@@ -1,5 +1,6 @@
-use spacetimedb_lib::{Hash, Identity};
+use spacetimedb_lib::Identity;
 use spacetimedb_sats::de::Deserialize;
+use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::ser::Serialize;
 
 use crate::address::Address;

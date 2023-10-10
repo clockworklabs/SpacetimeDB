@@ -1,8 +1,18 @@
+use std::collections::HashMap;
+use std::fmt;
+use std::sync::{Arc, Weak};
+use std::time::Duration;
+
+use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
+use futures::{Future, FutureExt};
+use indexmap::IndexMap;
+use tokio::sync::oneshot;
+
 use super::host_controller::HostThreadpool;
 use super::{ArgsTuple, EnergyDiff, InvalidReducerArguments, ReducerArgs, ReducerCallResult, Timestamp};
 use crate::client::ClientConnectionSender;
 use crate::database_logger::LogLevel;
-use crate::db::datastore::traits::{TableId, TxData, TxOp};
+use crate::db::datastore::traits::{TxData, TxOp};
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
 use crate::hash::Hash;
@@ -12,17 +22,10 @@ use crate::protobuf::client_api::{table_row_operation, SubscriptionUpdate, Table
 use crate::subscription::module_subscription_actor::ModuleSubscriptionManager;
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
 use crate::util::notify_once::NotifyOnce;
-use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
-use futures::{Future, FutureExt};
-use indexmap::IndexMap;
-use spacetimedb_lib::relation::MemTable;
-use spacetimedb_lib::{Address, ReducerDef, TableDef};
+use spacetimedb_lib::{Address, ReducerDef, TableDesc};
+use spacetimedb_sats::db::def::TableId;
+use spacetimedb_sats::relation::MemTable;
 use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
-use std::collections::HashMap;
-use std::fmt;
-use std::sync::{Arc, Weak};
-use std::time::Duration;
-use tokio::sync::oneshot;
 
 #[derive(Debug, Default, Clone)]
 pub struct DatabaseUpdate {
@@ -69,12 +72,12 @@ impl DatabaseUpdate {
             let table_name = if let Some(name) = table_name_map.get(&table_id) {
                 name.clone()
             } else {
-                let table_name = stdb.table_name_from_id(&tx, table_id.0).unwrap().unwrap();
+                let table_name = stdb.table_name_from_id(&tx, table_id).unwrap().unwrap();
                 table_name_map.insert(table_id, table_name.clone());
                 table_name
             };
             table_updates.push(DatabaseTableUpdate {
-                table_id: table_id.0,
+                table_id,
                 table_name,
                 ops: table_row_operations,
             });
@@ -90,7 +93,7 @@ impl DatabaseUpdate {
                 .tables
                 .into_iter()
                 .map(|table| TableUpdate {
-                    table_id: table.table_id,
+                    table_id: table.table_id.into(),
                     table_name: table.table_name,
                     table_row_operations: table
                         .ops
@@ -122,7 +125,7 @@ impl DatabaseUpdate {
                 .tables
                 .into_iter()
                 .map(|table| TableUpdateJson {
-                    table_id: table.table_id,
+                    table_id: table.table_id.into(),
                     table_name: table.table_name,
                     table_row_operations: table
                         .ops
@@ -148,7 +151,7 @@ impl DatabaseUpdate {
 
 #[derive(Debug, Clone)]
 pub struct DatabaseTableUpdate {
-    pub table_id: u32,
+    pub table_id: TableId,
     pub table_name: String,
     pub ops: Vec<TableOp>,
 }
@@ -217,9 +220,8 @@ pub trait Module: Send + Sync + 'static {
         &self,
         caller_identity: Identity,
         query: String,
-    ) -> Result<Vec<spacetimedb_lib::relation::MemTable>, DBError>;
+    ) -> Result<Vec<spacetimedb_sats::relation::MemTable>, DBError>;
     fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error>;
-
     #[cfg(feature = "tracelogging")]
     fn get_trace(&self) -> Option<bytes::Bytes>;
     #[cfg(feature = "tracelogging")]
@@ -316,7 +318,7 @@ trait DynModuleHost: Send + Sync + 'static {
         &self,
         caller_identity: Identity,
         query: String,
-    ) -> Result<Vec<spacetimedb_lib::relation::MemTable>, DBError>;
+    ) -> Result<Vec<spacetimedb_sats::relation::MemTable>, DBError>;
     fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error>;
     fn start(&self);
     fn exit(&self) -> Closed<'_>;
@@ -386,7 +388,7 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
         &self,
         caller_identity: Identity,
         query: String,
-    ) -> Result<Vec<spacetimedb_lib::relation::MemTable>, DBError> {
+    ) -> Result<Vec<spacetimedb_sats::relation::MemTable>, DBError> {
         self.module.one_off_query(caller_identity, query)
     }
 
@@ -651,7 +653,7 @@ impl WeakModuleHost {
 #[derive(Debug)]
 pub enum EntityDef {
     Reducer(ReducerDef),
-    Table(TableDef),
+    Table(TableDesc),
 }
 impl EntityDef {
     pub fn as_reducer(&self) -> Option<&ReducerDef> {
@@ -660,7 +662,7 @@ impl EntityDef {
             _ => None,
         }
     }
-    pub fn as_table(&self) -> Option<&TableDef> {
+    pub fn as_table(&self) -> Option<&TableDesc> {
         match self {
             Self::Table(x) => Some(x),
             _ => None,
@@ -682,7 +684,7 @@ impl Catalog {
         let schema = self.get(name)?;
         Some(schema.with(schema.ty().as_reducer()?))
     }
-    pub fn get_table(&self, name: &str) -> Option<WithTypespace<'_, TableDef>> {
+    pub fn get_table(&self, name: &str) -> Option<WithTypespace<'_, TableDesc>> {
         let schema = self.get(name)?;
         Some(schema.with(schema.ty().as_table()?))
     }

@@ -34,6 +34,7 @@ futures.workspace = true
 is-terminal.workspace = true
 itertools.workspace = true
 jsonwebtoken.workspace = true
+nonempty.workspace = true
 reqwest.workspace = true
 rustyline.workspace = true
 serde = { workspace = true, features = ["derive"] }

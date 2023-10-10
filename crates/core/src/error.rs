@@ -1,19 +1,22 @@
-use crate::client::ClientActorId;
-use crate::db::datastore::traits::{IndexDef, IndexId, TableId};
+use std::num::ParseIntError;
+use std::path::PathBuf;
+use std::sync::{MutexGuard, PoisonError};
+
 use hex::FromHexError;
+use thiserror::Error;
+
+use crate::client::ClientActorId;
+use crate::db::datastore::system_tables::SystemTable;
 use spacetimedb_lib::buffer::DecodeError;
-use spacetimedb_lib::error::{LibError, RelationError};
-use spacetimedb_lib::relation::FieldName;
 use spacetimedb_lib::{PrimaryKey, ProductValue};
+use spacetimedb_sats::db::def::{IndexDef, IndexId, TableId};
+use spacetimedb_sats::db::error::{LibError, RelationError, SchemaError};
 use spacetimedb_sats::product_value::InvalidFieldError;
+use spacetimedb_sats::relation::FieldName;
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_vm::errors::{ErrorKind, ErrorLang, ErrorVm};
 use spacetimedb_vm::expr::Crud;
-use std::num::ParseIntError;
-use std::path::PathBuf;
-use std::sync::{MutexGuard, PoisonError};
-use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum TableError {
@@ -23,8 +26,10 @@ pub enum TableError {
     Exist(String),
     #[error("Table with name `{0}` not found.")]
     NotFound(String),
-    #[error("Table with ID `{0}` not found.")]
-    IdNotFound(u32),
+    #[error("Table with ID `{1}` not found in `{0}`.")]
+    IdNotFound(SystemTable, u32),
+    #[error("Table with ID `{0}` not found in `TxState`.")]
+    IdNotFoundState(TableId),
     #[error("Column `{0}.{1}` is missing a name")]
     ColumnWithoutName(String, u32),
     #[error("schema_for_table: Table has invalid schema: {0} Err: {1}")]
@@ -60,11 +65,11 @@ pub enum IndexError {
     IndexAlreadyExists(IndexDef, String),
     #[error("Column not found: {0:?}")]
     ColumnNotFound(IndexDef),
-    #[error("Unique constraint violation '{}' in table '{}': column(s): '{:?}' value: {}", constraint_name, table_name, col_names, value.to_satn())]
+    #[error("Unique constraint violation '{}' in table '{}': column(s): '{:?}' value: {}", constraint_name, table_name, cols, value.to_satn())]
     UniqueConstraintViolation {
         constraint_name: String,
         table_name: String,
-        col_names: Vec<String>,
+        cols: Vec<String>,
         value: AlgebraicValue,
     },
     #[error("Attempt to define a index with more than 1 auto_inc column: Table: {0:?}, Columns: {1:?}")]
@@ -134,6 +139,8 @@ pub enum DBError {
     Sequence2(#[from] crate::db::datastore::locking_tx_datastore::SequenceError),
     #[error("IndexError: {0}")]
     Index(#[from] IndexError),
+    #[error("SchemaError: {0}")]
+    Schema(#[from] SchemaError),
     #[error("IOError: {0}.")]
     IoError(#[from] std::io::Error),
     #[error("ParseIntError: {0}.")]
@@ -244,7 +251,7 @@ impl From<DBError> for NodesError {
         match e {
             DBError::Table(TableError::Exist(name)) => Self::AlreadyExists(name),
             DBError::Table(TableError::System(name)) => Self::SystemName(name),
-            DBError::Table(TableError::IdNotFound(_) | TableError::NotFound(_)) => Self::TableNotFound,
+            DBError::Table(TableError::IdNotFound(_, _) | TableError::NotFound(_)) => Self::TableNotFound,
             DBError::Table(TableError::ColumnNotFound(_)) => Self::BadColumn,
             _ => Self::Internal(Box::new(e)),
         }

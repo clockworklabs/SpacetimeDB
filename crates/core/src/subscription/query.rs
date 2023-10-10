@@ -6,9 +6,9 @@ use crate::sql::compiler::compile_sql;
 use crate::sql::execute::execute_single_sql;
 use crate::subscription::subscription::QuerySet;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::{Column, FieldName, MemTable, RelValue};
-use spacetimedb_lib::DataKey;
+use spacetimedb_sats::relation::{Column, FieldName, MemTable, RelValue};
 use spacetimedb_sats::AlgebraicType;
+use spacetimedb_sats::DataKey;
 use spacetimedb_vm::expr::{Crud, CrudExpr, DbType, QueryExpr, SourceExpr};
 
 pub const SUBSCRIBE_TO_ALL_QUERY: &str = "SELECT * FROM *";
@@ -147,7 +147,6 @@ pub fn compile_read_only_query(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::datastore::traits::{ColumnDef, IndexDef, TableDef, TableSchema};
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp};
     use crate::sql::execute::run;
@@ -155,11 +154,12 @@ mod tests {
     use crate::vm::tests::create_table_with_rows;
     use itertools::Itertools;
     use nonempty::NonEmpty;
-    use spacetimedb_lib::auth::{StAccess, StTableType};
-    use spacetimedb_lib::data_key::ToDataKey;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_lib::relation::FieldName;
     use spacetimedb_lib::Identity;
+    use spacetimedb_sats::data_key::ToDataKey;
+    use spacetimedb_sats::db::auth::{StAccess, StTableType};
+    use spacetimedb_sats::db::def::*;
+    use spacetimedb_sats::relation::FieldName;
     use spacetimedb_sats::{product, ProductType, ProductValue};
     use spacetimedb_vm::dsl::{db_table, mem_table, scalar};
     use spacetimedb_vm::operator::OpCmp;
@@ -169,8 +169,8 @@ mod tests {
         tx: &mut MutTxId,
         name: &str,
         schema: &[(&str, AlgebraicType)],
-        indexes: &[(u32, &str)],
-    ) -> ResultTest<u32> {
+        indexes: &[(ColId, &str)],
+    ) -> ResultTest<TableId> {
         let table_name = name.to_string();
         let table_type = StTableType::User;
         let table_access = StAccess::Public;
@@ -180,27 +180,18 @@ mod tests {
             .map(|(col_name, col_type)| ColumnDef {
                 col_name: col_name.to_string(),
                 col_type: col_type.clone(),
-                is_autoinc: false,
             })
             .collect_vec();
 
         let indexes = indexes
             .iter()
-            .map(|(col_id, index_name)| IndexDef {
-                table_id: 0,
-                cols: NonEmpty::new(*col_id),
-                name: index_name.to_string(),
-                is_unique: false,
-            })
+            .map(|(col_id, index_name)| IndexDef::new(index_name, NonEmpty::new(*col_id), false, IndexType::BTree))
             .collect_vec();
 
-        let schema = TableDef {
-            table_name,
-            columns,
-            indexes,
-            table_type,
-            table_access,
-        };
+        let schema = TableDef::new(&table_name, &columns)
+            .with_indexes(&indexes)
+            .with_type(table_type)
+            .with_access(table_access);
 
         Ok(db.create_table(tx, schema)?)
     }
@@ -229,7 +220,7 @@ mod tests {
             ops: vec![op],
         };
 
-        let q = QueryExpr::new(db_table((&schema).into(), table_name.to_owned(), table_id));
+        let q = QueryExpr::new(db_table((&schema).into(), table_name, table_id));
 
         Ok((schema, table, data, q))
     }
@@ -367,7 +358,7 @@ mod tests {
         let table_id = create_table_with_rows(&db, &mut tx, "test", schema.clone(), &[])?;
 
         // select * from test
-        let query = QueryExpr::new(db_table(schema.clone(), "test".to_owned(), table_id));
+        let query = QueryExpr::new(db_table(schema.clone(), "test", table_id));
         let query = QuerySet(vec![Query { queries: vec![query] }]);
 
         let op = TableOp {
@@ -399,7 +390,7 @@ mod tests {
 
         // Create table [test] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1, "b")];
+        let indexes = &[(1.into(), "b")];
         let table_id = create_table(&db, &mut tx, "test", schema, indexes)?;
 
         let sql = "select * from test where b = 3";
@@ -456,7 +447,7 @@ mod tests {
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1, "b")];
+        let indexes = &[(1.into(), "b")];
         let lhs_id = create_table(&db, &mut tx, "lhs", schema, indexes)?;
 
         // Create table [rhs] with no indexes
@@ -563,7 +554,7 @@ mod tests {
         check_query(&db, &table, &mut tx, &q, &data)?;
 
         //SELECT * FROM inventory
-        let q_all = QueryExpr::new(db_table((&schema).into(), "_inventory".to_owned(), schema.table_id));
+        let q_all = QueryExpr::new(db_table((&schema).into(), "_inventory", schema.table_id));
         //SELECT * FROM inventory WHERE inventory_id = 1
         let q_id =
             q_all
@@ -603,7 +594,7 @@ mod tests {
 
         check_query_incr(&db, &mut tx, &s, &update, 3, &[row])?;
 
-        let q = QueryExpr::new(db_table((&schema).into(), "_inventory".to_owned(), schema.table_id));
+        let q = QueryExpr::new(db_table((&schema).into(), "_inventory", schema.table_id));
 
         let q = to_mem_table(q, &data);
         //Try access the private table
@@ -640,7 +631,7 @@ mod tests {
         let (schema, _table, _data, _q) = make_inv(&db, &mut tx, StAccess::Private)?;
 
         //SELECT * FROM inventory
-        let q_all = QueryExpr::new(db_table((&schema).into(), "inventory".to_owned(), schema.table_id));
+        let q_all = QueryExpr::new(db_table((&schema).into(), "inventory", schema.table_id));
         //SELECT * FROM inventory WHERE inventory_id = 1
         let q_id =
             q_all

@@ -1,11 +1,13 @@
 use super::code_indenter::CodeIndenter;
 use super::{GenCtx, GenItem};
 use convert_case::{Case, Casing};
+use nonempty::NonEmpty;
+use spacetimedb_lib::sats::db::def::TableSchema;
 use spacetimedb_lib::sats::{
     AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, ProductTypeElement, SumType,
     SumTypeVariant,
 };
-use spacetimedb_lib::{ColumnIndexAttribute, ReducerDef, TableDef};
+use spacetimedb_lib::{ReducerDef, TableDesc};
 use std::collections::HashSet;
 use std::fmt::Write;
 
@@ -330,17 +332,23 @@ fn find_product_type(ctx: &GenCtx, ty: AlgebraicTypeRef) -> &ProductType {
 
 /// Generate a file which defines a `struct` corresponding to the `table`'s `ProductType`,
 /// and implements `spacetimedb_sdk::table::TableType` for it.
-pub fn autogen_rust_table(ctx: &GenCtx, table: &TableDef) -> String {
+pub fn autogen_rust_table(ctx: &GenCtx, table: &TableDesc) -> String {
     let mut output = CodeIndenter::new(String::new());
     let out = &mut output;
 
-    let type_name = table.name.to_case(Case::Pascal);
+    let type_name = table.schema.table_name.to_case(Case::Pascal);
 
     begin_rust_struct_def_shared(ctx, out, &type_name, &find_product_type(ctx, table.data).elements);
 
     out.newline();
 
-    print_impl_tabletype(ctx, out, table);
+    let table = table
+        .schema
+        .clone()
+        .into_schema(0.into())
+        .validated()
+        .expect("Fail to generate table");
+    print_impl_tabletype(ctx, out, &table);
 
     output.into_inner()
 }
@@ -400,45 +408,19 @@ fn begin_rust_struct_def_shared(ctx: &GenCtx, out: &mut Indenter, name: &str, el
     out.newline();
 }
 
-fn find_primary_key_column_index(ctx: &GenCtx, table: &TableDef) -> Option<usize> {
-    // Search the whole slice, rather than stopping early like `Iter::position`, so we can
-    // report an error if multiple columns are primary.
-    let primaries = table
-        .column_attrs
-        .iter()
-        .enumerate()
-        .filter_map(|(i, attr)| attr.is_primary().then_some(i))
-        .collect::<Vec<_>>();
-    match primaries.len() {
-        2.. => {
-            let names = primaries
-                .iter()
-                .map(|&i| &find_product_type(ctx, table.data).elements[i])
-                .collect::<Vec<_>>();
-            panic!(
-                "Multiple primary columns defined for table {:?}: {:?}",
-                table.name, names
-            );
-        }
-        1 => Some(primaries[0]),
-        0 => None,
-
-        // rustc refuses to do exhaustiveness checking on `usize`, even in this case where
-        // one pattern is a range with no upper bound, so the entire range of `usize` is
-        // covered on any platform.
-        _ => unreachable!(),
-    }
+fn find_primary_key_column_index(table: &TableSchema) -> Option<usize> {
+    table.pk().map(|x| x.col_pos.into())
 }
 
-fn print_impl_tabletype(ctx: &GenCtx, out: &mut Indenter, table: &TableDef) {
-    let type_name = table.name.to_case(Case::Pascal);
+fn print_impl_tabletype(ctx: &GenCtx, out: &mut Indenter, table: &TableSchema) {
+    let type_name = table.table_name.to_case(Case::Pascal);
 
     write!(out, "impl TableType for {} ", type_name).unwrap();
 
     out.delimited_block(
         "{",
         |out| {
-            writeln!(out, "const TABLE_NAME: &'static str = {:?};", table.name).unwrap();
+            writeln!(out, "const TABLE_NAME: &'static str = {:?};", table.table_name).unwrap();
             writeln!(out, "type ReducerEvent = super::ReducerEvent;").unwrap();
         },
         "}\n",
@@ -446,20 +428,15 @@ fn print_impl_tabletype(ctx: &GenCtx, out: &mut Indenter, table: &TableDef) {
 
     out.newline();
 
-    if let Some(primary_column_index) = find_primary_key_column_index(ctx, table) {
-        let pk_field = &find_product_type(ctx, table.data).elements[primary_column_index];
-        let pk_field_name = pk_field
-            .name
-            .as_ref()
-            .expect("Fields designated as primary key should have names!")
-            .to_case(Case::Snake);
+    if let Some(pk_field) = table.pk() {
+        let pk_field_name = pk_field.col_name.to_case(Case::Snake);
         // TODO: ensure that primary key types are always `Eq`, `Hash`, `Clone`.
         write!(out, "impl TableWithPrimaryKey for {} ", type_name).unwrap();
         out.delimited_block(
             "{",
             |out| {
                 write!(out, "type PrimaryKey = ").unwrap();
-                write_type_ctx(ctx, out, &pk_field.algebraic_type);
+                write_type_ctx(ctx, out, &pk_field.col_type);
                 writeln!(out, ";").unwrap();
 
                 out.delimited_block(
@@ -474,32 +451,17 @@ fn print_impl_tabletype(ctx: &GenCtx, out: &mut Indenter, table: &TableDef) {
 
     out.newline();
 
-    print_table_filter_methods(
-        ctx,
-        out,
-        &type_name,
-        &find_product_type(ctx, table.data).elements,
-        &table.column_attrs,
-    );
+    print_table_filter_methods(ctx, out, &type_name, table);
 }
 
-fn print_table_filter_methods(
-    ctx: &GenCtx,
-    out: &mut Indenter,
-    table_type_name: &str,
-    elements: &[ProductTypeElement],
-    attrs: &[ColumnIndexAttribute],
-) {
+fn print_table_filter_methods(ctx: &GenCtx, out: &mut Indenter, table_type_name: &str, table: &TableSchema) {
     write!(out, "impl {} ", table_type_name).unwrap();
+    let constraints = table.column_constraints();
     out.delimited_block(
         "{",
         |out| {
-            for (elt, attr) in elements.iter().zip(attrs) {
-                let field_name = elt
-                    .name
-                    .as_ref()
-                    .expect("Table columns should have names!")
-                    .to_case(Case::Snake);
+            for field in &table.columns {
+                let field_name = field.col_name.to_case(Case::Snake);
                 // TODO: ensure that fields are PartialEq
                 writeln!(out, "{}", ALLOW_UNUSED).unwrap();
                 write!(out, "pub fn filter_by_{}({}: ", field_name, field_name).unwrap();
@@ -508,9 +470,11 @@ fn print_table_filter_methods(
                 //       fields should take &[T]. Determine if integer typeso should be by
                 //       value. Is there a trait for this?
                 //       Look at `Borrow` or Deref or AsRef?
-                write_type_ctx(ctx, out, &elt.algebraic_type);
+                write_type_ctx(ctx, out, &field.col_type);
                 write!(out, ") -> ").unwrap();
-                if attr.is_unique() {
+                let ct = constraints[&NonEmpty::new(field.col_pos)];
+
+                if ct.has_unique() {
                     write!(out, "Option<Self>").unwrap();
                 } else {
                     write!(out, "TableIter<Self>").unwrap();
@@ -524,7 +488,7 @@ fn print_table_filter_methods(
                             // TODO: for primary keys, we should be able to do better than
                             //       `find` or `filter`. We should be able to look up
                             //       directly in the `TableCache`.
-                            if attr.is_unique() { "find" } else { "filter" },
+                            if ct.has_unique() { "find" } else { "filter" },
                             field_name,
                             field_name,
                         )
@@ -826,7 +790,7 @@ fn iter_reducer_items(items: &[GenItem]) -> impl Iterator<Item = &ReducerDef> {
     })
 }
 
-fn iter_table_items(items: &[GenItem]) -> impl Iterator<Item = &TableDef> {
+fn iter_table_items(items: &[GenItem]) -> impl Iterator<Item = &TableDesc> {
     items.iter().filter_map(|item| match item {
         GenItem::Table(table) => Some(table),
         _ => None,
@@ -835,7 +799,7 @@ fn iter_table_items(items: &[GenItem]) -> impl Iterator<Item = &TableDef> {
 
 fn iter_module_names(items: &[GenItem]) -> impl Iterator<Item = String> + '_ {
     items.iter().map(|item| match item {
-        GenItem::Table(table) => table.name.to_case(Case::Snake),
+        GenItem::Table(table) => table.schema.table_name.to_case(Case::Snake),
         GenItem::TypeAlias(ty) => ty.name.to_case(Case::Snake),
         GenItem::Reducer(reducer) => reducer_module_name(reducer),
     })
@@ -905,17 +869,18 @@ fn print_handle_table_update_defn(ctx: &GenCtx, out: &mut Indenter, items: &[Gen
                 "match table_name {",
                 |out| {
                     for table in iter_table_items(items) {
+                        let table = table.schema.clone().into_schema(0.into()).validated().unwrap();
                         writeln!(
                             out,
                             "{:?} => client_cache.{}::<{}::{}>(callbacks, table_update),",
-                            table.name,
-                            if find_primary_key_column_index(ctx, table).is_some() {
+                            table.table_name,
+                            if find_primary_key_column_index(&table).is_some() {
                                 "handle_table_update_with_primary_key"
                             } else {
                                 "handle_table_update_no_primary_key"
                             },
-                            table.name.to_case(Case::Snake),
-                            table.name.to_case(Case::Pascal),
+                            table.table_name.to_case(Case::Snake),
+                            table.table_name.to_case(Case::Pascal),
                         ).unwrap();
                     }
                     writeln!(
@@ -940,8 +905,8 @@ fn print_invoke_row_callbacks_defn(out: &mut Indenter, items: &[GenItem]) {
                 writeln!(
                     out,
                     "reminders.invoke_callbacks::<{}::{}>(worker, &reducer_event, state);",
-                    table.name.to_case(Case::Snake),
-                    table.name.to_case(Case::Pascal),
+                    table.schema.table_name.to_case(Case::Snake),
+                    table.schema.table_name.to_case(Case::Pascal),
                 ).unwrap();
             }
         },
@@ -964,9 +929,9 @@ fn print_handle_resubscribe_defn(out: &mut Indenter, items: &[GenItem]) {
                         writeln!(
                             out,
                             "{:?} => client_cache.handle_resubscribe_for_type::<{}::{}>(callbacks, new_subs),",
-                            table.name,
-                            table.name.to_case(Case::Snake),
-                            table.name.to_case(Case::Pascal),
+                            table.schema.table_name,
+                            table.schema.table_name.to_case(Case::Snake),
+                            table.schema.table_name.to_case(Case::Pascal),
                         ).unwrap();
                     }
                     writeln!(

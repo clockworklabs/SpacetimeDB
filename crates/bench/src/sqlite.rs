@@ -7,8 +7,8 @@ use crate::{
 use ahash::AHashMap;
 use lazy_static::lazy_static;
 use rusqlite::Connection;
-use spacetimedb::db::datastore::traits::TableSchema;
 use spacetimedb_lib::sats::{AlgebraicType, AlgebraicValue, ProductType};
+use spacetimedb_sats::db::def::TableSchema;
 use std::{
     fmt::Write,
     hint::black_box,

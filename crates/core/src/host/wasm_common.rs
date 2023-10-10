@@ -342,7 +342,7 @@ pub fn err_to_errno(err: &NodesError) -> Option<u16> {
             DBError::Index(IndexError::UniqueConstraintViolation {
                 constraint_name: _,
                 table_name: _,
-                col_names: _,
+                cols: _,
                 value: _,
             }) => Some(errnos::UNIQUE_ALREADY_EXISTS),
             _ => None,

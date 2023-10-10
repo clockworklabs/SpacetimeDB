@@ -1,4 +1,4 @@
-pub use spacetimedb_lib::hash::*;
+pub use spacetimedb_sats::hash::*;
 
 pub trait ToHexString {
     fn to_hex_string(&self) -> String;

@@ -7,9 +7,10 @@ description = "The HTTP API for SpacetimeDB"
 
 [dependencies]
 spacetimedb-core = { path = "../core", version = "0.7.0" }
+spacetimedb-lib = { path = "../lib", version = "0.7.0" }
+
 tokio = { version = "1.2", features = ["full"] }
 lazy_static = "1.4.0"
-spacetimedb-lib = { path = "../lib", version = "0.7.0" }
 log = "0.4.4"
 serde = "1.0.136"
 serde_json = { version = "1.0", features = ["raw_value"] }

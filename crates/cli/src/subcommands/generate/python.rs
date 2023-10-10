@@ -1,9 +1,11 @@
 use super::util::fmt_fn;
 
 use convert_case::{Case, Casing};
+use nonempty::NonEmpty;
+use spacetimedb_lib::sats::db::def::TableSchema;
 use spacetimedb_lib::{
-    sats::{AlgebraicType::Builtin, AlgebraicTypeRef, ArrayType, BuiltinType, MapType},
-    AlgebraicType, ColumnIndexAttribute, ProductType, ProductTypeElement, ReducerDef, SumType, TableDef,
+    sats::{AlgebraicTypeRef, ArrayType, BuiltinType, MapType},
+    AlgebraicType, ProductType, ProductTypeElement, ReducerDef, SumType, TableDesc,
 };
 use std::fmt::{self, Write};
 
@@ -146,9 +148,14 @@ fn python_filename(ctx: &GenCtx, typeref: AlgebraicTypeRef) -> String {
         .to_case(Case::Snake)
 }
 
-pub fn autogen_python_table(ctx: &GenCtx, table: &TableDef) -> String {
+pub fn autogen_python_table(ctx: &GenCtx, table: &TableDesc) -> String {
     let tuple = ctx.typespace[table.data].as_product().unwrap();
-    autogen_python_product_table_common(ctx, &table.name, tuple, Some(&table.column_attrs))
+    autogen_python_product_table_common(
+        ctx,
+        &table.schema.clone().table_name,
+        tuple,
+        Some(table.schema.clone().into_schema(0.into())),
+    )
 }
 
 fn generate_imports(ctx: &GenCtx, elements: &Vec<ProductTypeElement>, imports: &mut Vec<String>) {
@@ -159,7 +166,7 @@ fn generate_imports(ctx: &GenCtx, elements: &Vec<ProductTypeElement>, imports: &
 
 fn _generate_imports(ctx: &GenCtx, ty: &AlgebraicType, imports: &mut Vec<String>) {
     match ty {
-        Builtin(b) => match b {
+        AlgebraicType::Builtin(b) => match b {
             BuiltinType::Array(ArrayType { elem_ty }) => _generate_imports(ctx, elem_ty, imports),
             BuiltinType::Map(map_type) => {
                 _generate_imports(ctx, &map_type.key_ty, imports);
@@ -187,10 +194,8 @@ fn autogen_python_product_table_common(
     ctx: &GenCtx,
     name: &str,
     product_type: &ProductType,
-    column_attrs: Option<&[ColumnIndexAttribute]>,
+    schema: Option<TableSchema>,
 ) -> String {
-    let is_table = column_attrs.is_some();
-
     let mut output = CodeIndenter::new(String::new());
 
     writeln!(
@@ -201,7 +206,7 @@ fn autogen_python_product_table_common(
     writeln!(output, "# WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.").unwrap();
     writeln!(output).unwrap();
 
-    if is_table {
+    if schema.is_some() {
         writeln!(output, "from __future__ import annotations").unwrap();
         writeln!(output, "from typing import List, Iterator, Callable").unwrap();
         writeln!(output).unwrap();
@@ -228,30 +233,24 @@ fn autogen_python_product_table_common(
         indent_scope!(output);
 
         // if this is a table, mark it as such
-        let is_table_str = match column_attrs {
+        let is_table_str = match schema {
             Some(_) => "True",
             None => "False",
         };
         writeln!(output, "is_table_class = {is_table_str}").unwrap();
         writeln!(output).unwrap();
 
-        if is_table {
+        if let Some(schema) = schema {
             // if this table has a primary key add it to the codegen
-            if let Some(primary_key) = column_attrs
-                .unwrap()
-                .iter()
-                .enumerate()
-                .find_map(|(idx, attr)| attr.is_primary().then_some(idx))
-                .map(|idx| {
-                    let field_name = product_type.elements[idx]
-                        .name
-                        .as_ref()
-                        .expect("autogen'd tuples should have field names")
-                        .replace("r#", "")
-                        .to_case(Case::Snake);
-                    format!("\"{}\"", field_name)
-                })
-            {
+            if let Some(primary_key) = schema.pk().map(|idx| {
+                let field_name = product_type.elements[usize::from(idx.col_pos)]
+                    .name
+                    .as_ref()
+                    .expect("autogen'd tuples should have field names")
+                    .replace("r#", "")
+                    .to_case(Case::Snake);
+                format!("\"{}\"", field_name)
+            }) {
                 writeln!(output, "primary_key = {}", primary_key).unwrap();
                 writeln!(output).unwrap();
             }
@@ -284,8 +283,10 @@ fn autogen_python_product_table_common(
             }
             writeln!(output).unwrap();
 
+            let constraints = schema.column_constraints();
             for (idx, field) in product_type.elements.iter().enumerate() {
-                let attr = column_attrs.unwrap()[idx];
+                let attr = constraints[&NonEmpty::new(idx.into())];
+
                 let field_type = &field.algebraic_type;
 
                 match field_type {
@@ -326,14 +327,14 @@ fn autogen_python_product_table_common(
                     .to_case(Case::Snake);
 
                 writeln!(output, "@classmethod").unwrap();
-                if attr.is_unique() {
+                if attr.has_unique() {
                     writeln!(output, "def filter_by_{field_name}(cls, {field_name}) -> {name}:").unwrap();
                 } else {
                     writeln!(output, "def filter_by_{field_name}(cls, {field_name}) -> List[{name}]:").unwrap();
                 }
                 {
                     indent_scope!(output);
-                    if attr.is_unique() {
+                    if attr.has_unique() {
                         writeln!(output, "return next(iter([column_value for column_value in SpacetimeDBClient.instance._get_table_cache(\"{name}\").values() if column_value.{field_name} == {field_name}]), None)").unwrap();
                     } else {
                         writeln!(output, "return [column_value for column_value in SpacetimeDBClient.instance._get_table_cache(\"{name}\").values() if column_value.{field_name} == {field_name}]").unwrap();
@@ -388,7 +389,7 @@ fn autogen_python_product_table_common(
                     AlgebraicType::Product(_) => {
                         reducer_args.push(format!("self.{python_field_name}"));
                     }
-                    Builtin(_) => {
+                    AlgebraicType::Builtin(_) => {
                         reducer_args.push(format!("self.{python_field_name}"));
                     }
                     AlgebraicType::Ref(type_ref) => {

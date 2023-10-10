@@ -1,11 +1,10 @@
 use super::RowId;
-use crate::{
-    db::datastore::traits::{IndexId, IndexSchema},
-    error::DBError,
-};
+use crate::db::datastore::locking_tx_datastore::table::Table;
+use crate::error::{DBError, IndexError};
 use nonempty::NonEmpty;
-use spacetimedb_lib::{data_key::ToDataKey, DataKey};
-use spacetimedb_sats::{AlgebraicValue, ProductValue};
+use spacetimedb_sats::data_key::ToDataKey;
+use spacetimedb_sats::db::def::{ColId, IndexId, IndexSchema, IndexType, TableId};
+use spacetimedb_sats::{AlgebraicValue, DataKey, ProductValue};
 use std::{
     collections::{btree_set, BTreeSet},
     ops::{Bound, RangeBounds},
@@ -77,15 +76,21 @@ impl Iterator for BTreeIndexRangeIter<'_> {
 
 pub(crate) struct BTreeIndex {
     pub(crate) index_id: IndexId,
-    pub(crate) table_id: u32,
-    pub(crate) cols: NonEmpty<u32>,
+    pub(crate) table_id: TableId,
+    pub(crate) cols: NonEmpty<ColId>,
     pub(crate) name: String,
     pub(crate) is_unique: bool,
     idx: BTreeSet<IndexKey>,
 }
 
 impl BTreeIndex {
-    pub(crate) fn new(index_id: IndexId, table_id: u32, cols: NonEmpty<u32>, name: String, is_unique: bool) -> Self {
+    pub(crate) fn new(
+        index_id: IndexId,
+        table_id: TableId,
+        cols: NonEmpty<ColId>,
+        name: String,
+        is_unique: bool,
+    ) -> Self {
         Self {
             index_id,
             table_id,
@@ -147,7 +152,7 @@ impl BTreeIndex {
     /// Returns an iterator over the [BTreeIndex] that yields all the `RowId`s
     /// that fall within the specified `range`.
     #[tracing::instrument(skip_all)]
-    pub(crate) fn seek<'a>(&'a self, range: &impl RangeBounds<AlgebraicValue>) -> BTreeIndexRangeIter<'a> {
+    pub(crate) fn seek(&self, range: &impl RangeBounds<AlgebraicValue>) -> BTreeIndexRangeIter {
         let map = |bound, datakey| match bound {
             Bound::Included(x) => Bound::Included(IndexKey::from_row(x, datakey)),
             Bound::Excluded(x) => Bound::Excluded(IndexKey::from_row(x, datakey)),
@@ -168,16 +173,30 @@ impl BTreeIndex {
         }
         Ok(())
     }
+
+    pub(crate) fn build_error_unique(&self, table: &Table, value: AlgebraicValue) -> IndexError {
+        IndexError::UniqueConstraintViolation {
+            constraint_name: self.name.clone(),
+            table_name: table.schema.table_name.clone(),
+            cols: self
+                .cols
+                .iter()
+                .map(|&x| table.schema.columns[usize::from(x)].col_name.clone())
+                .collect(),
+            value,
+        }
+    }
 }
 
 impl From<&BTreeIndex> for IndexSchema {
     fn from(x: &BTreeIndex) -> Self {
         IndexSchema {
-            index_id: x.index_id.0,
+            index_id: x.index_id,
             table_id: x.table_id,
-            cols: x.cols.clone(),
+            columns: x.cols.clone(),
             is_unique: x.is_unique,
             index_name: x.name.clone(),
+            index_type: IndexType::BTree,
         }
     }
 }

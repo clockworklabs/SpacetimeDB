@@ -1,3 +1,9 @@
+use spacetimedb_sats::hash::{hash_bytes, Hash};
+use spacetimedb_sats::DataKey;
+use std::io;
+use std::sync::Arc;
+use std::sync::Mutex;
+
 use super::{
     datastore::traits::{MutTxDatastore, TxData},
     message_log::{self, MessageLog},
@@ -14,15 +20,6 @@ use crate::{
     },
     error::DBError,
 };
-
-use spacetimedb_lib::{
-    hash::{hash_bytes, Hash},
-    DataKey,
-};
-
-use std::io;
-use std::sync::Arc;
-use std::sync::Mutex;
 
 #[derive(Clone)]
 pub struct CommitLog {
@@ -97,7 +94,7 @@ impl CommitLog {
                     TxOp::Insert(_) => Operation::Insert,
                     TxOp::Delete => Operation::Delete,
                 },
-                set_id: record.table_id.0,
+                set_id: record.table_id.into(),
                 data_key: record.key,
             })
             .collect();
@@ -285,7 +282,8 @@ impl From<message_log::Segments> for Iter {
 mod tests {
     use super::*;
 
-    use spacetimedb_lib::data_key::InlineData;
+    use spacetimedb_sats::data_key::InlineData;
+    use spacetimedb_sats::DataKey;
     use tempdir::TempDir;
 
     use crate::db::ostorage::memory_object_db::MemoryObjectDB;

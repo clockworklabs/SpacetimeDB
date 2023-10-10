@@ -8,18 +8,20 @@ description = "Spacetime Algebraic Type Notation"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-serde = ["dep:serde", "hex"]
+serde = ["dep:serde"]
 
 [dependencies]
 spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.7.0" }
 
 arrayvec.workspace = true
+bitflags.workspace = true
 decorum.workspace = true
 derive_more.workspace = true
 enum-as-inner.workspace = true
-hex = { workspace = true, optional = true }
+hex.workspace = true
 itertools.workspace = true
 nonempty.workspace = true
+sha3.workspace = true
 serde = { workspace = true, optional = true }
 thiserror.workspace = true
 tracing.workspace = true

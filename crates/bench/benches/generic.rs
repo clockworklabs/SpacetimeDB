@@ -3,13 +3,14 @@ use criterion::{
     measurement::{Measurement, WallTime},
     Bencher, BenchmarkGroup, Criterion,
 };
-use spacetimedb::db::datastore::traits::TableSchema;
 use spacetimedb_bench::{
     database::BenchDatabase,
     schemas::{create_sequential, BenchTable, IndexStrategy, Location, Person, RandomTable, BENCH_PKEY_INDEX},
     spacetime_module, spacetime_raw, sqlite, ResultBench,
 };
 use spacetimedb_lib::sats::AlgebraicType;
+use spacetimedb_sats::db::def::TableSchema;
+
 fn criterion_benchmark(c: &mut Criterion) {
     bench_suite::<sqlite::SQLite>(c, true).unwrap();
     bench_suite::<spacetime_raw::SpacetimeRaw>(c, true).unwrap();

@@ -1,7 +1,7 @@
-use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::RelValue;
 use spacetimedb_lib::PrimaryKey;
+use spacetimedb_sats::db::auth::{StAccess, StTableType};
+use spacetimedb_sats::relation::RelValue;
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_vm::expr::QueryExpr;
 use std::collections::HashSet;

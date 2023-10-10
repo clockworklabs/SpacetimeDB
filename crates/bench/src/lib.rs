@@ -1,6 +1,5 @@
 use crate::schemas::BenchTable;
-use spacetimedb::db::datastore::traits::{ColumnSchema, TableSchema};
-use spacetimedb_lib::auth::{StAccess, StTableType};
+use spacetimedb_sats::db::def::{ColumnDef, TableDef, TableSchema};
 
 pub mod database;
 pub mod schemas;
@@ -11,27 +10,16 @@ pub mod sqlite;
 pub type ResultBench<T> = Result<T, anyhow::Error>;
 
 pub(crate) fn create_schema<T: BenchTable>(table_name: &str) -> TableSchema {
-    let columns = T::product_type()
+    let columns: Vec<_> = T::product_type()
         .elements
         .into_iter()
-        .enumerate()
-        .map(|(pos, col)| ColumnSchema {
-            table_id: 0,
-            col_id: pos as u32,
+        .map(|col| ColumnDef {
             col_name: col.name.unwrap(),
             col_type: col.algebraic_type,
-            is_autoinc: false,
-        });
+        })
+        .collect();
 
-    TableSchema {
-        table_id: 0,
-        table_name: table_name.to_string(),
-        indexes: vec![],
-        columns: columns.collect(),
-        constraints: vec![],
-        table_type: StTableType::System,
-        table_access: StAccess::Public,
-    }
+    TableDef::new(table_name, &columns).into_schema(0.into())
 }
 
 #[cfg(test)]

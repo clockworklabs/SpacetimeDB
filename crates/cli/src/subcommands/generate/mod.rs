@@ -6,7 +6,8 @@ use clap::ArgAction::SetTrue;
 use convert_case::{Case, Casing};
 use duct::cmd;
 use spacetimedb_lib::sats::{AlgebraicType, Typespace};
-use spacetimedb_lib::{bsatn, MiscModuleExport, ModuleDef, ReducerDef, TableDef, TypeAlias, MODULE_ABI_MAJOR_VERSION};
+use spacetimedb_lib::MODULE_ABI_MAJOR_VERSION;
+use spacetimedb_lib::{bsatn, MiscModuleExport, ModuleDef, ReducerDef, TableDesc, TypeAlias};
 use wasmtime::{AsContext, Caller};
 
 mod code_indenter;
@@ -180,9 +181,20 @@ pub fn extract_from_moduledef(module: ModuleDef) -> (GenCtx, impl Iterator<Item 
         reducers,
         misc_exports,
     } = module;
+    // HACK: Patch the fields to have the types that point to `AlgebraicTypeRef` because all generators depend on that
+    // `register_table` in rt.rs resolve the types early, but the generators do it late. This impact enums where
+    // the enum name is not preserved in the `AlgebraicType`.
+    let tables: Vec<_> = tables
+        .into_iter()
+        .map(|mut x| {
+            x.schema.columns = typespace[x.data].as_product().unwrap().into();
+            x
+        })
+        .collect();
+
     let mut names = vec![None; typespace.types.len()];
     let name_info = itertools::chain!(
-        tables.iter().map(|t| (t.data, &t.name)),
+        tables.iter().map(|t| (t.data, &t.schema.table_name)),
         misc_exports
             .iter()
             .map(|MiscModuleExport::TypeAlias(a)| (a.ty, &a.name)),
@@ -190,7 +202,6 @@ pub fn extract_from_moduledef(module: ModuleDef) -> (GenCtx, impl Iterator<Item 
     for (typeref, name) in name_info {
         names[typeref.idx()] = Some(name.clone())
     }
-
     let ctx = GenCtx { typespace, names };
     let iter = itertools::chain!(
         misc_exports.into_iter().map(GenItem::from_misc_export),
@@ -204,7 +215,7 @@ pub fn extract_from_moduledef(module: ModuleDef) -> (GenCtx, impl Iterator<Item 
 }
 
 pub enum GenItem {
-    Table(TableDef),
+    Table(TableDesc),
     TypeAlias(TypeAlias),
     Reducer(ReducerDef),
 }
@@ -229,7 +240,7 @@ impl GenItem {
         match self {
             GenItem::Table(table) => {
                 let code = rust::autogen_rust_table(ctx, table);
-                Some((rust::rust_type_file_name(&table.name), code))
+                Some((rust::rust_type_file_name(&table.schema.table_name), code))
             }
             GenItem::TypeAlias(TypeAlias { name, ty }) => {
                 let code = match &ctx.typespace[*ty] {
@@ -250,7 +261,7 @@ impl GenItem {
         match self {
             GenItem::Table(table) => {
                 let code = python::autogen_python_table(ctx, table);
-                let name = table.name.to_case(Case::Snake);
+                let name = table.schema.table_name.to_case(Case::Snake);
                 Some((name + ".py", code))
             }
             GenItem::TypeAlias(TypeAlias { name, ty }) => match &ctx.typespace[*ty] {
@@ -279,7 +290,7 @@ impl GenItem {
         match self {
             GenItem::Table(table) => {
                 let code = typescript::autogen_typescript_table(ctx, table);
-                let name = table.name.to_case(Case::Snake);
+                let name = table.schema.table_name.to_case(Case::Snake);
                 Some((name + ".ts", code))
             }
             GenItem::TypeAlias(TypeAlias { name, ty }) => match &ctx.typespace[*ty] {
@@ -308,7 +319,7 @@ impl GenItem {
         match self {
             GenItem::Table(table) => {
                 let code = csharp::autogen_csharp_table(ctx, table, namespace);
-                Some((table.name.clone() + ".cs", code))
+                Some((table.schema.table_name.clone() + ".cs", code))
             }
             GenItem::TypeAlias(TypeAlias { name, ty }) => match &ctx.typespace[*ty] {
                 AlgebraicType::Sum(sum) => {

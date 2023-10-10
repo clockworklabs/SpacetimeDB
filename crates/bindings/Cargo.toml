@@ -22,6 +22,7 @@ spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.7.0"}
 
 derive_more.workspace = true
 log.workspace = true
+nonempty.workspace = true
 once_cell.workspace = true
 scoped-tls.workspace = true
 

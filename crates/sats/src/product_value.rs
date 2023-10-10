@@ -1,6 +1,7 @@
 use crate::algebraic_value::AlgebraicValue;
+use crate::db::def::ColId;
 use crate::product_type::ProductType;
-use crate::ArrayValue;
+use crate::{ArrayValue, SumValue};
 use nonempty::NonEmpty;
 
 /// A product value is made of a a list of
@@ -50,7 +51,7 @@ impl crate::Value for ProductValue {
 #[error("Field {col_pos}({name:?}) not found or has an invalid type")]
 pub struct InvalidFieldError {
     /// The claimed col_pos of the field within the product value.
-    pub col_pos: usize,
+    pub col_pos: ColId,
     /// The name of the field, if any.
     pub name: Option<&'static str>,
 }
@@ -60,9 +61,10 @@ impl ProductValue {
     ///
     /// The `name` is non-functional and is only used for error-messages.
     pub fn get_field(&self, index: usize, name: Option<&'static str>) -> Result<&AlgebraicValue, InvalidFieldError> {
-        self.elements
-            .get(index)
-            .ok_or(InvalidFieldError { col_pos: index, name })
+        self.elements.get(index).ok_or(InvalidFieldError {
+            col_pos: index.into(),
+            name,
+        })
     }
 
     /// This function is used to project fields based on the provided `indexes`.
@@ -77,13 +79,13 @@ impl ProductValue {
     /// The resulting [AlgebraicValue] will wrap into a [ProductValue] when projecting multiple
     /// fields, otherwise it will consist of a single [AlgebraicValue].
     ///
-    pub fn project(&self, indexes: &[(usize, Option<&'static str>)]) -> Result<AlgebraicValue, InvalidFieldError> {
+    pub fn project(&self, indexes: &[(ColId, Option<&'static str>)]) -> Result<AlgebraicValue, InvalidFieldError> {
         let fields = match indexes {
-            [(index, name)] => self.get_field(*index, *name)?.clone(),
+            [(index, name)] => self.get_field((*index).into(), *name)?.clone(),
             indexes => {
                 let fields: Result<Vec<_>, _> = indexes
                     .iter()
-                    .map(|(index, name)| self.get_field(*index, *name).cloned())
+                    .map(|(index, name)| self.get_field((*index).into(), *name).cloned())
                     .collect();
                 AlgebraicValue::Product(ProductValue::new(&fields?))
             }
@@ -100,10 +102,10 @@ impl ProductValue {
     /// fields, otherwise it will consist of a single [AlgebraicValue].
     ///
     /// **Parameters:**
-    /// - `indexes`: A [NonEmpty<u32>] containing the indexes of fields to be projected.
+    /// - `indexes`: A [NonEmpty<ColId>] containing the indexes of fields to be projected.
     ///
-    pub fn project_not_empty(&self, indexes: &NonEmpty<u32>) -> Result<AlgebraicValue, InvalidFieldError> {
-        let indexes: Vec<_> = indexes.iter().map(|x| (*x as usize, None)).collect();
+    pub fn project_not_empty(&self, indexes: &NonEmpty<ColId>) -> Result<AlgebraicValue, InvalidFieldError> {
+        let indexes: Vec<_> = indexes.iter().cloned().map(|x| (x, None)).collect();
         self.project(&indexes)
     }
 
@@ -115,7 +117,10 @@ impl ProductValue {
         name: Option<&'static str>,
         f: impl 'a + Fn(&'a AlgebraicValue) -> Option<T>,
     ) -> Result<T, InvalidFieldError> {
-        f(self.get_field(index, name)?).ok_or(InvalidFieldError { col_pos: index, name })
+        f(self.get_field(index, name)?).ok_or(InvalidFieldError {
+            col_pos: index.into(),
+            name,
+        })
     }
 
     /// Interprets the value at field of `self` identified by `index` as a `bool`.
@@ -163,8 +168,13 @@ impl ProductValue {
         self.extract_field(index, named, |f| f.as_bytes())
     }
 
-    /// Interprets the value at field of `self` identified by `index` as a array.
+    /// Interprets the value at field of `self` identified by `index` as an `ArrayValue`.
     pub fn field_as_array(&self, index: usize, named: Option<&'static str>) -> Result<&ArrayValue, InvalidFieldError> {
         self.extract_field(index, named, |f| f.as_array())
+    }
+
+    /// Interprets the value at field of `self` identified by `index` as a `SumValue`.
+    pub fn field_as_sum(&self, index: usize, named: Option<&'static str>) -> Result<SumValue, InvalidFieldError> {
+        self.extract_field(index, named, |f| f.as_sum().cloned())
     }
 }

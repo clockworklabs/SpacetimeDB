@@ -2,12 +2,12 @@ use std::fmt::{self, Write};
 use std::ops::Deref;
 
 use crate::buffer::{BufReader, BufWriter, DecodeError};
-use crate::hash::hash_bytes;
+use crate::hash::{hash_bytes, Hash};
 
 #[derive(Debug, Copy, Clone, PartialEq, Ord, PartialOrd, Eq, Hash)]
 pub enum DataKey {
     Data(InlineData),
-    Hash(super::Hash),
+    Hash(Hash),
 }
 
 impl DataKey {
@@ -18,7 +18,7 @@ impl DataKey {
 
     /// The maximum possible value for a DataKey, used for sorting DataKeys
     pub fn max_datakey() -> Self {
-        DataKey::Hash(super::Hash::from_slice(&[255; 32]))
+        DataKey::Hash(Hash::from_slice(&[255; 32]))
     }
 }
 
@@ -108,7 +108,7 @@ impl DataKey {
             if header != IS_HASH_BIT {
                 return Err(DecodeError::InvalidTag);
             }
-            let hash = super::hash::Hash {
+            let hash = Hash {
                 data: bytes.get_array()?,
             };
             Ok(Self::Hash(hash))

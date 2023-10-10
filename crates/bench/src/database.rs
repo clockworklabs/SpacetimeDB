@@ -1,5 +1,5 @@
-use spacetimedb::db::datastore::traits::TableSchema;
 use spacetimedb_lib::AlgebraicValue;
+use spacetimedb_sats::db::def::TableSchema;
 
 use crate::schemas::{BenchTable, IndexStrategy};
 use crate::ResultBench;

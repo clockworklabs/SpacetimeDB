@@ -5,7 +5,7 @@ use bytes::Bytes;
 use bytestring::ByteString;
 use spacetimedb_lib::de::serde::SeedWrapper;
 use spacetimedb_lib::de::DeserializeSeed;
-use spacetimedb_lib::{bsatn, Hash, Identity};
+use spacetimedb_lib::{bsatn, Identity};
 use spacetimedb_lib::{ProductValue, ReducerDef};
 use spacetimedb_sats::WithTypespace;
 
@@ -101,6 +101,7 @@ pub struct InvalidReducerArguments {
 }
 
 pub use module_host::{EntityDef, ReducerCallError};
+use spacetimedb_sats::hash::Hash;
 
 fn from_json_seed<'de, T: serde::de::DeserializeSeed<'de>>(s: &'de str, seed: T) -> anyhow::Result<T::Value> {
     let mut de = serde_json::Deserializer::from_str(s);

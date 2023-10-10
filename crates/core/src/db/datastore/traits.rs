@@ -1,368 +1,11 @@
-use crate::db::relational_db::ST_TABLES_ID;
-use core::fmt;
-use nonempty::NonEmpty;
-use spacetimedb_lib::auth::{StAccess, StTableType};
-use spacetimedb_lib::relation::{DbTable, FieldName, FieldOnly, Header, TableField};
-use spacetimedb_lib::{ColumnIndexAttribute, DataKey, Hash};
-use spacetimedb_sats::product_value::InvalidFieldError;
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue};
-use spacetimedb_vm::expr::SourceExpr;
+use crate::db::datastore::system_tables::{StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, ST_TABLES_ID};
+use spacetimedb_sats::db::def::*;
+use spacetimedb_sats::hash::Hash;
+use spacetimedb_sats::DataKey;
+use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
 use std::{ops::RangeBounds, sync::Arc};
 
 use super::{system_tables::StTableRow, Result};
-
-/// The `id` for [Sequence]
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
-pub struct TableId(pub(crate) u32);
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
-pub struct ColId(pub(crate) u32);
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
-pub struct IndexId(pub(crate) u32);
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct SequenceId(pub(crate) u32);
-
-impl From<IndexId> for AlgebraicValue {
-    fn from(value: IndexId) -> Self {
-        value.0.into()
-    }
-}
-
-impl From<SequenceId> for AlgebraicValue {
-    fn from(value: SequenceId) -> Self {
-        value.0.into()
-    }
-}
-
-impl fmt::Display for SequenceId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl TableId {
-    pub fn from_u32_for_testing(id: u32) -> Self {
-        Self(id)
-    }
-}
-
-impl From<TableId> for AlgebraicValue {
-    fn from(value: TableId) -> Self {
-        value.0.into()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SequenceSchema {
-    pub(crate) sequence_id: u32,
-    pub(crate) sequence_name: String,
-    pub(crate) table_id: u32,
-    pub(crate) col_id: u32,
-    pub(crate) increment: i128,
-    pub(crate) start: i128,
-    pub(crate) min_value: i128,
-    pub(crate) max_value: i128,
-    pub(crate) allocated: i128,
-}
-
-/// This type is just the [SequenceSchema] without the autoinc fields
-/// It's also adjusted to be convenient for specifying a new sequence
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SequenceDef {
-    pub(crate) sequence_name: String,
-    pub(crate) table_id: u32,
-    pub(crate) col_id: u32,
-    pub(crate) increment: i128,
-    pub(crate) start: Option<i128>,
-    pub(crate) min_value: Option<i128>,
-    pub(crate) max_value: Option<i128>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IndexSchema {
-    pub(crate) index_id: u32,
-    pub(crate) table_id: u32,
-    pub(crate) index_name: String,
-    pub(crate) is_unique: bool,
-    pub(crate) cols: NonEmpty<u32>,
-}
-
-/// This type is just the [IndexSchema] without the autoinc fields
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IndexDef {
-    pub(crate) table_id: u32,
-    pub(crate) cols: NonEmpty<u32>,
-    pub(crate) name: String,
-    pub(crate) is_unique: bool,
-}
-
-impl IndexDef {
-    pub fn new(name: String, table_id: u32, col_id: u32, is_unique: bool) -> Self {
-        Self {
-            cols: NonEmpty::new(col_id),
-            name,
-            is_unique,
-            table_id,
-        }
-    }
-}
-
-impl From<IndexSchema> for IndexDef {
-    fn from(value: IndexSchema) -> Self {
-        Self {
-            table_id: value.table_id,
-            cols: value.cols,
-            name: value.index_name,
-            is_unique: value.is_unique,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ColumnSchema {
-    pub table_id: u32,
-    pub col_id: u32,
-    pub col_name: String,
-    pub col_type: AlgebraicType,
-    pub is_autoinc: bool,
-}
-
-impl From<&ColumnSchema> for spacetimedb_lib::table::ColumnDef {
-    fn from(value: &ColumnSchema) -> Self {
-        Self {
-            column: ProductTypeElement::from(value),
-            // TODO(cloutiertyler): !!! This is not correct !!! We do not have the information regarding constraints here.
-            // We should remove this field from the ColumnDef struct.
-            attr: if value.is_autoinc {
-                spacetimedb_lib::ColumnIndexAttribute::AUTO_INC
-            } else {
-                spacetimedb_lib::ColumnIndexAttribute::UNSET
-            },
-            // if value.is_autoinc && value.is_unique {
-            //     spacetimedb_lib::ColumnIndexAttribute::Identity
-            // } else if value.is_autoinc {
-            //     spacetimedb_lib::ColumnIndexAttribute::AutoInc
-            // } else if value.is_unique {
-            //     spacetimedb_lib::ColumnIndexAttribute::Unique
-            // } else {
-            //     spacetimedb_lib::ColumnIndexAttribute::UnSet
-            // },
-            pos: value.col_id as usize,
-        }
-    }
-}
-
-impl From<&ColumnSchema> for ProductTypeElement {
-    fn from(value: &ColumnSchema) -> Self {
-        Self {
-            name: Some(value.col_name.clone()),
-            algebraic_type: value.col_type.clone(),
-        }
-    }
-}
-
-/// This type is just the [ColumnSchema] without the autoinc fields
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ColumnDef {
-    pub(crate) col_name: String,
-    pub(crate) col_type: AlgebraicType,
-    pub(crate) is_autoinc: bool,
-}
-
-impl From<ColumnSchema> for ColumnDef {
-    fn from(value: ColumnSchema) -> Self {
-        Self {
-            col_name: value.col_name,
-            col_type: value.col_type,
-            is_autoinc: value.is_autoinc,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConstraintSchema {
-    pub(crate) constraint_id: u32,
-    pub(crate) constraint_name: String,
-    pub(crate) kind: ColumnIndexAttribute,
-    pub(crate) table_id: u32,
-    pub(crate) columns: Vec<u32>,
-}
-
-/// This type is just the [ConstraintSchema] without the autoinc fields
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConstraintDef {
-    pub(crate) constraint_name: String,
-    pub(crate) kind: ColumnIndexAttribute,
-    pub(crate) table_id: u32,
-    pub(crate) columns: Vec<u32>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TableSchema {
-    pub table_id: u32,
-    pub table_name: String,
-    pub columns: Vec<ColumnSchema>,
-    pub indexes: Vec<IndexSchema>,
-    pub constraints: Vec<ConstraintSchema>,
-    pub table_type: StTableType,
-    pub table_access: StAccess,
-}
-
-impl TableSchema {
-    /// Check if the `name` of the [FieldName] exist on this [TableSchema]
-    ///
-    /// Warning: It ignores the `table_name`
-    pub fn get_column_by_field(&self, field: &FieldName) -> Option<&ColumnSchema> {
-        match field.field() {
-            FieldOnly::Name(x) => self.get_column_by_name(x),
-            FieldOnly::Pos(x) => self.get_column(x),
-        }
-    }
-
-    /// Check if there is an index for this [FieldName]
-    ///
-    /// Warning: It ignores the `table_name`
-    pub fn get_index_by_field(&self, field: &FieldName) -> Option<&IndexSchema> {
-        let ColumnSchema { col_id, .. } = self.get_column_by_field(field)?;
-        self.indexes.iter().find(
-            |IndexSchema {
-                 cols: NonEmpty { head: index_col, tail },
-                 ..
-             }| tail.is_empty() && index_col == col_id,
-        )
-    }
-
-    pub fn get_column(&self, pos: usize) -> Option<&ColumnSchema> {
-        self.columns.get(pos)
-    }
-
-    /// Check if the `col_name` exist on this [TableSchema]
-    ///
-    /// Warning: It ignores the `table_name`
-    pub fn get_column_by_name(&self, col_name: &str) -> Option<&ColumnSchema> {
-        self.columns.iter().find(|x| x.col_name == col_name)
-    }
-
-    /// Turn a [TableField] that could be an unqualified field `id` into `table.id`
-    pub fn normalize_field(&self, or_use: &TableField) -> FieldName {
-        FieldName::named(or_use.table.unwrap_or(&self.table_name), or_use.field)
-    }
-
-    /// Project the fields from the supplied `columns`.
-    pub fn project(&self, columns: impl Iterator<Item = usize>) -> Result<Vec<&ColumnSchema>> {
-        columns
-            .map(|pos| {
-                self.get_column(pos).ok_or(
-                    InvalidFieldError {
-                        col_pos: pos,
-                        name: None,
-                    }
-                    .into(),
-                )
-            })
-            .collect()
-    }
-
-    /// Utility for project the fields from the supplied `columns` that is a [NonEmpty<u32>],
-    /// used for when the list of field columns have at least one value.
-    pub fn project_not_empty(&self, columns: &NonEmpty<u32>) -> Result<Vec<&ColumnSchema>> {
-        self.project(columns.iter().map(|&x| x as usize))
-    }
-}
-
-impl From<&TableSchema> for ProductType {
-    fn from(value: &TableSchema) -> Self {
-        ProductType::new(
-            value
-                .columns
-                .iter()
-                .map(|c| ProductTypeElement {
-                    name: Some(c.col_name.clone()),
-                    algebraic_type: c.col_type.clone(),
-                })
-                .collect(),
-        )
-    }
-}
-
-impl From<&TableSchema> for SourceExpr {
-    fn from(value: &TableSchema) -> Self {
-        SourceExpr::DbTable(DbTable::new(
-            Header::from_product_type(value.table_name.clone(), value.into()),
-            value.table_id,
-            value.table_type,
-            value.table_access,
-        ))
-    }
-}
-
-impl From<&TableSchema> for DbTable {
-    fn from(value: &TableSchema) -> Self {
-        DbTable::new(value.into(), value.table_id, value.table_type, value.table_access)
-    }
-}
-
-impl From<&TableSchema> for Header {
-    fn from(value: &TableSchema) -> Self {
-        Header::from_product_type(value.table_name.clone(), value.into())
-    }
-}
-
-impl TableDef {
-    pub fn get_row_type(&self) -> ProductType {
-        ProductType::new(
-            self.columns
-                .iter()
-                .map(|c| ProductTypeElement {
-                    name: None,
-                    algebraic_type: c.col_type.clone(),
-                })
-                .collect(),
-        )
-    }
-}
-
-/// This type is just the [TableSchema] without the autoinc fields
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TableDef {
-    pub(crate) table_name: String,
-    pub(crate) columns: Vec<ColumnDef>,
-    pub(crate) indexes: Vec<IndexDef>,
-    pub(crate) table_type: StTableType,
-    pub(crate) table_access: StAccess,
-}
-
-impl From<ProductType> for TableDef {
-    fn from(value: ProductType) -> Self {
-        Self {
-            table_name: "".to_string(),
-            columns: value
-                .elements
-                .iter()
-                .enumerate()
-                .map(|(i, e)| ColumnDef {
-                    col_name: e.name.to_owned().unwrap_or_else(|| i.to_string()),
-                    col_type: e.algebraic_type.clone(),
-                    is_autoinc: false,
-                })
-                .collect(),
-            indexes: vec![],
-            table_type: StTableType::User,
-            table_access: StAccess::Public,
-        }
-    }
-}
-
-impl From<TableSchema> for TableDef {
-    fn from(value: TableSchema) -> Self {
-        Self {
-            table_name: value.table_name,
-            columns: value.columns.into_iter().map(Into::into).collect(),
-            indexes: value.indexes.into_iter().map(Into::into).collect(),
-            table_type: value.table_type,
-            table_access: value.table_access,
-        }
-    }
-}
 
 /// Operations in a transaction are either Inserts or Deletes.
 /// Inserts report the byte objects they inserted, to be persisted
@@ -454,6 +97,16 @@ pub trait TxDatastore: DataRow + Tx {
         table_id: TableId,
         row_id: Self::RowId,
     ) -> Result<Option<Self::DataRef>>;
+
+    fn scan_st_tables<'a>(&'a self, tx: &'a Self::TxId) -> Result<Vec<StTableRow<String>>>;
+
+    fn scan_st_columns<'a>(&'a self, tx: &'a Self::TxId) -> Result<Vec<StColumnRow<String>>>;
+
+    fn scan_st_constraints<'a>(&'a self, tx: &'a Self::TxId) -> Result<Vec<StConstraintRow<String>>>;
+
+    fn scan_st_sequences<'a>(&'a self, tx: &'a Self::TxId) -> Result<Vec<StSequenceRow<String>>>;
+
+    fn scan_st_indexes<'a>(&'a self, tx: &'a Self::TxId) -> Result<Vec<StIndexRow<String>>>;
 }
 
 pub trait MutTxDatastore: TxDatastore + MutTx {
@@ -468,18 +121,18 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     fn table_name_from_id_mut_tx(&self, tx: &Self::MutTxId, table_id: TableId) -> Result<Option<String>>;
     fn get_all_tables_mut_tx(&self, tx: &Self::MutTxId) -> super::Result<Vec<TableSchema>> {
         let mut tables = Vec::new();
-        let table_rows = self.iter_mut_tx(tx, TableId(ST_TABLES_ID))?.collect::<Vec<_>>();
+        let table_rows = self.iter_mut_tx(tx, ST_TABLES_ID)?.collect::<Vec<_>>();
         for data_ref in table_rows {
             let data = self.data_to_owned(data_ref);
             let row = StTableRow::try_from(data.view())?;
-            let table_id = TableId(row.table_id);
+            let table_id = row.table_id;
             tables.push(self.schema_for_table_mut_tx(tx, table_id)?);
         }
         Ok(tables)
     }
 
     // Indexes
-    fn create_index_mut_tx(&self, tx: &mut Self::MutTxId, index: IndexDef) -> Result<IndexId>;
+    fn create_index_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, index: IndexDef) -> Result<IndexId>;
     fn drop_index_mut_tx(&self, tx: &mut Self::MutTxId, index_id: IndexId) -> Result<()>;
     fn index_id_from_name_mut_tx(&self, tx: &Self::MutTxId, index_name: &str) -> super::Result<Option<IndexId>>;
 
@@ -490,13 +143,19 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
 
     // Sequences
     fn get_next_sequence_value_mut_tx(&self, tx: &mut Self::MutTxId, seq_id: SequenceId) -> Result<i128>;
-    fn create_sequence_mut_tx(&self, tx: &mut Self::MutTxId, seq: SequenceDef) -> Result<SequenceId>;
+    fn create_sequence_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, seq: SequenceDef)
+        -> Result<SequenceId>;
     fn drop_sequence_mut_tx(&self, tx: &mut Self::MutTxId, seq_id: SequenceId) -> Result<()>;
     fn sequence_id_from_name_mut_tx(
         &self,
         tx: &Self::MutTxId,
         sequence_name: &str,
     ) -> super::Result<Option<SequenceId>>;
+
+    // Constraints
+    fn drop_constraint_mut_tx(&self, tx: &mut Self::MutTxId, constraint_id: ConstraintId) -> super::Result<()>;
+    fn constraint_id_from_name(&self, tx: &Self::MutTxId, constraint_name: &str)
+        -> super::Result<Option<ConstraintId>>;
 
     // Data
     fn iter_mut_tx<'a>(&'a self, tx: &'a Self::MutTxId, table_id: TableId) -> Result<Self::Iter<'a>>;

@@ -1,5 +1,6 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
+use nonempty::NonEmpty;
 use std::any::TypeId;
 use std::collections::{btree_map, BTreeMap};
 use std::fmt;
@@ -9,15 +10,18 @@ use std::time::Duration;
 
 use crate::timestamp::with_timestamp_set;
 use crate::{sys, ReducerContext, ScheduleToken, SpacetimeType, TableType, Timestamp};
-use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
+use spacetimedb_lib::sats::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, AlgebraicType, AlgebraicTypeRef, ProductTypeElement};
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
-use spacetimedb_lib::{bsatn, Address, Identity, MiscModuleExport, ModuleDef, ReducerDef, TableDef, TypeAlias};
+use spacetimedb_lib::{bsatn, Address, Identity, MiscModuleExport, ModuleDef, ReducerDef, TableDesc, TypeAlias};
 use sys::Buffer;
 
+use crate::sats::db::attr::AttributeKind;
+use crate::sats::db::def::{ColumnDef, ConstraintDef, Constraints, IndexDef, SequenceDef, TableDef};
 pub use once_cell::sync::{Lazy, OnceCell};
+use spacetimedb_lib::sats::db::def::ColId;
 
 /// The `sender` invokes `reducer` at `timestamp` and provides it with the given `args`.
 ///
@@ -400,24 +404,79 @@ pub fn register_reftype<T: SpacetimeType>() {
 pub fn register_table<T: TableType>() {
     register_describer(|module| {
         let data = *T::make_type(module).as_ref().unwrap();
-        let schema = TableDef {
-            name: T::TABLE_NAME.into(),
-            data,
-            column_attrs: T::COLUMN_ATTRS.to_owned(),
-            indexes: T::INDEXES.iter().copied().map(Into::into).collect(),
-            table_type: StTableType::User,
-            table_access: StAccess::for_name(T::TABLE_NAME),
-        };
+        let columns = module
+            .module
+            .typespace
+            .with_type(&data)
+            .resolve_refs()
+            .and_then(|x| {
+                if let Ok(x) = x.into_product() {
+                    let cols: Vec<ColumnDef> = (&x).into();
+                    Some(cols)
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+
+        //let columns: Vec<_> = module.module.typespace[data].as_product().unwrap().into();
+        // dbg!(ty, &columns);
+        let indexes: Vec<_> = T::INDEXES.iter().copied().map(Into::into).collect();
+        //WARNING: The definition  of table assumes the # of constraints == # of columns elsewhere
+        let constraints: Vec<_> = T::COLUMN_ATTRS
+            .iter()
+            .enumerate()
+            .map(|(col_pos, x)| {
+                let col = &columns[col_pos];
+                let kind = match (*x).try_into() {
+                    Ok(x) => x,
+                    Err(_) => Constraints::unset(),
+                };
+
+                ConstraintDef::for_column(T::TABLE_NAME, &col.col_name, kind, NonEmpty::new(col_pos.into()))
+            })
+            .collect();
+
+        let sequences: Vec<_> = T::COLUMN_ATTRS
+            .iter()
+            .enumerate()
+            .filter_map(|(col_pos, x)| {
+                let col = &columns[col_pos];
+
+                if x.kind() == AttributeKind::AUTO_INC {
+                    Some(SequenceDef::for_column(T::TABLE_NAME, &col.col_name, col_pos.into()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let schema = TableDef::new(T::TABLE_NAME, &columns)
+            .with_type(StTableType::User)
+            .with_access(StAccess::for_name(T::TABLE_NAME))
+            .with_constraints(&constraints)
+            .with_sequences(&sequences)
+            .with_indexes(&indexes);
+        let schema = TableDesc { schema, data };
+
         module.module.tables.push(schema)
     })
 }
 
-impl From<crate::IndexDef<'_>> for spacetimedb_lib::IndexDef {
-    fn from(index: crate::IndexDef<'_>) -> spacetimedb_lib::IndexDef {
-        spacetimedb_lib::IndexDef {
-            name: index.name.to_owned(),
-            ty: index.ty,
-            col_ids: index.col_ids.to_owned(),
+impl From<crate::IndexDesc<'_>> for IndexDef {
+    fn from(index: crate::IndexDesc<'_>) -> IndexDef {
+        let cols: Vec<ColId> = index.col_ids.iter().map(|x| (*x).into()).collect();
+        let columns = if let Some(cols) = NonEmpty::from_slice(&cols) {
+            cols
+        } else {
+            panic!("Need at least one column in IndexDesc for index `{}`", index.name)
+        };
+
+        IndexDef {
+            index_name: index.name.to_string(),
+            is_unique: false,
+            index_type: index.ty,
+            columns,
         }
     }
 }

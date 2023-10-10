@@ -19,23 +19,25 @@ bench = false
 [dependencies]
 spacetimedb-lib = { path = "../lib" }
 spacetimedb-core = { path = "../core" }
+spacetimedb-sats= { path = "../sats" }
 spacetimedb-standalone = { path = "../standalone" }
 spacetimedb-client-api = { path = "../client-api" }
 spacetimedb-testing = { path = "../testing" }
 
 ahash.workspace = true
-log.workspace = true
-clap.workspace = true
-rusqlite.workspace = true
-criterion.workspace = true
-tempdir.workspace = true
-rand.workspace = true
-tokio.workspace = true
-serde_json.workspace = true
-serde.workspace = true
 anyhow.workspace = true
 anymap.workspace = true
 byte-unit.workspace = true
+clap.workspace = true
+criterion.workspace = true
 futures.workspace = true
-tracing-subscriber.workspace = true
 lazy_static.workspace = true
+log.workspace = true
+nonempty.workspace = true
+rand.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tempdir.workspace = true
+tokio.workspace = true
+tracing-subscriber.workspace = true

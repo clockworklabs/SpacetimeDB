@@ -3,14 +3,13 @@ use std::collections::HashMap;
 use tracing::info;
 
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::{IndexSchema, TableSchema};
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
 use crate::sql::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
-use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::operator::OpQuery;
-use spacetimedb_lib::relation::{self, DbTable, FieldExpr, FieldName, Header};
-use spacetimedb_lib::table::ProductTypeMeta;
+use spacetimedb_sats::db::auth::StAccess;
+use spacetimedb_sats::db::def::{ColId, IndexSchema, TableDef, TableSchema};
+use spacetimedb_sats::relation::{self, DbTable, FieldExpr, FieldName, Header};
 use spacetimedb_sats::{AlgebraicValue, ProductType};
 use spacetimedb_vm::dsl::{db_table, db_table_raw, query};
 use spacetimedb_vm::expr::{ColumnOp, CrudExpr, DbType, Expr, IndexJoin, JoinExpr, Query, QueryExpr, SourceExpr};
@@ -39,7 +38,7 @@ fn expr_for_projection(table: &From, of: Expr) -> Result<FieldExpr, PlanError> {
         Expr::Ident(x) => {
             let f = table.resolve_field(&x)?;
 
-            Ok(FieldExpr::Name(f.field))
+            Ok(FieldExpr::Name(f.into()))
         }
         Expr::Value(x) => Ok(FieldExpr::Value(x)),
         x => unreachable!("Wrong expression in SQL query {:?}", x),
@@ -76,6 +75,7 @@ fn check_cmp_expr(table: &From, expr: &ColumnOp) -> Result<(), PlanError> {
 /// Compiles a `WHERE ...` clause
 fn compile_where(mut q: QueryExpr, table: &From, filter: Selection) -> Result<QueryExpr, PlanError> {
     check_cmp_expr(table, &filter.clause)?;
+
     'outer: for ref op in filter.clause.to_vec() {
         // Go through each table schema referenced in the query.
         // Find the first sargable condition and short-circuit.
@@ -87,26 +87,26 @@ fn compile_where(mut q: QueryExpr, table: &From, filter: Selection) -> Result<Qu
         ) {
             match is_sargable(schema, op) {
                 // found sargable equality condition for one of the table schemas
-                Some(IndexArgument::Eq { col_id, value }) => {
-                    q = q.with_index_eq(schema.into(), col_id, value);
+                Some(IndexArgument::Eq { columns, value }) => {
+                    q = q.with_index_eq(schema.into(), columns, value);
                     continue 'outer;
                 }
                 // found sargable range condition for one of the table schemas
                 Some(IndexArgument::LowerBound {
-                    col_id,
+                    columns,
                     value,
                     inclusive,
                 }) => {
-                    q = q.with_index_lower_bound(schema.into(), col_id, value, inclusive);
+                    q = q.with_index_lower_bound(schema.into(), columns, value, inclusive);
                     continue 'outer;
                 }
                 // found sargable range condition for one of the table schemas
                 Some(IndexArgument::UpperBound {
-                    col_id,
+                    columns,
                     value,
                     inclusive,
                 }) => {
-                    q = q.with_index_upper_bound(schema.into(), col_id, value, inclusive);
+                    q = q.with_index_upper_bound(schema.into(), columns, value, inclusive);
                     continue 'outer;
                 }
                 None => {}
@@ -122,16 +122,16 @@ fn compile_where(mut q: QueryExpr, table: &From, filter: Selection) -> Result<Qu
 // using an index.
 pub enum IndexArgument {
     Eq {
-        col_id: u32,
+        columns: NonEmpty<ColId>,
         value: AlgebraicValue,
     },
     LowerBound {
-        col_id: u32,
+        columns: NonEmpty<ColId>,
         value: AlgebraicValue,
         inclusive: bool,
     },
     UpperBound {
-        col_id: u32,
+        columns: NonEmpty<ColId>,
         value: AlgebraicValue,
         inclusive: bool,
     },
@@ -160,36 +160,34 @@ fn is_sargable(table: &TableSchema, op: &ColumnOp) -> Option<IndexArgument> {
         let index = table
             .indexes
             .iter()
-            .find(|index| index.cols == NonEmpty::new(column.col_id))?;
-
-        assert_eq!(index.cols.len(), 1, "No yet supported multi-column indexes");
+            .find(|index| index.columns == NonEmpty::new(column.col_pos))?;
 
         match op {
             OpCmp::Eq => Some(IndexArgument::Eq {
-                col_id: index.cols.head,
+                columns: index.columns.clone(),
                 value: value.clone(),
             }),
             // a < 5 => exclusive upper bound
             OpCmp::Lt => Some(IndexArgument::UpperBound {
-                col_id: index.cols.head,
+                columns: index.columns.clone(),
                 value: value.clone(),
                 inclusive: false,
             }),
             // a > 5 => exclusive lower bound
             OpCmp::Gt => Some(IndexArgument::LowerBound {
-                col_id: index.cols.head,
+                columns: index.columns.clone(),
                 value: value.clone(),
                 inclusive: false,
             }),
             // a <= 5 => inclusive upper bound
             OpCmp::LtEq => Some(IndexArgument::UpperBound {
-                col_id: index.cols.head,
+                columns: index.columns.clone(),
                 value: value.clone(),
                 inclusive: true,
             }),
             // a >= 5 => inclusive lower bound
             OpCmp::GtEq => Some(IndexArgument::LowerBound {
-                col_id: index.cols.head,
+                columns: index.columns.clone(),
                 value: value.clone(),
                 inclusive: true,
             }),
@@ -236,7 +234,7 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
 
     let mut q = query(db_table_raw(
         ProductType::from(&table.root),
-        table.root.table_name.clone(),
+        &table.root.table_name,
         table.root.table_id,
         table.root.table_type,
         table.root.table_access,
@@ -246,7 +244,7 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
         for join in joins {
             match join {
                 Join::Inner { rhs, on } => {
-                    let t = db_table(rhs.into(), rhs.table_name.clone(), rhs.table_id);
+                    let t = db_table(rhs.into(), &rhs.table_name, rhs.table_id);
                     match on.op {
                         OpCmp::Eq => {}
                         x => unreachable!("Unsupported operator `{x}` for joins"),
@@ -308,7 +306,7 @@ fn try_index_join(mut query: QueryExpr, table: &From) -> QueryExpr {
             if !probe_side.query.is_empty() && wildcard_table_id == table.root.table_id {
                 // An applicable join must have an index defined on the correct field.
                 if let Some(IndexSchema {
-                    cols: NonEmpty { head, tail },
+                    columns: NonEmpty { head, tail },
                     ..
                 }) = table.root.get_index_by_field(&index_field)
                 {
@@ -357,7 +355,7 @@ fn compile_columns(table: &TableSchema, columns: Vec<FieldName>) -> DbTable {
     }
 
     DbTable::new(
-        Header::new(table.table_name.clone(), new),
+        Header::new(&table.table_name, new),
         table.table_id,
         table.table_type,
         table.table_access,
@@ -423,18 +421,8 @@ fn compile_update(
 }
 
 /// Compiles a `CREATE TABLE ...` clause
-fn compile_create_table(
-    name: String,
-    columns: ProductTypeMeta,
-    table_type: StTableType,
-    table_access: StAccess,
-) -> Result<CrudExpr, PlanError> {
-    Ok(CrudExpr::CreateTable {
-        name,
-        columns,
-        table_type,
-        table_access,
-    })
+fn compile_create_table(table: TableDef) -> Result<CrudExpr, PlanError> {
+    Ok(CrudExpr::CreateTable { table })
 }
 
 /// Compiles a `DROP ...` clause
@@ -461,12 +449,7 @@ fn compile_statement(statement: SqlAst) -> Result<CrudExpr, PlanError> {
             selection,
         } => compile_update(table, assignments, selection)?,
         SqlAst::Delete { table, selection } => compile_delete(table, selection)?,
-        SqlAst::CreateTable {
-            table,
-            columns,
-            table_type,
-            table_access: schema,
-        } => compile_create_table(table, columns, table_type, schema)?,
+        SqlAst::CreateTable { table } => compile_create_table(table)?,
         SqlAst::Drop {
             name,
             kind,
@@ -482,26 +465,21 @@ mod tests {
     use std::ops::Bound;
 
     use super::*;
+    use crate::db::relational_db::tests_utils::make_test_db;
     use itertools::Itertools;
-    use spacetimedb_lib::{
-        auth::{StAccess, StTableType},
-        error::ResultTest,
-    };
+    use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_sats::db::auth::{StAccess, StTableType};
+    use spacetimedb_sats::db::def::{ColumnDef, IndexDef, IndexType, TableDef, TableId};
     use spacetimedb_sats::AlgebraicType;
     use spacetimedb_vm::expr::{IndexScan, JoinExpr, Query};
-
-    use crate::db::{
-        datastore::traits::{ColumnDef, IndexDef, TableDef},
-        relational_db::tests_utils::make_test_db,
-    };
 
     fn create_table(
         db: &RelationalDB,
         tx: &mut MutTxId,
         name: &str,
         schema: &[(&str, AlgebraicType)],
-        indexes: &[(u32, &str)],
-    ) -> ResultTest<u32> {
+        indexes: &[(ColId, &str)],
+    ) -> ResultTest<TableId> {
         let table_name = name.to_string();
         let table_type = StTableType::User;
         let table_access = StAccess::Public;
@@ -511,27 +489,23 @@ mod tests {
             .map(|(col_name, col_type)| ColumnDef {
                 col_name: col_name.to_string(),
                 col_type: col_type.clone(),
-                is_autoinc: false,
             })
             .collect_vec();
 
         let indexes = indexes
             .iter()
             .map(|(col_id, index_name)| IndexDef {
-                table_id: 0,
-                cols: NonEmpty::new(*col_id),
-                name: index_name.to_string(),
+                index_name: index_name.to_string(),
                 is_unique: false,
+                index_type: IndexType::BTree,
+                columns: NonEmpty::new(*col_id),
             })
             .collect_vec();
 
-        let schema = TableDef {
-            table_name,
-            columns,
-            indexes,
-            table_type,
-            table_access,
-        };
+        let schema = TableDef::new(&table_name, &columns)
+            .with_indexes(&indexes)
+            .with_type(table_type)
+            .with_access(table_access);
 
         Ok(db.create_table(tx, schema)?)
     }
@@ -572,7 +546,7 @@ mod tests {
 
         // Create table [test] with index on [a]
         let schema = &[("a", AlgebraicType::U64)];
-        let indexes = &[(0, "a")];
+        let indexes = &[(0.into(), "a")];
         create_table(&db, &mut tx, "test", schema, indexes)?;
 
         // Compile query
@@ -590,7 +564,7 @@ mod tests {
         // Assert index scan
         let Query::IndexScan(IndexScan {
             table: _,
-            col_id,
+            columns: col_id,
             lower_bound: Bound::Included(u),
             upper_bound: Bound::Included(v),
         }) = ops.remove(0)
@@ -598,7 +572,7 @@ mod tests {
             panic!("Expected IndexScan");
         };
         assert_eq!(u, v);
-        assert_eq!(col_id, 0);
+        assert_eq!(col_id, NonEmpty::new(0.into()));
         assert_eq!(v, AlgebraicValue::U64(1));
         Ok(())
     }
@@ -610,7 +584,7 @@ mod tests {
 
         // Create table [test] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1, "b")];
+        let indexes = &[(1.into(), "b")];
         create_table(&db, &mut tx, "test", schema, indexes)?;
 
         // Note, order matters - the sargable predicate occurs last which means
@@ -640,7 +614,7 @@ mod tests {
 
         // Create table [test] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1, "b")];
+        let indexes = &[(1.into(), "b")];
         create_table(&db, &mut tx, "test", schema, indexes)?;
 
         // Note, order matters - the sargable predicate occurs first which
@@ -659,7 +633,7 @@ mod tests {
         // Assert index scan
         let Query::IndexScan(IndexScan {
             table: _,
-            col_id,
+            columns: col_id,
             lower_bound: Bound::Included(u),
             upper_bound: Bound::Included(v),
         }) = ops.remove(0)
@@ -667,7 +641,7 @@ mod tests {
             panic!("Expected IndexScan");
         };
         assert_eq!(u, v);
-        assert_eq!(col_id, 1);
+        assert_eq!(col_id, NonEmpty::new(1.into()));
         assert_eq!(v, AlgebraicValue::U64(2));
         Ok(())
     }
@@ -679,7 +653,7 @@ mod tests {
 
         // Create table [test] with indexes on [a] and [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(0, "a"), (1, "b")];
+        let indexes = &[(0.into(), "a"), (1.into(), "b")];
         create_table(&db, &mut tx, "test", schema, indexes)?;
 
         // Compile query
@@ -701,6 +675,28 @@ mod tests {
         Ok(())
     }
 
+    fn assert_index_scan(
+        op: Query,
+        col: ColId,
+        low_bound: Bound<AlgebraicValue>,
+        up_bound: Bound<AlgebraicValue>,
+    ) -> TableId {
+        if let Query::IndexScan(IndexScan {
+            table,
+            columns,
+            lower_bound,
+            upper_bound,
+        }) = op
+        {
+            assert_eq!(columns, NonEmpty::new(col), "Columns not match");
+            assert_eq!(lower_bound, low_bound, "Lower bound not match");
+            assert_eq!(upper_bound, up_bound, "Upper bound not match");
+            table.table_id
+        } else {
+            panic!("Expected IndexScan, got {op}");
+        }
+    }
+
     #[test]
     fn compile_index_range_open() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
@@ -708,7 +704,7 @@ mod tests {
 
         // Create table [test] with indexes on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1, "b")];
+        let indexes = &[(1.into(), "b")];
         create_table(&db, &mut tx, "test", schema, indexes)?;
 
         // Compile query
@@ -723,17 +719,13 @@ mod tests {
 
         assert_eq!(1, ops.len());
 
-        // Assert index scan
-        let Query::IndexScan(IndexScan {
-            table: _,
-            col_id: 1,
-            lower_bound: Bound::Excluded(value),
-            upper_bound: Bound::Unbounded,
-        }) = ops.remove(0)
-        else {
-            panic!("Expected IndexScan");
-        };
-        assert_eq!(value, AlgebraicValue::U64(2));
+        assert_index_scan(
+            ops.remove(0),
+            1.into(),
+            Bound::Excluded(AlgebraicValue::U64(2)),
+            Bound::Unbounded,
+        );
+
         Ok(())
     }
 
@@ -744,7 +736,7 @@ mod tests {
 
         // Create table [test] with indexes on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1, "b")];
+        let indexes = &[(1.into(), "b")];
         create_table(&db, &mut tx, "test", schema, indexes)?;
 
         // Compile query
@@ -759,18 +751,13 @@ mod tests {
 
         assert_eq!(1, ops.len());
 
-        // Assert index scan
-        let Query::IndexScan(IndexScan {
-            table: _,
-            col_id: 1,
-            lower_bound: Bound::Excluded(u),
-            upper_bound: Bound::Excluded(v),
-        }) = ops.remove(0)
-        else {
-            panic!("Expected IndexScan");
-        };
-        assert_eq!(u, AlgebraicValue::U64(2));
-        assert_eq!(v, AlgebraicValue::U64(5));
+        assert_index_scan(
+            ops.remove(0),
+            1.into(),
+            Bound::Excluded(AlgebraicValue::U64(2)),
+            Bound::Excluded(AlgebraicValue::U64(5)),
+        );
+
         Ok(())
     }
 
@@ -781,7 +768,7 @@ mod tests {
 
         // Create table [test] with indexes on [a] and [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(0, "a"), (1, "b")];
+        let indexes = &[(0.into(), "a"), (1.into(), "b")];
         create_table(&db, &mut tx, "test", schema, indexes)?;
 
         // Note, order matters - the equality condition occurs first which
@@ -798,18 +785,12 @@ mod tests {
 
         assert_eq!(2, ops.len());
 
-        // Assert index scan
-        let Query::IndexScan(IndexScan {
-            table: _,
-            col_id: 0,
-            lower_bound: Bound::Included(u),
-            upper_bound: Bound::Included(v),
-        }) = ops.remove(0)
-        else {
-            panic!("Expected IndexScan");
-        };
-
-        assert_eq!(u, v);
+        assert_index_scan(
+            ops.remove(0),
+            0.into(),
+            Bound::Included(AlgebraicValue::U64(3)),
+            Bound::Included(AlgebraicValue::U64(3)),
+        );
 
         let Query::Select(_) = ops.remove(0) else {
             panic!("Expected Select");
@@ -824,7 +805,7 @@ mod tests {
 
         // Create table [lhs] with index on [a]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(0, "a")];
+        let indexes = &[(0.into(), "a")];
         let lhs_id = create_table(&db, &mut tx, "lhs", schema, indexes)?;
 
         // Create table [rhs] with no indexes
@@ -849,15 +830,12 @@ mod tests {
         assert_eq!(query.len(), 2);
 
         // First operation in the pipeline should be an index scan
-        let Query::IndexScan(IndexScan {
-            table: DbTable { table_id, .. },
-            col_id: 0,
-            lower_bound: Bound::Included(AlgebraicValue::U64(3)),
-            upper_bound: Bound::Included(AlgebraicValue::U64(3)),
-        }) = query[0]
-        else {
-            panic!("unexpected operator {:#?}", query[0]);
-        };
+        let table_id = assert_index_scan(
+            query[0].clone(),
+            0.into(),
+            Bound::Included(AlgebraicValue::U64(3)),
+            Bound::Included(AlgebraicValue::U64(3)),
+        );
 
         assert_eq!(table_id, lhs_id);
 
@@ -1059,12 +1037,12 @@ mod tests {
 
         // Create table [lhs] with index on [a]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(0, "a")];
+        let indexes = &[(0.into(), "a")];
         let lhs_id = create_table(&db, &mut tx, "lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [c]
         let schema = &[("b", AlgebraicType::U64), ("c", AlgebraicType::U64)];
-        let indexes = &[(1, "c")];
+        let indexes = &[(1.into(), "c")];
         let rhs_id = create_table(&db, &mut tx, "rhs", schema, indexes)?;
 
         // Should push the sargable equality condition into the join's left arg.
@@ -1085,15 +1063,12 @@ mod tests {
         assert_eq!(query.len(), 2);
 
         // First operation in the pipeline should be an index scan
-        let Query::IndexScan(IndexScan {
-            table: DbTable { table_id, .. },
-            col_id: 0,
-            lower_bound: Bound::Included(AlgebraicValue::U64(3)),
-            upper_bound: Bound::Included(AlgebraicValue::U64(3)),
-        }) = query[0]
-        else {
-            panic!("unexpected operator {:#?}", query[0]);
-        };
+        let table_id = assert_index_scan(
+            query[0].clone(),
+            0.into(),
+            Bound::Included(AlgebraicValue::U64(3)),
+            Bound::Included(AlgebraicValue::U64(3)),
+        );
 
         assert_eq!(table_id, lhs_id);
 
@@ -1128,15 +1103,12 @@ mod tests {
         assert_eq!(1, rhs.len());
 
         // The right side of the join should be an index scan
-        let Query::IndexScan(IndexScan {
-            table: DbTable { table_id, .. },
-            col_id: 1,
-            lower_bound: Bound::Unbounded,
-            upper_bound: Bound::Excluded(AlgebraicValue::U64(4)),
-        }) = rhs[0]
-        else {
-            panic!("unexpected operator {:#?}", rhs[0]);
-        };
+        let table_id = assert_index_scan(
+            rhs[0].clone(),
+            1.into(),
+            Bound::Unbounded,
+            Bound::Excluded(AlgebraicValue::U64(4)),
+        );
 
         assert_eq!(table_id, rhs_id);
         Ok(())
@@ -1149,7 +1121,7 @@ mod tests {
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1, "b")];
+        let indexes = &[(1.into(), "b")];
         let lhs_id = create_table(&db, &mut tx, "lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [b, c]
@@ -1158,7 +1130,7 @@ mod tests {
             ("c", AlgebraicType::U64),
             ("d", AlgebraicType::U64),
         ];
-        let indexes = &[(0, "b"), (1, "c")];
+        let indexes = &[(0.into(), "b"), (1.into(), "c")];
         let rhs_id = create_table(&db, &mut tx, "rhs", schema, indexes)?;
 
         // Should generate an index join since there is an index on `lhs.b`.
@@ -1199,22 +1171,19 @@ mod tests {
 
         assert_eq!(table_id, rhs_id);
         assert_eq!(index_table, lhs_id);
-        assert_eq!(index_col, 1);
+        assert_eq!(index_col, 1.into());
         assert_eq!(probe_field, "b");
         assert_eq!(probe_table, "rhs");
 
         assert_eq!(2, rhs.len());
 
         // The probe side of the join should be an index scan
-        let Query::IndexScan(IndexScan {
-            table: DbTable { table_id, .. },
-            col_id: 1,
-            lower_bound: Bound::Excluded(AlgebraicValue::U64(2)),
-            upper_bound: Bound::Excluded(AlgebraicValue::U64(4)),
-        }) = rhs[0]
-        else {
-            panic!("unexpected operator {:#?}", rhs[0]);
-        };
+        let table_id = assert_index_scan(
+            rhs[0].clone(),
+            1.into(),
+            Bound::Excluded(AlgebraicValue::U64(2)),
+            Bound::Excluded(AlgebraicValue::U64(4)),
+        );
 
         assert_eq!(table_id, rhs_id);
 

@@ -4,24 +4,14 @@ use std::collections::hash_map::DefaultHasher;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
-use crate::auth::{StAccess, StTableType};
-use crate::error::RelationError;
-use crate::table::ColumnDef;
-use crate::DataKey;
-use spacetimedb_sats::algebraic_value::AlgebraicValue;
-use spacetimedb_sats::product_value::ProductValue;
-use spacetimedb_sats::satn::Satn;
-use spacetimedb_sats::{algebraic_type, AlgebraicType, ProductType, ProductTypeElement, Typespace, WithTypespace};
-
-impl ColumnDef {
-    pub fn name(&self) -> FieldOnly {
-        if let Some(name) = &self.column.name {
-            FieldOnly::Name(name)
-        } else {
-            FieldOnly::Pos(self.pos)
-        }
-    }
-}
+use crate::algebraic_value::AlgebraicValue;
+use crate::data_key::DataKey;
+use crate::db::auth::{StAccess, StTableType};
+use crate::db::def::TableId;
+use crate::db::error::RelationError;
+use crate::product_value::ProductValue;
+use crate::satn::Satn;
+use crate::{algebraic_type, AlgebraicType, ProductType, ProductTypeElement, Typespace, WithTypespace};
 
 pub fn calculate_hash<T: Hash>(t: &T) -> u64 {
     let mut s = DefaultHasher::new();
@@ -197,11 +187,14 @@ impl From<Header> for ProductType {
 }
 
 impl Header {
-    pub fn new(table_name: String, fields: Vec<Column>) -> Self {
-        Self { table_name, fields }
+    pub fn new(table_name: &str, fields: Vec<Column>) -> Self {
+        Self {
+            table_name: table_name.into(),
+            fields,
+        }
     }
 
-    pub fn from_product_type(table_name: String, fields: ProductType) -> Self {
+    pub fn from_product_type(table_name: &str, fields: ProductType) -> Self {
         let cols = fields
             .elements
             .into_iter()
@@ -209,8 +202,14 @@ impl Header {
             .map(|(pos, f)| {
                 let table = table_name.clone();
                 let name = match f.name {
-                    None => FieldName::Pos { table, field: pos },
-                    Some(field) => FieldName::Name { table, field },
+                    None => FieldName::Pos {
+                        table: table.into(),
+                        field: pos,
+                    },
+                    Some(field) => FieldName::Name {
+                        table: table.into(),
+                        field,
+                    },
                 };
                 Column::new(name, f.algebraic_type)
             })
@@ -221,7 +220,7 @@ impl Header {
 
     pub fn for_mem_table(fields: ProductType) -> Self {
         let table_name = format!("mem#{:x}", calculate_hash(&fields));
-        Self::from_product_type(table_name, fields)
+        Self::from_product_type(&table_name, fields)
     }
 
     pub fn as_without_table_name(&self) -> HeaderOnlyField {
@@ -290,7 +289,7 @@ impl Header {
             }
         }
 
-        Ok(Self::new(self.table_name.clone(), p))
+        Ok(Self::new(&self.table_name, p))
     }
 
     /// Adds the fields from `right` to this [`Header`],
@@ -315,7 +314,7 @@ impl Header {
             fields.push(f);
         }
 
-        Self::new(self.table_name.clone(), fields)
+        Self::new(&self.table_name, fields)
     }
 }
 
@@ -576,13 +575,13 @@ impl Relation for MemTable {
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct DbTable {
     pub head: Header,
-    pub table_id: u32,
+    pub table_id: TableId,
     pub table_type: StTableType,
     pub table_access: StAccess,
 }
 
 impl DbTable {
-    pub fn new(head: Header, table_id: u32, table_type: StTableType, table_access: StAccess) -> Self {
+    pub fn new(head: Header, table_id: TableId, table_type: StTableType, table_access: StAccess) -> Self {
         Self {
             head,
             table_id,

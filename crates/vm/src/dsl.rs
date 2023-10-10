@@ -1,11 +1,12 @@
 //! Utilities for build valid constructs for the vm.
 use crate::expr::{Expr, QueryExpr, SourceExpr};
 use crate::operator::*;
-use spacetimedb_lib::auth::{StAccess, StTableType};
-use spacetimedb_lib::relation::{DbTable, Header, MemTable};
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
+use spacetimedb_sats::db::auth::{StAccess, StTableType};
+use spacetimedb_sats::db::def::TableId;
 use spacetimedb_sats::product_type::ProductType;
 use spacetimedb_sats::product_value::ProductValue;
+use spacetimedb_sats::relation::{DbTable, Header, MemTable};
 use std::collections::HashMap;
 
 pub fn scalar<T: Into<AlgebraicValue>>(of: T) -> AlgebraicValue {
@@ -36,8 +37,8 @@ where
 
 pub fn db_table_raw(
     head: ProductType,
-    name: String,
-    table_id: u32,
+    name: &str,
+    table_id: TableId,
     table_type: StTableType,
     table_access: StAccess,
 ) -> DbTable {
@@ -46,9 +47,8 @@ pub fn db_table_raw(
 }
 
 /// Create a [DbTable] of type [StTableType::User] and derive `StAccess::for_name(name)`.
-pub fn db_table(head: ProductType, name: String, table_id: u32) -> DbTable {
-    let access = StAccess::for_name(&name);
-    db_table_raw(head, name, table_id, StTableType::User, access)
+pub fn db_table(head: ProductType, name: &str, table_id: TableId) -> DbTable {
+    db_table_raw(head, name, table_id, StTableType::User, StAccess::for_name(name))
 }
 
 pub fn bin_op<O, A, B>(op: O, a: A, b: B) -> Expr

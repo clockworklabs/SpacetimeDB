@@ -2,34 +2,33 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, TableDef, TableSchema};
-use crate::host::scheduler::Scheduler;
-use crate::sql;
 use anyhow::Context;
 use bytes::Bytes;
-use nonempty::NonEmpty;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::{bsatn, Address, IndexType, ModuleDef};
+use spacetimedb_lib::{bsatn, Address, ModuleDef};
 use spacetimedb_vm::expr::CrudExpr;
 
 use crate::client::ClientConnectionSender;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{DatabaseLogger, LogLevel, Record};
+use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::hash::Hash;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_host::{
     DatabaseUpdate, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo, ModuleInstance,
     UpdateDatabaseError, UpdateDatabaseResult, UpdateDatabaseSuccess,
 };
+use crate::host::scheduler::Scheduler;
 use crate::host::{
     ArgsTuple, EnergyDiff, EnergyMonitor, EnergyMonitorFingerprint, EnergyQuanta, EntityDef, ReducerCallResult,
     ReducerOutcome, Timestamp,
 };
 use crate::identity::Identity;
+use crate::sql;
 use crate::subscription::module_subscription_actor::{ModuleSubscriptionManager, SubscriptionEventSender};
 use crate::worker_metrics::{REDUCER_COMPUTE_TIME, REDUCER_COUNT, REDUCER_WRITE_SIZE};
+use spacetimedb_sats::db::def::{IndexDef, IndexId, TableDef, TableId, TableSchema};
 
 use super::*;
 
@@ -159,7 +158,9 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             misc_exports: _,
         } = desc;
         let catalog = itertools::chain(
-            tables.into_iter().map(|x| (x.name.clone(), EntityDef::Table(x))),
+            tables
+                .into_iter()
+                .map(|x| (x.schema.table_name.clone(), EntityDef::Table(x))),
             reducers.iter().map(|x| (x.name.clone(), EntityDef::Reducer(x.clone()))),
         )
         .collect();
@@ -251,7 +252,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         &self,
         caller_identity: Identity,
         query: String,
-    ) -> Result<Vec<spacetimedb_lib::relation::MemTable>, DBError> {
+    ) -> Result<Vec<spacetimedb_sats::relation::MemTable>, DBError> {
         let db = &self.worker_database_instance.relational_db;
         let auth = AuthCtx::new(self.worker_database_instance.identity, caller_identity);
         // TODO(jgilles): make this a read-only TX when those get added
@@ -351,12 +352,13 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         let stdb = &*self.database_instance_context().relational_db;
         let mut tx = stdb.begin_tx();
         for table in self.info.catalog.values().filter_map(EntityDef::as_table) {
-            self.system_logger().info(&format!("Creating table `{}`", table.name));
+            self.system_logger()
+                .info(&format!("Creating table `{}`", table.schema.table_name));
             tx = stdb
                 .with_auto_rollback(tx, |tx| {
                     let schema = self.schema_for(table)?;
                     stdb.create_table(tx, schema)
-                        .with_context(|| format!("failed to create table {}", table.name))
+                        .with_context(|| format!("failed to create table {}", table.schema.table_name))
                 })
                 .map(|(tx, _)| tx)
                 .map_err(|e| {
@@ -416,14 +418,14 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
 
                     for index_id in updates.indexes_to_drop {
                         self.system_logger()
-                            .info(&format!("Dropping index with id {}", index_id.0));
+                            .info(&format!("Dropping index with id {}", index_id));
                         stdb.drop_index(tx, index_id)?;
                     }
 
                     for index_def in updates.indexes_to_create {
                         self.system_logger()
-                            .info(&format!("Creating index `{}`", index_def.name));
-                        stdb.create_index(tx, index_def)?;
+                            .info(&format!("Creating index `{}`", index_def.index.index_name));
+                        stdb.create_index(tx, index_def.table_id, index_def.index)?;
                     }
 
                     Ok(())
@@ -683,79 +685,20 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
     // Helpers - NOT API
 
-    fn schema_for(&self, table: &spacetimedb_lib::TableDef) -> anyhow::Result<TableDef> {
-        let schema = self
-            .info
-            .typespace
-            .with_type(&table.data)
-            .resolve_refs()
-            .context("recursive types not yet supported")?;
-        let schema = schema.into_product().ok().context("table not a product type?")?;
-        anyhow::ensure!(
-            table.column_attrs.len() == schema.elements.len(),
-            "mismatched number of columns"
-        );
-        let columns: Vec<ColumnDef> = std::iter::zip(&schema.elements, &table.column_attrs)
-            .map(|(ty, attr)| {
-                Ok(ColumnDef {
-                    col_name: ty.name.clone().context("column without name")?,
-                    col_type: ty.algebraic_type.clone(),
-                    is_autoinc: attr.is_autoinc(),
-                })
-            })
-            .collect::<anyhow::Result<_>>()?;
+    fn schema_for(&self, table: &spacetimedb_lib::TableDesc) -> anyhow::Result<TableDef> {
+        // let schema = self
+        //     .info
+        //     .typespace
+        //     .with_type(&table.data)
+        //     .resolve_refs()
+        //     .context("recursive types not yet supported")?;
+        // let schema = schema.into_product().ok().context("table not a product type?")?;
+        // anyhow::ensure!(
+        //     table.schema.columns.len() == schema.elements.len(),
+        //     "mismatched number of columns"
+        // );
 
-        let mut indexes = Vec::new();
-        for (col_id, col) in columns.iter().enumerate() {
-            let mut index_for_column = None;
-            for index in table.indexes.iter() {
-                let [index_col_id] = *index.col_ids else {
-                    //Ignore multi-column indexes
-                    continue;
-                };
-                if index_col_id as usize != col_id {
-                    continue;
-                }
-                index_for_column = Some(index);
-                break;
-            }
-
-            let col_attr = table.column_attrs.get(col_id).context("invalid column id")?;
-            // If there's an index defined for this column already, use it
-            // making sure that it is unique if the column has a unique constraint
-            if let Some(index) = index_for_column {
-                match index.ty {
-                    IndexType::BTree => {}
-                    // TODO
-                    IndexType::Hash => anyhow::bail!("hash indexes not yet supported"),
-                }
-                let index = IndexDef {
-                    table_id: 0, // Will be ignored
-                    cols: NonEmpty::new(col_id as u32),
-                    name: index.name.clone(),
-                    is_unique: col_attr.is_unique(),
-                };
-                indexes.push(index);
-            } else if col_attr.is_unique() {
-                // If you didn't find an index, but the column is unique then create a unique btree index
-                // anyway.
-                let index = IndexDef {
-                    table_id: 0, // Will be ignored
-                    cols: NonEmpty::new(col_id as u32),
-                    name: format!("{}_{}_unique", table.name, col.col_name),
-                    is_unique: true,
-                };
-                indexes.push(index);
-            }
-        }
-
-        Ok(TableDef {
-            table_name: table.name.clone(),
-            columns,
-            indexes,
-            table_type: table.table_type,
-            table_access: table.table_access,
-        })
+        Ok(table.schema.clone())
     }
 
     fn system_logger(&self) -> SystemLogger {
@@ -775,9 +718,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 let TableDef {
                     table_name,
                     columns,
-                    indexes: _,
                     table_type,
                     table_access,
+                    ..
                 } = &self.0;
                 table_name == &other.0.table_name
                     && table_type == &other.0.table_type
@@ -799,15 +742,17 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
         for table in self.info.catalog.values().filter_map(EntityDef::as_table) {
             let proposed_schema_def = self.schema_for(table)?;
-            if let Some(known_schema) = known_tables.remove(&table.name) {
+            if let Some(known_schema) = known_tables.remove(&table.schema.table_name) {
                 let table_id = known_schema.table_id;
                 let known_schema_def = TableDef::from(known_schema.clone());
                 // If the schemas differ acc. to [Equiv], the update should be
                 // rejected.
                 if Equiv(&known_schema_def) != Equiv(&proposed_schema_def) {
-                    self.system_logger()
-                        .warn(&format!("stored and proposed schema of `{}` differ", table.name));
-                    tainted_tables.push(table.name.to_owned());
+                    self.system_logger().warn(&format!(
+                        "stored and proposed schema of `{}` differ",
+                        table.schema.table_name
+                    ));
+                    tainted_tables.push(table.schema.table_name.clone());
                 } else {
                     // The schema is unchanged, but maybe the indexes are.
                     let mut known_indexes = known_schema
@@ -816,19 +761,21 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                         .map(|idx| (idx.index_name.clone(), idx))
                         .collect::<BTreeMap<_, _>>();
 
-                    for mut index_def in proposed_schema_def.indexes {
-                        // This is zero in the proposed schema, as the table id
-                        // is not known at proposal time.
-                        index_def.table_id = table_id;
-
-                        match known_indexes.remove(&index_def.name) {
-                            None => indexes_to_create.push(index_def),
+                    for index_def in proposed_schema_def.indexes {
+                        match known_indexes.remove(&index_def.index_name) {
+                            None => indexes_to_create.push(IndexWithTable {
+                                index: index_def,
+                                table_id,
+                            }),
                             Some(known_index) => {
-                                let known_id = IndexId(known_index.index_id);
+                                let known_id = known_index.index_id;
                                 let known_index_def = IndexDef::from(known_index);
                                 if known_index_def != index_def {
                                     indexes_to_drop.push(known_id);
-                                    indexes_to_create.push(index_def);
+                                    indexes_to_create.push(IndexWithTable {
+                                        index: index_def,
+                                        table_id,
+                                    });
                                 }
                             }
                         }
@@ -836,11 +783,11 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
                     // Indexes not in the proposed schema shall be dropped.
                     for index in known_indexes.into_values() {
-                        indexes_to_drop.push(IndexId(index.index_id));
+                        indexes_to_drop.push(index.index_id);
                     }
                 }
             } else {
-                new_tables.insert(table.name.to_owned(), proposed_schema_def);
+                new_tables.insert(table.schema.table_name.clone(), proposed_schema_def);
             }
         }
         // We may at some point decide to drop orphaned tables automatically,
@@ -862,6 +809,11 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     }
 }
 
+struct IndexWithTable {
+    index: IndexDef,
+    table_id: TableId,
+}
+
 struct SchemaUpdates {
     /// Tables to create.
     new_tables: HashMap<String, TableDef>,
@@ -875,7 +827,7 @@ struct SchemaUpdates {
     /// Indexes to create.
     ///
     /// Should be processed _after_ `indexes_to_drop`.
-    indexes_to_create: Vec<IndexDef>,
+    indexes_to_create: Vec<IndexWithTable>,
 }
 
 #[derive(Debug)]

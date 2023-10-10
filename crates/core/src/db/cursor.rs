@@ -1,7 +1,7 @@
 use std::ops::RangeBounds;
 
 use crate::error::DBError;
-use spacetimedb_lib::relation::{DbTable, RowCount};
+use spacetimedb_sats::relation::{DbTable, RowCount};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 
 use super::datastore::locking_tx_datastore::{Iter, IterByColRange};

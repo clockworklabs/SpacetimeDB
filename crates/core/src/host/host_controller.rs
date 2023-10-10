@@ -35,6 +35,14 @@ impl HostThreadpool {
                 rt.spawn_blocking(|| thread.run());
                 Ok(())
             })
+            .panic_handler(|_| {
+                // TODO: determine appropriate behavior here.
+                //       This version prints the panic info,
+                //       but doesn't abort.
+                //       I (pgoldman 2023-09-19) have no clue why adding an abort call here
+                //       causes the panic info to not be printed, but it does.
+                eprintln!("HostThreadpool panic handler!");
+            })
             .build()
             .unwrap();
         Self { inner }

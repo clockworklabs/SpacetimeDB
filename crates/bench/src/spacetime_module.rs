@@ -1,8 +1,9 @@
-use spacetimedb::db::datastore::traits::TableSchema;
 use spacetimedb::db::{Config, FsyncPolicy, Storage};
 use spacetimedb_lib::sats::product;
 use spacetimedb_lib::{sats::ArrayValue, AlgebraicValue, ProductValue};
-use spacetimedb_testing::modules::{start_runtime, CompilationMode, CompiledModule, ModuleHandle};
+use spacetimedb_sats::db::def::TableSchema;
+use spacetimedb_testing::modules::CompilationMode;
+use spacetimedb_testing::modules::{start_runtime, CompiledModule, ModuleHandle};
 use tokio::runtime::Runtime;
 
 use crate::{
@@ -245,7 +246,7 @@ impl BenchDatabase for SpacetimeModule {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct TableId {
     pascal_case: String,
     snake_case: String,

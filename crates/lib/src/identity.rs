@@ -1,6 +1,7 @@
-use spacetimedb_bindings_macro::{Deserialize, Serialize};
-use spacetimedb_sats::{impl_st, AlgebraicType};
 use std::{fmt, str::FromStr};
+
+use spacetimedb_bindings_macro::{Deserialize, Serialize};
+use spacetimedb_sats::{hash, impl_st, AlgebraicType};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AuthCtx {
@@ -74,7 +75,7 @@ impl Identity {
     }
 
     pub fn from_hashing_bytes(bytes: impl AsRef<[u8]>) -> Self {
-        Identity::from_byte_array(crate::hash::hash_bytes(bytes).data)
+        Identity::from_byte_array(hash::hash_bytes(bytes).data)
     }
 }
 
