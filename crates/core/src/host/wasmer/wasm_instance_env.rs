@@ -1,6 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
+use crate::host::instance_env::InstanceEnv;
 use crate::host::scheduler::{ScheduleError, ScheduledReducerId};
 use crate::host::timestamp::Timestamp;
 use crate::host::wasm_common::{
@@ -9,9 +10,8 @@ use crate::host::wasm_common::{
 };
 use bytes::Bytes;
 use itertools::Itertools;
+use std::time::{Duration, Instant};
 use wasmer::{FunctionEnvMut, MemoryAccessError, RuntimeError, ValueType, WasmPtr};
-
-use crate::host::instance_env::InstanceEnv;
 
 use super::{Mem, WasmError};
 
@@ -21,6 +21,18 @@ pub(super) struct WasmInstanceEnv {
     pub buffers: Buffers,
     pub iters: BufferIters,
     pub timing_spans: TimingSpanSet,
+
+    /// Sum of WASM execution time during the current reducer call,
+    /// excluding host calls.
+    pub wasm_execution_time: Duration,
+
+    /// `Instant` just before we call or return into WASM;
+    /// used to compute the `wasm_execution_time`.
+    ///
+    /// Upon entering WASM, set this to `Instant::now`.
+    /// Upon exiting WASM, compute elapsed duration since this,
+    /// and sum into `wasm_execution_time`.
+    pub last_entry_into_wasm: Instant,
 }
 
 type WasmResult<T> = Result<T, WasmError>;
@@ -35,9 +47,74 @@ fn mem_err(err: MemoryAccessError) -> RuntimeError {
     }
 }
 
+/// Evaluate `body` with WASM execution timing paused.
+///
+/// `caller` should be an ident bound mutably to a `FunctionEnvMut<'_, WasmInstanceEnv>`.
+///
+/// `body` may be arbitrary code, including uses of `return` or `?`,
+/// except that panicing inside the `body` and then catching the panic outside the body
+/// will cause the reported time to be incorrect.
+///
+/// Returns from `body` will be intercepted, so that timing can be resumed after it exits.
+/// This macro will always return the result of `body`, even if `body` does an apparently non-local exit,
+/// like `return` or `?`.
+///
+/// This might be better done with an RAII gaurd,
+/// except that version would mutably borrow the `caller` for the duration of `body`,
+/// preventing the `body` from using the `caller`.
+/// This version mutably borrows `caller` once before `body`, and again after,
+/// but does not hold the borrow during `body`.
+macro_rules! with_timing_paused {
+    ($caller:ident -> { $($body:tt)* }) => {{
+        $caller.data_mut().timing_after_exit_wasm();
+
+        // Improvised try block: errors bubbled with `?` are captured in `res`,
+        // and the `timing_before_enter_wasm` runs regardless.
+        let res = (|| {
+            $($body)*
+        })();
+
+        $caller.data_mut().timing_before_enter_wasm();
+
+        res
+    }};
+}
+
 /// Wraps an `InstanceEnv` with the magic necessary to push
 /// and pull bytes from webassembly memory.
 impl WasmInstanceEnv {
+    /// Call this before calling a reducer,
+    /// as close to the actual WASM entry as possible,
+    /// to record WASM execution timing.
+    pub fn timing_start_reducer(&mut self) {
+        self.wasm_execution_time = Duration::ZERO;
+        self.timing_before_enter_wasm();
+    }
+
+    /// Call this before returning from a host function,
+    /// as close to the actual return as possible,
+    /// to record WASM execution timing.
+    pub fn timing_before_enter_wasm(&mut self) {
+        self.last_entry_into_wasm = Instant::now();
+    }
+
+    /// Call this after returning from a reducer,
+    /// as close to the actual return as possible,
+    /// to get the total duration of WASM execution,
+    /// not including execution of host functions.
+    pub fn timing_end_reducer(&mut self) -> Duration {
+        self.timing_after_exit_wasm();
+        self.wasm_execution_time
+    }
+
+    /// Call this upon entering a host function,
+    /// as close to the actual entrance as possible,
+    /// to record WASM execution timing.
+    pub fn timing_after_exit_wasm(&mut self) {
+        let this_execution_chunk = self.last_entry_into_wasm.elapsed();
+        self.wasm_execution_time += this_execution_chunk;
+    }
+
     /// Returns a reference to the memory, assumed to be initialized.
     pub fn mem(&self) -> Mem {
         self.mem.clone().expect("Initialized memory")
@@ -53,24 +130,26 @@ impl WasmInstanceEnv {
         func: &'static str,
         f: impl FnOnce(FunctionEnvMut<'_, Self>, &Mem) -> WasmResult<()>,
     ) -> RtResult<u16> {
-        // Call `f` with the caller and a handle to the memory.
-        // Bail if there were no errors.
-        let mem = caller.data().mem();
-        let Err(err) = f(caller.as_mut(), &mem) else {
-            return Ok(0);
-        };
-
-        // Handle any errors.
-        Err(match err {
-            WasmError::Db(err) => match err_to_errno(&err) {
-                Some(errno) => {
-                    log::info!("abi call to {func} returned a normal error: {err:#}");
-                    return Ok(errno);
-                }
-                None => RuntimeError::user(Box::new(AbiRuntimeError { func, err })),
-            },
-            WasmError::Mem(err) => mem_err(err),
-            WasmError::Wasm(err) => err,
+        with_timing_paused!(caller -> {
+            // Call `f` with the caller and a handle to the memory.
+            let mem = caller.data().mem();
+            if let Err(err) = f(caller.as_mut(), &mem) {
+                // If `f` returned an error, convert it into an appropriate ABI errno.
+                Err(match err {
+                    WasmError::Db(err) => match err_to_errno(&err) {
+                        Some(errno) => {
+                            log::info!("abi call to {func} returned a normal error: {err:#}");
+                            return Ok(errno);
+                        }
+                        None => RuntimeError::user(Box::new(AbiRuntimeError { func, err })),
+                    },
+                    WasmError::Mem(err) => mem_err(err),
+                    WasmError::Wasm(err) => err,
+                })
+            } else {
+                // If `f` succeeded, return 0.
+                Ok(0)
+            }
         })
     }
 
@@ -177,7 +256,7 @@ impl WasmInstanceEnv {
     /// [`target`]: https://docs.rs/log/latest/log/struct.Record.html#method.target
     #[tracing::instrument(skip_all)]
     pub fn console_log(
-        caller: FunctionEnvMut<'_, Self>,
+        mut caller: FunctionEnvMut<'_, Self>,
         level: u8,
         target: WasmPtr<u8>,
         target_len: u32,
@@ -187,40 +266,45 @@ impl WasmInstanceEnv {
         message: WasmPtr<u8>,
         message_len: u32,
     ) {
-        let mem = caller.data().mem();
+        with_timing_paused!(caller -> {
+            let mem = caller.data().mem();
 
-        // Reads a string lossily from the slice `(ptr, len)` in WASM memory.
-        let read_str = |ptr, len| {
-            mem.read_bytes(&caller, ptr, len)
-                .map(crate::util::string_from_utf8_lossy_owned)
-        };
-
-        // Reads as string optionally, unless `ptr.is_null()`.
-        let read_opt_str = |ptr: WasmPtr<_>, len| (!ptr.is_null()).then(|| read_str(ptr, len)).transpose();
-
-        let _ = (|| -> Result<_, MemoryAccessError> {
-            // Read the `target`, `filename`, and `message` strings from WASM memory.
-            let target = read_opt_str(target, target_len)?;
-            let filename = read_opt_str(filename, filename_len)?;
-            let message = read_str(message, message_len)?;
-
-            // The line number cannot be `u32::MAX` as this represents `Option::None`.
-            let line_number = (line_number != u32::MAX).then_some(line_number);
-
-            let record = Record {
-                target: target.as_deref(),
-                filename: filename.as_deref(),
-                line_number,
-                message: &message,
+            // Reads a string lossily from the slice `(ptr, len)` in WASM memory.
+            let read_str = |ptr, len| {
+                mem.read_bytes(&caller, ptr, len)
+                    .map(crate::util::string_from_utf8_lossy_owned)
             };
 
-            // Write the log record to the `DatabaseLogger` in the database instance context (dbic).
-            caller
-                .data()
-                .instance_env
-                .console_log(level.into(), &record, &WasmerBacktraceProvider);
-            Ok(())
-        })();
+            // Reads as string optionally, unless `ptr.is_null()`.
+            let read_opt_str = |ptr: WasmPtr<_>, len| (!ptr.is_null()).then(|| read_str(ptr, len)).transpose();
+
+            // This closure/call is a try block which swallows errors.
+            // Execution of the body will stop if `?` returns an `Err` from the closure,
+            // but the error will not be reported to the WASM module, nor anywhere else.
+            let _ = (|| -> Result<_, MemoryAccessError> {
+                // Read the `target`, `filename`, and `message` strings from WASM memory.
+                let target = read_opt_str(target, target_len)?;
+                let filename = read_opt_str(filename, filename_len)?;
+                let message = read_str(message, message_len)?;
+
+                // The line number cannot be `u32::MAX` as this represents `Option::None`.
+                let line_number = (line_number != u32::MAX).then_some(line_number);
+
+                let record = Record {
+                    target: target.as_deref(),
+                    filename: filename.as_deref(),
+                    line_number,
+                    message: &message,
+                };
+
+                // Write the log record to the `DatabaseLogger` in the database instance context (dbic).
+                caller
+                    .data()
+                    .instance_env
+                    .console_log(level.into(), &record, &WasmerBacktraceProvider);
+                Ok(())
+            })();
+        });
     }
 
     /// Inserts a row into the table identified by `table_id`,
@@ -588,13 +672,14 @@ impl WasmInstanceEnv {
     ///
     /// Returns an error if the buffer does not exist.
     // #[tracing::instrument(skip_all)]
-    pub fn buffer_len(caller: FunctionEnvMut<'_, Self>, buffer: u32) -> RtResult<u32> {
-        caller
-            .data()
-            .buffers
-            .get(BufferIdx(buffer))
-            .map(|b| b.len() as u32)
-            .ok_or_else(|| RuntimeError::new("no such buffer"))
+    pub fn buffer_len(mut caller: FunctionEnvMut<'_, Self>, buffer: u32) -> RtResult<u32> {
+        with_timing_paused!(caller -> {
+            caller.data()
+                .buffers
+                .get(BufferIdx(buffer))
+                .map(|b| b.len() as u32)
+                .ok_or_else(|| RuntimeError::new("no such buffer"))
+        })
     }
 
     /// Consumes the `buffer`,
@@ -610,14 +695,15 @@ impl WasmInstanceEnv {
         dst: WasmPtr<u8>,
         dst_len: u32,
     ) -> RtResult<()> {
-        let buf = caller
-            .data_mut()
-            .buffers
-            .take(BufferIdx(buffer))
-            .ok_or_else(|| RuntimeError::new("no such buffer"))?;
-        dst.slice(&caller.data().mem().view(&caller), dst_len)
-            .and_then(|slice| slice.write_slice(&buf))
-            .map_err(mem_err)
+        with_timing_paused!(caller -> {
+            let buf = caller.data_mut()
+                .buffers
+                .take(BufferIdx(buffer))
+                .ok_or_else(|| RuntimeError::new("no such buffer"))?;
+            dst.slice(&caller.data().mem().view(&caller), dst_len)
+                .and_then(|slice| slice.write_slice(&buf))
+                .map_err(mem_err)
+        })
     }
 
     /// Creates a buffer of size `data_len` in the host environment.
@@ -631,47 +717,53 @@ impl WasmInstanceEnv {
     /// Returns an error if `data + data_len` overflows a 64-bit integer.
     // #[tracing::instrument(skip_all)]
     pub fn buffer_alloc(mut caller: FunctionEnvMut<'_, Self>, data: WasmPtr<u8>, data_len: u32) -> RtResult<u32> {
-        let buf = caller
-            .data()
-            .mem()
-            .read_bytes(&caller, data, data_len)
-            .map_err(mem_err)?;
-        Ok(caller.data_mut().buffers.insert(buf.into()).0)
+        with_timing_paused!(caller -> {
+            let buf = caller
+                .data()
+                .mem()
+                .read_bytes(&caller, data, data_len)
+                .map_err(mem_err)?;
+            Ok(caller.data_mut().buffers.insert(buf.into()).0)
+        })
     }
 
     pub fn span_start(mut caller: FunctionEnvMut<'_, Self>, name: WasmPtr<u8>, name_len: u32) -> RtResult<u32> {
-        let name = caller
-            .data()
-            .mem()
-            .read_bytes(&caller, name, name_len)
-            .map_err(mem_err)?;
-        Ok(caller.data_mut().timing_spans.insert(TimingSpan::new(name)).0)
+        with_timing_paused!(caller -> {
+            let name = caller
+                .data()
+                .mem()
+                .read_bytes(&caller, name, name_len)
+                .map_err(mem_err)?;
+            Ok(caller.data_mut().timing_spans.insert(TimingSpan::new(name)).0)
+        })
     }
 
     pub fn span_end(mut caller: FunctionEnvMut<'_, Self>, span_id: u32) -> RtResult<()> {
-        let span = caller
-            .data_mut()
-            .timing_spans
-            .take(TimingSpanIdx(span_id))
-            .ok_or_else(|| RuntimeError::new("no such timing span"))?;
+        with_timing_paused!(caller -> {
+            let span = caller
+                .data_mut()
+                .timing_spans
+                .take(TimingSpanIdx(span_id))
+                .ok_or_else(|| RuntimeError::new("no such timing span"))?;
 
-        let elapsed = span.start.elapsed();
+            let elapsed = span.start.elapsed();
 
-        let name = String::from_utf8_lossy(&span.name);
-        let message = format!("Timing span {:?}: {:?}", name, elapsed);
+            let name = String::from_utf8_lossy(&span.name);
+            let message = format!("Timing span {:?}: {:?}", name, elapsed);
 
-        let record = Record {
-            target: None,
-            filename: None,
-            line_number: None,
-            message: &message,
-        };
-        caller.data().instance_env.console_log(
-            crate::database_logger::LogLevel::Info,
-            &record,
-            &WasmerBacktraceProvider,
-        );
-        Ok(())
+            let record = Record {
+                target: None,
+                filename: None,
+                line_number: None,
+                message: &message,
+            };
+            caller.data().instance_env.console_log(
+                crate::database_logger::LogLevel::Info,
+                &record,
+                &WasmerBacktraceProvider,
+            );
+            Ok(())
+        })
     }
 }
 

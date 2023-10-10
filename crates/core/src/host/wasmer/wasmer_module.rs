@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use super::wasm_instance_env::WasmInstanceEnv;
 use super::Mem;
 use crate::host::instance_env::InstanceEnv;
@@ -171,6 +173,8 @@ impl module_host_actor::WasmInstancePre for WasmerModule {
             buffers: Default::default(),
             iters: Default::default(),
             timing_spans: Default::default(),
+            wasm_execution_time: Duration::ZERO,
+            last_entry_into_wasm: Instant::now(),
         };
         let env = FunctionEnv::new(&mut store, env);
         let imports = self.imports(&mut store, &env);
@@ -360,8 +364,16 @@ impl WasmerInstance {
 
         // let guard = pprof::ProfilerGuardBuilder::default().frequency(2500).build().unwrap();
 
-        let start = std::time::Instant::now();
         log::trace!("Start reducer \"{}\"...", reducer_symbol);
+
+        let start = std::time::Instant::now();
+
+        // Collect information about WASM-only execution timing.
+        // We do some work between this and the `timing_end_reducer`
+        // other than the actual WASM call, which isn't ideal,
+        // but the overhead should be small.
+        self.env.as_mut(store).timing_start_reducer();
+
         // pass ownership of the `ptr` allocation into the reducer
         let result = call(reduce, store, bufs).and_then(|errbuf| {
             let errbuf = BufferIdx(errbuf);
@@ -377,10 +389,23 @@ impl WasmerInstance {
                 Err(crate::util::string_from_utf8_lossy_owned(errmsg.into()).into())
             })
         });
+
+        // Close the `wasm_execution_duration` span and collect the WASM execution time.
+        let wasm_duration = self.env.as_mut(store).timing_end_reducer();
+
+        // Close the `execution_duration` span and collect the overall execution time.
+        // Unlike `wasm_duration`, this includes time spent in host functions,
+        // e.g. evaluating queries.
+        let duration = start.elapsed();
+
+        // Clear buffers and timing spans to avoid leaking data across reducer runs.
         self.env.as_mut(store).buffers.clear();
+        self.env.as_mut(store).iters.clear();
+        self.env.as_mut(store).timing_spans.clear();
+
         // .call(store, sender_buf.ptr.cast(), timestamp, args_buf.ptr, args_buf.len)
         // .and_then(|_| {});
-        let duration = start.elapsed();
+
         let remaining = get_remaining_points(store, instance);
         let energy = module_host_actor::EnergyStats {
             used: EnergyQuanta::from_points(budget) - EnergyQuanta::from_points(remaining),
@@ -389,6 +414,7 @@ impl WasmerInstance {
         module_host_actor::ExecuteResult {
             energy,
             execution_duration: duration,
+            wasm_execution_duration: wasm_duration,
             call_result: result,
         }
     }

@@ -77,6 +77,7 @@ pub struct EnergyStats {
 pub struct ExecuteResult<E> {
     pub energy: EnergyStats,
     pub execution_duration: Duration,
+    pub wasm_execution_duration: Duration,
     pub call_result: Result<Result<(), Box<str>>, E>,
 }
 
@@ -619,6 +620,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let ExecuteResult {
             energy,
             execution_duration,
+            wasm_execution_duration,
             call_result,
         } = result;
 
@@ -632,9 +634,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         if execution_duration > FRAME_LEN_60FPS {
             // If we can't get your reducer done in a single frame
             // we should debug it.
-            log::debug!("Long running reducer {func_ident:?} took {execution_duration:?} to execute");
+            log::debug!("Long running reducer {func_ident:?} took {execution_duration:?} to execute, with {wasm_execution_duration:?} directly executing WASM");
         } else {
-            log::trace!("Reducer {func_ident:?} ran: {execution_duration:?}, {:?}", energy.used);
+            log::trace!("Reducer {func_ident:?} ran: total {execution_duration:?}, WASM-only {wasm_execution_duration:?}, consumed {:?} energy", energy.used);
         }
 
         REDUCER_COMPUTE_TIME
