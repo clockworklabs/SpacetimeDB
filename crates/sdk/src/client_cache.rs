@@ -296,7 +296,7 @@ impl<T: TableWithPrimaryKey> TableCache<T> {
         callbacks: &mut Vec<RowCallback<T>>,
         table_update: client_api_messages::TableUpdate,
     ) {
-        log::info!("Handling TableUpdate for table {:?} with primary key", T::TABLE_NAME);
+        log::trace!("Handling TableUpdate for table {:?} with primary key", T::TABLE_NAME);
 
         enum DiffEntry<T> {
             Insert(Vec<u8>, T),

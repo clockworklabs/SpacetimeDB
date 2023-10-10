@@ -204,7 +204,7 @@ async fn receiver_loop(
             client_api_messages::Message {
                 r#type: Some(client_api_messages::message::Type::SubscriptionUpdate(update)),
             } => {
-                log::info!("Message SubscriptionUpdate");
+                log::trace!("Message SubscriptionUpdate");
                 let mut callback_reminders = RowCallbackReminders::new_for_subscription_update(&update);
                 let new_state = update_client_cache(&client_cache, |client_cache| {
                     process_subscription_update_for_new_subscribed_set(update, client_cache, &mut callback_reminders);
@@ -221,14 +221,14 @@ async fn receiver_loop(
             client_api_messages::Message {
                 r#type: Some(client_api_messages::message::Type::TransactionUpdate(transaction_update)),
             } => {
-                log::info!("Message TransactionUpdate");
+                log::trace!("Message TransactionUpdate");
 
                 process_transaction_update(transaction_update, &client_cache, &db_callbacks, &reducer_callbacks);
             }
             client_api_messages::Message {
                 r#type: Some(client_api_messages::message::Type::IdentityToken(ident)),
             } => {
-                log::info!("Message IdentityToken");
+                log::trace!("Message IdentityToken");
                 let state = Option::clone(&client_cache.lock().expect("ClientCache Mutex is poisoned")).unwrap();
                 let mut credentials_lock = credentials.lock().expect("Credentials Mutex is poisoned");
                 credentials_lock.handle_identity_token(ident, state);
