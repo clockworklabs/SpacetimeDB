@@ -8,10 +8,17 @@ use nonempty::NonEmpty;
 use spacetimedb_lib::IndexType;
 use spacetimedb_sats::{ProductType, Typespace};
 
-use crate::db::{
-    datastore::{self, locking_tx_datastore::MutTxId, traits::IndexId},
-    relational_db::RelationalDB,
-};
+use crate::db::datastore::{self, traits::IndexId};
+
+/// Magic table id.
+///
+/// When a [`datastore::traits::TableDef`] is constructed, the corresponding
+/// table does not yet exist (typically) and thus no table id is known.
+///
+/// Nevertheless, [`datastore::traits::IndexDef`] requires to specify a table
+/// id. The magic value can be used as a placeholder, which the datastore will
+/// replace with the actual value upon creation of the table.
+const AUTO_TABLE_ID: u32 = 0;
 
 /// Schema information for a single table, as extracted from an STDB module.
 pub struct ModuleTableSchema<'a> {
@@ -56,10 +63,6 @@ impl<'a> ModuleTableSchema<'a> {
                 })
                 .collect::<anyhow::Result<_>>()?;
 
-        // The table id is not known yet, but we will need to specify one for
-        // the index definitions. The magic id zero will be replaced with the
-        // actual id upon table creation.
-        const AUTO_TABLE_ID: u32 = 0;
         let mut indexes = Vec::new();
 
         // Build single-column index definitions, determining `is_unique` from their
@@ -134,6 +137,7 @@ impl<'a> ModuleTableSchema<'a> {
 }
 
 /// The reasons a table can become [`Tainted`].
+#[derive(Debug, Eq, PartialEq)]
 pub enum TaintReason {
     /// The (row) schema changed, and we don't know how to go from A to B.
     IncompatibleSchema,
@@ -151,11 +155,13 @@ impl fmt::Display for TaintReason {
 }
 
 /// A table with name `table_name` marked tainted for reason [`TaintReason`].
+#[derive(Debug, PartialEq)]
 pub struct Tainted {
     pub table_name: String,
     pub reason: TaintReason,
 }
 
+#[derive(Debug)]
 pub enum SchemaUpdates {
     /// The schema cannot be updated due to conflicts.
     Tainted(Vec<Tainted>),
@@ -177,10 +183,9 @@ pub enum SchemaUpdates {
 
 /// Compute the diff between the current and proposed schema.
 ///
-/// Loads all table schemas from the given [`RelationalDB`] and compares them
-/// against the proposed [`datastore::traits::TableDef`]s. The proposed schemas
-/// are assumed to represent the full schema information extracted from an
-/// STDB module.
+/// Compares the [`datastore::traits::TableSchema`]s loaded from the database
+/// against the proposed [`datastore::traits::TableDef`]s. Both are assumed to
+/// represent the full schema information of the respective source.
 ///
 /// Tables in the latter whose schema differs from the former are returned as
 /// [`SchemaUpdates::Tainted`]. Tables also become tainted if they are
@@ -190,8 +195,7 @@ pub enum SchemaUpdates {
 /// If no tables become tainted, the database may safely be updated using the
 /// information in [`SchemaUpdates::Updates`].
 pub fn schema_updates(
-    stdb: &RelationalDB,
-    tx: &MutTxId,
+    current: impl IntoIterator<Item = datastore::traits::TableSchema>,
     proposed: impl IntoIterator<Item = anyhow::Result<datastore::traits::TableDef>>,
 ) -> anyhow::Result<SchemaUpdates> {
     let mut new_tables = HashMap::new();
@@ -199,8 +203,7 @@ pub fn schema_updates(
     let mut indexes_to_create = Vec::new();
     let mut indexes_to_drop = Vec::new();
 
-    let mut known_tables: BTreeMap<String, datastore::traits::TableSchema> = stdb
-        .get_all_tables(tx)?
+    let mut known_tables: BTreeMap<String, datastore::traits::TableSchema> = current
         .into_iter()
         .map(|schema| (schema.table_name.clone(), schema))
         .collect();
@@ -295,4 +298,351 @@ fn equiv(a: &datastore::traits::TableDef, b: &datastore::traits::TableDef) -> bo
         && table_type == &b.table_type
         && table_access == &b.table_access
         && columns == &b.columns
+}
+
+#[cfg(test)]
+mod tests {
+    use anyhow::bail;
+    use spacetimedb_lib::{
+        auth::{StAccess, StTableType},
+        ColumnIndexAttribute,
+    };
+    use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductTypeElement};
+
+    use super::*;
+
+    #[test]
+    fn test_hydrate() -> anyhow::Result<()> {
+        let module_schema = ModuleTableSchema {
+            table_def: &spacetimedb_lib::TableDef {
+                name: "Person".into(),
+                // Dummy value - we supply the row type manually
+                data: AlgebraicTypeRef(42),
+                column_attrs: vec![ColumnIndexAttribute::IDENTITY, ColumnIndexAttribute::UNSET],
+                indexes: vec![
+                    spacetimedb_lib::IndexDef {
+                        name: "id_and_name".into(),
+                        ty: spacetimedb_lib::IndexType::BTree,
+                        col_ids: vec![0, 1],
+                    },
+                    spacetimedb_lib::IndexDef {
+                        name: "just_name".into(),
+                        ty: spacetimedb_lib::IndexType::BTree,
+                        col_ids: vec![1],
+                    },
+                ],
+                table_type: StTableType::User,
+                table_access: StAccess::Public,
+            },
+            row_type: ProductType::new(vec![
+                ProductTypeElement {
+                    name: Some("id".into()),
+                    algebraic_type: AlgebraicType::U32,
+                },
+                ProductTypeElement {
+                    name: Some("name".into()),
+                    algebraic_type: AlgebraicType::String,
+                },
+            ]),
+        };
+
+        let mut datastore_schema = module_schema.hydrate()?;
+        let mut expected_schema = datastore::traits::TableDef {
+            table_name: "Person".into(),
+            columns: vec![
+                datastore::traits::ColumnDef {
+                    col_name: "id".into(),
+                    col_type: AlgebraicType::U32,
+                    is_autoinc: true,
+                },
+                datastore::traits::ColumnDef {
+                    col_name: "name".into(),
+                    col_type: AlgebraicType::String,
+                    is_autoinc: false,
+                },
+            ],
+            indexes: vec![
+                datastore::traits::IndexDef {
+                    table_id: AUTO_TABLE_ID,
+                    cols: NonEmpty::new(0),
+                    name: "Person_id_unique".into(),
+                    is_unique: true,
+                },
+                datastore::traits::IndexDef {
+                    table_id: AUTO_TABLE_ID,
+                    cols: NonEmpty { head: 0, tail: vec![1] },
+                    name: "id_and_name".into(),
+                    is_unique: false,
+                },
+                datastore::traits::IndexDef {
+                    table_id: AUTO_TABLE_ID,
+                    cols: NonEmpty::new(1),
+                    name: "just_name".into(),
+                    is_unique: false,
+                },
+            ],
+            table_type: StTableType::User,
+            table_access: StAccess::Public,
+        };
+
+        for schema in [&mut datastore_schema, &mut expected_schema] {
+            schema.columns.sort_by(|a, b| a.col_name.cmp(&b.col_name));
+            schema.indexes.sort_by(|a, b| a.name.cmp(&b.name));
+        }
+
+        assert_eq!(expected_schema, datastore_schema);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_updates_new_table() -> anyhow::Result<()> {
+        let current = [datastore::traits::TableSchema {
+            table_id: 42,
+            table_name: "Person".into(),
+            columns: vec![datastore::traits::ColumnSchema {
+                table_id: 42,
+                col_id: 0,
+                col_name: "name".into(),
+                col_type: AlgebraicType::String,
+                is_autoinc: false,
+            }],
+            indexes: vec![],
+            constraints: vec![],
+            table_type: StTableType::User,
+            table_access: StAccess::Public,
+        }];
+        let proposed = [
+            datastore::traits::TableDef {
+                table_name: "Person".into(),
+                columns: vec![datastore::traits::ColumnDef {
+                    col_name: "name".into(),
+                    col_type: AlgebraicType::String,
+                    is_autoinc: false,
+                }],
+                indexes: vec![],
+                table_type: StTableType::User,
+                table_access: StAccess::Public,
+            },
+            datastore::traits::TableDef {
+                table_name: "Pet".into(),
+                columns: vec![datastore::traits::ColumnDef {
+                    col_name: "furry".into(),
+                    col_type: AlgebraicType::Bool,
+                    is_autoinc: false,
+                }],
+                indexes: vec![],
+                table_type: StTableType::User,
+                table_access: StAccess::Public,
+            },
+        ];
+
+        match schema_updates(current, proposed.iter().cloned().map(Ok))? {
+            SchemaUpdates::Tainted(tainted) => bail!("unexpectedly tainted: {tainted:#?}"),
+            SchemaUpdates::Updates {
+                new_tables,
+                indexes_to_drop,
+                indexes_to_create,
+            } => {
+                assert!(indexes_to_drop.is_empty());
+                assert!(indexes_to_create.is_empty());
+                assert_eq!(new_tables.len(), 1);
+                assert_eq!(new_tables.get("Pet"), proposed.last());
+
+                Ok(())
+            }
+        }
+    }
+
+    #[test]
+    fn test_updates_alter_indexes() -> anyhow::Result<()> {
+        let current = [datastore::traits::TableSchema {
+            table_id: 42,
+            table_name: "Person".into(),
+            columns: vec![
+                datastore::traits::ColumnSchema {
+                    table_id: 42,
+                    col_id: 0,
+                    col_name: "id".into(),
+                    col_type: AlgebraicType::U32,
+                    is_autoinc: true,
+                },
+                datastore::traits::ColumnSchema {
+                    table_id: 42,
+                    col_id: 1,
+                    col_name: "name".into(),
+                    col_type: AlgebraicType::String,
+                    is_autoinc: false,
+                },
+            ],
+            indexes: vec![datastore::traits::IndexSchema {
+                index_id: 0,
+                table_id: 42,
+                index_name: "Person_id_unique".into(),
+                is_unique: true,
+                cols: NonEmpty::new(0),
+            }],
+            // Constraints are possibly not empty when loaded from an actual
+            // database, but not inspected by `schema_updates`.
+            constraints: vec![],
+            table_type: StTableType::User,
+            table_access: StAccess::Public,
+        }];
+        let mut proposed = vec![datastore::traits::TableDef {
+            table_name: "Person".into(),
+            columns: vec![
+                datastore::traits::ColumnDef {
+                    col_name: "id".into(),
+                    col_type: AlgebraicType::U32,
+                    is_autoinc: true,
+                },
+                datastore::traits::ColumnDef {
+                    col_name: "name".into(),
+                    col_type: AlgebraicType::String,
+                    is_autoinc: false,
+                },
+            ],
+            indexes: vec![datastore::traits::IndexDef {
+                table_id: AUTO_TABLE_ID,
+                cols: NonEmpty { head: 0, tail: vec![1] },
+                name: "Person_id_and_name".into(),
+                is_unique: false,
+            }],
+            table_type: StTableType::User,
+            table_access: StAccess::Public,
+        }];
+
+        match schema_updates(current, proposed.iter().cloned().map(Ok))? {
+            SchemaUpdates::Tainted(tainted) => bail!("unexpectedly tainted: {tainted:#?}"),
+            SchemaUpdates::Updates {
+                new_tables,
+                indexes_to_drop,
+                indexes_to_create,
+            } => {
+                assert!(new_tables.is_empty());
+                assert_eq!(indexes_to_drop.len(), 1);
+                assert_eq!(indexes_to_create.len(), 1);
+
+                assert_eq!(indexes_to_drop[0].0, 0);
+                assert_eq!(
+                    indexes_to_create.last(),
+                    proposed[0]
+                        .indexes
+                        .pop()
+                        .map(|mut idx| {
+                            idx.table_id = 42;
+                            idx
+                        })
+                        .as_ref()
+                );
+
+                Ok(())
+            }
+        }
+    }
+
+    #[test]
+    fn test_updates_schema_mismatch() -> anyhow::Result<()> {
+        let current = [datastore::traits::TableSchema {
+            table_id: 42,
+            table_name: "Person".into(),
+            columns: vec![datastore::traits::ColumnSchema {
+                table_id: 42,
+                col_id: 0,
+                col_name: "name".into(),
+                col_type: AlgebraicType::String,
+                is_autoinc: false,
+            }],
+            indexes: vec![],
+            constraints: vec![],
+            table_type: StTableType::User,
+            table_access: StAccess::Public,
+        }];
+        let proposed = [Ok(datastore::traits::TableDef {
+            table_name: "Person".into(),
+            columns: vec![
+                datastore::traits::ColumnDef {
+                    col_name: "id".into(),
+                    col_type: AlgebraicType::U32,
+                    is_autoinc: true,
+                },
+                datastore::traits::ColumnDef {
+                    col_name: "name".into(),
+                    col_type: AlgebraicType::String,
+                    is_autoinc: false,
+                },
+            ],
+            indexes: vec![],
+            table_type: StTableType::User,
+            table_access: StAccess::Public,
+        })];
+
+        match schema_updates(current, proposed)? {
+            SchemaUpdates::Tainted(tainted) => {
+                assert_eq!(tainted.len(), 1);
+                assert_eq!(
+                    tainted[0],
+                    Tainted {
+                        table_name: "Person".into(),
+                        reason: TaintReason::IncompatibleSchema,
+                    }
+                );
+
+                Ok(())
+            }
+
+            up @ SchemaUpdates::Updates { .. } => {
+                bail!("unexpectedly not tainted: {up:#?}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_updates_orphaned_table() -> anyhow::Result<()> {
+        let current = [datastore::traits::TableSchema {
+            table_id: 42,
+            table_name: "Person".into(),
+            columns: vec![datastore::traits::ColumnSchema {
+                table_id: 42,
+                col_id: 0,
+                col_name: "name".into(),
+                col_type: AlgebraicType::String,
+                is_autoinc: false,
+            }],
+            indexes: vec![],
+            constraints: vec![],
+            table_type: StTableType::User,
+            table_access: StAccess::Public,
+        }];
+        let proposed = [Ok(datastore::traits::TableDef {
+            table_name: "Pet".into(),
+            columns: vec![datastore::traits::ColumnDef {
+                col_name: "furry".into(),
+                col_type: AlgebraicType::Bool,
+                is_autoinc: false,
+            }],
+            indexes: vec![],
+            table_type: StTableType::User,
+            table_access: StAccess::Public,
+        })];
+
+        match schema_updates(current, proposed)? {
+            SchemaUpdates::Tainted(tainted) => {
+                assert_eq!(tainted.len(), 1);
+                assert_eq!(
+                    tainted[0],
+                    Tainted {
+                        table_name: "Person".into(),
+                        reason: TaintReason::Orphaned,
+                    }
+                );
+
+                Ok(())
+            }
+
+            up @ SchemaUpdates::Updates { .. } => {
+                bail!("unexpectedly not tainted: {up:#?}")
+            }
+        }
+    }
 }

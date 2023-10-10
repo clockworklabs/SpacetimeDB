@@ -702,12 +702,14 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         (status, energy)
     }
 
-    // Helpers - NOT API
+    // Helpers
 
+    /// Construct the full [`TableDef`] suitable for creating the table.
     fn schema_for(&self, table: &spacetimedb_lib::TableDef) -> anyhow::Result<TableDef> {
         ModuleTableSchema::resolve(&self.info.typespace, table)?.hydrate()
     }
 
+    /// Obtain a logger which logs to the user-retrievable module log.
     fn system_logger(&self) -> SystemLogger {
         let inner = self.database_instance_context().logger.lock().unwrap();
         SystemLogger { inner }
@@ -715,7 +717,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
     /// Compute the diff between the current and proposed schema.
     fn schema_updates(&self, tx: &MutTxId) -> anyhow::Result<host::db::SchemaUpdates> {
-        let stdb = &self.database_instance_context().relational_db;
+        let known = self.database_instance_context().relational_db.get_all_tables(tx)?;
         let proposed = self
             .info
             .catalog
@@ -723,7 +725,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             .filter_map(EntityDef::as_table)
             .map(|table| self.schema_for(table));
 
-        host::db::schema_updates(stdb, tx, proposed)
+        host::db::schema_updates(known, proposed)
     }
 }
 
