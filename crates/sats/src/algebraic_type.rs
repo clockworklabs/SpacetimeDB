@@ -6,6 +6,7 @@ use crate::algebraic_value::ser::ValueSerializer;
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize, MapType};
 use crate::{AlgebraicTypeRef, AlgebraicValue, ArrayType, BuiltinType, ProductType, SumType, SumTypeVariant};
+use derive_more::From;
 use enum_as_inner::EnumAsInner;
 
 /// The SpacetimeDB Algebraic Type System (SATS) is a structural type system in
@@ -51,7 +52,7 @@ use enum_as_inner::EnumAsInner;
 ///     indexes: Array<(index_type: String)>,
 /// )
 /// ```
-#[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, From)]
 #[sats(crate = crate)]
 pub enum AlgebraicType {
     /// A structural sum type.
@@ -219,12 +220,12 @@ impl AlgebraicType {
 
     /// Returns an unsized array type where the element type is `ty`.
     pub fn array(ty: Self) -> Self {
-        AlgebraicType::Builtin(BuiltinType::Array(ArrayType { elem_ty: Box::new(ty) }))
+        ArrayType { elem_ty: Box::new(ty) }.into()
     }
 
     /// Returns a map type from the type `key` to the type `value`.
     pub fn map(key: Self, value: Self) -> Self {
-        AlgebraicType::Builtin(BuiltinType::Map(Box::new(MapType::new(key, value))))
+        MapType::new(key, value).into()
     }
 
     /// Returns a sum type of unit variants with names taken from `var_names`.
