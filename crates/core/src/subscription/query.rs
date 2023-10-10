@@ -5,11 +5,12 @@ use crate::host::module_host::DatabaseTableUpdate;
 use crate::sql::compiler::compile_sql;
 use crate::sql::execute::execute_single_sql;
 use crate::subscription::subscription::QuerySet;
+use itertools::Itertools;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::{Column, FieldName, MemTable, RelValue};
+use spacetimedb_lib::relation::{Column, FieldExpr, FieldName, MemTable, RelValue};
 use spacetimedb_lib::DataKey;
 use spacetimedb_sats::AlgebraicType;
-use spacetimedb_vm::expr::{Crud, CrudExpr, DbType, QueryExpr, SourceExpr};
+use spacetimedb_vm::expr::{self, Crud, CrudExpr, DbType, QueryExpr, SourceExpr};
 
 pub const SUBSCRIBE_TO_ALL_QUERY: &str = "SELECT * FROM *";
 
@@ -18,7 +19,7 @@ pub enum QueryDef {
     Sql(String),
 }
 
-#[derive(Clone, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Eq, Debug, PartialEq, PartialOrd, Ord)]
 pub struct Query {
     pub queries: Vec<QueryExpr>,
 }
@@ -141,6 +142,80 @@ pub fn compile_read_only_query(
         Ok(Query { queries })
     } else {
         Err(SubscriptionError::Empty.into())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Supported {
+    Scan,
+    Semijoin,
+}
+
+pub fn classify(expr: &QueryExpr) -> Option<Supported> {
+    use expr::Query::*;
+
+    let mut clauses = expr.query.iter();
+    let first = clauses.next();
+    let second = clauses.next();
+    let third = clauses.next();
+    if clauses.next().is_some() {
+        return None;
+    }
+
+    let validate_projection = |fields: &[FieldExpr]| -> Option<()> {
+        let source_fields = expr.source.get_db_table()?.head.fields.iter().map(|col| &col.field);
+        for both in source_fields.zip_longest(fields.iter()) {
+            let (column, field) = both.both()?;
+            let FieldExpr::Name(field) = field else {
+                return None;
+            };
+            if column != field {
+                return None;
+            }
+        }
+
+        Some(())
+    };
+    match (first, second) {
+        // SELECT * FROM t
+        (None, None) => Some(Supported::Scan),
+        // SELECT t.* FROM t
+        (Some(Project(fields, _)), None) => {
+            validate_projection(fields)?;
+            Some(Supported::Scan)
+        }
+        // SELECT * FROM t WHERE ..
+        (Some(Select(..) | IndexScan(..)), maybe_project) => match maybe_project {
+            None => Some(Supported::Scan),
+            Some(Project(fields, _)) => {
+                validate_projection(fields)?;
+                Some(Supported::Scan)
+            }
+            // SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE ..
+            Some(JoinInner(..) | IndexJoin(..)) => match third {
+                None => Some(Supported::Semijoin),
+                Some(Project(fields, _)) => {
+                    validate_projection(fields)?;
+                    Some(Supported::Semijoin)
+                }
+                // Something that's not a projection
+                Some(_) => None,
+            },
+            // Something that's not a projection
+            Some(_) => None,
+        },
+        // SELECT lhs.* FROM lhs JOIN rhs on lhs.id = rhs.id
+        (Some(JoinInner(..) | IndexJoin(..)), maybe_project) => match maybe_project {
+            None => Some(Supported::Semijoin),
+            Some(Project(fields, _)) => {
+                validate_projection(fields)?;
+                Some(Supported::Semijoin)
+            }
+            // Something that's not a projection
+            Some(_) => None,
+        },
+
+        _ => None,
     }
 }
 
@@ -803,6 +878,44 @@ mod tests {
         let row_1 = product!(1u64, "health");
         let row_2 = product!(2u64, "jhon doe");
         check_query_incr(&db, &mut tx, &s, &update, 2, &[row_1, row_2])?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_classify() -> ResultTest<()> {
+        let (db, _tmp_dir) = make_test_db()?;
+        let mut tx = db.begin_tx();
+
+        let auth = AuthCtx::for_testing();
+        let ddl = "CREATE TABLE plain (id BIGINT UNSIGNED); \
+                   CREATE TABLE lhs (id BIGINT UNSIGNED PRIMARY KEY, x INTEGER); \
+                   CREATE TABLE rhs (id BIGINT UNSIGNED PRIMARY KEY, y INTEGER);";
+        run(&db, &mut tx, ddl, auth)?;
+
+        let scans = [
+            "SELECT * FROM plain",
+            "SELECT * FROM plain WHERE id > 5",
+            "SELECT plain.* FROM plain",
+            "SELECT plain.* FROM plain WHERE plain.id = 5",
+            "SELECT * FROM lhs",
+            "SELECT * FROM lhs WHERE id > 5",
+        ];
+        for scan in scans {
+            let expr = compile_read_only_query(&db, &tx, &auth, scan)?.queries.pop().unwrap();
+            assert_eq!(classify(&expr), Some(Supported::Scan), "{scan}\n{expr:#?}");
+        }
+
+        let joins = [
+            "SELECT * FROM lhs JOIN rhs ON lhs.id = rhs.id",
+            "SELECT * FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE lhs.x < 10",
+            "SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id",
+            "SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE lhs.x < 10",
+        ];
+        for join in joins {
+            let expr = compile_read_only_query(&db, &tx, &auth, join)?.queries.pop().unwrap();
+            assert_eq!(classify(&expr), Some(Supported::Semijoin), "{join}\n{expr:#?}");
+        }
 
         Ok(())
     }
