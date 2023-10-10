@@ -43,15 +43,30 @@ impl ProductType {
         Self { elements }
     }
 
-    /// Returns whether this is the special case of `spacetimedb_lib::Identity`.
-    pub fn is_identity(&self) -> bool {
+    /// Returns whether this is a "newtype" over bytes.
+    fn is_bytes_newtype(&self, check: &str) -> bool {
         match &*self.elements {
             [ProductTypeElement {
                 name: Some(name),
                 algebraic_type,
-            }] => name == "__identity_bytes" && algebraic_type.is_bytes(),
+            }] => name == check && algebraic_type.is_bytes(),
             _ => false,
         }
+    }
+
+    /// Returns whether this is the special case of `spacetimedb_lib::Identity`.
+    pub fn is_identity(&self) -> bool {
+        self.is_bytes_newtype("__identity_bytes")
+    }
+
+    /// Returns whether this is the special case of `spacetimedb_lib::Address`.
+    pub fn is_address(&self) -> bool {
+        self.is_bytes_newtype("__address_bytes")
+    }
+
+    /// Returns whether this is a special known type, currently `Address` or `Identity`.
+    pub fn is_special(&self) -> bool {
+        self.is_identity() || self.is_address()
     }
 }
 
@@ -76,12 +91,35 @@ impl<'a, I: Into<AlgebraicType>> FromIterator<(Option<&'a str>, I)> for ProductT
     }
 }
 
+impl From<Vec<ProductTypeElement>> for ProductType {
+    fn from(fields: Vec<ProductTypeElement>) -> Self {
+        ProductType::new(fields)
+    }
+}
+impl<const N: usize> From<[ProductTypeElement; N]> for ProductType {
+    fn from(fields: [ProductTypeElement; N]) -> Self {
+        ProductType::new(fields.into())
+    }
+}
+impl<const N: usize> From<[(Option<&str>, AlgebraicType); N]> for ProductType {
+    fn from(fields: [(Option<&str>, AlgebraicType); N]) -> Self {
+        fields.into_iter().collect()
+    }
+}
+impl<const N: usize> From<[(&str, AlgebraicType); N]> for ProductType {
+    fn from(fields: [(&str, AlgebraicType); N]) -> Self {
+        fields.into_iter().collect()
+    }
+}
+impl<const N: usize> From<[AlgebraicType; N]> for ProductType {
+    fn from(fields: [AlgebraicType; N]) -> Self {
+        fields.into_iter().collect()
+    }
+}
+
 impl MetaType for ProductType {
     fn meta_type() -> AlgebraicType {
-        AlgebraicType::product(vec![ProductTypeElement::new_named(
-            AlgebraicType::array(ProductTypeElement::meta_type()),
-            "elements",
-        )])
+        AlgebraicType::product([("elements", AlgebraicType::array(ProductTypeElement::meta_type()))])
     }
 }
 

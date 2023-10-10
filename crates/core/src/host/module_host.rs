@@ -16,7 +16,7 @@ use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
 use futures::{Future, FutureExt};
 use indexmap::IndexMap;
 use spacetimedb_lib::relation::MemTable;
-use spacetimedb_lib::{ReducerDef, TableDef};
+use spacetimedb_lib::{Address, ReducerDef, TableDef};
 use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
 use std::collections::HashMap;
 use std::fmt;
@@ -186,6 +186,7 @@ pub struct ModuleFunctionCall {
 pub struct ModuleEvent {
     pub timestamp: Timestamp,
     pub caller_identity: Identity,
+    pub caller_address: Option<Address>,
     pub function_call: ModuleFunctionCall,
     pub status: EventStatus,
     pub energy_quanta_used: EnergyDiff,
@@ -195,6 +196,7 @@ pub struct ModuleEvent {
 #[derive(Debug)]
 pub struct ModuleInfo {
     pub identity: Identity,
+    pub address: Address,
     pub module_hash: Hash,
     pub typespace: Typespace,
     pub reducers: IndexMap<String, ReducerDef>,
@@ -216,6 +218,7 @@ pub trait Module: Send + Sync + 'static {
         caller_identity: Identity,
         query: String,
     ) -> Result<Vec<spacetimedb_lib::relation::MemTable>, DBError>;
+    fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error>;
 
     #[cfg(feature = "tracelogging")]
     fn get_trace(&self) -> Option<bytes::Bytes>;
@@ -226,19 +229,23 @@ pub trait Module: Send + Sync + 'static {
 pub trait ModuleInstance: Send + 'static {
     fn trapped(&self) -> bool;
 
-    fn init_database(&mut self, args: ArgsTuple) -> anyhow::Result<ReducerCallResult>;
+    // TODO(kim): The `fence` arg below is to thread through the fencing token
+    // (see [`crate::db::datastore::traits::MutProgrammable`]). This trait
+    // should probably be generic over the type of token, but that turns out a
+    // bit unpleasant at the moment. So we just use the widest possible integer.
 
-    fn update_database(&mut self) -> anyhow::Result<UpdateDatabaseResult>;
+    fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<ReducerCallResult>;
+
+    fn update_database(&mut self, fence: u128) -> anyhow::Result<UpdateDatabaseResult>;
 
     fn call_reducer(
         &mut self,
         caller_identity: Identity,
+        caller_address: Option<Address>,
         client: Option<ClientConnectionSender>,
         reducer_id: usize,
         args: ArgsTuple,
     ) -> ReducerCallResult;
-
-    fn call_connect_disconnect(&mut self, identity: Identity, connected: bool);
 }
 
 // TODO: figure out how we want to handle traps. maybe it should just not return to the LendingPool and
@@ -260,30 +267,29 @@ impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
     fn trapped(&self) -> bool {
         self.inst.trapped()
     }
-    fn init_database(&mut self, args: ArgsTuple) -> anyhow::Result<ReducerCallResult> {
-        let ret = self.inst.init_database(args);
+    fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<ReducerCallResult> {
+        let ret = self.inst.init_database(fence, args);
         self.check_trap();
         ret
     }
-    fn update_database(&mut self) -> anyhow::Result<UpdateDatabaseResult> {
-        let ret = self.inst.update_database();
+    fn update_database(&mut self, fence: u128) -> anyhow::Result<UpdateDatabaseResult> {
+        let ret = self.inst.update_database(fence);
         self.check_trap();
         ret
     }
     fn call_reducer(
         &mut self,
         caller_identity: Identity,
+        caller_address: Option<Address>,
         client: Option<ClientConnectionSender>,
         reducer_id: usize,
         args: ArgsTuple,
     ) -> ReducerCallResult {
-        let ret = self.inst.call_reducer(caller_identity, client, reducer_id, args);
+        let ret = self
+            .inst
+            .call_reducer(caller_identity, caller_address, client, reducer_id, args);
         self.check_trap();
         ret
-    }
-    fn call_connect_disconnect(&mut self, identity: Identity, connected: bool) {
-        self.inst.call_connect_disconnect(identity, connected);
-        self.check_trap();
     }
 }
 
@@ -311,6 +317,7 @@ trait DynModuleHost: Send + Sync + 'static {
         caller_identity: Identity,
         query: String,
     ) -> Result<Vec<spacetimedb_lib::relation::MemTable>, DBError>;
+    fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error>;
     fn start(&self);
     fn exit(&self) -> Closed<'_>;
     fn exited(&self) -> Closed<'_>;
@@ -381,6 +388,10 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
         query: String,
     ) -> Result<Vec<spacetimedb_lib::relation::MemTable>, DBError> {
         self.module.one_off_query(caller_identity, query)
+    }
+
+    fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error> {
+        self.module.clear_table(table_name)
     }
 
     fn start(&self) {
@@ -492,15 +503,32 @@ impl ModuleHost {
     pub async fn call_identity_connected_disconnected(
         &self,
         caller_identity: Identity,
+        caller_address: Address,
         connected: bool,
-    ) -> Result<(), NoSuchModule> {
-        self.call(move |inst| inst.call_connect_disconnect(caller_identity, connected))
+    ) -> Result<(), ReducerCallError> {
+        match self
+            .call_reducer_inner(
+                caller_identity,
+                Some(caller_address),
+                None,
+                if connected {
+                    "__identity_connected__"
+                } else {
+                    "__identity_disconnected__"
+                },
+                ReducerArgs::Nullary,
+            )
             .await
+        {
+            Ok(_) | Err(ReducerCallError::NoSuchReducer) => Ok(()),
+            Err(e) => Err(e),
+        }
     }
 
     async fn call_reducer_inner(
         &self,
         caller_identity: Identity,
+        caller_address: Option<Address>,
         client: Option<ClientConnectionSender>,
         reducer_name: &str,
         args: ReducerArgs,
@@ -513,7 +541,7 @@ impl ModuleHost {
 
         let args = args.into_tuple(self.info.typespace.with_type(schema))?;
 
-        self.call(move |inst| inst.call_reducer(caller_identity, client, reducer_id, args))
+        self.call(move |inst| inst.call_reducer(caller_identity, caller_address, client, reducer_id, args))
             .await
             .map_err(Into::into)
     }
@@ -521,12 +549,13 @@ impl ModuleHost {
     pub async fn call_reducer(
         &self,
         caller_identity: Identity,
+        caller_address: Option<Address>,
         client: Option<ClientConnectionSender>,
         reducer_name: &str,
         args: ReducerArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
         let res = self
-            .call_reducer_inner(caller_identity, client, reducer_name, args)
+            .call_reducer_inner(caller_identity, caller_address, client, reducer_name, args)
             .await;
 
         let log_message = match &res {
@@ -556,18 +585,20 @@ impl ModuleHost {
         Ok(self.info().log_tx.subscribe())
     }
 
-    pub async fn init_database(&self, args: ReducerArgs) -> Result<ReducerCallResult, InitDatabaseError> {
+    pub async fn init_database(&self, fence: u128, args: ReducerArgs) -> Result<ReducerCallResult, InitDatabaseError> {
         let args = match self.catalog().get_reducer("__init__") {
             Some(schema) => args.into_tuple(schema)?,
             _ => ArgsTuple::default(),
         };
-        self.call(|inst| inst.init_database(args))
+        self.call(move |inst| inst.init_database(fence, args))
             .await?
             .map_err(InitDatabaseError::Other)
     }
 
-    pub async fn update_database(&self) -> Result<UpdateDatabaseResult, anyhow::Error> {
-        self.call(|inst| inst.update_database()).await?.map_err(Into::into)
+    pub async fn update_database(&self, fence: u128) -> Result<UpdateDatabaseResult, anyhow::Error> {
+        self.call(move |inst| inst.update_database(fence))
+            .await?
+            .map_err(Into::into)
     }
 
     pub async fn exit(&self) {
@@ -589,6 +620,14 @@ impl ModuleHost {
     ) -> Result<Vec<MemTable>, anyhow::Error> {
         let result = self.inner.one_off_query(caller_identity, query)?;
         Ok(result)
+    }
+
+    /// FIXME(jgilles): this is a temporary workaround for deleting not currently being supported
+    /// for tables without primary keys. It is only used in the benchmarks.
+    /// Note: this doesn't drop the table, it just clears it!
+    pub async fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error> {
+        self.inner.clear_table(table_name)?;
+        Ok(())
     }
 
     pub fn downgrade(&self) -> WeakModuleHost {

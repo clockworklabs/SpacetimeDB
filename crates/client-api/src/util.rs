@@ -12,6 +12,7 @@ use bytestring::ByteString;
 use http::{HeaderName, HeaderValue, Request, StatusCode};
 
 use spacetimedb::address::Address;
+use spacetimedb_lib::address::AddressForUrl;
 use spacetimedb_lib::name::DomainName;
 
 use crate::routes::database::DomainParsingRejection;
@@ -65,14 +66,14 @@ impl headers::Header for XForwardedFor {
 
 #[derive(Clone, Debug)]
 pub enum NameOrAddress {
-    Address(Address),
+    Address(AddressForUrl),
     Name(String),
 }
 
 impl NameOrAddress {
     pub fn into_string(self) -> String {
         match self {
-            NameOrAddress::Address(addr) => addr.to_hex(),
+            NameOrAddress::Address(addr) => Address::from(addr).to_hex(),
             NameOrAddress::Name(name) => name,
         }
     }
@@ -98,7 +99,7 @@ impl NameOrAddress {
     ) -> axum::response::Result<Result<ResolvedAddress, DomainName>> {
         Ok(match self {
             Self::Address(addr) => Ok(ResolvedAddress {
-                address: *addr,
+                address: Address::from(*addr),
                 domain: None,
             }),
             Self::Name(name) => {
@@ -133,7 +134,7 @@ impl<'de> serde::Deserialize<'de> for NameOrAddress {
     {
         String::deserialize(deserializer).map(|s| {
             if let Ok(addr) = Address::from_hex(&s) {
-                NameOrAddress::Address(addr)
+                NameOrAddress::Address(AddressForUrl::from(addr))
             } else {
                 NameOrAddress::Name(s)
             }
@@ -144,7 +145,7 @@ impl<'de> serde::Deserialize<'de> for NameOrAddress {
 impl fmt::Display for NameOrAddress {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Address(addr) => f.write_str(&addr.to_hex()),
+            Self::Address(addr) => f.write_str(&Address::from(*addr).to_hex()),
             Self::Name(name) => f.write_str(name),
         }
     }

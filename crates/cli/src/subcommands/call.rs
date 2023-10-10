@@ -1,13 +1,15 @@
 use crate::config::Config;
 use crate::edit_distance::{edit_distance, find_best_match_for_name};
 use crate::generate::rust::{write_arglist_no_delimiters, write_type};
+use crate::util;
 use crate::util::{add_auth_header_opt, database_address, get_auth_header_only};
 use anyhow::{bail, Context, Error};
 use clap::{Arg, ArgAction, ArgMatches};
 use itertools::Either;
 use serde_json::Value;
+use spacetimedb::db::AlgebraicType;
 use spacetimedb_lib::de::serde::deserialize_from;
-use spacetimedb_lib::sats::{AlgebraicTypeRef, Typespace};
+use spacetimedb_lib::sats::{AlgebraicTypeRef, BuiltinType, Typespace};
 use spacetimedb_lib::ProductTypeElement;
 use std::fmt::Write;
 use std::iter;
@@ -25,11 +27,7 @@ pub fn cli() -> clap::Command {
                 .required(true)
                 .help("The name of the reducer to call"),
         )
-        .arg(
-            Arg::new("arguments")
-                .help("arguments as a JSON array")
-                .default_value("[]"),
-        )
+        .arg(Arg::new("arguments").help("arguments formatted as JSON").num_args(1..))
         .arg(
             Arg::new("server")
                 .long("server")
@@ -57,7 +55,7 @@ pub fn cli() -> clap::Command {
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
     let database = args.get_one::<String>("database").unwrap();
     let reducer_name = args.get_one::<String>("reducer_name").unwrap();
-    let arg_json = args.get_one::<String>("arguments").unwrap();
+    let arguments = args.get_many::<String>("arguments");
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
 
     let as_identity = args.get_one::<String>("as_identity");
@@ -68,12 +66,34 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
     let builder = reqwest::Client::new().post(format!(
         "{}/database/call/{}/{}",
         config.get_host_url(server)?,
-        address,
+        address.clone(),
         reducer_name
     ));
     let auth_header = get_auth_header_only(&mut config, anon_identity, as_identity, server).await;
     let builder = add_auth_header_opt(builder, &auth_header);
+    let describe_reducer = util::describe_reducer(
+        &mut config,
+        address.clone(),
+        server.map(|x| x.to_string()),
+        reducer_name.clone(),
+        anon_identity,
+        as_identity.cloned(),
+    )
+    .await?;
 
+    // String quote any arguments that should be quoted
+    let arguments = arguments
+        .unwrap_or_default()
+        .zip(describe_reducer.schema.elements.iter())
+        .map(|(argument, element)| match &element.algebraic_type {
+            AlgebraicType::Builtin(BuiltinType::String) if !argument.starts_with('\"') || !argument.ends_with('\"') => {
+                format!("\"{}\"", argument)
+            }
+            _ => argument.to_string(),
+        })
+        .collect::<Vec<_>>();
+
+    let arg_json = format!("[{}]", arguments.join(", "));
     let res = builder.body(arg_json.to_owned()).send().await?;
 
     if let Err(e) = res.error_for_status_ref() {
@@ -89,7 +109,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
         } else if response_text.starts_with("invalid arguments") {
             invalid_arguments(
                 config,
-                &address,
+                address.as_str(),
                 database,
                 &auth_header,
                 reducer_name,
@@ -220,8 +240,8 @@ fn add_reducer_ctx_to_err(error: &mut String, schema_json: Value, reducer_name: 
         .map(|kv| kv.0)
         .collect::<Vec<_>>();
 
-    // Hide these pseudo-reducers; they shouldn't be callable.
-    reducers.retain(|&c| !matches!(c, "__update__" | "__init__"));
+    // Hide pseudo-reducers (assume that any `__XXX__` are such); they shouldn't be callable.
+    reducers.retain(|&c| !(c.starts_with("__") && c.ends_with("__")));
 
     if let Some(best) = find_best_match_for_name(&reducers, reducer_name, None) {
         write!(error, "\n\nA reducer with a similar name exists: `{}`", best).unwrap();

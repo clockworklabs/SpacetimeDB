@@ -58,9 +58,10 @@ pub fn configure_tracing() {
         (None, None)
     };
 
+    // Is important for `tracy_layer` to be before `fmt_layer` to not print ascii codes...
     let subscriber = tracing_subscriber::Registry::default()
-        .with(fmt_layer)
         .with(tracy_layer)
+        .with(fmt_layer)
         .with(flame_layer);
 
     if cfg!(debug_assertions) {

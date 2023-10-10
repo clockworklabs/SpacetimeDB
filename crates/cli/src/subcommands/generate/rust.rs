@@ -65,6 +65,9 @@ pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut
         AlgebraicType::Product(p) if p.is_identity() => {
             write!(out, "Identity").unwrap();
         }
+        AlgebraicType::Product(p) if p.is_address() => {
+            write!(out, "Address").unwrap();
+        }
         AlgebraicType::Product(ProductType { elements }) => {
             print_comma_sep_braced(out, elements, |out: &mut W, elem: &ProductTypeElement| {
                 if let Some(name) = &elem.name {
@@ -86,6 +89,9 @@ pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut
                 //       on generated types, and notably, `HashMap` is not itself `Hash`,
                 //       so any type that holds a `Map` cannot derive `Hash` and cannot
                 //       key a `Map`.
+                // UPDATE: No, `AlgebraicType::Map` is supposed to be `BTreeMap`. Fix this.
+                //         This will require deriving `Ord` for generated types,
+                //         and is likely to be a big headache.
                 write!(out, "HashMap::<").unwrap();
                 write_type(ctx, out, &ty.key_ty);
                 write!(out, ", ").unwrap();
@@ -155,6 +161,7 @@ const ALLOW_UNUSED: &str = "#[allow(unused)]";
 const SPACETIMEDB_IMPORTS: &[&str] = &[
     ALLOW_UNUSED,
     "use spacetimedb_sdk::{",
+    "\tAddress,",
     "\tsats::{ser::Serialize, de::Deserialize},",
     "\ttable::{TableType, TableIter, TableWithPrimaryKey},",
     "\treducer::{Reducer, ReducerCallbackId, Status},",
@@ -632,7 +639,7 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     writeln!(out, "{}", ALLOW_UNUSED).unwrap();
     write!(
         out,
-        "pub fn on_{}(mut __callback: impl FnMut(&Identity, &Status",
+        "pub fn on_{}(mut __callback: impl FnMut(&Identity, Option<Address>, &Status",
         func_name
     )
     .unwrap();
@@ -646,7 +653,7 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
         |out| {
             write!(out, "{}", type_name).unwrap();
             out.delimited_block(
-                "::on_reducer(move |__identity, __status, __args| {",
+                "::on_reducer(move |__identity, __addr, __status, __args| {",
                 |out| {
                     write!(out, "let ").unwrap();
                     print_reducer_struct_literal(out, reducer);
@@ -655,6 +662,7 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
                         "__callback(",
                         |out| {
                             writeln!(out, "__identity,").unwrap();
+                            writeln!(out, "__addr,").unwrap();
                             writeln!(out, "__status,").unwrap();
                             for arg_name in iter_reducer_arg_names(reducer) {
                                 writeln!(out, "{},", arg_name.unwrap()).unwrap();
@@ -675,7 +683,7 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     writeln!(out, "{}", ALLOW_UNUSED).unwrap();
     write!(
         out,
-        "pub fn once_on_{}(__callback: impl FnOnce(&Identity, &Status",
+        "pub fn once_on_{}(__callback: impl FnOnce(&Identity, Option<Address>, &Status",
         func_name
     )
     .unwrap();
@@ -689,7 +697,7 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
         |out| {
             write!(out, "{}", type_name).unwrap();
             out.delimited_block(
-                "::once_on_reducer(move |__identity, __status, __args| {",
+                "::once_on_reducer(move |__identity, __addr, __status, __args| {",
                 |out| {
                     write!(out, "let ").unwrap();
                     print_reducer_struct_literal(out, reducer);
@@ -698,6 +706,7 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
                         "__callback(",
                         |out| {
                             writeln!(out, "__identity,").unwrap();
+                            writeln!(out, "__addr,").unwrap();
                             writeln!(out, "__status,").unwrap();
                             for arg_name in iter_reducer_arg_names(reducer) {
                                 writeln!(out, "{},", arg_name.unwrap()).unwrap();
@@ -745,23 +754,11 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
 ///    Row callbacks are passed an optional `ReducerEvent` as an additional argument,
 ///    so they can know what reducer caused the row to change.
 ///
-/// 3. `fn handle_table_update`, which dispatches on table name to find the appropriate type
-///    to parse the rows and insert or remove them into/from the
-///    `spacetimedb_sdk::client_cache::ClientCache`. The other SDKs avoid needing
-///    such a dispatch function by dynamically discovering the set of table types,
-///    e.g. using C#'s `AppDomain`. Rust's type system prevents this.
+/// 3. `struct Module`, which implements `SpacetimeModule`.
+///    The methods on `SpacetimeModule` implement passing appropriate type parameters
+///    to various SDK internal functions.
 ///
-/// 4. `fn invoke_row_callbacks`, which is invoked after `handle_table_update` and `handle_resubscribe`
-///    to distribute a new client cache state and an optional `ReducerEvent`
-///    to the `DbCallbacks` worker alongside each row callback for the preceding table change.
-///
-/// 5. `fn handle_resubscribe`, which serves the same role as `handle_table_update`, but for
-///    re-subscriptions in a `SubscriptionUpdate` following an outgoing `Subscribe`.
-///
-/// 6. `fn handle_event`, which serves the same role as `handle_table_update`, but for
-///    reducers.
-///
-/// 7. `fn connect`, which invokes
+/// 4. `fn connect`, which invokes
 ///    `spacetimedb_sdk::background_connection::BackgroundDbConnection::connect`
 ///    to connect to a remote database, and passes the `handle_row_update`
 ///    and `handle_event` functions so the `BackgroundDbConnection` can spawn workers
@@ -796,23 +793,7 @@ pub fn autogen_rust_globals(ctx: &GenCtx, items: &[GenItem]) -> Vec<Vec<(String,
 
     out.newline();
 
-    // Define `fn handle_table_update`.
-    print_handle_table_update_defn(ctx, out, items);
-
-    out.newline();
-
-    // Define `fn invoke_row_callbacks`.
-    print_invoke_row_callbacks_defn(out, items);
-
-    out.newline();
-
-    // Define `fn handle_resubscribe`.
-    print_handle_resubscribe_defn(out, items);
-
-    out.newline();
-
-    // Define `fn handle_event`.
-    print_handle_event_defn(out, items);
+    print_spacetime_module_struct_defn(ctx, out, items);
 
     out.newline();
 
@@ -830,6 +811,7 @@ const DISPATCH_IMPORTS: &[&str] = &[
     "use spacetimedb_sdk::callbacks::{DbCallbacks, ReducerCallbacks};",
     "use spacetimedb_sdk::reducer::AnyReducerEvent;",
     "use spacetimedb_sdk::global_connection::with_connection_mut;",
+    "use spacetimedb_sdk::spacetime_module::SpacetimeModule;",
     "use std::sync::Arc;",
 ];
 
@@ -837,13 +819,9 @@ fn print_dispatch_imports(out: &mut Indenter) {
     print_lines(out, DISPATCH_IMPORTS);
 }
 
-fn is_init(reducer: &ReducerDef) -> bool {
-    reducer.name == "__init__"
-}
-
 fn iter_reducer_items(items: &[GenItem]) -> impl Iterator<Item = &ReducerDef> {
     items.iter().filter_map(|item| match item {
-        GenItem::Reducer(reducer) if !is_init(reducer) => Some(reducer),
+        GenItem::Reducer(reducer) => Some(reducer),
         _ => None,
     })
 }
@@ -856,10 +834,10 @@ fn iter_table_items(items: &[GenItem]) -> impl Iterator<Item = &TableDef> {
 }
 
 fn iter_module_names(items: &[GenItem]) -> impl Iterator<Item = String> + '_ {
-    items.iter().filter_map(|item| match item {
-        GenItem::Table(table) => Some(table.name.to_case(Case::Snake)),
-        GenItem::TypeAlias(ty) => Some(ty.name.to_case(Case::Snake)),
-        GenItem::Reducer(reducer) => (!is_init(reducer)).then_some(reducer_module_name(reducer)),
+    items.iter().map(|item| match item {
+        GenItem::Table(table) => table.name.to_case(Case::Snake),
+        GenItem::TypeAlias(ty) => ty.name.to_case(Case::Snake),
+        GenItem::Reducer(reducer) => reducer_module_name(reducer),
     })
 }
 
@@ -877,16 +855,50 @@ fn print_module_reexports(out: &mut Indenter, items: &[GenItem]) {
     }
 }
 
-/// Define the `handle_table_update` function,
-/// which dispatches on the table name in a `TableUpdate` message
-/// to call an appropriate method on the `ClientCache`.
-fn print_handle_table_update_defn(ctx: &GenCtx, out: &mut Indenter, items: &[GenItem]) {
-    // Muffle unused warning for handle_table_update, which is not supposed to be visible to
+/// Define a unit struct which implements `SpacetimeModule`,
+/// with methods responsible for supplying type parameters to various functions.
+///
+/// `SpacetimeModule`'s methods are:
+///
+/// - `handle_table_update`, which dispatches on table name to find the appropriate type
+///    to parse the rows and insert or remove them into/from the
+///    `spacetimedb_sdk::client_cache::ClientCache`. The other SDKs avoid needing
+///    such a dispatch function by dynamically discovering the set of table types,
+///    e.g. using C#'s `AppDomain`. Rust's type system prevents this.
+///
+/// - `invoke_row_callbacks`, which is invoked after `handle_table_update` and `handle_resubscribe`
+///    to distribute a new client cache state and an optional `ReducerEvent`
+///    to the `DbCallbacks` worker alongside each row callback for the preceding table change.
+///
+/// - `handle_resubscribe`, which serves the same role as `handle_table_update`, but for
+///    re-subscriptions in a `SubscriptionUpdate` following an outgoing `Subscribe`.
+///
+/// - `handle_event`, which serves the same role as `handle_table_update`, but for
+///    reducers.
+fn print_spacetime_module_struct_defn(ctx: &GenCtx, out: &mut Indenter, items: &[GenItem]) {
+    // Muffle unused warning for `Module`, which is not supposed to be visible to
     // users. It will be used if and only if `connect` is used, so that unused warning is
     // sufficient, and not as confusing.
     writeln!(out, "{}", ALLOW_UNUSED).unwrap();
+    writeln!(out, "pub struct Module;").unwrap();
     out.delimited_block(
-        "fn handle_table_update(table_update: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {",
+        "impl SpacetimeModule for Module {",
+        |out| {
+            print_handle_table_update_defn(ctx, out, items);
+            print_invoke_row_callbacks_defn(out, items);
+            print_handle_event_defn(out, items);
+            print_handle_resubscribe_defn(out, items);
+        },
+        "}\n",
+    );
+}
+
+/// Define the `handle_table_update` method,
+/// which dispatches on the table name in a `TableUpdate` message
+/// to call an appropriate method on the `ClientCache`.
+fn print_handle_table_update_defn(ctx: &GenCtx, out: &mut Indenter, items: &[GenItem]) {
+    out.delimited_block(
+        "fn handle_table_update(&self, table_update: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {",
         |out| {
             writeln!(out, "let table_name = &table_update.table_name[..];").unwrap();
             out.delimited_block(
@@ -921,10 +933,8 @@ fn print_handle_table_update_defn(ctx: &GenCtx, out: &mut Indenter, items: &[Gen
 /// Define the `invoke_row_callbacks` function,
 /// which does `RowCallbackReminders::invoke_callbacks` on each table type defined in the `items`.
 fn print_invoke_row_callbacks_defn(out: &mut Indenter, items: &[GenItem]) {
-    // Like `handle_table_update`, muffle unused warning for `invoke_row_callbacks`.
-    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
     out.delimited_block(
-        "fn invoke_row_callbacks(reminders: &mut RowCallbackReminders, worker: &mut DbCallbacks, reducer_event: Option<Arc<AnyReducerEvent>>, state: &Arc<ClientCache>) {",
+        "fn invoke_row_callbacks(&self, reminders: &mut RowCallbackReminders, worker: &mut DbCallbacks, reducer_event: Option<Arc<AnyReducerEvent>>, state: &Arc<ClientCache>) {",
         |out| {
             for table in iter_table_items(items) {
                 writeln!(
@@ -943,10 +953,8 @@ fn print_invoke_row_callbacks_defn(out: &mut Indenter, items: &[GenItem]) {
 /// which dispatches on the table name in a `TableUpdate`
 /// to invoke `ClientCache::handle_resubscribe_for_type` with an appropriate type arg.
 fn print_handle_resubscribe_defn(out: &mut Indenter, items: &[GenItem]) {
-    // Like `handle_table_update`, muffle unused warning for `handle_resubscribe`.
-    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
     out.delimited_block(
-        "fn handle_resubscribe(new_subs: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {",
+        "fn handle_resubscribe(&self, new_subs: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {",
         |out| {
             writeln!(out, "let table_name = &new_subs.table_name[..];").unwrap();
             out.delimited_block(
@@ -977,10 +985,8 @@ fn print_handle_resubscribe_defn(out: &mut Indenter, items: &[GenItem]) {
 /// which dispatches on the reducer name in an `Event`
 /// to `ReducerCallbacks::handle_event_of_type` with an appropriate type argument.
 fn print_handle_event_defn(out: &mut Indenter, items: &[GenItem]) {
-    // Like `handle_table_update`, muffle unused warning for `handle_event`.
-    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
     out.delimited_block(
-        "fn handle_event(event: Event, reducer_callbacks: &mut ReducerCallbacks, state: Arc<ClientCache>) -> Option<Arc<AnyReducerEvent>> {",
+        "fn handle_event(&self, event: Event, _reducer_callbacks: &mut ReducerCallbacks, _state: Arc<ClientCache>) -> Option<Arc<AnyReducerEvent>> {",
         |out| {
             out.delimited_block(
                 "let Some(function_call) = &event.function_call else {",
@@ -988,13 +994,21 @@ fn print_handle_event_defn(out: &mut Indenter, items: &[GenItem]) {
                     .unwrap(),
                 "};\n",
             );
+
+            // If the module defines no reducers,
+            // we'll generate a single match arm, the fallthrough.
+            // Clippy doesn't like this, as it could be a `let` binding,
+            // but we're not going to add logic to handle that case,
+            // so just quiet the lint.
+            writeln!(out, "#[allow(clippy::match_single_binding)]").unwrap();
+
             out.delimited_block(
                 "match &function_call.reducer[..] {",
                 |out| {
                     for reducer in iter_reducer_items(items) {
                         writeln!(
                             out,
-                            "{:?} => reducer_callbacks.handle_event_of_type::<{}::{}, ReducerEvent>(event, state, ReducerEvent::{}),",
+                            "{:?} => _reducer_callbacks.handle_event_of_type::<{}::{}, ReducerEvent>(event, _state, ReducerEvent::{}),",
                             reducer.name,
                             reducer_module_name(reducer),
                             reducer_type_name(reducer),
@@ -1040,7 +1054,7 @@ where
             |out| {
                 writeln!(
                     out,
-                    "connection.connect(spacetimedb_uri, db_name, credentials, handle_table_update, handle_resubscribe, invoke_row_callbacks, handle_event)?;"
+                    "connection.connect(spacetimedb_uri, db_name, credentials, Arc::new(Module))?;"
                 ).unwrap();
                 writeln!(out, "Ok(())").unwrap();
             },
@@ -1057,19 +1071,15 @@ fn print_reducer_event_defn(out: &mut Indenter, items: &[GenItem]) {
     out.delimited_block(
         "pub enum ReducerEvent {",
         |out| {
-            for item in items {
-                if let GenItem::Reducer(reducer) = item {
-                    if !is_init(reducer) {
-                        writeln!(
-                            out,
-                            "{}({}::{}),",
-                            reducer_variant_name(reducer),
-                            reducer_module_name(reducer),
-                            reducer_type_name(reducer),
-                        )
-                        .unwrap();
-                    }
-                }
+            for reducer in iter_reducer_items(items) {
+                writeln!(
+                    out,
+                    "{}({}::{}),",
+                    reducer_variant_name(reducer),
+                    reducer_module_name(reducer),
+                    reducer_type_name(reducer),
+                )
+                .unwrap();
             }
         },
         "}\n",

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use axum::response::ErrorResponse;
 use http::StatusCode;
 
 use spacetimedb::address::Address;
@@ -137,6 +138,7 @@ pub trait ControlStateWriteAccess: Send + Sync {
     async fn publish_database(
         &self,
         identity: &Identity,
+        publisher_address: Option<Address>,
         spec: DatabaseDef,
     ) -> spacetimedb::control_db::Result<Option<UpdateDatabaseResult>>;
 
@@ -239,9 +241,10 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for ArcEnv<T> 
     async fn publish_database(
         &self,
         identity: &Identity,
+        publisher_address: Option<Address>,
         spec: DatabaseDef,
     ) -> spacetimedb::control_db::Result<Option<UpdateDatabaseResult>> {
-        self.0.publish_database(identity, spec).await
+        self.0.publish_database(identity, publisher_address, spec).await
     }
 
     async fn delete_database(&self, identity: &Identity, address: &Address) -> spacetimedb::control_db::Result<()> {
@@ -391,9 +394,10 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
     async fn publish_database(
         &self,
         identity: &Identity,
+        publisher_address: Option<Address>,
         spec: DatabaseDef,
     ) -> spacetimedb::control_db::Result<Option<UpdateDatabaseResult>> {
-        (**self).publish_database(identity, spec).await
+        (**self).publish_database(identity, publisher_address, spec).await
     }
 
     async fn delete_database(&self, identity: &Identity, address: &Address) -> spacetimedb::control_db::Result<()> {
@@ -477,7 +481,7 @@ impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
     }
 }
 
-pub fn log_and_500(e: impl std::fmt::Display) -> StatusCode {
+pub fn log_and_500(e: impl std::fmt::Display) -> ErrorResponse {
     log::error!("internal error: {e:#}");
-    StatusCode::INTERNAL_SERVER_ERROR
+    (StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")).into()
 }

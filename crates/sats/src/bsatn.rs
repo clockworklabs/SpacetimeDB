@@ -65,7 +65,6 @@ macro_rules! codec_funcs {
 }
 
 codec_funcs!(crate::AlgebraicType);
-codec_funcs!(crate::BuiltinType);
 codec_funcs!(crate::ProductType);
 codec_funcs!(crate::SumType);
 codec_funcs!(crate::ProductTypeElement);
@@ -74,4 +73,3 @@ codec_funcs!(crate::SumTypeVariant);
 codec_funcs!(val: crate::AlgebraicValue);
 codec_funcs!(val: crate::ProductValue);
 codec_funcs!(val: crate::SumValue);
-codec_funcs!(val: crate::BuiltinValue);

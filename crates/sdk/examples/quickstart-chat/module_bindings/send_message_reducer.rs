@@ -9,6 +9,7 @@ use spacetimedb_sdk::{
     sats::{de::Deserialize, ser::Serialize},
     spacetimedb_lib,
     table::{TableIter, TableType, TableWithPrimaryKey},
+    Address,
 };
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
@@ -27,21 +28,21 @@ pub fn send_message(text: String) {
 
 #[allow(unused)]
 pub fn on_send_message(
-    mut __callback: impl FnMut(&Identity, &Status, &String) + Send + 'static,
+    mut __callback: impl FnMut(&Identity, Option<Address>, &Status, &String) + Send + 'static,
 ) -> ReducerCallbackId<SendMessageArgs> {
-    SendMessageArgs::on_reducer(move |__identity, __status, __args| {
+    SendMessageArgs::on_reducer(move |__identity, __addr, __status, __args| {
         let SendMessageArgs { text } = __args;
-        __callback(__identity, __status, text);
+        __callback(__identity, __addr, __status, text);
     })
 }
 
 #[allow(unused)]
 pub fn once_on_send_message(
-    __callback: impl FnOnce(&Identity, &Status, &String) + Send + 'static,
+    __callback: impl FnOnce(&Identity, Option<Address>, &Status, &String) + Send + 'static,
 ) -> ReducerCallbackId<SendMessageArgs> {
-    SendMessageArgs::once_on_reducer(move |__identity, __status, __args| {
+    SendMessageArgs::once_on_reducer(move |__identity, __addr, __status, __args| {
         let SendMessageArgs { text } = __args;
-        __callback(__identity, __status, text);
+        __callback(__identity, __addr, __status, text);
     })
 }
 

@@ -33,7 +33,7 @@ pub struct DeleteByColEq {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct DeleteRange {
     pub table_id: u32,
-    pub col_id: u32,
+    pub cols: u32,
     pub start_buffer: Vec<u8>,
     pub end_buffer: Vec<u8>,
     pub result_deleted_count: u32,

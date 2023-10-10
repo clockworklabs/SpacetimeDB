@@ -339,7 +339,7 @@ impl<'de, E: super::Error> super::VariantAccess<'de> for NoneAccess<E> {
     type Error = E;
     fn deserialize_seed<T: super::DeserializeSeed<'de>>(self, seed: T) -> Result<T::Output, Self::Error> {
         use crate::algebraic_value::de::*;
-        seed.deserialize(ValueDeserializer::new(crate::AlgebraicValue::UNIT))
+        seed.deserialize(ValueDeserializer::new(crate::AlgebraicValue::unit()))
             .map_err(|err| match err {
                 ValueDeserializeError::MismatchedType => E::custom("mismatched type"),
                 ValueDeserializeError::Custom(err) => E::custom(err),

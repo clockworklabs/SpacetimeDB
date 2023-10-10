@@ -1,4 +1,4 @@
-use crate::builtin_value::{ArrayValueIntoIter, ArrayValueIterCloned};
+use crate::array_value::{ArrayValueIntoIter, ArrayValueIterCloned};
 use crate::{de, AlgebraicValue, SumValue};
 
 use derive_more::From;

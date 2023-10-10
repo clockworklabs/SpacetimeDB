@@ -45,8 +45,9 @@ impl MessageJson {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct IdentityTokenJson {
-    pub identity: String,
+    pub identity: String, // in hex
     pub token: String,
+    pub address: String, // in hex
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -84,6 +85,7 @@ pub struct EventJson {
     pub function_call: FunctionCallJson,
     pub energy_quanta_used: i128,
     pub message: String,
+    pub caller_address: String, // hex address
 }
 
 #[derive(Debug, Clone, Serialize)]

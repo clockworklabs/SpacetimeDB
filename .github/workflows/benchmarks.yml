@@ -2,6 +2,7 @@ on:
   push:
     branches:
       - master
+      - kazimuth/benchwrangle
   workflow_dispatch:
     inputs:
       pr_number:
@@ -17,7 +18,7 @@ env:
 jobs:
   benchmark:
     name: run benchmarks
-    runs-on: self-hosted
+    runs-on: benchmarks-runner
     steps:
       - name: Checkout sources for a PR
         if: ${{ github.event.inputs.ref }}
@@ -63,13 +64,16 @@ jobs:
         run: |
           cargo build --release
 
+      - name: Install clippy for module build
+        run: |
+          rustup component add clippy
+
       - name: Criterion compare base branch
         if: ${{ env.PR_BASE_REF }}
         uses: clockworklabs/criterion-compare-action@main
         with:
           cwd: "crates/bench"
           branchName: ${{ env.PR_BASE_REF }}
-          benchName: modules
 
       - name: Criterion compare previous commit
         if: env.PR_BASE_REF == ''
@@ -77,13 +81,6 @@ jobs:
         with:
           cwd: "crates/bench"
           branchName: "HEAD~1"
-          benchName: modules
-
-      - name: Benchmark Vs Sqlite
-        working-directory: crates/bench/
-        run: |
-          python3 hyper_cmp.py versus > out.report
-          cat out.report >> $GITHUB_STEP_SUMMARY
 
       - name: Clean up
         if: always()

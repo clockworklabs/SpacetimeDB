@@ -91,7 +91,7 @@ impl AsyncDB for Sqlite {
             for (name, dectype) in &mut columns {
                 let value = row.get::<_, Value>(name.as_str())?;
                 let (value, kind) = match value {
-                    Value::Null => ("null".into(), AlgebraicType::NEVER_TYPE),
+                    Value::Null => ("null".into(), AlgebraicType::never()),
                     Value::Integer(x) => (x.to_string(), AlgebraicType::I64),
                     Value::Real(x) => (format!("{:?}", x), AlgebraicType::F64),
                     Value::Text(x) => (format!("'{}'", x), AlgebraicType::String),

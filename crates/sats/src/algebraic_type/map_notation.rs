@@ -1,7 +1,7 @@
 use super::AlgebraicType;
 use crate::builtin_type::BuiltinType;
 use crate::de::fmt_fn;
-use crate::{ArrayType, MapType};
+use crate::ArrayType;
 use std::fmt::{self, Formatter};
 
 /// Wraps an algebraic `ty` in a `Display` impl using a object/map JSON-like notation.
@@ -49,7 +49,7 @@ pub fn fmt_algebraic_type(ty: &AlgebraicType) -> impl '_ + fmt::Display {
                 BuiltinType::F64 => write!(f, ", 0: F64")?,
                 BuiltinType::String => write!(f, ", 0: String")?,
                 BuiltinType::Array(ArrayType { elem_ty }) => write!(f, ", 0: Array, 1: {}", fmt(elem_ty))?,
-                BuiltinType::Map(MapType { key_ty, ty }) => write!(f, "0: Map, 1: {}, 2: {}", fmt(key_ty), fmt(ty))?,
+                BuiltinType::Map(map) => write!(f, "0: Map, 1: {}, 2: {}", fmt(&map.key_ty), fmt(&map.ty))?,
             }
             write!(f, " }}")
         }

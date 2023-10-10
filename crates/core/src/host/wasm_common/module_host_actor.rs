@@ -8,9 +8,10 @@ use crate::host::scheduler::Scheduler;
 use crate::sql;
 use anyhow::Context;
 use bytes::Bytes;
+use nonempty::NonEmpty;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::{bsatn, IndexType, ModuleDef};
+use spacetimedb_lib::{bsatn, Address, IndexType, ModuleDef, VersionTuple};
 use spacetimedb_vm::expr::CrudExpr;
 
 use crate::client::ClientConnectionSender;
@@ -59,17 +60,10 @@ pub trait WasmInstance: Send + Sync + 'static {
         &mut self,
         reducer_id: usize,
         budget: EnergyQuanta,
-        sender: &[u8; 32],
+        sender_identity: &Identity,
+        sender_address: &Address,
         timestamp: Timestamp,
         arg_bytes: Bytes,
-    ) -> ExecuteResult<Self::Trap>;
-
-    fn call_connect_disconnect(
-        &mut self,
-        connect: bool,
-        budget: EnergyQuanta,
-        sender: &[u8; 32],
-        timestamp: Timestamp,
     ) -> ExecuteResult<Self::Trap>;
 
     fn log_traceback(func_type: &str, func: &str, trap: &Self::Trap);
@@ -98,7 +92,19 @@ pub(crate) struct WasmModuleHostActor<T: WasmModule> {
 }
 
 #[derive(thiserror::Error, Debug)]
+pub enum AbiVersionError {
+    #[error("module doesn't indicate spacetime ABI version")]
+    NoVersion,
+    #[error("abi version is malformed somehow (out-of-bounds, etc)")]
+    Malformed,
+    #[error("abi version {got} is not supported (host implements {implement})")]
+    UnsupportedVersion { got: VersionTuple, implement: VersionTuple },
+}
+
+#[derive(thiserror::Error, Debug)]
 pub enum InitializationError {
+    #[error(transparent)]
+    Abi(#[from] AbiVersionError),
     #[error(transparent)]
     Validation(#[from] ValidationError),
     #[error("setup function returned an error: {0}")]
@@ -173,6 +179,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 
         let info = Arc::new(ModuleInfo {
             identity: database_instance_context.identity,
+            address: database_instance_context.address,
             module_hash,
             typespace,
             reducers,
@@ -202,7 +209,6 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
     fn make_from_instance(&self, instance: T::Instance) -> WasmModuleInstance<T::Instance> {
         WasmModuleInstance {
             instance,
-            func_names: self.func_names.clone(),
             info: self.info.clone(),
             event_tx: self.event_tx.clone(),
             energy_monitor: self.energy_monitor.clone(),
@@ -276,6 +282,21 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
             )
         })
     }
+
+    fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error> {
+        let db = &*self.worker_database_instance.relational_db;
+        db.with_auto_commit(|tx| {
+            let tables = db.get_all_tables(tx)?;
+            for table in tables {
+                if table.table_name != table_name {
+                    continue;
+                }
+
+                db.clear_table(tx, table.table_id)?;
+            }
+            Ok(())
+        })
+    }
 }
 
 /// Somewhat ad-hoc wrapper around [`DatabaseLogger`] which allows to inject
@@ -285,6 +306,11 @@ struct SystemLogger<'a> {
 }
 
 impl SystemLogger<'_> {
+    fn info(&mut self, msg: &str) {
+        self.inner
+            .write(crate::database_logger::LogLevel::Info, &Self::record(msg), &())
+    }
+
     fn warn(&mut self, msg: &str) {
         self.inner
             .write(crate::database_logger::LogLevel::Warn, &Self::record(msg), &())
@@ -307,7 +333,6 @@ impl SystemLogger<'_> {
 
 pub struct WasmModuleInstance<T: WasmInstance> {
     instance: T,
-    func_names: Arc<FuncNames>,
     info: Arc<ModuleInfo>,
     event_tx: SubscriptionEventSender,
     energy_monitor: Arc<dyn EnergyMonitor>,
@@ -333,11 +358,12 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         self.trapped
     }
 
-    #[tracing::instrument(skip(args))]
-    fn init_database(&mut self, args: ArgsTuple) -> anyhow::Result<ReducerCallResult> {
+    #[tracing::instrument(skip(self, args), fields(db_id=self.instance.instance_env().dbic.database_id))]
+    fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<ReducerCallResult> {
         let stdb = &*self.database_instance_context().relational_db;
         let mut tx = stdb.begin_tx();
         for table in self.info.catalog.values().filter_map(EntityDef::as_table) {
+            self.system_logger().info(&format!("Creating table `{}`", table.name));
             tx = stdb
                 .with_auto_rollback(tx, |tx| {
                     let schema = self.schema_for(table)?;
@@ -350,6 +376,13 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                     e
                 })?;
         }
+
+        // Set the module hash. Morally, this should be done _after_ calling
+        // the `init` reducer, but that consumes our transaction context.
+        tx = stdb
+            .with_auto_rollback(tx, |tx| stdb.set_program_hash(tx, fence, self.info.module_hash))
+            .map(|(tx, ())| tx)?;
+
         let rcr = match self.info.reducers.get_index_of(INIT_DUNDER) {
             None => {
                 stdb.commit_tx(tx)?;
@@ -361,17 +394,24 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
             }
 
             Some(reducer_id) => {
+                self.system_logger().info("Invoking `init` reducer");
                 let caller_identity = self.database_instance_context().identity;
+                // If a caller address was passed to the `/database/publish` HTTP endpoint,
+                // the init/update reducer will receive it as the caller address.
+                // This is useful for bootstrapping the control DB in SpacetimeDB-cloud.
+                let caller_address = self.database_instance_context().publisher_address;
                 let client = None;
-                self.call_reducer_internal(Some(tx), caller_identity, client, reducer_id, args)
+                self.call_reducer_internal(Some(tx), caller_identity, caller_address, client, reducer_id, args)
             }
         };
+
+        self.system_logger().info("Database initialized");
 
         Ok(rcr)
     }
 
     #[tracing::instrument(skip_all)]
-    fn update_database(&mut self) -> Result<UpdateDatabaseResult, anyhow::Error> {
+    fn update_database(&mut self, fence: u128) -> Result<UpdateDatabaseResult, anyhow::Error> {
         let stdb = &*self.database_instance_context().relational_db;
         let mut tx = stdb.begin_tx();
 
@@ -381,15 +421,20 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
             tx = stdb
                 .with_auto_rollback::<_, _, DBError>(tx, |tx| {
                     for (name, schema) in updates.new_tables {
+                        self.system_logger().info(&format!("Creating table `{}`", name));
                         stdb.create_table(tx, schema)
                             .with_context(|| format!("failed to create table {}", name))?;
                     }
 
                     for index_id in updates.indexes_to_drop {
+                        self.system_logger()
+                            .info(&format!("Dropping index with id {}", index_id.0));
                         stdb.drop_index(tx, index_id)?;
                     }
 
                     for index_def in updates.indexes_to_create {
+                        self.system_logger()
+                            .info(&format!("Creating index `{}`", index_def.name));
                         stdb.create_index(tx, index_def)?;
                     }
 
@@ -399,11 +444,17 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         } else {
             stdb.rollback_tx(tx);
             self.system_logger()
-                .error("module update rejected due to schema mismatch");
+                .error("Module update rejected due to schema mismatch");
             return Ok(Err(UpdateDatabaseError::IncompatibleSchema {
                 tables: updates.tainted_tables,
             }));
         }
+
+        // Update the module hash. Morally, this should be done _after_ calling
+        // the `update` reducer, but that consumes our transaction context.
+        tx = stdb
+            .with_auto_rollback(tx, |tx| stdb.set_program_hash(tx, fence, self.info.module_hash))
+            .map(|(tx, ())| tx)?;
 
         let update_result = match self.info.reducers.get_index_of(UPDATE_DUNDER) {
             None => {
@@ -412,13 +463,26 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
             }
 
             Some(reducer_id) => {
+                self.system_logger().info("Invoking `update` reducer");
                 let caller_identity = self.database_instance_context().identity;
+                // If a caller address was passed to the `/database/publish` HTTP endpoint,
+                // the init/update reducer will receive it as the caller address.
+                // This is useful for bootstrapping the control DB in SpacetimeDB-cloud.
+                let caller_address = self.database_instance_context().publisher_address;
                 let client = None;
-                let res =
-                    self.call_reducer_internal(Some(tx), caller_identity, client, reducer_id, ArgsTuple::default());
+                let res = self.call_reducer_internal(
+                    Some(tx),
+                    caller_identity,
+                    caller_address,
+                    client,
+                    reducer_id,
+                    ArgsTuple::default(),
+                );
                 Some(res)
             }
         };
+
+        self.system_logger().info("Database updated");
 
         Ok(Ok(UpdateDatabaseSuccess {
             update_result,
@@ -430,59 +494,12 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
     fn call_reducer(
         &mut self,
         caller_identity: Identity,
+        caller_address: Option<Address>,
         client: Option<ClientConnectionSender>,
         reducer_id: usize,
         args: ArgsTuple,
     ) -> ReducerCallResult {
-        self.call_reducer_internal(None, caller_identity, client, reducer_id, args)
-    }
-
-    #[tracing::instrument(skip_all)]
-    fn call_connect_disconnect(&mut self, identity: Identity, connected: bool) {
-        let has_function = if connected {
-            self.func_names.conn
-        } else {
-            self.func_names.disconn
-        };
-        if !has_function {
-            return;
-        }
-
-        let start_instant = Instant::now();
-
-        let timestamp = Timestamp::now();
-
-        let (status, energy) = self.execute(
-            None,
-            InstanceOp::ConnDisconn {
-                conn: connected,
-                sender: &identity,
-                timestamp,
-            },
-        );
-
-        let reducer_symbol = if connected {
-            IDENTITY_CONNECTED_DUNDER
-        } else {
-            IDENTITY_DISCONNECTED_DUNDER
-        };
-
-        // TODO(cloutiertyler): We need to think about how to handle this special
-        // function. Is this just an autogenerated reducer? In the future if I call
-        // a reducer from within a reducer should that generate a module event?
-        // Good question, Tyler, good question.
-        let event = ModuleEvent {
-            timestamp,
-            function_call: ModuleFunctionCall {
-                reducer: reducer_symbol.to_string(),
-                args: ArgsTuple::default(),
-            },
-            status,
-            caller_identity: identity,
-            energy_quanta_used: energy.used,
-            host_execution_duration: start_instant.elapsed(),
-        };
-        self.event_tx.broadcast_event_blocking(None, event);
+        self.call_reducer_internal(None, caller_identity, caller_address, client, reducer_id, args)
     }
 }
 
@@ -506,6 +523,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         &mut self,
         tx: Option<MutTxId>,
         caller_identity: Identity,
+        caller_address: Option<Address>,
         client: Option<ClientConnectionSender>,
         reducer_id: usize,
         mut args: ArgsTuple,
@@ -520,9 +538,10 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
         let (status, energy) = self.execute(
             tx,
-            InstanceOp::Reducer {
+            ReducerOp {
                 id: reducer_id,
-                sender: &caller_identity,
+                sender_identity: &caller_identity,
+                sender_address: &caller_address.unwrap_or(Address::__dummy()),
                 timestamp,
                 arg_bytes: args.get_bsatn().clone(),
             },
@@ -536,6 +555,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let event = ModuleEvent {
             timestamp,
             caller_identity,
+            caller_address,
             function_call: ModuleFunctionCall {
                 reducer: reducerdef.name.clone(),
                 args,
@@ -568,26 +588,15 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     //
     /// The method also performs various measurements and records energy usage.
     #[tracing::instrument(skip_all)]
-    fn execute(&mut self, tx: Option<MutTxId>, op: InstanceOp<'_>) -> (EventStatus, EnergyStats) {
+    fn execute(&mut self, tx: Option<MutTxId>, op: ReducerOp<'_>) -> (EventStatus, EnergyStats) {
         let address = &self.database_instance_context().address.to_abbreviated_hex();
-        let func_ident = match op {
-            InstanceOp::Reducer { id, .. } => &*self.info.reducers[id].name,
-            InstanceOp::ConnDisconn { conn, .. } => {
-                if conn {
-                    IDENTITY_CONNECTED_DUNDER
-                } else {
-                    IDENTITY_DISCONNECTED_DUNDER
-                }
-            }
-        };
+        let func_ident = &*self.info.reducers[op.id].name;
         REDUCER_COUNT.with_label_values(&[address, func_ident]).inc();
 
         let energy_fingerprint = EnergyMonitorFingerprint {
             module_hash: self.info.module_hash,
             module_identity: self.info.identity,
-            caller_identity: match op {
-                InstanceOp::Reducer { sender, .. } | InstanceOp::ConnDisconn { sender, .. } => *sender,
-            },
+            caller_identity: *op.sender_identity,
             reducer_name: func_ident,
         };
 
@@ -596,22 +605,15 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let tx = tx.unwrap_or_else(|| self.database_instance_context().relational_db.begin_tx());
 
         let tx_slot = self.instance.instance_env().tx.clone();
-        let (tx, result) = tx_slot.set(tx, || match op {
-            InstanceOp::Reducer {
-                id,
-                sender,
-                timestamp,
-                arg_bytes,
-            } => self
-                .instance
-                .call_reducer(id, budget, sender.as_bytes(), timestamp, arg_bytes),
-            InstanceOp::ConnDisconn {
-                conn,
-                sender,
-                timestamp,
-            } => self
-                .instance
-                .call_connect_disconnect(conn, budget, sender.as_bytes(), timestamp),
+        let (tx, result) = tx_slot.set(tx, || {
+            self.instance.call_reducer(
+                op.id,
+                budget,
+                op.sender_identity,
+                op.sender_address,
+                op.timestamp,
+                op.arg_bytes,
+            )
         });
 
         let ExecuteResult {
@@ -720,7 +722,8 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             let mut index_for_column = None;
             for index in table.indexes.iter() {
                 let [index_col_id] = *index.col_ids else {
-                    anyhow::bail!("multi-column indexes not yet supported")
+                    //Ignore multi-column indexes
+                    continue;
                 };
                 if index_col_id as usize != col_id {
                     continue;
@@ -740,7 +743,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 }
                 let index = IndexDef {
                     table_id: 0, // Will be ignored
-                    col_id: col_id as u32,
+                    cols: NonEmpty::new(col_id as u32),
                     name: index.name.clone(),
                     is_unique: col_attr.is_unique(),
                 };
@@ -750,7 +753,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 // anyway.
                 let index = IndexDef {
                     table_id: 0, // Will be ignored
-                    col_id: col_id as u32,
+                    cols: NonEmpty::new(col_id as u32),
                     name: format!("{}_{}_unique", table.name, col.col_name),
                     is_unique: true,
                 };
@@ -888,16 +891,10 @@ struct SchemaUpdates {
 }
 
 #[derive(Debug)]
-enum InstanceOp<'a> {
-    Reducer {
-        id: usize,
-        sender: &'a Identity,
-        timestamp: Timestamp,
-        arg_bytes: Bytes,
-    },
-    ConnDisconn {
-        conn: bool,
-        sender: &'a Identity,
-        timestamp: Timestamp,
-    },
+struct ReducerOp<'a> {
+    id: usize,
+    sender_identity: &'a Identity,
+    sender_address: &'a Address,
+    timestamp: Timestamp,
+    arg_bytes: Bytes,
 }

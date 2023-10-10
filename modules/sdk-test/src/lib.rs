@@ -6,7 +6,8 @@
 // and clippy misunderstands `#[allow]` attributes in macro-expansions.
 #![allow(clippy::too_many_arguments)]
 
-use spacetimedb::{spacetimedb, Identity, SpacetimeType};
+use anyhow::{Context, Result};
+use spacetimedb::{spacetimedb, Address, Identity, ReducerContext, SpacetimeType};
 
 #[derive(SpacetimeType)]
 pub enum SimpleEnum {
@@ -32,6 +33,7 @@ pub enum EnumWithPayload {
     F64(f64),
     Str(String),
     Identity(Identity),
+    Address(Address),
     Bytes(Vec<u8>),
     Ints(Vec<i32>),
     Strings(Vec<String>),
@@ -65,6 +67,7 @@ pub struct EveryPrimitiveStruct {
     m: f64,
     n: String,
     o: Identity,
+    p: Address,
 }
 
 #[derive(SpacetimeType)]
@@ -84,6 +87,7 @@ pub struct EveryVecStruct {
     m: Vec<f64>,
     n: Vec<String>,
     o: Vec<Identity>,
+    p: Vec<Address>,
 }
 
 /// Defines one or more tables, and optionally reducers alongside them.
@@ -230,6 +234,7 @@ define_tables! {
     OneString { insert insert_one_string } s String;
 
     OneIdentity { insert insert_one_identity } i Identity;
+    OneAddress { insert insert_one_address } a Address;
 
     OneSimpleEnum { insert insert_one_simple_enum } e SimpleEnum;
     OneEnumWithPayload { insert insert_one_enum_with_payload } e EnumWithPayload;
@@ -262,6 +267,7 @@ define_tables! {
     VecString { insert insert_vec_string } s Vec<String>;
 
     VecIdentity { insert insert_vec_identity } i Vec<Identity>;
+    VecAddress { insert insert_vec_address } a Vec<Address>;
 
     VecSimpleEnum { insert insert_vec_simple_enum } e Vec<SimpleEnum>;
     VecEnumWithPayload { insert insert_vec_enum_with_payload } e Vec<EnumWithPayload>;
@@ -355,6 +361,12 @@ define_tables! {
         update_by update_unique_identity = update_by_i(i),
         delete_by delete_unique_identity = delete_by_i(i: Identity),
     } #[unique] i Identity, data i32;
+
+    UniqueAddress {
+        insert_or_panic insert_unique_address,
+        update_by update_unique_address = update_by_a(a),
+        delete_by delete_unique_address = delete_by_a(a: Address),
+    } #[unique] a Address, data i32;
 }
 
 // Tables mapping a primary key to a boring i32 payload.
@@ -390,13 +402,11 @@ define_tables! {
         delete_by delete_pk_u128 = delete_by_n(n: u128),
     } #[primarykey] n u128, data i32;
 
-
     PkI8 {
         insert_or_panic insert_pk_i8,
         update_by update_pk_i8 = update_by_n(n),
         delete_by delete_pk_i8 = delete_by_n(n: i8),
     } #[primarykey] n i8, data i32;
-
 
     PkI16 {
         insert_or_panic insert_pk_i16,
@@ -422,7 +432,6 @@ define_tables! {
         delete_by delete_pk_i128 = delete_by_n(n: i128),
     } #[primarykey] n i128, data i32;
 
-
     PkBool {
         insert_or_panic insert_pk_bool,
         update_by update_pk_bool = update_by_b(b),
@@ -440,6 +449,70 @@ define_tables! {
         update_by update_pk_identity = update_by_i(i),
         delete_by delete_pk_identity = delete_by_i(i: Identity),
     } #[primarykey] i Identity, data i32;
+
+    PkAddress {
+        insert_or_panic insert_pk_address,
+        update_by update_pk_address = update_by_a(a),
+        delete_by delete_pk_address = delete_by_a(a: Address),
+    } #[primarykey] a Address, data i32;
+}
+
+#[spacetimedb(reducer)]
+fn insert_caller_one_identity(ctx: ReducerContext) -> anyhow::Result<()> {
+    OneIdentity::insert(OneIdentity { i: ctx.sender });
+    Ok(())
+}
+
+#[spacetimedb(reducer)]
+fn insert_caller_vec_identity(ctx: ReducerContext) -> anyhow::Result<()> {
+    VecIdentity::insert(VecIdentity { i: vec![ctx.sender] });
+    Ok(())
+}
+
+#[spacetimedb(reducer)]
+fn insert_caller_unique_identity(ctx: ReducerContext, data: i32) -> anyhow::Result<()> {
+    UniqueIdentity::insert(UniqueIdentity { i: ctx.sender, data })?;
+    Ok(())
+}
+
+#[spacetimedb(reducer)]
+fn insert_caller_pk_identity(ctx: ReducerContext, data: i32) -> anyhow::Result<()> {
+    PkIdentity::insert(PkIdentity { i: ctx.sender, data })?;
+    Ok(())
+}
+
+#[spacetimedb(reducer)]
+fn insert_caller_one_address(ctx: ReducerContext) -> anyhow::Result<()> {
+    OneAddress::insert(OneAddress {
+        a: ctx.address.context("No address in reducer context")?,
+    });
+    Ok(())
+}
+
+#[spacetimedb(reducer)]
+fn insert_caller_vec_address(ctx: ReducerContext) -> anyhow::Result<()> {
+    VecAddress::insert(VecAddress {
+        a: vec![ctx.address.context("No address in reducer context")?],
+    });
+    Ok(())
+}
+
+#[spacetimedb(reducer)]
+fn insert_caller_unique_address(ctx: ReducerContext, data: i32) -> anyhow::Result<()> {
+    UniqueAddress::insert(UniqueAddress {
+        a: ctx.address.context("No address in reducer context")?,
+        data,
+    })?;
+    Ok(())
+}
+
+#[spacetimedb(reducer)]
+fn insert_caller_pk_address(ctx: ReducerContext, data: i32) -> anyhow::Result<()> {
+    PkAddress::insert(PkAddress {
+        a: ctx.address.context("No address in reducer context")?,
+        data,
+    })?;
+    Ok(())
 }
 
 // Some weird-looking tables.

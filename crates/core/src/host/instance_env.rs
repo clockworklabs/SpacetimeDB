@@ -1,3 +1,4 @@
+use nonempty::NonEmpty;
 use parking_lot::{Mutex, MutexGuard};
 use spacetimedb_lib::{bsatn, ProductValue};
 use std::ops::DerefMut;
@@ -42,7 +43,7 @@ impl InstanceEnv {
         }
     }
 
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(skip_all, fields(reducer=reducer))]
     pub fn schedule(
         &self,
         reducer: String,
@@ -77,7 +78,7 @@ impl InstanceEnv {
                 crate::error::DBError::Index(IndexError::UniqueConstraintViolation {
                     constraint_name: _,
                     table_name: _,
-                    col_name: _,
+                    col_names: _,
                     value: _,
                 }) => {}
                 _ => {
@@ -139,10 +140,10 @@ impl InstanceEnv {
     */
 
     /// Deletes all rows in the table identified by `table_id`
-    /// where the column identified by `col_id` equates to `value`.
+    /// where the column identified by `cols` equates to `value`.
     ///
     /// Returns an error if no columns were deleted or if the column wasn't found.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(skip(self, value))]
     pub fn delete_by_col_eq(&self, table_id: u32, col_id: u32, value: &[u8]) -> Result<u32, NodesError> {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;
@@ -168,7 +169,7 @@ impl InstanceEnv {
     pub fn delete_range(
         &self,
         table_id: u32,
-        col_id: u32,
+        cols: u32,
         start_buffer: &[u8],
         end_buffer: &[u8],
     ) -> Result<u32, NodesError> {
@@ -177,13 +178,13 @@ impl InstanceEnv {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;
 
-        let col_type = stdb.schema_for_column(tx, table_id, col_id)?;
+        let col_type = stdb.schema_for_column(tx, table_id, cols)?;
 
         let decode = |b: &[u8]| AlgebraicValue::decode(&col_type, &mut &b[..]).map_err(NodesError::DecodeValue);
         let start = decode(start_buffer)?;
         let end = decode(end_buffer)?;
 
-        let range = stdb.range_scan(tx, table_id, col_id, start..end)?;
+        let range = stdb.range_scan(tx, table_id, cols, start..end)?;
         let range = range.map(|x| stdb.data_to_owned(x).into()).collect::<Vec<_>>();
 
         let count = stdb.delete_in(tx, table_id, range)?.ok_or(NodesError::RangeNotFound)?;
@@ -193,7 +194,7 @@ impl InstanceEnv {
                 measure.start_instant.unwrap(),
                 measure.elapsed(),
                 table_id,
-                col_id,
+                cols,
                 start_buffer.into(),
                 end_buffer.into(),
                 count,
@@ -245,16 +246,17 @@ impl InstanceEnv {
         Ok(table_id)
     }
 
-    /// Creates an index of type `index_type`,
+    /// Creates an index of type `index_type` and name `index_name`,
     /// on a product of the given columns in `col_ids`,
     /// in the table identified by `table_id`.
     ///
-    /// Currently only single-column-indices are supported
-    /// and they may only be of the btree index type.
+    /// Currently only single-column-indices are supported.
+    /// That is, `col_ids.len() == 1`, or the call will panic.
     ///
-    /// The `table_name` is used together with the column ids to construct the name of the index.
-    /// As only single-column-indices are supported right now,
-    /// the name will be in the format `{table_name}_{col_id}`.
+    /// Another limitation is on the `index_type`.
+    /// Only `btree` indices are supported as of now, i.e., `index_type == 0`.
+    /// When `index_type == 1` is passed, the call will happen
+    /// and on `index_type > 1`, an error is returned.
     #[tracing::instrument(skip_all)]
     pub fn create_index(
         &self,
@@ -276,20 +278,15 @@ impl InstanceEnv {
             _ => return Err(NodesError::BadIndexType(index_type)),
         };
 
-        // TODO(george) The index API right now only allows single column indexes.
-        let col_id = match &*col_ids {
-            [id] => *id as u32,
-            _ => todo!("Multi-column indexes are not yet supported"),
-        };
+        let cols = NonEmpty::from_slice(&col_ids)
+            .expect("Attempt to create an index with zero columns")
+            .map(|x| x as u32);
 
-        let is_unique = stdb
-            .column_attrs(tx, table_id, col_id)?
-            .expect("invalid col_id")
-            .is_unique();
+        let is_unique = stdb.column_attrs(tx, table_id, &cols)?.is_unique();
 
         let index = IndexDef {
             table_id,
-            col_id,
+            cols,
             name: index_name,
             is_unique,
         };
@@ -300,7 +297,7 @@ impl InstanceEnv {
     }
 
     /// Finds all rows in the table identified by `table_id`
-    /// where the column identified by `col_id` matches to `value`.
+    /// where the column identified by `cols` matches to `value`.
     ///
     /// These rows are returned concatenated with each row bsatn encoded.
     ///

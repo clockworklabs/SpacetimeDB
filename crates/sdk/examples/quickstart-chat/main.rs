@@ -9,6 +9,7 @@ use spacetimedb_sdk::{
     reducer::Status,
     subscribe,
     table::{TableType, TableWithPrimaryKey},
+    Address,
 };
 
 // # Our main function
@@ -53,7 +54,7 @@ fn register_callbacks() {
 // ## Save credentials to a file
 
 /// Our `on_connect` callback: save our credentials to a file.
-fn on_connected(creds: &Credentials) {
+fn on_connected(creds: &Credentials, _address: Address) {
     if let Err(e) = save_credentials(CREDS_DIR, creds) {
         eprintln!("Failed to save credentials: {:?}", e);
     }
@@ -131,7 +132,7 @@ fn on_sub_applied() {
 // ## Warn if set_name failed
 
 /// Our `on_set_name` callback: print a warning if the reducer failed.
-fn on_name_set(_sender: &Identity, status: &Status, name: &String) {
+fn on_name_set(_sender_id: &Identity, _sender_addr: Option<Address>, status: &Status, name: &String) {
     if let Status::Failed(err) = status {
         eprintln!("Failed to change name to {:?}: {}", name, err);
     }
@@ -140,7 +141,7 @@ fn on_name_set(_sender: &Identity, status: &Status, name: &String) {
 // ## Warn if a message was rejected
 
 /// Our `on_send_message` callback: print a warning if the reducer failed.
-fn on_message_sent(_sender: &Identity, status: &Status, text: &String) {
+fn on_message_sent(_sender: &Identity, _sender_addr: Option<Address>, status: &Status, text: &String) {
     if let Status::Failed(err) = status {
         eprintln!("Failed to send message {:?}: {}", text, err);
     }
@@ -160,7 +161,7 @@ fn on_disconnected() {
 const HOST: &str = "http://localhost:3000";
 
 /// The module name we chose when we published our module.
-const DB_NAME: &str = "chat";
+const DB_NAME: &str = "quickstart-chat";
 
 /// Load credentials from a file and connect to the database.
 fn connect_to_db() {

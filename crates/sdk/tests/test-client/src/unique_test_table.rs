@@ -1,8 +1,8 @@
 use crate::module_bindings::*;
-use crate::test_counter::TestCounter;
 use anyhow::anyhow;
-use spacetimedb_sdk::{identity::Identity, table::TableType};
+use spacetimedb_sdk::{identity::Identity, table::TableType, Address};
 use std::sync::Arc;
+use test_counter::TestCounter;
 
 pub trait UniqueTestTable: TableType {
     type Key: Clone + Send + Sync + PartialEq + std::fmt::Debug + 'static;
@@ -234,5 +234,14 @@ impl_unique_test_table! {
         insert_reducer_event = InsertUniqueIdentity;
         delete_reducer = delete_unique_identity;
         delete_reducer_event = DeleteUniqueIdentity;
+    }
+
+    UniqueAddress {
+        Key = Address;
+        key_field_name = a;
+        insert_reducer = insert_unique_address;
+        insert_reducer_event = InsertUniqueAddress;
+        delete_reducer = delete_unique_address;
+        delete_reducer_event = DeleteUniqueAddress;
     }
 }

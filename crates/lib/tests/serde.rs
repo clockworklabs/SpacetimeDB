@@ -25,7 +25,7 @@ fn test_json_mappings() {
             "quux",
             AlgebraicType::Sum(enumm([
                 ("Hash", AlgebraicType::bytes()),
-                ("Unit", AlgebraicType::UNIT_TYPE),
+                ("Unit", AlgebraicType::unit()),
             ])),
         ),
         ("and_peggy", AlgebraicType::option(AlgebraicType::F64)),

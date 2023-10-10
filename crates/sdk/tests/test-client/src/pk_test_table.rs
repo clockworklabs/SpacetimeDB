@@ -1,8 +1,8 @@
 use crate::module_bindings::*;
-use crate::test_counter::TestCounter;
 use anyhow::anyhow;
 use spacetimedb_sdk::table::TableWithPrimaryKey;
 use std::sync::Arc;
+use test_counter::TestCounter;
 
 pub trait PkTestTable: TableWithPrimaryKey {
     fn as_value(&self) -> i32;
@@ -308,4 +308,16 @@ impl_pk_test_table! {
         update_reducer = update_pk_identity;
         update_reducer_event = UpdatePkIdentity;
     }
+
+    PkAddress {
+        Key = Address;
+        key_field_name = a;
+        insert_reducer = insert_pk_address;
+        insert_reducer_event = InsertPkAddress;
+        delete_reducer = delete_pk_address;
+        delete_reducer_event = DeletePkAddress;
+        update_reducer = update_pk_address;
+        update_reducer_event = UpdatePkAddress;
+    }
+
 }

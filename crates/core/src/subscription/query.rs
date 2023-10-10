@@ -24,7 +24,7 @@ pub struct Query {
 }
 
 impl Query {
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip_all, fields(table = table.table_name))]
     pub fn queries_of_table_id<'a>(&'a self, table: &'a DatabaseTableUpdate) -> impl Iterator<Item = QueryExpr> + '_ {
         self.queries.iter().filter_map(move |x| {
             if x.source.get_db_table().map(|x| x.table_id) == Some(table.table_id) {
@@ -45,10 +45,11 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
     let mut q = of;
     let table_access = q.source.table_access();
 
-    let mut t = match &q.source {
-        SourceExpr::MemTable(x) => MemTable::new(&x.head, table_access, &[]),
-        SourceExpr::DbTable(table) => MemTable::new(&table.head, table_access, &[]),
+    let head = match &q.source {
+        SourceExpr::MemTable(x) => &x.head,
+        SourceExpr::DbTable(table) => &table.head,
     };
+    let mut t = MemTable::new(head.clone(), table_access, vec![]);
 
     if let Some(pos) = t.head.find_pos_by_name(OP_TYPE_FIELD_NAME) {
         t.data.extend(data.ops.iter().map(|row| {
@@ -146,21 +147,63 @@ pub fn compile_read_only_query(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::datastore::traits::TableSchema;
+    use crate::db::datastore::traits::{ColumnDef, IndexDef, TableDef, TableSchema};
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp};
     use crate::sql::execute::run;
     use crate::subscription::subscription::QuerySet;
     use crate::vm::tests::create_table_with_rows;
     use itertools::Itertools;
+    use nonempty::NonEmpty;
     use spacetimedb_lib::auth::{StAccess, StTableType};
     use spacetimedb_lib::data_key::ToDataKey;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::relation::FieldName;
     use spacetimedb_lib::Identity;
-    use spacetimedb_sats::{product, BuiltinType, ProductType, ProductValue};
+    use spacetimedb_sats::{product, ProductType, ProductValue};
     use spacetimedb_vm::dsl::{db_table, mem_table, scalar};
     use spacetimedb_vm::operator::OpCmp;
+
+    fn create_table(
+        db: &RelationalDB,
+        tx: &mut MutTxId,
+        name: &str,
+        schema: &[(&str, AlgebraicType)],
+        indexes: &[(u32, &str)],
+    ) -> ResultTest<u32> {
+        let table_name = name.to_string();
+        let table_type = StTableType::User;
+        let table_access = StAccess::Public;
+
+        let columns = schema
+            .iter()
+            .map(|(col_name, col_type)| ColumnDef {
+                col_name: col_name.to_string(),
+                col_type: col_type.clone(),
+                is_autoinc: false,
+            })
+            .collect_vec();
+
+        let indexes = indexes
+            .iter()
+            .map(|(col_id, index_name)| IndexDef {
+                table_id: 0,
+                cols: NonEmpty::new(*col_id),
+                name: index_name.to_string(),
+                is_unique: false,
+            })
+            .collect_vec();
+
+        let schema = TableDef {
+            table_name,
+            columns,
+            indexes,
+            table_type,
+            table_access,
+        };
+
+        Ok(db.create_table(tx, schema)?)
+    }
 
     fn make_data(
         db: &RelationalDB,
@@ -186,7 +229,7 @@ mod tests {
             ops: vec![op],
         };
 
-        let q = QueryExpr::new(db_table((&schema).into(), table_name, table_id));
+        let q = QueryExpr::new(db_table((&schema).into(), table_name.to_owned(), table_id));
 
         Ok((schema, table, data, q))
     }
@@ -202,7 +245,7 @@ mod tests {
             "_inventory"
         };
 
-        let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
+        let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row = product!(1u64, "health");
 
         let (schema, table, data, q) = make_data(db, tx, table_name, &head, &row)?;
@@ -213,7 +256,7 @@ mod tests {
             FieldName::named(table_name, "name").into(),
         ];
 
-        let q = q.with_project(fields);
+        let q = q.with_project(fields, None);
 
         Ok((schema, table, data, q))
     }
@@ -223,7 +266,7 @@ mod tests {
         tx: &mut MutTxId,
     ) -> ResultTest<(TableSchema, MemTable, DatabaseTableUpdate, QueryExpr)> {
         let table_name = "player";
-        let head = ProductType::from_iter([("player_id", BuiltinType::U64), ("name", BuiltinType::String)]);
+        let head = ProductType::from([("player_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row = product!(2u64, "jhon doe");
 
         let (schema, table, data, q) = make_data(db, tx, table_name, &head, &row)?;
@@ -234,7 +277,7 @@ mod tests {
             FieldName::named(table_name, "name").into(),
         ];
 
-        let q = q.with_project(fields);
+        let q = q.with_project(fields, None);
 
         Ok((schema, table, data, q))
     }
@@ -314,7 +357,7 @@ mod tests {
         let (db, _) = make_test_db()?;
         let mut tx = db.begin_tx();
 
-        let schema = ProductType::from_iter([("u8", BuiltinType::U8)]);
+        let schema = ProductType::from([("u8", AlgebraicType::U8)]);
         let row = product!(1u8);
 
         // generate row id from row
@@ -324,7 +367,7 @@ mod tests {
         let table_id = create_table_with_rows(&db, &mut tx, "test", schema.clone(), &[])?;
 
         // select * from test
-        let query = QueryExpr::new(db_table(schema.clone(), "test", table_id));
+        let query = QueryExpr::new(db_table(schema.clone(), "test".to_owned(), table_id));
         let query = QuerySet(vec![Query { queries: vec![query] }]);
 
         let op = TableOp {
@@ -346,6 +389,145 @@ mod tests {
 
         // check that both row ids are the same
         assert_eq!(id1, id2);
+        Ok(())
+    }
+
+    #[test]
+    fn test_eval_incr_for_index_scan() -> ResultTest<()> {
+        let (db, _) = make_test_db()?;
+        let mut tx = db.begin_tx();
+
+        // Create table [test] with index on [b]
+        let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
+        let indexes = &[(1, "b")];
+        let table_id = create_table(&db, &mut tx, "test", schema, indexes)?;
+
+        let sql = "select * from test where b = 3";
+        let mut exp = compile_sql(&db, &tx, sql)?;
+
+        let Some(CrudExpr::Query(query)) = exp.pop() else {
+            panic!("unexpected query {:#?}", exp[0]);
+        };
+
+        let query = QuerySet(vec![Query { queries: vec![query] }]);
+
+        let mut ops = Vec::new();
+        for i in 0u64..9u64 {
+            let row = product!(i, i);
+            db.insert(&mut tx, table_id, row)?;
+
+            let row = product!(i + 10, i);
+            let row_pk = row.to_data_key().to_bytes();
+            ops.push(TableOp {
+                op_type: 0,
+                row_pk,
+                row,
+            })
+        }
+
+        let update = DatabaseUpdate {
+            tables: vec![DatabaseTableUpdate {
+                table_id,
+                table_name: "test".into(),
+                ops,
+            }],
+        };
+
+        let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
+
+        assert_eq!(result.tables.len(), 1);
+
+        let update = &result.tables[0];
+
+        assert_eq!(update.ops.len(), 1);
+
+        let op = &update.ops[0];
+
+        assert_eq!(op.op_type, 0);
+        assert_eq!(op.row, product!(13u64, 3u64));
+        assert_eq!(op.row_pk, product!(13u64, 3u64).to_data_key().to_bytes());
+        Ok(())
+    }
+
+    #[test]
+    fn test_eval_incr_for_index_join() -> ResultTest<()> {
+        let (db, _) = make_test_db()?;
+        let mut tx = db.begin_tx();
+
+        // Create table [lhs] with index on [b]
+        let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
+        let indexes = &[(1, "b")];
+        let lhs_id = create_table(&db, &mut tx, "lhs", schema, indexes)?;
+
+        // Create table [rhs] with no indexes
+        let schema = &[("b", AlgebraicType::U64), ("c", AlgebraicType::U64)];
+        let rhs_id = create_table(&db, &mut tx, "rhs", schema, &[])?;
+
+        // Should be answered using an index semijion
+        let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c = 3";
+        let mut exp = compile_sql(&db, &tx, sql)?;
+
+        let Some(CrudExpr::Query(query)) = exp.pop() else {
+            panic!("unexpected query {:#?}", exp[0]);
+        };
+
+        let query = QuerySet(vec![Query { queries: vec![query] }]);
+
+        for i in 0..10 {
+            // Insert into lhs
+            let row = product!(i as u64, i as u64);
+            db.insert(&mut tx, lhs_id, row)?;
+
+            // Insert into rhs
+            let row = product!(i as u64, i as u64);
+            db.insert(&mut tx, rhs_id, row)?;
+        }
+
+        let mut updates = Vec::new();
+
+        // An update event for the left table that matches the query
+        let lhs_row = product!(11u64, 3u64);
+        let lhs_key = lhs_row.to_data_key().to_bytes();
+        let lhs_op = TableOp {
+            op_type: 0,
+            row: lhs_row,
+            row_pk: lhs_key,
+        };
+        updates.push(DatabaseTableUpdate {
+            table_id: lhs_id,
+            table_name: "lhs".into(),
+            ops: vec![lhs_op],
+        });
+
+        // An update event for the right table that matches the query
+        let rhs_row = product!(12u64, 3u64);
+        let rhs_key = rhs_row.to_data_key().to_bytes();
+        let rhs_op = TableOp {
+            op_type: 0,
+            row: rhs_row,
+            row_pk: rhs_key,
+        };
+        updates.push(DatabaseTableUpdate {
+            table_id: rhs_id,
+            table_name: "rhs".into(),
+            ops: vec![rhs_op],
+        });
+
+        let update = DatabaseUpdate { tables: updates };
+        let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
+
+        assert_eq!(result.tables.len(), 1);
+
+        let update = &result.tables[0];
+
+        assert_eq!(update.ops.len(), 1);
+        assert_eq!(update.table_id, lhs_id);
+
+        let op = &update.ops[0];
+
+        assert_eq!(op.op_type, 0);
+        assert_eq!(op.row, product!(11u64, 3u64));
+        assert_eq!(op.row_pk, product!(11u64, 3u64).to_data_key().to_bytes());
         Ok(())
     }
 
@@ -381,7 +563,7 @@ mod tests {
         check_query(&db, &table, &mut tx, &q, &data)?;
 
         //SELECT * FROM inventory
-        let q_all = QueryExpr::new(db_table((&schema).into(), "_inventory", schema.table_id));
+        let q_all = QueryExpr::new(db_table((&schema).into(), "_inventory".to_owned(), schema.table_id));
         //SELECT * FROM inventory WHERE inventory_id = 1
         let q_id =
             q_all
@@ -421,7 +603,7 @@ mod tests {
 
         check_query_incr(&db, &mut tx, &s, &update, 3, &[row])?;
 
-        let q = QueryExpr::new(db_table((&schema).into(), "_inventory", schema.table_id));
+        let q = QueryExpr::new(db_table((&schema).into(), "_inventory".to_owned(), schema.table_id));
 
         let q = to_mem_table(q, &data);
         //Try access the private table
@@ -458,7 +640,7 @@ mod tests {
         let (schema, _table, _data, _q) = make_inv(&db, &mut tx, StAccess::Private)?;
 
         //SELECT * FROM inventory
-        let q_all = QueryExpr::new(db_table((&schema).into(), "inventory", schema.table_id));
+        let q_all = QueryExpr::new(db_table((&schema).into(), "inventory".to_owned(), schema.table_id));
         //SELECT * FROM inventory WHERE inventory_id = 1
         let q_id =
             q_all

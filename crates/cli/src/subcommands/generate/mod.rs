@@ -195,7 +195,10 @@ pub fn extract_from_moduledef(module: ModuleDef) -> (GenCtx, impl Iterator<Item 
     let iter = itertools::chain!(
         misc_exports.into_iter().map(GenItem::from_misc_export),
         tables.into_iter().map(GenItem::Table),
-        reducers.into_iter().map(GenItem::Reducer),
+        reducers
+            .into_iter()
+            .filter(|r| !(r.name.starts_with("__") && r.name.ends_with("__")))
+            .map(GenItem::Reducer),
     );
     (ctx, iter)
 }
@@ -236,7 +239,6 @@ impl GenItem {
                 };
                 Some((rust::rust_type_file_name(name), code))
             }
-            GenItem::Reducer(reducer) if reducer.name == "__init__" => None,
             GenItem::Reducer(reducer) => {
                 let code = rust::autogen_rust_reducer(ctx, reducer);
                 Some((rust::rust_reducer_file_name(&reducer.name), code))
@@ -265,8 +267,6 @@ impl GenItem {
                 AlgebraicType::Builtin(_) => todo!(),
                 AlgebraicType::Ref(_) => todo!(),
             },
-            // I'm not sure exactly how this should work; when does init_database get called with csharp?
-            GenItem::Reducer(reducer) if reducer.name == "__init__" => None,
             GenItem::Reducer(reducer) => {
                 let code = python::autogen_python_reducer(ctx, reducer);
                 let name = reducer.name.to_case(Case::Snake);
@@ -296,8 +296,6 @@ impl GenItem {
                 AlgebraicType::Builtin(_) => todo!(),
                 AlgebraicType::Ref(_) => todo!(),
             },
-            // I'm not sure exactly how this should work; when does init_database get called with csharp?
-            GenItem::Reducer(reducer) if reducer.name == "__init__" => None,
             GenItem::Reducer(reducer) => {
                 let code = typescript::autogen_typescript_reducer(ctx, reducer);
                 let name = reducer.name.to_case(Case::Snake);
@@ -325,8 +323,6 @@ impl GenItem {
                 AlgebraicType::Builtin(_) => todo!(),
                 AlgebraicType::Ref(_) => todo!(),
             },
-            // I'm not sure exactly how this should work; when does init_database get called with csharp?
-            GenItem::Reducer(reducer) if reducer.name == "__init__" => None,
             GenItem::Reducer(reducer) => {
                 let code = csharp::autogen_csharp_reducer(ctx, reducer, namespace);
                 let pascalcase = reducer.name.to_case(Case::Pascal);

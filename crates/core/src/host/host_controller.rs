@@ -189,19 +189,34 @@ impl HostController {
         }
     }
 
-    pub async fn init_module_host(&self, module_host_context: ModuleHostContext) -> Result<ModuleHost, anyhow::Error> {
+    pub async fn init_module_host(
+        &self,
+        fence: u128,
+        module_host_context: ModuleHostContext,
+    ) -> Result<ModuleHost, anyhow::Error> {
         let module_host = self.spawn_module_host(module_host_context).await?;
         // TODO(cloutiertyler): Hook this up again
         // let identity = &module_host.info().identity;
         // let max_spend = worker_budget::max_tx_spend(identity);
 
-        let rcr = module_host.init_database(ReducerArgs::Nullary).await?;
+        let rcr = module_host.init_database(fence, ReducerArgs::Nullary).await?;
         // worker_budget::record_tx_spend(identity, rcr.energy_quanta_used);
         rcr.outcome.into_result().context("init reducer failed")?;
         Ok(module_host)
     }
 
-    pub async fn delete_module_host(&self, worker_database_instance_id: u64) -> Result<(), anyhow::Error> {
+    pub async fn delete_module_host(
+        &self,
+        _fence: u128,
+        worker_database_instance_id: u64,
+    ) -> Result<(), anyhow::Error> {
+        // TODO(kim): If the delete semantics are to wipe all state from
+        // persistent storage, `_fence` is not needed. Otherwise, we will need
+        // to check it against the stored value to be able to order deletes wrt
+        // other lifecycle operations.
+        //
+        // Note that currently we don't delete the persistent state, but also
+        // imply that a deleted database cannot be resurrected.
         if let Some(host) = self.take_module_host(worker_database_instance_id) {
             host.exit().await;
         }
@@ -210,11 +225,12 @@ impl HostController {
 
     pub async fn update_module_host(
         &self,
+        fence: u128,
         module_host_context: ModuleHostContext,
     ) -> Result<UpdateOutcome, anyhow::Error> {
         let module_host = self.spawn_module_host(module_host_context).await?;
         // TODO: see init_module_host
-        let update_result = module_host.update_database().await?;
+        let update_result = module_host.update_database(fence).await?;
 
         Ok(UpdateOutcome {
             module_host,
@@ -268,6 +284,16 @@ impl HostController {
             }
         };
         Ok((module_host, mhc.scheduler_starter))
+    }
+
+    /// Determine if the module host described by [`ModuleHostContext`] is
+    /// managed by this host controller.
+    ///
+    /// Note that this method may report false negatives if the module host is
+    /// currently being spawned via [`Self::spawn_module_host`].
+    pub fn has_module_host(&self, module_host_context: &ModuleHostContext) -> bool {
+        let key = &module_host_context.dbic.database_instance_id;
+        self.modules.lock().contains_key(key)
     }
 
     /// Request a list of all describable entities in a module.

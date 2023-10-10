@@ -530,11 +530,12 @@ checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cc"
-version = "1.0.79"
+version = "1.0.83"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50d30906286121d95be3d479533b458f87493b30a4b5f79a607db8f5d11aa91f"
+checksum = "f1174fb0b6ec23863f8b971027804a42614e347eafb0a95bf0b12cdae21fc4d0"
 dependencies = [
  "jobserver",
+ "libc",
 ]
 
 [[package]]
@@ -703,6 +704,15 @@ dependencies = [
  "atty",
  "lazy_static",
  "winapi",
+]
+
+[[package]]
+name = "connect_disconnect_client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "spacetimedb-sdk",
+ "test-counter",
 ]
 
 [[package]]
@@ -1462,12 +1472,9 @@ dependencies = [
 
 [[package]]
 name = "fastrand"
-version = "1.9.0"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e51093e27b0797c359783294ca4f0a911c270184cb10f85783b118614a1501be"
-dependencies = [
- "instant",
-]
+checksum = "25cbce373ec4653f1a01a31e8a5e5ec0c622dc27ff9c4e6606eefef5cbbed4a5"
 
 [[package]]
 name = "fd-lock"
@@ -2507,6 +2514,12 @@ dependencies = [
  "memchr",
  "minimal-lexical",
 ]
+
+[[package]]
+name = "nonempty"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aeaf4ad7403de93e699c191202f017118df734d3850b01e13a3a8b2e6953d3c9"
 
 [[package]]
 name = "nu-ansi-term"
@@ -3787,6 +3800,7 @@ checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
 name = "sdk-test-module"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "log",
  "spacetimedb",
 ]
@@ -4134,8 +4148,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetime-module"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
 name = "spacetimedb"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "bytes",
  "derive_more",
@@ -4150,14 +4172,20 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bench"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
+ "ahash 0.8.3",
  "anyhow",
+ "anymap",
  "byte-unit",
  "clap 4.3.10",
  "criterion",
+ "futures",
+ "lazy_static",
+ "log",
  "rand 0.8.5",
  "rusqlite",
+ "serde",
  "serde_json",
  "spacetimedb-client-api",
  "spacetimedb-core",
@@ -4166,11 +4194,12 @@ dependencies = [
  "spacetimedb-testing",
  "tempdir",
  "tokio",
+ "tracing-subscriber",
 ]
 
 [[package]]
 name = "spacetimedb-bindings-macro"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "bitflags 2.3.3",
  "humantime",
@@ -4181,14 +4210,14 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-sys"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "getrandom",
 ]
 
 [[package]]
 name = "spacetimedb-cli"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "base64 0.21.2",
@@ -4224,7 +4253,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-client-api"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4256,7 +4285,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-client-api-messages"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "prost",
  "prost-build",
@@ -4265,7 +4294,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-core"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4292,6 +4321,7 @@ dependencies = [
  "jsonwebtoken",
  "lazy_static",
  "log",
+ "nonempty",
  "once_cell",
  "openssl",
  "parking_lot 0.12.1",
@@ -4344,7 +4374,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-lib"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "bitflags 2.3.3",
@@ -4377,7 +4407,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-sats"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "arrayvec",
  "bytes",
@@ -4386,6 +4416,7 @@ dependencies = [
  "enum-as-inner",
  "hex",
  "itertools",
+ "nonempty",
  "proptest",
  "rand 0.8.5",
  "serde",
@@ -4396,7 +4427,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-sdk"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "anymap",
@@ -4411,6 +4442,7 @@ dependencies = [
  "lazy_static",
  "log",
  "prost",
+ "rand 0.8.5",
  "spacetimedb-client-api-messages",
  "spacetimedb-lib",
  "spacetimedb-sats",
@@ -4421,7 +4453,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-standalone"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4450,6 +4482,7 @@ dependencies = [
  "clap 4.3.10",
  "duct",
  "lazy_static",
+ "prost",
  "rand 0.8.5",
  "serde_json",
  "serial_test",
@@ -4458,13 +4491,14 @@ dependencies = [
  "spacetimedb-core",
  "spacetimedb-lib",
  "spacetimedb-standalone",
+ "tempfile",
  "tokio",
  "wasmbin",
 ]
 
 [[package]]
 name = "spacetimedb-vm"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "derive_more",
@@ -4748,15 +4782,14 @@ dependencies = [
 
 [[package]]
 name = "tempfile"
-version = "3.6.0"
+version = "3.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "31c0432476357e58790aaa47a8efb0c5138f137343f3b5f23bd36a27e3b0a6d6"
+checksum = "cb94d2f3cc536af71caac6b6fcebf65860b347e7ce0cc9ebe8f70d3e521054ef"
 dependencies = [
- "autocfg",
  "cfg-if",
  "fastrand",
  "redox_syscall 0.3.5",
- "rustix 0.37.21",
+ "rustix 0.38.1",
  "windows-sys 0.48.0",
 ]
 
@@ -4786,7 +4819,15 @@ dependencies = [
  "anyhow",
  "env_logger",
  "spacetimedb-sdk",
+ "test-counter",
  "tokio",
+]
+
+[[package]]
+name = "test-counter"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
 ]
 
 [[package]]
@@ -5159,9 +5200,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-tracy"
-version = "0.10.2"
+version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "55c48ef3e655220d4e43a6be44aa84f078c3004357251cab45f9cc15551a593e"
+checksum = "fc6c7bf057d67aa107e076129a4f331aaac47ec379952d9f0775c6b1d838ee97"
 dependencies = [
  "tracing-core",
  "tracing-subscriber",
@@ -5170,9 +5211,9 @@ dependencies = [
 
 [[package]]
 name = "tracy-client"
-version = "0.15.2"
+version = "0.16.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "434ecabbda9f67eeea1eab44d52f4a20538afa3e2c2770f2efc161142b25b608"
+checksum = "03684af8fb393cc7903210d868e4cb9f5c1e156737be38f52c4217fb21b86bf6"
 dependencies = [
  "loom",
  "once_cell",
@@ -5181,9 +5222,9 @@ dependencies = [
 
 [[package]]
 name = "tracy-client-sys"
-version = "0.21.0"
+version = "0.21.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d99f5fc382239d08b6bf05bb6206a585bfdb988c878f2499081d0f285ef7819"
+checksum = "2cb915ea3af048554640d76dd6f1492589a6401a41a30d789b983c1ec280455a"
 dependencies = [
  "cc",
 ]
@@ -5289,6 +5330,17 @@ name = "untrusted"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a156c684c91ea7d62626509bce3cb4e1d9ed5c4d978f7b4352658f96a4c26b4a"
+
+[[package]]
+name = "upgrade-version"
+version = "0.1.0"
+dependencies = [
+ "clap 4.3.10",
+ "duct",
+ "regex",
+ "tempfile",
+ "walkdir",
+]
 
 [[package]]
 name = "url"

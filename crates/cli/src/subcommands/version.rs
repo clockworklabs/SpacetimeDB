@@ -24,6 +24,7 @@ pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
     }
 
     println!("Path: {}", std::env::current_exe()?.display());
+    println!("Commit: {}", env!("GIT_HASH"));
     println!(
         "spacetimedb tool version {}; spacetimedb-lib version {};",
         CLI_VERSION,
