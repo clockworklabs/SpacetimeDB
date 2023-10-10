@@ -2289,6 +2289,14 @@ mod tests {
         Ok((datastore, tx, table_id))
     }
 
+    fn all_rows(datastore: &Locking, tx: &MutTxId, table_id: TableId) -> Vec<ProductValue> {
+        datastore
+            .iter_mut_tx(tx, table_id)
+            .unwrap()
+            .map(|r| r.view().clone())
+            .collect()
+    }
+
     #[test]
     fn test_bootstrapping_sets_up_tables() -> ResultTest<()> {
         let datastore = get_datastore()?;
@@ -2622,12 +2630,8 @@ mod tests {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
-        let rows = datastore
-            .iter_mut_tx(&tx, table_id)?
-            .map(|r| r.view().clone())
-            .collect::<Vec<_>>();
         #[rustfmt::skip]
-        assert_eq!(rows, vec![u32_str_u32(1, "Foo", 18)]);
+        assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, "Foo", 18)]);
         Ok(())
     }
 
@@ -2639,12 +2643,8 @@ mod tests {
             AlgebraicValue::String("Foo".to_string()),
         ]);
         assert!(datastore.insert_mut_tx(&mut tx, table_id, row).is_err());
-        let rows = datastore
-            .iter_mut_tx(&tx, table_id)?
-            .map(|r| r.view().clone())
-            .collect::<Vec<_>>();
         #[rustfmt::skip]
-        assert_eq!(rows, vec![]);
+        assert_eq!(all_rows(&datastore, &tx, table_id), vec![]);
         Ok(())
     }
 
@@ -2655,12 +2655,8 @@ mod tests {
         datastore.insert_mut_tx(&mut tx, table_id, u32_str_u32(0, "Foo", 18))?;
         datastore.commit_mut_tx(tx)?;
         let tx = datastore.begin_mut_tx();
-        let rows = datastore
-            .iter_mut_tx(&tx, table_id)?
-            .map(|r| r.view().clone())
-            .collect::<Vec<_>>();
         #[rustfmt::skip]
-        assert_eq!(rows, vec![u32_str_u32(1, "Foo", 18)]);
+        assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, "Foo", 18)]);
         Ok(())
     }
 
@@ -2673,12 +2669,8 @@ mod tests {
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.rollback_mut_tx(tx);
         let tx = datastore.begin_mut_tx();
-        let rows = datastore
-            .iter_mut_tx(&tx, table_id)?
-            .map(|r| r.view().clone())
-            .collect::<Vec<_>>();
         #[rustfmt::skip]
-        assert_eq!(rows, vec![]);
+        assert_eq!(all_rows(&datastore, &tx, table_id), vec![]);
         Ok(())
     }
 
@@ -2692,19 +2684,11 @@ mod tests {
         let created_row = u32_str_u32(1, "Foo", 18);
         let num_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, vec![created_row])?;
         assert_eq!(num_deleted, Some(1));
-        let rows = datastore
-            .iter_mut_tx(&tx, table_id)?
-            .map(|r| r.view().clone())
-            .collect::<Vec<_>>();
-        assert_eq!(rows.len(), 0);
+        assert_eq!(all_rows(&datastore, &tx, table_id).len(), 0);
         let created_row = u32_str_u32(1, "Foo", 19);
         datastore.insert_mut_tx(&mut tx, table_id, created_row)?;
-        let rows = datastore
-            .iter_mut_tx(&tx, table_id)?
-            .map(|r| r.view().clone())
-            .collect::<Vec<_>>();
         #[rustfmt::skip]
-        assert_eq!(rows, vec![u32_str_u32(1, "Foo", 19)]);
+        assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, "Foo", 19)]);
         Ok(())
     }
 
@@ -2717,18 +2701,10 @@ mod tests {
             let created_row = u32_str_u32(1, "Foo", 18);
             let num_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, vec![created_row.clone()])?;
             assert_eq!(num_deleted, Some(1));
-            let rows = datastore
-                .iter_mut_tx(&tx, table_id)?
-                .map(|r| r.view().clone())
-                .collect::<Vec<_>>();
-            assert_eq!(rows.len(), 0);
+            assert_eq!(all_rows(&datastore, &tx, table_id).len(), 0);
             datastore.insert_mut_tx(&mut tx, table_id, created_row)?;
-            let rows = datastore
-                .iter_mut_tx(&tx, table_id)?
-                .map(|r| r.view().clone())
-                .collect::<Vec<_>>();
             #[rustfmt::skip]
-            assert_eq!(rows, vec![u32_str_u32(1, "Foo", 18)]);
+            assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, "Foo", 18)]);
         }
         Ok(())
     }
@@ -2748,12 +2724,8 @@ mod tests {
             })) => (),
             _ => panic!("Expected an unique constraint violation error."),
         }
-        let rows = datastore
-            .iter_mut_tx(&tx, table_id)?
-            .map(|r| r.view().clone())
-            .collect::<Vec<_>>();
         #[rustfmt::skip]
-        assert_eq!(rows, vec![u32_str_u32(1, "Foo", 18)]);
+        assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, "Foo", 18)]);
         Ok(())
     }
 
@@ -2774,12 +2746,8 @@ mod tests {
             })) => (),
             _ => panic!("Expected an unique constraint violation error."),
         }
-        let rows = datastore
-            .iter_mut_tx(&tx, table_id)?
-            .map(|r| r.view().clone())
-            .collect::<Vec<_>>();
         #[rustfmt::skip]
-        assert_eq!(rows, vec![u32_str_u32(1, "Foo", 18)]);
+        assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, "Foo", 18)]);
         Ok(())
     }
 
@@ -2793,12 +2761,8 @@ mod tests {
         datastore.rollback_mut_tx(tx);
         let mut tx = datastore.begin_mut_tx();
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
-        let rows = datastore
-            .iter_mut_tx(&tx, table_id)?
-            .map(|r| r.view().clone())
-            .collect::<Vec<_>>();
         #[rustfmt::skip]
-        assert_eq!(rows, vec![u32_str_u32(2, "Foo", 18)]);
+        assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(2, "Foo", 18)]);
         Ok(())
     }
 
@@ -2847,12 +2811,8 @@ mod tests {
             })) => (),
             _ => panic!("Expected an unique constraint violation error."),
         }
-        let rows = datastore
-            .iter_mut_tx(&tx, table_id)?
-            .map(|r| r.view().clone())
-            .collect::<Vec<_>>();
         #[rustfmt::skip]
-        assert_eq!(rows, vec![u32_str_u32(1, "Foo", 18)]);
+        assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, "Foo", 18)]);
         Ok(())
     }
 
@@ -2902,12 +2862,8 @@ mod tests {
             })) => (),
             _ => panic!("Expected an unique constraint violation error."),
         }
-        let rows = datastore
-            .iter_mut_tx(&tx, table_id)?
-            .map(|r| r.view().clone())
-            .collect::<Vec<_>>();
         #[rustfmt::skip]
-        assert_eq!(rows, vec![u32_str_u32(1, "Foo", 18)]);
+        assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, "Foo", 18)]);
         Ok(())
     }
 
@@ -2946,12 +2902,8 @@ mod tests {
         ]);
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
-        let rows = datastore
-            .iter_mut_tx(&tx, table_id)?
-            .map(|r| r.view().clone())
-            .collect::<Vec<_>>();
         #[rustfmt::skip]
-        assert_eq!(rows, vec![
+        assert_eq!(all_rows(&datastore, &tx, table_id), vec![
             u32_str_u32(1, "Foo", 18),
             u32_str_u32(2, "Bar", 18),
         ]);
@@ -2961,6 +2913,7 @@ mod tests {
     #[test]
     fn test_update_reinsert() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
+
         // Insert a row and commit the tx.
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
                                              // Because of autoinc columns, we will get a slightly different
@@ -2968,12 +2921,17 @@ mod tests {
         let row = datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx(tx)?;
 
+        let all_rows_col_0_eq_1 = |tx: &MutTxId| {
+            datastore
+                .iter_by_col_eq_mut_tx(tx, table_id, ColId(0), AlgebraicValue::U32(1))
+                .unwrap()
+                .collect::<Vec<_>>()
+        };
+
         // Update the db with the same actual value for that row, in a new tx.
         let mut tx = datastore.begin_mut_tx();
         // Iterate over all rows with the value 1 (from the autoinc) in column 0.
-        let rows = datastore
-            .iter_by_col_eq_mut_tx(&tx, table_id, ColId(0), AlgebraicValue::U32(1))?
-            .collect::<Vec<_>>();
+        let rows = all_rows_col_0_eq_1(&tx);
         assert_eq!(rows.len(), 1);
         let rows: Vec<ProductValue> = rows
             .into_iter()
@@ -2985,10 +2943,7 @@ mod tests {
         assert_eq!(count_deleted, Some(1));
 
         // We shouldn't see the row when iterating now that it's deleted.
-        let rows = datastore
-            .iter_by_col_eq_mut_tx(&tx, table_id, ColId(0), AlgebraicValue::U32(1))?
-            .collect::<Vec<_>>();
-        assert_eq!(rows.len(), 0);
+        assert_eq!(all_rows_col_0_eq_1(&tx).len(), 0);
 
         // Reinsert the row.
         let reinserted_row = datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
@@ -2996,10 +2951,7 @@ mod tests {
 
         // The actual test: we should be able to iterate again, while still in the
         // second transaction, and see exactly one row.
-        let rows = datastore
-            .iter_by_col_eq_mut_tx(&tx, table_id, ColId(0), AlgebraicValue::U32(1))?
-            .collect::<Vec<_>>();
-        assert_eq!(rows.len(), 1);
+        assert_eq!(all_rows_col_0_eq_1(&tx).len(), 1);
 
         datastore.commit_mut_tx(tx)?;
 
