@@ -5,9 +5,11 @@ use crate::host::{EnergyDiff, ReducerArgs, Timestamp};
 use crate::identity::Identity;
 use crate::protobuf::client_api::{message, FunctionCall, Message, Subscribe};
 use crate::worker_metrics::WORKER_METRICS;
+use base64::Engine;
 use bytes::Bytes;
 use bytestring::ByteString;
 use prost::Message as _;
+use spacetimedb_lib::Address;
 
 use super::messages::{ServerMessage, TransactionUpdateMessage};
 use super::{ClientConnection, DataMessage};
@@ -20,6 +22,8 @@ pub enum MessageHandleError {
     InvalidMessage,
     #[error(transparent)]
     TextDecode(#[from] serde_json::Error),
+    #[error(transparent)]
+    Base64Decode(#[from] base64::DecodeError),
 
     #[error(transparent)]
     Execution(#[from] MessageExecutionError),
@@ -55,6 +59,10 @@ async fn handle_binary(client: &ClientConnection, message_buf: Vec<u8>) -> Resul
             DecodedMessage::Call { reducer, args }
         }
         Some(message::Type::Subscribe(subscription)) => DecodedMessage::Subscribe(subscription),
+        Some(message::Type::OneOffQuery(ref oneoff)) => DecodedMessage::OneOffQuery {
+            query_string: &oneoff.query_string[..],
+            message_id: &oneoff.message_id[..],
+        },
         _ => return Err(MessageHandleError::InvalidMessage),
     };
 
@@ -63,27 +71,50 @@ async fn handle_binary(client: &ClientConnection, message_buf: Vec<u8>) -> Resul
     Ok(())
 }
 
-async fn handle_text(client: &ClientConnection, message: String) -> Result<(), MessageHandleError> {
-    #[derive(serde::Deserialize)]
-    enum Message<'a> {
-        #[serde(rename = "call")]
-        Call {
-            #[serde(borrow, rename = "fn")]
-            func: std::borrow::Cow<'a, str>,
-            args: &'a serde_json::value::RawValue,
-        },
-        #[serde(rename = "subscribe")]
-        Subscribe { query_strings: Vec<String> },
-    }
+#[derive(serde::Deserialize)]
+enum RawJsonMessage<'a> {
+    #[serde(rename = "call")]
+    Call {
+        #[serde(borrow, rename = "fn")]
+        func: std::borrow::Cow<'a, str>,
+        args: &'a serde_json::value::RawValue,
+    },
+    #[serde(rename = "subscribe")]
+    Subscribe { query_strings: Vec<String> },
+    #[serde(rename = "one_off_query")]
+    OneOffQuery {
+        #[serde(borrow)]
+        query_string: std::borrow::Cow<'a, str>,
 
+        /// A base64-encoded string of bytes.
+        #[serde(borrow)]
+        message_id: std::borrow::Cow<'a, str>,
+    },
+}
+
+async fn handle_text(client: &ClientConnection, message: String) -> Result<(), MessageHandleError> {
     let message = ByteString::from(message);
-    let msg = serde_json::from_str::<Message>(&message)?;
+    let msg = serde_json::from_str::<RawJsonMessage>(&message)?;
+    let mut message_id_ = Vec::new();
     let msg = match msg {
-        Message::Call { ref func, args } => {
+        RawJsonMessage::Call { ref func, args } => {
             let args = ReducerArgs::Json(message.slice_ref(args.get()));
             DecodedMessage::Call { reducer: func, args }
         }
-        Message::Subscribe { query_strings } => DecodedMessage::Subscribe(Subscribe { query_strings }),
+        RawJsonMessage::Subscribe { query_strings } => DecodedMessage::Subscribe(Subscribe { query_strings }),
+        RawJsonMessage::OneOffQuery {
+            query_string: ref query,
+            message_id,
+        } => {
+            let _ = std::mem::replace(
+                &mut message_id_,
+                base64::engine::general_purpose::STANDARD.decode(&message_id[..])?,
+            );
+            DecodedMessage::OneOffQuery {
+                query_string: &query[..],
+                message_id: &message_id_[..],
+            }
+        }
     };
 
     msg.handle(client).await?;
@@ -92,8 +123,15 @@ async fn handle_text(client: &ClientConnection, message: String) -> Result<(), M
 }
 
 enum DecodedMessage<'a> {
-    Call { reducer: &'a str, args: ReducerArgs },
+    Call {
+        reducer: &'a str,
+        args: ReducerArgs,
+    },
     Subscribe(Subscribe),
+    OneOffQuery {
+        query_string: &'a str,
+        message_id: &'a [u8],
+    },
 }
 
 impl DecodedMessage<'_> {
@@ -104,21 +142,27 @@ impl DecodedMessage<'_> {
                 res.map(drop).map_err(|e| (Some(reducer), e.into()))
             }
             DecodedMessage::Subscribe(subscription) => client.subscribe(subscription).map_err(|e| (None, e.into())),
+            DecodedMessage::OneOffQuery {
+                query_string: query,
+                message_id,
+            } => client.one_off_query(query, message_id).await.map_err(|err| (None, err)),
         };
         res.map_err(|(reducer, err)| MessageExecutionError {
             reducer: reducer.map(str::to_owned),
             caller_identity: client.id.identity,
+            caller_address: Some(client.id.address),
             err,
         })
     }
 }
 
-/// An error that arises from
+/// An error that arises from executing a message.  
 #[derive(thiserror::Error, Debug)]
 #[error("error executing message (reducer: {reducer:?}) (err: {err:?})")]
 pub struct MessageExecutionError {
     pub reducer: Option<String>,
     pub caller_identity: Identity,
+    pub caller_address: Option<Address>,
     #[source]
     pub err: anyhow::Error,
 }
@@ -128,6 +172,7 @@ impl MessageExecutionError {
         ModuleEvent {
             timestamp: Timestamp::now(),
             caller_identity: self.caller_identity,
+            caller_address: self.caller_address,
             function_call: ModuleFunctionCall {
                 reducer: self.reducer.unwrap_or_else(|| "<none>".to_owned()),
                 args: Default::default(),
@@ -154,5 +199,27 @@ impl ServerMessage for MessageExecutionError {
             database_update: Default::default(),
         }
         .serialize_binary()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RawJsonMessage;
+
+    #[test]
+    fn parse_one_off_query() {
+        let message = r#"{ "one_off_query": { "message_id": "ywS3WFquDECZQ0UdLZN1IA==", "query_string": "SELECT * FROM User WHERE name != 'bananas'" } }"#;
+        let parsed = serde_json::from_str::<RawJsonMessage>(message).unwrap();
+
+        if let RawJsonMessage::OneOffQuery {
+            query_string: query,
+            message_id,
+        } = parsed
+        {
+            assert_eq!(query, "SELECT * FROM User WHERE name != 'bananas'");
+            assert_eq!(message_id, "ywS3WFquDECZQ0UdLZN1IA==");
+        } else {
+            panic!("wrong variant")
+        }
     }
 }

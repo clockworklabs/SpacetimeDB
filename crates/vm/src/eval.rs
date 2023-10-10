@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use spacetimedb_lib::relation::{FieldExpr, MemTable, RelIter, Relation, Table};
 use spacetimedb_sats::algebraic_type::AlgebraicType;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
-use spacetimedb_sats::builtin_type::BuiltinType;
 use spacetimedb_sats::{product, ProductType, ProductValue};
 
 use crate::dsl::{bin_op, call_fn, if_, mem_table, scalar, var};
@@ -406,15 +405,23 @@ pub type IterRows<'a> = dyn RelOps + 'a;
 pub fn build_query(mut result: Box<IterRows>, query: Vec<Query>) -> Result<Box<IterRows<'_>>, ErrorVm> {
     for q in query {
         result = match q {
+            Query::IndexScan(_) => {
+                panic!("index scans unsupported on memory tables")
+            }
+            Query::IndexJoin(_) => {
+                panic!("index joins unsupported on memory tables")
+            }
             Query::Select(cmp) => {
-                let iter = result.select(move |row| cmp.compare(row));
+                let header = result.head().clone();
+                let iter = result.select(move |row| cmp.compare(row, &header));
                 Box::new(iter)
             }
-            Query::Project(cols) => {
+            Query::Project(cols, _) => {
                 if cols.is_empty() {
                     result
                 } else {
-                    let iter = result.project(&cols.clone(), move |row| Ok(row.project(&cols)?))?;
+                    let header = result.head().clone();
+                    let iter = result.project(&cols.clone(), move |row| Ok(row.project(&cols, &header)?))?;
                     Box::new(iter)
                 }
             }
@@ -424,10 +431,10 @@ pub fn build_query(mut result: Box<IterRows>, query: Vec<Query>) -> Result<Box<I
                 let col_rhs = FieldExpr::Name(q.col_rhs);
                 let key_lhs = col_lhs.clone();
                 let key_rhs = col_rhs.clone();
-                let row_rhs = q.rhs.row_count();
+                let row_rhs = q.rhs.source.row_count();
 
-                let head = q.rhs.head();
-                let rhs = match q.rhs {
+                let head = q.rhs.source.head().clone();
+                let rhs = match q.rhs.source {
                     SourceExpr::MemTable(x) => Box::new(RelIter::new(head, row_rhs, x)) as Box<IterRows<'_>>,
                     SourceExpr::DbTable(_) => {
                         // let iter = stdb.scan(tx, x.table_id)?;
@@ -439,23 +446,31 @@ pub fn build_query(mut result: Box<IterRows>, query: Vec<Query>) -> Result<Box<I
                     }
                 };
 
+                let rhs = build_query(rhs, q.rhs.query)?;
+
                 let lhs = result;
+                let key_lhs_header = lhs.head().clone();
+                let key_rhs_header = rhs.head().clone();
+                let col_lhs_header = lhs.head().clone();
+                let col_rhs_header = rhs.head().clone();
 
                 let iter = lhs.join_inner(
                     rhs,
+                    col_lhs_header.extend(&col_rhs_header),
                     move |row| {
-                        let f = row.get(&key_lhs);
+                        let f = row.get(&key_lhs, &key_lhs_header);
                         Ok(f.into())
                     },
                     move |row| {
-                        let f = row.get(&key_rhs);
+                        let f = row.get(&key_rhs, &key_rhs_header);
                         Ok(f.into())
                     },
-                    move |lhs, rhs| {
-                        let lhs = lhs.get(&col_lhs);
-                        let rhs = rhs.get(&col_rhs);
-                        Ok(lhs == rhs)
+                    move |l, r| {
+                        let l = l.get(&col_lhs, &col_lhs_header);
+                        let r = r.get(&col_rhs, &col_rhs_header);
+                        Ok(l == r)
                     },
+                    move |l, r| l.extend(r),
                 )?;
                 Box::new(iter)
             }
@@ -516,20 +531,20 @@ pub struct GameData {
 // Used internally for testing  SQL JOINS
 #[doc(hidden)]
 pub fn create_game_data() -> GameData {
-    let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
+    let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
     let row = product!(1u64, "health");
     let inv = mem_table(head, [row]);
 
-    let head = ProductType::from_iter([("entity_id", BuiltinType::U64), ("inventory_id", BuiltinType::U64)]);
+    let head = ProductType::from([("entity_id", AlgebraicType::U64), ("inventory_id", AlgebraicType::U64)]);
     let row1 = product!(100u64, 1u64);
     let row2 = product!(200u64, 1u64);
     let row3 = product!(300u64, 1u64);
     let player = mem_table(head, [row1, row2, row3]);
 
-    let head = ProductType::from_iter([
-        ("entity_id", BuiltinType::U64),
-        ("x", BuiltinType::F32),
-        ("z", BuiltinType::F32),
+    let head = ProductType::from([
+        ("entity_id", AlgebraicType::U64),
+        ("x", AlgebraicType::F32),
+        ("z", AlgebraicType::F32),
     ]);
     let row1 = product!(100u64, 0.0f32, 32.0f32);
     let row2 = product!(100u64, 1.0f32, 31.0f32);
@@ -540,13 +555,15 @@ pub fn create_game_data() -> GameData {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::disallowed_macros)]
+
     use super::*;
     use crate::dsl::{prefix_op, query, value};
     use crate::program::Program;
     use spacetimedb_lib::auth::StAccess;
     use spacetimedb_lib::error::RelationError;
     use spacetimedb_lib::identity::AuthCtx;
-    use spacetimedb_lib::relation::{FieldName, MemTable};
+    use spacetimedb_lib::relation::{FieldName, MemTable, RelValue};
 
     fn fib(n: u64) -> u64 {
         if n < 2 {
@@ -717,12 +734,13 @@ mod tests {
 
         let q = query(input).with_select_cmp(OpCmp::Eq, field, scalar(1));
 
-        let head = q.source.head();
+        let head = q.source.head().clone();
 
         let result = run_ast(p, q.into());
+        let row = RelValue::new(scalar(1).into(), None);
         assert_eq!(
             result,
-            Code::Table(MemTable::new(&head, StAccess::Public, &[scalar(1).into()])),
+            Code::Table(MemTable::new(head, StAccess::Public, [row].into())),
             "Query"
         );
     }
@@ -735,18 +753,19 @@ mod tests {
         let field = table.get_field(0).unwrap().clone();
 
         let source = query(table.clone());
-        let q = source.clone().with_project(&[field.into()]);
-        let head = q.source.head();
+        let q = source.clone().with_project(&[field.into()], None);
+        let head = q.source.head().clone();
 
         let result = run_ast(p, q.into());
+        let row = RelValue::new(input.into(), None);
         assert_eq!(
             result,
-            Code::Table(MemTable::new(&head, StAccess::Public, &[input.into()])),
+            Code::Table(MemTable::new(head.clone(), StAccess::Public, [row].into())),
             "Project"
         );
 
         let field = FieldName::positional(&table.head.table_name, 1);
-        let q = source.with_project(&[field.clone().into()]);
+        let q = source.with_project(&[field.clone().into()], None);
 
         let result = run_ast(p, q.into());
         assert_eq!(
@@ -769,7 +788,7 @@ mod tests {
         };
 
         //The expected result
-        let inv = ProductType::from_iter([(None, BuiltinType::I32), (Some("0_0"), BuiltinType::I32)]);
+        let inv = ProductType::from([(None, AlgebraicType::I32), (Some("0_0"), AlgebraicType::I32)]);
         let row = product!(scalar(1), scalar(1));
         let input = mem_table(inv, vec![row]);
 
@@ -783,7 +802,7 @@ mod tests {
     fn test_query_logic() {
         let p = &mut Program::new(AuthCtx::for_testing());
 
-        let inv = ProductType::from_iter([("id", BuiltinType::U64), ("name", BuiltinType::String)]);
+        let inv = ProductType::from([("id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
 
         let row = product!(scalar(1u64), scalar("health"));
 
@@ -809,7 +828,7 @@ mod tests {
     fn test_query() {
         let p = &mut Program::new(AuthCtx::for_testing());
 
-        let inv = ProductType::from_iter([("id", BuiltinType::U64), ("name", BuiltinType::String)]);
+        let inv = ProductType::from([("id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
 
         let row = product!(scalar(1u64), scalar("health"));
 
@@ -824,10 +843,10 @@ mod tests {
         };
 
         //The expected result
-        let inv = ProductType::from_iter([
-            (None, BuiltinType::U64),
-            (Some("id"), BuiltinType::U64),
-            (Some("name"), BuiltinType::String),
+        let inv = ProductType::from([
+            (None, AlgebraicType::U64),
+            (Some("id"), AlgebraicType::U64),
+            (Some("name"), AlgebraicType::String),
         ]);
         let row = product!(scalar(1u64), scalar("health"), scalar(1u64), scalar("health"));
         let input = mem_table(inv, vec![row]);
@@ -872,11 +891,14 @@ mod tests {
             .with_select_cmp(OpCmp::LtEq, location_x.clone(), scalar(32.0f32))
             .with_select_cmp(OpCmp::Gt, location_z.clone(), scalar(0.0f32))
             .with_select_cmp(OpCmp::LtEq, location_z.clone(), scalar(32.0f32))
-            .with_project(&[player_entity_id.clone().into(), player_inventory_id.clone().into()]);
+            .with_project(
+                &[player_entity_id.clone().into(), player_inventory_id.clone().into()],
+                None,
+            );
 
         let result = run_query(p, q.into());
 
-        let head = ProductType::from_iter([("entity_id", BuiltinType::U64), ("inventory_id", BuiltinType::U64)]);
+        let head = ProductType::from([("entity_id", AlgebraicType::U64), ("inventory_id", AlgebraicType::U64)]);
         let row1 = product!(100u64, 1u64);
         let input = mem_table(head, [row1]);
 
@@ -898,11 +920,11 @@ mod tests {
             .with_select_cmp(OpCmp::LtEq, location_x, scalar(32.0f32))
             .with_select_cmp(OpCmp::Gt, location_z.clone(), scalar(0.0f32))
             .with_select_cmp(OpCmp::LtEq, location_z, scalar(32.0f32))
-            .with_project(&[inv_inventory_id.into(), inv_name.into()]);
+            .with_project(&[inv_inventory_id.into(), inv_name.into()], None);
 
         let result = run_query(p, q.into());
 
-        let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
+        let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row1 = product!(1u64, "health");
         let input = mem_table(head, [row1]);
 

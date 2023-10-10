@@ -1,6 +1,6 @@
 use crate::errors::{ErrorType, ErrorVm};
 use spacetimedb_sats::satn::Satn;
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, BuiltinType};
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use std::fmt::Display;
 use std::str::FromStr;
 
@@ -34,26 +34,20 @@ where
 /// ```
 pub fn parse(value: &str, ty: &AlgebraicType) -> Result<AlgebraicValue, ErrorVm> {
     match ty {
-        AlgebraicType::Builtin(x) => match x {
-            BuiltinType::Bool => _parse::<bool>(value, ty),
-            BuiltinType::I8 => _parse::<i8>(value, ty),
-            BuiltinType::U8 => _parse::<u8>(value, ty),
-            BuiltinType::I16 => _parse::<i16>(value, ty),
-            BuiltinType::U16 => _parse::<u16>(value, ty),
-            BuiltinType::I32 => _parse::<i32>(value, ty),
-            BuiltinType::U32 => _parse::<u32>(value, ty),
-            BuiltinType::I64 => _parse::<i64>(value, ty),
-            BuiltinType::U64 => _parse::<u64>(value, ty),
-            BuiltinType::I128 => _parse::<i128>(value, ty),
-            BuiltinType::U128 => _parse::<u128>(value, ty),
-            BuiltinType::F32 => _parse::<f32>(value, ty),
-            BuiltinType::F64 => _parse::<f64>(value, ty),
-            BuiltinType::String => Ok(AlgebraicValue::String(value.to_string())),
-            x => Err(ErrorVm::Unsupported(format!(
-                "Can't parse '{value}' to {}",
-                x.to_satn_pretty()
-            ))),
-        },
+        &AlgebraicType::Bool => _parse::<bool>(value, ty),
+        &AlgebraicType::I8 => _parse::<i8>(value, ty),
+        &AlgebraicType::U8 => _parse::<u8>(value, ty),
+        &AlgebraicType::I16 => _parse::<i16>(value, ty),
+        &AlgebraicType::U16 => _parse::<u16>(value, ty),
+        &AlgebraicType::I32 => _parse::<i32>(value, ty),
+        &AlgebraicType::U32 => _parse::<u32>(value, ty),
+        &AlgebraicType::I64 => _parse::<i64>(value, ty),
+        &AlgebraicType::U64 => _parse::<u64>(value, ty),
+        &AlgebraicType::I128 => _parse::<i128>(value, ty),
+        &AlgebraicType::U128 => _parse::<u128>(value, ty),
+        &AlgebraicType::F32 => _parse::<f32>(value, ty),
+        &AlgebraicType::F64 => _parse::<f64>(value, ty),
+        &AlgebraicType::String => Ok(AlgebraicValue::String(value.to_string())),
         x => Err(ErrorVm::Unsupported(format!(
             "Can't parse '{value}' to {}",
             x.to_satn_pretty()

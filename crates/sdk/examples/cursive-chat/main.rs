@@ -8,6 +8,7 @@ use spacetimedb_sdk::{
     reducer::Status,
     subscribe,
     table::{TableType, TableWithPrimaryKey},
+    Address,
 };
 
 use cursive::{
@@ -140,7 +141,7 @@ fn register_callbacks(send: UiSend) {
 // ## Save credentials to a file
 
 /// Our `on_connect` callback: save our credentials to a file.
-fn on_connected(creds: &Credentials) {
+fn on_connected(creds: &Credentials, _address: Address) {
     if let Err(e) = save_credentials(CREDS_DIR, creds) {
         eprintln!("Failed to save credentials: {:?}", e);
     }
@@ -257,8 +258,8 @@ fn on_sub_applied(send: UiSend) -> impl FnMut() + Send + 'static {
 // ## Warn if set_name failed
 
 /// Our `on_set_name` callback: print a warning if the reducer failed.
-fn on_name_set(send: UiSend) -> impl FnMut(&Identity, &Status, &String) {
-    move |_sender, status, name| {
+fn on_name_set(send: UiSend) -> impl FnMut(&Identity, Option<Address>, &Status, &String) {
+    move |_sender_id, _sender_addr, status, name| {
         if let Status::Failed(err) = status {
             send.unbounded_send(UiMessage::NameRejected {
                 current_name: user_name_or_identity(&User::filter_by_identity(identity().unwrap()).unwrap()),
@@ -273,8 +274,8 @@ fn on_name_set(send: UiSend) -> impl FnMut(&Identity, &Status, &String) {
 // ## Warn if a message was rejected
 
 /// Our `on_send_message` callback: print a warning if the reducer failed.
-fn on_message_sent(send: UiSend) -> impl FnMut(&Identity, &Status, &String) {
-    move |_sender, status, text| {
+fn on_message_sent(send: UiSend) -> impl FnMut(&Identity, Option<Address>, &Status, &String) {
+    move |_sender_id, _sender_addr, status, text| {
         if let Status::Failed(err) = status {
             send.unbounded_send(UiMessage::MessageRejected {
                 rejected_message: text.clone(),

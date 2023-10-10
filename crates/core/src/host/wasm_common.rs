@@ -1,5 +1,6 @@
-pub mod abi;
 pub mod module_host_actor;
+
+use std::time::Instant;
 
 use crate::error::{DBError, IndexError, NodesError};
 
@@ -15,8 +16,6 @@ pub const SETUP_DUNDER: &str = "__setup__";
 pub const INIT_DUNDER: &str = "__init__";
 /// the reducer with this name is invoked when updating the database
 pub const UPDATE_DUNDER: &str = "__update__";
-pub const IDENTITY_CONNECTED_DUNDER: &str = "__identity_connected__";
-pub const IDENTITY_DISCONNECTED_DUNDER: &str = "__identity_disconnected__";
 
 pub const STDB_ABI_SYM: &str = "SPACETIME_ABI_VERSION";
 pub const STDB_ABI_IS_ADDR_SYM: &str = "SPACETIME_ABI_VERSION_IS_ADDR";
@@ -111,10 +110,17 @@ const PREINIT_SIG: StaticFuncSig = FuncSig::new(&[], &[]);
 const INIT_SIG: StaticFuncSig = FuncSig::new(&[], &[WasmType::I32]);
 const DESCRIBE_MODULE_SIG: StaticFuncSig = FuncSig::new(&[], &[WasmType::I32]);
 const CALL_REDUCER_SIG: StaticFuncSig = FuncSig::new(
-    &[WasmType::I32, WasmType::I32, WasmType::I64, WasmType::I32],
-    &[WasmType::I32],
+    &[
+        WasmType::I32, // Reducer ID
+        WasmType::I32, // Sender `Identity` buffer
+        WasmType::I32, // Sender `Address` buffer
+        WasmType::I64, // Timestamp
+        WasmType::I32, // Args buffer
+    ],
+    &[
+        WasmType::I32, // Result buffer
+    ],
 );
-const CONN_DISCONN_SIG: StaticFuncSig = FuncSig::new(&[WasmType::I32, WasmType::I64], &[WasmType::I32]);
 
 #[derive(thiserror::Error, Debug)]
 pub enum ValidationError {
@@ -139,8 +145,6 @@ pub enum ValidationError {
 
 #[derive(Default)]
 pub struct FuncNames {
-    pub conn: bool,
-    pub disconn: bool,
     pub preinits: Vec<String>,
 }
 impl FuncNames {
@@ -172,13 +176,7 @@ impl FuncNames {
     where
         T: FuncSigLike,
     {
-        if sym == IDENTITY_CONNECTED_DUNDER {
-            Self::validate_signature("conn/disconn", ty, sym, CONN_DISCONN_SIG)?;
-            self.conn = true;
-        } else if sym == IDENTITY_DISCONNECTED_DUNDER {
-            Self::validate_signature("conn/disconn", ty, sym, CONN_DISCONN_SIG)?;
-            self.disconn = true;
-        } else if sym == SETUP_DUNDER {
+        if sym == SETUP_DUNDER {
             Self::validate_signature("setup", ty, sym, INIT_SIG)?;
         } else if let Some(name) = sym.strip_prefix(PREINIT_DUNDER) {
             Self::validate_signature("preinit", ty, name, PREINIT_SIG)?;
@@ -211,7 +209,6 @@ impl FuncNames {
 #[error(transparent)]
 pub enum ModuleCreationError {
     WasmCompileError(anyhow::Error),
-    Abi(#[from] abi::AbiVersionError),
     Init(#[from] module_host_actor::InitializationError),
 }
 
@@ -288,6 +285,23 @@ impl BufferIdx {
 decl_index!(BufferIterIdx => Box<dyn Iterator<Item = Result<bytes::Bytes, NodesError>> + Send + Sync>);
 pub(super) type BufferIters = ResourceSlab<BufferIterIdx>;
 
+pub(super) struct TimingSpan {
+    pub start: Instant,
+    pub name: Vec<u8>,
+}
+
+impl TimingSpan {
+    pub fn new(name: Vec<u8>) -> Self {
+        Self {
+            start: Instant::now(),
+            name,
+        }
+    }
+}
+
+decl_index!(TimingSpanIdx => TimingSpan);
+pub(super) type TimingSpanSet = ResourceSlab<TimingSpanIdx>;
+
 pub mod errnos {
     /// NOTE! This is copied from the bindings-sys crate.
     /// The include! macro does not work when publishing to crates.io
@@ -329,7 +343,7 @@ pub fn err_to_errno(err: &NodesError) -> Option<u16> {
             DBError::Index(IndexError::UniqueConstraintViolation {
                 constraint_name: _,
                 table_name: _,
-                col_name: _,
+                col_names: _,
                 value: _,
             }) => Some(errnos::UNIQUE_ALREADY_EXISTS),
             _ => None,

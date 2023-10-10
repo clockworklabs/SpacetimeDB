@@ -79,6 +79,8 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
             // The only type that is allowed here is the identity type. All other types should fail.
             if prod.is_identity() {
                 write!(f, "SpacetimeDB.Identity")
+            } else if prod.is_address() {
+                write!(f, "SpacetimeDB.Address")
             } else {
                 unimplemented!()
             }
@@ -181,6 +183,12 @@ fn convert_type<'a>(
                 write!(
                     f,
                     "SpacetimeDB.Identity.From({}.AsProductValue().elements[0].AsBytes())",
+                    value
+                )
+            } else if product.is_address() {
+                write!(
+                    f,
+                    "(SpacetimeDB.Address)SpacetimeDB.Address.From({}.AsProductValue().elements[0].AsBytes())",
                     value
                 )
             } else {
@@ -955,27 +963,41 @@ fn autogen_csharp_access_funcs_for_struct(
         let field_type = &field.algebraic_type;
         let csharp_field_name_pascal = field_name.replace("r#", "").to_case(Case::Pascal);
 
-        let (field_type, csharp_field_type) = match field_type {
+        let (field_type, csharp_field_type, is_option) = match field_type {
             AlgebraicType::Product(product) => {
                 if product.is_identity() {
-                    ("Identity".into(), "SpacetimeDB.Identity")
+                    ("Identity".into(), "SpacetimeDB.Identity".into(), false)
+                } else if product.is_address() {
+                    ("Address".into(), "SpacetimeDB.Address".into(), false)
                 } else {
                     // TODO: We don't allow filtering on tuples right now,
                     //       it's possible we may consider it for the future.
                     continue;
                 }
             }
-            AlgebraicType::Ref(_) | AlgebraicType::Sum(_) => {
+            AlgebraicType::Sum(sum) => {
+                if let Some(Builtin(b)) = sum.as_option() {
+                    match maybe_primitive(b) {
+                        MaybePrimitive::Primitive(ty) => (format!("{:?}", b), format!("{}?", ty), true),
+                        _ => {
+                            continue;
+                        }
+                    }
+                } else {
+                    continue;
+                }
+            }
+            AlgebraicType::Ref(_) => {
                 // TODO: We don't allow filtering on enums or tuples right now;
                 //       it's possible we may consider it for the future.
                 continue;
             }
             AlgebraicType::Builtin(b) => match maybe_primitive(b) {
-                MaybePrimitive::Primitive(ty) => (format!("{:?}", b), ty),
+                MaybePrimitive::Primitive(ty) => (format!("{:?}", b), ty.into(), false),
                 MaybePrimitive::Array(ArrayType { elem_ty }) => {
                     if let Some(BuiltinType::U8) = elem_ty.as_builtin() {
                         // Do allow filtering for byte arrays
-                        ("Bytes".into(), "byte[]")
+                        ("Bytes".into(), "byte[]".into(), false)
                     } else {
                         // TODO: We don't allow filtering based on an array type, but we might want other functionality here in the future.
                         continue;
@@ -1031,6 +1053,20 @@ fn autogen_csharp_access_funcs_for_struct(
                             col_i
                         )
                         .unwrap();
+                    } else if is_option {
+                        writeln!(
+                            output,
+                            "var compareValue = ({})(productValue.elements[{}].AsSumValue().tag == 1 ? null : productValue.elements[{}].AsSumValue().value.As{}());",
+                            csharp_field_type, col_i, col_i, field_type
+                        )
+                        .unwrap();
+                    } else if field_type == "Address" {
+                        writeln!(
+                            output,
+                            "var compareValue = (Address)Address.From(productValue.elements[{}].AsProductValue().elements[0].AsBytes());",
+                            col_i
+                        )
+                            .unwrap();
                     } else {
                         writeln!(
                             output,
@@ -1395,7 +1431,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
                 writeln!(output, "args.{arg_name} = {convert};").unwrap();
             }
 
-            writeln!(output, "dbEvent.FunctionCall.CallInfo = new ReducerEvent(ReducerType.{func_name_pascal_case}, \"{func_name}\", dbEvent.Timestamp, Identity.From(dbEvent.CallerIdentity.ToByteArray()), dbEvent.Message, dbEvent.Status, args);").unwrap();
+            writeln!(output, "dbEvent.FunctionCall.CallInfo = new ReducerEvent(ReducerType.{func_name_pascal_case}, \"{func_name}\", dbEvent.Timestamp, Identity.From(dbEvent.CallerIdentity.ToByteArray()), Address.From(dbEvent.CallerAddress.ToByteArray()), dbEvent.Message, dbEvent.Status, args);").unwrap();
         }
 
         // Closing brace for Event parsing function
@@ -1435,16 +1471,13 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
 pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(String, String)>> {
     let reducers: Vec<&ReducerDef> = items
         .iter()
-        .map(|i| {
+        .filter_map(|i| {
             if let GenItem::Reducer(reducer) = i {
                 Some(reducer)
             } else {
                 None
             }
         })
-        .filter(|r| r.is_some())
-        .flatten()
-        .filter(|r| r.name != "__init__")
         .collect();
     let reducer_names: Vec<String> = reducers
         .iter()
@@ -1496,12 +1529,12 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
         indent_scope!(output);
         writeln!(output, "public ReducerType Reducer {{ get; private set; }}").unwrap();
         writeln!(output).unwrap();
-        writeln!(output, "public ReducerEvent(ReducerType reducer, string reducerName, ulong timestamp, SpacetimeDB.Identity identity, string errMessage, ClientApi.Event.Types.Status status, object args)").unwrap();
+        writeln!(output, "public ReducerEvent(ReducerType reducer, string reducerName, ulong timestamp, SpacetimeDB.Identity identity, SpacetimeDB.Address? callerAddress, string errMessage, ClientApi.Event.Types.Status status, object args)").unwrap();
         {
             indent_scope!(output);
             writeln!(
                 output,
-                ": base(reducerName, timestamp, identity, errMessage, status, args)"
+                ": base(reducerName, timestamp, identity, callerAddress, errMessage, status, args)"
             )
             .unwrap();
         }
@@ -1596,6 +1629,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
         output.indent(1);
     }
 
+    writeln!(output, "[ReducerClass]").unwrap();
     writeln!(output, "public partial class Reducer").unwrap();
     writeln!(output, "{{").unwrap();
     {

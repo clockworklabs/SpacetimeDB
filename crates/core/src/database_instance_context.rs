@@ -19,6 +19,7 @@ pub struct DatabaseInstanceContext {
     pub address: Address,
     pub logger: Arc<Mutex<DatabaseLogger>>,
     pub relational_db: Arc<RelationalDB>,
+    pub publisher_address: Option<Address>,
 }
 
 impl DatabaseInstanceContext {
@@ -37,6 +38,7 @@ impl DatabaseInstanceContext {
             database.address,
             db_path,
             &log_path,
+            database.publisher_address,
         )
     }
 
@@ -56,6 +58,7 @@ impl DatabaseInstanceContext {
         address: Address,
         db_path: PathBuf,
         log_path: &Path,
+        publisher_address: Option<Address>,
     ) -> Arc<Self> {
         let message_log = match config.storage {
             Storage::Memory => None,
@@ -83,6 +86,7 @@ impl DatabaseInstanceContext {
             relational_db: Arc::new(
                 RelationalDB::open(db_path, message_log, odb, address, config.fsync != FsyncPolicy::Never).unwrap(),
             ),
+            publisher_address,
         })
     }
 

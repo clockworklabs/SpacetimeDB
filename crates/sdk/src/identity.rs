@@ -3,6 +3,7 @@ use crate::global_connection::with_credential_store;
 use anyhow::{anyhow, Context, Result};
 use spacetimedb_lib::de::Deserialize;
 use spacetimedb_lib::ser::Serialize;
+use spacetimedb_lib::Address;
 use spacetimedb_sats::bsatn;
 // TODO: impl ser/de for `Identity`, `Token`, `Credentials` so that clients can stash them
 //       to disk and use them to re-connect.
@@ -75,7 +76,7 @@ pub struct Credentials {
 
 #[derive(Copy, Clone)]
 pub struct ConnectCallbackId {
-    id: CallbackId<Credentials>,
+    id: CallbackId<(Credentials, Address)>,
 }
 
 /// Register a callback to be invoked upon authentication with the database.
@@ -102,7 +103,7 @@ pub struct ConnectCallbackId {
 ///
 /// The returned `ConnectCallbackId` can be passed to `remove_on_connect` to unregister
 /// the callback.
-pub fn on_connect(callback: impl FnMut(&Credentials) + Send + 'static) -> ConnectCallbackId {
+pub fn on_connect(callback: impl FnMut(&Credentials, Address) + Send + 'static) -> ConnectCallbackId {
     let id = with_credential_store(|cred_store| cred_store.register_on_connect(callback));
     ConnectCallbackId { id }
 }
@@ -125,7 +126,7 @@ pub fn on_connect(callback: impl FnMut(&Credentials) + Send + 'static) -> Connec
 ///
 /// The returned `ConnectCallbackId` can be passed to `remove_on_connect` to unregister
 /// the callback.
-pub fn once_on_connect(callback: impl FnOnce(&Credentials) + Send + 'static) -> ConnectCallbackId {
+pub fn once_on_connect(callback: impl FnOnce(&Credentials, Address) + Send + 'static) -> ConnectCallbackId {
     let id = with_credential_store(|cred_store| cred_store.register_on_connect_oneshot(callback));
     ConnectCallbackId { id }
 }
@@ -164,6 +165,13 @@ pub fn token() -> Result<Token> {
 /// - We connected anonymously, and we have not yet received our credentials.
 pub fn credentials() -> Result<Credentials> {
     with_credential_store(|cred_store| cred_store.credentials().ok_or(anyhow!("Credentials not yet received")))
+}
+
+/// Read the current connection's `Address`.
+///
+/// Returns an error if `connect` has not yet been called.
+pub fn address() -> Result<Address> {
+    with_credential_store(|cred_store| cred_store.address().ok_or(anyhow!("Address not yet generated")))
 }
 
 const CREDS_FILE: &str = "credentials";
@@ -208,4 +216,14 @@ pub fn save_credentials(dirname: &str, creds: &Credentials) -> Result<()> {
 
     path.push(CREDS_FILE);
     std::fs::write(&path, creds_bytes).with_context(|| "Writing credentials to file")
+}
+
+#[doc(hidden)]
+/// Designate a file to store this client's `Address`.
+///
+/// If called, `use_save_address` must be called before the first call to `connect` in a process.
+///
+/// If the file at `path` exists, it will be treated as a BSATN-encoded `Address`
+pub fn use_saved_address(path: &str) -> Result<Address> {
+    with_credential_store(|cred_store| cred_store.use_saved_address(path))
 }

@@ -1,8 +1,14 @@
+use base64::Engine;
 use prost::Message as _;
+use spacetimedb_client_api_messages::client_api::{OneOffQueryResponse, OneOffTable};
+use spacetimedb_lib::{relation::MemTable, Address};
 
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
 use crate::identity::Identity;
-use crate::json::client_api::{EventJson, FunctionCallJson, IdentityTokenJson, MessageJson, TransactionUpdateJson};
+use crate::json::client_api::{
+    EventJson, FunctionCallJson, IdentityTokenJson, MessageJson, OneOffQueryResponseJson, OneOffTableJson,
+    TransactionUpdateJson,
+};
 use crate::protobuf::client_api::{event, message, Event, FunctionCall, IdentityToken, Message, TransactionUpdate};
 
 use super::{DataMessage, Protocol};
@@ -23,6 +29,7 @@ pub trait ServerMessage: Sized {
 pub struct IdentityTokenMessage {
     pub identity: Identity,
     pub identity_token: String,
+    pub address: Address,
 }
 
 impl ServerMessage for IdentityTokenMessage {
@@ -30,6 +37,7 @@ impl ServerMessage for IdentityTokenMessage {
         MessageJson::IdentityToken(IdentityTokenJson {
             identity: self.identity,
             token: self.identity_token,
+            address: self.address.to_hex(),
         })
     }
     fn serialize_binary(self) -> Message {
@@ -37,6 +45,7 @@ impl ServerMessage for IdentityTokenMessage {
             r#type: Some(message::Type::IdentityToken(IdentityToken {
                 identity: self.identity.as_bytes().to_vec(),
                 token: self.identity_token,
+                address: self.address.as_slice().to_vec(),
             })),
         }
     }
@@ -66,6 +75,7 @@ impl ServerMessage for TransactionUpdateMessage<'_> {
             },
             energy_quanta_used: event.energy_quanta_used.0,
             message: errmsg,
+            caller_address: event.caller_address.unwrap_or(Address::ZERO).to_hex(),
         };
 
         let subscription_update = database_update.into_json();
@@ -94,6 +104,7 @@ impl ServerMessage for TransactionUpdateMessage<'_> {
             message: errmsg,
             energy_quanta_used: event.energy_quanta_used.0 as i64,
             host_execution_duration_micros: event.host_execution_duration.as_micros() as u64,
+            caller_address: event.caller_address.unwrap_or(Address::zero()).as_slice().to_vec(),
         };
 
         let subscription_update = database_update.into_protobuf();
@@ -174,6 +185,54 @@ where
                 .get_or_insert_with(|| self.msg.serialize_binary().encode_to_vec())
                 .clone()
                 .into(),
+        }
+    }
+}
+
+pub struct OneOffQueryResponseMessage {
+    pub message_id: Vec<u8>,
+    pub error: Option<String>,
+    pub results: Vec<MemTable>,
+}
+
+impl ServerMessage for OneOffQueryResponseMessage {
+    fn serialize_text(self) -> MessageJson {
+        MessageJson::OneOffQueryResponse(OneOffQueryResponseJson {
+            message_id_base64: base64::engine::general_purpose::STANDARD.encode(self.message_id),
+            error: self.error,
+            result: self
+                .results
+                .into_iter()
+                .map(|table| OneOffTableJson {
+                    table_name: table.head.table_name,
+                    rows: table.data.into_iter().map(|row| row.data.elements).collect(),
+                })
+                .collect(),
+        })
+    }
+
+    fn serialize_binary(self) -> Message {
+        Message {
+            r#type: Some(message::Type::OneOffQueryResponse(OneOffQueryResponse {
+                message_id: self.message_id,
+                error: self.error.unwrap_or_default(),
+                tables: self
+                    .results
+                    .into_iter()
+                    .map(|table| OneOffTable {
+                        table_name: table.head.table_name,
+                        row: table
+                            .data
+                            .into_iter()
+                            .map(|row| {
+                                let mut row_bytes = Vec::new();
+                                row.data.encode(&mut row_bytes);
+                                row_bytes
+                            })
+                            .collect(),
+                    })
+                    .collect(),
+            })),
         }
     }
 }

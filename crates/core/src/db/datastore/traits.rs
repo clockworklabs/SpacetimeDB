@@ -1,8 +1,10 @@
 use crate::db::relational_db::ST_TABLES_ID;
 use core::fmt;
+use nonempty::NonEmpty;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::relation::{DbTable, FieldName, FieldOnly, Header, TableField};
-use spacetimedb_lib::{ColumnIndexAttribute, DataKey};
+use spacetimedb_lib::{ColumnIndexAttribute, DataKey, Hash};
+use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue};
 use spacetimedb_vm::expr::SourceExpr;
 use std::{ops::RangeBounds, sync::Arc};
@@ -19,15 +21,33 @@ pub struct IndexId(pub(crate) u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SequenceId(pub(crate) u32);
 
-impl TableId {
-    pub fn from_u32_for_testing(id: u32) -> Self {
-        Self(id)
+impl From<IndexId> for AlgebraicValue {
+    fn from(value: IndexId) -> Self {
+        value.0.into()
+    }
+}
+
+impl From<SequenceId> for AlgebraicValue {
+    fn from(value: SequenceId) -> Self {
+        value.0.into()
     }
 }
 
 impl fmt::Display for SequenceId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl TableId {
+    pub fn from_u32_for_testing(id: u32) -> Self {
+        Self(id)
+    }
+}
+
+impl From<TableId> for AlgebraicValue {
+    fn from(value: TableId) -> Self {
+        value.0.into()
     }
 }
 
@@ -61,16 +81,16 @@ pub struct SequenceDef {
 pub struct IndexSchema {
     pub(crate) index_id: u32,
     pub(crate) table_id: u32,
-    pub(crate) col_id: u32,
     pub(crate) index_name: String,
     pub(crate) is_unique: bool,
+    pub(crate) cols: NonEmpty<u32>,
 }
 
 /// This type is just the [IndexSchema] without the autoinc fields
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexDef {
     pub(crate) table_id: u32,
-    pub(crate) col_id: u32,
+    pub(crate) cols: NonEmpty<u32>,
     pub(crate) name: String,
     pub(crate) is_unique: bool,
 }
@@ -78,7 +98,7 @@ pub struct IndexDef {
 impl IndexDef {
     pub fn new(name: String, table_id: u32, col_id: u32, is_unique: bool) -> Self {
         Self {
-            col_id,
+            cols: NonEmpty::new(col_id),
             name,
             is_unique,
             table_id,
@@ -90,7 +110,7 @@ impl From<IndexSchema> for IndexDef {
     fn from(value: IndexSchema) -> Self {
         Self {
             table_id: value.table_id,
-            col_id: value.col_id,
+            cols: value.cols,
             name: value.index_name,
             is_unique: value.is_unique,
         }
@@ -99,11 +119,11 @@ impl From<IndexSchema> for IndexDef {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ColumnSchema {
-    pub(crate) table_id: u32,
-    pub(crate) col_id: u32,
-    pub(crate) col_name: String,
-    pub(crate) col_type: AlgebraicType,
-    pub(crate) is_autoinc: bool,
+    pub table_id: u32,
+    pub col_id: u32,
+    pub col_name: String,
+    pub col_type: AlgebraicType,
+    pub is_autoinc: bool,
 }
 
 impl From<&ColumnSchema> for spacetimedb_lib::table::ColumnDef {
@@ -178,13 +198,13 @@ pub struct ConstraintDef {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableSchema {
-    pub(crate) table_id: u32,
-    pub(crate) table_name: String,
-    pub(crate) columns: Vec<ColumnSchema>,
-    pub(crate) indexes: Vec<IndexSchema>,
-    pub(crate) constraints: Vec<ConstraintSchema>,
-    pub(crate) table_type: StTableType,
-    pub(crate) table_access: StAccess,
+    pub table_id: u32,
+    pub table_name: String,
+    pub columns: Vec<ColumnSchema>,
+    pub indexes: Vec<IndexSchema>,
+    pub constraints: Vec<ConstraintSchema>,
+    pub table_type: StTableType,
+    pub table_access: StAccess,
 }
 
 impl TableSchema {
@@ -196,6 +216,19 @@ impl TableSchema {
             FieldOnly::Name(x) => self.get_column_by_name(x),
             FieldOnly::Pos(x) => self.get_column(x),
         }
+    }
+
+    /// Check if there is an index for this [FieldName]
+    ///
+    /// Warning: It ignores the `table_name`
+    pub fn get_index_by_field(&self, field: &FieldName) -> Option<&IndexSchema> {
+        let ColumnSchema { col_id, .. } = self.get_column_by_field(field)?;
+        self.indexes.iter().find(
+            |IndexSchema {
+                 cols: NonEmpty { head: index_col, tail },
+                 ..
+             }| tail.is_empty() && index_col == col_id,
+        )
     }
 
     pub fn get_column(&self, pos: usize) -> Option<&ColumnSchema> {
@@ -212,6 +245,27 @@ impl TableSchema {
     /// Turn a [TableField] that could be an unqualified field `id` into `table.id`
     pub fn normalize_field(&self, or_use: &TableField) -> FieldName {
         FieldName::named(or_use.table.unwrap_or(&self.table_name), or_use.field)
+    }
+
+    /// Project the fields from the supplied `columns`.
+    pub fn project(&self, columns: impl Iterator<Item = usize>) -> Result<Vec<&ColumnSchema>> {
+        columns
+            .map(|pos| {
+                self.get_column(pos).ok_or(
+                    InvalidFieldError {
+                        col_pos: pos,
+                        name: None,
+                    }
+                    .into(),
+                )
+            })
+            .collect()
+    }
+
+    /// Utility for project the fields from the supplied `columns` that is a [NonEmpty<u32>],
+    /// used for when the list of field columns have at least one value.
+    pub fn project_not_empty(&self, columns: &NonEmpty<u32>) -> Result<Vec<&ColumnSchema>> {
+        self.project(columns.iter().map(|&x| x as usize))
     }
 }
 
@@ -233,7 +287,7 @@ impl From<&TableSchema> for ProductType {
 impl From<&TableSchema> for SourceExpr {
     fn from(value: &TableSchema) -> Self {
         SourceExpr::DbTable(DbTable::new(
-            &Header::from_product_type(&value.table_name, value.into()),
+            Header::from_product_type(value.table_name.clone(), value.into()),
             value.table_id,
             value.table_type,
             value.table_access,
@@ -243,13 +297,13 @@ impl From<&TableSchema> for SourceExpr {
 
 impl From<&TableSchema> for DbTable {
     fn from(value: &TableSchema) -> Self {
-        DbTable::new(&value.into(), value.table_id, value.table_type, value.table_access)
+        DbTable::new(value.into(), value.table_id, value.table_type, value.table_access)
     }
 }
 
 impl From<&TableSchema> for Header {
     fn from(value: &TableSchema) -> Self {
-        Header::from_product_type(&value.table_name, value.into())
+        Header::from_product_type(value.table_name.clone(), value.into())
     }
 }
 
@@ -391,7 +445,7 @@ pub trait TxDatastore: DataRow + Tx {
         tx: &'a Self::TxId,
         table_id: TableId,
         col_id: ColId,
-        value: &'a AlgebraicValue,
+        value: AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a>>;
 
     fn get_tx<'a>(
@@ -458,7 +512,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         tx: &'a Self::MutTxId,
         table_id: TableId,
         col_id: ColId,
-        value: &'a AlgebraicValue,
+        value: AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a>>;
     fn get_mut_tx<'a>(
         &'a self,
@@ -479,4 +533,33 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         table_id: TableId,
         row: ProductValue,
     ) -> Result<ProductValue>;
+}
+
+/// Describes a programmable [`TxDatastore`].
+///
+/// A programmable datastore is one which has a program of some kind associated
+/// with it.
+pub trait Programmable: TxDatastore {
+    /// Retrieve the [`Hash`] of the program currently associated with the
+    /// datastore.
+    ///
+    /// A `None` result means that no program is currently associated, e.g.
+    /// because the datastore has not been fully initialized yet.
+    fn program_hash(&self, tx: &Self::TxId) -> Result<Option<Hash>>;
+}
+
+/// Describes a [`Programmable`] datastore which allows to update the program
+/// associated with it.
+pub trait MutProgrammable: MutTxDatastore {
+    /// A fencing token (usually a monotonic counter) which allows to order
+    /// `set_module_hash` with respect to a distributed locking service.
+    type FencingToken: Eq + Ord;
+
+    /// Update the [`Hash`] of the program currently associated with the
+    /// datastore.
+    ///
+    /// The operation runs within the transactional context `tx`. The fencing
+    /// token `fence` must be verified to be greater than in any previous
+    /// invocations of this method.
+    fn set_program_hash(&self, tx: &mut Self::MutTxId, fence: Self::FencingToken, hash: Hash) -> Result<()>;
 }

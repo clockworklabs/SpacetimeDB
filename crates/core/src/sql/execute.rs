@@ -1,8 +1,9 @@
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::MemTable;
-use spacetimedb_lib::{ProductType, ProductValue};
+use spacetimedb_sats::{ProductType, ProductValue};
 use spacetimedb_vm::eval::run_ast;
 use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
+use tracing::info;
 
 use crate::database_instance_context_controller::DatabaseInstanceContextController;
 use crate::db::datastore::locking_tx_datastore::MutTxId;
@@ -27,6 +28,7 @@ pub fn execute(
     sql_text: String,
     auth: AuthCtx,
 ) -> Result<Vec<MemTable>, DBError> {
+    info!(sql = sql_text);
     if let Some((database_instance_context, _)) = db_inst_ctx_controller.get(database_instance_id) {
         database_instance_context
             .relational_db
@@ -52,7 +54,7 @@ fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Result<(), DBErr
     Ok(())
 }
 
-#[tracing::instrument(skip_all)]
+#[tracing::instrument(skip(db, tx, auth))]
 pub fn execute_single_sql(
     db: &RelationalDB,
     tx: &mut MutTxId,
@@ -87,12 +89,7 @@ pub fn execute_sql(
 
 /// Run the `SQL` string using the `auth` credentials
 #[tracing::instrument(skip_all)]
-pub(crate) fn run(
-    db: &RelationalDB,
-    tx: &mut MutTxId,
-    sql_text: &str,
-    auth: AuthCtx,
-) -> Result<Vec<MemTable>, DBError> {
+pub fn run(db: &RelationalDB, tx: &mut MutTxId, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
     let ast = compile_sql(db, tx, sql_text)?;
     execute_sql(db, tx, ast, auth)
 }
@@ -103,10 +100,11 @@ pub(crate) mod tests {
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::db::relational_db::{ST_TABLES_ID, ST_TABLES_NAME};
     use crate::vm::tests::create_table_with_rows;
+    use itertools::Itertools;
     use spacetimedb_lib::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_lib::relation::Header;
-    use spacetimedb_sats::{product, AlgebraicType, BuiltinType, ProductType};
+    use spacetimedb_lib::relation::{Header, RelValue};
+    use spacetimedb_sats::{product, AlgebraicType, ProductType};
     use spacetimedb_vm::dsl::{mem_table, scalar};
     use spacetimedb_vm::eval::create_game_data;
     use tempdir::TempDir;
@@ -120,7 +118,7 @@ pub(crate) mod tests {
         let (db, tmp_dir) = make_test_db()?;
 
         let mut tx = db.begin_tx();
-        let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
+        let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let rows: Vec<_> = (1..=total_rows).map(|i| product!(i, format!("health{i}"))).collect();
         create_table_with_rows(&db, &mut tx, "inventory", head.clone(), &rows)?;
         db.commit_tx(tx)?;
@@ -167,7 +165,7 @@ pub(crate) mod tests {
         assert_eq!(result.len(), 1, "Not return results");
         let result = result.first().unwrap().clone();
 
-        let head = ProductType::from_iter([("inventory_id", BuiltinType::U64)]);
+        let head = ProductType::from([("inventory_id", AlgebraicType::U64)]);
         let row = product!(1u64);
         let input = mem_table(head, vec![row]);
 
@@ -188,8 +186,8 @@ pub(crate) mod tests {
 
         assert_eq!(result.len(), 1, "Not return results");
         let result = result.first().unwrap().clone();
-        let schema = ProductType::from_iter([BuiltinType::I32]);
-        let row = product!(scalar(1));
+        let schema = ProductType::from([AlgebraicType::I32]);
+        let row = product!(1);
         let input = mem_table(schema, vec![row]);
 
         assert_eq!(result.as_without_table_name(), input.as_without_table_name(), "Scalar");
@@ -357,9 +355,27 @@ pub(crate) mod tests {
         let (db, _tmp_dir) = make_test_db()?;
 
         let mut tx = db.begin_tx();
-        create_table_with_rows(&db, &mut tx, "Inventory", data.inv.head.into(), &data.inv.data)?;
-        create_table_with_rows(&db, &mut tx, "Player", data.player.head.into(), &data.player.data)?;
-        create_table_with_rows(&db, &mut tx, "Location", data.location.head.into(), &data.location.data)?;
+        create_table_with_rows(
+            &db,
+            &mut tx,
+            "Inventory",
+            data.inv.head.into(),
+            &data.inv.data.iter().map(|row| row.data.clone()).collect_vec(),
+        )?;
+        create_table_with_rows(
+            &db,
+            &mut tx,
+            "Player",
+            data.player.head.into(),
+            &data.player.data.iter().map(|row| row.data.clone()).collect_vec(),
+        )?;
+        create_table_with_rows(
+            &db,
+            &mut tx,
+            "Location",
+            data.location.head.into(),
+            &data.location.data.iter().map(|row| row.data.clone()).collect_vec(),
+        )?;
 
         let result = &run_for_testing(
             &db,
@@ -373,7 +389,7 @@ pub(crate) mod tests {
         WHERE x > 0 AND x <= 32 AND z > 0 AND z <= 32",
         )?[0];
 
-        let head = ProductType::from_iter([("entity_id", BuiltinType::U64), ("inventory_id", BuiltinType::U64)]);
+        let head = ProductType::from([("entity_id", AlgebraicType::U64), ("inventory_id", AlgebraicType::U64)]);
         let row1 = product!(100u64, 1u64);
         let input = mem_table(head, [row1]);
 
@@ -397,7 +413,7 @@ pub(crate) mod tests {
         WHERE x > 0 AND x <= 32 AND z > 0 AND z <= 32",
         )?[0];
 
-        let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
+        let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row1 = product!(1u64, "health");
         let input = mem_table(head, [row1]);
 
@@ -427,7 +443,7 @@ pub(crate) mod tests {
         let mut result = result.first().unwrap().clone();
 
         let row = product!(scalar(2u64), scalar("test"));
-        input.data.push(row);
+        input.data.push(RelValue::new(row, None));
         input.data.sort();
         result.data.sort();
 
@@ -509,7 +525,7 @@ pub(crate) mod tests {
 
         let mut change = input;
         change.data.clear();
-        change.data.push(row);
+        change.data.push(RelValue::new(row, None));
 
         assert_eq!(
             change.as_without_table_name(),
@@ -526,7 +542,7 @@ pub(crate) mod tests {
             .map(|x| {
                 x.data
                     .into_iter()
-                    .map(|x| x.field_as_str(1, None).unwrap().to_string())
+                    .map(|x| x.data.field_as_str(1, None).unwrap().to_string())
                     .collect::<Vec<_>>()
             })
             .collect();

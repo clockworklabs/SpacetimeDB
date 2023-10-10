@@ -9,7 +9,6 @@ pub mod identity;
 pub use spacetimedb_sats::de;
 pub mod error;
 pub mod hash;
-#[cfg(feature = "serde")]
 pub mod name;
 pub mod operator;
 pub mod primary_key;
@@ -41,7 +40,7 @@ pub use type_value::{AlgebraicValue, ProductValue};
 
 pub use spacetimedb_sats as sats;
 
-pub const MODULE_ABI_VERSION: VersionTuple = VersionTuple::new(4, 0);
+pub const MODULE_ABI_VERSION: VersionTuple = VersionTuple::new(5, 0);
 
 // if it ends up we need more fields in the future, we can split one of them in two
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]

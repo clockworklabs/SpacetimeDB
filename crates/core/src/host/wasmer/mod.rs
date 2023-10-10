@@ -15,7 +15,7 @@ mod wasmer_module;
 use wasmer_module::WasmerModule;
 
 use super::scheduler::Scheduler;
-use super::wasm_common::{abi, module_host_actor::WasmModuleHostActor, ModuleCreationError};
+use super::wasm_common::{module_host_actor::WasmModuleHostActor, ModuleCreationError};
 use super::{EnergyMonitor, EnergyQuanta};
 
 pub fn make_actor(
@@ -47,15 +47,6 @@ pub fn make_actor(
 
     let module = Module::new(&engine, program_bytes).map_err(|e| ModuleCreationError::WasmCompileError(e.into()))?;
 
-    let abi = abi::determine_spacetime_abi(program_bytes)?;
-
-    if !WasmerModule::IMPLEMENTED_ABI.supports(abi) {
-        return Err(ModuleCreationError::Abi(abi::AbiVersionError::UnsupportedVersion {
-            implement: WasmerModule::IMPLEMENTED_ABI,
-            got: abi,
-        }));
-    }
-
     let module = WasmerModule::new(module, engine);
 
     WasmModuleHostActor::new(dbic, module_hash, module, scheduler, energy_monitor).map_err(Into::into)
@@ -69,27 +60,41 @@ enum WasmError {
     Wasm(#[from] RuntimeError),
 }
 
+/// Wraps access to WASM linear memory with some additional functionality.
 #[derive(Clone)]
 struct Mem {
+    /// The underlying WASM `memory` instance.
     pub memory: Memory,
 }
 
 impl Mem {
+    /// Constructs an instance of `Mem` from an exports map.
     fn extract(exports: &wasmer::Exports) -> anyhow::Result<Self> {
-        Ok(Self {
-            memory: exports.get_memory("memory")?.clone(),
-        })
+        let memory = exports.get_memory("memory")?.clone();
+        Ok(Self { memory })
     }
+
+    /// Creates and returns a view into the actual memory `store`.
+    /// This view allows for reads and writes.
+
     fn view<'a>(&self, store: &'a impl AsStoreRef) -> wasmer::MemoryView<'a> {
         self.memory.view(store)
     }
 
-    /// Reads a slice of bytes starting from `ptr` and lasting `len` bytes into a `Vec<u8>`.
+    /// Reads a slice of bytes starting from `ptr`
+    /// and lasting `len` bytes into a `Vec<u8>`.
     ///
     /// Returns an error if the slice length overflows a 64-bit address.
     fn read_bytes(&self, store: &impl AsStoreRef, ptr: WasmPtr<u8>, len: u32) -> Result<Vec<u8>, MemoryAccessError> {
         ptr.slice(&self.view(store), len)?.read_to_vec()
     }
+
+    /// Writes `data` into the slice starting from `ptr`
+    /// and lasting `len` bytes.
+    ///
+    /// Returns an error if
+    /// - the slice length overflows a 64-bit address
+    /// - `len != data.len()`
     fn set_bytes(
         &self,
         store: &impl AsStoreRef,

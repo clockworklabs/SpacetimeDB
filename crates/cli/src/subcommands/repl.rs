@@ -1,6 +1,8 @@
 use crate::api::{ClientApi, Connection};
 use crate::sql::run_sql;
 use colored::*;
+use dirs::home_dir;
+use std::env::temp_dir;
 
 use rustyline::completion::Completer;
 use rustyline::error::ReadlineError;
@@ -39,7 +41,8 @@ sort by
 pub async fn exec(con: Connection) -> Result<(), anyhow::Error> {
     let database = con.database.clone();
     let mut rl = Editor::<ReplHelper, DefaultHistory>::new().unwrap();
-    if rl.load_history(".history.txt").is_err() {
+    let history = home_dir().unwrap_or_else(temp_dir).join(".stdb.history.txt");
+    if rl.load_history(&history).is_err() {
         eprintln!("No previous history.");
     }
     rl.set_helper(Some(ReplHelper::new().unwrap()));
@@ -68,7 +71,7 @@ pub async fn exec(con: Connection) -> Result<(), anyhow::Error> {
                 sql => {
                     rl.add_history_entry(sql).ok();
 
-                    if let Err(err) = run_sql(api.sql(), sql).await {
+                    if let Err(err) = run_sql(api.sql(), sql, true).await {
                         eprintln!("{}", err.to_string().red())
                     }
                 }
@@ -84,7 +87,7 @@ pub async fn exec(con: Connection) -> Result<(), anyhow::Error> {
         }
     }
 
-    rl.save_history(".history.txt").ok();
+    rl.save_history(&history).ok();
 
     Ok(())
 }

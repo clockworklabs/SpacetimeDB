@@ -51,6 +51,8 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, ref_prefix: &'a str) -> im
             // The only type that is allowed here is the identity type. All other types should fail.
             if prod.is_identity() {
                 write!(f, "Identity")
+            } else if prod.is_address() {
+                write!(f, "Address")
             } else {
                 unimplemented!()
             }
@@ -131,6 +133,8 @@ fn convert_type<'a>(
         AlgebraicType::Product(product) => {
             if product.is_identity() {
                 write!(f, "new Identity({}.asProductValue().elements[0].asBytes())", value)
+            } else if product.is_address() {
+                write!(f, "new Address({}.asProductValue().elements[0].asBytes())", value)
             } else {
                 unimplemented!()
             }
@@ -641,7 +645,7 @@ fn autogen_typescript_product_table_common(
     writeln!(output).unwrap();
 
     writeln!(output, "// @ts-ignore").unwrap();
-    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, IDatabaseTable, AlgebraicValue, ReducerEvent, Identity }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
+    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, IDatabaseTable, AlgebraicValue, ReducerEvent, Identity, Address }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
 
     let mut imports = Vec::new();
     generate_imports(ctx, &product_type.elements, &mut imports, None);
@@ -991,6 +995,8 @@ fn autogen_typescript_access_funcs_for_struct(
             AlgebraicType::Product(product) => {
                 if product.is_identity() {
                     "Identity"
+                } else if product.is_address() {
+                    "Address"
                 } else {
                     // TODO: We don't allow filtering on tuples right now, its possible we may consider it for the future.
                     continue;
@@ -1046,7 +1052,7 @@ fn autogen_typescript_access_funcs_for_struct(
             writeln!(output, "{{").unwrap();
             {
                 indent_scope!(output);
-                if typescript_field_type == "Identity" {
+                if typescript_field_type == "Identity" || typescript_field_type == "Address" {
                     writeln!(output, "if (instance.{typescript_field_name_camel}.isEqual(value)) {{",).unwrap();
                     {
                         indent_scope!(output);
@@ -1144,7 +1150,7 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
     writeln!(output).unwrap();
 
     writeln!(output, "// @ts-ignore").unwrap();
-    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, IDatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, ReducerEvent }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
+    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, IDatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, Address, ReducerEvent }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
 
     let mut imports = Vec::new();
     generate_imports(

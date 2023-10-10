@@ -1,13 +1,14 @@
 use super::wasm_instance_env::WasmInstanceEnv;
 use super::Mem;
 use crate::host::instance_env::InstanceEnv;
-use crate::host::wasm_common::module_host_actor::{DescribeError, InitializationError};
+use crate::host::wasm_common::module_host_actor::{AbiVersionError, DescribeError, InitializationError};
 use crate::host::wasm_common::*;
 use crate::host::{EnergyQuanta, Timestamp};
 use bytes::Bytes;
+use spacetimedb_lib::{Address, Identity, VersionTuple};
 use wasmer::{
     imports, AsStoreMut, Engine, ExternType, Function, FunctionEnv, Imports, Instance, Module, RuntimeError, Store,
-    TypedFunction,
+    TypedFunction, WasmPtr,
 };
 use wasmer_middlewares::metering as wasmer_metering;
 
@@ -45,7 +46,7 @@ impl WasmerModule {
         WasmerModule { module, engine }
     }
 
-    pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(4, 0);
+    pub const IMPLEMENTED_ABI: VersionTuple = VersionTuple::new(5, 0);
 
     fn imports(&self, store: &mut Store, env: &FunctionEnv<WasmInstanceEnv>) -> Imports {
         const _: () = assert!(WasmerModule::IMPLEMENTED_ABI.eq(spacetimedb_lib::MODULE_ABI_VERSION));
@@ -130,6 +131,8 @@ impl WasmerModule {
                 "_buffer_len" => Function::new_typed_with_env(store, env, WasmInstanceEnv::buffer_len),
                 "_buffer_consume" => Function::new_typed_with_env(store, env, WasmInstanceEnv::buffer_consume),
                 "_buffer_alloc" => Function::new_typed_with_env(store, env, WasmInstanceEnv::buffer_alloc),
+                "_span_start" => Function::new_typed_with_env(store, env, WasmInstanceEnv::span_start),
+                "_span_end" => Function::new_typed_with_env(store, env, WasmInstanceEnv::span_end),
             }
         }
     }
@@ -167,6 +170,7 @@ impl module_host_actor::WasmInstancePre for WasmerModule {
             mem: None,
             buffers: Default::default(),
             iters: Default::default(),
+            timing_spans: Default::default(),
         };
         let env = FunctionEnv::new(&mut store, env);
         let imports = self.imports(&mut store, &env);
@@ -174,6 +178,43 @@ impl module_host_actor::WasmInstancePre for WasmerModule {
             .map_err(|err| InitializationError::Instantiation(err.into()))?;
 
         let mem = Mem::extract(&instance.exports).unwrap();
+
+        // We could (and did in the past) parse the ABI version manually before the instantiation,
+        // but it gets complicated in presence of wasm-opt optimisations which might split encoded
+        // versions like `[...other data...]\00\00\03\00[...other data...]` by zeroes
+        // into several segments, so there is no single data segment containing the entire version.
+        // Instead, it's more reliable to extract the version from an instantiated module
+        // when all the data segments are loaded into the flat memory at correct offsets.
+        let abi_version = instance
+            .exports
+            .get_global(STDB_ABI_SYM)
+            .map_err(|_| AbiVersionError::NoVersion)?;
+
+        let mut abi_version = match abi_version.get(&mut store) {
+            wasmer::Value::I32(x) => x as u32,
+            _ => return Err(AbiVersionError::Malformed.into()),
+        };
+
+        let abi_is_addr = instance.exports.get_global(STDB_ABI_IS_ADDR_SYM).is_ok();
+        if abi_is_addr {
+            abi_version = u32::from_le_bytes(
+                mem.read_bytes(&store, WasmPtr::new(abi_version), 4)
+                    .ok()
+                    .and_then(|bytes| bytes.try_into().ok())
+                    .ok_or(AbiVersionError::Malformed)?,
+            );
+        }
+
+        let abi_version = VersionTuple::from_u32(abi_version);
+
+        if !WasmerModule::IMPLEMENTED_ABI.supports(abi_version) {
+            return Err(AbiVersionError::UnsupportedVersion {
+                implement: WasmerModule::IMPLEMENTED_ABI,
+                got: abi_version,
+            }
+            .into());
+        }
+
         env.as_mut(&mut store).mem = Some(mem);
 
         // Note: this budget is just for initializers
@@ -265,34 +306,29 @@ impl module_host_actor::WasmInstance for WasmerInstance {
         &mut self,
         reducer_id: usize,
         budget: EnergyQuanta,
-        sender: &[u8; 32],
+        sender_identity: &Identity,
+        sender_address: &Address,
         timestamp: Timestamp,
         arg_bytes: Bytes,
     ) -> module_host_actor::ExecuteResult<Self::Trap> {
-        self.call_tx_function::<(u32, u32, u64, u32), 2>(
+        self.call_tx_function::<(u32, u32, u32, u64, u32), 3>(
             CALL_REDUCER_DUNDER,
             budget,
-            [sender.to_vec().into(), arg_bytes],
-            |func, store, [sender, args]| func.call(store, reducer_id as u32, sender.0, timestamp.0, args.0),
-        )
-    }
-
-    fn call_connect_disconnect(
-        &mut self,
-        connect: bool,
-        budget: EnergyQuanta,
-        sender: &[u8; 32],
-        timestamp: Timestamp,
-    ) -> module_host_actor::ExecuteResult<Self::Trap> {
-        self.call_tx_function::<(u32, u64), 1>(
-            if connect {
-                IDENTITY_CONNECTED_DUNDER
-            } else {
-                IDENTITY_DISCONNECTED_DUNDER
+            [
+                Bytes::copy_from_slice(sender_identity.as_bytes()),
+                Bytes::copy_from_slice(sender_address.as_slice()),
+                arg_bytes,
+            ],
+            |func, store, [sender_identity, sender_address, args]| {
+                func.call(
+                    store,
+                    reducer_id as u32,
+                    sender_identity.0,
+                    sender_address.0,
+                    timestamp.0,
+                    args.0,
+                )
             },
-            budget,
-            [sender.to_vec().into()],
-            |func, store, [sender]| func.call(store, sender.0, timestamp.0),
         )
     }
 

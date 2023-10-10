@@ -35,4 +35,4 @@ export SPACETIMEDB_TRACY=1
 echo "DATABASE AT ${STDB_PATH}"
 echo "LOGS AT $STDB_PATH/logs"
 
-cargo run -p spacetimedb-standalone -- start -l 127.0.0.1:3000
+cargo run -p spacetimedb-standalone -- start -l 127.0.0.1:3000 --enable-tracy

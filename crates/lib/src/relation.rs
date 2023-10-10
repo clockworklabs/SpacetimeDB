@@ -1,3 +1,5 @@
+use derive_more::From;
+use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -5,6 +7,7 @@ use std::hash::{Hash, Hasher};
 use crate::auth::{StAccess, StTableType};
 use crate::error::RelationError;
 use crate::table::ColumnDef;
+use crate::DataKey;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::product_value::ProductValue;
 use spacetimedb_sats::satn::Satn;
@@ -86,10 +89,8 @@ impl FieldName {
     }
 
     pub fn table(&self) -> &str {
-        match self {
-            FieldName::Name { table, .. } => table,
-            FieldName::Pos { table, .. } => table,
-        }
+        let (FieldName::Name { table, .. } | FieldName::Pos { table, .. }) = self;
+        table
     }
 
     pub fn field(&self) -> FieldOnly {
@@ -105,24 +106,19 @@ impl FieldName {
             FieldName::Pos { .. } => None,
         }
     }
+
+    pub fn into_field_name(self) -> Option<String> {
+        match self {
+            FieldName::Name { field, .. } => Some(field),
+            FieldName::Pos { .. } => None,
+        }
+    }
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, From)]
 pub enum FieldExpr {
     Name(FieldName),
     Value(AlgebraicValue),
-}
-
-impl From<AlgebraicValue> for FieldExpr {
-    fn from(x: AlgebraicValue) -> Self {
-        Self::Value(x)
-    }
-}
-
-impl From<FieldName> for FieldExpr {
-    fn from(x: FieldName) -> Self {
-        Self::Name(x)
-    }
 }
 
 impl fmt::Display for FieldName {
@@ -191,44 +187,41 @@ pub struct Header {
 
 impl From<Header> for ProductType {
     fn from(value: Header) -> Self {
-        ProductType::from_iter(value.fields.iter().map(|x| match &x.field {
-            FieldName::Name { field, .. } => ProductTypeElement::new_named(x.algebraic_type.clone(), field),
-            FieldName::Pos { .. } => ProductTypeElement::new(x.algebraic_type.clone(), None),
-        }))
+        ProductType::from_iter(
+            value
+                .fields
+                .into_iter()
+                .map(|x| ProductTypeElement::new(x.algebraic_type, x.field.into_field_name())),
+        )
     }
 }
 
 impl Header {
-    pub fn new(table_name: &str, fields: &[Column]) -> Self {
-        Self {
-            table_name: table_name.into(),
-            fields: fields.into(),
-        }
+    pub fn new(table_name: String, fields: Vec<Column>) -> Self {
+        Self { table_name, fields }
     }
 
-    pub fn from_product_type(table_name: &str, fields: ProductType) -> Self {
-        let mut cols = Vec::with_capacity(fields.elements.len());
+    pub fn from_product_type(table_name: String, fields: ProductType) -> Self {
+        let cols = fields
+            .elements
+            .into_iter()
+            .enumerate()
+            .map(|(pos, f)| {
+                let table = table_name.clone();
+                let name = match f.name {
+                    None => FieldName::Pos { table, field: pos },
+                    Some(field) => FieldName::Name { table, field },
+                };
+                Column::new(name, f.algebraic_type)
+            })
+            .collect();
 
-        for (pos, f) in fields.elements.into_iter().enumerate() {
-            let name = match f.name {
-                None => FieldName::Pos {
-                    table: table_name.into(),
-                    field: pos,
-                },
-                Some(x) => FieldName::Name {
-                    table: table_name.into(),
-                    field: x,
-                },
-            };
-            cols.push(Column::new(name, f.algebraic_type));
-        }
-
-        Self::new(table_name, &cols)
+        Self::new(table_name, cols)
     }
 
     pub fn for_mem_table(fields: ProductType) -> Self {
         let table_name = format!("mem#{:x}", calculate_hash(&fields));
-        Self::from_product_type(&table_name, fields)
+        Self::from_product_type(table_name, fields)
     }
 
     pub fn as_without_table_name(&self) -> HeaderOnlyField {
@@ -297,7 +290,7 @@ impl Header {
             }
         }
 
-        Ok(Self::new(&self.table_name, &p))
+        Ok(Self::new(self.table_name.clone(), p))
     }
 
     /// Adds the fields from `right` to this [`Header`],
@@ -322,7 +315,7 @@ impl Header {
             fields.push(f);
         }
 
-        Self::new(&self.table_name, &fields)
+        Self::new(self.table_name.clone(), fields)
     }
 }
 
@@ -385,7 +378,7 @@ impl RowCount {
 /// A [Relation] is anything that could be represented as a [Header] of `[ColumnName:ColumnType]` that
 /// generates rows/tuples of [AlgebraicValue] that exactly match that [Header].
 pub trait Relation {
-    fn head(&self) -> Header;
+    fn head(&self) -> &Header;
     /// Specify the size in rows of the [Relation].
     ///
     /// Warning: It should at least be precise in the lower-bound estimate.
@@ -412,47 +405,44 @@ impl<T> RelIter<T> {
     }
 }
 
+/// A borrowed version of [RelValue].
 #[derive(Debug, Clone, Copy)]
 pub struct RelValueRef<'a> {
-    pub head: &'a Header,
     pub data: &'a ProductValue,
 }
 
 impl<'a> RelValueRef<'a> {
-    pub fn new(head: &'a Header, data: &'a ProductValue) -> Self {
-        Self { head, data }
+    pub fn new(data: &'a ProductValue) -> Self {
+        Self { data }
     }
 
-    pub fn get(&self, col: &'a FieldExpr) -> &'a AlgebraicValue {
+    pub fn get(&self, col: &'a FieldExpr, header: &'a Header) -> &'a AlgebraicValue {
         match col {
             FieldExpr::Name(col) => {
-                if let Some(pos) = self.head.column_pos(col) {
+                if let Some(pos) = header.column_pos(col) {
                     if let Some(v) = self.data.elements.get(pos) {
                         v
                     } else {
                         unreachable!("Field `{col}` at pos {pos} not found on row: {:?}", self.data.elements)
                     }
                 } else {
-                    unreachable!(
-                        "Field `{col}` not found on `{}`. Fields:{}",
-                        self.head.table_name, self.head
-                    )
+                    unreachable!("Field `{col}` not found on `{}`. Fields:{}", header.table_name, header)
                 }
             }
             FieldExpr::Value(x) => x,
         }
     }
 
-    pub fn project(&self, cols: &[FieldExpr]) -> Result<ProductValue, RelationError> {
+    pub fn project(&self, cols: &[FieldExpr], header: &'a Header) -> Result<ProductValue, RelationError> {
         let mut elements = Vec::with_capacity(cols.len());
 
         for col in cols {
             match col {
                 FieldExpr::Name(col) => {
-                    if let Some(pos) = self.head.column_pos(col) {
+                    if let Some(pos) = header.column_pos(col) {
                         elements.push(self.data.elements[pos].clone());
                     } else {
-                        return Err(RelationError::FieldNotFound(self.head.clone(), col.clone()));
+                        return Err(RelationError::FieldNotFound(header.clone(), col.clone()));
                     }
                 }
                 FieldExpr::Value(col) => {
@@ -465,40 +455,49 @@ impl<'a> RelValueRef<'a> {
     }
 }
 
-impl Relation for RelValueRef<'_> {
-    fn head(&self) -> Header {
-        self.head.clone()
-    }
-
-    fn row_count(&self) -> RowCount {
-        RowCount::exact(1)
-    }
-}
-
-/// The row/tuple generated by a [Relation] operator
-#[derive(Debug, Clone)]
+/// RelValue represents a materialized row during query execution.
+/// In particular it is the type generated/consumed by a [Relation] operator.
+/// This is in contrast to a `DataRef` which represents a row belonging to a table.
+/// The difference being that a RelValue's [DataKey] is optional since relational
+/// operators can modify their input rows.
+#[derive(Debug, Clone, Eq)]
 pub struct RelValue {
-    pub head: Header,
+    pub id: Option<DataKey>,
     pub data: ProductValue,
 }
 
 impl RelValue {
-    pub fn new(head: &Header, data: &ProductValue) -> Self {
-        Self {
-            head: head.clone(),
-            data: data.clone(),
-        }
+    pub fn new(data: ProductValue, id: Option<DataKey>) -> Self {
+        Self { id, data }
     }
 
     pub fn as_val_ref(&self) -> RelValueRef {
-        RelValueRef::new(&self.head, &self.data)
+        RelValueRef::new(&self.data)
     }
 
-    pub fn extend(self, head: &Header, with: RelValue) -> RelValue {
+    pub fn extend(self, with: RelValue) -> RelValue {
         let mut x = self;
-        x.head = head.clone();
+        x.id = None;
         x.data.elements.extend(with.data.elements);
         x
+    }
+}
+
+impl PartialEq for RelValue {
+    fn eq(&self, other: &Self) -> bool {
+        self.data == other.data
+    }
+}
+
+impl Ord for RelValue {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.data.cmp(&other.data)
+    }
+}
+
+impl PartialOrd for RelValue {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -506,42 +505,43 @@ impl RelValue {
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct MemTableWithoutTableName<'a> {
     pub head: HeaderOnlyField<'a>,
-    pub data: &'a [ProductValue],
+    pub data: &'a [RelValue],
 }
 
 /// An in-memory table
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct MemTable {
     pub head: Header,
-    pub data: Vec<ProductValue>,
+    pub data: Vec<RelValue>,
     pub table_access: StAccess,
 }
 
 impl MemTable {
-    pub fn new(head: &Header, table_access: StAccess, data: &[ProductValue]) -> Self {
+    pub fn new(head: Header, table_access: StAccess, data: Vec<RelValue>) -> Self {
         assert_eq!(
             head.fields.len(),
             data.first()
-                .map(|x| x.elements.len())
+                .map(|x| x.data.elements.len())
                 .unwrap_or_else(|| head.fields.len()),
-            "Not match the number of columns between the header.len() <> data.len()"
+            "number of columns in `header.len() != data.len()`"
         );
         Self {
-            head: head.clone(),
-            data: data.into(),
+            head,
+            data,
             table_access,
         }
     }
 
     pub fn from_value(of: AlgebraicValue) -> Self {
         let head = Header::for_mem_table(of.type_of().into());
-        Self::new(&head, StAccess::Public, &[of.into()])
+        let row = RelValue::new(of.into(), None);
+        Self::new(head, StAccess::Public, [row].into())
     }
 
-    pub fn from_iter(head: &Header, data: impl Iterator<Item = ProductValue>) -> Self {
+    pub fn from_iter(head: Header, data: impl Iterator<Item = ProductValue>) -> Self {
         Self {
-            head: head.clone(),
-            data: data.collect(),
+            head,
+            data: data.map(|row| RelValue::new(row, None)).collect(),
             table_access: StAccess::Public,
         }
     }
@@ -563,8 +563,8 @@ impl MemTable {
 }
 
 impl Relation for MemTable {
-    fn head(&self) -> Header {
-        self.head.clone()
+    fn head(&self) -> &Header {
+        &self.head
     }
 
     fn row_count(&self) -> RowCount {
@@ -582,9 +582,9 @@ pub struct DbTable {
 }
 
 impl DbTable {
-    pub fn new(head: &Header, table_id: u32, table_type: StTableType, table_access: StAccess) -> Self {
+    pub fn new(head: Header, table_id: u32, table_type: StTableType, table_access: StAccess) -> Self {
         Self {
-            head: head.clone(),
+            head,
             table_id,
             table_type,
             table_access,
@@ -593,8 +593,8 @@ impl DbTable {
 }
 
 impl Relation for DbTable {
-    fn head(&self) -> Header {
-        self.head.clone()
+    fn head(&self) -> &Header {
+        &self.head
     }
 
     fn row_count(&self) -> RowCount {
@@ -632,7 +632,7 @@ impl Table {
 }
 
 impl Relation for Table {
-    fn head(&self) -> Header {
+    fn head(&self) -> &Header {
         match self {
             Table::MemTable(x) => x.head(),
             Table::DbTable(x) => x.head(),
