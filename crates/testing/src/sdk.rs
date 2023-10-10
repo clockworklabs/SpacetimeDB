@@ -5,7 +5,7 @@ use std::thread::JoinHandle;
 use std::{collections::HashSet, fs::create_dir_all, sync::Mutex};
 
 use crate::invoke_cli;
-use crate::modules::{module_path, CompiledModule};
+use crate::modules::{module_path, CompilationMode, CompiledModule};
 use std::path::Path;
 use tempfile::TempDir;
 
@@ -110,7 +110,7 @@ impl Test {
     pub fn run(&self) {
         ensure_standalone_process();
 
-        let compiled = CompiledModule::compile(&self.module_name);
+        let compiled = CompiledModule::compile(&self.module_name, CompilationMode::Debug);
 
         generate_bindings(
             &self.generate_language,
