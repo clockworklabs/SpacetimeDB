@@ -9,7 +9,7 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_sats::meta_type::MetaType;
 use spacetimedb_sats::relation::MemTable;
 use spacetimedb_sats::satn::Satn;
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, BuiltinType};
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use sqllogictest::{AsyncDB, ColumnType, DBOutput};
 use std::fs;
 use std::io::Write;
@@ -31,7 +31,7 @@ impl ColumnType for Kind {
 
     fn to_char(&self) -> char {
         match self.0 {
-            AlgebraicType::Builtin(BuiltinType::Map(_)) | AlgebraicType::Builtin(BuiltinType::Array(_)) => '?',
+            AlgebraicType::Map(_) | AlgebraicType::Array(_) => '?',
             AlgebraicType::I8
             | AlgebraicType::U8
             | AlgebraicType::U16

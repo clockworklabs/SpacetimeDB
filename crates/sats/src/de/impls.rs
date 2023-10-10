@@ -302,8 +302,8 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, AlgebraicType> {
             AlgebraicType::Ref(r) => self.resolve(*r).deserialize(de),
             AlgebraicType::Sum(sum) => self.with(sum).deserialize(de).map(Into::into),
             AlgebraicType::Product(prod) => self.with(prod).deserialize(de).map(Into::into),
-            AlgebraicType::Builtin(crate::BuiltinType::Array(ty)) => self.with(ty).deserialize(de).map(Into::into),
-            AlgebraicType::Builtin(crate::BuiltinType::Map(ty)) => self.with(&**ty).deserialize(de).map(Into::into),
+            AlgebraicType::Array(ty) => self.with(ty).deserialize(de).map(Into::into),
+            AlgebraicType::Map(ty) => self.with(&**ty).deserialize(de).map(Into::into),
             &AlgebraicType::Bool => bool::deserialize(de).map(Into::into),
             &AlgebraicType::I8 => i8::deserialize(de).map(Into::into),
             &AlgebraicType::U8 => u8::deserialize(de).map(Into::into),
@@ -435,10 +435,10 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
                 AlgebraicType::Product(ty) => deserializer
                     .deserialize_array_seed(BasicVecVisitor, self.with(ty))
                     .map(ArrayValue::Product),
-                AlgebraicType::Builtin(crate::BuiltinType::Array(ty)) => deserializer
+                AlgebraicType::Array(ty) => deserializer
                     .deserialize_array_seed(BasicVecVisitor, self.with(ty))
                     .map(ArrayValue::Array),
-                AlgebraicType::Builtin(crate::BuiltinType::Map(ty)) => deserializer
+                AlgebraicType::Map(ty) => deserializer
                     .deserialize_array_seed(BasicVecVisitor, self.with(&**ty))
                     .map(ArrayValue::Map),
                 &AlgebraicType::Bool => de_array(deserializer, ArrayValue::Bool),
