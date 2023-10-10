@@ -70,6 +70,11 @@ macro_rules! with_timing_paused {
 
         // Improvised try block: errors bubbled with `?` are captured in `res`,
         // and the `timing_before_enter_wasm` runs regardless.
+        //
+        // Clippy will warn about this if `body` doesn't include a `?` or `return`,
+        // because it's not smart enough to understand that macros can be invoked multiple times
+        // on different inputs.
+        #[allow(clippy::redundant_closure_call)]
         let res = (|| {
             $($body)*
         })();
