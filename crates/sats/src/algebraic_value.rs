@@ -2,6 +2,7 @@ pub mod de;
 pub mod ser;
 
 use crate::{AlgebraicType, ArrayValue, BuiltinType, MapValue, ProductValue, SumValue};
+use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use std::ops::{Bound, RangeBounds};
 
@@ -20,7 +21,7 @@ pub type F64 = decorum::Total<f64>;
 /// These are only values and not expressions.
 /// That is, they are canonical and cannot be simplified further by some evaluation.
 /// So forms like `42 + 24` are not represented in an `AlgebraicValue`.
-#[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, From)]
 pub enum AlgebraicValue {
     /// A structural sum value.
     ///

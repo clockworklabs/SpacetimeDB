@@ -484,7 +484,7 @@ pub(crate) fn st_sequences_schema() -> TableSchema {
             ColumnSchema {
                 table_id: ST_SEQUENCES_ID.0,
                 col_id: 7,
-                col_name: "max_malue".into(),
+                col_name: "max_value".into(),
                 col_type: AlgebraicType::I128,
                 is_autoinc: false,
             },

@@ -6,6 +6,7 @@ use crate::algebraic_value::ser::ValueSerializer;
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize, MapType};
 use crate::{AlgebraicTypeRef, AlgebraicValue, ArrayType, BuiltinType, ProductType, SumType, SumTypeVariant};
+use derive_more::From;
 use enum_as_inner::EnumAsInner;
 
 /// The SpacetimeDB Algebraic Type System (SATS) is a structural type system in
@@ -51,7 +52,7 @@ use enum_as_inner::EnumAsInner;
 ///     indexes: Array<(index_type: String)>,
 /// )
 /// ```
-#[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, From)]
 #[sats(crate = crate)]
 pub enum AlgebraicType {
     /// A structural sum type.
@@ -219,12 +220,12 @@ impl AlgebraicType {
 
     /// Returns an unsized array type where the element type is `ty`.
     pub fn array(ty: Self) -> Self {
-        AlgebraicType::Builtin(BuiltinType::Array(ArrayType { elem_ty: Box::new(ty) }))
+        ArrayType { elem_ty: Box::new(ty) }.into()
     }
 
     /// Returns a map type from the type `key` to the type `value`.
     pub fn map(key: Self, value: Self) -> Self {
-        AlgebraicType::Builtin(BuiltinType::Map(Box::new(MapType::new(key, value))))
+        MapType::new(key, value).into()
     }
 
     /// Returns a sum type of unit variants with names taken from `var_names`.
@@ -238,6 +239,46 @@ impl AlgebraicType {
 
     pub fn from_value(value: &AlgebraicValue) -> Result<Self, ValueDeserializeError> {
         Self::deserialize(ValueDeserializer::from_ref(value))
+    }
+
+    #[inline]
+    /// Given an AlgebraicType, returns the min value for that type.
+    pub fn min_value(&self) -> Option<AlgebraicValue> {
+        match *self {
+            Self::I8 => Some(i8::MIN.into()),
+            Self::U8 => Some(u8::MIN.into()),
+            Self::I16 => Some(i16::MIN.into()),
+            Self::U16 => Some(u16::MIN.into()),
+            Self::I32 => Some(i32::MIN.into()),
+            Self::U32 => Some(u32::MIN.into()),
+            Self::I64 => Some(i64::MIN.into()),
+            Self::U64 => Some(u64::MIN.into()),
+            Self::I128 => Some(i128::MIN.into()),
+            Self::U128 => Some(u128::MIN.into()),
+            Self::F32 => Some(f32::MIN.into()),
+            Self::F64 => Some(f64::MIN.into()),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    /// Given an AlgebraicType, returns the max value for that type.
+    pub fn max_value(&self) -> Option<AlgebraicValue> {
+        match *self {
+            Self::I8 => Some(i8::MAX.into()),
+            Self::U8 => Some(u8::MAX.into()),
+            Self::I16 => Some(i16::MAX.into()),
+            Self::U16 => Some(u16::MAX.into()),
+            Self::I32 => Some(i32::MAX.into()),
+            Self::U32 => Some(u32::MAX.into()),
+            Self::I64 => Some(i64::MAX.into()),
+            Self::U64 => Some(u64::MAX.into()),
+            Self::I128 => Some(i128::MAX.into()),
+            Self::U128 => Some(u128::MAX.into()),
+            Self::F32 => Some(f32::MAX.into()),
+            Self::F64 => Some(f64::MAX.into()),
+            _ => None,
+        }
     }
 }
 
