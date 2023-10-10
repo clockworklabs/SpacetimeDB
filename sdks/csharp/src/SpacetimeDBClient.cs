@@ -7,6 +7,7 @@ using System.Net.WebSockets;
 using System.Reflection;
 using System.Text;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using ClientApi;
 using Newtonsoft.Json;
@@ -92,6 +93,8 @@ namespace SpacetimeDB
         public static ClientCache clientDB;
         public static Dictionary<string, Func<ClientApi.Event, bool>> reducerEventCache = new Dictionary<string, Func<ClientApi.Event, bool>>();
         public static Dictionary<string, Action<ClientApi.Event>> deserializeEventCache = new Dictionary<string, Action<ClientApi.Event>>();
+
+        private static Dictionary<Guid, Channel<OneOffQueryResponse>> waitingOneOffQueries = new Dictionary<Guid, Channel<OneOffQueryResponse>>();
 
         private bool isClosing;
         private Thread messageProcessThread;
@@ -391,6 +394,21 @@ namespace SpacetimeDB
                     case ClientApi.Message.TypeOneofCase.IdentityToken:
                         break;
                     case ClientApi.Message.TypeOneofCase.Event:
+                        break;
+                    case ClientApi.Message.TypeOneofCase.OneOffQuery:
+                        break;
+                    case ClientApi.Message.TypeOneofCase.OneOffQueryResponse:
+                        /// This case does NOT produce a list of DBOps, because it should not modify the client cache state!
+                        var resp = message.OneOffQueryResponse;
+                        Guid messageId = new Guid(resp.MessageId.Span);
+
+                        if (!waitingOneOffQueries.ContainsKey(messageId))
+                        {
+                            logger.LogError("Response to unknown one-off-query: " + messageId);
+                            break;
+                        }
+                        waitingOneOffQueries[messageId].Writer.TryWrite(resp);
+                        waitingOneOffQueries.Remove(messageId);
                         break;
                 }
 
@@ -715,7 +733,73 @@ namespace SpacetimeDB
                 return;
             }
             var json = JsonConvert.SerializeObject(queries);
+            // should we use UTF8 here? ASCII is fragile.
             webSocket.Send(Encoding.ASCII.GetBytes("{ \"subscribe\": { \"query_strings\": " + json + " }}"));
+        }
+
+        /// Usage: SpacetimeDBClient.instance.OneOffQuery<Message>("WHERE sender = \"bob\"");
+        public async Task<T[]> OneOffQuery<T>(string query) where T : IDatabaseTable
+        {
+            Guid messageId = Guid.NewGuid();
+            Type type = typeof(T);
+            Channel<OneOffQueryResponse> resultChannel = Channel.CreateBounded<OneOffQueryResponse>(1);
+            waitingOneOffQueries[messageId] = resultChannel;
+
+            // unsanitized here, but writes will be prevented serverside.
+            // the best they can do is send multiple selects, which will just result in them getting no data back.
+            string queryString = "SELECT * FROM " + type.Name + " " + query;
+
+            // see: SpacetimeDB\crates\core\src\client\message_handlers.rs, enum Message<'a>
+            var serializedQuery = "{ \"one_off_query\": { \"message_id\": \"" + System.Convert.ToBase64String(messageId.ToByteArray()) +
+            "\", \"query_string\": " + JsonConvert.SerializeObject(queryString) + " } }";
+            webSocket.Send(Encoding.UTF8.GetBytes(serializedQuery));
+
+            // Suspend for an arbitrary amount of time
+            var result = await resultChannel.Reader.ReadAsync();
+
+            T[] LogAndThrow(string error)
+            {
+                error = "While processing one-off-query `" + queryString + "`, ID " + messageId + ": " + error;
+                logger.LogError(error);
+                throw new Exception(error);
+            }
+
+            // The server got back to us
+            if (result.Error != null && result.Error != "")
+            {
+                return LogAndThrow("Server error: " + result.Error);
+            }
+
+            if (result.Tables.Count != 1)
+            {
+                return LogAndThrow("Expected a single table, but got " + result.Tables.Count);
+            }
+
+            var resultTable = result.Tables[0];
+            var cacheTable = clientDB.GetTable(resultTable.TableName);
+
+            if (cacheTable.ClientTableType != type)
+            {
+                return LogAndThrow("Mismatched result type, expected " + type + " but got " + resultTable.TableName);
+            }
+
+            T[] results = (T[])Array.CreateInstance(type, resultTable.Row.Count);
+            using var stream = new MemoryStream();
+            using var reader = new BinaryReader(stream);
+            for (int i = 0; i < results.Length; i++)
+            {
+                var rowValue = resultTable.Row[i].ToByteArray();
+                stream.Position = 0;
+                stream.Write(rowValue, 0, rowValue.Length);
+                stream.Position = 0;
+                stream.SetLength(rowValue.Length);
+
+                var deserialized = AlgebraicValue.Deserialize(cacheTable.RowSchema, reader);
+                cacheTable.SetAndForgetDecodedValue(deserialized, out var obj);
+                results[i] = (T)obj;
+            }
+
+            return results;
         }
 
         public void Update()
