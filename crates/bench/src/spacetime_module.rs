@@ -1,12 +1,9 @@
-use spacetimedb::db::datastore::traits::TableSchema;
 use spacetimedb::db::{Config, FsyncPolicy, Storage};
-use spacetimedb_lib::sats::product;
 use spacetimedb_lib::{sats::ArrayValue, AlgebraicValue, ProductValue};
 use spacetimedb_testing::modules::{start_runtime, CompilationMode, CompiledModule, ModuleHandle};
 use tokio::runtime::Runtime;
 
 use crate::{
-    create_schema,
     database::BenchDatabase,
     schemas::{snake_case_table_name, table_name, BenchTable},
     ResultBench,
@@ -83,10 +80,6 @@ impl BenchDatabase for SpacetimeModule {
             pascal_case: table_name::<T>(table_style),
             snake_case: snake_case_table_name::<T>(table_style),
         })
-    }
-
-    fn get_table<T: BenchTable>(&mut self, table_id: &Self::TableId) -> ResultBench<TableSchema> {
-        Ok(create_schema::<T>(&table_id.pascal_case))
     }
 
     fn clear_table(&mut self, table_id: &Self::TableId) -> ResultBench<()> {
@@ -177,61 +170,21 @@ impl BenchDatabase for SpacetimeModule {
 
     fn filter<T: BenchTable>(
         &mut self,
-        table: &TableSchema,
+        table_id: &Self::TableId,
         column_index: u32,
         value: AlgebraicValue,
     ) -> ResultBench<()> {
         let SpacetimeModule { runtime, module } = self;
         let module = module.as_mut().unwrap();
 
-        //let product_type = T::product_type();
-        let column_name = &table.columns[column_index as usize].col_name;
-        let reducer_name = format!("filter_{}_by_{}", table.table_name, column_name);
+        let product_type = T::product_type();
+        let column_name = product_type.elements[column_index as usize].name.as_ref().unwrap();
+        let reducer_name = format!("filter_{}_by_{}", table_id.snake_case, column_name);
 
         runtime.block_on(async move {
             module
                 .call_reducer_binary(&reducer_name, ProductValue { elements: vec![value] })
                 .await?;
-            Ok(())
-        })
-    }
-
-    fn sql_select(&mut self, table: &TableSchema) -> ResultBench<()> {
-        let SpacetimeModule { runtime, module } = self;
-        let module = module.as_mut().unwrap();
-        let sql = format!("SELECT * FROM {}", table.table_name);
-        let id = module.client.id.identity;
-        runtime.block_on(async move {
-            module.client.module.one_off_query(id, sql).await?;
-            Ok(())
-        })
-    }
-
-    fn sql_where<T: BenchTable>(
-        &mut self,
-        table: &TableSchema,
-        column_index: u32,
-        value: AlgebraicValue,
-    ) -> ResultBench<()> {
-        let column = &table.columns[column_index as usize].col_name;
-
-        let value = match value {
-            AlgebraicValue::U32(x) => x.to_string(),
-            AlgebraicValue::U64(x) => x.to_string(),
-            AlgebraicValue::String(x) => format!("'{}'", x),
-            _ => {
-                unreachable!()
-            }
-        };
-
-        let SpacetimeModule { runtime, module } = self;
-        let module = module.as_mut().unwrap();
-        let table_name = &table.table_name;
-        let sql_query = format!("SELECT * FROM {table_name} WHERE {column} = {value}");
-
-        let id = module.client.id.identity;
-        runtime.block_on(async move {
-            module.client.module.one_off_query(id, sql_query).await?;
             Ok(())
         })
     }

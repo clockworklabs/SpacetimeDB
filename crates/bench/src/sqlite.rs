@@ -1,5 +1,4 @@
 use crate::{
-    create_schema,
     database::BenchDatabase,
     schemas::{table_name, BenchTable, IndexStrategy},
     ResultBench,
@@ -7,7 +6,6 @@ use crate::{
 use ahash::AHashMap;
 use lazy_static::lazy_static;
 use rusqlite::Connection;
-use spacetimedb::db::datastore::traits::TableSchema;
 use spacetimedb_lib::sats::{AlgebraicType, AlgebraicValue, ProductType};
 use std::{
     fmt::Write,
@@ -27,8 +25,6 @@ impl BenchDatabase for SQLite {
     fn name() -> &'static str {
         "sqlite"
     }
-
-    type TableId = String;
 
     fn build(in_memory: bool, fsync: bool) -> ResultBench<Self>
     where
@@ -53,6 +49,8 @@ impl BenchDatabase for SQLite {
             _temp_dir: temp_dir,
         })
     }
+
+    type TableId = String;
 
     /// We derive the SQLite schema from the AlgebraicType of the table.
     fn create_table<T: BenchTable>(
@@ -94,10 +92,6 @@ impl BenchDatabase for SQLite {
         self.db.execute_batch(&statement)?;
 
         Ok(table_name)
-    }
-
-    fn get_table<T: BenchTable>(&mut self, table_id: &Self::TableId) -> ResultBench<TableSchema> {
-        Ok(create_schema::<T>(table_id))
     }
 
     fn clear_table(&mut self, table_id: &Self::TableId) -> ResultBench<()> {
@@ -173,13 +167,17 @@ impl BenchDatabase for SQLite {
 
     fn filter<T: BenchTable>(
         &mut self,
-        table: &TableSchema,
+        table_id: &Self::TableId,
         column_index: u32,
         value: AlgebraicValue,
     ) -> ResultBench<()> {
-        let statement = memo_query(BenchName::Filter, &table.table_name, || {
-            let column = &table.columns[column_index as usize].col_name;
-            format!("SELECT * FROM {} WHERE {column} = ?", table.table_name)
+        let statement = memo_query(BenchName::Filter, table_id, || {
+            let column = T::product_type()
+                .elements
+                .swap_remove(column_index as usize)
+                .name
+                .unwrap();
+            format!("SELECT * FROM {table_id} WHERE {column} = ?")
         });
 
         let mut begin = self.db.prepare_cached(BEGIN_TRANSACTION)?;
@@ -211,19 +209,6 @@ impl BenchDatabase for SQLite {
 
         commit.execute(())?;
         Ok(())
-    }
-
-    fn sql_select(&mut self, table: &TableSchema) -> ResultBench<()> {
-        self.iterate(&table.table_name)
-    }
-
-    fn sql_where<T: BenchTable>(
-        &mut self,
-        table: &TableSchema,
-        column_index: u32,
-        value: AlgebraicValue,
-    ) -> ResultBench<()> {
-        self.filter::<T>(table, column_index, value)
     }
 }
 
