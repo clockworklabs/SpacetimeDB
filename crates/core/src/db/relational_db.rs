@@ -17,7 +17,6 @@ use crate::error::{DBError, DatabaseError, IndexError, TableError};
 use crate::hash::Hash;
 use fs2::FileExt;
 use nonempty::NonEmpty;
-use prometheus::HistogramVec;
 use spacetimedb_lib::ColumnIndexAttribute;
 use spacetimedb_lib::{data_key::ToDataKey, PrimaryKey};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};

@@ -589,7 +589,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     /// The method also performs various measurements and records energy usage.
     #[tracing::instrument(skip_all)]
     fn execute(&mut self, tx: Option<MutTxId>, op: ReducerOp<'_>) -> (EventStatus, EnergyStats) {
-        let address = &self.database_instance_context().address;
+        let address = &self.database_instance_context().address.clone();
         let func_ident = &*self.info.reducers[op.id].name;
         WORKER_METRICS
             .reducer_count
