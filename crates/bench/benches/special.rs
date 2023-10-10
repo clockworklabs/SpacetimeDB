@@ -4,10 +4,7 @@ use spacetimedb_bench::{
     schemas::{create_sequential, BenchTable, Location, Person, RandomTable},
     spacetime_module::BENCHMARKS_MODULE,
 };
-use spacetimedb_lib::{
-    sats::{self, BuiltinValue},
-    AlgebraicValue, ProductValue,
-};
+use spacetimedb_lib::{sats, ProductValue};
 use spacetimedb_testing::modules::start_runtime;
 
 fn criterion_benchmark(c: &mut Criterion) {
@@ -26,9 +23,7 @@ fn custom_module_benchmarks(c: &mut Criterion) {
     };
     let module = runtime.block_on(async { BENCHMARKS_MODULE.load_module(config).await });
 
-    let args = ProductValue {
-        elements: vec![AlgebraicValue::Builtin(BuiltinValue::String("0".repeat(65536)))],
-    };
+    let args = sats::product!["0".repeat(65536)];
     c.bench_function("stdb_module/large_arguments/64KiB", |b| {
         b.iter_batched(
             || args.clone(),
@@ -37,10 +32,8 @@ fn custom_module_benchmarks(c: &mut Criterion) {
         )
     });
 
-    for n in [1, 100, 1000] {
-        let args = ProductValue {
-            elements: vec![AlgebraicValue::Builtin(BuiltinValue::U32(n))],
-        };
+    for n in [1u32, 100, 1000] {
+        let args = sats::product![n];
         c.bench_function(&format!("stdb_module/print_bulk/lines={n}"), |b| {
             b.iter_batched(
                 || args.clone(),
