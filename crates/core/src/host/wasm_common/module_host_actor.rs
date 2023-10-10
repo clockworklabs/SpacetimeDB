@@ -1,17 +1,16 @@
-use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, TableDef, TableSchema};
+use crate::db::datastore::traits::TableDef;
+use crate::host::db::{ModuleTableSchema, SchemaUpdates};
 use crate::host::scheduler::Scheduler;
-use crate::sql;
+use crate::{host, sql};
 use anyhow::Context;
 use bytes::Bytes;
-use nonempty::NonEmpty;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::{bsatn, Address, IndexType, ModuleDef, VersionTuple};
+use spacetimedb_lib::{bsatn, Address, ModuleDef, VersionTuple};
 use spacetimedb_vm::expr::CrudExpr;
 
 use crate::client::ClientConnectionSender;
@@ -417,37 +416,47 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
 
         let (tx0, updates) = stdb.with_auto_rollback::<_, _, anyhow::Error>(tx, |tx| self.schema_updates(tx))?;
         tx = tx0;
-        if updates.tainted_tables.is_empty() {
-            tx = stdb
-                .with_auto_rollback::<_, _, DBError>(tx, |tx| {
-                    for (name, schema) in updates.new_tables {
-                        self.system_logger().info(&format!("Creating table `{}`", name));
-                        stdb.create_table(tx, schema)
-                            .with_context(|| format!("failed to create table {}", name))?;
-                    }
+        match updates {
+            SchemaUpdates::Updates {
+                new_tables,
+                indexes_to_drop,
+                indexes_to_create,
+            } => {
+                tx = stdb
+                    .with_auto_rollback::<_, _, DBError>(tx, |tx| {
+                        for (name, schema) in new_tables {
+                            self.system_logger().info(&format!("Creating table `{}`", name));
+                            stdb.create_table(tx, schema)
+                                .with_context(|| format!("failed to create table {}", name))?;
+                        }
 
-                    for index_id in updates.indexes_to_drop {
-                        self.system_logger()
-                            .info(&format!("Dropping index with id {}", index_id.0));
-                        stdb.drop_index(tx, index_id)?;
-                    }
+                        for index_id in indexes_to_drop {
+                            self.system_logger()
+                                .info(&format!("Dropping index with id {}", index_id.0));
+                            stdb.drop_index(tx, index_id)?;
+                        }
 
-                    for index_def in updates.indexes_to_create {
-                        self.system_logger()
-                            .info(&format!("Creating index `{}`", index_def.name));
-                        stdb.create_index(tx, index_def)?;
-                    }
+                        for index_def in indexes_to_create {
+                            self.system_logger()
+                                .info(&format!("Creating index `{}`", index_def.name));
+                            stdb.create_index(tx, index_def)?;
+                        }
 
-                    Ok(())
-                })
-                .map(|(tx, ())| tx)?;
-        } else {
-            stdb.rollback_tx(tx);
-            self.system_logger()
-                .error("Module update rejected due to schema mismatch");
-            return Ok(Err(UpdateDatabaseError::IncompatibleSchema {
-                tables: updates.tainted_tables,
-            }));
+                        Ok(())
+                    })
+                    .map(|(tx, ())| tx)?;
+            }
+            SchemaUpdates::Tainted(tainted) => {
+                stdb.rollback_tx(tx);
+                self.system_logger()
+                    .error("Module update rejected due to schema mismatch");
+                let mut tables = Vec::with_capacity(tainted.len());
+                for t in tainted {
+                    self.system_logger().warn(&format!("{}: {}", t.table_name, t.reason));
+                    tables.push(t.table_name);
+                }
+                return Ok(Err(UpdateDatabaseError::IncompatibleSchema { tables }));
+            }
         }
 
         // Update the module hash. Morally, this should be done _after_ calling
@@ -696,96 +705,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     // Helpers - NOT API
 
     fn schema_for(&self, table: &spacetimedb_lib::TableDef) -> anyhow::Result<TableDef> {
-        let schema = self
-            .info
-            .typespace
-            .with_type(&table.data)
-            .resolve_refs()
-            .context("recursive types not yet supported")?;
-        let schema = schema.into_product().ok().context("table not a product type?")?;
-        anyhow::ensure!(
-            table.column_attrs.len() == schema.elements.len(),
-            "mismatched number of columns"
-        );
-        let columns: Vec<ColumnDef> = std::iter::zip(&schema.elements, &table.column_attrs)
-            .map(|(ty, attr)| {
-                Ok(ColumnDef {
-                    col_name: ty.name.clone().context("column without name")?,
-                    col_type: ty.algebraic_type.clone(),
-                    is_autoinc: attr.is_autoinc(),
-                })
-            })
-            .collect::<anyhow::Result<_>>()?;
-
-        let mut indexes = Vec::new();
-
-        // Build single-column index definitions, determining `is_unique` from
-        // their respective column attributes.
-        for (col_id, col) in columns.iter().enumerate() {
-            let mut index_for_column = None;
-            for index in table.indexes.iter() {
-                let [index_col_id] = *index.col_ids else {
-                    //Ignore multi-column indexes
-                    continue;
-                };
-                if index_col_id as usize != col_id {
-                    continue;
-                }
-                index_for_column = Some(index);
-                break;
-            }
-
-            let col_attr = table.column_attrs.get(col_id).context("invalid column id")?;
-            // If there's an index defined for this column already, use it
-            // making sure that it is unique if the column has a unique constraint
-            if let Some(index) = index_for_column {
-                match index.ty {
-                    IndexType::BTree => {}
-                    // TODO
-                    IndexType::Hash => anyhow::bail!("hash indexes not yet supported"),
-                }
-                let index = IndexDef {
-                    table_id: 0, // Will be ignored
-                    cols: NonEmpty::new(col_id as u32),
-                    name: index.name.clone(),
-                    is_unique: col_attr.is_unique(),
-                };
-                indexes.push(index);
-            } else if col_attr.is_unique() {
-                // If you didn't find an index, but the column is unique then create a unique btree index
-                // anyway.
-                let index = IndexDef {
-                    table_id: 0, // Will be ignored
-                    cols: NonEmpty::new(col_id as u32),
-                    name: format!("{}_{}_unique", table.name, col.col_name),
-                    is_unique: true,
-                };
-                indexes.push(index);
-            }
-        }
-
-        // Multi-column indexes cannot be unique (yet), so just add them.
-        let multi_col_indexes = table.indexes.iter().filter_map(|index| {
-            if index.col_ids.len() > 1 {
-                Some(IndexDef {
-                    table_id: 0,
-                    cols: NonEmpty::collect(index.col_ids.iter().map(|i| *i as u32))?,
-                    name: index.name.clone(),
-                    is_unique: false,
-                })
-            } else {
-                None
-            }
-        });
-        indexes.extend(multi_col_indexes);
-
-        Ok(TableDef {
-            table_name: table.name.clone(),
-            columns,
-            indexes,
-            table_type: table.table_type,
-            table_access: table.table_access,
-        })
+        ModuleTableSchema::resolve(&self.info.typespace, table)?.hydrate()
     }
 
     fn system_logger(&self) -> SystemLogger {
@@ -794,118 +714,17 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     }
 
     /// Compute the diff between the current and proposed schema.
-    fn schema_updates(&self, tx: &MutTxId) -> anyhow::Result<SchemaUpdates> {
-        let stdb = &*self.database_instance_context().relational_db;
+    fn schema_updates(&self, tx: &MutTxId) -> anyhow::Result<host::db::SchemaUpdates> {
+        let stdb = &self.database_instance_context().relational_db;
+        let proposed = self
+            .info
+            .catalog
+            .values()
+            .filter_map(EntityDef::as_table)
+            .map(|table| self.schema_for(table));
 
-        // Until we know how to migrate schemas, we only accept `TableDef`s for
-        // existing tables which are equal sans their indexes.
-        struct Equiv<'a>(&'a TableDef);
-        impl PartialEq for Equiv<'_> {
-            fn eq(&self, other: &Self) -> bool {
-                let TableDef {
-                    table_name,
-                    columns,
-                    indexes: _,
-                    table_type,
-                    table_access,
-                } = &self.0;
-                table_name == &other.0.table_name
-                    && table_type == &other.0.table_type
-                    && table_access == &other.0.table_access
-                    && columns == &other.0.columns
-            }
-        }
-
-        let mut new_tables = HashMap::new();
-        let mut tainted_tables = Vec::new();
-        let mut indexes_to_create = Vec::new();
-        let mut indexes_to_drop = Vec::new();
-
-        let mut known_tables: BTreeMap<String, TableSchema> = stdb
-            .get_all_tables(tx)?
-            .into_iter()
-            .map(|schema| (schema.table_name.clone(), schema))
-            .collect();
-
-        for table in self.info.catalog.values().filter_map(EntityDef::as_table) {
-            let proposed_schema_def = self.schema_for(table)?;
-            if let Some(known_schema) = known_tables.remove(&table.name) {
-                let table_id = known_schema.table_id;
-                let known_schema_def = TableDef::from(known_schema.clone());
-                // If the schemas differ acc. to [Equiv], the update should be
-                // rejected.
-                if Equiv(&known_schema_def) != Equiv(&proposed_schema_def) {
-                    self.system_logger()
-                        .warn(&format!("stored and proposed schema of `{}` differ", table.name));
-                    tainted_tables.push(table.name.to_owned());
-                } else {
-                    // The schema is unchanged, but maybe the indexes are.
-                    let mut known_indexes = known_schema
-                        .indexes
-                        .into_iter()
-                        .map(|idx| (idx.index_name.clone(), idx))
-                        .collect::<BTreeMap<_, _>>();
-
-                    for mut index_def in proposed_schema_def.indexes {
-                        // This is zero in the proposed schema, as the table id
-                        // is not known at proposal time.
-                        index_def.table_id = table_id;
-
-                        match known_indexes.remove(&index_def.name) {
-                            None => indexes_to_create.push(index_def),
-                            Some(known_index) => {
-                                let known_id = IndexId(known_index.index_id);
-                                let known_index_def = IndexDef::from(known_index);
-                                if known_index_def != index_def {
-                                    indexes_to_drop.push(known_id);
-                                    indexes_to_create.push(index_def);
-                                }
-                            }
-                        }
-                    }
-
-                    // Indexes not in the proposed schema shall be dropped.
-                    for index in known_indexes.into_values() {
-                        indexes_to_drop.push(IndexId(index.index_id));
-                    }
-                }
-            } else {
-                new_tables.insert(table.name.to_owned(), proposed_schema_def);
-            }
-        }
-        // We may at some point decide to drop orphaned tables automatically,
-        // but for now it's an incompatible schema change
-        for orphan in known_tables.into_keys() {
-            if !orphan.starts_with("st_") {
-                self.system_logger()
-                    .warn(format!("Orphaned table: {}", orphan).as_str());
-                tainted_tables.push(orphan);
-            }
-        }
-
-        Ok(SchemaUpdates {
-            new_tables,
-            tainted_tables,
-            indexes_to_drop,
-            indexes_to_create,
-        })
+        host::db::schema_updates(stdb, tx, proposed)
     }
-}
-
-struct SchemaUpdates {
-    /// Tables to create.
-    new_tables: HashMap<String, TableDef>,
-    /// Names of tables with incompatible schema updates.
-    tainted_tables: Vec<String>,
-    /// Indexes to drop.
-    ///
-    /// Should be processed _before_ `indexes_to_create`, as we might be
-    /// updating (i.e. drop then create with different parameters).
-    indexes_to_drop: Vec<IndexId>,
-    /// Indexes to create.
-    ///
-    /// Should be processed _after_ `indexes_to_drop`.
-    indexes_to_create: Vec<IndexDef>,
 }
 
 #[derive(Debug)]

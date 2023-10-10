@@ -9,6 +9,7 @@ use spacetimedb_lib::{bsatn, Hash, Identity};
 use spacetimedb_lib::{ProductValue, ReducerDef};
 use spacetimedb_sats::WithTypespace;
 
+mod db;
 mod host_controller;
 pub(crate) mod module_host;
 pub use module_host::{UpdateDatabaseError, UpdateDatabaseResult, UpdateDatabaseSuccess};
