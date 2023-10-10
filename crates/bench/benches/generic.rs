@@ -293,7 +293,7 @@ fn _filter_setup<DB: BenchDatabase, T: BenchTable + RandomTable>(
     load: u32,
     buckets: u32,
 ) -> ResultBench<(String, TableSchema, Vec<T>)> {
-    let filter_column_type = match &T::product_type().elements[column_index as usize].algebraic_type {
+    let filter_column_type = match T::product_type().elements[column_index as usize].algebraic_type {
         AlgebraicType::String => "string",
         AlgebraicType::U32 => "u32",
         AlgebraicType::U64 => "u64",
