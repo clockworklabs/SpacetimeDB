@@ -2,7 +2,7 @@ use spacetimedb::db::datastore::traits::TableSchema;
 use spacetimedb::db::{Config, FsyncPolicy, Storage};
 use spacetimedb_lib::sats::product;
 use spacetimedb_lib::{sats::ArrayValue, AlgebraicValue, ProductValue};
-use spacetimedb_testing::modules::{start_runtime, CompiledModule, ModuleHandle};
+use spacetimedb_testing::modules::{start_runtime, CompilationMode, CompiledModule, ModuleHandle};
 use tokio::runtime::Runtime;
 
 use crate::{
@@ -14,7 +14,7 @@ use crate::{
 
 lazy_static::lazy_static! {
     pub static ref BENCHMARKS_MODULE: CompiledModule =
-        CompiledModule::compile("benchmarks");
+        CompiledModule::compile("benchmarks", CompilationMode::Release);
 }
 
 /// A benchmark backend that invokes a spacetime module.

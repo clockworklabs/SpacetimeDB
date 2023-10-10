@@ -77,9 +77,15 @@ pub struct CompiledModule {
     program_bytes: OnceLock<Vec<u8>>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum CompilationMode {
+    Debug,
+    Release,
+}
+
 impl CompiledModule {
-    pub fn compile(name: &str) -> Self {
-        let path = spacetimedb_cli::build(&module_path(name), false, true).unwrap();
+    pub fn compile(name: &str, mode: CompilationMode) -> Self {
+        let path = spacetimedb_cli::build(&module_path(name), false, mode == CompilationMode::Debug).unwrap();
         Self {
             name: name.to_owned(),
             path,
