@@ -2302,6 +2302,7 @@ mod tests {
         assert_eq!(
             table_rows,
             vec![
+                // table_id, table_name, table_type, table_access
                 table_row(0, "st_table", StTableType::System, StAccess::Public),
                 table_row(1, "st_columns", StTableType::System, StAccess::Public),
                 table_row(2, "st_sequence", StTableType::System, StAccess::Public),
@@ -2319,6 +2320,7 @@ mod tests {
         assert_eq!(
             column_rows,
             vec![
+                // table_id, col_id, col_name, col_type, is_autoinc
                 column_row(0, 0, "table_id", AlgebraicType::U32, true),
                 column_row(0, 1, "table_name", AlgebraicType::String, false),
                 column_row(0, 2, "table_type", AlgebraicType::String, false),
@@ -2366,6 +2368,7 @@ mod tests {
         assert_eq!(
             index_rows,
             vec![
+                // index_id, table_id, col_id, index_name, is_unique
                 index_row(0, 0, 0, "table_id_idx", true),
                 index_row(1, 3, 0, "index_id_idx", true),
                 index_row(2, 2, 0, "sequences_id_idx", true),
@@ -2418,6 +2421,7 @@ mod tests {
         assert_eq!(
             table_rows,
             vec![
+                // table_id, table_name, table_type, table_access
                 table_row(6, "Foo", StTableType::User, StAccess::Public)
             ]
         );
@@ -2430,6 +2434,7 @@ mod tests {
         assert_eq!(
             column_rows,
             vec![
+                // table_id, col_id, col_name, col_type, is_autoinc
                 column_row(6, 0, "id", AlgebraicType::U32, true),
                 column_row(6, 1, "name", AlgebraicType::String, false),
                 column_row(6, 2, "age", AlgebraicType::U32, false),
@@ -2452,6 +2457,7 @@ mod tests {
         assert_eq!(
             table_rows,
             vec![
+                // table_id, table_name, table_type, table_access
                 table_row(6, "Foo", StTableType::User, StAccess::Public)
             ]
         );
@@ -2464,6 +2470,7 @@ mod tests {
         assert_eq!(
             column_rows,
             vec![
+                // table_id, col_id, col_name, col_type, is_autoinc
                 column_row(6, 0, "id", AlgebraicType::U32, true),
                 column_row(6, 1, "name", AlgebraicType::String, false),
                 column_row(6, 2, "age", AlgebraicType::U32, false),
@@ -2501,11 +2508,13 @@ mod tests {
             table_id: table_id.0,
             table_name: "Foo".into(),
             columns: vec![
+                // table_id, col_id: id, col_name, col_type, is_autoinc
                 column_schema(6, 0, "id", AlgebraicType::U32, true),
                 column_schema(6, 1, "name", AlgebraicType::String, false),
                 column_schema(6, 2, "age", AlgebraicType::U32, false),
             ],
             indexes: vec![
+                // index_id, table_id, col_id, index_name, is_unique
                 index_schema(6, 6, 0, "id_idx", true),
                 index_schema(7, 6, 1, "name_idx", true),
             ],
@@ -2527,11 +2536,13 @@ mod tests {
             table_id: table_id.0,
             table_name: "Foo".into(),
             columns: vec![
+                // table_id, col_id: id, col_name, col_type, is_autoinc
                 column_schema(6, 0, "id", AlgebraicType::U32, true),
                 column_schema(6, 1, "name", AlgebraicType::String, false),
                 column_schema(6, 2, "age", AlgebraicType::U32, false),
             ],
             indexes: vec![
+                // index_id, table_id, col_id, index_name, is_unique
                 index_schema(6, 6, 0, "id_idx", true),
                 index_schema(7, 6, 1, "name_idx", true),
             ],
@@ -2814,6 +2825,7 @@ mod tests {
             .collect::<Vec<_>>();
         #[rustfmt::skip]
         assert_eq!(index_rows, vec![
+            // index_id, table_id, col_id, index_name, is_unique
             index_row(0, 0, 0, "table_id_idx", true),
             index_row(1, 3, 0, "index_id_idx", true),
             index_row(2, 2, 0, "sequences_id_idx", true),
@@ -2867,6 +2879,7 @@ mod tests {
             .collect::<Vec<_>>();
         #[rustfmt::skip]
         assert_eq!(index_rows, vec![
+            // index_id, table_id, col_id, index_name, is_unique
             index_row(0, 0, 0, "table_id_idx", true),
             index_row(1, 3, 0, "index_id_idx", true),
             index_row(2, 2, 0, "sequences_id_idx", true),
@@ -2921,6 +2934,7 @@ mod tests {
             .collect::<Vec<_>>();
         #[rustfmt::skip]
         assert_eq!(index_rows, vec![
+            // index_id, table_id, col_id, index_name, is_unique
             index_row(0, 0, 0, "table_id_idx", true),
             index_row(1, 3, 0, "index_id_idx", true),
             index_row(2, 2, 0, "sequences_id_idx", true),
