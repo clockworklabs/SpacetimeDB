@@ -1,5 +1,8 @@
 use spacetimedb::db::{Config, FsyncPolicy, Storage};
-use spacetimedb_lib::{sats::ArrayValue, AlgebraicValue, ProductValue};
+use spacetimedb_lib::{
+    sats::{product, ArrayValue},
+    AlgebraicValue, ProductValue,
+};
 use spacetimedb_testing::modules::{start_runtime, CompilationMode, CompiledModule, ModuleHandle};
 use tokio::runtime::Runtime;
 
