@@ -711,13 +711,20 @@ impl Buffer {
         unsafe { raw::_buffer_len(self.handle()) }
     }
 
-    /// Read the contents of the buffer into a boxed byte slice.
+    /// Read the contents of the buffer and append to the provided Vec.
+    pub fn read_into(self, buf: &mut Vec<u8>) {
+        let old_buf_len = buf.len();
+        let data_len = self.data_len();
+        buf.reserve(data_len);
+        self.read_uninit(buf.spare_capacity_mut()[..data_len]);
+        // SAFETY: We just read `data_len` bytes after the end of `buf`.
+        unsafe { buf.set_len(old_buf_len + data_len) };
+    }
+
+    /// Read the contents of the buffer into a new boxed byte slice.
     pub fn read(self) -> Box<[u8]> {
-        let len = self.data_len();
-        let mut buf = alloc::vec::Vec::with_capacity(len);
-        self.read_uninit(buf.spare_capacity_mut());
-        // SAFETY: We just wrote `len` bytes to `buf`.
-        unsafe { buf.set_len(len) };
+        let mut buf = alloc::vec::Vec::new();
+        self.read_into(&mut buf);
         buf.into_boxed_slice()
     }
 
@@ -746,14 +753,13 @@ impl Buffer {
 }
 
 impl Iterator for BufferIter {
-    type Item = Result<Box<[u8]>, Errno>;
+    type Item = Result<Buffer, Errno>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let buf = unsafe { call(|out| raw::_iter_next(self.handle(), out)) };
         match buf {
             Ok(buf) if buf.is_invalid() => None,
-            Ok(buf) => Some(Ok(buf.read())),
-            Err(e) => Some(Err(e)),
+            res => Some(res),
         }
     }
 }
