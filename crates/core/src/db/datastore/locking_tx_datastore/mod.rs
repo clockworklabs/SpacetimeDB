@@ -72,8 +72,8 @@ pub enum SequenceError {
     NotInteger { col: String, found: AlgebraicType },
     #[error("Sequence ID `{0}` still had no values left after allocation.")]
     UnableToAllocate(SequenceId),
-    #[error("The auto_inc sequence need exactly 1 column : Table: {0:?}, Columns: {1:?}")]
-    OneColumnAutoInc(TableId, NonEmpty<ColId>),
+    #[error("Autoinc constraint on table {0:?} spans more than one column: {1:?}")]
+    MultiColumnAutoInc(TableId, NonEmpty<ColId>),
 }
 
 const SEQUENCE_PREALLOCATION_AMOUNT: i128 = 4_096;
@@ -373,7 +373,7 @@ impl Inner {
             .committed_state
             .get_or_create_table(ST_TABLES_ID, &ST_TABLE_ROW_TYPE, &st_table_schema());
 
-        // Insert the table row into `st_tables` for all system tables, creating st_tables if it's missing
+        // Insert the table row into `st_tables` for all system tables
         for schema in system_tables() {
             let table_id = schema.table_id;
             let table_name = &schema.table_name;
@@ -408,7 +408,9 @@ impl Inner {
             st_columns.rows.insert(RowId(data_key), row);
         }
 
-        // Insert constraints into `st_constraints` sorted by table/column
+        // Insert the FK sorted by table/column so it show together when queried.
+
+        // Insert constraints into `st_constraints`
         let st_constraints = self.committed_state.get_or_create_table(
             ST_CONSTRAINTS_ID,
             &ST_CONSTRAINT_ROW_TYPE,
@@ -435,7 +437,7 @@ impl Inner {
             *sequences_start.entry(ST_CONSTRAINTS_ID).or_default() += 1;
         }
 
-        // Insert the indexes into `st_indexes` sorted by table/column
+        // Insert the indexes into `st_indexes`
         let st_indexes =
             self.committed_state
                 .get_or_create_table(ST_INDEXES_ID, &ST_INDEX_ROW_TYPE, &st_indexes_schema());
@@ -461,10 +463,9 @@ impl Inner {
             *sequences_start.entry(ST_INDEXES_ID).or_default() += 1;
         }
 
-        // TODO(kim): We need to make sure to have ST_MODULE in the committed
-        // state. `bootstrap_system_table` initializes the others lazily, but
-        // it doesn't know about `ST_MODULE_ROW_TYPE`. Perhaps the committed
-        // state should be initialized eagerly here?
+        // We don't add the row here but with `MutProgrammable::set_program_hash`, but we need to register the table
+        // in the internal state.
+        // TODO: This should be moved here?
         self.committed_state
             .get_or_create_table(ST_MODULE_ID, &ST_MODULE_ROW_TYPE, &st_module_schema());
 
@@ -635,7 +636,7 @@ impl Inner {
             (seq_row, old_seq_row_id)
         };
 
-        self.delete(&ST_SEQUENCES_ID, &old_seq_row_id)?;
+        self.delete(&ST_SEQUENCES_ID, &old_seq_row_id);
         self.insert(ST_SEQUENCES_ID, ProductValue::from(&seq_row))?;
 
         let Some(sequence) = self.sequence_state.get_sequence_mut(seq_id) else {
@@ -726,7 +727,7 @@ impl Inner {
         let st = StSequenceRow::try_from(old_row.view())?;
 
         let old_seq_row_id = RowId(old_row.data.to_data_key());
-        self.delete(&ST_SEQUENCES_ID, &old_seq_row_id)?;
+        self.delete(&ST_SEQUENCES_ID, &old_seq_row_id);
 
         self.sequence_state.sequences.remove(&sequence_id);
         if let Some(insert_table) = self.tx_state.as_mut().unwrap().get_insert_table_mut(&st.table_id) {
@@ -799,7 +800,7 @@ impl Inner {
 
         // Verify we have 1 column if need `auto_inc`
         if constraint.kind.has_autoinc() && constraint.columns.len() != 1 {
-            return Err(SequenceError::OneColumnAutoInc(table_id, constraint.columns).into());
+            return Err(SequenceError::MultiColumnAutoInc(table_id, constraint.columns).into());
         };
 
         // Insert the constraint row into st_constraint
@@ -876,7 +877,7 @@ impl Inner {
             .unwrap();
 
         let old_row_id = RowId(old_row.view().to_data_key());
-        self.delete(&ST_CONSTRAINTS_ID, &old_row_id)?;
+        self.delete(&ST_CONSTRAINTS_ID, &old_row_id);
 
         let st = StConstraintRow::try_from(old_row.view())?;
 
@@ -914,7 +915,9 @@ impl Inner {
         Ok(())
     }
 
-    // NOTE: This must be sync with `Self::schema_for_table`
+    // NOTE:  It is essential to keep this function in sync with the
+    // `Self::schema_for_table`, as it must reflect the same steps used
+    // to create database objects when querying for information about the table.
     fn create_table(&mut self, table_schema: TableDef) -> super::Result<TableId> {
         log::trace!("TABLE CREATING: {}", table_schema.table_name);
 
@@ -1015,7 +1018,9 @@ impl Inner {
         Ok(ProductType { elements })
     }
 
-    // NOTE: This must be sync with `Self::create_table`
+    // NOTE: It is essential to keep this function in sync with the
+    // `Self::create_table`, as it must reflect the same steps used
+    // to create database objects.
     #[tracing::instrument(skip_all)]
     fn schema_for_table(&self, table_id: TableId) -> super::Result<TableSchema> {
         if let Some(schema) = self.get_schema(&table_id) {
@@ -1174,7 +1179,7 @@ impl Inner {
         let row_id = RowId(row.view().to_data_key());
         let mut el = StTableRow::try_from(row.view())?;
         el.table_name = new_name;
-        self.delete(&ST_TABLES_ID, &row_id)?;
+        self.delete(&ST_TABLES_ID, &row_id);
         self.insert(ST_TABLES_ID, (&el).into())?;
         Ok(())
     }
@@ -1208,7 +1213,6 @@ impl Inner {
             table_id,
             index.columns
         );
-        // Create the index in memory
         if !self.table_exists(&table_id) {
             return Err(TableError::IdNotFoundState(table_id).into());
         }
@@ -1303,7 +1307,7 @@ impl Inner {
         let st = StIndexRow::try_from(old_row.view())?;
 
         let old_index_row_id = RowId(old_row.data.to_data_key());
-        self.delete(&ST_INDEXES_ID, &old_index_row_id)?;
+        self.delete(&ST_INDEXES_ID, &old_index_row_id);
 
         let clear_indexes = |table: &mut Table| {
             let cols: Vec<_> = table
@@ -1616,8 +1620,8 @@ impl Inner {
             .map(|table| table.get_schema())
     }
 
-    fn delete(&mut self, table_id: &TableId, row_id: &RowId) -> super::Result<bool> {
-        Ok(self.delete_row_internal(table_id, row_id))
+    fn delete(&mut self, table_id: &TableId, row_id: &RowId) -> bool {
+        self.delete_row_internal(table_id, row_id)
     }
 
     fn delete_row_internal(&mut self, table_id: &TableId, row_id: &RowId) -> bool {
@@ -1656,7 +1660,7 @@ impl Inner {
         let mut count = 0;
         for tuple in relation {
             let data_key = tuple.to_data_key();
-            if self.delete(table_id, &RowId(data_key))? {
+            if self.delete(table_id, &RowId(data_key)) {
                 count += 1;
             }
         }
@@ -2320,7 +2324,7 @@ impl MutTxDatastore for Locking {
         table_id: TableId,
         row_id: Self::RowId,
     ) -> super::Result<bool> {
-        tx.lock.delete(&table_id, &row_id)
+        Ok(tx.lock.delete(&table_id, &row_id))
     }
 
     fn delete_by_rel_mut_tx<R: IntoIterator<Item = spacetimedb_sats::ProductValue>>(

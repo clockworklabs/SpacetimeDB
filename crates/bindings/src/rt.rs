@@ -417,10 +417,8 @@ pub fn register_table<T: TableType>() {
                     None
                 }
             })
-            .unwrap();
+            .expect("Fail to retrieve the columns from the module");
 
-        //let columns: Vec<_> = module.module.typespace[data].as_product().unwrap().into();
-        // dbg!(ty, &columns);
         let indexes: Vec<_> = T::INDEXES.iter().copied().map(Into::into).collect();
         //WARNING: The definition  of table assumes the # of constraints == # of columns elsewhere
         let constraints: Vec<_> = T::COLUMN_ATTRS

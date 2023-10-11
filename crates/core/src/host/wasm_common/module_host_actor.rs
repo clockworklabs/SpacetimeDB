@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use bytes::Bytes;
+use itertools::Itertools;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{bsatn, Address, ModuleDef};
@@ -356,8 +357,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                 .info(&format!("Creating table `{}`", table.schema.table_name));
             tx = stdb
                 .with_auto_rollback(tx, |tx| {
-                    let schema = self.schema_for(table)?;
-                    stdb.create_table(tx, schema)
+                    stdb.create_table(tx, table.schema.clone())
                         .with_context(|| format!("failed to create table {}", table.schema.table_name))
                 })
                 .map(|(tx, _)| tx)
@@ -684,23 +684,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     }
 
     // Helpers - NOT API
-
-    fn schema_for(&self, table: &spacetimedb_lib::TableDesc) -> anyhow::Result<TableDef> {
-        // let schema = self
-        //     .info
-        //     .typespace
-        //     .with_type(&table.data)
-        //     .resolve_refs()
-        //     .context("recursive types not yet supported")?;
-        // let schema = schema.into_product().ok().context("table not a product type?")?;
-        // anyhow::ensure!(
-        //     table.schema.columns.len() == schema.elements.len(),
-        //     "mismatched number of columns"
-        // );
-
-        Ok(table.schema.clone())
-    }
-
     fn system_logger(&self) -> SystemLogger {
         let inner = self.database_instance_context().logger.lock().unwrap();
         SystemLogger { inner }
@@ -718,14 +701,16 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 let TableDef {
                     table_name,
                     columns,
+                    indexes: _,
+                    constraints: _,
+                    sequences: _,
                     table_type,
                     table_access,
-                    ..
                 } = &self.0;
                 table_name == &other.0.table_name
                     && table_type == &other.0.table_type
                     && table_access == &other.0.table_access
-                    && columns == &other.0.columns
+                    && columns.iter().sorted().eq(other.0.columns.iter().sorted())
             }
         }
 
@@ -741,7 +726,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             .collect();
 
         for table in self.info.catalog.values().filter_map(EntityDef::as_table) {
-            let proposed_schema_def = self.schema_for(table)?;
+            let proposed_schema_def = table.schema.clone();
             if let Some(known_schema) = known_tables.remove(&table.schema.table_name) {
                 let table_id = known_schema.table_id;
                 let known_schema_def = TableDef::from(known_schema.clone());

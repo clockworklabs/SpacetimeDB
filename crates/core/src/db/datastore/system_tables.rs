@@ -67,7 +67,8 @@ pub(crate) fn system_tables() -> [TableSchema; 6] {
         st_indexes_schema(),
         st_constraints_schema(),
         st_module_schema(),
-        // Is important this is always last, so the starting sequence is correct
+        // Is important this is always last, so the starting sequence for each
+        // system table is correct.
         st_sequences_schema(),
     ]
 }
