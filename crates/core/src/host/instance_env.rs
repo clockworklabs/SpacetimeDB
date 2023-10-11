@@ -377,7 +377,7 @@ impl InstanceEnv {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn iter_filtered(&self, table_id: u32, filter: &[u8]) -> Result<impl Iterator<Item = Vec<u8>>, NodesError> {
+    pub fn iter_filtered_chunks(&self, table_id: u32, filter: &[u8]) -> Result<Vec<Vec<u8>>, NodesError> {
         use spacetimedb_lib::filter;
 
         fn filter_to_column_op(table_name: &str, filter: filter::Expr) -> ColumnOp {
@@ -407,11 +407,18 @@ impl InstanceEnv {
             }
         }
 
+        let mut chunked_writer = ChunkedWriter::default();
+
         let stdb = &self.dbic.relational_db;
         let tx = &mut *self.tx.get()?;
 
         let schema = stdb.schema_for_table(tx, table_id)?;
         let row_type = ProductType::from(&schema);
+
+        // write and force flush schema as it's expected to be the first individual chunk
+        row_type.encode(&mut chunked_writer);
+        chunked_writer.force_flush();
+
         let filter = filter::Expr::from_bytes(
             // TODO: looks like module typespace is currently not hooked up to instances;
             // use empty typespace for now which should be enough for primitives
@@ -428,9 +435,14 @@ impl InstanceEnv {
             Code::Table(table) => table,
             _ => unreachable!("query should always return a table"),
         };
-        Ok(std::iter::once(bsatn::to_vec(&row_type))
-            .chain(results.data.into_iter().map(|row| bsatn::to_vec(&row.data)))
-            .map(|bytes| bytes.expect("encoding algebraic values should never fail")))
+
+        // write all rows and flush at row boundaries
+        for row in results.data {
+            row.data.encode(&mut chunked_writer);
+            chunked_writer.flush();
+        }
+
+        Ok(chunked_writer.into_chunks())
     }
 }
 

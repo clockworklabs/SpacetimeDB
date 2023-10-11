@@ -520,11 +520,7 @@ impl WasmInstanceEnv {
             let filter = caller.data().mem().read_bytes(&caller, filter, filter_len)?;
 
             // Construct the iterator.
-            let chunks = caller
-                .data()
-                .instance_env
-                .iter_filtered(table_id, &filter)?
-                .collect::<Vec<_>>();
+            let chunks = caller.data().instance_env.iter_filtered_chunks(table_id, &filter)?;
 
             // Register the iterator and get back the index to write to `out`.
             // Calls to the iterator are done through dynamic dispatch.
