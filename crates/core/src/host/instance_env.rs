@@ -18,6 +18,7 @@ use spacetimedb_lib::filter::CmpArgs;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::operator::OpQuery;
 use spacetimedb_lib::relation::{FieldExpr, FieldName};
+use spacetimedb_sats::buffer::BufWriter;
 use spacetimedb_sats::{ProductType, Typespace};
 use spacetimedb_vm::expr::{Code, ColumnOp};
 
@@ -33,8 +34,39 @@ pub struct TxSlot {
     inner: Arc<Mutex<Option<MutTxId>>>,
 }
 
-// For now, just send buffers over a certain fixed size.
-const ITER_CHUNK_SIZE: usize = 64 * 1024;
+#[derive(Default)]
+struct ChunkedWriter {
+    chunks: Vec<Vec<u8>>,
+    current_buf: Vec<u8>,
+}
+
+impl BufWriter for ChunkedWriter {
+    fn put_slice(&mut self, slice: &[u8]) {
+        self.current_buf.extend_from_slice(slice);
+    }
+}
+
+impl ChunkedWriter {
+    pub fn force_flush(&mut self) {
+        if !self.current_buf.is_empty() {
+            self.chunks.push(std::mem::take(&mut self.current_buf));
+        }
+    }
+
+    pub fn flush(&mut self) {
+        // For now, just send buffers over a certain fixed size.
+        const ITER_CHUNK_SIZE: usize = 64 * 1024;
+
+        if self.current_buf.len() > ITER_CHUNK_SIZE {
+            self.force_flush();
+        }
+    }
+
+    pub fn into_chunks(mut self) -> Vec<Vec<u8>> {
+        self.force_flush();
+        self.chunks
+    }
+}
 
 // Generic 'instance environment' delegated to from various host types.
 impl InstanceEnv {
@@ -326,32 +358,22 @@ impl InstanceEnv {
 
     #[tracing::instrument(skip_all)]
     pub fn iter_chunks(&self, table_id: u32) -> Result<Vec<Vec<u8>>, NodesError> {
-        let mut chunks = Vec::new();
+        let mut chunked_writer = ChunkedWriter::default();
 
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.tx.get()?;
 
-        // initial chunk is expected to be schema itself, encode it ignoring chunk size
-        {
-            let mut buf = Vec::new();
-            let schema = stdb.row_schema_for_table(tx, table_id)?;
-            schema.encode(&mut buf);
-            chunks.push(buf);
-        }
+        stdb.row_schema_for_table(tx, table_id)?.encode(&mut chunked_writer);
+        // initial chunk is expected to be schema itself, so force-flush it as a separate chunk
+        chunked_writer.force_flush();
 
-        let mut buf = Vec::new();
         for row in stdb.iter(tx, table_id)? {
-            if buf.len() > ITER_CHUNK_SIZE {
-                chunks.push(buf);
-                buf = Vec::new();
-            }
-            row.view().encode(&mut buf);
-        }
-        if !buf.is_empty() {
-            chunks.push(buf);
+            row.view().encode(&mut chunked_writer);
+            // Flush at row boundaries.
+            chunked_writer.flush();
         }
 
-        Ok(chunks)
+        Ok(chunked_writer.into_chunks())
     }
 
     #[tracing::instrument(skip_all)]
