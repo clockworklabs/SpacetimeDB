@@ -13,8 +13,16 @@ use crate::{
 };
 
 lazy_static::lazy_static! {
-    pub static ref BENCHMARKS_MODULE: CompiledModule =
-        CompiledModule::compile("benchmarks", CompilationMode::Release);
+    pub static ref BENCHMARKS_MODULE: CompiledModule = {
+        // Temporarily add CARGO_TARGET_DIR override to avoid conflicts with main target dir.
+        // Otherwise for some reason Cargo will mark all dependencies with build scripts as
+        // fresh - but only if running benchmarks (if modules are built in release mode).
+        // See https://github.com/clockworklabs/SpacetimeDB/issues/401.
+        std::env::set_var("CARGO_TARGET_DIR", concat!(env!("CARGO_MANIFEST_DIR"), "/target"));
+        let module = CompiledModule::compile("benchmarks", CompilationMode::Release);
+        std::env::remove_var("CARGO_TARGET_DIR");
+        module
+    };
 }
 
 /// A benchmark backend that invokes a spacetime module.
