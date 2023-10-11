@@ -36,20 +36,29 @@ pub struct TxSlot {
 
 #[derive(Default)]
 struct ChunkedWriter {
-    chunks: Vec<Vec<u8>>,
-    current_buf: Vec<u8>,
+    chunks: Vec<Box<[u8]>>,
+    scratch_space: Vec<u8>,
 }
 
 impl BufWriter for ChunkedWriter {
     fn put_slice(&mut self, slice: &[u8]) {
-        self.current_buf.extend_from_slice(slice);
+        self.scratch_space.extend_from_slice(slice);
     }
 }
 
 impl ChunkedWriter {
     pub fn force_flush(&mut self) {
-        if !self.current_buf.is_empty() {
-            self.chunks.push(std::mem::take(&mut self.current_buf));
+        if !self.scratch_space.is_empty() {
+            // We intentionally clone here so that our scratch space is not
+            // recreated with zero capacity (via `Vec::new`), but instead can
+            // be `.clear()`ed in-place and reused.
+            //
+            // This way the buffers in `chunks` are always fitted fixed-size to
+            // the actual data they contain, while the scratch space is ever-
+            // growing and has higher chance of fitting each next row without
+            // reallocation.
+            self.chunks.push(self.scratch_space.as_slice().into());
+            self.scratch_space.clear();
         }
     }
 
@@ -57,13 +66,17 @@ impl ChunkedWriter {
         // For now, just send buffers over a certain fixed size.
         const ITER_CHUNK_SIZE: usize = 64 * 1024;
 
-        if self.current_buf.len() > ITER_CHUNK_SIZE {
+        if self.scratch_space.len() > ITER_CHUNK_SIZE {
             self.force_flush();
         }
     }
 
-    pub fn into_chunks(mut self) -> Vec<Vec<u8>> {
-        self.force_flush();
+    pub fn into_chunks(mut self) -> Vec<Box<[u8]>> {
+        if !self.scratch_space.is_empty() {
+            // This is equivalent to calling `force_flush`, but we avoid extra
+            // clone by just shrinking and pushing the scratch space in-place.
+            self.chunks.push(self.scratch_space.into());
+        }
         self.chunks
     }
 }
@@ -357,7 +370,7 @@ impl InstanceEnv {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn iter_chunks(&self, table_id: u32) -> Result<Vec<Vec<u8>>, NodesError> {
+    pub fn iter_chunks(&self, table_id: u32) -> Result<Vec<Box<[u8]>>, NodesError> {
         let mut chunked_writer = ChunkedWriter::default();
 
         let stdb = &*self.dbic.relational_db;
@@ -377,7 +390,7 @@ impl InstanceEnv {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn iter_filtered_chunks(&self, table_id: u32, filter: &[u8]) -> Result<Vec<Vec<u8>>, NodesError> {
+    pub fn iter_filtered_chunks(&self, table_id: u32, filter: &[u8]) -> Result<Vec<Box<[u8]>>, NodesError> {
         use spacetimedb_lib::filter;
 
         fn filter_to_column_op(table_name: &str, filter: filter::Expr) -> ColumnOp {

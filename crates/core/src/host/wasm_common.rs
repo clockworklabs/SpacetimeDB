@@ -281,7 +281,7 @@ impl BufferIdx {
     }
 }
 
-decl_index!(BufferIterIdx => std::vec::IntoIter<Vec<u8>>);
+decl_index!(BufferIterIdx => std::vec::IntoIter<Box<[u8]>>);
 pub(super) type BufferIters = ResourceSlab<BufferIterIdx>;
 
 pub(super) struct TimingSpan {
