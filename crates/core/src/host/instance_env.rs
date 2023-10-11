@@ -7,7 +7,7 @@ use std::sync::Arc;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::{DataRow, IndexDef};
+use crate::db::datastore::traits::{ColId, DataRow, IndexDef};
 use crate::error::{IndexError, NodesError};
 use crate::util::ResultInspectExt;
 
@@ -152,7 +152,7 @@ impl InstanceEnv {
         let eq_value = stdb.decode_column(tx, table_id, col_id, value)?;
 
         // Find all rows in the table where the column data equates to `value`.
-        let seek = stdb.iter_by_col_eq(tx, table_id, col_id, eq_value)?;
+        let seek = stdb.iter_by_col_eq(tx, table_id, ColId(col_id), eq_value)?;
         let seek = seek.map(|x| stdb.data_to_owned(x).into()).collect::<Vec<_>>();
 
         // Delete them and count how many we deleted and error if none.
@@ -313,7 +313,7 @@ impl InstanceEnv {
 
         // Find all rows in the table where the column data matches `value`.
         // Concatenate and return these rows using bsatn encoding.
-        let results = stdb.iter_by_col_eq(tx, table_id, col_id, value)?;
+        let results = stdb.iter_by_col_eq(tx, table_id, ColId(col_id), value)?;
         let mut bytes = Vec::new();
         for result in results {
             bsatn::to_writer(&mut bytes, result.view()).unwrap();

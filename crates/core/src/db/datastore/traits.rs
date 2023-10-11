@@ -1,5 +1,6 @@
 use crate::db::relational_db::ST_TABLES_ID;
 use core::fmt;
+use derive_more::From;
 use nonempty::NonEmpty;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::relation::{DbTable, FieldName, FieldOnly, Header, TableField};
@@ -12,10 +13,17 @@ use std::{ops::RangeBounds, sync::Arc};
 use super::{system_tables::StTableRow, Result};
 
 /// The `id` for [Sequence]
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, From)]
 pub struct TableId(pub(crate) u32);
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, From)]
 pub struct ColId(pub(crate) u32);
+
+impl From<ColId> for NonEmpty<ColId> {
+    fn from(value: ColId) -> Self {
+        NonEmpty::new(value)
+    }
+}
+
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct IndexId(pub(crate) u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -436,7 +444,7 @@ pub trait TxDatastore: DataRow + Tx {
         &'a self,
         tx: &'a Self::TxId,
         table_id: TableId,
-        col_id: ColId,
+        cols: NonEmpty<ColId>,
         range: R,
     ) -> Result<Self::IterByColRange<'a, R>>;
 
@@ -444,7 +452,7 @@ pub trait TxDatastore: DataRow + Tx {
         &'a self,
         tx: &'a Self::TxId,
         table_id: TableId,
-        col_id: ColId,
+        cols: NonEmpty<ColId>,
         value: AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a>>;
 
@@ -504,14 +512,14 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         &'a self,
         tx: &'a Self::MutTxId,
         table_id: TableId,
-        col_id: ColId,
+        cols: impl Into<NonEmpty<ColId>>,
         range: R,
     ) -> Result<Self::IterByColRange<'a, R>>;
     fn iter_by_col_eq_mut_tx<'a>(
         &'a self,
         tx: &'a Self::MutTxId,
         table_id: TableId,
-        col_id: ColId,
+        cols: impl Into<NonEmpty<ColId>>,
         value: AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a>>;
     fn get_mut_tx<'a>(
