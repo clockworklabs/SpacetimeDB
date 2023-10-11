@@ -21,7 +21,7 @@ pub struct ProductValue {
 macro_rules! product {
     [$($elems:expr),*$(,)?] => {
         $crate::ProductValue {
-            elements: [$($crate::AlgebraicValue::from($elems)),*].into()
+            elements: vec![$($crate::AlgebraicValue::from($elems)),*],
         }
     }
 }

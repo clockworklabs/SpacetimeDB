@@ -112,7 +112,7 @@ impl InstanceEnv {
 
     #[tracing::instrument(skip_all)]
     pub fn console_log(&self, level: LogLevel, record: &Record, bt: &dyn BacktraceProvider) {
-        self.dbic.logger.lock().unwrap().write(level, record, bt);
+        self.dbic.logger.lock().write(level, record, bt);
         log::trace!("MOD({}): {}", self.dbic.address.to_abbreviated_hex(), record.message);
     }
 

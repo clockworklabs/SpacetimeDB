@@ -1,12 +1,13 @@
 use crate::db::relational_db::ST_TABLES_ID;
 use crate::execution_context::ExecutionContext;
+use anyhow::Context;
 use nonempty::NonEmpty;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::relation::{DbTable, FieldName, FieldOnly, Header, TableField};
 use spacetimedb_lib::{ColumnIndexAttribute, DataKey, Hash};
 use spacetimedb_primitives::{ColId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::product_value::InvalidFieldError;
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue};
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, WithTypespace};
 use spacetimedb_vm::expr::SourceExpr;
 use std::{borrow::Cow, ops::RangeBounds, sync::Arc};
 
@@ -290,6 +291,73 @@ pub struct TableDef {
     pub(crate) indexes: Vec<IndexDef>,
     pub(crate) table_type: StTableType,
     pub(crate) table_access: StAccess,
+}
+
+impl TableDef {
+    pub fn from_lib_tabledef(table: WithTypespace<'_, spacetimedb_lib::TableDef>) -> anyhow::Result<Self> {
+        let schema = table
+            .map(|t| &t.data)
+            .resolve_refs()
+            .context("recursive types not yet supported")?;
+        let schema = schema.into_product().ok().context("table not a product type?")?;
+        let table = table.ty();
+        anyhow::ensure!(
+            table.column_attrs.len() == schema.elements.len(),
+            "mismatched number of columns"
+        );
+
+        let mut columns = Vec::with_capacity(schema.elements.len());
+        let mut indexes = Vec::new();
+        for (col_id, (ty, col_attr)) in std::iter::zip(&schema.elements, &table.column_attrs).enumerate() {
+            let col = ColumnDef {
+                col_name: ty.name.clone().context("column without name")?,
+                col_type: ty.algebraic_type.clone(),
+                is_autoinc: col_attr.is_autoinc(),
+            };
+
+            let index_for_column = table.indexes.iter().find(|index| {
+                // Ignore multi-column indexes
+                matches!(*index.col_ids, [index_col_id] if index_col_id as usize == col_id)
+            });
+
+            // If there's an index defined for this column already, use it,
+            // making sure that it is unique if the column has a unique constraint
+            let index_info = if let Some(index) = index_for_column {
+                Some((index.name.clone(), index.ty))
+            } else if col_attr.is_unique() {
+                // If you didn't find an index, but the column is unique then create a unique btree index
+                // anyway.
+                Some((
+                    format!("{}_{}_unique", table.name, col.col_name),
+                    spacetimedb_lib::IndexType::BTree,
+                ))
+            } else {
+                None
+            };
+            if let Some((name, ty)) = index_info {
+                match ty {
+                    spacetimedb_lib::IndexType::BTree => {}
+                    // TODO
+                    spacetimedb_lib::IndexType::Hash => anyhow::bail!("hash indexes not yet supported"),
+                }
+                indexes.push(IndexDef::new(
+                    name,
+                    TableId(0), // Will be ignored
+                    ColId(col_id as u32),
+                    col_attr.is_unique(),
+                ))
+            }
+            columns.push(col);
+        }
+
+        Ok(TableDef {
+            table_name: table.name.clone(),
+            columns,
+            indexes,
+            table_type: table.table_type,
+            table_access: table.table_access,
+        })
+    }
 }
 
 impl From<ProductType> for TableDef {

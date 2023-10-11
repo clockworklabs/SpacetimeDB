@@ -44,10 +44,8 @@ impl Address {
         Self { __address_bytes: *arr }
     }
 
-    pub fn zero() -> Self {
-        Self {
-            __address_bytes: [0; 16],
-        }
+    pub const fn zero() -> Self {
+        Self::ZERO
     }
 
     pub fn from_u128(u: u128) -> Self {
@@ -93,9 +91,7 @@ impl Address {
     }
 
     #[doc(hidden)]
-    pub fn __dummy() -> Self {
-        Self::zero()
-    }
+    pub const __DUMMY: Self = Self::ZERO;
 
     pub fn to_u128(&self) -> u128 {
         u128::from_be_bytes(self.__address_bytes)

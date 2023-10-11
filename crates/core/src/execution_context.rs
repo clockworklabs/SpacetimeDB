@@ -1,3 +1,4 @@
+use crate::host::ReducerId;
 use derive_more::Display;
 
 /// Represents the context under which a database runtime method is executed.
@@ -8,7 +9,7 @@ pub struct ExecutionContext {
     // The database on which a transaction is being executed.
     database_id: u64,
     // The reducer from which the current transaction originated.
-    reducer_id: Option<u64>,
+    reducer_id: Option<ReducerId>,
     // The type of transaction that is being executed.
     txn_type: TransactionType,
 }
@@ -32,7 +33,7 @@ impl Default for TransactionType {
 
 impl ExecutionContext {
     /// Returns an [ExecutionContext] for a reducer transaction.
-    pub fn reducer(database_id: u64, reducer_id: u64) -> Self {
+    pub fn reducer(database_id: u64, reducer_id: ReducerId) -> Self {
         Self {
             database_id,
             reducer_id: Some(reducer_id),
@@ -67,7 +68,7 @@ impl ExecutionContext {
     /// Returns the id of the reducer that is being executed.
     /// Returns [None] if this is not a reducer context.
     #[inline]
-    pub fn reducer_id(&self) -> Option<u64> {
+    pub fn reducer_id(&self) -> Option<ReducerId> {
         self.reducer_id
     }
 

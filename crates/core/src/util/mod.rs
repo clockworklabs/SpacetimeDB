@@ -58,3 +58,11 @@ impl std::ops::Deref for AnyBytes {
         }
     }
 }
+
+#[track_caller]
+pub const fn const_unwrap<T: Copy>(o: Option<T>) -> T {
+    match o {
+        Some(x) => x,
+        None => panic!("called `const_unwrap()` on a `None` value"),
+    }
+}

@@ -325,7 +325,6 @@ impl RelationalDB {
     pub fn with_auto_rollback<F, A, E>(&self, mut tx: MutTxId, f: F) -> Result<(MutTxId, A), E>
     where
         F: FnOnce(&mut MutTxId) -> Result<A, E>,
-        E: From<DBError>,
     {
         let res = f(&mut tx);
         self.rollback_on_err(tx, res)
@@ -370,11 +369,7 @@ impl RelationalDB {
 
     /// Roll back transaction `tx` if `res` is `Err`, otherwise return it
     /// alongside the `Ok` value.
-    #[tracing::instrument(skip_all)]
-    pub fn rollback_on_err<A, E>(&self, tx: MutTxId, res: Result<A, E>) -> Result<(MutTxId, A), E>
-    where
-        E: From<DBError>,
-    {
+    pub fn rollback_on_err<A, E>(&self, tx: MutTxId, res: Result<A, E>) -> Result<(MutTxId, A), E> {
         match res {
             Err(e) => {
                 self.rollback_tx(tx);

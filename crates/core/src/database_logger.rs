@@ -190,4 +190,42 @@ impl DatabaseLogger {
 
         text[text.len() - off_from_end..].to_owned()
     }
+
+    pub fn system_logger(&mut self) -> &mut SystemLogger {
+        // SAFETY: SystemLogger is repr(transparent) over DatabaseLogger
+        unsafe { &mut *(self as *mut DatabaseLogger as *mut SystemLogger) }
+    }
+}
+
+/// Somewhat ad-hoc wrapper around [`DatabaseLogger`] which allows to inject
+/// "system messages" into the user-retrievable database / module log
+#[repr(transparent)]
+pub struct SystemLogger {
+    inner: DatabaseLogger,
+}
+
+impl SystemLogger {
+    pub fn info(&mut self, msg: &str) {
+        self.inner
+            .write(crate::database_logger::LogLevel::Info, &Self::record(msg), &())
+    }
+
+    pub fn warn(&mut self, msg: &str) {
+        self.inner
+            .write(crate::database_logger::LogLevel::Warn, &Self::record(msg), &())
+    }
+
+    pub fn error(&mut self, msg: &str) {
+        self.inner
+            .write(crate::database_logger::LogLevel::Error, &Self::record(msg), &())
+    }
+
+    fn record(message: &str) -> Record {
+        Record {
+            target: None,
+            filename: Some("spacetimedb"),
+            line_number: None,
+            message,
+        }
+    }
 }

@@ -84,7 +84,7 @@ fn assemble_context(sender: Buffer, timestamp: u64, client_address: Buffer) -> R
 
     let address = Address::from_arr(&client_address.read_array::<16>());
 
-    let address = if address == Address::__dummy() {
+    let address = if address == Address::__DUMMY {
         None
     } else {
         Some(address)
