@@ -11,7 +11,7 @@ use bytes::Bytes;
 use nonempty::NonEmpty;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::{bsatn, Address, IndexType, ModuleDef, VersionTuple};
+use spacetimedb_lib::{bsatn, Address, IndexType, ModuleDef};
 use spacetimedb_vm::expr::CrudExpr;
 
 use crate::client::ClientConnectionSender;
@@ -92,19 +92,7 @@ pub(crate) struct WasmModuleHostActor<T: WasmModule> {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum AbiVersionError {
-    #[error("module doesn't indicate spacetime ABI version")]
-    NoVersion,
-    #[error("abi version is malformed somehow (out-of-bounds, etc)")]
-    Malformed,
-    #[error("abi version {got} is not supported (host implements {implement})")]
-    UnsupportedVersion { got: VersionTuple, implement: VersionTuple },
-}
-
-#[derive(thiserror::Error, Debug)]
 pub enum InitializationError {
-    #[error(transparent)]
-    Abi(#[from] AbiVersionError),
     #[error(transparent)]
     Validation(#[from] ValidationError),
     #[error("setup function returned an error: {0}")]

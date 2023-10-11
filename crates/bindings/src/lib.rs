@@ -37,14 +37,6 @@ pub use log;
 
 pub type Result<T = (), E = Errno> = core::result::Result<T, E>;
 
-#[no_mangle]
-static SPACETIME_ABI_VERSION: u32 = {
-    assert!(spacetimedb_lib::MODULE_ABI_VERSION.to_u32() == sys::ABI_VERSION);
-    sys::ABI_VERSION
-};
-#[no_mangle]
-static SPACETIME_ABI_VERSION_IS_ADDR: () = ();
-
 /// A context that any reducer is provided with.
 #[non_exhaustive]
 #[derive(Copy, Clone)]
