@@ -10,20 +10,13 @@ namespace SpacetimeDB.SATS
     {
         public List<SumTypeVariant> variants;
 
-        public SumType()
-        {
-            variants = new List<SumTypeVariant>();
-        }
+        public SumType() => variants = new List<SumTypeVariant>();
 
         // TODO(jdetter): Perhaps not needed?
-        public SumType NewUnnamed()
+        public SumType NewUnnamed() => new SumType
         {
-            var s = new SumType
-            {
-                variants = variants.Select(a => new SumTypeVariant(null, a.algebraicType)).ToList()
-            };
-            return s;
-        }
+            variants = variants.Select(a => new SumTypeVariant(null, a.algebraicType)).ToList()
+        };
     }
 
     public struct SumTypeVariant
@@ -42,10 +35,7 @@ namespace SpacetimeDB.SATS
     {
         public List<ProductTypeElement> elements;
 
-        public ProductType()
-        {
-            elements = new List<ProductTypeElement>();
-        }
+        public ProductType() => elements = new List<ProductTypeElement>();
     }
 
     public struct ProductTypeElement
@@ -72,10 +62,13 @@ namespace SpacetimeDB.SATS
         public AlgebraicType valueType;
     }
 
-    public class BuiltinType
+    public class AlgebraicType
     {
         public enum Type
         {
+            TypeRef,
+            Sum,
+            Product,
             Bool,
             I8,
             U8,
@@ -91,23 +84,7 @@ namespace SpacetimeDB.SATS
             F64,
             String,
             Array,
-            Map
-        }
-
-        public Type type;
-
-        public AlgebraicType arrayType;
-        public MapType mapType;
-    }
-
-    public class AlgebraicType
-    {
-        public enum Type
-        {
-            Sum,
-            Product,
-            Builtin,
-            TypeRef,
+            Map,
             None,
         }
 
@@ -121,7 +98,7 @@ namespace SpacetimeDB.SATS
                 type = value == null ? Type.None : Type.Sum;
             }
         }
-        
+
         public ProductType product {
             get { return type == Type.Product ? (ProductType)type_ : null; }
             set {
@@ -129,12 +106,20 @@ namespace SpacetimeDB.SATS
                 type = value == null ? Type.None : Type.Product;
             }
         }
-        
-        public BuiltinType builtin {
-            get { return type == Type.Builtin ? (BuiltinType)type_ : null; }
+
+        public AlgebraicType array {
+            get { return type == Type.Array ? (AlgebraicType)type_ : null; }
             set {
                 type_ = value;
-                type = value == null ? Type.None : Type.Builtin;
+                type = value == null ? Type.None : Type.Array;
+            }
+        }
+
+        public MapType map {
+            get { return type == Type.Map ? (MapType)type_ : null; }
+            set {
+                type_ = value;
+                type = value == null ? Type.None : Type.Map;
             }
         }
 
@@ -151,19 +136,18 @@ namespace SpacetimeDB.SATS
             return new AlgebraicType
             {
                 type = Type.Product,
-                product = new ProductType
-                {
+                type_ = new ProductType {
                     elements = elements.ToList()
                 }
             };
         }
-        
+
         public static AlgebraicType CreateSumType(IEnumerable<SumTypeVariant> variants)
         {
             return new AlgebraicType
             {
                 type = Type.Sum,
-                sum = new SumType
+                type_ = new SumType
                 {
                     variants = variants.ToList(),
                 }
@@ -173,25 +157,42 @@ namespace SpacetimeDB.SATS
         public static AlgebraicType CreateArrayType(AlgebraicType elementType)  {
             return new AlgebraicType
             {
-                type = Type.Builtin,
-                builtin = new BuiltinType
-                {
-                    type = BuiltinType.Type.Array,
-                    arrayType = elementType
-                }
+                type = Type.Array,
+                type_ = elementType
             };
         }
 
-        public static AlgebraicType CreatePrimitiveType(BuiltinType.Type type)  {
+        public static AlgebraicType CreateBytesType() => AlgebraicType.CreateArrayType(AlgebraicType.CreateU8Type());
+
+        public static AlgebraicType CreateMapType(MapType type)  {
             return new AlgebraicType
             {
-                type = Type.Builtin,
-                builtin = new BuiltinType
-                {
-                    type = type,
-                }
+                type = Type.Map,
+                type_ = type
             };
         }
 
+        public static AlgebraicType CreateTypeRef(int idx) {
+            return new AlgebraicType
+            {
+                type = Type.TypeRef,
+                type_ = idx
+            };
+        }
+
+        public static AlgebraicType CreateBoolType() => new AlgebraicType { type = Type.Bool };
+        public static AlgebraicType CreateI8Type() => new AlgebraicType { type = Type.I8 };
+        public static AlgebraicType CreateU8Type() => new AlgebraicType { type = Type.U8 };
+        public static AlgebraicType CreateI16Type() => new AlgebraicType { type = Type.I16 };
+        public static AlgebraicType CreateU16Type() => new AlgebraicType { type = Type.U16 };
+        public static AlgebraicType CreateI32Type() => new AlgebraicType { type = Type.I32 };
+        public static AlgebraicType CreateU32Type() => new AlgebraicType { type = Type.U32 };
+        public static AlgebraicType CreateI64Type() => new AlgebraicType { type = Type.I64 };
+        public static AlgebraicType CreateU64Type() => new AlgebraicType { type = Type.U64 };
+        public static AlgebraicType CreateI128Type() => new AlgebraicType { type = Type.I128 };
+        public static AlgebraicType CreateU128Type() => new AlgebraicType { type = Type.U128 };
+        public static AlgebraicType CreateF32Type() => new AlgebraicType { type = Type.F32 };
+        public static AlgebraicType CreateF64Type() => new AlgebraicType { type = Type.F64 };
+        public static AlgebraicType CreateStringType() => new AlgebraicType { type = Type.String };
     }
 }

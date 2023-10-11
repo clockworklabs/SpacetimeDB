@@ -33,10 +33,10 @@ namespace SpacetimeDB.Types
 			{
 				new SpacetimeDB.SATS.ProductTypeElement("sender", SpacetimeDB.SATS.AlgebraicType.CreateProductType(new SpacetimeDB.SATS.ProductTypeElement[]
 			{
-				new SpacetimeDB.SATS.ProductTypeElement("__identity_bytes", SpacetimeDB.SATS.AlgebraicType.CreateArrayType(SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.U8))),
+				new SpacetimeDB.SATS.ProductTypeElement("__identity_bytes", SpacetimeDB.SATS.AlgebraicType.CreateBytesType()),
 			})),
-				new SpacetimeDB.SATS.ProductTypeElement("sent", SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.U64)),
-				new SpacetimeDB.SATS.ProductTypeElement("text", SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.String)),
+				new SpacetimeDB.SATS.ProductTypeElement("sent", SpacetimeDB.SATS.AlgebraicType.CreateU64Type()),
+				new SpacetimeDB.SATS.ProductTypeElement("text", SpacetimeDB.SATS.AlgebraicType.CreateStringType()),
 			});
 		}
 

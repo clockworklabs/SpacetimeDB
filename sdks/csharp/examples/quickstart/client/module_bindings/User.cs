@@ -37,16 +37,16 @@ namespace SpacetimeDB.Types
 			{
 				new SpacetimeDB.SATS.ProductTypeElement("identity", SpacetimeDB.SATS.AlgebraicType.CreateProductType(new SpacetimeDB.SATS.ProductTypeElement[]
 			{
-				new SpacetimeDB.SATS.ProductTypeElement("__identity_bytes", SpacetimeDB.SATS.AlgebraicType.CreateArrayType(SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.U8))),
+				new SpacetimeDB.SATS.ProductTypeElement("__identity_bytes", SpacetimeDB.SATS.AlgebraicType.CreateBytesType()),
 			})),
 				new SpacetimeDB.SATS.ProductTypeElement("name", SpacetimeDB.SATS.AlgebraicType.CreateSumType(new System.Collections.Generic.List<SpacetimeDB.SATS.SumTypeVariant>
 			{
-				new SpacetimeDB.SATS.SumTypeVariant("some", SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.String)),
+				new SpacetimeDB.SATS.SumTypeVariant("some", SpacetimeDB.SATS.AlgebraicType.CreateStringType()),
 				new SpacetimeDB.SATS.SumTypeVariant("none", SpacetimeDB.SATS.AlgebraicType.CreateProductType(new SpacetimeDB.SATS.ProductTypeElement[]
 			{
 			})),
 			})),
-				new SpacetimeDB.SATS.ProductTypeElement("online", SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.Bool)),
+				new SpacetimeDB.SATS.ProductTypeElement("online", SpacetimeDB.SATS.AlgebraicType.CreateBoolType()),
 			});
 		}
 

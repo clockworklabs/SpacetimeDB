@@ -52,7 +52,7 @@ namespace SpacetimeDB.Types
 			bsatnBytes.CopyTo(ms.GetBuffer(), 0);
 			ms.Position = 0;
 			using var reader = new System.IO.BinaryReader(ms);
-			var args_0_value = SpacetimeDB.SATS.AlgebraicValue.Deserialize(SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.String), reader);
+			var args_0_value = SpacetimeDB.SATS.AlgebraicValue.Deserialize(SpacetimeDB.SATS.AlgebraicType.CreateStringType(), reader);
 			args.Text = args_0_value.AsString();
 			dbEvent.FunctionCall.CallInfo = new ReducerEvent(ReducerType.SendMessage, "send_message", dbEvent.Timestamp, Identity.From(dbEvent.CallerIdentity.ToByteArray()), dbEvent.Message, dbEvent.Status, args);
 		}

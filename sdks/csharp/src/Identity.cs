@@ -14,25 +14,7 @@ namespace SpacetimeDB
 
         public byte[] Bytes => bytes;
 
-        public static AlgebraicType GetAlgebraicType()
-        {
-            return new AlgebraicType
-            {
-                type = AlgebraicType.Type.Builtin,
-                builtin = new BuiltinType
-                {
-                    type = BuiltinType.Type.Array,
-                    arrayType = new AlgebraicType
-                    {
-                        type = AlgebraicType.Type.Builtin,
-                        builtin = new BuiltinType
-                        {
-                            type = BuiltinType.Type.U8
-                        }
-                    }
-                }
-            };
-        }
+        public static AlgebraicType GetAlgebraicType() => AlgebraicType.CreateBytesType();
 
         public static explicit operator Identity(AlgebraicValue v) => new Identity
         {
