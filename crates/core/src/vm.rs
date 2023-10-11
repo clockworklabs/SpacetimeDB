@@ -19,7 +19,7 @@ use spacetimedb_vm::expr::*;
 use spacetimedb_vm::program::{ProgramRef, ProgramVm};
 use spacetimedb_vm::rel_ops::RelOps;
 use std::collections::HashMap;
-use std::ops::RangeBounds;
+use std::ops::{Bound, RangeBounds};
 use tracing::debug;
 
 //TODO: This is partially duplicated from the `vm` crate to avoid borrow checker issues
@@ -35,18 +35,65 @@ pub fn build_query<'a>(
 
     for op in query.query {
         result = match op {
+            // A single column index scan
             Query::IndexScan(IndexScan {
                 table,
-                col_id,
-                lower_bound,
-                upper_bound,
-            }) if db_table => iter_by_col_range(stdb, tx, table, col_id, (lower_bound, upper_bound))?,
+                cols,
+                index_cols,
+                bounds: NonEmpty { head, .. },
+            }) if db_table && cols.len() == 1 && index_cols.len() == 1 => {
+                let col_id = ColId(*cols.last());
+                iter_by_col_range(stdb, tx, table, col_id.into(), head)?
+            }
+            // A multi-column index scan
+            Query::IndexScan(IndexScan {
+                table,
+                cols,
+                index_cols,
+                bounds,
+            }) if db_table && cols.len() == index_cols.len() && well_typed(&bounds) => {
+                let mut lower = Vec::new();
+                let mut upper = Vec::new();
+
+                // A multi-column index on (a, b) is implemented as a scalar index on a || b.
+                // That is the concatenation of columns a and b.
+                // In order to concatenate a multi-dimensional index bound,
+                // each component of the bound must be a well defined algebraic value.
+                // Therefore we must turn the infinite bound [5, inf] into the finite one [5, MAX].
+                for (i, col_id) in cols.iter().enumerate() {
+                    match &bounds[i].0 {
+                        Bound::Unbounded => {
+                            lower.push(table.head.fields[*col_id as usize].algebraic_type.min_value().unwrap());
+                        }
+                        Bound::Included(value) | Bound::Excluded(value) => {
+                            lower.push(value.clone());
+                        }
+                    }
+                    match &bounds[i].1 {
+                        Bound::Unbounded => {
+                            upper.push(table.head.fields[*col_id as usize].algebraic_type.max_value().unwrap());
+                        }
+                        Bound::Included(value) | Bound::Excluded(value) => {
+                            upper.push(value.clone());
+                        }
+                    }
+                }
+
+                let cols = NonEmpty::collect(cols.iter().map(|u| ColId(*u))).unwrap();
+                let lower = AlgebraicValue::product(lower);
+                let upper = AlgebraicValue::product(upper);
+
+                iter_by_col_range(stdb, tx, table, cols, (Bound::Included(lower), Bound::Included(upper)))?
+            }
+            // An index scan against a MemTable is not supported, so convert to a select.
+            // Similarly for a strict prefix scan of a multi-column index.
             Query::IndexScan(index_scan) => {
                 let header = result.head().clone();
                 let cmp: ColumnOp = index_scan.into();
                 let iter = result.select(move |row| cmp.compare(row, &header));
                 Box::new(iter)
             }
+            // An index nested loop join.
             Query::IndexJoin(join) if db_table => Box::new(IndexSemiJoin::new(
                 stdb,
                 tx,
@@ -56,6 +103,7 @@ pub fn build_query<'a>(
                 join.index_table,
                 join.index_col,
             )),
+            // An index nested loop join against a MemTable is not supported, so convert to an inner join.
             Query::IndexJoin(join) => {
                 let join: JoinExpr = join.into();
                 let iter = join_inner(stdb, tx, result, join, true)?;
@@ -82,6 +130,17 @@ pub fn build_query<'a>(
         }
     }
     Ok(result)
+}
+
+// Index bounds are well typed if the algebraic types support min/max values.
+fn well_typed(bounds: &NonEmpty<(Bound<AlgebraicValue>, Bound<AlgebraicValue>)>) -> bool {
+    !bounds.iter().any(|bound| match (&bound.0, &bound.1) {
+        (Bound::Unbounded, Bound::Included(value)) => value.type_of().min_value().is_none(),
+        (Bound::Unbounded, Bound::Excluded(value)) => value.type_of().min_value().is_none(),
+        (Bound::Included(value), Bound::Unbounded) => value.type_of().max_value().is_none(),
+        (Bound::Excluded(value), Bound::Unbounded) => value.type_of().max_value().is_none(),
+        _ => false,
+    })
 }
 
 fn join_inner<'a>(
@@ -150,10 +209,10 @@ fn iter_by_col_range<'a>(
     db: &'a RelationalDB,
     tx: &'a MutTxId,
     table: DbTable,
-    col_id: u32,
+    cols: NonEmpty<ColId>,
     range: impl RangeBounds<AlgebraicValue> + 'a,
 ) -> Result<Box<dyn RelOps + 'a>, ErrorVm> {
-    let iter = db.iter_by_col_range(tx, table.table_id, ColId(col_id), range)?;
+    let iter = db.iter_by_col_range(tx, table.table_id, cols, range)?;
     Ok(Box::new(IndexCursor::new(table, iter)?) as Box<IterRows<'_>>)
 }
 

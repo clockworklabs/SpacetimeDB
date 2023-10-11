@@ -4520,6 +4520,7 @@ version = "0.7.0"
 dependencies = [
  "anyhow",
  "derive_more",
+ "nonempty",
  "spacetimedb-lib",
  "spacetimedb-sats",
  "tempdir",

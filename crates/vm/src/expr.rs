@@ -1,4 +1,5 @@
 use derive_more::From;
+use nonempty::NonEmpty;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::error::AuthError;
 use spacetimedb_lib::relation::{
@@ -95,6 +96,45 @@ impl ColumnOp {
             op: OpQuery::Cmp(op),
             lhs: Box::new(ColumnOp::Field(FieldExpr::Name(field))),
             rhs: Box::new(ColumnOp::Field(FieldExpr::Value(value))),
+        }
+    }
+
+    // Constructs an inequality expression give a field name and a pair of upper and lower bounds.
+    pub fn between(field: FieldName, lower_bound: Bound<AlgebraicValue>, upper_bound: Bound<AlgebraicValue>) -> Self {
+        match (lower_bound, upper_bound) {
+            // Inclusive lower bound => field >= value
+            (Bound::Included(value), Bound::Unbounded) => Self::cmp(field, OpCmp::GtEq, value),
+            // Exclusive lower bound => field > value
+            (Bound::Excluded(value), Bound::Unbounded) => Self::cmp(field, OpCmp::Gt, value),
+            // Inclusive upper bound => field <= value
+            (Bound::Unbounded, Bound::Included(value)) => Self::cmp(field, OpCmp::LtEq, value),
+            // Exclusive upper bound => field < value
+            (Bound::Unbounded, Bound::Excluded(value)) => Self::cmp(field, OpCmp::Lt, value),
+            // field >= lower and field <= upper
+            (Bound::Included(lower), Bound::Included(upper)) => Self::new(
+                OpQuery::Logic(OpLogic::And),
+                Self::cmp(field.clone(), OpCmp::GtEq, lower),
+                Self::cmp(field.clone(), OpCmp::LtEq, upper),
+            ),
+            // field >= lower and field < upper
+            (Bound::Included(lower), Bound::Excluded(upper)) => Self::new(
+                OpQuery::Logic(OpLogic::And),
+                Self::cmp(field.clone(), OpCmp::GtEq, lower),
+                Self::cmp(field.clone(), OpCmp::Lt, upper),
+            ),
+            // field > lower and field <= upper
+            (Bound::Excluded(lower), Bound::Included(upper)) => Self::new(
+                OpQuery::Logic(OpLogic::And),
+                Self::cmp(field.clone(), OpCmp::Gt, lower),
+                Self::cmp(field.clone(), OpCmp::LtEq, upper),
+            ),
+            // field > lower and field < upper
+            (Bound::Excluded(lower), Bound::Excluded(upper)) => Self::new(
+                OpQuery::Logic(OpLogic::And),
+                Self::cmp(field.clone(), OpCmp::Gt, lower),
+                Self::cmp(field.clone(), OpCmp::Lt, upper),
+            ),
+            (Bound::Unbounded, Bound::Unbounded) => unreachable!(),
         }
     }
 
@@ -227,54 +267,16 @@ impl From<IndexScan> for Box<ColumnOp> {
 impl From<IndexScan> for ColumnOp {
     fn from(value: IndexScan) -> Self {
         let table = value.table;
-        let col_id = value.col_id;
+        let col_id = value.cols.head;
         let field = table.head.fields[col_id as usize].field.clone();
-        match (value.lower_bound, value.upper_bound) {
-            // Inclusive lower bound => field >= value
-            (Bound::Included(value), Bound::Unbounded) => ColumnOp::Cmp {
-                op: OpQuery::Cmp(OpCmp::GtEq),
-                lhs: field.into(),
-                rhs: value.into(),
-            },
-            // Exclusive lower bound => field > value
-            (Bound::Excluded(value), Bound::Unbounded) => ColumnOp::Cmp {
-                op: OpQuery::Cmp(OpCmp::Gt),
-                lhs: field.into(),
-                rhs: value.into(),
-            },
-            // Inclusive upper bound => field <= value
-            (Bound::Unbounded, Bound::Included(value)) => ColumnOp::Cmp {
-                op: OpQuery::Cmp(OpCmp::LtEq),
-                lhs: field.into(),
-                rhs: value.into(),
-            },
-            // Exclusive upper bound => field < value
-            (Bound::Unbounded, Bound::Excluded(value)) => ColumnOp::Cmp {
-                op: OpQuery::Cmp(OpCmp::Lt),
-                lhs: field.into(),
-                rhs: value.into(),
-            },
-            (Bound::Unbounded, Bound::Unbounded) => unreachable!(),
-            (lower_bound, upper_bound) => {
-                let lhs = IndexScan {
-                    table: table.clone(),
-                    col_id,
-                    lower_bound,
-                    upper_bound: Bound::Unbounded,
-                };
-                let rhs = IndexScan {
-                    table,
-                    col_id,
-                    lower_bound: Bound::Unbounded,
-                    upper_bound,
-                };
-                ColumnOp::Cmp {
-                    op: OpQuery::Logic(OpLogic::And),
-                    lhs: lhs.into(),
-                    rhs: rhs.into(),
-                }
-            }
+        let mut op = ColumnOp::between(field, value.bounds.head.0, value.bounds.head.1);
+        for (i, col_id) in value.cols.tail.iter().enumerate() {
+            let field = table.head.fields[*col_id as usize].field.clone();
+            let (lower, upper) = &value.bounds.tail[i];
+            let lhs = ColumnOp::between(field, lower.clone(), upper.clone());
+            op = ColumnOp::new(OpQuery::Logic(OpLogic::And), lhs, op);
         }
+        op
     }
 }
 
@@ -447,9 +449,9 @@ pub enum CrudExpr {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct IndexScan {
     pub table: DbTable,
-    pub col_id: u32,
-    pub lower_bound: Bound<AlgebraicValue>,
-    pub upper_bound: Bound<AlgebraicValue>,
+    pub cols: NonEmpty<u32>,
+    pub index_cols: NonEmpty<u32>,
+    pub bounds: NonEmpty<(Bound<AlgebraicValue>, Bound<AlgebraicValue>)>,
 }
 
 impl PartialOrd for IndexScan {
@@ -494,18 +496,28 @@ impl Ord for IndexScan {
             return order;
         };
 
-        let order = self.col_id.cmp(&other.col_id);
+        let order = self.cols.cmp(&other.cols);
         let Ordering::Equal = order else {
             return order;
         };
 
-        match (
-            RangeBound(&self.lower_bound).cmp(&RangeBound(&other.lower_bound)),
-            RangeBound(&self.upper_bound).cmp(&RangeBound(&other.upper_bound)),
-        ) {
-            (Ordering::Equal, ord) => ord,
-            (ord, _) => ord,
+        let order = self.index_cols.cmp(&other.index_cols);
+        let Ordering::Equal = order else {
+            return order;
+        };
+
+        for ((l1, u1), (l2, u2)) in self.bounds.iter().zip(other.bounds.iter()) {
+            match (RangeBound(l1).cmp(&RangeBound(l2)), RangeBound(u1).cmp(&RangeBound(u2))) {
+                (Ordering::Equal, Ordering::Equal) => {}
+                (Ordering::Equal, ord) => {
+                    return ord;
+                }
+                (ord, _) => {
+                    return ord;
+                }
+            }
         }
+        Ordering::Equal
     }
 }
 
@@ -563,17 +575,52 @@ impl QueryExpr {
         }
     }
 
+    // Merge consecutive selections (filters) into a single operation.
+    pub fn merge_selects(mut self) -> Self {
+        match self.query.pop() {
+            Some(Query::Select(lhs)) => match self.query.pop() {
+                Some(Query::Select(rhs)) => {
+                    let op = ColumnOp::new(OpQuery::Logic(OpLogic::And), lhs, rhs);
+                    self.query.push(Query::Select(op));
+                    self.merge_selects()
+                }
+                Some(rhs) => {
+                    self.query.push(rhs);
+                    self.query.push(Query::Select(lhs));
+                    self
+                }
+                None => {
+                    self.query.push(Query::Select(lhs));
+                    self
+                }
+            },
+            Some(op) => {
+                self.query.push(op);
+                self
+            }
+            None => self,
+        }
+    }
+
     // Generate an index scan for an equality predicate if this is the first operator.
     // Otherwise generate a select.
     // TODO: Replace these methods with a proper query optimization pass.
-    pub fn with_index_eq(mut self, table: DbTable, col_id: u32, value: AlgebraicValue) -> Self {
+    pub fn with_index_eq(
+        mut self,
+        table: DbTable,
+        index_cols: NonEmpty<u32>,
+        col_id: u32,
+        value: AlgebraicValue,
+    ) -> Self {
         // if this is the first operator in the list, generate index scan
         let Some(query) = self.query.pop() else {
+            let cols = NonEmpty::new(col_id);
+            let bounds = NonEmpty::new((Bound::Included(value.clone()), Bound::Included(value)));
             self.query.push(Query::IndexScan(IndexScan {
                 table,
-                col_id,
-                lower_bound: Bound::Included(value.clone()),
-                upper_bound: Bound::Included(value),
+                index_cols,
+                cols,
+                bounds,
             }));
             return self;
         };
@@ -590,49 +637,48 @@ impl QueryExpr {
                     },
                 ..
             }) if table.table_id != rhs_table_id => {
-                self = self.with_index_eq(table, col_id, value);
+                self = self.with_index_eq(table, index_cols, col_id, value);
                 self.query.push(query);
-                self
             }
             // try to push below join's rhs
             Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs }) => {
                 self.query.push(Query::JoinInner(JoinExpr {
-                    rhs: rhs.with_index_eq(table, col_id, value),
+                    rhs: rhs.with_index_eq(table, index_cols, col_id, value),
                     col_lhs,
                     col_rhs,
                 }));
-                self
             }
-            // merge with a preceding select
-            Query::Select(filter) => {
-                self.query.push(Query::Select(ColumnOp::Cmp {
-                    op: OpQuery::Logic(OpLogic::And),
-                    lhs: filter.into(),
-                    rhs: IndexScan {
-                        table,
-                        col_id,
-                        lower_bound: Bound::Included(value.clone()),
-                        upper_bound: Bound::Included(value),
-                    }
-                    .into(),
+            // further specify the bounds for a multi-column index scan
+            Query::IndexScan(IndexScan {
+                table,
+                index_cols,
+                mut cols,
+                mut bounds,
+            }) if cols.len() < index_cols.len() && col_id == index_cols[cols.len()] => {
+                // append a new column and bound to the prefix scan
+                cols.push(col_id);
+                bounds.push((Bound::Included(value.clone()), Bound::Included(value.clone())));
+
+                self.query.push(Query::IndexScan(IndexScan {
+                    table,
+                    cols,
+                    index_cols,
+                    bounds,
                 }));
-                self
+            }
+            // push below select
+            Query::Select(_) => {
+                self = self.with_index_eq(table, index_cols, col_id, value);
+                self.query.push(query);
             }
             // else generate a new select
             query => {
+                let field = table.head.fields[col_id as usize].field.clone();
                 self.query.push(query);
-                self.query.push(Query::Select(
-                    IndexScan {
-                        table,
-                        col_id,
-                        lower_bound: Bound::Included(value.clone()),
-                        upper_bound: Bound::Included(value),
-                    }
-                    .into(),
-                ));
-                self
+                self.query.push(Query::Select(ColumnOp::cmp(field, OpCmp::Eq, value)));
             }
         }
+        self.merge_selects()
     }
 
     // Generate an index scan for a range predicate or try merging with a previous index scan.
@@ -641,18 +687,33 @@ impl QueryExpr {
     pub fn with_index_lower_bound(
         mut self,
         table: DbTable,
+        index_cols: NonEmpty<u32>,
         col_id: u32,
         value: AlgebraicValue,
         inclusive: bool,
     ) -> Self {
         // if this is the first operator in the list, generate an index scan
         let Some(query) = self.query.pop() else {
+            let cols = NonEmpty::new(col_id);
+            let bounds = NonEmpty::new((Self::bound(value.clone(), inclusive), Bound::Unbounded));
+            let field = table.head.fields[col_id as usize].field.clone();
+            let multi_column = index_cols.len() > 1;
+
             self.query.push(Query::IndexScan(IndexScan {
                 table,
-                col_id,
-                lower_bound: Self::bound(value, inclusive),
-                upper_bound: Bound::Unbounded,
+                index_cols,
+                cols,
+                bounds,
             }));
+
+            // push a select to catch any boundary values that slip through
+            if multi_column {
+                self.query.push(Query::Select(ColumnOp::cmp(
+                    field,
+                    if inclusive { OpCmp::GtEq } else { OpCmp::Gt },
+                    value,
+                )));
+            }
             return self;
         };
         match query {
@@ -668,79 +729,102 @@ impl QueryExpr {
                     },
                 ..
             }) if table.table_id != rhs_table_id => {
-                self = self.with_index_lower_bound(table, col_id, value, inclusive);
+                self = self.with_index_lower_bound(table, index_cols, col_id, value, inclusive);
                 self.query.push(query);
-                self
             }
             // try to push below join's rhs
             Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs }) => {
                 self.query.push(Query::JoinInner(JoinExpr {
-                    rhs: rhs.with_index_lower_bound(table, col_id, value, inclusive),
+                    rhs: rhs.with_index_lower_bound(table, index_cols, col_id, value, inclusive),
                     col_lhs,
                     col_rhs,
                 }));
-                self
             }
-            // merge with a preceding upper bounded index scan (inclusive)
+            // merge with a preceding upper bounded single column index scan
             Query::IndexScan(IndexScan {
-                col_id: lhs_col_id,
-                lower_bound: Bound::Unbounded,
-                upper_bound: Bound::Included(upper),
+                cols,
+                index_cols,
+                mut bounds,
                 ..
-            }) if col_id == lhs_col_id => {
+            }) if col_id == *cols.last() && index_cols.len() == 1 && matches!(bounds.last(), (Bound::Unbounded, _)) => {
+                // update the bounds for the last column in the prefix scan
+                bounds.last_mut().0 = Self::bound(value.clone(), inclusive);
                 self.query.push(Query::IndexScan(IndexScan {
                     table,
-                    col_id,
-                    lower_bound: Self::bound(value, inclusive),
-                    upper_bound: Bound::Included(upper),
+                    cols,
+                    index_cols,
+                    bounds,
                 }));
-                self
             }
-            // merge with a preceding upper bounded index scan (exclusive)
+            // merge with a preceding upper bounded multi-column index scan
             Query::IndexScan(IndexScan {
-                col_id: lhs_col_id,
-                lower_bound: Bound::Unbounded,
-                upper_bound: Bound::Excluded(upper),
+                cols,
+                index_cols,
+                mut bounds,
                 ..
-            }) if col_id == lhs_col_id => {
+            }) if col_id == *cols.last() && matches!(bounds.last(), (Bound::Unbounded, _)) => {
+                let field = table.head.fields[col_id as usize].field.clone();
+
+                // update the bounds for the last column in the prefix scan
+                bounds.last_mut().0 = Self::bound(value.clone(), inclusive);
                 self.query.push(Query::IndexScan(IndexScan {
                     table,
-                    col_id,
-                    lower_bound: Self::bound(value, inclusive),
-                    upper_bound: Bound::Excluded(upper),
+                    cols,
+                    index_cols,
+                    bounds,
                 }));
-                self
+
+                // push a select to catch any boundary values that slip through
+                self.query.push(Query::Select(ColumnOp::cmp(
+                    field,
+                    if inclusive { OpCmp::GtEq } else { OpCmp::Gt },
+                    value,
+                )));
             }
-            // merge with a preceding select
-            Query::Select(filter) => {
-                self.query.push(Query::Select(ColumnOp::Cmp {
-                    op: OpQuery::Logic(OpLogic::And),
-                    lhs: filter.into(),
-                    rhs: IndexScan {
-                        table,
-                        col_id,
-                        lower_bound: Self::bound(value, inclusive),
-                        upper_bound: Bound::Unbounded,
-                    }
-                    .into(),
+            // further specify the bounds for a multi-column index scan
+            Query::IndexScan(IndexScan {
+                table,
+                index_cols,
+                mut cols,
+                mut bounds,
+            }) if cols.len() < index_cols.len() && col_id == index_cols[cols.len()] => {
+                let field = table.head.fields[col_id as usize].field.clone();
+
+                // append a new column and bound to the prefix scan
+                cols.push(col_id);
+                bounds.push((Self::bound(value.clone(), inclusive), Bound::Unbounded));
+
+                self.query.push(Query::IndexScan(IndexScan {
+                    table,
+                    cols,
+                    index_cols,
+                    bounds,
                 }));
-                self
+
+                // push a select to catch any boundary values that slip through
+                self.query.push(Query::Select(ColumnOp::cmp(
+                    field,
+                    if inclusive { OpCmp::GtEq } else { OpCmp::Gt },
+                    value,
+                )));
+            }
+            // push below select
+            Query::Select(_) => {
+                self = self.with_index_lower_bound(table, index_cols, col_id, value, inclusive);
+                self.query.push(query);
             }
             // else generate a new select
             query => {
+                let field = table.head.fields[col_id as usize].field.clone();
                 self.query.push(query);
-                self.query.push(Query::Select(
-                    IndexScan {
-                        table,
-                        col_id,
-                        lower_bound: Self::bound(value, inclusive),
-                        upper_bound: Bound::Unbounded,
-                    }
-                    .into(),
-                ));
-                self
+                self.query.push(Query::Select(ColumnOp::cmp(
+                    field,
+                    if inclusive { OpCmp::GtEq } else { OpCmp::Gt },
+                    value,
+                )));
             }
         }
+        self.merge_selects()
     }
 
     // Generate an index scan for a range predicate or try merging with a previous index scan.
@@ -749,18 +833,33 @@ impl QueryExpr {
     pub fn with_index_upper_bound(
         mut self,
         table: DbTable,
+        index_cols: NonEmpty<u32>,
         col_id: u32,
         value: AlgebraicValue,
         inclusive: bool,
     ) -> Self {
         // if this is the first operator in the list, generate an index scan
         let Some(query) = self.query.pop() else {
+            let cols = NonEmpty::new(col_id);
+            let bounds = NonEmpty::new((Bound::Unbounded, Self::bound(value.clone(), inclusive)));
+            let field = table.head.fields[col_id as usize].field.clone();
+            let multi_column = index_cols.len() > 1;
+
             self.query.push(Query::IndexScan(IndexScan {
                 table,
-                col_id,
-                lower_bound: Bound::Unbounded,
-                upper_bound: Self::bound(value, inclusive),
+                index_cols,
+                cols,
+                bounds,
             }));
+
+            // push a select to catch any boundary values that slip through
+            if multi_column {
+                self.query.push(Query::Select(ColumnOp::cmp(
+                    field,
+                    if inclusive { OpCmp::GtEq } else { OpCmp::Gt },
+                    value,
+                )));
+            }
             return self;
         };
         match query {
@@ -776,79 +875,102 @@ impl QueryExpr {
                     },
                 ..
             }) if table.table_id != rhs_table_id => {
-                self = self.with_index_upper_bound(table, col_id, value, inclusive);
+                self = self.with_index_upper_bound(table, index_cols, col_id, value, inclusive);
                 self.query.push(query);
-                self
             }
             // try to push below join's rhs
             Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs }) => {
                 self.query.push(Query::JoinInner(JoinExpr {
-                    rhs: rhs.with_index_upper_bound(table, col_id, value, inclusive),
+                    rhs: rhs.with_index_upper_bound(table, index_cols, col_id, value, inclusive),
                     col_lhs,
                     col_rhs,
                 }));
-                self
             }
-            // merge with a preceding lower bounded index scan (inclusive)
+            // merge with a preceding lower bounded single column index scan
             Query::IndexScan(IndexScan {
-                col_id: lhs_col_id,
-                lower_bound: Bound::Included(lower),
-                upper_bound: Bound::Unbounded,
+                cols,
+                index_cols,
+                mut bounds,
                 ..
-            }) if col_id == lhs_col_id => {
+            }) if col_id == *cols.last() && index_cols.len() == 1 && matches!(bounds.last(), (_, Bound::Unbounded)) => {
+                // update the bounds for the last column in the prefix scan
+                bounds.last_mut().1 = Self::bound(value.clone(), inclusive);
                 self.query.push(Query::IndexScan(IndexScan {
                     table,
-                    col_id,
-                    lower_bound: Bound::Included(lower),
-                    upper_bound: Self::bound(value, inclusive),
+                    cols,
+                    index_cols,
+                    bounds,
                 }));
-                self
             }
-            // merge with a preceding lower bounded index scan (inclusive)
+            // merge with a preceding lower bounded multi-column index scan
             Query::IndexScan(IndexScan {
-                col_id: lhs_col_id,
-                lower_bound: Bound::Excluded(lower),
-                upper_bound: Bound::Unbounded,
+                cols,
+                index_cols,
+                mut bounds,
                 ..
-            }) if col_id == lhs_col_id => {
+            }) if col_id == *cols.last() && matches!(bounds.last(), (_, Bound::Unbounded)) => {
+                let field = table.head.fields[col_id as usize].field.clone();
+
+                // update the bounds for the last column in the prefix scan
+                bounds.last_mut().1 = Self::bound(value.clone(), inclusive);
                 self.query.push(Query::IndexScan(IndexScan {
                     table,
-                    col_id,
-                    lower_bound: Bound::Excluded(lower),
-                    upper_bound: Self::bound(value, inclusive),
+                    cols,
+                    index_cols,
+                    bounds,
                 }));
-                self
+
+                // push a select to catch any boundary values that slip through
+                self.query.push(Query::Select(ColumnOp::cmp(
+                    field,
+                    if inclusive { OpCmp::LtEq } else { OpCmp::Lt },
+                    value,
+                )));
             }
-            // merge with a preceding select
-            Query::Select(filter) => {
-                self.query.push(Query::Select(ColumnOp::Cmp {
-                    op: OpQuery::Logic(OpLogic::And),
-                    lhs: filter.into(),
-                    rhs: IndexScan {
-                        table,
-                        col_id,
-                        lower_bound: Bound::Unbounded,
-                        upper_bound: Self::bound(value, inclusive),
-                    }
-                    .into(),
+            // further specify the bounds for a multi-column index scan
+            Query::IndexScan(IndexScan {
+                table,
+                index_cols,
+                mut cols,
+                mut bounds,
+            }) if cols.len() < index_cols.len() && col_id == index_cols[cols.len()] => {
+                let field = table.head.fields[col_id as usize].field.clone();
+
+                // append a new column and bound to the prefix scan
+                cols.push(col_id);
+                bounds.push((Bound::Unbounded, Self::bound(value.clone(), inclusive)));
+
+                self.query.push(Query::IndexScan(IndexScan {
+                    table,
+                    cols,
+                    index_cols,
+                    bounds,
                 }));
-                self
+
+                // push a select to catch any boundary values that slip through
+                self.query.push(Query::Select(ColumnOp::cmp(
+                    field,
+                    if inclusive { OpCmp::LtEq } else { OpCmp::Lt },
+                    value,
+                )));
+            }
+            // push below select
+            Query::Select(_) => {
+                self = self.with_index_upper_bound(table, index_cols, col_id, value, inclusive);
+                self.query.push(query);
             }
             // else generate a new select
             query => {
+                let field = table.head.fields[col_id as usize].field.clone();
                 self.query.push(query);
-                self.query.push(Query::Select(
-                    IndexScan {
-                        table,
-                        col_id,
-                        lower_bound: Bound::Unbounded,
-                        upper_bound: Self::bound(value, inclusive),
-                    }
-                    .into(),
-                ));
-                self
+                self.query.push(Query::Select(ColumnOp::cmp(
+                    field,
+                    if inclusive { OpCmp::LtEq } else { OpCmp::Lt },
+                    value,
+                )));
             }
         }
+        self.merge_selects()
     }
 
     pub fn with_select<O>(mut self, op: O) -> Self
