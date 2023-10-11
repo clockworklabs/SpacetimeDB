@@ -1,5 +1,6 @@
 use prometheus::IntGauge;
 
+/// Decrements the inner [`IntGauge`] on drop.
 pub struct GaugeInc {
     gauge: IntGauge,
 }
@@ -10,6 +11,7 @@ impl Drop for GaugeInc {
     }
 }
 
+/// Increment the given [`IntGauge`], and decrement it when the returned value goes out of scope.
 #[inline]
 pub fn inc_scope(gauge: &IntGauge) -> GaugeInc {
     gauge.inc();

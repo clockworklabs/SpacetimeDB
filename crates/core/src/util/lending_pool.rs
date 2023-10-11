@@ -30,12 +30,6 @@ impl<T> Clone for LendingPool<T> {
     }
 }
 
-// impl<T> Default for LendingPool<T> {
-//     fn default() -> Self {
-//         Self::new()
-//     }
-// }
-
 struct LendingPoolInner<T> {
     closed_notify: NotifyOnce,
     waiter_gauge: IntGauge,
@@ -134,8 +128,6 @@ impl<T> LendingPool<T> {
         }
     }
 }
-
-// impl<T> FromIterator<T> for LendingPool<T> {}
 
 pin_project_lite::pin_project! {
     pub struct Closed<'a> {
