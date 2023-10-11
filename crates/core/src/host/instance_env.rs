@@ -33,6 +33,9 @@ pub struct TxSlot {
     inner: Arc<Mutex<Option<MutTxId>>>,
 }
 
+// For now, just send buffers over a certain fixed size.
+const ITER_CHUNK_SIZE: usize = 64 * 1024;
+
 // Generic 'instance environment' delegated to from various host types.
 impl InstanceEnv {
     pub fn new(dbic: Arc<DatabaseInstanceContext>, scheduler: Scheduler) -> Self {
@@ -322,53 +325,33 @@ impl InstanceEnv {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn iter(&self, table_id: u32) -> impl Iterator<Item = Result<Vec<u8>, NodesError>> {
-        use genawaiter::{sync::gen, yield_, GeneratorState};
+    pub fn iter_chunks(&self, table_id: u32) -> Result<Vec<Vec<u8>>, NodesError> {
+        let mut chunks = Vec::new();
 
-        // Cheap Arc clones to untie the returned iterator from our own lifetime.
-        let relational_db = self.dbic.relational_db.clone();
-        let tx = self.tx.clone();
+        let stdb = &*self.dbic.relational_db;
+        let tx = &mut *self.tx.get()?;
 
-        // For now, just send buffers over a certain fixed size.
-        fn should_yield_buf(buf: &Vec<u8>) -> bool {
-            const SIZE: usize = 64 * 1024;
-            buf.len() >= SIZE
-        }
-
-        let mut generator = Some(gen!({
-            let stdb = &*relational_db;
-            let tx = &mut *tx.get()?;
-
+        // initial chunk is expected to be schema itself, encode it ignoring chunk size
+        {
             let mut buf = Vec::new();
             let schema = stdb.row_schema_for_table(tx, table_id)?;
             schema.encode(&mut buf);
-            yield_!(buf);
+            chunks.push(buf);
+        }
 
-            let mut buf = Vec::new();
-            for row in stdb.iter(tx, table_id)? {
-                if should_yield_buf(&buf) {
-                    yield_!(buf);
-                    buf = Vec::new();
-                }
-                row.view().encode(&mut buf);
+        let mut buf = Vec::new();
+        for row in stdb.iter(tx, table_id)? {
+            if buf.len() > ITER_CHUNK_SIZE {
+                chunks.push(buf);
+                buf = Vec::new();
             }
-            if !buf.is_empty() {
-                yield_!(buf)
-            }
+            row.view().encode(&mut buf);
+        }
+        if !buf.is_empty() {
+            chunks.push(buf);
+        }
 
-            Ok(())
-        }));
-
-        std::iter::from_fn(move || match generator.as_mut()?.resume() {
-            GeneratorState::Yielded(bytes) => Some(Ok(bytes)),
-            GeneratorState::Complete(res) => {
-                generator = None;
-                match res {
-                    Ok(()) => None,
-                    Err(err) => Some(Err(err)),
-                }
-            }
-        })
+        Ok(chunks)
     }
 
     #[tracing::instrument(skip_all)]
