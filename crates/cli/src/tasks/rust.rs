@@ -5,29 +5,45 @@ use anyhow::Context;
 use cargo_metadata::Message;
 use duct::cmd;
 
+fn cargo_cmd(subcommand: &str, build_debug: bool, args: &[&str]) -> duct::Expression {
+    duct::cmd(
+        "cargo",
+        [
+            subcommand,
+            "--config=net.git-fetch-with-cli=true",
+            "--target=wasm32-unknown-unknown",
+        ]
+        .into_iter()
+        .chain((!build_debug).then_some("--release"))
+        .chain(args.iter().copied()),
+    )
+}
+
 pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bool) -> anyhow::Result<PathBuf> {
     // Make sure that we have the wasm target installed (ok to run if its already installed)
     cmd!("rustup", "target", "add", "wasm32-unknown-unknown").run()?;
-    let reader = if build_debug {
-        cmd!(
-            "cargo",
-            "--config=net.git-fetch-with-cli=true",
-            "build",
-            "--target=wasm32-unknown-unknown",
-            "--message-format=json-render-diagnostics"
+
+    // Note: Clippy has to run first so that it can build & cache deps for actual build while checking in parallel.
+    if !skip_clippy {
+        let clippy_conf_dir = tempfile::tempdir()?;
+        fs::write(clippy_conf_dir.path().join("clippy.toml"), CLIPPY_TOML)?;
+        println!("checking crate with spacetimedb's clippy configuration");
+        let out = cargo_cmd(
+            "clippy",
+            build_debug,
+            &["--", "--no-deps", "-Aclippy::all", "-Dclippy::disallowed-macros"],
         )
-    } else {
-        cmd!(
-            "cargo",
-            "--config=net.git-fetch-with-cli=true",
-            "build",
-            "--target=wasm32-unknown-unknown",
-            "--release",
-            "--message-format=json-render-diagnostics"
-        )
+        .dir(project_path)
+        .env("CLIPPY_DISABLE_DOCS_LINKS", "1")
+        .env("CLIPPY_CONF_DIR", clippy_conf_dir.path())
+        .unchecked()
+        .run()?;
+        anyhow::ensure!(out.status.success(), "clippy found a lint error");
     }
-    .dir(project_path)
-    .reader()?;
+
+    let reader = cargo_cmd("build", build_debug, &["--message-format=json-render-diagnostics"])
+        .dir(project_path)
+        .reader()?;
 
     let mut artifact = None;
     for message in Message::parse_stream(io::BufReader::new(reader)) {
@@ -39,32 +55,6 @@ pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bo
     }
     let artifact = artifact.context("no artifact found?")?;
     let artifact = artifact.filenames.into_iter().next().context("no wasm?")?;
-
-    if !skip_clippy {
-        let clippy_conf_dir = tempfile::tempdir()?;
-        fs::write(clippy_conf_dir.path().join("clippy.toml"), CLIPPY_TOML)?;
-        println!("checking crate with spacetimedb's clippy configuration");
-        // TODO: should we pass --no-deps here? leaving it out could be valuable if a module is split
-        //       into multiple crates, but without it it lints on proc-macro crates too
-        let out = cmd!(
-            "cargo",
-            "--config=net.git-fetch-with-cli=true",
-            "clippy",
-            "--target=wasm32-unknown-unknown",
-            // TODO: pass -q? otherwise it might be too busy
-            // "-q",
-            "--",
-            "--no-deps",
-            "-Aclippy::all",
-            "-Dclippy::disallowed-macros"
-        )
-        .dir(project_path)
-        .env("CLIPPY_DISABLE_DOCS_LINKS", "1")
-        .env("CLIPPY_CONF_DIR", clippy_conf_dir.path())
-        .unchecked()
-        .run()?;
-        anyhow::ensure!(out.status.success(), "clippy found a lint error");
-    }
 
     check_for_wasm_bindgen(artifact.as_ref())?;
 
