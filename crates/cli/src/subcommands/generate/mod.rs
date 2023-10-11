@@ -6,7 +6,7 @@ use clap::ArgAction::SetTrue;
 use convert_case::{Case, Casing};
 use duct::cmd;
 use spacetimedb_lib::sats::{AlgebraicType, Typespace};
-use spacetimedb_lib::{bsatn, MiscModuleExport, ModuleDef, ReducerDef, TableDef, TypeAlias};
+use spacetimedb_lib::{bsatn, MiscModuleExport, ModuleDef, ReducerDef, TableDef, TypeAlias, MODULE_ABI_MAJOR_VERSION};
 use wasmtime::{AsContext, Caller};
 
 mod code_indenter;
@@ -344,8 +344,9 @@ fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<ModuleDef> {
     let mut store = wasmtime::Store::new(&engine, ctx);
     let mut linker = wasmtime::Linker::new(&engine);
     linker.allow_shadowing(true).define_unknown_imports_as_traps(&module)?;
+    let module_name = &*format!("spacetime_{MODULE_ABI_MAJOR_VERSION}.0");
     linker.func_wrap(
-        "spacetime_6.0",
+        module_name,
         "_console_log",
         |caller: Caller<'_, WasmCtx>,
          _level: u32,
@@ -365,7 +366,7 @@ fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<ModuleDef> {
             }
         },
     )?;
-    linker.func_wrap("spacetime_6.0", "_buffer_alloc", WasmCtx::buffer_alloc)?;
+    linker.func_wrap(module_name, "_buffer_alloc", WasmCtx::buffer_alloc)?;
     let instance = linker.instantiate(&mut store, &module)?;
     let memory = Memory {
         mem: instance.get_memory(&mut store, "memory").unwrap(),

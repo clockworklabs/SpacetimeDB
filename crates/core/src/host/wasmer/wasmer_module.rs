@@ -49,6 +49,7 @@ impl WasmerModule {
     pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(6, 0);
 
     fn imports(&self, store: &mut Store, env: &FunctionEnv<WasmInstanceEnv>) -> Imports {
+        #[allow(clippy::assertions_on_constants)]
         const _: () = assert!(WasmerModule::IMPLEMENTED_ABI.major == spacetimedb_lib::MODULE_ABI_MAJOR_VERSION);
         imports! {
             "spacetime_6.0" => {
