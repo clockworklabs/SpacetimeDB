@@ -465,19 +465,25 @@ namespace SpacetimeDB
         /// <summary>
         /// Connect to a remote spacetime instance.
         /// </summary>
-        /// <param name="host">The host or IP address and the port to connect to. Example: spacetime.spacetimedb.net:3000</param>
+        /// <param name="uri"> URI of the SpacetimeDB server (ex: https://testnet.spacetimedb.com)
         /// <param name="addressOrName">The name or address of the database to connect to</param>
-        /// <param name="sslEnabled">Should websocket use SSL</param>
-        public void Connect(string token, string host, string addressOrName, bool sslEnabled = true)
+        public void Connect(string token, string uri, string addressOrName)
         {
             isClosing = false;
 
-            logger.Log($"SpacetimeDBClient: Connecting to {host} {addressOrName}");
+            uri = uri.Replace("http://", "ws://");
+            uri = uri.Replace("https://", "wss://");
+            if (!uri.StartsWith("ws://") && !uri.StartsWith("wss://"))
+            {
+                uri = $"ws://{uri}";
+            }
+
+            logger.Log($"SpacetimeDBClient: Connecting to {uri} {addressOrName}");
             Task.Run(async () =>
             {
                 try
                 {
-                    await webSocket.Connect(token, host, addressOrName, sslEnabled);
+                    await webSocket.Connect(token, uri, addressOrName);
                 }
                 catch (Exception e)
                 {

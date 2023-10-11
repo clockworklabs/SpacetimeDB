@@ -107,11 +107,9 @@ namespace SpacetimeDB.Types
 		}
 
 		public delegate void InsertEventHandler(Message insertedValue, SpacetimeDB.Types.ReducerEvent dbEvent);
-		public delegate void UpdateEventHandler(Message oldValue, Message newValue, SpacetimeDB.Types.ReducerEvent dbEvent);
 		public delegate void DeleteEventHandler(Message deletedValue, SpacetimeDB.Types.ReducerEvent dbEvent);
 		public delegate void RowUpdateEventHandler(SpacetimeDBClient.TableOp op, Message oldValue, Message newValue, SpacetimeDB.Types.ReducerEvent dbEvent);
 		public static event InsertEventHandler OnInsert;
-		public static event UpdateEventHandler OnUpdate;
 		public static event DeleteEventHandler OnBeforeDelete;
 		public static event DeleteEventHandler OnDelete;
 		public static event RowUpdateEventHandler OnRowUpdate;
@@ -119,11 +117,6 @@ namespace SpacetimeDB.Types
 		public static void OnInsertEvent(object newValue, ClientApi.Event dbEvent)
 		{
 			OnInsert?.Invoke((Message)newValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);
-		}
-
-		public static void OnUpdateEvent(object oldValue, object newValue, ClientApi.Event dbEvent)
-		{
-			OnUpdate?.Invoke((Message)oldValue,(Message)newValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);
 		}
 
 		public static void OnBeforeDeleteEvent(object oldValue, ClientApi.Event dbEvent)

@@ -133,13 +133,12 @@ void OnSubscriptionApplied()
     PrintMessagesInOrder();
 }
 
-const string HOST = "localhost:3000";
-const string DBNAME = "chat2";
-const bool SSL_ENABLED = false;
+const string HOST = "http://localhost:3000";
+const string DBNAME = "chatqs";
 
 void ProcessThread()
 {
-    SpacetimeDBClient.instance.Connect(AuthToken.Token, HOST, DBNAME, SSL_ENABLED);
+    SpacetimeDBClient.instance.Connect(AuthToken.Token, HOST, DBNAME);
 
     // loop until cancellation token
     while (!cancel_token.IsCancellationRequested)
