@@ -860,7 +860,7 @@ fn print_spacetime_module_struct_defn(ctx: &GenCtx, out: &mut Indenter, items: &
 /// Define the `handle_table_update` method,
 /// which dispatches on the table name in a `TableUpdate` message
 /// to call an appropriate method on the `ClientCache`.
-fn print_handle_table_update_defn(ctx: &GenCtx, out: &mut Indenter, items: &[GenItem]) {
+fn print_handle_table_update_defn(_ctx: &GenCtx, out: &mut Indenter, items: &[GenItem]) {
     out.delimited_block(
         "fn handle_table_update(&self, table_update: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {",
         |out| {

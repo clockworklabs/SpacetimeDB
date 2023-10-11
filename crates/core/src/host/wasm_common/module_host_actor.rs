@@ -698,19 +698,12 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         struct Equiv<'a>(&'a TableDef);
         impl PartialEq for Equiv<'_> {
             fn eq(&self, other: &Self) -> bool {
-                let TableDef {
-                    table_name,
-                    columns,
-                    indexes: _,
-                    constraints: _,
-                    sequences: _,
-                    table_type,
-                    table_access,
-                } = &self.0;
-                table_name == &other.0.table_name
-                    && table_type == &other.0.table_type
-                    && table_access == &other.0.table_access
-                    && columns.iter().sorted().eq(other.0.columns.iter().sorted())
+                let mut me = self.0.clone().into_schema(0.into());
+                let mut other = other.0.clone().into_schema(0.into());
+                me.columns.sort();
+                other.columns.sort();
+
+                me.eq(&other)
             }
         }
 
