@@ -80,6 +80,12 @@ impl ArrayValue {
 
     /// Helper for `type_of` above.
     /// Infers the `AlgebraicType` from the first element by running `then` on it.
+    ///
+    /// The result of `first_type_of(&[])` is an empty sum type ("never"),
+    /// that is, a type that has no values.
+    /// This leads to e.g., an empty array of products having the type "never".
+    /// This is the most conservative choice
+    /// and has the consequence that no values can be added to such an array.
     fn first_type_of<T>(arr: &[T], then: impl FnOnce(&T) -> AlgebraicType) -> AlgebraicType {
         arr.first().map(then).unwrap_or_else(AlgebraicType::never)
     }

@@ -1,7 +1,7 @@
 pub mod de;
 pub mod ser;
 
-use crate::{AlgebraicType, ArrayValue, BuiltinType, MapValue, ProductValue, SumValue};
+use crate::{AlgebraicType, ArrayValue, MapValue, ProductValue, SumValue};
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use std::ops::{Bound, RangeBounds};
@@ -213,7 +213,7 @@ impl AlgebraicValue {
         match self {
             Self::Sum(x) => Self::type_of_sum(x),
             Self::Product(x) => Self::type_of_product(x),
-            Self::Array(x) => AlgebraicType::Builtin(BuiltinType::Array(x.type_of())),
+            Self::Array(x) => x.type_of().into(),
             Self::Map(x) => Self::type_of_map(x),
             Self::Bool(_) => AlgebraicType::Bool,
             Self::I8(_) => AlgebraicType::I8,
