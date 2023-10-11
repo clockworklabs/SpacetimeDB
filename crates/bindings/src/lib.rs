@@ -245,34 +245,6 @@ pub fn delete_range(table_id: u32, col_id: u8, range: Range<AlgebraicValue>) -> 
 //
 // }
 
-// Get the buffer iterator for this table,
-// with an optional filter,
-// and return it and its decoded `ProductType` schema.
-fn buffer_table_iter(
-    table_id: u32,
-    filter: Option<spacetimedb_lib::filter::Expr>,
-) -> Result<(BufferIter, ProductType)> {
-    // Decode the filter, if any.
-    let filter = filter
-        .as_ref()
-        .map(bsatn::to_vec)
-        .transpose()
-        .expect("Couldn't decode the filter query");
-
-    // Create the iterator.
-    let mut iter = sys::iter(table_id, filter.as_deref())?;
-
-    // First item is an encoded schema.
-    let schema_raw = iter
-        .next()
-        .expect("Missing schema")
-        .expect("Failed to get schema")
-        .read();
-    let schema = decode_schema(&mut &schema_raw[..]).expect("Could not decode schema");
-
-    Ok((iter, schema))
-}
-
 /// A table iterator which yields `ProductValue`s.
 // type ProductValueTableIter = RawTableIter<ProductValue, ProductValueBufferDeserialize>;
 
@@ -285,10 +257,18 @@ fn buffer_table_iter(
 /// A table iterator which yields values of the `TableType` corresponding to the table.
 type TableTypeTableIter<T> = RawTableIter<TableTypeBufferDeserialize<T>>;
 
+// Get the iterator for this table with an optional filter,
 fn table_iter<T: TableType>(table_id: u32, filter: Option<spacetimedb_lib::filter::Expr>) -> Result<TableIter<T>> {
-    // The TableType deserializer doesn't need the schema, as we have type-directed
-    // dispatch to deserialize any given `TableType`.
-    let (iter, _schema) = buffer_table_iter(table_id, filter)?;
+    // Decode the filter, if any.
+    let filter = filter
+        .as_ref()
+        .map(bsatn::to_vec)
+        .transpose()
+        .expect("Couldn't decode the filter query");
+
+    // Create the iterator.
+    let iter = sys::iter(table_id, filter.as_deref())?;
+
     let deserializer = TableTypeBufferDeserialize::new();
     Ok(RawTableIter::new(iter, deserializer).into())
 }
