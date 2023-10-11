@@ -398,10 +398,7 @@ impl WasmerInstance {
         // e.g. evaluating queries.
         let duration = start.elapsed();
 
-        // Clear buffers and timing spans to avoid leaking data across reducer runs.
         self.env.as_mut(store).buffers.clear();
-        self.env.as_mut(store).iters.clear();
-        self.env.as_mut(store).timing_spans.clear();
 
         // .call(store, sender_buf.ptr.cast(), timestamp, args_buf.ptr, args_buf.len)
         // .and_then(|_| {});
