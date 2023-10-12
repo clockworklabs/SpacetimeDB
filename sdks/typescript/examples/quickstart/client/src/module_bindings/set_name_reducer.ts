@@ -14,6 +14,7 @@ import {
   SumTypeVariant,
   Serializer,
   Identity,
+  Address,
   ReducerEvent,
 } from "@clockworklabs/spacetimedb-sdk";
 
@@ -25,7 +26,7 @@ export class SetNameReducer {
         BuiltinType.Type.String
       );
       serializer.write(_nameType, _name);
-      __SPACETIMEDB__.spacetimeDBClient.call("SetName", serializer);
+      __SPACETIMEDB__.spacetimeDBClient.call("set_name", serializer);
     }
   }
 

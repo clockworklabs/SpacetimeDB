@@ -1,6 +1,6 @@
 /* eslint-disable */
 import Long from "long";
-import * as _m0 from "protobufjs/minimal";
+import _m0 from "protobufjs/minimal";
 
 export const protobufPackage = "client_api";
 
@@ -26,33 +26,38 @@ export interface Message {
   identityToken?: IdentityToken | undefined;
   /** client -> database, register SQL queries on which to receive updates. */
   subscribe?: Subscribe | undefined;
+  /** client -> database, send a one-off SQL query without establishing a subscription. */
+  oneOffQuery?: OneOffQuery | undefined;
+  /** database -> client, return results to a one off SQL query. */
+  oneOffQueryResponse?: OneOffQueryResponse | undefined;
 }
 
 /**
- * / Received by database from client to inform of user's identity and token.
+ * / Received by database from client to inform of user's identity, token and client address.
  * /
- * / Do you receive this if you provide a token when connecting, or only if you connect
- * / anonymously? Find out and document - pgoldman 2023-06-06.
+ * / The database will always send an `IdentityToken` message
+ * / as the first message for a new WebSocket connection.
+ * / If the client is re-connecting with existing credentials,
+ * / the message will include those credentials.
+ * / If the client connected anonymously,
+ * / the database will generate new credentials to identify it.
  */
 export interface IdentityToken {
   identity: Uint8Array;
   token: string;
+  address: Uint8Array;
 }
 
 /**
  * / Sent by client to database to request a reducer runs.
  * /
- * / `reducer` is the string name of a reducer to run.
+ * / - `reducer` is the string name of a reducer to run.
  * /
- * / `argBytes` is the arguments to the reducer, encoded as BSATN. (Possibly as SATN if
- * /            you're in the text API? Find out and document - pgoldman 2023-06-05)
+ * / - `argBytes` is the arguments to the reducer, encoded as BSATN.
  * /
  * / SpacetimeDB models reducers as taking a single `AlgebraicValue` as an argument, which
  * / generally will be a `ProductValue` containing all of the args (except the
  * / `ReducerContext`, which is injected by the host, not provided in this API).
- * /
- * / I don't think clients will ever receive a `FunctionCall` from the database, except
- * / wrapped in an `Event` - pgoldman 2023-06-05.
  */
 export interface FunctionCall {
   /** TODO: Maybe this should be replaced with an int identifier for performance? */
@@ -77,9 +82,6 @@ export interface FunctionCall {
  * / will be subscribed to `B` but not `A`. In this case, the client will receive a
  * / `SubscriptionUpdate` containing every existing row that matches `B`, even if some were
  * / already in `A`.
- * /
- * / I don't think clients will ever receive a `Subscribe` from the database - pgoldman
- * / 2023-06-05.
  */
 export interface Subscribe {
   queryStrings: string[];
@@ -88,40 +90,44 @@ export interface Subscribe {
 /**
  * / Part of a `TransactionUpdate` received by client from database upon a reducer run.
  * /
- * / `timestamp` is the time when the reducer ran (started? finished? Find out and document
- * /             - pgoldman 2023-06-05), as microseconds since the Unix epoch.
+ * / - `timestamp` is the time when the reducer started,
+ * /               as microseconds since the Unix epoch.
  * /
- * / `callerIdentity` is the identity token of the user who requested the reducer
- * /                  run. (What if it's run by the database without a client request? Is
- * /                  `callerIdentity` empty? Find out and document - pgoldman 2023-06-05).
+ * / - `callerIdentity` is the identity of the user who requested the reducer run.
+ * /                    For event-driven and scheduled reducers,
+ * /                    it is the identity of the database owner.
  * /
- * / `functionCall` contains the name of the reducer which ran and the arguments it
- * /                received.
+ * / - `functionCall` contains the name of the reducer which ran and the arguments it
+ * /                  received.
  * /
- * / `status` of `committed` means that the reducer ran successfully and its changes were
- * /                         committed to the database. The rows altered in the database
- * /                         will be recorded in the parent `TransactionUpdate`'s
- * /                         `SubscriptionUpdate`.
+ * / - `status` of `committed` means that the reducer ran successfully and its changes were
+ * /                           committed to the database. The rows altered in the database
+ * /                           will be recorded in the parent `TransactionUpdate`'s
+ * /                           `SubscriptionUpdate`.
  * /
- * / `status` of `failed` means that the reducer panicked, and any changes it attempted to
- * /                      make were rolled back.
+ * / - `status` of `failed` means that the reducer panicked, and any changes it attempted to
+ * /                        make were rolled back.
  * /
- * / `status` of `failed` means that the reducer was interrupted due to insufficient
- * /                      energy/funds, and any changes it attempted to make were rolled
- * /                      back. (Verify this - pgoldman 2023-06-05).
+ * / - `status` of `out_of_energy` means that the reducer was interrupted
+ * /                               due to insufficient energy/funds,
+ * /                               and any changes it attempted to make were rolled back.
  * /
- * / `message` what does it do? Find out and document - pgoldman 2023-06-05.
+ * / - `message` is the error message with which the reducer failed.
+ * /             For `committed` or `out_of_energy` statuses,
+ * /             it is the empty string.
  * /
- * / `energy_quanta_used` and `host_execution_duration_micros` seem self-explanatory; they
- * / describe the amount of energy credits consumed by running the reducer, and how long it
- * / took to run.
+ * / - `energy_quanta_used` and `host_execution_duration_micros` seem self-explanatory;
+ * /   they describe the amount of energy credits consumed by running the reducer,
+ * /   and how long it took to run.
  * /
- * / Do clients receive `TransactionUpdate`s / `Event`s for reducer runs which don't touch
- * / any of the client's subscribed rows? Find out and document - pgoldman 2023-06-05.
- * /
- * / Will a client ever receive an `Event` not wrapped in a `TransactionUpdate`? Possibly
- * / when `status = failed` or `status = out_of_energy`? Find out and document - pgoldman
- * / 2023-06-05.
+ * / - `callerAddress` is the 16-byte address of the user who requested the reducer run.
+ * /                   The all-zeros address is a sentinel which denotes no address.
+ * /                   `init` and `update` reducers will have a `callerAddress`
+ * /                   if and only if one was provided to the `publish` HTTP endpoint.
+ * /                   Scheduled reducers will never have a `callerAddress`.
+ * /                   Reducers invoked by HTTP will have a `callerAddress`
+ * /                   if and only if one was provided to the `call` HTTP endpoint.
+ * /                   Reducers invoked by WebSocket will always have a `callerAddress`.
  */
 export interface Event {
   timestamp: number;
@@ -135,6 +141,7 @@ export interface Event {
   message: string;
   energyQuantaUsed: number;
   hostExecutionDurationMicros: number;
+  callerAddress: Uint8Array;
 }
 
 export enum Event_Status {
@@ -197,9 +204,6 @@ export interface SubscriptionUpdate {
  * /                           or may not change between runs.
  * /
  * / `tableRowOperations` are actual modified rows.
- * /
- * / Can a client send `TableUpdate`s to the database to alter the database? I don't think
- * / so, but would be good to know for sure - pgoldman 2023-06-05.
  */
 export interface TableUpdate {
   tableId: number;
@@ -213,18 +217,17 @@ export interface TableUpdate {
  * /
  * / The table being altered is identified by the parent `TableUpdate`.
  * /
- * / `op` of `DELETE` means that the row in question has been removed and is no longer
- * /                  resident in the table.
+ * / - `op` of `DELETE` means that the row in question has been removed and is no longer
+ * /                    resident in the table.
  * /
- * / `op` of `INSERT` means that the row in question has been either newly inserted or
- * /                  updated, and is resident in the table.
+ * / - `op` of `INSERT` means that the row in question has been either newly inserted or
+ * /                    updated, and is resident in the table.
  * /
- * / `row_pk` is a hash of the row computed by the database. As of 2023-06-13, even for
- * /          tables with a `#[primarykey]` annotation on one column, the `row_pk` is not
- * /          that primary key.
+ * / - `row_pk` is a hash of the row computed by the database. As of 2023-06-13, even for
+ * /            tables with a `#[primarykey]` annotation on one column, the `row_pk` is not
+ * /            that primary key.
  * /
- * / `row` is the row itself, encoded as BSATN (or possibly SATN for the text api? Find out
- * /       and document - pgoldman 2023-06-05).
+ * / - `row` is the row itself, encoded as BSATN.
  */
 export interface TableRowOperation {
   op: TableRowOperation_OperationType;
@@ -272,16 +275,51 @@ export function tableRowOperation_OperationTypeToJSON(
 /**
  * / Received by client from database upon a reducer run.
  * /
- * / Do clients receive `TransactionUpdate`s for reducer runs which do not alter any of the
- * / client's subscribed rows? Find out and document - pgoldman 2023-06-05.
+ * / Clients receive `TransactionUpdate`s only for reducers
+ * / which update at least one of their subscribed rows,
+ * / or for their own `failed` or `out_of_energy` reducer invocations.
  * /
- * / `event` contains information about the reducer.
+ * / - `event` contains information about the reducer.
  * /
- * / `subscriptionUpdate` contains changes to subscribed rows.
+ * / - `subscriptionUpdate` contains changes to subscribed rows.
  */
 export interface TransactionUpdate {
   event: Event | undefined;
   subscriptionUpdate: SubscriptionUpdate | undefined;
+}
+
+/**
+ * / A one-off query submission.
+ * /
+ * / Query should be a "SELECT * FROM Table WHERE ...". Other types of queries will be rejected.
+ * / Multiple such semicolon-delimited queries are allowed.
+ * /
+ * / One-off queries are identified by a client-generated messageID.
+ * / To avoid data leaks, the server will NOT cache responses to messages based on UUID!
+ * / It also will not check for duplicate IDs. They are just a way to match responses to messages.
+ */
+export interface OneOffQuery {
+  messageId: Uint8Array;
+  queryString: string;
+}
+
+/**
+ * / A one-off query response.
+ * / Will contain either one error or multiple response rows.
+ * / At most one of these messages will be sent in reply to any query.
+ * /
+ * / The messageId will be identical to the one sent in the original query.
+ */
+export interface OneOffQueryResponse {
+  messageId: Uint8Array;
+  error: string;
+  tables: OneOffTable[];
+}
+
+/** / A table included as part of a one-off query. */
+export interface OneOffTable {
+  tableName: string;
+  row: Uint8Array[];
 }
 
 function createBaseMessage(): Message {
@@ -292,6 +330,8 @@ function createBaseMessage(): Message {
     transactionUpdate: undefined,
     identityToken: undefined,
     subscribe: undefined,
+    oneOffQuery: undefined,
+    oneOffQueryResponse: undefined,
   };
 }
 
@@ -329,6 +369,18 @@ export const Message = {
     }
     if (message.subscribe !== undefined) {
       Subscribe.encode(message.subscribe, writer.uint32(50).fork()).ldelim();
+    }
+    if (message.oneOffQuery !== undefined) {
+      OneOffQuery.encode(
+        message.oneOffQuery,
+        writer.uint32(58).fork()
+      ).ldelim();
+    }
+    if (message.oneOffQueryResponse !== undefined) {
+      OneOffQueryResponse.encode(
+        message.oneOffQueryResponse,
+        writer.uint32(66).fork()
+      ).ldelim();
     }
     return writer;
   },
@@ -389,6 +441,23 @@ export const Message = {
 
           message.subscribe = Subscribe.decode(reader, reader.uint32());
           continue;
+        case 7:
+          if (tag !== 58) {
+            break;
+          }
+
+          message.oneOffQuery = OneOffQuery.decode(reader, reader.uint32());
+          continue;
+        case 8:
+          if (tag !== 66) {
+            break;
+          }
+
+          message.oneOffQueryResponse = OneOffQueryResponse.decode(
+            reader,
+            reader.uint32()
+          );
+          continue;
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -416,40 +485,53 @@ export const Message = {
       subscribe: isSet(object.subscribe)
         ? Subscribe.fromJSON(object.subscribe)
         : undefined,
+      oneOffQuery: isSet(object.oneOffQuery)
+        ? OneOffQuery.fromJSON(object.oneOffQuery)
+        : undefined,
+      oneOffQueryResponse: isSet(object.oneOffQueryResponse)
+        ? OneOffQueryResponse.fromJSON(object.oneOffQueryResponse)
+        : undefined,
     };
   },
 
   toJSON(message: Message): unknown {
     const obj: any = {};
-    message.functionCall !== undefined &&
-      (obj.functionCall = message.functionCall
-        ? FunctionCall.toJSON(message.functionCall)
-        : undefined);
-    message.subscriptionUpdate !== undefined &&
-      (obj.subscriptionUpdate = message.subscriptionUpdate
-        ? SubscriptionUpdate.toJSON(message.subscriptionUpdate)
-        : undefined);
-    message.event !== undefined &&
-      (obj.event = message.event ? Event.toJSON(message.event) : undefined);
-    message.transactionUpdate !== undefined &&
-      (obj.transactionUpdate = message.transactionUpdate
-        ? TransactionUpdate.toJSON(message.transactionUpdate)
-        : undefined);
-    message.identityToken !== undefined &&
-      (obj.identityToken = message.identityToken
-        ? IdentityToken.toJSON(message.identityToken)
-        : undefined);
-    message.subscribe !== undefined &&
-      (obj.subscribe = message.subscribe
-        ? Subscribe.toJSON(message.subscribe)
-        : undefined);
+    if (message.functionCall !== undefined) {
+      obj.functionCall = FunctionCall.toJSON(message.functionCall);
+    }
+    if (message.subscriptionUpdate !== undefined) {
+      obj.subscriptionUpdate = SubscriptionUpdate.toJSON(
+        message.subscriptionUpdate
+      );
+    }
+    if (message.event !== undefined) {
+      obj.event = Event.toJSON(message.event);
+    }
+    if (message.transactionUpdate !== undefined) {
+      obj.transactionUpdate = TransactionUpdate.toJSON(
+        message.transactionUpdate
+      );
+    }
+    if (message.identityToken !== undefined) {
+      obj.identityToken = IdentityToken.toJSON(message.identityToken);
+    }
+    if (message.subscribe !== undefined) {
+      obj.subscribe = Subscribe.toJSON(message.subscribe);
+    }
+    if (message.oneOffQuery !== undefined) {
+      obj.oneOffQuery = OneOffQuery.toJSON(message.oneOffQuery);
+    }
+    if (message.oneOffQueryResponse !== undefined) {
+      obj.oneOffQueryResponse = OneOffQueryResponse.toJSON(
+        message.oneOffQueryResponse
+      );
+    }
     return obj;
   },
 
   create<I extends Exact<DeepPartial<Message>, I>>(base?: I): Message {
-    return Message.fromPartial(base ?? {});
+    return Message.fromPartial(base ?? ({} as any));
   },
-
   fromPartial<I extends Exact<DeepPartial<Message>, I>>(object: I): Message {
     const message = createBaseMessage();
     message.functionCall =
@@ -478,12 +560,21 @@ export const Message = {
       object.subscribe !== undefined && object.subscribe !== null
         ? Subscribe.fromPartial(object.subscribe)
         : undefined;
+    message.oneOffQuery =
+      object.oneOffQuery !== undefined && object.oneOffQuery !== null
+        ? OneOffQuery.fromPartial(object.oneOffQuery)
+        : undefined;
+    message.oneOffQueryResponse =
+      object.oneOffQueryResponse !== undefined &&
+      object.oneOffQueryResponse !== null
+        ? OneOffQueryResponse.fromPartial(object.oneOffQueryResponse)
+        : undefined;
     return message;
   },
 };
 
 function createBaseIdentityToken(): IdentityToken {
-  return { identity: new Uint8Array(0), token: "" };
+  return { identity: new Uint8Array(0), token: "", address: new Uint8Array(0) };
 }
 
 export const IdentityToken = {
@@ -496,6 +587,9 @@ export const IdentityToken = {
     }
     if (message.token !== "") {
       writer.uint32(18).string(message.token);
+    }
+    if (message.address.length !== 0) {
+      writer.uint32(26).bytes(message.address);
     }
     return writer;
   },
@@ -522,6 +616,13 @@ export const IdentityToken = {
 
           message.token = reader.string();
           continue;
+        case 3:
+          if (tag !== 26) {
+            break;
+          }
+
+          message.address = reader.bytes();
+          continue;
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -537,31 +638,38 @@ export const IdentityToken = {
         ? bytesFromBase64(object.identity)
         : new Uint8Array(0),
       token: isSet(object.token) ? String(object.token) : "",
+      address: isSet(object.address)
+        ? bytesFromBase64(object.address)
+        : new Uint8Array(0),
     };
   },
 
   toJSON(message: IdentityToken): unknown {
     const obj: any = {};
-    message.identity !== undefined &&
-      (obj.identity = base64FromBytes(
-        message.identity !== undefined ? message.identity : new Uint8Array(0)
-      ));
-    message.token !== undefined && (obj.token = message.token);
+    if (message.identity.length !== 0) {
+      obj.identity = base64FromBytes(message.identity);
+    }
+    if (message.token !== "") {
+      obj.token = message.token;
+    }
+    if (message.address.length !== 0) {
+      obj.address = base64FromBytes(message.address);
+    }
     return obj;
   },
 
   create<I extends Exact<DeepPartial<IdentityToken>, I>>(
     base?: I
   ): IdentityToken {
-    return IdentityToken.fromPartial(base ?? {});
+    return IdentityToken.fromPartial(base ?? ({} as any));
   },
-
   fromPartial<I extends Exact<DeepPartial<IdentityToken>, I>>(
     object: I
   ): IdentityToken {
     const message = createBaseIdentityToken();
     message.identity = object.identity ?? new Uint8Array(0);
     message.token = object.token ?? "";
+    message.address = object.address ?? new Uint8Array(0);
     return message;
   },
 };
@@ -626,20 +734,20 @@ export const FunctionCall = {
 
   toJSON(message: FunctionCall): unknown {
     const obj: any = {};
-    message.reducer !== undefined && (obj.reducer = message.reducer);
-    message.argBytes !== undefined &&
-      (obj.argBytes = base64FromBytes(
-        message.argBytes !== undefined ? message.argBytes : new Uint8Array(0)
-      ));
+    if (message.reducer !== "") {
+      obj.reducer = message.reducer;
+    }
+    if (message.argBytes.length !== 0) {
+      obj.argBytes = base64FromBytes(message.argBytes);
+    }
     return obj;
   },
 
   create<I extends Exact<DeepPartial<FunctionCall>, I>>(
     base?: I
   ): FunctionCall {
-    return FunctionCall.fromPartial(base ?? {});
+    return FunctionCall.fromPartial(base ?? ({} as any));
   },
-
   fromPartial<I extends Exact<DeepPartial<FunctionCall>, I>>(
     object: I
   ): FunctionCall {
@@ -699,18 +807,15 @@ export const Subscribe = {
 
   toJSON(message: Subscribe): unknown {
     const obj: any = {};
-    if (message.queryStrings) {
-      obj.queryStrings = message.queryStrings.map((e) => e);
-    } else {
-      obj.queryStrings = [];
+    if (message.queryStrings?.length) {
+      obj.queryStrings = message.queryStrings;
     }
     return obj;
   },
 
   create<I extends Exact<DeepPartial<Subscribe>, I>>(base?: I): Subscribe {
-    return Subscribe.fromPartial(base ?? {});
+    return Subscribe.fromPartial(base ?? ({} as any));
   },
-
   fromPartial<I extends Exact<DeepPartial<Subscribe>, I>>(
     object: I
   ): Subscribe {
@@ -729,6 +834,7 @@ function createBaseEvent(): Event {
     message: "",
     energyQuantaUsed: 0,
     hostExecutionDurationMicros: 0,
+    callerAddress: new Uint8Array(0),
   };
 }
 
@@ -757,6 +863,9 @@ export const Event = {
     }
     if (message.hostExecutionDurationMicros !== 0) {
       writer.uint32(56).uint64(message.hostExecutionDurationMicros);
+    }
+    if (message.callerAddress.length !== 0) {
+      writer.uint32(66).bytes(message.callerAddress);
     }
     return writer;
   },
@@ -820,6 +929,13 @@ export const Event = {
             reader.uint64() as Long
           );
           continue;
+        case 8:
+          if (tag !== 66) {
+            break;
+          }
+
+          message.callerAddress = reader.bytes();
+          continue;
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -846,39 +962,46 @@ export const Event = {
       hostExecutionDurationMicros: isSet(object.hostExecutionDurationMicros)
         ? Number(object.hostExecutionDurationMicros)
         : 0,
+      callerAddress: isSet(object.callerAddress)
+        ? bytesFromBase64(object.callerAddress)
+        : new Uint8Array(0),
     };
   },
 
   toJSON(message: Event): unknown {
     const obj: any = {};
-    message.timestamp !== undefined &&
-      (obj.timestamp = Math.round(message.timestamp));
-    message.callerIdentity !== undefined &&
-      (obj.callerIdentity = base64FromBytes(
-        message.callerIdentity !== undefined
-          ? message.callerIdentity
-          : new Uint8Array(0)
-      ));
-    message.functionCall !== undefined &&
-      (obj.functionCall = message.functionCall
-        ? FunctionCall.toJSON(message.functionCall)
-        : undefined);
-    message.status !== undefined &&
-      (obj.status = event_StatusToJSON(message.status));
-    message.message !== undefined && (obj.message = message.message);
-    message.energyQuantaUsed !== undefined &&
-      (obj.energyQuantaUsed = Math.round(message.energyQuantaUsed));
-    message.hostExecutionDurationMicros !== undefined &&
-      (obj.hostExecutionDurationMicros = Math.round(
+    if (message.timestamp !== 0) {
+      obj.timestamp = Math.round(message.timestamp);
+    }
+    if (message.callerIdentity.length !== 0) {
+      obj.callerIdentity = base64FromBytes(message.callerIdentity);
+    }
+    if (message.functionCall !== undefined) {
+      obj.functionCall = FunctionCall.toJSON(message.functionCall);
+    }
+    if (message.status !== 0) {
+      obj.status = event_StatusToJSON(message.status);
+    }
+    if (message.message !== "") {
+      obj.message = message.message;
+    }
+    if (message.energyQuantaUsed !== 0) {
+      obj.energyQuantaUsed = Math.round(message.energyQuantaUsed);
+    }
+    if (message.hostExecutionDurationMicros !== 0) {
+      obj.hostExecutionDurationMicros = Math.round(
         message.hostExecutionDurationMicros
-      ));
+      );
+    }
+    if (message.callerAddress.length !== 0) {
+      obj.callerAddress = base64FromBytes(message.callerAddress);
+    }
     return obj;
   },
 
   create<I extends Exact<DeepPartial<Event>, I>>(base?: I): Event {
-    return Event.fromPartial(base ?? {});
+    return Event.fromPartial(base ?? ({} as any));
   },
-
   fromPartial<I extends Exact<DeepPartial<Event>, I>>(object: I): Event {
     const message = createBaseEvent();
     message.timestamp = object.timestamp ?? 0;
@@ -892,6 +1015,7 @@ export const Event = {
     message.energyQuantaUsed = object.energyQuantaUsed ?? 0;
     message.hostExecutionDurationMicros =
       object.hostExecutionDurationMicros ?? 0;
+    message.callerAddress = object.callerAddress ?? new Uint8Array(0);
     return message;
   },
 };
@@ -947,12 +1071,8 @@ export const SubscriptionUpdate = {
 
   toJSON(message: SubscriptionUpdate): unknown {
     const obj: any = {};
-    if (message.tableUpdates) {
-      obj.tableUpdates = message.tableUpdates.map((e) =>
-        e ? TableUpdate.toJSON(e) : undefined
-      );
-    } else {
-      obj.tableUpdates = [];
+    if (message.tableUpdates?.length) {
+      obj.tableUpdates = message.tableUpdates.map((e) => TableUpdate.toJSON(e));
     }
     return obj;
   },
@@ -960,9 +1080,8 @@ export const SubscriptionUpdate = {
   create<I extends Exact<DeepPartial<SubscriptionUpdate>, I>>(
     base?: I
   ): SubscriptionUpdate {
-    return SubscriptionUpdate.fromPartial(base ?? {});
+    return SubscriptionUpdate.fromPartial(base ?? ({} as any));
   },
-
   fromPartial<I extends Exact<DeepPartial<SubscriptionUpdate>, I>>(
     object: I
   ): SubscriptionUpdate {
@@ -1048,23 +1167,23 @@ export const TableUpdate = {
 
   toJSON(message: TableUpdate): unknown {
     const obj: any = {};
-    message.tableId !== undefined &&
-      (obj.tableId = Math.round(message.tableId));
-    message.tableName !== undefined && (obj.tableName = message.tableName);
-    if (message.tableRowOperations) {
+    if (message.tableId !== 0) {
+      obj.tableId = Math.round(message.tableId);
+    }
+    if (message.tableName !== "") {
+      obj.tableName = message.tableName;
+    }
+    if (message.tableRowOperations?.length) {
       obj.tableRowOperations = message.tableRowOperations.map((e) =>
-        e ? TableRowOperation.toJSON(e) : undefined
+        TableRowOperation.toJSON(e)
       );
-    } else {
-      obj.tableRowOperations = [];
     }
     return obj;
   },
 
   create<I extends Exact<DeepPartial<TableUpdate>, I>>(base?: I): TableUpdate {
-    return TableUpdate.fromPartial(base ?? {});
+    return TableUpdate.fromPartial(base ?? ({} as any));
   },
-
   fromPartial<I extends Exact<DeepPartial<TableUpdate>, I>>(
     object: I
   ): TableUpdate {
@@ -1151,25 +1270,23 @@ export const TableRowOperation = {
 
   toJSON(message: TableRowOperation): unknown {
     const obj: any = {};
-    message.op !== undefined &&
-      (obj.op = tableRowOperation_OperationTypeToJSON(message.op));
-    message.rowPk !== undefined &&
-      (obj.rowPk = base64FromBytes(
-        message.rowPk !== undefined ? message.rowPk : new Uint8Array(0)
-      ));
-    message.row !== undefined &&
-      (obj.row = base64FromBytes(
-        message.row !== undefined ? message.row : new Uint8Array(0)
-      ));
+    if (message.op !== 0) {
+      obj.op = tableRowOperation_OperationTypeToJSON(message.op);
+    }
+    if (message.rowPk.length !== 0) {
+      obj.rowPk = base64FromBytes(message.rowPk);
+    }
+    if (message.row.length !== 0) {
+      obj.row = base64FromBytes(message.row);
+    }
     return obj;
   },
 
   create<I extends Exact<DeepPartial<TableRowOperation>, I>>(
     base?: I
   ): TableRowOperation {
-    return TableRowOperation.fromPartial(base ?? {});
+    return TableRowOperation.fromPartial(base ?? ({} as any));
   },
-
   fromPartial<I extends Exact<DeepPartial<TableRowOperation>, I>>(
     object: I
   ): TableRowOperation {
@@ -1247,21 +1364,22 @@ export const TransactionUpdate = {
 
   toJSON(message: TransactionUpdate): unknown {
     const obj: any = {};
-    message.event !== undefined &&
-      (obj.event = message.event ? Event.toJSON(message.event) : undefined);
-    message.subscriptionUpdate !== undefined &&
-      (obj.subscriptionUpdate = message.subscriptionUpdate
-        ? SubscriptionUpdate.toJSON(message.subscriptionUpdate)
-        : undefined);
+    if (message.event !== undefined) {
+      obj.event = Event.toJSON(message.event);
+    }
+    if (message.subscriptionUpdate !== undefined) {
+      obj.subscriptionUpdate = SubscriptionUpdate.toJSON(
+        message.subscriptionUpdate
+      );
+    }
     return obj;
   },
 
   create<I extends Exact<DeepPartial<TransactionUpdate>, I>>(
     base?: I
   ): TransactionUpdate {
-    return TransactionUpdate.fromPartial(base ?? {});
+    return TransactionUpdate.fromPartial(base ?? ({} as any));
   },
-
   fromPartial<I extends Exact<DeepPartial<TransactionUpdate>, I>>(
     object: I
   ): TransactionUpdate {
@@ -1279,10 +1397,276 @@ export const TransactionUpdate = {
   },
 };
 
-declare var self: any | undefined;
-declare var window: any | undefined;
-declare var global: any | undefined;
-var tsProtoGlobalThis: any = (() => {
+function createBaseOneOffQuery(): OneOffQuery {
+  return { messageId: new Uint8Array(0), queryString: "" };
+}
+
+export const OneOffQuery = {
+  encode(
+    message: OneOffQuery,
+    writer: _m0.Writer = _m0.Writer.create()
+  ): _m0.Writer {
+    if (message.messageId.length !== 0) {
+      writer.uint32(10).bytes(message.messageId);
+    }
+    if (message.queryString !== "") {
+      writer.uint32(18).string(message.queryString);
+    }
+    return writer;
+  },
+
+  decode(input: _m0.Reader | Uint8Array, length?: number): OneOffQuery {
+    const reader =
+      input instanceof _m0.Reader ? input : _m0.Reader.create(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseOneOffQuery();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          if (tag !== 10) {
+            break;
+          }
+
+          message.messageId = reader.bytes();
+          continue;
+        case 2:
+          if (tag !== 18) {
+            break;
+          }
+
+          message.queryString = reader.string();
+          continue;
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skipType(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): OneOffQuery {
+    return {
+      messageId: isSet(object.messageId)
+        ? bytesFromBase64(object.messageId)
+        : new Uint8Array(0),
+      queryString: isSet(object.queryString) ? String(object.queryString) : "",
+    };
+  },
+
+  toJSON(message: OneOffQuery): unknown {
+    const obj: any = {};
+    if (message.messageId.length !== 0) {
+      obj.messageId = base64FromBytes(message.messageId);
+    }
+    if (message.queryString !== "") {
+      obj.queryString = message.queryString;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<OneOffQuery>, I>>(base?: I): OneOffQuery {
+    return OneOffQuery.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<OneOffQuery>, I>>(
+    object: I
+  ): OneOffQuery {
+    const message = createBaseOneOffQuery();
+    message.messageId = object.messageId ?? new Uint8Array(0);
+    message.queryString = object.queryString ?? "";
+    return message;
+  },
+};
+
+function createBaseOneOffQueryResponse(): OneOffQueryResponse {
+  return { messageId: new Uint8Array(0), error: "", tables: [] };
+}
+
+export const OneOffQueryResponse = {
+  encode(
+    message: OneOffQueryResponse,
+    writer: _m0.Writer = _m0.Writer.create()
+  ): _m0.Writer {
+    if (message.messageId.length !== 0) {
+      writer.uint32(10).bytes(message.messageId);
+    }
+    if (message.error !== "") {
+      writer.uint32(18).string(message.error);
+    }
+    for (const v of message.tables) {
+      OneOffTable.encode(v!, writer.uint32(26).fork()).ldelim();
+    }
+    return writer;
+  },
+
+  decode(input: _m0.Reader | Uint8Array, length?: number): OneOffQueryResponse {
+    const reader =
+      input instanceof _m0.Reader ? input : _m0.Reader.create(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseOneOffQueryResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          if (tag !== 10) {
+            break;
+          }
+
+          message.messageId = reader.bytes();
+          continue;
+        case 2:
+          if (tag !== 18) {
+            break;
+          }
+
+          message.error = reader.string();
+          continue;
+        case 3:
+          if (tag !== 26) {
+            break;
+          }
+
+          message.tables.push(OneOffTable.decode(reader, reader.uint32()));
+          continue;
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skipType(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): OneOffQueryResponse {
+    return {
+      messageId: isSet(object.messageId)
+        ? bytesFromBase64(object.messageId)
+        : new Uint8Array(0),
+      error: isSet(object.error) ? String(object.error) : "",
+      tables: Array.isArray(object?.tables)
+        ? object.tables.map((e: any) => OneOffTable.fromJSON(e))
+        : [],
+    };
+  },
+
+  toJSON(message: OneOffQueryResponse): unknown {
+    const obj: any = {};
+    if (message.messageId.length !== 0) {
+      obj.messageId = base64FromBytes(message.messageId);
+    }
+    if (message.error !== "") {
+      obj.error = message.error;
+    }
+    if (message.tables?.length) {
+      obj.tables = message.tables.map((e) => OneOffTable.toJSON(e));
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<OneOffQueryResponse>, I>>(
+    base?: I
+  ): OneOffQueryResponse {
+    return OneOffQueryResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<OneOffQueryResponse>, I>>(
+    object: I
+  ): OneOffQueryResponse {
+    const message = createBaseOneOffQueryResponse();
+    message.messageId = object.messageId ?? new Uint8Array(0);
+    message.error = object.error ?? "";
+    message.tables =
+      object.tables?.map((e) => OneOffTable.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseOneOffTable(): OneOffTable {
+  return { tableName: "", row: [] };
+}
+
+export const OneOffTable = {
+  encode(
+    message: OneOffTable,
+    writer: _m0.Writer = _m0.Writer.create()
+  ): _m0.Writer {
+    if (message.tableName !== "") {
+      writer.uint32(18).string(message.tableName);
+    }
+    for (const v of message.row) {
+      writer.uint32(34).bytes(v!);
+    }
+    return writer;
+  },
+
+  decode(input: _m0.Reader | Uint8Array, length?: number): OneOffTable {
+    const reader =
+      input instanceof _m0.Reader ? input : _m0.Reader.create(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseOneOffTable();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 2:
+          if (tag !== 18) {
+            break;
+          }
+
+          message.tableName = reader.string();
+          continue;
+        case 4:
+          if (tag !== 34) {
+            break;
+          }
+
+          message.row.push(reader.bytes());
+          continue;
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skipType(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): OneOffTable {
+    return {
+      tableName: isSet(object.tableName) ? String(object.tableName) : "",
+      row: Array.isArray(object?.row)
+        ? object.row.map((e: any) => bytesFromBase64(e))
+        : [],
+    };
+  },
+
+  toJSON(message: OneOffTable): unknown {
+    const obj: any = {};
+    if (message.tableName !== "") {
+      obj.tableName = message.tableName;
+    }
+    if (message.row?.length) {
+      obj.row = message.row.map((e) => base64FromBytes(e));
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<OneOffTable>, I>>(base?: I): OneOffTable {
+    return OneOffTable.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<OneOffTable>, I>>(
+    object: I
+  ): OneOffTable {
+    const message = createBaseOneOffTable();
+    message.tableName = object.tableName ?? "";
+    message.row = object.row?.map((e) => e) || [];
+    return message;
+  },
+};
+
+declare const self: any | undefined;
+declare const window: any | undefined;
+declare const global: any | undefined;
+const tsProtoGlobalThis: any = (() => {
   if (typeof globalThis !== "undefined") {
     return globalThis;
   }
@@ -1358,8 +1742,6 @@ function longToNumber(long: Long): number {
   return long.toNumber();
 }
 
-// If you get a compile-error about 'Constructor<Long> and ... have no overlap',
-// add '--ts_proto_opt=esModuleInterop=true' as a flag when calling 'protoc'.
 if (_m0.util.Long !== Long) {
   _m0.util.Long = Long as any;
   _m0.configure();

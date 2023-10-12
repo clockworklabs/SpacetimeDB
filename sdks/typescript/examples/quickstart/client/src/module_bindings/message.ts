@@ -14,6 +14,7 @@ import {
   AlgebraicValue,
   ReducerEvent,
   Identity,
+  Address,
 } from "@clockworklabs/spacetimedb-sdk";
 
 export class Message extends IDatabaseTable {
@@ -36,7 +37,7 @@ export class Message extends IDatabaseTable {
   public static getAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
       new ProductTypeElement(
-        "Sender",
+        "sender",
         AlgebraicType.createProductType([
           new ProductTypeElement(
             "__identity_bytes",
@@ -47,11 +48,11 @@ export class Message extends IDatabaseTable {
         ])
       ),
       new ProductTypeElement(
-        "Sent",
-        AlgebraicType.createPrimitiveType(BuiltinType.Type.I64)
+        "sent",
+        AlgebraicType.createPrimitiveType(BuiltinType.Type.U64)
       ),
       new ProductTypeElement(
-        "Text",
+        "text",
         AlgebraicType.createPrimitiveType(BuiltinType.Type.String)
       ),
     ]);
@@ -59,12 +60,12 @@ export class Message extends IDatabaseTable {
 
   public static fromValue(value: AlgebraicValue): Message {
     let productValue = value.asProductValue();
-    let __Sender = new Identity(
+    let __sender = new Identity(
       productValue.elements[0].asProductValue().elements[0].asBytes()
     );
-    let __Sent = productValue.elements[1].asNumber();
-    let __Text = productValue.elements[2].asString();
-    return new this(__Sender, __Sent, __Text);
+    let __sent = productValue.elements[1].asNumber();
+    let __text = productValue.elements[2].asString();
+    return new this(__sender, __sent, __text);
   }
 
   public static count(): number {

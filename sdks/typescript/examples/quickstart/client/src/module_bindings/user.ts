@@ -14,6 +14,7 @@ import {
   AlgebraicValue,
   ReducerEvent,
   Identity,
+  Address,
 } from "@clockworklabs/spacetimedb-sdk";
 
 export class User extends IDatabaseTable {
@@ -42,7 +43,7 @@ export class User extends IDatabaseTable {
   public static getAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
       new ProductTypeElement(
-        "Identity",
+        "identity",
         AlgebraicType.createProductType([
           new ProductTypeElement(
             "__identity_bytes",
@@ -53,7 +54,7 @@ export class User extends IDatabaseTable {
         ])
       ),
       new ProductTypeElement(
-        "Name",
+        "name",
         AlgebraicType.createSumType([
           new SumTypeVariant(
             "some",
@@ -63,7 +64,7 @@ export class User extends IDatabaseTable {
         ])
       ),
       new ProductTypeElement(
-        "Online",
+        "online",
         AlgebraicType.createPrimitiveType(BuiltinType.Type.Bool)
       ),
     ]);
@@ -71,15 +72,15 @@ export class User extends IDatabaseTable {
 
   public static fromValue(value: AlgebraicValue): User {
     let productValue = value.asProductValue();
-    let __Identity = new Identity(
+    let __identity = new Identity(
       productValue.elements[0].asProductValue().elements[0].asBytes()
     );
-    let __Name =
+    let __name =
       productValue.elements[1].asSumValue().tag == 1
         ? null
         : productValue.elements[1].asSumValue().value.asString();
-    let __Online = productValue.elements[2].asBoolean();
-    return new this(__Identity, __Name, __Online);
+    let __online = productValue.elements[2].asBoolean();
+    return new this(__identity, __name, __online);
   }
 
   public static count(): number {

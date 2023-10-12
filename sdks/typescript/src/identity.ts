@@ -1,5 +1,5 @@
 /**
- * A unique public identifier for a client connected to a database.
+ * A unique public identifier for a user connected to a database.
  */
 export class Identity {
   private data: Uint8Array;
