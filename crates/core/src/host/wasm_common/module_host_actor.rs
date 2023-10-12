@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use bytes::Bytes;
-use itertools::Itertools;
+
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{bsatn, Address, ModuleDef};

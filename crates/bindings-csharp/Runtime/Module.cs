@@ -2,6 +2,7 @@ namespace SpacetimeDB.Module;
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using SpacetimeDB.SATS;
@@ -47,6 +48,7 @@ public partial struct ConstraintDef
 
     public ConstraintDef(string name, byte kind, UInt32[] columnIds)
     {
+        //Trace.Assert(columnIds.Length >0, "Constraints requiere to have  at least one column");
         ConstraintName = name;
         Kind = kind;
         ColumnIds = columnIds;
@@ -106,9 +108,7 @@ public partial struct TableDef
     // "public" | "private"
     string TableAccess;
 
-    AlgebraicTypeRef Data;
-
-    public TableDef(string tableName, ColumnAttrs[] columns, IndexDef[] indices, AlgebraicTypeRef data)
+    public TableDef(string tableName, ColumnAttrs[] columns, IndexDef[] indices)
     {
 
         TableName = tableName;
@@ -118,23 +118,21 @@ public partial struct TableDef
         Indices = indices;
         TableType = "user";
         TableAccess = tableName.StartsWith('_') ? "private" : "public";
+    }
+}
+
+[SpacetimeDB.Type]
+public partial struct TableDesc
+{
+
+    TableDef schema;
+    AlgebraicTypeRef Data;
+
+    public TableDesc(string tableName, ColumnAttrs[] columns, IndexDef[] indices, AlgebraicTypeRef data)
+    {
+        schema = new TableDef(tableName, columns, indices);
         Data = data;
     }
-
-    //public TableDef(
-    //    string name,
-    //    AlgebraicTypeRef type,
-    //    ColumnAttrs[] columnAttrs,
-    //    IndexDef[] indices
-    //)
-    //{
-    //    TableName = name;
-    //    Data = type;
-    //    ColumnAttrs = columnAttrs.Cast<byte>().ToArray();
-    //    Indices = indices;
-    //    TableType = "user";
-    //    TableAccess = name.StartsWith('_') ? "private" : "public";
-    //}
 }
 
 [SpacetimeDB.Type]
@@ -164,7 +162,7 @@ partial struct MiscModuleExport : SpacetimeDB.TaggedEnum<(TypeAlias TypeAlias, U
 public partial struct ModuleDef
 {
     List<AlgebraicType> Types = new();
-    List<TableDef> Tables = new();
+    List<TableDesc> Tables = new();
     List<ReducerDef> Reducers = new();
     List<MiscModuleExport> MiscExports = new();
 
@@ -200,7 +198,7 @@ public partial struct ModuleDef
         }
     }
 
-    public void Add(TableDef table)
+    public void Add(TableDesc table)
     {
         Tables.Add(table);
     }
@@ -249,7 +247,7 @@ public static class FFI
         module.Add(reducer.MakeReducerDef());
     }
 
-    public static void RegisterTable(TableDef table) => module.Add(table);
+    public static void RegisterTable(TableDesc table) => module.Add(table);
 
     public static AlgebraicTypeRef AllocTypeRef() => module.AllocTypeRef();
 

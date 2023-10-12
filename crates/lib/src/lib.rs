@@ -86,7 +86,6 @@ extern crate self as spacetimedb_lib;
 //WARNING: Change this structure(or any of their members) is an ABI change.
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
 pub struct TableDesc {
-    #[serde(flatten)]
     pub schema: TableDef,
     /// data should always point to a ProductType in the typespace
     pub data: sats::AlgebraicTypeRef,

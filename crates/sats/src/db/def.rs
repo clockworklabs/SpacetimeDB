@@ -293,7 +293,13 @@ impl ser::Serialize for Constraints {
 impl<'de, T: de::Deserialize<'de> + Clone> de::Deserialize<'de> for NonEmpty<T> {
     fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let arr: Vec<T> = deserializer.deserialize_array(BasicVecVisitor)?;
-        NonEmpty::from_slice(&arr).ok_or_else(|| de::Error::custom("invalid NonEmpty<u32>"))
+        NonEmpty::from_slice(&arr).ok_or_else(|| {
+            de::Error::custom(format!(
+                "invalid NonEmpty<{}>. Len is {}",
+                std::any::type_name::<T>(),
+                arr.len()
+            ))
+        })
     }
 }
 
@@ -570,7 +576,7 @@ impl From<IndexSchema> for IndexDef {
 }
 
 /// A struct representing the schema of a database column.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd)]
 pub struct ColumnSchema {
     pub table_id: TableId,
     /// Position of the column within the table.
