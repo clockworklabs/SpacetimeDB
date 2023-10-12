@@ -19,7 +19,7 @@ use super::{Mem, WasmError};
 /// and the database.
 ///
 /// A `WasmInstanceEnv` associates an `InstanceEnv` (responsible for
-/// the database instance and it's associated state) with a wasm
+/// the database instance and its associated state) with a wasm
 /// `Mem`. It also contains the resources (`Buffers` and
 /// `BufferIters`) needed to manage the ABI contract between modules
 /// and the host.
