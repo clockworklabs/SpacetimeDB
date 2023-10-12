@@ -8,7 +8,7 @@ using System.Linq;
 using static Utils;
 
 [System.Flags]
-enum ColumnAttrs : byte
+enum ConstraintFlags : byte
 {
     UnSet = 0b0000,
     Indexed = 0b0001,
@@ -49,11 +49,11 @@ public class Module : IIncrementalGenerator
                             )
                             .Select(
                                 a =>
-                                    (ColumnAttrs)a.ConstructorArguments[0].Value!
+                                    (ConstraintFlags)a.ConstructorArguments[0].Value!
                             )
                             .SingleOrDefault();
 
-                        if (indexKind.HasFlag(ColumnAttrs.AutoInc))
+                        if (indexKind.HasFlag(ConstraintFlags.AutoInc))
                         {
                             var isValidForAutoInc = f.Type.SpecialType switch
                             {
@@ -107,7 +107,7 @@ public class Module : IIncrementalGenerator
                 (t, ct) =>
                 {
                     var autoIncFields = t.Fields
-                        .Where(f => f.IndexKind.HasFlag(ColumnAttrs.AutoInc))
+                        .Where(f => f.IndexKind.HasFlag(ConstraintFlags.AutoInc))
                         .Select(f => f.Name);
 
                     var extensions =
@@ -141,7 +141,7 @@ public class Module : IIncrementalGenerator
 
                     foreach (var (f, index) in t.Fields.Select((f, i) => (f, i)))
                     {
-                        if (f.IndexKind.HasFlag(ColumnAttrs.Unique))
+                        if (f.IndexKind.HasFlag(ConstraintFlags.Unique))
                         {
                             extensions +=
                                 $@"

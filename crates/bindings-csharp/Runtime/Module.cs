@@ -23,6 +23,7 @@ public partial struct IndexDef
     }
 }
 
+
 [SpacetimeDB.Type]
 public partial struct ColumnDef
 {
@@ -41,13 +42,13 @@ public partial struct ConstraintDef
 {
     string ConstraintName;
     // bitflags should be serialized as bytes rather than sum types
-    ConstraintFlags Kind;
-    byte[] ColumnIds;
+    byte Kind;
+    UInt32[] ColumnIds;
 
-    public ConstraintDef(string name, byte kind, byte[] columnIds)
+    public ConstraintDef(string name, byte kind, UInt32[] columnIds)
     {
         ConstraintName = name;
-        Kind = kind.Cast<byte>();
+        Kind = kind;
         ColumnIds = columnIds;
     }
 }
@@ -55,6 +56,7 @@ public partial struct ConstraintDef
 [SpacetimeDB.Type]
 public partial struct SequenceDef
 {
+
     string SequenceName;
     UInt32 ColPos;
     Int64 increment;
@@ -63,7 +65,7 @@ public partial struct SequenceDef
     Int64? max_value;
     Int64 allocated;
 
-    public SequenceDef(string sequenceName, uint colPos, long increment, long? start, long? min_value, long? max_value, long allocated)
+    public SequenceDef(string sequenceName, uint colPos, long increment= 1, long? start= null, long? min_value= null, long? max_value= null, long allocated = 4_096)
     {
         SequenceName = sequenceName;
         ColPos = colPos;
@@ -74,6 +76,21 @@ public partial struct SequenceDef
         this.allocated = allocated;
     }
 }
+
+public partial struct ColumnAttrs
+{
+    public string ColName;
+    public AlgebraicType ColType;
+    public ConstraintFlags Kind;
+
+    public ColumnAttrs(string colName, AlgebraicType colType, ConstraintFlags kind)
+    {
+        ColName = colName;
+        ColType = colType;
+        Kind = kind;
+    }
+}
+
 
 [SpacetimeDB.Type]
 public partial struct TableDef
@@ -91,14 +108,15 @@ public partial struct TableDef
 
     AlgebraicTypeRef Data;
 
-    public TableDef(string tableName, ColumnDef[] columns, IndexDef[] indices, ConstraintDef[] constraints, SequenceDef[] sequences, string tableType, AlgebraicTypeRef data)
+    public TableDef(string tableName, ColumnAttrs[] columns, IndexDef[] indices, AlgebraicTypeRef data)
     {
+
         TableName = tableName;
-        Columns = columns;
+        Columns = columns.Select(x => new ColumnDef(x.ColName, x.ColType)).ToArray();
+        Constraints = columns.Select((x, pos) => new ConstraintDef(x.ColName, ((byte)x.Kind), new UInt32[((uint)pos)])).ToArray();
+        Sequences = columns.Where(x => x.Kind.HasFlag(ConstraintFlags.AutoInc)).Select((x, pos) => new SequenceDef(x.ColName, (uint)pos)).ToArray();
         Indices = indices;
-        Constraints = constraints;
-        Sequences = sequences;
-        TableType = tableType;
+        TableType = "user";
         TableAccess = tableName.StartsWith('_') ? "private" : "public";
         Data = data;
     }
@@ -194,7 +212,6 @@ public partial struct ModuleDef
 }
 
 [System.Flags]
-[SpacetimeDB.Type]
 public enum ConstraintFlags : byte
 {
     UnSet = 0b0000,

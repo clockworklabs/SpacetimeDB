@@ -24,6 +24,7 @@
     <RepositoryType>git</RepositoryType>
     <RepositoryUrl>https://github.com/clockworklabs/SpacetimeDBLibCSharp</RepositoryUrl>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
   </PropertyGroup>
 
   <ItemGroup>

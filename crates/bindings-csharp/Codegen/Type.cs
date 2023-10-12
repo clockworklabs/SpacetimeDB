@@ -33,9 +33,9 @@ public class Type : IIncrementalGenerator
 
                 // Ensure variants are contiguous as SATS enums don't support explicit tags.
                 if (enumType.Members.Any(m => m.EqualsValue is not null))
-                {
+                {                    
                     throw new InvalidOperationException(
-                        "[SpacetimeDB.Type] enums cannot have explicit values."
+                        "[SpacetimeDB.Type] enums cannot have explicit values: " + enumType.Identifier
                     );
                 }
 
