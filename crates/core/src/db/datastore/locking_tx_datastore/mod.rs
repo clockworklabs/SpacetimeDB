@@ -228,13 +228,13 @@ impl CommittedState {
 /// Note that because a transaction may have several operations performed on the same
 /// row, it is not the case that a call to insert a row guarantees that the row
 /// will be present in `insert_tables`. Rather, a row will be present in `insert_tables`
-/// if the cummulative effect of all the calls results in the row being inserted during
+/// if the cumulative effect of all the calls results in the row being inserted during
 /// this transaction. The same holds for delete tables.
 ///
 /// For a concrete example, suppose a row is already present in a table at the start
 /// of a transaction. A call to delete that row will enter it into `delete_tables`.
 /// A subsequent call to reinsert that row will not put it into `insert_tables`, but
-/// instead remove it from `delete_tables`, as the cummulative effect is to do nothing.
+/// instead remove it from `delete_tables`, as the cumulative effect is to do nothing.
 ///
 /// This data structure also tracks modifications beyond inserting and deleting rows.
 /// In particular, creating indexes and sequences is tracked by `insert_tables`.
@@ -1326,7 +1326,7 @@ impl Inner {
             //    we should fail, as we would otherwise violate set semantics.
             // 3. If the row was originally present, and is currently going to be deleted
             //    by this transaction, we will remove it from `delete_tables`, and the
-            //    cummulative effect will be to leave the row in place in the committed state.
+            //    cumulative effect will be to leave the row in place in the committed state.
 
             let delete_table = tx_state.get_or_create_delete_table(table_id);
             let row_was_previously_deleted = delete_table.remove(&row_id);
