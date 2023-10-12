@@ -325,12 +325,11 @@ namespace SpacetimeDB
                                 else
                                 {
                                     // Skip this insert if we already have it
-                                    if (table.entries.ContainsKey(rowPk))
+                                    if (!table.entries.ContainsKey(rowPk))
                                     {
-                                        continue;
+                                        table.SetDecodedValue(rowPk, decodedRow, out var obj);
                                     }
 
-                                    table.SetDecodedValue(rowPk, decodedRow, out var obj);
                                     dbOp = new DbOp
                                     {
                                         table = table,
