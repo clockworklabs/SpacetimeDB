@@ -1174,25 +1174,6 @@ impl Inner {
         }
     }
 
-    /// Check if the value is one of the `numeric` types and is `0`.
-    fn can_replace_with_sequence(value: &AlgebraicValue) -> bool {
-        match value {
-            AlgebraicValue::I8(x) => *x == 0,
-            AlgebraicValue::U8(x) => *x == 0,
-            AlgebraicValue::I16(x) => *x == 0,
-            AlgebraicValue::U16(x) => *x == 0,
-            AlgebraicValue::I32(x) => *x == 0,
-            AlgebraicValue::U32(x) => *x == 0,
-            AlgebraicValue::I64(x) => *x == 0,
-            AlgebraicValue::U64(x) => *x == 0,
-            AlgebraicValue::I128(x) => *x == 0,
-            AlgebraicValue::U128(x) => *x == 0,
-            AlgebraicValue::F32(x) => *x == 0.0,
-            AlgebraicValue::F64(x) => *x == 0.0,
-            _ => false,
-        }
-    }
-
     #[tracing::instrument(skip_all)]
     fn insert(&mut self, table_id: TableId, mut row: ProductValue) -> super::Result<ProductValue> {
         // TODO: Excuting schema_for_table for every row insert is expensive.
@@ -1202,7 +1183,7 @@ impl Inner {
         let mut col_to_update = None;
         for col in &*schema.columns {
             if col.is_autoinc {
-                if !Self::can_replace_with_sequence(&row.elements[col.col_id as usize]) {
+                if !row.elements[col.col_id as usize].is_numeric_zero() {
                     continue;
                 }
                 let st_sequences_table_id_col = ColId(2);
