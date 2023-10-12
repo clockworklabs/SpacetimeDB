@@ -9,47 +9,114 @@ using SpacetimeDB.SATS;
 [SpacetimeDB.Type]
 public partial struct IndexDef
 {
-    string Name;
+    string IndexName;
+    bool IsUnique;
     Runtime.IndexType Type;
     byte[] ColumnIds;
-
-    public IndexDef(string name, Runtime.IndexType type, byte[] columnIds)
+        
+    public IndexDef(string name, Runtime.IndexType type, bool isUnique, byte[] columnIds)
     {
-        Name = name;
+        IndexName = name;
+        IsUnique = isUnique;
         Type = type;
         ColumnIds = columnIds;
     }
 }
 
 [SpacetimeDB.Type]
+public partial struct ColumnDef
+{
+    string ColName;
+    AlgebraicType ColType;
+
+    public ColumnDef(string name, AlgebraicType type)
+    {
+        ColName = name;
+        ColType = type;
+    }
+}
+
+[SpacetimeDB.Type]
+public partial struct ConstraintDef
+{
+    string ConstraintName;
+    // bitflags should be serialized as bytes rather than sum types
+    ConstraintFlags Kind;
+    byte[] ColumnIds;
+
+    public ConstraintDef(string name, byte kind, byte[] columnIds)
+    {
+        ConstraintName = name;
+        Kind = kind.Cast<byte>();
+        ColumnIds = columnIds;
+    }
+}
+
+[SpacetimeDB.Type]
+public partial struct SequenceDef
+{
+    string SequenceName;
+    UInt32 ColPos;
+    Int64 increment;
+    Int64? start;
+    Int64? min_value;
+    Int64? max_value;
+    Int64 allocated;
+
+    public SequenceDef(string sequenceName, uint colPos, long increment, long? start, long? min_value, long? max_value, long allocated)
+    {
+        SequenceName = sequenceName;
+        ColPos = colPos;
+        this.increment = increment;
+        this.start = start;
+        this.min_value = min_value;
+        this.max_value = max_value;
+        this.allocated = allocated;
+    }
+}
+
+[SpacetimeDB.Type]
 public partial struct TableDef
 {
-    string Name;
-    AlgebraicTypeRef Data;
-    // bitflags should be serialized as bytes rather than sum types
-    byte[] ColumnAttrs;
+    string TableName;
+    ColumnDef[] Columns;
     IndexDef[] Indices;
-
+    ConstraintDef[] Constraints;
+    SequenceDef[] Sequences;
     // "system" | "user"
     string TableType;
 
     // "public" | "private"
     string TableAccess;
 
-    public TableDef(
-        string name,
-        AlgebraicTypeRef type,
-        ColumnAttrs[] columnAttrs,
-        IndexDef[] indices
-    )
+    AlgebraicTypeRef Data;
+
+    public TableDef(string tableName, ColumnDef[] columns, IndexDef[] indices, ConstraintDef[] constraints, SequenceDef[] sequences, string tableType, AlgebraicTypeRef data)
     {
-        Name = name;
-        Data = type;
-        ColumnAttrs = columnAttrs.Cast<byte>().ToArray();
+        TableName = tableName;
+        Columns = columns;
         Indices = indices;
-        TableType = "user";
-        TableAccess = name.StartsWith('_') ? "private" : "public";
+        Constraints = constraints;
+        Sequences = sequences;
+        TableType = tableType;
+        TableAccess = tableName.StartsWith('_') ? "private" : "public";
+        Data = data;
     }
+
+    //public TableDef(
+    //    string name,
+    //    AlgebraicTypeRef type,
+    //    ColumnAttrs[] columnAttrs,
+    //    IndexDef[] indices
+    //)
+    //{
+    //    TableName = name;
+    //    Data = type;
+    //    ColumnAttrs = columnAttrs.Cast<byte>().ToArray();
+    //    Indices = indices;
+    //    TableType = "user";
+    //    TableAccess = name.StartsWith('_') ? "private" : "public";
+    //}
 }
 
 [SpacetimeDB.Type]
@@ -127,7 +194,8 @@ public partial struct ModuleDef
 }
 
 [System.Flags]
-public enum ColumnAttrs : byte
+[SpacetimeDB.Type]
+public enum ConstraintFlags : byte
 {
     UnSet = 0b0000,
     Indexed = 0b0001,
@@ -136,6 +204,7 @@ public enum ColumnAttrs : byte
     Identity = Unique | AutoInc,
     PrimaryKey = Unique | 0b1000,
     PrimaryKeyAuto = PrimaryKey | AutoInc,
+    PrimaryKeyIdentity = PrimaryKey | Identity,
 }
 
 public static class ReducerKind
