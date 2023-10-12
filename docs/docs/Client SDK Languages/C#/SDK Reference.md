@@ -44,6 +44,7 @@ The SpacetimeDB client C# for Rust contains all the tools you need to build nati
       - [Static Property `AuthToken.Token`](#static-property-authtokentoken)
       - [Static Method `AuthToken.SaveToken`](#static-method-authtokensavetoken)
     - [Class `Identity`](#class-identity)
+    - [Class `Address`](#class-address)
   - [Customizing logging](#customizing-logging)
     - [Interface `ISpacetimeDBLogger`](#interface-ispacetimedblogger)
     - [Class `ConsoleLogger`](#class-consolelogger)
@@ -178,7 +179,7 @@ SpacetimeDBClient.instance.Connect(null, "dev.spacetimedb.net", DBNAME, true);
 AuthToken.Init();
 Identity localIdentity;
 SpacetimeDBClient.instance.Connect(AuthToken.Token, "dev.spacetimedb.net", DBNAME, true);
-SpacetimeDBClient.instance.onIdentityReceived += (string authToken, Identity identity) {
+SpacetimeDBClient.instance.onIdentityReceived += (string authToken, Identity identity, Address address) {
     AuthToken.SaveToken(authToken);
     localIdentity = identity;
 }
@@ -192,13 +193,13 @@ SpacetimeDBClient.instance.onIdentityReceived += (string authToken, Identity ide
 namespace SpacetimeDB {
 
 class SpacetimeDBClient {
-    public event Action<string, Identity> onIdentityReceived;
+    public event Action<string, Identity, Address> onIdentityReceived;
 }
 
 }
 ```
 
-Called when we receive an auth token and [`Identity`](#class-identity) from the server. The [`Identity`](#class-identity) serves as a unique public identifier for a client connected to the database. It can be for several purposes, such as filtering rows in a database for the rows created by a particular user. The auth token is a private access token that allows us to assume an identity.
++Called when we receive an auth token, [`Identity`](#class-identity) and [`Address`](#class-address) from the server. The [`Identity`](#class-identity) serves as a unique public identifier for a user of the database. It can be for several purposes, such as filtering rows in a database for the rows created by a particular user. The auth token is a private access token that allows us to assume an identity. The [`Address`](#class-address) is opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#class-identity).
 
 To store the auth token to the filesystem, use the static method [`AuthToken.SaveToken`](#static-method-authtokensavetoken). You may also want to store the returned [`Identity`](#class-identity) in a local variable.
 
@@ -209,7 +210,7 @@ If an existing auth token is used to connect to the database, the same auth toke
 AuthToken.Init();
 Identity localIdentity;
 SpacetimeDBClient.instance.Connect(AuthToken.Token, "dev.spacetimedb.net", DBNAME, true);
-SpacetimeDBClient.instance.onIdentityReceived += (string authToken, Identity identity) {
+SpacetimeDBClient.instance.onIdentityReceived += (string authToken, Identity identity, Address address) {
     AuthToken.SaveToken(authToken);
     localIdentity = identity;
 }
@@ -856,23 +857,41 @@ Save a token to the filesystem.
 ### Class `Identity`
 
 ```cs
-namespace SpacetimeDB {
-
-public struct Identity : IEquatable<Identity>
+namespace SpacetimeDB 
 {
-    public byte[] Bytes { get; }
-    public static Identity From(byte[] bytes);
-    public bool Equals(Identity other);
-    public static bool operator ==(Identity a, Identity b);
-    public static bool operator !=(Identity a, Identity b);
-}
-
+    public struct Identity : IEquatable<Identity>
+    {
+        public byte[] Bytes { get; }
+        public static Identity From(byte[] bytes);
+        public bool Equals(Identity other);
+        public static bool operator ==(Identity a, Identity b);
+        public static bool operator !=(Identity a, Identity b);
+    }
 }
 ```
 
-A unique public identifier for a client connected to a database.
+A unique public identifier for a user of a database.
+
+<!-- FIXME: this is no longer accurate; `Identity` columns are properly `Identity`-type. -->
 
 Columns of type `Identity` inside a module will be represented in the C# SDK as properties of type `byte[]`. `Identity` is essentially just a wrapper around `byte[]`, and you can use the `Bytes` property to get a `byte[]` that can be used to filter tables and so on.
+
+### Class `Identity`
+```cs
+namespace SpacetimeDB 
+{
+    public struct Address : IEquatable<Address>
+    {
+        public byte[] Bytes { get; }
+        public static Address? From(byte[] bytes);
+        public bool Equals(Address other);
+        public static bool operator ==(Address a, Address b);
+        public static bool operator !=(Address a, Address b);
+    }
+}
+```
+
+An opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#class-identity).
 
 ## Customizing logging
 

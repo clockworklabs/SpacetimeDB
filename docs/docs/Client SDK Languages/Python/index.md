@@ -215,11 +215,12 @@ def print_message(message):
 
 We can also register callbacks to run each time a reducer is invoked. We register these callbacks using the `register_on_<reducer>` method, which is automatically implemented for each reducer by `spacetime generate`.
 
-Each reducer callback takes three fixed arguments:
-
+Each reducer callback takes four fixed arguments:
+ 
 1. The `Identity` of the client who requested the reducer invocation.
-2. The `Status` of the reducer run, one of `committed`, `failed` or `outofenergy`.
-3. The `Message` returned by the reducer in error cases, or `None` if the reducer succeeded.
+2. The `Address` of the client who requested the reducer invocation, or `None` for scheduled reducers.
+3. The `Status` of the reducer run, one of `committed`, `failed` or `outofenergy`.
+4. The `Message` returned by the reducer in error cases, or `None` if the reducer succeeded.
 
 It also takes a variable number of arguments which match the calling arguments of the reducer.
 
@@ -237,8 +238,8 @@ We'll test both that our identity matches the sender and that the status is `fai
 Add this function before the `register_callbacks` function:
 
 ```python
-def on_set_name_reducer(sender, status, message, name):
-    if sender == local_identity:
+def on_set_name_reducer(sender_id, sender_address, status, message, name):
+    if sender_id == local_identity:
         if status == "failed":
             print(f"Failed to set name: {message}")
 ```
@@ -250,10 +251,10 @@ We handle warnings on rejected messages the same way as rejected names, though t
 Add this function before the `register_callbacks` function:
 
 ```python
-def on_send_message_reducer(sender, _addr, status, message, msg):
-    if sender == local_identity:
+def on_send_message_reducer(sender_id, sender_address, status, message, msg):
+    if sender_id == local_identity:
         if status == "failed":
-            print(f"Failed to send message: {message}")
+            print(f"Failed to send message: {message}")            
 ```
 
 ### OnSubscriptionApplied callback
@@ -301,10 +302,11 @@ def check_commands():
 
 This callback fires after the client connects to the server. We'll use it to save our credentials to a file so that we can re-authenticate as the same user next time we connect.
 
-The `on_connect` callback takes two arguments:
+The `on_connect` callback takes three arguments:
 
 1. The `Auth Token` is the equivalent of your private key. This is the only way to authenticate with the SpacetimeDB module as this user.
 2. The `Identity` is the equivalent of your public key. This is used to uniquely identify this user and will be sent to other clients. We store this in a global variable so we can use it to identify that a given message or transaction was sent by us.
+3. The `Address` is an opaque identifier modules can use to distinguish multiple concurrent connections by the same `Identity`. We don't need to know our `Address`, so we'll ignore that argument.
 
 To store our auth token, we use the optional component `local_config`, which provides a simple interface for storing and retrieving a single `Identity` from a file. We'll use the `local_config::set_string` method to store the auth token. Other projects might want to associate this token with some other identifier such as an email address or Steam ID.
 
