@@ -6,6 +6,9 @@ on:
       - master
       - staging
       - development
+    tags:
+      - 'v*'
+
 
 jobs:
   docker-amd64:
