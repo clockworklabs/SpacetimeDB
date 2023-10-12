@@ -27,9 +27,8 @@ use super::{Mem, WasmError};
 /// Once created, a `WasmInstanceEnv` must be instantiated with a `Mem`
 /// exactly once.
 ///
-/// Some of the state associated to a `WasmInstanceEnv` is per module
-/// reducer invocation. For instance, module-defined timing spans
-/// are per reducer.
+/// Some of the state associated to a `WasmInstanceEnv` is per reducer invocation.
+/// For instance, module-defined timing spans are per reducer.
 pub(super) struct WasmInstanceEnv {
     /// The database `InstanceEnv` associated to this instance.
     instance_env: InstanceEnv,
