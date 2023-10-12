@@ -262,12 +262,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
             // mildly confusing, since the user did not subscribe to anything. Should we rename SubscriptionError to ReadOnlyQueryError?
             let compiled = crate::subscription::query::compile_read_only_query(db, tx, &auth, &query)?;
 
-            sql::execute::execute_sql(
-                db,
-                tx,
-                compiled.queries.into_iter().map(CrudExpr::Query).collect(),
-                auth,
-            )
+            sql::execute::execute_sql(db, tx, compiled.into_iter().map(CrudExpr::Query).collect(), auth)
         })
     }
 

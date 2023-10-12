@@ -19,25 +19,6 @@ pub enum QueryDef {
     Sql(String),
 }
 
-#[derive(Clone, Eq, Debug, PartialEq, PartialOrd, Ord)]
-pub struct Query {
-    pub queries: Vec<QueryExpr>,
-}
-
-impl Query {
-    #[tracing::instrument(skip_all, fields(table = table.table_name))]
-    pub fn queries_of_table_id<'a>(&'a self, table: &'a DatabaseTableUpdate) -> impl Iterator<Item = QueryExpr> + '_ {
-        self.queries.iter().filter_map(move |x| {
-            if x.source.get_db_table().map(|x| x.table_id) == Some(table.table_id) {
-                let t = to_mem_table(x.clone(), table);
-                Some(t)
-            } else {
-                None
-            }
-        })
-    }
-}
-
 pub const OP_TYPE_FIELD_NAME: &str = "__op_type";
 
 //HACK: To recover the `op_type` of this particular row I add a "hidden" column `OP_TYPE_FIELD_NAME`
@@ -111,7 +92,7 @@ pub fn compile_read_only_query(
     tx: &MutTxId,
     auth: &AuthCtx,
     input: &str,
-) -> Result<Query, DBError> {
+) -> Result<QuerySet, DBError> {
     let input = input.trim();
     if input.is_empty() {
         return Err(SubscriptionError::Empty.into());
@@ -139,7 +120,7 @@ pub fn compile_read_only_query(
     }
 
     if !queries.is_empty() {
-        Ok(Query { queries })
+        Ok(queries.into_iter().collect())
     } else {
         Err(SubscriptionError::Empty.into())
     }
@@ -154,67 +135,57 @@ pub enum Supported {
 pub fn classify(expr: &QueryExpr) -> Option<Supported> {
     use expr::Query::*;
 
-    let mut clauses = expr.query.iter();
-    let first = clauses.next();
-    let second = clauses.next();
-    let third = clauses.next();
-    if clauses.next().is_some() {
+    let mut ops = expr.query.iter();
+    let first = ops.next();
+    let second = ops.next();
+    let third = ops.next();
+    // Too complex to even consider.
+    if ops.next().is_some() {
         return None;
     }
 
-    let validate_projection = |fields: &[FieldExpr]| -> Option<()> {
-        let source_fields = expr.source.get_db_table()?.head.fields.iter().map(|col| &col.field);
-        for both in source_fields.zip_longest(fields.iter()) {
-            let (column, field) = both.both()?;
-            let FieldExpr::Name(field) = field else {
-                return None;
-            };
-            if column != field {
-                return None;
+    let projects_lhs = |op: &expr::Query| -> Option<()> {
+        if let Project(fields, _) = op {
+            let source_fields = expr.source.get_db_table()?.head.fields.iter().map(|col| &col.field);
+            for both in source_fields.zip_longest(fields.iter()) {
+                let (column, field) = both.both()?;
+                let FieldExpr::Name(field) = field else {
+                    return None;
+                };
+                if column != field {
+                    return None;
+                }
             }
-        }
 
-        Some(())
+            Some(())
+        } else {
+            None
+        }
     };
+
     match (first, second) {
         // SELECT * FROM t
         (None, None) => Some(Supported::Scan),
         // SELECT t.* FROM t
-        (Some(Project(fields, _)), None) => {
-            validate_projection(fields)?;
-            Some(Supported::Scan)
-        }
-        // SELECT * FROM t WHERE ..
+        (Some(p @ Project(..)), None) => projects_lhs(p).map(|_| Supported::Scan),
         (Some(Select(..) | IndexScan(..)), maybe_project) => match maybe_project {
+            // SELECT * FROM t WHERE ..
             None => Some(Supported::Scan),
-            Some(Project(fields, _)) => {
-                validate_projection(fields)?;
-                Some(Supported::Scan)
-            }
             // SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE ..
             Some(JoinInner(..) | IndexJoin(..)) => match third {
                 None => Some(Supported::Semijoin),
-                Some(Project(fields, _)) => {
-                    validate_projection(fields)?;
-                    Some(Supported::Semijoin)
-                }
-                // Something that's not a projection
-                Some(_) => None,
+                Some(op) => projects_lhs(op).map(|_| Supported::Semijoin),
             },
-            // Something that's not a projection
-            Some(_) => None,
+            // SELECT t.* FROM t WHERE ..
+            Some(op) => projects_lhs(op).map(|_| Supported::Scan),
         },
         // SELECT lhs.* FROM lhs JOIN rhs on lhs.id = rhs.id
         (Some(JoinInner(..) | IndexJoin(..)), maybe_project) => match maybe_project {
             None => Some(Supported::Semijoin),
-            Some(Project(fields, _)) => {
-                validate_projection(fields)?;
-                Some(Supported::Semijoin)
-            }
-            // Something that's not a projection
-            Some(_) => None,
+            Some(op) => projects_lhs(op).map(|_| Supported::Semijoin),
         },
 
+        // Anything else is not supported.
         _ => None,
     }
 }
@@ -396,7 +367,7 @@ mod tests {
         assert_eq!(
             result.tables.len(),
             total_tables,
-            "Must return the correct number of tables"
+            "Must return the correct number of tables: {result:#?}"
         );
 
         let result = get_result(result);
@@ -417,7 +388,7 @@ mod tests {
         assert_eq!(
             result.tables.len(),
             total_tables,
-            "Must return the correct number of tables"
+            "Must return the correct number of tables: {result:#?}"
         );
 
         let result = get_result(result);
@@ -442,8 +413,7 @@ mod tests {
         let table_id = create_table_with_rows(&db, &mut tx, "test", schema.clone(), &[])?;
 
         // select * from test
-        let query = QueryExpr::new(db_table(schema.clone(), "test".to_owned(), table_id));
-        let query = QuerySet(vec![Query { queries: vec![query] }]);
+        let query: QuerySet = QueryExpr::new(db_table(schema.clone(), "test".to_string(), table_id)).into();
 
         let op = TableOp {
             op_type: 0,
@@ -484,7 +454,7 @@ mod tests {
             panic!("unexpected query {:#?}", exp[0]);
         };
 
-        let query = QuerySet(vec![Query { queries: vec![query] }]);
+        let query = QuerySet::from(query);
 
         let mut ops = Vec::new();
         for i in 0u64..9u64 {
@@ -546,7 +516,7 @@ mod tests {
             panic!("unexpected query {:#?}", exp[0]);
         };
 
-        let query = QuerySet(vec![Query { queries: vec![query] }]);
+        let query = QuerySet::from(query);
 
         for i in 0..10 {
             // Insert into lhs
@@ -645,14 +615,7 @@ mod tests {
                 .clone()
                 .with_select_cmp(OpCmp::Eq, FieldName::named("_inventory", "inventory_id"), scalar(1u64));
 
-        let s = QuerySet(vec![
-            Query {
-                queries: vec![q_all.clone()],
-            },
-            Query {
-                queries: vec![q_all, q_id],
-            },
-        ]);
+        let s = QuerySet::from([q_all, q_id]);
 
         let row1 = TableOp {
             op_type: 0,
@@ -722,14 +685,7 @@ mod tests {
                 .clone()
                 .with_select_cmp(OpCmp::Eq, FieldName::named("inventory", "inventory_id"), scalar(1u64));
 
-        let s = QuerySet(vec![
-            Query {
-                queries: vec![q_all.clone()],
-            },
-            Query {
-                queries: vec![q_all, q_id],
-            },
-        ]);
+        let s = QuerySet::from([q_all, q_id]);
 
         check_query_eval(&db, &mut tx, &s, 1, &[product!(1u64, "health")])?;
 
@@ -760,43 +716,6 @@ mod tests {
         Ok(())
     }
 
-    //Check that
-    //```
-    //SELECT * FROM table1
-    //SELECT * FROM table2
-    // =
-    //SELECT * FROM table2
-    //SELECT * FROM table1
-    //```
-    // return just one row irrespective of the order of the queries
-    #[test]
-    fn test_subscribe_commutative() -> ResultTest<()> {
-        let (db, _tmp_dir) = make_test_db()?;
-        let mut tx = db.begin_tx();
-
-        let (_, _, _, q_1) = make_inv(&db, &mut tx, StAccess::Public)?;
-        let (_, _, _, q_2) = make_player(&db, &mut tx)?;
-
-        let s = QuerySet(vec![
-            Query {
-                queries: vec![q_1.clone()],
-            },
-            Query {
-                queries: vec![q_2.clone()],
-            },
-        ]);
-
-        let result_1 = s.eval(&db, &mut tx, AuthCtx::for_testing())?;
-
-        let s = QuerySet(vec![Query { queries: vec![q_2] }, Query { queries: vec![q_1] }]);
-
-        let result_2 = s.eval(&db, &mut tx, AuthCtx::for_testing())?;
-
-        assert_eq!(get_result(result_1), get_result(result_2));
-
-        Ok(())
-    }
-
     #[test]
     fn test_subscribe_sql() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
@@ -817,9 +736,9 @@ mod tests {
         let sql_query = "SELECT * FROM MobileEntityState JOIN EnemyState ON MobileEntityState.entity_id = EnemyState.entity_id WHERE location_x > 96000 AND MobileEntityState.location_x < 192000 AND MobileEntityState.location_z > 96000 AND MobileEntityState.location_z < 192000";
         let q = compile_read_only_query(&db, &tx, &AuthCtx::for_testing(), sql_query)?;
 
-        for q in q.queries {
+        for q in &q {
             assert_eq!(
-                run_query(&db, &mut tx, &q, AuthCtx::for_testing())?.len(),
+                run_query(&db, &mut tx, q, AuthCtx::for_testing())?.len(),
                 1,
                 "Not return results"
             );
@@ -838,12 +757,8 @@ mod tests {
         let row_1 = product!(1u64, "health");
         let row_2 = product!(2u64, "jhon doe");
 
-        let s = QuerySet(vec![compile_read_only_query(
-            &db,
-            &tx,
-            &AuthCtx::for_testing(),
-            SUBSCRIBE_TO_ALL_QUERY,
-        )?]);
+        let s = compile_read_only_query(&db, &tx, &AuthCtx::for_testing(), SUBSCRIBE_TO_ALL_QUERY)
+            .map(QuerySet::from_iter)?;
 
         check_query_eval(&db, &mut tx, &s, 2, &[row_1.clone(), row_2.clone()])?;
 
@@ -902,7 +817,7 @@ mod tests {
             "SELECT * FROM lhs WHERE id > 5",
         ];
         for scan in scans {
-            let expr = compile_read_only_query(&db, &tx, &auth, scan)?.queries.pop().unwrap();
+            let expr = compile_read_only_query(&db, &tx, &auth, scan)?.pop_first().unwrap();
             assert_eq!(classify(&expr), Some(Supported::Scan), "{scan}\n{expr:#?}");
         }
 
@@ -913,7 +828,7 @@ mod tests {
             "SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE lhs.x < 10",
         ];
         for join in joins {
-            let expr = compile_read_only_query(&db, &tx, &auth, join)?.queries.pop().unwrap();
+            let expr = compile_read_only_query(&db, &tx, &auth, join)?.pop_first().unwrap();
             assert_eq!(classify(&expr), Some(Supported::Semijoin), "{join}\n{expr:#?}");
         }
 
