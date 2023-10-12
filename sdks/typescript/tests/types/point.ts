@@ -6,7 +6,6 @@ import {
   __SPACETIMEDB__,
   AlgebraicType,
   ProductType,
-  BuiltinType,
   ProductTypeElement,
   SumType,
   SumTypeVariant,
@@ -36,11 +35,11 @@ export class Point extends IDatabaseTable {
     return AlgebraicType.createProductType([
       new ProductTypeElement(
         "x",
-        AlgebraicType.createPrimitiveType(BuiltinType.Type.U16)
+        AlgebraicType.createU16Type()
       ),
       new ProductTypeElement(
         "y",
-        AlgebraicType.createPrimitiveType(BuiltinType.Type.U16)
+        AlgebraicType.createU16Type()
       ),
     ]);
   }

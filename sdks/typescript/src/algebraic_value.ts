@@ -1,11 +1,4 @@
-import {
-  ProductType,
-  SumType,
-  AlgebraicType,
-  BuiltinType,
-  // EnumLabel,
-  MapType,
-} from "./algebraic_type";
+import { ProductType, SumType, AlgebraicType, MapType } from "./algebraic_type";
 import BinaryReader from "./binary_reader";
 
 export interface ReducerArgsAdapter {
@@ -43,20 +36,14 @@ export class BinaryReducerArgsAdapter {
   }
 }
 
-/** Defines the interface for deserialize `AlgebraicValue`s*/
+/** Defines the interface for deserializing `AlgebraicValue`s*/
 export interface ValueAdapter {
-  readUInt8Array: () => Uint8Array;
-  readArray: (type: AlgebraicType) => AlgebraicValue[];
-  readMap: (
-    keyType: AlgebraicType,
-    valueType: AlgebraicType
-  ) => Map<AlgebraicValue, AlgebraicValue>;
-  readString: () => string;
   readSum: (type: SumType) => SumValue;
   readProduct: (type: ProductType) => ProductValue;
-
+  readUInt8Array: () => Uint8Array;
+  readArray: (type: AlgebraicType) => AlgebraicValue[];
+  readMap: (keyType: AlgebraicType, valueType: AlgebraicType) => MapValue;
   readBool: () => boolean;
-  readByte: () => number;
   readI8: () => number;
   readU8: () => number;
   readI16: () => number;
@@ -69,6 +56,8 @@ export interface ValueAdapter {
   readI128: () => BigInt;
   readF32: () => number;
   readF64: () => number;
+  readString: () => string;
+  readByte: () => number;
 
   callMethod<K extends keyof ValueAdapter>(methodName: K): any;
 }
@@ -305,10 +294,10 @@ export class JSONAdapter implements ValueAdapter {
 export class SumValue {
   /** A tag representing the choice of one variant of the sum type's variants. */
   public tag: number;
-  /** 
-  * Given a variant `Var(Ty)` in a sum type `{ Var(Ty), ... }`,
-  * this provides the `value` for `Ty`.
-  */
+  /**
+   * Given a variant `Var(Ty)` in a sum type `{ Var(Ty), ... }`,
+   * this provides the `value` for `Ty`.
+   */
   public value: AlgebraicValue;
 
   constructor(tag: number, value: AlgebraicValue) {
@@ -329,12 +318,12 @@ export class SumValue {
   }
 }
 
-/** 
-* A product value is made of a list of
-* "elements" / "fields" / "factors" of other `AlgebraicValue`s.
-*
-* The type of product value is a [product type](`ProductType`).
-*/
+/**
+ * A product value is made of a list of
+ * "elements" / "fields" / "factors" of other `AlgebraicValue`s.
+ *
+ * The type of product value is a [product type](`ProductType`).
+ */
 export class ProductValue {
   elements: AlgebraicValue[];
 
@@ -354,122 +343,29 @@ export class ProductValue {
   }
 }
 
-/** A built-in value of a [`BuiltinType`]. */
-type BuiltinValueType =
+type MapValue = Map<AlgebraicValue, AlgebraicValue>;
+
+type AnyValue =
+  | SumValue
+  | ProductValue
   | boolean
   | string
   | number
   | AlgebraicValue[]
   | BigInt
-  | Map<AlgebraicValue, AlgebraicValue>
+  | MapValue
   | Uint8Array;
-
-export class BuiltinValue {
-  value: BuiltinValueType;
-
-  constructor(value: BuiltinValueType) {
-    this.value = value;
-  }
-
-  public static deserialize(
-    type: BuiltinType,
-    adapter: ValueAdapter
-  ): BuiltinValue {
-    switch (type.type) {
-      case BuiltinType.Type.Array:
-        let arrayBuiltinType: BuiltinType.Type | undefined =
-          type.arrayType &&
-          type.arrayType.type === AlgebraicType.Type.BuiltinType
-            ? type.arrayType.builtin.type
-            : undefined;
-        if (
-          arrayBuiltinType !== undefined &&
-          arrayBuiltinType === BuiltinType.Type.U8
-        ) {
-          const value = adapter.readUInt8Array();
-          return new this(value);
-        } else {
-          const arrayResult = adapter.readArray(
-            type.arrayType as AlgebraicType
-          );
-          return new this(arrayResult);
-        }
-      case BuiltinType.Type.Map:
-        let keyType: AlgebraicType = (type.mapType as MapType).keyType;
-        let valueType: AlgebraicType = (type.mapType as MapType).valueType;
-        const mapResult = adapter.readMap(keyType, valueType);
-        return new this(mapResult);
-      case BuiltinType.Type.String:
-        const result = adapter.readString();
-        return new this(result);
-      default:
-        const methodName: string = "read" + type.type;
-        return new this(adapter.callMethod(methodName as keyof ValueAdapter));
-    }
-  }
-
-  public asString(): string {
-    return this.value as string;
-  }
-
-  public asArray(): AlgebraicValue[] {
-    return this.value as AlgebraicValue[];
-  }
-
-  public asJsArray(type: string): any[] {
-    return this.asArray().map((el) =>
-      el.callMethod(("as" + type) as keyof AlgebraicValue)
-    );
-  }
-
-  public asNumber(): number {
-    return this.value as number;
-  }
-
-  public asBool(): boolean {
-    return this.value as boolean;
-  }
-
-  public asBigInt(): BigInt {
-    return this.value as BigInt;
-  }
-
-  public asBoolean(): boolean {
-    return this.value as boolean;
-  }
-
-  public asBytes(): Uint8Array {
-    return this.value as Uint8Array;
-  }
-}
-
-type AnyValue = SumValue | ProductValue | BuiltinValue;
 
 /** A value in SATS. */
 export class AlgebraicValue {
-  /** A structural sum value. */
-  sum: SumValue | undefined;
-  /** A structural product value. */
-  product: ProductValue | undefined;
-  /** A builtin value that has a builtin type */
-  builtin: BuiltinValue | undefined;
+  value: AnyValue;
 
   constructor(value: AnyValue | undefined) {
     if (value === undefined) {
       // TODO: possibly get rid of it
       throw "value is undefined";
     }
-    switch (value.constructor) {
-      case SumValue:
-        this.sum = value as SumValue;
-        break;
-      case ProductValue:
-        this.product = value as ProductValue;
-        break;
-      case BuiltinValue:
-        this.builtin = value as BuiltinValue;
-        break;
-    }
+    this.value = value;
   }
 
   callMethod<K extends keyof AlgebraicValue>(methodName: K): any {
@@ -478,75 +374,88 @@ export class AlgebraicValue {
 
   public static deserialize(type: AlgebraicType, adapter: ValueAdapter) {
     switch (type.type) {
-      case AlgebraicType.Type.ProductType:
-        return new this(ProductValue.deserialize(type.product, adapter));
-      case AlgebraicType.Type.SumType:
+      case AlgebraicType.Type.Sum:
         return new this(SumValue.deserialize(type.sum, adapter));
-      case AlgebraicType.Type.BuiltinType:
-        return new this(BuiltinValue.deserialize(type.builtin, adapter));
+      case AlgebraicType.Type.Product:
+        return new this(ProductValue.deserialize(type.product, adapter));
+      case AlgebraicType.Type.Array:
+        let elemType = type.array;
+        if (elemType.type === AlgebraicType.Type.U8) {
+          return new this(adapter.readUInt8Array());
+        } else {
+          return new this(adapter.readArray(elemType));
+        }
+      case AlgebraicType.Type.Map:
+        let mapType = type.map;
+        return new this(adapter.readMap(mapType.keyType, mapType.valueType));
+      case AlgebraicType.Type.Bool:
+        return new this(adapter.readBool());
+      case AlgebraicType.Type.I8:
+        return new this(adapter.readI8());
+      case AlgebraicType.Type.U8:
+        return new this(adapter.readU8());
+      case AlgebraicType.Type.I16:
+        return new this(adapter.readI16());
+      case AlgebraicType.Type.U16:
+        return new this(adapter.readU16());
+      case AlgebraicType.Type.I32:
+        return new this(adapter.readI32());
+      case AlgebraicType.Type.U32:
+        return new this(adapter.readU32());
+      case AlgebraicType.Type.I64:
+        return new this(adapter.readI64());
+      case AlgebraicType.Type.U64:
+        return new this(adapter.readU64());
+      case AlgebraicType.Type.I128:
+        return new this(adapter.readI128());
+      case AlgebraicType.Type.U128:
+        return new this(adapter.readU128());
+      case AlgebraicType.Type.String:
+        return new this(adapter.readString());
       default:
-        throw new Error("not implemented");
+        throw new Error(`not implemented, ${type.type}`);
     }
-  }
-
-  public asProductValue(): ProductValue {
-    if (!this.product) {
-      throw "AlgebraicValue is not a ProductValue and product was requested";
-    }
-    return this.product as ProductValue;
-  }
-
-  public asBuiltinValue(): BuiltinValue {
-    this.assertBuiltin();
-    return this.builtin as BuiltinValue;
   }
 
   public asSumValue(): SumValue {
-    if (!this.sum) {
-      throw "AlgebraicValue is not a SumValue and a sum value was requested";
-    }
+    return this.value as SumValue;
+  }
 
-    return this.sum as SumValue;
+  public asProductValue(): ProductValue {
+    return this.value as ProductValue;
   }
 
   public asArray(): AlgebraicValue[] {
-    this.assertBuiltin();
-    return (this.builtin as BuiltinValue).asArray();
+    return this.value as AlgebraicValue[];
   }
 
-  public asString(): string {
-    this.assertBuiltin();
-    return (this.builtin as BuiltinValue).asString();
-  }
-
-  public asNumber(): number {
-    this.assertBuiltin();
-    return (this.builtin as BuiltinValue).asNumber();
+  public asMap(): MapValue {
+    return this.value as MapValue;
   }
 
   public asBool(): boolean {
-    this.assertBuiltin();
-    return (this.builtin as BuiltinValue).asBool();
+    return this.value as boolean;
+  }
+
+  public asNumber(): number {
+    return this.value as number;
   }
 
   public asBigInt(): BigInt {
-    this.assertBuiltin();
-    return (this.builtin as BuiltinValue).asBigInt();
+    return this.value as BigInt;
   }
 
-  public asBoolean(): boolean {
-    this.assertBuiltin();
-    return (this.builtin as BuiltinValue).asBool();
+  public asString(): string {
+    return this.value as string;
   }
 
   public asBytes(): Uint8Array {
-    this.assertBuiltin();
-    return (this.builtin as BuiltinValue).asBytes();
+    return this.value as Uint8Array;
   }
 
-  private assertBuiltin() {
-    if (!this.builtin) {
-      throw "AlgebraicValue is not a BuiltinValue and a string was requested";
-    }
+  public asJsArray(type: string): any[] {
+    return this.asArray().map((el) =>
+      el.callMethod(("as" + type) as keyof AlgebraicValue)
+    );
   }
 }

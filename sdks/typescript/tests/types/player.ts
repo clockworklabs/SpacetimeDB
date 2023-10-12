@@ -6,7 +6,6 @@ import {
   __SPACETIMEDB__,
   AlgebraicType,
   ProductType,
-  BuiltinType,
   ProductTypeElement,
   SumType,
   SumTypeVariant,
@@ -40,11 +39,11 @@ export class Player extends IDatabaseTable {
     return AlgebraicType.createProductType([
       new ProductTypeElement(
         "owner_id",
-        AlgebraicType.createPrimitiveType(BuiltinType.Type.String)
+        AlgebraicType.createStringType()
       ),
       new ProductTypeElement(
         "name",
-        AlgebraicType.createPrimitiveType(BuiltinType.Type.String)
+        AlgebraicType.createStringType()
       ),
       new ProductTypeElement("location", Point.getAlgebraicType()),
     ]);

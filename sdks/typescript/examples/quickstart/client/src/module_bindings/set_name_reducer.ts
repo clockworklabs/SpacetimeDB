@@ -6,7 +6,6 @@ import {
   __SPACETIMEDB__,
   AlgebraicType,
   ProductType,
-  BuiltinType,
   ProductTypeElement,
   IDatabaseTable,
   AlgebraicValue,
@@ -22,16 +21,14 @@ export class SetNameReducer {
   public static call(_name: string) {
     if (__SPACETIMEDB__.spacetimeDBClient) {
       const serializer = __SPACETIMEDB__.spacetimeDBClient.getSerializer();
-      let _nameType = AlgebraicType.createPrimitiveType(
-        BuiltinType.Type.String
-      );
+      let _nameType = AlgebraicType.createStringType();
       serializer.write(_nameType, _name);
       __SPACETIMEDB__.spacetimeDBClient.call("set_name", serializer);
     }
   }
 
   public static deserializeArgs(adapter: ReducerArgsAdapter): any[] {
-    let nameType = AlgebraicType.createPrimitiveType(BuiltinType.Type.String);
+    let nameType = AlgebraicType.createStringType();
     let nameValue = AlgebraicValue.deserialize(nameType, adapter.next());
     let name = nameValue.asString();
     return [name];

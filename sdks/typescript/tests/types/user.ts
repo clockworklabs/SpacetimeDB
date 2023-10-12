@@ -6,7 +6,6 @@ import {
   __SPACETIMEDB__,
   AlgebraicType,
   ProductType,
-  BuiltinType,
   ProductTypeElement,
   SumType,
   SumTypeVariant,
@@ -40,15 +39,13 @@ export class User extends IDatabaseTable {
         AlgebraicType.createProductType([
           new ProductTypeElement(
             "__identity_bytes",
-            AlgebraicType.createArrayType(
-              AlgebraicType.createPrimitiveType(BuiltinType.Type.U8)
-            )
+            AlgebraicType.createBytesType()
           ),
         ])
       ),
       new ProductTypeElement(
         "username",
-        AlgebraicType.createPrimitiveType(BuiltinType.Type.String)
+        AlgebraicType.createStringType()
       ),
     ]);
   }
