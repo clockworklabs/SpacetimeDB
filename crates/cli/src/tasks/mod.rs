@@ -18,10 +18,13 @@ pub fn build(project_path: &Path, skip_clippy: bool, build_debug: bool) -> anyho
         match cmd!("wasm-opt", "-O2", &wasm_path, "-o", &wasm_path_opt).run() {
             Ok(_) => wasm_path = wasm_path_opt,
             // Non-critical error for backward compatibility with users who don't have wasm-opt.
-            Err(err) => eprintln!(
-                "Could not optimise binary with wasm-opt: {}. Module might be running slower.",
-                err
-            ),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                eprintln!("Could not find wasm-opt to optimise the module.");
+                eprintln!(
+                    "For best performance install wasm-opt from https://github.com/WebAssembly/binaryen/releases."
+                );
+            }
+            Err(err) => return Err(err.into()),
         }
     }
     Ok(wasm_path)
