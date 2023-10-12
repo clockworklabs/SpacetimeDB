@@ -10,14 +10,13 @@ using SpacetimeDB.SATS;
 [SpacetimeDB.Type]
 public partial struct IndexDef
 {
-    string IndexName;
-    bool IsUnique;
-    Runtime.IndexType Type;
-    uint[] ColumnIds;
+    public string IndexName;
+    public bool IsUnique;
+    public Runtime.IndexType Type;
+    public uint[] ColumnIds;
 
     public IndexDef(string name, Runtime.IndexType type, bool isUnique, uint[] columnIds)
     {
-        Trace.Assert(columnIds.Length > 0 , "Index need at least one column");
         IndexName = name;
         IsUnique = isUnique;
         Type = type;
@@ -42,14 +41,13 @@ public partial struct ColumnDef
 [SpacetimeDB.Type]
 public partial struct ConstraintDef
 {
-    string ConstraintName;
+    public string ConstraintName;
     // bitflags should be serialized as bytes rather than sum types
-    byte Kind;
-    uint[] ColumnIds;
+    public byte Kind;
+    public uint[] ColumnIds;
 
     public ConstraintDef(string name, byte kind, uint[] columnIds)
     {
-        Trace.Assert(columnIds.Length > 0 , "Constraints need at least one column");
         ConstraintName = name;
         Kind = kind;
         ColumnIds = columnIds;
@@ -114,18 +112,31 @@ public partial struct TableDef
 
         TableName = tableName;
         Columns = columns.Select(x => new ColumnDef(x.ColName, x.ColType)).ToArray();
-        Constraints = columns.Select((x, pos) => new ConstraintDef(x.ColName, ((byte)x.Kind), new UInt32[((uint)pos)])).ToArray();
+        Constraints = columns.Select((x, pos) => new ConstraintDef(x.ColName, ((byte)x.Kind), new uint[] { (uint)pos } )).ToArray();
         Sequences = columns.Where(x => x.Kind.HasFlag(ConstraintFlags.AutoInc)).Select((x, pos) => new SequenceDef(x.ColName, (uint)pos)).ToArray();
         Indices = indices;
         TableType = "user";
         TableAccess = tableName.StartsWith('_') ? "private" : "public";
+    }
+
+    public void ValidateCodeGen()
+    {
+        foreach (ConstraintDef col in this.Constraints)
+        {
+            Trace.Assert(col.ColumnIds.Length > 0, "Constraint need at least one column");
+        }
+
+        foreach (IndexDef col in this.Indices)
+        {
+            Trace.Assert(col.ColumnIds.Length > 0, "Constraint need at least one column");
+        }
     }
 }
 
 [SpacetimeDB.Type]
 public partial struct TableDesc
 {
-    TableDef schema;
+    public TableDef schema;
     AlgebraicTypeRef Data;
 
     public TableDesc(string tableName, ColumnAttrs[] columns, IndexDef[] indices, AlgebraicTypeRef data)

@@ -3,7 +3,9 @@ namespace SpacetimeDB.Codegen;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using static Utils;
 
@@ -180,15 +182,21 @@ public class Module : IIncrementalGenerator
         var addTables = tables
             .Select(
                 (t, ct) =>
-                    $@"
-                FFI.RegisterTable(new SpacetimeDB.Module.TableDesc(
+                {
+                    //Trace.Assert(t.Fields.Length == 0, "Is required at least one column");
+
+                    var code = $@"
+                var table_{t.Name} = new SpacetimeDB.Module.TableDesc(
                     nameof({t.FullName}),
                     new SpacetimeDB.Module.ColumnAttrs[] {{ {string.Join(", ", t.Fields.Select(f => $"new SpacetimeDB.Module.ColumnAttrs(\"{f.Name}\", {f.TypeInfo}.AlgebraicType, SpacetimeDB.Module.ConstraintFlags.{f.IndexKind})"))} }},
                     new SpacetimeDB.Module.IndexDef[] {{ }},
                     {t.FullName}.GetSatsTypeInfo().AlgebraicType.TypeRef
-                ));
-            "
-            )
+                );
+
+                FFI.RegisterTable(table_{t.Name});
+            ";
+                    return code;
+                })
             .Collect();
 
         var reducers = context.SyntaxProvider.ForAttributeWithMetadataName(

@@ -354,11 +354,11 @@ impl SequenceSchema {
     /// ```
     /// use spacetimedb_sats::db::def::*;
     ///
-    /// let sequence_def = SequenceDef::for_column("my_table", "my_sequence", 1);
+    /// let sequence_def = SequenceDef::for_column("my_table", "my_sequence", 1.into());
     /// let schema = SequenceSchema::from_def(42.into(), sequence_def);
     ///
     /// assert_eq!(schema.sequence_name, "seq_my_table_my_sequence");
-    /// assert_eq!(schema.table_id, 42);
+    /// assert_eq!(schema.table_id, 42.into());
     /// ```
     pub fn from_def(table_id: TableId, sequence: SequenceDef) -> Self {
         Self {
@@ -403,7 +403,7 @@ impl SequenceDef {
     /// ```
     /// use spacetimedb_sats::db::def::*;
     ///
-    /// let sequence_def = SequenceDef::for_column("my_table", "my_sequence", 1);
+    /// let sequence_def = SequenceDef::for_column("my_table", "my_sequence", 1.into());
     /// assert_eq!(sequence_def.sequence_name, "seq_my_table_my_sequence");
     /// ```
     pub fn for_column(table: &str, seq_name: &str, col_pos: ColId) -> Self {
@@ -533,7 +533,7 @@ impl IndexDef {
     /// use nonempty::NonEmpty;
     /// use spacetimedb_sats::db::def::*;
     ///
-    /// let index_def = IndexDef::for_column("my_table", "test", NonEmpty::new(1u32), true);
+    /// let index_def = IndexDef::for_column("my_table", "test", NonEmpty::new(1u32.into()), true);
     /// assert_eq!(index_def.index_name, "idx_my_table_test_unique");
     /// ```
     pub fn for_column(table: &str, index_name: &str, columns: NonEmpty<ColId>, is_unique: bool) -> Self {
@@ -769,7 +769,7 @@ impl ConstraintDef {
     /// use nonempty::NonEmpty;
     /// use spacetimedb_sats::db::def::*;
     ///
-    /// let constraint_def = ConstraintDef::for_column("my_table", "test",Constraints::identity(), NonEmpty::new(1u32));
+    /// let constraint_def = ConstraintDef::for_column("my_table", "test",Constraints::identity(), NonEmpty::new(1u32.into()));
     /// assert_eq!(constraint_def.constraint_name, "ct_my_table_test_identity");
     /// ```
     pub fn for_column(table: &str, column_name: &str, kind: Constraints, columns: NonEmpty<ColId>) -> Self {
