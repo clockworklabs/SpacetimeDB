@@ -22,10 +22,10 @@ Open the project in your IDE of choice.
 
 ## Add the NuGet package for the C# SpacetimeDB SDK
 
-Add the `spacetimedbsdk` [NuGet package](https://www.nuget.org/packages/spacetimedbsdk) using Visual Studio NuGet package manager or via the .NET CLI
+Add the `SpacetimeDB.ClientSDK` [NuGet package](https://www.nuget.org/packages/spacetimedbsdk) using Visual Studio NuGet package manager or via the .NET CLI
 
 ```bash
-dotnet add package spacetimedbsdk
+dotnet add package SpacetimeDB.ClientSDK
 ```
 
 ## Generate your module types
