@@ -72,7 +72,7 @@ jobs:
 
       - name: Install latest wasm-opt for module optimisations
         run: |
-          curl https://github.com/WebAssembly/binaryen/releases/download/version_116/binaryen-version_116-x86_64-linux.tar.gz -L | tar xz -C /usr/local --strip-components=1
+          curl https://github.com/WebAssembly/binaryen/releases/download/version_116/binaryen-version_116-x86_64-linux.tar.gz -L | sudo tar xz -C /usr/local --strip-components=1
 
       - name: Criterion compare base branch
         if: ${{ env.PR_BASE_REF }}
