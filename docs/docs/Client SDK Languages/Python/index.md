@@ -53,7 +53,7 @@ In your `client` directory, run:
 
 ```bash
 mkdir -p module_bindings
-spacetime generate --lang python --out-dir src/module_bindings --project_path ../server
+spacetime generate --lang python --out-dir module_bindings --project-path ../server
 ```
 
 Take a look inside `client/module_bindings`. The CLI should have generated five files:
