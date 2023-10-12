@@ -86,7 +86,8 @@ impl WasmInstanceEnv {
         self.mem.clone().expect("Initialized memory")
     }
 
-    /// Return a reference to the `InstanceEnv`.
+    /// Return a reference to the `InstanceEnv`,
+    /// which is responsible for DB instance and associated state.
     pub fn instance_env(&self) -> &InstanceEnv {
         &self.instance_env
     }
