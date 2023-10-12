@@ -106,6 +106,7 @@ impl WasmInstanceEnv {
     /// Reset all of the state associated to a single reducer call.
     pub fn clear_reducer_state(&mut self) {
         // For the moment, we only explicitly clear the set of buffers.
+        // TODO: should we be clearing `iters` and/or `timing_spans`?
         self.buffers.clear();
     }
 
