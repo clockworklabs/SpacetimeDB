@@ -135,7 +135,7 @@ void OnSubscriptionApplied()
 }
 
 const string HOST = "http://localhost:3000";
-const string DBNAME = "module";
+const string DBNAME = "chatqs";
 
 void ProcessThread()
 {
