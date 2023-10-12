@@ -1,5 +1,6 @@
 import { AlgebraicType, BuiltinType } from "./algebraic_type";
 import BinaryWriter from "./binary_writer";
+import { Identity } from "./identity";
 
 export interface Serializer {
   write(type: AlgebraicType, value: any): any;
@@ -42,10 +43,19 @@ export class JSONSerializer {
       case AlgebraicType.Type.ProductType:
         let serializedArray: any[] = [];
         for (const element of type.product.elements) {
-          const serialized = this.serializeType(
-            element.algebraicType,
-            value[element.name]
-          );
+          let serialized: any;
+          // If the value is an identity we can't use the `[]` operator, so we're
+          // special casing the identity type. It might be possible to define the
+          // `__identity_bytes` property on Identity, but I don't have time to check
+          // at the moment
+          if (value.constructor === Identity) {
+            serialized = value.toHexString();
+          } else {
+            serialized = this.serializeType(
+              element.algebraicType,
+              value[element.name]
+            );
+          }
           serializedArray.push(serialized);
         }
         return serializedArray;
@@ -97,7 +107,14 @@ export class BinarySerializer {
         break;
       case AlgebraicType.Type.ProductType:
         for (const element of type.product.elements) {
-          this.write(element.algebraicType, value[element.name]);
+          this.write(
+            element.algebraicType,
+            // If the value is an Identity we have to return an Uint8Array instead of trying
+            // to use the `[]` operator.
+            value.constructor === Identity
+              ? value.toUint8Array()
+              : value[element.name]
+          );
         }
         break;
       case AlgebraicType.Type.SumType:
