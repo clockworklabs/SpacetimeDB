@@ -345,9 +345,7 @@ struct RawTableIter<De> {
     /// The underlying source of our `Buffer`s.
     inner: BufferIter,
 
-    /// The current position in the current buffer,
-    /// from which `deserializer` can read.
-    /// A value of `None` indicates that we need to pull another `Buffer` from `inner`.
+    /// The current position in the buffer, from which `deserializer` can read.
     reader: Cursor<Vec<u8>>,
 
     deserializer: De,
@@ -377,7 +375,6 @@ impl<T, De: BufferDeserialize<Item = T>> Iterator for RawTableIter<De> {
             let buffer = self.inner.next()?;
             let buffer = buffer.expect("RawTableIter::next: Failed to get buffer!");
             self.reader.pos.set(0);
-            self.reader.buf.clear();
             buffer.read_into(&mut self.reader.buf);
         }
     }

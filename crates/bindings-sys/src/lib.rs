@@ -711,14 +711,15 @@ impl Buffer {
         unsafe { raw::_buffer_len(self.handle()) }
     }
 
-    /// Read the contents of the buffer and append to the provided Vec.
+    /// Read the contents of the buffer into the provided Vec.
+    /// The Vec is cleared in the process.
     pub fn read_into(self, buf: &mut Vec<u8>) {
-        let old_buf_len = buf.len();
         let data_len = self.data_len();
+        buf.clear();
         buf.reserve(data_len);
-        self.read_uninit(buf.spare_capacity_mut()[..data_len]);
+        self.read_uninit(&mut buf.spare_capacity_mut()[..data_len]);
         // SAFETY: We just read `data_len` bytes after the end of `buf`.
-        unsafe { buf.set_len(old_buf_len + data_len) };
+        unsafe { buf.set_len(data_len) };
     }
 
     /// Read the contents of the buffer into a new boxed byte slice.
