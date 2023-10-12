@@ -324,7 +324,6 @@ namespace SpacetimeDB
                                 }
                                 else
                                 {
-                                    // Skip this insert if we already have it
                                     if (!table.entries.ContainsKey(rowPk))
                                     {
                                         table.SetDecodedValue(rowPk, decodedRow, out var obj);
