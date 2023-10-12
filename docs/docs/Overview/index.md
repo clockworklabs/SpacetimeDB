@@ -1,5 +1,3 @@
-# SpacetimeDB Documentation
-
 ## Installation
 
 You can run SpacetimeDB as a standalone database server via the `spacetime` CLI tool.
