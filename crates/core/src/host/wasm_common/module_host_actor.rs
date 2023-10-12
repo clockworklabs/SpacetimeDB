@@ -275,12 +275,12 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         let db = &*self.worker_database_instance.relational_db;
         db.with_auto_commit(|tx| {
             let tables = db.get_all_tables(tx)?;
-            let clear_ids = tables
+            // We currently have unique table names,
+            // so we can assume there's only one table to clear.
+            if let Some(table_id) = tables
                 .iter()
-                .filter(|t| t.table_name == table_name)
-                .map(|t| t.table_id)
-                .collect::<Vec<_>>();
-            for table_id in clear_ids {
+                .find_map(|t| (t.table_name == table_name).then_some(t.table_id))
+            {
                 db.clear_table(tx, table_id)?;
             }
             Ok(())
