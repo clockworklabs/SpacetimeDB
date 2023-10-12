@@ -5,6 +5,7 @@ use spacetimedb_lib::PrimaryKey;
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_vm::expr::QueryExpr;
 use std::collections::HashSet;
+use std::ops::Deref;
 
 use super::query::Query;
 use crate::db::datastore::locking_tx_datastore::MutTxId;
@@ -70,6 +71,7 @@ impl QuerySet {
         let same_owner = auth.owner == auth.caller;
         let queries = tables
             .iter()
+            .map(Deref::deref)
             .filter(|t| t.table_type == StTableType::User && (same_owner || t.table_access == StAccess::Public))
             .map(QueryExpr::new)
             .collect();

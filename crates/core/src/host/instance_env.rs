@@ -406,7 +406,7 @@ impl InstanceEnv {
         let tx = &mut *self.tx.get()?;
 
         let schema = stdb.schema_for_table(tx, table_id)?;
-        let row_type = ProductType::from(&schema);
+        let row_type = ProductType::from(&*schema);
         let filter = filter::Expr::from_bytes(
             // TODO: looks like module typespace is currently not hooked up to instances;
             // use empty typespace for now which should be enough for primitives
@@ -416,7 +416,7 @@ impl InstanceEnv {
             filter,
         )
         .map_err(NodesError::DecodeFilter)?;
-        let q = spacetimedb_vm::dsl::query(&schema).with_select(filter_to_column_op(&schema.table_name, filter));
+        let q = spacetimedb_vm::dsl::query(&*schema).with_select(filter_to_column_op(&schema.table_name, filter));
         //TODO: How pass the `caller` here?
         let p = &mut DbProgram::new(stdb, tx, AuthCtx::for_current(self.dbic.identity));
         let results = match spacetimedb_vm::eval::run_ast(p, q.into()) {

@@ -201,7 +201,7 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn schema_for_table(&self, tx: &MutTxId, table_id: u32) -> Result<TableSchema, DBError> {
+    pub fn schema_for_table<'tx>(&self, tx: &'tx MutTxId, table_id: u32) -> Result<Cow<'tx, TableSchema>, DBError> {
         self.inner.schema_for_table_mut_tx(tx, TableId(table_id))
     }
 
@@ -210,7 +210,7 @@ impl RelationalDB {
         self.inner.row_type_for_table_mut_tx(tx, TableId(table_id))
     }
 
-    pub fn get_all_tables(&self, tx: &MutTxId) -> Result<Vec<TableSchema>, DBError> {
+    pub fn get_all_tables<'tx>(&self, tx: &'tx MutTxId) -> Result<Vec<Cow<'tx, TableSchema>>, DBError> {
         self.inner.get_all_tables_mut_tx(tx)
     }
 
@@ -221,19 +221,23 @@ impl RelationalDB {
         table_id: u32,
         col_id: u32,
     ) -> Result<Cow<'tx, AlgebraicType>, DBError> {
+        // We need to do a manual bounds check here
+        // since we want to do `swap_remove` to get an owned value
+        // in the case of `Cow::Owned` and avoid a `clone`.
+        let check_bounds = |schema: &ProductType| -> Result<_, DBError> {
+            let col_idx = col_id as usize;
+            if col_idx >= schema.elements.len() {
+                return Err(TableError::ColumnNotFound(col_id).into());
+            }
+            Ok(col_idx)
+        };
         Ok(match self.row_schema_for_table(tx, table_id)? {
-            Cow::Borrowed(schema) => Cow::Borrowed(
-                &schema
-                    .elements
-                    .get(col_id as usize)
-                    .ok_or(TableError::ColumnNotFound(col_id))?
-                    .algebraic_type,
-            ),
+            Cow::Borrowed(schema) => {
+                let col_idx = check_bounds(schema)?;
+                Cow::Borrowed(&schema.elements[col_idx].algebraic_type)
+            }
             Cow::Owned(mut schema) => {
-                let col_idx = col_id as usize;
-                if col_idx >= schema.elements.len() {
-                    return Err(TableError::ColumnNotFound(col_id).into());
-                }
+                let col_idx = check_bounds(&schema)?;
                 Cow::Owned(schema.elements.swap_remove(col_idx).algebraic_type)
             }
         })

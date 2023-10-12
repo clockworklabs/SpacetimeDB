@@ -213,7 +213,7 @@ pub(crate) mod tests {
     fn test_select_catalog() -> ResultTest<()> {
         let (db, _, _tmp_dir) = create_data(1)?;
         let mut tx = db.begin_tx();
-        let schema = db.schema_for_table(&tx, ST_TABLES_ID).unwrap();
+        let schema = db.schema_for_table(&tx, ST_TABLES_ID).unwrap().into_owned();
 
         let result = run_for_testing(
             &db,
