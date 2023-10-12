@@ -53,7 +53,7 @@ In your `client` directory, run:
 
 ```bash
 mkdir -p module_bindings
-spacetime generate --lang python --out-dir src/module_bindings --project_path ../server
+spacetime generate --lang python --out-dir module_bindings --project-path ../server
 ```
 
 Take a look inside `client/module_bindings`. The CLI should have generated five files:
@@ -250,7 +250,7 @@ We handle warnings on rejected messages the same way as rejected names, though t
 Add this function before the `register_callbacks` function:
 
 ```python
-def on_send_message_reducer(sender, status, message, msg):
+def on_send_message_reducer(sender, _addr, status, message, msg):
     if sender == local_identity:
         if status == "failed":
             print(f"Failed to send message: {message}")

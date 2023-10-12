@@ -150,7 +150,7 @@ This second case means that, even though the module only ever inserts online use
 Whenever we want to print a user, if they have set a name, we'll use that. If they haven't set a name, we'll instead print the first 8 bytes of their identity, encoded as hexadecimal. We'll define a function `UserNameOrIdentity` to handle this.
 
 ```csharp
-string UserNameOrIdentity(User user) => user.Name ?? Identity.From(user.Identity).ToString()!.Substring(0, 8);
+string UserNameOrIdentity(User user) => user.Name ?? user.Identity.ToString()!.Substring(0, 8);
 
 void User_OnInsert(User insertedValue, ReducerEvent? dbEvent)
 {
@@ -291,7 +291,7 @@ void OnConnect()
 This callback is executed when we receive our credentials from the SpacetimeDB module. We'll use the `AuthToken` module to save our token to local storage, so that we can re-authenticate as the same user the next time we connect. We'll also store the identity in a global variable `local_identity` so that we can use it to check if we are the sender of a message or name change.
 
 ```csharp
-void OnIdentityReceived(string authToken, Identity identity)
+void OnIdentityReceived(string authToken, Identity identity, Address _address)
 {
     local_identity = identity;
     AuthToken.SaveToken(authToken);
@@ -333,13 +333,12 @@ Since the input loop will be blocking, we'll run our processing code in a separa
 3. Finally, Close the connection to the module.
 
 ```csharp
-const string HOST = "localhost:3000";
-const string DBNAME = "chat";
-const bool SSL_ENABLED = false;
-
+const string HOST = "http://localhost:3000";
+const string DBNAME = "module";
+ 
 void ProcessThread()
 {
-    SpacetimeDBClient.instance.Connect(AuthToken.Token, HOST, DBNAME, SSL_ENABLED);
+    SpacetimeDBClient.instance.Connect(AuthToken.Token, HOST, DBNAME);
 
     // loop until cancellation token
     while (!cancel_token.IsCancellationRequested)
