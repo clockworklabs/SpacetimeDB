@@ -243,7 +243,7 @@ impl WasmerInstance {
             .ok_or(DescribeError::BadBuffer)?;
 
         // Clear all of the instance state associated to this describer call.
-        self.env.as_mut(store).clear_reducer_state();
+        self.env.as_mut(store).finish_reducer();
 
         Ok(bytes)
     }
@@ -320,8 +320,8 @@ impl WasmerInstance {
 
         // let guard = pprof::ProfilerGuardBuilder::default().frequency(2500).build().unwrap();
 
-        let start = std::time::Instant::now();
-        log::trace!("Start reducer \"{}\"...", reducer_symbol);
+        self.env.as_mut(store).start_reducer();
+
         // pass ownership of the `ptr` allocation into the reducer
         let result = call(reduce, store, bufs).and_then(|errbuf| {
             let errbuf = BufferIdx(errbuf);
@@ -337,20 +337,20 @@ impl WasmerInstance {
             })
         });
 
-        // Clear all of the instance state associated to this single reducer call.
-        self.env.as_mut(store).clear_reducer_state();
+        // Signal that this reducer call is finished. This gets us the timings
+        // associated to our reducer call, and clears all of the instance state
+        // associated to the call.
+        let timings = self.env.as_mut(store).finish_reducer();
 
-        // .call(store, sender_buf.ptr.cast(), timestamp, args_buf.ptr, args_buf.len)
-        // .and_then(|_| {});
-        let duration = start.elapsed();
         let remaining = get_remaining_points(store, instance);
         let energy = module_host_actor::EnergyStats {
             used: EnergyQuanta::from_points(budget) - EnergyQuanta::from_points(remaining),
             remaining: EnergyQuanta::from_points(remaining),
         };
+
         module_host_actor::ExecuteResult {
             energy,
-            execution_duration: duration,
+            timings,
             call_result: result,
         }
     }

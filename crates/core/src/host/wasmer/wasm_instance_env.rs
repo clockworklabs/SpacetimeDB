@@ -1,11 +1,16 @@
 #![allow(clippy::too_many_arguments)]
 
+use std::time::Instant;
+
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
 use crate::host::scheduler::{ScheduleError, ScheduledReducerId};
 use crate::host::timestamp::Timestamp;
+use crate::host::wasm_common::instrumentation::CallSpanStart;
+use crate::host::wasm_common::module_host_actor::ExecutionTimings;
 use crate::host::wasm_common::{
-    err_to_errno, AbiRuntimeError, BufferIdx, BufferIterIdx, BufferIters, Buffers, TimingSpan, TimingSpanIdx,
-    TimingSpanSet,
+    err_to_errno,
+    instrumentation::{Call, CallTimes},
+    AbiRuntimeError, BufferIdx, BufferIterIdx, BufferIters, Buffers, TimingSpan, TimingSpanIdx, TimingSpanSet,
 };
 use wasmer::{FunctionEnvMut, MemoryAccessError, RuntimeError, ValueType, WasmPtr};
 
@@ -45,6 +50,15 @@ pub(super) struct WasmInstanceEnv {
 
     /// Track time spent in module-defined spans.
     timing_spans: TimingSpanSet,
+
+    /// The point in time the last reducer call started at.
+    reducer_start: Instant,
+
+    /// Track time spent in all wasm instance env calls (aka syscall time).
+    ///
+    /// Each function, like `insert`, will add the `Duration` spent in it
+    /// to this tracker.
+    call_times: CallTimes,
 }
 
 type WasmResult<T> = Result<T, WasmError>;
@@ -64,12 +78,15 @@ fn mem_err(err: MemoryAccessError) -> RuntimeError {
 impl WasmInstanceEnv {
     /// Create a new `WasmEnstanceEnv` from the given `InstanceEnv`.
     pub fn new(instance_env: InstanceEnv) -> Self {
+        let reducer_start = Instant::now();
         Self {
             instance_env,
             mem: None,
             buffers: Default::default(),
             iters: Default::default(),
             timing_spans: Default::default(),
+            reducer_start,
+            call_times: CallTimes::new(),
         }
     }
 
@@ -101,27 +118,57 @@ impl WasmInstanceEnv {
         self.buffers.insert(data)
     }
 
-    /// Reset all of the state associated to a single reducer call.
-    pub fn clear_reducer_state(&mut self) {
-        // For the moment, we only explicitly clear the set of buffers.
+    /// Signal to this `WasmInstanceEnv` that a reducer call is beginning.
+    pub fn start_reducer(&mut self) {
+        self.reducer_start = Instant::now();
+    }
+
+    /// Signal to this `WasmInstanceEnv` that a reducer call is over.
+    /// This resets all of the state associated to a single reducer call,
+    /// and returns instrumentation records.
+    pub fn finish_reducer(&mut self) -> ExecutionTimings {
+        // For the moment, we only explicitly clear the set of buffers and the
+        // "syscall" times.
         // TODO: should we be clearing `iters` and/or `timing_spans`?
         self.buffers.clear();
+
+        let total_duration = self.reducer_start.elapsed();
+
+        // Taking the call times record also resets timings to 0s for the next call.
+        let wasm_instance_env_call_times = self.call_times.take();
+
+        ExecutionTimings {
+            total_duration,
+            wasm_instance_env_call_times,
+        }
     }
 
     /// Call the function `f` with the name `func`.
     /// The function `f` is provided with the callers environment and the host's memory.
+    ///
+    /// One of `cvt`, `cvt_ret`, or `cvt_noret` should be used in the implementation of any
+    /// host call, to provide consistent error handling and instrumentation.
     ///
     /// Some database errors are logged but are otherwise regarded as `Ok(_)`.
     /// See `err_to_errno` for a list.
     fn cvt(
         mut caller: FunctionEnvMut<'_, Self>,
         func: &'static str,
+        call: Call,
         f: impl FnOnce(FunctionEnvMut<'_, Self>, &Mem) -> WasmResult<()>,
     ) -> RtResult<u16> {
+        let span_start = CallSpanStart::new(call);
+
         // Call `f` with the caller and a handle to the memory.
-        // Bail if there were no errors.
         let mem = caller.data().mem();
-        let Err(err) = f(caller.as_mut(), &mem) else {
+        let result = f(caller.as_mut(), &mem);
+
+        // Track the span of this call.
+        let span = span_start.end();
+        caller.data_mut().call_times.span(span);
+
+        // Bail if there were no errors.
+        let Err(err) = result else {
             return Ok(0);
         };
 
@@ -143,6 +190,9 @@ impl WasmInstanceEnv {
     ///
     /// Otherwise, `cvt_ret` (this function) behaves as `cvt`.
     ///
+    /// One of `cvt`, `cvt_ret`, or `cvt_noret` should be used in the implementation of any
+    /// host call, to provide consistent error handling and instrumentation.
+    ///
     /// This method should be used as opposed to a manual implementation,
     /// as it helps with upholding the safety invariants of [`bindings_sys::call`].
     ///
@@ -150,12 +200,29 @@ impl WasmInstanceEnv {
     fn cvt_ret<T: ValueType>(
         caller: FunctionEnvMut<'_, Self>,
         func: &'static str,
+        call: Call,
         out: WasmPtr<T>,
         f: impl FnOnce(FunctionEnvMut<'_, Self>, &Mem) -> WasmResult<T>,
     ) -> RtResult<u16> {
-        Self::cvt(caller, func, |mut caller, mem| {
+        Self::cvt(caller, func, call, |mut caller, mem| {
             f(caller.as_mut(), mem).and_then(|ret| out.write(&mem.view(&caller), ret).map_err(Into::into))
         })
+    }
+
+    /// Call the function `f`.
+    ///
+    /// This is the version of `cvt` or `cvt_ret` for functions with no return value.
+    /// One of `cvt`, `cvt_ret`, or `cvt_noret` should be used in the implementation of any
+    /// host call, to provide consistent error handling and instrumentation.
+    fn cvt_noret(mut caller: FunctionEnvMut<'_, Self>, call: Call, f: impl FnOnce(FunctionEnvMut<'_, Self>, &Mem)) {
+        let span_start = CallSpanStart::new(call);
+
+        // Call `f` with the caller and a handle to the memory.
+        let mem = caller.data().mem();
+        f(caller.as_mut(), &mem);
+
+        let span = span_start.end();
+        caller.data_mut().call_times.span(span);
     }
 
     /// Reads a string from WASM memory starting at `ptr` and lasting `len` bytes.
@@ -191,7 +258,7 @@ impl WasmInstanceEnv {
         time: u64,
         out: WasmPtr<u64>,
     ) -> RtResult<()> {
-        Self::cvt_ret(caller, "schedule_reducer", out, |caller, mem| {
+        Self::cvt_ret(caller, "schedule_reducer", Call::ScheduleReducer, out, |caller, mem| {
             // Read the index name as a string from `(name, name_len)`.
             let name = Self::read_string(&caller, mem, name, name_len)?;
 
@@ -223,7 +290,9 @@ impl WasmInstanceEnv {
     /// This assumes that the reducer hasn't already been executed.
     #[tracing::instrument(skip_all)]
     pub fn cancel_reducer(caller: FunctionEnvMut<'_, Self>, id: u64) {
-        caller.data().instance_env.cancel_reducer(ScheduledReducerId(id))
+        Self::cvt_noret(caller, Call::CancelReducer, |caller, _mem| {
+            caller.data().instance_env.cancel_reducer(ScheduledReducerId(id))
+        })
     }
 
     /// Log at `level` a `message` message occuring in `filename:line_number`
@@ -252,40 +321,40 @@ impl WasmInstanceEnv {
         message: WasmPtr<u8>,
         message_len: u32,
     ) {
-        let mem = caller.data().mem();
-
-        // Reads a string lossily from the slice `(ptr, len)` in WASM memory.
-        let read_str = |ptr, len| {
-            mem.read_bytes(&caller, ptr, len)
-                .map(crate::util::string_from_utf8_lossy_owned)
-        };
-
-        // Reads as string optionally, unless `ptr.is_null()`.
-        let read_opt_str = |ptr: WasmPtr<_>, len| (!ptr.is_null()).then(|| read_str(ptr, len)).transpose();
-
-        let _ = (|| -> Result<_, MemoryAccessError> {
-            // Read the `target`, `filename`, and `message` strings from WASM memory.
-            let target = read_opt_str(target, target_len)?;
-            let filename = read_opt_str(filename, filename_len)?;
-            let message = read_str(message, message_len)?;
-
-            // The line number cannot be `u32::MAX` as this represents `Option::None`.
-            let line_number = (line_number != u32::MAX).then_some(line_number);
-
-            let record = Record {
-                target: target.as_deref(),
-                filename: filename.as_deref(),
-                line_number,
-                message: &message,
+        Self::cvt_noret(caller, Call::ConsoleLog, |caller, mem| {
+            // Reads a string lossily from the slice `(ptr, len)` in WASM memory.
+            let read_str = |ptr, len| {
+                mem.read_bytes(&caller, ptr, len)
+                    .map(crate::util::string_from_utf8_lossy_owned)
             };
 
-            // Write the log record to the `DatabaseLogger` in the database instance context (dbic).
-            caller
-                .data()
-                .instance_env
-                .console_log(level.into(), &record, &WasmerBacktraceProvider);
-            Ok(())
-        })();
+            // Reads as string optionally, unless `ptr.is_null()`.
+            let read_opt_str = |ptr: WasmPtr<_>, len| (!ptr.is_null()).then(|| read_str(ptr, len)).transpose();
+
+            let _ = (|| -> Result<_, MemoryAccessError> {
+                // Read the `target`, `filename`, and `message` strings from WASM memory.
+                let target = read_opt_str(target, target_len)?;
+                let filename = read_opt_str(filename, filename_len)?;
+                let message = read_str(message, message_len)?;
+
+                // The line number cannot be `u32::MAX` as this represents `Option::None`.
+                let line_number = (line_number != u32::MAX).then_some(line_number);
+
+                let record = Record {
+                    target: target.as_deref(),
+                    filename: filename.as_deref(),
+                    line_number,
+                    message: &message,
+                };
+
+                // Write the log record to the `DatabaseLogger` in the database instance context (dbic).
+                caller
+                    .data()
+                    .instance_env
+                    .console_log(level.into(), &record, &WasmerBacktraceProvider);
+                Ok(())
+            })();
+        })
     }
 
     /// Inserts a row into the table identified by `table_id`,
@@ -305,7 +374,7 @@ impl WasmInstanceEnv {
     ///   according to the `ProductType` that the table's schema specifies.
     #[tracing::instrument(skip_all)]
     pub fn insert(caller: FunctionEnvMut<'_, Self>, table_id: u32, row: WasmPtr<u8>, row_len: u32) -> RtResult<u16> {
-        Self::cvt(caller, "insert", |caller, mem| {
+        Self::cvt(caller, "insert", Call::Insert, |caller, mem| {
             // Read the row from WASM memory into a buffer.
             let mut row_buffer = mem.read_bytes(&caller, row, row_len)?;
 
@@ -351,7 +420,7 @@ impl WasmInstanceEnv {
         value_len: u32,
         out: WasmPtr<u32>,
     ) -> RtResult<u16> {
-        Self::cvt_ret(caller, "delete_by_col_eq", out, |caller, mem| {
+        Self::cvt_ret(caller, "delete_by_col_eq", Call::DeleteByColEq, out, |caller, mem| {
             let value = mem.read_bytes(&caller, value, value_len)?;
             Ok(caller.data().instance_env.delete_by_col_eq(table_id, col_id, &value)?)
         })
@@ -452,7 +521,7 @@ impl WasmInstanceEnv {
         name_len: u32,
         out: WasmPtr<u32>,
     ) -> RtResult<u16> {
-        Self::cvt_ret(caller, "get_table_id", out, |caller, mem| {
+        Self::cvt_ret(caller, "get_table_id", Call::GetTableId, out, |caller, mem| {
             // Read the table name from WASM memory.
             let name = Self::read_string(&caller, mem, name, name_len)?;
 
@@ -488,7 +557,7 @@ impl WasmInstanceEnv {
         col_ids: WasmPtr<u8>,
         col_len: u32,
     ) -> RtResult<u16> {
-        Self::cvt(caller, "create_index", |caller, mem| {
+        Self::cvt(caller, "create_index", Call::CreateIndex, |caller, mem| {
             // Read the index name from WASM memory.
             let index_name = Self::read_string(&caller, mem, index_name, index_name_len)?;
 
@@ -530,7 +599,7 @@ impl WasmInstanceEnv {
         val_len: u32,
         out: WasmPtr<BufferIdx>,
     ) -> RtResult<u16> {
-        Self::cvt_ret(caller, "iter_by_col_eq", out, |mut caller, mem| {
+        Self::cvt_ret(caller, "iter_by_col_eq", Call::IterByColEq, out, |mut caller, mem| {
             // Read the test value from WASM memory.
             let value = mem.read_bytes(&caller, val, val_len)?;
 
@@ -551,7 +620,7 @@ impl WasmInstanceEnv {
     /// - a table with the provided `table_id` doesn't exist
     // #[tracing::instrument(skip_all)]
     pub fn iter_start(caller: FunctionEnvMut<'_, Self>, table_id: u32, out: WasmPtr<BufferIterIdx>) -> RtResult<u16> {
-        Self::cvt_ret(caller, "iter_start", out, |mut caller, _mem| {
+        Self::cvt_ret(caller, "iter_start", Call::IterStart, out, |mut caller, _mem| {
             // Collect the iterator chunks.
             let chunks = caller.data().instance_env.iter_chunks(table_id)?;
 
@@ -582,17 +651,23 @@ impl WasmInstanceEnv {
         filter_len: u32,
         out: WasmPtr<BufferIterIdx>,
     ) -> RtResult<u16> {
-        Self::cvt_ret(caller, "iter_start_filtered", out, |mut caller, _mem| {
-            // Read the slice `(filter, filter_len)`.
-            let filter = caller.data().mem().read_bytes(&caller, filter, filter_len)?;
+        Self::cvt_ret(
+            caller,
+            "iter_start_filtered",
+            Call::IterStartFiltered,
+            out,
+            |mut caller, _mem| {
+                // Read the slice `(filter, filter_len)`.
+                let filter = caller.data().mem().read_bytes(&caller, filter, filter_len)?;
 
-            // Construct the iterator.
-            let chunks = caller.data().instance_env.iter_filtered_chunks(table_id, &filter)?;
+                // Construct the iterator.
+                let chunks = caller.data().instance_env.iter_filtered_chunks(table_id, &filter)?;
 
-            // Register the iterator and get back the index to write to `out`.
-            // Calls to the iterator are done through dynamic dispatch.
-            Ok(caller.data_mut().iters.insert(chunks.into_iter()))
-        })
+                // Register the iterator and get back the index to write to `out`.
+                // Calls to the iterator are done through dynamic dispatch.
+                Ok(caller.data_mut().iters.insert(chunks.into_iter()))
+            },
+        )
     }
 
     /// Advances the registered iterator with the index given by `iter_key`.
@@ -608,7 +683,7 @@ impl WasmInstanceEnv {
     /// - advancing the iterator resulted in an error
     // #[tracing::instrument(skip_all)]
     pub fn iter_next(caller: FunctionEnvMut<'_, Self>, iter_key: u32, out: WasmPtr<BufferIdx>) -> RtResult<u16> {
-        Self::cvt_ret(caller, "iter_next", out, |mut caller, _mem| {
+        Self::cvt_ret(caller, "iter_next", Call::IterNext, out, |mut caller, _mem| {
             let data_mut = caller.data_mut();
 
             // Retrieve the iterator by `iter_key`.
@@ -630,7 +705,7 @@ impl WasmInstanceEnv {
     /// Returns an error if the iterator does not exist.
     // #[tracing::instrument(skip_all)]
     pub fn iter_drop(caller: FunctionEnvMut<'_, Self>, iter_key: u32) -> RtResult<u16> {
-        Self::cvt(caller, "iter_drop", |mut caller, _mem| {
+        Self::cvt(caller, "iter_drop", Call::IterDrop, |mut caller, _mem| {
             caller
                 .data_mut()
                 .iters
