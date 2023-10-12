@@ -12,7 +12,7 @@
     <Product>SpacetimeDB</Product>
     <Description>The SpacetimeDB SDK is a software development kit (SDK) designed to simplify the interaction with SpacetimeDB server modules.</Description>
     <Copyright>2023</Copyright>
-    <PackageProjectUrl>http://spacetimedb.com</PackageProjectUrl>
+    <PackageProjectUrl>https://spacetimedb.com</PackageProjectUrl>
     <PackageIcon>logo.png</PackageIcon>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/clockworklabs/SpacetimeDBCSharpSDK</RepositoryUrl>
