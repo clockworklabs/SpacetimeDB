@@ -7,7 +7,7 @@ use spacetimedb_lib::{ColumnIndexAttribute, DataKey, Hash};
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue};
 use spacetimedb_vm::expr::SourceExpr;
-use std::{ops::RangeBounds, sync::Arc};
+use std::{borrow::Cow, ops::RangeBounds, sync::Arc};
 
 use super::{system_tables::StTableRow, Result};
 
@@ -459,7 +459,11 @@ pub trait TxDatastore: DataRow + Tx {
 pub trait MutTxDatastore: TxDatastore + MutTx {
     // Tables
     fn create_table_mut_tx(&self, tx: &mut Self::MutTxId, schema: TableDef) -> Result<TableId>;
-    fn row_type_for_table_mut_tx(&self, tx: &Self::MutTxId, table_id: TableId) -> Result<ProductType>;
+    fn row_type_for_table_mut_tx<'tx>(
+        &self,
+        tx: &'tx Self::MutTxId,
+        table_id: TableId,
+    ) -> super::Result<Cow<'tx, ProductType>>;
     fn schema_for_table_mut_tx(&self, tx: &Self::MutTxId, table_id: TableId) -> Result<TableSchema>;
     fn drop_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId) -> Result<()>;
     fn rename_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, new_name: &str) -> Result<()>;

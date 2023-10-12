@@ -9,6 +9,7 @@ use self::{
 };
 use nonempty::NonEmpty;
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, BTreeSet, HashMap},
     ops::RangeBounds,
     sync::Arc,
@@ -564,7 +565,7 @@ impl Inner {
             let table_row = StTableRow::try_from(&row)?;
             let table_id = TableId(table_row.table_id);
             let schema = self.schema_for_table(table_id)?;
-            let row_type = self.row_type_for_table(table_id)?;
+            let row_type = self.row_type_for_table(table_id)?.into_owned();
             if self.committed_state.get_table(&table_id).is_none() {
                 self.committed_state.tables.insert(
                     table_id,
@@ -790,11 +791,11 @@ impl Inner {
         Ok(())
     }
 
-    fn row_type_for_table(&self, table_id: TableId) -> super::Result<ProductType> {
+    fn row_type_for_table(&self, table_id: TableId) -> super::Result<Cow<'_, ProductType>> {
         // Fetch the `ProductType` from the in memory table if it exists.
         // The `ProductType` is invalidated if the schema of the table changes.
         if let Some(row_type) = self.get_row_type(&table_id) {
-            return Ok(row_type.clone());
+            return Ok(Cow::Borrowed(row_type));
         }
 
         // Look up the columns for the table in question.
@@ -809,7 +810,7 @@ impl Inner {
             .into_iter()
             .map(|col| col.col_type.into())
             .collect();
-        Ok(ProductType { elements })
+        Ok(Cow::Owned(ProductType { elements }))
     }
 
     #[tracing::instrument(skip_all)]
@@ -1005,7 +1006,7 @@ impl Inner {
         {
             insert_table
         } else {
-            let row_type = self.row_type_for_table(TableId(index.table_id))?;
+            let row_type = self.row_type_for_table(TableId(index.table_id))?.into_owned();
             let schema = self.schema_for_table(TableId(index.table_id))?;
             self.tx_state.as_mut().unwrap().insert_tables.insert(
                 TableId(index.table_id),
@@ -1635,7 +1636,7 @@ impl Locking {
         for write in &transaction.writes {
             let table_id = TableId(write.set_id);
             let schema = inner.schema_for_table(table_id)?;
-            let row_type = inner.row_type_for_table(table_id)?;
+            let row_type = inner.row_type_for_table(table_id)?.into_owned();
             let table = inner.committed_state.tables.entry(table_id).or_insert(Table {
                 row_type: row_type.clone(),
                 schema,
@@ -1985,7 +1986,11 @@ impl MutTxDatastore for Locking {
     /// reflect the schema of the table.
     ///
     /// This function is known to be called quite frequently.
-    fn row_type_for_table_mut_tx(&self, tx: &Self::MutTxId, table_id: TableId) -> super::Result<ProductType> {
+    fn row_type_for_table_mut_tx<'tx>(
+        &self,
+        tx: &'tx Self::MutTxId,
+        table_id: TableId,
+    ) -> super::Result<Cow<'tx, ProductType>> {
         tx.lock.row_type_for_table(table_id)
     }
 

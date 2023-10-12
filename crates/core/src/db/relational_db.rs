@@ -22,6 +22,7 @@ use prometheus::HistogramVec;
 use spacetimedb_lib::ColumnIndexAttribute;
 use spacetimedb_lib::{data_key::ToDataKey, PrimaryKey};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
+use std::borrow::Cow;
 use std::fs::{create_dir_all, File};
 use std::ops::RangeBounds;
 use std::path::Path;
@@ -205,7 +206,7 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn row_schema_for_table(&self, tx: &MutTxId, table_id: u32) -> Result<ProductType, DBError> {
+    pub fn row_schema_for_table<'tx>(&self, tx: &'tx MutTxId, table_id: u32) -> Result<Cow<'tx, ProductType>, DBError> {
         self.inner.row_type_for_table_mut_tx(tx, TableId(table_id))
     }
 
@@ -214,13 +215,28 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn schema_for_column(&self, tx: &MutTxId, table_id: u32, col_id: u32) -> Result<AlgebraicType, DBError> {
-        let schema = self.row_schema_for_table(tx, table_id)?;
-        let col = schema
-            .elements
-            .get(col_id as usize)
-            .ok_or(TableError::ColumnNotFound(col_id))?;
-        Ok(col.algebraic_type.clone())
+    pub fn schema_for_column<'tx>(
+        &self,
+        tx: &'tx MutTxId,
+        table_id: u32,
+        col_id: u32,
+    ) -> Result<Cow<'tx, AlgebraicType>, DBError> {
+        Ok(match self.row_schema_for_table(tx, table_id)? {
+            Cow::Borrowed(schema) => Cow::Borrowed(
+                &schema
+                    .elements
+                    .get(col_id as usize)
+                    .ok_or(TableError::ColumnNotFound(col_id))?
+                    .algebraic_type,
+            ),
+            Cow::Owned(mut schema) => {
+                let col_idx = col_id as usize;
+                if col_idx >= schema.elements.len() {
+                    return Err(TableError::ColumnNotFound(col_id).into());
+                }
+                Cow::Owned(schema.elements.swap_remove(col_idx).algebraic_type)
+            }
+        })
     }
 
     pub fn decode_column(
