@@ -473,16 +473,15 @@ impl RelationalDB {
     /// where the column data identified by `cols` matches `value`.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
-    #[tracing::instrument(skip(self, tx, value))]
+    #[tracing::instrument(skip_all)]
     pub fn iter_by_col_eq<'a>(
         &'a self,
         tx: &'a MutTxId,
-        table_id: u32,
-        col_id: u32,
+        table_id: impl Into<TableId>,
+        cols: impl Into<NonEmpty<ColId>>,
         value: AlgebraicValue,
     ) -> Result<IterByColEq<'a>, DBError> {
-        self.inner
-            .iter_by_col_eq_mut_tx(tx, TableId(table_id), ColId(col_id), value)
+        self.inner.iter_by_col_eq_mut_tx(tx, table_id.into(), cols, value)
     }
 
     /// Returns an iterator,
@@ -493,12 +492,11 @@ impl RelationalDB {
     pub fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         tx: &'a MutTxId,
-        table_id: u32,
-        col_id: u32,
+        table_id: impl Into<TableId>,
+        cols: impl Into<NonEmpty<ColId>>,
         range: R,
     ) -> Result<IterByColRange<'a, R>, DBError> {
-        self.inner
-            .iter_by_col_range_mut_tx(tx, TableId(table_id), ColId(col_id), range)
+        self.inner.iter_by_col_range_mut_tx(tx, table_id.into(), cols, range)
     }
 
     #[tracing::instrument(skip(self, tx, row))]
@@ -642,11 +640,13 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use crate::address::Address;
+    use crate::db::datastore::locking_tx_datastore::IterByColEq;
     use crate::db::datastore::system_tables::StIndexRow;
     use crate::db::datastore::system_tables::StSequenceRow;
     use crate::db::datastore::system_tables::StTableRow;
     use crate::db::datastore::system_tables::ST_INDEXES_ID;
     use crate::db::datastore::system_tables::ST_SEQUENCES_ID;
+    use crate::db::datastore::traits::ColId;
     use crate::db::datastore::traits::ColumnDef;
     use crate::db::datastore::traits::IndexDef;
     use crate::db::datastore::traits::TableDef;
@@ -662,6 +662,33 @@ mod tests {
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::{AlgebraicType, AlgebraicValue, ProductType};
     use spacetimedb_sats::product;
+
+    fn column(name: &str, ty: AlgebraicType) -> ColumnDef {
+        ColumnDef {
+            col_name: name.to_string(),
+            col_type: ty,
+            is_autoinc: false,
+        }
+    }
+
+    fn index(name: &str, cols: &[u32]) -> IndexDef {
+        IndexDef {
+            table_id: 0,
+            cols: NonEmpty::collect(cols.iter().copied()).unwrap(),
+            name: name.to_string(),
+            is_unique: false,
+        }
+    }
+
+    fn table(name: &str, columns: Vec<ColumnDef>, indexes: Vec<IndexDef>) -> TableDef {
+        TableDef {
+            table_name: name.to_string(),
+            columns,
+            indexes,
+            table_type: StTableType::User,
+            table_access: StAccess::Public,
+        }
+    }
 
     #[test]
     fn test() -> ResultTest<()> {
@@ -816,7 +843,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(1)])?;
 
         let mut rows = stdb
-            .iter_by_col_range(&tx, table_id, 0, AlgebraicValue::I32(0)..)?
+            .iter_by_col_range(&tx, table_id, ColId(0), AlgebraicValue::I32(0)..)?
             .map(|r| *r.view().elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
         rows.sort();
@@ -842,7 +869,7 @@ mod tests {
 
         let tx = stdb.begin_tx();
         let mut rows = stdb
-            .iter_by_col_range(&tx, table_id, 0, AlgebraicValue::I32(0)..)?
+            .iter_by_col_range(&tx, table_id, ColId(0), AlgebraicValue::I32(0)..)?
             .map(|r| *r.view().elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
         rows.sort();
@@ -922,7 +949,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(0)])?;
 
         let mut rows = stdb
-            .iter_by_col_range(&tx, table_id, 0, AlgebraicValue::I64(0)..)?
+            .iter_by_col_range(&tx, table_id, ColId(0), AlgebraicValue::I64(0)..)?
             .map(|r| *r.view().elements[0].as_i64().unwrap())
             .collect::<Vec<i64>>();
         rows.sort();
@@ -957,7 +984,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(6)])?;
 
         let mut rows = stdb
-            .iter_by_col_range(&tx, table_id, 0, AlgebraicValue::I64(0)..)?
+            .iter_by_col_range(&tx, table_id, ColId(0), AlgebraicValue::I64(0)..)?
             .map(|r| *r.view().elements[0].as_i64().unwrap())
             .collect::<Vec<i64>>();
         rows.sort();
@@ -991,7 +1018,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(0)])?;
 
         let mut rows = stdb
-            .iter_by_col_range(&tx, table_id, 0, AlgebraicValue::I64(0)..)?
+            .iter_by_col_range(&tx, table_id, ColId(0), AlgebraicValue::I64(0)..)?
             .map(|r| *r.view().elements[0].as_i64().unwrap())
             .collect::<Vec<i64>>();
         rows.sort();
@@ -1009,7 +1036,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(0)])?;
 
         let mut rows = stdb
-            .iter_by_col_range(&tx, table_id, 0, AlgebraicValue::I64(0)..)?
+            .iter_by_col_range(&tx, table_id, ColId(0), AlgebraicValue::I64(0)..)?
             .map(|r| *r.view().elements[0].as_i64().unwrap())
             .collect::<Vec<i64>>();
         rows.sort();
@@ -1051,7 +1078,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(1)])?;
 
         let mut rows = stdb
-            .iter_by_col_range(&tx, table_id, 0, AlgebraicValue::I64(0)..)?
+            .iter_by_col_range(&tx, table_id, ColId(0), AlgebraicValue::I64(0)..)?
             .map(|r| *r.view().elements[0].as_i64().unwrap())
             .collect::<Vec<i64>>();
         rows.sort();
@@ -1143,7 +1170,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(0)])?;
 
         let mut rows = stdb
-            .iter_by_col_range(&tx, table_id, 0, AlgebraicValue::I64(0)..)?
+            .iter_by_col_range(&tx, table_id, ColId(0), AlgebraicValue::I64(0)..)?
             .map(|r| *r.view().elements[0].as_i64().unwrap())
             .collect::<Vec<i64>>();
         rows.sort();
@@ -1277,6 +1304,59 @@ mod tests {
         }
         assert_eq!(1, n);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_multi_column_index() -> ResultTest<()> {
+        let (stdb, _tmp_dir) = make_test_db()?;
+
+        let columns = vec![
+            column("a", AlgebraicType::U64),
+            column("b", AlgebraicType::U64),
+            column("c", AlgebraicType::U64),
+        ];
+
+        let indexes = vec![index("0", &[0, 1])];
+        let schema = table("t", columns, indexes);
+
+        let mut tx = stdb.begin_tx();
+        let table_id = stdb.create_table(&mut tx, schema)?;
+
+        stdb.insert(
+            &mut tx,
+            table_id,
+            product![AlgebraicValue::U64(0), AlgebraicValue::U64(0), AlgebraicValue::U64(1)],
+        )?;
+        stdb.insert(
+            &mut tx,
+            table_id,
+            product![AlgebraicValue::U64(0), AlgebraicValue::U64(1), AlgebraicValue::U64(2)],
+        )?;
+        stdb.insert(
+            &mut tx,
+            table_id,
+            product![AlgebraicValue::U64(1), AlgebraicValue::U64(2), AlgebraicValue::U64(2)],
+        )?;
+
+        let cols: NonEmpty<ColId> = NonEmpty::collect(vec![ColId(0), ColId(1)]).unwrap();
+        let value: AlgebraicValue = product![AlgebraicValue::U64(0), AlgebraicValue::U64(1)].into();
+
+        let IterByColEq::Index(mut iter) = stdb.iter_by_col_eq(&tx, table_id, cols, value)? else {
+            panic!("expected index iterator");
+        };
+
+        let Some(row) = iter.next() else {
+            panic!("expected non-empty iterator");
+        };
+
+        assert_eq!(
+            row.view(),
+            &product![AlgebraicValue::U64(0), AlgebraicValue::U64(1), AlgebraicValue::U64(2)]
+        );
+
+        // iter should only return a single row, so this count should now be 0.
+        assert_eq!(iter.count(), 0);
         Ok(())
     }
 
