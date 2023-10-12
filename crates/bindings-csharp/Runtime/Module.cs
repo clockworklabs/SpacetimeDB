@@ -17,6 +17,7 @@ public partial struct IndexDef
 
     public IndexDef(string name, Runtime.IndexType type, bool isUnique, uint[] columnIds)
     {
+        Trace.Assert(columnIds.Length > 0 , "Index need at least one column");
         IndexName = name;
         IsUnique = isUnique;
         Type = type;
@@ -48,7 +49,7 @@ public partial struct ConstraintDef
 
     public ConstraintDef(string name, byte kind, uint[] columnIds)
     {
-        //Trace.Assert(columnIds.Length >0, "Constraints requiere to have  at least one column");
+        Trace.Assert(columnIds.Length > 0 , "Constraints need at least one column");
         ConstraintName = name;
         Kind = kind;
         ColumnIds = columnIds;
@@ -130,7 +131,6 @@ public partial struct TableDesc
     public TableDesc(string tableName, ColumnAttrs[] columns, IndexDef[] indices, AlgebraicTypeRef data)
     {
         schema = new TableDef(tableName, columns, indices);
-        Console.WriteLine(schema.ToString());
         Data = data;
     }
 }
