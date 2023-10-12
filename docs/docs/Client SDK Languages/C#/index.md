@@ -22,10 +22,10 @@ Open the project in your IDE of choice.
 
 ## Add the NuGet package for the C# SpacetimeDB SDK
 
-Add the `spacetimedbsdk` [NuGet package](https://www.nuget.org/packages/spacetimedbsdk) using Visual Studio NuGet package manager or via the .NET CLI
+Add the `SpacetimeDB.ClientSDK` [NuGet package](https://www.nuget.org/packages/spacetimedbsdk) using Visual Studio NuGet package manager or via the .NET CLI
 
 ```bash
-dotnet add package spacetimedbsdk
+dotnet add package SpacetimeDB.ClientSDK
 ```
 
 ## Generate your module types
@@ -288,7 +288,7 @@ void OnConnect()
 
 ## OnIdentityReceived callback
 
-This callback is executed when we receive our credentials from the SpacetimeDB module. We'll use the `AuthToken` module to save our token to local storage, so that we can re-authenticate as the same user the next time we connect. We'll also store the identity in a global variable `local_identity` so that we can use it to check if we are the sender of a message or name change.
+This callback is executed when we receive our credentials from the SpacetimeDB module. We'll use the `AuthToken` module to save our token to local storage, so that we can re-authenticate as the same user the next time we connect. We'll also store the identity in a global variable `local_identity` so that we can use it to check if we are the sender of a message or name change. This callback also notifies us of our client's `Address`, an opaque identifier SpacetimeDB modules can use to distinguish connections by the same `Identity`, but we won't use it in our app.
 
 ```csharp
 void OnIdentityReceived(string authToken, Identity identity, Address _address)

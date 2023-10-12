@@ -345,14 +345,14 @@ We use the `connect` and `disconnect` reducers to update the logged in state of 
 
 ```rust
 #[spacetimedb(connect)]
-pub fn identity_connected(ctx: ReducerContext) {
+pub fn client_connected(ctx: ReducerContext) {
     // called when the client connects, we update the logged_in state to true
     update_player_login_state(ctx, true);
 }
 
 
 #[spacetimedb(disconnect)]
-pub fn identity_disconnected(ctx: ReducerContext) {
+pub fn client_disconnected(ctx: ReducerContext) {
     // Called when the client disconnects, we update the logged_in state to false
     update_player_login_state(ctx, false);
 }
@@ -545,7 +545,7 @@ The "local client cache" is a client-side view of the database, defined by the s
 
 
         // called when we receive the client identity from SpacetimeDB
-        SpacetimeDBClient.instance.onIdentityReceived += (token, identity) => {
+        SpacetimeDBClient.instance.onIdentityReceived += (token, identity, address) => {
             AuthToken.SaveToken(token);
             local_identity = identity;
         };

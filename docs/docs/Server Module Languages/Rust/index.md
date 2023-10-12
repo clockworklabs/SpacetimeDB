@@ -55,14 +55,14 @@ From `spacetimedb`, we import:
 
 - `spacetimedb`, an attribute macro we'll use to define tables and reducers.
 - `ReducerContext`, a special argument passed to each reducer.
-- `Identity`, a unique identifier for each connected client.
+- `Identity`, a unique identifier for each user.
 - `Timestamp`, a point in time. Specifically, an unsigned 64-bit count of milliseconds since the UNIX epoch.
 
 ## Define tables
 
 To get our chat server running, we'll need to store two kinds of data: information about each user, and records of all the messages that have been sent.
 
-For each `User`, we'll store the `Identity` of their client connection, an optional name they can set to identify themselves to other users, and whether they're online or not. We'll designate the `Identity` as our primary key, which enforces that it must be unique, indexes it for faster lookup, and allows clients to track updates.
+For each `User`, we'll store their `Identity`, an optional name they can set to identify themselves to other users, and whether they're online or not. We'll designate the `Identity` as our primary key, which enforces that it must be unique, indexes it for faster lookup, and allows clients to track updates.
 
 To `server/src/lib.rs`, add the definition of the table `User`:
 
@@ -93,7 +93,7 @@ pub struct Message {
 
 We want to allow users to set their names, because `Identity` is not a terribly user-friendly identifier. To that effect, we define a reducer `set_name` which clients can invoke to set their `User.name`. It will validate the caller's chosen name, using a function `validate_name` which we'll define next, then look up the `User` record for the caller and update it to store the validated name. If the name fails the validation, the reducer will fail.
 
-Each reducer may accept as its first argument a `ReducerContext`, which includes the `Identity` of the client that called the reducer, and the `Timestamp` when it was invoked. For now, we only need the `Identity`, `ctx.sender`.
+Each reducer may accept as its first argument a `ReducerContext`, which includes the `Identity` and `Address` of the client that called the reducer, and the `Timestamp` when it was invoked. For now, we only need the `Identity`, `ctx.sender`.
 
 It's also possible to call `set_name` via the SpacetimeDB CLI's `spacetime call` command without a connection, in which case no `User` record will exist for the caller. We'll return an error in this case, but you could alter the reducer to insert a `User` row for the module owner. You'll have to decide whether the module owner is always online or always offline, though.
 

@@ -116,7 +116,9 @@ The following types are supported out of the box and can be stored in the databa
 And a couple of special custom types:
 
 - `SpacetimeDB.SATS.Unit` - semantically equivalent to an empty struct, sometimes useful in generic contexts where C# doesn't permit `void`.
-- `Identity` (`SpacetimeDB.Runtime.Identity`) - a unique identifier for each connected client; internally a byte blob but can be printed, hashed and compared for equality.
+- `Identity` (`SpacetimeDB.Runtime.Identity`) - a unique identifier for each user; internally a byte blob but can be printed, hashed and compared for equality.
+- `Address` (`SpacetimeDB.Runtime.Address`) - an identifier which disamgibuates connections by the same `Identity`; internally a byte blob but can be printed, hashed and compared for equality.
+
 
 #### Custom types
 
@@ -245,13 +247,14 @@ public static void Add(string name, int age)
 }
 ```
 
-If a reducer has an argument with a type `DbEventArgs` (`SpacetimeDB.Runtime.DbEventArgs`), it will be provided with event details such as the sender identity (`SpacetimeDB.Runtime.Identity`) and the time (`DateTimeOffset`) of the invocation:
+If a reducer has an argument with a type `DbEventArgs` (`SpacetimeDB.Runtime.DbEventArgs`), it will be provided with event details such as the sender identity (`SpacetimeDB.Runtime.Identity`), sender address (`SpacetimeDB.Runtime.Address?`) and the time (`DateTimeOffset`) of the invocation:
 
 ```csharp
 [SpacetimeDB.Reducer]
 public static void PrintInfo(DbEventArgs e)
 {
-    Log($"Sender: {e.Sender}");
+    Log($"Sender identity: {e.Sender}");
+    Log($"Sender address: {e.Address}");
     Log($"Time: {e.Time}");
 }
 ```
