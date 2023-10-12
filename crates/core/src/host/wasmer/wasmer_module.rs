@@ -166,13 +166,7 @@ impl module_host_actor::WasmInstancePre for WasmerModule {
 
     fn instantiate(&self, env: InstanceEnv, func_names: &FuncNames) -> Result<Self::Instance, InitializationError> {
         let mut store = Store::new(self.engine.clone());
-        let env = WasmInstanceEnv {
-            instance_env: env,
-            mem: None,
-            buffers: Default::default(),
-            iters: Default::default(),
-            timing_spans: Default::default(),
-        };
+        let env = WasmInstanceEnv::new(env);
         let env = FunctionEnv::new(&mut store, env);
         let imports = self.imports(&mut store, &env);
         let instance = Instance::new(&mut store, &self.module, &imports)
@@ -180,7 +174,7 @@ impl module_host_actor::WasmInstancePre for WasmerModule {
 
         let mem = Mem::extract(&instance.exports).unwrap();
 
-        env.as_mut(&mut store).mem = Some(mem);
+        env.as_mut(&mut store).instantiate(mem);
 
         // Note: this budget is just for initializers
         let budget = EnergyQuanta::DEFAULT_BUDGET.as_points();
@@ -201,8 +195,7 @@ impl module_host_actor::WasmInstancePre for WasmerModule {
                 Ok(errbuf) => {
                     let errbuf = env
                         .as_mut(&mut store)
-                        .buffers
-                        .take(errbuf)
+                        .take_buffer(errbuf)
                         .unwrap_or_else(|| "unknown error".as_bytes().into());
                     let errbuf = crate::util::string_from_utf8_lossy_owned(errbuf.into()).into();
                     // TODO: catch this and return the error message to the http client
@@ -246,10 +239,12 @@ impl WasmerInstance {
         let bytes = self
             .env
             .as_mut(store)
-            .buffers
-            .take(buf)
+            .take_buffer(buf)
             .ok_or(DescribeError::BadBuffer)?;
-        self.env.as_mut(store).buffers.clear();
+
+        // Clear all of the instance state associated to this describer call.
+        self.env.as_mut(store).clear_reducer_state();
+
         Ok(bytes)
     }
 }
@@ -262,7 +257,7 @@ impl module_host_actor::WasmInstance for WasmerInstance {
     }
 
     fn instance_env(&self) -> &InstanceEnv {
-        &self.env.as_ref(&self.store).instance_env
+        self.env.as_ref(&self.store).instance_env()
     }
 
     type Trap = wasmer::RuntimeError;
@@ -321,7 +316,7 @@ impl WasmerInstance {
             .get_typed_function::<Args, u32>(store, reducer_symbol)
             .expect("invalid reducer");
 
-        let bufs = bufs.map(|data| self.env.as_mut(store).buffers.insert(data));
+        let bufs = bufs.map(|data| self.env.as_mut(store).insert_buffer(data));
 
         // let guard = pprof::ProfilerGuardBuilder::default().frequency(2500).build().unwrap();
 
@@ -336,13 +331,15 @@ impl WasmerInstance {
                 let errmsg = self
                     .env
                     .as_mut(store)
-                    .buffers
-                    .take(errbuf)
+                    .take_buffer(errbuf)
                     .ok_or_else(|| RuntimeError::new("invalid buffer handle"))?;
                 Err(crate::util::string_from_utf8_lossy_owned(errmsg.into()).into())
             })
         });
-        self.env.as_mut(store).buffers.clear();
+
+        // Clear all of the instance state associated to this single reducer call.
+        self.env.as_mut(store).clear_reducer_state();
+
         // .call(store, sender_buf.ptr.cast(), timestamp, args_buf.ptr, args_buf.len)
         // .and_then(|_| {});
         let duration = start.elapsed();
