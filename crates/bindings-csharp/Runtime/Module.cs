@@ -13,9 +13,9 @@ public partial struct IndexDef
     string IndexName;
     bool IsUnique;
     Runtime.IndexType Type;
-    byte[] ColumnIds;
-        
-    public IndexDef(string name, Runtime.IndexType type, bool isUnique, byte[] columnIds)
+    uint[] ColumnIds;
+
+    public IndexDef(string name, Runtime.IndexType type, bool isUnique, uint[] columnIds)
     {
         IndexName = name;
         IsUnique = isUnique;
@@ -44,9 +44,9 @@ public partial struct ConstraintDef
     string ConstraintName;
     // bitflags should be serialized as bytes rather than sum types
     byte Kind;
-    UInt32[] ColumnIds;
+    uint[] ColumnIds;
 
-    public ConstraintDef(string name, byte kind, UInt32[] columnIds)
+    public ConstraintDef(string name, byte kind, uint[] columnIds)
     {
         //Trace.Assert(columnIds.Length >0, "Constraints requiere to have  at least one column");
         ConstraintName = name;
@@ -61,21 +61,21 @@ public partial struct SequenceDef
 
     string SequenceName;
     UInt32 ColPos;
-    Int64 increment;
-    Int64? start;
-    Int64? min_value;
-    Int64? max_value;
-    Int64 allocated;
+    Int128 increment;
+    Int128? start;
+    Int128? min_value;
+    Int128? max_value;
+    Int128 allocated;
 
-    public SequenceDef(string sequenceName, uint colPos, long increment= 1, long? start= null, long? min_value= null, long? max_value= null, long allocated = 4_096)
+    public SequenceDef(string sequenceName, uint colPos, Int128? increment = null, Int128? start = null, Int128? min_value = null, Int128? max_value = null, Int128? allocated = null)
     {
         SequenceName = sequenceName;
         ColPos = colPos;
-        this.increment = increment;
+        this.increment = increment ?? 1;
         this.start = start;
         this.min_value = min_value;
         this.max_value = max_value;
-        this.allocated = allocated;
+        this.allocated = allocated ?? 4_096;
     }
 }
 
@@ -124,13 +124,13 @@ public partial struct TableDef
 [SpacetimeDB.Type]
 public partial struct TableDesc
 {
-
     TableDef schema;
     AlgebraicTypeRef Data;
 
     public TableDesc(string tableName, ColumnAttrs[] columns, IndexDef[] indices, AlgebraicTypeRef data)
     {
         schema = new TableDef(tableName, columns, indices);
+        Console.WriteLine(schema.ToString());
         Data = data;
     }
 }

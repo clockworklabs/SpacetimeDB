@@ -184,7 +184,7 @@ public class Module : IIncrementalGenerator
                 FFI.RegisterTable(new SpacetimeDB.Module.TableDesc(
                     nameof({t.FullName}),
                     new SpacetimeDB.Module.ColumnAttrs[] {{ {string.Join(", ", t.Fields.Select(f => $"new SpacetimeDB.Module.ColumnAttrs(\"{f.Name}\", {f.TypeInfo}.AlgebraicType, SpacetimeDB.Module.ConstraintFlags.{f.IndexKind})"))} }},
-                    new SpacetimeDB.Module.IndexDef[] {{ }},    
+                    new SpacetimeDB.Module.IndexDef[] {{ }},
                     {t.FullName}.GetSatsTypeInfo().AlgebraicType.TypeRef
                 ));
             "
