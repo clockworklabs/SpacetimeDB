@@ -250,7 +250,7 @@ We handle warnings on rejected messages the same way as rejected names, though t
 Add this function before the `register_callbacks` function:
 
 ```python
-def on_send_message_reducer(sender, status, message, msg):
+def on_send_message_reducer(sender, _addr, status, message, msg):
     if sender == local_identity:
         if status == "failed":
             print(f"Failed to send message: {message}")
