@@ -487,7 +487,7 @@ namespace SpacetimeDB
             {
                 try
                 {
-                    await webSocket.Connect(token, host, addressOrName, sslEnabled, clientAddress);
+                    await webSocket.Connect(token, uri, addressOrName, clientAddress);
                 }
                 catch (Exception e)
                 {
