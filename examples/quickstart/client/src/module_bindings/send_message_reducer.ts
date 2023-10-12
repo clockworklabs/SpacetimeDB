@@ -14,6 +14,7 @@ import {
   SumTypeVariant,
   Serializer,
   Identity,
+  Address,
   ReducerEvent,
 } from "@clockworklabs/spacetimedb-sdk";
 
@@ -25,7 +26,7 @@ export class SendMessageReducer {
         BuiltinType.Type.String
       );
       serializer.write(_textType, _text);
-      __SPACETIMEDB__.spacetimeDBClient.call("SendMessage", serializer);
+      __SPACETIMEDB__.spacetimeDBClient.call("send_message", serializer);
     }
   }
 
