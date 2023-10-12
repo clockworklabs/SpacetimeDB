@@ -215,7 +215,7 @@ mod tests {
         let table = mem_table(head.clone(), [row.clone()]);
         let table_id = create_table_with_rows(db, tx, table_name, head.clone(), &[row.clone()])?;
 
-        let schema = db.schema_for_table(tx, table_id).unwrap();
+        let schema = db.schema_for_table(tx, table_id).unwrap().into_owned();
 
         let op = TableOp {
             op_type: 1,

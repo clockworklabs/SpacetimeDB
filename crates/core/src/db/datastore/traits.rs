@@ -8,7 +8,7 @@ use spacetimedb_lib::{ColumnIndexAttribute, DataKey, Hash};
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue};
 use spacetimedb_vm::expr::SourceExpr;
-use std::{ops::RangeBounds, sync::Arc};
+use std::{borrow::Cow, ops::RangeBounds, sync::Arc};
 
 use super::{system_tables::StTableRow, Result};
 
@@ -360,6 +360,18 @@ impl From<ProductType> for TableDef {
     }
 }
 
+impl From<&TableSchema> for TableDef {
+    fn from(value: &TableSchema) -> Self {
+        Self {
+            table_name: value.table_name.clone(),
+            columns: value.columns.iter().cloned().map(Into::into).collect(),
+            indexes: value.indexes.iter().cloned().map(Into::into).collect(),
+            table_type: value.table_type,
+            table_access: value.table_access,
+        }
+    }
+}
+
 impl From<TableSchema> for TableDef {
     fn from(value: TableSchema) -> Self {
         Self {
@@ -467,14 +479,21 @@ pub trait TxDatastore: DataRow + Tx {
 pub trait MutTxDatastore: TxDatastore + MutTx {
     // Tables
     fn create_table_mut_tx(&self, tx: &mut Self::MutTxId, schema: TableDef) -> Result<TableId>;
-    fn row_type_for_table_mut_tx(&self, tx: &Self::MutTxId, table_id: TableId) -> Result<ProductType>;
-    fn schema_for_table_mut_tx(&self, tx: &Self::MutTxId, table_id: TableId) -> Result<TableSchema>;
+    // In these methods, we use `'tx` because the return type must borrow data
+    // from `Inner` in the `Locking` implementation,
+    // and `Inner` lives in `tx: &MutTxId`.
+    fn row_type_for_table_mut_tx<'tx>(
+        &self,
+        tx: &'tx Self::MutTxId,
+        table_id: TableId,
+    ) -> Result<Cow<'tx, ProductType>>;
+    fn schema_for_table_mut_tx<'tx>(&self, tx: &'tx Self::MutTxId, table_id: TableId) -> Result<Cow<'tx, TableSchema>>;
     fn drop_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId) -> Result<()>;
     fn rename_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, new_name: &str) -> Result<()>;
     fn table_id_exists(&self, tx: &Self::MutTxId, table_id: &TableId) -> bool;
     fn table_id_from_name_mut_tx(&self, tx: &Self::MutTxId, table_name: &str) -> Result<Option<TableId>>;
     fn table_name_from_id_mut_tx(&self, tx: &Self::MutTxId, table_id: TableId) -> Result<Option<String>>;
-    fn get_all_tables_mut_tx(&self, tx: &Self::MutTxId) -> super::Result<Vec<TableSchema>> {
+    fn get_all_tables_mut_tx<'tx>(&self, tx: &'tx Self::MutTxId) -> super::Result<Vec<Cow<'tx, TableSchema>>> {
         let mut tables = Vec::new();
         let table_rows = self.iter_mut_tx(tx, TableId(ST_TABLES_ID))?.collect::<Vec<_>>();
         for data_ref in table_rows {

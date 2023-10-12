@@ -231,6 +231,27 @@ impl AlgebraicValue {
             Self::String(_) => AlgebraicType::String,
         }
     }
+
+    /// Returns whether this value represents a numeric zero.
+    ///
+    /// Can only be true where the type is numeric.
+    pub fn is_numeric_zero(&self) -> bool {
+        match *self {
+            Self::I8(x) => x == 0,
+            Self::U8(x) => x == 0,
+            Self::I16(x) => x == 0,
+            Self::U16(x) => x == 0,
+            Self::I32(x) => x == 0,
+            Self::U32(x) => x == 0,
+            Self::I64(x) => x == 0,
+            Self::U64(x) => x == 0,
+            Self::I128(x) => x == 0,
+            Self::U128(x) => x == 0,
+            Self::F32(x) => x == 0.0,
+            Self::F64(x) => x == 0.0,
+            _ => false,
+        }
+    }
 }
 
 impl<T: Into<AlgebraicValue>> From<Option<T>> for AlgebraicValue {
