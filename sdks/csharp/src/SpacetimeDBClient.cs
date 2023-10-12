@@ -81,7 +81,7 @@ namespace SpacetimeDB
         /// <summary>
         /// Invoked when a reducer is returned with an error and has no client-side handler.
         /// </summary>
-        public event Action<ReducerEvent> onUnhandledReducerError;
+        public event Action<ReducerEventBase> onUnhandledReducerError;
 
         /// <summary>
         /// Called when we receive an identity from the server
