@@ -257,7 +257,7 @@ impl module_host_actor::WasmInstance for WasmerInstance {
     }
 
     fn instance_env(&self) -> &InstanceEnv {
-        &self.env.as_ref(&self.store).instance_env()
+        self.env.as_ref(&self.store).instance_env()
     }
 
     type Trap = wasmer::RuntimeError;
