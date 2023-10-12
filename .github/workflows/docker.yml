@@ -2,10 +2,6 @@ name: Docker Image
 
 on:
   push:
-    branches:
-      - master
-      - staging
-      - development
 
 jobs:
   docker-amd64:
