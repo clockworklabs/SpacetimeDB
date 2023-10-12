@@ -5,7 +5,7 @@ using System.Collections.Concurrent;
 // our local client SpacetimeDB identity
 Identity? local_identity = null;
 // declare a thread safe queue to store commands in format (command, args)
-ConcurrentQueue<(string, string)> input_queue = new ConcurrentQueue<(string, string)>();
+ConcurrentQueue<(string,string)> input_queue = new ConcurrentQueue<(string, string)>();
 // declare a threadsafe cancel token to cancel the process loop
 CancellationTokenSource cancel_token = new CancellationTokenSource();
 
@@ -24,6 +24,7 @@ void Main()
 
     InputLoop();
 
+    // this signals the ProcessThread to stop
     cancel_token.Cancel();
     thread.Join();
 }
@@ -45,9 +46,9 @@ void RegisterCallbacks()
 
 string UserNameOrIdentity(User user) => user.Name ?? user.Identity.ToString()!.Substring(0, 8);
 
-void User_OnInsert(User insertedValue, ReducerEvent dbEvent)
+void User_OnInsert(User insertedValue, ReducerEvent? dbEvent)
 {
-    if (insertedValue.Online)
+    if(insertedValue.Online)
     {
         Console.WriteLine($"{UserNameOrIdentity(insertedValue)} is online");
     }
@@ -55,13 +56,13 @@ void User_OnInsert(User insertedValue, ReducerEvent dbEvent)
 
 void User_OnUpdate(User oldValue, User newValue, ReducerEvent dbEvent)
 {
-    if (oldValue.Name != newValue.Name)
+    if(oldValue.Name != newValue.Name)
     {
         Console.WriteLine($"{UserNameOrIdentity(oldValue)} renamed to {newValue.Name}");
     }
-    if (oldValue.Online != newValue.Online)
+    if(oldValue.Online != newValue.Online)
     {
-        if (newValue.Online)
+        if(newValue.Online)
         {
             Console.WriteLine($"{UserNameOrIdentity(newValue)} connected.");
         }
@@ -76,7 +77,7 @@ void PrintMessage(Message message)
 {
     var sender = User.FilterByIdentity(message.Sender);
     var senderName = "unknown";
-    if (sender != null)
+    if(sender != null)
     {
         senderName = UserNameOrIdentity(sender);
     }
@@ -84,9 +85,9 @@ void PrintMessage(Message message)
     Console.WriteLine($"{senderName}: {message.Text}");
 }
 
-void Message_OnInsert(Message insertedValue, ReducerEvent dbEvent)
+void Message_OnInsert(Message insertedValue, ReducerEvent? dbEvent)
 {
-    if (dbEvent != null)
+    if(dbEvent != null)
     {
         PrintMessage(insertedValue);
     }
@@ -94,7 +95,7 @@ void Message_OnInsert(Message insertedValue, ReducerEvent dbEvent)
 
 void Reducer_OnSetNameEvent(ReducerEvent reducerEvent, string name)
 {
-    if (reducerEvent.Identity == local_identity && reducerEvent.Status == ClientApi.Event.Types.Status.Failed)
+    if(reducerEvent.Identity == local_identity && reducerEvent.Status == ClientApi.Event.Types.Status.Failed)
     {
         Console.Write($"Failed to change name to {name}");
     }
@@ -113,7 +114,7 @@ void OnConnect()
     SpacetimeDBClient.instance.Subscribe(new List<string> { "SELECT * FROM User", "SELECT * FROM Message" });
 }
 
-void OnIdentityReceived(string authToken, Identity identity)
+void OnIdentityReceived(string authToken, Identity identity, Address _address)
 {
     local_identity = identity;
     AuthToken.SaveToken(authToken);
@@ -133,13 +134,12 @@ void OnSubscriptionApplied()
     PrintMessagesInOrder();
 }
 
-const string HOST = "localhost:3000";
-const string DBNAME = "chat2";
-const bool SSL_ENABLED = false;
+const string HOST = "http://localhost:3000";
+const string DBNAME = "chatqs";
 
 void ProcessThread()
 {
-    SpacetimeDBClient.instance.Connect(AuthToken.Token, HOST, DBNAME, SSL_ENABLED);
+    SpacetimeDBClient.instance.Connect(AuthToken.Token, HOST, DBNAME);
 
     // loop until cancellation token
     while (!cancel_token.IsCancellationRequested)

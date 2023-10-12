@@ -135,6 +135,18 @@ namespace SpacetimeDB
             }
 
             /// <summary>
+            /// Decodes the given AlgebraicValue into the out parameter `obj`.
+            /// Does NOT cache the resulting value! This should only be used with rows
+            /// that don't participate in the usual client cache lifecycle, i.e. OneOffQuery.
+            /// </summary>
+            /// <param name="value">The AlgebraicValue to decode.</param>
+            /// <param name="obj">The domain object for `value`</param>
+            public void SetAndForgetDecodedValue(AlgebraicValue value, out object obj)
+            {
+                obj = decoderFunc(value);
+            }
+
+            /// <summary>
             /// Inserts the value into the table. There can be no existing value with the provided pk.
             /// </summary>
             /// <returns></returns>
