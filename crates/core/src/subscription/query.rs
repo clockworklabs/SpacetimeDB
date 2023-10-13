@@ -601,7 +601,7 @@ mod tests {
             tables: vec![data.clone()],
         };
 
-        check_query_incr(&db, &mut tx, &s, &update, 3, &[row])?;
+        check_query_incr(&db, &mut tx, &s, &update, 1, &[row])?;
 
         let q = QueryExpr::new(db_table((&schema).into(), "_inventory".to_owned(), schema.table_id));
 
@@ -656,7 +656,7 @@ mod tests {
             },
         ]);
 
-        check_query_eval(&db, &mut tx, &s, 3, &[product!(1u64, "health")])?;
+        check_query_eval(&db, &mut tx, &s, 1, &[product!(1u64, "health")])?;
 
         let row = product!(1u64, "health");
 
@@ -680,7 +680,7 @@ mod tests {
 
         let update = DatabaseUpdate { tables: vec![data] };
 
-        check_query_incr(&db, &mut tx, &s, &update, 3, &[row])?;
+        check_query_incr(&db, &mut tx, &s, &update, 1, &[row])?;
 
         Ok(())
     }
