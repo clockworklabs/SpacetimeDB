@@ -2,11 +2,26 @@
 
 ![UnityTutorial-HeroImage](/images/unity-tutorial/UnityTutorial-HeroImage.JPG)
 
+Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
+
 The objective of this tutorial is to help you become acquainted with the basic features of SpacetimeDB. By the end of this tutorial you should have a basic understanding of what SpacetimeDB offers for developers making multiplayer games. It assumes that you have a basic understanding of the Unity Editor, using a command line terminal, and coding.
+
+In this tutorial we'll be giving you some CLI commands to execute. If you are using Windows we recommend using Git Bash or powershell. If you're on mac we recommend you use the Terminal application. If you encouter issues with any of the commands in this guide, please reach out to us through our discord server and we would be happy to help assist you.
+
+## Prepare Project Structure
+
+This project is separated into two sub-projects, one for the server (module) code and one for the client code. First we'll create the main directory, this directory name doesn't matter but we'll give you an example:
+
+```bash
+mkdir SpacetimeDBUnityTutorial
+cd SpacetimeDBUnityTutorial
+```
+
+In the following sections we'll be adding a client directory and a server directory, which will contain the client files and the module (server) files respectively. We'll start by populating the client directory.
 
 ## Setting up the Tutorial Unity Project
 
-In this section, we will guide you through the process of setting up the Unity Project that will serve as the starting point for our tutorial. By the end of this section, you will have a basic Unity project ready to integrate SpacetimeDB functionality.
+In this section, we will guide you through the process of setting up a Unity Project that will serve as the starting point for our tutorial. By the end of this section, you will have a basic Unity project and be ready to implement the server functionality.
 
 ### Step 1: Create a Blank Unity Project
 
@@ -14,11 +29,9 @@ In this section, we will guide you through the process of setting up the Unity P
 
 ![UnityHub-NewProject](/images/unity-tutorial/UnityHub-NewProject.JPG)
 
-2. Choose a suitable project name and location. For this tutorial, we recommend creating an empty folder for your tutorial project and selecting that as the project location, with the project being named "Client".
+2. For Project Name use `client`. For Project Location make sure that you use your `SpacetimeDBUnityTutorial` directory. This is the directory that we created in a previous step.
 
-This allows you to have a single subfolder that contains both the Unity project in a folder called "Client" and the SpacetimeDB server module in a folder called "Server" which we will create later in this tutorial.
-
-Ensure that you have selected the **3D (URP)** template for this project.
+**Important: Ensure that you have selected the 3D (URP) template for this project.** If you forget to do this then Unity won't be able to properly render the materials in the scene!
 
 ![UnityHub-3DURP](/images/unity-tutorial/UnityHub-3DURP.JPG)
 
@@ -50,6 +63,7 @@ In this step, we will import the provided Unity tutorial package that contains t
 
 3. Browse and select the downloaded tutorial package file.
 4. Unity will prompt you with an import settings dialog. Ensure that all the files are selected and click "Import" to import the package into your project.
+5. At this point in the project, you shouldn't have any errors.
 
 ![Unity-ImportCustomPackage2](/images/unity-tutorial/Unity-ImportCustomPackage2.JPG)
 
@@ -77,221 +91,145 @@ Congratulations! You have successfully set up the basic single-player game proje
 
 ## Writing our SpacetimeDB Server Module
 
-### Step 1: Create the Module
+At this point you should have the single player game working. In your CLI, your current working directory should be within your `SpacetimeDBUnityTutorial` directory that we created in a previous step.
 
-1. It is important that you already have SpacetimeDB [installed](/install).
+### Create the Module
 
-2. Run the SpacetimeDB standalone using the installed CLI. In your terminal or command window, run the following command:
+1. It is important that you already have the SpacetimeDB CLI tool [installed](/install).
+
+2. Run SpacetimeDB locally using the installed CLI. In a **new** terminal or command window, run the following command:
 
 ```bash
 spacetime start
 ```
 
-3. Make sure your CLI is pointed to your local instance of SpacetimeDB. You can do this by running the following command:
+3. Run the following command to initialize the SpacetimeDB server project with Rust as the language:
 
 ```bash
-spacetime server set http://localhost:3000
+spacetime init --lang=rust server
 ```
 
-4. Open a new command prompt or terminal and navigate to the folder where your Unity project is located using the cd command. For example:
+This command creates a new folder named "server" within your Unity project directory and sets up the SpacetimeDB server project with Rust as the programming language.
 
-```bash
-cd path/to/tutorial_project_folder
-```
+### Understanding Entity Component Systems
 
-5. Run the following command to initialize the SpacetimeDB server project with Rust as the language:
-
-```bash
-spacetime init --lang=rust ./Server
-```
-
-This command creates a new folder named "Server" within your Unity project directory and sets up the SpacetimeDB server project with Rust as the programming language.
-
-### Step 2: SpacetimeDB Tables
-
-1. Using your favorite code editor (we recommend VS Code) open the newly created lib.rs file in the Server folder.
-2. Erase everything in the file as we are going to be writing our module from scratch.
-
----
-
-**Understanding ECS**
-
-ECS is a game development architecture that separates game objects into components for better flexibility and performance. You can read more about the ECS design pattern [here](https://en.wikipedia.org/wiki/Entity_component_system).
+Entity Component System (ECS) is a game development architecture that separates game objects into components for better flexibility and performance. You can read more about the ECS design pattern [here](https://en.wikipedia.org/wiki/Entity_component_system).
 
 We chose ECS for this example project because it promotes scalability, modularity, and efficient data management, making it ideal for building multiplayer games with SpacetimeDB.
 
----
+### SpacetimeDB Tables
 
-3. Add the following code to lib.rs.
+In this section we'll be making some edits to the file `server/src/lib.rs`. We recommend you open up this file in an IDE like VSCode or RustRover.
 
-We are going to start by adding the global `Config` table. Right now it only contains the "message of the day" but it can be extended to store other configuration variables.
+**Important: Open the `server/src/lib.rs` file and delete its contents. We will be writing it from scratch here.**
 
-You'll notice we have a custom `spacetimedb(table)` attribute that tells SpacetimeDB that this is a SpacetimeDB table. SpacetimeDB automatically generates several functions for us for inserting, updating and querying the table created as a result of this attribute.
+First we need to add some imports at the top of the file.
 
-The `primarykey` attribute on the version not only ensures uniqueness, preventing duplicate values for the column, but also guides the client to determine whether an operation should be an insert or an update. NOTE: Our `version` column in this `Config` table is always 0. This is a trick we use to store
-global variables that can be accessed from anywhere.
-
-We also use the built in rust `derive(Clone)` function to automatically generate a clone function for this struct that we use when updating the row.
+**Copy and paste into lib.rs:**
 
 ```rust
-use spacetimedb::{spacetimedb, Identity, SpacetimeType, Timestamp, ReducerContext};
+use spacetimedb::{spacetimedb, Identity, SpacetimeType, ReducerContext};
 use log;
+```
 
+Then we are going to start by adding the global `Config` table. Right now it only contains the "message of the day" but it can be extended to store other configuration variables. This also uses a couple of macros, like `#[spacetimedb(table)]` which you can learn more about in our rust module reference. Simply put, this just tells SpacetimeDB to create a table which uses this struct as the schema for the table.
+
+**Append to the bottom of lib.rs:**
+
+```rust
+// We're using this table as a singleton, so there should typically only be one element where the version is 0.
 #[spacetimedb(table)]
 #[derive(Clone)]
 pub struct Config {
-    // Config is a global table with a single row. This table will be used to
-    // store configuration or global variables
-
     #[primarykey]
-    // always 0
-    // having a table with a primarykey field which is always zero is a way to store singleton global state
     pub version: u32,
-
     pub message_of_the_day: String,
 }
-
 ```
 
-The next few tables are all components in the ECS system for our spawnable entities. Spawnable Entities are any objects in the game simulation that can have a world location. In this tutorial we will have only one type of spawnable entity, the Player.
+Next we're going to define a new `SpacetimeType` called `StdbVector3` which we're going to use to store positions. The difference between a `#[derive(SpacetimeType)]` and a `#[spacetimedb(table)]` is that tables actually store data, whereas the deriving `SpacetimeType` just allows you to create a new column of that type in a SpacetimeDB table. So therefore, `StdbVector3` is not itself a table.
 
-The first component is the `SpawnableEntityComponent` that allows us to access any spawnable entity in the world by its entity_id. The `autoinc` attribute designates an auto-incrementing column in SpacetimeDB, generating sequential values for new entries. When inserting 0 with this attribute, it gets replaced by the next value in the sequence.
+**Append to the bottom of lib.rs:**
 
 ```rust
-#[spacetimedb(table)]
-pub struct SpawnableEntityComponent {
-    // All entities that can be spawned in the world will have this component.
-    // This allows us to find all objects in the world by iterating through
-    // this table. It also ensures that all world objects have a unique
-    // entity_id.
-
-    #[primarykey]
-    #[autoinc]
-    pub entity_id: u64,
+// This allows us to store 3D points in tables.
+#[derive(SpacetimeType, Clone)]
+pub struct StdbVector3 {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
 }
 ```
 
-The `PlayerComponent` table connects this entity to a SpacetimeDB identity - a user's "public key." In the context of this tutorial, each user is permitted to have just one Player entity. To guarantee this, we apply the `unique` attribute to the `owner_id` column. If a uniqueness constraint is required on a column aside from the `primarykey`, we make use of the `unique` attribute. This mechanism makes certain that no duplicate values exist within the designated column.
+Now we're going to create a table which actually uses the `StdbVector3` that we just defined. The `EntityComponent` is associated with all entities in the world, including players.
 
 ```rust
+// This stores information related to all entities in our game. In this tutorial
+// all entities must at least have an entity_id, a location, a direction and they
+// must specify whether or not they are moving.
+#[spacetimedb(table)]
+#[derive(Clone)]
+pub struct EntityComponent {
+    #[primarykey]
+    // The autoinc macro here just means every time we insert into this table
+    // we will receive a new row where this value will be increased by one. This
+    // allows us to easily get rows where `entity_id` is unique.
+    #[autoinc]
+    pub entity_id: u64,
+    pub location: StdbVector3,
+    pub direction: f32,
+    pub moving: bool,
+}
+```
+
+Next we will define the `PlayerComponent` table. The `PlayerComponent` table is used to store information related to players. Each player will have a row in this table, and will also have a row in the `EntityComponent` table with a matching `entity_id`. You'll see how this works later in the `create_player` reducer.
+
+**Append to the bottom of lib.rs:**
+
+```rust
+// All players have this component and it associates an entity with the user's 
+// Identity. It also stores their username and whether or not they're logged in.
 #[derive(Clone)]
 #[spacetimedb(table)]
 pub struct PlayerComponent {
-    // All players have this component and it associates the spawnable entity
-    // with the user's identity. It also stores their username.
-
+    // An entity_id that matches an entity_id in the `EntityComponent` table.
     #[primarykey]
     pub entity_id: u64,
+    // The user's identity, which is unique to each player
     #[unique]
     pub owner_id: Identity,
-
-    // username is provided to the create_player reducer
     pub username: String,
-    // this value is updated when the user logs in and out
     pub logged_in: bool,
 }
 ```
 
-The next component, `MobileLocationComponent`, is used to store the last known location and movement direction for spawnable entities that can move smoothly through the world.
+Next we write our very first reducer, `create_player`:
 
-Using the `derive(SpacetimeType)` attribute, we define a custom SpacetimeType, StdbVector2, that stores 2D positions. Marking it a `SpacetimeType` allows it to be used in SpacetimeDB columns and reducer calls.
-
-We are also making use of the SpacetimeDB `Timestamp` type for the `move_start_timestamp` column. Timestamps represent the elapsed time since the Unix epoch (January 1, 1970, at 00:00:00 UTC) and are not dependent on any specific timezone.
+**Append to the bottom of lib.rs:**
 
 ```rust
-#[derive(SpacetimeType, Clone)]
-pub struct StdbVector2 {
-    // A spacetime type which can be used in tables and reducers to represent
-    // a 2d position.
-    pub x: f32,
-    pub z: f32,
-}
-
-impl StdbVector2 {
-    // this allows us to use StdbVector2::ZERO in reducers
-    pub const ZERO: StdbVector2 = StdbVector2 { x: 0.0, z: 0.0 };
-}
-
-#[spacetimedb(table)]
-#[derive(Clone)]
-pub struct MobileLocationComponent {
-    // This component will be created for all world objects that can move
-    // smoothly throughout the world. It keeps track of the position the last
-    // time the component was updated and the direction the mobile object is
-    // currently moving.
-
-    #[primarykey]
-    pub entity_id: u64,
-
-    // The last known location of this entity
-    pub location: StdbVector2,
-    // Movement direction, {0,0} if not moving at all.
-    pub direction: StdbVector2,
-    // Timestamp when movement started. Timestamp::UNIX_EPOCH if not moving.
-    pub move_start_timestamp: Timestamp,
-}
-```
-
-Next we write our very first reducer, `create_player`. This reducer is called by the client after the user enters a username.
-
----
-
-**SpacetimeDB Reducers**
-
-"Reducer" is a term coined by SpacetimeDB that "reduces" a single function call into one or more database updates performed within a single transaction. Reducers can be called remotely using a client SDK or they can be scheduled to be called at some future time from another reducer call.
-
----
-
-The first argument to all reducers is the `ReducerContext`. This struct contains: `sender` the identity of the user that called the reducer and `timestamp` which is the `Timestamp` when the reducer was called.
-
-Before we begin creating the components for the player entity, we pass the sender identity to the auto-generated function `filter_by_owner_id` to see if there is already a player entity associated with this user's identity. Because the `owner_id` column is unique, the `filter_by_owner_id` function returns a `Option<PlayerComponent>` that we can check to see if a matching row exists.
-
----
-
-**Rust Options**
-
-Rust programs use Option in a similar way to how C#/Unity programs use nullable types. Rust's Option is an enumeration type that represents the possibility of a value being either present (Some) or absent (None), providing a way to handle optional values and avoid null-related errors. For more information, refer to the official Rust documentation: [Rust Option](https://doc.rust-lang.org/std/option/).
-
----
-
-The first component we create and insert, `SpawnableEntityComponent`, automatically increments the `entity_id` property. When we use the insert function, it returns a result that includes the newly generated `entity_id`. We will utilize this generated `entity_id` in all other components associated with the player entity.
-
-Note the Result that the insert function returns can fail with a "DuplicateRow" error if we insert two rows with the same unique column value. In this example we just use the rust `expect` function to check for this.
-
----
-
-**Rust Results**
-
-A Result is like an Option where the None is augmented with a value describing the error. Rust programs use Result and return Err in situations where Unity/C# programs would signal an exception. For more information, refer to the official Rust documentation: [Rust Result](https://doc.rust-lang.org/std/result/).
-
----
-
-We then create and insert our `PlayerComponent` and `MobileLocationComponent` using the same `entity_id`.
-
-We use the log crate to write to the module log. This can be viewed using the CLI command `spacetime logs <module-domain-or-address>`. If you add the -f switch it will continuously tail the log.
-
-```rust
+// This reducer is called when the user logs in for the first time and
+// enters a username
 #[spacetimedb(reducer)]
 pub fn create_player(ctx: ReducerContext, username: String) -> Result<(), String> {
-    // This reducer is called when the user logs in for the first time and
-    // enters a username
-
+    // Get the Identity of the client who called this reducer
     let owner_id = ctx.sender;
-    // We check to see if there is already a PlayerComponent with this identity.
-    // this should never happen because the client only calls it if no player
-    // is found.
+
+    // Make sure we don't already have a player with this identity
     if PlayerComponent::filter_by_owner_id(&owner_id).is_some() {
         log::info!("Player already exists");
         return Err("Player already exists".to_string());
     }
 
-    // Next we create the SpawnableEntityComponent. The entity_id for this
-    // component automatically increments and we get it back from the result
-    // of the insert call and use it for all components.
+    // Create a new entity for this player and get a unique `entity_id`.
+    let entity_id = EntityComponent::insert(EntityComponent 
+    { 
+        entity_id: 0, 
+        location: StdbVector3 { x: 0.0, y: 0.0, z: 0.0 },
+        direction: 0.0,
+        moving: false,
+    }).expect("Failed to create a unique PlayerComponent.").entity_id;
 
-    let entity_id = SpawnableEntityComponent::insert(SpawnableEntityComponent { entity_id: 0 })
-        .expect("Failed to create player spawnable entity component.")
-        .entity_id;
     // The PlayerComponent uses the same entity_id and stores the identity of
     // the owner, username, and whether or not they are logged in.
     PlayerComponent::insert(PlayerComponent {
@@ -299,18 +237,7 @@ pub fn create_player(ctx: ReducerContext, username: String) -> Result<(), String
         owner_id,
         username: username.clone(),
         logged_in: true,
-    })
-    .expect("Failed to insert player component.");
-    // The MobileLocationComponent is used to calculate the current position
-    // of an entity that can move smoothly in the world. We are using 2d
-    // positions and the client will use the terrain height for the y value.
-    MobileLocationComponent::insert(MobileLocationComponent {
-        entity_id,
-        location: StdbVector2::ZERO,
-        direction: StdbVector2::ZERO,
-        move_start_timestamp: Timestamp::UNIX_EPOCH,
-    })
-    .expect("Failed to insert player mobile entity component.");
+    }).expect("Failed to insert player component.");
 
     log::info!("Player created: {}({})", username, entity_id);
 
@@ -318,32 +245,41 @@ pub fn create_player(ctx: ReducerContext, username: String) -> Result<(), String
 }
 ```
 
-SpacetimeDB also gives you the ability to define custom reducers that automatically trigger when certain events occur.
+---
 
-- `init` - Called the very first time you publish your module and anytime you clear the database. We'll learn about publishing a little later.
-- `connect` - Called when a user connects to the SpacetimeDB module. Their identity can be found in the `sender` member of the `ReducerContext`.
+**SpacetimeDB Reducers**
+
+"Reducer" is a term coined by Clockwork Labs that refers to a function which when executed "reduces" into a list of inserts and deletes, which is then packed into a single database transaction. Reducers can be called remotely using the CLI or a client SDK or they can be scheduled to be called at some future time from another reducer call.
+
+---
+
+SpacetimeDB gives you the ability to define custom reducers that automatically trigger when certain events occur.
+
+- `init` - Called the first time you publish your module and anytime you clear the database. We'll learn about publishing later.
+- `connect` - Called when a user connects to the SpacetimeDB module. Their identity can be found in the `sender` value of the `ReducerContext`.
 - `disconnect` - Called when a user disconnects from the SpacetimeDB module.
 
 Next we are going to write a custom `init` reducer that inserts the default message of the day into our `Config` table. The `Config` table only ever contains a single row with version 0, which we retrieve using `Config::filter_by_version(0)`.
 
+**Append to the bottom of lib.rs:**
+
 ```rust
+// Called when the module is initially published
 #[spacetimedb(init)]
 pub fn init() {
-    // Called when the module is initially published
-
-
-    // Create our global config table.
     Config::insert(Config {
         version: 0,
         message_of_the_day: "Hello, World!".to_string(),
-    })
-    .expect("Failed to insert config.");
+    }).expect("Failed to insert config.");
 }
 ```
 
 We use the `connect` and `disconnect` reducers to update the logged in state of the player. The `update_player_login_state` helper function looks up the `PlayerComponent` row using the user's identity and if it exists, it updates the `logged_in` variable and calls the auto-generated `update` function on `PlayerComponent` to update the row.
 
+**Append to the bottom of lib.rs:**
+
 ```rust
+// Called when the client connects, we update the logged_in state to true
 #[spacetimedb(connect)]
 pub fn client_connected(ctx: ReducerContext) {
     // called when the client connects, we update the logged_in state to true
@@ -351,29 +287,57 @@ pub fn client_connected(ctx: ReducerContext) {
 }
 
 
+// Called when the client disconnects, we update the logged_in state to false
 #[spacetimedb(disconnect)]
 pub fn client_disconnected(ctx: ReducerContext) {
     // Called when the client disconnects, we update the logged_in state to false
     update_player_login_state(ctx, false);
 }
 
-
+// This helper function gets the PlayerComponent, sets the logged
+// in variable and updates the PlayerComponent table row.
 pub fn update_player_login_state(ctx: ReducerContext, logged_in: bool) {
-    // This helper function gets the PlayerComponent, sets the logged
-    // in variable and updates the SpacetimeDB table row.
     if let Some(player) = PlayerComponent::filter_by_owner_id(&ctx.sender) {
-        let entity_id = player.entity_id;
         // We clone the PlayerComponent so we can edit it and pass it back.
         let mut player = player.clone();
         player.logged_in = logged_in;
-        PlayerComponent::update_by_entity_id(&entity_id, player);
+        PlayerComponent::update_by_entity_id(&player.entity_id.clone(), player);
     }
 }
 ```
 
-Our final two reducers handle player movement. In `move_player` we look up the `PlayerComponent` using the user identity. If we don't find one, we return an error because the client should not be sending moves without creating a player entity first.
+Our final reducer handles player movement. In `update_player_position` we look up the `PlayerComponent` using the user's Identity. If we don't find one, we return an error because the client should not be sending moves without calling `create_player` first.
 
-Using the `entity_id` in the `PlayerComponent` we retrieved, we can lookup the `MobileLocationComponent` that stores the entity's locations in the world. We update the values passed in from the client and call the auto-generated `update` function.
+Using the `entity_id` in the `PlayerComponent` we retrieved, we can lookup the `EntityComponent` that stores the entity's locations in the world. We update the values passed in from the client and call the auto-generated `update` function.
+
+**Append to the bottom of lib.rs:**
+
+```rust
+// Updates the position of a player. This is also called when the player stops moving.
+#[spacetimedb(reducer)]
+pub fn update_player_position(
+    ctx: ReducerContext,
+    location: StdbVector3,
+    direction: f32,
+    moving: bool,
+) -> Result<(), String> {
+    // First, look up the player using the sender identity, then use that
+    // entity_id to retrieve and update the EntityComponent
+    if let Some(player) = PlayerComponent::filter_by_owner_id(&ctx.sender) {
+        if let Some(mut entity) = EntityComponent::filter_by_entity_id(&player.entity_id) {
+            entity.location = location;
+            entity.direction = direction;
+            entity.moving = moving;
+            EntityComponent::update_by_entity_id(&player.entity_id, entity);
+            return Ok(());
+        }
+    }
+
+    // If we can not find the PlayerComponent or EntityComponent for 
+    // this player then something went wrong.
+    return Err("Player not found".to_string());
+}
+```
 
 ---
 
@@ -383,71 +347,16 @@ In a fully developed game, the server would typically perform server-side valida
 
 ---
 
-```rust
-#[spacetimedb(reducer)]
-pub fn move_player(
-    ctx: ReducerContext,
-    start: StdbVector2,
-    direction: StdbVector2,
-) -> Result<(), String> {
-    // Update the MobileLocationComponent with the current movement
-    // values. The client will call this regularly as the direction of movement
-    // changes. A fully developed game should validate these moves on the server
-    // before committing them, but that is beyond the scope of this tutorial.
+### Publishing a Module to SpacetimeDB
 
-    let owner_id = ctx.sender;
-    // First, look up the player using the sender identity, then use that
-    // entity_id to retrieve and update the MobileLocationComponent
-    if let Some(player) = PlayerComponent::filter_by_owner_id(&owner_id) {
-        if let Some(mut mobile) = MobileLocationComponent::filter_by_entity_id(&player.entity_id) {
-            mobile.location = start;
-            mobile.direction = direction;
-            mobile.move_start_timestamp = ctx.timestamp;
-            MobileLocationComponent::update_by_entity_id(&player.entity_id, mobile);
-
-
-            return Ok(());
-        }
-    }
-
-
-    // If we can not find the PlayerComponent for this user something went wrong.
-    // This should never happen.
-    return Err("Player not found".to_string());
-}
-
-
-#[spacetimedb(reducer)]
-pub fn stop_player(ctx: ReducerContext, location: StdbVector2) -> Result<(), String> {
-    // Update the MobileLocationComponent when a player comes to a stop. We set
-    // the location to the current location and the direction to {0,0}
-    let owner_id = ctx.sender;
-    if let Some(player) = PlayerComponent::filter_by_owner_id(&owner_id) {
-        if let Some(mut mobile) = MobileLocationComponent::filter_by_entity_id(&player.entity_id) {
-            mobile.location = location;
-            mobile.direction = StdbVector2::ZERO;
-            mobile.move_start_timestamp = Timestamp::UNIX_EPOCH;
-            MobileLocationComponent::update_by_entity_id(&player.entity_id, mobile);
-
-
-            return Ok(());
-        }
-    }
-
-
-    return Err("Player not found".to_string());
-}
-```
-
-4. Now that we've written the code for our server module, we need to publish it to SpacetimeDB. This will create the database and call the init reducer. Make sure your domain name is unique. You will get an error if someone has already created a database with that name. In your terminal or command window, run the following commands.
+Now that we've written the code for our server module, we need to publish it to SpacetimeDB. This will create the database and call the init reducer. In your terminal or command window, run the following commands.
 
 ```bash
-cd Server
-
-spacetime publish -c yourname-bitcraftmini
+cd server
+spacetime publish unity-tutorial
 ```
 
-If you get any errors from this command, double check that you correctly entered everything into lib.rs. You can also look at the Troubleshooting section at the end of this tutorial.
+If you get any errors from this command, double check that you correctly entered everything into `lib.rs`. You can also look at the Troubleshooting section at the end of this tutorial.
 
 ## Updating our Unity Project to use SpacetimeDB
 
@@ -467,7 +376,6 @@ https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.git
 
 ```bash
 mkdir -p ../Client/Assets/module_bindings
-
 spacetime generate --out-dir ../Client/Assets/module_bindings --lang=csharp
 ```
 
@@ -490,10 +398,9 @@ using SpacetimeDB.Types;
 
 ```csharp
     // These are connection variables that are exposed on the GameManager
-    // inspector. The cloud version of SpacetimeDB needs sslEnabled = true
+    // inspector.
     [SerializeField] private string moduleAddress = "YOUR_MODULE_DOMAIN_OR_ADDRESS";
     [SerializeField] private string hostName = "localhost:3000";
-    [SerializeField] private bool sslEnabled = false;
 
     // This is the identity for this player that is automatically generated
     // the first time you log in. We set this variable when the
@@ -501,7 +408,7 @@ using SpacetimeDB.Types;
     private Identity local_identity;
 ```
 
-The first three fields will appear in your Inspector so you can update your connection details without editing the code. The `moduleAddress` should be set to the domain you used in the publish command. You should not need to change `hostName` or `sslEnabled` if you are using the standalone version of SpacetimeDB.
+The first three fields will appear in your Inspector so you can update your connection details without editing the code. The `moduleAddress` should be set to the domain you used in the publish command. You should not need to change `hostName` if you are using the standalone version of SpacetimeDB.
 
 4. Add the following code to the `Start` function. **Be sure to remove the line `UIUsernameChooser.instance.Show();`** since we will call this after we get the local state and find that the player for us.
 
@@ -516,47 +423,46 @@ The "local client cache" is a client-side view of the database, defined by the s
 ---
 
 ```csharp
-        // When we connect to SpacetimeDB we send our subscription queries
-        // to tell SpacetimeDB which tables we want to get updates for.
-        SpacetimeDBClient.instance.onConnect += () =>
+    // When we connect to SpacetimeDB we send our subscription queries
+    // to tell SpacetimeDB which tables we want to get updates for.
+    SpacetimeDBClient.instance.onConnect += () =>
+    {
+        Debug.Log("Connected.");
+
+        SpacetimeDBClient.instance.Subscribe(new List<string>()
         {
-            Debug.Log("Connected.");
+            "SELECT * FROM Config",
+            "SELECT * FROM SpawnableEntityComponent",
+            "SELECT * FROM PlayerComponent",
+            "SELECT * FROM MobileLocationComponent",
+        });
+    };
 
-            SpacetimeDBClient.instance.Subscribe(new List<string>()
-            {
-                "SELECT * FROM Config",
-                "SELECT * FROM SpawnableEntityComponent",
-                "SELECT * FROM PlayerComponent",
-                "SELECT * FROM MobileLocationComponent",
-            });
-        };
+    // called when we have an error connecting to SpacetimeDB
+    SpacetimeDBClient.instance.onConnectError += (error, message) =>
+    {
+        Debug.LogError($"Connection error: " + message);
+    };
 
-        // called when we have an error connecting to SpacetimeDB
-        SpacetimeDBClient.instance.onConnectError += (error, message) =>
-        {
-            Debug.LogError($"Connection error: " + message);
-        };
-
-        // called when we are disconnected from SpacetimeDB
-        SpacetimeDBClient.instance.onDisconnect += (closeStatus, error) =>
-        {
-            Debug.Log("Disconnected.");
-        };
+    // called when we are disconnected from SpacetimeDB
+    SpacetimeDBClient.instance.onDisconnect += (closeStatus, error) =>
+    {
+        Debug.Log("Disconnected.");
+    };
 
 
-        // called when we receive the client identity from SpacetimeDB
-        SpacetimeDBClient.instance.onIdentityReceived += (token, identity, address) => {
-            AuthToken.SaveToken(token);
-            local_identity = identity;
-        };
+    // called when we receive the client identity from SpacetimeDB
+    SpacetimeDBClient.instance.onIdentityReceived += (token, identity, address) => {
+        AuthToken.SaveToken(token);
+        local_identity = identity;
+    };
 
+    // called after our local cache is populated from a Subscribe call
+    SpacetimeDBClient.instance.onSubscriptionApplied += OnSubscriptionApplied;
 
-        // called after our local cache is populated from a Subscribe call
-        SpacetimeDBClient.instance.onSubscriptionApplied += OnSubscriptionApplied;
-
-        // now that we’ve registered all our callbacks, lets connect to
-        // spacetimedb
-        SpacetimeDBClient.instance.Connect(AuthToken.Token, hostName, moduleAddress, sslEnabled);
+    // now that we’ve registered all our callbacks, lets connect to
+    // spacetimedb
+    SpacetimeDBClient.instance.Connect(AuthToken.Token, hostName, moduleAddress);
 ```
 
 5. Next we write the `OnSubscriptionUpdate` callback. When this event occurs for the first time, it signifies that our local client cache is fully populated. At this point, we can verify if a player entity already exists for the corresponding user. If we do not have a player entity, we need to show the `UserNameChooser` dialog so the user can enter a username. We also put the message of the day into the chat window. Finally we unsubscribe from the callback since we only need to do this once.
