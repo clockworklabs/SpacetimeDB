@@ -415,7 +415,7 @@ private Identity local_identity;
 
 The first three fields will appear in your Inspector so you can update your connection details without editing the code. The `moduleAddress` should be set to the domain you used in the publish command. You should not need to change `hostName` if you are using SpacetimeDB locally.
 
-Now add the following code to the `Start()` function. **Be sure to remove the line `UIUsernameChooser.instance.Show();`** since we will call this after we get the local state and find that the player for us.
+Now add the following code to the `Start()` function. For clarity, replace your entire `Start()` function with the function below.
 
 **REPLACE the Start() function in TutorialGameManager.cs**
 
