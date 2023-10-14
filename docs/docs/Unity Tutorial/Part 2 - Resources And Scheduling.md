@@ -1,5 +1,7 @@
 # Part 2 - Resources and Scheduling
 
+**Oct 14th, 2023: This tutorial has not yet been updated for the recent 0.7.0 release, it will be updated asap!**
+
 In this second part of the lesson, we'll add resource nodes to our project and learn about scheduled reducers. Then we will spawn the nodes on the client so they are visible to the player.
 
 ## Add Resource Node Spawner
