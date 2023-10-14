@@ -237,6 +237,7 @@ impl QuerySet {
 /// Helper to retain [`PrimaryKey`] before converting to [`TableOp`].
 ///
 /// [`PrimaryKey`] is [`Copy`], while [`TableOp`] stores it as a [`Vec<u8>`].
+#[derive(Debug)]
 struct Op {
     op_type: u8,
     row_pk: PrimaryKey,
