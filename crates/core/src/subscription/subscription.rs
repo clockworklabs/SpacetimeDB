@@ -402,16 +402,9 @@ impl<'a> IncrementalJoin<'a> {
                         }
                     })
                 });
-            // {A+ join B+}
-            let c = eval_incremental(db, tx, auth, &query::to_mem_table(rhs_virt, &self.lhs.inserts()))?;
-
-            // ({A+ join B} U {A join B+}) \ {A+ join B+ }
+            // {A+ join B} U {A join B+}
             let mut set = a.map(|op| (op.row_pk, op)).collect::<HashMap<PrimaryKey, Op>>();
             set.extend(b.map(|op| (op.row_pk, op)));
-            for op in c {
-                set.remove(&op.row_pk);
-            }
-
             set
         };
         let mut deletes = {
@@ -435,14 +428,10 @@ impl<'a> IncrementalJoin<'a> {
                 });
             // {A- join B-}
             let c = eval_incremental(db, tx, auth, &query::to_mem_table(rhs_virt, &self.lhs.deletes()))?;
-
-            // ({A- join B} U {A join B-}) \ {A- join B-}
+            // {A- join B} U {A join B-} U {A- join B-}
             let mut set = a.map(|op| (op.row_pk, op)).collect::<HashMap<PrimaryKey, Op>>();
             set.extend(b.map(|op| (op.row_pk, op)));
-            for op in c {
-                set.remove(&op.row_pk);
-            }
-
+            set.extend(c.map(|op| (op.row_pk, op)));
             set
         };
 
