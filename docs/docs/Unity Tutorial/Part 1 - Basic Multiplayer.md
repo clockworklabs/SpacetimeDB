@@ -410,8 +410,6 @@ At the top of the class definition add the following members:
 // the first time you log in. We set this variable when the
 // onIdentityReceived callback is triggered by the SDK after connecting
 private Identity local_identity;
-// Whether or not we're connected to SpacetimeDB
-private bool connected;
 ```
 
 The first three fields will appear in your Inspector so you can update your connection details without editing the code. The `moduleAddress` should be set to the domain you used in the publish command. You should not need to change `hostName` if you are using SpacetimeDB locally.
@@ -436,21 +434,18 @@ SpacetimeDBClient.instance.onConnect += () =>
 SpacetimeDBClient.instance.onConnectError += (error, message) =>
 {
     Debug.LogError($"Connection error: " + message);
-    connected = false;
 };
 
 // Called when we are disconnected from SpacetimeDB
 SpacetimeDBClient.instance.onDisconnect += (closeStatus, error) =>
 {
     Debug.Log("Disconnected.");
-    connected = false;
 };
 
 // Called when we receive the client identity from SpacetimeDB
 SpacetimeDBClient.instance.onIdentityReceived += (token, identity, address) => {
     AuthToken.SaveToken(token);
     local_identity = identity;
-    connected = true;
 };
 
 // Called after our local cache is populated from a Subscribe call
@@ -462,15 +457,6 @@ SpacetimeDBClient.instance.Connect(AuthToken.Token, hostName, moduleAddress);
 
 In our `onConnect` callback we are calling `Subscribe` with a list of queries. This tells SpacetimeDB what rows we want in our local client cache. We will also not get row update callbacks or event callbacks for any reducer that does not modify a row that matches these queries.
 
-Now we'll create a helper function which we'll use later. This function just returns whether or not we're currently connected to SpacetimeDB.
-
-**Append after the Start() function in TutorialGameManager.cs**
-
-```csharp
-// Returns whether or not we're connected to SpacetimeDB
-public bool IsConnected() => connected;
-```
-
 ---
 
 **Local Client Cache**
@@ -481,7 +467,7 @@ The "local client cache" is a client-side view of the database defined by the su
 
 Next we write the `OnSubscriptionUpdate` callback. When this event occurs for the first time, it signifies that our local client cache is fully populated. At this point, we can verify if a player entity already exists for the corresponding user. If we do not have a player entity, we need to show the `UserNameChooser` dialog so the user can enter a username. We also put the message of the day into the chat window. Finally we unsubscribe from the callback since we only need to do this once.
 
-**Append after the IsConnected() function in TutorialGameManager.cs**
+**Append after the Start() function in TutorialGameManager.cs**
 
 ```csharp
 void OnSubscriptionApplied()
@@ -661,87 +647,81 @@ private void FixedUpdate()
 }
 ```
 
-7. Finally, we need to update our connection settings in the inspector for our GameManager object in the scene. Click on the GameManager in the Hierarchy tab. The the inspector tab you should now see fields for `Module Address` and `Host Name`. Set the `Module Address` to the name you used when you ran `spacetime publish`. This is likely `unity-tutorial`. If you don't remember, you can go back to your terminal and run `spacetime publish` again from the `server` folder.
+Finally, we need to update our connection settings in the inspector for our GameManager object in the scene. Click on the GameManager in the Hierarchy tab. The the inspector tab you should now see fields for `Module Address` and `Host Name`. Set the `Module Address` to the name you used when you ran `spacetime publish`. This is likely `unity-tutorial`. If you don't remember, you can go back to your terminal and run `spacetime publish` again from the `server` folder.
 
 ![GameManager-Inspector2](/images/unity-tutorial/GameManager-Inspector2.JPG)
 
-### Step 4: Play the Game!
+### Play the Game!
 
-1. Go to File -> Build Settings... Replace the SampleScene with the Main scene we have been working in.
+Go to File -> Build Settings... Replace the SampleScene with the Main scene we have been working in.
 
 ![Unity-AddOpenScenes](/images/unity-tutorial/Unity-AddOpenScenes.JPG)
 
 When you hit the `Build` button, it will kick off a build of the game which will use a different identity than the Unity Editor. Create your character in the build and in the Unity Editor by entering a name and clicking `Continue`. Now you can see each other in game running around the map.
 
-### Step 5: Implement Player Logout
+### Implement Player Logout
 
 So far we have not handled the `logged_in` variable of the `PlayerComponent`. This means that remote players will not despawn on your screen when they disconnect. To fix this we need to handle the `OnUpdate` event for the `PlayerComponent` table in addition to `OnInsert`. We are going to use a common function that handles any time the `PlayerComponent` changes.
 
-1. Open `TutorialGameManager.cs` and add the following code to the `Start` function:
-
+**Append to the bottom of Start() function in TutorialGameManager.cs**
 ```csharp
-    PlayerComponent.OnUpdate += PlayerComponent_OnUpdate;
+PlayerComponent.OnUpdate += PlayerComponent_OnUpdate;
 ```
 
-2. We are going to add a check to determine if the player is logged for remote players. If the player is not logged in, we search for the RemotePlayer object with the corresponding `EntityId` and destroy it. Add `using System.Linq;` to the top of the file and replace the `PlayerComponent_OnInsert` function with the following code.
+We are going to add a check to determine if the player is logged for remote players. If the player is not logged in, we search for the RemotePlayer object with the corresponding `EntityId` and destroy it.
 
+**Append to the top of TutorialGameManager.cs**
 ```csharp
-    private void PlayerComponent_OnUpdate(PlayerComponent oldValue, PlayerComponent newValue, ReducerEvent dbEvent)
-    {
-        OnPlayerComponentChanged(newValue);
-    }
+using System.Linq;
+```
 
-    private void PlayerComponent_OnInsert(PlayerComponent obj, ReducerEvent dbEvent)
-    {
-        OnPlayerComponentChanged(obj);
-    }
+Next we'll be updating some of the code in `PlayerComponent_OnInsert`. For simplicity, just replace the entire function.
 
-    private void OnPlayerComponentChanged(PlayerComponent obj)
+**REPLACE PlayerComponent_OnInsert in TutorialGameManager.cs**
+```csharp
+private void PlayerComponent_OnUpdate(PlayerComponent oldValue, PlayerComponent newValue, ReducerEvent dbEvent)
+{
+    OnPlayerComponentChanged(newValue);
+}
+
+private void PlayerComponent_OnInsert(PlayerComponent obj, ReducerEvent dbEvent)
+{
+    OnPlayerComponentChanged(obj);
+}
+
+private void OnPlayerComponentChanged(PlayerComponent obj)
+{
+    if (obj.OwnerId != local_identity)
     {
-        // if the identity of the PlayerComponent matches our user identity then this is the local player
-        if (obj.OwnerId == local_identity)
+        // if the remote player is logged in, spawn in
+        if (obj.LoggedIn)
         {
-            // Set the local player username
-            LocalPlayer.instance.Username = obj.Username;
-
-            // Get the MobileLocationComponent for this object and update the position to match the server
-            MobileLocationComponent mobPos = MobileLocationComponent.FilterByEntityId(obj.EntityId);
-            Vector3 playerPos = new Vector3(mobPos.Location.X, 0.0f, mobPos.Location.Z);
-            LocalPlayer.instance.transform.position = new Vector3(playerPos.x, MathUtil.GetTerrainHeight(playerPos), playerPos.z);
-
-            // Now that we have our initial position we can start the game
-            StartGame();
+            // spawn the player object and attach the RemotePlayer component
+            var remotePlayer = Instantiate(PlayerPrefab);
+            remotePlayer.AddComponent<RemotePlayer>().EntityId = obj.EntityId;
         }
-        // otherwise this is a remote player
         else
         {
-            // if the remote player is logged in, spawn it
-            if (obj.LoggedIn)
-            {
-                // spawn the player object and attach the RemotePlayer component
-                var remotePlayer = Instantiate(PlayerPrefab);
-                remotePlayer.AddComponent<RemotePlayer>().EntityId = obj.EntityId;
-            }
             // otherwise we need to look for the remote player object in the scene (if it exists) and destroy it
-            else
+            var remotePlayer = FindObjectsOfType<RemotePlayer>().FirstOrDefault(item => item.EntityId == obj.EntityId);
+            if (remotePlayer != null)
             {
-                var remotePlayer = FindObjectsOfType<RemotePlayer>().FirstOrDefault(item => item.EntityId == obj.EntityId);
-                if (remotePlayer != null)
-                {
-                    Destroy(remotePlayer.gameObject);
-                }
+                Destroy(remotePlayer.gameObject);
             }
         }
     }
+}
 ```
 
-3. Now you when you play the game you should see remote players disappear when they log out.
+Now you when you play the game you should see remote players disappear when they log out.
 
-### Step 6: Add Chat Support
+### Finally, Add Chat Support
 
 The project has a chat window but so far all it's used for is the message of the day. We are going to add the ability for players to send chat messages to each other.
 
-1. First lets add a new `ChatMessage` table to the SpacetimeDB module. Add the following code to lib.rs.
+First lets add a new `ChatMessage` table to the SpacetimeDB module. Add the following code to ``lib.rs``.
+
+**Append to the bottom of server/src/lib.rs:**
 
 ```rust
 #[spacetimedb(table)]
@@ -749,34 +729,30 @@ pub struct ChatMessage {
     // The primary key for this table will be auto-incremented
     #[primarykey]
     #[autoinc]
-    pub chat_entity_id: u64,
+    pub message_id: u64,
 
-    // The entity id of the player (or NPC) that sent the message
-    pub source_entity_id: u64,
+    // The entity id of the player that sent the message
+    pub sender_id: u64,
     // Message contents
-    pub chat_text: String,
-    // Timestamp of when the message was sent
-    pub timestamp: Timestamp,
+    pub text: String,
 }
 ```
 
-2. Now we need to add a reducer to handle inserting new chat messages. Add the following code to lib.rs.
+Now we need to add a reducer to handle inserting new chat messages.
+
+**Append to the bottom of server/src/lib.rs:**
 
 ```rust
+// Adds a chat entry to the ChatMessage table
 #[spacetimedb(reducer)]
-pub fn chat_message(ctx: ReducerContext, message: String) -> Result<(), String> {
-    // Add a chat entry to the ChatMessage table
-
-    // Get the player component based on the sender identity
-    let owner_id = ctx.sender;
-    if let Some(player) = PlayerComponent::filter_by_owner_id(&owner_id) {
+pub fn send_chat_message(ctx: ReducerContext, text: String) -> Result<(), String> {
+    if let Some(player) = PlayerComponent::filter_by_owner_id(&ctx.sender) {
         // Now that we have the player we can insert the chat message using the player entity id.
         ChatMessage::insert(ChatMessage {
             // this column auto-increments so we can set it to 0
-            chat_entity_id: 0,
-            source_entity_id: player.entity_id,
-            chat_text: message,
-            timestamp: ctx.timestamp,
+            message_id: 0,
+            sender_id: player.entity_id,
+            text,
         })
         .unwrap();
 
@@ -787,57 +763,53 @@ pub fn chat_message(ctx: ReducerContext, message: String) -> Result<(), String> 
 }
 ```
 
-3. Before updating the client, let's generate the client files and publish our module.
+Before updating the client, let's generate the client files and update publish our module.
 
+**Execute commands in the server/ directory**
 ```bash
-spacetime generate --out-dir ../Client/Assets/module_bindings --lang=csharp
-
-spacetime publish -c yourname-bitcraftmini
+spacetime generate --out-dir ../client/Assets/module_bindings --lang=csharp
+spacetime publish -c unity-tutorial
 ```
 
-4. On the client, let's add code to send the message when the chat button or enter is pressed. Update the `OnChatButtonPress` function in `UIChatController.cs`.
+On the client, let's add code to send the message when the chat button or enter is pressed. Update the `OnChatButtonPress` function in `UIChatController.cs`.
+
+**Append to the top of UIChatController.cs:**
+```csharp
+using SpacetimeDB.Types;
+```
+
+**REPLACE the OnChatButtonPress function in UIChatController.cs:**
 
 ```csharp
 public void OnChatButtonPress()
 {
-    Reducer.ChatMessage(_chatInput.text);
+    Reducer.SendChatMessage(_chatInput.text);
     _chatInput.text = "";
 }
 ```
 
-5. Next let's add the `ChatMessage` table to our list of subscriptions.
+Now we need to add a reducer to handle inserting new chat messages. First register for the ChatMessage reducer in the `Start()` function using the auto-generated function:
 
+**Append to the bottom of the Start() function in TutorialGameManager.cs:**
 ```csharp
-            SpacetimeDBClient.instance.Subscribe(new List<string>()
-            {
-                "SELECT * FROM Config",
-                "SELECT * FROM SpawnableEntityComponent",
-                "SELECT * FROM PlayerComponent",
-                "SELECT * FROM MobileLocationComponent",
-                "SELECT * FROM ChatMessage",
-            });
+Reducer.OnSendChatMessageEvent += OnSendChatMessageEvent;
 ```
 
-6. Now we need to add a reducer to handle inserting new chat messages. First register for the ChatMessage reducer in the `Start` function using the auto-generated function:
+Now we write the `OnSendChatMessageEvent` function. We can find the `PlayerComponent` for the player who sent the message using the `Identity` of the sender. Then we get the `Username` and prepend it to the message before sending it to the chat window.
 
+**Append after the Start() function in TutorialGameManager.cs**
 ```csharp
-        Reducer.OnChatMessageEvent += OnChatMessageEvent;
-```
-
-Then we write the `OnChatMessageEvent` function. We can find the `PlayerComponent` for the player who sent the message using the `Identity` of the sender. Then we get the `Username` and prepend it to the message before sending it to the chat window.
-
-```csharp
-    private void OnChatMessageEvent(ReducerEvent dbEvent, string message)
+private void OnSendChatMessageEvent(ReducerEvent dbEvent, string message)
+{
+    var player = PlayerComponent.FilterByOwnerId(dbEvent.Identity);
+    if (player != null)
     {
-        var player = PlayerComponent.FilterByOwnerId(dbEvent.Identity);
-        if (player != null)
-        {
-            UIChatController.instance.OnChatMessageReceived(player.Username + ": " + message);
-        }
+        UIChatController.instance.OnChatMessageReceived(player.Username + ": " + message);
     }
+}
 ```
 
-7. Now when you run the game you should be able to send chat messages to other players. Be sure to make a new Unity client build and run it in a separate window so you can test chat between two clients.
+Now when you run the game you should be able to send chat messages to other players. Be sure to make a new Unity client build and run it in a separate window so you can test chat between two clients.
 
 ## Conclusion
 
