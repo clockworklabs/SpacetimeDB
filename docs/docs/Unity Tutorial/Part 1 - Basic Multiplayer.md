@@ -408,6 +408,8 @@ At the top of the class definition add the following members:
     // the first time you log in. We set this variable when the
     // onIdentityReceived callback is triggered by the SDK after connecting
     private Identity local_identity;
+    // Whether or not we're connected to SpacetimeDB
+    private bool connected;
 ```
 
 The first three fields will appear in your Inspector so you can update your connection details without editing the code. The `moduleAddress` should be set to the domain you used in the publish command. You should not need to change `hostName` if you are using SpacetimeDB locally.
@@ -420,6 +422,7 @@ Now add the following code to the `Start()` function. **Be sure to remove the li
     SpacetimeDBClient.instance.onConnect += () =>
     {
         Debug.Log("Connected.");
+        connected = true;
 
         // Request all tables
         SpacetimeDBClient.instance.Subscribe(new List<string>()
@@ -428,30 +431,30 @@ Now add the following code to the `Start()` function. **Be sure to remove the li
         });
     };
 
-    // called when we have an error connecting to SpacetimeDB
+    // Called when we have an error connecting to SpacetimeDB
     SpacetimeDBClient.instance.onConnectError += (error, message) =>
     {
         Debug.LogError($"Connection error: " + message);
+        connected = false;
     };
 
-    // called when we are disconnected from SpacetimeDB
+    // Called when we are disconnected from SpacetimeDB
     SpacetimeDBClient.instance.onDisconnect += (closeStatus, error) =>
     {
         Debug.Log("Disconnected.");
+        connected = false;
     };
 
-
-    // called when we receive the client identity from SpacetimeDB
+    // Called when we receive the client identity from SpacetimeDB
     SpacetimeDBClient.instance.onIdentityReceived += (token, identity, address) => {
         AuthToken.SaveToken(token);
         local_identity = identity;
     };
 
-    // called after our local cache is populated from a Subscribe call
+    // Called after our local cache is populated from a Subscribe call
     SpacetimeDBClient.instance.onSubscriptionApplied += OnSubscriptionApplied;
-
-    // now that we’ve registered all our callbacks, lets connect to
-    // spacetimedb
+    
+    // Now that we’ve registered all our callbacks, lets connect to spacetimedb
     SpacetimeDBClient.instance.Connect(AuthToken.Token, hostName, moduleAddress);
 ```
 
@@ -616,31 +619,37 @@ Next we need to handle what happens when a `PlayerComponent` is added to our loc
     }
 ```
 
-Next, we need to update the `FixedUpdate` function in `LocalPlayer` to call the `move_player` and `stop_player` reducers using the auto-generated functions. **Don’t forget to add `using SpacetimeDB.Types;`** to LocalPlayer.cs
+Next, we will add a `FixedUpdate()` function to the `LocalPlayer` class so that we can send the local player's position to SpacetimeDB. We will do this by calling the auto-generated reducer function `Reducer.UpdatePlayerPosition(...)`. When we invoke this reducer from the client, a request is sent to SpacetimeDB and the reducer `update_player_position(...)` is executed on the server and a transaction is produced. All clients connected to SpacetimeDB will start receiving the results of these transactions.
+
+**Append to the top of LocalPlayer.cs**
 
 ```csharp
-    private Vector3? lastUpdateDirection;
+using SpacetimeDB.Types;
+```
+
+**Append to the bottom of LocalPlayer class in LocalPlayer.cs**
+
+```csharp
+    private float? lastUpdateTime;
 
     private void FixedUpdate()
     {
-        var directionVec = GetDirectionVec();
-        PlayerMovementController.Local.DirectionVec = directionVec;
+        if (lastUpdateTime.HasValue && Time.time - lastUpdateTime.Value > 1.0f / movementUpdateSpeed)
+        {
+            return;
+        }
 
-        // first get the position of the player
-        var ourPos = PlayerMovementController.Local.GetModelTransform().position;
-        // if we are moving , and we haven't updated our destination yet, or we've moved more than .1 units, update our destination
-        if (directionVec.sqrMagnitude != 0 && (!lastUpdateDirection.HasValue || (directionVec - lastUpdateDirection.Value).sqrMagnitude > .1f))
-        {
-            Reducer.MovePlayer(new StdbVector2() { X = ourPos.x, Z = ourPos.z }, new StdbVector2() { X = directionVec.x, Z = directionVec.z });
-            lastUpdateDirection = directionVec;
-        }
-        // if we stopped moving, send the update
-        else if(directionVec.sqrMagnitude == 0 && lastUpdateDirection != null)
-        {
-            Reducer.StopPlayer(new StdbVector2() { X = ourPos.x, Z = ourPos.z });
-            lastUpdateDirection = null;
-        }
-    }
+        lastUpdateTime = Time.time;
+        var p = PlayerMovementController.Local.GetPosition();
+        Reducer.UpdatePlayerPosition(new StdbVector3
+            {
+                X = p.x,
+                Y = p.y,
+                Z = p.z,
+            },
+            PlayerMovementController.Local.GetRotation(),
+            PlayerMovementController.Local.IsMoving());
+}
 ```
 
 7. Finally, we need to update our connection settings in the inspector for our GameManager object in the scene. Click on the GameManager in the Hierarchy tab. The the inspector tab you should now see fields for `Module Address`, `Host Name` and `SSL Enabled`. Set the `Module Address` to the name you used when you ran `spacetime publish`. If you don't remember, you can go back to your terminal and run `spacetime publish` again from the `Server` folder.
