@@ -8,6 +8,8 @@ The objective of this tutorial is to help you become acquainted with the basic f
 
 In this tutorial we'll be giving you some CLI commands to execute. If you are using Windows we recommend using Git Bash or powershell. If you're on mac we recommend you use the Terminal application. If you encouter issues with any of the commands in this guide, please reach out to us through our discord server and we would be happy to help assist you.
 
+This tutorial has been tested against UnityEngine version 2022.3.4f1. This tutorial may work on newer versions as well.
+
 ## Prepare Project Structure
 
 This project is separated into two sub-projects, one for the server (module) code and one for the client code. First we'll create the main directory, this directory name doesn't matter but we'll give you an example:
@@ -399,17 +401,17 @@ At the top of the class definition add the following members:
 **Append to the top of TutorialGameManager class inside of TutorialGameManager.cs**
 
 ```csharp
-    // These are connection variables that are exposed on the GameManager
-    // inspector.
-    [SerializeField] private string moduleAddress = "unity-tutorial";
-    [SerializeField] private string hostName = "localhost:3000";
+// These are connection variables that are exposed on the GameManager
+// inspector.
+[SerializeField] private string moduleAddress = "unity-tutorial";
+[SerializeField] private string hostName = "localhost:3000";
 
-    // This is the identity for this player that is automatically generated
-    // the first time you log in. We set this variable when the
-    // onIdentityReceived callback is triggered by the SDK after connecting
-    private Identity local_identity;
-    // Whether or not we're connected to SpacetimeDB
-    private bool connected;
+// This is the identity for this player that is automatically generated
+// the first time you log in. We set this variable when the
+// onIdentityReceived callback is triggered by the SDK after connecting
+private Identity local_identity;
+// Whether or not we're connected to SpacetimeDB
+private bool connected;
 ```
 
 The first three fields will appear in your Inspector so you can update your connection details without editing the code. The `moduleAddress` should be set to the domain you used in the publish command. You should not need to change `hostName` if you are using SpacetimeDB locally.
@@ -419,46 +421,55 @@ Now add the following code to the `Start()` function. **Be sure to remove the li
 **Modify the Start() function in TutorialGameManager.cs**
 
 ```csharp
-    SpacetimeDBClient.instance.onConnect += () =>
+SpacetimeDBClient.instance.onConnect += () =>
+{
+    Debug.Log("Connected.");
+
+    // Request all tables
+    SpacetimeDBClient.instance.Subscribe(new List<string>()
     {
-        Debug.Log("Connected.");
-        connected = true;
+        "SELECT * FROM *",
+    });
+};
 
-        // Request all tables
-        SpacetimeDBClient.instance.Subscribe(new List<string>()
-        {
-            "SELECT * FROM *",
-        });
-    };
+// Called when we have an error connecting to SpacetimeDB
+SpacetimeDBClient.instance.onConnectError += (error, message) =>
+{
+    Debug.LogError($"Connection error: " + message);
+    connected = false;
+};
 
-    // Called when we have an error connecting to SpacetimeDB
-    SpacetimeDBClient.instance.onConnectError += (error, message) =>
-    {
-        Debug.LogError($"Connection error: " + message);
-        connected = false;
-    };
+// Called when we are disconnected from SpacetimeDB
+SpacetimeDBClient.instance.onDisconnect += (closeStatus, error) =>
+{
+    Debug.Log("Disconnected.");
+    connected = false;
+};
 
-    // Called when we are disconnected from SpacetimeDB
-    SpacetimeDBClient.instance.onDisconnect += (closeStatus, error) =>
-    {
-        Debug.Log("Disconnected.");
-        connected = false;
-    };
+// Called when we receive the client identity from SpacetimeDB
+SpacetimeDBClient.instance.onIdentityReceived += (token, identity, address) => {
+    AuthToken.SaveToken(token);
+    local_identity = identity;
+    connected = true;
+};
 
-    // Called when we receive the client identity from SpacetimeDB
-    SpacetimeDBClient.instance.onIdentityReceived += (token, identity, address) => {
-        AuthToken.SaveToken(token);
-        local_identity = identity;
-    };
+// Called after our local cache is populated from a Subscribe call
+SpacetimeDBClient.instance.onSubscriptionApplied += OnSubscriptionApplied;
 
-    // Called after our local cache is populated from a Subscribe call
-    SpacetimeDBClient.instance.onSubscriptionApplied += OnSubscriptionApplied;
-    
-    // Now that we’ve registered all our callbacks, lets connect to spacetimedb
-    SpacetimeDBClient.instance.Connect(AuthToken.Token, hostName, moduleAddress);
+// Now that we’ve registered all our callbacks, lets connect to spacetimedb
+SpacetimeDBClient.instance.Connect(AuthToken.Token, hostName, moduleAddress);
 ```
 
 In our `onConnect` callback we are calling `Subscribe` with a list of queries. This tells SpacetimeDB what rows we want in our local client cache. We will also not get row update callbacks or event callbacks for any reducer that does not modify a row that matches these queries.
+
+Now we'll create a helper function which we'll use later. This function just returns whether or not we're currently connected to SpacetimeDB.
+
+**Append after the Start() function in TutorialGameManager.cs**
+
+```csharp
+// Returns whether or not we're connected to SpacetimeDB
+public bool IsConnected() => connected;
+```
 
 ---
 
@@ -470,7 +481,7 @@ The "local client cache" is a client-side view of the database defined by the su
 
 Next we write the `OnSubscriptionUpdate` callback. When this event occurs for the first time, it signifies that our local client cache is fully populated. At this point, we can verify if a player entity already exists for the corresponding user. If we do not have a player entity, we need to show the `UserNameChooser` dialog so the user can enter a username. We also put the message of the day into the chat window. Finally we unsubscribe from the callback since we only need to do this once.
 
-**Append after the Start() function in TutorialGameManager.cs**
+**Append after the IsConnected() function in TutorialGameManager.cs**
 
 ```csharp
 void OnSubscriptionApplied()
@@ -508,14 +519,14 @@ Then we're doing a modification to the `ButtonPressed()` function:
 **Modify the ButtonPressed function in UIUsernameChooser.cs**
 
 ```csharp
-    public void ButtonPressed()
-    {         
-        CameraController.RemoveDisabler(GetHashCode());
-        _panel.SetActive(false);
+public void ButtonPressed()
+{         
+    CameraController.RemoveDisabler(GetHashCode());
+    _panel.SetActive(false);
 
-        // Call the SpacetimeDB CreatePlayer reducer
-        Reducer.CreatePlayer(_usernameField.text);
-    }
+    // Call the SpacetimeDB CreatePlayer reducer
+    Reducer.CreatePlayer(_usernameField.text);
+}
 ```
 
 We need to create a `RemotePlayer` script that we attach to remote player objects. In the same folder as `LocalPlayer.cs`, create a new C# script called `RemotePlayer`. In the start function, we will register an OnUpdate callback for the `EntityComponent` and query the local cache to get the player’s initial position. **Make sure you include a `using SpacetimeDB.Types;`** at the top of the file.
@@ -566,18 +577,18 @@ We now write the `EntityComponent_OnUpdate` callback which sets the movement dir
 **Append to bottom of RemotePlayer class in RemotePlayer.cs:**
 
 ```csharp
-    private void EntityComponent_OnUpdate(EntityComponent oldObj, EntityComponent obj, ReducerEvent callInfo)
+private void EntityComponent_OnUpdate(EntityComponent oldObj, EntityComponent obj, ReducerEvent callInfo)
+{
+    // If the update was made to this object
+    if(obj.EntityId == EntityId)
     {
-        // If the update was made to this object
-        if(obj.EntityId == EntityId)
-        {
-            // Update the DirectionVec in the PlayerMovementController component with the updated values
-            var movementController = GetComponent<PlayerMovementController>();
-            movementController.RemoteTargetPosition = new Vector3(obj.Position.X, obj.Position.Y, obj.Position.Z);
-            movementController.RemoteTargetRotation = obj.Direction;
-            movementController.SetMoving(obj.Moving);
-        }
+        // Update the DirectionVec in the PlayerMovementController component with the updated values
+        var movementController = GetComponent<PlayerMovementController>();
+        movementController.RemoteTargetPosition = new Vector3(obj.Position.X, obj.Position.Y, obj.Position.Z);
+        movementController.RemoteTargetRotation = obj.Direction;
+        movementController.SetMoving(obj.Moving);
     }
+}
 ```
 
 Next we need to handle what happens when a `PlayerComponent` is added to our local cache. We will handle it differently based on if it’s our local player entity or a remote player. We are going to register for the `OnInsert` event for our `PlayerComponent` table. Add the following code to the `Start` function in `TutorialGameManager`.
@@ -585,7 +596,7 @@ Next we need to handle what happens when a `PlayerComponent` is added to our loc
 **Append to bottom of Start() function in TutorialGameManager.cs:**
 
 ```csharp
-    PlayerComponent.OnInsert += PlayerComponent_OnInsert;
+PlayerComponent.OnInsert += PlayerComponent_OnInsert;
 ```
 
 5. Create the `PlayerComponent_OnInsert` function which does something different depending on if it's the component for the local player or a remote player. If it's the local player, we set the local player object's initial position and call `StartGame`. If it's a remote player, we instantiate a `PlayerPrefab` with the `RemotePlayer` component. The start function of `RemotePlayer` handles initializing the player position.
@@ -593,30 +604,30 @@ Next we need to handle what happens when a `PlayerComponent` is added to our loc
 **Append to bottom of TutorialGameManager class in TutorialGameManager.cs:**
 
 ```csharp
-    private void PlayerComponent_OnInsert(PlayerComponent obj, ReducerEvent callInfo)
+private void PlayerComponent_OnInsert(PlayerComponent obj, ReducerEvent callInfo)
+{
+    // if the identity of the PlayerComponent matches our user identity then this is the local player
+    if(obj.OwnerId == local_identity)
     {
-        // if the identity of the PlayerComponent matches our user identity then this is the local player
-        if(obj.OwnerId == local_identity)
-        {
-            // Set the local player username
-            LocalPlayer.instance.Username = obj.Username;
+        // Set the local player username
+        LocalPlayer.instance.Username = obj.Username;
 
-            // Get the MobileLocationComponent for this object and update the position to match the server
-            MobileLocationComponent mobPos = MobileLocationComponent.FilterByEntityId(obj.EntityId);
-            Vector3 playerPos = new Vector3(mobPos.Location.X, 0.0f, mobPos.Location.Z);
-            LocalPlayer.instance.transform.position = new Vector3(playerPos.x, MathUtil.GetTerrainHeight(playerPos), playerPos.z);
+        // Get the MobileLocationComponent for this object and update the position to match the server
+        MobileLocationComponent mobPos = MobileLocationComponent.FilterByEntityId(obj.EntityId);
+        Vector3 playerPos = new Vector3(mobPos.Location.X, 0.0f, mobPos.Location.Z);
+        LocalPlayer.instance.transform.position = new Vector3(playerPos.x, MathUtil.GetTerrainHeight(playerPos), playerPos.z);
 
-            // Now that we have our initial position we can start the game
-            StartGame();
-        }
-        // otherwise this is a remote player
-        else
-        {
-            // spawn the player object and attach the RemotePlayer component
-            var remotePlayer = Instantiate(PlayerPrefab);
-            remotePlayer.AddComponent<RemotePlayer>().EntityId = obj.EntityId;
-        }
+        // Now that we have our initial position we can start the game
+        StartGame();
     }
+    // otherwise this is a remote player
+    else
+    {
+        // spawn the player object and attach the RemotePlayer component
+        var remotePlayer = Instantiate(PlayerPrefab);
+        remotePlayer.AddComponent<RemotePlayer>().EntityId = obj.EntityId;
+    }
+}
 ```
 
 Next, we will add a `FixedUpdate()` function to the `LocalPlayer` class so that we can send the local player's position to SpacetimeDB. We will do this by calling the auto-generated reducer function `Reducer.UpdatePlayerPosition(...)`. When we invoke this reducer from the client, a request is sent to SpacetimeDB and the reducer `update_player_position(...)` is executed on the server and a transaction is produced. All clients connected to SpacetimeDB will start receiving the results of these transactions.
@@ -630,29 +641,27 @@ using SpacetimeDB.Types;
 **Append to the bottom of LocalPlayer class in LocalPlayer.cs**
 
 ```csharp
-    private float? lastUpdateTime;
-
-    private void FixedUpdate()
+private void FixedUpdate()
+{
+    if ((lastUpdateTime.HasValue && Time.time - lastUpdateTime.Value > 1.0f / movementUpdateSpeed) || !SpacetimeDBClient.instance.IsConnected())
     {
-        if (lastUpdateTime.HasValue && Time.time - lastUpdateTime.Value > 1.0f / movementUpdateSpeed)
-        {
-            return;
-        }
+        return;
+    }
 
-        lastUpdateTime = Time.time;
-        var p = PlayerMovementController.Local.GetPosition();
-        Reducer.UpdatePlayerPosition(new StdbVector3
-            {
-                X = p.x,
-                Y = p.y,
-                Z = p.z,
-            },
-            PlayerMovementController.Local.GetRotation(),
-            PlayerMovementController.Local.IsMoving());
+    lastUpdateTime = Time.time;
+    var p = PlayerMovementController.Local.GetPosition();
+    Reducer.UpdatePlayerPosition(new StdbVector3
+        {
+            X = p.x,
+            Y = p.y,
+            Z = p.z,
+        },
+        PlayerMovementController.Local.GetRotation(),
+        PlayerMovementController.Local.IsMoving());
 }
 ```
 
-7. Finally, we need to update our connection settings in the inspector for our GameManager object in the scene. Click on the GameManager in the Hierarchy tab. The the inspector tab you should now see fields for `Module Address`, `Host Name` and `SSL Enabled`. Set the `Module Address` to the name you used when you ran `spacetime publish`. If you don't remember, you can go back to your terminal and run `spacetime publish` again from the `Server` folder.
+7. Finally, we need to update our connection settings in the inspector for our GameManager object in the scene. Click on the GameManager in the Hierarchy tab. The the inspector tab you should now see fields for `Module Address` and `Host Name`. Set the `Module Address` to the name you used when you ran `spacetime publish`. This is likely `unity-tutorial`. If you don't remember, you can go back to your terminal and run `spacetime publish` again from the `server` folder.
 
 ![GameManager-Inspector2](/images/unity-tutorial/GameManager-Inspector2.JPG)
 
