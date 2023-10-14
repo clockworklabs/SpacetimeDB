@@ -5,7 +5,7 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::{DbTable, MemTable, RelValue};
 use spacetimedb_lib::{DataKey, PrimaryKey};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
-use spacetimedb_vm::expr::{self, IndexJoin, JoinExpr, QueryExpr, SourceExpr};
+use spacetimedb_vm::expr::{self, IndexJoin, QueryExpr, SourceExpr};
 use std::collections::{btree_set, BTreeSet, HashMap, HashSet};
 use std::ops::Deref;
 
@@ -348,8 +348,7 @@ impl<'a> IncrementalJoin<'a> {
             .query
             .iter()
             .find_map(|op| match op {
-                expr::Query::JoinInner(JoinExpr { rhs, .. })
-                | expr::Query::IndexJoin(IndexJoin { probe_side: rhs, .. }) => {
+                expr::Query::IndexJoin(IndexJoin { probe_side: rhs, .. }) => {
                     rhs.source.get_db_table().map(|table| JoinSide {
                         table,
                         updates: DatabaseTableUpdate {
@@ -476,9 +475,7 @@ impl<'a> IncrementalJoin<'a> {
 
         let mut q = self.expr.clone();
         for op in q.query.iter_mut() {
-            if let expr::Query::JoinInner(JoinExpr { rhs, .. })
-            | expr::Query::IndexJoin(IndexJoin { probe_side: rhs, .. }) = op
-            {
+            if let expr::Query::IndexJoin(IndexJoin { probe_side: rhs, .. }) = op {
                 let virt = MemTable::new(
                     self.rhs.table.head.clone(),
                     self.rhs.table.table_access,

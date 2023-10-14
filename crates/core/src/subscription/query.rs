@@ -5,9 +5,8 @@ use crate::host::module_host::DatabaseTableUpdate;
 use crate::sql::compiler::compile_sql;
 use crate::sql::execute::execute_single_sql;
 use crate::subscription::subscription::QuerySet;
-use itertools::Itertools;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::{Column, FieldExpr, FieldName, MemTable, RelValue};
+use spacetimedb_lib::relation::{Column, FieldName, MemTable, RelValue};
 use spacetimedb_lib::DataKey;
 use spacetimedb_sats::AlgebraicType;
 use spacetimedb_vm::expr::{self, Crud, CrudExpr, DbType, QueryExpr, SourceExpr};
@@ -134,60 +133,15 @@ pub enum Supported {
 
 pub fn classify(expr: &QueryExpr) -> Option<Supported> {
     use expr::Query::*;
-
-    let mut ops = expr.query.iter();
-    let first = ops.next();
-    let second = ops.next();
-    let third = ops.next();
-    // Too complex to even consider.
-    if ops.next().is_some() {
-        return None;
+    if expr.query.len() == 1 && matches!(expr.query[0], IndexJoin(_)) {
+        return Some(Supported::Semijoin);
     }
-
-    let projects_lhs = |op: &expr::Query| -> Option<()> {
-        if let Project(fields, _) = op {
-            let source_fields = expr.source.get_db_table()?.head.fields.iter().map(|col| &col.field);
-            for both in source_fields.zip_longest(fields.iter()) {
-                let (column, field) = both.both()?;
-                let FieldExpr::Name(field) = field else {
-                    return None;
-                };
-                if column != field {
-                    return None;
-                }
-            }
-
-            Some(())
-        } else {
-            None
+    for op in &expr.query {
+        if let JoinInner(_) = op {
+            return None;
         }
-    };
-
-    match (first, second) {
-        // SELECT * FROM t
-        (None, None) => Some(Supported::Scan),
-        // SELECT t.* FROM t
-        (Some(p @ Project(..)), None) => projects_lhs(p).map(|_| Supported::Scan),
-        (Some(Select(..) | IndexScan(..)), maybe_project) => match maybe_project {
-            // SELECT * FROM t WHERE ..
-            None => Some(Supported::Scan),
-            // SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE ..
-            Some(JoinInner(..) | IndexJoin(..)) => match third {
-                None => Some(Supported::Semijoin),
-                Some(op) => projects_lhs(op).map(|_| Supported::Semijoin),
-            },
-            // SELECT t.* FROM t WHERE ..
-            Some(op) => projects_lhs(op).map(|_| Supported::Scan),
-        },
-        // SELECT lhs.* FROM lhs JOIN rhs on lhs.id = rhs.id
-        (Some(JoinInner(..) | IndexJoin(..)), maybe_project) => match maybe_project {
-            None => Some(Supported::Semijoin),
-            Some(op) => projects_lhs(op).map(|_| Supported::Semijoin),
-        },
-
-        // Anything else is not supported.
-        _ => None,
     }
+    Some(Supported::Scan)
 }
 
 #[cfg(test)]
@@ -802,12 +756,23 @@ mod tests {
         let (db, _tmp_dir) = make_test_db()?;
         let mut tx = db.begin_tx();
 
-        let auth = AuthCtx::for_testing();
-        let ddl = "CREATE TABLE plain (id BIGINT UNSIGNED); \
-                   CREATE TABLE lhs (id BIGINT UNSIGNED PRIMARY KEY, x INTEGER); \
-                   CREATE TABLE rhs (id BIGINT UNSIGNED PRIMARY KEY, y INTEGER);";
-        run(&db, &mut tx, ddl, auth)?;
+        // Create table [plain]
+        let schema = &[("id", AlgebraicType::U64)];
+        create_table(&db, &mut tx, "plain", schema, &[])?;
 
+        // Create table [lhs] with indexes on [id] and [x]
+        let schema = &[("id", AlgebraicType::U64), ("x", AlgebraicType::I32)];
+        let indexes = &[(0, "id"), (1, "x")];
+        create_table(&db, &mut tx, "lhs", schema, indexes)?;
+
+        // Create table [rhs] with indexes on [id] and [y]
+        let schema = &[("id", AlgebraicType::U64), ("y", AlgebraicType::I32)];
+        let indexes = &[(0, "id"), (1, "y")];
+        create_table(&db, &mut tx, "rhs", schema, indexes)?;
+
+        let auth = AuthCtx::for_testing();
+
+        // All single table queries are supported
         let scans = [
             "SELECT * FROM plain",
             "SELECT * FROM plain WHERE id > 5",
@@ -821,15 +786,22 @@ mod tests {
             assert_eq!(classify(&expr), Some(Supported::Scan), "{scan}\n{expr:#?}");
         }
 
-        let joins = [
-            "SELECT * FROM lhs JOIN rhs ON lhs.id = rhs.id",
-            "SELECT * FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE lhs.x < 10",
-            "SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id",
-            "SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE lhs.x < 10",
-        ];
+        // Only index semijoins are supported
+        let joins = ["SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE rhs.y < 10"];
         for join in joins {
             let expr = compile_read_only_query(&db, &tx, &auth, join)?.pop_first().unwrap();
             assert_eq!(classify(&expr), Some(Supported::Semijoin), "{join}\n{expr:#?}");
+        }
+
+        // All other joins are unsupported
+        let joins = [
+            "SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id",
+            "SELECT * FROM lhs JOIN rhs ON lhs.id = rhs.id",
+            "SELECT * FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE lhs.x < 10",
+        ];
+        for join in joins {
+            let expr = compile_read_only_query(&db, &tx, &auth, join)?.pop_first().unwrap();
+            assert_eq!(classify(&expr), None, "{join}\n{expr:#?}");
         }
 
         Ok(())
