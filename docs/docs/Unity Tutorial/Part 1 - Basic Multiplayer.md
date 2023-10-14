@@ -27,17 +27,17 @@ In this section, we will guide you through the process of setting up a Unity Pro
 
 ### Step 1: Create a Blank Unity Project
 
-1. Open Unity and create a new project by selecting "New" from the Unity Hub or going to **File -> New Project**.
+Open Unity and create a new project by selecting "New" from the Unity Hub or going to **File -> New Project**.
 
 ![UnityHub-NewProject](/images/unity-tutorial/UnityHub-NewProject.JPG)
 
-2. For Project Name use `client`. For Project Location make sure that you use your `SpacetimeDBUnityTutorial` directory. This is the directory that we created in a previous step.
+For Project Name use `client`. For Project Location make sure that you use your `SpacetimeDBUnityTutorial` directory. This is the directory that we created in a previous step.
 
 **Important: Ensure that you have selected the 3D (URP) template for this project.** If you forget to do this then Unity won't be able to properly render the materials in the scene!
 
 ![UnityHub-3DURP](/images/unity-tutorial/UnityHub-3DURP.JPG)
 
-3. Click "Create" to generate the blank project.
+Click "Create" to generate the blank project.
 
 ### Step 2: Adding Required Packages
 
@@ -205,7 +205,7 @@ pub struct PlayerComponent {
 }
 ```
 
-Next we write our very first reducer, `create_player`:
+Next we write our very first reducer, `create_player`. From the client we will call this reducer when we create a new player:
 
 **Append to the bottom of lib.rs:**
 
@@ -394,6 +394,7 @@ Next we are going to connect to our SpacetimeDB module. Open `TutorialGameManage
 ```csharp
 using SpacetimeDB;
 using SpacetimeDB.Types;
+using System.Linq;
 ```
 
 At the top of the class definition add the following members:
@@ -416,46 +417,54 @@ The first three fields will appear in your Inspector so you can update your conn
 
 Now add the following code to the `Start()` function. **Be sure to remove the line `UIUsernameChooser.instance.Show();`** since we will call this after we get the local state and find that the player for us.
 
-**Modify the Start() function in TutorialGameManager.cs**
+**REPLACE the Start() function in TutorialGameManager.cs**
 
 ```csharp
-SpacetimeDBClient.instance.onConnect += () =>
+// Start is called before the first frame update
+void Start()
 {
-    Debug.Log("Connected.");
+    instance = this;
 
-    // Request all tables
-    SpacetimeDBClient.instance.Subscribe(new List<string>()
+    SpacetimeDBClient.instance.onConnect += () =>
     {
-        "SELECT * FROM *",
-    });
-};
+        Debug.Log("Connected.");
 
-// Called when we have an error connecting to SpacetimeDB
-SpacetimeDBClient.instance.onConnectError += (error, message) =>
-{
-    Debug.LogError($"Connection error: " + message);
-};
+        // Request all tables
+        SpacetimeDBClient.instance.Subscribe(new List<string>()
+        {
+            "SELECT * FROM *",
+        });
+    };
 
-// Called when we are disconnected from SpacetimeDB
-SpacetimeDBClient.instance.onDisconnect += (closeStatus, error) =>
-{
-    Debug.Log("Disconnected.");
-};
+    // Called when we have an error connecting to SpacetimeDB
+    SpacetimeDBClient.instance.onConnectError += (error, message) =>
+    {
+        Debug.LogError($"Connection error: " + message);
+    };
 
-// Called when we receive the client identity from SpacetimeDB
-SpacetimeDBClient.instance.onIdentityReceived += (token, identity, address) => {
-    AuthToken.SaveToken(token);
-    local_identity = identity;
-};
+    // Called when we are disconnected from SpacetimeDB
+    SpacetimeDBClient.instance.onDisconnect += (closeStatus, error) =>
+    {
+        Debug.Log("Disconnected.");
+    };
 
-// Called after our local cache is populated from a Subscribe call
-SpacetimeDBClient.instance.onSubscriptionApplied += OnSubscriptionApplied;
+    // Called when we receive the client identity from SpacetimeDB
+    SpacetimeDBClient.instance.onIdentityReceived += (token, identity, address) => {
+        AuthToken.SaveToken(token);
+        local_identity = identity;
+    };
 
-// Now that we’ve registered all our callbacks, lets connect to spacetimedb
-SpacetimeDBClient.instance.Connect(AuthToken.Token, hostName, moduleAddress);
+    // Called after our local cache is populated from a Subscribe call
+    SpacetimeDBClient.instance.onSubscriptionApplied += OnSubscriptionApplied;
+
+    // Now that we’ve registered all our callbacks, lets connect to spacetimedb
+    SpacetimeDBClient.instance.Connect(AuthToken.Token, hostName, moduleAddress);
+}
 ```
 
-In our `onConnect` callback we are calling `Subscribe` with a list of queries. This tells SpacetimeDB what rows we want in our local client cache. We will also not get row update callbacks or event callbacks for any reducer that does not modify a row that matches these queries.
+In our `onConnect` callback we are calling `Subscribe` and subscribing to all data in the database. You can also subscribe to specific tables using SQL syntax like `SELECT * FROM MyTable`. Our SQL documentation enumerates the operations that are accepted in our SQL syntax. 
+
+Subscribing to tables tells SpacetimeDB what rows we want in our local client cache. We will also not get row update callbacks or event callbacks for any reducer that does not modify a row that matches at least one of our queries. This means that events can happen on the server and the client won't be notified unless they are subscribed to at least 1 row in the change.
 
 ---
 
@@ -465,7 +474,7 @@ The "local client cache" is a client-side view of the database defined by the su
 
 ---
 
-Next we write the `OnSubscriptionUpdate` callback. When this event occurs for the first time, it signifies that our local client cache is fully populated. At this point, we can verify if a player entity already exists for the corresponding user. If we do not have a player entity, we need to show the `UserNameChooser` dialog so the user can enter a username. We also put the message of the day into the chat window. Finally we unsubscribe from the callback since we only need to do this once.
+Next we write the `OnSubscriptionApplied` callback. When this event occurs for the first time, it signifies that our local client cache is fully populated. At this point, we can verify if a player entity already exists for the corresponding user. If we do not have a player entity, we need to show the `UserNameChooser` dialog so the user can enter a username. We also put the message of the day into the chat window. Finally we unsubscribe from the callback since we only need to do this once.
 
 **Append after the Start() function in TutorialGameManager.cs**
 
@@ -558,7 +567,7 @@ public class RemotePlayer : MonoBehaviour
 }
 ```
 
-We now write the `EntityComponent_OnUpdate` callback which sets the movement direction in the `MovementController` for this player. We also set the position to the current location when we stop moving (`DirectionVec` is zero)
+We now write the `EntityComponent_OnUpdate` callback which sets the movement direction in the `MovementController` for this player. We also set the target position to the current location in the latest update.
 
 **Append to bottom of RemotePlayer class in RemotePlayer.cs:**
 
@@ -568,8 +577,9 @@ private void EntityComponent_OnUpdate(EntityComponent oldObj, EntityComponent ob
     // If the update was made to this object
     if(obj.EntityId == EntityId)
     {
-        // Update the DirectionVec in the PlayerMovementController component with the updated values
         var movementController = GetComponent<PlayerMovementController>();
+
+        // Update target position, rotation, etc.
         movementController.RemoteTargetPosition = new Vector3(obj.Position.X, obj.Position.Y, obj.Position.Z);
         movementController.RemoteTargetRotation = obj.Direction;
         movementController.SetMoving(obj.Moving);
@@ -585,32 +595,30 @@ Next we need to handle what happens when a `PlayerComponent` is added to our loc
 PlayerComponent.OnInsert += PlayerComponent_OnInsert;
 ```
 
-5. Create the `PlayerComponent_OnInsert` function which does something different depending on if it's the component for the local player or a remote player. If it's the local player, we set the local player object's initial position and call `StartGame`. If it's a remote player, we instantiate a `PlayerPrefab` with the `RemotePlayer` component. The start function of `RemotePlayer` handles initializing the player position.
+Create the `PlayerComponent_OnInsert` function which does something different depending on if it's the component for the local player or a remote player. If it's the local player, we set the local player object's initial position and call `StartGame`. If it's a remote player, we instantiate a `PlayerPrefab` with the `RemotePlayer` component. The start function of `RemotePlayer` handles initializing the player position.
 
 **Append to bottom of TutorialGameManager class in TutorialGameManager.cs:**
 
 ```csharp
 private void PlayerComponent_OnInsert(PlayerComponent obj, ReducerEvent callInfo)
 {
-    // if the identity of the PlayerComponent matches our user identity then this is the local player
+    // If the identity of the PlayerComponent matches our user identity then this is the local player
     if(obj.OwnerId == local_identity)
     {
-        // Set the local player username
-        LocalPlayer.instance.Username = obj.Username;
-
-        // Get the MobileLocationComponent for this object and update the position to match the server
-        MobileLocationComponent mobPos = MobileLocationComponent.FilterByEntityId(obj.EntityId);
-        Vector3 playerPos = new Vector3(mobPos.Location.X, 0.0f, mobPos.Location.Z);
-        LocalPlayer.instance.transform.position = new Vector3(playerPos.x, MathUtil.GetTerrainHeight(playerPos), playerPos.z);
-
         // Now that we have our initial position we can start the game
         StartGame();
     }
-    // otherwise this is a remote player
     else
     {
-        // spawn the player object and attach the RemotePlayer component
+        // Spawn the player object and attach the RemotePlayer component
         var remotePlayer = Instantiate(PlayerPrefab);
+        // Lookup and apply the position for this new player
+        var entity = EntityComponent.FilterByEntityId(obj.EntityId);
+        var position = new Vector3(entity.Position.X, entity.Position.Y, entity.Position.Z);
+        remotePlayer.transform.position = position;
+        var movementController = remotePlayer.GetComponent<PlayerMovementController>();
+        movementController.RemoteTargetPosition = position;
+        movementController.RemoteTargetRotation = entity.Direction;
         remotePlayer.AddComponent<RemotePlayer>().EntityId = obj.EntityId;
     }
 }
@@ -622,11 +630,13 @@ Next, we will add a `FixedUpdate()` function to the `LocalPlayer` class so that 
 
 ```csharp
 using SpacetimeDB.Types;
+using SpacetimeDB;
 ```
 
 **Append to the bottom of LocalPlayer class in LocalPlayer.cs**
 
 ```csharp
+private float? lastUpdateTime;
 private void FixedUpdate()
 {
     if ((lastUpdateTime.HasValue && Time.time - lastUpdateTime.Value > 1.0f / movementUpdateSpeed) || !SpacetimeDBClient.instance.IsConnected())
@@ -635,14 +645,14 @@ private void FixedUpdate()
     }
 
     lastUpdateTime = Time.time;
-    var p = PlayerMovementController.Local.GetPosition();
+    var p = PlayerMovementController.Local.GetModelPosition();
     Reducer.UpdatePlayerPosition(new StdbVector3
         {
             X = p.x,
             Y = p.y,
             Z = p.z,
         },
-        PlayerMovementController.Local.GetRotation(),
+        PlayerMovementController.Local.GetModelRotation(),
         PlayerMovementController.Local.IsMoving());
 }
 ```
@@ -668,12 +678,7 @@ So far we have not handled the `logged_in` variable of the `PlayerComponent`. Th
 PlayerComponent.OnUpdate += PlayerComponent_OnUpdate;
 ```
 
-We are going to add a check to determine if the player is logged for remote players. If the player is not logged in, we search for the RemotePlayer object with the corresponding `EntityId` and destroy it.
-
-**Append to the top of TutorialGameManager.cs**
-```csharp
-using System.Linq;
-```
+We are going to add a check to determine if the player is logged for remote players. If the player is not logged in, we search for the `RemotePlayer` object with the corresponding `EntityId` and destroy it.
 
 Next we'll be updating some of the code in `PlayerComponent_OnInsert`. For simplicity, just replace the entire function.
 
@@ -691,22 +696,38 @@ private void PlayerComponent_OnInsert(PlayerComponent obj, ReducerEvent dbEvent)
 
 private void OnPlayerComponentChanged(PlayerComponent obj)
 {
-    if (obj.OwnerId != local_identity)
+    // If the identity of the PlayerComponent matches our user identity then this is the local player
+    if(obj.OwnerId == local_identity)
     {
-        // if the remote player is logged in, spawn in
+        // Now that we have our initial position we can start the game
+        StartGame();
+    }
+    else
+    {
+        // otherwise we need to look for the remote player object in the scene (if it exists) and destroy it
+        var existingPlayer = FindObjectsOfType<RemotePlayer>().FirstOrDefault(item => item.EntityId == obj.EntityId);
         if (obj.LoggedIn)
         {
-            // spawn the player object and attach the RemotePlayer component
-            var remotePlayer = Instantiate(PlayerPrefab);
-            remotePlayer.AddComponent<RemotePlayer>().EntityId = obj.EntityId;
+            // Only spawn remote players who aren't already spawned
+            if (existingPlayer == null)
+            {
+                // Spawn the player object and attach the RemotePlayer component
+                var remotePlayer = Instantiate(PlayerPrefab);
+                // Lookup and apply the position for this new player
+                var entity = EntityComponent.FilterByEntityId(obj.EntityId);
+                var position = new Vector3(entity.Position.X, entity.Position.Y, entity.Position.Z);
+                remotePlayer.transform.position = position;
+                var movementController = remotePlayer.GetComponent<PlayerMovementController>();
+                movementController.RemoteTargetPosition = position;
+                movementController.RemoteTargetRotation = entity.Direction;
+                remotePlayer.AddComponent<RemotePlayer>().EntityId = obj.EntityId;
+            }
         }
         else
         {
-            // otherwise we need to look for the remote player object in the scene (if it exists) and destroy it
-            var remotePlayer = FindObjectsOfType<RemotePlayer>().FirstOrDefault(item => item.EntityId == obj.EntityId);
-            if (remotePlayer != null)
+            if (existingPlayer != null)
             {
-                Destroy(remotePlayer.gameObject);
+                Destroy(existingPlayer.gameObject);
             }
         }
     }
