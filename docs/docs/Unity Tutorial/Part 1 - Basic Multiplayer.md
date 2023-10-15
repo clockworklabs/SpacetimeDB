@@ -355,7 +355,7 @@ Now that we've written the code for our server module, we need to publish it to 
 
 ```bash
 cd server
-spacetime publish unity-tutorial
+spacetime publish -c unity-tutorial
 ```
 
 If you get any errors from this command, double check that you correctly entered everything into `lib.rs`. You can also look at the Troubleshooting section at the end of this tutorial.
