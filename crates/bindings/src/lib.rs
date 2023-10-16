@@ -263,7 +263,11 @@ fn buffer_table_iter(
     let mut iter = sys::iter(table_id, filter.as_deref())?;
 
     // First item is an encoded schema.
-    let schema_raw = iter.next().expect("Missing schema").expect("Failed to get schema");
+    let schema_raw = iter
+        .next()
+        .expect("Missing schema")
+        .expect("Failed to get schema")
+        .read();
     let schema = decode_schema(&mut &schema_raw[..]).expect("Could not decode schema");
 
     Ok((iter, schema))
