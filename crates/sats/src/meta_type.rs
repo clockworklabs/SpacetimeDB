@@ -10,9 +10,9 @@ use crate::AlgebraicType;
 ///
 /// For example, the `MetaType` of [`ProductType`](crate::ProductType) is
 /// ```ignore
-/// AlgebraicType::product(vec![ProductTypeElement::new_named(
-///     AlgebraicType::array(ProductTypeElement::meta_type()),
+/// AlgebraicType::product([(
 ///     "elements",
+///     AlgebraicType::array(ProductTypeElement::meta_type()),
 /// )])
 /// ```
 pub trait MetaType {

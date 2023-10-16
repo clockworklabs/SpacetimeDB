@@ -484,7 +484,7 @@ pub(crate) fn st_sequences_schema() -> TableSchema {
             ColumnSchema {
                 table_id: ST_SEQUENCES_ID.0,
                 col_id: 7,
-                col_name: "max_malue".into(),
+                col_name: "max_value".into(),
                 col_type: AlgebraicType::I128,
                 is_autoinc: false,
             },
@@ -796,11 +796,11 @@ impl<'a> TryFrom<&'a ProductValue> for StIndexRow<&'a str> {
 impl<Name: AsRef<str>> From<&StIndexRow<Name>> for ProductValue {
     fn from(x: &StIndexRow<Name>) -> Self {
         product![
-            AlgebraicValue::U32(x.index_id),
-            AlgebraicValue::U32(x.table_id),
-            AlgebraicValue::ArrayOf(x.cols.clone()),
+            x.index_id,
+            x.table_id,
+            ArrayValue::from(x.cols.clone()),
             AlgebraicValue::String(x.index_name.as_ref().to_string()),
-            AlgebraicValue::Bool(x.is_unique)
+            x.is_unique
         ]
     }
 }
@@ -863,15 +863,15 @@ impl<'a> TryFrom<&'a ProductValue> for StSequenceRow<&'a str> {
 impl<Name: AsRef<str>> From<&StSequenceRow<Name>> for ProductValue {
     fn from(x: &StSequenceRow<Name>) -> Self {
         product![
-            AlgebraicValue::U32(x.sequence_id),
+            x.sequence_id,
             AlgebraicValue::String(x.sequence_name.as_ref().to_string()),
-            AlgebraicValue::U32(x.table_id),
-            AlgebraicValue::U32(x.col_id),
-            AlgebraicValue::I128(x.increment),
-            AlgebraicValue::I128(x.start),
-            AlgebraicValue::I128(x.min_value),
-            AlgebraicValue::I128(x.max_value),
-            AlgebraicValue::I128(x.allocated),
+            x.table_id,
+            x.col_id,
+            x.increment,
+            x.start,
+            x.min_value,
+            x.max_value,
+            x.allocated,
         ]
     }
 }
@@ -941,11 +941,11 @@ impl<'a> TryFrom<&'a ProductValue> for StConstraintRow<&'a str> {
 impl<Name: AsRef<str>> From<&StConstraintRow<Name>> for ProductValue {
     fn from(x: &StConstraintRow<Name>) -> Self {
         product![
-            AlgebraicValue::U32(x.constraint_id),
+            x.constraint_id,
             AlgebraicValue::String(x.constraint_name.as_ref().to_string()),
-            AlgebraicValue::U8(x.kind.bits()),
-            AlgebraicValue::U32(x.table_id),
-            AlgebraicValue::ArrayOf(x.columns.clone())
+            x.kind.bits(),
+            x.table_id,
+            ArrayValue::from(x.columns.clone())
         ]
     }
 }

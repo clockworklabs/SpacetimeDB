@@ -453,7 +453,7 @@ impl TypespaceBuilder for ModuleBuilder {
             btree_map::Entry::Occupied(o) => *o.get(),
             btree_map::Entry::Vacant(v) => {
                 // Bind a fresh alias to the unit type.
-                let slot_ref = self.module.typespace.add(AlgebraicType::UNIT_TYPE);
+                let slot_ref = self.module.typespace.add(AlgebraicType::unit());
                 // Relate `typeid -> fresh alias`.
                 v.insert(slot_ref);
 

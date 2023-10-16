@@ -37,14 +37,6 @@ pub use log;
 
 pub type Result<T = (), E = Errno> = core::result::Result<T, E>;
 
-#[no_mangle]
-static SPACETIME_ABI_VERSION: u32 = {
-    assert!(spacetimedb_lib::MODULE_ABI_VERSION.to_u32() == sys::ABI_VERSION);
-    sys::ABI_VERSION
-};
-#[no_mangle]
-static SPACETIME_ABI_VERSION_IS_ADDR: () = ();
-
 /// A context that any reducer is provided with.
 #[non_exhaustive]
 #[derive(Copy, Clone)]
@@ -271,7 +263,11 @@ fn buffer_table_iter(
     let mut iter = sys::iter(table_id, filter.as_deref())?;
 
     // First item is an encoded schema.
-    let schema_raw = iter.next().expect("Missing schema").expect("Failed to get schema");
+    let schema_raw = iter
+        .next()
+        .expect("Missing schema")
+        .expect("Failed to get schema")
+        .read();
     let schema = decode_schema(&mut &schema_raw[..]).expect("Could not decode schema");
 
     Ok((iter, schema))
@@ -353,10 +349,8 @@ struct RawTableIter<De> {
     /// The underlying source of our `Buffer`s.
     inner: BufferIter,
 
-    /// The current position in the current buffer,
-    /// from which `deserializer` can read.
-    /// A value of `None` indicates that we need to pull another `Buffer` from `inner`.
-    reader: Option<Cursor<Box<[u8]>>>,
+    /// The current position in the buffer, from which `deserializer` can read.
+    reader: Cursor<Vec<u8>>,
 
     deserializer: De,
 }
@@ -365,7 +359,7 @@ impl<De: BufferDeserialize> RawTableIter<De> {
     fn new(iter: BufferIter, deserializer: De) -> Self {
         RawTableIter {
             inner: iter,
-            reader: None,
+            reader: Cursor::new(Vec::new()),
             deserializer,
         }
     }
@@ -376,30 +370,17 @@ impl<T, De: BufferDeserialize<Item = T>> Iterator for RawTableIter<De> {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            // If we currently have some bytes in the buffer to still decode,
-            // do that. Otherwise, try to fetch the next buffer first.
-
-            match &self.reader {
-                Some(reader) => {
-                    if reader.remaining() == 0 {
-                        self.reader = None;
-                        continue;
-                    }
-                    break;
-                }
-                None => {
-                    // If we receive None here, iteration is complete.
-                    let buffer = self.inner.next()?;
-                    let buffer = buffer.expect("RawTableIter::next: Failed to get buffer!");
-                    self.reader = Some(Cursor::new(buffer));
-                    break;
-                }
+            // If we currently have some bytes in the buffer to still decode, do that.
+            if (&self.reader).remaining() > 0 {
+                let row = self.deserializer.deserialize(&self.reader);
+                return Some(row);
             }
+            // Otherwise, try to fetch the next chunk while reusing the buffer.
+            let buffer = self.inner.next()?;
+            let buffer = buffer.expect("RawTableIter::next: Failed to get buffer!");
+            self.reader.pos.set(0);
+            buffer.read_into(&mut self.reader.buf);
         }
-
-        let reader = self.reader.as_ref().unwrap();
-        let row = self.deserializer.deserialize(reader);
-        Some(row)
     }
 }
 

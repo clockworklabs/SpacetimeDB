@@ -1,7 +1,6 @@
 use crate::algebraic_type::AlgebraicType;
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
-use crate::{AlgebraicTypeRef, ProductTypeElement};
 
 /// A variant of a sum type.
 ///
@@ -37,8 +36,8 @@ impl SumTypeVariant {
     }
 
     /// Returns a unit variant with `name`.
-    pub fn unit(name: impl AsRef<str>) -> Self {
-        Self::new_named(AlgebraicType::UNIT_TYPE, name)
+    pub fn unit(name: &str) -> Self {
+        Self::new_named(AlgebraicType::unit(), name)
     }
 
     /// Returns the name of the variant.
@@ -53,15 +52,15 @@ impl SumTypeVariant {
 
     /// Returns whether this is a unit variant.
     pub fn is_unit(&self) -> bool {
-        self.algebraic_type == AlgebraicType::UNIT_TYPE
+        self.algebraic_type == AlgebraicType::unit()
     }
 }
 
 impl MetaType for SumTypeVariant {
     fn meta_type() -> AlgebraicType {
-        AlgebraicType::product(vec![
-            ProductTypeElement::new_named(AlgebraicType::option(AlgebraicType::String), "name"),
-            ProductTypeElement::new_named(AlgebraicType::Ref(AlgebraicTypeRef(0)), "algebraic_type"),
+        AlgebraicType::product([
+            ("name", AlgebraicType::option(AlgebraicType::String)),
+            ("algebraic_type", AlgebraicType::ZERO_REF),
         ])
     }
 }

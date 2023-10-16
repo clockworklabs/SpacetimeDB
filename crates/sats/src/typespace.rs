@@ -120,7 +120,7 @@ pub trait TypespaceBuilder {
 ///     ['a, T: SpacetimeType] Foo<'a, T>,
 /// //  The `make_type` implementation where `ts: impl TypespaceBuilder`
 /// //  and the expression right of `=>` is an `AlgebraicType`.
-///     ts => AlgebraicType::product(vec![T::make_type(ts).into(), AlgebraicType::U8.into()])
+///     ts => AlgebraicType::product([T::make_type(ts), AlgebraicType::U8])
 /// );
 /// ```
 #[macro_export]
@@ -157,7 +157,7 @@ impl_primitives! {
     String => String,
 }
 
-impl_st!([] (), _ts => AlgebraicType::UNIT_TYPE);
+impl_st!([] (), _ts => AlgebraicType::unit());
 impl_st!([] &str, _ts => AlgebraicType::String);
 impl_st!([T: SpacetimeType] Vec<T>, ts => AlgebraicType::array(T::make_type(ts)));
 impl_st!([T: SpacetimeType] Option<T>, ts => AlgebraicType::option(T::make_type(ts)));

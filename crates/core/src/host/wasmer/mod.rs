@@ -15,7 +15,7 @@ mod wasmer_module;
 use wasmer_module::WasmerModule;
 
 use super::scheduler::Scheduler;
-use super::wasm_common::{module_host_actor::WasmModuleHostActor, ModuleCreationError};
+use super::wasm_common::{abi, module_host_actor::WasmModuleHostActor, ModuleCreationError};
 use super::{EnergyMonitor, EnergyQuanta};
 
 pub fn make_actor(
@@ -46,6 +46,12 @@ pub fn make_actor(
     let engine: wasmer::Engine = EngineBuilder::new(compiler_config).into();
 
     let module = Module::new(&engine, program_bytes).map_err(|e| ModuleCreationError::WasmCompileError(e.into()))?;
+
+    let abi = abi::determine_spacetime_abi(module.imports().functions(), wasmer::ImportType::module)?;
+
+    if let Some(abi) = abi {
+        abi::verify_supported(WasmerModule::IMPLEMENTED_ABI, abi)?;
+    }
 
     let module = WasmerModule::new(module, engine);
 

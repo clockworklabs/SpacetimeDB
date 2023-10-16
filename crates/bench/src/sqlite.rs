@@ -6,10 +6,7 @@ use crate::{
 use ahash::AHashMap;
 use lazy_static::lazy_static;
 use rusqlite::Connection;
-use spacetimedb_lib::{
-    sats::{self},
-    AlgebraicType, AlgebraicValue, ProductType,
-};
+use spacetimedb_lib::sats::{AlgebraicType, AlgebraicValue, ProductType};
 use std::{
     fmt::Write,
     hint::black_box,
@@ -66,9 +63,8 @@ impl BenchDatabase for SQLite {
         for (i, column) in T::product_type().elements.iter().enumerate() {
             let column_name = column.name.clone().unwrap();
             let type_ = match column.algebraic_type {
-                AlgebraicType::Builtin(sats::BuiltinType::U32) => "INTEGER",
-                AlgebraicType::Builtin(sats::BuiltinType::U64) => "INTEGER",
-                AlgebraicType::Builtin(sats::BuiltinType::String) => "TEXT",
+                AlgebraicType::U32 | AlgebraicType::U64 => "INTEGER",
+                AlgebraicType::String => "TEXT",
                 _ => unimplemented!(),
             };
             let extra = if index_strategy == IndexStrategy::Unique && i == 0 {
@@ -190,19 +186,19 @@ impl BenchDatabase for SQLite {
 
         begin.execute(())?;
         match value {
-            AlgebraicValue::Builtin(sats::BuiltinValue::String(value)) => {
+            AlgebraicValue::String(value) => {
+                for _ in stmt.query_map((&*value,), |row| {
+                    black_box(row);
+                    Ok(())
+                })? {}
+            }
+            AlgebraicValue::U32(value) => {
                 for _ in stmt.query_map((value,), |row| {
                     black_box(row);
                     Ok(())
                 })? {}
             }
-            AlgebraicValue::Builtin(sats::BuiltinValue::U32(value)) => {
-                for _ in stmt.query_map((value,), |row| {
-                    black_box(row);
-                    Ok(())
-                })? {}
-            }
-            AlgebraicValue::Builtin(sats::BuiltinValue::U64(value)) => {
+            AlgebraicValue::U64(value) => {
                 for _ in stmt.query_map((value,), |row| {
                     black_box(row);
                     Ok(())

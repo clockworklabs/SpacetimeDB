@@ -65,20 +65,11 @@ impl ResolveRefs for AlgebraicType {
     type Output = Self;
     fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output> {
         match this.ty() {
-            AlgebraicType::Sum(sum) => this.with(sum)._resolve_refs(state).map(Self::Sum),
-            AlgebraicType::Product(prod) => this.with(prod)._resolve_refs(state).map(Self::Product),
-            AlgebraicType::Builtin(b) => this.with(b)._resolve_refs(state).map(Self::Builtin),
-            AlgebraicType::Ref(r) => this.with(r)._resolve_refs(state),
-        }
-    }
-}
-
-impl ResolveRefs for BuiltinType {
-    type Output = Self;
-    fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output> {
-        match this.ty() {
-            BuiltinType::Array(ty) => this.with(ty)._resolve_refs(state).map(Self::Array),
-            BuiltinType::Map(m) => this.with(m)._resolve_refs(state).map(Self::Map),
+            Self::Ref(r) => this.with(r)._resolve_refs(state),
+            Self::Sum(sum) => this.with(sum)._resolve_refs(state).map(Into::into),
+            Self::Product(prod) => this.with(prod)._resolve_refs(state).map(Into::into),
+            Self::Builtin(BuiltinType::Array(ty)) => this.with(ty)._resolve_refs(state).map(Into::into),
+            Self::Builtin(BuiltinType::Map(m)) => this.with(&**m)._resolve_refs(state).map(Into::into),
             // These types are plain and cannot have refs in them.
             x => Some(x.clone()),
         }
@@ -86,20 +77,20 @@ impl ResolveRefs for BuiltinType {
 }
 
 impl ResolveRefs for ArrayType {
-    type Output = ArrayType;
+    type Output = Self;
     fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output> {
-        Some(ArrayType {
+        Some(Self {
             elem_ty: Box::new(this.map(|m| &*m.elem_ty)._resolve_refs(state)?),
         })
     }
 }
 
 impl ResolveRefs for MapType {
-    type Output = MapType;
+    type Output = Self;
     fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output> {
-        Some(MapType {
-            key_ty: Box::new(this.map(|m| &*m.key_ty)._resolve_refs(state)?),
-            ty: Box::new(this.map(|m| &*m.ty)._resolve_refs(state)?),
+        Some(Self {
+            key_ty: this.map(|m| &m.key_ty)._resolve_refs(state)?,
+            ty: this.map(|m| &m.ty)._resolve_refs(state)?,
         })
     }
 }
@@ -120,7 +111,7 @@ impl ResolveRefs for ProductType {
 impl ResolveRefs for ProductTypeElement {
     type Output = Self;
     fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output> {
-        Some(ProductTypeElement {
+        Some(Self {
             algebraic_type: this.map(|e| &e.algebraic_type)._resolve_refs(state)?,
             name: this.ty().name.clone(),
         })
@@ -135,15 +126,15 @@ impl ResolveRefs for SumType {
             .variants
             .iter()
             .map(|v| this.with(v)._resolve_refs(state))
-            .collect::<Option<_>>()?;
-        Some(SumType { variants })
+            .collect::<Option<Vec<_>>>()?;
+        Some(Self { variants })
     }
 }
 
 impl ResolveRefs for SumTypeVariant {
     type Output = Self;
     fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output> {
-        Some(SumTypeVariant {
+        Some(Self {
             algebraic_type: this.map(|v| &v.algebraic_type)._resolve_refs(state)?,
             name: this.ty().name.clone(),
         })

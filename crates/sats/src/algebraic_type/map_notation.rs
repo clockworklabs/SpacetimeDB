@@ -1,25 +1,23 @@
-use super::AlgebraicType;
-use crate::builtin_type::BuiltinType;
-use crate::de::fmt_fn;
-use crate::{ArrayType, MapType};
-use std::fmt::{self, Formatter};
+use crate::{de::fmt_fn, AlgebraicType, BuiltinType::*};
+use std::fmt;
 
 /// Wraps an algebraic `ty` in a `Display` impl using a object/map JSON-like notation.
 pub fn fmt_algebraic_type(ty: &AlgebraicType) -> impl '_ + fmt::Display {
     use fmt_algebraic_type as fmt;
 
     // Format name/index + type.
-    let fmt_name_ty = |f: &mut Formatter<'_>, i, name, ty| match name {
+    let fmt_name_ty = |f: &mut fmt::Formatter<'_>, i, name, ty| match name {
         Some(name) => write!(f, "{}: {}", name, fmt(ty)),
         None => write!(f, "{}: {}", i, fmt(ty)),
     };
 
     fmt_fn(move |f| match ty {
+        AlgebraicType::Ref(r) => write!(f, "{{ ty_: Ref, 0: {} }}", r.0),
         AlgebraicType::Sum(ty) => {
             write!(f, "{{ ty_: Sum")?;
             for (i, e_ty) in ty.variants.iter().enumerate() {
                 write!(f, ", ")?;
-                fmt_name_ty(f, i, e_ty.name.as_ref(), &e_ty.algebraic_type)?;
+                fmt_name_ty(f, i, e_ty.name.as_deref(), &e_ty.algebraic_type)?;
             }
             write!(f, " }}")
         }
@@ -27,32 +25,25 @@ pub fn fmt_algebraic_type(ty: &AlgebraicType) -> impl '_ + fmt::Display {
             write!(f, "{{ ty_: Product")?;
             for (i, e_ty) in ty.elements.iter().enumerate() {
                 write!(f, ", ")?;
-                fmt_name_ty(f, i, e_ty.name.as_ref(), &e_ty.algebraic_type)?;
+                fmt_name_ty(f, i, e_ty.name.as_deref(), &e_ty.algebraic_type)?;
             }
             write!(f, " }}")
         }
-        AlgebraicType::Builtin(ty) => {
-            write!(f, "{{ ty_: Builtin")?;
-            match &ty {
-                BuiltinType::Bool => write!(f, ", 0: Bool")?,
-                BuiltinType::I8 => write!(f, ", 0: I8")?,
-                BuiltinType::U8 => write!(f, ", 0: U8")?,
-                BuiltinType::I16 => write!(f, ", 0: I16")?,
-                BuiltinType::U16 => write!(f, ", 0: U16")?,
-                BuiltinType::I32 => write!(f, ", 0: I32")?,
-                BuiltinType::U32 => write!(f, ", 0: U32")?,
-                BuiltinType::I64 => write!(f, ", 0: I64")?,
-                BuiltinType::U64 => write!(f, ", 0: U64")?,
-                BuiltinType::I128 => write!(f, ", 0: I128")?,
-                BuiltinType::U128 => write!(f, ", 0: U128")?,
-                BuiltinType::F32 => write!(f, ", 0: F32")?,
-                BuiltinType::F64 => write!(f, ", 0: F64")?,
-                BuiltinType::String => write!(f, ", 0: String")?,
-                BuiltinType::Array(ArrayType { elem_ty }) => write!(f, ", 0: Array, 1: {}", fmt(elem_ty))?,
-                BuiltinType::Map(MapType { key_ty, ty }) => write!(f, "0: Map, 1: {}, 2: {}", fmt(key_ty), fmt(ty))?,
-            }
-            write!(f, " }}")
-        }
-        AlgebraicType::Ref(r) => write!(f, "{{ ty_: Ref, 0: {} }}", r.0),
+        AlgebraicType::Builtin(Array(ty)) => write!(f, "{{ ty_: Array, 0: {} }}", fmt(&ty.elem_ty)),
+        AlgebraicType::Builtin(Map(map)) => write!(f, "{{ ty_: Map, 0: {}, 1: {} }}", fmt(&map.key_ty), fmt(&map.ty)),
+        &AlgebraicType::Bool => write!(f, "{{ ty_: Bool }}"),
+        &AlgebraicType::I8 => write!(f, "{{ ty_: I8 }}"),
+        &AlgebraicType::U8 => write!(f, "{{ ty_: U8 }}"),
+        &AlgebraicType::I16 => write!(f, "{{ ty_: I16 }}"),
+        &AlgebraicType::U16 => write!(f, "{{ ty_: U16 }}"),
+        &AlgebraicType::I32 => write!(f, "{{ ty_: I32 }}"),
+        &AlgebraicType::U32 => write!(f, "{{ ty_: U32 }}"),
+        &AlgebraicType::I64 => write!(f, "{{ ty_: I64 }}"),
+        &AlgebraicType::U64 => write!(f, "{{ ty_: U64 }}"),
+        &AlgebraicType::I128 => write!(f, "{{ ty_: I128 }}"),
+        &AlgebraicType::U128 => write!(f, "{{ ty_: U128 }}"),
+        &AlgebraicType::F32 => write!(f, "{{ ty_: F32 }}"),
+        &AlgebraicType::F64 => write!(f, "{{ ty_: F64 }}"),
+        &AlgebraicType::String => write!(f, "{{ ty_: String }}"),
     })
 }

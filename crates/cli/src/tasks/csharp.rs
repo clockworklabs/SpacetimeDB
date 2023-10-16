@@ -1,4 +1,6 @@
+use anyhow::Context;
 use duct::cmd;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 pub(crate) fn build_csharp(project_path: &Path, _build_debug: bool) -> anyhow::Result<PathBuf> {
@@ -10,6 +12,14 @@ pub(crate) fn build_csharp(project_path: &Path, _build_debug: bool) -> anyhow::R
     if output_path.exists() {
         std::fs::remove_file(&output_path)?;
     }
+
+    // Ensure the project path exists.
+    fs::metadata(project_path).with_context(|| {
+        format!(
+            "The provided project path '{}' does not exist.",
+            project_path.to_str().unwrap()
+        )
+    })?;
 
     // run dotnet publish using cmd macro
     let result = cmd!("dotnet", "publish", "-c", "Release").dir(project_path).run();

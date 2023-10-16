@@ -1,5 +1,6 @@
 use nonempty::NonEmpty;
 use std::collections::HashMap;
+use tracing::info;
 
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::traits::{IndexSchema, TableSchema};
@@ -16,8 +17,9 @@ use spacetimedb_vm::expr::{ColumnOp, CrudExpr, DbType, Expr, IndexJoin, JoinExpr
 use spacetimedb_vm::operator::OpCmp;
 
 /// Compile the `SQL` expression into a `ast`
-#[tracing::instrument(skip(db, tx))]
+#[tracing::instrument(skip_all)]
 pub fn compile_sql(db: &RelationalDB, tx: &MutTxId, sql_text: &str) -> Result<Vec<CrudExpr>, DBError> {
+    info!(sql = sql_text);
     let ast = compile_to_ast(db, tx, sql_text)?;
 
     let mut results = Vec::with_capacity(ast.len());
@@ -234,7 +236,7 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
 
     let mut q = query(db_table_raw(
         ProductType::from(&table.root),
-        &table.root.table_name,
+        table.root.table_name.clone(),
         table.root.table_id,
         table.root.table_type,
         table.root.table_access,
@@ -244,7 +246,7 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
         for join in joins {
             match join {
                 Join::Inner { rhs, on } => {
-                    let t = db_table(rhs.into(), &rhs.table_name, rhs.table_id);
+                    let t = db_table(rhs.into(), rhs.table_name.clone(), rhs.table_id);
                     match on.op {
                         OpCmp::Eq => {}
                         x => unreachable!("Unsupported operator `{x}` for joins"),
@@ -355,7 +357,7 @@ fn compile_columns(table: &TableSchema, columns: Vec<FieldName>) -> DbTable {
     }
 
     DbTable::new(
-        &Header::new(&table.table_name, &new),
+        Header::new(table.table_name.clone(), new),
         table.table_id,
         table.table_type,
         table.table_access,
@@ -485,7 +487,7 @@ mod tests {
         auth::{StAccess, StTableType},
         error::ResultTest,
     };
-    use spacetimedb_sats::{AlgebraicType, BuiltinValue};
+    use spacetimedb_sats::AlgebraicType;
     use spacetimedb_vm::expr::{IndexScan, JoinExpr, Query};
 
     use crate::db::{
@@ -850,8 +852,8 @@ mod tests {
         let Query::IndexScan(IndexScan {
             table: DbTable { table_id, .. },
             col_id: 0,
-            lower_bound: Bound::Included(AlgebraicValue::Builtin(BuiltinValue::U64(3))),
-            upper_bound: Bound::Included(AlgebraicValue::Builtin(BuiltinValue::U64(3))),
+            lower_bound: Bound::Included(AlgebraicValue::U64(3)),
+            upper_bound: Bound::Included(AlgebraicValue::U64(3)),
         }) = query[0]
         else {
             panic!("unexpected operator {:#?}", query[0]);
@@ -935,7 +937,7 @@ mod tests {
         assert_eq!(table, "lhs");
         assert_eq!(field, "a");
 
-        let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::Builtin(BuiltinValue::U64(3)))) = **rhs else {
+        let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **rhs else {
             panic!("unexpected right hand side {:#?}", **rhs);
         };
 
@@ -1044,7 +1046,7 @@ mod tests {
         assert_eq!(table, "rhs");
         assert_eq!(field, "c");
 
-        let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::Builtin(BuiltinValue::U64(3)))) = **rhs else {
+        let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **rhs else {
             panic!("unexpected right hand side {:#?}", **rhs);
         };
         Ok(())
@@ -1086,8 +1088,8 @@ mod tests {
         let Query::IndexScan(IndexScan {
             table: DbTable { table_id, .. },
             col_id: 0,
-            lower_bound: Bound::Included(AlgebraicValue::Builtin(BuiltinValue::U64(3))),
-            upper_bound: Bound::Included(AlgebraicValue::Builtin(BuiltinValue::U64(3))),
+            lower_bound: Bound::Included(AlgebraicValue::U64(3)),
+            upper_bound: Bound::Included(AlgebraicValue::U64(3)),
         }) = query[0]
         else {
             panic!("unexpected operator {:#?}", query[0]);
@@ -1130,7 +1132,7 @@ mod tests {
             table: DbTable { table_id, .. },
             col_id: 1,
             lower_bound: Bound::Unbounded,
-            upper_bound: Bound::Excluded(AlgebraicValue::Builtin(BuiltinValue::U64(4))),
+            upper_bound: Bound::Excluded(AlgebraicValue::U64(4)),
         }) = rhs[0]
         else {
             panic!("unexpected operator {:#?}", rhs[0]);
@@ -1207,8 +1209,8 @@ mod tests {
         let Query::IndexScan(IndexScan {
             table: DbTable { table_id, .. },
             col_id: 1,
-            lower_bound: Bound::Excluded(AlgebraicValue::Builtin(BuiltinValue::U64(2))),
-            upper_bound: Bound::Excluded(AlgebraicValue::Builtin(BuiltinValue::U64(4))),
+            lower_bound: Bound::Excluded(AlgebraicValue::U64(2)),
+            upper_bound: Bound::Excluded(AlgebraicValue::U64(4)),
         }) = rhs[0]
         else {
             panic!("unexpected operator {:#?}", rhs[0]);
@@ -1233,7 +1235,7 @@ mod tests {
         assert_eq!(table, "rhs");
         assert_eq!(field, "d");
 
-        let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::Builtin(BuiltinValue::U64(3)))) = **value else {
+        let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **value else {
             panic!("unexpected right hand side {:#?}", value);
         };
         Ok(())

@@ -20,7 +20,7 @@ pub struct ProductValue {
 macro_rules! product {
     [$($elems:expr),*$(,)?] => {
         $crate::ProductValue {
-            elements: vec![$($crate::AlgebraicValue::from($elems)),*]
+            elements: [$($crate::AlgebraicValue::from($elems)),*].into()
         }
     }
 }
@@ -155,12 +155,12 @@ impl ProductValue {
 
     /// Interprets the value at field of `self` identified by `index` as a string slice.
     pub fn field_as_str(&self, index: usize, named: Option<&'static str>) -> Result<&str, InvalidFieldError> {
-        self.extract_field(index, named, |f| f.as_string().map(|x| x.as_str()))
+        self.extract_field(index, named, |f| f.as_string()).map(|x| &**x)
     }
 
     /// Interprets the value at field of `self` identified by `index` as a byte slice.
     pub fn field_as_bytes(&self, index: usize, named: Option<&'static str>) -> Result<&[u8], InvalidFieldError> {
-        self.extract_field(index, named, |f| f.as_bytes().map(|x| x.as_slice()))
+        self.extract_field(index, named, |f| f.as_bytes())
     }
 
     /// Interprets the value at field of `self` identified by `index` as a array.

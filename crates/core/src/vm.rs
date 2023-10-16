@@ -1,7 +1,7 @@
 //! The [DbProgram] that execute arbitrary queries & code against the database.
 use crate::db::cursor::{CatalogCursor, IndexCursor, TableCursor};
 use crate::db::datastore::locking_tx_datastore::{IterByColEq, MutTxId};
-use crate::db::datastore::traits::{ColumnDef, IndexDef, TableDef};
+use crate::db::datastore::traits::{ColId, ColumnDef, IndexDef, TableDef};
 use crate::db::relational_db::RelationalDB;
 use itertools::Itertools;
 use nonempty::NonEmpty;
@@ -20,6 +20,7 @@ use spacetimedb_vm::program::{ProgramRef, ProgramVm};
 use spacetimedb_vm::rel_ops::RelOps;
 use std::collections::HashMap;
 use std::ops::RangeBounds;
+use tracing::debug;
 
 //TODO: This is partially duplicated from the `vm` crate to avoid borrow checker issues
 //and pull all that crate in core. Will be revisited after trait refactor
@@ -134,7 +135,7 @@ fn join_inner<'a>(
 }
 
 fn get_table<'a>(stdb: &'a RelationalDB, tx: &'a MutTxId, query: SourceExpr) -> Result<Box<dyn RelOps + 'a>, ErrorVm> {
-    let head = query.head();
+    let head = query.head().clone();
     let row_count = query.row_count();
     Ok(match query {
         SourceExpr::MemTable(x) => Box::new(RelIter::new(head, row_count, x)) as Box<IterRows<'_>>,
@@ -152,7 +153,7 @@ fn iter_by_col_range<'a>(
     col_id: u32,
     range: impl RangeBounds<AlgebraicValue> + 'a,
 ) -> Result<Box<dyn RelOps + 'a>, ErrorVm> {
-    let iter = db.iter_by_col_range(tx, table.table_id, col_id, range)?;
+    let iter = db.iter_by_col_range(tx, table.table_id, ColId(col_id), range)?;
     Ok(Box::new(IndexCursor::new(table, iter)?) as Box<IterRows<'_>>)
 }
 
@@ -224,7 +225,7 @@ impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
                     let table_id = self.index_table;
                     let col_id = self.index_col;
                     let value = value.clone();
-                    let mut index_iter = self.db.iter_by_col_eq(self.tx, table_id, col_id, value)?;
+                    let mut index_iter = self.db.iter_by_col_eq(self.tx, table_id, ColId(col_id), value)?;
                     if let Some(value) = index_iter.next() {
                         self.index_iter = Some(index_iter);
                         return Ok(Some(value.into()));
@@ -259,14 +260,16 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         }
     }
 
+    #[tracing::instrument(skip_all)]
     fn _eval_query(&mut self, query: QueryCode) -> Result<Code, ErrorVm> {
         let table_access = query.table.table_access();
+        debug!(table = query.table.table_name());
 
         let result = build_query(self.db, self.tx, query)?;
         let head = result.head().clone();
         let rows: Vec<_> = result.collect_vec()?;
 
-        Ok(Code::Table(MemTable::new(&head, table_access, &rows)))
+        Ok(Code::Table(MemTable::new(head, table_access, rows)))
     }
 
     fn _execute_insert(&mut self, table: &Table, rows: Vec<ProductValue>) -> Result<Code, ErrorVm> {
@@ -412,7 +415,7 @@ impl ProgramVm for DbProgram<'_, '_> {
                     deleted.data.clone().into_iter().map(|row| row.data).collect_vec(),
                 )?;
 
-                let to_insert = mem_table(table.head(), deleted.data.into_iter().map(|row| row.data));
+                let to_insert = mem_table(table.head().clone(), deleted.data.into_iter().map(|row| row.data));
                 insert.table = Table::MemTable(to_insert);
 
                 let result = self.insert_query(&table, insert)?;
@@ -514,7 +517,7 @@ pub(crate) mod tests {
     use crate::db::relational_db::{ST_COLUMNS_NAME, ST_INDEXES_NAME, ST_SEQUENCES_NAME, ST_TABLES_NAME};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::relation::{DbTable, FieldName};
-    use spacetimedb_sats::{product, AlgebraicType, BuiltinType, ProductType, ProductValue};
+    use spacetimedb_sats::{product, AlgebraicType, ProductType, ProductValue};
     use spacetimedb_vm::dsl::*;
     use spacetimedb_vm::eval::run_ast;
     use spacetimedb_vm::operator::OpCmp;
@@ -535,7 +538,7 @@ pub(crate) mod tests {
                     .iter()
                     .enumerate()
                     .map(|(i, e)| ColumnDef {
-                        col_name: e.name.clone().unwrap_or(i.to_string()),
+                        col_name: e.name.clone().unwrap_or_else(|| i.to_string()),
                         col_type: e.algebraic_type.clone(),
                         is_autoinc: false,
                     })
@@ -575,11 +578,11 @@ pub(crate) mod tests {
         let mut tx = stdb.begin_tx();
         let p = &mut DbProgram::new(&stdb, &mut tx, AuthCtx::for_testing());
 
-        let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
+        let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row = product!(1u64, "health");
         let table_id = create_table_from_program(p, "inventory", head.clone(), &[row])?;
 
-        let inv = db_table(head, "inventory", table_id);
+        let inv = db_table(head, "inventory".to_owned(), table_id);
 
         let data = MemTable::from_value(scalar(1u64));
         let rhs = data.get_field(0).unwrap().clone();
@@ -592,10 +595,10 @@ pub(crate) mod tests {
         };
 
         //The expected result
-        let inv = ProductType::from_iter([
-            (Some("inventory_id"), BuiltinType::U64),
-            (Some("name"), BuiltinType::String),
-            (None, BuiltinType::U64),
+        let inv = ProductType::from([
+            (Some("inventory_id"), AlgebraicType::U64),
+            (Some("name"), AlgebraicType::String),
+            (None, AlgebraicType::U64),
         ]);
         let row = product!(scalar(1u64), scalar("health"), scalar(1u64));
         let input = mem_table(inv, vec![row]);
@@ -689,7 +692,7 @@ pub(crate) mod tests {
     fn test_query_catalog_indexes() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
 
-        let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
+        let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row = product!(1u64, "health");
 
         let mut tx = db.begin_tx();

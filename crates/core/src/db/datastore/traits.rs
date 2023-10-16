@@ -1,5 +1,6 @@
 use crate::db::relational_db::ST_TABLES_ID;
 use core::fmt;
+use derive_more::From;
 use nonempty::NonEmpty;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::relation::{DbTable, FieldName, FieldOnly, Header, TableField};
@@ -7,15 +8,22 @@ use spacetimedb_lib::{ColumnIndexAttribute, DataKey, Hash};
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue};
 use spacetimedb_vm::expr::SourceExpr;
-use std::{ops::RangeBounds, sync::Arc};
+use std::{borrow::Cow, ops::RangeBounds, sync::Arc};
 
 use super::{system_tables::StTableRow, Result};
 
 /// The `id` for [Sequence]
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, From)]
 pub struct TableId(pub(crate) u32);
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, From)]
 pub struct ColId(pub(crate) u32);
+
+impl From<ColId> for NonEmpty<ColId> {
+    fn from(value: ColId) -> Self {
+        NonEmpty::new(value)
+    }
+}
+
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct IndexId(pub(crate) u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -119,11 +127,11 @@ impl From<IndexSchema> for IndexDef {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ColumnSchema {
-    pub(crate) table_id: u32,
-    pub(crate) col_id: u32,
-    pub(crate) col_name: String,
-    pub(crate) col_type: AlgebraicType,
-    pub(crate) is_autoinc: bool,
+    pub table_id: u32,
+    pub col_id: u32,
+    pub col_name: String,
+    pub col_type: AlgebraicType,
+    pub is_autoinc: bool,
 }
 
 impl From<&ColumnSchema> for spacetimedb_lib::table::ColumnDef {
@@ -198,13 +206,13 @@ pub struct ConstraintDef {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableSchema {
-    pub(crate) table_id: u32,
-    pub(crate) table_name: String,
-    pub(crate) columns: Vec<ColumnSchema>,
-    pub(crate) indexes: Vec<IndexSchema>,
-    pub(crate) constraints: Vec<ConstraintSchema>,
-    pub(crate) table_type: StTableType,
-    pub(crate) table_access: StAccess,
+    pub table_id: u32,
+    pub table_name: String,
+    pub columns: Vec<ColumnSchema>,
+    pub indexes: Vec<IndexSchema>,
+    pub constraints: Vec<ConstraintSchema>,
+    pub table_type: StTableType,
+    pub table_access: StAccess,
 }
 
 impl TableSchema {
@@ -287,7 +295,7 @@ impl From<&TableSchema> for ProductType {
 impl From<&TableSchema> for SourceExpr {
     fn from(value: &TableSchema) -> Self {
         SourceExpr::DbTable(DbTable::new(
-            &Header::from_product_type(&value.table_name, value.into()),
+            Header::from_product_type(value.table_name.clone(), value.into()),
             value.table_id,
             value.table_type,
             value.table_access,
@@ -297,13 +305,13 @@ impl From<&TableSchema> for SourceExpr {
 
 impl From<&TableSchema> for DbTable {
     fn from(value: &TableSchema) -> Self {
-        DbTable::new(&value.into(), value.table_id, value.table_type, value.table_access)
+        DbTable::new(value.into(), value.table_id, value.table_type, value.table_access)
     }
 }
 
 impl From<&TableSchema> for Header {
     fn from(value: &TableSchema) -> Self {
-        Header::from_product_type(&value.table_name, value.into())
+        Header::from_product_type(value.table_name.clone(), value.into())
     }
 }
 
@@ -348,6 +356,18 @@ impl From<ProductType> for TableDef {
             indexes: vec![],
             table_type: StTableType::User,
             table_access: StAccess::Public,
+        }
+    }
+}
+
+impl From<&TableSchema> for TableDef {
+    fn from(value: &TableSchema) -> Self {
+        Self {
+            table_name: value.table_name.clone(),
+            columns: value.columns.iter().cloned().map(Into::into).collect(),
+            indexes: value.indexes.iter().cloned().map(Into::into).collect(),
+            table_type: value.table_type,
+            table_access: value.table_access,
         }
     }
 }
@@ -436,7 +456,7 @@ pub trait TxDatastore: DataRow + Tx {
         &'a self,
         tx: &'a Self::TxId,
         table_id: TableId,
-        col_id: ColId,
+        cols: NonEmpty<ColId>,
         range: R,
     ) -> Result<Self::IterByColRange<'a, R>>;
 
@@ -444,7 +464,7 @@ pub trait TxDatastore: DataRow + Tx {
         &'a self,
         tx: &'a Self::TxId,
         table_id: TableId,
-        col_id: ColId,
+        cols: NonEmpty<ColId>,
         value: AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a>>;
 
@@ -459,14 +479,21 @@ pub trait TxDatastore: DataRow + Tx {
 pub trait MutTxDatastore: TxDatastore + MutTx {
     // Tables
     fn create_table_mut_tx(&self, tx: &mut Self::MutTxId, schema: TableDef) -> Result<TableId>;
-    fn row_type_for_table_mut_tx(&self, tx: &Self::MutTxId, table_id: TableId) -> Result<ProductType>;
-    fn schema_for_table_mut_tx(&self, tx: &Self::MutTxId, table_id: TableId) -> Result<TableSchema>;
+    // In these methods, we use `'tx` because the return type must borrow data
+    // from `Inner` in the `Locking` implementation,
+    // and `Inner` lives in `tx: &MutTxId`.
+    fn row_type_for_table_mut_tx<'tx>(
+        &self,
+        tx: &'tx Self::MutTxId,
+        table_id: TableId,
+    ) -> Result<Cow<'tx, ProductType>>;
+    fn schema_for_table_mut_tx<'tx>(&self, tx: &'tx Self::MutTxId, table_id: TableId) -> Result<Cow<'tx, TableSchema>>;
     fn drop_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId) -> Result<()>;
     fn rename_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, new_name: &str) -> Result<()>;
     fn table_id_exists(&self, tx: &Self::MutTxId, table_id: &TableId) -> bool;
     fn table_id_from_name_mut_tx(&self, tx: &Self::MutTxId, table_name: &str) -> Result<Option<TableId>>;
     fn table_name_from_id_mut_tx(&self, tx: &Self::MutTxId, table_id: TableId) -> Result<Option<String>>;
-    fn get_all_tables_mut_tx(&self, tx: &Self::MutTxId) -> super::Result<Vec<TableSchema>> {
+    fn get_all_tables_mut_tx<'tx>(&self, tx: &'tx Self::MutTxId) -> super::Result<Vec<Cow<'tx, TableSchema>>> {
         let mut tables = Vec::new();
         let table_rows = self.iter_mut_tx(tx, TableId(ST_TABLES_ID))?.collect::<Vec<_>>();
         for data_ref in table_rows {
@@ -504,14 +531,14 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         &'a self,
         tx: &'a Self::MutTxId,
         table_id: TableId,
-        col_id: ColId,
+        cols: impl Into<NonEmpty<ColId>>,
         range: R,
     ) -> Result<Self::IterByColRange<'a, R>>;
     fn iter_by_col_eq_mut_tx<'a>(
         &'a self,
         tx: &'a Self::MutTxId,
         table_id: TableId,
-        col_id: ColId,
+        cols: impl Into<NonEmpty<ColId>>,
         value: AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a>>;
     fn get_mut_tx<'a>(

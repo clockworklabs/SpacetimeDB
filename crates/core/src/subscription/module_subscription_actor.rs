@@ -146,11 +146,11 @@ impl ModuleSubscriptionActor {
         self.remove_subscriber(sender.id);
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
 
-        let queries: QuerySet = subscription
-            .query_strings
-            .into_iter()
-            .map(|query| compile_read_only_query(&self.relational_db, tx, &auth, &query))
-            .collect::<Result<_, _>>()?;
+        let mut queries = QuerySet::new();
+        for sql in subscription.query_strings {
+            let qset = compile_read_only_query(&self.relational_db, tx, &auth, &sql)?;
+            queries.extend(qset);
+        }
 
         let sub = match self.subscriptions.iter_mut().find(|s| s.queries == queries) {
             Some(sub) => {
