@@ -328,7 +328,7 @@ impl ControlDb {
         let tree = self.db.open_tree("database_by_address")?;
 
         let key = database.address.to_hex();
-        if tree.contains_key(&key)? {
+        if tree.contains_key(key)? {
             return Err(Error::DatabaseAlreadyExists(database.address));
         }
 

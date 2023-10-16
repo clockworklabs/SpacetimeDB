@@ -2,6 +2,8 @@ use core::fmt;
 use sha3::{Digest, Keccak256};
 use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, AlgebraicType};
 
+use crate::hex::HexString;
+
 pub const HASH_SIZE: usize = 32;
 
 #[derive(Eq, PartialEq, PartialOrd, Ord, Clone, Copy, Hash)]
@@ -14,8 +16,6 @@ impl_serialize!([] Hash, (self, ser) => self.data.serialize(ser));
 impl_deserialize!([] Hash, de => Ok(Self { data: <_>::deserialize(de)? }));
 
 impl Hash {
-    const ABBREVIATION_LEN: usize = 16;
-
     pub const ZERO: Self = Self { data: [0; HASH_SIZE] };
 
     pub fn from_arr(arr: &[u8; HASH_SIZE]) -> Self {
@@ -31,12 +31,16 @@ impl Hash {
         self.data.to_vec()
     }
 
-    pub fn to_hex(&self) -> String {
-        hex::encode(self.data)
+    pub fn to_hex(&self) -> HexString<32> {
+        crate::hex::encode(&self.data)
     }
 
-    pub fn to_abbreviated_hex(&self) -> String {
-        self.to_hex()[0..Hash::ABBREVIATION_LEN].to_owned()
+    pub fn abbreviate(&self) -> &[u8; 16] {
+        self.data[..16].try_into().unwrap()
+    }
+
+    pub fn to_abbreviated_hex(&self) -> HexString<16> {
+        crate::hex::encode(self.abbreviate())
     }
 
     pub fn as_slice(&self) -> &[u8] {
@@ -56,7 +60,7 @@ pub fn hash_bytes(bytes: impl AsRef<[u8]>) -> Hash {
 
 impl fmt::Display for Hash {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&hex::encode(self.data))
+        f.pad(&self.to_hex())
     }
 }
 
