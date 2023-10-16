@@ -13,6 +13,9 @@ harness = false
 name = "generic"
 harness = false
 
+[[bin]]
+name = "summarize"
+
 [lib]
 bench = false
 
@@ -39,3 +42,5 @@ byte-unit.workspace = true
 futures.workspace = true
 tracing-subscriber.workspace = true
 lazy_static.workspace = true
+walkdir.workspace = true
+regex.workspace = true

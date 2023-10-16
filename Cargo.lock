@@ -4140,6 +4140,7 @@ dependencies = [
  "lazy_static",
  "log",
  "rand 0.8.5",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",
@@ -4151,6 +4152,7 @@ dependencies = [
  "tempdir",
  "tokio",
  "tracing-subscriber",
+ "walkdir",
 ]
 
 [[package]]

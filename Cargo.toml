@@ -175,6 +175,7 @@ tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 url = "2.3.1"
 urlencoding = "2.1.2"
 uuid = { version = "1.2.1", features = ["v4"] }
+walkdir = "2.2.5"
 wasmbin = "0.6"
 
 # wasmer prior to 4.1.1 had a signal handling bug on macOS.
