@@ -1,3 +1,26 @@
+//! This file defines `CallSpan` and `CallSpanStart`,
+//! which describe the time that a module spends executing "host calls,"
+//! the WASM analog to syscalls.
+//!
+//! We can collect `CallSpan` timing data for various parts of host-call execution:
+//! - `WasmInstanceEnv`, responsible for direct communication between WASM and the host.
+//! - `InstanceEnv`, responsible for calls into the relational DB.
+//! - Others?
+//!
+//! The instrumentation has non-negligible overhead,
+//! so we enable it on a per-component basis with `cfg` attributes.
+//! This is accomplished by defining two interchangeable modules,
+//! `noop` and `op`, both of which implement the call-span interface.
+//! `noop` does nothing.
+//! `op` uses `std::time::Instant` and `std::time::Duration` to capture timings.
+//! Components which use the time-span interface will conditionally import one of the two modules, like:
+//! ```no-run
+//! #[cfg(feature = "spacetimedb-wasm-instance-times)]
+//! use instrumentation::op as span;
+//! #[cfg(not(feature = "spacetimedb-wasm-instance-times)]
+//! use instrumentation::noop as span;
+//! ```
+
 use std::time::{Duration, Instant};
 
 use enum_map::{enum_map, Enum, EnumMap};
