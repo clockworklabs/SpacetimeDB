@@ -36,7 +36,7 @@ impl Identity {
     const ABBREVIATION_LEN: usize = 16;
 
     /// Returns an `Identity` defined as the given `bytes` byte array.
-    pub fn from_byte_array(bytes: [u8; 32]) -> Self {
+    pub const fn from_byte_array(bytes: [u8; 32]) -> Self {
         Self {
             __identity_bytes: bytes,
         }

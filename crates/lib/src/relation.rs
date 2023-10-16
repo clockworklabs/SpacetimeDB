@@ -602,7 +602,7 @@ impl Relation for DbTable {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, From)]
 pub enum Table {
     MemTable(MemTable),
     DbTable(DbTable),
