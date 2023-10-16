@@ -100,7 +100,7 @@ static MonoArray* stdb_buffer_consume(Buffer buf);
 //   return out;
 // }
 
-#define STDB_IMPORT_MODULE_MINOR(minor) "spacetime_6." #minor
+#define STDB_IMPORT_MODULE_MINOR(minor) "spacetime_7." #minor
 #define STDB_IMPORT_MODULE STDB_IMPORT_MODULE_MINOR(0)
 
 __attribute__((import_module(STDB_IMPORT_MODULE),
