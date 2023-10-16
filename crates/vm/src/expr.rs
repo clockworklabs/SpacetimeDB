@@ -1302,41 +1302,14 @@ impl AuthAccess for CrudCode {
         if owner == caller {
             return Ok(());
         }
-        match self {
-            CrudCode::Query(q) => q.check_auth(owner, caller),
-            CrudCode::Insert { table, .. } => table.check_auth(owner, caller),
-            CrudCode::Update { insert, delete } => {
-                insert.check_auth(owner, caller)?;
-                delete.check_auth(owner, caller)
-            }
-            CrudCode::Delete { query, .. } => query.check_auth(owner, caller),
-            //TODO: Must allow to create private tables for `caller`
-            CrudCode::CreateTable { name, table_access, .. } => {
-                if table_access == &StAccess::Public {
-                    Ok(())
-                } else {
-                    Err(AuthError::TablePrivate {
-                        named: name.to_string(),
-                    })
-                }
-            }
-            CrudCode::Drop {
-                name,
-                kind,
-                table_access,
-            } => {
-                if table_access == &StAccess::Public {
-                    Ok(())
-                } else {
-                    let named = name.to_string();
-                    Err(match kind {
-                        DbType::Table => AuthError::TablePrivate { named },
-                        DbType::Index => AuthError::IndexPrivate { named },
-                        DbType::Sequence => AuthError::SequencePrivate { named },
-                    })
-                }
-            }
+
+        // Anyone may query, so as long as the tables involved are public.
+        if let CrudCode::Query(q) = self {
+            return q.check_auth(owner, caller);
         }
+
+        // Mutating operations require `owner == caller`.
+        Err(AuthError::OwnerRequired)
     }
 }
 
