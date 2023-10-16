@@ -7,8 +7,6 @@ use crate::host::wasm_common::{
     err_to_errno, AbiRuntimeError, BufferIdx, BufferIterIdx, BufferIters, Buffers, TimingSpan, TimingSpanIdx,
     TimingSpanSet,
 };
-use bytes::Bytes;
-use itertools::Itertools;
 use wasmer::{FunctionEnvMut, MemoryAccessError, RuntimeError, ValueType, WasmPtr};
 
 use crate::host::instance_env::InstanceEnv;
@@ -554,14 +552,12 @@ impl WasmInstanceEnv {
     // #[tracing::instrument(skip_all)]
     pub fn iter_start(caller: FunctionEnvMut<'_, Self>, table_id: u32, out: WasmPtr<BufferIterIdx>) -> RtResult<u16> {
         Self::cvt_ret(caller, "iter_start", out, |mut caller, _mem| {
-            // Construct the iterator.
-            let iter = caller.data().instance_env.iter(table_id);
-            // TODO: make it so the above iterator doesn't lock the database for its whole lifetime
-            let iter = iter.map_ok(Bytes::from).collect::<Vec<_>>().into_iter();
+            // Collect the iterator chunks.
+            let chunks = caller.data().instance_env.iter_chunks(table_id)?;
 
             // Register the iterator and get back the index to write to `out`.
             // Calls to the iterator are done through dynamic dispatch.
-            Ok(caller.data_mut().iters.insert(Box::new(iter)))
+            Ok(caller.data_mut().iters.insert(chunks.into_iter()))
         })
     }
 
@@ -591,13 +587,11 @@ impl WasmInstanceEnv {
             let filter = caller.data().mem().read_bytes(&caller, filter, filter_len)?;
 
             // Construct the iterator.
-            let iter = caller.data().instance_env.iter_filtered(table_id, &filter)?;
-            // TODO: make it so the above iterator doesn't lock the database for its whole lifetime
-            let iter = iter.map(Bytes::from).map(Ok).collect::<Vec<_>>().into_iter();
+            let chunks = caller.data().instance_env.iter_filtered_chunks(table_id, &filter)?;
 
             // Register the iterator and get back the index to write to `out`.
             // Calls to the iterator are done through dynamic dispatch.
-            Ok(caller.data_mut().iters.insert(Box::new(iter)))
+            Ok(caller.data_mut().iters.insert(chunks.into_iter()))
         })
     }
 
@@ -624,11 +618,9 @@ impl WasmInstanceEnv {
                 .ok_or_else(|| RuntimeError::new("no such iterator"))?;
 
             // Advance the iterator.
-            match iter.next() {
-                Some(Ok(buf)) => Ok(data_mut.buffers.insert(buf)),
-                Some(Err(err)) => Err(err.into()),
-                None => Ok(BufferIdx::INVALID),
-            }
+            Ok(iter
+                .next()
+                .map_or(BufferIdx::INVALID, |buf| data_mut.buffers.insert(buf.into())))
         })
     }
 

@@ -281,7 +281,7 @@ impl BufferIdx {
     }
 }
 
-decl_index!(BufferIterIdx => Box<dyn Iterator<Item = Result<bytes::Bytes, NodesError>> + Send + Sync>);
+decl_index!(BufferIterIdx => std::vec::IntoIter<Box<[u8]>>);
 pub(super) type BufferIters = ResourceSlab<BufferIterIdx>;
 
 pub(super) struct TimingSpan {
