@@ -1,4 +1,4 @@
-use crate::worker_metrics::metrics_group;
+use crate::util::typed_prometheus::metrics_group;
 use once_cell::sync::Lazy;
 use prometheus::{Histogram, HistogramVec};
 

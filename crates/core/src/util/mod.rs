@@ -6,6 +6,7 @@ pub mod prometheus_handle;
 mod future_queue;
 pub mod lending_pool;
 pub mod notify_once;
+pub mod typed_prometheus;
 
 pub use future_queue::{future_queue, FutureQueue};
 
