@@ -5,7 +5,7 @@ use std::time::Instant;
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
 use crate::host::scheduler::{ScheduleError, ScheduledReducerId};
 use crate::host::timestamp::Timestamp;
-use crate::host::wasm_common::instrumentation::CallSpanStart;
+use crate::host::wasm_common::instrumentation;
 use crate::host::wasm_common::module_host_actor::ExecutionTimings;
 use crate::host::wasm_common::{
     err_to_errno,
@@ -17,6 +17,11 @@ use wasmer::{FunctionEnvMut, MemoryAccessError, RuntimeError, ValueType, WasmPtr
 use crate::host::instance_env::InstanceEnv;
 
 use super::{Mem, WasmError};
+
+#[cfg(not(feature = "spacetimedb-wasm-instance-env-times"))]
+use instrumentation::noop as span;
+#[cfg(feature = "spacetimedb-wasm-instance-env-times")]
+use instrumentation::op as span;
 
 /// A `WasmInstanceEnv` provides the connection between a module
 /// and the database.
@@ -157,7 +162,7 @@ impl WasmInstanceEnv {
         call: Call,
         f: impl FnOnce(FunctionEnvMut<'_, Self>, &Mem) -> WasmResult<()>,
     ) -> RtResult<u16> {
-        let span_start = CallSpanStart::new(call);
+        let span_start = span::CallSpanStart::new(call);
 
         // Call `f` with the caller and a handle to the memory.
         let mem = caller.data().mem();
@@ -165,7 +170,7 @@ impl WasmInstanceEnv {
 
         // Track the span of this call.
         let span = span_start.end();
-        caller.data_mut().call_times.span(span);
+        span::record_span(&mut caller.data_mut().call_times, span);
 
         // Bail if there were no errors.
         let Err(err) = result else {
@@ -215,14 +220,14 @@ impl WasmInstanceEnv {
     /// One of `cvt`, `cvt_ret`, or `cvt_noret` should be used in the implementation of any
     /// host call, to provide consistent error handling and instrumentation.
     fn cvt_noret(mut caller: FunctionEnvMut<'_, Self>, call: Call, f: impl FnOnce(FunctionEnvMut<'_, Self>, &Mem)) {
-        let span_start = CallSpanStart::new(call);
+        let span_start = span::CallSpanStart::new(call);
 
         // Call `f` with the caller and a handle to the memory.
         let mem = caller.data().mem();
         f(caller.as_mut(), &mem);
 
         let span = span_start.end();
-        caller.data_mut().call_times.span(span);
+        span::record_span(&mut caller.data_mut().call_times, span);
     }
 
     /// Reads a string from WASM memory starting at `ptr` and lasting `len` bytes.

@@ -2,28 +2,58 @@ use std::time::{Duration, Instant};
 
 use enum_map::{enum_map, Enum, EnumMap};
 
-pub struct CallSpanStart {
-    call: Call,
-    start: Instant,
-}
+#[allow(unused)]
+pub mod noop {
+    use super::*;
 
-impl CallSpanStart {
-    pub fn new(call: Call) -> Self {
-        let start = Instant::now();
-        Self { call, start }
+    pub struct CallSpanStart;
+
+    impl CallSpanStart {
+        pub fn new(_call: Call) -> Self {
+            Self
+        }
+
+        pub fn end(self) -> CallSpan {
+            CallSpan
+        }
     }
 
-    pub fn end(self) -> CallSpan {
-        let call = self.call;
-        let duration = self.start.elapsed();
-        CallSpan { call, duration }
-    }
+    pub struct CallSpan;
+
+    pub fn record_span(_call_times: &mut CallTimes, _span: CallSpan) {}
 }
 
-#[derive(Debug)]
-pub struct CallSpan {
-    call: Call,
-    duration: Duration,
+#[allow(unused)]
+pub mod op {
+    use super::*;
+
+    pub struct CallSpanStart {
+        call: Call,
+        start: Instant,
+    }
+
+    impl CallSpanStart {
+        pub fn new(call: Call) -> Self {
+            let start = Instant::now();
+            Self { call, start }
+        }
+
+        pub fn end(self) -> CallSpan {
+            let call = self.call;
+            let duration = self.start.elapsed();
+            CallSpan { call, duration }
+        }
+    }
+
+    #[derive(Debug)]
+    pub struct CallSpan {
+        pub(super) call: Call,
+        pub(super) duration: Duration,
+    }
+
+    pub fn record_span(times: &mut CallTimes, span: CallSpan) {
+        times.span(span)
+    }
 }
 
 /// Tags for each call that a `WasmInstanceEnv` can make.
@@ -57,7 +87,7 @@ impl CallTimes {
 
     /// Track a particular `CallSpan` by adding its duration to the
     /// associated `Call`'s timing information.
-    pub fn span(&mut self, span: CallSpan) {
+    pub fn span(&mut self, span: op::CallSpan) {
         self.times[span.call] += span.duration;
     }
 
