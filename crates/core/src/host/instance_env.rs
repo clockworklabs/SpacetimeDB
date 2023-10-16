@@ -47,6 +47,7 @@ impl BufWriter for ChunkedWriter {
 }
 
 impl ChunkedWriter {
+    /// Flushes the currently populated part of the scratch space as a new chunk.
     pub fn force_flush(&mut self) {
         if !self.scratch_space.is_empty() {
             // We intentionally clone here so that our scratch space is not
@@ -62,6 +63,8 @@ impl ChunkedWriter {
         }
     }
 
+    /// Similar to [`Self::force_flush`], but only flushes if the data in the
+    /// scratch space is larger than our chunking threshold.
     pub fn flush(&mut self) {
         // For now, just send buffers over a certain fixed size.
         const ITER_CHUNK_SIZE: usize = 64 * 1024;
@@ -71,6 +74,7 @@ impl ChunkedWriter {
         }
     }
 
+    /// Finalises the writer and returns all the chunks.
     pub fn into_chunks(mut self) -> Vec<Box<[u8]>> {
         if !self.scratch_space.is_empty() {
             // This is equivalent to calling `force_flush`, but we avoid extra
