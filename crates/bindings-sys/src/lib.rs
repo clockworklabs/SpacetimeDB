@@ -21,7 +21,7 @@ pub mod raw {
     // on. Any non-breaking additions to the abi surface should be put in a new `extern {}` block
     // with a module identifier with a minor version 1 above the previous highest minor version.
     // For breaking changes, all functions should be moved into one new `spacetime_X.0` block.
-    #[link(wasm_import_module = "spacetime_6.0")]
+    #[link(wasm_import_module = "spacetime_7.0")]
     extern "C" {
         /*
         /// Create a table with `name`, a UTF-8 slice in WASM memory lasting `name_len` bytes,
@@ -711,13 +711,21 @@ impl Buffer {
         unsafe { raw::_buffer_len(self.handle()) }
     }
 
-    /// Read the contents of the buffer into a boxed byte slice.
+    /// Read the contents of the buffer into the provided Vec.
+    /// The Vec is cleared in the process.
+    pub fn read_into(self, buf: &mut Vec<u8>) {
+        let data_len = self.data_len();
+        buf.clear();
+        buf.reserve(data_len);
+        self.read_uninit(&mut buf.spare_capacity_mut()[..data_len]);
+        // SAFETY: We just wrote `data_len` bytes into `buf`.
+        unsafe { buf.set_len(data_len) };
+    }
+
+    /// Read the contents of the buffer into a new boxed byte slice.
     pub fn read(self) -> Box<[u8]> {
-        let len = self.data_len();
-        let mut buf = alloc::vec::Vec::with_capacity(len);
-        self.read_uninit(buf.spare_capacity_mut());
-        // SAFETY: We just wrote `len` bytes to `buf`.
-        unsafe { buf.set_len(len) };
+        let mut buf = alloc::vec::Vec::new();
+        self.read_into(&mut buf);
         buf.into_boxed_slice()
     }
 
@@ -746,14 +754,13 @@ impl Buffer {
 }
 
 impl Iterator for BufferIter {
-    type Item = Result<Box<[u8]>, Errno>;
+    type Item = Result<Buffer, Errno>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let buf = unsafe { call(|out| raw::_iter_next(self.handle(), out)) };
         match buf {
             Ok(buf) if buf.is_invalid() => None,
-            Ok(buf) => Some(Ok(buf.read())),
-            Err(e) => Some(Err(e)),
+            res => Some(res),
         }
     }
 }

@@ -146,14 +146,14 @@ impl DatabaseUpdate {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatabaseTableUpdate {
     pub table_id: u32,
     pub table_name: String,
     pub ops: Vec<TableOp>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableOp {
     pub op_type: u8,
     pub row_pk: Vec<u8>,

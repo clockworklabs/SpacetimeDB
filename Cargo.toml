@@ -84,7 +84,7 @@ criterion = { version = "0.4.0", features = [
   "html_reports",
 ] }
 crossbeam-channel = "0.5"
-cursive = "0.20"
+cursive = { version = "0.20", default-features = false, features = ["crossterm-backend"] }
 decorum = { version = "0.3.1", default-features = false, features = ["std"] }
 derive_more = "0.99.17"
 dirs = "5.0.1"
@@ -97,7 +97,6 @@ fs2 = "0.4.3"
 fs-err = "2.9.0"
 futures = "0.3"
 futures-channel = "0.3"
-genawaiter = "0.99.1"
 getrandom = { version = "0.2.7", features = ["custom"] }
 glob = "0.3.1"
 hex = "0.4.3"
@@ -176,6 +175,7 @@ tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 url = "2.3.1"
 urlencoding = "2.1.2"
 uuid = { version = "1.2.1", features = ["v4"] }
+walkdir = "2.2.5"
 wasmbin = "0.6"
 
 # wasmer prior to 4.1.1 had a signal handling bug on macOS.

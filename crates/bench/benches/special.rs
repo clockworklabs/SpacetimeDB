@@ -47,7 +47,7 @@ fn custom_module_benchmarks(c: &mut Criterion) {
 fn serialize_benchmarks<T: BenchTable + RandomTable>(c: &mut Criterion) {
     let name = T::name_snake_case();
     let count = 100;
-    let mut group = c.benchmark_group("serialize");
+    let mut group = c.benchmark_group("special/serialize");
     group.throughput(criterion::Throughput::Elements(count));
 
     let data = create_sequential::<T>(0xdeadbeef, count as u32, 100);

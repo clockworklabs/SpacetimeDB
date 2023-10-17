@@ -3,7 +3,7 @@ use crate::{
     schemas::{table_name, BenchTable, IndexStrategy},
     ResultBench,
 };
-use spacetimedb::db::datastore::traits::{IndexDef, TableDef};
+use spacetimedb::db::datastore::traits::{ColId, IndexDef, TableDef};
 use spacetimedb::db::relational_db::{open_db, RelationalDB};
 use spacetimedb_lib::sats::AlgebraicValue;
 use std::hint::black_box;
@@ -107,8 +107,9 @@ impl BenchDatabase for SpacetimeRaw {
         column_index: u32,
         value: AlgebraicValue,
     ) -> ResultBench<()> {
+        let col: ColId = column_index.into();
         self.db.with_auto_commit(|tx| {
-            for row in self.db.iter_by_col_eq(tx, *table_id, column_index, value)? {
+            for row in self.db.iter_by_col_eq(tx, *table_id, col, value)? {
                 black_box(row);
             }
             Ok(())

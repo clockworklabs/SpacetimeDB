@@ -1,7 +1,7 @@
 //! The [DbProgram] that execute arbitrary queries & code against the database.
 use crate::db::cursor::{CatalogCursor, IndexCursor, TableCursor};
 use crate::db::datastore::locking_tx_datastore::{IterByColEq, MutTxId};
-use crate::db::datastore::traits::{ColumnDef, IndexDef, TableDef};
+use crate::db::datastore::traits::{ColId, ColumnDef, IndexDef, TableDef};
 use crate::db::relational_db::RelationalDB;
 use itertools::Itertools;
 use nonempty::NonEmpty;
@@ -153,7 +153,7 @@ fn iter_by_col_range<'a>(
     col_id: u32,
     range: impl RangeBounds<AlgebraicValue> + 'a,
 ) -> Result<Box<dyn RelOps + 'a>, ErrorVm> {
-    let iter = db.iter_by_col_range(tx, table.table_id, col_id, range)?;
+    let iter = db.iter_by_col_range(tx, table.table_id, ColId(col_id), range)?;
     Ok(Box::new(IndexCursor::new(table, iter)?) as Box<IterRows<'_>>)
 }
 
@@ -225,7 +225,7 @@ impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
                     let table_id = self.index_table;
                     let col_id = self.index_col;
                     let value = value.clone();
-                    let mut index_iter = self.db.iter_by_col_eq(self.tx, table_id, col_id, value)?;
+                    let mut index_iter = self.db.iter_by_col_eq(self.tx, table_id, ColId(col_id), value)?;
                     if let Some(value) = index_iter.next() {
                         self.index_iter = Some(index_iter);
                         return Ok(Some(value.into()));

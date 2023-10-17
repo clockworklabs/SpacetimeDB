@@ -10,6 +10,7 @@ use sqlparser::ast::{
 };
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use crate::db::datastore::locking_tx_datastore::MutTxId;
@@ -410,7 +411,7 @@ fn compile_where(table: &From, filter: Option<SqlExpr>) -> Result<Option<Selecti
 /// Retrieves the [TableSchema] for the [Table]
 ///
 /// Fails if the table `name` and/or `table_id` is not found
-fn find_table(db: &RelationalDB, tx: &MutTxId, t: Table) -> Result<TableSchema, PlanError> {
+fn find_table<'tx>(db: &RelationalDB, tx: &'tx MutTxId, t: Table) -> Result<Cow<'tx, TableSchema>, PlanError> {
     let table_id = db
         .table_id_from_name(tx, &t.name)?
         .ok_or(PlanError::UnknownTable { table: t.name.clone() })?;
@@ -437,14 +438,14 @@ fn compile_from(db: &RelationalDB, tx: &MutTxId, from: &[TableWithJoins]) -> Res
     };
 
     let t = compile_table_factor(root_table.relation.clone())?;
-    let base = find_table(db, tx, t)?;
+    let base = find_table(db, tx, t)?.into_owned();
     let mut base = From::new(base);
 
     for join in &root_table.joins {
         match &join.join_operator {
             JoinOperator::Inner(constraint) => {
                 let t = compile_table_factor(join.relation.clone())?;
-                let join = find_table(db, tx, t)?;
+                let join = find_table(db, tx, t)?.into_owned();
 
                 match constraint {
                     JoinConstraint::On(x) => {
@@ -621,7 +622,7 @@ fn compile_insert(
     columns: Vec<Ident>,
     data: &Values,
 ) -> Result<SqlAst, PlanError> {
-    let table = find_table(db, tx, Table::new(table_name))?;
+    let table = find_table(db, tx, Table::new(table_name))?.into_owned();
 
     let columns = columns
         .into_iter()
@@ -656,7 +657,7 @@ fn compile_update(
     assignments: Vec<Assignment>,
     selection: Option<SqlExpr>,
 ) -> Result<SqlAst, PlanError> {
-    let table = From::new(find_table(db, tx, table)?);
+    let table = From::new(find_table(db, tx, table)?.into_owned());
     let selection = compile_where(&table, selection)?;
 
     let mut x = HashMap::with_capacity(assignments.len());
@@ -683,7 +684,7 @@ fn compile_delete(
     table: Table,
     selection: Option<SqlExpr>,
 ) -> Result<SqlAst, PlanError> {
-    let table = From::new(find_table(db, tx, table)?);
+    let table = From::new(find_table(db, tx, table)?.into_owned());
     let selection = compile_where(&table, selection)?;
 
     Ok(SqlAst::Delete {

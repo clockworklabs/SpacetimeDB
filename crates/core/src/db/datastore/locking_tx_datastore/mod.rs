@@ -9,6 +9,7 @@ use self::{
 };
 use nonempty::NonEmpty;
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, BTreeSet, HashMap},
     ops::RangeBounds,
     sync::Arc,
@@ -207,7 +208,7 @@ impl CommittedState {
     pub fn index_seek<'a>(
         &'a self,
         table_id: &TableId,
-        cols: NonEmpty<ColId>,
+        cols: &NonEmpty<ColId>,
         range: &impl RangeBounds<AlgebraicValue>,
     ) -> Option<BTreeIndexRangeIter<'a>> {
         if let Some(table) = self.tables.get(table_id) {
@@ -323,7 +324,7 @@ impl TxState {
     pub fn index_seek<'a>(
         &'a self,
         table_id: &TableId,
-        cols: NonEmpty<ColId>,
+        cols: &NonEmpty<ColId>,
         range: &impl RangeBounds<AlgebraicValue>,
     ) -> Option<BTreeIndexRangeIter<'a>> {
         self.insert_tables.get(table_id)?.index_seek(cols, range)
@@ -563,9 +564,9 @@ impl Inner {
         for row in rows {
             let table_row = StTableRow::try_from(&row)?;
             let table_id = TableId(table_row.table_id);
-            let schema = self.schema_for_table(table_id)?;
-            let row_type = self.row_type_for_table(table_id)?;
             if self.committed_state.get_table(&table_id).is_none() {
+                let schema = self.schema_for_table(table_id)?.into_owned();
+                let row_type = self.row_type_for_table(table_id)?.into_owned();
                 self.committed_state.tables.insert(
                     table_id,
                     Table {
@@ -582,7 +583,7 @@ impl Inner {
 
     fn drop_table_from_st_tables(&mut self, table_id: TableId) -> super::Result<()> {
         const ST_TABLES_TABLE_ID_COL: ColId = ColId(0);
-        let rows = self.iter_by_col_eq(&ST_TABLES_ID, &ST_TABLES_TABLE_ID_COL, table_id.into())?;
+        let rows = self.iter_by_col_eq(&ST_TABLES_ID, ST_TABLES_TABLE_ID_COL, table_id.into())?;
         let rows = rows.map(|row| row.view().to_owned()).collect::<Vec<_>>();
         if rows.is_empty() {
             return Err(TableError::IdNotFound(table_id.0).into());
@@ -593,7 +594,7 @@ impl Inner {
 
     fn drop_table_from_st_columns(&mut self, table_id: TableId) -> super::Result<()> {
         const ST_COLUMNS_TABLE_ID_COL: ColId = ColId(0);
-        let rows = self.iter_by_col_eq(&ST_COLUMNS_ID, &ST_COLUMNS_TABLE_ID_COL, table_id.into())?;
+        let rows = self.iter_by_col_eq(&ST_COLUMNS_ID, ST_COLUMNS_TABLE_ID_COL, table_id.into())?;
         let rows = rows.map(|row| row.view().to_owned()).collect::<Vec<_>>();
         if rows.is_empty() {
             return Err(TableError::IdNotFound(table_id.0).into());
@@ -619,7 +620,7 @@ impl Inner {
         // If we're out of allocations, then update the sequence row in st_sequences to allocate a fresh batch of sequences.
         const ST_SEQUENCES_SEQUENCE_ID_COL: ColId = ColId(0);
         let old_seq_row = self
-            .iter_by_col_eq(&ST_SEQUENCES_ID, &ST_SEQUENCES_SEQUENCE_ID_COL, seq_id.into())?
+            .iter_by_col_eq(&ST_SEQUENCES_ID, ST_SEQUENCES_SEQUENCE_ID_COL, seq_id.into())?
             .last()
             .unwrap()
             .data;
@@ -684,7 +685,7 @@ impl Inner {
     fn drop_sequence(&mut self, seq_id: SequenceId) -> super::Result<()> {
         const ST_SEQUENCES_SEQUENCE_ID_COL: ColId = ColId(0);
         let old_seq_row = self
-            .iter_by_col_eq(&ST_SEQUENCES_ID, &ST_SEQUENCES_SEQUENCE_ID_COL, seq_id.into())?
+            .iter_by_col_eq(&ST_SEQUENCES_ID, ST_SEQUENCES_SEQUENCE_ID_COL, seq_id.into())?
             .last()
             .unwrap()
             .data;
@@ -698,7 +699,7 @@ impl Inner {
         let seq_name_col: ColId = ColId(1);
         self.iter_by_col_eq(
             &ST_SEQUENCES_ID,
-            &seq_name_col,
+            seq_name_col,
             AlgebraicValue::String(seq_name.to_owned()),
         )
         .map(|mut iter| {
@@ -753,7 +754,7 @@ impl Inner {
         }
 
         // Get the half formed schema
-        let schema = self.schema_for_table(TableId(table_id))?;
+        let schema = self.schema_for_table(TableId(table_id))?.into_owned();
 
         // Create the in memory representation of the table
         // NOTE: This should be done before creating the indexes
@@ -790,11 +791,11 @@ impl Inner {
         Ok(())
     }
 
-    fn row_type_for_table(&self, table_id: TableId) -> super::Result<ProductType> {
+    fn row_type_for_table(&self, table_id: TableId) -> super::Result<Cow<'_, ProductType>> {
         // Fetch the `ProductType` from the in memory table if it exists.
         // The `ProductType` is invalidated if the schema of the table changes.
         if let Some(row_type) = self.get_row_type(&table_id) {
-            return Ok(row_type.clone());
+            return Ok(Cow::Borrowed(row_type));
         }
 
         // Look up the columns for the table in question.
@@ -803,23 +804,29 @@ impl Inner {
         // representation of a table. This would happen in situations where
         // we have created the table in the database, but have not yet
         // represented in memory or inserted any rows into it.
-        let table_schema = self.schema_for_table(table_id)?;
-        let elements = table_schema
-            .columns
-            .into_iter()
-            .map(|col| col.col_type.into())
-            .collect();
-        Ok(ProductType { elements })
+        let elements = match self.schema_for_table(table_id)? {
+            Cow::Borrowed(table_schema) => table_schema
+                .columns
+                .iter()
+                .map(|col| col.col_type.clone().into())
+                .collect(),
+            Cow::Owned(table_schema) => table_schema
+                .columns
+                .into_iter()
+                .map(|col| col.col_type.into())
+                .collect(),
+        };
+        Ok(Cow::Owned(ProductType { elements }))
     }
 
     #[tracing::instrument(skip_all)]
-    fn schema_for_table(&self, table_id: TableId) -> super::Result<TableSchema> {
+    fn schema_for_table(&self, table_id: TableId) -> super::Result<Cow<'_, TableSchema>> {
         if let Some(schema) = self.get_schema(&table_id) {
-            return Ok(schema.clone());
+            return Ok(Cow::Borrowed(schema));
         }
 
         // Look up the table_name for the table in question.
-        let table_id_col: ColId = ColId(0);
+        let table_id_col = NonEmpty::new(0);
 
         // TODO(george): As part of the bootstrapping process, we add a bunch of rows
         // and only at very end do we patch things up and create table metadata, indexes,
@@ -829,7 +836,7 @@ impl Inner {
         let value: AlgebraicValue = table_id.into();
         let rows = IterByColRange::Scan(ScanIterByColRange {
             range: value,
-            col_id: table_id_col,
+            cols: table_id_col,
             scan_iter: self.iter(&ST_TABLES_ID)?,
         })
         .collect::<Vec<_>>();
@@ -843,7 +850,7 @@ impl Inner {
         // Look up the columns for the table in question.
         let mut columns = Vec::new();
         const TABLE_ID_COL: ColId = ColId(0);
-        for data_ref in self.iter_by_col_eq(&ST_COLUMNS_ID, &TABLE_ID_COL, table_id.into())? {
+        for data_ref in self.iter_by_col_eq(&ST_COLUMNS_ID, TABLE_ID_COL, table_id.into())? {
             let row = data_ref.view();
 
             let el = StColumnRow::try_from(row)?;
@@ -862,7 +869,7 @@ impl Inner {
         // Look up the indexes for the table in question.
         let mut indexes = Vec::new();
         let table_id_col: ColId = ColId(1);
-        for data_ref in self.iter_by_col_eq(&ST_INDEXES_ID, &table_id_col, table_id.into())? {
+        for data_ref in self.iter_by_col_eq(&ST_INDEXES_ID, table_id_col, table_id.into())? {
             let row = data_ref.view();
 
             let el = StIndexRow::try_from(row)?;
@@ -876,7 +883,7 @@ impl Inner {
             indexes.push(index_schema);
         }
 
-        Ok(TableSchema {
+        Ok(Cow::Owned(TableSchema {
             columns,
             table_id,
             table_name,
@@ -884,14 +891,14 @@ impl Inner {
             constraints: vec![],
             table_type: el.table_type,
             table_access: el.table_access,
-        })
+        }))
     }
 
     fn drop_table(&mut self, table_id: TableId) -> super::Result<()> {
         // First drop the tables indexes.
         const ST_INDEXES_TABLE_ID_COL: ColId = ColId(1);
         let rows = self
-            .iter_by_col_eq(&ST_INDEXES_ID, &ST_INDEXES_TABLE_ID_COL, table_id.into())?
+            .iter_by_col_eq(&ST_INDEXES_ID, ST_INDEXES_TABLE_ID_COL, table_id.into())?
             .collect::<Vec<_>>();
         for data_ref in rows {
             let row = data_ref.view();
@@ -902,7 +909,7 @@ impl Inner {
         // Remove the table's sequences from st_sequences.
         const ST_SEQUENCES_TABLE_ID_COL: ColId = ColId(2);
         let rows = self
-            .iter_by_col_eq(&ST_SEQUENCES_ID, &ST_SEQUENCES_TABLE_ID_COL, table_id.into())?
+            .iter_by_col_eq(&ST_SEQUENCES_ID, ST_SEQUENCES_TABLE_ID_COL, table_id.into())?
             .collect::<Vec<_>>();
         for data_ref in rows {
             let row = data_ref.view();
@@ -927,7 +934,7 @@ impl Inner {
         // Update the table's name in st_tables.
         const ST_TABLES_TABLE_ID_COL: ColId = ColId(0);
         let rows = self
-            .iter_by_col_eq(&ST_TABLES_ID, &ST_TABLES_TABLE_ID_COL, table_id.into())?
+            .iter_by_col_eq(&ST_TABLES_ID, ST_TABLES_TABLE_ID_COL, table_id.into())?
             .collect::<Vec<_>>();
         assert!(rows.len() <= 1, "Expected at most one row in st_tables for table_id");
         let row = rows.first().ok_or_else(|| TableError::IdNotFound(table_id.0))?;
@@ -943,7 +950,7 @@ impl Inner {
         let table_name_col: ColId = ColId(1);
         self.iter_by_col_eq(
             &ST_TABLES_ID,
-            &table_name_col,
+            table_name_col,
             AlgebraicValue::String(table_name.to_owned()),
         )
         .map(|mut iter| {
@@ -954,7 +961,7 @@ impl Inner {
 
     fn table_name_from_id(&self, table_id: TableId) -> super::Result<Option<String>> {
         let table_id_col: ColId = ColId(0);
-        self.iter_by_col_eq(&ST_TABLES_ID, &table_id_col, table_id.into())
+        self.iter_by_col_eq(&ST_TABLES_ID, table_id_col, table_id.into())
             .map(|mut iter| {
                 iter.next()
                     .map(|row| row.view().elements[1].as_string().unwrap().to_owned())
@@ -1005,8 +1012,8 @@ impl Inner {
         {
             insert_table
         } else {
-            let row_type = self.row_type_for_table(TableId(index.table_id))?;
-            let schema = self.schema_for_table(TableId(index.table_id))?;
+            let row_type = self.row_type_for_table(TableId(index.table_id))?.into_owned();
+            let schema = self.schema_for_table(TableId(index.table_id))?.into_owned();
             self.tx_state.as_mut().unwrap().insert_tables.insert(
                 TableId(index.table_id),
                 Table {
@@ -1055,7 +1062,7 @@ impl Inner {
         // Remove the index from st_indexes.
         const ST_INDEXES_INDEX_ID_COL: ColId = ColId(0);
         let old_index_row = self
-            .iter_by_col_eq(&ST_INDEXES_ID, &ST_INDEXES_INDEX_ID_COL, index_id.into())?
+            .iter_by_col_eq(&ST_INDEXES_ID, ST_INDEXES_INDEX_ID_COL, index_id.into())?
             .last()
             .unwrap()
             .data;
@@ -1104,7 +1111,7 @@ impl Inner {
         let index_name_col: ColId = ColId(3);
         self.iter_by_col_eq(
             &ST_INDEXES_ID,
-            &index_name_col,
+            index_name_col,
             AlgebraicValue::String(index_name.to_owned()),
         )
         .map(|mut iter| {
@@ -1139,48 +1146,31 @@ impl Inner {
             || self.committed_state.tables.contains_key(table_id)
     }
 
-    fn sequence_value_to_algebraic_value(
-        table_name: &str,
-        col_name: &str,
-        ty: &AlgebraicType,
-        sequence_value: i128,
-    ) -> Result<AlgebraicValue, SequenceError> {
-        Ok(match *ty {
-            AlgebraicType::I8 => AlgebraicValue::I8(sequence_value as i8),
-            AlgebraicType::U8 => AlgebraicValue::U8(sequence_value as u8),
-            AlgebraicType::I16 => AlgebraicValue::I16(sequence_value as i16),
-            AlgebraicType::U16 => AlgebraicValue::U16(sequence_value as u16),
-            AlgebraicType::I32 => AlgebraicValue::I32(sequence_value as i32),
-            AlgebraicType::U32 => AlgebraicValue::U32(sequence_value as u32),
-            AlgebraicType::I64 => AlgebraicValue::I64(sequence_value as i64),
-            AlgebraicType::U64 => AlgebraicValue::U64(sequence_value as u64),
-            AlgebraicType::I128 => sequence_value.into(),
-            AlgebraicType::U128 => (sequence_value as u128).into(),
-            _ => {
-                return Err(SequenceError::NotInteger {
-                    col: format!("{}.{}", table_name, col_name),
-                    found: ty.clone(),
-                })
-            }
-        })
+    fn algebraic_type_is_numeric(ty: &AlgebraicType) -> bool {
+        matches!(*ty, |AlgebraicType::I8| AlgebraicType::U8
+            | AlgebraicType::I16
+            | AlgebraicType::U16
+            | AlgebraicType::I32
+            | AlgebraicType::U32
+            | AlgebraicType::I64
+            | AlgebraicType::U64
+            | AlgebraicType::I128
+            | AlgebraicType::U128)
     }
 
-    /// Check if the value is one of the `numeric` types and is `0`.
-    fn can_replace_with_sequence(value: &AlgebraicValue) -> bool {
-        match value {
-            AlgebraicValue::I8(x) => *x == 0,
-            AlgebraicValue::U8(x) => *x == 0,
-            AlgebraicValue::I16(x) => *x == 0,
-            AlgebraicValue::U16(x) => *x == 0,
-            AlgebraicValue::I32(x) => *x == 0,
-            AlgebraicValue::U32(x) => *x == 0,
-            AlgebraicValue::I64(x) => *x == 0,
-            AlgebraicValue::U64(x) => *x == 0,
-            AlgebraicValue::I128(x) => *x == 0,
-            AlgebraicValue::U128(x) => *x == 0,
-            AlgebraicValue::F32(x) => *x == 0.0,
-            AlgebraicValue::F64(x) => *x == 0.0,
-            _ => false,
+    fn sequence_value_to_algebraic_value(ty: &AlgebraicType, sequence_value: i128) -> AlgebraicValue {
+        match *ty {
+            AlgebraicType::I8 => (sequence_value as i8).into(),
+            AlgebraicType::U8 => (sequence_value as u8).into(),
+            AlgebraicType::I16 => (sequence_value as i16).into(),
+            AlgebraicType::U16 => (sequence_value as u16).into(),
+            AlgebraicType::I32 => (sequence_value as i32).into(),
+            AlgebraicType::U32 => (sequence_value as u32).into(),
+            AlgebraicType::I64 => (sequence_value as i64).into(),
+            AlgebraicType::U64 => (sequence_value as u64).into(),
+            AlgebraicType::I128 => sequence_value.into(),
+            AlgebraicType::U128 => (sequence_value as u128).into(),
+            _ => unreachable!("should have been prevented in `fn insert`"),
         }
     }
 
@@ -1189,29 +1179,43 @@ impl Inner {
         // TODO: Excuting schema_for_table for every row insert is expensive.
         // We should store the schema in the [Table] struct instead.
         let schema = self.schema_for_table(table_id)?;
-        for col in schema.columns {
+
+        let mut col_to_update = None;
+        for col in &*schema.columns {
             if col.is_autoinc {
-                if !Self::can_replace_with_sequence(&row.elements[col.col_id as usize]) {
+                if !row.elements[col.col_id as usize].is_numeric_zero() {
                     continue;
                 }
                 let st_sequences_table_id_col = ColId(2);
-                for seq_row in self.iter_by_col_eq(&ST_SEQUENCES_ID, &st_sequences_table_id_col, table_id.into())? {
+                for seq_row in self.iter_by_col_eq(&ST_SEQUENCES_ID, st_sequences_table_id_col, table_id.into())? {
                     let seq_row = seq_row.view();
                     let seq_row = StSequenceRow::try_from(seq_row)?;
                     if seq_row.col_id != col.col_id {
                         continue;
                     }
-                    let sequence_value = self.get_next_sequence_value(SequenceId(seq_row.sequence_id))?;
-                    row.elements[col.col_id as usize] = Self::sequence_value_to_algebraic_value(
-                        &schema.table_name,
-                        &col.col_name,
-                        &col.col_type,
-                        sequence_value,
-                    )?;
+
+                    col_to_update = Some((col.col_id, seq_row.sequence_id));
                     break;
                 }
             }
         }
+
+        if let Some((col_id, sequence_id)) = col_to_update {
+            let col_idx = col_id as usize;
+            let col = &schema.columns[col_idx];
+            if !Self::algebraic_type_is_numeric(&col.col_type) {
+                return Err(SequenceError::NotInteger {
+                    col: format!("{}.{}", &schema.table_name, &col.col_name),
+                    found: col.col_type.clone(),
+                }
+                .into());
+            }
+            // At this point, we know this will be essentially a cheap copy.
+            let col_ty = col.col_type.clone();
+            let seq_val = self.get_next_sequence_value(SequenceId(sequence_id))?;
+            row.elements[col_idx] = Self::sequence_value_to_algebraic_value(&col_ty, seq_val);
+        }
+
         self.insert_row_internal(table_id, row.clone())?;
         Ok(row)
     }
@@ -1473,10 +1477,10 @@ impl Inner {
     fn iter_by_col_eq(
         &self,
         table_id: &TableId,
-        col_id: &ColId,
+        cols: impl Into<NonEmpty<ColId>>,
         value: AlgebraicValue,
     ) -> super::Result<IterByColEq<'_>> {
-        self.iter_by_col_range(table_id, col_id, value)
+        self.iter_by_col_range(table_id, cols.into(), value)
     }
 
     /// Returns an iterator,
@@ -1485,7 +1489,7 @@ impl Inner {
     fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         table_id: &TableId,
-        col_id: &ColId,
+        cols: NonEmpty<ColId>,
         range: R,
     ) -> super::Result<IterByColRange<'a, R>> {
         // We have to index_seek in both the committed state and the current tx state.
@@ -1502,7 +1506,7 @@ impl Inner {
         if let Some(inserted_rows) = self
             .tx_state
             .as_ref()
-            .and_then(|tx_state| tx_state.index_seek(table_id, NonEmpty::new(*col_id), &range))
+            .and_then(|tx_state| tx_state.index_seek(table_id, &cols, &range))
         {
             // The current transaction has modified this table, and the table is indexed.
             let tx_state = self.tx_state.as_ref().unwrap();
@@ -1510,23 +1514,18 @@ impl Inner {
                 table_id: *table_id,
                 tx_state,
                 inserted_rows,
-                committed_rows: self
-                    .committed_state
-                    .index_seek(table_id, NonEmpty::new(*col_id), &range),
+                committed_rows: self.committed_state.index_seek(table_id, &cols, &range),
                 committed_state: &self.committed_state,
             }))
         } else {
             // Either the current transaction has not modified this table, or the table is not
             // indexed.
-            match self
-                .committed_state
-                .index_seek(table_id, NonEmpty::new(*col_id), &range)
-            {
+            match self.committed_state.index_seek(table_id, &cols, &range) {
                 //If we don't have `self.tx_state` yet is likely we are running the bootstrap process
                 Some(committed_rows) => match self.tx_state.as_ref() {
                     None => Ok(IterByColRange::Scan(ScanIterByColRange {
                         range,
-                        col_id: *col_id,
+                        cols: NonEmpty::collect(cols.map(|col| col.0)).unwrap(),
                         scan_iter: self.iter(table_id)?,
                     })),
                     Some(tx_state) => Ok(IterByColRange::CommittedIndex(CommittedIndexIter {
@@ -1538,7 +1537,7 @@ impl Inner {
                 },
                 None => Ok(IterByColRange::Scan(ScanIterByColRange {
                     range,
-                    col_id: *col_id,
+                    cols: NonEmpty::collect(cols.map(|col| col.0)).unwrap(),
                     scan_iter: self.iter(table_id)?,
                 })),
             }
@@ -1626,6 +1625,25 @@ impl Locking {
         Ok(())
     }
 
+    fn table_rows(
+        inner: &mut Inner,
+        table_id: TableId,
+        schema: TableSchema,
+        row_type: ProductType,
+    ) -> &mut BTreeMap<RowId, ProductValue> {
+        &mut inner
+            .committed_state
+            .tables
+            .entry(table_id)
+            .or_insert_with(|| Table {
+                row_type,
+                schema,
+                indexes: HashMap::new(),
+                rows: BTreeMap::new(),
+            })
+            .rows
+    }
+
     pub fn replay_transaction(
         &self,
         transaction: &Transaction,
@@ -1634,17 +1652,11 @@ impl Locking {
         let mut inner = self.inner.lock();
         for write in &transaction.writes {
             let table_id = TableId(write.set_id);
-            let schema = inner.schema_for_table(table_id)?;
-            let row_type = inner.row_type_for_table(table_id)?;
-            let table = inner.committed_state.tables.entry(table_id).or_insert(Table {
-                row_type: row_type.clone(),
-                schema,
-                indexes: HashMap::new(),
-                rows: BTreeMap::new(),
-            });
+            let schema = inner.schema_for_table(table_id)?.into_owned();
+            let row_type = inner.row_type_for_table(table_id)?.into_owned();
             match write.operation {
                 Operation::Delete => {
-                    table.rows.remove(&RowId(write.data_key));
+                    Self::table_rows(&mut inner, table_id, schema, row_type).remove(&RowId(write.data_key));
                 }
                 Operation::Insert => {
                     let product_value = match write.data_key {
@@ -1658,7 +1670,8 @@ impl Locking {
                             })
                         }
                     };
-                    table.rows.insert(RowId(write.data_key), product_value);
+                    Self::table_rows(&mut inner, table_id, schema, row_type)
+                        .insert(RowId(write.data_key), product_value);
                 }
             }
         }
@@ -1887,7 +1900,7 @@ impl<R: RangeBounds<AlgebraicValue>> Iterator for IterByColRange<'_, R> {
 
 pub struct ScanIterByColRange<'a, R: RangeBounds<AlgebraicValue>> {
     scan_iter: Iter<'a>,
-    col_id: ColId,
+    cols: NonEmpty<u32>,
     range: R,
 }
 
@@ -1898,8 +1911,8 @@ impl<R: RangeBounds<AlgebraicValue>> Iterator for ScanIterByColRange<'_, R> {
     fn next(&mut self) -> Option<Self::Item> {
         for data_ref in &mut self.scan_iter {
             let row = data_ref.view();
-            let value = &row.elements[self.col_id.0 as usize];
-            if self.range.contains(value) {
+            let value = row.project_not_empty(&self.cols).unwrap();
+            if self.range.contains(&value) {
                 return Some(data_ref);
             }
         }
@@ -1920,20 +1933,20 @@ impl TxDatastore for Locking {
         &'a self,
         tx: &'a Self::TxId,
         table_id: TableId,
-        col_id: ColId,
+        cols: NonEmpty<ColId>,
         range: R,
     ) -> super::Result<Self::IterByColRange<'a, R>> {
-        self.iter_by_col_range_mut_tx(tx, table_id, col_id, range)
+        self.iter_by_col_range_mut_tx(tx, table_id, cols, range)
     }
 
     fn iter_by_col_eq_tx<'a>(
         &'a self,
         tx: &'a Self::TxId,
         table_id: TableId,
-        col_id: ColId,
+        cols: NonEmpty<ColId>,
         value: AlgebraicValue,
     ) -> super::Result<Self::IterByColEq<'a>> {
-        self.iter_by_col_eq_mut_tx(tx, table_id, col_id, value)
+        self.iter_by_col_eq_mut_tx(tx, table_id, cols, value)
     }
 
     fn get_tx<'a>(
@@ -1985,7 +1998,11 @@ impl MutTxDatastore for Locking {
     /// reflect the schema of the table.
     ///
     /// This function is known to be called quite frequently.
-    fn row_type_for_table_mut_tx(&self, tx: &Self::MutTxId, table_id: TableId) -> super::Result<ProductType> {
+    fn row_type_for_table_mut_tx<'tx>(
+        &self,
+        tx: &'tx Self::MutTxId,
+        table_id: TableId,
+    ) -> super::Result<Cow<'tx, ProductType>> {
         tx.lock.row_type_for_table(table_id)
     }
 
@@ -1993,7 +2010,11 @@ impl MutTxDatastore for Locking {
     /// expensive than `row_type_for_table_mut_tx`.  Prefer
     /// `row_type_for_table_mut_tx` if you only need to access the `ProductType`
     /// of the table.
-    fn schema_for_table_mut_tx(&self, tx: &Self::MutTxId, table_id: TableId) -> super::Result<TableSchema> {
+    fn schema_for_table_mut_tx<'tx>(
+        &self,
+        tx: &'tx Self::MutTxId,
+        table_id: TableId,
+    ) -> super::Result<Cow<'tx, TableSchema>> {
         tx.lock.schema_for_table(table_id)
     }
 
@@ -2059,20 +2080,20 @@ impl MutTxDatastore for Locking {
         &'a self,
         tx: &'a Self::MutTxId,
         table_id: TableId,
-        col_id: ColId,
+        cols: impl Into<NonEmpty<ColId>>,
         range: R,
     ) -> super::Result<Self::IterByColRange<'a, R>> {
-        tx.lock.iter_by_col_range(&table_id, &col_id, range)
+        tx.lock.iter_by_col_range(&table_id, cols.into(), range)
     }
 
     fn iter_by_col_eq_mut_tx<'a>(
         &'a self,
         tx: &'a Self::MutTxId,
         table_id: TableId,
-        col_id: ColId,
+        cols: impl Into<NonEmpty<ColId>>,
         value: AlgebraicValue,
     ) -> super::Result<Self::IterByColEq<'a>> {
-        tx.lock.iter_by_col_eq(&table_id, &col_id, value)
+        tx.lock.iter_by_col_eq(&table_id, cols, value)
     }
 
     fn get_mut_tx<'a>(
@@ -2510,9 +2531,9 @@ mod tests {
     #[test]
     fn test_schema_for_table_pre_commit() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
-        let schema = datastore.schema_for_table_mut_tx(&tx, table_id)?;
+        let schema = &*datastore.schema_for_table_mut_tx(&tx, table_id)?;
         #[rustfmt::skip]
-        assert_eq!(schema, TableSchema {
+        assert_eq!(schema, &TableSchema {
             table_id: table_id.0,
             table_name: "Foo".into(),
             columns: vec![
@@ -2538,9 +2559,9 @@ mod tests {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx(tx)?;
         let tx = datastore.begin_mut_tx();
-        let schema = datastore.schema_for_table_mut_tx(&tx, table_id)?;
+        let schema = &*datastore.schema_for_table_mut_tx(&tx, table_id)?;
         #[rustfmt::skip]
-        assert_eq!(schema, TableSchema {
+        assert_eq!(schema, &TableSchema {
             table_id: table_id.0,
             table_name: "Foo".into(),
             columns: vec![
@@ -2567,9 +2588,9 @@ mod tests {
         datastore.commit_mut_tx(tx)?;
 
         let mut tx = datastore.begin_mut_tx();
-        let schema = datastore.schema_for_table_mut_tx(&tx, table_id)?;
+        let schema = datastore.schema_for_table_mut_tx(&tx, table_id)?.into_owned();
 
-        for index in schema.indexes {
+        for index in &*schema.indexes {
             datastore.drop_index_mut_tx(&mut tx, IndexId(index.index_id))?;
         }
         assert!(

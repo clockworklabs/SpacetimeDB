@@ -63,9 +63,9 @@ impl Table {
     /// Matching is defined by `Ord for AlgebraicValue`.
     pub(crate) fn index_seek(
         &self,
-        cols: NonEmpty<ColId>,
+        cols: &NonEmpty<ColId>,
         range: &impl RangeBounds<AlgebraicValue>,
     ) -> Option<BTreeIndexRangeIter<'_>> {
-        self.indexes.get(&cols).map(|index| index.seek(range))
+        self.indexes.get(cols).map(|index| index.seek(range))
     }
 }

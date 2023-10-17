@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, TableDef, TableSchema};
+use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, TableDef};
 use crate::host::scheduler::Scheduler;
 use crate::sql;
 use anyhow::Context;
@@ -262,12 +262,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
             // mildly confusing, since the user did not subscribe to anything. Should we rename SubscriptionError to ReadOnlyQueryError?
             let compiled = crate::subscription::query::compile_read_only_query(db, tx, &auth, &query)?;
 
-            sql::execute::execute_sql(
-                db,
-                tx,
-                compiled.queries.into_iter().map(CrudExpr::Query).collect(),
-                auth,
-            )
+            sql::execute::execute_sql(db, tx, compiled.into_iter().map(CrudExpr::Query).collect(), auth)
         })
     }
 
@@ -275,12 +270,13 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         let db = &*self.worker_database_instance.relational_db;
         db.with_auto_commit(|tx| {
             let tables = db.get_all_tables(tx)?;
-            for table in tables {
-                if table.table_name != table_name {
-                    continue;
-                }
-
-                db.clear_table(tx, table.table_id)?;
+            // We currently have unique table names,
+            // so we can assume there's only one table to clear.
+            if let Some(table_id) = tables
+                .iter()
+                .find_map(|t| (t.table_name == table_name).then_some(t.table_id))
+            {
+                db.clear_table(tx, table_id)?;
             }
             Ok(())
         })
@@ -791,7 +787,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let mut indexes_to_create = Vec::new();
         let mut indexes_to_drop = Vec::new();
 
-        let mut known_tables: BTreeMap<String, TableSchema> = stdb
+        let mut known_tables: BTreeMap<_, _> = stdb
             .get_all_tables(tx)?
             .into_iter()
             .map(|schema| (schema.table_name.clone(), schema))
@@ -801,7 +797,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             let proposed_schema_def = self.schema_for(table)?;
             if let Some(known_schema) = known_tables.remove(&table.name) {
                 let table_id = known_schema.table_id;
-                let known_schema_def = TableDef::from(known_schema.clone());
+                let known_schema_def = TableDef::from(&*known_schema);
                 // If the schemas differ acc. to [Equiv], the update should be
                 // rejected.
                 if Equiv(&known_schema_def) != Equiv(&proposed_schema_def) {
@@ -812,8 +808,8 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                     // The schema is unchanged, but maybe the indexes are.
                     let mut known_indexes = known_schema
                         .indexes
-                        .into_iter()
-                        .map(|idx| (idx.index_name.clone(), idx))
+                        .iter()
+                        .map(|idx| (&idx.index_name, idx))
                         .collect::<BTreeMap<_, _>>();
 
                     for mut index_def in proposed_schema_def.indexes {
@@ -825,7 +821,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                             None => indexes_to_create.push(index_def),
                             Some(known_index) => {
                                 let known_id = IndexId(known_index.index_id);
-                                let known_index_def = IndexDef::from(known_index);
+                                let known_index_def = IndexDef::from(known_index.clone());
                                 if known_index_def != index_def {
                                     indexes_to_drop.push(known_id);
                                     indexes_to_create.push(index_def);
