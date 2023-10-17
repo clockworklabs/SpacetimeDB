@@ -6,7 +6,7 @@ use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, TableDef};
 use crate::host::scheduler::Scheduler;
 use crate::sql;
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use bytes::Bytes;
 use nonempty::NonEmpty;
 use spacetimedb_lib::buffer::DecodeError;
@@ -264,11 +264,18 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
 
         db.with_read_only(|tx| {
             log::debug!("One-off query: {query}");
-            // NOTE(jgilles): this returns errors about mutating queries as SubscriptionErrors, which is perhaps
-            // mildly confusing, since the user did not subscribe to anything. Should we rename SubscriptionError to ReadOnlyQueryError?
-            let compiled = crate::subscription::query::compile_read_only_query(db, tx, &auth, &query)?;
 
-            sql::execute::execute_sql(db, tx, compiled.into_iter().map(CrudExpr::Query).collect(), auth)
+            let compiled = sql::compiler::compile_sql(db, tx, &query)?
+                .into_iter()
+                .map(|expr| {
+                    if matches!(expr, CrudExpr::Query { .. }) {
+                        Ok(expr)
+                    } else {
+                        Err(anyhow!("One-off queries are not allowed to modify the database"))
+                    }
+                })
+                .collect::<Result<_, _>>()?;
+            sql::execute::execute_sql(db, tx, compiled, auth)
         })
     }
 

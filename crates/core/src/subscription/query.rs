@@ -123,14 +123,14 @@ pub fn compile_read_only_query(
     }
 
     if !queries.is_empty() {
-        Ok(queries.into_iter().collect())
+        Ok(queries.into_iter().map(TryFrom::try_from).collect::<Result<_, _>>()?)
     } else {
         Err(SubscriptionError::Empty.into())
     }
 }
 
 /// The kind of [`QueryExpr`] currently supported for incremental evaluation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Supported {
     /// A scan or [`QueryExpr::Select`] of a single table.
     Scan,
@@ -414,7 +414,7 @@ mod tests {
         let table_id = create_table_with_rows(&db, &mut tx, "test", schema.clone(), &[])?;
 
         // select * from test
-        let query: QuerySet = QueryExpr::new(db_table(schema.clone(), "test".to_string(), table_id)).into();
+        let query: QuerySet = QueryExpr::new(db_table(schema.clone(), "test".to_string(), table_id)).try_into()?;
 
         let op = TableOp {
             op_type: 0,
@@ -455,7 +455,7 @@ mod tests {
             panic!("unexpected query {:#?}", exp[0]);
         };
 
-        let query = QuerySet::from(query);
+        let query = QuerySet::try_from(query)?;
 
         let mut ops = Vec::new();
         for i in 0u64..9u64 {
@@ -531,7 +531,7 @@ mod tests {
             panic!("unexpected query {:#?}", exp[0]);
         };
 
-        let query = QuerySet::from(query);
+        let query = QuerySet::try_from(query)?;
 
         // Case 1: Delete a row inside the region and insert back inside the region
         {
@@ -771,7 +771,10 @@ mod tests {
                 .clone()
                 .with_select_cmp(OpCmp::Eq, FieldName::named("_inventory", "inventory_id"), scalar(1u64));
 
-        let s = QuerySet::from([q_all, q_id]);
+        let s = [q_all, q_id]
+            .into_iter()
+            .map(TryFrom::try_from)
+            .collect::<Result<QuerySet, _>>()?;
 
         let row1 = TableOp {
             op_type: 0,
@@ -841,7 +844,10 @@ mod tests {
                 .clone()
                 .with_select_cmp(OpCmp::Eq, FieldName::named("inventory", "inventory_id"), scalar(1u64));
 
-        let s = QuerySet::from([q_all, q_id]);
+        let s = [q_all, q_id]
+            .into_iter()
+            .map(TryFrom::try_from)
+            .collect::<Result<QuerySet, _>>()?;
 
         check_query_eval(&db, &mut tx, &s, 1, &[product!(1u64, "health")])?;
 
@@ -877,27 +883,51 @@ mod tests {
         let (db, _tmp_dir) = make_test_db()?;
         let mut tx = db.begin_tx();
 
-        let sql_create = "CREATE TABLE MobileEntityState (entity_id BIGINT UNSIGNED, location_x INTEGER, location_z INTEGER, destination_x INTEGER, destination_z INTEGER, is_running BOOLEAN, timestamp  BIGINT UNSIGNED, dimension INTEGER UNSIGNED);\
-        CREATE TABLE EnemyState (entity_id BIGINT UNSIGNED, herd_id INTEGER, status INTEGER, type INTEGER, direction INTEGER);";
-        run(&db, &mut tx, sql_create, AuthCtx::for_testing())?;
+        // Create table [MobileEntityState]
+        let schema = &[
+            ("entity_id", AlgebraicType::U64),
+            ("location_x", AlgebraicType::I32),
+            ("location_z", AlgebraicType::I32),
+            ("destination_x", AlgebraicType::I32),
+            ("destination_z", AlgebraicType::I32),
+            ("is_running", AlgebraicType::Bool),
+            ("timestamp", AlgebraicType::U64),
+            ("dimension", AlgebraicType::U32),
+        ];
+        let indexes = &[(0, "entity_id"), (1, "location_x"), (2, "location_z")];
+        create_table(&db, &mut tx, "MobileEntityState", schema, indexes)?;
 
-        let sql_create = "\
+        // Create table [EnemyState]
+        let schema = &[
+            ("entity_id", AlgebraicType::U64),
+            ("herd_id", AlgebraicType::I32),
+            ("status", AlgebraicType::I32),
+            ("type", AlgebraicType::I32),
+            ("direction", AlgebraicType::I32),
+        ];
+        let indexes = &[(0, "entity_id")];
+        create_table(&db, &mut tx, "EnemyState", schema, indexes)?;
+
+        let sql_insert = "\
         insert into MobileEntityState (entity_id, location_x, location_z, destination_x, destination_z, is_running, timestamp, dimension) values (1, 96001, 96001, 96001, 1867045146, false, 17167179743690094247, 3926297397);\
         insert into MobileEntityState (entity_id, location_x, location_z, destination_x, destination_z, is_running, timestamp, dimension) values (2, 96001, 191000, 191000, 1560020888, true, 2947537077064292621, 445019304);
 
         insert into EnemyState (entity_id, herd_id, status, type, direction) values (1, 1181485940, 1633678837, 1158301365, 132191327);
         insert into EnemyState (entity_id, herd_id, status, type, direction) values (2, 2017368418, 194072456, 34423057, 1296770410);";
-        run(&db, &mut tx, sql_create, AuthCtx::for_testing())?;
+        run(&db, &mut tx, sql_insert, AuthCtx::for_testing())?;
 
-        let sql_query = "SELECT * FROM MobileEntityState JOIN EnemyState ON MobileEntityState.entity_id = EnemyState.entity_id WHERE location_x > 96000 AND MobileEntityState.location_x < 192000 AND MobileEntityState.location_z > 96000 AND MobileEntityState.location_z < 192000";
-        let q = compile_read_only_query(&db, &tx, &AuthCtx::for_testing(), sql_query)?;
+        let sql_query = "\
+            SELECT EnemyState.* FROM EnemyState \
+            JOIN MobileEntityState ON MobileEntityState.entity_id = EnemyState.entity_id  \
+            WHERE MobileEntityState.location_x > 96000 \
+            AND MobileEntityState.location_x < 192000 \
+            AND MobileEntityState.location_z > 96000 \
+            AND MobileEntityState.location_z < 192000";
+        let qset = compile_read_only_query(&db, &tx, &AuthCtx::for_testing(), sql_query)?;
 
-        for q in &q {
-            assert_eq!(
-                run_query(&db, &mut tx, q, AuthCtx::for_testing())?.len(),
-                1,
-                "Not return results"
-            );
+        for q in qset {
+            let result = run_query(&db, &mut tx, q.as_expr(), AuthCtx::for_testing())?;
+            assert_eq!(result.len(), 1, "Join query did not return any rows");
         }
 
         Ok(())
@@ -913,9 +943,7 @@ mod tests {
         let row_1 = product!(1u64, "health");
         let row_2 = product!(2u64, "jhon doe");
 
-        let s = compile_read_only_query(&db, &tx, &AuthCtx::for_testing(), SUBSCRIBE_TO_ALL_QUERY)
-            .map(QuerySet::from_iter)?;
-
+        let s = compile_read_only_query(&db, &tx, &AuthCtx::for_testing(), SUBSCRIBE_TO_ALL_QUERY)?;
         check_query_eval(&db, &mut tx, &s, 2, &[row_1.clone(), row_2.clone()])?;
 
         let row1 = TableOp {
@@ -985,14 +1013,14 @@ mod tests {
         ];
         for scan in scans {
             let expr = compile_read_only_query(&db, &tx, &auth, scan)?.pop_first().unwrap();
-            assert_eq!(classify(&expr), Some(Supported::Scan), "{scan}\n{expr:#?}");
+            assert_eq!(expr.kind(), Supported::Scan, "{scan}\n{expr:#?}");
         }
 
         // Only index semijoins are supported
         let joins = ["SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE rhs.y < 10"];
         for join in joins {
             let expr = compile_read_only_query(&db, &tx, &auth, join)?.pop_first().unwrap();
-            assert_eq!(classify(&expr), Some(Supported::Semijoin), "{join}\n{expr:#?}");
+            assert_eq!(expr.kind(), Supported::Semijoin, "{join}\n{expr:#?}");
         }
 
         // All other joins are unsupported
@@ -1002,8 +1030,7 @@ mod tests {
             "SELECT * FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE lhs.x < 10",
         ];
         for join in joins {
-            let expr = compile_read_only_query(&db, &tx, &auth, join)?.pop_first().unwrap();
-            assert_eq!(classify(&expr), None, "{join}\n{expr:#?}");
+            assert!(compile_read_only_query(&db, &tx, &auth, join).is_err(), "{join}");
         }
 
         Ok(())
