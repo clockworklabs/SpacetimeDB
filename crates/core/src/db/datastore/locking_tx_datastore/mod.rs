@@ -1281,26 +1281,11 @@ impl Inner {
         if let Some(table) = self.committed_state.tables.get_mut(&table_id) {
             for index in table.indexes.values() {
                 let value = index.get_fields(&row)?;
-                let Some(violators) = index.get_rows_that_violate_unique_constraint(&value) else {
+                let Some(row_id) = index.get_row_that_violates_unique_constraint(&value) else {
                     continue;
                 };
-                for row_id in violators {
-                    if let Some(delete_table) = self.tx_state.as_ref().unwrap().delete_tables.get(&table_id) {
-                        if !delete_table.contains(&row_id) {
-                            let value = row.project_not_empty(&index.cols)?;
-                            return Err(IndexError::UniqueConstraintViolation {
-                                constraint_name: index.name.clone(),
-                                table_name: table.schema.table_name.clone(),
-                                col_names: index
-                                    .cols
-                                    .iter()
-                                    .map(|&x| insert_table.schema.columns[x as usize].col_name.clone())
-                                    .collect(),
-                                value,
-                            }
-                            .into());
-                        }
-                    } else {
+                if let Some(delete_table) = self.tx_state.as_ref().unwrap().delete_tables.get(&table_id) {
+                    if !delete_table.contains(row_id) {
                         let value = row.project_not_empty(&index.cols)?;
                         return Err(IndexError::UniqueConstraintViolation {
                             constraint_name: index.name.clone(),
@@ -1314,6 +1299,19 @@ impl Inner {
                         }
                         .into());
                     }
+                } else {
+                    let value = row.project_not_empty(&index.cols)?;
+                    return Err(IndexError::UniqueConstraintViolation {
+                        constraint_name: index.name.clone(),
+                        table_name: table.schema.table_name.clone(),
+                        col_names: index
+                            .cols
+                            .iter()
+                            .map(|&x| insert_table.schema.columns[x as usize].col_name.clone())
+                            .collect(),
+                        value,
+                    }
+                    .into());
                 }
             }
         }
