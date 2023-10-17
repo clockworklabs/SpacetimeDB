@@ -216,7 +216,7 @@ impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
         // Return a value from the current index iterator, if not exhausted.
         if let Some(value) = self.index_iter.as_mut().and_then(|iter| iter.next()) {
-            return Ok(Some(value.into()));
+            return Ok(Some(value.to_rel_value()));
         }
         // Otherwise probe the index with a row from the probe side.
         while let Some(row) = self.probe_side.next()? {
@@ -228,7 +228,7 @@ impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
                     let mut index_iter = self.db.iter_by_col_eq(self.tx, table_id, col_id, value)?;
                     if let Some(value) = index_iter.next() {
                         self.index_iter = Some(index_iter);
-                        return Ok(Some(value.into()));
+                        return Ok(Some(value.to_rel_value()));
                     }
                 }
             }
@@ -291,7 +291,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
             Table::MemTable(_) => Err(ErrorVm::Other(anyhow::anyhow!("How deal with mutating values?"))),
             Table::DbTable(t) => {
                 let count = self.db.delete_by_rel(self.tx, t.table_id, rows)?;
-                Ok(Code::Value(count.unwrap_or_default().into()))
+                Ok(Code::Value(count.into()))
             }
         }
     }
@@ -465,7 +465,7 @@ impl RelOps for TableCursor<'_> {
 
     #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
-        Ok(self.iter.next().map(|row| row.into()))
+        Ok(self.iter.next().map(|row| row.to_rel_value()))
     }
 }
 
@@ -480,7 +480,7 @@ impl<R: RangeBounds<AlgebraicValue>> RelOps for IndexCursor<'_, R> {
 
     #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
-        Ok(self.iter.next().map(|row| row.into()))
+        Ok(self.iter.next().map(|row| row.to_rel_value()))
     }
 }
 
@@ -747,9 +747,9 @@ pub(crate) mod tests {
         check_catalog(
             p,
             ST_SEQUENCES_NAME,
-            (&StSequenceRow {
+            StSequenceRow {
                 sequence_id: 1.into(),
-                sequence_name: "sequence_id_seq",
+                sequence_name: "sequence_id_seq".to_owned(),
                 table_id: 2.into(),
                 col_id: 0.into(),
                 increment: 1,
@@ -757,8 +757,8 @@ pub(crate) mod tests {
                 min_value: 1,
                 max_value: 4294967295,
                 allocated: 4096,
-            })
-                .into(),
+            }
+            .into(),
             q,
             (&st_sequences_schema()).into(),
         );

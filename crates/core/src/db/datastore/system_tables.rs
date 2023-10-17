@@ -811,11 +811,11 @@ impl<'a> TryFrom<&'a ProductValue> for StSequenceRow<&'a str> {
     }
 }
 
-impl<Name: AsRef<str>> From<&StSequenceRow<Name>> for ProductValue {
-    fn from(x: &StSequenceRow<Name>) -> Self {
+impl From<StSequenceRow<String>> for ProductValue {
+    fn from(x: StSequenceRow<String>) -> Self {
         product![
             x.sequence_id,
-            AlgebraicValue::String(x.sequence_name.as_ref().to_string()),
+            x.sequence_name,
             x.table_id,
             x.col_id,
             x.increment,
@@ -827,11 +827,11 @@ impl<Name: AsRef<str>> From<&StSequenceRow<Name>> for ProductValue {
     }
 }
 
-impl<'a> From<&StSequenceRow<&'a str>> for SequenceSchema {
-    fn from(sequence: &StSequenceRow<&'a str>) -> Self {
+impl From<StSequenceRow<String>> for SequenceSchema {
+    fn from(sequence: StSequenceRow<String>) -> Self {
         Self {
             sequence_id: sequence.sequence_id,
-            sequence_name: sequence.sequence_name.into(),
+            sequence_name: sequence.sequence_name,
             table_id: sequence.table_id,
             col_id: sequence.col_id,
             start: sequence.start,
