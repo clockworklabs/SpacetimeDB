@@ -1664,7 +1664,9 @@ impl Locking {
                             panic!("Couldn't decode product value to {:?} from message log", row_type)
                         }),
                         DataKey::Hash(hash) => {
-                            let data = odb.lock().unwrap().get(hash).unwrap();
+                            let data = odb.lock().unwrap().get(hash).unwrap_or_else(|| {
+                                panic!("Object {hash} referenced from transaction not present in object DB");
+                            });
                             ProductValue::decode(&row_type, &mut &data[..]).unwrap_or_else(|_| {
                                 panic!("Couldn't decode product value to {:?} from message log", row_type)
                             })
