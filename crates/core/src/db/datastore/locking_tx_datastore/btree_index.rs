@@ -66,12 +66,12 @@ pub struct BTreeIndexRangeIter<'a> {
     range_iter: btree_set::Range<'a, IndexKey>,
 }
 
-impl Iterator for BTreeIndexRangeIter<'_> {
-    type Item = RowId;
+impl<'a> Iterator for BTreeIndexRangeIter<'a> {
+    type Item = &'a RowId;
 
     #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Option<Self::Item> {
-        self.range_iter.next().map(|key| key.row_id)
+        self.range_iter.next().map(|key| &key.row_id)
     }
 }
 

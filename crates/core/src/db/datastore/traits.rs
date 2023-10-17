@@ -416,10 +416,9 @@ pub trait Data: Into<ProductValue> {
 pub trait DataRow: Send + Sync {
     type RowId: Copy;
 
-    type Data: Data;
-    type DataRef: Clone;
+    type DataRef<'a>;
 
-    fn data_to_owned(&self, data_ref: Self::DataRef) -> Self::Data;
+    fn view_product_value<'a>(&self, drr: Self::DataRef<'a>) -> &'a ProductValue;
 }
 
 pub trait Tx {
@@ -438,15 +437,15 @@ pub trait MutTx {
 }
 
 pub trait TxDatastore: DataRow + Tx {
-    type Iter<'a>: Iterator<Item = Self::DataRef>
+    type Iter<'a>: Iterator<Item = Self::DataRef<'a>>
     where
         Self: 'a;
 
-    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>>: Iterator<Item = Self::DataRef>
+    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>>: Iterator<Item = Self::DataRef<'a>>
     where
         Self: 'a;
 
-    type IterByColEq<'a>: Iterator<Item = Self::DataRef>
+    type IterByColEq<'a>: Iterator<Item = Self::DataRef<'a>>
     where
         Self: 'a;
 
@@ -469,11 +468,11 @@ pub trait TxDatastore: DataRow + Tx {
     ) -> Result<Self::IterByColEq<'a>>;
 
     fn get_tx<'a>(
-        &'a self,
+        &self,
         tx: &'a Self::TxId,
         table_id: TableId,
-        row_id: Self::RowId,
-    ) -> Result<Option<Self::DataRef>>;
+        row_id: &'a Self::RowId,
+    ) -> Result<Option<Self::DataRef<'a>>>;
 }
 
 pub trait MutTxDatastore: TxDatastore + MutTx {
@@ -492,13 +491,13 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     fn rename_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, new_name: &str) -> Result<()>;
     fn table_id_exists(&self, tx: &Self::MutTxId, table_id: &TableId) -> bool;
     fn table_id_from_name_mut_tx(&self, tx: &Self::MutTxId, table_name: &str) -> Result<Option<TableId>>;
-    fn table_name_from_id_mut_tx(&self, tx: &Self::MutTxId, table_id: TableId) -> Result<Option<String>>;
+    fn table_name_from_id_mut_tx<'tx>(&self, tx: &'tx Self::MutTxId, table_id: TableId) -> Result<Option<&'tx str>>;
     fn get_all_tables_mut_tx<'tx>(&self, tx: &'tx Self::MutTxId) -> super::Result<Vec<Cow<'tx, TableSchema>>> {
         let mut tables = Vec::new();
         let table_rows = self.iter_mut_tx(tx, TableId(ST_TABLES_ID))?.collect::<Vec<_>>();
         for data_ref in table_rows {
-            let data = self.data_to_owned(data_ref);
-            let row = StTableRow::try_from(data.view())?;
+            let data = self.view_product_value(data_ref);
+            let row = StTableRow::try_from(data)?;
             let table_id = TableId(row.table_id);
             tables.push(self.schema_for_table_mut_tx(tx, table_id)?);
         }
@@ -535,18 +534,18 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         range: R,
     ) -> Result<Self::IterByColRange<'a, R>>;
     fn iter_by_col_eq_mut_tx<'a>(
-        &'a self,
+        &self,
         tx: &'a Self::MutTxId,
         table_id: TableId,
         cols: impl Into<NonEmpty<ColId>>,
         value: AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a>>;
     fn get_mut_tx<'a>(
-        &'a self,
+        &self,
         tx: &'a Self::MutTxId,
         table_id: TableId,
-        row_id: Self::RowId,
-    ) -> Result<Option<Self::DataRef>>;
+        row_id: &'a Self::RowId,
+    ) -> Result<Option<Self::DataRef<'a>>>;
     fn delete_mut_tx<'a>(&'a self, tx: &'a mut Self::MutTxId, table_id: TableId, row_id: Self::RowId) -> Result<bool>;
     fn delete_by_rel_mut_tx<R: IntoIterator<Item = ProductValue>>(
         &self,

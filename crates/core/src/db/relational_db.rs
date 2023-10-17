@@ -1,5 +1,5 @@
 use super::commit_log::{CommitLog, CommitLogView};
-use super::datastore::locking_tx_datastore::{Data, DataRef, Iter, IterByColEq, IterByColRange, MutTxId, RowId};
+use super::datastore::locking_tx_datastore::{DataRef, Iter, IterByColEq, IterByColRange, MutTxId, RowId};
 use super::datastore::traits::{
     ColId, DataRow, IndexDef, IndexId, MutProgrammable, MutTx, MutTxDatastore, Programmable, SequenceDef, SequenceId,
     TableDef, TableId, TableSchema, TxData,
@@ -57,11 +57,10 @@ pub struct RelationalDB {
 
 impl DataRow for RelationalDB {
     type RowId = RowId;
-    type Data = Data;
-    type DataRef = DataRef;
+    type DataRef<'a> = DataRef<'a>;
 
-    fn data_to_owned(&self, data_ref: Self::DataRef) -> Self::Data {
-        self.inner.data_to_owned(data_ref)
+    fn view_product_value<'a>(&self, drr: Self::DataRef<'a>) -> &'a ProductValue {
+        drr.view()
     }
 }
 
@@ -416,7 +415,7 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn table_name_from_id(&self, tx: &MutTxId, table_id: u32) -> Result<Option<String>, DBError> {
+    pub fn table_name_from_id<'tx>(&self, tx: &'tx MutTxId, table_id: u32) -> Result<Option<&'tx str>, DBError> {
         self.inner.table_name_from_id_mut_tx(tx, TableId(table_id))
     }
 
@@ -1313,7 +1312,7 @@ mod tests {
         stdb.rename_table(&mut tx, table_id, "YourTable")?;
         let table_name = stdb.table_name_from_id(&tx, table_id)?;
 
-        assert_eq!(Some("YourTable"), table_name.as_deref());
+        assert_eq!(Some("YourTable"), table_name);
         // Also make sure we've removed the old ST_TABLES_ID row
         let mut n = 0;
         for row in stdb.iter(&tx, ST_TABLES_ID)? {

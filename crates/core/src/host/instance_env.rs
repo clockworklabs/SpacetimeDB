@@ -7,7 +7,7 @@ use std::sync::Arc;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::{ColId, DataRow, IndexDef};
+use crate::db::datastore::traits::{ColId, IndexDef};
 use crate::error::{IndexError, NodesError};
 use crate::util::ResultInspectExt;
 
@@ -153,7 +153,7 @@ impl InstanceEnv {
 
         // Find all rows in the table where the column data equates to `value`.
         let seek = stdb.iter_by_col_eq(tx, table_id, ColId(col_id), eq_value)?;
-        let seek = seek.map(|x| stdb.data_to_owned(x).into()).collect::<Vec<_>>();
+        let seek = seek.map(|x| x.view().clone()).collect::<Vec<_>>();
 
         // Delete them and count how many we deleted and error if none.
         let count = stdb
