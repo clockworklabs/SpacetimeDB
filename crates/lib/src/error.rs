@@ -112,6 +112,8 @@ pub enum AuthError {
     IndexPrivate { named: String },
     #[error("Sequence `{named}` is private")]
     SequencePrivate { named: String },
+    #[error("Only the database owner can perform the requested operation")]
+    OwnerRequired,
 }
 
 #[derive(thiserror::Error, Debug)]

@@ -9,32 +9,13 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::{Column, FieldName, MemTable, RelValue};
 use spacetimedb_lib::DataKey;
 use spacetimedb_sats::AlgebraicType;
-use spacetimedb_vm::expr::{Crud, CrudExpr, DbType, QueryExpr, SourceExpr};
+use spacetimedb_vm::expr::{self, Crud, CrudExpr, DbType, QueryExpr, SourceExpr};
 
 pub const SUBSCRIBE_TO_ALL_QUERY: &str = "SELECT * FROM *";
 
 pub enum QueryDef {
     Table(String),
     Sql(String),
-}
-
-#[derive(Clone, Eq, PartialEq, PartialOrd, Ord)]
-pub struct Query {
-    pub queries: Vec<QueryExpr>,
-}
-
-impl Query {
-    #[tracing::instrument(skip_all, fields(table = table.table_name))]
-    pub fn queries_of_table_id<'a>(&'a self, table: &'a DatabaseTableUpdate) -> impl Iterator<Item = QueryExpr> + '_ {
-        self.queries.iter().filter_map(move |x| {
-            if x.source.get_db_table().map(|x| x.table_id) == Some(table.table_id) {
-                let t = to_mem_table(x.clone(), table);
-                Some(t)
-            } else {
-                None
-            }
-        })
-    }
 }
 
 pub const OP_TYPE_FIELD_NAME: &str = "__op_type";
@@ -110,7 +91,7 @@ pub fn compile_read_only_query(
     tx: &MutTxId,
     auth: &AuthCtx,
     input: &str,
-) -> Result<Query, DBError> {
+) -> Result<QuerySet, DBError> {
     let input = input.trim();
     if input.is_empty() {
         return Err(SubscriptionError::Empty.into());
@@ -138,10 +119,29 @@ pub fn compile_read_only_query(
     }
 
     if !queries.is_empty() {
-        Ok(Query { queries })
+        Ok(queries.into_iter().collect())
     } else {
         Err(SubscriptionError::Empty.into())
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Supported {
+    Scan,
+    Semijoin,
+}
+
+pub fn classify(expr: &QueryExpr) -> Option<Supported> {
+    use expr::Query::*;
+    if expr.query.len() == 1 && matches!(expr.query[0], IndexJoin(_)) {
+        return Some(Supported::Semijoin);
+    }
+    for op in &expr.query {
+        if let JoinInner(_) = op {
+            return None;
+        }
+    }
+    Some(Supported::Scan)
 }
 
 #[cfg(test)]
@@ -205,6 +205,42 @@ mod tests {
         Ok(db.create_table(tx, schema)?)
     }
 
+    fn insert_op(table_id: u32, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
+        let row_pk = row.to_data_key().to_bytes();
+        DatabaseTableUpdate {
+            table_id,
+            table_name: table_name.to_string(),
+            ops: vec![TableOp {
+                op_type: 1,
+                row,
+                row_pk,
+            }],
+        }
+    }
+
+    fn delete_op(table_id: u32, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
+        let row_pk = row.to_data_key().to_bytes();
+        DatabaseTableUpdate {
+            table_id,
+            table_name: table_name.to_string(),
+            ops: vec![TableOp {
+                op_type: 0,
+                row,
+                row_pk,
+            }],
+        }
+    }
+
+    fn insert_row(db: &RelationalDB, tx: &mut MutTxId, table_id: u32, row: ProductValue) -> ResultTest<()> {
+        db.insert(tx, table_id, row)?;
+        Ok(())
+    }
+
+    fn delete_row(db: &RelationalDB, tx: &mut MutTxId, table_id: u32, row: ProductValue) -> ResultTest<()> {
+        db.delete_by_rel(tx, table_id, vec![row])?;
+        Ok(())
+    }
+
     fn make_data(
         db: &RelationalDB,
         tx: &mut MutTxId,
@@ -215,7 +251,7 @@ mod tests {
         let table = mem_table(head.clone(), [row.clone()]);
         let table_id = create_table_with_rows(db, tx, table_name, head.clone(), &[row.clone()])?;
 
-        let schema = db.schema_for_table(tx, table_id).unwrap();
+        let schema = db.schema_for_table(tx, table_id).unwrap().into_owned();
 
         let op = TableOp {
             op_type: 1,
@@ -321,7 +357,7 @@ mod tests {
         assert_eq!(
             result.tables.len(),
             total_tables,
-            "Must return the correct number of tables"
+            "Must return the correct number of tables: {result:#?}"
         );
 
         let result = get_result(result);
@@ -342,7 +378,7 @@ mod tests {
         assert_eq!(
             result.tables.len(),
             total_tables,
-            "Must return the correct number of tables"
+            "Must return the correct number of tables: {result:#?}"
         );
 
         let result = get_result(result);
@@ -367,8 +403,7 @@ mod tests {
         let table_id = create_table_with_rows(&db, &mut tx, "test", schema.clone(), &[])?;
 
         // select * from test
-        let query = QueryExpr::new(db_table(schema.clone(), "test".to_owned(), table_id));
-        let query = QuerySet(vec![Query { queries: vec![query] }]);
+        let query: QuerySet = QueryExpr::new(db_table(schema.clone(), "test".to_string(), table_id)).into();
 
         let op = TableOp {
             op_type: 0,
@@ -409,7 +444,7 @@ mod tests {
             panic!("unexpected query {:#?}", exp[0]);
         };
 
-        let query = QuerySet(vec![Query { queries: vec![query] }]);
+        let query = QuerySet::from(query);
 
         let mut ops = Vec::new();
         for i in 0u64..9u64 {
@@ -454,80 +489,235 @@ mod tests {
         let (db, _) = make_test_db()?;
         let mut tx = db.begin_tx();
 
-        // Create table [lhs] with index on [b]
-        let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1, "b")];
+        // Create table [lhs] with index on [id]
+        let schema = &[("id", AlgebraicType::I32), ("x", AlgebraicType::I32)];
+        let indexes = &[(0, "id")];
         let lhs_id = create_table(&db, &mut tx, "lhs", schema, indexes)?;
 
         // Create table [rhs] with no indexes
-        let schema = &[("b", AlgebraicType::U64), ("c", AlgebraicType::U64)];
+        let schema = &[
+            ("rid", AlgebraicType::I32),
+            ("id", AlgebraicType::I32),
+            ("y", AlgebraicType::I32),
+        ];
         let rhs_id = create_table(&db, &mut tx, "rhs", schema, &[])?;
 
+        // Insert into lhs
+        for i in 0..5 {
+            db.insert(&mut tx, lhs_id, product!(i, i + 5))?;
+        }
+
+        // Insert into rhs
+        for i in 10..20 {
+            db.insert(&mut tx, rhs_id, product!(i, i - 10, i - 8))?;
+        }
+
         // Should be answered using an index semijion
-        let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c = 3";
+        let sql = "select lhs.* from lhs join rhs on lhs.id = rhs.id where rhs.y >= 2 and rhs.y <= 4";
         let mut exp = compile_sql(&db, &tx, sql)?;
 
         let Some(CrudExpr::Query(query)) = exp.pop() else {
             panic!("unexpected query {:#?}", exp[0]);
         };
 
-        let query = QuerySet(vec![Query { queries: vec![query] }]);
+        let query = QuerySet::from(query);
 
-        for i in 0..10 {
-            // Insert into lhs
-            let row = product!(i as u64, i as u64);
-            db.insert(&mut tx, lhs_id, row)?;
+        // Case 1: Delete a row inside the region and insert back inside the region
+        {
+            let r1 = product!(10, 0, 2);
+            let r2 = product!(10, 0, 3);
 
-            // Insert into rhs
-            let row = product!(i as u64, i as u64);
-            db.insert(&mut tx, rhs_id, row)?;
+            delete_row(&db, &mut tx, rhs_id, r1.clone())?;
+            insert_row(&db, &mut tx, rhs_id, r2.clone())?;
+
+            let updates = vec![
+                delete_op(rhs_id, "rhs", r1.clone()),
+                insert_op(rhs_id, "rhs", r2.clone()),
+            ];
+
+            let update = DatabaseUpdate { tables: updates };
+            let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
+
+            // No updates to report
+            assert_eq!(result.tables.len(), 0);
+
+            // Clean up tx
+            insert_row(&db, &mut tx, rhs_id, r1.clone())?;
+            delete_row(&db, &mut tx, rhs_id, r2.clone())?;
         }
 
-        let mut updates = Vec::new();
+        // Case 2: Delete a row outside the region and insert back outside the region
+        {
+            let r1 = product!(13, 3, 5);
+            let r2 = product!(13, 3, 6);
 
-        // An update event for the left table that matches the query
-        let lhs_row = product!(11u64, 3u64);
-        let lhs_key = lhs_row.to_data_key().to_bytes();
-        let lhs_op = TableOp {
-            op_type: 0,
-            row: lhs_row,
-            row_pk: lhs_key,
-        };
-        updates.push(DatabaseTableUpdate {
-            table_id: lhs_id,
-            table_name: "lhs".into(),
-            ops: vec![lhs_op],
-        });
+            insert_row(&db, &mut tx, rhs_id, r1.clone())?;
+            delete_row(&db, &mut tx, rhs_id, r2.clone())?;
 
-        // An update event for the right table that matches the query
-        let rhs_row = product!(12u64, 3u64);
-        let rhs_key = rhs_row.to_data_key().to_bytes();
-        let rhs_op = TableOp {
-            op_type: 0,
-            row: rhs_row,
-            row_pk: rhs_key,
-        };
-        updates.push(DatabaseTableUpdate {
-            table_id: rhs_id,
-            table_name: "rhs".into(),
-            ops: vec![rhs_op],
-        });
+            let updates = vec![
+                delete_op(rhs_id, "rhs", r1.clone()),
+                insert_op(rhs_id, "rhs", r2.clone()),
+            ];
 
-        let update = DatabaseUpdate { tables: updates };
-        let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
+            let update = DatabaseUpdate { tables: updates };
+            let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
 
-        assert_eq!(result.tables.len(), 1);
+            // No updates to report
+            assert_eq!(result.tables.len(), 0);
 
-        let update = &result.tables[0];
+            // Clean up tx
+            insert_row(&db, &mut tx, rhs_id, r1.clone())?;
+            delete_row(&db, &mut tx, rhs_id, r2.clone())?;
+        }
 
-        assert_eq!(update.ops.len(), 1);
-        assert_eq!(update.table_id, lhs_id);
+        // Case 3: Delete a row inside the region and insert back outside the region
+        {
+            let r1 = product!(10, 0, 2);
+            let r2 = product!(10, 0, 5);
 
-        let op = &update.ops[0];
+            delete_row(&db, &mut tx, rhs_id, r1.clone())?;
+            insert_row(&db, &mut tx, rhs_id, r2.clone())?;
 
-        assert_eq!(op.op_type, 0);
-        assert_eq!(op.row, product!(11u64, 3u64));
-        assert_eq!(op.row_pk, product!(11u64, 3u64).to_data_key().to_bytes());
+            let updates = vec![
+                delete_op(rhs_id, "rhs", r1.clone()),
+                insert_op(rhs_id, "rhs", r2.clone()),
+            ];
+
+            let update = DatabaseUpdate { tables: updates };
+            let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
+
+            // A single delete from lhs
+            assert_eq!(result.tables.len(), 1);
+            assert_eq!(result.tables[0], delete_op(lhs_id, "lhs", product!(0, 5)));
+
+            // Clean up tx
+            insert_row(&db, &mut tx, rhs_id, r1.clone())?;
+            delete_row(&db, &mut tx, rhs_id, r2.clone())?;
+        }
+
+        // Case 4: Delete a row outside the region and insert back inside the region
+        {
+            let r1 = product!(13, 3, 5);
+            let r2 = product!(13, 3, 4);
+
+            delete_row(&db, &mut tx, rhs_id, r1.clone())?;
+            insert_row(&db, &mut tx, rhs_id, r2.clone())?;
+
+            let updates = vec![
+                delete_op(rhs_id, "rhs", r1.clone()),
+                insert_op(rhs_id, "rhs", r2.clone()),
+            ];
+
+            let update = DatabaseUpdate { tables: updates };
+            let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
+
+            // A single insert into lhs
+            assert_eq!(result.tables.len(), 1);
+            assert_eq!(result.tables[0], insert_op(lhs_id, "lhs", product!(3, 8)));
+
+            // Clean up tx
+            insert_row(&db, &mut tx, rhs_id, r1.clone())?;
+            delete_row(&db, &mut tx, rhs_id, r2.clone())?;
+        }
+
+        // Case 5: Insert a row into lhs and insert a matching row inside the region of rhs
+        {
+            let lhs_row = product!(5, 10);
+            let rhs_row = product!(20, 5, 3);
+
+            insert_row(&db, &mut tx, lhs_id, lhs_row.clone())?;
+            insert_row(&db, &mut tx, rhs_id, rhs_row.clone())?;
+
+            let updates = vec![
+                insert_op(lhs_id, "lhs", lhs_row.clone()),
+                insert_op(rhs_id, "rhs", rhs_row.clone()),
+            ];
+
+            let update = DatabaseUpdate { tables: updates };
+            let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
+
+            // A single insert into lhs
+            assert_eq!(result.tables.len(), 1);
+            assert_eq!(result.tables[0], insert_op(lhs_id, "lhs", product!(5, 10)));
+
+            // Clean up tx
+            delete_row(&db, &mut tx, lhs_id, lhs_row.clone())?;
+            delete_row(&db, &mut tx, rhs_id, rhs_row.clone())?;
+        }
+
+        // Case 6: Insert a row into lhs and insert a matching row outside the region of rhs
+        {
+            let lhs_row = product!(5, 10);
+            let rhs_row = product!(20, 5, 5);
+
+            insert_row(&db, &mut tx, lhs_id, lhs_row.clone())?;
+            insert_row(&db, &mut tx, rhs_id, rhs_row.clone())?;
+
+            let updates = vec![
+                insert_op(lhs_id, "lhs", lhs_row.clone()),
+                insert_op(rhs_id, "rhs", rhs_row.clone()),
+            ];
+
+            let update = DatabaseUpdate { tables: updates };
+            let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
+
+            // No updates to report
+            assert_eq!(result.tables.len(), 0);
+
+            // Clean up tx
+            delete_row(&db, &mut tx, lhs_id, lhs_row.clone())?;
+            delete_row(&db, &mut tx, rhs_id, rhs_row.clone())?;
+        }
+
+        // Case 7: Delete a row from lhs and delete a matching row inside the region of rhs
+        {
+            let lhs_row = product!(0, 5);
+            let rhs_row = product!(10, 0, 2);
+
+            delete_row(&db, &mut tx, lhs_id, lhs_row.clone())?;
+            delete_row(&db, &mut tx, rhs_id, rhs_row.clone())?;
+
+            let updates = vec![
+                delete_op(lhs_id, "lhs", lhs_row.clone()),
+                delete_op(rhs_id, "rhs", rhs_row.clone()),
+            ];
+
+            let update = DatabaseUpdate { tables: updates };
+            let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
+
+            // A single delete from lhs
+            assert_eq!(result.tables.len(), 1);
+            assert_eq!(result.tables[0], delete_op(lhs_id, "lhs", product!(0, 5)));
+
+            // Clean up tx
+            insert_row(&db, &mut tx, lhs_id, lhs_row.clone())?;
+            insert_row(&db, &mut tx, rhs_id, rhs_row.clone())?;
+        }
+
+        // Case 8: Delete a row from lhs and delete a matching row outside the region of rhs
+        {
+            let lhs_row = product!(3, 8);
+            let rhs_row = product!(13, 3, 5);
+
+            delete_row(&db, &mut tx, lhs_id, lhs_row.clone())?;
+            delete_row(&db, &mut tx, rhs_id, rhs_row.clone())?;
+
+            let updates = vec![
+                delete_op(lhs_id, "lhs", lhs_row.clone()),
+                delete_op(rhs_id, "rhs", rhs_row.clone()),
+            ];
+
+            let update = DatabaseUpdate { tables: updates };
+            let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
+
+            // No updates to report
+            assert_eq!(result.tables.len(), 0);
+
+            // Clean up tx
+            insert_row(&db, &mut tx, lhs_id, lhs_row.clone())?;
+            insert_row(&db, &mut tx, rhs_id, rhs_row.clone())?;
+        }
+
         Ok(())
     }
 
@@ -570,14 +760,7 @@ mod tests {
                 .clone()
                 .with_select_cmp(OpCmp::Eq, FieldName::named("_inventory", "inventory_id"), scalar(1u64));
 
-        let s = QuerySet(vec![
-            Query {
-                queries: vec![q_all.clone()],
-            },
-            Query {
-                queries: vec![q_all, q_id],
-            },
-        ]);
+        let s = QuerySet::from([q_all, q_id]);
 
         let row1 = TableOp {
             op_type: 0,
@@ -601,7 +784,7 @@ mod tests {
             tables: vec![data.clone()],
         };
 
-        check_query_incr(&db, &mut tx, &s, &update, 3, &[row])?;
+        check_query_incr(&db, &mut tx, &s, &update, 1, &[row])?;
 
         let q = QueryExpr::new(db_table((&schema).into(), "_inventory".to_owned(), schema.table_id));
 
@@ -647,16 +830,9 @@ mod tests {
                 .clone()
                 .with_select_cmp(OpCmp::Eq, FieldName::named("inventory", "inventory_id"), scalar(1u64));
 
-        let s = QuerySet(vec![
-            Query {
-                queries: vec![q_all.clone()],
-            },
-            Query {
-                queries: vec![q_all, q_id],
-            },
-        ]);
+        let s = QuerySet::from([q_all, q_id]);
 
-        check_query_eval(&db, &mut tx, &s, 3, &[product!(1u64, "health")])?;
+        check_query_eval(&db, &mut tx, &s, 1, &[product!(1u64, "health")])?;
 
         let row = product!(1u64, "health");
 
@@ -680,44 +856,7 @@ mod tests {
 
         let update = DatabaseUpdate { tables: vec![data] };
 
-        check_query_incr(&db, &mut tx, &s, &update, 3, &[row])?;
-
-        Ok(())
-    }
-
-    //Check that
-    //```
-    //SELECT * FROM table1
-    //SELECT * FROM table2
-    // =
-    //SELECT * FROM table2
-    //SELECT * FROM table1
-    //```
-    // return just one row irrespective of the order of the queries
-    #[test]
-    fn test_subscribe_commutative() -> ResultTest<()> {
-        let (db, _tmp_dir) = make_test_db()?;
-        let mut tx = db.begin_tx();
-
-        let (_, _, _, q_1) = make_inv(&db, &mut tx, StAccess::Public)?;
-        let (_, _, _, q_2) = make_player(&db, &mut tx)?;
-
-        let s = QuerySet(vec![
-            Query {
-                queries: vec![q_1.clone()],
-            },
-            Query {
-                queries: vec![q_2.clone()],
-            },
-        ]);
-
-        let result_1 = s.eval(&db, &mut tx, AuthCtx::for_testing())?;
-
-        let s = QuerySet(vec![Query { queries: vec![q_2] }, Query { queries: vec![q_1] }]);
-
-        let result_2 = s.eval(&db, &mut tx, AuthCtx::for_testing())?;
-
-        assert_eq!(get_result(result_1), get_result(result_2));
+        check_query_incr(&db, &mut tx, &s, &update, 1, &[row])?;
 
         Ok(())
     }
@@ -742,9 +881,9 @@ mod tests {
         let sql_query = "SELECT * FROM MobileEntityState JOIN EnemyState ON MobileEntityState.entity_id = EnemyState.entity_id WHERE location_x > 96000 AND MobileEntityState.location_x < 192000 AND MobileEntityState.location_z > 96000 AND MobileEntityState.location_z < 192000";
         let q = compile_read_only_query(&db, &tx, &AuthCtx::for_testing(), sql_query)?;
 
-        for q in q.queries {
+        for q in &q {
             assert_eq!(
-                run_query(&db, &mut tx, &q, AuthCtx::for_testing())?.len(),
+                run_query(&db, &mut tx, q, AuthCtx::for_testing())?.len(),
                 1,
                 "Not return results"
             );
@@ -763,12 +902,8 @@ mod tests {
         let row_1 = product!(1u64, "health");
         let row_2 = product!(2u64, "jhon doe");
 
-        let s = QuerySet(vec![compile_read_only_query(
-            &db,
-            &tx,
-            &AuthCtx::for_testing(),
-            SUBSCRIBE_TO_ALL_QUERY,
-        )?]);
+        let s = compile_read_only_query(&db, &tx, &AuthCtx::for_testing(), SUBSCRIBE_TO_ALL_QUERY)
+            .map(QuerySet::from_iter)?;
 
         check_query_eval(&db, &mut tx, &s, 2, &[row_1.clone(), row_2.clone()])?;
 
@@ -803,6 +938,62 @@ mod tests {
         let row_1 = product!(1u64, "health");
         let row_2 = product!(2u64, "jhon doe");
         check_query_incr(&db, &mut tx, &s, &update, 2, &[row_1, row_2])?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_classify() -> ResultTest<()> {
+        let (db, _tmp_dir) = make_test_db()?;
+        let mut tx = db.begin_tx();
+
+        // Create table [plain]
+        let schema = &[("id", AlgebraicType::U64)];
+        create_table(&db, &mut tx, "plain", schema, &[])?;
+
+        // Create table [lhs] with indexes on [id] and [x]
+        let schema = &[("id", AlgebraicType::U64), ("x", AlgebraicType::I32)];
+        let indexes = &[(0, "id"), (1, "x")];
+        create_table(&db, &mut tx, "lhs", schema, indexes)?;
+
+        // Create table [rhs] with indexes on [id] and [y]
+        let schema = &[("id", AlgebraicType::U64), ("y", AlgebraicType::I32)];
+        let indexes = &[(0, "id"), (1, "y")];
+        create_table(&db, &mut tx, "rhs", schema, indexes)?;
+
+        let auth = AuthCtx::for_testing();
+
+        // All single table queries are supported
+        let scans = [
+            "SELECT * FROM plain",
+            "SELECT * FROM plain WHERE id > 5",
+            "SELECT plain.* FROM plain",
+            "SELECT plain.* FROM plain WHERE plain.id = 5",
+            "SELECT * FROM lhs",
+            "SELECT * FROM lhs WHERE id > 5",
+        ];
+        for scan in scans {
+            let expr = compile_read_only_query(&db, &tx, &auth, scan)?.pop_first().unwrap();
+            assert_eq!(classify(&expr), Some(Supported::Scan), "{scan}\n{expr:#?}");
+        }
+
+        // Only index semijoins are supported
+        let joins = ["SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE rhs.y < 10"];
+        for join in joins {
+            let expr = compile_read_only_query(&db, &tx, &auth, join)?.pop_first().unwrap();
+            assert_eq!(classify(&expr), Some(Supported::Semijoin), "{join}\n{expr:#?}");
+        }
+
+        // All other joins are unsupported
+        let joins = [
+            "SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id",
+            "SELECT * FROM lhs JOIN rhs ON lhs.id = rhs.id",
+            "SELECT * FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE lhs.x < 10",
+        ];
+        for join in joins {
+            let expr = compile_read_only_query(&db, &tx, &auth, join)?.pop_first().unwrap();
+            assert_eq!(classify(&expr), None, "{join}\n{expr:#?}");
+        }
 
         Ok(())
     }

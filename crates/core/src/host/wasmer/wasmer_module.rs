@@ -1,14 +1,14 @@
 use super::wasm_instance_env::WasmInstanceEnv;
 use super::Mem;
 use crate::host::instance_env::InstanceEnv;
-use crate::host::wasm_common::module_host_actor::{AbiVersionError, DescribeError, InitializationError};
+use crate::host::wasm_common::module_host_actor::{DescribeError, InitializationError};
 use crate::host::wasm_common::*;
 use crate::host::{EnergyQuanta, Timestamp};
 use bytes::Bytes;
-use spacetimedb_lib::{Address, Identity, VersionTuple};
+use spacetimedb_lib::{Address, Identity};
 use wasmer::{
     imports, AsStoreMut, Engine, ExternType, Function, FunctionEnv, Imports, Instance, Module, RuntimeError, Store,
-    TypedFunction, WasmPtr,
+    TypedFunction,
 };
 use wasmer_middlewares::metering as wasmer_metering;
 
@@ -46,12 +46,13 @@ impl WasmerModule {
         WasmerModule { module, engine }
     }
 
-    pub const IMPLEMENTED_ABI: VersionTuple = VersionTuple::new(5, 0);
+    pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(7, 0);
 
     fn imports(&self, store: &mut Store, env: &FunctionEnv<WasmInstanceEnv>) -> Imports {
-        const _: () = assert!(WasmerModule::IMPLEMENTED_ABI.eq(spacetimedb_lib::MODULE_ABI_VERSION));
+        #[allow(clippy::assertions_on_constants)]
+        const _: () = assert!(WasmerModule::IMPLEMENTED_ABI.major == spacetimedb_lib::MODULE_ABI_MAJOR_VERSION);
         imports! {
-            "spacetime" => {
+            "spacetime_7.0" => {
                 "_schedule_reducer" => Function::new_typed_with_env(store, env, WasmInstanceEnv::schedule_reducer),
                 "_cancel_reducer" => Function::new_typed_with_env(store, env, WasmInstanceEnv::cancel_reducer),
                 "_delete_by_col_eq" => Function::new_typed_with_env(
@@ -165,13 +166,7 @@ impl module_host_actor::WasmInstancePre for WasmerModule {
 
     fn instantiate(&self, env: InstanceEnv, func_names: &FuncNames) -> Result<Self::Instance, InitializationError> {
         let mut store = Store::new(self.engine.clone());
-        let env = WasmInstanceEnv {
-            instance_env: env,
-            mem: None,
-            buffers: Default::default(),
-            iters: Default::default(),
-            timing_spans: Default::default(),
-        };
+        let env = WasmInstanceEnv::new(env);
         let env = FunctionEnv::new(&mut store, env);
         let imports = self.imports(&mut store, &env);
         let instance = Instance::new(&mut store, &self.module, &imports)
@@ -179,43 +174,7 @@ impl module_host_actor::WasmInstancePre for WasmerModule {
 
         let mem = Mem::extract(&instance.exports).unwrap();
 
-        // We could (and did in the past) parse the ABI version manually before the instantiation,
-        // but it gets complicated in presence of wasm-opt optimisations which might split encoded
-        // versions like `[...other data...]\00\00\03\00[...other data...]` by zeroes
-        // into several segments, so there is no single data segment containing the entire version.
-        // Instead, it's more reliable to extract the version from an instantiated module
-        // when all the data segments are loaded into the flat memory at correct offsets.
-        let abi_version = instance
-            .exports
-            .get_global(STDB_ABI_SYM)
-            .map_err(|_| AbiVersionError::NoVersion)?;
-
-        let mut abi_version = match abi_version.get(&mut store) {
-            wasmer::Value::I32(x) => x as u32,
-            _ => return Err(AbiVersionError::Malformed.into()),
-        };
-
-        let abi_is_addr = instance.exports.get_global(STDB_ABI_IS_ADDR_SYM).is_ok();
-        if abi_is_addr {
-            abi_version = u32::from_le_bytes(
-                mem.read_bytes(&store, WasmPtr::new(abi_version), 4)
-                    .ok()
-                    .and_then(|bytes| bytes.try_into().ok())
-                    .ok_or(AbiVersionError::Malformed)?,
-            );
-        }
-
-        let abi_version = VersionTuple::from_u32(abi_version);
-
-        if !WasmerModule::IMPLEMENTED_ABI.supports(abi_version) {
-            return Err(AbiVersionError::UnsupportedVersion {
-                implement: WasmerModule::IMPLEMENTED_ABI,
-                got: abi_version,
-            }
-            .into());
-        }
-
-        env.as_mut(&mut store).mem = Some(mem);
+        env.as_mut(&mut store).instantiate(mem);
 
         // Note: this budget is just for initializers
         let budget = EnergyQuanta::DEFAULT_BUDGET.as_points();
@@ -236,8 +195,7 @@ impl module_host_actor::WasmInstancePre for WasmerModule {
                 Ok(errbuf) => {
                     let errbuf = env
                         .as_mut(&mut store)
-                        .buffers
-                        .take(errbuf)
+                        .take_buffer(errbuf)
                         .unwrap_or_else(|| "unknown error".as_bytes().into());
                     let errbuf = crate::util::string_from_utf8_lossy_owned(errbuf.into()).into();
                     // TODO: catch this and return the error message to the http client
@@ -281,10 +239,12 @@ impl WasmerInstance {
         let bytes = self
             .env
             .as_mut(store)
-            .buffers
-            .take(buf)
+            .take_buffer(buf)
             .ok_or(DescribeError::BadBuffer)?;
-        self.env.as_mut(store).buffers.clear();
+
+        // Clear all of the instance state associated to this describer call.
+        self.env.as_mut(store).clear_reducer_state();
+
         Ok(bytes)
     }
 }
@@ -297,7 +257,7 @@ impl module_host_actor::WasmInstance for WasmerInstance {
     }
 
     fn instance_env(&self) -> &InstanceEnv {
-        &self.env.as_ref(&self.store).instance_env
+        self.env.as_ref(&self.store).instance_env()
     }
 
     type Trap = wasmer::RuntimeError;
@@ -356,7 +316,7 @@ impl WasmerInstance {
             .get_typed_function::<Args, u32>(store, reducer_symbol)
             .expect("invalid reducer");
 
-        let bufs = bufs.map(|data| self.env.as_mut(store).buffers.insert(data));
+        let bufs = bufs.map(|data| self.env.as_mut(store).insert_buffer(data));
 
         // let guard = pprof::ProfilerGuardBuilder::default().frequency(2500).build().unwrap();
 
@@ -371,13 +331,15 @@ impl WasmerInstance {
                 let errmsg = self
                     .env
                     .as_mut(store)
-                    .buffers
-                    .take(errbuf)
+                    .take_buffer(errbuf)
                     .ok_or_else(|| RuntimeError::new("invalid buffer handle"))?;
                 Err(crate::util::string_from_utf8_lossy_owned(errmsg.into()).into())
             })
         });
-        self.env.as_mut(store).buffers.clear();
+
+        // Clear all of the instance state associated to this single reducer call.
+        self.env.as_mut(store).clear_reducer_state();
+
         // .call(store, sender_buf.ptr.cast(), timestamp, args_buf.ptr, args_buf.len)
         // .and_then(|_| {});
         let duration = start.elapsed();

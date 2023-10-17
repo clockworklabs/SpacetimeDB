@@ -37,7 +37,6 @@ email_address.workspace = true
 flate2.workspace = true
 fs2.workspace = true
 futures.workspace = true
-genawaiter.workspace = true
 hex.workspace = true
 hostname.workspace = true
 hyper.workspace = true

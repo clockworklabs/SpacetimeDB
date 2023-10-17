@@ -7,20 +7,44 @@ use crate::host::wasm_common::{
     err_to_errno, AbiRuntimeError, BufferIdx, BufferIterIdx, BufferIters, Buffers, TimingSpan, TimingSpanIdx,
     TimingSpanSet,
 };
-use bytes::Bytes;
-use itertools::Itertools;
 use wasmer::{FunctionEnvMut, MemoryAccessError, RuntimeError, ValueType, WasmPtr};
 
 use crate::host::instance_env::InstanceEnv;
 
 use super::{Mem, WasmError};
 
+/// A `WasmInstanceEnv` provides the connection between a module
+/// and the database.
+///
+/// A `WasmInstanceEnv` associates an `InstanceEnv` (responsible for
+/// the database instance and its associated state) with a wasm
+/// `Mem`. It also contains the resources (`Buffers` and
+/// `BufferIters`) needed to manage the ABI contract between modules
+/// and the host.
+///
+/// Once created, a `WasmInstanceEnv` must be instantiated with a `Mem`
+/// exactly once.
+///
+/// Some of the state associated to a `WasmInstanceEnv` is per reducer invocation.
+/// For instance, module-defined timing spans are per reducer.
 pub(super) struct WasmInstanceEnv {
-    pub instance_env: InstanceEnv,
-    pub mem: Option<Mem>,
-    pub buffers: Buffers,
-    pub iters: BufferIters,
-    pub timing_spans: TimingSpanSet,
+    /// The database `InstanceEnv` associated to this instance.
+    instance_env: InstanceEnv,
+
+    /// The `Mem` associated to this instance. At construction time,
+    /// this is always `None`. The `Mem` instance is extracted from the
+    /// instance exports, and after instantiation is complete, this will
+    /// always be `Some`.
+    mem: Option<Mem>,
+
+    /// The slab of `Buffers` created for this instance.
+    buffers: Buffers,
+
+    /// The slab of `BufferIters` created for this instance.
+    iters: BufferIters,
+
+    /// Track time spent in module-defined spans.
+    timing_spans: TimingSpanSet,
 }
 
 type WasmResult<T> = Result<T, WasmError>;
@@ -38,9 +62,50 @@ fn mem_err(err: MemoryAccessError) -> RuntimeError {
 /// Wraps an `InstanceEnv` with the magic necessary to push
 /// and pull bytes from webassembly memory.
 impl WasmInstanceEnv {
+    /// Create a new `WasmEnstanceEnv` from the given `InstanceEnv`.
+    pub fn new(instance_env: InstanceEnv) -> Self {
+        Self {
+            instance_env,
+            mem: None,
+            buffers: Default::default(),
+            iters: Default::default(),
+            timing_spans: Default::default(),
+        }
+    }
+
+    /// Finish the instantiation of this instance with the provided `Mem`.
+    pub fn instantiate(&mut self, mem: Mem) {
+        assert!(self.mem.is_none());
+        self.mem = Some(mem);
+    }
+
     /// Returns a reference to the memory, assumed to be initialized.
     pub fn mem(&self) -> Mem {
         self.mem.clone().expect("Initialized memory")
+    }
+
+    /// Return a reference to the `InstanceEnv`,
+    /// which is responsible for DB instance and associated state.
+    pub fn instance_env(&self) -> &InstanceEnv {
+        &self.instance_env
+    }
+
+    /// Take ownership of a particular `Buffer` from this instance.
+    pub fn take_buffer(&mut self, idx: BufferIdx) -> Option<bytes::Bytes> {
+        self.buffers.take(idx)
+    }
+
+    /// Take ownership of the given `data` and give back a `BufferIdx`
+    /// as a handle to that data.
+    pub fn insert_buffer(&mut self, data: bytes::Bytes) -> BufferIdx {
+        self.buffers.insert(data)
+    }
+
+    /// Reset all of the state associated to a single reducer call.
+    pub fn clear_reducer_state(&mut self) {
+        // For the moment, we only explicitly clear the set of buffers.
+        // TODO: should we be clearing `iters` and/or `timing_spans`?
+        self.buffers.clear();
     }
 
     /// Call the function `f` with the name `func`.
@@ -487,14 +552,12 @@ impl WasmInstanceEnv {
     // #[tracing::instrument(skip_all)]
     pub fn iter_start(caller: FunctionEnvMut<'_, Self>, table_id: u32, out: WasmPtr<BufferIterIdx>) -> RtResult<u16> {
         Self::cvt_ret(caller, "iter_start", out, |mut caller, _mem| {
-            // Construct the iterator.
-            let iter = caller.data().instance_env.iter(table_id);
-            // TODO: make it so the above iterator doesn't lock the database for its whole lifetime
-            let iter = iter.map_ok(Bytes::from).collect::<Vec<_>>().into_iter();
+            // Collect the iterator chunks.
+            let chunks = caller.data().instance_env.iter_chunks(table_id)?;
 
             // Register the iterator and get back the index to write to `out`.
             // Calls to the iterator are done through dynamic dispatch.
-            Ok(caller.data_mut().iters.insert(Box::new(iter)))
+            Ok(caller.data_mut().iters.insert(chunks.into_iter()))
         })
     }
 
@@ -524,13 +587,11 @@ impl WasmInstanceEnv {
             let filter = caller.data().mem().read_bytes(&caller, filter, filter_len)?;
 
             // Construct the iterator.
-            let iter = caller.data().instance_env.iter_filtered(table_id, &filter)?;
-            // TODO: make it so the above iterator doesn't lock the database for its whole lifetime
-            let iter = iter.map(Bytes::from).map(Ok).collect::<Vec<_>>().into_iter();
+            let chunks = caller.data().instance_env.iter_filtered_chunks(table_id, &filter)?;
 
             // Register the iterator and get back the index to write to `out`.
             // Calls to the iterator are done through dynamic dispatch.
-            Ok(caller.data_mut().iters.insert(Box::new(iter)))
+            Ok(caller.data_mut().iters.insert(chunks.into_iter()))
         })
     }
 
@@ -557,11 +618,9 @@ impl WasmInstanceEnv {
                 .ok_or_else(|| RuntimeError::new("no such iterator"))?;
 
             // Advance the iterator.
-            match iter.next() {
-                Some(Ok(buf)) => Ok(data_mut.buffers.insert(buf)),
-                Some(Err(err)) => Err(err.into()),
-                None => Ok(BufferIdx::INVALID),
-            }
+            Ok(iter
+                .next()
+                .map_or(BufferIdx::INVALID, |buf| data_mut.buffers.insert(buf.into())))
         })
     }
 

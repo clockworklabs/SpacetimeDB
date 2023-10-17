@@ -7,7 +7,7 @@ use std::sync::Arc;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::{DataRow, IndexDef};
+use crate::db::datastore::traits::{ColId, DataRow, IndexDef};
 use crate::error::{IndexError, NodesError};
 use crate::util::ResultInspectExt;
 
@@ -18,6 +18,7 @@ use spacetimedb_lib::filter::CmpArgs;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::operator::OpQuery;
 use spacetimedb_lib::relation::{FieldExpr, FieldName};
+use spacetimedb_sats::buffer::BufWriter;
 use spacetimedb_sats::{ProductType, Typespace};
 use spacetimedb_vm::expr::{Code, ColumnOp};
 
@@ -31,6 +32,50 @@ pub struct InstanceEnv {
 #[derive(Clone, Default)]
 pub struct TxSlot {
     inner: Arc<Mutex<Option<MutTxId>>>,
+}
+
+#[derive(Default)]
+struct ChunkedWriter {
+    chunks: Vec<Box<[u8]>>,
+    scratch_space: Vec<u8>,
+}
+
+impl BufWriter for ChunkedWriter {
+    fn put_slice(&mut self, slice: &[u8]) {
+        self.scratch_space.extend_from_slice(slice);
+    }
+}
+
+impl ChunkedWriter {
+    /// Flushes the data collected in the scratch space if it's larger than our
+    /// chunking threshold.
+    pub fn flush(&mut self) {
+        // For now, just send buffers over a certain fixed size.
+        const ITER_CHUNK_SIZE: usize = 64 * 1024;
+
+        if self.scratch_space.len() > ITER_CHUNK_SIZE {
+            // We intentionally clone here so that our scratch space is not
+            // recreated with zero capacity (via `Vec::new`), but instead can
+            // be `.clear()`ed in-place and reused.
+            //
+            // This way the buffers in `chunks` are always fitted fixed-size to
+            // the actual data they contain, while the scratch space is ever-
+            // growing and has higher chance of fitting each next row without
+            // reallocation.
+            self.chunks.push(self.scratch_space.as_slice().into());
+            self.scratch_space.clear();
+        }
+    }
+
+    /// Finalises the writer and returns all the chunks.
+    pub fn into_chunks(mut self) -> Vec<Box<[u8]>> {
+        if !self.scratch_space.is_empty() {
+            // Avoid extra clone by just shrinking and pushing the scratch space
+            // in-place.
+            self.chunks.push(self.scratch_space.into());
+        }
+        self.chunks
+    }
 }
 
 // Generic 'instance environment' delegated to from various host types.
@@ -152,7 +197,7 @@ impl InstanceEnv {
         let eq_value = stdb.decode_column(tx, table_id, col_id, value)?;
 
         // Find all rows in the table where the column data equates to `value`.
-        let seek = stdb.iter_by_col_eq(tx, table_id, col_id, eq_value)?;
+        let seek = stdb.iter_by_col_eq(tx, table_id, ColId(col_id), eq_value)?;
         let seek = seek.map(|x| stdb.data_to_owned(x).into()).collect::<Vec<_>>();
 
         // Delete them and count how many we deleted and error if none.
@@ -313,7 +358,7 @@ impl InstanceEnv {
 
         // Find all rows in the table where the column data matches `value`.
         // Concatenate and return these rows using bsatn encoding.
-        let results = stdb.iter_by_col_eq(tx, table_id, col_id, value)?;
+        let results = stdb.iter_by_col_eq(tx, table_id, ColId(col_id), value)?;
         let mut bytes = Vec::new();
         for result in results {
             bsatn::to_writer(&mut bytes, result.view()).unwrap();
@@ -322,57 +367,23 @@ impl InstanceEnv {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn iter(&self, table_id: u32) -> impl Iterator<Item = Result<Vec<u8>, NodesError>> {
-        use genawaiter::{sync::gen, yield_, GeneratorState};
+    pub fn iter_chunks(&self, table_id: u32) -> Result<Vec<Box<[u8]>>, NodesError> {
+        let mut chunked_writer = ChunkedWriter::default();
 
-        // Cheap Arc clones to untie the returned iterator from our own lifetime.
-        let relational_db = self.dbic.relational_db.clone();
-        let tx = self.tx.clone();
+        let stdb = &*self.dbic.relational_db;
+        let tx = &mut *self.tx.get()?;
 
-        // For now, just send buffers over a certain fixed size.
-        fn should_yield_buf(buf: &Vec<u8>) -> bool {
-            const SIZE: usize = 64 * 1024;
-            buf.len() >= SIZE
+        for row in stdb.iter(tx, table_id)? {
+            row.view().encode(&mut chunked_writer);
+            // Flush at row boundaries.
+            chunked_writer.flush();
         }
 
-        let mut generator = Some(gen!({
-            let stdb = &*relational_db;
-            let tx = &mut *tx.get()?;
-
-            let mut buf = Vec::new();
-            let schema = stdb.row_schema_for_table(tx, table_id)?;
-            schema.encode(&mut buf);
-            yield_!(buf);
-
-            let mut buf = Vec::new();
-            for row in stdb.iter(tx, table_id)? {
-                if should_yield_buf(&buf) {
-                    yield_!(buf);
-                    buf = Vec::new();
-                }
-                row.view().encode(&mut buf);
-            }
-            if !buf.is_empty() {
-                yield_!(buf)
-            }
-
-            Ok(())
-        }));
-
-        std::iter::from_fn(move || match generator.as_mut()?.resume() {
-            GeneratorState::Yielded(bytes) => Some(Ok(bytes)),
-            GeneratorState::Complete(res) => {
-                generator = None;
-                match res {
-                    Ok(()) => None,
-                    Err(err) => Some(Err(err)),
-                }
-            }
-        })
+        Ok(chunked_writer.into_chunks())
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn iter_filtered(&self, table_id: u32, filter: &[u8]) -> Result<impl Iterator<Item = Vec<u8>>, NodesError> {
+    pub fn iter_filtered_chunks(&self, table_id: u32, filter: &[u8]) -> Result<Vec<Box<[u8]>>, NodesError> {
         use spacetimedb_lib::filter;
 
         fn filter_to_column_op(table_name: &str, filter: filter::Expr) -> ColumnOp {
@@ -406,7 +417,8 @@ impl InstanceEnv {
         let tx = &mut *self.tx.get()?;
 
         let schema = stdb.schema_for_table(tx, table_id)?;
-        let row_type = ProductType::from(&schema);
+        let row_type = ProductType::from(&*schema);
+
         let filter = filter::Expr::from_bytes(
             // TODO: looks like module typespace is currently not hooked up to instances;
             // use empty typespace for now which should be enough for primitives
@@ -416,16 +428,23 @@ impl InstanceEnv {
             filter,
         )
         .map_err(NodesError::DecodeFilter)?;
-        let q = spacetimedb_vm::dsl::query(&schema).with_select(filter_to_column_op(&schema.table_name, filter));
+        let q = spacetimedb_vm::dsl::query(&*schema).with_select(filter_to_column_op(&schema.table_name, filter));
         //TODO: How pass the `caller` here?
         let p = &mut DbProgram::new(stdb, tx, AuthCtx::for_current(self.dbic.identity));
         let results = match spacetimedb_vm::eval::run_ast(p, q.into()) {
             Code::Table(table) => table,
             _ => unreachable!("query should always return a table"),
         };
-        Ok(std::iter::once(bsatn::to_vec(&row_type))
-            .chain(results.data.into_iter().map(|row| bsatn::to_vec(&row.data)))
-            .map(|bytes| bytes.expect("encoding algebraic values should never fail")))
+
+        let mut chunked_writer = ChunkedWriter::default();
+
+        // write all rows and flush at row boundaries
+        for row in results.data {
+            row.data.encode(&mut chunked_writer);
+            chunked_writer.flush();
+        }
+
+        Ok(chunked_writer.into_chunks())
     }
 }
 
