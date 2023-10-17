@@ -1,6 +1,6 @@
 [package]
 name = "spacetimedb-bindings-sys"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2021"
 license-file = "LICENSE"
 description = "Easy support for interacting between SpacetimeDB and Rust."
