@@ -2,7 +2,8 @@ use std::ops::Deref;
 
 use crate::host::{ModuleHost, NoSuchModule, ReducerArgs, ReducerCallError, ReducerCallResult};
 use crate::protobuf::client_api::Subscribe;
-use crate::worker_metrics::{CONNECTED_CLIENTS, WEBSOCKET_SENT, WEBSOCKET_SENT_MSG_SIZE};
+use crate::util::prometheus_handle::IntGaugeExt;
+use crate::worker_metrics::WORKER_METRICS;
 use derive_more::From;
 use futures::prelude::*;
 use tokio::sync::mpsc;
@@ -42,12 +43,11 @@ impl ClientConnectionSender {
 
         self.sendtx.send(message).await.map_err(|_| ClientClosed)?;
 
-        WEBSOCKET_SENT
-            .with_label_values(&[self.id.identity.to_hex().as_str()])
-            .inc();
+        WORKER_METRICS.websocket_sent.with_label_values(&self.id.identity).inc();
 
-        WEBSOCKET_SENT_MSG_SIZE
-            .with_label_values(&[self.id.identity.to_hex().as_str()])
+        WORKER_METRICS
+            .websocket_sent_msg_size
+            .with_label_values(&self.id.identity)
             .observe(bytes_len as f64);
 
         Ok(())
@@ -121,11 +121,8 @@ impl ClientConnection {
         };
 
         let actor_fut = actor(this.clone(), sendrx);
-        tokio::spawn(async move {
-            CONNECTED_CLIENTS.inc();
-            actor_fut.await;
-            CONNECTED_CLIENTS.dec();
-        });
+        let gauge_guard = WORKER_METRICS.connected_clients.inc_scope();
+        tokio::spawn(actor_fut.map(|()| drop(gauge_guard)));
 
         Ok(this)
     }

@@ -18,7 +18,7 @@ use spacetimedb::client::ClientActorIndex;
 use spacetimedb::control_db::{self, ControlDb};
 use spacetimedb::database_instance_context::DatabaseInstanceContext;
 use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
-use spacetimedb::db::{db_metrics, Config};
+use spacetimedb::db::{db_metrics::DB_METRICS, Config};
 use spacetimedb::host::EnergyQuanta;
 use spacetimedb::host::UpdateDatabaseResult;
 use spacetimedb::host::UpdateOutcome;
@@ -28,7 +28,8 @@ use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType, Id
 use spacetimedb::module_host_context::ModuleHostContext;
 use spacetimedb::object_db::ObjectDb;
 use spacetimedb::sendgrid_controller::SendGridController;
-use spacetimedb::{stdb_path, worker_metrics};
+use spacetimedb::stdb_path;
+use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_lib::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
 use spacetimedb_lib::recovery::RecoveryCode;
 use std::fs::File;
@@ -45,6 +46,7 @@ pub struct StandaloneEnv {
     public_key: DecodingKey,
     private_key: EncodingKey,
     public_key_bytes: Box<[u8]>,
+    metrics_registry: prometheus::Registry,
 
     /// The following config applies to the whole environment minus the control_db and object_db.
     config: Config,
@@ -59,6 +61,11 @@ impl StandaloneEnv {
         let host_controller = Arc::new(HostController::new(energy_monitor.clone()));
         let client_actor_index = ClientActorIndex::new();
         let (public_key, private_key, public_key_bytes) = get_or_create_keys()?;
+
+        let metrics_registry = prometheus::Registry::new();
+        metrics_registry.register(Box::new(&*WORKER_METRICS)).unwrap();
+        metrics_registry.register(Box::new(&*DB_METRICS)).unwrap();
+
         let this = Arc::new(Self {
             control_db,
             db_inst_ctx_controller,
@@ -68,6 +75,7 @@ impl StandaloneEnv {
             public_key,
             private_key,
             public_key_bytes,
+            metrics_registry,
             config,
         });
         energy_monitor.set_standalone_env(this.clone());
@@ -154,9 +162,7 @@ fn get_key_path(env: &str) -> Option<PathBuf> {
 #[async_trait]
 impl spacetimedb_client_api::NodeDelegate for StandaloneEnv {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
-        let mut metric_families = worker_metrics::REGISTRY.gather();
-        metric_families.extend(db_metrics::REGISTRY.gather());
-        metric_families
+        self.metrics_registry.gather()
     }
 
     fn database_instance_context_controller(&self) -> &DatabaseInstanceContextController {

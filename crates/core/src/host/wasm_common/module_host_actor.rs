@@ -29,7 +29,7 @@ use crate::host::{
 };
 use crate::identity::Identity;
 use crate::subscription::module_subscription_actor::{ModuleSubscriptionManager, SubscriptionEventSender};
-use crate::worker_metrics::{REDUCER_COMPUTE_TIME, REDUCER_COUNT, REDUCER_WRITE_SIZE};
+use crate::worker_metrics::WORKER_METRICS;
 
 use super::instrumentation::CallTimes;
 use super::*;
@@ -579,9 +579,12 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     /// The method also performs various measurements and records energy usage.
     #[tracing::instrument(skip_all)]
     fn execute(&mut self, tx: Option<MutTxId>, op: ReducerOp<'_>) -> (EventStatus, EnergyStats) {
-        let address = &self.database_instance_context().address.to_abbreviated_hex();
+        let address = self.database_instance_context().address;
         let func_ident = &*self.info.reducers[op.id].name;
-        REDUCER_COUNT.with_label_values(&[address, func_ident]).inc();
+        WORKER_METRICS
+            .reducer_count
+            .with_label_values(&address, func_ident)
+            .inc();
 
         let energy_fingerprint = EnergyMonitorFingerprint {
             module_hash: self.info.module_hash,
@@ -638,8 +641,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             );
         }
 
-        REDUCER_COMPUTE_TIME
-            .with_label_values(&[address, func_ident])
+        WORKER_METRICS
+            .reducer_compute_time
+            .with_label_values(&address, func_ident)
             .observe(timings.total_duration.as_secs_f64());
 
         // If you can afford to take 500 ms for a transaction
@@ -681,8 +685,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                     // in batches. This is because it's possible for a tiny reducer call to trigger a whole commit to be written to disk.
                     // We should track the commit sizes instead internally to the CommitLog probably.
                     if let Some(bytes_written) = bytes_written {
-                        REDUCER_WRITE_SIZE
-                            .with_label_values(&[address, func_ident])
+                        WORKER_METRICS
+                            .reducer_write_size
+                            .with_label_values(&address, func_ident)
                             .observe(bytes_written as f64);
                     }
                     EventStatus::Committed(DatabaseUpdate::from_writes(stdb, &tx_data))

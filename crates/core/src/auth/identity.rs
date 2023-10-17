@@ -39,7 +39,7 @@ pub fn encode_token_with_expiry(
     });
 
     let claims = SpacetimeIdentityClaims {
-        hex_identity: identity.to_hex(),
+        hex_identity: identity.to_hex().to_string(),
         iat: SystemTime::now(),
         exp: expiry,
     };

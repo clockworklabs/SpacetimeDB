@@ -4,8 +4,8 @@ use crate::StandaloneEnv;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
 use spacetimedb::config::{FilesGlobal, FilesLocal, SpacetimeDbFiles};
-use spacetimedb::db::{db_metrics, Config, FsyncPolicy, Storage};
-use spacetimedb::{startup, worker_metrics};
+use spacetimedb::db::{Config, FsyncPolicy, Storage};
+use spacetimedb::startup;
 use std::net::TcpListener;
 
 #[cfg(feature = "string")]
@@ -223,12 +223,6 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     startup::configure_tracing();
-
-    // Metrics for pieces under worker_node/ related to reducer hosting, etc.
-    worker_metrics::register_custom_metrics();
-
-    // Metrics for our use of db/.
-    db_metrics::register_custom_metrics();
 
     let ctx = spacetimedb_client_api::ArcEnv(StandaloneEnv::init(config).await?);
 
