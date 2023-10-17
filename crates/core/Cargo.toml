@@ -34,6 +34,7 @@ crossbeam-channel.workspace = true
 derive_more.workspace = true
 dirs.workspace = true
 email_address.workspace = true
+enum-map.workspace = true
 flate2.workspace = true
 fs2.workspace = true
 futures.workspace = true

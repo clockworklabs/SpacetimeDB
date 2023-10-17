@@ -31,6 +31,7 @@ use crate::identity::Identity;
 use crate::subscription::module_subscription_actor::{ModuleSubscriptionManager, SubscriptionEventSender};
 use crate::worker_metrics::{REDUCER_COMPUTE_TIME, REDUCER_COUNT, REDUCER_WRITE_SIZE};
 
+use super::instrumentation::CallTimes;
 use super::*;
 
 pub trait WasmModule: Send + 'static {
@@ -74,9 +75,14 @@ pub struct EnergyStats {
     pub remaining: EnergyQuanta,
 }
 
+pub struct ExecutionTimings {
+    pub total_duration: Duration,
+    pub wasm_instance_env_call_times: CallTimes,
+}
+
 pub struct ExecuteResult<E> {
     pub energy: EnergyStats,
-    pub execution_duration: Duration,
+    pub timings: ExecutionTimings,
     pub call_result: Result<Result<(), Box<str>>, E>,
 }
 
@@ -602,28 +608,39 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
         let ExecuteResult {
             energy,
-            execution_duration,
+            timings,
             call_result,
         } = result;
 
         self.energy_monitor
-            .record(&energy_fingerprint, energy.used, execution_duration);
+            .record(&energy_fingerprint, energy.used, timings.total_duration);
 
         const FRAME_LEN_60FPS: Duration = match Duration::from_secs(1).checked_div(60) {
             Some(d) => d,
             None => unreachable!(),
         };
-        if execution_duration > FRAME_LEN_60FPS {
+        if timings.total_duration > FRAME_LEN_60FPS {
             // If we can't get your reducer done in a single frame
-            // we should debug it.
-            log::debug!("Long running reducer {func_ident:?} took {execution_duration:?} to execute");
+            // we should debug it. To that end, this logging includes a detailed
+            // breakdown of where time is spent in the reducer call.
+            //
+            // TODO(george) only print the per-call timings if they are actually collected.
+            log::debug!(
+                "Long running reducer {func_ident:?} took {:?} to execute, with the following wasm_instance_env call times: {:?}",
+                timings.total_duration,
+                timings.wasm_instance_env_call_times
+            );
         } else {
-            log::trace!("Reducer {func_ident:?} ran: {execution_duration:?}, {:?}", energy.used);
+            log::trace!(
+                "Reducer {func_ident:?} ran: {:?}, {:?}",
+                timings.total_duration,
+                energy.used
+            );
         }
 
         REDUCER_COMPUTE_TIME
             .with_label_values(&[address, func_ident])
-            .observe(execution_duration.as_secs_f64());
+            .observe(timings.total_duration.as_secs_f64());
 
         // If you can afford to take 500 ms for a transaction
         // you can afford to generate a flamegraph. Fix your stuff.
