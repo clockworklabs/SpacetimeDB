@@ -20,7 +20,11 @@ pub enum QueryDef {
 
 pub const OP_TYPE_FIELD_NAME: &str = "__op_type";
 
-//HACK: To recover the `op_type` of this particular row I add a "hidden" column `OP_TYPE_FIELD_NAME`
+/// Replace the primary (ie. `source`) table of the given [`QueryExpr`] with
+/// a virtual [`MemTable`] consisting of the rows in [`DatabaseTableUpdate`].
+///
+/// To be able to reify the `op_type` of the individual operations in the update,
+/// each virtual row is extended with a column [`OP_TYPE_FIELD_NAME`].
 #[tracing::instrument(skip_all)]
 pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
     let mut q = of;
@@ -125,12 +129,19 @@ pub fn compile_read_only_query(
     }
 }
 
+/// The kind of [`QueryExpr`] currently supported for incremental evaluation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Supported {
+    /// A scan or [`QueryExpr::Select`] of a single table.
     Scan,
+    /// A semijoin of two tables, restricted to [`QueryExpr::IndexJoin`]s.
+    ///
+    /// See [`crate::sql::compiler::try_index_join`].
     Semijoin,
 }
 
+/// Classify a [`QueryExpr`] into a [`Supported`] kind, or `None` if incremental
+/// evaluation is not currently supported for the expression.
 pub fn classify(expr: &QueryExpr) -> Option<Supported> {
     use expr::Query::*;
     if expr.query.len() == 1 && matches!(expr.query[0], IndexJoin(_)) {
