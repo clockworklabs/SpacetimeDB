@@ -15,6 +15,7 @@ use crate::{
     error::DBError,
 };
 
+use anyhow::Context;
 use spacetimedb_lib::{
     hash::{hash_bytes, Hash},
     DataKey,
@@ -69,9 +70,15 @@ impl CommitLog {
             let mut mlog = mlog.lock().unwrap();
             mlog.append(commit)?;
             if self.fsync {
-                mlog.sync_all()?;
+                let offset = mlog.open_segment_max_offset;
+                // Sync the odb first, as the mlog depends on its data. This is
+                // not an atomicity guarantee, but the error context may help
+                // with forensics.
                 let mut odb = self.odb.lock().unwrap();
-                odb.sync_all()?;
+                odb.sync_all()
+                    .with_context(|| format!("Error syncing odb to disk. Log offset: {offset}"))?;
+                mlog.sync_all()
+                    .with_context(|| format!("Error syncing mlog to disk. Log offset: {offset}"))?;
                 log::trace!("DATABASE: FSYNC");
             } else {
                 mlog.flush()?;
