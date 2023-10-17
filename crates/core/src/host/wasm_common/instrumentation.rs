@@ -117,6 +117,10 @@ impl CallTimes {
 
     /// Taking the record of call times gives a copy of the
     /// current values and resets the values to zero.
+    /// 
+    /// WasmInstanceEnv::finish_reducer (and other future per-reducer-call metrics)
+    /// will `take`` the CallTimes after running a reducer and report the taken times,
+    /// leaving a fresh zeroed CallTimes for the next reducer invocation.
     pub fn take(&mut self) -> CallTimes {
         std::mem::replace(self, Self::new())
     }

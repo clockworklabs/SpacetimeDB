@@ -623,6 +623,8 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             // If we can't get your reducer done in a single frame
             // we should debug it. To that end, this logging includes a detailed
             // breakdown of where time is spent in the reducer call.
+            //
+            // TODO(george) only print the per-call timings if they are actually collected.
             log::debug!(
                 "Long running reducer {func_ident:?} took {:?} to execute, with the following wasm_instance_env call times: {:?}",
                 timings.total_duration,
