@@ -22,46 +22,21 @@ use super::query;
 
 pub struct Subscription {
     pub queries: QuerySet,
-    pub subscribers: Vec<ClientConnectionSender>,
-}
-
-#[derive(Deref, DerefMut, PartialEq, From, IntoIterator)]
-pub struct QuerySet(BTreeSet<QueryExpr>);
-
-impl From<QueryExpr> for QuerySet {
-    fn from(expr: QueryExpr) -> Self {
-        [expr].into()
-    }
-}
-
-impl<const N: usize> From<[QueryExpr; N]> for QuerySet {
-    fn from(exprs: [QueryExpr; N]) -> Self {
-        Self(exprs.into())
-    }
-}
-
-impl FromIterator<QueryExpr> for QuerySet {
-    fn from_iter<T: IntoIterator<Item = QueryExpr>>(iter: T) -> Self {
-        QuerySet(BTreeSet::from_iter(iter))
-    }
-}
-
-impl<'a> IntoIterator for &'a QuerySet {
-    type Item = &'a QueryExpr;
-    type IntoIter = btree_set::Iter<'a, QueryExpr>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.iter()
-    }
-}
-
-impl Extend<QueryExpr> for QuerySet {
-    fn extend<T: IntoIterator<Item = QueryExpr>>(&mut self, iter: T) {
-        self.0.extend(iter)
-    }
+    subscribers: Vec<ClientConnectionSender>,
 }
 
 impl Subscription {
+    pub fn new(queries: QuerySet, subscriber: ClientConnectionSender) -> Self {
+        Self {
+            queries,
+            subscribers: vec![subscriber],
+        }
+    }
+
+    pub fn subscribers(&self) -> &[ClientConnectionSender] {
+        &self.subscribers
+    }
+
     pub fn remove_subscriber(&mut self, client_id: ClientActorId) -> Option<ClientConnectionSender> {
         let i = self.subscribers.iter().position(|sub| sub.id == client_id)?;
         Some(self.subscribers.swap_remove(i))
@@ -71,6 +46,84 @@ impl Subscription {
         if !self.subscribers.iter().any(|s| s.id == sender.id) {
             self.subscribers.push(sender);
         }
+    }
+}
+
+/// A [`QueryExpr`] tagged with [`query::Supported`].
+///
+/// Constructed via `TryFrom`, which rejects unsupported queries.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct SupportedQuery {
+    kind: query::Supported,
+    expr: QueryExpr,
+}
+
+impl SupportedQuery {
+    pub fn kind(&self) -> query::Supported {
+        self.kind
+    }
+
+    pub fn as_expr(&self) -> &QueryExpr {
+        self.as_ref()
+    }
+}
+
+impl TryFrom<QueryExpr> for SupportedQuery {
+    type Error = DBError;
+
+    fn try_from(expr: QueryExpr) -> Result<Self, Self::Error> {
+        let kind = query::classify(&expr).context("Unsupported query expression")?;
+        Ok(Self { kind, expr })
+    }
+}
+
+impl AsRef<QueryExpr> for SupportedQuery {
+    fn as_ref(&self) -> &QueryExpr {
+        &self.expr
+    }
+}
+
+#[derive(Deref, DerefMut, PartialEq, From, IntoIterator)]
+pub struct QuerySet(BTreeSet<SupportedQuery>);
+
+impl From<SupportedQuery> for QuerySet {
+    fn from(q: SupportedQuery) -> Self {
+        Self([q].into())
+    }
+}
+
+impl<const N: usize> From<[SupportedQuery; N]> for QuerySet {
+    fn from(qs: [SupportedQuery; N]) -> Self {
+        Self(qs.into())
+    }
+}
+
+impl FromIterator<SupportedQuery> for QuerySet {
+    fn from_iter<T: IntoIterator<Item = SupportedQuery>>(iter: T) -> Self {
+        QuerySet(BTreeSet::from_iter(iter))
+    }
+}
+
+impl<'a> IntoIterator for &'a QuerySet {
+    type Item = &'a SupportedQuery;
+    type IntoIter = btree_set::Iter<'a, SupportedQuery>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl Extend<SupportedQuery> for QuerySet {
+    fn extend<T: IntoIterator<Item = SupportedQuery>>(&mut self, iter: T) {
+        self.0.extend(iter)
+    }
+}
+
+impl TryFrom<QueryExpr> for QuerySet {
+    type Error = DBError;
+
+    fn try_from(expr: QueryExpr) -> Result<Self, Self::Error> {
+        SupportedQuery::try_from(expr).map(Self::from)
     }
 }
 
@@ -98,7 +151,10 @@ impl QuerySet {
             .iter()
             .map(Deref::deref)
             .filter(|t| t.table_type == StTableType::User && (same_owner || t.table_access == StAccess::Public))
-            .map(QueryExpr::new)
+            .map(|src| SupportedQuery {
+                kind: query::Supported::Scan,
+                expr: QueryExpr::new(src),
+            })
             .collect();
 
         Ok(Self(exprs))
@@ -121,11 +177,10 @@ impl QuerySet {
         let mut table_ops = HashMap::new();
         let mut seen = HashSet::new();
 
-        for expr in self {
+        for SupportedQuery { kind, expr } in self {
             use query::Supported::*;
-            match query::classify(expr) {
-                None => log::warn!("invalid query expression for incremental evaluation"),
-                Some(Scan) => {
+            match kind {
+                Scan => {
                     let source = expr
                         .source
                         .get_db_table()
@@ -147,7 +202,8 @@ impl QuerySet {
                         }
                     }
                 }
-                Some(Semijoin) => {
+
+                Semijoin => {
                     if let Some(plan) = IncrementalJoin::new(expr, database_update.tables.iter())? {
                         let table_id = plan.lhs.table.table_id;
                         let header = &plan.lhs.table.head;
@@ -196,13 +252,13 @@ impl QuerySet {
         let mut table_ops = HashMap::new();
         let mut seen = HashSet::new();
 
-        for q in &self.0 {
-            if let Some(t) = q.source.get_db_table() {
+        for SupportedQuery { expr, .. } in self {
+            if let Some(t) = expr.source.get_db_table() {
                 // Get the TableOps for this table
                 let (_, table_row_operations) = table_ops
                     .entry(t.table_id)
                     .or_insert_with(|| (t.head.table_name.clone(), vec![]));
-                for table in run_query(relational_db, tx, q, auth)? {
+                for table in run_query(relational_db, tx, expr, auth)? {
                     for row in table.data {
                         let row_pk = pk_for_row(&row);
 

@@ -154,21 +154,18 @@ impl ModuleSubscriptionActor {
 
         let sub = match self.subscriptions.iter_mut().find(|s| s.queries == queries) {
             Some(sub) => {
-                sub.subscribers.push(sender);
+                sub.add_subscriber(sender);
                 sub
             }
             None => {
-                self.subscriptions.push(Subscription {
-                    queries,
-                    subscribers: vec![sender],
-                });
+                self.subscriptions.push(Subscription::new(queries, sender));
                 self.subscriptions.last_mut().unwrap()
             }
         };
 
         let database_update = sub.queries.eval(&self.relational_db, tx, auth)?;
 
-        let sender = sub.subscribers.last().unwrap();
+        let sender = sub.subscribers().last().unwrap();
 
         // NOTE: It is important to send the state in this thread because if you spawn a new
         // thread it's possible for messages to get sent to the client out of order. If you do
@@ -193,7 +190,7 @@ impl ModuleSubscriptionActor {
     fn remove_subscriber(&mut self, client_id: ClientActorId) {
         self.subscriptions.retain_mut(|sub| {
             sub.remove_subscriber(client_id);
-            !sub.subscribers.is_empty()
+            !sub.subscribers().is_empty()
         })
     }
 
@@ -217,7 +214,7 @@ impl ModuleSubscriptionActor {
             };
             let mut message = CachedMessage::new(message);
 
-            for subscriber in &subscription.subscribers {
+            for subscriber in subscription.subscribers() {
                 // rustc realllly doesn't like subscriber.send_message(message) here for weird
                 // lifetime reasons, even though it would be sound
                 let message = message.serialize(subscriber.protocol);
