@@ -97,6 +97,7 @@ pub enum Call {
 }
 
 #[derive(Debug)]
+/// Associates each `Call` tag with a cumulative total `Duration` spent within that call.
 pub struct CallTimes {
     times: EnumMap<Call, Duration>,
 }
