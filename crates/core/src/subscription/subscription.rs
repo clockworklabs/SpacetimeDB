@@ -254,6 +254,13 @@ impl From<Op> for TableOp {
     }
 }
 
+/// Incremental evaluation of the supplied [`QueryExpr`].
+///
+/// The expression is assumed to project a single virtual table consisting
+/// of [`DatabaseTableUpdate`]s (see [`query::to_mem_table`]). That is,
+/// the `op_type` of the resulting [`Op`]s will be extracted from the virtual
+/// column injected by [`query::to_mem_table`], and the virtual column will be
+/// removed from the `row`.
 fn eval_incremental(
     db: &RelationalDB,
     tx: &mut MutTxId,
@@ -297,18 +304,24 @@ fn eval_incremental(
     Ok(ops)
 }
 
+/// Helper for evaluating a [`query::Supported::Semijoin`].
 struct IncrementalJoin<'a> {
     expr: &'a QueryExpr,
     lhs: JoinSide<'a>,
     rhs: JoinSide<'a>,
 }
 
+/// One side of an [`IncrementalJoin`].
+///
+/// Holds the "physical" [`DbTable`] this side of the join operates on, as well
+/// as the [`DatabaseTableUpdate`]s pertaining that table.
 struct JoinSide<'a> {
     table: &'a DbTable,
     updates: DatabaseTableUpdate,
 }
 
 impl JoinSide<'_> {
+    /// Return a [`DatabaseTableUpdate`] consisting of only insert operations.
     pub fn inserts(&self) -> DatabaseTableUpdate {
         let ops = self.updates.ops.iter().filter(|op| op.op_type == 1).cloned().collect();
         DatabaseTableUpdate {
@@ -318,6 +331,7 @@ impl JoinSide<'_> {
         }
     }
 
+    /// Return a [`DatabaseTableUpdate`] with only delete operations.
     pub fn deletes(&self) -> DatabaseTableUpdate {
         let ops = self.updates.ops.iter().filter(|op| op.op_type == 0).cloned().collect();
         DatabaseTableUpdate {
@@ -329,6 +343,18 @@ impl JoinSide<'_> {
 }
 
 impl<'a> IncrementalJoin<'a> {
+    /// Construct an [`IncrementalJoin`] from a [`QueryExpr`] and a series
+    /// of [`DatabaseTableUpdate`]s.
+    ///
+    /// The query expression is assumed to be classified as a
+    /// [`query::Supported::Semijoin`] already. The supplied updates are assumed
+    /// to be the full set of updates from a single transaction.
+    ///
+    /// If neither side of the join is modified by any of the updates, `None` is
+    /// returned. Otherwise, `Some` [`IncrementalJoin`] is returned with the
+    /// updates partitioned into the respective [`JoinSide`].
+    ///
+    /// An error is returned if the expression is not well-formed.
     pub fn new(
         expr: &'a QueryExpr,
         updates: impl Iterator<Item = &'a DatabaseTableUpdate>,
@@ -378,6 +404,40 @@ impl<'a> IncrementalJoin<'a> {
         }
     }
 
+    /// Evaluate this [`IncrementalJoin`].
+    ///
+    /// The following assumptions are made for the incremental evaluation to be
+    /// correct without maintaining a materialized view:
+    ///
+    /// * The join is a primary foreign key semijoin, i.e. one row from the
+    ///   right table joins with at most one row from the left table.
+    /// * The rows in the [`DatabaseTableUpdate`]s on either side of the join
+    ///   are already committed to the underlying "physical" tables.
+    /// * We maintain set semantics, i.e. no two rows with the same
+    ///   [`PrimaryKey`] can appear in the result.
+    ///
+    /// Based on this, we evaluate the join as:
+    ///
+    /// ```text
+    ///     let inserts = {A+ join B} U {A join B+}
+    ///     let deletes = {A- join B} U {A join B-} U {A- join B-}
+    ///
+    ///     (deletes \ inserts) || (inserts \ deletes)
+    /// ```
+    ///
+    /// Where:
+    ///
+    /// `A`:  Committed table to the LHS of the join.
+    /// `B`:  Committed table to the RHS of the join.
+    /// `+`:  Virtual table of only the insert operations against the annotated table.
+    /// `-`:  Virtual table of only the delete operations against the annotated table.
+    /// `U`:  Set union.
+    /// `\`:  Set difference.
+    /// `||`: Concatenation.
+    ///
+    /// Additional discussion is also available in the [wiki] (internal link).
+    ///
+    /// [wiki]: https://www.notion.so/clockworklabs/Incremental-Evaluation-for-Joins-in-Bitcraft-062612b06a9646b2b6206d6a578790c1
     pub fn eval(
         &self,
         db: &RelationalDB,
