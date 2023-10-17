@@ -552,7 +552,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         tx: &mut Self::MutTxId,
         table_id: TableId,
         relation: R,
-    ) -> Result<Option<u32>>;
+    ) -> Result<u32>;
     fn insert_mut_tx<'a>(
         &'a self,
         tx: &'a mut Self::MutTxId,

@@ -1,5 +1,5 @@
 use super::commit_log::{CommitLog, CommitLogView};
-use super::datastore::locking_tx_datastore::{DataRef, Iter, IterByColEq, IterByColRange, MutTxId, RowId};
+use super::datastore::locking_tx_datastore::{DataRef, Iter, IterByColEq, IterByColRange, Locking, MutTxId, RowId};
 use super::datastore::traits::{
     ColId, DataRow, IndexDef, IndexId, MutProgrammable, MutTx, MutTxDatastore, Programmable, SequenceDef, SequenceId,
     TableDef, TableId, TableSchema, TxData,
@@ -20,15 +20,13 @@ use fs2::FileExt;
 use nonempty::NonEmpty;
 use prometheus::HistogramVec;
 use spacetimedb_lib::ColumnIndexAttribute;
-use spacetimedb_lib::{data_key::ToDataKey, PrimaryKey};
+use spacetimedb_lib::{data_key::ToDataKey, DataKey, PrimaryKey};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use std::borrow::Cow;
 use std::fs::{create_dir_all, File};
 use std::ops::RangeBounds;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-
-use super::datastore::locking_tx_datastore::Locking;
 
 /// Starts histogram prometheus measurements for `table_id`.
 fn measure(hist: &'static HistogramVec, table_id: u32) {
@@ -545,12 +543,21 @@ impl RelationalDB {
     */
 
     #[tracing::instrument(skip_all)]
-    pub fn delete_by_rel<R: Relation>(
+    pub fn delete(
         &self,
         tx: &mut MutTxId,
         table_id: u32,
-        relation: R,
-    ) -> Result<Option<u32>, DBError> {
+        relation: impl IntoIterator<Item = DataKey>,
+    ) -> Result<u32, DBError> {
+        let table_id = TableId(table_id);
+        relation
+            .into_iter()
+            .map(|dk| self.inner.delete_mut_tx(tx, table_id, RowId(dk)).map(|b| b as u32))
+            .sum()
+    }
+
+    #[tracing::instrument(skip_all)]
+    pub fn delete_by_rel<R: Relation>(&self, tx: &mut MutTxId, table_id: u32, relation: R) -> Result<u32, DBError> {
         measure(&RDB_DELETE_BY_REL_TIME, table_id);
         self.inner.delete_by_rel_mut_tx(tx, TableId(table_id), relation)
     }

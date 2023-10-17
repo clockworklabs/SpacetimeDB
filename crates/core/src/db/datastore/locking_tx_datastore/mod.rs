@@ -565,26 +565,26 @@ impl Inner {
         Ok(())
     }
 
-    fn drop_table_from_st_tables(&mut self, table_id: TableId) -> super::Result<()> {
-        const ST_TABLES_TABLE_ID_COL: ColId = ColId(0);
-        let rows = self.iter_by_col_eq(&ST_TABLES_ID, ST_TABLES_TABLE_ID_COL, table_id.into())?;
-        let rows = rows.map(|row| row.view().to_owned()).collect::<Vec<_>>();
-        if rows.is_empty() {
+    fn drop_col_eq(&mut self, table_id: TableId, col_id: ColId, value: AlgebraicValue) -> super::Result<()> {
+        let rows = self.iter_by_col_eq(&table_id, col_id, value)?;
+        let ids_to_delete = rows.map(|row| RowId(*row.id())).collect::<Vec<_>>();
+        if ids_to_delete.is_empty() {
             return Err(TableError::IdNotFound(table_id.0).into());
         }
-        self.delete_by_rel(&table_id, rows)?;
+        for id in ids_to_delete {
+            self.delete(&table_id, &id)?;
+        }
         Ok(())
+    }
+
+    fn drop_table_from_st_tables(&mut self, table_id: TableId) -> super::Result<()> {
+        const ST_TABLES_TABLE_ID_COL: ColId = ColId(0);
+        self.drop_col_eq(ST_TABLES_ID, ST_TABLES_TABLE_ID_COL, table_id.into())
     }
 
     fn drop_table_from_st_columns(&mut self, table_id: TableId) -> super::Result<()> {
         const ST_COLUMNS_TABLE_ID_COL: ColId = ColId(0);
-        let rows = self.iter_by_col_eq(&ST_COLUMNS_ID, ST_COLUMNS_TABLE_ID_COL, table_id.into())?;
-        let rows = rows.map(|row| row.view().to_owned()).collect::<Vec<_>>();
-        if rows.is_empty() {
-            return Err(TableError::IdNotFound(table_id.0).into());
-        }
-        self.delete_by_rel(&table_id, rows)?;
-        Ok(())
+        self.drop_col_eq(ST_COLUMNS_ID, ST_COLUMNS_TABLE_ID_COL, table_id.into())
     }
 
     #[tracing::instrument(skip_all)]
@@ -883,24 +883,22 @@ impl Inner {
     fn drop_table(&mut self, table_id: TableId) -> super::Result<()> {
         // First drop the tables indexes.
         const ST_INDEXES_TABLE_ID_COL: ColId = ColId(1);
-        let rows = self
+        let indexes = self
             .iter_by_col_eq(&ST_INDEXES_ID, ST_INDEXES_TABLE_ID_COL, table_id.into())?
-            .map(|x| x.view().clone())
-            .collect::<Vec<_>>();
-        for row in rows {
-            let el = StIndexRow::try_from(&row)?;
-            self.drop_index(IndexId(el.index_id))?;
+            .map(|row| StIndexRow::try_from(row.view()).map(|el| el.index_id))
+            .collect::<Result<Vec<_>, _>>()?;
+        for id in indexes {
+            self.drop_index(IndexId(id))?;
         }
 
         // Remove the table's sequences from st_sequences.
         const ST_SEQUENCES_TABLE_ID_COL: ColId = ColId(2);
         let rows = self
             .iter_by_col_eq(&ST_SEQUENCES_ID, ST_SEQUENCES_TABLE_ID_COL, table_id.into())?
-            .map(|x| x.view().clone())
-            .collect::<Vec<_>>();
-        for row in rows {
-            let el = StSequenceRow::try_from(&row)?;
-            self.drop_sequence(SequenceId(el.sequence_id))?;
+            .map(|row| StSequenceRow::try_from(row.view()).map(|el| el.sequence_id))
+            .collect::<Result<Vec<_>, _>>()?;
+        for id in rows {
+            self.drop_sequence(SequenceId(id))?;
         }
 
         // Remove the table's columns from st_columns.
@@ -919,17 +917,21 @@ impl Inner {
     fn rename_table(&mut self, table_id: TableId, new_name: &str) -> super::Result<()> {
         // Update the table's name in st_tables.
         const ST_TABLES_TABLE_ID_COL: ColId = ColId(0);
-        let rows = self
-            .iter_by_col_eq(&ST_TABLES_ID, ST_TABLES_TABLE_ID_COL, table_id.into())?
-            .map(|x| x.view().clone())
-            .collect::<Vec<_>>();
-        assert!(rows.len() <= 1, "Expected at most one row in st_tables for table_id");
-        let row = rows.first().ok_or_else(|| TableError::IdNotFound(table_id.0))?;
-        let row_id = RowId(row.to_data_key());
-        let mut el = StTableRow::try_from(row)?;
+        let mut row_iter = self.iter_by_col_eq(&ST_TABLES_ID, ST_TABLES_TABLE_ID_COL, table_id.into())?;
+
+        let row = row_iter.next().ok_or_else(|| TableError::IdNotFound(table_id.0))?;
+        let row_id = RowId(*row.id);
+        let mut el = StTableRow::try_from(row.view())?;
         el.table_name = new_name;
+        let new_row = (&el).into();
+
+        assert!(
+            row_iter.next().is_none(),
+            "Expected at most one row in st_tables for table_id"
+        );
+
         self.delete(&ST_TABLES_ID, &row_id)?;
-        self.insert(ST_TABLES_ID, (&el).into())?;
+        self.insert(ST_TABLES_ID, new_row)?;
         Ok(())
     }
 
@@ -1439,16 +1441,12 @@ impl Inner {
     fn delete_by_rel(
         &mut self,
         table_id: &TableId,
-        relation: impl IntoIterator<Item = spacetimedb_sats::ProductValue>,
-    ) -> super::Result<Option<u32>> {
-        let mut count = 0;
-        for tuple in relation {
-            let data_key = tuple.to_data_key();
-            if self.delete(table_id, &RowId(data_key))? {
-                count += 1;
-            }
-        }
-        Ok(Some(count))
+        relation: impl IntoIterator<Item = ProductValue>,
+    ) -> super::Result<u32> {
+        relation
+            .into_iter()
+            .map(|pv| Ok(self.delete(table_id, &RowId(pv.to_data_key()))? as u32))
+            .sum()
     }
 
     fn iter(&self, table_id: &TableId) -> super::Result<Iter> {
@@ -2109,12 +2107,12 @@ impl MutTxDatastore for Locking {
         tx.lock.delete(&table_id, &row_id)
     }
 
-    fn delete_by_rel_mut_tx<R: IntoIterator<Item = spacetimedb_sats::ProductValue>>(
+    fn delete_by_rel_mut_tx<R: IntoIterator<Item = ProductValue>>(
         &self,
         tx: &mut Self::MutTxId,
         table_id: TableId,
         relation: R,
-    ) -> super::Result<Option<u32>> {
+    ) -> super::Result<u32> {
         tx.lock.delete_by_rel(&table_id, relation)
     }
 
@@ -2697,7 +2695,7 @@ mod tests {
         let mut tx = datastore.begin_mut_tx();
         let created_row = u32_str_u32(1, "Foo", 18);
         let num_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, vec![created_row])?;
-        assert_eq!(num_deleted, Some(1));
+        assert_eq!(num_deleted, 1);
         assert_eq!(all_rows(&datastore, &tx, table_id).len(), 0);
         let created_row = u32_str_u32(1, "Foo", 19);
         datastore.insert_mut_tx(&mut tx, table_id, created_row)?;
@@ -2714,7 +2712,7 @@ mod tests {
         for _ in 0..2 {
             let created_row = u32_str_u32(1, "Foo", 18);
             let num_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, vec![created_row.clone()])?;
-            assert_eq!(num_deleted, Some(1));
+            assert_eq!(num_deleted, 1);
             assert_eq!(all_rows(&datastore, &tx, table_id).len(), 0);
             datastore.insert_mut_tx(&mut tx, table_id, created_row)?;
             #[rustfmt::skip]
@@ -2951,7 +2949,7 @@ mod tests {
         assert_eq!(row, rows[0]);
         // Delete the row.
         let count_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, rows)?;
-        assert_eq!(count_deleted, Some(1));
+        assert_eq!(count_deleted, 1);
 
         // We shouldn't see the row when iterating now that it's deleted.
         assert_eq!(all_rows_col_0_eq_1(&tx).len(), 0);
