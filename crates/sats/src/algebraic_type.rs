@@ -245,18 +245,18 @@ impl AlgebraicType {
     /// Given an AlgebraicType, returns the min value for that type.
     pub fn min_value(&self) -> Option<AlgebraicValue> {
         match *self {
-            Self::I8 => Some(i8::MIN.into()),
-            Self::U8 => Some(u8::MIN.into()),
-            Self::I16 => Some(i16::MIN.into()),
-            Self::U16 => Some(u16::MIN.into()),
-            Self::I32 => Some(i32::MIN.into()),
-            Self::U32 => Some(u32::MIN.into()),
-            Self::I64 => Some(i64::MIN.into()),
-            Self::U64 => Some(u64::MIN.into()),
-            Self::I128 => Some(i128::MIN.into()),
-            Self::U128 => Some(u128::MIN.into()),
-            Self::F32 => Some(f32::MIN.into()),
-            Self::F64 => Some(f64::MIN.into()),
+            Self::Builtin(crate::BuiltinType::I8) => Some(i8::MIN.into()),
+            Self::Builtin(crate::BuiltinType::U8) => Some(u8::MIN.into()),
+            Self::Builtin(crate::BuiltinType::I16) => Some(i16::MIN.into()),
+            Self::Builtin(crate::BuiltinType::U16) => Some(u16::MIN.into()),
+            Self::Builtin(crate::BuiltinType::I32) => Some(i32::MIN.into()),
+            Self::Builtin(crate::BuiltinType::U32) => Some(u32::MIN.into()),
+            Self::Builtin(crate::BuiltinType::I64) => Some(i64::MIN.into()),
+            Self::Builtin(crate::BuiltinType::U64) => Some(u64::MIN.into()),
+            Self::Builtin(crate::BuiltinType::I128) => Some(i128::MIN.into()),
+            Self::Builtin(crate::BuiltinType::U128) => Some(u128::MIN.into()),
+            Self::Builtin(crate::BuiltinType::F32) => Some(f32::MIN.into()),
+            Self::Builtin(crate::BuiltinType::F64) => Some(f64::MIN.into()),
             _ => None,
         }
     }
@@ -265,18 +265,18 @@ impl AlgebraicType {
     /// Given an AlgebraicType, returns the max value for that type.
     pub fn max_value(&self) -> Option<AlgebraicValue> {
         match *self {
-            Self::I8 => Some(i8::MAX.into()),
-            Self::U8 => Some(u8::MAX.into()),
-            Self::I16 => Some(i16::MAX.into()),
-            Self::U16 => Some(u16::MAX.into()),
-            Self::I32 => Some(i32::MAX.into()),
-            Self::U32 => Some(u32::MAX.into()),
-            Self::I64 => Some(i64::MAX.into()),
-            Self::U64 => Some(u64::MAX.into()),
-            Self::I128 => Some(i128::MAX.into()),
-            Self::U128 => Some(u128::MAX.into()),
-            Self::F32 => Some(f32::MAX.into()),
-            Self::F64 => Some(f64::MAX.into()),
+            Self::Builtin(crate::BuiltinType::I8) => Some(i8::MAX.into()),
+            Self::Builtin(crate::BuiltinType::U8) => Some(u8::MAX.into()),
+            Self::Builtin(crate::BuiltinType::I16) => Some(i16::MAX.into()),
+            Self::Builtin(crate::BuiltinType::U16) => Some(u16::MAX.into()),
+            Self::Builtin(crate::BuiltinType::I32) => Some(i32::MAX.into()),
+            Self::Builtin(crate::BuiltinType::U32) => Some(u32::MAX.into()),
+            Self::Builtin(crate::BuiltinType::I64) => Some(i64::MAX.into()),
+            Self::Builtin(crate::BuiltinType::U64) => Some(u64::MAX.into()),
+            Self::Builtin(crate::BuiltinType::I128) => Some(i128::MAX.into()),
+            Self::Builtin(crate::BuiltinType::U128) => Some(u128::MAX.into()),
+            Self::Builtin(crate::BuiltinType::F32) => Some(f32::MAX.into()),
+            Self::Builtin(crate::BuiltinType::F64) => Some(f64::MAX.into()),
             _ => None,
         }
     }
