@@ -140,18 +140,20 @@ public static class Runtime
 
     public class RawTableIter : IEnumerable<byte[]>
     {
-        private readonly uint tableId;
-        private readonly byte[]? filterBytes;
+        public readonly byte[] Schema;
+
+        private readonly IEnumerator<byte[]> iter;
 
         public RawTableIter(uint tableId, byte[]? filterBytes = null)
         {
-            this.tableId = tableId;
-            this.filterBytes = filterBytes;
+            iter = new BufferIter(tableId, filterBytes);
+            iter.MoveNext();
+            Schema = iter.Current;
         }
 
         public IEnumerator<byte[]> GetEnumerator()
         {
-            return new BufferIter(tableId, filterBytes);
+            return iter;
         }
 
         IEnumerator IEnumerable.GetEnumerator()
