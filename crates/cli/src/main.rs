@@ -1,6 +1,10 @@
 use clap::Command;
+use mimalloc::MiMalloc;
 use spacetimedb_cli::*;
 use spacetimedb_lib::util;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {

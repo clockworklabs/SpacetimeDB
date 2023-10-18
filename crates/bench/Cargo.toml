@@ -44,3 +44,4 @@ tracing-subscriber.workspace = true
 lazy_static.workspace = true
 walkdir.workspace = true
 regex.workspace = true
+mimalloc.workspace = true
