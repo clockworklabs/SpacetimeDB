@@ -1147,29 +1147,32 @@ impl Inner {
     }
 
     fn algebraic_type_is_numeric(ty: &AlgebraicType) -> bool {
-        matches!(*ty, |AlgebraicType::I8| AlgebraicType::U8
-            | AlgebraicType::I16
-            | AlgebraicType::U16
-            | AlgebraicType::I32
-            | AlgebraicType::U32
-            | AlgebraicType::I64
-            | AlgebraicType::U64
-            | AlgebraicType::I128
-            | AlgebraicType::U128)
+        matches!(
+            *ty,
+            AlgebraicType::Builtin(|spacetimedb_sats::BuiltinType::I8| spacetimedb_sats::BuiltinType::U8
+                | spacetimedb_sats::BuiltinType::I16
+                | spacetimedb_sats::BuiltinType::U16
+                | spacetimedb_sats::BuiltinType::I32
+                | spacetimedb_sats::BuiltinType::U32
+                | spacetimedb_sats::BuiltinType::I64
+                | spacetimedb_sats::BuiltinType::U64
+                | spacetimedb_sats::BuiltinType::I128
+                | spacetimedb_sats::BuiltinType::U128)
+        )
     }
 
     fn sequence_value_to_algebraic_value(ty: &AlgebraicType, sequence_value: i128) -> AlgebraicValue {
         match *ty {
-            AlgebraicType::I8 => (sequence_value as i8).into(),
-            AlgebraicType::U8 => (sequence_value as u8).into(),
-            AlgebraicType::I16 => (sequence_value as i16).into(),
-            AlgebraicType::U16 => (sequence_value as u16).into(),
-            AlgebraicType::I32 => (sequence_value as i32).into(),
-            AlgebraicType::U32 => (sequence_value as u32).into(),
-            AlgebraicType::I64 => (sequence_value as i64).into(),
-            AlgebraicType::U64 => (sequence_value as u64).into(),
-            AlgebraicType::I128 => sequence_value.into(),
-            AlgebraicType::U128 => (sequence_value as u128).into(),
+            AlgebraicType::Builtin(spacetimedb_sats::BuiltinType::I8) => (sequence_value as i8).into(),
+            AlgebraicType::Builtin(spacetimedb_sats::BuiltinType::U8) => (sequence_value as u8).into(),
+            AlgebraicType::Builtin(spacetimedb_sats::BuiltinType::I16) => (sequence_value as i16).into(),
+            AlgebraicType::Builtin(spacetimedb_sats::BuiltinType::U16) => (sequence_value as u16).into(),
+            AlgebraicType::Builtin(spacetimedb_sats::BuiltinType::I32) => (sequence_value as i32).into(),
+            AlgebraicType::Builtin(spacetimedb_sats::BuiltinType::U32) => (sequence_value as u32).into(),
+            AlgebraicType::Builtin(spacetimedb_sats::BuiltinType::I64) => (sequence_value as i64).into(),
+            AlgebraicType::Builtin(spacetimedb_sats::BuiltinType::U64) => (sequence_value as u64).into(),
+            AlgebraicType::Builtin(spacetimedb_sats::BuiltinType::I128) => sequence_value.into(),
+            AlgebraicType::Builtin(spacetimedb_sats::BuiltinType::U128) => (sequence_value as u128).into(),
             _ => unreachable!("should have been prevented in `fn insert`"),
         }
     }
