@@ -3,21 +3,28 @@ use super::{
     RowId,
 };
 use crate::db::datastore::traits::{ColId, TableSchema};
+use indexmap::IndexMap;
 use nonempty::NonEmpty;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
-use std::{
-    collections::{BTreeMap, HashMap},
-    ops::RangeBounds,
-};
+use std::{collections::HashMap, ops::RangeBounds};
 
 pub(crate) struct Table {
     pub(crate) row_type: ProductType,
     pub(crate) schema: TableSchema,
     pub(crate) indexes: HashMap<NonEmpty<ColId>, BTreeIndex>,
-    pub(crate) rows: BTreeMap<RowId, ProductValue>,
+    pub(crate) rows: IndexMap<RowId, ProductValue>,
 }
 
 impl Table {
+    pub(crate) fn new(row_type: ProductType, schema: TableSchema) -> Self {
+        Self {
+            row_type,
+            schema,
+            indexes: Default::default(),
+            rows: Default::default(),
+        }
+    }
+
     pub(crate) fn insert_index(&mut self, mut index: BTreeIndex) {
         index.build_from_rows(self.scan_rows()).unwrap();
         self.indexes.insert(index.cols.clone().map(ColId), index);

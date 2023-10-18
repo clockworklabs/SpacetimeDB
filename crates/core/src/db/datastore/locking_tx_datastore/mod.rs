@@ -137,12 +137,9 @@ impl CommittedState {
     }
 
     fn get_or_create_table(&mut self, table_id: TableId, row_type: &ProductType, schema: &TableSchema) -> &mut Table {
-        self.tables.entry(table_id).or_insert_with(|| Table {
-            row_type: row_type.clone(),
-            schema: schema.clone(),
-            rows: BTreeMap::new(),
-            indexes: HashMap::new(),
-        })
+        self.tables
+            .entry(table_id)
+            .or_insert_with(|| Table::new(row_type.clone(), schema.clone()))
     }
 
     fn get_table(&mut self, table_id: &TableId) -> Option<&mut Table> {
@@ -567,15 +564,9 @@ impl Inner {
             if self.committed_state.get_table(&table_id).is_none() {
                 let schema = self.schema_for_table(table_id)?.into_owned();
                 let row_type = self.row_type_for_table(table_id)?.into_owned();
-                self.committed_state.tables.insert(
-                    table_id,
-                    Table {
-                        row_type,
-                        schema,
-                        indexes: HashMap::new(),
-                        rows: BTreeMap::new(),
-                    },
-                );
+                self.committed_state
+                    .tables
+                    .insert(table_id, Table::new(row_type, schema));
             }
         }
         Ok(())
@@ -779,15 +770,11 @@ impl Inner {
         row_type: ProductType,
         schema: TableSchema,
     ) -> super::Result<()> {
-        self.tx_state.as_mut().unwrap().insert_tables.insert(
-            table_id,
-            Table {
-                row_type,
-                schema,
-                indexes: HashMap::new(),
-                rows: BTreeMap::new(),
-            },
-        );
+        self.tx_state
+            .as_mut()
+            .unwrap()
+            .insert_tables
+            .insert(table_id, Table::new(row_type, schema));
         Ok(())
     }
 
@@ -1014,15 +1001,11 @@ impl Inner {
         } else {
             let row_type = self.row_type_for_table(TableId(index.table_id))?.into_owned();
             let schema = self.schema_for_table(TableId(index.table_id))?.into_owned();
-            self.tx_state.as_mut().unwrap().insert_tables.insert(
-                TableId(index.table_id),
-                Table {
-                    row_type,
-                    schema,
-                    indexes: HashMap::new(),
-                    rows: BTreeMap::new(),
-                },
-            );
+            self.tx_state
+                .as_mut()
+                .unwrap()
+                .insert_tables
+                .insert(TableId(index.table_id), Table::new(row_type, schema));
             self.tx_state
                 .as_mut()
                 .unwrap()
@@ -1254,8 +1237,8 @@ impl Inner {
                             ),
                         )
                     })
-                    .collect::<HashMap<_, _>>(),
-                rows: BTreeMap::new(),
+                    .collect(),
+                rows: Default::default(),
             };
             self.tx_state.as_mut().unwrap().insert_tables.insert(table_id, table);
             self.tx_state.as_ref().unwrap().get_insert_table(&table_id).unwrap()
@@ -1630,17 +1613,12 @@ impl Locking {
         table_id: TableId,
         schema: TableSchema,
         row_type: ProductType,
-    ) -> &mut BTreeMap<RowId, ProductValue> {
+    ) -> &mut indexmap::IndexMap<RowId, ProductValue> {
         &mut inner
             .committed_state
             .tables
             .entry(table_id)
-            .or_insert_with(|| Table {
-                row_type,
-                schema,
-                indexes: HashMap::new(),
-                rows: BTreeMap::new(),
-            })
+            .or_insert_with(|| Table::new(row_type, schema))
             .rows
     }
 
@@ -1725,10 +1703,10 @@ impl<'a> Iter<'a> {
 enum ScanStage<'a> {
     Start,
     CurrentTx {
-        iter: std::collections::btree_map::Iter<'a, RowId, ProductValue>,
+        iter: indexmap::map::Iter<'a, RowId, ProductValue>,
     },
     Committed {
-        iter: std::collections::btree_map::Iter<'a, RowId, ProductValue>,
+        iter: indexmap::map::Iter<'a, RowId, ProductValue>,
     },
 }
 
