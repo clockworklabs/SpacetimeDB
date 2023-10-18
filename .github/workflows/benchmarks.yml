@@ -121,9 +121,9 @@ jobs:
         working-directory: crates/bench/
         run: |
           if [ -e target/criterion/$NORMALIZED_BRANCH_NAME.json ]; then
-            cargo run --bin summarize markdown-report branch.json $NORMALIZED_BRANCH_NAME.json --report-name report
+            cargo run --bin summarize report branch.json $NORMALIZED_BRANCH_NAME.json --report-name report --markdown
           else
-            cargo run --bin summarize markdown-report branch.json --report-name report
+            cargo run --bin summarize report branch.json --report-name report --markdown
           fi
 
       # this will work for both PR and master

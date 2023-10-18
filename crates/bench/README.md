@@ -64,7 +64,7 @@ This is used on CI (see [`../../.github/workflows/benchmarks.yml`](../../.github
 To generate a report without comparisons, use:
 ```bash
 cargo bench --bench generic --bench special -- --save-baseline current
-cargo run --bin summarize markdown-report current
+cargo run --bin summarize report current --markdown
 ```
 
 To compare to another branch, do:
@@ -73,9 +73,10 @@ git checkout master
 cargo bench --bench generic --bench special -- --save-baseline base
 git checkout high-octane-feature-branch
 cargo bench --bench generic --bench special -- --save-baseline current
-cargo run --bin summarize markdown-report current base
+cargo run --bin summarize report current base --markdown
 ```
 
+Omit `--markdown` to generate HTML instead.
 Of course, this will take about an hour, so it might be better to let the CI do it for you.
 
 ## Adding more

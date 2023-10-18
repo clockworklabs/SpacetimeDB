@@ -33,8 +33,8 @@ enum Command {
         baseline: String,
     },
     /// Use packed json files to generate a markdown report
-    /// suitable for posting in a github PR.
-    MarkdownReport {
+    /// suitable for posting in a github PR, or an HTML report.
+    Report {
         /// The name of the new baseline to compare.
         /// End with ".json" to load from a packed JSON file in `{target_dir}/criterion`.
         /// Otherwise, read from the loose criterion files in the filesystem.
@@ -48,6 +48,10 @@ enum Command {
         /// Report will be written to `{target_dir}/criterion/{report_name}.md`.
         #[arg(long = "report-name", required = false)]
         report_name: Option<String>,
+
+        /// Output results as markdown instead of html.
+        #[arg(long = "markdown", required = false, action)]
+        markdown: bool,
     },
 }
 
@@ -96,10 +100,11 @@ fn main() {
             serde_json::to_writer_pretty(&mut file, baseline).expect("failed to write json");
             println!("Wrote {}", path.display());
         }
-        Command::MarkdownReport {
+        Command::Report {
             baseline_old: baseline_old_name,
             baseline_new: baseline_new_name,
             report_name,
+            markdown,
         } => {
             let old = baseline_old_name
                 .map(|name| load_baseline(&benchmarks, &crit_dir, &name))
@@ -112,7 +117,7 @@ fn main() {
 
             let new = load_baseline(&benchmarks, &crit_dir, &baseline_new_name).expect("failed to load new baseline");
 
-            let report = generate_markdown_report(old, new).expect("failed to generate markdown report");
+            let report = generate_report(old, new, markdown).expect("failed to generate report");
 
             if let Some(report_name) = report_name {
                 let path = crit_dir.join(format!("{}.md", report_name));
@@ -153,15 +158,39 @@ fn load_packed_baseline(crit_dir: &Path, name: &str) -> Result<data::BaseBenchma
     Ok(baseline)
 }
 
-fn generate_markdown_report(old: data::BaseBenchmarks, new: data::BaseBenchmarks) -> Result<String> {
-    let mut result = String::new();
+struct Report {
+    contents: String,
+    markdown: bool,
+}
 
-    writeln!(&mut result, "# Benchmark Report")?;
-    writeln!(&mut result)?;
+impl Report {
+    fn header(&mut self, level: u8, text: impl AsRef<str>) -> Result<()> {
+        let text = text.as_ref();
+        if self.markdown {
+            writeln!(self.contents)?;
+            for _ in 1..level {
+                write!(self.contents, "#")?;
+            }
+            writeln!(self.contents, " {text}")?;
+        } else {
+            writeln!(self.contents, "<h{level}>{text}</h{level}>")?;
+        }
+        Ok(())
+    }
+}
 
-    writeln!(
-        &mut result,
-        "Legend:
+fn generate_report(old: data::BaseBenchmarks, new: data::BaseBenchmarks, markdown: bool) -> Result<String> {
+    let mut result = Report {
+        contents: String::new(),
+        markdown,
+    };
+
+    result.header(1, "Benchmark report")?;
+
+    if markdown {
+        writeln!(
+            &mut result.contents,
+            "Legend:
 
 - `load`: number of rows pre-loaded into the database
 - `count`: number of rows touched by the transaction
@@ -173,10 +202,31 @@ fn generate_markdown_report(old: data::BaseBenchmarks, new: data::BaseBenchmarks
     - `person(id: u32, name: String, age: u64)`
     - `location(id: u32, x: u64, y: u64)`
 
-All throughputs are single-threaded.
-
-    "
-    )?;
+All throughputs are single-threaded."
+        )?;
+    } else {
+        writeln!(
+            &mut result.contents,
+            "<p>Legend:</p>
+        <ul>
+        <li><code>load</code>: number of rows pre-loaded into the database</li>
+        <li><code>count</code>: number of rows touched by the transaction</li>
+        <li>index types:
+            <ul>
+                <li><code>unique</code>: a single index on the <code>id</code> column</li>
+                <li><code>non_unique</code>: no indexes</li>
+                <li><code>multi_index</code>: non-unique index on every column</li>
+            </ul>
+        </li>
+        <li>schemas:
+            <ul>
+                <li><code>person(id: u32, name: String, age: u64)</code></li>
+                <li><code>location(id: u32, x: u64, y: u64)</code></li>
+            </ul>
+        </li>
+        </ul>"
+        )?;
+    }
 
     let remaining = old
         .benchmarks
@@ -186,17 +236,18 @@ All throughputs are single-threaded.
     let mut remaining = remaining.into_iter().collect::<Vec<_>>();
     remaining.sort();
 
-    writeln!(&mut result, "## Empty transaction")?;
-    let table = extract_benchmarks_to_table(
+    result.header(2, "Empty transaction")?;
+    extract_benchmarks_to_table(
+        &mut result,
         r"(?x) (?P<db>[^/]+) / (?P<on_disk>[^/]+) / empty",
         &old,
         &new,
         &mut remaining,
     )?;
-    writeln!(&mut result, "{table}")?;
 
-    writeln!(&mut result, "## Single-row insertions")?;
-    let table = extract_benchmarks_to_table(
+    result.header(2, "Single-row insertions")?;
+    extract_benchmarks_to_table(
+        &mut result,
         r"(?x) (?P<db>[^/]+) / (?P<on_disk>[^/]+) / insert_1 /
                 (?P<schema>[^/]+) / (?P<index_type>[^/]+) /
                 load = (?P<load>[^/]+)",
@@ -204,10 +255,10 @@ All throughputs are single-threaded.
         &new,
         &mut remaining,
     )?;
-    writeln!(&mut result, "{table}")?;
 
-    writeln!(&mut result, "## Multi-row insertions")?;
-    let table = extract_benchmarks_to_table(
+    result.header(2, "Multi-row insertions")?;
+    extract_benchmarks_to_table(
+        &mut result,
         r"(?x) (?P<db>[^/]+) / (?P<on_disk>[^/]+) / insert_bulk /
                         (?P<schema>[^/]+) / (?P<index_type>[^/]+) /
                         load = (?P<load>[^/]+) / count = (?P<count>[^/]+)",
@@ -215,20 +266,20 @@ All throughputs are single-threaded.
         &new,
         &mut remaining,
     )?;
-    writeln!(&mut result, "{table}")?;
 
-    writeln!(&mut result, "## Full table iterate")?;
-    let table = extract_benchmarks_to_table(
+    result.header(2, "Full table iterate")?;
+    extract_benchmarks_to_table(
+        &mut result,
         r"(?x) (?P<db>[^/]+) / (?P<on_disk>[^/]+) / iterate / 
                         (?P<schema>[^/]+) / (?P<index_type>[^/]+) ",
         &old,
         &new,
         &mut remaining,
     )?;
-    writeln!(&mut result, "{table}")?;
 
-    writeln!(&mut result, "## Find unique key")?;
-    let table = extract_benchmarks_to_table(
+    result.header(2, "Find unique key")?;
+    extract_benchmarks_to_table(
+        &mut result,
         r"(?x) (?P<db>[^/]+) / (?P<on_disk>[^/]+) / find_unique /
                 (?P<key_type>[^/]+) /
                 load = (?P<load>[^/]+) ",
@@ -236,10 +287,10 @@ All throughputs are single-threaded.
         &new,
         &mut remaining,
     )?;
-    writeln!(&mut result, "{table}")?;
 
-    writeln!(&mut result, "## Filter")?;
-    let table = extract_benchmarks_to_table(
+    result.header(2, "Filter")?;
+    extract_benchmarks_to_table(
+        &mut result,
         r"(?x) (?P<db>[^/]+) / (?P<on_disk>[^/]+) / filter /
                 (?P<key_type>[^/]+) / (?P<index_strategy>[^/]+) / 
                 load = (?P<load>[^/]+) / count = (?P<count>[^/]+)",
@@ -247,63 +298,60 @@ All throughputs are single-threaded.
         &new,
         &mut remaining,
     )?;
-    writeln!(&mut result, "{table}")?;
 
-    writeln!(&mut result, "## Serialize")?;
-    let table = extract_benchmarks_to_table(
+    result.header(2, "Serialize")?;
+    extract_benchmarks_to_table(
+        &mut result,
         r"(?x) serialize / (?P<schema>[^/]+) / (?P<format>[^/]+) /
                 count = (?P<count>[^/]+)",
         &old,
         &new,
         &mut remaining,
     )?;
-    writeln!(&mut result, "{table}")?;
 
-    writeln!(&mut result, "## Module: invoke with large arguments")?;
-    let table = extract_benchmarks_to_table(
+    result.header(2, "Module: invoke with large arguments")?;
+    extract_benchmarks_to_table(
+        &mut result,
         r"(?x) stdb_module / large_arguments / (?P<arg_size>[^/]+)",
         &old,
         &new,
         &mut remaining,
     )?;
-    writeln!(&mut result, "{table}")?;
 
-    writeln!(&mut result, "## Module: print bulk")?;
-    let table = extract_benchmarks_to_table(
+    result.header(2, "Module: print bulk")?;
+    extract_benchmarks_to_table(
+        &mut result,
         r"(?x) stdb_module / print_bulk / lines = (?P<line_count>[^/]+)",
         &old,
         &new,
         &mut remaining,
     )?;
-    writeln!(&mut result, "{table}")?;
 
     // catch-all for remaining benchmarks
-    writeln!(&mut result, "## Remaining benchmarks")?;
-    let table = extract_benchmarks_to_table(r"(?x) (?P<name>.+)", &old, &new, &mut remaining)?;
-    writeln!(&mut result, "{table}")?;
+    result.header(2, "Remaining benchmarks")?;
+    extract_benchmarks_to_table(&mut result, r"(?x) (?P<name>.+)", &old, &new, &mut remaining)?;
 
-    assert_eq!(remaining.len(), 0);
+    assert_eq!(remaining.len(), 0, "Internal error: not all benchmarks consumed?");
 
-    Ok(result)
+    Ok(result.contents)
 }
 
 /// A given benchmark group fits a pattern such as
 /// `[db]/[disk]/insert_1/[schema]/[index_type]/load=[load]`
 ///
 /// Pass a regex using named capture groups to extract all such benchmarks to a table.
-/// We use insignificant whitespace to make these easier to read.
-/// For example:
 ///
-/// `r"(?x) (?P<db>[^/]+) / (?P<on_disk>[^/]+) / insert_1 / (?P<schema>[^/]+) / (?P<index_type>[^/]+) / load = (?P<load>[^/]+)"`
+/// We track what benchmarks have been seen using the out parameter `remaining`.w
 ///
 /// Some strings are treated specially:
 /// - `disk -> 💿`, `mem -> 🧠`
 fn extract_benchmarks_to_table(
+    out: &mut Report,
     pattern: &str,
     old: &data::BaseBenchmarks,
     new: &data::BaseBenchmarks,
     remaining: &mut Vec<&String>,
-) -> Result<String> {
+) -> Result<()> {
     let regex = regex::Regex::new(pattern)?;
 
     let mut capture_names: Vec<_> = regex.capture_names().map(|name| name.unwrap_or("")).collect();
@@ -314,10 +362,14 @@ fn extract_benchmarks_to_table(
         .iter()
         .map(|s| s.replace('_', " "))
         .collect::<Vec<_>>();
+
     headers.push("new latency".to_string());
     headers.push("old latency".to_string());
+    headers.push("delta latency".to_string());
+
     headers.push("new throughput".to_string());
     headers.push("old throughput".to_string());
+    headers.push("delta throughput".to_string());
 
     let mut rows = Vec::new();
 
@@ -338,19 +390,32 @@ fn extract_benchmarks_to_table(
             row.push(emojify(cell));
         }
 
-        if let Some(new) = new.benchmarks.get(&**bench_name) {
+        let new_bench = new.benchmarks.get(&**bench_name);
+        let old_bench = old.benchmarks.get(&**bench_name);
+
+        if let Some(new) = new_bench {
             row.push(time(new.nanoseconds(), new.stddev()))
         } else {
             row.push("-".to_string());
-        }
+        };
 
-        if let Some(old) = old.benchmarks.get(&**bench_name) {
+        if let Some(old) = old_bench {
             row.push(time(old.nanoseconds(), old.stddev()))
         } else {
             row.push("-".to_string());
         }
 
-        if let Some(new) = new.benchmarks.get(&**bench_name) {
+        if let (Some(new), Some(old)) = (new_bench, old_bench) {
+            // This is not as sophisticated as the analysis performed by Criterion.
+            row.push(time(
+                -old.nanoseconds() + new.nanoseconds(),
+                old.stddev() + new.stddev(),
+            ));
+        } else {
+            row.push("-".to_string());
+        }
+
+        if let Some(new) = new_bench {
             if let Some(data::Throughput::Elements(throughput)) = new.throughput() {
                 row.push(throughput_per(throughput, "tx"))
             } else {
@@ -360,9 +425,23 @@ fn extract_benchmarks_to_table(
             row.push("-".to_string());
         }
 
-        if let Some(old) = old.benchmarks.get(&**bench_name) {
+        if let Some(old) = old_bench {
             if let Some(data::Throughput::Elements(throughput)) = old.throughput() {
                 row.push(throughput_per(throughput, "tx"))
+            } else {
+                row.push("-".to_string());
+            }
+        } else {
+            row.push("-".to_string());
+        }
+
+        if let (Some(new), Some(old)) = (new_bench, old_bench) {
+            if let (
+                Some(data::Throughput::Elements(new_throughput)),
+                Some(data::Throughput::Elements(old_throughput)),
+            ) = (new.throughput(), old.throughput())
+            {
+                row.push(throughput_per(-old_throughput + new_throughput, "tx"))
             } else {
                 row.push("-".to_string());
             }
@@ -381,15 +460,17 @@ fn extract_benchmarks_to_table(
         .filter_map(|(i, s)| if extracted.contains(&i) { None } else { Some(*s) })
         .collect();
 
-    Ok(format_markdown_table(headers, rows))
+    if out.markdown {
+        format_markdown_table(&mut out.contents, headers, rows)
+    } else {
+        format_html_table(&mut out.contents, headers, rows)
+    }
 }
 
-fn format_markdown_table(headers: Vec<String>, rows: Vec<Vec<String>>) -> String {
+fn format_markdown_table(out: &mut String, headers: Vec<String>, rows: Vec<Vec<String>>) -> Result<()> {
     for row in &rows {
         assert_eq!(row.len(), headers.len(), "internal error: mismatched row lengths");
     }
-
-    let mut result = "\n".to_string();
 
     let mut max_widths = headers.iter().map(|s| s.len()).collect::<Vec<_>>();
     for row in &rows {
@@ -398,27 +479,62 @@ fn format_markdown_table(headers: Vec<String>, rows: Vec<Vec<String>>) -> String
         }
     }
 
-    result.push_str("| ");
+    // headers
+    write!(out, "| ")?;
     for (i, header) in headers.iter().enumerate() {
-        result.push_str(&format!("{:width$} | ", header, width = max_widths[i]));
+        write!(out, "{:width$} | ", header, width = max_widths[i])?;
     }
-    result.push('\n');
+    writeln!(out)?;
 
-    result.push('|');
+    write!(out, "|")?;
     for max_width in &max_widths {
-        result.push_str(&format!("-{:-<width$}-|", "", width = *max_width));
+        write!(out, "-{:-<width$}-|", "", width = *max_width)?;
     }
-    result.push('\n');
+    writeln!(out)?;
 
+    // rows
     for row in &rows {
-        result.push_str("| ");
+        write!(out, "| ")?;
+
         for (i, cell) in row.iter().enumerate() {
-            result.push_str(&format!("{:width$} | ", cell, width = max_widths[i]));
+            write!(out, "{:width$} | ", cell, width = max_widths[i])?;
         }
-        result.push('\n');
+        writeln!(out)?;
     }
 
-    result
+    Ok(())
+}
+
+fn format_html_table(out: &mut String, headers: Vec<String>, rows: Vec<Vec<String>>) -> Result<()> {
+    for row in &rows {
+        assert_eq!(row.len(), headers.len(), "internal error: mismatched row lengths");
+    }
+
+    writeln!(out, "<table>")?;
+
+    // headers
+    write!(out, "<thead>")?;
+    write!(out, "<tr>")?;
+    for header in &headers {
+        write!(out, "<th>{}</th>", header)?;
+    }
+    write!(out, "</tr>")?;
+    writeln!(out, "</thead>")?;
+
+    // rows
+    writeln!(out, "<tbody>")?;
+    for row in &rows {
+        write!(out, "<tr>")?;
+        for cell in row {
+            write!(out, "<td>{}</td>", cell)?;
+        }
+        writeln!(out, "</tr>")?;
+    }
+    writeln!(out, "</tbody>")?;
+
+    writeln!(out, "</table>")?;
+
+    Ok(())
 }
 
 fn time(nanos: f64, stddev: f64) -> String {
@@ -426,11 +542,11 @@ fn time(nanos: f64, stddev: f64) -> String {
     const MIN_MILLI: f64 = 2_000_000.0;
     const MIN_SEC: f64 = 2_000_000_000.0;
 
-    let (div, label) = if nanos < MIN_MICRO {
+    let (div, label) = if nanos < MIN_MICRO && stddev < MIN_MICRO {
         (1.0, "ns")
-    } else if nanos < MIN_MILLI {
+    } else if nanos < MIN_MILLI && stddev < MIN_MILLI {
         (1_000.0, "µs")
-    } else if nanos < MIN_SEC {
+    } else if nanos < MIN_SEC && stddev < MIN_SEC {
         (1_000_000.0, "ms")
     } else {
         (1_000_000_000.0, "s")
@@ -444,7 +560,8 @@ fn throughput_per(per: f64, unit: &str) -> String {
     const MIN_G: f64 = (2 * (1 << 30) as u64) as f64;
 
     if per < MIN_K {
-        format!("{} {}/sec", per as u64, unit)
+        // may be negative when rendering deltas
+        format!("{} {}/sec", per as i64, unit)
     } else if per < MIN_M {
         format!("{:.1} K{}/sec", (per / (1 << 10) as f64), unit)
     } else if per < MIN_G {
