@@ -546,13 +546,18 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         table_id: TableId,
         row_id: &'a Self::RowId,
     ) -> Result<Option<Self::DataRef<'a>>>;
-    fn delete_mut_tx<'a>(&'a self, tx: &'a mut Self::MutTxId, table_id: TableId, row_id: Self::RowId) -> Result<bool>;
-    fn delete_by_rel_mut_tx<R: IntoIterator<Item = ProductValue>>(
+    fn delete_mut_tx<'a>(
+        &'a self,
+        tx: &'a mut Self::MutTxId,
+        table_id: TableId,
+        row_ids: impl IntoIterator<Item = Self::RowId>,
+    ) -> u32;
+    fn delete_by_rel_mut_tx(
         &self,
         tx: &mut Self::MutTxId,
         table_id: TableId,
-        relation: R,
-    ) -> Result<u32>;
+        relation: impl IntoIterator<Item = ProductValue>,
+    ) -> u32;
     fn insert_mut_tx<'a>(
         &'a self,
         tx: &'a mut Self::MutTxId,

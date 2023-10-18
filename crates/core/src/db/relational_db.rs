@@ -20,7 +20,7 @@ use fs2::FileExt;
 use nonempty::NonEmpty;
 use prometheus::HistogramVec;
 use spacetimedb_lib::ColumnIndexAttribute;
-use spacetimedb_lib::{data_key::ToDataKey, DataKey, PrimaryKey};
+use spacetimedb_lib::{data_key::ToDataKey, PrimaryKey};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use std::borrow::Cow;
 use std::fs::{create_dir_all, File};
@@ -543,21 +543,12 @@ impl RelationalDB {
     */
 
     #[tracing::instrument(skip_all)]
-    pub fn delete(
-        &self,
-        tx: &mut MutTxId,
-        table_id: u32,
-        relation: impl IntoIterator<Item = DataKey>,
-    ) -> Result<u32, DBError> {
-        let table_id = TableId(table_id);
-        relation
-            .into_iter()
-            .map(|dk| self.inner.delete_mut_tx(tx, table_id, RowId(dk)).map(|b| b as u32))
-            .sum()
+    pub fn delete(&self, tx: &mut MutTxId, table_id: u32, row_ids: impl IntoIterator<Item = RowId>) -> u32 {
+        self.inner.delete_mut_tx(tx, TableId(table_id), row_ids)
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn delete_by_rel<R: Relation>(&self, tx: &mut MutTxId, table_id: u32, relation: R) -> Result<u32, DBError> {
+    pub fn delete_by_rel<R: Relation>(&self, tx: &mut MutTxId, table_id: u32, relation: R) -> u32 {
         measure(&RDB_DELETE_BY_REL_TIME, table_id);
         self.inner.delete_by_rel_mut_tx(tx, TableId(table_id), relation)
     }
@@ -567,9 +558,9 @@ impl RelationalDB {
     pub fn clear_table(&self, tx: &mut MutTxId, table_id: u32) -> Result<(), DBError> {
         let relation = self
             .iter(tx, table_id)?
-            .map(|data| data.view().clone())
+            .map(|data| RowId(*data.id()))
             .collect::<Vec<_>>();
-        self.delete_by_rel(tx, table_id, relation)?;
+        self.delete(tx, table_id, relation);
         Ok(())
     }
 

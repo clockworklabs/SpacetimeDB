@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
-use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::db::datastore::locking_tx_datastore::{MutTxId, RowId};
 use crate::db::datastore::traits::{ColId, IndexDef};
 use crate::error::{IndexError, NodesError};
 use crate::util::ResultInspectExt;
@@ -155,15 +155,12 @@ impl InstanceEnv {
         // Find all rows in the table where the column data equates to `value`.
         let rows_to_delete = stdb
             .iter_by_col_eq(tx, table_id, ColId(col_id), eq_value)?
-            .map(|x| *x.id())
+            .map(|x| RowId(*x.id()))
             .collect::<Vec<_>>();
 
         // Delete them and count how many we deleted and error if none.
-        let count = stdb
-            .delete(tx, table_id, rows_to_delete)
-            .inspect_err_(|e| log::error!("delete_by_col_eq(table_id: {table_id}): {e}"))?;
-        let count = NonZeroU32::new(count).ok_or(NodesError::ColumnValueNotFound)?;
-        Ok(count)
+        let count = stdb.delete(tx, table_id, rows_to_delete);
+        NonZeroU32::new(count).ok_or(NodesError::ColumnValueNotFound)
     }
 
     /*

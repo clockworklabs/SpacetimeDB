@@ -571,9 +571,7 @@ impl Inner {
         if ids_to_delete.is_empty() {
             return Err(TableError::IdNotFound(table_id.0).into());
         }
-        for id in ids_to_delete {
-            self.delete(&table_id, &id)?;
-        }
+        self.delete(&table_id, ids_to_delete);
         Ok(())
     }
 
@@ -620,7 +618,7 @@ impl Inner {
             (seq_row, old_seq_row_id)
         };
 
-        self.delete(&ST_SEQUENCES_ID, &old_seq_row_id)?;
+        self.delete(&ST_SEQUENCES_ID, [old_seq_row_id]);
         self.insert(ST_SEQUENCES_ID, ProductValue::from(seq_row))?;
 
         let Some(sequence) = self.sequence_state.get_sequence_mut(seq_id) else {
@@ -676,7 +674,7 @@ impl Inner {
             .unwrap()
             .data;
         let old_seq_row_id = RowId(old_seq_row.to_data_key());
-        self.delete(&ST_SEQUENCES_ID, &old_seq_row_id)?;
+        self.delete(&ST_SEQUENCES_ID, [old_seq_row_id]);
         self.sequence_state.sequences.remove(&seq_id);
         Ok(())
     }
@@ -930,7 +928,7 @@ impl Inner {
             "Expected at most one row in st_tables for table_id"
         );
 
-        self.delete(&ST_TABLES_ID, &row_id)?;
+        self.delete(&ST_TABLES_ID, [row_id]);
         self.insert(ST_TABLES_ID, new_row)?;
         Ok(())
     }
@@ -1056,7 +1054,7 @@ impl Inner {
             .unwrap()
             .data;
         let old_index_row_id = RowId(old_index_row.to_data_key());
-        self.delete(&ST_INDEXES_ID, &old_index_row_id)?;
+        self.delete(&ST_INDEXES_ID, [old_index_row_id]);
 
         self.drop_index_internal(&index_id);
 
@@ -1406,8 +1404,11 @@ impl Inner {
             .map(|table| table.get_schema())
     }
 
-    fn delete(&mut self, table_id: &TableId, row_id: &RowId) -> super::Result<bool> {
-        Ok(self.delete_row_internal(table_id, row_id))
+    fn delete(&mut self, table_id: &TableId, row_ids: impl IntoIterator<Item = RowId>) -> u32 {
+        row_ids
+            .into_iter()
+            .map(|row_id| self.delete_row_internal(table_id, &row_id) as u32)
+            .sum()
     }
 
     fn delete_row_internal(&mut self, table_id: &TableId, row_id: &RowId) -> bool {
@@ -1438,15 +1439,8 @@ impl Inner {
         }
     }
 
-    fn delete_by_rel(
-        &mut self,
-        table_id: &TableId,
-        relation: impl IntoIterator<Item = ProductValue>,
-    ) -> super::Result<u32> {
-        relation
-            .into_iter()
-            .map(|pv| Ok(self.delete(table_id, &RowId(pv.to_data_key()))? as u32))
-            .sum()
+    fn delete_by_rel(&mut self, table_id: &TableId, relation: impl IntoIterator<Item = ProductValue>) -> u32 {
+        self.delete(table_id, relation.into_iter().map(|pv| RowId(pv.to_data_key())))
     }
 
     fn iter(&self, table_id: &TableId) -> super::Result<Iter> {
@@ -2102,17 +2096,17 @@ impl MutTxDatastore for Locking {
         &'a self,
         tx: &'a mut Self::MutTxId,
         table_id: TableId,
-        row_id: Self::RowId,
-    ) -> super::Result<bool> {
-        tx.lock.delete(&table_id, &row_id)
+        row_ids: impl IntoIterator<Item = Self::RowId>,
+    ) -> u32 {
+        tx.lock.delete(&table_id, row_ids)
     }
 
-    fn delete_by_rel_mut_tx<R: IntoIterator<Item = ProductValue>>(
+    fn delete_by_rel_mut_tx(
         &self,
         tx: &mut Self::MutTxId,
         table_id: TableId,
-        relation: R,
-    ) -> super::Result<u32> {
+        relation: impl IntoIterator<Item = ProductValue>,
+    ) -> u32 {
         tx.lock.delete_by_rel(&table_id, relation)
     }
 
@@ -2147,7 +2141,7 @@ impl traits::MutProgrammable for Locking {
             if fence <= row.epoch.0 {
                 return Err(anyhow!("stale fencing token: {}, storage is at epoch: {}", fence, row.epoch).into());
             }
-            tx.lock.delete_by_rel(&ST_MODULE_ID, Some(ProductValue::from(&row)))?;
+            tx.lock.delete_by_rel(&ST_MODULE_ID, Some(ProductValue::from(&row)));
         }
 
         tx.lock.insert(
@@ -2694,7 +2688,7 @@ mod tests {
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx();
         let created_row = u32_str_u32(1, "Foo", 18);
-        let num_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, vec![created_row])?;
+        let num_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, [created_row]);
         assert_eq!(num_deleted, 1);
         assert_eq!(all_rows(&datastore, &tx, table_id).len(), 0);
         let created_row = u32_str_u32(1, "Foo", 19);
@@ -2711,7 +2705,7 @@ mod tests {
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         for _ in 0..2 {
             let created_row = u32_str_u32(1, "Foo", 18);
-            let num_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, vec![created_row.clone()])?;
+            let num_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, [created_row.clone()]);
             assert_eq!(num_deleted, 1);
             assert_eq!(all_rows(&datastore, &tx, table_id).len(), 0);
             datastore.insert_mut_tx(&mut tx, table_id, created_row)?;
@@ -2948,7 +2942,7 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(row, rows[0]);
         // Delete the row.
-        let count_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, rows)?;
+        let count_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, rows);
         assert_eq!(count_deleted, 1);
 
         // We shouldn't see the row when iterating now that it's deleted.
