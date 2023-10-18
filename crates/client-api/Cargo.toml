@@ -5,6 +5,9 @@ edition = "2021"
 license-file = "LICENSE"
 description = "The HTTP API for SpacetimeDB"
 
+[lints]
+workspace = true
+
 [dependencies]
 spacetimedb-core = { path = "../core", version = "0.7.1" }
 tokio = { version = "1.2", features = ["full"] }

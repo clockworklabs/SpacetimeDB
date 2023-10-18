@@ -58,11 +58,11 @@ pub trait NodeDelegate: Send + Sync {
 
 /// Parameters for publishing a database.
 ///
-/// See [`ControlStateDelegate::publish_database`].
+/// See [`ControlStateWriteAccess::publish_database`].
 pub struct DatabaseDef {
     /// The [`Address`] the database shall have.
     ///
-    /// Addresses are allocated via [`ControlStateDelegate::create_address`].
+    /// Addresses are allocated via [`ControlStateWriteAccess::create_address`].
     pub address: Address,
     /// The compiled program of the database module.
     pub program_bytes: Vec<u8>,

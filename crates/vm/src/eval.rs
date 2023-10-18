@@ -141,7 +141,7 @@ fn build_typed<P: ProgramVm>(p: &mut P, node: Expr) -> ExprOpt {
 
 /// First pass:
 ///
-/// Compile the [Expr] into a type-annotated AST [Tree<ExprOpt>].
+/// Compile the [Expr] into a type-annotated AST [ExprOpt].
 ///
 /// Then validate & type-check it.
 #[tracing::instrument(skip_all)]
@@ -195,7 +195,7 @@ fn compile_query(q: QueryExprOpt) -> QueryCode {
 
 /// Second pass:
 ///
-/// Compiles [Tree<ExprOpt>] into [Code] moving the execution into closures.
+/// Compiles [ExprOpt] into [Code] moving the execution into closures.
 #[tracing::instrument(skip_all)]
 fn compile<P: ProgramVm>(p: &mut P, node: ExprOpt) -> Result<Code, ErrorVm> {
     Ok(match node {

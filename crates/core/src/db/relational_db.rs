@@ -452,7 +452,8 @@ impl RelationalDB {
         self.inner.sequence_id_from_name_mut_tx(tx, sequence_name)
     }
 
-    /// Adds the [index::BTreeIndex] into the [ST_INDEXES_NAME] table
+    /// Adds the [IndexDef] into the [ST_INDEXES_NAME] table, and creates the
+    /// corresponding index.
     ///
     /// Returns the `index_id`
     ///
@@ -462,7 +463,7 @@ impl RelationalDB {
         self.inner.create_index_mut_tx(tx, index)
     }
 
-    /// Removes the [index::BTreeIndex] from the database by their `index_id`
+    /// Removes the index with id [IndexId] from the database.
     #[tracing::instrument(skip(self, tx))]
     pub fn drop_index(&self, tx: &mut MutTxId, index_id: IndexId) -> Result<(), DBError> {
         self.inner.drop_index_mut_tx(tx, index_id)
@@ -559,19 +560,19 @@ impl RelationalDB {
         self.inner.get_next_sequence_value_mut_tx(tx, seq_id)
     }
 
-    /// Add a [Sequence] into the database instance, generates a stable [SequenceId] for it that will persist on restart.
+    /// Add a sequence] into the database instance, generates a stable [SequenceId] for it that will persist on restart.
     #[tracing::instrument(skip(self, tx, seq), fields(seq=seq.sequence_name))]
     pub fn create_sequence(&self, tx: &mut MutTxId, seq: SequenceDef) -> Result<SequenceId, DBError> {
         self.inner.create_sequence_mut_tx(tx, seq)
     }
 
-    ///Removes the [Sequence] from database instance
+    ///Removes the sequence with id [SequenceId] from database instance
     #[tracing::instrument(skip(self, tx))]
     pub fn drop_sequence(&self, tx: &mut MutTxId, seq_id: SequenceId) -> Result<(), DBError> {
         self.inner.drop_sequence_mut_tx(tx, seq_id)
     }
 
-    /// Retrieve the [`Hash`] of the program (SpacetimeDB module) currently
+    /// Retrieve the [`struct@Hash`] of the program (SpacetimeDB module) currently
     /// associated with the database.
     ///
     /// A `None` result indicates that the database is not fully initialized
@@ -580,7 +581,7 @@ impl RelationalDB {
         self.inner.program_hash(tx)
     }
 
-    /// Update the [`Hash`] of the program (SpacetimeDB module) currently
+    /// Update the [`struct@Hash`] of the program (SpacetimeDB module) currently
     /// associated with the database.
     ///
     /// The operation runs within the transactional context `tx`.
@@ -591,7 +592,7 @@ impl RelationalDB {
     ///
     /// The method **MUST** be called within the transaction context which
     /// ensures that any lifecycle reducers (`init`, `update`) are invoked. That
-    /// is, an impl of [`crate::host::ModuleInstance`].
+    /// is, an impl of [`crate::host::module_host::ModuleInstance`].
     pub(crate) fn set_program_hash(&self, tx: &mut MutTxId, fence: u128, hash: Hash) -> Result<(), DBError> {
         self.inner.set_program_hash(tx, fence, hash)
     }

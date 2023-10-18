@@ -292,7 +292,7 @@ pub mod raw {
 
     /// What strategy does the database index use?
     ///
-    /// See also: https://www.postgresql.org/docs/current/sql-createindex.html
+    /// See also: <https://www.postgresql.org/docs/current/sql-createindex.html>
     #[repr(u8)]
     #[non_exhaustive]
     pub enum IndexType {

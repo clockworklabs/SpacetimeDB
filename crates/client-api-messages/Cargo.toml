@@ -5,6 +5,9 @@ edition = "2021"
 license-file = "LICENSE"
 description = "Types for the SpacetimeDB client API messages"
 
+[lints]
+workspace = true
+
 [dependencies]
 prost.workspace = true
 strum.workspace = true

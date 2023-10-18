@@ -21,7 +21,7 @@ use crate::functions::{FunDef, Param};
 use crate::operator::{Op, OpCmp, OpLogic, OpQuery};
 use crate::types::Ty;
 
-/// A `index` into the list of [Fun]
+/// A `index` into the list of functions.
 pub type FunctionId = usize;
 
 /// Trait for checking if the `caller` have access to `Self`

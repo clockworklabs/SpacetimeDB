@@ -60,6 +60,13 @@ rpath = false
 [profile.bench]
 debug = true
 
+[workspace.lints.rustdoc]
+private_intra_doc_links = "allow"
+broken_intra_doc_links = "deny"
+invalid_html_tags = "deny"
+invalid_rust_codeblocks = "deny"
+bare_urls = "deny"
+
 [workspace.dependencies]
 ahash = "0.8.3"
 anyhow = { version = "1.0.68", features = ["backtrace"] }

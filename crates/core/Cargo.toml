@@ -17,6 +17,9 @@ bench = false
 name = "odb_flavor_bench"
 harness = false
 
+[lints]
+workspace = true
+
 [dependencies]
 spacetimedb-lib = { path = "../lib", version = "0.7.1" }
 spacetimedb-sats = { path = "../sats", version = "0.7.1" }

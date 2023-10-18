@@ -351,7 +351,7 @@ impl TryFrom<SegmentView> for File {
 
 /// Iterator over a [`SegmentView`], yielding individual messages.
 ///
-/// Created by [`SegmentView::try_iter`].
+/// Created by [`SegmentView::try_into_iter`].
 #[must_use = "iterators are lazy and do nothing unless consumed"]
 pub struct IterSegment {
     file: BufReader<File>,

@@ -50,7 +50,7 @@ pub enum AlgebraicValue {
     /// and the same applies to each `value`.
     /// A map as a whole has the type [`AlgebraicType::Map(key_ty, val_ty)`].
     ///
-    /// Maps are implemented internally as [`BTreeMap<AlgebraicValue, AlgebraicValue>`].
+    /// Maps are implemented internally as [`std::collections::BTreeMap<AlgebraicValue, AlgebraicValue>`].
     /// This implies that key/values are ordered first by key and then value
     /// as if they were a sorted slice `[(key, value)]`.
     /// This order is observable as maps are exposed both directly

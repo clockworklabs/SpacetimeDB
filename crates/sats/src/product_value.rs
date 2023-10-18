@@ -101,7 +101,7 @@ impl ProductValue {
     /// fields, otherwise it will consist of a single [AlgebraicValue].
     ///
     /// **Parameters:**
-    /// - `indexes`: A [NonEmpty<u32>] containing the indexes of fields to be projected.
+    /// - `indexes`: A [`NonEmpty<u32>`] containing the indexes of fields to be projected.
     ///
     pub fn project_not_empty(&self, indexes: &NonEmpty<ColId>) -> Result<AlgebraicValue, InvalidFieldError> {
         let indexes: Vec<_> = indexes.iter().map(|x| (x.idx(), None)).collect();

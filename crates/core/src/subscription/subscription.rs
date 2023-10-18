@@ -188,9 +188,9 @@ impl QuerySet {
         Ok(Self(exprs))
     }
 
-    /// Incremental evaluation of `rows` that matched the [Query] (aka subscriptions)
+    /// Incremental evaluation of `rows` that matched the [QuerySet] (aka subscriptions)
     ///
-    /// This is equivalent to run a `trigger` on `INSERT/UPDATE/DELETE`, run the [Query] and see if the `row` is matched.
+    /// This is equivalent to run a `trigger` on `INSERT/UPDATE/DELETE`, run the [QuerySet] and see if the `row` is matched.
     ///
     /// NOTE: The returned `rows` in [DatabaseUpdate] are **deduplicated** so if 2 queries match the same `row`, only one copy is returned.
     #[tracing::instrument(skip_all)]
@@ -262,7 +262,7 @@ impl QuerySet {
         Ok(output)
     }
 
-    /// Direct execution of [Query] (aka subscriptions)
+    /// Direct execution of [QuerySet] (aka subscriptions)
     ///
     /// This is equivalent to run a direct query like `SELECT * FROM table` and get back all the `rows` that match it.
     ///

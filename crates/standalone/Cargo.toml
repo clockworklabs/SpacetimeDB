@@ -16,6 +16,9 @@ proc-macro = false     # Set to `true` for a proc-macro library.
 harness = true         # Use libtest harness.
 required-features = [] # Features required to build this target (N/A for lib)
 
+[lints]
+workspace = true
+
 [dependencies]
 spacetimedb-core = { path = "../core", version = "0.7.1" }
 spacetimedb-lib = { path = "../lib", version = "0.7.1", features = ["cli"] }

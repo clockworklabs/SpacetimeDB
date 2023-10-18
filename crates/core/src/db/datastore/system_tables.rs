@@ -302,11 +302,11 @@ pub fn st_columns_schema() -> TableSchema {
 pub static ST_COLUMNS_ROW_TYPE: Lazy<ProductType> =
     Lazy::new(|| ProductType::from_iter(st_columns_schema().columns.iter().map(|c| c.col_type.clone())));
 
-/// System Table [ST_INDEXES]
+/// System Table [ST_INDEXES_NAME]
 ///
-/// | index_id: IndexId | table_id: TableId | cols: NonEmpty<ColId> | index_name: String | is_unique: bool      |
-/// |---------------|---------------|---------------------|--------------------|----------------------|
-/// | 1             | 1             | [1]                 | "ix_sample"        | 0                    |
+/// | index_id: IndexId | table_id: TableId | cols: `NonEmpty<ColId>` | index_name: String | is_unique: bool      |
+/// |-------------------|-------------------|-------------------------|--------------------|----------------------|
+/// | 1                 | 1                 | \[1\]                   | "ix_sample"        | 0                    |
 pub fn st_indexes_schema() -> TableSchema {
     TableSchema {
         table_id: ST_INDEXES_ID,
@@ -365,7 +365,7 @@ pub fn st_indexes_schema() -> TableSchema {
 pub static ST_INDEX_ROW_TYPE: Lazy<ProductType> =
     Lazy::new(|| ProductType::from_iter(st_indexes_schema().columns.iter().map(|c| c.col_type.clone())));
 
-/// System Table [ST_SEQUENCES]
+/// System Table [ST_SEQUENCES_NAME]
 ///
 /// | sequence_id | sequence_name     | increment | start | min_value | max_value | table_id | col_id | allocated |
 /// |-------------|-------------------|-----------|-------|-----------|-----------|----------|--------|-----------|
@@ -524,7 +524,8 @@ pub static ST_CONSTRAINT_ROW_TYPE: Lazy<ProductType> =
 /// This table holds exactly one row, describing the latest version of the
 /// SpacetimeDB module associated with the database:
 ///
-/// * `program_hash` is the [`Hash`] of the raw bytes of the (compiled) module.
+/// * `program_hash` is the [`struct@Hash`] of the raw bytes of the (compiled)
+///    module.
 /// * `kind` is the [`ModuleKind`] (currently always [`WASM_MODULE`]).
 /// * `epoch` is a _fencing token_ used to protect against concurrent updates.
 ///

@@ -62,7 +62,8 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
     q
 }
 
-/// Runs a query that evaluates if the changes made should be reported to the [ModuleSubscriptionManager]
+/// Runs a query that evaluates if the changes made should be reported to the
+/// [super::module_subscription_actor::ModuleSubscriptionManager]
 #[tracing::instrument(skip_all)]
 pub(crate) fn run_query(
     db: &RelationalDB,
@@ -77,7 +78,7 @@ pub(crate) fn run_query(
 // as it can only return back the changes valid for the tables in scope *right now*
 // instead of **continuously updating** the db changes
 // with system table modifications (add/remove tables, indexes, ...).
-/// Compile from `SQL` into a [`Query`], rejecting empty queries and queries that attempt to modify the data in any way.
+/// Compile from `SQL` into a [`QuerySet`], rejecting empty queries and queries that attempt to modify the data in any way.
 ///
 /// NOTE: When the `input` query is equal to [`SUBSCRIBE_TO_ALL_QUERY`],
 /// **compilation is bypassed** and the equivalent of the following is done:
@@ -132,11 +133,11 @@ pub fn compile_read_only_query(
 /// The kind of [`QueryExpr`] currently supported for incremental evaluation.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Supported {
-    /// A scan or [`QueryExpr::Select`] of a single table.
+    /// A scan or [`expr::Query::Select`] of a single table.
     Scan,
-    /// A semijoin of two tables, restricted to [`QueryExpr::IndexJoin`]s.
+    /// A semijoin of two tables, restricted to [`expr::Query::IndexJoin`]s.
     ///
-    /// See [`crate::sql::compiler::try_index_join`].
+    /// See [try_index_join](../../sql/compiler/fn.try_index_join.html).
     Semijoin,
 }
 

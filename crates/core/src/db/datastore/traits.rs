@@ -222,7 +222,7 @@ impl TableSchema {
             .collect()
     }
 
-    /// Utility for project the fields from the supplied `columns` that is a [NonEmpty<u32>],
+    /// Utility for project the fields from the supplied `columns` that is a [`NonEmpty<u32>`],
     /// used for when the list of field columns have at least one value.
     pub fn project_not_empty(&self, columns: &NonEmpty<ColId>) -> Result<Vec<&ColumnSchema>> {
         self.project(columns.iter().map(|&x| x.idx()))
@@ -522,7 +522,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
 /// A programmable datastore is one which has a program of some kind associated
 /// with it.
 pub trait Programmable: TxDatastore {
-    /// Retrieve the [`Hash`] of the program currently associated with the
+    /// Retrieve the [`struct@Hash`] of the program currently associated with the
     /// datastore.
     ///
     /// A `None` result means that no program is currently associated, e.g.
@@ -537,7 +537,7 @@ pub trait MutProgrammable: MutTxDatastore {
     /// `set_module_hash` with respect to a distributed locking service.
     type FencingToken: Eq + Ord;
 
-    /// Update the [`Hash`] of the program currently associated with the
+    /// Update the [`struct@Hash`] of the program currently associated with the
     /// datastore.
     ///
     /// The operation runs within the transactional context `tx`. The fencing

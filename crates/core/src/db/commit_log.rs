@@ -48,7 +48,7 @@ impl CommitLog {
         }
     }
 
-    /// Persist to disk the [Tx] result into the [MessageLog].
+    /// Persist to disk the [TxData] result into the [MessageLog].
     ///
     /// Returns `Some(n_bytes_written)` if `commit_result` was persisted, `None` if it doesn't have bytes to write.
     #[tracing::instrument(skip_all)]

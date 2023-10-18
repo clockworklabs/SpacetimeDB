@@ -199,7 +199,7 @@ impl WasmInstanceEnv {
     /// host call, to provide consistent error handling and instrumentation.
     ///
     /// This method should be used as opposed to a manual implementation,
-    /// as it helps with upholding the safety invariants of [`bindings_sys::call`].
+    /// as it helps with upholding the safety invariants of `bindings_sys::call`.
     ///
     /// Returns an error if writing `T` to `out` errors.
     fn cvt_ret<T: ValueType>(

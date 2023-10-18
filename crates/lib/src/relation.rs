@@ -573,7 +573,7 @@ impl Relation for MemTable {
     }
 }
 
-/// A stored table from [RelationalDB]
+/// A stored table from `RelationalDB`
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct DbTable {
     pub head: Header,

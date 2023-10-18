@@ -18,6 +18,9 @@ default = ["serde"]
 serde = ["dep:serde", "spacetimedb-sats/serde", "dep:serde_with", "chrono/serde"]
 cli = ["clap"]
 
+[lints]
+workspace = true
+
 [dependencies]
 spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.7.1" }
 spacetimedb-sats = { path = "../sats", version = "0.7.1" }
