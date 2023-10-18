@@ -198,11 +198,52 @@ pub fn delete_by_col_eq(table_id: TableId, col_id: u8, value: &impl Serialize) -
     })
 }
 
-/// A table iterator which yields values of the `TableType` corresponding to the table.
-type TableTypeTableIter<T> = RawTableIter<TableTypeBufferDeserialize<T>>;
+/*
+pub fn delete_pk(table_id: u32, primary_key: &PrimaryKey) -> Result<()> {
+    with_row_buf(|bytes| {
+        primary_key.encode(bytes);
+        sys::delete_pk(table_id, bytes)
+    })
+}
 
-// Get the iterator for this table with an optional filter,
-fn table_iter<T: TableType>(table_id: TableId, filter: Option<spacetimedb_lib::filter::Expr>) -> Result<TableIter<T>> {
+pub fn delete_filter<F: Fn(&ProductValue) -> bool>(table_id: u32, f: F) -> Result<usize> {
+    with_row_buf(|bytes| {
+        let mut count = 0;
+        for tuple_value in pv_table_iter(table_id, None)? {
+            if f(&tuple_value) {
+                count += 1;
+                bytes.clear();
+                tuple_value.encode(bytes);
+                sys::delete_value(table_id, bytes)?;
+            }
+        }
+        Ok(count)
+    })
+}
+
+pub fn delete_range(table_id: u32, col_id: u8, range: Range<AlgebraicValue>) -> Result<u32> {
+    with_row_buf(|bytes| {
+        range.start.encode(bytes);
+        let mid = bytes.len();
+        range.end.encode(bytes);
+        let (range_start, range_end) = bytes.split_at(mid);
+        sys::delete_range(table_id, col_id.into(), range_start, range_end)
+    })
+}
+*/
+
+//
+// fn page_table(table_id : u32, pager_token : u32, read_entries : u32) {
+//
+// }
+
+// Get the buffer iterator for this table,
+// with an optional filter,
+// and return it and its decoded `ProductType` schema.
+fn buffer_table_iter(
+    table_id: u32,
+    filter: Option<spacetimedb_lib::filter::Expr>,
+) -> Result<(BufferIter, ProductType)> {
     // Decode the filter, if any.
     let filter = filter
         .as_ref()
@@ -211,8 +252,35 @@ fn table_iter<T: TableType>(table_id: TableId, filter: Option<spacetimedb_lib::f
         .expect("Couldn't decode the filter query");
 
     // Create the iterator.
-    let iter = sys::iter(table_id, filter.as_deref())?;
+    let mut iter = sys::iter(table_id, filter.as_deref())?;
 
+    // First item is an encoded schema.
+    let schema_raw = iter
+        .next()
+        .expect("Missing schema")
+        .expect("Failed to get schema")
+        .read();
+    let schema = decode_schema(&mut &schema_raw[..]).expect("Could not decode schema");
+
+    Ok((iter, schema))
+}
+
+/// A table iterator which yields `ProductValue`s.
+// type ProductValueTableIter = RawTableIter<ProductValue, ProductValueBufferDeserialize>;
+
+// fn pv_table_iter(table_id: u32, filter: Option<spacetimedb_lib::filter::Expr>) -> Result<ProductValueTableIter> {
+//     let (iter, schema) = buffer_table_iter(table_id, filter)?;
+//     let deserializer = ProductValueBufferDeserialize::new(schema);
+//     Ok(RawTableIter::new(iter, deserializer))
+// }
+
+/// A table iterator which yields values of the `TableType` corresponding to the table.
+type TableTypeTableIter<T> = RawTableIter<TableTypeBufferDeserialize<T>>;
+
+fn table_iter<T: TableType>(table_id: u32, filter: Option<spacetimedb_lib::filter::Expr>) -> Result<TableIter<T>> {
+    // The TableType deserializer doesn't need the schema, as we have type-directed
+    // dispatch to deserialize any given `TableType`.
+    let (iter, _schema) = buffer_table_iter(table_id, filter)?;
     let deserializer = TableTypeBufferDeserialize::new();
     Ok(RawTableIter::new(iter, deserializer).into())
 }

@@ -50,13 +50,9 @@ impl BufWriter for ChunkedWriter {
 }
 
 impl ChunkedWriter {
-    /// Flushes the data collected in the scratch space if it's larger than our
-    /// chunking threshold.
-    pub fn flush(&mut self) {
-        // For now, just send buffers over a certain fixed size.
-        const ITER_CHUNK_SIZE: usize = 64 * 1024;
-
-        if self.scratch_space.len() > ITER_CHUNK_SIZE {
+    /// Flushes the currently populated part of the scratch space as a new chunk.
+    pub fn force_flush(&mut self) {
+        if !self.scratch_space.is_empty() {
             // We intentionally clone here so that our scratch space is not
             // recreated with zero capacity (via `Vec::new`), but instead can
             // be `.clear()`ed in-place and reused.
@@ -70,11 +66,22 @@ impl ChunkedWriter {
         }
     }
 
+    /// Similar to [`Self::force_flush`], but only flushes if the data in the
+    /// scratch space is larger than our chunking threshold.
+    pub fn flush(&mut self) {
+        // For now, just send buffers over a certain fixed size.
+        const ITER_CHUNK_SIZE: usize = 64 * 1024;
+
+        if self.scratch_space.len() > ITER_CHUNK_SIZE {
+            self.force_flush();
+        }
+    }
+
     /// Finalises the writer and returns all the chunks.
     pub fn into_chunks(mut self) -> Vec<Box<[u8]>> {
         if !self.scratch_space.is_empty() {
-            // Avoid extra clone by just shrinking and pushing the scratch space
-            // in-place.
+            // This is equivalent to calling `force_flush`, but we avoid extra
+            // clone by just shrinking and pushing the scratch space in-place.
             self.chunks.push(self.scratch_space.into());
         }
         self.chunks
@@ -274,6 +281,10 @@ impl InstanceEnv {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.tx.get()?;
 
+        stdb.row_schema_for_table(tx, table_id)?.encode(&mut chunked_writer);
+        // initial chunk is expected to be schema itself, so force-flush it as a separate chunk
+        chunked_writer.force_flush();
+
         for row in stdb.iter(ctx, tx, table_id)? {
             row.view().encode(&mut chunked_writer);
             // Flush at row boundaries.
@@ -319,11 +330,17 @@ impl InstanceEnv {
             }
         }
 
+        let mut chunked_writer = ChunkedWriter::default();
+
         let stdb = &self.dbic.relational_db;
         let tx = &mut *self.tx.get()?;
 
         let schema = stdb.schema_for_table(tx, table_id)?;
         let row_type = ProductType::from(&*schema);
+
+        // write and force flush schema as it's expected to be the first individual chunk
+        row_type.encode(&mut chunked_writer);
+        chunked_writer.force_flush();
 
         let filter = filter::Expr::from_bytes(
             // TODO: looks like module typespace is currently not hooked up to instances;
@@ -341,8 +358,6 @@ impl InstanceEnv {
             Code::Table(table) => table,
             _ => unreachable!("query should always return a table"),
         };
-
-        let mut chunked_writer = ChunkedWriter::default();
 
         // write all rows and flush at row boundaries
         for row in results.data {
