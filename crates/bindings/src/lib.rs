@@ -102,15 +102,6 @@ pub fn decode_schema<'a>(bytes: &mut impl BufReader<'a>) -> Result<ProductType, 
     ProductType::decode(bytes)
 }
 
-/*
-pub fn create_table(table_name: &str, schema: ProductType) -> Result<u32> {
-    with_row_buf(|bytes| {
-        schema.encode(bytes);
-        sys::create_table(table_name, bytes)
-    })
-}
-*/
-
 /// Queries and returns the `table_id` associated with the given (table) `name`.
 ///
 /// Panics if the table does not exist.
@@ -206,54 +197,6 @@ pub fn delete_by_col_eq(table_id: u32, col_id: u8, value: &impl Serialize) -> Re
     })
 }
 
-/*
-pub fn delete_pk(table_id: u32, primary_key: &PrimaryKey) -> Result<()> {
-    with_row_buf(|bytes| {
-        primary_key.encode(bytes);
-        sys::delete_pk(table_id, bytes)
-    })
-}
-
-pub fn delete_filter<F: Fn(&ProductValue) -> bool>(table_id: u32, f: F) -> Result<usize> {
-    with_row_buf(|bytes| {
-        let mut count = 0;
-        for tuple_value in pv_table_iter(table_id, None)? {
-            if f(&tuple_value) {
-                count += 1;
-                bytes.clear();
-                tuple_value.encode(bytes);
-                sys::delete_value(table_id, bytes)?;
-            }
-        }
-        Ok(count)
-    })
-}
-
-pub fn delete_range(table_id: u32, col_id: u8, range: Range<AlgebraicValue>) -> Result<u32> {
-    with_row_buf(|bytes| {
-        range.start.encode(bytes);
-        let mid = bytes.len();
-        range.end.encode(bytes);
-        let (range_start, range_end) = bytes.split_at(mid);
-        sys::delete_range(table_id, col_id.into(), range_start, range_end)
-    })
-}
-*/
-
-//
-// fn page_table(table_id : u32, pager_token : u32, read_entries : u32) {
-//
-// }
-
-/// A table iterator which yields `ProductValue`s.
-// type ProductValueTableIter = RawTableIter<ProductValue, ProductValueBufferDeserialize>;
-
-// fn pv_table_iter(table_id: u32, filter: Option<spacetimedb_lib::filter::Expr>) -> Result<ProductValueTableIter> {
-//     let (iter, schema) = buffer_table_iter(table_id, filter)?;
-//     let deserializer = ProductValueBufferDeserialize::new(schema);
-//     Ok(RawTableIter::new(iter, deserializer))
-// }
-
 /// A table iterator which yields values of the `TableType` corresponding to the table.
 type TableTypeTableIter<T> = RawTableIter<TableTypeBufferDeserialize<T>>;
 
@@ -283,26 +226,6 @@ trait BufferDeserialize {
     /// Deserialize one entry from the `reader`, which must not be empty.
     fn deserialize<'de>(&mut self, reader: impl BufReader<'de>) -> Self::Item;
 }
-
-/// Deserialize `ProductValue`s from `Buffer`s.
-// struct ProductValueBufferDeserialize {
-//     /// The schema to deserialize with.
-//     schema: ProductType,
-// }
-
-// impl ProductValueBufferDeserialize {
-//     fn new(schema: ProductType) -> Self {
-//         Self { schema }
-//     }
-// }
-
-// impl BufferDeserialize for ProductValueBufferDeserialize {
-//     type Item = ProductValue;
-
-//     fn deserialize<'de>(&mut self, mut reader: impl BufReader<'de>) -> Self::Item {
-//         decode_row(&self.schema, &mut reader).expect("Failed to decode row!")
-//     }
-// }
 
 /// Deserialize bsatn values to a particular `T` where `T: TableType`.
 struct TableTypeBufferDeserialize<T> {

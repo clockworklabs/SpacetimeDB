@@ -139,51 +139,6 @@ impl InstanceEnv {
         Ok(ret)
     }
 
-    /*
-    #[tracing::instrument(skip_all)]
-    pub fn delete_pk(&self, table_id: u32, buffer: &[u8]) -> Result<(), NodesError> {
-        self.measure(table_id, &INSTANCE_ENV_DELETE_PK);
-
-        // Decode the primary key.
-        let primary_key = PrimaryKey::decode(&mut &buffer[..]).map_err(NodesError::DecodePrimaryKey)?;
-        // TODO: Actually delete the primary key?
-        Err(NodesError::PrimaryKeyNotFound(primary_key))
-    }
-
-    #[tracing::instrument(skip_all)]
-    pub fn delete_value(&self, table_id: u32, buffer: &[u8]) -> Result<(), NodesError> {
-        let measure = self.measure(table_id, &INSTANCE_ENV_DELETE_VALUE);
-
-        let stdb = &*self.dbic.relational_db;
-        let tx = &mut *self.get_tx()?;
-
-        let schema = stdb.row_schema_for_table(tx, table_id)?;
-        let row = ProductValue::decode(&schema, &mut &buffer[..]).map_err(NodesError::DecodeRow)?;
-
-        let row_id = row.to_data_key();
-        // todo: check that res is true, but for now it always is
-        let res = stdb
-            .delete_pk(tx, table_id, row_id)
-            .inspect_err_(|e| log::error!("delete_value(table_id: {table_id}): {e}"))?;
-
-        self.with_trace_log(|l| {
-            l.delete_value(
-                measure.start_instant.unwrap(),
-                measure.elapsed(),
-                table_id,
-                buffer.into(),
-                res,
-            )
-        });
-
-        if res {
-            Ok(())
-        } else {
-            Err(NodesError::PrimaryKeyNotFound(PrimaryKey { data_key: row_id }))
-        }
-    }
-    */
-
     /// Deletes all rows in the table identified by `table_id`
     /// where the column identified by `cols` equates to `value`.
     ///
@@ -208,72 +163,6 @@ impl InstanceEnv {
 
         Ok(count)
     }
-
-    /*
-    #[tracing::instrument(skip_all)]
-    pub fn delete_range(
-        &self,
-        table_id: u32,
-        cols: u32,
-        start_buffer: &[u8],
-        end_buffer: &[u8],
-    ) -> Result<u32, NodesError> {
-        let measure = self.measure(table_id, &INSTANCE_ENV_DELETE_RANGE);
-
-        let stdb = &*self.dbic.relational_db;
-        let tx = &mut *self.get_tx()?;
-
-        let col_type = stdb.schema_for_column(tx, table_id, cols)?;
-
-        let decode = |b: &[u8]| AlgebraicValue::decode(&col_type, &mut &b[..]).map_err(NodesError::DecodeValue);
-        let start = decode(start_buffer)?;
-        let end = decode(end_buffer)?;
-
-        let range = stdb.range_scan(tx, table_id, cols, start..end)?;
-        let range = range.map(|x| stdb.data_to_owned(x).into()).collect::<Vec<_>>();
-
-        let count = stdb.delete_in(tx, table_id, range)?.ok_or(NodesError::RangeNotFound)?;
-
-        self.with_trace_log(|l| {
-            l.delete_range(
-                measure.start_instant.unwrap(),
-                measure.elapsed(),
-                table_id,
-                cols,
-                start_buffer.into(),
-                end_buffer.into(),
-                count,
-            )
-        });
-
-        Ok(count)
-    }
-
-    #[tracing::instrument(skip_all)]
-    pub fn create_table(&self, _table_name: &str, _schema_bytes: &[u8]) -> Result<u32, NodesError> {
-        // let now = SystemTime::now();
-
-        // let stdb = &*self.dbic.relational_db;
-        // let tx = &mut *self.get_tx()?;
-
-        unimplemented!()
-        // let schema = ProductType::decode(&mut &schema_bytes[..]).map_err(NodesError::DecodeSchema)?;
-
-        // let table_id = stdb.create_table(tx, table_name, schema)?;
-
-        // self.with_trace_log(|l| {
-        //     l.create_table(
-        //         now,
-        //         now.elapsed().unwrap(),
-        //         table_name.into(),
-        //         schema_bytes.into(),
-        //         table_id,
-        //     );
-        // });
-
-        // Ok(table_id)
-    }
-    */
 
     /// Returns the `table_id` associated with the given `table_name`.
     ///

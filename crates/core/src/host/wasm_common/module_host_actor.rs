@@ -646,16 +646,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             .with_label_values(&address, func_ident)
             .observe(timings.total_duration.as_secs_f64());
 
-        // If you can afford to take 500 ms for a transaction
-        // you can afford to generate a flamegraph. Fix your stuff.
-        // if duration.as_millis() > 500 {
-        //     if let Ok(report) = guard.report().build() {
-        //         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-        //         let file = std::fs::File::create(format!("flamegraphs/flamegraph-{}.svg", now.as_millis())).unwrap();
-        //         report.flamegraph(file).unwrap();
-        //     };
-        // }
-
         let stdb = &*self.database_instance_context().relational_db;
         let status = match call_result {
             Err(err) => {
