@@ -1,4 +1,3 @@
-pub mod abi;
 pub mod instrumentation;
 pub mod module_host_actor;
 
