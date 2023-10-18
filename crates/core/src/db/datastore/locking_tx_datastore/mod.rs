@@ -92,7 +92,8 @@ pub struct DataRef<'a> {
 }
 
 impl<'a> DataRef<'a> {
-    fn new(id: &'a DataKey, data: &'a ProductValue) -> Self {
+    fn new(id: &'a RowId, data: &'a ProductValue) -> Self {
+        let id = &id.0;
         Self { id, data }
     }
 
@@ -262,6 +263,7 @@ impl TxState {
         }
     }
 
+    /// Returns the state of `row_id` within the table identified by `table_id`.
     #[tracing::instrument(skip_all)]
     pub fn get_row_op(&self, table_id: &TableId, row_id: &RowId) -> RowState {
         if let Some(true) = self.delete_tables.get(table_id).map(|set| set.contains(row_id)) {
@@ -654,7 +656,7 @@ impl Inner {
         };
         let row = sequence_row.into();
         let result = self.insert(ST_SEQUENCES_ID, row)?;
-        // TODO(centril): `result` is already owned, so pass that it.
+        // TODO(centril): `result` is already owned, so pass that in.
         let sequence_row = StSequenceRow::try_from(&result)?.to_owned();
         let sequence_id = SequenceId(sequence_row.sequence_id);
 
@@ -1357,7 +1359,7 @@ impl Inner {
         match self.tx_state.as_ref().unwrap().get_row_op(table_id, row_id) {
             RowState::Committed(_) => unreachable!("a row cannot be committed in a tx state"),
             RowState::Insert(row) => {
-                return Ok(Some(DataRef::new(&row_id.0, row)));
+                return Ok(Some(DataRef::new(row_id, row)));
             }
             RowState::Delete => {
                 return Ok(None);
@@ -1369,7 +1371,7 @@ impl Inner {
             .tables
             .get(table_id)
             .and_then(|table| table.get_row(row_id))
-            .map(|row| DataRef::new(&row_id.0, row)))
+            .map(|row| DataRef::new(row_id, row)))
     }
 
     fn get_row_type(&self, table_id: &TableId) -> Option<&ProductType> {
@@ -1671,8 +1673,8 @@ impl DataRow for Locking {
     type RowId = RowId;
     type DataRef<'a> = DataRef<'a>;
 
-    fn view_product_value<'a>(&self, drr: Self::DataRef<'a>) -> &'a ProductValue {
-        drr.data
+    fn view_product_value<'a>(&self, data_ref: Self::DataRef<'a>) -> &'a ProductValue {
+        data_ref.data
     }
 }
 
@@ -1720,62 +1722,68 @@ impl<'a> Iterator for Iter<'a> {
     #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Option<Self::Item> {
         let table_id = self.table_id;
+
+        // Moves the current scan stage to the current tx if rows were inserted in it.
+        // Returns `None` otherwise.
+        let maybe_stage_current_tx_inserts = |this: &mut Self| {
+            let table = this.inner.tx_state.as_ref()?;
+            let insert_table = table.insert_tables.get(&table_id)?;
+            this.stage = ScanStage::CurrentTx {
+                iter: insert_table.rows.iter(),
+            };
+            Some(())
+        };
+
+        // The finite state machine goes:
+        //      Start --> CurrentTx ---\
+        //        |         ^          |
+        //        v         |          v
+        //     Committed ---/------> Stop
         loop {
             match &mut self.stage {
                 ScanStage::Start => {
                     let _span = tracing::debug_span!("ScanStage::Start").entered();
                     if let Some(table) = self.inner.committed_state.tables.get(&table_id) {
+                        // The committed state has changes for this table.
+                        // Go through them in (1).
                         self.stage = ScanStage::Committed {
                             iter: table.rows.iter(),
                         };
-                    } else if let Some(table) = self
-                        .inner
-                        .tx_state
-                        .as_ref()
-                        .and_then(|s| s.insert_tables.get(&table_id))
-                    {
-                        self.stage = ScanStage::CurrentTx {
-                            iter: table.rows.iter(),
-                        };
-                    };
+                    } else {
+                        // No committed changes, so look for inserts in the current tx in (2).
+                        maybe_stage_current_tx_inserts(self);
+                    }
                 }
                 ScanStage::Committed { iter } => {
+                    // (1) Go through the committed state for this table.
                     let _span = tracing::debug_span!("ScanStage::Committed").entered();
                     for (row_id, row) in iter {
+                        // Check the committed row's state in the current tx.
                         match self.inner.tx_state.as_ref().map(|tx_state| tx_state.get_row_op(&table_id, row_id)) {
                             Some(RowState::Committed(_)) => unreachable!("a row cannot be committed in a tx state"),
-                            // Do nothing, we'll get it in the next stage.
+                            // Do nothing, via (3), we'll get it in the next stage (2).
                             Some(RowState::Insert(_)) |
                             // Skip it, it's been deleted.
                             Some(RowState::Delete) => {}
-                            Some(RowState::Absent) | None => {
-                                return Some(DataRef::new(&row_id.0, row));
-                            }
+                            // There either are no state changes for the current tx (`None`),
+                            // or there are, but `row_id` specifically has not been changed.
+                            // Either way, the row is in the committed state
+                            // and hasn't been removed in the current tx,
+                            // so it exists and can be returned.
+                            Some(RowState::Absent) | None => return Some(DataRef::new(row_id, row)),
                         }
                     }
-                    if let Some(table) = self
-                        .inner
-                        .tx_state
-                        .as_ref()
-                        .and_then(|s| s.insert_tables.get(&table_id))
-                    {
-                        self.stage = ScanStage::CurrentTx {
-                            iter: table.rows.iter(),
-                        };
-                    } else {
-                        break;
-                    }
+                    // (3) We got here, so we must've exhausted the committed changes.
+                    // Start looking in the current tx for inserts, if any, in (2).
+                    maybe_stage_current_tx_inserts(self)?;
                 }
                 ScanStage::CurrentTx { iter } => {
+                    // (2) look for inserts in the current tx.
                     let _span = tracing::debug_span!("ScanStage::CurrentTx").entered();
-                    if let Some((id, row)) = iter.next() {
-                        return Some(DataRef::new(&id.0, row));
-                    }
-                    break;
+                    return iter.next().map(|(id, row)| DataRef::new(id, row));
                 }
             }
         }
-        None
     }
 }
 
@@ -1794,7 +1802,7 @@ impl<'a> Iterator for IndexSeekIterInner<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(row_id) = self.inserted_rows.next() {
             return Some(DataRef::new(
-                &row_id.0,
+                row_id,
                 self.tx_state.get_row(&self.table_id, row_id).unwrap(),
             ));
         }
@@ -1845,8 +1853,10 @@ impl<'a> Iterator for CommittedIndexIter<'a> {
 ///
 /// Panics if `table_id` and `row_id` do not identify an actually present row.
 #[tracing::instrument(skip_all)]
+#[inline]
+// N.B. This function is used in hot loops, so care is advised when changing it.
 fn get_committed_row<'a>(state: &'a CommittedState, table_id: &TableId, row_id: &'a RowId) -> DataRef<'a> {
-    DataRef::new(&row_id.0, state.tables.get(table_id).unwrap().get_row(row_id).unwrap())
+    DataRef::new(row_id, state.tables.get(table_id).unwrap().get_row(row_id).unwrap())
 }
 
 /// An [IterByColRange] for an individual column value.
@@ -2929,7 +2939,7 @@ mod tests {
             datastore
                 .iter_by_col_eq_mut_tx(tx, table_id, ColId(0), AlgebraicValue::U32(1))
                 .unwrap()
-                .map(|drr| drr.data.clone())
+                .map(|data_ref| data_ref.data.clone())
                 .collect::<Vec<_>>()
         };
 
