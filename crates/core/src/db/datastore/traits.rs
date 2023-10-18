@@ -370,7 +370,7 @@ pub trait DataRow: Send + Sync {
 
     type DataRef<'a>;
 
-    fn view_product_value<'a>(&self, drr: Self::DataRef<'a>) -> &'a ProductValue;
+    fn view_product_value<'a>(&self, data_ref: Self::DataRef<'a>) -> &'a ProductValue;
 }
 
 pub trait Tx {
