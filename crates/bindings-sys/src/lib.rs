@@ -13,9 +13,12 @@ use std::ptr;
 
 use alloc::boxed::Box;
 
+use spacetimedb_primitives::{ColId, TableId};
+
 /// Provides a raw set of sys calls which abstractions can be built atop of.
 pub mod raw {
     use core::mem::ManuallyDrop;
+    use spacetimedb_primitives::{ColId, TableId};
 
     // this module identifier determines the abi version that modules built with this crate depend
     // on. Any non-breaking additions to the abi surface should be put in a new `extern {}` block
@@ -33,7 +36,7 @@ pub mod raw {
             name_len: usize,
             schema: *const u8,
             schema_len: usize,
-            out: *mut u32,
+            out: *mut TableId,
         ) -> u16;
         */
 
@@ -47,7 +50,7 @@ pub mod raw {
         /// - the slice `(name, name_len)` is not valid UTF-8
         /// - `name + name_len` overflows a 64-bit address.
         /// - writing to `out` overflows a 32-bit integer
-        pub fn _get_table_id(name: *const u8, name_len: usize, out: *mut u32) -> u16;
+        pub fn _get_table_id(name: *const u8, name_len: usize, out: *mut TableId) -> u16;
 
         /// Creates an index with the name `index_name` and type `index_type`,
         /// on a product of the given columns in `col_ids`
@@ -69,7 +72,7 @@ pub mod raw {
         pub fn _create_index(
             index_name: *const u8,
             index_name_len: usize,
-            table_id: u32,
+            table_id: TableId,
             index_type: u8,
             col_ids: *const u8,
             col_len: usize,
@@ -92,7 +95,13 @@ pub mod raw {
         /// - `(val, val_len)` cannot be decoded to an `AlgebraicValue`
         ///   typed at the `AlgebraicType` of the column,
         /// - `val + val_len` overflows a 64-bit integer
-        pub fn _iter_by_col_eq(table_id: u32, col_id: u32, val: *const u8, val_len: usize, out: *mut Buffer) -> u16;
+        pub fn _iter_by_col_eq(
+            table_id: TableId,
+            col_id: ColId,
+            val: *const u8,
+            val_len: usize,
+            out: *mut Buffer,
+        ) -> u16;
 
         /// Inserts a row into the table identified by `table_id`,
         /// where the row is read from the byte slice `row` in WASM memory,
@@ -109,7 +118,7 @@ pub mod raw {
         /// - `row + row_len` overflows a 64-bit integer
         /// - `(row, row_len)` doesn't decode from BSATN to a `ProductValue`
         ///   according to the `ProductType` that the table's schema specifies.
-        pub fn _insert(table_id: u32, row: *mut u8, row_len: usize) -> u16;
+        pub fn _insert(table_id: TableId, row: *mut u8, row_len: usize) -> u16;
 
         /// Deletes all rows in the table identified by `table_id`
         /// where the column identified by `col_id` matches the byte string,
@@ -128,7 +137,13 @@ pub mod raw {
         ///   according to the `AlgebraicType` that the table's schema specifies for `col_id`.
         /// - `value + value_len` overflows a 64-bit integer
         /// - writing to `out` would overflow a 32-bit integer
-        pub fn _delete_by_col_eq(table_id: u32, col_id: u32, value: *const u8, value_len: usize, out: *mut u32) -> u16;
+        pub fn _delete_by_col_eq(
+            table_id: TableId,
+            col_id: ColId,
+            value: *const u8,
+            value_len: usize,
+            out: *mut u32,
+        ) -> u16;
 
         /// Start iteration on each row, as bytes, of a table identified by `table_id`.
         ///
@@ -137,7 +152,7 @@ pub mod raw {
         ///
         /// Returns an error if
         /// - a table with the provided `table_id` doesn't exist
-        pub fn _iter_start(table_id: u32, out: *mut BufferIter) -> u16;
+        pub fn _iter_start(table_id: TableId, out: *mut BufferIter) -> u16;
 
         /// Like [`_iter_start`], start iteration on each row,
         /// as bytes, of a table identified by `table_id`.
@@ -152,7 +167,12 @@ pub mod raw {
         /// - a table with the provided `table_id` doesn't exist
         /// - `(filter, filter_len)` doesn't decode to a filter expression
         /// - `filter + filter_len` overflows a 64-bit integer
-        pub fn _iter_start_filtered(table_id: u32, filter: *const u8, filter_len: usize, out: *mut BufferIter) -> u16;
+        pub fn _iter_start_filtered(
+            table_id: TableId,
+            filter: *const u8,
+            filter_len: usize,
+            out: *mut BufferIter,
+        ) -> u16;
 
         /// Advances the registered iterator with the index given by `iter_key`.
         ///
@@ -471,7 +491,7 @@ unsafe fn call<T>(f: impl FnOnce(*mut T) -> u16) -> Result<T, Errno> {
 ///
 /// Returns an error if the table does not exist.
 #[inline]
-pub fn get_table_id(name: &str) -> Result<u32, Errno> {
+pub fn get_table_id(name: &str) -> Result<TableId, Errno> {
     unsafe { call(|out| raw::_get_table_id(name.as_ptr(), name.len(), out)) }
 }
 
@@ -488,7 +508,7 @@ pub fn get_table_id(name: &str) -> Result<u32, Errno> {
 ///
 /// Traps if `index_type == 1` or `col_ids.len() != 1`.
 #[inline]
-pub fn create_index(index_name: &str, table_id: u32, index_type: u8, col_ids: &[u8]) -> Result<(), Errno> {
+pub fn create_index(index_name: &str, table_id: TableId, index_type: u8, col_ids: &[u8]) -> Result<(), Errno> {
     cvt(unsafe {
         raw::_create_index(
             index_name.as_ptr(),
@@ -518,7 +538,7 @@ pub fn create_index(index_name: &str, table_id: u32, index_type: u8, col_ids: &[
 /// - `val` cannot be BSATN-decoded to an `AlgebraicValue`
 ///   typed at the `AlgebraicType` of the column
 #[inline]
-pub fn iter_by_col_eq(table_id: u32, col_id: u32, val: &[u8]) -> Result<Buffer, Errno> {
+pub fn iter_by_col_eq(table_id: TableId, col_id: ColId, val: &[u8]) -> Result<Buffer, Errno> {
     unsafe { call(|out| raw::_iter_by_col_eq(table_id, col_id, val.as_ptr(), val.len(), out)) }
 }
 
@@ -535,7 +555,7 @@ pub fn iter_by_col_eq(table_id: u32, col_id: u32, val: &[u8]) -> Result<Buffer, 
 /// - `row` doesn't decode from BSATN to a `ProductValue`
 ///   according to the `ProductType` that the table's schema specifies.
 #[inline]
-pub fn insert(table_id: u32, row: &mut [u8]) -> Result<(), Errno> {
+pub fn insert(table_id: TableId, row: &mut [u8]) -> Result<(), Errno> {
     cvt(unsafe { raw::_insert(table_id, row.as_mut_ptr(), row.len()) })
 }
 
@@ -552,7 +572,7 @@ pub fn insert(table_id: u32, row: &mut [u8]) -> Result<(), Errno> {
 /// - no columns were deleted
 /// - `col_id` does not identify a column of the table
 #[inline]
-pub fn delete_by_col_eq(table_id: u32, col_id: u32, value: &[u8]) -> Result<u32, Errno> {
+pub fn delete_by_col_eq(table_id: TableId, col_id: ColId, value: &[u8]) -> Result<u32, Errno> {
     unsafe { call(|out| raw::_delete_by_col_eq(table_id, col_id, value.as_ptr(), value.len(), out)) }
 }
 
@@ -568,7 +588,7 @@ pub fn delete_by_col_eq(table_id: u32, col_id: u32, value: &[u8]) -> Result<u32,
 /// - a table with the provided `table_id` doesn't exist
 /// - `Some(filter)` doesn't decode to a filter expression
 #[inline]
-pub fn iter(table_id: u32, filter: Option<&[u8]>) -> Result<BufferIter, Errno> {
+pub fn iter(table_id: TableId, filter: Option<&[u8]>) -> Result<BufferIter, Errno> {
     unsafe {
         call(|out| match filter {
             None => raw::_iter_start(table_id, out),

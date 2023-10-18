@@ -14,7 +14,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::{MutTxDatastore, TableId, TableSchema};
+use crate::db::datastore::traits::{MutTxDatastore, TableSchema};
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
 use spacetimedb_lib::relation::{extract_table_field, FieldExpr, FieldName};
@@ -415,7 +415,7 @@ fn find_table<'tx>(db: &RelationalDB, tx: &'tx MutTxId, t: Table) -> Result<Cow<
     let table_id = db
         .table_id_from_name(tx, &t.name)?
         .ok_or(PlanError::UnknownTable { table: t.name.clone() })?;
-    if !db.inner.table_id_exists(tx, &TableId(table_id)) {
+    if !db.inner.table_id_exists(tx, &table_id) {
         return Err(PlanError::UnknownTable { table: t.name });
     }
     db.schema_for_table(tx, table_id)

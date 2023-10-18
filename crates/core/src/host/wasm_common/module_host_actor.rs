@@ -3,15 +3,15 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, TableDef};
+use crate::db::datastore::traits::{ColumnDef, IndexDef, TableDef};
 use crate::host::scheduler::Scheduler;
 use crate::sql;
 use anyhow::{anyhow, Context};
 use bytes::Bytes;
-use nonempty::NonEmpty;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{bsatn, Address, IndexType, ModuleDef};
+use spacetimedb_primitives::{ColId, IndexId, TableId};
 use spacetimedb_vm::expr::CrudExpr;
 
 use crate::client::ClientConnectionSender;
@@ -744,22 +744,22 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                     // TODO
                     IndexType::Hash => anyhow::bail!("hash indexes not yet supported"),
                 }
-                let index = IndexDef {
-                    table_id: 0, // Will be ignored
-                    cols: NonEmpty::new(col_id as u32),
-                    name: index.name.clone(),
-                    is_unique: col_attr.is_unique(),
-                };
+                let index = IndexDef::new(
+                    index.name.clone(),
+                    TableId(0), // Will be ignored
+                    ColId(col_id as u32),
+                    col_attr.is_unique(),
+                );
                 indexes.push(index);
             } else if col_attr.is_unique() {
                 // If you didn't find an index, but the column is unique then create a unique btree index
                 // anyway.
-                let index = IndexDef {
-                    table_id: 0, // Will be ignored
-                    cols: NonEmpty::new(col_id as u32),
-                    name: format!("{}_{}_unique", table.name, col.col_name),
-                    is_unique: true,
-                };
+                let index = IndexDef::new(
+                    format!("{}_{}_unique", table.name, col.col_name),
+                    TableId(0), // Will be ignored
+                    ColId(col_id as u32),
+                    true,
+                );
                 indexes.push(index);
             }
         }
@@ -839,7 +839,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                         match known_indexes.remove(&index_def.name) {
                             None => indexes_to_create.push(index_def),
                             Some(known_index) => {
-                                let known_id = IndexId(known_index.index_id);
+                                let known_id = known_index.index_id;
                                 let known_index_def = IndexDef::from(known_index.clone());
                                 if known_index_def != index_def {
                                     indexes_to_drop.push(known_id);
@@ -851,7 +851,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
                     // Indexes not in the proposed schema shall be dropped.
                     for index in known_indexes.into_values() {
-                        indexes_to_drop.push(IndexId(index.index_id));
+                        indexes_to_drop.push(index.index_id);
                     }
                 }
             } else {

@@ -1,6 +1,7 @@
 #![allow(clippy::disallowed_names)]
 use spacetimedb::{
-    delete_by_col_eq, query, spacetimedb, AlgebraicValue, Deserialize, ReducerContext, SpacetimeType, Timestamp,
+    delete_by_col_eq, query, spacetimedb, AlgebraicValue, Deserialize, ReducerContext, SpacetimeType, TableId,
+    Timestamp,
 };
 use spacetimedb_lib::bsatn;
 
@@ -91,7 +92,7 @@ pub fn test(ctx: ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC) -> an
     log::info!("Row count before delete: {:?}", row_count);
 
     for row in 5..10 {
-        delete_by_col_eq(1, 0, &AlgebraicValue::U32(row))?;
+        delete_by_col_eq(TableId(1), 0, &AlgebraicValue::U32(row))?;
     }
 
     let row_count = TestA::iter().count();

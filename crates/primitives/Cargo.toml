@@ -1,0 +1,9 @@
+[package]
+name = "spacetimedb-primitives"
+version = "0.7.1"
+edition = "2021"
+license-file = "LICENSE"
+description = "Primitives such as TableId and ColumnIndexAttribute"
+
+[dependencies]
+nonempty.workspace = true

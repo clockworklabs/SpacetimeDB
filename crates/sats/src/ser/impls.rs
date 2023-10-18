@@ -224,3 +224,8 @@ impl_serialize!([] ValueWithType<'_, MapValue>, (self, ser) => {
     }
     map.end()
 });
+
+impl_serialize!([] spacetimedb_primitives::ColId, (self, ser) => ser.serialize_u32(self.0));
+impl_serialize!([] spacetimedb_primitives::TableId, (self, ser) => ser.serialize_u32(self.0));
+impl_serialize!([] spacetimedb_primitives::IndexId, (self, ser) => ser.serialize_u32(self.0));
+impl_serialize!([] spacetimedb_primitives::SequenceId, (self, ser) => ser.serialize_u32(self.0));

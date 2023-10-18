@@ -1,8 +1,7 @@
 use super::commit_log::{CommitLog, CommitLogView};
 use super::datastore::locking_tx_datastore::{Data, DataRef, Iter, IterByColEq, IterByColRange, MutTxId, RowId};
 use super::datastore::traits::{
-    ColId, DataRow, IndexDef, IndexId, MutProgrammable, MutTx, MutTxDatastore, Programmable, SequenceDef, SequenceId,
-    TableDef, TableId, TableSchema, TxData,
+    DataRow, IndexDef, MutProgrammable, MutTx, MutTxDatastore, Programmable, SequenceDef, TableDef, TableSchema, TxData,
 };
 use super::message_log::MessageLog;
 use super::ostorage::memory_object_db::MemoryObjectDB;
@@ -19,6 +18,7 @@ use fs2::FileExt;
 use nonempty::NonEmpty;
 use spacetimedb_lib::ColumnIndexAttribute;
 use spacetimedb_lib::{data_key::ToDataKey, PrimaryKey};
+use spacetimedb_primitives::{ColId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use std::borrow::Cow;
 use std::fs::{create_dir_all, File};
@@ -34,11 +34,11 @@ pub const ST_SEQUENCES_NAME: &str = "st_sequence";
 pub const ST_INDEXES_NAME: &str = "st_indexes";
 
 /// The static ID of the table that defines tables
-pub const ST_TABLES_ID: u32 = 0;
+pub const ST_TABLES_ID: TableId = TableId(0);
 /// The static ID of the table that defines columns
-pub const ST_COLUMNS_ID: u32 = 1;
+pub const ST_COLUMNS_ID: TableId = TableId(1);
 /// The ID that we can start use to generate user tables that will not conflict with the bootstrapped ones.
-pub const ST_TABLE_ID_START: u32 = 2;
+pub const ST_TABLE_ID_START: TableId = TableId(2);
 
 #[derive(Clone)]
 pub struct RelationalDB {
@@ -187,13 +187,17 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn schema_for_table<'tx>(&self, tx: &'tx MutTxId, table_id: u32) -> Result<Cow<'tx, TableSchema>, DBError> {
-        self.inner.schema_for_table_mut_tx(tx, TableId(table_id))
+    pub fn schema_for_table<'tx>(&self, tx: &'tx MutTxId, table_id: TableId) -> Result<Cow<'tx, TableSchema>, DBError> {
+        self.inner.schema_for_table_mut_tx(tx, table_id)
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn row_schema_for_table<'tx>(&self, tx: &'tx MutTxId, table_id: u32) -> Result<Cow<'tx, ProductType>, DBError> {
-        self.inner.row_type_for_table_mut_tx(tx, TableId(table_id))
+    pub fn row_schema_for_table<'tx>(
+        &self,
+        tx: &'tx MutTxId,
+        table_id: TableId,
+    ) -> Result<Cow<'tx, ProductType>, DBError> {
+        self.inner.row_type_for_table_mut_tx(tx, table_id)
     }
 
     pub fn get_all_tables<'tx>(&self, tx: &'tx MutTxId) -> Result<Vec<Cow<'tx, TableSchema>>, DBError> {
@@ -204,14 +208,14 @@ impl RelationalDB {
     pub fn schema_for_column<'tx>(
         &self,
         tx: &'tx MutTxId,
-        table_id: u32,
-        col_id: u32,
+        table_id: TableId,
+        col_id: ColId,
     ) -> Result<Cow<'tx, AlgebraicType>, DBError> {
         // We need to do a manual bounds check here
         // since we want to do `swap_remove` to get an owned value
         // in the case of `Cow::Owned` and avoid a `clone`.
         let check_bounds = |schema: &ProductType| -> Result<_, DBError> {
-            let col_idx = col_id as usize;
+            let col_idx = col_id.idx();
             if col_idx >= schema.elements.len() {
                 return Err(TableError::ColumnNotFound(col_id).into());
             }
@@ -232,8 +236,8 @@ impl RelationalDB {
     pub fn decode_column(
         &self,
         tx: &MutTxId,
-        table_id: u32,
-        col_id: u32,
+        table_id: TableId,
+        col_id: ColId,
         bytes: &[u8],
     ) -> Result<AlgebraicValue, DBError> {
         let schema = self.schema_for_column(tx, table_id, col_id)?;
@@ -375,16 +379,16 @@ impl RelationalDB {
 }
 
 impl RelationalDB {
-    pub fn create_table<T: Into<TableDef>>(&self, tx: &mut MutTxId, schema: T) -> Result<u32, DBError> {
-        self.inner.create_table_mut_tx(tx, schema.into()).map(|TableId(id)| id)
+    pub fn create_table<T: Into<TableDef>>(&self, tx: &mut MutTxId, schema: T) -> Result<TableId, DBError> {
+        self.inner.create_table_mut_tx(tx, schema.into())
     }
 
-    pub fn drop_table(&self, tx: &mut MutTxId, table_id: u32) -> Result<(), DBError> {
+    pub fn drop_table(&self, tx: &mut MutTxId, table_id: TableId) -> Result<(), DBError> {
         let _guard = DB_METRICS
             .rdb_drop_table_time
-            .with_label_values(&table_id)
+            .with_label_values(&table_id.0)
             .start_timer();
-        self.inner.drop_table_mut_tx(tx, TableId(table_id))
+        self.inner.drop_table_mut_tx(tx, table_id)
     }
 
     /// Rename a table.
@@ -393,30 +397,28 @@ impl RelationalDB {
     /// relatively cheap operation which only modifies the system tables.
     ///
     /// If the table is not found or is a system table, an error is returned.
-    pub fn rename_table(&self, tx: &mut MutTxId, table_id: u32, new_name: &str) -> Result<(), DBError> {
-        self.inner.rename_table_mut_tx(tx, TableId(table_id), new_name)
+    pub fn rename_table(&self, tx: &mut MutTxId, table_id: TableId, new_name: &str) -> Result<(), DBError> {
+        self.inner.rename_table_mut_tx(tx, table_id, new_name)
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn table_id_from_name(&self, tx: &MutTxId, table_name: &str) -> Result<Option<u32>, DBError> {
-        self.inner
-            .table_id_from_name_mut_tx(tx, table_name)
-            .map(|x| x.map(|x| x.0))
+    pub fn table_id_from_name(&self, tx: &MutTxId, table_name: &str) -> Result<Option<TableId>, DBError> {
+        self.inner.table_id_from_name_mut_tx(tx, table_name)
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn table_name_from_id(&self, tx: &MutTxId, table_id: u32) -> Result<Option<String>, DBError> {
-        self.inner.table_name_from_id_mut_tx(tx, TableId(table_id))
+    pub fn table_name_from_id(&self, tx: &MutTxId, table_id: TableId) -> Result<Option<String>, DBError> {
+        self.inner.table_name_from_id_mut_tx(tx, table_id)
     }
 
     #[tracing::instrument(skip_all)]
     pub fn column_attrs(
         &self,
         tx: &mut MutTxId,
-        table_id: u32,
-        cols: &NonEmpty<u32>,
+        table_id: TableId,
+        cols: &NonEmpty<ColId>,
     ) -> Result<ColumnIndexAttribute, DBError> {
-        let table = self.inner.schema_for_table_mut_tx(tx, TableId(table_id))?;
+        let table = self.inner.schema_for_table_mut_tx(tx, table_id)?;
         let columns = table.project_not_empty(cols)?;
         // Verify we don't have more than 1 auto_inc in the list of columns
         let autoinc = columns.iter().filter(|x| x.is_autoinc).count();
@@ -424,7 +426,7 @@ impl RelationalDB {
             autoinc == 1
         } else {
             return Err(DBError::Index(IndexError::OneAutoInc(
-                TableId(table_id),
+                table_id,
                 columns.iter().map(|x| x.col_name.clone()).collect(),
             )));
         };
@@ -472,9 +474,9 @@ impl RelationalDB {
     /// Returns an iterator,
     /// yielding every row in the table identified by `table_id`.
     #[tracing::instrument(skip(self, tx))]
-    pub fn iter<'a>(&'a self, tx: &'a MutTxId, table_id: u32) -> Result<Iter<'a>, DBError> {
-        let _guard = DB_METRICS.rdb_iter_time.with_label_values(&table_id).start_timer();
-        self.inner.iter_mut_tx(tx, TableId(table_id))
+    pub fn iter<'a>(&'a self, tx: &'a MutTxId, table_id: TableId) -> Result<Iter<'a>, DBError> {
+        let _guard = DB_METRICS.rdb_iter_time.with_label_values(&table_id.0).start_timer();
+        self.inner.iter_mut_tx(tx, table_id)
     }
 
     /// Returns an iterator,
@@ -509,22 +511,22 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip(self, tx, row))]
-    pub fn insert(&self, tx: &mut MutTxId, table_id: u32, row: ProductValue) -> Result<ProductValue, DBError> {
+    pub fn insert(&self, tx: &mut MutTxId, table_id: TableId, row: ProductValue) -> Result<ProductValue, DBError> {
         let _guard = DB_METRICS
             .rdb_insert_row_time
-            .with_label_values(&table_id)
+            .with_label_values(&table_id.0)
             .start_timer();
-        self.inner.insert_mut_tx(tx, TableId(table_id), row)
+        self.inner.insert_mut_tx(tx, table_id, row)
     }
 
     #[tracing::instrument(skip_all)]
     pub fn insert_bytes_as_row(
         &self,
         tx: &mut MutTxId,
-        table_id: u32,
+        table_id: TableId,
         row_bytes: &[u8],
     ) -> Result<ProductValue, DBError> {
-        let ty = self.inner.row_type_for_table_mut_tx(tx, TableId(table_id))?;
+        let ty = self.inner.row_type_for_table_mut_tx(tx, table_id)?;
         let row = ProductValue::decode(&ty, &mut &row_bytes[..])?;
         self.insert(tx, table_id, row)
     }
@@ -533,19 +535,19 @@ impl RelationalDB {
     pub fn delete_by_rel<R: Relation>(
         &self,
         tx: &mut MutTxId,
-        table_id: u32,
+        table_id: TableId,
         relation: R,
     ) -> Result<Option<u32>, DBError> {
         let _guard = DB_METRICS
             .rdb_delete_by_rel_time
-            .with_label_values(&table_id)
+            .with_label_values(&table_id.0)
             .start_timer();
-        self.inner.delete_by_rel_mut_tx(tx, TableId(table_id), relation)
+        self.inner.delete_by_rel_mut_tx(tx, table_id, relation)
     }
 
     /// Clear all rows from a table without dropping it.
     #[tracing::instrument(skip_all)]
-    pub fn clear_table(&self, tx: &mut MutTxId, table_id: u32) -> Result<(), DBError> {
+    pub fn clear_table(&self, tx: &mut MutTxId, table_id: TableId) -> Result<(), DBError> {
         let relation = self
             .iter(tx, table_id)?
             .map(|data| data.view().clone())
@@ -644,6 +646,8 @@ mod tests {
     #![allow(clippy::disallowed_macros)]
 
     use nonempty::NonEmpty;
+    use spacetimedb_primitives::ColId;
+    use spacetimedb_primitives::TableId;
     use std::sync::{Arc, Mutex};
 
     use crate::address::Address;
@@ -653,7 +657,6 @@ mod tests {
     use crate::db::datastore::system_tables::StTableRow;
     use crate::db::datastore::system_tables::ST_INDEXES_ID;
     use crate::db::datastore::system_tables::ST_SEQUENCES_ID;
-    use crate::db::datastore::traits::ColId;
     use crate::db::datastore::traits::ColumnDef;
     use crate::db::datastore::traits::IndexDef;
     use crate::db::datastore::traits::TableDef;
@@ -680,8 +683,8 @@ mod tests {
 
     fn index(name: &str, cols: &[u32]) -> IndexDef {
         IndexDef {
-            table_id: 0,
-            cols: NonEmpty::collect(cols.iter().copied()).unwrap(),
+            table_id: 0.into(),
+            cols: NonEmpty::collect(cols.iter().copied().map(Into::into)).unwrap(),
             name: name.to_string(),
             is_unique: false,
         }
@@ -768,7 +771,7 @@ mod tests {
         let table_id = stdb.table_id_from_name(&tx, "MyTable")?.unwrap();
         let schema = stdb.schema_for_table(&tx, table_id)?;
         let col = schema.columns.iter().find(|x| x.col_name == "my_col").unwrap();
-        assert_eq!(col.col_id, 0);
+        assert_eq!(col.col_id, ColId(0));
         Ok(())
     }
 
@@ -1065,12 +1068,12 @@ mod tests {
                 col_type: AlgebraicType::I64,
                 is_autoinc: false,
             }],
-            indexes: vec![IndexDef {
-                table_id: 0,
-                cols: NonEmpty::new(0),
-                name: "MyTable_my_col_idx".to_string(),
-                is_unique: false,
-            }],
+            indexes: vec![IndexDef::new(
+                "MyTable_my_col_idx".to_string(),
+                TableId(0),
+                ColId(0),
+                false,
+            )],
             table_type: StTableType::User,
             table_access: StAccess::Public,
         };
@@ -1107,12 +1110,12 @@ mod tests {
                 col_type: AlgebraicType::I64,
                 is_autoinc: false,
             }],
-            indexes: vec![IndexDef {
-                table_id: 0,
-                cols: NonEmpty::new(0),
-                name: "MyTable_my_col_idx".to_string(),
-                is_unique: true,
-            }],
+            indexes: vec![IndexDef::new(
+                "MyTable_my_col_idx".to_string(),
+                TableId(0),
+                ColId(0),
+                true,
+            )],
             table_type: StTableType::User,
             table_access: StAccess::Public,
         };
@@ -1154,12 +1157,12 @@ mod tests {
                 col_type: AlgebraicType::I64,
                 is_autoinc: true,
             }],
-            indexes: vec![IndexDef {
-                table_id: 0,
-                cols: NonEmpty::new(0),
-                name: "MyTable_my_col_idx".to_string(),
-                is_unique: true,
-            }],
+            indexes: vec![IndexDef::new(
+                "MyTable_my_col_idx".to_string(),
+                TableId(0),
+                ColId(0),
+                true,
+            )],
             table_type: StTableType::User,
             table_access: StAccess::Public,
         };
@@ -1217,24 +1220,9 @@ mod tests {
                 },
             ],
             indexes: vec![
-                IndexDef {
-                    table_id: 0,
-                    cols: NonEmpty::new(0),
-                    name: "MyTable_col1_idx".to_string(),
-                    is_unique: true,
-                },
-                IndexDef {
-                    table_id: 0,
-                    cols: NonEmpty::new(2),
-                    name: "MyTable_col3_idx".to_string(),
-                    is_unique: false,
-                },
-                IndexDef {
-                    table_id: 0,
-                    cols: NonEmpty::new(3),
-                    name: "MyTable_col4_idx".to_string(),
-                    is_unique: true,
-                },
+                IndexDef::new("MyTable_col1_idx".to_string(), TableId(0), ColId(0), true),
+                IndexDef::new("MyTable_col3_idx".to_string(), TableId(0), ColId(2), false),
+                IndexDef::new("MyTable_col4_idx".to_string(), TableId(0), ColId(3), true),
             ],
             table_type: StTableType::User,
             table_access: StAccess::Public,
@@ -1242,14 +1230,14 @@ mod tests {
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         let indexes = stdb
-            .iter(&tx, ST_INDEXES_ID.0)?
+            .iter(&tx, ST_INDEXES_ID)?
             .map(|x| StIndexRow::try_from(x.view()).unwrap().to_owned())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(indexes.len(), 3, "Wrong number of indexes");
 
         let sequences = stdb
-            .iter(&tx, ST_SEQUENCES_ID.0)?
+            .iter(&tx, ST_SEQUENCES_ID)?
             .map(|x| StSequenceRow::try_from(x.view()).unwrap().to_owned())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
@@ -1258,14 +1246,14 @@ mod tests {
         stdb.drop_table(&mut tx, table_id)?;
 
         let indexes = stdb
-            .iter(&tx, ST_INDEXES_ID.0)?
+            .iter(&tx, ST_INDEXES_ID)?
             .map(|x| StIndexRow::try_from(x.view()).unwrap().to_owned())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(indexes.len(), 0, "Wrong number of indexes");
 
         let sequences = stdb
-            .iter(&tx, ST_SEQUENCES_ID.0)?
+            .iter(&tx, ST_SEQUENCES_ID)?
             .map(|x| StSequenceRow::try_from(x.view()).unwrap().to_owned())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
@@ -1287,12 +1275,12 @@ mod tests {
                 col_type: AlgebraicType::I64,
                 is_autoinc: true,
             }],
-            indexes: vec![IndexDef {
-                table_id: 0,
-                cols: NonEmpty::new(0),
-                name: "MyTable_my_col_idx".to_string(),
-                is_unique: true,
-            }],
+            indexes: vec![IndexDef::new(
+                "MyTable_my_col_idx".to_string(),
+                TableId(0),
+                ColId(0),
+                true,
+            )],
             table_type: StTableType::User,
             table_access: StAccess::Public,
         };

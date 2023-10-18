@@ -165,12 +165,12 @@ mod tests {
     use crate::subscription::subscription::QuerySet;
     use crate::vm::tests::create_table_with_rows;
     use itertools::Itertools;
-    use nonempty::NonEmpty;
     use spacetimedb_lib::auth::{StAccess, StTableType};
     use spacetimedb_lib::data_key::ToDataKey;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::relation::FieldName;
     use spacetimedb_lib::Identity;
+    use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::{product, ProductType, ProductValue};
     use spacetimedb_vm::dsl::{db_table, mem_table, scalar};
     use spacetimedb_vm::operator::OpCmp;
@@ -181,7 +181,7 @@ mod tests {
         name: &str,
         schema: &[(&str, AlgebraicType)],
         indexes: &[(u32, &str)],
-    ) -> ResultTest<u32> {
+    ) -> ResultTest<TableId> {
         let table_name = name.to_string();
         let table_type = StTableType::User;
         let table_access = StAccess::Public;
@@ -197,12 +197,7 @@ mod tests {
 
         let indexes = indexes
             .iter()
-            .map(|(col_id, index_name)| IndexDef {
-                table_id: 0,
-                cols: NonEmpty::new(*col_id),
-                name: index_name.to_string(),
-                is_unique: false,
-            })
+            .map(|(col_id, index_name)| IndexDef::new(index_name.to_string(), TableId(0), ColId(*col_id), false))
             .collect_vec();
 
         let schema = TableDef {
@@ -216,7 +211,7 @@ mod tests {
         Ok(db.create_table(tx, schema)?)
     }
 
-    fn insert_op(table_id: u32, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
+    fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
         let row_pk = row.to_data_key().to_bytes();
         DatabaseTableUpdate {
             table_id,
@@ -229,7 +224,7 @@ mod tests {
         }
     }
 
-    fn delete_op(table_id: u32, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
+    fn delete_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
         let row_pk = row.to_data_key().to_bytes();
         DatabaseTableUpdate {
             table_id,
@@ -242,12 +237,12 @@ mod tests {
         }
     }
 
-    fn insert_row(db: &RelationalDB, tx: &mut MutTxId, table_id: u32, row: ProductValue) -> ResultTest<()> {
+    fn insert_row(db: &RelationalDB, tx: &mut MutTxId, table_id: TableId, row: ProductValue) -> ResultTest<()> {
         db.insert(tx, table_id, row)?;
         Ok(())
     }
 
-    fn delete_row(db: &RelationalDB, tx: &mut MutTxId, table_id: u32, row: ProductValue) -> ResultTest<()> {
+    fn delete_row(db: &RelationalDB, tx: &mut MutTxId, table_id: TableId, row: ProductValue) -> ResultTest<()> {
         db.delete_by_rel(tx, table_id, vec![row])?;
         Ok(())
     }

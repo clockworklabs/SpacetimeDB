@@ -586,3 +586,8 @@ impl FieldNameVisitor<'_> for TupleNameVisitor<'_> {
             .ok_or_else(|| Error::unknown_field_name(name, &self))
     }
 }
+
+impl_deserialize!([] spacetimedb_primitives::ColId, de => u32::deserialize(de).map(Self));
+impl_deserialize!([] spacetimedb_primitives::TableId, de => u32::deserialize(de).map(Self));
+impl_deserialize!([] spacetimedb_primitives::IndexId, de => u32::deserialize(de).map(Self));
+impl_deserialize!([] spacetimedb_primitives::SequenceId, de => u32::deserialize(de).map(Self));

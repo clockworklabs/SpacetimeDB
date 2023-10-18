@@ -3,9 +3,10 @@ use crate::{
     schemas::{table_name, BenchTable, IndexStrategy},
     ResultBench,
 };
-use spacetimedb::db::datastore::traits::{ColId, IndexDef, TableDef};
+use spacetimedb::db::datastore::traits::{IndexDef, TableDef};
 use spacetimedb::db::relational_db::{open_db, RelationalDB};
 use spacetimedb_lib::sats::AlgebraicValue;
+use spacetimedb_primitives::{ColId, TableId};
 use std::hint::black_box;
 use tempdir::TempDir;
 
@@ -15,11 +16,12 @@ pub struct SpacetimeRaw {
     db: RelationalDB,
     _temp_dir: TempDir,
 }
+
 impl BenchDatabase for SpacetimeRaw {
     fn name() -> &'static str {
         "stdb_raw"
     }
-    type TableId = u32;
+    type TableId = TableId;
 
     fn build(in_memory: bool, fsync: bool) -> ResultBench<Self>
     where
@@ -43,14 +45,14 @@ impl BenchDatabase for SpacetimeRaw {
             match index_strategy {
                 IndexStrategy::Unique => {
                     self.db
-                        .create_index(tx, IndexDef::new("id".to_string(), table_id, 0, true))?;
+                        .create_index(tx, IndexDef::new("id".to_string(), table_id, 0.into(), true))?;
                 }
                 IndexStrategy::NonUnique => (),
                 IndexStrategy::MultiIndex => {
                     for (i, column) in T::product_type().elements.iter().enumerate() {
                         self.db.create_index(
                             tx,
-                            IndexDef::new(column.name.clone().unwrap(), table_id, i as u32, false),
+                            IndexDef::new(column.name.clone().unwrap(), table_id, i.into(), false),
                         )?;
                     }
                 }

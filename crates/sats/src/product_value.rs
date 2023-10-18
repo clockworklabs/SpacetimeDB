@@ -2,6 +2,7 @@ use crate::algebraic_value::AlgebraicValue;
 use crate::product_type::ProductType;
 use crate::ArrayValue;
 use nonempty::NonEmpty;
+use spacetimedb_primitives::ColId;
 
 /// A product value is made of a a list of
 /// "elements" / "fields" / "factors" of other `AlgebraicValue`s.
@@ -102,8 +103,8 @@ impl ProductValue {
     /// **Parameters:**
     /// - `indexes`: A [NonEmpty<u32>] containing the indexes of fields to be projected.
     ///
-    pub fn project_not_empty(&self, indexes: &NonEmpty<u32>) -> Result<AlgebraicValue, InvalidFieldError> {
-        let indexes: Vec<_> = indexes.iter().map(|x| (*x as usize, None)).collect();
+    pub fn project_not_empty(&self, indexes: &NonEmpty<ColId>) -> Result<AlgebraicValue, InvalidFieldError> {
+        let indexes: Vec<_> = indexes.iter().map(|x| (x.idx(), None)).collect();
         self.project(&indexes)
     }
 
