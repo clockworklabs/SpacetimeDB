@@ -209,7 +209,7 @@ impl module_host_actor::WasmInstancePre for WasmerModule {
             .into());
         }
 
-        env.as_mut(&mut store).mem = Some(mem);
+        env.as_mut(&mut store).instantiate(mem);
 
         // Note: this budget is just for initializers
         let budget = EnergyQuanta::DEFAULT_BUDGET.as_points();
