@@ -1,3 +1,28 @@
+//! # Subscription Evaluation
+//!
+//! This module defines how subscription queries are evaluated.
+//!
+//! A subscription query returns rows matching one or more SQL SELECT statements
+//! alongside information about the affected table and an operation identifier
+//! (insert or delete) -- a [`DatabaseUpdate`]. This allows subscribers to
+//! maintain their own view of (virtual) tables matching the statements.
+//!
+//! When the [`Subscription`] is first established, all its queries are
+//! evaluated against the database and the results are sent back to the
+//! subscriber (see [`QuerySet::eval`]). Afterwards, the [`QuerySet`] is
+//! evaluated [incrementally][`QuerySet::eval_incr`] whenever a transaction
+//! commits updates to the database.
+//!
+//! Incremental evaluation is straightforward if a query selects from a single
+//! table (`SELECT * FROM table WHERE ...`). For join queries, however, it is
+//! not obvious how to compute the minimal set of operations for the client to
+//! synchronize its state. In general, we conjecture that server-side
+//! materialized views are necessary. We find, however, that a particular kind
+//! of join query _can_ be evaluated incrementally without materialized views,
+//! as described in the following section:
+//!
+#![doc = include_str!("../../../../docs/incremental-joins.md")]
+
 use anyhow::Context;
 use derive_more::{Deref, DerefMut, From, IntoIterator};
 use spacetimedb_lib::auth::{StAccess, StTableType};
@@ -20,6 +45,8 @@ use crate::{
 
 use super::query;
 
+/// A subscription is a [`QuerySet`], along with a set of subscribers all
+/// interested in the same set of queries.
 pub struct Subscription {
     pub queries: QuerySet,
     subscribers: Vec<ClientConnectionSender>,
@@ -83,6 +110,7 @@ impl AsRef<QueryExpr> for SupportedQuery {
     }
 }
 
+/// A set of [supported][`SupportedQuery`] [`QueryExpr`]s.
 #[derive(Deref, DerefMut, PartialEq, From, IntoIterator)]
 pub struct QuerySet(BTreeSet<SupportedQuery>);
 
@@ -483,17 +511,15 @@ impl<'a> IncrementalJoin<'a> {
     ///
     /// Where:
     ///
-    /// `A`:  Committed table to the LHS of the join.
-    /// `B`:  Committed table to the RHS of the join.
-    /// `+`:  Virtual table of only the insert operations against the annotated table.
-    /// `-`:  Virtual table of only the delete operations against the annotated table.
-    /// `U`:  Set union.
-    /// `\`:  Set difference.
-    /// `||`: Concatenation.
+    /// * `A`:  Committed table to the LHS of the join.
+    /// * `B`:  Committed table to the RHS of the join.
+    /// * `+`:  Virtual table of only the insert operations against the annotated table.
+    /// * `-`:  Virtual table of only the delete operations against the annotated table.
+    /// * `U`:  Set union.
+    /// * `\`:  Set difference.
+    /// * `||`: Concatenation.
     ///
-    /// Additional discussion is also available in the [wiki] (internal link).
-    ///
-    /// [wiki]: https://www.notion.so/clockworklabs/Incremental-Evaluation-for-Joins-in-Bitcraft-062612b06a9646b2b6206d6a578790c1
+    /// For a more in-depth discussion, see the [module-level documentation](./index.html).
     pub fn eval(
         &self,
         db: &RelationalDB,
