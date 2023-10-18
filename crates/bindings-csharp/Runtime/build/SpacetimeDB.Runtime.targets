@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <WasiNativeFileReference Include="$(MSBuildThisFileDirectory)../bindings.c" />
+    <WasiNativeFileReference Include="-Wl,--export=SPACETIME_ABI_VERSION,--export=SPACETIME_ABI_VERSION_IS_ADDR" />
     <WasiAfterRuntimeLoaded Include="mono_stdb_attach_bindings" />
   </ItemGroup>
 
