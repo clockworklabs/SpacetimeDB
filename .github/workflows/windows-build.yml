@@ -6,6 +6,7 @@ on:
       - '**'
     branches:
       - master
+      - 'v0*'
 
 jobs:
   windows-client:
