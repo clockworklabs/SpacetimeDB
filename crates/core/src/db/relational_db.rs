@@ -173,13 +173,6 @@ impl RelationalDB {
         CommitLogView::from(&self.commit_log)
     }
 
-    // pub fn reset_hard(&mut self, message_log: Arc<Mutex<MessageLog>>) -> Result<(), DBError> {
-    //     log::warn!("DATABASE: RESET");
-
-    //     self.txdb.reset_hard(message_log)?;
-    //     Ok(())
-    // }
-
     #[tracing::instrument(skip_all)]
     pub fn pk_for_row(row: &ProductValue) -> PrimaryKey {
         PrimaryKey {
@@ -535,14 +528,6 @@ impl RelationalDB {
         let row = ProductValue::decode(&ty, &mut &row_bytes[..])?;
         self.insert(tx, table_id, row)
     }
-
-    /*
-    #[tracing::instrument(skip_all)]
-    pub fn delete_pk(&self, tx: &mut MutTxId, table_id: u32, row_id: DataKey) -> Result<bool, DBError> {
-        measure(&RDB_DELETE_PK_TIME, table_id);
-        self.inner.delete_row_mut_tx(tx, TableId(table_id), RowId(row_id))
-    }
-    */
 
     #[tracing::instrument(skip_all)]
     pub fn delete_by_rel<R: Relation>(

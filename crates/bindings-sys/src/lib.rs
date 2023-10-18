@@ -130,21 +130,6 @@ pub mod raw {
         /// - writing to `out` would overflow a 32-bit integer
         pub fn _delete_by_col_eq(table_id: u32, col_id: u32, value: *const u8, value_len: usize, out: *mut u32) -> u16;
 
-        /*
-        /// Deletes the primary key pointed to at by `pk` in the table identified by `table_id`.
-        pub fn _delete_pk(table_id: u32, pk: *const u8, pk_len: usize) -> u16;
-        pub fn _delete_value(table_id: u32, row: *const u8, row_len: usize) -> u16;
-        pub fn _delete_range(
-            table_id: u32,
-            col_id: u32,
-            range_start: *const u8,
-            range_start_len: usize,
-            range_end: *const u8,
-            range_end_len: usize,
-            out: *mut u32,
-        ) -> u16;
-        */
-
         /// Start iteration on each row, as bytes, of a table identified by `table_id`.
         ///
         /// The iterator is registered in the host environment
@@ -482,17 +467,6 @@ unsafe fn call<T>(f: impl FnOnce(*mut T) -> u16) -> Result<T, Errno> {
     Ok(out.assume_init())
 }
 
-/*
-/// Create a table with `name`, a UTF-8 slice in WASM memory lasting `name_len` bytes,
-/// and with the table's `schema` in a slice in WASM memory lasting `schem_len` bytes.
-///
-/// Returns the table id of the new table.
-#[inline]
-pub fn create_table(name: &str, schema: &[u8]) -> Result<u32, Errno> {
-    unsafe { call(|out| raw::_create_table(name.as_ptr(), name.len(), schema.as_ptr(), schema.len(), out)) }
-}
-*/
-
 /// Queries and returns the `table_id` associated with the given (table) `name`.
 ///
 /// Returns an error if the table does not exist.
@@ -581,33 +555,6 @@ pub fn insert(table_id: u32, row: &mut [u8]) -> Result<(), Errno> {
 pub fn delete_by_col_eq(table_id: u32, col_id: u32, value: &[u8]) -> Result<u32, Errno> {
     unsafe { call(|out| raw::_delete_by_col_eq(table_id, col_id, value.as_ptr(), value.len(), out)) }
 }
-
-/*
-#[inline]
-pub fn delete_pk(table_id: u32, pk: &[u8]) -> Result<(), Errno> {
-    cvt(unsafe { raw::_delete_pk(table_id, pk.as_ptr(), pk.len()) })
-}
-#[inline]
-pub fn delete_value(table_id: u32, row: &[u8]) -> Result<(), Errno> {
-    cvt(unsafe { raw::_delete_value(table_id, row.as_ptr(), row.len()) })
-}
-#[inline]
-pub fn delete_range(table_id: u32, col_id: u32, range_start: &[u8], range_end: &[u8]) -> Result<u32, Errno> {
-    unsafe {
-        call(|out| {
-            raw::_delete_range(
-                table_id,
-                col_id,
-                range_start.as_ptr(),
-                range_start.len(),
-                range_end.as_ptr(),
-                range_end.len(),
-                out,
-            )
-        })
-    }
-}
-*/
 
 /// Returns an iterator for each row, as bytes, of a table identified by `table_id`.
 /// The rows can be put through an optional `filter`,

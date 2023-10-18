@@ -60,35 +60,11 @@ impl WasmerModule {
                     env,
                     WasmInstanceEnv::delete_by_col_eq,
                 ),
-                /*
-                "_delete_pk" => Function::new_typed_with_env(
-                    store,
-                    env,
-                    WasmInstanceEnv::delete_pk,
-                ),
-                "_delete_value" => Function::new_typed_with_env(
-                    store,
-                    env,
-                    WasmInstanceEnv::delete_value,
-                ),
-                "_delete_range" => Function::new_typed_with_env(
-                    store,
-                    env,
-                    WasmInstanceEnv::delete_range,
-                ),
-                */
                 "_insert" => Function::new_typed_with_env(
                     store,
                     env,
                     WasmInstanceEnv::insert,
                 ),
-                /*
-                "_create_table" => Function::new_typed_with_env(
-                    store,
-                    env,
-                    WasmInstanceEnv::create_table,
-                ),
-                */
                 "_get_table_id" => Function::new_typed_with_env(
                     store,
                     env,
@@ -317,8 +293,6 @@ impl WasmerInstance {
             .expect("invalid reducer");
 
         let bufs = bufs.map(|data| self.env.as_mut(store).insert_buffer(data));
-
-        // let guard = pprof::ProfilerGuardBuilder::default().frequency(2500).build().unwrap();
 
         self.env.as_mut(store).start_reducer();
 
