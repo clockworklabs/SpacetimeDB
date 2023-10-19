@@ -8,7 +8,6 @@ use spacetimedb_sats::{impl_serialize, WithTypespace};
 pub mod address;
 pub mod filter;
 pub mod identity;
-pub mod name;
 pub mod operator;
 pub mod primary_key;
 pub mod type_def {
@@ -19,10 +18,6 @@ pub mod type_value {
 }
 
 pub mod error;
-#[cfg(feature = "serde")]
-pub mod recovery;
-#[cfg(feature = "cli")]
-pub mod util;
 pub mod version;
 
 pub use address::Address;

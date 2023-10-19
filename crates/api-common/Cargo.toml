@@ -1,0 +1,18 @@
+[package]
+name = "spacetimedb-api-common"
+version = "0.7.3"
+edition = "2021"
+
+[dependencies]
+spacetimedb-lib = { path = "../lib", version = "0.7.1" }
+spacetimedb-sats = { path = "../sats", version = "0.7.1" }
+
+chrono.workspace = true
+hex.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+itertools.workspace = true
+proptest.workspace = true
+serde_json.workspace = true

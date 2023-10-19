@@ -6,7 +6,7 @@ use clap::ArgMatches;
 use clap::{Arg, Command};
 use reqwest::Url;
 
-use spacetimedb_lib::name::{DnsLookupResponse, InsertDomainResult, RegisterTldResult};
+use spacetimedb_api_common::name::{DnsLookupResponse, InsertDomainResult, RegisterTldResult};
 
 pub fn cli() -> Command {
     Command::new("dns")

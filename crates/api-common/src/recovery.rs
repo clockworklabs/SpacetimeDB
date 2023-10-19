@@ -2,7 +2,7 @@ use chrono::serde::ts_seconds;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::Identity;
+use spacetimedb_lib::Identity;
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct RecoveryCode {
