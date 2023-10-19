@@ -120,6 +120,8 @@ pub enum AuthError {
 pub enum RelationError {
     #[error("Field `{1}` not found. Must be one of {0}")]
     FieldNotFound(Header, FieldName),
+    #[error("Field `{1}` not found at position {0}")]
+    FieldNotFoundAtPos(usize, FieldName),
     #[error("Field `{0}` fail to infer the type: {1}")]
     TypeInference(FieldName, TypeError),
     #[error("Field declaration only support `table.field` or `field`. It gets instead `{0}`")]

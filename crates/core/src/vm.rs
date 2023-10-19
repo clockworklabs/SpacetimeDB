@@ -112,16 +112,16 @@ fn join_inner<'a>(
         rhs,
         header,
         move |row| {
-            let f = row.get(&key_lhs, &key_lhs_header);
+            let f = row.get(&key_lhs, &key_lhs_header)?;
             Ok(f.into())
         },
         move |row| {
-            let f = row.get(&key_rhs, &key_rhs_header);
+            let f = row.get(&key_rhs, &key_rhs_header)?;
             Ok(f.into())
         },
         move |l, r| {
-            let l = l.get(&col_lhs, &col_lhs_header);
-            let r = r.get(&col_rhs, &col_rhs_header);
+            let l = l.get(&col_lhs, &col_lhs_header)?;
+            let r = r.get(&col_rhs, &col_rhs_header)?;
             Ok(l == r)
         },
         move |l, r| {

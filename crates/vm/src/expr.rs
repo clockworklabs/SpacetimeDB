@@ -100,7 +100,7 @@ impl ColumnOp {
 
     fn reduce(&self, row: RelValueRef, value: &ColumnOp, header: &Header) -> Result<AlgebraicValue, ErrorLang> {
         match value {
-            ColumnOp::Field(field) => Ok(row.get(field, header).clone()),
+            ColumnOp::Field(field) => Ok(row.get(field, header)?.clone()),
             ColumnOp::Cmp { op, lhs, rhs } => Ok(self.compare_bin_op(row, *op, lhs, rhs, header)?.into()),
         }
     }
@@ -108,7 +108,7 @@ impl ColumnOp {
     fn reduce_bool(&self, row: RelValueRef, value: &ColumnOp, header: &Header) -> Result<bool, ErrorLang> {
         match value {
             ColumnOp::Field(field) => {
-                let field = row.get(field, header);
+                let field = row.get(field, header)?;
 
                 match field.as_bool() {
                     Some(b) => Ok(*b),
@@ -156,7 +156,7 @@ impl ColumnOp {
     pub fn compare(&self, row: RelValueRef, header: &Header) -> Result<bool, ErrorVm> {
         match self {
             ColumnOp::Field(field) => {
-                let lhs = row.get(field, header);
+                let lhs = row.get(field, header)?;
                 Ok(*lhs.as_bool().unwrap())
             }
             ColumnOp::Cmp { op, lhs, rhs } => self.compare_bin_op(row, *op, lhs, rhs, header),
