@@ -1,4 +1,4 @@
-use clap::Command;
+use clap::{Arg, Command};
 use mimalloc::MiMalloc;
 use spacetimedb_cli::*;
 use spacetimedb_lib::util;
@@ -21,6 +21,13 @@ async fn main() -> Result<(), anyhow::Error> {
 fn get_command() -> Command {
     Command::new("spacetime")
         .args_conflicts_with_subcommands(true)
+        .arg(
+            Arg::new("server")
+                .long("server")
+                .short('s')
+                .help("The name of the server to use for subcommands. See spacetime server for more information"),
+        )
+        .after_help("Run `spacetime help` for more detailed information.")
         .subcommand_required(true)
         .subcommands(get_subcommands())
         .help_expected(true)

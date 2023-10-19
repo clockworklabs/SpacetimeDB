@@ -87,17 +87,9 @@ pub fn cli() -> clap::Command {
             Arg::new("name|address")
                 .help("A valid domain or address for this database"),
         )
-        .arg(
-            Arg::new("server")
-                .long("server")
-                .short('s')
-                .help("The nickname, domain name or URL of the server to host the database."),
-        )
-        .after_help("Run `spacetime help publish` for more detailed information.")
 }
 
-pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let server = args.get_one::<String>("server").map(|s| s.as_str());
+pub async fn exec(mut config: Config, args: &ArgMatches, server: Option<&str>) -> Result<(), anyhow::Error> {
     let identity = args.get_one::<String>("identity").map(String::as_str);
     let name_or_address = args.get_one::<String>("name|address");
     let path_to_project = args.get_one::<PathBuf>("path_to_project").unwrap();

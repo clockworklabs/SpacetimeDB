@@ -38,13 +38,15 @@ pub fn get_subcommands() -> Vec<Command> {
 }
 
 pub async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    let server = args.get_one::<String>("server").map(|s| s.as_str());
+
     match cmd {
         "version" => version::exec(config, args).await,
         "identity" => identity::exec(config, args).await,
-        "call" => call::exec(config, args).await,
-        "describe" => describe::exec(config, args).await,
+        "call" => call::exec(config, args, server).await,
+        "describe" => describe::exec(config, args, server).await,
         "energy" => energy::exec(config, args).await,
-        "publish" => publish::exec(config, args).await,
+        "publish" => publish::exec(config, args, server).await,
         "delete" => delete::exec(config, args).await,
         "logs" => logs::exec(config, args).await,
         "sql" => sql::exec(config, args).await,

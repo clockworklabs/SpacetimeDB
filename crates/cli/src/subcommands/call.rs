@@ -52,11 +52,10 @@ pub fn cli() -> clap::Command {
         .after_help("Run `spacetime help call` for more detailed information.\n")
 }
 
-pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
+pub async fn exec(mut config: Config, args: &ArgMatches, server: Option<&str>) -> Result<(), Error> {
     let database = args.get_one::<String>("database").unwrap();
     let reducer_name = args.get_one::<String>("reducer_name").unwrap();
     let arguments = args.get_many::<String>("arguments");
-    let server = args.get_one::<String>("server").map(|s| s.as_ref());
 
     let as_identity = args.get_one::<String>("as_identity");
     let anon_identity = args.get_flag("anon_identity");
