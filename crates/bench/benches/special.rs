@@ -1,4 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
+use mimalloc::MiMalloc;
 use spacetimedb::db::{Config, Storage};
 use spacetimedb_bench::{
     schemas::{create_sequential, BenchTable, Location, Person, RandomTable},
@@ -6,6 +7,9 @@ use spacetimedb_bench::{
 };
 use spacetimedb_lib::{sats, ProductValue};
 use spacetimedb_testing::modules::start_runtime;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 fn criterion_benchmark(c: &mut Criterion) {
     serialize_benchmarks::<Person>(c);
