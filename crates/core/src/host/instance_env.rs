@@ -1,13 +1,14 @@
 use nonempty::NonEmpty;
 use parking_lot::{Mutex, MutexGuard};
 use spacetimedb_lib::{bsatn, ProductValue};
+use std::num::NonZeroU32;
 use std::ops::DerefMut;
 use std::sync::Arc;
 
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
-use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::{IndexDef};
+use crate::db::datastore::locking_tx_datastore::{MutTxId, RowId};
+use crate::db::datastore::traits::IndexDef;
 use crate::error::{IndexError, NodesError};
 use crate::util::ResultInspectExt;
 
@@ -145,7 +146,7 @@ impl InstanceEnv {
     ///
     /// Returns an error if no columns were deleted or if the column wasn't found.
     #[tracing::instrument(skip(self, value))]
-    pub fn delete_by_col_eq(&self, table_id: TableId, col_id: ColId, value: &[u8]) -> Result<u32, NodesError> {
+    pub fn delete_by_col_eq(&self, table_id: TableId, col_id: ColId, value: &[u8]) -> Result<NonZeroU32, NodesError> {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;
 
@@ -153,16 +154,14 @@ impl InstanceEnv {
         let eq_value = stdb.decode_column(tx, table_id, col_id, value)?;
 
         // Find all rows in the table where the column data equates to `value`.
-        let seek = stdb.iter_by_col_eq(tx, table_id, col_id, eq_value)?;
-        let seek = seek.map(|x| x.view().clone()).collect::<Vec<_>>();
+        let rows_to_delete = stdb
+            .iter_by_col_eq(tx, table_id, col_id, eq_value)?
+            .map(|x| RowId(*x.id()))
+            .collect::<Vec<_>>();
 
         // Delete them and count how many we deleted and error if none.
-        let count = stdb
-            .delete_by_rel(tx, table_id, seek)
-            .inspect_err_(|e| log::error!("delete_by_col_eq(table_id: {table_id}): {e}"))?
-            .ok_or(NodesError::ColumnValueNotFound)?;
-
-        Ok(count)
+        let count = stdb.delete(tx, table_id, rows_to_delete);
+        NonZeroU32::new(count).ok_or(NodesError::ColumnValueNotFound)
     }
 
     /// Returns the `table_id` associated with the given `table_name`.

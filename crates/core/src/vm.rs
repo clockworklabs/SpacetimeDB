@@ -290,7 +290,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
             // TODO: How do we deal with mutating values?
             Table::MemTable(_) => Err(ErrorVm::Other(anyhow::anyhow!("How deal with mutating values?"))),
             Table::DbTable(t) => {
-                let count = self.db.delete_by_rel(self.tx, t.table_id, rows)?;
+                let count = self.db.delete_by_rel(self.tx, t.table_id, rows);
                 Ok(Code::Value(count.into()))
             }
         }
@@ -636,13 +636,13 @@ pub(crate) mod tests {
         check_catalog(
             p,
             ST_TABLES_NAME,
-            (&StTableRow {
+            StTableRow {
                 table_id: ST_TABLES_ID,
-                table_name: ST_TABLES_NAME,
+                table_name: ST_TABLES_NAME.to_string(),
                 table_type: StTableType::System,
                 table_access: StAccess::Public,
-            })
-                .into(),
+            }
+            .into(),
             q,
             DbTable::from(&st_table_schema()),
         );
@@ -673,14 +673,14 @@ pub(crate) mod tests {
         check_catalog(
             p,
             ST_COLUMNS_NAME,
-            (&StColumnRow {
+            StColumnRow {
                 table_id: ST_COLUMNS_ID,
                 col_id: StColumnFields::TableId.col_id(),
-                col_name: StColumnFields::TableId.name(),
+                col_name: StColumnFields::TableId.col_name(),
                 col_type: AlgebraicType::U32,
                 is_autoinc: false,
-            })
-                .into(),
+            }
+            .into(),
             q,
             (&st_columns_schema()).into(),
         );
@@ -715,14 +715,14 @@ pub(crate) mod tests {
         check_catalog(
             p,
             ST_INDEXES_NAME,
-            (&StIndexRow {
+            StIndexRow {
                 index_id,
-                index_name: "idx_1",
+                index_name: "idx_1".to_owned(),
                 table_id,
                 cols: NonEmpty::new(0.into()),
                 is_unique: true,
-            })
-                .into(),
+            }
+            .into(),
             q,
             (&st_indexes_schema()).into(),
         );

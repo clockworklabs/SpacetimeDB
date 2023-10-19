@@ -242,9 +242,8 @@ mod tests {
         Ok(())
     }
 
-    fn delete_row(db: &RelationalDB, tx: &mut MutTxId, table_id: TableId, row: ProductValue) -> ResultTest<()> {
-        db.delete_by_rel(tx, table_id, vec![row])?;
-        Ok(())
+    fn delete_row(db: &RelationalDB, tx: &mut MutTxId, table_id: TableId, row: ProductValue) {
+        db.delete_by_rel(tx, table_id, [row]);
     }
 
     fn make_data(
@@ -533,7 +532,7 @@ mod tests {
             let r1 = product!(10, 0, 2);
             let r2 = product!(10, 0, 3);
 
-            delete_row(&db, &mut tx, rhs_id, r1.clone())?;
+            delete_row(&db, &mut tx, rhs_id, r1.clone());
             insert_row(&db, &mut tx, rhs_id, r2.clone())?;
 
             let updates = vec![
@@ -549,7 +548,7 @@ mod tests {
 
             // Clean up tx
             insert_row(&db, &mut tx, rhs_id, r1.clone())?;
-            delete_row(&db, &mut tx, rhs_id, r2.clone())?;
+            delete_row(&db, &mut tx, rhs_id, r2.clone());
         }
 
         // Case 2: Delete a row outside the region and insert back outside the region
@@ -558,7 +557,7 @@ mod tests {
             let r2 = product!(13, 3, 6);
 
             insert_row(&db, &mut tx, rhs_id, r1.clone())?;
-            delete_row(&db, &mut tx, rhs_id, r2.clone())?;
+            delete_row(&db, &mut tx, rhs_id, r2.clone());
 
             let updates = vec![
                 delete_op(rhs_id, "rhs", r1.clone()),
@@ -573,7 +572,7 @@ mod tests {
 
             // Clean up tx
             insert_row(&db, &mut tx, rhs_id, r1.clone())?;
-            delete_row(&db, &mut tx, rhs_id, r2.clone())?;
+            delete_row(&db, &mut tx, rhs_id, r2.clone());
         }
 
         // Case 3: Delete a row inside the region and insert back outside the region
@@ -581,7 +580,7 @@ mod tests {
             let r1 = product!(10, 0, 2);
             let r2 = product!(10, 0, 5);
 
-            delete_row(&db, &mut tx, rhs_id, r1.clone())?;
+            delete_row(&db, &mut tx, rhs_id, r1.clone());
             insert_row(&db, &mut tx, rhs_id, r2.clone())?;
 
             let updates = vec![
@@ -598,7 +597,7 @@ mod tests {
 
             // Clean up tx
             insert_row(&db, &mut tx, rhs_id, r1.clone())?;
-            delete_row(&db, &mut tx, rhs_id, r2.clone())?;
+            delete_row(&db, &mut tx, rhs_id, r2.clone());
         }
 
         // Case 4: Delete a row outside the region and insert back inside the region
@@ -606,7 +605,7 @@ mod tests {
             let r1 = product!(13, 3, 5);
             let r2 = product!(13, 3, 4);
 
-            delete_row(&db, &mut tx, rhs_id, r1.clone())?;
+            delete_row(&db, &mut tx, rhs_id, r1.clone());
             insert_row(&db, &mut tx, rhs_id, r2.clone())?;
 
             let updates = vec![
@@ -623,7 +622,7 @@ mod tests {
 
             // Clean up tx
             insert_row(&db, &mut tx, rhs_id, r1.clone())?;
-            delete_row(&db, &mut tx, rhs_id, r2.clone())?;
+            delete_row(&db, &mut tx, rhs_id, r2.clone());
         }
 
         // Case 5: Insert a row into lhs and insert a matching row inside the region of rhs
@@ -647,8 +646,8 @@ mod tests {
             assert_eq!(result.tables[0], insert_op(lhs_id, "lhs", product!(5, 10)));
 
             // Clean up tx
-            delete_row(&db, &mut tx, lhs_id, lhs_row.clone())?;
-            delete_row(&db, &mut tx, rhs_id, rhs_row.clone())?;
+            delete_row(&db, &mut tx, lhs_id, lhs_row.clone());
+            delete_row(&db, &mut tx, rhs_id, rhs_row.clone());
         }
 
         // Case 6: Insert a row into lhs and insert a matching row outside the region of rhs
@@ -671,8 +670,8 @@ mod tests {
             assert_eq!(result.tables.len(), 0);
 
             // Clean up tx
-            delete_row(&db, &mut tx, lhs_id, lhs_row.clone())?;
-            delete_row(&db, &mut tx, rhs_id, rhs_row.clone())?;
+            delete_row(&db, &mut tx, lhs_id, lhs_row.clone());
+            delete_row(&db, &mut tx, rhs_id, rhs_row.clone());
         }
 
         // Case 7: Delete a row from lhs and delete a matching row inside the region of rhs
@@ -680,8 +679,8 @@ mod tests {
             let lhs_row = product!(0, 5);
             let rhs_row = product!(10, 0, 2);
 
-            delete_row(&db, &mut tx, lhs_id, lhs_row.clone())?;
-            delete_row(&db, &mut tx, rhs_id, rhs_row.clone())?;
+            delete_row(&db, &mut tx, lhs_id, lhs_row.clone());
+            delete_row(&db, &mut tx, rhs_id, rhs_row.clone());
 
             let updates = vec![
                 delete_op(lhs_id, "lhs", lhs_row.clone()),
@@ -705,8 +704,8 @@ mod tests {
             let lhs_row = product!(3, 8);
             let rhs_row = product!(13, 3, 5);
 
-            delete_row(&db, &mut tx, lhs_id, lhs_row.clone())?;
-            delete_row(&db, &mut tx, rhs_id, rhs_row.clone())?;
+            delete_row(&db, &mut tx, lhs_id, lhs_row.clone());
+            delete_row(&db, &mut tx, rhs_id, rhs_row.clone());
 
             let updates = vec![
                 delete_op(lhs_id, "lhs", lhs_row.clone()),

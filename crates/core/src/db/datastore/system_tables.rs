@@ -626,13 +626,13 @@ impl StTableRow<&str> {
     }
 }
 
-impl<Name: AsRef<str>> From<&StTableRow<Name>> for ProductValue {
-    fn from(x: &StTableRow<Name>) -> Self {
+impl From<StTableRow<String>> for ProductValue {
+    fn from(x: StTableRow<String>) -> Self {
         product![
             x.table_id,
-            AlgebraicValue::String(x.table_name.as_ref().to_owned()),
-            AlgebraicValue::String(x.table_type.as_str().into()),
-            AlgebraicValue::String(x.table_access.as_str().into())
+            x.table_name,
+            x.table_type.as_str().to_owned(),
+            x.table_access.as_str().to_owned()
         ]
     }
 }
@@ -681,15 +681,15 @@ impl<'a> TryFrom<&'a ProductValue> for StColumnRow<&'a str> {
     }
 }
 
-impl<Name: AsRef<str>> From<&StColumnRow<Name>> for ProductValue {
-    fn from(x: &StColumnRow<Name>) -> Self {
+impl From<StColumnRow<String>> for ProductValue {
+    fn from(x: StColumnRow<String>) -> Self {
         let mut bytes = Vec::new();
         x.col_type.encode(&mut bytes);
         product![
             x.table_id,
             x.col_id,
             AlgebraicValue::Bytes(bytes),
-            AlgebraicValue::String(x.col_name.as_ref().to_owned()),
+            x.col_name,
             x.is_autoinc,
         ]
     }
@@ -744,13 +744,13 @@ impl<'a> TryFrom<&'a ProductValue> for StIndexRow<&'a str> {
     }
 }
 
-impl<Name: AsRef<str>> From<&StIndexRow<Name>> for ProductValue {
-    fn from(x: &StIndexRow<Name>) -> Self {
+impl From<StIndexRow<String>> for ProductValue {
+    fn from(x: StIndexRow<String>) -> Self {
         product![
             x.index_id,
             x.table_id,
             ArrayValue::from(x.cols.clone().map(|x| x.0)),
-            AlgebraicValue::String(x.index_name.as_ref().to_string()),
+            x.index_name,
             x.is_unique
         ]
     }
@@ -889,11 +889,11 @@ impl<'a> TryFrom<&'a ProductValue> for StConstraintRow<&'a str> {
     }
 }
 
-impl<Name: AsRef<str>> From<&StConstraintRow<Name>> for ProductValue {
-    fn from(x: &StConstraintRow<Name>) -> Self {
+impl From<StConstraintRow<String>> for ProductValue {
+    fn from(x: StConstraintRow<String>) -> Self {
         product![
             x.constraint_id,
-            AlgebraicValue::String(x.constraint_name.as_ref().to_string()),
+            x.constraint_name,
             x.kind.bits(),
             x.table_id,
             ArrayValue::from(x.columns.iter().copied().map(|x| x.0).collect::<Vec<_>>())
