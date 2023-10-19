@@ -1,4 +1,5 @@
 use crate::{AlgebraicType, AlgebraicValue, ArrayType, BuiltinType, MapType, ProductType, ProductValue};
+use spacetimedb_primitives::{ColId, ConstraintId, IndexId, SequenceId, TableId};
 
 impl crate::Value for AlgebraicValue {
     type Type = AlgebraicType;
@@ -48,3 +49,18 @@ built_in_into!(f32, F32);
 built_in_into!(f64, F64);
 built_in_into!(&str, String);
 built_in_into!(&[u8], Bytes);
+
+macro_rules! system_id {
+    ($name:ident) => {
+        impl From<$name> for AlgebraicValue {
+            fn from(value: $name) -> Self {
+                value.0.into()
+            }
+        }
+    };
+}
+system_id!(TableId);
+system_id!(ColId);
+system_id!(SequenceId);
+system_id!(IndexId);
+system_id!(ConstraintId);

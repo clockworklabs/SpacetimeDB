@@ -533,8 +533,8 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
     let mut columns = Vec::<Column>::new();
 
     let get_table_id_func = quote! {
-        fn table_id() -> u32 {
-            static TABLE_ID: spacetimedb::rt::OnceCell<u32> = spacetimedb::rt::OnceCell::new();
+        fn table_id() -> spacetimedb::TableId {
+            static TABLE_ID: spacetimedb::rt::OnceCell<spacetimedb::TableId> = spacetimedb::rt::OnceCell::new();
             *TABLE_ID.get_or_init(|| {
                 spacetimedb::get_table_id(<Self as spacetimedb::TableType>::TABLE_NAME)
             })

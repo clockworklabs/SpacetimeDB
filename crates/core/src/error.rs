@@ -1,10 +1,11 @@
 use crate::client::ClientActorId;
-use crate::db::datastore::traits::{IndexDef, IndexId, TableId};
+use crate::db::datastore::traits::IndexDef;
 use hex::FromHexError;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::error::{LibError, RelationError};
 use spacetimedb_lib::relation::FieldName;
 use spacetimedb_lib::{PrimaryKey, ProductValue};
+use spacetimedb_primitives::{ColId, IndexId, TableId};
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::AlgebraicValue;
@@ -24,19 +25,19 @@ pub enum TableError {
     #[error("Table with name `{0}` not found.")]
     NotFound(String),
     #[error("Table with ID `{0}` not found.")]
-    IdNotFound(u32),
+    IdNotFound(TableId),
     #[error("Column `{0}.{1}` is missing a name")]
-    ColumnWithoutName(String, u32),
+    ColumnWithoutName(String, ColId),
     #[error("schema_for_table: Table has invalid schema: {0} Err: {1}")]
-    InvalidSchema(u32, LibError),
+    InvalidSchema(TableId, LibError),
     #[error("Row has invalid row type for table: {0} Err: {1}", table_id, row.to_satn())]
-    RowInvalidType { table_id: u32, row: ProductValue },
+    RowInvalidType { table_id: TableId, row: ProductValue },
     #[error("failed to decode row in table")]
     RowDecodeError(DecodeError),
     #[error("Column with name `{0}` already exists")]
     DuplicateColumnName(String),
     #[error("Column `{0}` not found")]
-    ColumnNotFound(u32),
+    ColumnNotFound(ColId),
     #[error(
         "DecodeError for field `{0}.{1}`, expect `{2}` but found `{3}`",
         table,

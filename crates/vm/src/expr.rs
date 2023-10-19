@@ -6,6 +6,7 @@ use spacetimedb_lib::relation::{
 };
 use spacetimedb_lib::table::ProductTypeMeta;
 use spacetimedb_lib::Identity;
+use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::algebraic_type::AlgebraicType;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::satn::Satn;
@@ -228,7 +229,7 @@ impl From<IndexScan> for ColumnOp {
     fn from(value: IndexScan) -> Self {
         let table = value.table;
         let col_id = value.col_id;
-        let field = table.head.fields[col_id as usize].field.clone();
+        let field = table.head.fields[col_id.idx()].field.clone();
         match (value.lower_bound, value.upper_bound) {
             // Inclusive lower bound => field >= value
             (Bound::Included(value), Bound::Unbounded) => ColumnOp::Cmp {
@@ -355,8 +356,8 @@ pub struct IndexJoin {
     pub probe_side: QueryExpr,
     pub probe_field: FieldName,
     pub index_header: Header,
-    pub index_table: u32,
-    pub index_col: u32,
+    pub index_table: TableId,
+    pub index_col: ColId,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
@@ -368,7 +369,7 @@ pub struct JoinExpr {
 
 impl From<IndexJoin> for JoinExpr {
     fn from(value: IndexJoin) -> Self {
-        let pos = value.index_col as usize;
+        let pos = value.index_col.idx();
         let rhs = value.probe_side;
         let col_lhs = value.index_header.fields[pos].field.clone();
         let col_rhs = value.probe_field;
@@ -447,7 +448,7 @@ pub enum CrudExpr {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct IndexScan {
     pub table: DbTable,
-    pub col_id: u32,
+    pub col_id: ColId,
     pub lower_bound: Bound<AlgebraicValue>,
     pub upper_bound: Bound<AlgebraicValue>,
 }
@@ -524,7 +525,7 @@ pub enum Query {
     // Projects a set of columns.
     // The second argument is the table id for a qualified wildcard project.
     // If present, further optimzations are possible.
-    Project(Vec<FieldExpr>, Option<u32>),
+    Project(Vec<FieldExpr>, Option<TableId>),
     // A join of two relations (base or intermediate) based on equality.
     // Equivalent to a Nested Loop Join.
     // Its operands my use indexes but the join itself does not.
@@ -610,7 +611,7 @@ impl QueryExpr {
     // Generate an index scan for an equality predicate if this is the first operator.
     // Otherwise generate a select.
     // TODO: Replace these methods with a proper query optimization pass.
-    pub fn with_index_eq(mut self, table: DbTable, col_id: u32, value: AlgebraicValue) -> Self {
+    pub fn with_index_eq(mut self, table: DbTable, col_id: ColId, value: AlgebraicValue) -> Self {
         // if this is the first operator in the list, generate index scan
         let Some(query) = self.query.pop() else {
             self.query.push(Query::IndexScan(IndexScan {
@@ -685,7 +686,7 @@ impl QueryExpr {
     pub fn with_index_lower_bound(
         mut self,
         table: DbTable,
-        col_id: u32,
+        col_id: ColId,
         value: AlgebraicValue,
         inclusive: bool,
     ) -> Self {
@@ -793,7 +794,7 @@ impl QueryExpr {
     pub fn with_index_upper_bound(
         mut self,
         table: DbTable,
-        col_id: u32,
+        col_id: ColId,
         value: AlgebraicValue,
         inclusive: bool,
     ) -> Self {
@@ -964,7 +965,7 @@ impl QueryExpr {
     // Appends a project operation to the query operator pipeline.
     // The `wildcard_table_id` represents a projection of the form `table.*`.
     // This is used to determine if an inner join can be rewritten as an index join.
-    pub fn with_project(self, cols: &[FieldExpr], wildcard_table_id: Option<u32>) -> Self {
+    pub fn with_project(self, cols: &[FieldExpr], wildcard_table_id: Option<TableId>) -> Self {
         let mut x = self;
         if !cols.is_empty() {
             x.query.push(Query::Project(cols.into(), wildcard_table_id));
@@ -1466,7 +1467,7 @@ mod tests {
                     table_name: "foo".into(),
                     fields: vec![],
                 },
-                table_id: 42,
+                table_id: 42.into(),
                 table_type: StTableType::User,
                 table_access: StAccess::Private,
             }),
@@ -1482,7 +1483,7 @@ mod tests {
         [
             Query::IndexScan(IndexScan {
                 table: db_table,
-                col_id: 42,
+                col_id: 42.into(),
                 lower_bound: Bound::Included(22.into()),
                 upper_bound: Bound::Unbounded,
             }),
@@ -1496,8 +1497,8 @@ mod tests {
                     table_name: "bar".into(),
                     fields: vec![],
                 },
-                index_table: 42,
-                index_col: 22,
+                index_table: 42.into(),
+                index_col: 22.into(),
             }),
             Query::JoinInner(JoinExpr {
                 rhs: mem_table.into(),

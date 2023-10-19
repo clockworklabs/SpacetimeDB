@@ -386,7 +386,7 @@ impl WasmInstanceEnv {
             // Insert the row into the DB. We get back the decoded version.
             // Then re-encode and write that back into WASM memory at `row`.
             // We're doing this because of autoinc.
-            let new_row = caller.data().instance_env.insert(table_id, &row_buffer)?;
+            let new_row = caller.data().instance_env.insert(table_id.into(), &row_buffer)?;
             row_buffer.clear();
             new_row.encode(&mut row_buffer);
             assert_eq!(
@@ -427,7 +427,10 @@ impl WasmInstanceEnv {
     ) -> RtResult<u16> {
         Self::cvt_ret(caller, "delete_by_col_eq", Call::DeleteByColEq, out, |caller, mem| {
             let value = mem.read_bytes(&caller, value, value_len)?;
-            Ok(caller.data().instance_env.delete_by_col_eq(table_id, col_id, &value)?)
+            Ok(caller
+                .data()
+                .instance_env
+                .delete_by_col_eq(table_id.into(), col_id.into(), &value)?)
         })
     }
 
@@ -453,7 +456,7 @@ impl WasmInstanceEnv {
             let name = Self::read_string(&caller, mem, name, name_len)?;
 
             // Query the table id.
-            Ok(caller.data().instance_env.get_table_id(name)?)
+            Ok(caller.data().instance_env.get_table_id(name)?.0)
         })
     }
 
@@ -495,7 +498,7 @@ impl WasmInstanceEnv {
             caller
                 .data()
                 .instance_env
-                .create_index(index_name, table_id, index_type, cols)?;
+                .create_index(index_name, table_id.into(), index_type, cols)?;
             Ok(())
         })
     }
@@ -531,7 +534,10 @@ impl WasmInstanceEnv {
             let value = mem.read_bytes(&caller, val, val_len)?;
 
             // Find the relevant rows.
-            let data = caller.data().instance_env.iter_by_col_eq(table_id, col_id, &value)?;
+            let data = caller
+                .data()
+                .instance_env
+                .iter_by_col_eq(table_id.into(), col_id.into(), &value)?;
 
             // Insert the encoded + concatenated rows into a new buffer and return its id.
             Ok(caller.data_mut().buffers.insert(data.into()))
@@ -549,7 +555,7 @@ impl WasmInstanceEnv {
     pub fn iter_start(caller: FunctionEnvMut<'_, Self>, table_id: u32, out: WasmPtr<BufferIterIdx>) -> RtResult<u16> {
         Self::cvt_ret(caller, "iter_start", Call::IterStart, out, |mut caller, _mem| {
             // Collect the iterator chunks.
-            let chunks = caller.data().instance_env.iter_chunks(table_id)?;
+            let chunks = caller.data().instance_env.iter_chunks(table_id.into())?;
 
             // Register the iterator and get back the index to write to `out`.
             // Calls to the iterator are done through dynamic dispatch.
@@ -588,7 +594,10 @@ impl WasmInstanceEnv {
                 let filter = caller.data().mem().read_bytes(&caller, filter, filter_len)?;
 
                 // Construct the iterator.
-                let chunks = caller.data().instance_env.iter_filtered_chunks(table_id, &filter)?;
+                let chunks = caller
+                    .data()
+                    .instance_env
+                    .iter_filtered_chunks(table_id.into(), &filter)?;
 
                 // Register the iterator and get back the index to write to `out`.
                 // Calls to the iterator are done through dynamic dispatch.

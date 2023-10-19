@@ -11,6 +11,7 @@ use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::operator::OpQuery;
 use spacetimedb_lib::relation::{self, DbTable, FieldExpr, FieldName, Header};
 use spacetimedb_lib::table::ProductTypeMeta;
+use spacetimedb_primitives::ColId;
 use spacetimedb_sats::{AlgebraicValue, ProductType};
 use spacetimedb_vm::dsl::{db_table, db_table_raw, query};
 use spacetimedb_vm::expr::{ColumnOp, CrudExpr, DbType, Expr, IndexJoin, JoinExpr, Query, QueryExpr, SourceExpr};
@@ -122,16 +123,16 @@ fn compile_where(mut q: QueryExpr, table: &From, filter: Selection) -> Result<Qu
 // using an index.
 pub enum IndexArgument {
     Eq {
-        col_id: u32,
+        col_id: ColId,
         value: AlgebraicValue,
     },
     LowerBound {
-        col_id: u32,
+        col_id: ColId,
         value: AlgebraicValue,
         inclusive: bool,
     },
     UpperBound {
-        col_id: u32,
+        col_id: ColId,
         value: AlgebraicValue,
         inclusive: bool,
     },
@@ -487,6 +488,7 @@ mod tests {
         auth::{StAccess, StTableType},
         error::ResultTest,
     };
+    use spacetimedb_primitives::TableId;
     use spacetimedb_sats::AlgebraicType;
     use spacetimedb_vm::expr::{IndexScan, JoinExpr, Query};
 
@@ -501,7 +503,7 @@ mod tests {
         name: &str,
         schema: &[(&str, AlgebraicType)],
         indexes: &[(u32, &str)],
-    ) -> ResultTest<u32> {
+    ) -> ResultTest<TableId> {
         let table_name = name.to_string();
         let table_type = StTableType::User;
         let table_access = StAccess::Public;
@@ -517,12 +519,7 @@ mod tests {
 
         let indexes = indexes
             .iter()
-            .map(|(col_id, index_name)| IndexDef {
-                table_id: 0,
-                cols: NonEmpty::new(*col_id),
-                name: index_name.to_string(),
-                is_unique: false,
-            })
+            .map(|(col_id, index_name)| IndexDef::new(index_name.to_string(), 0.into(), ColId(*col_id), false))
             .collect_vec();
 
         let schema = TableDef {
@@ -598,7 +595,7 @@ mod tests {
             panic!("Expected IndexScan");
         };
         assert_eq!(u, v);
-        assert_eq!(col_id, 0);
+        assert_eq!(col_id, 0.into());
         assert_eq!(v, AlgebraicValue::U64(1));
         Ok(())
     }
@@ -667,7 +664,7 @@ mod tests {
             panic!("Expected IndexScan");
         };
         assert_eq!(u, v);
-        assert_eq!(col_id, 1);
+        assert_eq!(col_id, 1.into());
         assert_eq!(v, AlgebraicValue::U64(2));
         Ok(())
     }
@@ -726,7 +723,7 @@ mod tests {
         // Assert index scan
         let Query::IndexScan(IndexScan {
             table: _,
-            col_id: 1,
+            col_id: ColId(1),
             lower_bound: Bound::Excluded(value),
             upper_bound: Bound::Unbounded,
         }) = ops.remove(0)
@@ -762,7 +759,7 @@ mod tests {
         // Assert index scan
         let Query::IndexScan(IndexScan {
             table: _,
-            col_id: 1,
+            col_id: ColId(1),
             lower_bound: Bound::Excluded(u),
             upper_bound: Bound::Excluded(v),
         }) = ops.remove(0)
@@ -801,7 +798,7 @@ mod tests {
         // Assert index scan
         let Query::IndexScan(IndexScan {
             table: _,
-            col_id: 0,
+            col_id: ColId(0),
             lower_bound: Bound::Included(u),
             upper_bound: Bound::Included(v),
         }) = ops.remove(0)
@@ -851,7 +848,7 @@ mod tests {
         // First operation in the pipeline should be an index scan
         let Query::IndexScan(IndexScan {
             table: DbTable { table_id, .. },
-            col_id: 0,
+            col_id: ColId(0),
             lower_bound: Bound::Included(AlgebraicValue::U64(3)),
             upper_bound: Bound::Included(AlgebraicValue::U64(3)),
         }) = query[0]
@@ -1087,7 +1084,7 @@ mod tests {
         // First operation in the pipeline should be an index scan
         let Query::IndexScan(IndexScan {
             table: DbTable { table_id, .. },
-            col_id: 0,
+            col_id: ColId(0),
             lower_bound: Bound::Included(AlgebraicValue::U64(3)),
             upper_bound: Bound::Included(AlgebraicValue::U64(3)),
         }) = query[0]
@@ -1130,7 +1127,7 @@ mod tests {
         // The right side of the join should be an index scan
         let Query::IndexScan(IndexScan {
             table: DbTable { table_id, .. },
-            col_id: 1,
+            col_id: ColId(1),
             lower_bound: Bound::Unbounded,
             upper_bound: Bound::Excluded(AlgebraicValue::U64(4)),
         }) = rhs[0]
@@ -1199,7 +1196,7 @@ mod tests {
 
         assert_eq!(table_id, rhs_id);
         assert_eq!(index_table, lhs_id);
-        assert_eq!(index_col, 1);
+        assert_eq!(index_col, 1.into());
         assert_eq!(probe_field, "b");
         assert_eq!(probe_table, "rhs");
 
@@ -1208,7 +1205,7 @@ mod tests {
         // The probe side of the join should be an index scan
         let Query::IndexScan(IndexScan {
             table: DbTable { table_id, .. },
-            col_id: 1,
+            col_id: ColId(1),
             lower_bound: Bound::Excluded(AlgebraicValue::U64(2)),
             upper_bound: Bound::Excluded(AlgebraicValue::U64(4)),
         }) = rhs[0]

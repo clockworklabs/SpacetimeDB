@@ -15,6 +15,7 @@ members = [
   "crates/sdk",
   "crates/client-api-messages",
   "crates/sqltest",
+  "crates/primitives",
   "modules/rust-wasm-test",
   "modules/benchmarks",
   "modules/spacetimedb-quickstart",

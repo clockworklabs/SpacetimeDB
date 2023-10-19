@@ -4124,6 +4124,7 @@ dependencies = [
  "spacetimedb-bindings-macro",
  "spacetimedb-bindings-sys",
  "spacetimedb-lib",
+ "spacetimedb-primitives",
 ]
 
 [[package]]
@@ -4147,6 +4148,7 @@ dependencies = [
  "spacetimedb-client-api",
  "spacetimedb-core",
  "spacetimedb-lib",
+ "spacetimedb-primitives",
  "spacetimedb-standalone",
  "spacetimedb-testing",
  "tempdir",
@@ -4171,6 +4173,7 @@ name = "spacetimedb-bindings-sys"
 version = "0.7.1"
 dependencies = [
  "getrandom",
+ "spacetimedb-primitives",
 ]
 
 [[package]]
@@ -4306,6 +4309,7 @@ dependencies = [
  "sled",
  "spacetimedb-client-api-messages",
  "spacetimedb-lib",
+ "spacetimedb-primitives",
  "spacetimedb-sats",
  "spacetimedb-vm",
  "sqlparser",
@@ -4352,9 +4356,17 @@ dependencies = [
  "serde_with",
  "sha3",
  "spacetimedb-bindings-macro",
+ "spacetimedb-primitives",
  "spacetimedb-sats",
  "thiserror",
  "tracing",
+]
+
+[[package]]
+name = "spacetimedb-primitives"
+version = "0.7.1"
+dependencies = [
+ "nonempty",
 ]
 
 [[package]]
@@ -4380,6 +4392,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "spacetimedb-bindings-macro",
+ "spacetimedb-primitives",
  "thiserror",
  "tracing",
 ]
@@ -4462,6 +4475,7 @@ dependencies = [
  "anyhow",
  "derive_more",
  "spacetimedb-lib",
+ "spacetimedb-primitives",
  "spacetimedb-sats",
  "tempdir",
  "thiserror",

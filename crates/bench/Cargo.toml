@@ -25,6 +25,7 @@ spacetimedb-core = { path = "../core" }
 spacetimedb-standalone = { path = "../standalone" }
 spacetimedb-client-api = { path = "../client-api" }
 spacetimedb-testing = { path = "../testing" }
+spacetimedb-primitives = { path = "../primitives" }
 
 ahash.workspace = true
 log.workspace = true

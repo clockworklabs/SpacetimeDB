@@ -1,10 +1,8 @@
 use super::RowId;
-use crate::{
-    db::datastore::traits::{IndexId, IndexSchema},
-    error::DBError,
-};
+use crate::{db::datastore::traits::IndexSchema, error::DBError};
 use nonempty::NonEmpty;
 use spacetimedb_lib::{data_key::ToDataKey, DataKey};
+use spacetimedb_primitives::{ColId, IndexId, TableId};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use std::{
     collections::{btree_set, BTreeSet},
@@ -77,15 +75,21 @@ impl Iterator for BTreeIndexRangeIter<'_> {
 
 pub(crate) struct BTreeIndex {
     pub(crate) index_id: IndexId,
-    pub(crate) table_id: u32,
-    pub(crate) cols: NonEmpty<u32>,
+    pub(crate) table_id: TableId,
+    pub(crate) cols: NonEmpty<ColId>,
     pub(crate) name: String,
     pub(crate) is_unique: bool,
     idx: BTreeSet<IndexKey>,
 }
 
 impl BTreeIndex {
-    pub(crate) fn new(index_id: IndexId, table_id: u32, cols: NonEmpty<u32>, name: String, is_unique: bool) -> Self {
+    pub(crate) fn new(
+        index_id: IndexId,
+        table_id: TableId,
+        cols: NonEmpty<ColId>,
+        name: String,
+        is_unique: bool,
+    ) -> Self {
         Self {
             index_id,
             table_id,
@@ -173,7 +177,7 @@ impl BTreeIndex {
 impl From<&BTreeIndex> for IndexSchema {
     fn from(x: &BTreeIndex) -> Self {
         IndexSchema {
-            index_id: x.index_id.0,
+            index_id: x.index_id,
             table_id: x.table_id,
             cols: x.cols.clone(),
             is_unique: x.is_unique,

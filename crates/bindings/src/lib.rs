@@ -27,6 +27,7 @@ pub use spacetimedb_lib::sats;
 pub use spacetimedb_lib::Address;
 pub use spacetimedb_lib::AlgebraicValue;
 pub use spacetimedb_lib::Identity;
+pub use spacetimedb_primitives::TableId;
 pub use timestamp::Timestamp;
 
 pub use spacetimedb_bindings_sys as sys;
@@ -105,14 +106,14 @@ pub fn decode_schema<'a>(bytes: &mut impl BufReader<'a>) -> Result<ProductType, 
 /// Queries and returns the `table_id` associated with the given (table) `name`.
 ///
 /// Panics if the table does not exist.
-pub fn get_table_id(table_name: &str) -> u32 {
+pub fn get_table_id(table_name: &str) -> TableId {
     sys::get_table_id(table_name).unwrap_or_else(|_| {
         panic!("Failed to get table with name: {}", table_name);
     })
 }
 
 /// Insert a row of type `T` into the table identified by `table_id`.
-pub fn insert<T: TableType>(table_id: u32, row: T) -> T::InsertResult {
+pub fn insert<T: TableType>(table_id: TableId, row: T) -> T::InsertResult {
     trait HasAutoinc: TableType {
         const HAS_AUTOINC: bool;
     }
@@ -165,11 +166,11 @@ pub fn insert<T: TableType>(table_id: u32, row: T) -> T::InsertResult {
 /// - there were unique constraint violations
 /// - `row` doesn't decode from BSATN to a `ProductValue`
 ///   according to the `ProductType` that the table's schema specifies
-pub fn iter_by_col_eq(table_id: u32, col_id: u8, val: &impl Serialize) -> Result<Buffer> {
+pub fn iter_by_col_eq(table_id: TableId, col_id: u8, val: &impl Serialize) -> Result<Buffer> {
     with_row_buf(|bytes| {
         // Encode `val` as BSATN into `bytes` and then use that.
         bsatn::to_writer(bytes, val).unwrap();
-        sys::iter_by_col_eq(table_id, col_id as u32, bytes)
+        sys::iter_by_col_eq(table_id, col_id.into(), bytes)
     })
 }
 
@@ -189,7 +190,7 @@ pub fn iter_by_col_eq(table_id: u32, col_id: u8, val: &impl Serialize) -> Result
 ///   according to the `AlgebraicType` that the table's schema specifies for `col_id`.
 ///
 /// Panics when serialization fails.
-pub fn delete_by_col_eq(table_id: u32, col_id: u8, value: &impl Serialize) -> Result<u32> {
+pub fn delete_by_col_eq(table_id: TableId, col_id: u8, value: &impl Serialize) -> Result<u32> {
     with_row_buf(|bytes| {
         // Encode `value` as BSATN into `bytes` and then use that.
         bsatn::to_writer(bytes, value).unwrap();
@@ -201,7 +202,7 @@ pub fn delete_by_col_eq(table_id: u32, col_id: u8, value: &impl Serialize) -> Re
 type TableTypeTableIter<T> = RawTableIter<TableTypeBufferDeserialize<T>>;
 
 // Get the iterator for this table with an optional filter,
-fn table_iter<T: TableType>(table_id: u32, filter: Option<spacetimedb_lib::filter::Expr>) -> Result<TableIter<T>> {
+fn table_iter<T: TableType>(table_id: TableId, filter: Option<spacetimedb_lib::filter::Expr>) -> Result<TableIter<T>> {
     // Decode the filter, if any.
     let filter = filter
         .as_ref()
@@ -322,7 +323,7 @@ pub trait TableType: SpacetimeType + DeserializeOwned + Serialize {
     type InsertResult: sealed::InsertResult<T = Self>;
 
     /// Returns the ID of this table.
-    fn table_id() -> u32;
+    fn table_id() -> TableId;
 
     /// Insert `ins` as a row in this table.
     fn insert(ins: Self) -> Self::InsertResult {

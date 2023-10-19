@@ -15,6 +15,7 @@ use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, AlgebraicType, AlgebraicTypeRef, ProductTypeElement};
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
 use spacetimedb_lib::{bsatn, Address, Identity, MiscModuleExport, ModuleDef, ReducerDef, TableDef, TypeAlias};
+use spacetimedb_primitives::TableId;
 use sys::Buffer;
 
 pub use once_cell::sync::{Lazy, OnceCell};
@@ -62,7 +63,7 @@ pub fn invoke_reducer<'a, A: Args<'a>, T>(
 /// Returns an invalid buffer on success
 /// and otherwise the error is written into the fresh one returned
 /// when `table_id` doesn't identify a table.
-pub fn create_index(index_name: &str, table_id: u32, index_type: sys::raw::IndexType, col_ids: Vec<u8>) -> Buffer {
+pub fn create_index(index_name: &str, table_id: TableId, index_type: sys::raw::IndexType, col_ids: Vec<u8>) -> Buffer {
     let result = sys::create_index(index_name, table_id, index_type as u8, &col_ids);
     cvt_result(result.map_err(cvt_errno))
 }
