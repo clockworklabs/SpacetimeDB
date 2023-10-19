@@ -15,7 +15,7 @@ pub use spacetimedb_lib::de::{Deserialize, DeserializeOwned};
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, impl_st};
 pub use spacetimedb_lib::ser::Serialize;
 use spacetimedb_lib::{bsatn, ColumnIndexAttribute, IndexType, PrimaryKey, ProductType, ProductValue};
-use std::cell::RefCell;
+use std::cell::UnsafeCell;
 use std::marker::PhantomData;
 use std::{fmt, panic};
 
@@ -71,19 +71,35 @@ impl ReducerContext {
 // #[global_allocator]
 // static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
+struct Buf {
+    vec: UnsafeCell<Vec<u8>>,
+}
+
+impl Buf {
+    const fn new() -> Self {
+        Self {
+            vec: UnsafeCell::new(Vec::new()),
+        }
+    }
+
+    fn with<R>(&self, f: impl FnOnce(&mut Vec<u8>) -> R) -> R {
+        let ptr = self.vec.get();
+        let buf = unsafe { &mut *ptr };
+        f(buf)
+    }
+}
+
+unsafe impl Sync for Buf {}
+
 /// Run a function `f` provided with an empty mutable row buffer
 /// and return the result of the function.
 fn with_row_buf<R>(f: impl FnOnce(&mut Vec<u8>) -> R) -> R {
-    thread_local! {
-        /// A global buffer used for row data.
-        // This gets optimized away to a normal global since wasm32 doesn't have threads by default.
-        static ROW_BUF: RefCell<Vec<u8>> = RefCell::new(Vec::with_capacity(8 * 1024));
-    }
+    /// A global buffer used for row data.
+    static ROW_BUF: Buf = Buf::new();
 
-    ROW_BUF.with(|r| {
-        let mut buf = r.borrow_mut();
+    ROW_BUF.with(|buf| {
         buf.clear();
-        f(&mut buf)
+        f(buf)
     })
 }
 
