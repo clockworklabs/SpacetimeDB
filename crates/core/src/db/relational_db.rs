@@ -647,7 +647,6 @@ mod tests {
 
     use nonempty::NonEmpty;
     use spacetimedb_primitives::ColId;
-    use spacetimedb_primitives::TableId;
     use std::sync::{Arc, Mutex};
 
     use crate::address::Address;
@@ -771,7 +770,7 @@ mod tests {
         let table_id = stdb.table_id_from_name(&tx, "MyTable")?.unwrap();
         let schema = stdb.schema_for_table(&tx, table_id)?;
         let col = schema.columns.iter().find(|x| x.col_name == "my_col").unwrap();
-        assert_eq!(col.col_id, ColId(0));
+        assert_eq!(col.col_id, 0.into());
         Ok(())
     }
 
@@ -1070,8 +1069,8 @@ mod tests {
             }],
             indexes: vec![IndexDef::new(
                 "MyTable_my_col_idx".to_string(),
-                TableId(0),
-                ColId(0),
+                0.into(),
+                0.into(),
                 false,
             )],
             table_type: StTableType::User,
@@ -1112,8 +1111,8 @@ mod tests {
             }],
             indexes: vec![IndexDef::new(
                 "MyTable_my_col_idx".to_string(),
-                TableId(0),
-                ColId(0),
+                0.into(),
+                0.into(),
                 true,
             )],
             table_type: StTableType::User,
@@ -1159,8 +1158,8 @@ mod tests {
             }],
             indexes: vec![IndexDef::new(
                 "MyTable_my_col_idx".to_string(),
-                TableId(0),
-                ColId(0),
+                0.into(),
+                0.into(),
                 true,
             )],
             table_type: StTableType::User,
@@ -1220,9 +1219,9 @@ mod tests {
                 },
             ],
             indexes: vec![
-                IndexDef::new("MyTable_col1_idx".to_string(), TableId(0), ColId(0), true),
-                IndexDef::new("MyTable_col3_idx".to_string(), TableId(0), ColId(2), false),
-                IndexDef::new("MyTable_col4_idx".to_string(), TableId(0), ColId(3), true),
+                IndexDef::new("MyTable_col1_idx".to_string(), 0.into(), 0.into(), true),
+                IndexDef::new("MyTable_col3_idx".to_string(), 0.into(), 2.into(), false),
+                IndexDef::new("MyTable_col4_idx".to_string(), 0.into(), 3.into(), true),
             ],
             table_type: StTableType::User,
             table_access: StAccess::Public,
@@ -1277,8 +1276,8 @@ mod tests {
             }],
             indexes: vec![IndexDef::new(
                 "MyTable_my_col_idx".to_string(),
-                TableId(0),
-                ColId(0),
+                0.into(),
+                0.into(),
                 true,
             )],
             table_type: StTableType::User,
@@ -1334,7 +1333,7 @@ mod tests {
             product![AlgebraicValue::U64(1), AlgebraicValue::U64(2), AlgebraicValue::U64(2)],
         )?;
 
-        let cols: NonEmpty<ColId> = NonEmpty::collect(vec![ColId(0), ColId(1)]).unwrap();
+        let cols: NonEmpty<ColId> = NonEmpty::collect(vec![0.into(), 1.into()]).unwrap();
         let value: AlgebraicValue = product![AlgebraicValue::U64(0), AlgebraicValue::U64(1)].into();
 
         let IterByColEq::Index(mut iter) = stdb.iter_by_col_eq(&tx, table_id, cols, value)? else {

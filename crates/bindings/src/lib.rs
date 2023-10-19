@@ -15,7 +15,6 @@ pub use spacetimedb_lib::de::{Deserialize, DeserializeOwned};
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, impl_st};
 pub use spacetimedb_lib::ser::Serialize;
 use spacetimedb_lib::{bsatn, ColumnIndexAttribute, IndexType, PrimaryKey, ProductType, ProductValue};
-use spacetimedb_primitives::ColId;
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::{fmt, panic};
@@ -171,7 +170,7 @@ pub fn iter_by_col_eq(table_id: TableId, col_id: u8, val: &impl Serialize) -> Re
     with_row_buf(|bytes| {
         // Encode `val` as BSATN into `bytes` and then use that.
         bsatn::to_writer(bytes, val).unwrap();
-        sys::iter_by_col_eq(table_id, ColId(col_id as u32), bytes)
+        sys::iter_by_col_eq(table_id, col_id.into(), bytes)
     })
 }
 
@@ -195,7 +194,7 @@ pub fn delete_by_col_eq(table_id: TableId, col_id: u8, value: &impl Serialize) -
     with_row_buf(|bytes| {
         // Encode `value` as BSATN into `bytes` and then use that.
         bsatn::to_writer(bytes, value).unwrap();
-        sys::delete_by_col_eq(table_id, ColId(col_id as u32), bytes)
+        sys::delete_by_col_eq(table_id, col_id.into(), bytes)
     })
 }
 

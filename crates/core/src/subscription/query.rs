@@ -197,7 +197,7 @@ mod tests {
 
         let indexes = indexes
             .iter()
-            .map(|(col_id, index_name)| IndexDef::new(index_name.to_string(), TableId(0), ColId(*col_id), false))
+            .map(|(col_id, index_name)| IndexDef::new(index_name.to_string(), 0.into(), ColId(*col_id), false))
             .collect_vec();
 
         let schema = TableDef {

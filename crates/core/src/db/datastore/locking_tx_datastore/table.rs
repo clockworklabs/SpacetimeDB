@@ -2,7 +2,7 @@ use super::{
     btree_index::{BTreeIndex, BTreeIndexRangeIter},
     RowId,
 };
-use crate::db::datastore::traits::{ColId, TableSchema};
+use crate::db::datastore::traits::TableSchema;
 use indexmap::IndexMap;
 use nonempty::NonEmpty;
 use spacetimedb_primitives::ColId;

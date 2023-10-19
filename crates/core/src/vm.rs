@@ -332,8 +332,8 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
             if meta.is_unique() {
                 indexes.push(IndexDef::new(
                     format!("{}_{}_idx", table_name, i),
-                    TableId(0), // Ignored
-                    ColId(i as u32),
+                    0.into(), // Ignored
+                    i.into(),
                     true,
                 ));
             }
@@ -518,7 +518,7 @@ pub(crate) mod tests {
     use nonempty::NonEmpty;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::relation::{DbTable, FieldName};
-    use spacetimedb_primitives::{SequenceId, TableId};
+    use spacetimedb_primitives::TableId;
     use spacetimedb_sats::{product, AlgebraicType, ProductType, ProductValue};
     use spacetimedb_vm::dsl::*;
     use spacetimedb_vm::eval::run_ast;
@@ -702,7 +702,7 @@ pub(crate) mod tests {
         db.commit_tx(tx)?;
 
         let mut tx = db.begin_tx();
-        let index = IndexDef::new("idx_1".into(), table_id, ColId(0), true);
+        let index = IndexDef::new("idx_1".into(), table_id, 0.into(), true);
         let index_id = db.create_index(&mut tx, index)?;
 
         let p = &mut DbProgram::new(&db, &mut tx, AuthCtx::for_testing());
@@ -719,7 +719,7 @@ pub(crate) mod tests {
                 index_id,
                 index_name: "idx_1",
                 table_id,
-                cols: NonEmpty::new(ColId(0)),
+                cols: NonEmpty::new(0.into()),
                 is_unique: true,
             })
                 .into(),
@@ -748,10 +748,10 @@ pub(crate) mod tests {
             p,
             ST_SEQUENCES_NAME,
             (&StSequenceRow {
-                sequence_id: SequenceId(1),
+                sequence_id: 1.into(),
                 sequence_name: "sequence_id_seq",
-                table_id: TableId(2),
-                col_id: ColId(0),
+                table_id: 2.into(),
+                col_id: 0.into(),
                 increment: 1,
                 start: 4,
                 min_value: 1,

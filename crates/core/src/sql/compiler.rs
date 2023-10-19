@@ -519,7 +519,7 @@ mod tests {
 
         let indexes = indexes
             .iter()
-            .map(|(col_id, index_name)| IndexDef::new(index_name.to_string(), TableId(0), ColId(*col_id), false))
+            .map(|(col_id, index_name)| IndexDef::new(index_name.to_string(), 0.into(), ColId(*col_id), false))
             .collect_vec();
 
         let schema = TableDef {
@@ -595,7 +595,7 @@ mod tests {
             panic!("Expected IndexScan");
         };
         assert_eq!(u, v);
-        assert_eq!(col_id, ColId(0));
+        assert_eq!(col_id, 0.into());
         assert_eq!(v, AlgebraicValue::U64(1));
         Ok(())
     }
@@ -664,7 +664,7 @@ mod tests {
             panic!("Expected IndexScan");
         };
         assert_eq!(u, v);
-        assert_eq!(col_id, ColId(1));
+        assert_eq!(col_id, 1.into());
         assert_eq!(v, AlgebraicValue::U64(2));
         Ok(())
     }
@@ -1196,7 +1196,7 @@ mod tests {
 
         assert_eq!(table_id, rhs_id);
         assert_eq!(index_table, lhs_id);
-        assert_eq!(index_col, ColId(1));
+        assert_eq!(index_col, 1.into());
         assert_eq!(probe_field, "b");
         assert_eq!(probe_table, "rhs");
 

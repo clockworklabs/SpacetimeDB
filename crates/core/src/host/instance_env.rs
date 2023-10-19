@@ -215,7 +215,7 @@ impl InstanceEnv {
 
         let cols = NonEmpty::from_slice(&col_ids)
             .expect("Attempt to create an index with zero columns")
-            .map(|x| ColId(x as u32));
+            .map(Into::into);
 
         let is_unique = stdb.column_attrs(tx, table_id, &cols)?.is_unique();
 
