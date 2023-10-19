@@ -1,4 +1,4 @@
-name: Build Linux SpacetimeDB client
+name: Build Linux SpacetimeDB CLI
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
       - master
 
 jobs:
-  linux-amd64-client:
+  linux-amd64-cli:
     runs-on: bare-metal
 
     steps:
@@ -39,7 +39,7 @@ jobs:
           endpoint: https://nyc3.digitaloceanspaces.com
           destination_dir: ${{ steps.extract_branch.outputs.branch }}
 
-  linux-arm64-client:
+  linux-arm64-cli:
     runs-on: arm-runner
 
     steps:

@@ -1,4 +1,4 @@
-name: CI
+name: Contributor Membership Check
 
 on:
   pull_request:

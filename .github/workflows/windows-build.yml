@@ -1,4 +1,4 @@
-name: Build Windows SpacetimeDB client
+name: Build Windows SpacetimeDB CLI
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
       - master
 
 jobs:
-  windows-client:
+  windows-cli:
     runs-on: windows-latest
 
     steps:
