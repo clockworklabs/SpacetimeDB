@@ -427,10 +427,11 @@ impl WasmInstanceEnv {
     ) -> RtResult<u16> {
         Self::cvt_ret(caller, "delete_by_col_eq", Call::DeleteByColEq, out, |caller, mem| {
             let value = mem.read_bytes(&caller, value, value_len)?;
-            Ok(caller
+            let count = caller
                 .data()
                 .instance_env
-                .delete_by_col_eq(table_id.into(), col_id.into(), &value)?)
+                .delete_by_col_eq(table_id.into(), col_id.into(), &value)?;
+            Ok(count.get())
         })
     }
 

@@ -1,5 +1,5 @@
 use super::commit_log::{CommitLog, CommitLogView};
-use super::datastore::locking_tx_datastore::{Data, DataRef, Iter, IterByColEq, IterByColRange, MutTxId, RowId};
+use super::datastore::locking_tx_datastore::{DataRef, Iter, IterByColEq, IterByColRange, Locking, MutTxId, RowId};
 use super::datastore::traits::{
     DataRow, IndexDef, MutProgrammable, MutTx, MutTxDatastore, Programmable, SequenceDef, TableDef, TableSchema, TxData,
 };
@@ -26,8 +26,6 @@ use std::ops::RangeBounds;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use super::datastore::locking_tx_datastore::Locking;
-
 pub const ST_TABLES_NAME: &str = "st_table";
 pub const ST_COLUMNS_NAME: &str = "st_columns";
 pub const ST_SEQUENCES_NAME: &str = "st_sequence";
@@ -50,11 +48,10 @@ pub struct RelationalDB {
 
 impl DataRow for RelationalDB {
     type RowId = RowId;
-    type Data = Data;
-    type DataRef = DataRef;
+    type DataRef<'a> = DataRef<'a>;
 
-    fn data_to_owned(&self, data_ref: Self::DataRef) -> Self::Data {
-        self.inner.data_to_owned(data_ref)
+    fn view_product_value<'a>(&self, data_ref: Self::DataRef<'a>) -> &'a ProductValue {
+        data_ref.view()
     }
 }
 
@@ -407,7 +404,7 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn table_name_from_id(&self, tx: &MutTxId, table_id: TableId) -> Result<Option<String>, DBError> {
+    pub fn table_name_from_id<'tx>(&self, tx: &'tx MutTxId, table_id: TableId) -> Result<Option<&'tx str>, DBError> {
         self.inner.table_name_from_id_mut_tx(tx, table_id)
     }
 
@@ -531,17 +528,17 @@ impl RelationalDB {
         self.insert(tx, table_id, row)
     }
 
+    pub fn delete(&self, tx: &mut MutTxId, table_id: TableId, row_ids: impl IntoIterator<Item = RowId>) -> u32 {
+        self.inner.delete_mut_tx(tx, table_id, row_ids)
+    }
+
     #[tracing::instrument(skip_all)]
-    pub fn delete_by_rel<R: Relation>(
-        &self,
-        tx: &mut MutTxId,
-        table_id: TableId,
-        relation: R,
-    ) -> Result<Option<u32>, DBError> {
+    pub fn delete_by_rel<R: Relation>(&self, tx: &mut MutTxId, table_id: TableId, relation: R) -> u32 {
         let _guard = DB_METRICS
             .rdb_delete_by_rel_time
             .with_label_values(&table_id.0)
             .start_timer();
+
         self.inner.delete_by_rel_mut_tx(tx, table_id, relation)
     }
 
@@ -550,9 +547,9 @@ impl RelationalDB {
     pub fn clear_table(&self, tx: &mut MutTxId, table_id: TableId) -> Result<(), DBError> {
         let relation = self
             .iter(tx, table_id)?
-            .map(|data| data.view().clone())
+            .map(|data| RowId(*data.id()))
             .collect::<Vec<_>>();
-        self.delete_by_rel(tx, table_id, relation)?;
+        self.delete(tx, table_id, relation);
         Ok(())
     }
 
@@ -1287,7 +1284,7 @@ mod tests {
         stdb.rename_table(&mut tx, table_id, "YourTable")?;
         let table_name = stdb.table_name_from_id(&tx, table_id)?;
 
-        assert_eq!(Some("YourTable"), table_name.as_deref());
+        assert_eq!(Some("YourTable"), table_name);
         // Also make sure we've removed the old ST_TABLES_ID row
         let mut n = 0;
         for row in stdb.iter(&tx, ST_TABLES_ID)? {

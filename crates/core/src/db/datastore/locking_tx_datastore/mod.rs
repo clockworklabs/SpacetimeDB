@@ -11,7 +11,7 @@ use nonempty::NonEmpty;
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet, HashMap},
-    ops::RangeBounds,
+    ops::{Deref, RangeBounds},
     sync::Arc,
     vec,
 };
@@ -46,7 +46,6 @@ use crate::{
 };
 
 use anyhow::anyhow;
-use derive_more::Into;
 use parking_lot::{lock_api::ArcMutexGuard, Mutex, RawMutex};
 use spacetimedb_lib::{
     auth::{StAccess, StTableType},
@@ -82,45 +81,33 @@ pub enum SequenceError {
 
 const SEQUENCE_PREALLOCATION_AMOUNT: i128 = 4_096;
 
-#[derive(Into)]
-pub struct Data {
-    data: ProductValue,
-}
-
-impl traits::Data for Data {
-    fn view(&self) -> &ProductValue {
-        &self.data
-    }
-}
-
 /// A `DataRef` represents a row stored in a table.
 ///
 /// A table row always has a [`DataKey`] associated with it.
 /// This is in contrast to rows that are materialized during query execution
 /// which may or may not have an associated `DataKey`.
-#[derive(Clone)]
-pub struct DataRef {
-    id: DataKey,
-    data: ProductValue,
+#[derive(Copy, Clone)]
+pub struct DataRef<'a> {
+    id: &'a DataKey,
+    data: &'a ProductValue,
 }
 
-impl DataRef {
-    fn new(id: DataKey, data: ProductValue) -> Self {
+impl<'a> DataRef<'a> {
+    fn new(id: &'a RowId, data: &'a ProductValue) -> Self {
+        let id = &id.0;
         Self { id, data }
     }
 
-    pub fn view(&self) -> &ProductValue {
-        &self.data
+    pub fn view(self) -> &'a ProductValue {
+        self.data
     }
 
-    pub fn id(&self) -> &DataKey {
-        &self.id
+    pub fn id(self) -> &'a DataKey {
+        self.id
     }
-}
 
-impl From<DataRef> for RelValue {
-    fn from(val: DataRef) -> Self {
-        RelValue::new(val.data, Some(val.id))
+    pub fn to_rel_value(self) -> RelValue {
+        RelValue::new(self.data.clone(), Some(*self.id))
     }
 }
 
@@ -252,13 +239,13 @@ struct TxState {
 
 /// Represents whether a row has been previously committed, inserted
 /// or deleted this transaction, or simply not present at all.
-enum RowState {
+enum RowState<'a> {
     /// The row is present in the table because it was inserted
     /// in a previously committed transaction.
-    Committed(ProductValue),
+    Committed(&'a ProductValue),
     /// The row is present because it has been inserted in the
     /// current transaction.
-    Insert(ProductValue),
+    Insert(&'a ProductValue),
     /// The row is absent because it has been deleted in the
     /// current transaction.
     Delete,
@@ -274,6 +261,7 @@ impl TxState {
         }
     }
 
+    /// Returns the state of `row_id` within the table identified by `table_id`.
     #[tracing::instrument(skip_all)]
     pub fn get_row_op(&self, table_id: &TableId, row_id: &RowId) -> RowState {
         if let Some(true) = self.delete_tables.get(table_id).map(|set| set.contains(row_id)) {
@@ -282,10 +270,7 @@ impl TxState {
         let Some(table) = self.insert_tables.get(table_id) else {
             return RowState::Absent;
         };
-        table
-            .get_row(row_id)
-            .map(|pv| RowState::Insert(pv.clone()))
-            .unwrap_or(RowState::Absent)
+        table.get_row(row_id).map(RowState::Insert).unwrap_or(RowState::Absent)
     }
 
     #[tracing::instrument(skip_all)]
@@ -368,7 +353,6 @@ impl Inner {
 
     fn bootstrap_system_table(&mut self, schema: TableSchema) -> Result<(), DBError> {
         let table_id = schema.table_id;
-        let table_name = &schema.table_name;
 
         // Insert the table row into st_tables, creating st_tables if it's missing
         let st_tables = self
@@ -376,24 +360,27 @@ impl Inner {
             .get_or_create_table(ST_TABLES_ID, &ST_TABLE_ROW_TYPE, &st_table_schema());
         let row = StTableRow {
             table_id,
-            table_name: &table_name,
+            table_name: schema.table_name,
             table_type: StTableType::System,
             table_access: StAccess::Public,
         };
-        let row: ProductValue = (&row).into();
+        let row: ProductValue = row.into();
         let data_key = row.to_data_key();
         st_tables.rows.insert(RowId(data_key), row);
 
         // Insert the columns into st_columns
-        for (i, col) in schema.columns.iter().enumerate() {
+        let first_col_id = schema.columns.first().unwrap().col_id;
+        for (i, col) in schema.columns.into_iter().enumerate() {
+            let col_name_for_autoinc = col.is_autoinc.then(|| col.col_name.clone());
+
             let row = StColumnRow {
                 table_id,
                 col_id: i.into(),
-                col_name: &col.col_name,
-                col_type: col.col_type.clone(),
+                col_name: col.col_name,
+                col_type: col.col_type,
                 is_autoinc: col.is_autoinc,
             };
-            let row = ProductValue::from(&row);
+            let row = ProductValue::from(row);
             let data_key = row.to_data_key();
             {
                 let st_columns =
@@ -405,7 +392,7 @@ impl Inner {
             // If any columns are auto incrementing, we need to create a sequence
             // NOTE: This code with the `seq_start` is particularly fragile.
             // TODO: If we exceed  `SEQUENCE_PREALLOCATION_AMOUNT` we will get a unique violation
-            if col.is_autoinc {
+            if let Some(col_name) = col_name_for_autoinc {
                 // The database is bootstrapped with the total of `SystemTables::total_` that identify what is the start of the sequence
                 let (seq_start, seq_id): (i128, SequenceId) = match schema.table_id {
                     ST_TABLES_ID => (SystemTables::total_tables() as i128, TABLE_ID_SEQUENCE_ID),
@@ -424,7 +411,7 @@ impl Inner {
                 );
                 let row = StSequenceRow {
                     sequence_id: seq_id,
-                    sequence_name: &format!("{}_seq", col.col_name),
+                    sequence_name: format!("{}_seq", col_name),
                     table_id: col.table_id,
                     col_id: col.col_id,
                     increment: 1,
@@ -433,7 +420,7 @@ impl Inner {
                     max_value: u32::MAX as i128,
                     allocated: SEQUENCE_PREALLOCATION_AMOUNT,
                 };
-                let row = ProductValue::from(&row);
+                let row = ProductValue::from(row);
                 let data_key = row.to_data_key();
                 st_sequences.rows.insert(RowId(data_key), row);
             }
@@ -448,9 +435,10 @@ impl Inner {
 
         let mut indexes = schema.indexes.clone();
         //TODO: The constraints are limited to 1 column until indexes are changed to deal with n-columns
-        for constraint in schema.constraints {
+        indexes.extend(schema.constraints.into_iter().map(|constraint| {
             assert_eq!(constraint.columns.len(), 1, "Constraints only supported for 1 column.");
-            let col_id = schema.columns.first().unwrap();
+
+            let index_name = format!("idx_{}", &constraint.constraint_name);
 
             let row = StConstraintRow {
                 constraint_id: constraint.constraint_id,
@@ -459,46 +447,43 @@ impl Inner {
                 table_id,
                 columns: constraint.columns,
             };
-            let row = ProductValue::from(&row);
+            let row = ProductValue::from(row);
             let data_key = row.to_data_key();
             st_constraints.rows.insert(RowId(data_key), row);
 
             //Check if add an index:
-            let idx = match constraint.kind {
+            match constraint.kind {
                 x if x.is_unique() => IndexSchema {
                     index_id: constraint.constraint_id,
                     table_id,
-                    cols: NonEmpty::new(col_id.col_id),
-                    index_name: format!("idx_{}", &constraint.constraint_name),
+                    cols: NonEmpty::new(first_col_id),
+                    index_name,
                     is_unique: true,
                 },
                 x if x.is_indexed() => IndexSchema {
                     index_id: constraint.constraint_id,
                     table_id,
-                    cols: NonEmpty::new(col_id.col_id),
-                    index_name: format!("idx_{}", &constraint.constraint_name),
+                    cols: NonEmpty::new(first_col_id),
+                    index_name,
                     is_unique: false,
                 },
-                x => {
-                    panic!("Adding constraint of kind `{x:?}` is not supported yet.")
-                }
-            };
-            indexes.push(idx);
-        }
+                x => panic!("Adding constraint of kind `{x:?}` is not supported yet."),
+            }
+        }));
 
         // Insert the indexes into st_indexes
         let st_indexes =
             self.committed_state
                 .get_or_create_table(ST_INDEXES_ID, &ST_INDEX_ROW_TYPE, &st_indexes_schema());
-        for (_, index) in indexes.iter().enumerate() {
+        for (_, index) in indexes.into_iter().enumerate() {
             let row = StIndexRow {
                 index_id: index.index_id,
                 table_id,
-                cols: index.cols.clone(),
-                index_name: &index.index_name,
+                cols: index.cols,
+                index_name: index.index_name,
                 is_unique: index.is_unique,
             };
-            let row = ProductValue::from(&row);
+            let row = ProductValue::from(row);
             let data_key = row.to_data_key();
             st_indexes.rows.insert(RowId(data_key), row);
         }
@@ -508,9 +493,8 @@ impl Inner {
 
     fn build_sequence_state(&mut self) -> super::Result<()> {
         let st_sequences = self.committed_state.tables.get(&ST_SEQUENCES_ID).unwrap();
-        let rows = st_sequences.scan_rows().cloned().collect::<Vec<_>>();
-        for row in rows {
-            let sequence = StSequenceRow::try_from(&row)?;
+        for row in st_sequences.scan_rows() {
+            let sequence = StSequenceRow::try_from(row)?;
             // TODO: The system tables have initialized their value already, but this is wrong:
             // If we exceed  `SEQUENCE_PREALLOCATION_AMOUNT` we will get a unique violation
             let is_system_table = self
@@ -519,7 +503,7 @@ impl Inner {
                 .get(&sequence.table_id)
                 .map_or(false, |x| x.schema.table_type == StTableType::System);
 
-            let schema = (&sequence).into();
+            let schema = sequence.to_owned().into();
 
             let mut seq = Sequence::new(schema);
             // Now we need to recover the last allocation value.
@@ -571,26 +555,24 @@ impl Inner {
         Ok(())
     }
 
-    fn drop_table_from_st_tables(&mut self, table_id: TableId) -> super::Result<()> {
-        const ST_TABLES_TABLE_ID_COL: ColId = ColId(0);
-        let rows = self.iter_by_col_eq(&ST_TABLES_ID, ST_TABLES_TABLE_ID_COL, table_id.into())?;
-        let rows = rows.map(|row| row.view().to_owned()).collect::<Vec<_>>();
-        if rows.is_empty() {
+    fn drop_col_eq(&mut self, table_id: TableId, col_id: ColId, value: AlgebraicValue) -> super::Result<()> {
+        let rows = self.iter_by_col_eq(&table_id, col_id, value)?;
+        let ids_to_delete = rows.map(|row| RowId(*row.id())).collect::<Vec<_>>();
+        if ids_to_delete.is_empty() {
             return Err(TableError::IdNotFound(table_id).into());
         }
-        self.delete_by_rel(&table_id, rows)?;
+        self.delete(&table_id, ids_to_delete);
         Ok(())
+    }
+
+    fn drop_table_from_st_tables(&mut self, table_id: TableId) -> super::Result<()> {
+        const ST_TABLES_TABLE_ID_COL: ColId = ColId(0);
+        self.drop_col_eq(ST_TABLES_ID, ST_TABLES_TABLE_ID_COL, table_id.into())
     }
 
     fn drop_table_from_st_columns(&mut self, table_id: TableId) -> super::Result<()> {
         const ST_COLUMNS_TABLE_ID_COL: ColId = ColId(0);
-        let rows = self.iter_by_col_eq(&ST_COLUMNS_ID, ST_COLUMNS_TABLE_ID_COL, table_id.into())?;
-        let rows = rows.map(|row| row.view().to_owned()).collect::<Vec<_>>();
-        if rows.is_empty() {
-            return Err(TableError::IdNotFound(table_id).into());
-        }
-        self.delete_by_rel(&table_id, rows)?;
-        Ok(())
+        self.drop_col_eq(ST_COLUMNS_ID, ST_COLUMNS_TABLE_ID_COL, table_id.into())
     }
 
     #[tracing::instrument(skip_all)]
@@ -615,18 +597,19 @@ impl Inner {
             .unwrap()
             .data;
         let (seq_row, old_seq_row_id) = {
+            let old_seq_row_id = RowId(old_seq_row.to_data_key());
+            let mut seq_row = StSequenceRow::try_from(old_seq_row)?.to_owned();
+
             let Some(sequence) = self.sequence_state.get_sequence_mut(seq_id) else {
                 return Err(SequenceError::NotFound(seq_id).into());
             };
-            let old_seq_row_id = RowId(old_seq_row.to_data_key());
-            let mut seq_row = StSequenceRow::try_from(&old_seq_row)?;
             seq_row.allocated = sequence.nth_value(SEQUENCE_PREALLOCATION_AMOUNT as usize);
             sequence.set_allocation(seq_row.allocated);
             (seq_row, old_seq_row_id)
         };
 
-        self.delete(&ST_SEQUENCES_ID, &old_seq_row_id)?;
-        self.insert(ST_SEQUENCES_ID, ProductValue::from(&seq_row))?;
+        self.delete(&ST_SEQUENCES_ID, [old_seq_row_id]);
+        self.insert(ST_SEQUENCES_ID, ProductValue::from(seq_row))?;
 
         let Some(sequence) = self.sequence_state.get_sequence_mut(seq_id) else {
             return Err(SequenceError::NotFound(seq_id).into());
@@ -650,7 +633,7 @@ impl Inner {
         // fail if the table already exists.
         let sequence_row = StSequenceRow {
             sequence_id: 0.into(), // autogen'd
-            sequence_name: seq.sequence_name.as_str(),
+            sequence_name: seq.sequence_name,
             table_id: seq.table_id,
             col_id: seq.col_id,
             allocated: seq.start.unwrap_or(1),
@@ -659,15 +642,16 @@ impl Inner {
             min_value: seq.min_value.unwrap_or(1),
             max_value: seq.max_value.unwrap_or(i128::MAX),
         };
-        let row = (&sequence_row).into();
+        let row = sequence_row.into();
         let result = self.insert(ST_SEQUENCES_ID, row)?;
-        let sequence_row = StSequenceRow::try_from(&result)?;
+        // TODO(centril): `result` is already owned, so pass that in.
+        let sequence_row = StSequenceRow::try_from(&result)?.to_owned();
         let sequence_id = sequence_row.sequence_id;
 
-        let schema = (&sequence_row).into();
+        let schema = sequence_row.into();
         self.sequence_state.sequences.insert(sequence_id, Sequence::new(schema));
 
-        log::trace!("SEQUENCE CREATED: {}", seq.sequence_name);
+        log::trace!("SEQUENCE CREATED: id = {}", sequence_id);
 
         Ok(sequence_id)
     }
@@ -680,7 +664,7 @@ impl Inner {
             .unwrap()
             .data;
         let old_seq_row_id = RowId(old_seq_row.to_data_key());
-        self.delete(&ST_SEQUENCES_ID, &old_seq_row_id)?;
+        self.delete(&ST_SEQUENCES_ID, [old_seq_row_id]);
         self.sequence_state.sequences.remove(&seq_id);
         Ok(())
     }
@@ -710,28 +694,31 @@ impl Inner {
         // fail if the table already exists.
         let row = StTableRow {
             table_id: 0.into(),
-            table_name,
+            table_name: table_schema.table_name.clone(),
             table_type: table_schema.table_type,
             table_access: table_schema.table_access,
         };
-        let table_id = StTableRow::try_from(&self.insert(ST_TABLES_ID, (&row).into())?)?.table_id;
+        let table_id = StTableRow::try_from(&self.insert(ST_TABLES_ID, row.into())?)?.table_id;
+
+        let row_type = table_schema.get_row_type();
 
         // Insert the columns into st_columns
-        for (i, col) in table_schema.columns.iter().enumerate() {
+        for (i, col) in table_schema.columns.into_iter().enumerate() {
             let col_id = i.into();
+            let col_name_for_autoinc = col.is_autoinc.then(|| col.col_name.clone());
             let row = StColumnRow {
                 table_id,
                 col_id,
-                col_name: &col.col_name,
-                col_type: col.col_type.clone(),
+                col_name: col.col_name,
+                col_type: col.col_type,
                 is_autoinc: col.is_autoinc,
             };
-            self.insert(ST_COLUMNS_ID, (&row).into())?;
+            self.insert(ST_COLUMNS_ID, row.into())?;
 
             // Insert create the sequence for the autoinc column
-            if col.is_autoinc {
+            if let Some(col_name) = col_name_for_autoinc {
                 let sequence_def = SequenceDef {
-                    sequence_name: format!("{}_{}_seq", table_name, col.col_name),
+                    sequence_name: format!("{}_{}_seq", table_name, col_name),
                     table_id,
                     col_id,
                     increment: 1,
@@ -748,7 +735,7 @@ impl Inner {
 
         // Create the in memory representation of the table
         // NOTE: This should be done before creating the indexes
-        self.create_table_internal(table_id, table_schema.get_row_type(), schema)?;
+        self.create_table_internal(table_id, row_type, schema)?;
 
         // Create the indexes for the table
         for mut index in table_schema.indexes {
@@ -883,25 +870,19 @@ impl Inner {
     fn drop_table(&mut self, table_id: TableId) -> super::Result<()> {
         // First drop the tables indexes.
         const ST_INDEXES_TABLE_ID_COL: ColId = ColId(1);
-        let rows = self
-            .iter_by_col_eq(&ST_INDEXES_ID, ST_INDEXES_TABLE_ID_COL, table_id.into())?
-            .collect::<Vec<_>>();
-        for data_ref in rows {
-            let row = data_ref.view();
-            let el = StIndexRow::try_from(row)?;
-            self.drop_index(el.index_id)?;
-        }
+        self.iter_by_col_eq(&ST_INDEXES_ID, ST_INDEXES_TABLE_ID_COL, table_id.into())?
+            .map(|row| StIndexRow::try_from(row.view()).map(|el| el.index_id))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .try_for_each(|id| self.drop_index(id))?;
 
         // Remove the table's sequences from st_sequences.
         const ST_SEQUENCES_TABLE_ID_COL: ColId = ColId(2);
-        let rows = self
-            .iter_by_col_eq(&ST_SEQUENCES_ID, ST_SEQUENCES_TABLE_ID_COL, table_id.into())?
-            .collect::<Vec<_>>();
-        for data_ref in rows {
-            let row = data_ref.view();
-            let el = StSequenceRow::try_from(row)?;
-            self.drop_sequence(el.sequence_id)?;
-        }
+        self.iter_by_col_eq(&ST_SEQUENCES_ID, ST_SEQUENCES_TABLE_ID_COL, table_id.into())?
+            .map(|row| StSequenceRow::try_from(row.view()).map(|el| el.sequence_id))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .try_for_each(|id| self.drop_sequence(id))?;
 
         // Remove the table's columns from st_columns.
         self.drop_table_from_st_columns(table_id)?;
@@ -919,16 +900,21 @@ impl Inner {
     fn rename_table(&mut self, table_id: TableId, new_name: &str) -> super::Result<()> {
         // Update the table's name in st_tables.
         const ST_TABLES_TABLE_ID_COL: ColId = ColId(0);
-        let rows = self
-            .iter_by_col_eq(&ST_TABLES_ID, ST_TABLES_TABLE_ID_COL, table_id.into())?
-            .collect::<Vec<_>>();
-        assert!(rows.len() <= 1, "Expected at most one row in st_tables for table_id");
-        let row = rows.first().ok_or_else(|| TableError::IdNotFound(table_id))?;
-        let row_id = RowId(row.view().to_data_key());
+        let mut row_iter = self.iter_by_col_eq(&ST_TABLES_ID, ST_TABLES_TABLE_ID_COL, table_id.into())?;
+
+        let row = row_iter.next().ok_or_else(|| TableError::IdNotFound(table_id))?;
+        let row_id = RowId(*row.id);
         let mut el = StTableRow::try_from(row.view())?;
         el.table_name = new_name;
-        self.delete(&ST_TABLES_ID, &row_id)?;
-        self.insert(ST_TABLES_ID, (&el).into())?;
+        let new_row = el.to_owned().into();
+
+        assert!(
+            row_iter.next().is_none(),
+            "Expected at most one row in st_tables for table_id"
+        );
+
+        self.delete(&ST_TABLES_ID, [row_id]);
+        self.insert(ST_TABLES_ID, new_row)?;
         Ok(())
     }
 
@@ -945,12 +931,12 @@ impl Inner {
         })
     }
 
-    fn table_name_from_id(&self, table_id: TableId) -> super::Result<Option<String>> {
+    fn table_name_from_id(&self, table_id: TableId) -> super::Result<Option<&str>> {
         let table_id_col: ColId = 0.into();
         self.iter_by_col_eq(&ST_TABLES_ID, table_id_col, table_id.into())
             .map(|mut iter| {
                 iter.next()
-                    .map(|row| row.view().elements[1].as_string().unwrap().to_owned())
+                    .map(|row| row.view().elements[1].as_string().unwrap().deref())
             })
     }
 
@@ -969,27 +955,22 @@ impl Inner {
             index_id: 0.into(), // Autogen'd
             table_id: index.table_id,
             cols: index.cols.clone(),
-            index_name: &index.name,
+            index_name: index.name.clone(),
             is_unique: index.is_unique,
         };
-        let index_id = StIndexRow::try_from(&self.insert(ST_INDEXES_ID, (&row).into())?)?.index_id;
+        let index_id = StIndexRow::try_from(&self.insert(ST_INDEXES_ID, row.into())?)?.index_id;
 
         // Create the index in memory
         if !self.table_exists(&index.table_id) {
             return Err(TableError::IdNotFound(index.table_id).into());
         }
-        self.create_index_internal(index_id, &index)?;
+        self.create_index_internal(index_id, index)?;
 
-        log::trace!(
-            "INDEX CREATED: {} for table: {} and col(s): {:?}",
-            index.name,
-            index.table_id,
-            index.cols
-        );
+        log::trace!("INDEX CREATED: id = {}", index_id);
         Ok(index_id)
     }
 
-    fn create_index_internal(&mut self, index_id: IndexId, index: &IndexDef) -> super::Result<()> {
+    fn create_index_internal(&mut self, index_id: IndexId, index: IndexDef) -> super::Result<()> {
         let insert_table =
             if let Some(insert_table) = self.tx_state.as_mut().unwrap().get_insert_table_mut(&index.table_id) {
                 insert_table
@@ -1012,7 +993,7 @@ impl Inner {
             index_id,
             index.table_id,
             index.cols.clone(),
-            index.name.to_string(),
+            index.name.clone(),
             index.is_unique,
         );
         insert_index.build_from_rows(insert_table.scan_rows())?;
@@ -1025,12 +1006,12 @@ impl Inner {
         insert_table.schema.indexes.push(IndexSchema {
             table_id: index.table_id,
             cols: index.cols.clone(),
-            index_name: index.name.to_string(),
+            index_name: index.name,
             is_unique: index.is_unique,
             index_id,
         });
 
-        insert_table.indexes.insert(index.cols.clone(), insert_index);
+        insert_table.indexes.insert(index.cols, insert_index);
         Ok(())
     }
 
@@ -1045,7 +1026,7 @@ impl Inner {
             .unwrap()
             .data;
         let old_index_row_id = RowId(old_index_row.to_data_key());
-        self.delete(&ST_INDEXES_ID, &old_index_row_id)?;
+        self.delete(&ST_INDEXES_ID, [old_index_row_id]);
 
         self.drop_index_internal(&index_id);
 
@@ -1098,7 +1079,7 @@ impl Inner {
         })
     }
 
-    fn contains_row(&self, table_id: &TableId, row_id: &RowId) -> RowState {
+    fn contains_row(&self, table_id: &TableId, row_id: &RowId) -> RowState<'_> {
         match self.tx_state.as_ref().unwrap().get_row_op(table_id, row_id) {
             RowState::Committed(_) => unreachable!("a row cannot be committed in a tx state"),
             RowState::Insert(pv) => return RowState::Insert(pv),
@@ -1111,7 +1092,7 @@ impl Inner {
             .get(table_id)
             .and_then(|table| table.rows.get(row_id))
         {
-            Some(pv) => RowState::Committed(pv.clone()),
+            Some(pv) => RowState::Committed(pv),
             None => RowState::Absent,
         }
     }
@@ -1264,7 +1245,7 @@ impl Inner {
                 };
                 for row_id in violators {
                     if let Some(delete_table) = self.tx_state.as_ref().unwrap().delete_tables.get(&table_id) {
-                        if !delete_table.contains(&row_id) {
+                        if !delete_table.contains(row_id) {
                             let value = row.project_not_empty(&index.cols)?;
                             return Err(IndexError::UniqueConstraintViolation {
                                 constraint_name: index.name.clone(),
@@ -1339,14 +1320,14 @@ impl Inner {
         Ok(())
     }
 
-    fn get(&self, table_id: &TableId, row_id: &RowId) -> super::Result<Option<DataRef>> {
+    fn get<'a>(&'a self, table_id: &TableId, row_id: &'a RowId) -> super::Result<Option<DataRef<'a>>> {
         if !self.table_exists(table_id) {
             return Err(TableError::IdNotFound(*table_id).into());
         }
         match self.tx_state.as_ref().unwrap().get_row_op(table_id, row_id) {
             RowState::Committed(_) => unreachable!("a row cannot be committed in a tx state"),
             RowState::Insert(row) => {
-                return Ok(Some(DataRef::new(row_id.0, row)));
+                return Ok(Some(DataRef::new(row_id, row)));
             }
             RowState::Delete => {
                 return Ok(None);
@@ -1358,7 +1339,7 @@ impl Inner {
             .tables
             .get(table_id)
             .and_then(|table| table.get_row(row_id))
-            .map(|row| DataRef::new(row_id.0, row.clone())))
+            .map(|row| DataRef::new(row_id, row)))
     }
 
     fn get_row_type(&self, table_id: &TableId) -> Option<&ProductType> {
@@ -1391,8 +1372,11 @@ impl Inner {
             .map(|table| table.get_schema())
     }
 
-    fn delete(&mut self, table_id: &TableId, row_id: &RowId) -> super::Result<bool> {
-        Ok(self.delete_row_internal(table_id, row_id))
+    fn delete(&mut self, table_id: &TableId, row_ids: impl IntoIterator<Item = RowId>) -> u32 {
+        row_ids
+            .into_iter()
+            .map(|row_id| self.delete_row_internal(table_id, &row_id) as u32)
+            .sum()
     }
 
     fn delete_row_internal(&mut self, table_id: &TableId, row_id: &RowId) -> bool {
@@ -1423,19 +1407,8 @@ impl Inner {
         }
     }
 
-    fn delete_by_rel(
-        &mut self,
-        table_id: &TableId,
-        relation: impl IntoIterator<Item = spacetimedb_sats::ProductValue>,
-    ) -> super::Result<Option<u32>> {
-        let mut count = 0;
-        for tuple in relation {
-            let data_key = tuple.to_data_key();
-            if self.delete(table_id, &RowId(data_key))? {
-                count += 1;
-            }
-        }
-        Ok(Some(count))
+    fn delete_by_rel(&mut self, table_id: &TableId, relation: impl IntoIterator<Item = ProductValue>) -> u32 {
+        self.delete(table_id, relation.into_iter().map(|pv| RowId(pv.to_data_key())))
     }
 
     fn iter(&self, table_id: &TableId) -> super::Result<Iter> {
@@ -1655,11 +1628,10 @@ pub struct RowId(pub(crate) DataKey);
 
 impl DataRow for Locking {
     type RowId = RowId;
-    type Data = Data;
-    type DataRef = DataRef;
+    type DataRef<'a> = DataRef<'a>;
 
-    fn data_to_owned(&self, data_ref: Self::DataRef) -> Self::Data {
-        Data { data: data_ref.data }
+    fn view_product_value<'a>(&self, data_ref: Self::DataRef<'a>) -> &'a ProductValue {
+        data_ref.data
     }
 }
 
@@ -1701,69 +1673,74 @@ enum ScanStage<'a> {
     },
 }
 
-impl Iterator for Iter<'_> {
-    type Item = DataRef;
+impl<'a> Iterator for Iter<'a> {
+    type Item = DataRef<'a>;
 
     #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Option<Self::Item> {
+        let table_id = self.table_id;
+
+        // Moves the current scan stage to the current tx if rows were inserted in it.
+        // Returns `None` otherwise.
+        let maybe_stage_current_tx_inserts = |this: &mut Self| {
+            let table = this.inner.tx_state.as_ref()?;
+            let insert_table = table.insert_tables.get(&table_id)?;
+            this.stage = ScanStage::CurrentTx {
+                iter: insert_table.rows.iter(),
+            };
+            Some(())
+        };
+
+        // The finite state machine goes:
+        //      Start --> CurrentTx ---\
+        //        |         ^          |
+        //        v         |          v
+        //     Committed ---/------> Stop
         loop {
             match &mut self.stage {
                 ScanStage::Start => {
                     let _span = tracing::debug_span!("ScanStage::Start").entered();
-                    if let Some(table) = self.inner.committed_state.tables.get(&self.table_id) {
+                    if let Some(table) = self.inner.committed_state.tables.get(&table_id) {
+                        // The committed state has changes for this table.
+                        // Go through them in (1).
                         self.stage = ScanStage::Committed {
                             iter: table.rows.iter(),
                         };
-                    } else if let Some(table) = self.inner.tx_state.as_ref().unwrap().insert_tables.get(&self.table_id)
-                    {
-                        self.stage = ScanStage::CurrentTx {
-                            iter: table.rows.iter(),
-                        };
-                    };
+                    } else {
+                        // No committed changes, so look for inserts in the current tx in (2).
+                        maybe_stage_current_tx_inserts(self);
+                    }
                 }
                 ScanStage::Committed { iter } => {
+                    // (1) Go through the committed state for this table.
                     let _span = tracing::debug_span!("ScanStage::Committed").entered();
                     for (row_id, row) in iter {
-                        match self
-                            .inner
-                            .tx_state
-                            .as_ref()
-                            .map(|tx_state| tx_state.get_row_op(&self.table_id, row_id))
-                        {
+                        // Check the committed row's state in the current tx.
+                        match self.inner.tx_state.as_ref().map(|tx_state| tx_state.get_row_op(&table_id, row_id)) {
                             Some(RowState::Committed(_)) => unreachable!("a row cannot be committed in a tx state"),
-                            Some(RowState::Insert(_)) => (), // Do nothing, we'll get it in the next stage
-                            Some(RowState::Delete) => (),    // Skip it, it's been deleted
-                            Some(RowState::Absent) => {
-                                return Some(DataRef::new(row_id.0, row.clone()));
-                            }
-                            None => {
-                                return Some(DataRef::new(row_id.0, row.clone()));
-                            }
+                            // Do nothing, via (3), we'll get it in the next stage (2).
+                            Some(RowState::Insert(_)) |
+                            // Skip it, it's been deleted.
+                            Some(RowState::Delete) => {}
+                            // There either are no state changes for the current tx (`None`),
+                            // or there are, but `row_id` specifically has not been changed.
+                            // Either way, the row is in the committed state
+                            // and hasn't been removed in the current tx,
+                            // so it exists and can be returned.
+                            Some(RowState::Absent) | None => return Some(DataRef::new(row_id, row)),
                         }
                     }
-                    if let Some(table) = self
-                        .inner
-                        .tx_state
-                        .as_ref()
-                        .and_then(|tx_state| tx_state.insert_tables.get(&self.table_id))
-                    {
-                        self.stage = ScanStage::CurrentTx {
-                            iter: table.rows.iter(),
-                        };
-                    } else {
-                        break;
-                    }
+                    // (3) We got here, so we must've exhausted the committed changes.
+                    // Start looking in the current tx for inserts, if any, in (2).
+                    maybe_stage_current_tx_inserts(self)?;
                 }
                 ScanStage::CurrentTx { iter } => {
+                    // (2) look for inserts in the current tx.
                     let _span = tracing::debug_span!("ScanStage::CurrentTx").entered();
-                    if let Some((id, row)) = iter.next() {
-                        return Some(DataRef::new(id.0, row.clone()));
-                    }
-                    break;
+                    return iter.next().map(|(id, row)| DataRef::new(id, row));
                 }
             }
         }
-        None
     }
 }
 
@@ -1775,15 +1752,15 @@ pub struct IndexSeekIterInner<'a> {
     committed_rows: Option<BTreeIndexRangeIter<'a>>,
 }
 
-impl Iterator for IndexSeekIterInner<'_> {
-    type Item = DataRef;
+impl<'a> Iterator for IndexSeekIterInner<'a> {
+    type Item = DataRef<'a>;
 
     #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(row_id) = self.inserted_rows.next() {
             return Some(DataRef::new(
-                row_id.0,
-                self.tx_state.get_row(&self.table_id, &row_id).unwrap().clone(),
+                row_id,
+                self.tx_state.get_row(&self.table_id, row_id).unwrap(),
             ));
         }
 
@@ -1796,7 +1773,7 @@ impl Iterator for IndexSeekIterInner<'_> {
                     .map_or(false, |table| table.contains(row_id))
             })
         }) {
-            return Some(get_committed_row(self.committed_state, &self.table_id, &row_id));
+            return Some(get_committed_row(self.committed_state, &self.table_id, row_id));
         }
 
         None
@@ -1810,8 +1787,8 @@ pub struct CommittedIndexIter<'a> {
     committed_rows: BTreeIndexRangeIter<'a>,
 }
 
-impl Iterator for CommittedIndexIter<'_> {
-    type Item = DataRef;
+impl<'a> Iterator for CommittedIndexIter<'a> {
+    type Item = DataRef<'a>;
 
     #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Option<Self::Item> {
@@ -1822,21 +1799,21 @@ impl Iterator for CommittedIndexIter<'_> {
                 .get(&self.table_id)
                 .map_or(false, |table| table.contains(row_id))
         }) {
-            return Some(get_committed_row(self.committed_state, &self.table_id, &row_id));
+            return Some(get_committed_row(self.committed_state, &self.table_id, row_id));
         }
 
         None
     }
 }
 
-/// Retrieve a commited row. Panics if `table_id` and `row_id` do not identify an actually
-/// present row.
+/// Retrieve a commited row.
+///
+/// Panics if `table_id` and `row_id` do not identify an actually present row.
 #[tracing::instrument(skip_all)]
-fn get_committed_row(state: &CommittedState, table_id: &TableId, row_id: &RowId) -> DataRef {
-    DataRef::new(
-        row_id.0,
-        state.tables.get(table_id).unwrap().get_row(row_id).unwrap().clone(),
-    )
+#[inline]
+// N.B. This function is used in hot loops, so care is advised when changing it.
+fn get_committed_row<'a>(state: &'a CommittedState, table_id: &TableId, row_id: &'a RowId) -> DataRef<'a> {
+    DataRef::new(row_id, state.tables.get(table_id).unwrap().get_row(row_id).unwrap())
 }
 
 /// An [IterByColRange] for an individual column value.
@@ -1856,8 +1833,8 @@ pub enum IterByColRange<'a, R: RangeBounds<AlgebraicValue>> {
     CommittedIndex(CommittedIndexIter<'a>),
 }
 
-impl<R: RangeBounds<AlgebraicValue>> Iterator for IterByColRange<'_, R> {
-    type Item = DataRef;
+impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for IterByColRange<'a, R> {
+    type Item = DataRef<'a>;
 
     #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Option<Self::Item> {
@@ -1875,8 +1852,8 @@ pub struct ScanIterByColRange<'a, R: RangeBounds<AlgebraicValue>> {
     range: R,
 }
 
-impl<R: RangeBounds<AlgebraicValue>> Iterator for ScanIterByColRange<'_, R> {
-    type Item = DataRef;
+impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for ScanIterByColRange<'a, R> {
+    type Item = DataRef<'a>;
 
     #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Option<Self::Item> {
@@ -1921,11 +1898,11 @@ impl TxDatastore for Locking {
     }
 
     fn get_tx<'a>(
-        &'a self,
+        &self,
         tx: &'a Self::TxId,
         table_id: TableId,
-        row_id: Self::RowId,
-    ) -> super::Result<Option<Self::DataRef>> {
+        row_id: &'a Self::RowId,
+    ) -> super::Result<Option<Self::DataRef<'a>>> {
         self.get_mut_tx(tx, table_id, row_id)
     }
 }
@@ -2007,7 +1984,11 @@ impl MutTxDatastore for Locking {
         tx.lock.table_id_from_name(table_name)
     }
 
-    fn table_name_from_id_mut_tx(&self, tx: &Self::MutTxId, table_id: TableId) -> super::Result<Option<String>> {
+    fn table_name_from_id_mut_tx<'tx>(
+        &self,
+        tx: &'tx Self::MutTxId,
+        table_id: TableId,
+    ) -> super::Result<Option<&'tx str>> {
         tx.lock.table_name_from_id(table_id)
     }
 
@@ -2058,7 +2039,7 @@ impl MutTxDatastore for Locking {
     }
 
     fn iter_by_col_eq_mut_tx<'a>(
-        &'a self,
+        &self,
         tx: &'a Self::MutTxId,
         table_id: TableId,
         cols: impl Into<NonEmpty<ColId>>,
@@ -2068,29 +2049,29 @@ impl MutTxDatastore for Locking {
     }
 
     fn get_mut_tx<'a>(
-        &'a self,
+        &self,
         tx: &'a Self::MutTxId,
         table_id: TableId,
-        row_id: Self::RowId,
-    ) -> super::Result<Option<Self::DataRef>> {
-        tx.lock.get(&table_id, &row_id)
+        row_id: &'a Self::RowId,
+    ) -> super::Result<Option<Self::DataRef<'a>>> {
+        tx.lock.get(&table_id, row_id)
     }
 
     fn delete_mut_tx<'a>(
         &'a self,
         tx: &'a mut Self::MutTxId,
         table_id: TableId,
-        row_id: Self::RowId,
-    ) -> super::Result<bool> {
-        tx.lock.delete(&table_id, &row_id)
+        row_ids: impl IntoIterator<Item = Self::RowId>,
+    ) -> u32 {
+        tx.lock.delete(&table_id, row_ids)
     }
 
-    fn delete_by_rel_mut_tx<R: IntoIterator<Item = spacetimedb_sats::ProductValue>>(
+    fn delete_by_rel_mut_tx(
         &self,
         tx: &mut Self::MutTxId,
         table_id: TableId,
-        relation: R,
-    ) -> super::Result<Option<u32>> {
+        relation: impl IntoIterator<Item = ProductValue>,
+    ) -> u32 {
         tx.lock.delete_by_rel(&table_id, relation)
     }
 
@@ -2098,7 +2079,7 @@ impl MutTxDatastore for Locking {
         &'a self,
         tx: &'a mut Self::MutTxId,
         table_id: TableId,
-        row: spacetimedb_sats::ProductValue,
+        row: ProductValue,
     ) -> super::Result<ProductValue> {
         tx.lock.insert(table_id, row)
     }
@@ -2125,7 +2106,7 @@ impl traits::MutProgrammable for Locking {
             if fence <= row.epoch.0 {
                 return Err(anyhow!("stale fencing token: {}, storage is at epoch: {}", fence, row.epoch).into());
             }
-            tx.lock.delete_by_rel(&ST_MODULE_ID, Some(ProductValue::from(&row)))?;
+            tx.lock.delete_by_rel(&ST_MODULE_ID, Some(ProductValue::from(&row)));
         }
 
         tx.lock.insert(
@@ -2150,9 +2131,7 @@ mod tests {
             locking_tx_datastore::{
                 StColumnRow, StIndexRow, StSequenceRow, ST_COLUMNS_ID, ST_INDEXES_ID, ST_SEQUENCES_ID, ST_TABLES_ID,
             },
-            traits::{
-                ColumnDef, ColumnSchema, DataRow, IndexDef, IndexSchema, MutTx, MutTxDatastore, TableDef, TableSchema,
-            },
+            traits::{ColumnDef, ColumnSchema, IndexDef, IndexSchema, MutTx, MutTxDatastore, TableDef, TableSchema},
         },
         error::{DBError, IndexError},
     };
@@ -2666,8 +2645,8 @@ mod tests {
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx();
         let created_row = u32_str_u32(1, "Foo", 18);
-        let num_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, vec![created_row])?;
-        assert_eq!(num_deleted, Some(1));
+        let num_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, [created_row]);
+        assert_eq!(num_deleted, 1);
         assert_eq!(all_rows(&datastore, &tx, table_id).len(), 0);
         let created_row = u32_str_u32(1, "Foo", 19);
         datastore.insert_mut_tx(&mut tx, table_id, created_row)?;
@@ -2683,8 +2662,8 @@ mod tests {
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         for _ in 0..2 {
             let created_row = u32_str_u32(1, "Foo", 18);
-            let num_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, vec![created_row.clone()])?;
-            assert_eq!(num_deleted, Some(1));
+            let num_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, [created_row.clone()]);
+            assert_eq!(num_deleted, 1);
             assert_eq!(all_rows(&datastore, &tx, table_id).len(), 0);
             datastore.insert_mut_tx(&mut tx, table_id, created_row)?;
             #[rustfmt::skip]
@@ -2894,6 +2873,7 @@ mod tests {
             datastore
                 .iter_by_col_eq_mut_tx(tx, table_id, ColId(0), AlgebraicValue::U32(1))
                 .unwrap()
+                .map(|data_ref| data_ref.data.clone())
                 .collect::<Vec<_>>()
         };
 
@@ -2902,14 +2882,10 @@ mod tests {
         // Iterate over all rows with the value 1 (from the autoinc) in column 0.
         let rows = all_rows_col_0_eq_1(&tx);
         assert_eq!(rows.len(), 1);
-        let rows: Vec<ProductValue> = rows
-            .into_iter()
-            .map(|row| datastore.data_to_owned(row).into())
-            .collect();
         assert_eq!(row, rows[0]);
         // Delete the row.
-        let count_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, rows)?;
-        assert_eq!(count_deleted, Some(1));
+        let count_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, rows);
+        assert_eq!(count_deleted, 1);
 
         // We shouldn't see the row when iterating now that it's deleted.
         assert_eq!(all_rows_col_0_eq_1(&tx).len(), 0);
