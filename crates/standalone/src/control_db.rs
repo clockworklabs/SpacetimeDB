@@ -9,9 +9,11 @@ use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, DatabaseInstance, EnergyBalance, IdentityEmail, Node};
 use spacetimedb::{energy, stdb_path};
 
+use spacetimedb_client_api_messages::name::{
+    DomainName, DomainParsingError, InsertDomainResult, RegisterTldResult, Tld, TldRef,
+};
+use spacetimedb_client_api_messages::recovery::RecoveryCode;
 use spacetimedb_lib::bsatn;
-use spacetimedb_lib::name::{DomainName, DomainParsingError, InsertDomainResult, RegisterTldResult, Tld, TldRef};
-use spacetimedb_lib::recovery::RecoveryCode;
 
 #[cfg(test)]
 mod tests;

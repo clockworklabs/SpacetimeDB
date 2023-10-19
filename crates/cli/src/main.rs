@@ -1,7 +1,6 @@
 use clap::Command;
 use mimalloc::MiMalloc;
 use spacetimedb_cli::*;
-use spacetimedb_lib::util;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
@@ -12,8 +11,9 @@ async fn main() -> Result<(), anyhow::Error> {
     // Save a default version to disk
     config.save();
 
-    let (cmd, subcommand_args) = util::match_subcommand_or_exit(get_command());
-    exec_subcommand(config, &cmd, &subcommand_args).await?;
+    let matches = get_command().get_matches();
+    let (cmd, subcommand_args) = matches.subcommand().unwrap();
+    exec_subcommand(config, cmd, subcommand_args).await?;
 
     Ok(())
 }
@@ -21,6 +21,7 @@ async fn main() -> Result<(), anyhow::Error> {
 fn get_command() -> Command {
     Command::new("spacetime")
         .args_conflicts_with_subcommands(true)
+        .arg_required_else_help(true)
         .subcommand_required(true)
         .subcommands(get_subcommands())
         .help_expected(true)

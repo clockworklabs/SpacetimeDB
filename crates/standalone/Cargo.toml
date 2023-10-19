@@ -18,8 +18,9 @@ required-features = [] # Features required to build this target (N/A for lib)
 
 [dependencies]
 spacetimedb-core.workspace = true
-spacetimedb-lib = { workspace = true, features = ["cli"] }
+spacetimedb-lib.workspace = true
 spacetimedb-client-api.workspace = true
+spacetimedb-client-api-messages.workspace = true
 
 anyhow.workspace = true
 async-trait.workspace = true

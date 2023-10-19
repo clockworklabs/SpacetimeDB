@@ -3,8 +3,8 @@ use clap::Arg;
 use clap::ArgAction::SetTrue;
 use clap::ArgMatches;
 use reqwest::{StatusCode, Url};
-use spacetimedb_lib::name::PublishOp;
-use spacetimedb_lib::name::{is_address, parse_domain_name, PublishResult};
+use spacetimedb_client_api_messages::name::PublishOp;
+use spacetimedb_client_api_messages::name::{is_address, parse_domain_name, PublishResult};
 use std::fs;
 use std::path::PathBuf;
 
