@@ -416,21 +416,21 @@ impl<'a> RelValueRef<'a> {
         Self { data }
     }
 
-    pub fn get(&self, col: &'a FieldExpr, header: &'a Header) -> &'a AlgebraicValue {
-        match col {
+    pub fn get(&self, col: &'a FieldExpr, header: &'a Header) -> Result<&'a AlgebraicValue, RelationError> {
+        let val = match col {
             FieldExpr::Name(col) => {
-                if let Some(pos) = header.column_pos(col) {
-                    if let Some(v) = self.data.elements.get(pos) {
-                        v
-                    } else {
-                        unreachable!("Field `{col}` at pos {pos} not found on row: {:?}", self.data.elements)
-                    }
-                } else {
-                    unreachable!("Field `{col}` not found on `{}`. Fields:{}", header.table_name, header)
-                }
+                let pos = header
+                    .column_pos(col)
+                    .ok_or_else(|| RelationError::FieldNotFound(header.clone(), col.clone()))?;
+                self.data
+                    .elements
+                    .get(pos)
+                    .ok_or_else(|| RelationError::FieldNotFoundAtPos(pos, col.clone()))?
             }
             FieldExpr::Value(x) => x,
-        }
+        };
+
+        Ok(val)
     }
 
     pub fn project(&self, cols: &[FieldExpr], header: &'a Header) -> Result<ProductValue, RelationError> {
