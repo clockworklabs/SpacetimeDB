@@ -11,7 +11,6 @@ use spacetimedb_lib::relation::{Header, MemTable, RelIter, RelValue, RowCount, T
 use spacetimedb_lib::table::ProductTypeMeta;
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
-use spacetimedb_vm::dsl::mem_table;
 use spacetimedb_vm::env::EnvDb;
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::eval::IterRows;
@@ -308,16 +307,6 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         }
     }
 
-    fn insert_query(&mut self, table: &Table, query: QueryCode) -> Result<Code, ErrorVm> {
-        let result = self._eval_query(query)?;
-        match result {
-            Code::Table(result) => {
-                self._execute_insert(table, result.data.into_iter().map(|row| row.data).collect_vec())
-            }
-            _ => Ok(result),
-        }
-    }
-
     fn create_table(
         &mut self,
         table_name: &str,
@@ -402,7 +391,10 @@ impl ProgramVm for DbProgram<'_, '_> {
         match query {
             CrudCode::Query(query) => self._eval_query(query),
             CrudCode::Insert { table, rows } => self._execute_insert(&table, rows),
-            CrudCode::Update { mut insert, delete } => {
+            CrudCode::Update {
+                delete,
+                mut assignments,
+            } => {
                 let table = delete.table.clone();
                 let result = self._eval_query(delete)?;
 
@@ -415,11 +407,38 @@ impl ProgramVm for DbProgram<'_, '_> {
                     deleted.data.clone().into_iter().map(|row| row.data).collect_vec(),
                 )?;
 
-                let to_insert = mem_table(table.head().clone(), deleted.data.into_iter().map(|row| row.data));
-                insert.table = Table::MemTable(to_insert);
+                // Replace the columns in the matched rows with the assigned
+                // values. No typechecking is performed here, nor that all
+                // assignments are consumed.
+                let exprs: Vec<Option<FieldExpr>> = table
+                    .head()
+                    .fields
+                    .iter()
+                    .map(|col| assignments.remove(&col.field))
+                    .collect();
+                let insert_rows = deleted
+                    .data
+                    .into_iter()
+                    .map(|row| {
+                        let elements = row
+                            .data
+                            .elements
+                            .into_iter()
+                            .zip(&exprs)
+                            .map(|(val, expr)| {
+                                if let Some(FieldExpr::Value(assigned)) = expr {
+                                    assigned.clone()
+                                } else {
+                                    val
+                                }
+                            })
+                            .collect();
 
-                let result = self.insert_query(&table, insert)?;
-                Ok(result)
+                        ProductValue { elements }
+                    })
+                    .collect_vec();
+
+                self._execute_insert(&table, insert_rows)
             }
             CrudCode::Delete { query } => {
                 let result = self.delete_query(query)?;

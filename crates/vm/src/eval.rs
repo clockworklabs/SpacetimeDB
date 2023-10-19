@@ -101,11 +101,10 @@ fn build_typed<P: ProgramVm>(p: &mut P, node: Expr) -> ExprOpt {
                 }
                 ExprOpt::Crud(Box::new(CrudExprOpt::Insert { source, rows }))
             }
-            CrudExpr::Update { insert, delete } => {
-                let insert = build_query_opt(insert);
+            CrudExpr::Update { delete, assignments } => {
                 let delete = build_query_opt(delete);
 
-                ExprOpt::Crud(Box::new(CrudExprOpt::Update { insert, delete }))
+                ExprOpt::Crud(Box::new(CrudExprOpt::Update { delete, assignments }))
             }
             CrudExpr::Delete { query } => {
                 let query = build_query_opt(query);
@@ -270,10 +269,9 @@ fn compile<P: ProgramVm>(p: &mut P, node: ExprOpt) -> Result<Code, ErrorVm> {
                     };
                     Code::Crud(q)
                 }
-                CrudExprOpt::Update { insert, delete } => {
-                    let insert = compile_query(insert);
+                CrudExprOpt::Update { delete, assignments } => {
                     let delete = compile_query(delete);
-                    Code::Crud(CrudCode::Update { insert, delete })
+                    Code::Crud(CrudCode::Update { delete, assignments })
                 }
                 CrudExprOpt::Delete { query } => {
                     let query = compile_query(query);

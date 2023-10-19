@@ -403,24 +403,8 @@ fn compile_update(
     } else {
         QueryExpr::new(&table.root)
     };
-    let mut cols = Vec::with_capacity(table.root.columns.len());
 
-    for field in table.root.columns.iter() {
-        let field = FieldName::named(&table.root.table_name, &field.col_name);
-        if let Some(f) = assignments.get(&field) {
-            cols.push(f.clone());
-        } else {
-            cols.push(FieldExpr::Name(field));
-        }
-    }
-
-    let insert = QueryExpr::new(&table.root).with_project(&cols, None);
-    let insert = if let Some(filter) = selection {
-        compile_where(insert, &table, filter)?
-    } else {
-        insert
-    };
-    Ok(CrudExpr::Update { insert, delete })
+    Ok(CrudExpr::Update { delete, assignments })
 }
 
 /// Compiles a `CREATE TABLE ...` clause
