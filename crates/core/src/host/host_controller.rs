@@ -90,28 +90,21 @@ impl fmt::Display for DescribedEntityType {
 /// for a user's balance to go negative. This is allowable
 /// for reasons of eventual consistency motivated by performance.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct EnergyQuanta(pub i128);
+pub struct EnergyQuanta(i128);
 
 impl EnergyQuanta {
     pub const ZERO: Self = EnergyQuanta(0);
 
     pub const DEFAULT_BUDGET: Self = EnergyQuanta(1_000_000_000_000_000_000);
 
-    /// A conversion function to convert from the canonical unit to points used
-    /// by Wasmer to track energy usage.
-    pub fn as_points(&self) -> u64 {
-        if self.0 < 0 {
-            return 0;
-        } else if self.0 > u64::MAX as i128 {
-            return u64::MAX;
-        }
-        self.0 as u64
+    #[inline]
+    pub fn new(v: i128) -> Self {
+        Self(v)
     }
 
-    /// A conversion function to convert from point used
-    /// by Wasmer to track energy usage, to our canonical unit.
-    pub fn from_points(points: u64) -> Self {
-        Self(points as i128)
+    #[inline]
+    pub fn get(&self) -> i128 {
+        self.0
     }
 }
 

@@ -1,22 +1,40 @@
+use std::borrow::Cow;
 use std::sync::Arc;
 
-use wasmer::wasmparser::Operator;
-use wasmer::{AsStoreRef, CompilerConfig, EngineBuilder, Memory, MemoryAccessError, Module, RuntimeError, WasmPtr};
-use wasmer_middlewares::Metering;
+use anyhow::Context;
+use once_cell::sync::Lazy;
+use wasmtime::{Engine, Linker, Module, StoreContext, StoreContextMut};
 
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::error::NodesError;
 use crate::hash::Hash;
 
-mod opcode_cost;
 mod wasm_instance_env;
 mod wasmer_module;
 
 use wasmer_module::WasmerModule;
 
+use self::wasm_instance_env::WasmInstanceEnv;
+
 use super::scheduler::Scheduler;
+use super::wasm_common::module_host_actor::InitializationError;
 use super::wasm_common::{abi, module_host_actor::WasmModuleHostActor, ModuleCreationError};
 use super::{EnergyMonitor, EnergyQuanta};
+
+static ENGINE: Lazy<Engine> = Lazy::new(|| {
+    let mut config = wasmtime::Config::new();
+    config
+        .cranelift_opt_level(wasmtime::OptLevel::Speed)
+        .consume_fuel(true)
+        .wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Enable);
+    Engine::new(&config).unwrap()
+});
+
+static LINKER: Lazy<Linker<WasmInstanceEnv>> = Lazy::new(|| {
+    let mut linker = Linker::new(&ENGINE);
+    WasmerModule::link_imports(&mut linker).unwrap();
+    linker
+});
 
 pub fn make_actor(
     dbic: Arc<DatabaseInstanceContext>,
@@ -25,35 +43,22 @@ pub fn make_actor(
     scheduler: Scheduler,
     energy_monitor: Arc<dyn EnergyMonitor>,
 ) -> Result<impl super::module_host::Module, ModuleCreationError> {
-    let cost_function =
-        |operator: &Operator| -> u64 { opcode_cost::OperationType::operation_type_of(operator).energy_cost() };
+    let module = Module::new(&ENGINE, program_bytes).map_err(ModuleCreationError::WasmCompileError)?;
 
-    // TODO(cloutiertyler): Why are we setting the initial points here? This
-    // seems like giving away free energy. Presumably this should always be set
-    // before calling reducer?
-    // I believe we can just set this to be zero and it's already being set by reducers
-    // but I don't want to break things, so I'm going to leave it.
-    let initial_points = EnergyQuanta::DEFAULT_BUDGET.as_points();
-    let metering = Arc::new(Metering::new(initial_points, cost_function));
-
-    // let mut compiler_config = wasmer_compiler_llvm::LLVM::default();
-    // compiler_config.opt_level(wasmer_compiler_llvm::LLVMOptLevel::Aggressive);
-    // compiler_config.push_middleware(metering);
-    let mut compiler_config = wasmer::Cranelift::default();
-    compiler_config.opt_level(wasmer::CraneliftOptLevel::Speed);
-    compiler_config.push_middleware(metering);
-
-    let engine: wasmer::Engine = EngineBuilder::new(compiler_config).into();
-
-    let module = Module::new(&engine, program_bytes).map_err(|e| ModuleCreationError::WasmCompileError(e.into()))?;
-
-    let abi = abi::determine_spacetime_abi(module.imports().functions(), wasmer::ImportType::module)?;
+    let func_imports = module
+        .imports()
+        .filter(|imp| matches!(imp.ty(), wasmtime::ExternType::Func(_)));
+    let abi = abi::determine_spacetime_abi(func_imports, |imp| imp.module())?;
 
     if let Some(abi) = abi {
         abi::verify_supported(WasmerModule::IMPLEMENTED_ABI, abi)?;
     }
 
-    let module = WasmerModule::new(module, engine);
+    let module = LINKER
+        .instantiate_pre(&module)
+        .map_err(InitializationError::Instantiation)?;
+
+    let module = WasmerModule::new(module);
 
     WasmModuleHostActor::new(dbic, module_hash, module, scheduler, energy_monitor).map_err(Into::into)
 }
@@ -62,52 +67,126 @@ pub fn make_actor(
 #[error(transparent)]
 enum WasmError {
     Db(#[from] NodesError),
-    Mem(#[from] MemoryAccessError),
-    Wasm(#[from] RuntimeError),
+    Wasm(#[from] anyhow::Error),
 }
 
+#[derive(Copy, Clone)]
+struct WasmtimeFuel(u64);
+
+impl WasmtimeFuel {
+    /// 1000 energy quanta == 1 wasmtime fuel unit
+    const QUANTA_MULTIPLIER: i128 = 1_000;
+
+    /// Convert from EnergyQuanta to wasmtime fuel. The second element of the tuple is the remainder
+    /// of quanta in the case that `eq` isn't in u64 range. It can be safely ignored if the supplied
+    /// budget isn't being bookkept.
+    fn from_energy_quanta(eq: EnergyQuanta) -> (Self, EnergyQuanta) {
+        if eq.get() < 0 {
+            return (Self(0), eq);
+        }
+        let fuel = eq.get() / Self::QUANTA_MULTIPLIER;
+        let div_remainder = eq.get() % Self::QUANTA_MULTIPLIER;
+        let u64_max = i128::from(u64::MAX);
+        let fuel_clamped = fuel.clamp(0, u64_max) as u64;
+        let clamp_remainder = if fuel > u64_max {
+            (fuel - u64_max) * Self::QUANTA_MULTIPLIER
+        } else {
+            0
+        };
+        (
+            WasmtimeFuel(fuel_clamped),
+            EnergyQuanta::new(div_remainder + clamp_remainder),
+        )
+    }
+}
+
+impl From<WasmtimeFuel> for EnergyQuanta {
+    fn from(fuel: WasmtimeFuel) -> Self {
+        EnergyQuanta::new(i128::from(fuel.0) * WasmtimeFuel::QUANTA_MULTIPLIER)
+    }
+}
+
+trait WasmPointee {
+    type Pointer;
+    fn write_to(self, mem: &mut MemView, ptr: Self::Pointer) -> Result<(), WasmError>;
+}
+macro_rules! impl_pointee {
+    ($($t:ty),*) => {
+        $(impl WasmPointee for $t {
+            type Pointer = u32;
+            fn write_to(self, mem: &mut MemView, ptr: Self::Pointer) -> Result<(), WasmError> {
+                let bytes = self.to_le_bytes();
+                mem.deref_slice_mut(ptr, bytes.len() as u32)?.copy_from_slice(&bytes);
+                Ok(())
+            }
+        })*
+    };
+}
+impl_pointee!(u8, u16, u32, u64);
+impl_pointee!(super::wasm_common::BufferIdx, super::wasm_common::BufferIterIdx);
+type WasmPtr<T> = <T as WasmPointee>::Pointer;
+
 /// Wraps access to WASM linear memory with some additional functionality.
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 struct Mem {
     /// The underlying WASM `memory` instance.
-    pub memory: Memory,
+    pub memory: wasmtime::Memory,
 }
 
 impl Mem {
     /// Constructs an instance of `Mem` from an exports map.
-    fn extract(exports: &wasmer::Exports) -> anyhow::Result<Self> {
-        let memory = exports.get_memory("memory")?.clone();
-        Ok(Self { memory })
+    fn extract(exports: &wasmtime::Instance, store: impl wasmtime::AsContextMut) -> anyhow::Result<Self> {
+        Ok(Self {
+            memory: exports.get_memory(store, "memory").context("no memory export")?,
+        })
     }
 
     /// Creates and returns a view into the actual memory `store`.
     /// This view allows for reads and writes.
-
-    fn view<'a>(&self, store: &'a impl AsStoreRef) -> wasmer::MemoryView<'a> {
-        self.memory.view(store)
+    fn view_and_store<'a, T>(&self, store: impl Into<StoreContextMut<'a, T>>) -> (&'a mut MemView, &'a mut T) {
+        let (mem, store_data) = self.memory.data_and_store_mut(store);
+        (MemView::from_slice_mut(mem), store_data)
     }
 
-    /// Reads a slice of bytes starting from `ptr`
-    /// and lasting `len` bytes into a `Vec<u8>`.
-    ///
-    /// Returns an error if the slice length overflows a 64-bit address.
-    fn read_bytes(&self, store: &impl AsStoreRef, ptr: WasmPtr<u8>, len: u32) -> Result<Vec<u8>, MemoryAccessError> {
-        ptr.slice(&self.view(store), len)?.read_to_vec()
+    fn view_const<'a, T: 'a>(&self, store: impl Into<StoreContext<'a, T>>) -> &'a MemView {
+        MemView::from_slice(self.memory.data(store))
     }
+}
 
-    /// Writes `data` into the slice starting from `ptr`
-    /// and lasting `len` bytes.
-    ///
-    /// Returns an error if
-    /// - the slice length overflows a 64-bit address
-    /// - `len != data.len()`
-    fn set_bytes(
-        &self,
-        store: &impl AsStoreRef,
-        ptr: WasmPtr<u8>,
-        len: u32,
-        data: &[u8],
-    ) -> Result<(), MemoryAccessError> {
-        ptr.slice(&self.view(store), len)?.write_slice(data)
+#[repr(transparent)]
+struct MemView([u8]);
+
+impl MemView {
+    fn from_slice_mut(v: &mut [u8]) -> &mut Self {
+        unsafe { &mut *(v as *mut [u8] as *mut MemView) }
+    }
+    fn from_slice(v: &[u8]) -> &Self {
+        unsafe { &*(v as *const [u8] as *const MemView) }
+    }
+    fn deref_slice(&self, offset: WasmPtr<u8>, len: u32) -> Result<&[u8], WasmError> {
+        self.0
+            .get(offset as usize..)
+            .and_then(|s| s.get(..len as usize))
+            .ok_or_else(|| WasmError::Wasm(wasmtime::Trap::MemoryOutOfBounds.into()))
+    }
+    fn deref_str(&self, offset: WasmPtr<u8>, len: u32) -> Result<&str, WasmError> {
+        let b = self.deref_slice(offset, len)?;
+        std::str::from_utf8(b).map_err(|e| WasmError::Wasm(e.into()))
+    }
+    fn deref_str_lossy(&self, offset: WasmPtr<u8>, len: u32) -> Result<Cow<str>, WasmError> {
+        self.deref_slice(offset, len).map(String::from_utf8_lossy)
+    }
+    fn opt_deref_str_lossy(&self, offset: WasmPtr<u8>, len: u32) -> Result<Option<Cow<str>>, WasmError> {
+        if offset == 0 {
+            Ok(None)
+        } else {
+            self.deref_str_lossy(offset, len).map(Some)
+        }
+    }
+    fn deref_slice_mut(&mut self, offset: WasmPtr<u8>, len: u32) -> Result<&mut [u8], WasmError> {
+        self.0
+            .get_mut(offset as usize..)
+            .and_then(|s| s.get_mut(..len as usize))
+            .ok_or_else(|| WasmError::Wasm(wasmtime::Trap::MemoryOutOfBounds.into()))
     }
 }

@@ -193,13 +193,13 @@ impl InstanceEnv {
     ///
     /// Errors with `TableNotFound` if the table does not exist.
     #[tracing::instrument(skip_all)]
-    pub fn get_table_id(&self, table_name: String) -> Result<TableId, NodesError> {
+    pub fn get_table_id(&self, table_name: &str) -> Result<TableId, NodesError> {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;
 
         // Query the table id from the name.
         let table_id = stdb
-            .table_id_from_name(tx, &table_name)?
+            .table_id_from_name(tx, table_name)?
             .ok_or(NodesError::TableNotFound)?;
 
         Ok(table_id)
@@ -235,7 +235,7 @@ impl InstanceEnv {
             IndexType::Hash => todo!("Hash indexes not yet supported"),
         };
 
-        let cols = NonEmpty::from_slice(&col_ids)
+        let cols = NonEmpty::from_vec(col_ids)
             .expect("Attempt to create an index with zero columns")
             .map(Into::into);
 
