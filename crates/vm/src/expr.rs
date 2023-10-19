@@ -399,7 +399,7 @@ pub enum Crud {
     Drop(DbType),
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum CrudExpr {
     Query(QueryExpr),
     Insert {
@@ -407,8 +407,8 @@ pub enum CrudExpr {
         rows: Vec<Vec<FieldExpr>>,
     },
     Update {
-        insert: QueryExpr,
         delete: QueryExpr,
+        assignments: HashMap<FieldName, FieldExpr>,
     },
     Delete {
         query: QueryExpr,
@@ -1080,8 +1080,8 @@ pub enum CrudExprOpt {
         rows: Vec<ProductValue>,
     },
     Update {
-        insert: QueryExprOpt,
         delete: QueryExprOpt,
+        assignments: HashMap<FieldName, FieldExpr>,
     },
     Delete {
         query: QueryExprOpt,
@@ -1342,8 +1342,8 @@ pub enum CrudCode {
         rows: Vec<ProductValue>,
     },
     Update {
-        insert: QueryCode,
         delete: QueryCode,
+        assignments: HashMap<FieldName, FieldExpr>,
     },
     Delete {
         query: QueryCode,
@@ -1575,11 +1575,13 @@ mod tests {
 
     #[test]
     fn test_auth_crud_code_update() {
-        let mut qc = query_codes().into_iter();
-        let insert = qc.next().unwrap();
-        let delete = qc.next().unwrap();
-        let crud = CrudCode::Update { insert, delete };
-        assert_owner_required(crud);
+        for qc in query_codes() {
+            let crud = CrudCode::Update {
+                delete: qc,
+                assignments: Default::default(),
+            };
+            assert_owner_required(crud);
+        }
     }
 
     #[test]

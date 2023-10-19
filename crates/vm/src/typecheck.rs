@@ -136,7 +136,7 @@ pub(crate) fn check_types(env: &mut EnvTy, ast: &ExprOpt) -> Result<Ty, ErrorTyp
             let q = &**q;
             match q {
                 CrudExprOpt::Insert { source, .. } => Ok(ty_source(source)),
-                CrudExprOpt::Update { insert, .. } => Ok(ty_source(&insert.source)),
+                CrudExprOpt::Update { delete, .. } => Ok(ty_source(&delete.source)),
                 CrudExprOpt::Delete { query } => Ok(ty_source(&query.source)),
                 CrudExprOpt::CreateTable { columns, .. } => Ok(AlgebraicType::Product(columns.columns.clone()).into()),
                 CrudExprOpt::Drop { .. } => {
