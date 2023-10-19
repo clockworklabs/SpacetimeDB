@@ -1,29 +1,31 @@
 mod host_controller;
+pub mod instance_env; // Visible for integration testing.
 pub(crate) mod module_host;
 pub mod scheduler;
-mod wasmer;
-// Visible for integration testing.
-pub mod instance_env;
 mod timestamp;
 mod wasm_common;
+mod wasmtime;
+
+pub use host_controller::{
+    DescribedEntityType, EnergyDiff, EnergyQuanta, HostController, ReducerCallResult, ReducerOutcome, UpdateOutcome,
+};
+pub use module_host::{
+    EntityDef, ModuleHost, NoSuchModule, ReducerCallError, UpdateDatabaseResult, UpdateDatabaseSuccess,
+};
+pub use timestamp::Timestamp;
 
 use anyhow::Context;
 use bytes::Bytes;
 use bytestring::ByteString;
 use derive_more::Display;
 use enum_map::Enum;
-pub use host_controller::{
-    DescribedEntityType, EnergyDiff, EnergyQuanta, HostController, ReducerCallResult, ReducerOutcome, UpdateOutcome,
-};
-pub use module_host::{ModuleHost, NoSuchModule};
-pub use module_host::{UpdateDatabaseResult, UpdateDatabaseSuccess};
+use std::time::Duration;
+
 use spacetimedb_lib::de::serde::SeedWrapper;
 use spacetimedb_lib::de::DeserializeSeed;
-use spacetimedb_lib::{bsatn, Identity};
+use spacetimedb_lib::{bsatn, Hash, Identity};
 use spacetimedb_lib::{ProductValue, ReducerDef};
 use spacetimedb_sats::WithTypespace;
-use std::time::Duration;
-pub use timestamp::Timestamp;
 
 #[derive(Debug)]
 pub enum ReducerArgs {
@@ -119,9 +121,6 @@ pub struct InvalidReducerArguments {
     reducer: String,
 }
 
-pub use module_host::{EntityDef, ReducerCallError};
-use spacetimedb_sats::hash::Hash;
-
 fn from_json_seed<'de, T: serde::de::DeserializeSeed<'de>>(s: &'de str, seed: T) -> anyhow::Result<T::Value> {
     let mut de = serde_json::Deserializer::from_str(s);
     let mut track = serde_path_to_error::Track::new();
@@ -168,7 +167,7 @@ impl EnergyMonitor for NullEnergyMonitor {
 }
 
 /// Tags for each call that a `WasmInstanceEnv` can make.
-#[derive(Debug, Display, Enum)]
+#[derive(Debug, Display, Enum, Clone, Copy)]
 pub enum AbiCall {
     CancelReducer,
     ConsoleLog,
