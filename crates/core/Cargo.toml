@@ -85,10 +85,11 @@ tracing.workspace = true
 url.workspace = true
 urlencoding.workspace = true
 uuid.workspace = true
-wasmer-middlewares.workspace = true
-wasmer-types.workspace = true
-wasmer-vm.workspace = true
-wasmer.workspace = true
+# wasmer-middlewares.workspace = true
+# wasmer-types.workspace = true
+# wasmer-vm.workspace = true
+# wasmer.workspace = true
+wasmtime.workspace = true
 # Rocksdb ostorage backend, linked only if "rocksdb" feature enabled.
 rocksdb = {workspace = true, optional = true}
 

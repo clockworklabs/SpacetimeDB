@@ -379,17 +379,17 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
 
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> spacetimedb::control_db::Result<()> {
         let mut balance = <Self as spacetimedb_client_api::ControlStateReadAccess>::get_energy_balance(self, identity)?
-            .map(|quanta| quanta.0)
-            .unwrap_or(0);
-        balance = balance.saturating_add(amount.0);
+            .map_or(0, |quanta| quanta.get());
+        balance = balance.saturating_add(amount.get());
 
-        self.control_db.set_energy_balance(*identity, EnergyQuanta(balance))
+        self.control_db
+            .set_energy_balance(*identity, EnergyQuanta::new(balance))
     }
     async fn withdraw_energy(&self, identity: &Identity, amount: EnergyQuanta) -> spacetimedb::control_db::Result<()> {
         let energy_balance = self.control_db.get_energy_balance(identity)?;
-        let energy_balance = energy_balance.unwrap_or(EnergyQuanta(0));
-        log::trace!("Withdrawing {} energy from {}", amount.0, identity);
-        log::trace!("Old balance: {}", energy_balance.0);
+        let energy_balance = energy_balance.unwrap_or(EnergyQuanta::new(0));
+        log::trace!("Withdrawing {} energy from {}", amount.get(), identity);
+        log::trace!("Old balance: {}", energy_balance.get());
         let new_balance = energy_balance - amount;
         self.control_db.set_energy_balance(*identity, new_balance.as_quanta())
     }

@@ -516,7 +516,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let reducer_span = tracing::trace_span!(
             "run_reducer",
             timings.total_duration = tracing::field::Empty,
-            energy.budget = budget.0,
+            energy.budget = budget.get(),
             energy.used = tracing::field::Empty,
         )
         .entered();

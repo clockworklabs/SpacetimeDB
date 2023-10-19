@@ -170,7 +170,7 @@ impl EnergyMonitor for NullEnergyMonitor {
 }
 
 /// Tags for each call that a `WasmInstanceEnv` can make.
-#[derive(Debug, Display, Enum)]
+#[derive(Debug, Display, Enum, Clone, Copy)]
 pub enum AbiCall {
     CancelReducer,
     ConsoleLog,

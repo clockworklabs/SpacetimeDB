@@ -1,121 +1,75 @@
 use super::wasm_instance_env::WasmInstanceEnv;
-use super::Mem;
+use super::{Mem, WasmtimeFuel};
 use crate::host::instance_env::InstanceEnv;
 use crate::host::wasm_common::module_host_actor::{DescribeError, InitializationError, ReducerOp};
 use crate::host::wasm_common::*;
 use crate::host::EnergyQuanta;
+use crate::util::ResultInspectExt;
+use anyhow::anyhow;
 use bytes::Bytes;
-use wasmer::{
-    imports, AsStoreMut, Engine, ExternType, Function, FunctionEnv, Imports, Instance, Module, RuntimeError, Store,
-    TypedFunction,
-};
-use wasmer_middlewares::metering as wasmer_metering;
+use wasmtime::{AsContext, AsContextMut, ExternType, Instance, InstancePre, Linker, Store, TypedFunc, WasmBacktrace};
 
-fn get_remaining_points(ctx: &mut impl AsStoreMut, instance: &Instance) -> u64 {
-    let remaining_points = wasmer_metering::get_remaining_points(ctx, instance);
-    match remaining_points {
-        wasmer_metering::MeteringPoints::Remaining(x) => x,
-        wasmer_metering::MeteringPoints::Exhausted => 0,
-    }
-}
+// fn get_remaining_points(ctx: &mut impl AsStoreMut, instance: &Instance) -> u64 {
+//     let remaining_points = wasmer_metering::get_remaining_points(ctx, instance);
+//     match remaining_points {
+//         wasmer_metering::MeteringPoints::Remaining(x) => x,
+//         wasmer_metering::MeteringPoints::Exhausted => 0,
+//     }
+// }
 
-fn log_traceback(func_type: &str, func: &str, e: &RuntimeError) {
-    let frames = e.trace();
-    let frames_len = frames.len();
-
-    log::info!("{} \"{}\" runtime error: {}", func_type, func, e.message());
-    for (i, frame) in frames.iter().enumerate().take(frames_len) {
-        log::info!(
-            "  Frame #{}: {:?}::{}",
-            frames_len - i,
-            frame.module_name(),
-            rustc_demangle::demangle(frame.function_name().unwrap_or("<func>"))
-        );
+fn log_traceback(func_type: &str, func: &str, e: &wasmtime::Error) {
+    log::info!("{} \"{}\" runtime error: {}", func_type, func, e);
+    if let Some(bt) = e.downcast_ref::<WasmBacktrace>() {
+        let frames_len = bt.frames().len();
+        for (i, frame) in bt.frames().iter().enumerate() {
+            log::info!(
+                "  Frame #{}: {}",
+                frames_len - i,
+                rustc_demangle::demangle(frame.func_name().unwrap_or("<unknown>"))
+            );
+        }
     }
 }
 
 #[derive(Clone)]
 pub struct WasmerModule {
-    module: Module,
-    engine: Engine,
+    module: InstancePre<WasmInstanceEnv>,
 }
 
 impl WasmerModule {
-    pub fn new(module: Module, engine: Engine) -> Self {
-        WasmerModule { module, engine }
+    pub(super) fn new(module: InstancePre<WasmInstanceEnv>) -> Self {
+        WasmerModule { module }
     }
 
     pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(7, 0);
 
-    fn imports(&self, store: &mut Store, env: &FunctionEnv<WasmInstanceEnv>) -> Imports {
+    pub(super) fn link_imports(linker: &mut Linker<WasmInstanceEnv>) -> anyhow::Result<()> {
         #[allow(clippy::assertions_on_constants)]
         const _: () = assert!(WasmerModule::IMPLEMENTED_ABI.major == spacetimedb_lib::MODULE_ABI_MAJOR_VERSION);
-        imports! {
-            "spacetime_7.0" => {
-                "_schedule_reducer" => Function::new_typed_with_env(store, env, WasmInstanceEnv::schedule_reducer),
-                "_cancel_reducer" => Function::new_typed_with_env(store, env, WasmInstanceEnv::cancel_reducer),
-                "_delete_by_col_eq" => Function::new_typed_with_env(
-                    store,
-                    env,
-                    WasmInstanceEnv::delete_by_col_eq,
-                ),
-                "_delete_by_rel" => Function::new_typed_with_env(
-                    store,
-                    env,
-                    WasmInstanceEnv::delete_by_rel,
-                ),
-                "_insert" => Function::new_typed_with_env(
-                    store,
-                    env,
-                    WasmInstanceEnv::insert,
-                ),
-                "_get_table_id" => Function::new_typed_with_env(
-                    store,
-                    env,
-                    WasmInstanceEnv::get_table_id,
-                ),
-                "_create_index" => Function::new_typed_with_env(
-                    store,
-                    env,
-                    WasmInstanceEnv::create_index,
-                ),
-                "_iter_by_col_eq" => Function::new_typed_with_env(
-                    store,
-                    env,
-                    WasmInstanceEnv::iter_by_col_eq,
-                ),
-                "_iter_start" => Function::new_typed_with_env(
-                    store,
-                    env,
-                    WasmInstanceEnv::iter_start
-                ),
-                "_iter_start_filtered" => Function::new_typed_with_env(
-                    store,
-                    env,
-                    WasmInstanceEnv::iter_start_filtered
-                ),
-                "_iter_next" => Function::new_typed_with_env(
-                    store,
-                    env,
-                    WasmInstanceEnv::iter_next
-                ),
-                "_iter_drop" => Function::new_typed_with_env(
-                    store,
-                    env,
-                    WasmInstanceEnv::iter_drop
-                ),
-                "_console_log" => Function::new_typed_with_env(
-                    store,
-                    env,
-                    WasmInstanceEnv::console_log
-                ),
-                "_buffer_len" => Function::new_typed_with_env(store, env, WasmInstanceEnv::buffer_len),
-                "_buffer_consume" => Function::new_typed_with_env(store, env, WasmInstanceEnv::buffer_consume),
-                "_buffer_alloc" => Function::new_typed_with_env(store, env, WasmInstanceEnv::buffer_alloc),
-                "_span_start" => Function::new_typed_with_env(store, env, WasmInstanceEnv::span_start),
-                "_span_end" => Function::new_typed_with_env(store, env, WasmInstanceEnv::span_end),
-            }
-        }
+        linker
+            .func_wrap("spacetime_7.0", "_schedule_reducer", WasmInstanceEnv::schedule_reducer)?
+            .func_wrap("spacetime_7.0", "_cancel_reducer", WasmInstanceEnv::cancel_reducer)?
+            .func_wrap("spacetime_7.0", "_delete_by_col_eq", WasmInstanceEnv::delete_by_col_eq)?
+            .func_wrap("spacetime_7.0", "delete_by_rel", WasmInstanceEnv::delete_by_rel)?
+            .func_wrap("spacetime_7.0", "_insert", WasmInstanceEnv::insert)?
+            .func_wrap("spacetime_7.0", "_get_table_id", WasmInstanceEnv::get_table_id)?
+            .func_wrap("spacetime_7.0", "_create_index", WasmInstanceEnv::create_index)?
+            .func_wrap("spacetime_7.0", "_iter_by_col_eq", WasmInstanceEnv::iter_by_col_eq)?
+            .func_wrap("spacetime_7.0", "_iter_start", WasmInstanceEnv::iter_start)?
+            .func_wrap(
+                "spacetime_7.0",
+                "_iter_start_filtered",
+                WasmInstanceEnv::iter_start_filtered,
+            )?
+            .func_wrap("spacetime_7.0", "_iter_next", WasmInstanceEnv::iter_next)?
+            .func_wrap("spacetime_7.0", "_iter_drop", WasmInstanceEnv::iter_drop)?
+            .func_wrap("spacetime_7.0", "_console_log", WasmInstanceEnv::console_log)?
+            .func_wrap("spacetime_7.0", "_buffer_len", WasmInstanceEnv::buffer_len)?
+            .func_wrap("spacetime_7.0", "_buffer_consume", WasmInstanceEnv::buffer_consume)?
+            .func_wrap("spacetime_7.0", "_buffer_alloc", WasmInstanceEnv::buffer_alloc)?
+            .func_wrap("spacetime_7.0", "_span_start", WasmInstanceEnv::span_start)?
+            .func_wrap("spacetime_7.0", "_span_end", WasmInstanceEnv::span_end)?;
+        Ok(())
     }
 }
 
@@ -127,13 +81,17 @@ impl module_host_actor::WasmModule for WasmerModule {
 
     fn get_export(&self, s: &str) -> Option<Self::ExternType> {
         self.module
+            .module()
             .exports()
             .find(|exp| exp.name() == s)
-            .map(|exp| exp.ty().clone())
+            .map(|exp| exp.ty())
     }
 
     fn for_each_export<E>(&self, mut f: impl FnMut(&str, &Self::ExternType) -> Result<(), E>) -> Result<(), E> {
-        self.module.exports().try_for_each(|exp| f(exp.name(), exp.ty()))
+        self.module
+            .module()
+            .exports()
+            .try_for_each(|exp| f(exp.name(), &exp.ty()))
     }
 
     fn instantiate_pre(&self) -> Result<Self::InstancePre, InitializationError> {
@@ -145,36 +103,36 @@ impl module_host_actor::WasmInstancePre for WasmerModule {
     type Instance = WasmerInstance;
 
     fn instantiate(&self, env: InstanceEnv, func_names: &FuncNames) -> Result<Self::Instance, InitializationError> {
-        let mut store = Store::new(self.engine.clone());
         let env = WasmInstanceEnv::new(env);
-        let env = FunctionEnv::new(&mut store, env);
-        let imports = self.imports(&mut store, &env);
-        let instance = Instance::new(&mut store, &self.module, &imports)
-            .map_err(|err| InitializationError::Instantiation(err.into()))?;
+        let mut store = Store::new(self.module.module().engine(), env);
+        let instance = self
+            .module
+            .instantiate(&mut store)
+            .map_err(InitializationError::Instantiation)?;
 
-        let mem = Mem::extract(&instance.exports).unwrap();
-
-        env.as_mut(&mut store).instantiate(mem);
+        let mem = Mem::extract(&instance, &mut store).unwrap();
+        store.data_mut().instantiate(mem);
 
         // Note: this budget is just for initializers
-        let budget = EnergyQuanta::DEFAULT_BUDGET.as_points();
-        wasmer_metering::set_remaining_points(&mut store, &instance, budget);
+        let (init_budget, _) = WasmtimeFuel::from_energy_quanta(EnergyQuanta::DEFAULT_BUDGET);
+        set_store_fuel(&mut store, init_budget);
 
         for preinit in &func_names.preinits {
-            let func = instance.exports.get_typed_function::<(), ()>(&store, preinit).unwrap();
-            func.call(&mut store).map_err(|err| InitializationError::RuntimeError {
-                err: err.into(),
-                func: preinit.clone(),
-            })?;
+            let func = instance.get_typed_func::<(), ()>(&mut store, preinit).unwrap();
+            func.call(&mut store, ())
+                .map_err(|err| InitializationError::RuntimeError {
+                    err,
+                    func: preinit.clone(),
+                })?;
         }
 
-        let init = instance.exports.get_typed_function::<(), u32>(&store, SETUP_DUNDER);
+        let init = instance.get_typed_func::<(), u32>(&mut store, SETUP_DUNDER);
         if let Ok(init) = init {
-            match init.call(&mut store).map(BufferIdx) {
+            match init.call(&mut store, ()).map(BufferIdx) {
                 Ok(errbuf) if errbuf.is_invalid() => {}
                 Ok(errbuf) => {
-                    let errbuf = env
-                        .as_mut(&mut store)
+                    let errbuf = store
+                        .data_mut()
                         .take_buffer(errbuf)
                         .unwrap_or_else(|| "unknown error".as_bytes().into());
                     let errbuf = crate::util::string_from_utf8_lossy_owned(errbuf.into()).into();
@@ -183,7 +141,7 @@ impl module_host_actor::WasmInstancePre for WasmerModule {
                 }
                 Err(err) => {
                     return Err(InitializationError::RuntimeError {
-                        err: err.into(),
+                        err,
                         func: SETUP_DUNDER.to_owned(),
                     });
                 }
@@ -191,13 +149,11 @@ impl module_host_actor::WasmInstancePre for WasmerModule {
         }
 
         let call_reducer = instance
-            .exports
-            .get_typed_function(&store, CALL_REDUCER_DUNDER)
+            .get_typed_func(&mut store, CALL_REDUCER_DUNDER)
             .expect("no call_reducer");
 
         Ok(WasmerInstance {
             store,
-            env,
             instance,
             call_reducer,
         })
@@ -205,48 +161,42 @@ impl module_host_actor::WasmInstancePre for WasmerModule {
 }
 
 pub struct WasmerInstance {
-    store: Store,
-    env: FunctionEnv<WasmInstanceEnv>,
+    store: Store<WasmInstanceEnv>,
     instance: Instance,
-    call_reducer: TypedFunction<(u32, u32, u32, u64, u32), u32>,
+    call_reducer: TypedFunc<(u32, u32, u32, u64, u32), u32>,
 }
 
 impl module_host_actor::WasmInstance for WasmerInstance {
     fn extract_descriptions(&mut self) -> Result<Bytes, DescribeError> {
         let describer_func_name = DESCRIBE_MODULE_DUNDER;
-        let describer = self.instance.exports.get_function(describer_func_name).unwrap();
+        let describer = self.instance.get_func(&mut self.store, describer_func_name).unwrap();
 
         let start = std::time::Instant::now();
         log::trace!("Start describer \"{}\"...", describer_func_name);
 
         let store = &mut self.store;
         let describer = describer
-            .typed::<(), u32>(store)
+            .typed::<(), u32>(&mut *store)
             .map_err(|_| DescribeError::Signature)?;
-        let result = describer.call(store).map(BufferIdx);
+        let result = describer.call(&mut *store, ()).map(BufferIdx);
         let duration = start.elapsed();
         log::trace!("Describer \"{}\" ran: {} us", describer_func_name, duration.as_micros(),);
-        let buf = result.map_err(|err| {
-            log_traceback("describer", describer_func_name, &err);
-            DescribeError::RuntimeError(err.into())
-        })?;
-        let bytes = self
-            .env
-            .as_mut(store)
-            .take_buffer(buf)
-            .ok_or(DescribeError::BadBuffer)?;
+        let buf = result
+            .inspect_err_(|err| log_traceback("describer", describer_func_name, err))
+            .map_err(DescribeError::RuntimeError)?;
+        let bytes = store.data_mut().take_buffer(buf).ok_or(DescribeError::BadBuffer)?;
 
         // Clear all of the instance state associated to this describer call.
-        self.env.as_mut(store).finish_reducer();
+        store.data_mut().finish_reducer();
 
         Ok(bytes)
     }
 
     fn instance_env(&self) -> &InstanceEnv {
-        self.env.as_ref(&self.store).instance_env()
+        self.store.data().instance_env()
     }
 
-    type Trap = wasmer::RuntimeError;
+    type Trap = anyhow::Error;
 
     fn call_reducer(
         &mut self,
@@ -254,38 +204,35 @@ impl module_host_actor::WasmInstance for WasmerInstance {
         budget: EnergyQuanta,
     ) -> module_host_actor::ExecuteResult<Self::Trap> {
         let store = &mut self.store;
-        let instance = &self.instance;
-        let budget = budget.as_points();
-        wasmer_metering::set_remaining_points(store, instance, budget);
+        // note that this conversion is load-bearing - although we convert budget right back into
+        // EnergyQuanta at the end of this function, from_energy_quanta clamps it to a u64 range.
+        // otherwise, we'd return something like `used: i128::MAX - u64::MAX`, which is inaccurate.
+        let (budget, _excess_quanta) = WasmtimeFuel::from_energy_quanta(budget);
+        set_store_fuel(store, budget);
 
-        let mut make_buf = |data| self.env.as_mut(store).insert_buffer(data);
+        let mut make_buf = |data| store.data_mut().insert_buffer(data);
 
         let identity_buf = make_buf(op.caller_identity.as_bytes().to_vec().into());
         let address_buf = make_buf(op.caller_address.as_slice().to_vec().into());
         let args_buf = make_buf(op.arg_bytes);
 
-        self.env.as_mut(store).start_reducer(op.name);
+        store.data_mut().start_reducer(op.name);
 
-        let result = self
+        let call_result = self
             .call_reducer
             .call(
-                store,
-                op.id.0,
-                identity_buf.0,
-                address_buf.0,
-                op.timestamp.0,
-                args_buf.0,
+                &mut *store,
+                (op.id.0, identity_buf.0, address_buf.0, op.timestamp.0, args_buf.0),
             )
             .and_then(|errbuf| {
                 let errbuf = BufferIdx(errbuf);
                 Ok(if errbuf.is_invalid() {
                     Ok(())
                 } else {
-                    let errmsg = self
-                        .env
-                        .as_mut(store)
+                    let errmsg = store
+                        .data_mut()
                         .take_buffer(errbuf)
-                        .ok_or_else(|| RuntimeError::new("invalid buffer handle"))?;
+                        .ok_or_else(|| anyhow!("invalid buffer handle"))?;
                     Err(crate::util::string_from_utf8_lossy_owned(errmsg.into()).into())
                 })
             });
@@ -293,22 +240,38 @@ impl module_host_actor::WasmInstance for WasmerInstance {
         // Signal that this reducer call is finished. This gets us the timings
         // associated to our reducer call, and clears all of the instance state
         // associated to the call.
-        let timings = self.env.as_mut(store).finish_reducer();
+        let timings = store.data_mut().finish_reducer();
 
-        let remaining = get_remaining_points(store, instance);
+        let remaining: EnergyQuanta = get_store_fuel(store).into();
         let energy = module_host_actor::EnergyStats {
-            used: EnergyQuanta::from_points(budget) - EnergyQuanta::from_points(remaining),
-            remaining: EnergyQuanta::from_points(remaining),
+            used: EnergyQuanta::from(budget) - remaining,
+            remaining,
         };
 
         module_host_actor::ExecuteResult {
             energy,
             timings,
-            call_result: result,
+            call_result,
         }
     }
 
     fn log_traceback(func_type: &str, func: &str, trap: &Self::Trap) {
         log_traceback(func_type, func, trap)
     }
+}
+
+fn set_store_fuel(store: &mut impl AsContextMut, fuel: WasmtimeFuel) {
+    let fuel = fuel.0;
+    let mut store = store.as_context_mut();
+    let rem = store.fuel_remaining().unwrap();
+    let diff = rem.abs_diff(fuel);
+    if rem < fuel {
+        store.add_fuel(diff).unwrap();
+    } else {
+        store.consume_fuel(diff).unwrap();
+    }
+}
+
+fn get_store_fuel(store: &impl AsContext) -> WasmtimeFuel {
+    WasmtimeFuel(store.as_context().fuel_remaining().unwrap())
 }
