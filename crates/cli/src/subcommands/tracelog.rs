@@ -20,50 +20,36 @@ fn get_energy_subcommands() -> Vec<clap::Command> {
             .about("Retrieve a copy of the trace log for a database, if tracing is turned on")
             .arg(Arg::new("database").required(true))
             .arg(Arg::new("outputfile").required(true).help("path to write tracelog to"))
-            .arg(
-                Arg::new("server")
-                    .long("server")
-                    .short('s')
-                    .help("The nickname, host name or URL of the server running tracing"),
-            ),
         clap::Command::new("stop")
             .about("Stop tracing on a given database")
             .arg(Arg::new("database").required(true))
-            .arg(
-                Arg::new("server")
-                    .long("server")
-                    .short('s')
-                    .help("The nickname, host name or URL of the server running tracing"),
-            ),
         clap::Command::new("replay")
             .about("Replay a tracelog on a temporary fresh DB instance on the server")
             .arg(Arg::new("tracefile").required(true).help("path to read tracelog from"))
-            .arg(
-                Arg::new("server")
-                    .long("server")
-                    .short('s')
-                    .help("The nickname, host name or URL of the server running tracing"),
-            ),
     ]
 }
 
-async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
+async fn exec_subcommand(
+    config: Config,
+    cmd: &str,
+    args: &ArgMatches,
+    server: Option<&str>,
+) -> Result<(), anyhow::Error> {
     match cmd {
-        "get" => exec_get(config, args).await,
-        "stop" => exec_stop(config, args).await,
-        "replay" => exec_replay(config, args).await,
+        "get" => exec_get(config, args, server).await,
+        "stop" => exec_stop(config, args, server).await,
+        "replay" => exec_replay(config, args, server).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
 }
 
-pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(config: Config, args: &ArgMatches, server: Option<&str>) -> Result<(), anyhow::Error> {
     let (cmd, subcommand_args) = args.subcommand().expect("Subcommand required");
-    exec_subcommand(config, cmd, subcommand_args).await
+    exec_subcommand(config, cmd, subcommand_args, server).await
 }
 
-pub async fn exec_replay(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec_replay(config: Config, args: &ArgMatches, server: Option<&str>) -> Result<(), anyhow::Error> {
     let tracefile = args.get_one::<String>("tracefile").unwrap();
-    let server = args.get_one::<String>("server").map(|s| s.as_ref());
     match std::fs::read(tracefile) {
         Ok(o) => {
             let client = reqwest::Client::new();
@@ -87,9 +73,8 @@ pub async fn exec_replay(config: Config, args: &ArgMatches) -> Result<(), anyhow
     Ok(())
 }
 
-pub async fn exec_stop(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec_stop(config: Config, args: &ArgMatches, server: Option<&str>) -> Result<(), anyhow::Error> {
     let database = args.get_one::<String>("database").unwrap();
-    let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let address = database_address(&config, database, server).await?;
 
     let client = reqwest::Client::new();
@@ -115,9 +100,8 @@ pub async fn exec_stop(config: Config, args: &ArgMatches) -> Result<(), anyhow::
     Ok(())
 }
 
-pub async fn exec_get(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec_get(config: Config, args: &ArgMatches, server: Option<&str>) -> Result<(), anyhow::Error> {
     let database = args.get_one::<String>("database").unwrap();
-    let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let address = database_address(&config, database, server).await?;
 
     let client = reqwest::Client::new();

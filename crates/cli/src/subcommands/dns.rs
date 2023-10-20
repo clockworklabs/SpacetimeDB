@@ -16,9 +16,9 @@ pub fn cli() -> Command {
         .about("Create, manage and query domains")
 }
 
-pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(config: Config, args: &ArgMatches, server: Option<&str>) -> Result<(), anyhow::Error> {
     let (cmd, subcommand_args) = args.subcommand().expect("Subcommand required");
-    exec_subcommand(config, cmd, subcommand_args).await
+    exec_subcommand(config, cmd, subcommand_args, server).await
 }
 
 fn get_subcommands() -> Vec<Command> {
@@ -77,20 +77,24 @@ fn get_subcommands() -> Vec<Command> {
     ]
 }
 
-async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
+async fn exec_subcommand(
+    config: Config,
+    cmd: &str,
+    args: &ArgMatches,
+    server: Option<&str>,
+) -> Result<(), anyhow::Error> {
     match cmd {
-        "register-tld" => exec_register_tld(config, args).await,
-        "lookup" => exec_dns_lookup(config, args).await,
-        "reverse-lookup" => exec_reverse_dns(config, args).await,
-        "set-name" => exec_set_name(config, args).await,
+        "register-tld" => exec_register_tld(config, args, server).await,
+        "lookup" => exec_dns_lookup(config, args, server).await,
+        "reverse-lookup" => exec_reverse_dns(config, args, server).await,
+        "set-name" => exec_set_name(config, args, server).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
 }
 
-async fn exec_register_tld(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+async fn exec_register_tld(mut config: Config, args: &ArgMatches, server: Option<&str>) -> Result<(), anyhow::Error> {
     let tld = args.get_one::<String>("tld").unwrap().clone();
     let identity = args.get_one::<String>("identity");
-    let server = args.get_one::<String>("server").map(|s| s.as_ref());
 
     match spacetime_register_tld(&mut config, &tld, identity, server).await? {
         RegisterTldResult::Success { domain } => {
@@ -108,9 +112,8 @@ async fn exec_register_tld(mut config: Config, args: &ArgMatches) -> Result<(), 
     Ok(())
 }
 
-pub async fn exec_dns_lookup(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec_dns_lookup(config: Config, args: &ArgMatches, server: Option<&str>) -> Result<(), anyhow::Error> {
     let domain = args.get_one::<String>("domain").unwrap();
-    let server = args.get_one::<String>("server").map(|s| s.as_ref());
 
     let response = spacetime_dns(&config, domain, server).await?;
     match response {
@@ -124,9 +127,8 @@ pub async fn exec_dns_lookup(config: Config, args: &ArgMatches) -> Result<(), an
     Ok(())
 }
 
-pub async fn exec_reverse_dns(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec_reverse_dns(config: Config, args: &ArgMatches, server: Option<&str>) -> Result<(), anyhow::Error> {
     let addr = args.get_one::<String>("address").unwrap();
-    let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let response = spacetime_reverse_dns(&config, addr, server).await?;
     if response.names.is_empty() {
         Err(anyhow::anyhow!("Could not find a name for the address: {}", addr))
@@ -138,11 +140,10 @@ pub async fn exec_reverse_dns(config: Config, args: &ArgMatches) -> Result<(), a
     }
 }
 
-pub async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec_set_name(mut config: Config, args: &ArgMatches, server: Option<&str>) -> Result<(), anyhow::Error> {
     let domain = args.get_one::<String>("domain").unwrap();
     let address = args.get_one::<String>("address").unwrap();
     let identity = args.get_one::<String>("identity");
-    let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let auth_header = get_auth_header_only(&mut config, false, identity, server).await?;
 
     let builder = reqwest::Client::new().get(Url::parse_with_params(

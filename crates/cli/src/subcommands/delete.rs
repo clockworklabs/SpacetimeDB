@@ -26,8 +26,7 @@ pub fn cli() -> clap::Command {
         .after_help("Run `spacetime help delete` for more detailed information.\n")
 }
 
-pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let server = args.get_one::<String>("server").map(|s| s.as_ref());
+pub async fn exec(mut config: Config, args: &ArgMatches, server: Option<&str>) -> Result<(), anyhow::Error> {
     let database = args.get_one::<String>("database").unwrap();
     let identity_or_name = args.get_one::<String>("identity");
 

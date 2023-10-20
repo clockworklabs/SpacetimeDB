@@ -20,7 +20,6 @@ async fn main() -> Result<(), anyhow::Error> {
 
 fn get_command() -> Command {
     Command::new("spacetime")
-        .args_conflicts_with_subcommands(true)
         .arg(
             Arg::new("server")
                 .long("server")
