@@ -4,13 +4,14 @@ use serde::Deserialize;
 use serde_json::value::RawValue;
 
 use spacetimedb_lib::sats::ProductType;
+use spacetimedb_lib::Address;
 
 static APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
 
 #[derive(Debug, Clone)]
 pub struct Connection {
     pub(crate) host: String,
-    pub(crate) address: String,
+    pub(crate) address: Address,
     pub(crate) database: String,
     pub(crate) auth_header: Option<String>,
 }

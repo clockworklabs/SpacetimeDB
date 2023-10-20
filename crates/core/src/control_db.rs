@@ -32,7 +32,7 @@ pub enum Error {
     #[error("record with the name {0} already exists")]
     RecordAlreadyExists(DomainName),
     #[error("database with address {0} already exists")]
-    DatabaseAlreadyExists(String),
+    DatabaseAlreadyExists(Address),
     #[error("failed to register {0} domain")]
     DomainRegistrationFailure(DomainName),
     #[error("failed to decode data")]
@@ -119,6 +119,7 @@ impl ControlDb {
         owner_identity: Identity,
         try_register_tld: bool,
     ) -> Result<InsertDomainResult> {
+        let address = *address;
         if self.spacetime_dns(&domain)?.is_some() {
             return Err(Error::RecordAlreadyExists(domain));
         }
@@ -160,10 +161,7 @@ impl ControlDb {
             }
         }
 
-        Ok(InsertDomainResult::Success {
-            domain,
-            address: address.to_hex(),
-        })
+        Ok(InsertDomainResult::Success { domain, address })
     }
 
     /// Inserts a top level domain that will be owned by `owner_identity`.
@@ -330,8 +328,8 @@ impl ControlDb {
         let tree = self.db.open_tree("database_by_address")?;
 
         let key = database.address.to_hex();
-        if tree.contains_key(key.as_bytes())? {
-            return Err(Error::DatabaseAlreadyExists(key));
+        if tree.contains_key(key)? {
+            return Err(Error::DatabaseAlreadyExists(database.address));
         }
 
         database.id = id;
@@ -356,7 +354,7 @@ impl ControlDb {
             let old_database: Database = bsatn::from_slice(&old_value[..])?;
 
             if database.address != old_database.address && tree_by_address.contains_key(key.as_bytes())? {
-                return Err(Error::DatabaseAlreadyExists(key));
+                return Err(Error::DatabaseAlreadyExists(database.address));
             }
         }
 

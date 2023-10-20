@@ -2,19 +2,18 @@ use anyhow::Context;
 use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
 use reqwest::RequestBuilder;
 use serde::Deserialize;
-use spacetimedb_lib::name::{is_address, DnsLookupResponse, RegisterTldResult, ReverseDNSResponse};
-use spacetimedb_lib::{AlgebraicType, Identity};
+use spacetimedb_lib::name::{DnsLookupResponse, RegisterTldResult, ReverseDNSResponse};
+use spacetimedb_lib::{Address, AlgebraicType, Identity};
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::Path;
-use std::process::exit;
 
 use crate::config::{Config, IdentityConfig};
 
 /// Determine the address of the `database`.
-pub async fn database_address(config: &Config, database: &str, server: Option<&str>) -> Result<String, anyhow::Error> {
-    if is_address(database) {
-        return Ok(database.to_string());
+pub async fn database_address(config: &Config, database: &str, server: Option<&str>) -> Result<Address, anyhow::Error> {
+    if let Ok(address) = Address::from_hex(database) {
+        return Ok(address);
     }
     match spacetime_dns(config, database, server).await? {
         DnsLookupResponse::Success { domain: _, address } => Ok(address),
@@ -49,7 +48,7 @@ pub async fn spacetime_register_tld(
     // TODO(jdetter): Fix URL encoding on specifying this domain
     let builder = reqwest::Client::new()
         .get(format!("{}/database/register_tld?tld={}", config.get_host_url(server)?, tld).as_str());
-    let builder = add_auth_header_opt(builder, &Some(auth_header));
+    let builder = add_auth_header_opt(builder, &auth_header);
 
     let res = builder.send().await?.error_for_status()?;
     let bytes = res.bytes().await.unwrap();
@@ -78,7 +77,7 @@ pub async fn spacetime_reverse_dns(
 
 #[derive(Deserialize)]
 pub struct IdentityTokenJson {
-    pub identity: String,
+    pub identity: Identity,
     pub token: String,
 }
 
@@ -119,7 +118,7 @@ pub async fn init_default(
 
     let identity_token: IdentityTokenJson = serde_json::from_str(&body)?;
 
-    let identity = identity_token.identity.clone();
+    let identity = identity_token.identity;
 
     let identity_config = IdentityConfig {
         identity: identity_token.identity,
@@ -128,7 +127,7 @@ pub async fn init_default(
     };
     config.identity_configs_mut().push(identity_config.clone());
     if config.default_identity(server).is_err() {
-        config.set_default_identity(identity, server)?;
+        config.set_default_identity(identity.to_hex().to_string(), server)?;
     }
     config.save();
     Ok(InitDefaultResult {
@@ -149,23 +148,11 @@ pub async fn select_identity_config(
     identity_or_name: Option<&str>,
     server: Option<&str>,
 ) -> Result<IdentityConfig, anyhow::Error> {
-    let resolve_identity_to_identity_config = |ident: &str| -> Result<IdentityConfig, anyhow::Error> {
-        config
-            .get_identity_config_by_identity(ident)
-            .map(Clone::clone)
-            .ok_or_else(|| anyhow::anyhow!("Missing identity credentials for identity: {}", ident))
-    };
-
     if let Some(identity_or_name) = identity_or_name {
-        if is_hex_identity(identity_or_name) {
-            resolve_identity_to_identity_config(identity_or_name)
-        } else {
-            // First check to see if we can convert the name to an identity, then return the config for that identity
-            match config.resolve_name_to_identity(Some(identity_or_name))? {
-                None => Err(anyhow::anyhow!("No such identity for name: {}", identity_or_name,)),
-                Some(identity) => resolve_identity_to_identity_config(&identity),
-            }
-        }
+        config
+            .get_identity_config(identity_or_name)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("No such identity credentials for identity: {}", identity_or_name))
     } else {
         Ok(init_default(config, None, server).await?.identity_config)
     }
@@ -198,22 +185,20 @@ pub struct DescribeElementName {
 
 pub async fn describe_reducer(
     config: &mut Config,
-    database: String,
+    database: Address,
     server: Option<String>,
     reducer_name: String,
     anon_identity: bool,
     as_identity: Option<String>,
 ) -> anyhow::Result<DescribeReducer> {
-    let address = database_address(config, &database, server.as_deref()).await?;
-
     let builder = reqwest::Client::new().get(format!(
         "{}/database/schema/{}/{}/{}",
         config.get_host_url(server.as_deref())?,
-        address,
+        database,
         "reducer",
         reducer_name
     ));
-    let auth_header = get_auth_header_only(config, anon_identity, as_identity.as_ref(), server.as_deref()).await;
+    let auth_header = get_auth_header_only(config, anon_identity, as_identity.as_ref(), server.as_deref()).await?;
     let builder = add_auth_header_opt(builder, &auth_header);
 
     let descr = builder
@@ -241,10 +226,11 @@ pub async fn get_auth_header_only(
     anon_identity: bool,
     identity_or_name: Option<&String>,
     server: Option<&str>,
-) -> Option<String> {
-    get_auth_header(config, anon_identity, identity_or_name.map(|x| x.as_str()), server)
-        .await
-        .map(|(ah, _)| ah)
+) -> anyhow::Result<Option<String>> {
+    let (ah, _) = get_auth_header(config, anon_identity, identity_or_name.map(String::as_str), server)
+        .await?
+        .unzip();
+    Ok(ah)
 }
 
 /// Gets the `auth_header` for a request to the server depending on how you want
@@ -264,15 +250,9 @@ pub async fn get_auth_header(
     anon_identity: bool,
     identity_or_name: Option<&str>,
     server: Option<&str>,
-) -> Option<(String, Identity)> {
-    if !anon_identity {
-        let identity_config = match select_identity_config(config, identity_or_name, server).await {
-            Ok(ic) => ic,
-            Err(err) => {
-                println!("{}", err);
-                exit(1);
-            }
-        };
+) -> anyhow::Result<Option<(String, Identity)>> {
+    Ok(if !anon_identity {
+        let identity_config = select_identity_config(config, identity_or_name, server).await?;
         // The current form is: Authorization: Basic base64("token:<token>")
         let mut auth_header = String::new();
         auth_header.push_str(
@@ -282,19 +262,10 @@ pub async fn get_auth_header(
             )
             .as_str(),
         );
-        match Identity::from_hex(identity_config.identity.clone()) {
-            Ok(identity) => Some((auth_header, identity)),
-            Err(_) => {
-                println!(
-                    "Local config contains invalid malformed identity: {}",
-                    identity_config.identity
-                );
-                exit(1)
-            }
-        }
+        Some((auth_header, identity_config.identity))
     } else {
         None
-    }
+    })
 }
 
 pub fn is_hex_identity(ident: &str) -> bool {

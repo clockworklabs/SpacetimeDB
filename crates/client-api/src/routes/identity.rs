@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use spacetimedb::auth::identity::encode_token_with_expiry;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
-use spacetimedb_lib::Identity;
+use spacetimedb_lib::{Address, Identity};
 
 use crate::auth::{SpacetimeAuth, SpacetimeAuthHeader};
 use crate::{log_and_500, ControlStateDelegate, ControlStateWriteAccess, NodeDelegate};
@@ -17,7 +17,7 @@ pub struct CreateIdentityQueryParams {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateIdentityResponse {
-    identity: String,
+    identity: Identity,
     token: String,
 }
 
@@ -33,7 +33,7 @@ pub async fn create_identity<S: ControlStateDelegate + NodeDelegate>(
     }
 
     let identity_response = CreateIdentityResponse {
-        identity: auth.identity.to_hex(),
+        identity: auth.identity,
         token: auth.creds.token().to_owned(),
     };
     Ok(axum::Json(identity_response))
@@ -46,7 +46,7 @@ pub struct GetIdentityResponse {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct GetIdentityResponseEntry {
-    identity: String,
+    identity: Identity,
     email: String,
 }
 
@@ -71,7 +71,7 @@ pub async fn get_identity<S: ControlStateDelegate>(
 
                 for identity_email in identities {
                     response.identities.push(GetIdentityResponseEntry {
-                        identity: identity_email.identity.to_hex(),
+                        identity: identity_email.identity,
                         email: identity_email.email,
                     })
                 }
@@ -137,7 +137,7 @@ pub struct GetDatabasesParams {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetDatabasesResponse {
-    addresses: Vec<String>,
+    addresses: Vec<Address>,
 }
 
 pub async fn get_databases<S: ControlStateDelegate>(
@@ -150,12 +150,12 @@ pub async fn get_databases<S: ControlStateDelegate>(
         log::error!("Failure when retrieving databases for search: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    let matching_dbs = all_dbs.into_iter().filter(|db| db.identity == identity);
-    let addresses = matching_dbs.map(|db| db.address.to_hex());
-    let response = GetDatabasesResponse {
-        addresses: addresses.collect(),
-    };
-    Ok(axum::Json(response))
+    let addresses = all_dbs
+        .iter()
+        .filter(|db| db.identity == identity)
+        .map(|db| db.address)
+        .collect();
+    Ok(axum::Json(GetDatabasesResponse { addresses }))
 }
 
 #[derive(Debug, Serialize)]

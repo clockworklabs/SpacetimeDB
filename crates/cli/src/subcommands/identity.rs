@@ -11,7 +11,7 @@ use email_address::EmailAddress;
 use reqwest::{StatusCode, Url};
 use serde::Deserialize;
 use spacetimedb::auth::identity::decode_token;
-use spacetimedb_lib::recovery::RecoveryCodeResponse;
+use spacetimedb_lib::{recovery::RecoveryCodeResponse, Identity};
 use tabled::{object::Columns, Alignment, Modify, Style, Table, Tabled};
 
 pub fn cli() -> Command {
@@ -191,6 +191,7 @@ fn get_subcommands() -> Vec<Command> {
             .arg(
                 Arg::new("identity")
                     .required(true)
+                    .value_parser(clap::value_parser!(Identity))
                     .help("The identity string associated with the provided token"),
             )
             .arg(
@@ -227,7 +228,7 @@ fn get_subcommands() -> Vec<Command> {
             )
             .arg(Arg::new("identity").required(true).help(
                 "The identity you would like to recover. This identity must be associated with the email provided.",
-            ))
+            ).value_parser(clap::value_parser!(Identity)))
             .arg(
                 Arg::new("server")
                     .long("server")
@@ -263,10 +264,11 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
 
 /// Executes the `identity set-default` command which sets the default identity.
 async fn exec_set_default(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let identity = config
-        .resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_ref()))?
-        .unwrap();
-    config.set_default_identity(identity, args.get_one::<String>("server").map(|s| s.as_ref()))?;
+    let identity = config.resolve_name_to_identity(args.get_one::<String>("identity").unwrap())?;
+    config.set_default_identity(
+        identity.to_hex().to_string(),
+        args.get_one::<String>("server").map(|s| s.as_ref()),
+    )?;
     config.save();
     Ok(())
 }
@@ -327,8 +329,8 @@ async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
     }
 
     if let Some(identity_or_name) = identity_or_name {
-        let ic = if is_hex_identity(identity_or_name) {
-            config.delete_identity_config_by_identity(identity_or_name.as_str())
+        let ic = if let Ok(identity) = Identity::from_hex(identity_or_name) {
+            config.delete_identity_config_by_identity(&identity)
         } else {
             config.delete_identity_config_by_name(identity_or_name.as_str())
         }
@@ -417,7 +419,7 @@ async fn exec_new(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
 
     let identity_token: IdentityTokenJson = builder.send().await?.error_for_status()?.json().await?;
-    let identity = identity_token.identity.clone();
+    let identity = identity_token.identity;
 
     if save {
         config.identity_configs_mut().push(IdentityConfig {
@@ -426,7 +428,7 @@ async fn exec_new(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             nickname: alias.map(|s| s.to_string()),
         });
         if default || config.default_identity(server).is_err() {
-            config.set_default_identity(identity.clone(), server)?;
+            config.set_default_identity(identity.to_hex().to_string(), server)?;
         }
 
         config.save();
@@ -441,7 +443,7 @@ async fn exec_new(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
 /// Executes the `identity import` command which imports an identity from a token into the config.
 async fn exec_import(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let identity: String = args.get_one::<String>("identity").unwrap().clone();
+    let identity: Identity = *args.get_one::<Identity>("identity").unwrap();
     let token: String = args.get_one::<String>("token").unwrap().clone();
 
     //optional
@@ -467,7 +469,7 @@ async fn exec_import(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
 #[tabled(rename_all = "UPPERCASE")]
 struct LsRow {
     default: String,
-    identity: String,
+    identity: Identity,
     name: String,
     // email: String,
 }
@@ -480,7 +482,7 @@ async fn exec_list(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
         for identity_token in config.identity_configs() {
             rows.push(LsRow {
                 default: "".to_string(),
-                identity: identity_token.identity.clone(),
+                identity: identity_token.identity,
                 name: identity_token.nickname.clone().unwrap_or_default(),
             });
         }
@@ -495,26 +497,18 @@ Fetch the server's fingerprint with:
 \tspacetime server fingerprint {server_name}"
             )
         })?;
-        let default_identity = config.default_identity(server);
-
-        let is_default = |id| {
-            if let Ok(default_identity) = default_identity {
-                id == default_identity
-            } else {
-                false
-            }
-        };
+        let default_identity = config.get_default_identity_config(server).ok().map(|cfg| cfg.identity);
 
         for identity_token in config.identity_configs() {
             if decode_token(&decoding_key, &identity_token.token).is_ok() {
                 rows.push(LsRow {
-                    default: if is_default(&identity_token.identity) {
+                    default: if Some(identity_token.identity) == default_identity {
                         "***"
                     } else {
                         ""
                     }
                     .to_string(),
-                    identity: identity_token.identity.clone(),
+                    identity: identity_token.identity,
                     name: identity_token.nickname.clone().unwrap_or_default(),
                     // TODO(jdetter): We'll have to look this up via a query
                     // email: identity_token.email.unwrap_or_default(),
@@ -572,37 +566,25 @@ async fn exec_find(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
 
 /// Executes the `identity token` command which prints the token for an identity.
 async fn exec_token(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let identity_or_name = config
-        .resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_str()))?
-        .unwrap();
+    let identity = args.get_one::<String>("identity").unwrap();
     let ic = config
-        .get_identity_config_by_identity(identity_or_name.as_str())
-        .unwrap();
+        .get_identity_config(identity)
+        .ok_or_else(|| anyhow::anyhow!("Missing identity credentials for identity: {identity}"))?;
     println!("{}", ic.token);
     Ok(())
 }
 
 /// Executes the `identity set-default` command which sets the default identity.
 async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let cloned_config = config.clone();
-    let identity_or_name = cloned_config
-        .resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_ref()))?
-        .unwrap();
-    let new_name = args.get_one::<String>("name").unwrap().as_ref();
-    let old_nickname = config.set_identity_nickname(identity_or_name.as_ref(), new_name)?;
-    if let Some(old_nickname) = old_nickname {
-        println!("Updated identity: {}", identity_or_name);
-        println!(" OLD NAME: {}", old_nickname);
-        println!(" NEW NAME: {}", new_name);
-    } else {
-        println!("Created identity: {}", identity_or_name);
-        println!(" NAME: {}", new_name);
-    }
-    config.save();
+    let new_name = args.get_one::<String>("name").unwrap();
+    let identity_or_name = args.get_one::<String>("identity").unwrap();
     let ic = config
-        .get_identity_config_by_identity(identity_or_name.as_ref())
-        .unwrap();
+        .get_identity_config_mut(identity_or_name)
+        .ok_or_else(|| anyhow::anyhow!("Missing identity credentials for identity: {identity_or_name}"))?;
+    ic.nickname = Some(new_name.to_owned());
+    println!("Updated identity:");
     print_identity_config(ic);
+    config.save();
     Ok(())
 }
 
@@ -610,33 +592,27 @@ async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), anyh
 async fn exec_set_email(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let email = args.get_one::<String>("email").unwrap().clone();
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
-    let identity = config
-        .resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_ref()))?
-        .unwrap();
+    let identity = args.get_one::<String>("identity").unwrap();
     let identity_config = config
-        .get_identity_config_by_identity(identity.as_str())
-        .unwrap_or_else(|| panic!("Could not find identity: {}", identity));
+        .get_identity_config(identity)
+        .ok_or_else(|| anyhow::anyhow!("Missing identity credentials for identity: {identity}"))?;
 
     // TODO: check that the identity is valid for the server
 
-    let mut builder = reqwest::Client::new().post(format!(
-        "{}/identity/{}/set-email?email={}",
-        config.get_host_url(server)?,
-        identity_config.identity,
-        email
-    ));
-
-    if let Some(identity_token) = config.get_identity_config_by_identity(identity.as_str()) {
-        builder = builder.basic_auth("token", Some(identity_token.token.clone()));
-    } else {
-        println!("Missing identity credentials for identity.");
-        std::process::exit(0);
-    }
-
-    builder.send().await?.error_for_status()?;
+    reqwest::Client::new()
+        .post(format!(
+            "{}/identity/{}/set-email?email={}",
+            config.get_host_url(server)?,
+            identity_config.identity,
+            email
+        ))
+        .basic_auth("token", Some(&identity_config.token))
+        .send()
+        .await?
+        .error_for_status()?;
 
     println!(" Associated email with identity");
-    print_identity_config(config.get_identity_config_by_identity(identity.as_str()).unwrap());
+    print_identity_config(identity_config);
     println!(" EMAIL {}", email);
 
     Ok(())
@@ -644,23 +620,17 @@ async fn exec_set_email(config: Config, args: &ArgMatches) -> Result<(), anyhow:
 
 /// Executes the `identity recover` command which recovers an identity from an email.
 async fn exec_recover(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    let identity = args.get_one::<Identity>("identity").unwrap();
     let email = args.get_one::<String>("email").unwrap();
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
-    let identity = config
-        .resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_str()))?
-        .unwrap();
 
-    let query_params = vec![
+    let query_params = [
         ("email", email.as_str()),
-        ("identity", identity.as_str()),
+        ("identity", &*identity.to_hex()),
         ("link", "false"),
     ];
 
-    if config
-        .identity_configs()
-        .iter()
-        .any(|a| a.identity.to_lowercase() == identity.to_lowercase())
-    {
+    if config.get_identity_config_by_identity(identity).is_some() {
         return Err(anyhow::anyhow!("No need to recover this identity, it is already stored in your config. Use `spacetime identity list` to list identities."));
     }
 
@@ -695,7 +665,7 @@ async fn exec_recover(mut config: Config, args: &ArgMatches) -> Result<(), anyho
             vec![
                 ("code", code.to_string().as_str()),
                 ("email", email.as_str()),
-                ("identity", identity.as_str()),
+                ("identity", identity.to_hex().as_str()),
             ],
         )?);
         let res = builder.send().await?;
@@ -706,11 +676,11 @@ async fn exec_recover(mut config: Config, args: &ArgMatches) -> Result<(), anyho
                 let response: RecoveryCodeResponse = serde_json::from_str(utf8.as_str())?;
                 let identity_config = IdentityConfig {
                     nickname: None,
-                    identity: response.identity.clone(),
+                    identity: response.identity,
                     token: response.token,
                 };
                 config.identity_configs_mut().push(identity_config.clone());
-                config.set_default_identity_if_unset(server, &identity_config.identity)?;
+                config.set_default_identity_if_unset(server, &identity_config.identity.to_hex())?;
                 config.save();
                 println!("Success. Identity imported.");
                 print_identity_config(&identity_config);

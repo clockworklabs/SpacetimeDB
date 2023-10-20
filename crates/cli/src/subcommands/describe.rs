@@ -69,7 +69,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             entity_name
         ),
     });
-    let auth_header = get_auth_header_only(&mut config, anon_identity, as_identity, server).await;
+    let auth_header = get_auth_header_only(&mut config, anon_identity, as_identity, server).await?;
     let builder = add_auth_header_opt(builder, &auth_header);
 
     let descr = builder

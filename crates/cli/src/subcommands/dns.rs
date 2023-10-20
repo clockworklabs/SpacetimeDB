@@ -143,9 +143,7 @@ pub async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), 
     let address = args.get_one::<String>("address").unwrap();
     let identity = args.get_one::<String>("identity");
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
-    let auth_header = get_auth_header_only(&mut config, false, identity, server)
-        .await
-        .unwrap();
+    let auth_header = get_auth_header_only(&mut config, false, identity, server).await?;
 
     let builder = reqwest::Client::new().get(Url::parse_with_params(
         format!("{}/database/set_name", config.get_host_url(server)?).as_str(),
@@ -155,7 +153,7 @@ pub async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), 
             ("register_tld", "true".to_string()),
         ],
     )?);
-    let builder = add_auth_header_opt(builder, &Some(auth_header));
+    let builder = add_auth_header_opt(builder, &auth_header);
 
     let res = builder.send().await?.error_for_status()?;
     let bytes = res.bytes().await.unwrap();

@@ -1,5 +1,6 @@
 // use clap::Arg;
 use clap::{value_parser, Arg, ArgMatches};
+use spacetimedb_lib::Identity;
 
 use crate::config::Config;
 
@@ -74,13 +75,13 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 
 async fn exec_update_balance(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     // let project_name = args.value_of("project name").unwrap();
-    let hex_id = args.get_one::<String>("identity");
+    let identity = args.get_one::<String>("identity");
     let balance = *args.get_one::<i128>("balance").unwrap();
     let quiet = args.get_flag("quiet");
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
 
-    let hex_id = hex_id_or_default(hex_id, &config, server);
-    let res = set_balance(&reqwest::Client::new(), &config, hex_id, balance, server).await?;
+    let hex_id = resolve_id_or_default(identity, &config, server)?;
+    let res = set_balance(&reqwest::Client::new(), &config, &hex_id, balance, server).await?;
 
     if !quiet {
         println!("{}", res.text().await?);
@@ -91,9 +92,9 @@ async fn exec_update_balance(config: Config, args: &ArgMatches) -> Result<(), an
 
 async fn exec_status(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     // let project_name = args.value_of("project name").unwrap();
-    let hex_id = args.get_one::<String>("identity");
+    let identity = args.get_one::<String>("identity");
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
-    let hex_id = hex_id_or_default(hex_id, &config, server);
+    let hex_id = resolve_id_or_default(identity, &config, server)?;
 
     let status = reqwest::Client::new()
         .get(format!("{}/energy/{}", config.get_host_url(server)?, hex_id,))
@@ -108,14 +109,17 @@ async fn exec_status(config: Config, args: &ArgMatches) -> Result<(), anyhow::Er
     Ok(())
 }
 
-fn hex_id_or_default<'a>(hex_id: Option<&'a String>, config: &'a Config, server: Option<&str>) -> &'a String {
-    hex_id.unwrap_or_else(|| &config.get_default_identity_config(server).unwrap().identity)
+fn resolve_id_or_default(identity: Option<&String>, config: &Config, server: Option<&str>) -> anyhow::Result<Identity> {
+    match identity {
+        Some(identity) => config.resolve_name_to_identity(identity),
+        None => Ok(config.get_default_identity_config(server)?.identity),
+    }
 }
 
 pub(super) async fn set_balance(
     client: &reqwest::Client,
     config: &Config,
-    hex_identity: &str,
+    identity: &Identity,
     balance: i128,
     server: Option<&str>,
 ) -> anyhow::Result<reqwest::Response> {
@@ -123,7 +127,7 @@ pub(super) async fn set_balance(
     // does not support that on the server side without an extension.
     // see https://github.com/gotham-rs/gotham/issues/11
     client
-        .post(format!("{}/energy/{}", config.get_host_url(server)?, hex_identity,))
+        .post(format!("{}/energy/{}", config.get_host_url(server)?, identity,))
         .query(&[("balance", balance)])
         .send()
         .await?

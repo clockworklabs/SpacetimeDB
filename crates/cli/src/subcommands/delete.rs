@@ -34,7 +34,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let address = database_address(&config, database, server).await?;
 
     let builder = reqwest::Client::new().post(format!("{}/database/delete/{}", config.get_host_url(server)?, address));
-    let auth_header = get_auth_header_only(&mut config, false, identity_or_name, server).await;
+    let auth_header = get_auth_header_only(&mut config, false, identity_or_name, server).await?;
     let builder = add_auth_header_opt(builder, &auth_header);
     builder.send().await?.error_for_status()?;
 

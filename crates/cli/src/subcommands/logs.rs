@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::io::{self, Write};
 
 use crate::config::Config;
-use crate::util::{add_auth_header_opt, database_address, get_auth_header};
+use crate::util::{add_auth_header_opt, database_address, get_auth_header_only};
 use clap::{Arg, ArgAction, ArgMatches};
 use futures::{AsyncBufReadExt, TryStreamExt};
 use is_terminal::IsTerminal;
@@ -86,15 +86,12 @@ struct LogsParams {
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
+    let identity = args.get_one::<String>("identity");
     let num_lines = args.get_one::<u32>("num_lines").copied();
     let database = args.get_one::<String>("database").unwrap();
     let follow = args.get_flag("follow");
 
-    let cloned_config = config.clone();
-    let identity = cloned_config.resolve_name_to_identity(args.get_one::<String>("identity").map(|x| x.as_str()))?;
-    let auth_header = get_auth_header(&mut config, false, identity.as_deref(), server)
-        .await
-        .map(|x| x.0);
+    let auth_header = get_auth_header_only(&mut config, false, identity, server).await?;
 
     let address = database_address(&config, database, server).await?;
 
