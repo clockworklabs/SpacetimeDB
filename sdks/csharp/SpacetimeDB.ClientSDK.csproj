@@ -7,7 +7,7 @@
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
     <PackageId>SpacetimeDB.ClientSDK</PackageId>
     <Title>SpacetimeDB SDK</Title>
-    <Authors>derek_clockwork</Authors>
+    <Authors>jdetter</Authors>
     <Company>Clockwork Labs</Company>
     <Product>SpacetimeDB</Product>
     <Description>The SpacetimeDB SDK is a software development kit (SDK) designed to simplify the interaction with SpacetimeDB server modules.</Description>

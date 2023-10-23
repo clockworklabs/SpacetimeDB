@@ -654,18 +654,19 @@ namespace SpacetimeDB
                 case Message.TypeOneofCase.SubscriptionUpdate:
                 case Message.TypeOneofCase.TransactionUpdate:
                     // First trigger OnBeforeDelete
-                    for (var i = 0; i < dbOps.Count; i++)
+                    foreach (var update in dbOps)
                     {
-                        // TODO: Reimplement updates when we add support for primary keys
-                        var update = dbOps[i];
-                        try
+                        if (update.op == TableOp.Delete)
                         {
-                            update.table.BeforeDeleteCallback?.Invoke(update.oldValue,
-                                message.TransactionUpdate?.Event);
-                        }
-                        catch (Exception e)
-                        {
-                            logger.LogException(e);
+                            try
+                            {
+                                update.table.BeforeDeleteCallback?.Invoke(update.oldValue,
+                                    message.TransactionUpdate?.Event);
+                            }
+                            catch (Exception e)
+                            {
+                                logger.LogException(e);
+                            }
                         }
                     }
 
