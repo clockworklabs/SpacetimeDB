@@ -857,7 +857,7 @@ namespace SpacetimeDB
                                             if (dbOps[i].table.RowUpdatedCallback != null)
                                             {
                                                 dbOps[i].table.RowUpdatedCallback
-                                                    .Invoke(tableOp, oldValue, null, message.TransactionUpdate?.Event);
+                                                    .Invoke(tableOp, oldValue, newValue, message.TransactionUpdate?.Event);
                                             }
                                         }
                                         catch (Exception e)
