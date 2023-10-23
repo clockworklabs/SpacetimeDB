@@ -863,7 +863,10 @@ impl CredentialStore {
     /// Do not invoke on-connect callbacks.
     pub(crate) fn maybe_set_credentials(&mut self, credentials: Option<Credentials>) {
         if let Some(creds) = &credentials {
-            log::trace!("maybe_set_credentials: Setting stored credentials to Some({:?})", creds.identity);
+            log::trace!(
+                "maybe_set_credentials: Setting stored credentials to Some({:?})",
+                creds.identity,
+            );
         } else {
             log::trace!("maybe_set_credentials: Setting stored credentials to None");
         }
