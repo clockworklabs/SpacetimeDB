@@ -313,10 +313,37 @@ impl BackgroundDbConnection {
         IntoUri: TryInto<http::Uri>,
         <IntoUri as TryInto<http::Uri>>::Error: std::error::Error + Send + Sync + 'static,
     {
-        let client_address = {
-            let mut lock = self.credentials.lock().expect("CredentialStore Mutex is poisoned");
-            lock.get_or_init_address()
-        };
+        // Disconnect to prevent any outstanding messages from contending for unique resources,
+        // i.e. the reducer callbacks, credential store and client cache.
+        self.disconnect();
+
+        // Hold all internal locks for the duration of this method,
+        // to prevent races if the connection starts receiving messages
+        // before this method returns.
+        let mut reducer_callbacks_lock = self
+            .reducer_callbacks
+            .lock()
+            .expect("ReducerCallbacks Mutex is poisoned");
+        let mut credentials_lock = self.credentials.lock().expect("CredentialStore Mutex is poisoned");
+        let mut client_cache_lock = self.client_cache.lock().expect("ClientCache Mutex is poisoned");
+
+        // Specialize the reducer callbacks for this module.
+        // Registering callbacks doesn't require the module, but firing them does,
+        // in order to parse arguments with appropriate types.
+        reducer_callbacks_lock.set_module(module.clone());
+
+        // If credentials were passed to connect, store them in the credential store.
+        // If not, unset any stale credentials in the credential store.
+        credentials_lock.maybe_set_credentials(credentials.clone());
+
+        let client_address = credentials_lock.get_or_init_address();
+
+        // Construct a new client cache specialized for this module.
+        // The client cache needs to know the module
+        // in order to parse rows and issue callbacks with appropriate types.
+        let client_cache = Arc::new(ClientCache::new(module.clone()));
+        *client_cache_lock = Some(client_cache);
+
         // `block_in_place` is required here, as tokio won't allow us to call
         // `block_on` if it would block the current thread of an outer runtime
         let connection = tokio::task::block_in_place(|| {
@@ -328,15 +355,6 @@ impl BackgroundDbConnection {
             ))
         })?;
 
-        let client_cache = Arc::new(ClientCache::new(module.clone()));
-
-        {
-            // Set the global `CLIENT_CACHE` to our newly-constructed cache.
-            // Do this inside a short scope to avoid holding the lock unnecessarily.
-            let mut client_cache_lock = self.client_cache.lock().expect("ClientCache mutex is poisoned");
-            *client_cache_lock = Some(client_cache);
-        }
-
         let (websocket_loop_handle, recv_chan, send_chan) = connection.spawn_message_loop(&self.handle);
         let recv_handle = self.spawn_receiver(recv_chan, self.client_cache.clone());
 
@@ -344,25 +362,19 @@ impl BackgroundDbConnection {
         self.websocket_loop_handle = Some(websocket_loop_handle);
         self.recv_handle = Some(recv_handle);
 
-        self.reducer_callbacks
-            .lock()
-            .expect("ReducerCallbacks Mutex is poisoned")
-            .set_module(module);
-        self.credentials
-            .lock()
-            .expect("CredentialStore Mutex is poisoned")
-            .maybe_set_credentials(credentials);
-
         Ok(())
     }
 
     pub fn disconnect(&mut self) {
         self.send_chan = None;
+
+        // `block_in_place` over `block_on` allows us to wait for a future to complete
+        // regardless of whether we're currently running in an `async` task or not.
         if let Some(h) = self.websocket_loop_handle.take() {
-            let _ = self.handle.block_on(h);
+            let _ = tokio::task::block_in_place(|| self.handle.block_on(h));
         }
         if let Some(h) = self.recv_handle.take() {
-            let _ = self.handle.block_on(h);
+            let _ = tokio::task::block_in_place(|| self.handle.block_on(h));
         }
     }
 

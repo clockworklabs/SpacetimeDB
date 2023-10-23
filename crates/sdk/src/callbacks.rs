@@ -287,6 +287,10 @@ impl<Args: OwnedArgs> CallbackMap<Args> {
                     // Enter a dynamic context where `CURRENT_STATE`
                     // is the state which caused this callback invocation.
                     let _guard = CurrentStateGuard::with_current_state(db_state);
+                    log::trace!(
+                        "CallbackMap worker: received invoke message for args {} and got state guard",
+                        std::any::type_name::<Args>(),
+                    );
 
                     // We're invoking several callbacks, so none of them may consume `args`.
                     let borrowed = args.borrow();
@@ -408,6 +412,7 @@ impl<Args: OwnedArgs> CallbackMap<Args> {
 
     /// Invoke each currently-registered callback in `self` with `args`.
     fn invoke(&self, args: Args, db_state: ClientCacheView) {
+        log::trace!("CallbackMap: invoking for args type {}", std::any::type_name::<Args>());
         self.send
             .unbounded_send(CallbackMessage::Invoke { args, db_state })
             // TODO: properly handle this error somehow
@@ -857,6 +862,15 @@ impl CredentialStore {
     ///
     /// Do not invoke on-connect callbacks.
     pub(crate) fn maybe_set_credentials(&mut self, credentials: Option<Credentials>) {
+        if let Some(creds) = &credentials {
+            log::trace!(
+                "maybe_set_credentials: Setting stored credentials to Some({:?})",
+                creds.identity,
+            );
+        } else {
+            log::trace!("maybe_set_credentials: Setting stored credentials to None");
+        }
+
         self.credentials = credentials;
     }
 
@@ -915,12 +929,16 @@ impl CredentialStore {
             return;
         }
 
+        let identity = Identity::from_bytes(identity);
+        log::trace!("handle_identity_token: received identity {:?}", identity);
+
         let creds = Credentials {
-            identity: Identity::from_bytes(identity),
+            identity,
             token: Token { string: token },
         };
 
         let address = Address::from_slice(&address);
+        log::trace!("handle_identity_token: received address {:?}", address);
 
         if Some(address) != self.address {
             log::error!(
@@ -929,8 +947,6 @@ impl CredentialStore {
                 self.address,
             );
         }
-
-        self.callbacks.invoke((creds.clone(), address), state);
 
         if let Some(existing_creds) = &self.credentials {
             // If we already have credentials, make sure that they match. Log an error if
@@ -944,10 +960,15 @@ impl CredentialStore {
                     creds,
                     existing_creds,
                 );
+            } else {
+                log::trace!("handle_identity_token: received creds match local record.");
             }
         } else {
-            self.credentials = Some(creds);
+            self.credentials = Some(creds.clone());
+            log::trace!("handle_identity_token: storing new credentials");
         }
+
+        self.callbacks.invoke((creds.clone(), address), state);
     }
 
     /// Return the current connection's `Identity`, if one is stored.
