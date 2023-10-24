@@ -36,6 +36,7 @@ pub mod control_db;
 pub mod database_instance_context;
 pub mod database_instance_context_controller;
 pub mod database_logger;
+pub mod execution_context;
 pub mod host;
 pub mod module_host_context;
 pub mod object_db;

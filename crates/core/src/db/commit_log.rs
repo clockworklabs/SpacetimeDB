@@ -7,12 +7,14 @@ use super::{
 use crate::{
     db::{
         datastore::{locking_tx_datastore::RowId, traits::TxOp},
+        db_metrics::DB_METRICS,
         messages::{
             transaction::Transaction,
             write::{Operation, Write},
         },
     },
     error::DBError,
+    execution_context::ExecutionContext,
 };
 
 use anyhow::Context;
@@ -52,13 +54,18 @@ impl CommitLog {
     ///
     /// Returns `Some(n_bytes_written)` if `commit_result` was persisted, `None` if it doesn't have bytes to write.
     #[tracing::instrument(skip_all)]
-    pub fn append_tx<D>(&self, tx_data: &TxData, datastore: &D) -> Result<Option<usize>, DBError>
+    pub fn append_tx<D>(
+        &self,
+        ctx: &ExecutionContext,
+        tx_data: &TxData,
+        datastore: &D,
+    ) -> Result<Option<usize>, DBError>
     where
         D: MutTxDatastore<RowId = RowId>,
     {
         if let Some(mlog) = &self.mlog {
             let mut mlog = mlog.lock().unwrap();
-            self.generate_commit(tx_data, datastore)
+            self.generate_commit(ctx, tx_data, datastore)
                 .as_deref()
                 .map(|bytes| self.append_commit_bytes(&mut mlog, bytes))
                 .transpose()
@@ -88,7 +95,12 @@ impl CommitLog {
         Ok(commit.len())
     }
 
-    fn generate_commit<D: MutTxDatastore<RowId = RowId>>(&self, tx_data: &TxData, _datastore: &D) -> Option<Vec<u8>> {
+    fn generate_commit<D: MutTxDatastore<RowId = RowId>>(
+        &self,
+        ctx: &ExecutionContext,
+        tx_data: &TxData,
+        _datastore: &D,
+    ) -> Option<Vec<u8>> {
         // We are not creating a commit for empty transactions.
         // The reason for this is that empty transactions get encoded as 0 bytes,
         // so a commit containing an empty transaction contains no useful information.
@@ -97,18 +109,46 @@ impl CommitLog {
         }
 
         let mut unwritten_commit = self.unwritten_commit.lock().unwrap();
-        let writes = tx_data
-            .records
-            .iter()
-            .map(|record| Write {
-                operation: match record.op {
-                    TxOp::Insert(_) => Operation::Insert,
-                    TxOp::Delete => Operation::Delete,
-                },
-                set_id: record.table_id.0,
+        let mut writes = Vec::with_capacity(tx_data.records.len());
+
+        let rows_inserted = &DB_METRICS.rdb_num_rows_inserted;
+        let rows_deleted = &DB_METRICS.rdb_num_rows_deleted;
+
+        for record in &tx_data.records {
+            let table_id: u32 = record.table_id.into();
+
+            let operation = match record.op {
+                TxOp::Insert(_) => {
+                    // Increment rows inserted metric
+                    let metric = rows_inserted.with_label_values(
+                        &ctx.txn_type(),
+                        &ctx.database_id(),
+                        &ctx.reducer_id().unwrap_or(0),
+                        &table_id,
+                    );
+                    metric.inc();
+                    Operation::Insert
+                }
+                TxOp::Delete => {
+                    // Increment rows deleted metric
+                    let metric = rows_deleted.with_label_values(
+                        &ctx.txn_type(),
+                        &ctx.database_id(),
+                        &ctx.reducer_id().unwrap_or(0),
+                        &table_id,
+                    );
+                    metric.inc();
+                    Operation::Delete
+                }
+            };
+
+            writes.push(Write {
+                operation,
+                set_id: table_id,
                 data_key: record.key,
             })
-            .collect();
+        }
+
         let transaction = Transaction { writes };
         unwritten_commit.transactions.push(Arc::new(transaction));
 

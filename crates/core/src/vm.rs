@@ -534,6 +534,7 @@ pub(crate) mod tests {
     };
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::db::relational_db::{ST_COLUMNS_NAME, ST_INDEXES_NAME, ST_SEQUENCES_NAME, ST_TABLES_NAME};
+    use crate::execution_context::ExecutionContext;
     use nonempty::NonEmpty;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::relation::{DbTable, FieldName};
@@ -718,7 +719,7 @@ pub(crate) mod tests {
 
         let mut tx = db.begin_tx();
         let table_id = create_table_with_rows(&db, &mut tx, "inventory", head, &[row])?;
-        db.commit_tx(tx)?;
+        db.commit_tx(&ExecutionContext::default(), tx)?;
 
         let mut tx = db.begin_tx();
         let index = IndexDef::new("idx_1".into(), table_id, 0.into(), true);

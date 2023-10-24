@@ -9,6 +9,7 @@ use crate::database_instance_context_controller::DatabaseInstanceContextControll
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, DatabaseError};
+use crate::execution_context::ExecutionContext;
 use crate::sql::compiler::compile_sql;
 use crate::vm::DbProgram;
 
@@ -30,9 +31,11 @@ pub fn execute(
 ) -> Result<Vec<MemTable>, DBError> {
     info!(sql = sql_text);
     if let Some((database_instance_context, _)) = db_inst_ctx_controller.get(database_instance_id) {
-        database_instance_context
-            .relational_db
-            .with_auto_commit(|tx| run(&database_instance_context.relational_db, tx, &sql_text, auth))
+        let db = &database_instance_context.relational_db;
+        let ctx = ExecutionContext::sql(db.id());
+        db.with_auto_commit(&ctx, |tx| {
+            run(&database_instance_context.relational_db, tx, &sql_text, auth)
+        })
     } else {
         Err(DatabaseError::NotFound(database_instance_id).into())
     }
@@ -121,7 +124,7 @@ pub(crate) mod tests {
         let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let rows: Vec<_> = (1..=total_rows).map(|i| product!(i, format!("health{i}"))).collect();
         create_table_with_rows(&db, &mut tx, "inventory", head.clone(), &rows)?;
-        db.commit_tx(tx)?;
+        db.commit_tx(&ExecutionContext::default(), tx)?;
 
         Ok((db, mem_table(head, rows), tmp_dir))
     }
@@ -588,7 +591,7 @@ pub(crate) mod tests {
             &mut tx,
             "CREATE TABLE inventory2 (inventory_id BIGINT UNSIGNED, name TEXT)",
         )?;
-        db.commit_tx(tx)?;
+        db.commit_tx(&ExecutionContext::default(), tx)?;
 
         let mut tx = db.begin_tx();
         run_for_testing(&db, &mut tx, "DROP TABLE inventory2")?;

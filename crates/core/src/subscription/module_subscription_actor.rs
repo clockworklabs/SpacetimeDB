@@ -4,7 +4,6 @@ use super::{
     query::compile_read_only_query,
     subscription::{QuerySet, Subscription},
 };
-use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::host::module_host::{EventStatus, ModuleEvent};
 use crate::protobuf::client_api::Subscribe;
 use crate::{
@@ -14,6 +13,7 @@ use crate::{
     },
     host::NoSuchModule,
 };
+use crate::{db::datastore::locking_tx_datastore::MutTxId, execution_context::ExecutionContext};
 use crate::{db::relational_db::RelationalDB, error::DBError};
 use futures::{stream::FuturesUnordered, FutureExt, StreamExt};
 use spacetimedb_lib::identity::AuthCtx;
@@ -184,7 +184,8 @@ impl ModuleSubscriptionActor {
         //Split logic to properly handle `Error` + `Tx`
         let mut tx = self.relational_db.begin_tx();
         let result = self._add_subscription(sender, subscription, &mut tx).await;
-        self.relational_db.finish_tx(tx, result)
+        let ctx = ExecutionContext::sql(self.relational_db.id());
+        self.relational_db.finish_tx(&ctx, tx, result)
     }
 
     fn remove_subscriber(&mut self, client_id: ClientActorId) {
@@ -231,6 +232,7 @@ impl ModuleSubscriptionActor {
         //Split logic to properly handle `Error` + `Tx`
         let mut tx = self.relational_db.begin_tx();
         let result = self._broadcast_commit_event(event, &mut tx).await;
-        self.relational_db.finish_tx(tx, result)
+        let ctx = ExecutionContext::sql(self.relational_db.id());
+        self.relational_db.finish_tx(&ctx, tx, result)
     }
 }

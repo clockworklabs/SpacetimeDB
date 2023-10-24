@@ -2,6 +2,7 @@ use crate::db::DBRunner;
 use async_trait::async_trait;
 use spacetimedb::db::relational_db::{open_db, RelationalDB};
 use spacetimedb::error::DBError;
+use spacetimedb::execution_context::ExecutionContext;
 use spacetimedb::sql::compiler::compile_sql;
 use spacetimedb::sql::execute::execute_sql;
 use spacetimedb_lib::identity::AuthCtx;
@@ -79,7 +80,7 @@ impl SpaceDb {
     }
 
     pub(crate) fn run_sql(&self, sql: &str) -> anyhow::Result<Vec<MemTable>> {
-        self.conn.with_auto_commit(|tx| {
+        self.conn.with_auto_commit(&ExecutionContext::default(), |tx| {
             let ast = compile_sql(&self.conn, tx, sql)?;
             let result = execute_sql(&self.conn, tx, ast, self.auth)?;
             //remove comments to see which SQL worked. Can't collect it outside from lack of a hook in the external `sqllogictest` crate... :(

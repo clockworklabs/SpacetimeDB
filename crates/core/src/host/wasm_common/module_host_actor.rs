@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::traits::{ColumnDef, IndexDef, TableDef};
+use crate::execution_context::ExecutionContext;
 use crate::host::scheduler::Scheduler;
 use crate::sql;
 use anyhow::{anyhow, Context};
@@ -281,7 +282,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
 
     fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error> {
         let db = &*self.worker_database_instance.relational_db;
-        db.with_auto_commit(|tx| {
+        db.with_auto_commit(&ExecutionContext::internal(db.id()), |tx| {
             let tables = db.get_all_tables(tx)?;
             // We currently have unique table names,
             // so we can assume there's only one table to clear.
@@ -382,7 +383,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
 
         let rcr = match self.info.reducers.get_index_of(INIT_DUNDER) {
             None => {
-                stdb.commit_tx(tx)?;
+                stdb.commit_tx(&ExecutionContext::internal(stdb.id()), tx)?;
                 ReducerCallResult {
                     outcome: ReducerOutcome::Committed,
                     energy_used: EnergyDiff::ZERO,
@@ -455,7 +456,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
 
         let update_result = match self.info.reducers.get_index_of(UPDATE_DUNDER) {
             None => {
-                stdb.commit_tx(tx)?;
+                stdb.commit_tx(&ExecutionContext::internal(stdb.id()), tx)?;
                 None
             }
 
@@ -586,7 +587,10 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     /// The method also performs various measurements and records energy usage.
     #[tracing::instrument(skip_all)]
     fn execute(&mut self, tx: Option<MutTxId>, op: ReducerOp<'_>) -> (EventStatus, EnergyStats) {
-        let address = self.database_instance_context().address;
+        let dbic = self.database_instance_context();
+        let database_id = dbic.database_id;
+        let reducer_id = op.id as u64;
+        let address = dbic.address;
         let func_ident = &*self.info.reducers[op.id].name;
         WORKER_METRICS
             .reducer_count
@@ -602,7 +606,8 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
         let budget = self.energy_monitor.reducer_budget(&energy_fingerprint);
 
-        let tx = tx.unwrap_or_else(|| self.database_instance_context().relational_db.begin_tx());
+        let db = dbic.relational_db.clone();
+        let tx = tx.unwrap_or_else(|| db.begin_tx());
 
         let tx_slot = self.instance.instance_env().tx.clone();
         let (tx, result) = tx_slot.set(tx, || {
@@ -653,10 +658,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             .with_label_values(&address, func_ident)
             .observe(timings.total_duration.as_secs_f64());
 
-        let stdb = &*self.database_instance_context().relational_db;
         let status = match call_result {
             Err(err) => {
-                stdb.rollback_tx(tx);
+                db.rollback_tx(tx);
 
                 T::log_traceback("reducer", func_ident, &err);
 
@@ -670,14 +674,17 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 }
             }
             Ok(Err(errmsg)) => {
-                stdb.rollback_tx(tx);
+                db.rollback_tx(tx);
 
                 log::info!("reducer returned error: {errmsg}");
 
                 EventStatus::Failed(errmsg.into())
             }
             Ok(Ok(())) => {
-                if let Some((tx_data, bytes_written)) = stdb.commit_tx(tx).unwrap() {
+                if let Some((tx_data, bytes_written)) = db
+                    .commit_tx(&ExecutionContext::reducer(database_id, reducer_id), tx)
+                    .unwrap()
+                {
                     // TODO(cloutiertyler): This tracking doesn't really belong here if we want to write transactions to disk
                     // in batches. This is because it's possible for a tiny reducer call to trigger a whole commit to be written to disk.
                     // We should track the commit sizes instead internally to the CommitLog probably.
@@ -687,7 +694,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                             .with_label_values(&address, func_ident)
                             .observe(bytes_written as f64);
                     }
-                    EventStatus::Committed(DatabaseUpdate::from_writes(stdb, &tx_data))
+                    EventStatus::Committed(DatabaseUpdate::from_writes(&db, &tx_data))
                 } else {
                     todo!("Write skew, you need to implement retries my man, T-dawg.");
                 }
