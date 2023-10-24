@@ -44,6 +44,7 @@ pub struct RelationalDB {
     pub(crate) inner: Locking,
     commit_log: CommitLog,
     _lock: Arc<File>,
+    id: u64,
 }
 
 impl DataRow for RelationalDB {
@@ -66,6 +67,7 @@ impl RelationalDB {
         root: impl AsRef<Path>,
         message_log: Option<Arc<Mutex<MessageLog>>>,
         odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
+        id: u64,
         address: Address,
         fsync: bool,
     ) -> Result<Self, DBError> {
@@ -159,10 +161,16 @@ impl RelationalDB {
             inner: datastore,
             commit_log,
             _lock: Arc::new(lock),
+            id,
         };
 
         log::trace!("[{}] DATABASE: OPENED", address);
         Ok(db)
+    }
+
+    /// Returns the id for this database
+    pub fn id(&self) -> u64 {
+        self.id
     }
 
     /// Obtain a read-only view of this database's [`CommitLog`].
@@ -613,7 +621,7 @@ pub fn open_db(path: impl AsRef<Path>, in_memory: bool, fsync: bool) -> Result<R
         Some(Arc::new(Mutex::new(MessageLog::open(path.join("mlog"))?)))
     };
     let odb = Arc::new(Mutex::new(make_default_ostorage(in_memory, path.join("odb"))?));
-    let stdb = RelationalDB::open(path, mlog, odb, Address::zero(), fsync)?;
+    let stdb = RelationalDB::open(path, mlog, odb, 0, Address::zero(), fsync)?;
 
     Ok(stdb)
 }
@@ -728,7 +736,7 @@ mod tests {
             tmp_dir.path().join("odb"),
         )?));
 
-        match RelationalDB::open(tmp_dir.path(), mlog, odb, Address::zero(), true) {
+        match RelationalDB::open(tmp_dir.path(), mlog, odb, 0, Address::zero(), true) {
             Ok(_) => {
                 panic!("Allowed to open database twice")
             }
