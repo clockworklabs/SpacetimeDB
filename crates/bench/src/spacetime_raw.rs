@@ -74,7 +74,11 @@ impl BenchDatabase for SpacetimeRaw {
 
     fn count_table(&mut self, table_id: &Self::TableId) -> ResultBench<u32> {
         self.db.with_auto_commit(&ExecutionContext::default(), |tx| {
-            Ok(self.db.iter(tx, *table_id)?.map(|_| 1u32).sum())
+            Ok(self
+                .db
+                .iter(&ExecutionContext::default(), tx, *table_id)?
+                .map(|_| 1u32)
+                .sum())
         })
     }
 
@@ -100,7 +104,7 @@ impl BenchDatabase for SpacetimeRaw {
 
     fn iterate(&mut self, table_id: &Self::TableId) -> ResultBench<()> {
         self.db.with_auto_commit(&ExecutionContext::default(), |tx| {
-            for row in self.db.iter(tx, *table_id)? {
+            for row in self.db.iter(&ExecutionContext::default(), tx, *table_id)? {
                 black_box(row);
             }
             Ok(())
@@ -115,7 +119,10 @@ impl BenchDatabase for SpacetimeRaw {
     ) -> ResultBench<()> {
         let col: ColId = column_index.into();
         self.db.with_auto_commit(&ExecutionContext::default(), |tx| {
-            for row in self.db.iter_by_col_eq(tx, *table_id, col, value)? {
+            for row in self
+                .db
+                .iter_by_col_eq(&ExecutionContext::default(), tx, *table_id, col, value)?
+            {
                 black_box(row);
             }
             Ok(())

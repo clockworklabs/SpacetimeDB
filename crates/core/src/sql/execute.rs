@@ -64,7 +64,8 @@ pub fn execute_single_sql(
     ast: CrudExpr,
     auth: AuthCtx,
 ) -> Result<Vec<MemTable>, DBError> {
-    let p = &mut DbProgram::new(db, tx, auth);
+    let ctx = ExecutionContext::sql(db.id());
+    let p = &mut DbProgram::new(&ctx, db, tx, auth);
     let q = Expr::Crud(Box::new(ast));
 
     let mut result = Vec::with_capacity(1);
@@ -81,8 +82,8 @@ pub fn execute_sql(
     auth: AuthCtx,
 ) -> Result<Vec<MemTable>, DBError> {
     let total = ast.len();
-
-    let p = &mut DbProgram::new(db, tx, auth);
+    let ctx = ExecutionContext::sql(db.id());
+    let p = &mut DbProgram::new(&ctx, db, tx, auth);
     let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
 
     let mut result = Vec::with_capacity(total);

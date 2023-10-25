@@ -247,6 +247,7 @@ impl module_host_actor::WasmInstance for WasmerInstance {
         timestamp: Timestamp,
         arg_bytes: Bytes,
     ) -> module_host_actor::ExecuteResult<Self::Trap> {
+        self.env.as_mut(&mut self.store).set_reducer_id(reducer_id as u64);
         self.call_tx_function::<(u32, u32, u32, u64, u32), 3>(
             CALL_REDUCER_DUNDER,
             budget,
