@@ -1,6 +1,6 @@
-use crate::util::typed_prometheus::metrics_group;
+use crate::{execution_context::TransactionType, util::typed_prometheus::metrics_group};
 use once_cell::sync::Lazy;
-use prometheus::{Histogram, HistogramVec};
+use prometheus::{Histogram, HistogramVec, IntCounterVec};
 
 metrics_group!(
     #[non_exhaustive]
@@ -49,6 +49,16 @@ metrics_group!(
         #[help = "The time spent deleting values in a set from a table"]
         #[labels(table_id: u32)]
         pub rdb_delete_by_rel_time: HistogramVec,
+
+        #[name = spacetime_num_rows_inserted]
+        #[help = "The number of rows inserted into a table"]
+        #[labels(txn_type: TransactionType, database_id: u64, reducer_id: u64, table_id: u32)]
+        pub rdb_num_rows_inserted: IntCounterVec,
+
+        #[name = spacetime_num_rows_deleted]
+        #[help = "The number of rows deleted from a table"]
+        #[labels(txn_type: TransactionType, database_id: u64, reducer_id: u64, table_id: u32)]
+        pub rdb_num_rows_deleted: IntCounterVec,
     }
 );
 

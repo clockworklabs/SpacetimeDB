@@ -92,6 +92,8 @@ macro_rules! metrics_vec {
 }
 pub use metrics_vec;
 
+use crate::execution_context::TransactionType;
+
 pub trait AsPrometheusLabel {
     type Str<'a>: AsRef<str> + 'a
     where
@@ -114,7 +116,20 @@ macro_rules! impl_prometheusvalue_string {
         })*
     }
 }
-impl_prometheusvalue_string!(Hash, Identity, Address, u8, u16, u32, u64, i8, i16, i32, i64);
+impl_prometheusvalue_string!(
+    Hash,
+    Identity,
+    Address,
+    TransactionType,
+    u8,
+    u16,
+    u32,
+    u64,
+    i8,
+    i16,
+    i32,
+    i64
+);
 
 #[doc(hidden)]
 pub trait ExtractMetricVecT {

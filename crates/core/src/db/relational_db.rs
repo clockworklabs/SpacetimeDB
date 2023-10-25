@@ -13,6 +13,7 @@ use crate::db::messages::commit::Commit;
 use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 use crate::db::ostorage::ObjectDB;
 use crate::error::{DBError, DatabaseError, IndexError, TableError};
+use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
 use fs2::FileExt;
 use nonempty::NonEmpty;
@@ -44,6 +45,7 @@ pub struct RelationalDB {
     pub(crate) inner: Locking,
     commit_log: CommitLog,
     _lock: Arc<File>,
+    id: u64,
 }
 
 impl DataRow for RelationalDB {
@@ -66,6 +68,7 @@ impl RelationalDB {
         root: impl AsRef<Path>,
         message_log: Option<Arc<Mutex<MessageLog>>>,
         odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
+        id: u64,
         address: Address,
         fsync: bool,
     ) -> Result<Self, DBError> {
@@ -159,10 +162,16 @@ impl RelationalDB {
             inner: datastore,
             commit_log,
             _lock: Arc::new(lock),
+            id,
         };
 
         log::trace!("[{}] DATABASE: OPENED", address);
         Ok(db)
+    }
+
+    /// Returns the id for this database
+    pub fn id(&self) -> u64 {
+        self.id
     }
 
     /// Obtain a read-only view of this database's [`CommitLog`].
@@ -259,10 +268,10 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn commit_tx(&self, tx: MutTxId) -> Result<Option<(TxData, Option<usize>)>, DBError> {
+    pub fn commit_tx(&self, ctx: &ExecutionContext, tx: MutTxId) -> Result<Option<(TxData, Option<usize>)>, DBError> {
         log::trace!("COMMIT TX");
         if let Some(tx_data) = self.inner.commit_mut_tx(tx)? {
-            let bytes_written = self.commit_log.append_tx(&tx_data, &self.inner)?;
+            let bytes_written = self.commit_log.append_tx(ctx, &tx_data, &self.inner)?;
             return Ok(Some((tx_data, bytes_written)));
         }
         Ok(None)
@@ -296,14 +305,14 @@ impl RelationalDB {
     ///     Ok(())
     /// })?;
     /// ```
-    pub fn with_auto_commit<F, A, E>(&self, f: F) -> Result<A, E>
+    pub fn with_auto_commit<F, A, E>(&self, ctx: &ExecutionContext, f: F) -> Result<A, E>
     where
         F: FnOnce(&mut MutTxId) -> Result<A, E>,
         E: From<DBError>,
     {
         let mut tx = self.begin_tx();
         let res = f(&mut tx);
-        self.finish_tx(tx, res)
+        self.finish_tx(ctx, tx, res)
     }
 
     /// Run a fallible function in a transaction, rolling it back if the
@@ -343,14 +352,14 @@ impl RelationalDB {
 
     /// Perform the transactional logic for the `tx` according to the `res`
     #[tracing::instrument(skip_all)]
-    pub fn finish_tx<A, E>(&self, tx: MutTxId, res: Result<A, E>) -> Result<A, E>
+    pub fn finish_tx<A, E>(&self, ctx: &ExecutionContext, tx: MutTxId, res: Result<A, E>) -> Result<A, E>
     where
         E: From<DBError>,
     {
         if res.is_err() {
             self.rollback_tx(tx);
         } else {
-            match self.commit_tx(tx).map_err(E::from)? {
+            match self.commit_tx(ctx, tx).map_err(E::from)? {
                 Some(_) => (),
                 None => panic!("TODO: retry?"),
             }
@@ -613,7 +622,7 @@ pub fn open_db(path: impl AsRef<Path>, in_memory: bool, fsync: bool) -> Result<R
         Some(Arc::new(Mutex::new(MessageLog::open(path.join("mlog"))?)))
     };
     let odb = Arc::new(Mutex::new(make_default_ostorage(in_memory, path.join("odb"))?));
-    let stdb = RelationalDB::open(path, mlog, odb, Address::zero(), fsync)?;
+    let stdb = RelationalDB::open(path, mlog, odb, 0, Address::zero(), fsync)?;
 
     Ok(stdb)
 }
@@ -658,6 +667,7 @@ mod tests {
     use crate::db::datastore::traits::TableDef;
     use crate::db::message_log::MessageLog;
     use crate::db::relational_db::{open_db, ST_TABLES_ID};
+    use crate::execution_context::ExecutionContext;
 
     use super::RelationalDB;
     use crate::db::relational_db::make_default_ostorage;
@@ -704,7 +714,7 @@ mod tests {
         let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
         schema.table_name = "MyTable".to_string();
         stdb.create_table(&mut tx, schema)?;
-        stdb.commit_tx(tx)?;
+        stdb.commit_tx(&ExecutionContext::default(), tx)?;
 
         Ok(())
     }
@@ -719,7 +729,7 @@ mod tests {
         schema.table_name = "MyTable".to_string();
         stdb.create_table(&mut tx, schema)?;
 
-        stdb.commit_tx(tx)?;
+        stdb.commit_tx(&ExecutionContext::default(), tx)?;
 
         let mlog = Some(Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?)));
         let in_memory = false;
@@ -728,7 +738,7 @@ mod tests {
             tmp_dir.path().join("odb"),
         )?));
 
-        match RelationalDB::open(tmp_dir.path(), mlog, odb, Address::zero(), true) {
+        match RelationalDB::open(tmp_dir.path(), mlog, odb, 0, Address::zero(), true) {
             Ok(_) => {
                 panic!("Allowed to open database twice")
             }
@@ -821,7 +831,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(-1)])?;
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(0)])?;
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(1)])?;
-        stdb.commit_tx(tx)?;
+        stdb.commit_tx(&ExecutionContext::default(), tx)?;
 
         let tx = stdb.begin_tx();
         let mut rows = stdb
@@ -871,7 +881,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(-1)])?;
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(0)])?;
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(1)])?;
-        stdb.commit_tx(tx)?;
+        stdb.commit_tx(&ExecutionContext::default(), tx)?;
 
         let tx = stdb.begin_tx();
         let mut rows = stdb
@@ -910,7 +920,7 @@ mod tests {
         let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
         schema.table_name = "MyTable".to_string();
         let table_id = stdb.create_table(&mut tx, schema)?;
-        stdb.commit_tx(tx)?;
+        stdb.commit_tx(&ExecutionContext::default(), tx)?;
 
         let mut tx = stdb.begin_tx();
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(-1)])?;
@@ -1031,7 +1041,7 @@ mod tests {
 
         assert_eq!(rows, vec![1]);
 
-        stdb.commit_tx(tx)?;
+        stdb.commit_tx(&ExecutionContext::default(), tx)?;
         drop(stdb);
 
         dbg!("reopen...");

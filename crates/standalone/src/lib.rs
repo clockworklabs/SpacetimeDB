@@ -19,6 +19,7 @@ use spacetimedb::control_db::{self, ControlDb};
 use spacetimedb::database_instance_context::DatabaseInstanceContext;
 use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
 use spacetimedb::db::{db_metrics::DB_METRICS, Config};
+use spacetimedb::execution_context::ExecutionContext;
 use spacetimedb::host::EnergyQuanta;
 use spacetimedb::host::UpdateDatabaseResult;
 use spacetimedb::host::UpdateOutcome;
@@ -515,7 +516,7 @@ impl StandaloneEnv {
             Ok(maybe_hash) => {
                 // Release tx due to locking semantics and acquire a control db
                 // lock instead.
-                stdb.commit_tx(tx)?;
+                stdb.commit_tx(&ExecutionContext::internal(stdb.id()), tx)?;
                 let lock = self.lock_database_instance_for_update(instance.id)?;
 
                 if let Some(hash) = maybe_hash {
@@ -568,7 +569,7 @@ impl StandaloneEnv {
             Ok(maybe_hash) => {
                 // Release tx due to locking semantics and acquire a control db
                 // lock instead.
-                stdb.commit_tx(tx)?;
+                stdb.commit_tx(&ExecutionContext::internal(stdb.id()), tx)?;
                 let lock = self.lock_database_instance_for_update(instance.id)?;
 
                 match maybe_hash {
