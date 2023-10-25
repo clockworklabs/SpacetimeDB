@@ -289,6 +289,9 @@ These are two special kinds of reducers that can be used to respond to module li
 
 - `ReducerKind.Init` - this reducer will be invoked when the module is first published.
 - `ReducerKind.Update` - this reducer will be invoked when the module is updated.
+- `ReducerKind.Connect` - this reducer will be invoked when a client connects to the database.
+- `ReducerKind.Disconnect` - this reducer will be invoked when a client disconnects from the database.
+
 
 Example:
 
@@ -297,18 +300,5 @@ Example:
 public static void Init()
 {
     Log("...and we're live!");
-}
-```
-
-### Connection events
-
-`OnConnect` and `OnDisconnect` `SpacetimeDB.Runtime` events are triggered when a client connects or disconnects from the database. They can be used to initialize per-client state or to clean up after the client disconnects. They get passed an instance of the earlier mentioned `DbEventArgs` which can be used to distinguish clients via its `Sender` field.
-
-```csharp
-[SpacetimeDB.Reducer(ReducerKind.Init)]
-public static void Init()
-{
-    OnConnect += (e) => Log($"Client {e.Sender} connected!");
-    OnDisconnect += (e) => Log($"Client {e.Sender} disconnected!");
 }
 ```
