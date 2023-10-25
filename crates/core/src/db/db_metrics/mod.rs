@@ -60,10 +60,10 @@ metrics_group!(
         #[labels(txn_type: TransactionType, database_id: u64, reducer_id: u64, table_id: u32)]
         pub rdb_num_rows_deleted: IntCounterVec,
 
-        #[name = spacetime_num_rows_read]
-        #[help = "The number of rows read from a table"]
+        #[name = spacetime_num_rows_fetched]
+        #[help = "The number of rows fetched from a table"]
         #[labels(txn_type: TransactionType, database_id: u64, reducer_id: u64, table_id: u32)]
-        pub rdb_num_rows_read: IntCounterVec,
+        pub rdb_num_rows_fetched: IntCounterVec,
     }
 );
 

@@ -1686,20 +1686,20 @@ pub struct Iter<'a> {
     table_id: TableId,
     inner: &'a Inner,
     stage: ScanStage<'a>,
-    committed_rows_scanned: u64,
+    committed_rows_fetched: u64,
 }
 
 impl Drop for Iter<'_> {
     fn drop(&mut self) {
         DB_METRICS
-            .rdb_num_rows_read
+            .rdb_num_rows_fetched
             .with_label_values(
                 &self.ctx.txn_type(),
                 &self.ctx.database_id(),
                 &self.ctx.reducer_id().unwrap_or(0),
                 &self.table_id.into(),
             )
-            .inc_by(self.committed_rows_scanned);
+            .inc_by(self.committed_rows_fetched);
     }
 }
 
@@ -1710,7 +1710,7 @@ impl<'a> Iter<'a> {
             table_id,
             inner,
             stage: ScanStage::Start,
-            committed_rows_scanned: 0,
+            committed_rows_fetched: 0,
         }
     }
 }
@@ -1768,7 +1768,7 @@ impl<'a> Iterator for Iter<'a> {
                     let _span = tracing::debug_span!("ScanStage::Committed").entered();
                     for (row_id, row) in iter {
                         // Increment metric for number of committed rows scanned.
-                        self.committed_rows_scanned += 1;
+                        self.committed_rows_fetched += 1;
                         // Check the committed row's state in the current tx.
                         match self.inner.tx_state.as_ref().map(|tx_state| tx_state.get_row_op(&table_id, row_id)) {
                             Some(RowState::Committed(_)) => unreachable!("a row cannot be committed in a tx state"),
