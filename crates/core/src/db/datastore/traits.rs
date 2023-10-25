@@ -1,4 +1,5 @@
 use crate::db::relational_db::ST_TABLES_ID;
+use crate::execution_context::ExecutionContext;
 use nonempty::NonEmpty;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::relation::{DbTable, FieldName, FieldOnly, Header, TableField};
@@ -401,10 +402,16 @@ pub trait TxDatastore: DataRow + Tx {
     where
         Self: 'a;
 
-    fn iter_tx<'a>(&'a self, tx: &'a Self::TxId, table_id: TableId) -> Result<Self::Iter<'a>>;
+    fn iter_tx<'a>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        tx: &'a Self::TxId,
+        table_id: TableId,
+    ) -> Result<Self::Iter<'a>>;
 
     fn iter_by_col_range_tx<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
+        ctx: &'a ExecutionContext,
         tx: &'a Self::TxId,
         table_id: TableId,
         cols: NonEmpty<ColId>,
@@ -413,6 +420,7 @@ pub trait TxDatastore: DataRow + Tx {
 
     fn iter_by_col_eq_tx<'a>(
         &'a self,
+        ctx: &'a ExecutionContext,
         tx: &'a Self::TxId,
         table_id: TableId,
         cols: NonEmpty<ColId>,
@@ -443,10 +451,19 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     fn rename_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, new_name: &str) -> Result<()>;
     fn table_id_exists(&self, tx: &Self::MutTxId, table_id: &TableId) -> bool;
     fn table_id_from_name_mut_tx(&self, tx: &Self::MutTxId, table_name: &str) -> Result<Option<TableId>>;
-    fn table_name_from_id_mut_tx<'tx>(&self, tx: &'tx Self::MutTxId, table_id: TableId) -> Result<Option<&'tx str>>;
-    fn get_all_tables_mut_tx<'tx>(&self, tx: &'tx Self::MutTxId) -> super::Result<Vec<Cow<'tx, TableSchema>>> {
+    fn table_name_from_id_mut_tx<'a>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        tx: &'a Self::MutTxId,
+        table_id: TableId,
+    ) -> Result<Option<&'a str>>;
+    fn get_all_tables_mut_tx<'tx>(
+        &self,
+        ctx: &ExecutionContext,
+        tx: &'tx Self::MutTxId,
+    ) -> super::Result<Vec<Cow<'tx, TableSchema>>> {
         let mut tables = Vec::new();
-        let table_rows = self.iter_mut_tx(tx, ST_TABLES_ID)?.collect::<Vec<_>>();
+        let table_rows = self.iter_mut_tx(ctx, tx, ST_TABLES_ID)?.collect::<Vec<_>>();
         for data_ref in table_rows {
             let data = self.view_product_value(data_ref);
             let row = StTableRow::try_from(data)?;
@@ -476,16 +493,23 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     ) -> super::Result<Option<SequenceId>>;
 
     // Data
-    fn iter_mut_tx<'a>(&'a self, tx: &'a Self::MutTxId, table_id: TableId) -> Result<Self::Iter<'a>>;
+    fn iter_mut_tx<'a>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        tx: &'a Self::MutTxId,
+        table_id: TableId,
+    ) -> Result<Self::Iter<'a>>;
     fn iter_by_col_range_mut_tx<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
+        ctx: &'a ExecutionContext,
         tx: &'a Self::MutTxId,
         table_id: TableId,
         cols: impl Into<NonEmpty<ColId>>,
         range: R,
     ) -> Result<Self::IterByColRange<'a, R>>;
     fn iter_by_col_eq_mut_tx<'a>(
-        &self,
+        &'a self,
+        ctx: &'a ExecutionContext,
         tx: &'a Self::MutTxId,
         table_id: TableId,
         cols: impl Into<NonEmpty<ColId>>,

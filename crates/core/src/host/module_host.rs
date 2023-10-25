@@ -5,6 +5,7 @@ use crate::database_logger::LogLevel;
 use crate::db::datastore::traits::{TxData, TxOp};
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
+use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
 use crate::identity::Identity;
 use crate::json::client_api::{SubscriptionUpdateJson, TableRowOperationJson, TableUpdateJson};
@@ -65,13 +66,14 @@ impl DatabaseUpdate {
             });
         }
 
+        let ctx = ExecutionContext::internal(stdb.id());
         let mut table_name_map: HashMap<TableId, _> = HashMap::new();
         let mut table_updates = Vec::new();
         for (table_id, table_row_operations) in map.drain() {
             let table_name = if let Some(name) = table_name_map.get(&table_id) {
                 name
             } else {
-                let table_name = stdb.table_name_from_id(&tx, table_id).unwrap().unwrap();
+                let table_name = stdb.table_name_from_id(&ctx, &tx, table_id).unwrap().unwrap();
                 table_name_map.insert(table_id, table_name);
                 table_name
             };

@@ -10,6 +10,7 @@ use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::{MutTxId, RowId};
 use crate::db::datastore::traits::IndexDef;
 use crate::error::{IndexError, NodesError};
+use crate::execution_context::ExecutionContext;
 use crate::util::ResultInspectExt;
 
 use super::scheduler::{ScheduleError, ScheduledReducerId, Scheduler};
@@ -118,7 +119,7 @@ impl InstanceEnv {
     pub fn insert(&self, table_id: TableId, buffer: &[u8]) -> Result<ProductValue, NodesError> {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;
-
+        let ctx = ExecutionContext::internal(stdb.id());
         let ret = stdb
             .insert_bytes_as_row(tx, table_id, buffer)
             .inspect_err_(|e| match e {
@@ -129,7 +130,7 @@ impl InstanceEnv {
                     value: _,
                 }) => {}
                 _ => {
-                    let res = stdb.table_name_from_id(tx, table_id);
+                    let res = stdb.table_name_from_id(&ctx, tx, table_id);
                     if let Ok(Some(table_name)) = res {
                         log::debug!("insert(table: {table_name}, table_id: {table_id}): {e}")
                     } else {
@@ -145,8 +146,14 @@ impl InstanceEnv {
     /// where the column identified by `cols` equates to `value`.
     ///
     /// Returns an error if no columns were deleted or if the column wasn't found.
-    #[tracing::instrument(skip(self, value))]
-    pub fn delete_by_col_eq(&self, table_id: TableId, col_id: ColId, value: &[u8]) -> Result<NonZeroU32, NodesError> {
+    #[tracing::instrument(skip(self, ctx, value))]
+    pub fn delete_by_col_eq(
+        &self,
+        ctx: &ExecutionContext,
+        table_id: TableId,
+        col_id: ColId,
+        value: &[u8],
+    ) -> Result<NonZeroU32, NodesError> {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;
 
@@ -155,7 +162,7 @@ impl InstanceEnv {
 
         // Find all rows in the table where the column data equates to `value`.
         let rows_to_delete = stdb
-            .iter_by_col_eq(tx, table_id, col_id, eq_value)?
+            .iter_by_col_eq(ctx, tx, table_id, col_id, eq_value)?
             .map(|x| RowId(*x.id()))
             .collect::<Vec<_>>();
 
@@ -238,7 +245,13 @@ impl InstanceEnv {
     /// Matching is defined by decoding of `value` to an `AlgebraicValue`
     /// according to the column's schema and then `Ord for AlgebraicValue`.
     #[tracing::instrument(skip_all)]
-    pub fn iter_by_col_eq(&self, table_id: TableId, col_id: ColId, value: &[u8]) -> Result<Vec<u8>, NodesError> {
+    pub fn iter_by_col_eq(
+        &self,
+        ctx: &ExecutionContext,
+        table_id: TableId,
+        col_id: ColId,
+        value: &[u8],
+    ) -> Result<Vec<u8>, NodesError> {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;
 
@@ -247,7 +260,7 @@ impl InstanceEnv {
 
         // Find all rows in the table where the column data matches `value`.
         // Concatenate and return these rows using bsatn encoding.
-        let results = stdb.iter_by_col_eq(tx, table_id, col_id, value)?;
+        let results = stdb.iter_by_col_eq(ctx, tx, table_id, col_id, value)?;
         let mut bytes = Vec::new();
         for result in results {
             bsatn::to_writer(&mut bytes, result.view()).unwrap();
@@ -256,13 +269,13 @@ impl InstanceEnv {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn iter_chunks(&self, table_id: TableId) -> Result<Vec<Box<[u8]>>, NodesError> {
+    pub fn iter_chunks(&self, ctx: &ExecutionContext, table_id: TableId) -> Result<Vec<Box<[u8]>>, NodesError> {
         let mut chunked_writer = ChunkedWriter::default();
 
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.tx.get()?;
 
-        for row in stdb.iter(tx, table_id)? {
+        for row in stdb.iter(ctx, tx, table_id)? {
             row.view().encode(&mut chunked_writer);
             // Flush at row boundaries.
             chunked_writer.flush();
@@ -272,7 +285,12 @@ impl InstanceEnv {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn iter_filtered_chunks(&self, table_id: TableId, filter: &[u8]) -> Result<Vec<Box<[u8]>>, NodesError> {
+    pub fn iter_filtered_chunks(
+        &self,
+        ctx: &ExecutionContext,
+        table_id: TableId,
+        filter: &[u8],
+    ) -> Result<Vec<Box<[u8]>>, NodesError> {
         use spacetimedb_lib::filter;
 
         fn filter_to_column_op(table_name: &str, filter: filter::Expr) -> ColumnOp {
@@ -319,7 +337,7 @@ impl InstanceEnv {
         .map_err(NodesError::DecodeFilter)?;
         let q = spacetimedb_vm::dsl::query(&*schema).with_select(filter_to_column_op(&schema.table_name, filter));
         //TODO: How pass the `caller` here?
-        let p = &mut DbProgram::new(stdb, tx, AuthCtx::for_current(self.dbic.identity));
+        let p = &mut DbProgram::new(ctx, stdb, tx, AuthCtx::for_current(self.dbic.identity));
         let results = match spacetimedb_vm::eval::run_ast(p, q.into()) {
             Code::Table(table) => table,
             _ => unreachable!("query should always return a table"),

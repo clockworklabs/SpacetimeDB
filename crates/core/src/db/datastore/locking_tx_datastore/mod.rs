@@ -28,10 +28,6 @@ use super::{
     },
 };
 
-use crate::db::datastore::system_tables::{
-    st_constraints_schema, st_module_schema, table_name_is_system, StConstraintRow, SystemTables,
-    CONSTRAINT_ID_SEQUENCE_ID, ST_CONSTRAINTS_ID, ST_CONSTRAINT_ROW_TYPE, ST_MODULE_ROW_TYPE,
-};
 use crate::{
     db::datastore::traits::{TxOp, TxRecord},
     db::{
@@ -43,6 +39,16 @@ use crate::{
         ostorage::ObjectDB,
     },
     error::{DBError, IndexError, TableError},
+};
+use crate::{
+    db::{
+        datastore::system_tables::{
+            st_constraints_schema, st_module_schema, table_name_is_system, StConstraintRow, SystemTables,
+            CONSTRAINT_ID_SEQUENCE_ID, ST_CONSTRAINTS_ID, ST_CONSTRAINT_ROW_TYPE, ST_MODULE_ROW_TYPE,
+        },
+        db_metrics::DB_METRICS,
+    },
+    execution_context::ExecutionContext,
 };
 
 use anyhow::anyhow;
@@ -339,15 +345,18 @@ struct Inner {
     tx_state: Option<TxState>,
     /// The state of sequence generation in this database.
     sequence_state: SequencesState,
+    /// The id of this database.
+    database_id: u64,
 }
 
 impl Inner {
-    pub fn new() -> Self {
+    pub fn new(database_id: u64) -> Self {
         Self {
             memory: BTreeMap::new(),
             committed_state: CommittedState::new(),
             tx_state: None,
             sequence_state: SequencesState::new(),
+            database_id,
         }
     }
 
@@ -556,7 +565,8 @@ impl Inner {
     }
 
     fn drop_col_eq(&mut self, table_id: TableId, col_id: ColId, value: AlgebraicValue) -> super::Result<()> {
-        let rows = self.iter_by_col_eq(&table_id, col_id, value)?;
+        let ctx = ExecutionContext::internal(self.database_id);
+        let rows = self.iter_by_col_eq(&ctx, &table_id, col_id, value)?;
         let ids_to_delete = rows.map(|row| RowId(*row.id())).collect::<Vec<_>>();
         if ids_to_delete.is_empty() {
             return Err(TableError::IdNotFound(table_id).into());
@@ -591,8 +601,9 @@ impl Inner {
         // Allocate new sequence values
         // If we're out of allocations, then update the sequence row in st_sequences to allocate a fresh batch of sequences.
         const ST_SEQUENCES_SEQUENCE_ID_COL: ColId = ColId(0);
+        let ctx = ExecutionContext::internal(self.database_id);
         let old_seq_row = self
-            .iter_by_col_eq(&ST_SEQUENCES_ID, ST_SEQUENCES_SEQUENCE_ID_COL, seq_id.into())?
+            .iter_by_col_eq(&ctx, &ST_SEQUENCES_ID, ST_SEQUENCES_SEQUENCE_ID_COL, seq_id.into())?
             .last()
             .unwrap()
             .data;
@@ -658,8 +669,9 @@ impl Inner {
 
     fn drop_sequence(&mut self, seq_id: SequenceId) -> super::Result<()> {
         const ST_SEQUENCES_SEQUENCE_ID_COL: ColId = ColId(0);
+        let ctx = ExecutionContext::internal(self.database_id);
         let old_seq_row = self
-            .iter_by_col_eq(&ST_SEQUENCES_ID, ST_SEQUENCES_SEQUENCE_ID_COL, seq_id.into())?
+            .iter_by_col_eq(&ctx, &ST_SEQUENCES_ID, ST_SEQUENCES_SEQUENCE_ID_COL, seq_id.into())?
             .last()
             .unwrap()
             .data;
@@ -672,6 +684,7 @@ impl Inner {
     fn sequence_id_from_name(&self, seq_name: &str) -> super::Result<Option<SequenceId>> {
         let seq_name_col: ColId = 1.into();
         self.iter_by_col_eq(
+            &ExecutionContext::internal(self.database_id),
             &ST_SEQUENCES_ID,
             seq_name_col,
             AlgebraicValue::String(seq_name.to_owned()),
@@ -798,6 +811,8 @@ impl Inner {
             return Ok(Cow::Borrowed(schema));
         }
 
+        let ctx = ExecutionContext::internal(self.database_id);
+
         // Look up the table_name for the table in question.
         let table_id_col = NonEmpty::new(0.into());
 
@@ -810,7 +825,7 @@ impl Inner {
         let rows = IterByColRange::Scan(ScanIterByColRange {
             range: value,
             cols: table_id_col,
-            scan_iter: self.iter(&ST_TABLES_ID)?,
+            scan_iter: self.iter(&ctx, &ST_TABLES_ID)?,
         })
         .collect::<Vec<_>>();
         assert!(rows.len() <= 1, "Expected at most one row in st_tables for table_id");
@@ -823,7 +838,7 @@ impl Inner {
         // Look up the columns for the table in question.
         let mut columns = Vec::new();
         const TABLE_ID_COL: ColId = ColId(0);
-        for data_ref in self.iter_by_col_eq(&ST_COLUMNS_ID, TABLE_ID_COL, table_id.into())? {
+        for data_ref in self.iter_by_col_eq(&ctx, &ST_COLUMNS_ID, TABLE_ID_COL, table_id.into())? {
             let row = data_ref.view();
 
             let el = StColumnRow::try_from(row)?;
@@ -842,7 +857,7 @@ impl Inner {
         // Look up the indexes for the table in question.
         let mut indexes = Vec::new();
         let table_id_col: ColId = 1.into();
-        for data_ref in self.iter_by_col_eq(&ST_INDEXES_ID, table_id_col, table_id.into())? {
+        for data_ref in self.iter_by_col_eq(&ctx, &ST_INDEXES_ID, table_id_col, table_id.into())? {
             let row = data_ref.view();
 
             let el = StIndexRow::try_from(row)?;
@@ -868,18 +883,19 @@ impl Inner {
     }
 
     fn drop_table(&mut self, table_id: TableId) -> super::Result<()> {
+        let ctx = ExecutionContext::internal(self.database_id);
         // First drop the tables indexes.
         const ST_INDEXES_TABLE_ID_COL: ColId = ColId(1);
-        self.iter_by_col_eq(&ST_INDEXES_ID, ST_INDEXES_TABLE_ID_COL, table_id.into())?
-            .map(|row| StIndexRow::try_from(row.view()).map(|el| el.index_id))
+        let iter = self.iter_by_col_eq(&ctx, &ST_INDEXES_ID, ST_INDEXES_TABLE_ID_COL, table_id.into())?;
+        iter.map(|row| StIndexRow::try_from(row.view()).map(|el| el.index_id))
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .try_for_each(|id| self.drop_index(id))?;
 
         // Remove the table's sequences from st_sequences.
         const ST_SEQUENCES_TABLE_ID_COL: ColId = ColId(2);
-        self.iter_by_col_eq(&ST_SEQUENCES_ID, ST_SEQUENCES_TABLE_ID_COL, table_id.into())?
-            .map(|row| StSequenceRow::try_from(row.view()).map(|el| el.sequence_id))
+        let iter = self.iter_by_col_eq(&ctx, &ST_SEQUENCES_ID, ST_SEQUENCES_TABLE_ID_COL, table_id.into())?;
+        iter.map(|row| StSequenceRow::try_from(row.view()).map(|el| el.sequence_id))
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .try_for_each(|id| self.drop_sequence(id))?;
@@ -900,7 +916,8 @@ impl Inner {
     fn rename_table(&mut self, table_id: TableId, new_name: &str) -> super::Result<()> {
         // Update the table's name in st_tables.
         const ST_TABLES_TABLE_ID_COL: ColId = ColId(0);
-        let mut row_iter = self.iter_by_col_eq(&ST_TABLES_ID, ST_TABLES_TABLE_ID_COL, table_id.into())?;
+        let ctx = ExecutionContext::internal(self.database_id);
+        let mut row_iter = self.iter_by_col_eq(&ctx, &ST_TABLES_ID, ST_TABLES_TABLE_ID_COL, table_id.into())?;
 
         let row = row_iter.next().ok_or_else(|| TableError::IdNotFound(table_id))?;
         let row_id = RowId(*row.id);
@@ -913,6 +930,13 @@ impl Inner {
             "Expected at most one row in st_tables for table_id"
         );
 
+        // Note the borrow checker requires that we explictly drop the iterator.
+        // That is, before we delete and insert the new row.
+        // This is because datastore iterators write to the metric store when dropped.
+        // Hence if we don't explicitly drop here,
+        // there will be another immutable borrow of self after the two mutable borrows below.
+        drop(row_iter);
+
         self.delete(&ST_TABLES_ID, [row_id]);
         self.insert(ST_TABLES_ID, new_row)?;
         Ok(())
@@ -921,6 +945,7 @@ impl Inner {
     fn table_id_from_name(&self, table_name: &str) -> super::Result<Option<TableId>> {
         let table_name_col: ColId = 1.into();
         self.iter_by_col_eq(
+            &ExecutionContext::internal(self.database_id),
             &ST_TABLES_ID,
             table_name_col,
             AlgebraicValue::String(table_name.to_owned()),
@@ -931,9 +956,9 @@ impl Inner {
         })
     }
 
-    fn table_name_from_id(&self, table_id: TableId) -> super::Result<Option<&str>> {
+    fn table_name_from_id<'a>(&'a self, ctx: &'a ExecutionContext, table_id: TableId) -> super::Result<Option<&str>> {
         let table_id_col: ColId = 0.into();
-        self.iter_by_col_eq(&ST_TABLES_ID, table_id_col, table_id.into())
+        self.iter_by_col_eq(ctx, &ST_TABLES_ID, table_id_col, table_id.into())
             .map(|mut iter| {
                 iter.next()
                     .map(|row| row.view().elements[1].as_string().unwrap().deref())
@@ -1020,8 +1045,9 @@ impl Inner {
 
         // Remove the index from st_indexes.
         const ST_INDEXES_INDEX_ID_COL: ColId = ColId(0);
+        let ctx = ExecutionContext::internal(self.database_id);
         let old_index_row = self
-            .iter_by_col_eq(&ST_INDEXES_ID, ST_INDEXES_INDEX_ID_COL, index_id.into())?
+            .iter_by_col_eq(&ctx, &ST_INDEXES_ID, ST_INDEXES_INDEX_ID_COL, index_id.into())?
             .last()
             .unwrap()
             .data;
@@ -1069,6 +1095,7 @@ impl Inner {
     fn index_id_from_name(&self, index_name: &str) -> super::Result<Option<IndexId>> {
         let index_name_col: ColId = 3.into();
         self.iter_by_col_eq(
+            &ExecutionContext::internal(self.database_id),
             &ST_INDEXES_ID,
             index_name_col,
             AlgebraicValue::String(index_name.to_owned()),
@@ -1146,7 +1173,12 @@ impl Inner {
                     continue;
                 }
                 let st_sequences_table_id_col = ColId(2);
-                for seq_row in self.iter_by_col_eq(&ST_SEQUENCES_ID, st_sequences_table_id_col, table_id.into())? {
+                for seq_row in self.iter_by_col_eq(
+                    &ExecutionContext::internal(self.database_id),
+                    &ST_SEQUENCES_ID,
+                    st_sequences_table_id_col,
+                    table_id.into(),
+                )? {
                     let seq_row = seq_row.view();
                     let seq_row = StSequenceRow::try_from(seq_row)?;
                     if seq_row.col_id != col.col_id {
@@ -1411,9 +1443,9 @@ impl Inner {
         self.delete(table_id, relation.into_iter().map(|pv| RowId(pv.to_data_key())))
     }
 
-    fn iter(&self, table_id: &TableId) -> super::Result<Iter> {
+    fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: &TableId) -> super::Result<Iter> {
         if self.table_exists(table_id) {
-            return Ok(Iter::new(*table_id, self));
+            return Ok(Iter::new(ctx, *table_id, self));
         }
         Err(TableError::IdNotFound(*table_id).into())
     }
@@ -1421,13 +1453,14 @@ impl Inner {
     /// Returns an iterator,
     /// yielding every row in the table identified by `table_id`,
     /// where the column data identified by `col_id` equates to `value`.
-    fn iter_by_col_eq(
-        &self,
+    fn iter_by_col_eq<'a>(
+        &'a self,
+        ctx: &'a ExecutionContext,
         table_id: &TableId,
         cols: impl Into<NonEmpty<ColId>>,
         value: AlgebraicValue,
     ) -> super::Result<IterByColEq<'_>> {
-        self.iter_by_col_range(table_id, cols.into(), value)
+        self.iter_by_col_range(ctx, table_id, cols.into(), value)
     }
 
     /// Returns an iterator,
@@ -1435,6 +1468,7 @@ impl Inner {
     /// where the values of `col_id` are contained in `range`.
     fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
+        ctx: &'a ExecutionContext,
         table_id: &TableId,
         cols: NonEmpty<ColId>,
         range: R,
@@ -1473,7 +1507,7 @@ impl Inner {
                     None => Ok(IterByColRange::Scan(ScanIterByColRange {
                         range,
                         cols,
-                        scan_iter: self.iter(table_id)?,
+                        scan_iter: self.iter(ctx, table_id)?,
                     })),
                     Some(tx_state) => Ok(IterByColRange::CommittedIndex(CommittedIndexIter {
                         table_id: *table_id,
@@ -1485,7 +1519,7 @@ impl Inner {
                 None => Ok(IterByColRange::Scan(ScanIterByColRange {
                     range,
                     cols,
-                    scan_iter: self.iter(table_id)?,
+                    scan_iter: self.iter(ctx, table_id)?,
                 })),
             }
         }
@@ -1512,12 +1546,12 @@ pub struct Locking {
 impl Locking {
     /// IMPORTANT! This the most delicate function in the entire codebase.
     /// DO NOT CHANGE UNLESS YOU KNOW WHAT YOU'RE DOING!!!
-    pub fn bootstrap() -> Result<Self, DBError> {
+    pub fn bootstrap(database_id: u64) -> Result<Self, DBError> {
         log::trace!("DATABASE: BOOTSTRAPPING SYSTEM TABLES...");
 
         // NOTE! The bootstrapping process does not take plan in a transaction.
         // This is intentional.
-        let mut datastore = Inner::new();
+        let mut datastore = Inner::new(database_id);
 
         // TODO(cloutiertyler): One thing to consider in the future is, should
         // we persist the bootstrap transaction in the message log? My intuition
@@ -1648,17 +1682,35 @@ impl traits::Tx for Locking {
 }
 
 pub struct Iter<'a> {
+    ctx: &'a ExecutionContext,
     table_id: TableId,
     inner: &'a Inner,
     stage: ScanStage<'a>,
+    committed_rows_fetched: u64,
+}
+
+impl Drop for Iter<'_> {
+    fn drop(&mut self) {
+        DB_METRICS
+            .rdb_num_rows_fetched
+            .with_label_values(
+                &self.ctx.txn_type(),
+                &self.ctx.database_id(),
+                &self.ctx.reducer_id().unwrap_or(0),
+                &self.table_id.into(),
+            )
+            .inc_by(self.committed_rows_fetched);
+    }
 }
 
 impl<'a> Iter<'a> {
-    fn new(table_id: TableId, inner: &'a Inner) -> Self {
+    fn new(ctx: &'a ExecutionContext, table_id: TableId, inner: &'a Inner) -> Self {
         Self {
+            ctx,
             table_id,
             inner,
             stage: ScanStage::Start,
+            committed_rows_fetched: 0,
         }
     }
 }
@@ -1715,6 +1767,8 @@ impl<'a> Iterator for Iter<'a> {
                     // (1) Go through the committed state for this table.
                     let _span = tracing::debug_span!("ScanStage::Committed").entered();
                     for (row_id, row) in iter {
+                        // Increment metric for number of committed rows scanned.
+                        self.committed_rows_fetched += 1;
                         // Check the committed row's state in the current tx.
                         match self.inner.tx_state.as_ref().map(|tx_state| tx_state.get_row_op(&table_id, row_id)) {
                             Some(RowState::Committed(_)) => unreachable!("a row cannot be committed in a tx state"),
@@ -1873,28 +1927,35 @@ impl TxDatastore for Locking {
     type IterByColEq<'a> = IterByColRange<'a, AlgebraicValue> where Self: 'a;
     type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterByColRange<'a, R> where Self: 'a;
 
-    fn iter_tx<'a>(&'a self, tx: &'a Self::TxId, table_id: TableId) -> super::Result<Self::Iter<'a>> {
-        self.iter_mut_tx(tx, table_id)
+    fn iter_tx<'a>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        tx: &'a Self::TxId,
+        table_id: TableId,
+    ) -> super::Result<Self::Iter<'a>> {
+        self.iter_mut_tx(ctx, tx, table_id)
     }
 
     fn iter_by_col_range_tx<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
+        ctx: &'a ExecutionContext,
         tx: &'a Self::TxId,
         table_id: TableId,
         cols: NonEmpty<ColId>,
         range: R,
     ) -> super::Result<Self::IterByColRange<'a, R>> {
-        self.iter_by_col_range_mut_tx(tx, table_id, cols, range)
+        self.iter_by_col_range_mut_tx(ctx, tx, table_id, cols, range)
     }
 
     fn iter_by_col_eq_tx<'a>(
         &'a self,
+        ctx: &'a ExecutionContext,
         tx: &'a Self::TxId,
         table_id: TableId,
         cols: NonEmpty<ColId>,
         value: AlgebraicValue,
     ) -> super::Result<Self::IterByColEq<'a>> {
-        self.iter_by_col_eq_mut_tx(tx, table_id, cols, value)
+        self.iter_by_col_eq_mut_tx(ctx, tx, table_id, cols, value)
     }
 
     fn get_tx<'a>(
@@ -1984,12 +2045,13 @@ impl MutTxDatastore for Locking {
         tx.lock.table_id_from_name(table_name)
     }
 
-    fn table_name_from_id_mut_tx<'tx>(
-        &self,
-        tx: &'tx Self::MutTxId,
+    fn table_name_from_id_mut_tx<'a>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        tx: &'a Self::MutTxId,
         table_id: TableId,
-    ) -> super::Result<Option<&'tx str>> {
-        tx.lock.table_name_from_id(table_id)
+    ) -> super::Result<Option<&'a str>> {
+        tx.lock.table_name_from_id(ctx, table_id)
     }
 
     fn create_index_mut_tx(&self, tx: &mut Self::MutTxId, index: IndexDef) -> super::Result<IndexId> {
@@ -2024,28 +2086,35 @@ impl MutTxDatastore for Locking {
         tx.lock.sequence_id_from_name(sequence_name)
     }
 
-    fn iter_mut_tx<'a>(&'a self, tx: &'a Self::MutTxId, table_id: TableId) -> super::Result<Self::Iter<'a>> {
-        tx.lock.iter(&table_id)
+    fn iter_mut_tx<'a>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        tx: &'a Self::MutTxId,
+        table_id: TableId,
+    ) -> super::Result<Self::Iter<'a>> {
+        tx.lock.iter(ctx, &table_id)
     }
 
     fn iter_by_col_range_mut_tx<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
+        ctx: &'a ExecutionContext,
         tx: &'a Self::MutTxId,
         table_id: TableId,
         cols: impl Into<NonEmpty<ColId>>,
         range: R,
     ) -> super::Result<Self::IterByColRange<'a, R>> {
-        tx.lock.iter_by_col_range(&table_id, cols.into(), range)
+        tx.lock.iter_by_col_range(ctx, &table_id, cols.into(), range)
     }
 
     fn iter_by_col_eq_mut_tx<'a>(
-        &self,
+        &'a self,
+        ctx: &'a ExecutionContext,
         tx: &'a Self::MutTxId,
         table_id: TableId,
         cols: impl Into<NonEmpty<ColId>>,
         value: AlgebraicValue,
     ) -> super::Result<Self::IterByColEq<'a>> {
-        tx.lock.iter_by_col_eq(&table_id, cols, value)
+        tx.lock.iter_by_col_eq(ctx, &table_id, cols, value)
     }
 
     fn get_mut_tx<'a>(
@@ -2087,7 +2156,11 @@ impl MutTxDatastore for Locking {
 
 impl traits::Programmable for Locking {
     fn program_hash(&self, tx: &MutTxId) -> Result<Option<Hash>, DBError> {
-        match tx.lock.iter(&ST_MODULE_ID)?.next() {
+        match tx
+            .lock
+            .iter(&ExecutionContext::internal(tx.lock.database_id), &ST_MODULE_ID)?
+            .next()
+        {
             None => Ok(None),
             Some(data) => {
                 let row = StModuleRow::try_from(data.view())?;
@@ -2101,13 +2174,38 @@ impl traits::MutProgrammable for Locking {
     type FencingToken = u128;
 
     fn set_program_hash(&self, tx: &mut MutTxId, fence: Self::FencingToken, hash: Hash) -> Result<(), DBError> {
-        if let Some(data) = tx.lock.iter(&ST_MODULE_ID)?.next() {
+        let ctx = ExecutionContext::internal(tx.lock.database_id);
+        let mut iter = tx.lock.iter(&ctx, &ST_MODULE_ID)?;
+        if let Some(data) = iter.next() {
             let row = StModuleRow::try_from(data.view())?;
             if fence <= row.epoch.0 {
                 return Err(anyhow!("stale fencing token: {}, storage is at epoch: {}", fence, row.epoch).into());
             }
+
+            // Note the borrow checker requires that we explictly drop the iterator.
+            // That is, before we delete and insert.
+            // This is because datastore iterators write to the metric store when dropped.
+            // Hence if we don't explicitly drop here,
+            // there will be another immutable borrow of self after the two mutable borrows below.
+            drop(iter);
+
             tx.lock.delete_by_rel(&ST_MODULE_ID, Some(ProductValue::from(&row)));
+            tx.lock.insert(
+                ST_MODULE_ID,
+                ProductValue::from(&StModuleRow {
+                    program_hash: hash,
+                    kind: WASM_MODULE,
+                    epoch: system_tables::Epoch(fence),
+                }),
+            )?;
+            return Ok(());
         }
+
+        // Note the borrow checker requires that we explictly drop the iterator before we insert.
+        // This is because datastore iterators write to the metric store when dropped.
+        // Hence if we don't explicitly drop here,
+        // there will be another immutable borrow of self after the mutable borrow of the insert.
+        drop(iter);
 
         tx.lock.insert(
             ST_MODULE_ID,
@@ -2117,7 +2215,6 @@ impl traits::MutProgrammable for Locking {
                 epoch: system_tables::Epoch(fence),
             }),
         )?;
-
         Ok(())
     }
 }
@@ -2126,6 +2223,7 @@ impl traits::MutProgrammable for Locking {
 mod tests {
     use super::{ColId, Locking, MutTxId, StTableRow};
     use crate::db::datastore::system_tables::{StConstraintRow, ST_CONSTRAINTS_ID};
+    use crate::execution_context::ExecutionContext;
     use crate::{
         db::datastore::{
             locking_tx_datastore::{
@@ -2150,7 +2248,7 @@ mod tests {
     }
 
     fn get_datastore() -> super::super::Result<Locking> {
-        Locking::bootstrap()
+        Locking::bootstrap(0)
     }
 
     fn index_row(index_id: u32, table_id: u32, col_id: u32, name: &str, is_unique: bool) -> StIndexRow<String> {
@@ -2262,7 +2360,7 @@ mod tests {
 
     fn all_rows(datastore: &Locking, tx: &MutTxId, table_id: TableId) -> Vec<ProductValue> {
         datastore
-            .iter_mut_tx(tx, table_id)
+            .iter_mut_tx(&ExecutionContext::default(), tx, table_id)
             .unwrap()
             .map(|r| r.view().clone())
             .collect()
@@ -2273,7 +2371,7 @@ mod tests {
         let datastore = get_datastore()?;
         let tx = datastore.begin_mut_tx();
         let table_rows = datastore
-            .iter_mut_tx(&tx, ST_TABLES_ID)?
+            .iter_mut_tx(&ExecutionContext::default(), &tx, ST_TABLES_ID)?
             .map(|x| StTableRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| x.table_id)
             .collect::<Vec<_>>();
@@ -2291,7 +2389,7 @@ mod tests {
             ]
         );
         let column_rows = datastore
-            .iter_mut_tx(&tx, ST_COLUMNS_ID)?
+            .iter_mut_tx(&ExecutionContext::default(), &tx, ST_COLUMNS_ID)?
             .map(|x| StColumnRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| (x.table_id, x.col_id))
             .collect::<Vec<_>>();
@@ -2339,7 +2437,7 @@ mod tests {
             ]
         );
         let index_rows = datastore
-            .iter_mut_tx(&tx, ST_INDEXES_ID)?
+            .iter_mut_tx(&ExecutionContext::default(), &tx, ST_INDEXES_ID)?
             .map(|x| StIndexRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| x.index_id)
             .collect::<Vec<_>>();
@@ -2357,7 +2455,7 @@ mod tests {
             ]
         );
         let sequence_rows = datastore
-            .iter_mut_tx(&tx, ST_SEQUENCES_ID)?
+            .iter_mut_tx(&ExecutionContext::default(), &tx, ST_SEQUENCES_ID)?
             .map(|x| StSequenceRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| x.sequence_id)
             .collect::<Vec<_>>();
@@ -2372,7 +2470,7 @@ mod tests {
             ]
         );
         let constraints_rows = datastore
-            .iter_mut_tx(&tx, ST_CONSTRAINTS_ID)?
+            .iter_mut_tx(&ExecutionContext::default(), &tx, ST_CONSTRAINTS_ID)?
             .map(|x| StConstraintRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| x.constraint_id)
             .collect::<Vec<_>>();
@@ -2392,7 +2490,13 @@ mod tests {
     fn test_create_table_pre_commit() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         let table_rows = datastore
-            .iter_by_col_eq_mut_tx(&tx, ST_TABLES_ID, ColId(0), table_id.into())?
+            .iter_by_col_eq_mut_tx(
+                &ExecutionContext::default(),
+                &tx,
+                ST_TABLES_ID,
+                ColId(0),
+                table_id.into(),
+            )?
             .map(|x| StTableRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| x.table_id)
             .collect::<Vec<_>>();
@@ -2405,7 +2509,13 @@ mod tests {
             ]
         );
         let column_rows = datastore
-            .iter_by_col_eq_mut_tx(&tx, ST_COLUMNS_ID, ColId(0), table_id.into())?
+            .iter_by_col_eq_mut_tx(
+                &ExecutionContext::default(),
+                &tx,
+                ST_COLUMNS_ID,
+                ColId(0),
+                table_id.into(),
+            )?
             .map(|x| StColumnRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| (x.table_id, x.col_id))
             .collect::<Vec<_>>();
@@ -2428,7 +2538,13 @@ mod tests {
         datastore.commit_mut_tx(tx)?;
         let tx = datastore.begin_mut_tx();
         let table_rows = datastore
-            .iter_by_col_eq_mut_tx(&tx, ST_TABLES_ID, ColId(0), table_id.into())?
+            .iter_by_col_eq_mut_tx(
+                &ExecutionContext::default(),
+                &tx,
+                ST_TABLES_ID,
+                ColId(0),
+                table_id.into(),
+            )?
             .map(|x| StTableRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| x.table_id)
             .collect::<Vec<_>>();
@@ -2441,7 +2557,13 @@ mod tests {
             ]
         );
         let column_rows = datastore
-            .iter_by_col_eq_mut_tx(&tx, ST_COLUMNS_ID, ColId(0), table_id.into())?
+            .iter_by_col_eq_mut_tx(
+                &ExecutionContext::default(),
+                &tx,
+                ST_COLUMNS_ID,
+                ColId(0),
+                table_id.into(),
+            )?
             .map(|x| StColumnRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| (x.table_id, x.col_id))
             .collect::<Vec<_>>();
@@ -2464,13 +2586,25 @@ mod tests {
         datastore.rollback_mut_tx(tx);
         let tx = datastore.begin_mut_tx();
         let table_rows = datastore
-            .iter_by_col_eq_mut_tx(&tx, ST_TABLES_ID, ColId(0), table_id.into())?
+            .iter_by_col_eq_mut_tx(
+                &ExecutionContext::default(),
+                &tx,
+                ST_TABLES_ID,
+                ColId(0),
+                table_id.into(),
+            )?
             .map(|x| StTableRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| x.table_id)
             .collect::<Vec<_>>();
         assert_eq!(table_rows, vec![]);
         let column_rows = datastore
-            .iter_by_col_eq_mut_tx(&tx, ST_COLUMNS_ID, ColId(0), table_id.into())?
+            .iter_by_col_eq_mut_tx(
+                &ExecutionContext::default(),
+                &tx,
+                ST_COLUMNS_ID,
+                ColId(0),
+                table_id.into(),
+            )?
             .map(|x| StColumnRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| x.table_id)
             .collect::<Vec<_>>();
@@ -2741,7 +2875,7 @@ mod tests {
         let index_def = IndexDef::new("age_idx".to_string(), table_id, 2.into(), true);
         datastore.create_index_mut_tx(&mut tx, index_def)?;
         let index_rows = datastore
-            .iter_mut_tx(&tx, ST_INDEXES_ID)?
+            .iter_mut_tx(&ExecutionContext::default(), &tx, ST_INDEXES_ID)?
             .map(|x| StIndexRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| x.index_id)
             .collect::<Vec<_>>();
@@ -2786,7 +2920,7 @@ mod tests {
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx();
         let index_rows = datastore
-            .iter_mut_tx(&tx, ST_INDEXES_ID)?
+            .iter_mut_tx(&ExecutionContext::default(), &tx, ST_INDEXES_ID)?
             .map(|x| StIndexRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| x.index_id)
             .collect::<Vec<_>>();
@@ -2832,7 +2966,7 @@ mod tests {
         datastore.rollback_mut_tx(tx);
         let mut tx = datastore.begin_mut_tx();
         let index_rows = datastore
-            .iter_mut_tx(&tx, ST_INDEXES_ID)?
+            .iter_mut_tx(&ExecutionContext::default(), &tx, ST_INDEXES_ID)?
             .map(|x| StIndexRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| x.index_id)
             .collect::<Vec<_>>();
@@ -2871,7 +3005,13 @@ mod tests {
 
         let all_rows_col_0_eq_1 = |tx: &MutTxId| {
             datastore
-                .iter_by_col_eq_mut_tx(tx, table_id, ColId(0), AlgebraicValue::U32(1))
+                .iter_by_col_eq_mut_tx(
+                    &ExecutionContext::default(),
+                    tx,
+                    table_id,
+                    ColId(0),
+                    AlgebraicValue::U32(1),
+                )
                 .unwrap()
                 .map(|data_ref| data_ref.data.clone())
                 .collect::<Vec<_>>()

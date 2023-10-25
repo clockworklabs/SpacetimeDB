@@ -59,6 +59,11 @@ metrics_group!(
         #[help = "The number of rows deleted from a table"]
         #[labels(txn_type: TransactionType, database_id: u64, reducer_id: u64, table_id: u32)]
         pub rdb_num_rows_deleted: IntCounterVec,
+
+        #[name = spacetime_num_rows_fetched]
+        #[help = "The number of rows fetched from a table"]
+        #[labels(txn_type: TransactionType, database_id: u64, reducer_id: u64, table_id: u32)]
+        pub rdb_num_rows_fetched: IntCounterVec,
     }
 );
 

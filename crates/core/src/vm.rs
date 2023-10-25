@@ -3,6 +3,7 @@ use crate::db::cursor::{CatalogCursor, IndexCursor, TableCursor};
 use crate::db::datastore::locking_tx_datastore::{IterByColEq, MutTxId};
 use crate::db::datastore::traits::{ColumnDef, IndexDef, TableDef};
 use crate::db::relational_db::RelationalDB;
+use crate::execution_context::ExecutionContext;
 use itertools::Itertools;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::identity::AuthCtx;
@@ -25,12 +26,13 @@ use tracing::debug;
 //and pull all that crate in core. Will be revisited after trait refactor
 #[tracing::instrument(skip_all)]
 pub fn build_query<'a>(
+    ctx: &'a ExecutionContext,
     stdb: &'a RelationalDB,
     tx: &'a MutTxId,
     query: QueryCode,
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {
     let db_table = matches!(&query.table, Table::DbTable(_));
-    let mut result = get_table(stdb, tx, query.table.into())?;
+    let mut result = get_table(ctx, stdb, tx, query.table.into())?;
 
     for op in query.query {
         result = match op {
@@ -39,25 +41,36 @@ pub fn build_query<'a>(
                 col_id,
                 lower_bound,
                 upper_bound,
-            }) if db_table => iter_by_col_range(stdb, tx, table, col_id, (lower_bound, upper_bound))?,
+            }) if db_table => iter_by_col_range(ctx, stdb, tx, table, col_id, (lower_bound, upper_bound))?,
             Query::IndexScan(index_scan) => {
                 let header = result.head().clone();
                 let cmp: ColumnOp = index_scan.into();
                 let iter = result.select(move |row| cmp.compare(row, &header));
                 Box::new(iter)
             }
-            Query::IndexJoin(join) if db_table => Box::new(IndexSemiJoin::new(
-                stdb,
-                tx,
-                build_query(stdb, tx, join.probe_side.into())?,
-                join.probe_field,
-                join.index_header,
-                join.index_table,
-                join.index_col,
-            )),
+            Query::IndexJoin(IndexJoin {
+                probe_side,
+                probe_field,
+                index_header,
+                index_table,
+                index_col,
+            }) if db_table => {
+                let probe_side = build_query(ctx, stdb, tx, probe_side.into())?;
+                Box::new(IndexSemiJoin {
+                    ctx,
+                    db: stdb,
+                    tx,
+                    probe_side,
+                    probe_field,
+                    index_header,
+                    index_table,
+                    index_col,
+                    index_iter: None,
+                })
+            }
             Query::IndexJoin(join) => {
                 let join: JoinExpr = join.into();
-                let iter = join_inner(stdb, tx, result, join, true)?;
+                let iter = join_inner(ctx, stdb, tx, result, join, true)?;
                 Box::new(iter)
             }
             Query::Select(cmp) => {
@@ -75,7 +88,7 @@ pub fn build_query<'a>(
                 }
             }
             Query::JoinInner(join) => {
-                let iter = join_inner(stdb, tx, result, join, false)?;
+                let iter = join_inner(ctx, stdb, tx, result, join, false)?;
                 Box::new(iter)
             }
         }
@@ -84,6 +97,7 @@ pub fn build_query<'a>(
 }
 
 fn join_inner<'a>(
+    ctx: &'a ExecutionContext,
     db: &'a RelationalDB,
     tx: &'a MutTxId,
     lhs: impl RelOps + 'a,
@@ -95,7 +109,7 @@ fn join_inner<'a>(
     let key_lhs = col_lhs.clone();
     let key_rhs = col_rhs.clone();
 
-    let rhs = build_query(db, tx, rhs.rhs.into())?;
+    let rhs = build_query(ctx, db, tx, rhs.rhs.into())?;
     let key_lhs_header = lhs.head().clone();
     let key_rhs_header = rhs.head().clone();
     let col_lhs_header = lhs.head().clone();
@@ -133,26 +147,32 @@ fn join_inner<'a>(
     )
 }
 
-fn get_table<'a>(stdb: &'a RelationalDB, tx: &'a MutTxId, query: SourceExpr) -> Result<Box<dyn RelOps + 'a>, ErrorVm> {
+fn get_table<'a>(
+    ctx: &'a ExecutionContext,
+    stdb: &'a RelationalDB,
+    tx: &'a MutTxId,
+    query: SourceExpr,
+) -> Result<Box<dyn RelOps + 'a>, ErrorVm> {
     let head = query.head().clone();
     let row_count = query.row_count();
     Ok(match query {
         SourceExpr::MemTable(x) => Box::new(RelIter::new(head, row_count, x)) as Box<IterRows<'_>>,
         SourceExpr::DbTable(x) => {
-            let iter = stdb.iter(tx, x.table_id)?;
+            let iter = stdb.iter(ctx, tx, x.table_id)?;
             Box::new(TableCursor::new(x, iter)?) as Box<IterRows<'_>>
         }
     })
 }
 
 fn iter_by_col_range<'a>(
+    ctx: &'a ExecutionContext,
     db: &'a RelationalDB,
     tx: &'a MutTxId,
     table: DbTable,
     col_id: ColId,
     range: impl RangeBounds<AlgebraicValue> + 'a,
 ) -> Result<Box<dyn RelOps + 'a>, ErrorVm> {
-    let iter = db.iter_by_col_range(tx, table.table_id, col_id, range)?;
+    let iter = db.iter_by_col_range(ctx, tx, table.table_id, col_id, range)?;
     Ok(Box::new(IndexCursor::new(table, iter)?) as Box<IterRows<'_>>)
 }
 
@@ -177,29 +197,8 @@ pub struct IndexSemiJoin<'a, Rhs: RelOps> {
     pub db: &'a RelationalDB,
     // A reference to the current transaction.
     pub tx: &'a MutTxId,
-}
-
-impl<'a, Rhs: RelOps> IndexSemiJoin<'a, Rhs> {
-    pub fn new(
-        db: &'a RelationalDB,
-        tx: &'a MutTxId,
-        probe_side: Rhs,
-        probe_field: FieldName,
-        index_header: Header,
-        index_table: TableId,
-        index_col: ColId,
-    ) -> Self {
-        IndexSemiJoin {
-            db,
-            tx,
-            probe_side,
-            probe_field,
-            index_header,
-            index_table,
-            index_col,
-            index_iter: None,
-        }
-    }
+    // The execution context for the current transaction.
+    ctx: &'a ExecutionContext,
 }
 
 impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
@@ -224,7 +223,7 @@ impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
                     let table_id = self.index_table;
                     let col_id = self.index_col;
                     let value = value.clone();
-                    let mut index_iter = self.db.iter_by_col_eq(self.tx, table_id, col_id, value)?;
+                    let mut index_iter = self.db.iter_by_col_eq(self.ctx, self.tx, table_id, col_id, value)?;
                     if let Some(value) = index_iter.next() {
                         self.index_iter = Some(index_iter);
                         return Ok(Some(value.to_rel_value()));
@@ -239,6 +238,7 @@ impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
 /// A [ProgramVm] implementation that carry a [RelationalDB] for it
 /// query execution
 pub struct DbProgram<'db, 'tx> {
+    ctx: &'tx ExecutionContext,
     pub(crate) env: EnvDb,
     pub(crate) stats: HashMap<String, u64>,
     pub(crate) db: &'db RelationalDB,
@@ -247,10 +247,11 @@ pub struct DbProgram<'db, 'tx> {
 }
 
 impl<'db, 'tx> DbProgram<'db, 'tx> {
-    pub fn new(db: &'db RelationalDB, tx: &'tx mut MutTxId, auth: AuthCtx) -> Self {
+    pub fn new(ctx: &'tx ExecutionContext, db: &'db RelationalDB, tx: &'tx mut MutTxId, auth: AuthCtx) -> Self {
         let mut env = EnvDb::new();
         Self::load_ops(&mut env);
         Self {
+            ctx,
             env,
             db,
             stats: Default::default(),
@@ -264,7 +265,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         let table_access = query.table.table_access();
         debug!(table = query.table.table_name());
 
-        let result = build_query(self.db, self.tx, query)?;
+        let result = build_query(self.ctx, self.db, self.tx, query)?;
         let head = result.head().clone();
         let rows: Vec<_> = result.collect_vec()?;
 
@@ -598,7 +599,8 @@ pub(crate) mod tests {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_tx();
-        let p = &mut DbProgram::new(&stdb, &mut tx, AuthCtx::for_testing());
+        let ctx = ExecutionContext::default();
+        let p = &mut DbProgram::new(&ctx, &stdb, &mut tx, AuthCtx::for_testing());
 
         let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row = product!(1u64, "health");
@@ -646,7 +648,8 @@ pub(crate) mod tests {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_tx();
-        let p = &mut DbProgram::new(&stdb, &mut tx, AuthCtx::for_testing());
+        let ctx = ExecutionContext::default();
+        let p = &mut DbProgram::new(&ctx, &stdb, &mut tx, AuthCtx::for_testing());
 
         let q = query(&st_table_schema()).with_select_cmp(
             OpCmp::Eq,
@@ -677,7 +680,8 @@ pub(crate) mod tests {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_tx();
-        let p = &mut DbProgram::new(&stdb, &mut tx, AuthCtx::for_testing());
+        let ctx = ExecutionContext::default();
+        let p = &mut DbProgram::new(&ctx, &stdb, &mut tx, AuthCtx::for_testing());
 
         let q = query(&st_columns_schema())
             .with_select_cmp(
@@ -718,14 +722,15 @@ pub(crate) mod tests {
         let row = product!(1u64, "health");
 
         let mut tx = db.begin_tx();
+        let ctx = ExecutionContext::default();
         let table_id = create_table_with_rows(&db, &mut tx, "inventory", head, &[row])?;
-        db.commit_tx(&ExecutionContext::default(), tx)?;
+        db.commit_tx(&ctx, tx)?;
 
         let mut tx = db.begin_tx();
         let index = IndexDef::new("idx_1".into(), table_id, 0.into(), true);
         let index_id = db.create_index(&mut tx, index)?;
 
-        let p = &mut DbProgram::new(&db, &mut tx, AuthCtx::for_testing());
+        let p = &mut DbProgram::new(&ctx, &db, &mut tx, AuthCtx::for_testing());
 
         let q = query(&st_indexes_schema()).with_select_cmp(
             OpCmp::Eq,
@@ -757,7 +762,8 @@ pub(crate) mod tests {
         let (db, _tmp_dir) = make_test_db()?;
 
         let mut tx = db.begin_tx();
-        let p = &mut DbProgram::new(&db, &mut tx, AuthCtx::for_testing());
+        let ctx = ExecutionContext::default();
+        let p = &mut DbProgram::new(&ctx, &db, &mut tx, AuthCtx::for_testing());
 
         let q = query(&st_sequences_schema()).with_select_cmp(
             OpCmp::Eq,

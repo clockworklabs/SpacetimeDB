@@ -3,6 +3,7 @@
 use std::time::Instant;
 
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
+use crate::execution_context::ExecutionContext;
 use crate::host::scheduler::{ScheduleError, ScheduledReducerId};
 use crate::host::timestamp::Timestamp;
 use crate::host::wasm_common::instrumentation;
@@ -64,6 +65,9 @@ pub(super) struct WasmInstanceEnv {
     /// Each function, like `insert`, will add the `Duration` spent in it
     /// to this tracker.
     call_times: CallTimes,
+
+    /// The last, including current, reducer to be executed by this environment.
+    reducer_id: u64,
 }
 
 type WasmResult<T> = Result<T, WasmError>;
@@ -92,6 +96,7 @@ impl WasmInstanceEnv {
             timing_spans: Default::default(),
             reducer_start,
             call_times: CallTimes::new(),
+            reducer_id: 0,
         }
     }
 
@@ -146,6 +151,16 @@ impl WasmInstanceEnv {
             total_duration,
             wasm_instance_env_call_times,
         }
+    }
+
+    /// Provide this environment with information about the current reducer being executed.
+    pub fn set_reducer_id(&mut self, id: u64) {
+        self.reducer_id = id;
+    }
+
+    /// Returns an execution context for a reducer call.
+    fn reducer_context(&self) -> ExecutionContext {
+        ExecutionContext::reducer(self.instance_env().dbic.database_id, self.reducer_id)
     }
 
     /// Call the function `f` with the name `func`.
@@ -426,11 +441,12 @@ impl WasmInstanceEnv {
         out: WasmPtr<u32>,
     ) -> RtResult<u16> {
         Self::cvt_ret(caller, "delete_by_col_eq", Call::DeleteByColEq, out, |caller, mem| {
+            let ctx = caller.data().reducer_context();
             let value = mem.read_bytes(&caller, value, value_len)?;
             let count = caller
                 .data()
                 .instance_env
-                .delete_by_col_eq(table_id.into(), col_id.into(), &value)?;
+                .delete_by_col_eq(&ctx, table_id.into(), col_id.into(), &value)?;
             Ok(count.get())
         })
     }
@@ -534,11 +550,14 @@ impl WasmInstanceEnv {
             // Read the test value from WASM memory.
             let value = mem.read_bytes(&caller, val, val_len)?;
 
+            // Retrieve the execution context for the current reducer.
+            let ctx = caller.data().reducer_context();
+
             // Find the relevant rows.
             let data = caller
                 .data()
                 .instance_env
-                .iter_by_col_eq(table_id.into(), col_id.into(), &value)?;
+                .iter_by_col_eq(&ctx, table_id.into(), col_id.into(), &value)?;
 
             // Insert the encoded + concatenated rows into a new buffer and return its id.
             Ok(caller.data_mut().buffers.insert(data.into()))
@@ -555,8 +574,11 @@ impl WasmInstanceEnv {
     // #[tracing::instrument(skip_all)]
     pub fn iter_start(caller: FunctionEnvMut<'_, Self>, table_id: u32, out: WasmPtr<BufferIterIdx>) -> RtResult<u16> {
         Self::cvt_ret(caller, "iter_start", Call::IterStart, out, |mut caller, _mem| {
+            // Retrieve the execution context for the current reducer.
+            let ctx = caller.data().reducer_context();
+
             // Collect the iterator chunks.
-            let chunks = caller.data().instance_env.iter_chunks(table_id.into())?;
+            let chunks = caller.data().instance_env.iter_chunks(&ctx, table_id.into())?;
 
             // Register the iterator and get back the index to write to `out`.
             // Calls to the iterator are done through dynamic dispatch.
@@ -594,11 +616,14 @@ impl WasmInstanceEnv {
                 // Read the slice `(filter, filter_len)`.
                 let filter = caller.data().mem().read_bytes(&caller, filter, filter_len)?;
 
+                // Retrieve the execution context for the current reducer.
+                let ctx = caller.data().reducer_context();
+
                 // Construct the iterator.
                 let chunks = caller
                     .data()
                     .instance_env
-                    .iter_filtered_chunks(table_id.into(), &filter)?;
+                    .iter_filtered_chunks(&ctx, table_id.into(), &filter)?;
 
                 // Register the iterator and get back the index to write to `out`.
                 // Calls to the iterator are done through dynamic dispatch.
