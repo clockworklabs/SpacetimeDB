@@ -4,7 +4,10 @@ use crate::{
 };
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use tabled::{object::Columns, Alignment, Modify, Style, Table, Tabled};
+use tabled::{
+    settings::{object::Columns, Alignment, Modify, Style},
+    Table, Tabled,
+};
 
 pub fn cli() -> Command {
     Command::new("server")
@@ -170,7 +173,8 @@ pub async fn exec_list(config: Config, _args: &ArgMatches) -> Result<(), anyhow:
         });
     }
 
-    let table = Table::new(&rows)
+    let mut table = Table::new(&rows);
+    table
         .with(Style::empty())
         .with(Modify::new(Columns::first()).with(Alignment::right()));
     println!("{}", table);

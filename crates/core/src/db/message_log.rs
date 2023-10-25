@@ -420,11 +420,11 @@ mod tests {
 
     use super::MessageLog;
     use spacetimedb_lib::error::ResultTest;
-    use tempdir::{self, TempDir};
+    use tempfile::{self, TempDir};
 
     #[test]
     fn test_message_log() -> ResultTest<()> {
-        let tmp_dir = TempDir::new("message_log_test")?;
+        let tmp_dir = TempDir::with_prefix("message_log_test")?;
         let path = tmp_dir.path();
         let mut message_log = MessageLog::open(path)?;
 
@@ -447,7 +447,7 @@ mod tests {
 
     #[test]
     fn test_message_log_reopen() -> ResultTest<()> {
-        let tmp_dir = TempDir::new("message_log_test")?;
+        let tmp_dir = TempDir::with_prefix("message_log_test")?;
         let path = tmp_dir.path();
         let mut message_log = MessageLog::open(path)?;
 
@@ -476,7 +476,7 @@ mod tests {
 
     #[test]
     fn test_segments_iter() -> ResultTest<()> {
-        let tmp = TempDir::new("message_log_test")?;
+        let tmp = TempDir::with_prefix("message_log_test")?;
         let path = tmp.path();
 
         const MESSAGE: &[u8] = b"fee fi fo fum";
@@ -510,7 +510,7 @@ mod tests {
 
     #[test]
     fn test_segment_iter() -> ResultTest<()> {
-        let tmp = TempDir::new("message_log_test")?;
+        let tmp = TempDir::with_prefix("message_log_test")?;
         let path = tmp.path();
 
         const MESSAGE: &[u8] = b"fee fi fo fum";

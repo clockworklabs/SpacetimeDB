@@ -626,11 +626,11 @@ pub fn open_log(path: impl AsRef<Path>) -> Result<Arc<Mutex<MessageLog>>, DBErro
 #[cfg(test)]
 pub(crate) mod tests_utils {
     use super::*;
-    use tempdir::TempDir;
+    use tempfile::TempDir;
 
     // Utility for creating a database on a TempDir
     pub(crate) fn make_test_db() -> Result<(RelationalDB, TempDir), DBError> {
-        let tmp_dir = TempDir::new("stdb_test")?;
+        let tmp_dir = TempDir::with_prefix("stdb_test")?;
         let in_memory = false;
         let fsync = false;
         let stdb = open_db(&tmp_dir, in_memory, fsync)?;

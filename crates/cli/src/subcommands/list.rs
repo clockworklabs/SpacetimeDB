@@ -4,8 +4,10 @@ use clap::{Arg, ArgMatches, Command};
 use reqwest::StatusCode;
 use serde::Deserialize;
 use spacetimedb_lib::Address;
-use tabled::object::Columns;
-use tabled::{Alignment, Modify, Style, Table, Tabled};
+use tabled::{
+    settings::{object::Columns, Alignment, Modify, Style},
+    Table, Tabled,
+};
 
 pub fn cli() -> Command {
     Command::new("list")
@@ -67,7 +69,8 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 
     let identity = identity_config.nick_or_identity();
     if !result.addresses.is_empty() {
-        let table = Table::new(result.addresses)
+        let mut table = Table::new(result.addresses);
+        table
             .with(Style::psql())
             .with(Modify::new(Columns::first()).with(Alignment::left()));
         println!("Associated database addresses for {}:\n", identity);

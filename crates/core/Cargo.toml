@@ -71,7 +71,7 @@ slab.workspace = true
 sled.workspace = true
 sqlparser.workspace = true
 strum.workspace = true
-tempdir.workspace = true
+tempfile.workspace = true
 thiserror.workspace = true
 tokio-util.workspace = true
 tokio.workspace = true
@@ -89,7 +89,6 @@ wasmer-middlewares.workspace = true
 wasmer-types.workspace = true
 wasmer-vm.workspace = true
 wasmer.workspace = true
-wasmparser.workspace = true
 # Rocksdb ostorage backend, linked only if "rocksdb" feature enabled.
 rocksdb = {workspace = true, optional = true}
 

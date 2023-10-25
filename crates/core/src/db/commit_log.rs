@@ -293,13 +293,13 @@ mod tests {
     use super::*;
 
     use spacetimedb_lib::data_key::InlineData;
-    use tempdir::TempDir;
+    use tempfile::TempDir;
 
     use crate::db::ostorage::memory_object_db::MemoryObjectDB;
 
     #[test]
     fn test_iter_commits() {
-        let tmp = TempDir::new("commit_log_test").unwrap();
+        let tmp = TempDir::with_prefix("commit_log_test").unwrap();
 
         let data_key = DataKey::Data(InlineData::from_bytes(b"asdf").unwrap());
         let tx = Transaction {

@@ -12,7 +12,10 @@ use reqwest::{StatusCode, Url};
 use serde::Deserialize;
 use spacetimedb::auth::identity::decode_token;
 use spacetimedb_lib::{recovery::RecoveryCodeResponse, Identity};
-use tabled::{object::Columns, Alignment, Modify, Style, Table, Tabled};
+use tabled::{
+    settings::{object::Columns, Alignment, Modify, Style},
+    Table, Tabled,
+};
 
 pub fn cli() -> Command {
     Command::new("identity")
@@ -518,7 +521,8 @@ Fetch the server's fingerprint with:
         println!("Identities for {}:", config.server_nick_or_host(server)?);
     }
 
-    let table = Table::new(&rows)
+    let mut table = Table::new(&rows);
+    table
         .with(Style::empty())
         .with(Modify::new(Columns::first()).with(Alignment::right()));
     println!("{}", table);

@@ -12,7 +12,7 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicValue, BuiltinType};
 use sqllogictest::{AsyncDB, ColumnType, DBOutput};
 use std::fs;
 use std::io::Write;
-use tempdir::TempDir;
+use tempfile::TempDir;
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Kind(pub(crate) AlgebraicType);
@@ -67,7 +67,7 @@ pub struct SpaceDb {
 
 impl SpaceDb {
     pub fn new() -> anyhow::Result<Self> {
-        let tmp_dir = TempDir::new("stdb_test")?;
+        let tmp_dir = TempDir::with_prefix("stdb_test")?;
         let in_memory = false;
         let fsync = false;
         let conn = open_db(&tmp_dir, in_memory, fsync)?;

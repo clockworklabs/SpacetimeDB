@@ -2,7 +2,7 @@ use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::ValueSerializer;
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
-use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement};
+use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement, ValueWithType, WithTypespace};
 
 /// A structural product type  of the factors given by `elements`.
 ///
@@ -132,3 +132,56 @@ impl ProductType {
         Self::deserialize(ValueDeserializer::from_ref(value))
     }
 }
+
+impl<'a> WithTypespace<'a, ProductType> {
+    #[inline]
+    pub fn elements(&self) -> ElementsWithTypespace<'a> {
+        self.iter_with(&self.ty().elements)
+    }
+
+    #[inline]
+    pub fn with_values<I: IntoIterator<Item = &'a AlgebraicValue>>(
+        &self,
+        vals: I,
+    ) -> ElementValuesWithType<'a, I::IntoIter>
+    where
+        I::IntoIter: ExactSizeIterator,
+    {
+        let elements = self.elements();
+        let vals = vals.into_iter();
+        assert_eq!(elements.len(), vals.len());
+        ElementValuesWithType {
+            inner: std::iter::zip(elements, vals),
+        }
+    }
+}
+
+impl<'a> IntoIterator for WithTypespace<'a, ProductType> {
+    type Item = WithTypespace<'a, ProductTypeElement>;
+    type IntoIter = ElementsWithTypespace<'a>;
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.elements()
+    }
+}
+
+pub type ElementsWithTypespace<'a> = crate::IterWithTypespace<'a, std::slice::Iter<'a, ProductTypeElement>>;
+
+pub struct ElementValuesWithType<'a, I> {
+    inner: std::iter::Zip<ElementsWithTypespace<'a>, I>,
+}
+
+impl<'a, I> Iterator for ElementValuesWithType<'a, I>
+where
+    I: ExactSizeIterator<Item = &'a AlgebraicValue>,
+{
+    type Item = ValueWithType<'a, AlgebraicValue>;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next().map(|(ty, val)| ty.algebraic_type().with_value(val))
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl<'a, I> ExactSizeIterator for ElementValuesWithType<'a, I> where I: ExactSizeIterator<Item = &'a AlgebraicValue> {}

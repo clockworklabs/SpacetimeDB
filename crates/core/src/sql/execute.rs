@@ -107,7 +107,7 @@ pub(crate) mod tests {
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
     use spacetimedb_vm::dsl::{mem_table, scalar};
     use spacetimedb_vm::eval::create_game_data;
-    use tempdir::TempDir;
+    use tempfile::TempDir;
 
     /// Short-cut for simplify test execution
     fn run_for_testing(db: &RelationalDB, tx: &mut MutTxId, sql_text: &str) -> Result<Vec<MemTable>, DBError> {

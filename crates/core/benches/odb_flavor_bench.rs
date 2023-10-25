@@ -15,7 +15,7 @@ use spacetimedb::db::ostorage::ObjectDB;
 use std::collections::VecDeque;
 use std::fmt::{Display, Formatter};
 use std::path::Path;
-use tempdir::TempDir;
+use tempfile::TempDir;
 
 const VALUE_MAX_SIZE: usize = 4096;
 const THROUGHPUT_BENCH_VALUE_SIZE: usize = 1024;
@@ -68,7 +68,7 @@ fn add<F>(bench: &mut Bencher, flavor: ODBFlavor, valgen: F)
 where
     F: Fn() -> Vec<u8>,
 {
-    let tmp_dir = TempDir::new("txdb_bench").unwrap();
+    let tmp_dir = TempDir::with_prefix("txdb_bench").unwrap();
     let mut db = open_db(tmp_dir.path(), flavor).unwrap();
     bench.iter_with_setup(valgen, move |bytes| {
         db.add(bytes);
@@ -80,7 +80,7 @@ fn get<F>(bench: &mut Bencher, flavor: ODBFlavor, valgen: F)
 where
     F: Fn() -> Vec<u8>,
 {
-    let tmp_dir = TempDir::new("odb_bench").unwrap();
+    let tmp_dir = TempDir::with_prefix("odb_bench").unwrap();
     let mut db = open_db(tmp_dir.path(), flavor).unwrap();
     let bytes = valgen();
     let hash = db.add(bytes.clone());
@@ -95,7 +95,7 @@ fn add_get<F>(bench: &mut Bencher, flavor: ODBFlavor, valgen: F)
 where
     F: Fn() -> Vec<u8>,
 {
-    let tmp_dir = TempDir::new("odb_bench").unwrap();
+    let tmp_dir = TempDir::with_prefix("odb_bench").unwrap();
     let mut db = open_db(tmp_dir.path(), flavor).unwrap();
     bench.iter_with_setup(valgen, move |bytes| {
         let hash = db.add(bytes.clone());
@@ -109,7 +109,7 @@ fn add_get_delayed<F>(bench: &mut Bencher, flavor: ODBFlavor, valgen: F, delay_c
 where
     F: Fn() -> Vec<u8>,
 {
-    let tmp_dir = TempDir::new("txdb_bench").unwrap();
+    let tmp_dir = TempDir::with_prefix("txdb_bench").unwrap();
     let mut db = open_db(tmp_dir.path(), flavor).unwrap();
 
     // Keep N items in our hash stack, pushing new hashes to the end and popping old ones off

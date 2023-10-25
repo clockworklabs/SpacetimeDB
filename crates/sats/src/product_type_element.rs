@@ -1,6 +1,6 @@
 use crate::meta_type::MetaType;
-use crate::AlgebraicType;
 use crate::{de::Deserialize, ser::Serialize};
+use crate::{AlgebraicType, WithTypespace};
 
 /// A factor / element of a product type.
 ///
@@ -57,5 +57,12 @@ impl MetaType for ProductTypeElement {
 impl From<AlgebraicType> for ProductTypeElement {
     fn from(value: AlgebraicType) -> Self {
         ProductTypeElement::new(value, None)
+    }
+}
+
+impl<'a> WithTypespace<'a, ProductTypeElement> {
+    #[inline]
+    pub fn algebraic_type(&self) -> WithTypespace<'a, AlgebraicType> {
+        self.with(&self.ty().algebraic_type)
     }
 }

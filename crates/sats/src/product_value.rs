@@ -1,6 +1,6 @@
 use crate::algebraic_value::AlgebraicValue;
 use crate::product_type::ProductType;
-use crate::ArrayValue;
+use crate::{ArrayValue, ValueWithType};
 use nonempty::NonEmpty;
 use spacetimedb_primitives::ColId;
 
@@ -39,6 +39,22 @@ impl FromIterator<AlgebraicValue> for ProductValue {
     fn from_iter<T: IntoIterator<Item = AlgebraicValue>>(iter: T) -> Self {
         let elements = iter.into_iter().collect();
         Self { elements }
+    }
+}
+
+impl IntoIterator for ProductValue {
+    type Item = AlgebraicValue;
+    type IntoIter = std::vec::IntoIter<AlgebraicValue>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.elements.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a ProductValue {
+    type Item = &'a AlgebraicValue;
+    type IntoIter = std::slice::Iter<'a, AlgebraicValue>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.elements.iter()
     }
 }
 
@@ -167,5 +183,11 @@ impl ProductValue {
     /// Interprets the value at field of `self` identified by `index` as a array.
     pub fn field_as_array(&self, index: usize, named: Option<&'static str>) -> Result<&ArrayValue, InvalidFieldError> {
         self.extract_field(index, named, |f| f.as_array())
+    }
+}
+
+impl<'a> ValueWithType<'a, ProductValue> {
+    pub fn elements(&self) -> impl ExactSizeIterator<Item = ValueWithType<'a, AlgebraicValue>> {
+        self.ty_s().with_values(self.value())
     }
 }

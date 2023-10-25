@@ -25,6 +25,6 @@ rusqlite.workspace = true
 rust_decimal.workspace = true
 sqllogictest-engines.workspace = true
 sqllogictest.workspace = true
-tempdir.workspace = true
+tempfile.workspace = true
 tokio.workspace = true
 tokio-postgres.workspace = true

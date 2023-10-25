@@ -82,6 +82,10 @@ impl<'a, T: Value> ValueWithType<'a, T> {
         self.ty.ty
     }
 
+    pub fn ty_s(&self) -> WithTypespace<'a, T::Type> {
+        self.ty
+    }
+
     /// Returns the typing context (`Typespace`).
     pub fn typespace(&self) -> &'a Typespace {
         self.ty.typespace
@@ -148,6 +152,13 @@ impl<'a, T: ?Sized> WithTypespace<'a, T> {
         }
     }
 
+    pub(crate) fn iter_with<U: 'a, I: IntoIterator<Item = &'a U>>(&self, tys: I) -> IterWithTypespace<'a, I::IntoIter> {
+        IterWithTypespace {
+            typespace: self.typespace,
+            iter: tys.into_iter(),
+        }
+    }
+
     /// Wraps `val` with the type and typespace context in `self`.
     pub fn with_value<'b, V: Value<Type = T>>(&self, val: &'b V) -> ValueWithType<'b, V>
     where
@@ -175,5 +186,32 @@ impl<'a, T: ?Sized> WithTypespace<'a, T> {
             typespace: self.typespace,
             ty: f(self.ty),
         }
+    }
+}
+
+pub struct IterWithTypespace<'a, I> {
+    typespace: &'a Typespace,
+    iter: I,
+}
+
+impl<'a, I, T: 'a> Iterator for IterWithTypespace<'a, I>
+where
+    I: Iterator<Item = &'a T>,
+{
+    type Item = WithTypespace<'a, T>;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(|ty| self.typespace.with_type(ty))
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.iter.size_hint()
+    }
+}
+
+impl<'a, I, T: 'a> ExactSizeIterator for IterWithTypespace<'a, I>
+where
+    I: ExactSizeIterator<Item = &'a T>,
+{
+    fn len(&self) -> usize {
+        self.iter.len()
     }
 }
