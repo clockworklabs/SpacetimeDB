@@ -30,6 +30,14 @@ jobs:
       - name: Enable CPU boost
         run: echo "1" | sudo tee /sys/devices/system/cpu/cpufreq/boost
 
+      - name: Check membership
+        if: ${{ env.PR_NUMBER }}
+        run: |
+          if [[ $(gh api --paginate /orgs/{owner}/members --jq 'any(.login == env.GITHUB_ACTOR)') != true ]]; then
+            gh pr comment $PR_NUMBER -b "Sorry, you don't have permission to run benchmarks."
+            exit 1
+          fi
+
       - name: Post initial comment
         run: |
           if [[ $PR_NUMBER ]]; then
@@ -149,7 +157,7 @@ jobs:
           gh api "$COMMENT_UPDATE_URL" -X PATCH -f body="$BODY"
 
       - name: Post failure comment
-        if: ${{ failure() }}
+        if: ${{ failure() && env.COMMENT_UPDATE_URL }}
         run: |
           BODY="Benchmarking failed. Please check [the workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details."
           gh api "$COMMENT_UPDATE_URL" -X PATCH -f body="$BODY"
