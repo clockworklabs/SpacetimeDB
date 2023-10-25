@@ -15,7 +15,7 @@ static class Utils
         return symbol.ToDisplayString(
             SymbolDisplayFormat.FullyQualifiedFormat
                 .WithMemberOptions(SymbolDisplayMemberOptions.IncludeContainingType)
-                .WithGenericsOptions(SymbolDisplayGenericsOptions.None)
+                .WithGenericsOptions(SymbolDisplayGenericsOptions.IncludeTypeParameters)
                 .WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted)
         );
     }
