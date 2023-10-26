@@ -141,10 +141,10 @@ pub async fn check_email<S: ControlStateWriteAccess>(
     if auth.identity != identity {
         return Err(StatusCode::UNAUTHORIZED.into());
     }
-    
+
     let emails = ctx.get_emails(&identity).await.map_err(log_and_500)?;
 
-    Ok(emails)
+    Ok(axum::Json(emails))
 }
 
 #[derive(Deserialize)]
@@ -233,6 +233,6 @@ where
         .route("/websocket_token", post(create_websocket_token::<S>))
         .route("/:identity/verify", get(validate_token))
         .route("/:identity/set-email", post(set_email::<S>))
-        .route("/:identity/email", get(check_email::<S>))
+        .route("/:identity/emails", get(check_email::<S>))
         .route("/:identity/databases", get(get_databases::<S>))
 }
