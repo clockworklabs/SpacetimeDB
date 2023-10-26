@@ -91,6 +91,7 @@ wasmer-vm.workspace = true
 wasmer.workspace = true
 # Rocksdb ostorage backend, linked only if "rocksdb" feature enabled.
 rocksdb = {workspace = true, optional = true}
+smallvec = { version = "1.11.1", features = ["const_new", "const_generics", "union"] }
 
 [features]
 # Optional storage engines.
