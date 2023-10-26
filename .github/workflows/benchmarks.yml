@@ -33,10 +33,12 @@ jobs:
       - name: Check membership
         if: ${{ github.event_name == 'issue_comment' }}
         env:
+          CONTRIB_ORG: clockworklabs
           COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
-          GH_TOKEN: ${{ secrets.ORG_READ_TOKEN }}
+          ORG_READ_TOKEN: ${{ secrets.ORG_READ_TOKEN }}
         run: |
-          if [[ $(gh api --paginate /orgs/{owner}/members --jq 'any(.login == env.COMMENT_AUTHOR)') != true ]]; then
+          curl -OL https://github.com/cli/cli/releases/download/v2.37.0/gh_2.37.0_linux_amd64.deb && sudo dpkg -i gh_2.37.0_linux_amd64.deb
+          if [[ $(GH_TOKEN=$ORG_READ_TOKEN gh api --paginate /orgs/{owner}/members --jq 'any(.login == env.COMMENT_AUTHOR)') != true ]]; then
             gh pr comment $PR_NUMBER -b "Sorry, you don't have permission to run benchmarks."
             exit 1
           fi
