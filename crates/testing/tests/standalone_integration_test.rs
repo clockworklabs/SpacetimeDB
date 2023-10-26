@@ -14,8 +14,14 @@ fn test_calling_a_reducer_in_module(module_name: &'static str) {
             let json = r#"{"call": {"fn": "say_hello", "args": []}}"#.to_string();
             module.send(json).await.unwrap();
 
-            let lines = module.read_log(Some(10)).await;
-            let lines: Vec<Value> = lines.trim().split('\n').map(serde_json::from_str).collect::<serde_json::Result<_>>().unwrap();
+            let lines: Vec<Value> = module
+                .read_log(Some(10))
+                .await
+                .trim()
+                .split('\n')
+                .map(serde_json::from_str)
+                .collect::<serde_json::Result<_>>()
+                .unwrap();
 
             assert!(lines.len() >= 4);
 
