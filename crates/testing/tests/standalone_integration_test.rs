@@ -15,14 +15,17 @@ fn test_calling_a_reducer_in_module(module_name: &'static str) {
             module.send(json).await.unwrap();
 
             let lines = module.read_log(Some(10)).await;
-            let lines: Vec<&str> = lines.trim().split('\n').collect();
+            let lines: Vec<Value> = lines.trim().split('\n').map(serde_json::from_str).collect::<serde_json::Result<_>>().unwrap();
 
-            assert_eq!(lines.len(), 4);
+            assert!(lines.len() >= 4);
 
-            let json: Value = serde_json::from_str(lines[2]).unwrap();
-            assert_eq!(json["message"], Value::String("Hello, Tyrion!".to_string()));
-            let json: Value = serde_json::from_str(lines[3]).unwrap();
-            assert_eq!(json["message"], Value::String("Hello, World!".to_string()));
+            assert_eq!(lines[0], serde_json::json!({"level":"Info","filename":"spacetimedb","message":"Creating table `Person`"}));
+
+            assert_eq!(lines[lines.len() - 2]["level"], "Info");
+            assert_eq!(lines[lines.len() - 2]["message"], "Hello, Tyrion!");
+
+            assert_eq!(lines[lines.len() - 1]["level"], "Info");
+            assert_eq!(lines[lines.len() - 1]["message"], "Hello, World!");
         },
     );
 }
