@@ -31,9 +31,11 @@ jobs:
         run: echo "1" | sudo tee /sys/devices/system/cpu/cpufreq/boost
 
       - name: Check membership
-        if: ${{ env.PR_NUMBER }}
+        if: ${{ github.event_name == 'issue_comment' }}
+        env:
+          COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
         run: |
-          if [[ $(gh api --paginate /orgs/{owner}/members --jq 'any(.login == env.GITHUB_ACTOR)') != true ]]; then
+          if [[ $(gh api --paginate /orgs/{owner}/members --jq 'any(.login == env.COMMENT_AUTHOR)') != true ]]; then
             gh pr comment $PR_NUMBER -b "Sorry, you don't have permission to run benchmarks."
             exit 1
           fi
