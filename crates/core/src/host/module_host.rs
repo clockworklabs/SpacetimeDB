@@ -67,7 +67,7 @@ impl DatabaseUpdate {
             });
         }
 
-        let ctx = ExecutionContext::internal(stdb.id());
+        let ctx = ExecutionContext::internal(stdb.address());
         let mut table_name_map: HashMap<TableId, _> = HashMap::new();
         let mut table_updates = Vec::new();
         for (table_id, table_row_operations) in map.drain() {

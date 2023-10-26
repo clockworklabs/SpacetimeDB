@@ -184,7 +184,7 @@ impl ModuleSubscriptionActor {
         //Split logic to properly handle `Error` + `Tx`
         let mut tx = self.relational_db.begin_tx();
         let result = self._add_subscription(sender, subscription, &mut tx).await;
-        let ctx = ExecutionContext::sql(self.relational_db.id());
+        let ctx = ExecutionContext::sql(self.relational_db.address());
         self.relational_db.finish_tx(&ctx, tx, result)
     }
 
@@ -232,7 +232,7 @@ impl ModuleSubscriptionActor {
         //Split logic to properly handle `Error` + `Tx`
         let mut tx = self.relational_db.begin_tx();
         let result = self._broadcast_commit_event(event, &mut tx).await;
-        let ctx = ExecutionContext::sql(self.relational_db.id());
+        let ctx = ExecutionContext::sql(self.relational_db.address());
         self.relational_db.finish_tx(&ctx, tx, result)
     }
 }

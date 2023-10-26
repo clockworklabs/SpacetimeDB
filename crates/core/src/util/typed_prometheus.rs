@@ -121,7 +121,6 @@ impl_prometheusvalue_string!(
     Identity,
     Address,
     TransactionType,
-    crate::host::ReducerId,
     u8,
     u16,
     u32,

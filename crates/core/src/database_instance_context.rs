@@ -84,15 +84,7 @@ impl DatabaseInstanceContext {
             address,
             logger: Arc::new(DatabaseLogger::open(log_path)),
             relational_db: Arc::new(
-                RelationalDB::open(
-                    db_path,
-                    message_log,
-                    odb,
-                    database_id,
-                    address,
-                    config.fsync != FsyncPolicy::Never,
-                )
-                .unwrap(),
+                RelationalDB::open(db_path, message_log, odb, address, config.fsync != FsyncPolicy::Never).unwrap(),
             ),
             publisher_address,
         })

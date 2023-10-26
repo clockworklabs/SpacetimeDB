@@ -122,8 +122,8 @@ impl CommitLog {
                     // Increment rows inserted metric
                     let metric = rows_inserted.with_label_values(
                         &ctx.txn_type(),
-                        &ctx.database_id(),
-                        &ctx.reducer_id().unwrap_or_default(),
+                        &ctx.database(),
+                        ctx.reducer_name().unwrap_or_default(),
                         &table_id,
                     );
                     metric.inc();
@@ -133,8 +133,8 @@ impl CommitLog {
                     // Increment rows deleted metric
                     let metric = rows_deleted.with_label_values(
                         &ctx.txn_type(),
-                        &ctx.database_id(),
-                        &ctx.reducer_id().unwrap_or_default(),
+                        &ctx.database(),
+                        ctx.reducer_name().unwrap_or_default(),
                         &table_id,
                     );
                     metric.inc();

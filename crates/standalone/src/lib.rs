@@ -516,7 +516,7 @@ impl StandaloneEnv {
             Ok(maybe_hash) => {
                 // Release tx due to locking semantics and acquire a control db
                 // lock instead.
-                stdb.commit_tx(&ExecutionContext::internal(stdb.id()), tx)?;
+                stdb.commit_tx(&ExecutionContext::internal(stdb.address()), tx)?;
                 let lock = self.lock_database_instance_for_update(instance.id)?;
 
                 if let Some(hash) = maybe_hash {
@@ -569,7 +569,7 @@ impl StandaloneEnv {
             Ok(maybe_hash) => {
                 // Release tx due to locking semantics and acquire a control db
                 // lock instead.
-                stdb.commit_tx(&ExecutionContext::internal(stdb.id()), tx)?;
+                stdb.commit_tx(&ExecutionContext::internal(stdb.address()), tx)?;
                 let lock = self.lock_database_instance_for_update(instance.id)?;
 
                 match maybe_hash {

@@ -57,7 +57,7 @@ use spacetimedb_lib::{
     auth::{StAccess, StTableType},
     data_key::ToDataKey,
     relation::RelValue,
-    DataKey, Hash,
+    Address, DataKey, Hash,
 };
 use spacetimedb_primitives::{ColId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
@@ -345,18 +345,18 @@ struct Inner {
     tx_state: Option<TxState>,
     /// The state of sequence generation in this database.
     sequence_state: SequencesState,
-    /// The id of this database.
-    database_id: u64,
+    /// The address of this database.
+    database_address: Address,
 }
 
 impl Inner {
-    pub fn new(database_id: u64) -> Self {
+    pub fn new(database_address: Address) -> Self {
         Self {
             memory: BTreeMap::new(),
             committed_state: CommittedState::new(),
             tx_state: None,
             sequence_state: SequencesState::new(),
-            database_id,
+            database_address,
         }
     }
 
@@ -565,7 +565,7 @@ impl Inner {
     }
 
     fn drop_col_eq(&mut self, table_id: TableId, col_id: ColId, value: AlgebraicValue) -> super::Result<()> {
-        let ctx = ExecutionContext::internal(self.database_id);
+        let ctx = ExecutionContext::internal(self.database_address);
         let rows = self.iter_by_col_eq(&ctx, &table_id, col_id, value)?;
         let ids_to_delete = rows.map(|row| RowId(*row.id())).collect::<Vec<_>>();
         if ids_to_delete.is_empty() {
@@ -601,7 +601,7 @@ impl Inner {
         // Allocate new sequence values
         // If we're out of allocations, then update the sequence row in st_sequences to allocate a fresh batch of sequences.
         const ST_SEQUENCES_SEQUENCE_ID_COL: ColId = ColId(0);
-        let ctx = ExecutionContext::internal(self.database_id);
+        let ctx = ExecutionContext::internal(self.database_address);
         let old_seq_row = self
             .iter_by_col_eq(&ctx, &ST_SEQUENCES_ID, ST_SEQUENCES_SEQUENCE_ID_COL, seq_id.into())?
             .last()
@@ -669,7 +669,7 @@ impl Inner {
 
     fn drop_sequence(&mut self, seq_id: SequenceId) -> super::Result<()> {
         const ST_SEQUENCES_SEQUENCE_ID_COL: ColId = ColId(0);
-        let ctx = ExecutionContext::internal(self.database_id);
+        let ctx = ExecutionContext::internal(self.database_address);
         let old_seq_row = self
             .iter_by_col_eq(&ctx, &ST_SEQUENCES_ID, ST_SEQUENCES_SEQUENCE_ID_COL, seq_id.into())?
             .last()
@@ -684,7 +684,7 @@ impl Inner {
     fn sequence_id_from_name(&self, seq_name: &str) -> super::Result<Option<SequenceId>> {
         let seq_name_col: ColId = 1.into();
         self.iter_by_col_eq(
-            &ExecutionContext::internal(self.database_id),
+            &ExecutionContext::internal(self.database_address),
             &ST_SEQUENCES_ID,
             seq_name_col,
             AlgebraicValue::String(seq_name.to_owned()),
@@ -811,7 +811,7 @@ impl Inner {
             return Ok(Cow::Borrowed(schema));
         }
 
-        let ctx = ExecutionContext::internal(self.database_id);
+        let ctx = ExecutionContext::internal(self.database_address);
 
         // Look up the table_name for the table in question.
         let table_id_col = NonEmpty::new(0.into());
@@ -883,7 +883,7 @@ impl Inner {
     }
 
     fn drop_table(&mut self, table_id: TableId) -> super::Result<()> {
-        let ctx = ExecutionContext::internal(self.database_id);
+        let ctx = ExecutionContext::internal(self.database_address);
         // First drop the tables indexes.
         const ST_INDEXES_TABLE_ID_COL: ColId = ColId(1);
         let iter = self.iter_by_col_eq(&ctx, &ST_INDEXES_ID, ST_INDEXES_TABLE_ID_COL, table_id.into())?;
@@ -916,7 +916,7 @@ impl Inner {
     fn rename_table(&mut self, table_id: TableId, new_name: &str) -> super::Result<()> {
         // Update the table's name in st_tables.
         const ST_TABLES_TABLE_ID_COL: ColId = ColId(0);
-        let ctx = ExecutionContext::internal(self.database_id);
+        let ctx = ExecutionContext::internal(self.database_address);
         let mut row_iter = self.iter_by_col_eq(&ctx, &ST_TABLES_ID, ST_TABLES_TABLE_ID_COL, table_id.into())?;
 
         let row = row_iter.next().ok_or_else(|| TableError::IdNotFound(table_id))?;
@@ -945,7 +945,7 @@ impl Inner {
     fn table_id_from_name(&self, table_name: &str) -> super::Result<Option<TableId>> {
         let table_name_col: ColId = 1.into();
         self.iter_by_col_eq(
-            &ExecutionContext::internal(self.database_id),
+            &ExecutionContext::internal(self.database_address),
             &ST_TABLES_ID,
             table_name_col,
             AlgebraicValue::String(table_name.to_owned()),
@@ -1045,7 +1045,7 @@ impl Inner {
 
         // Remove the index from st_indexes.
         const ST_INDEXES_INDEX_ID_COL: ColId = ColId(0);
-        let ctx = ExecutionContext::internal(self.database_id);
+        let ctx = ExecutionContext::internal(self.database_address);
         let old_index_row = self
             .iter_by_col_eq(&ctx, &ST_INDEXES_ID, ST_INDEXES_INDEX_ID_COL, index_id.into())?
             .last()
@@ -1095,7 +1095,7 @@ impl Inner {
     fn index_id_from_name(&self, index_name: &str) -> super::Result<Option<IndexId>> {
         let index_name_col: ColId = 3.into();
         self.iter_by_col_eq(
-            &ExecutionContext::internal(self.database_id),
+            &ExecutionContext::internal(self.database_address),
             &ST_INDEXES_ID,
             index_name_col,
             AlgebraicValue::String(index_name.to_owned()),
@@ -1174,7 +1174,7 @@ impl Inner {
                 }
                 let st_sequences_table_id_col = ColId(2);
                 for seq_row in self.iter_by_col_eq(
-                    &ExecutionContext::internal(self.database_id),
+                    &ExecutionContext::internal(self.database_address),
                     &ST_SEQUENCES_ID,
                     st_sequences_table_id_col,
                     table_id.into(),
@@ -1546,12 +1546,12 @@ pub struct Locking {
 impl Locking {
     /// IMPORTANT! This the most delicate function in the entire codebase.
     /// DO NOT CHANGE UNLESS YOU KNOW WHAT YOU'RE DOING!!!
-    pub fn bootstrap(database_id: u64) -> Result<Self, DBError> {
+    pub fn bootstrap(database_address: Address) -> Result<Self, DBError> {
         log::trace!("DATABASE: BOOTSTRAPPING SYSTEM TABLES...");
 
         // NOTE! The bootstrapping process does not take plan in a transaction.
         // This is intentional.
-        let mut datastore = Inner::new(database_id);
+        let mut datastore = Inner::new(database_address);
 
         // TODO(cloutiertyler): One thing to consider in the future is, should
         // we persist the bootstrap transaction in the message log? My intuition
@@ -1682,7 +1682,7 @@ impl traits::Tx for Locking {
 }
 
 pub struct Iter<'a> {
-    ctx: &'a ExecutionContext,
+    ctx: &'a ExecutionContext<'a>,
     table_id: TableId,
     inner: &'a Inner,
     stage: ScanStage<'a>,
@@ -1695,8 +1695,8 @@ impl Drop for Iter<'_> {
             .rdb_num_rows_fetched
             .with_label_values(
                 &self.ctx.txn_type(),
-                &self.ctx.database_id(),
-                &self.ctx.reducer_id().unwrap_or_default(),
+                &self.ctx.database(),
+                self.ctx.reducer_name().unwrap_or_default(),
                 &self.table_id.into(),
             )
             .inc_by(self.committed_rows_fetched);
@@ -2158,7 +2158,7 @@ impl traits::Programmable for Locking {
     fn program_hash(&self, tx: &MutTxId) -> Result<Option<Hash>, DBError> {
         match tx
             .lock
-            .iter(&ExecutionContext::internal(tx.lock.database_id), &ST_MODULE_ID)?
+            .iter(&ExecutionContext::internal(tx.lock.database_address), &ST_MODULE_ID)?
             .next()
         {
             None => Ok(None),
@@ -2174,7 +2174,7 @@ impl traits::MutProgrammable for Locking {
     type FencingToken = u128;
 
     fn set_program_hash(&self, tx: &mut MutTxId, fence: Self::FencingToken, hash: Hash) -> Result<(), DBError> {
-        let ctx = ExecutionContext::internal(tx.lock.database_id);
+        let ctx = ExecutionContext::internal(tx.lock.database_address);
         let mut iter = tx.lock.iter(&ctx, &ST_MODULE_ID)?;
         if let Some(data) = iter.next() {
             let row = StModuleRow::try_from(data.view())?;
@@ -2235,6 +2235,7 @@ mod tests {
     };
     use itertools::Itertools;
     use nonempty::NonEmpty;
+    use spacetimedb_lib::Address;
     use spacetimedb_lib::{
         auth::{StAccess, StTableType},
         error::ResultTest,
@@ -2248,7 +2249,7 @@ mod tests {
     }
 
     fn get_datastore() -> super::super::Result<Locking> {
-        Locking::bootstrap(0)
+        Locking::bootstrap(Address::zero())
     }
 
     fn index_row(index_id: u32, table_id: u32, col_id: u32, name: &str, is_unique: bool) -> StIndexRow<String> {

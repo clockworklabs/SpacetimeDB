@@ -32,7 +32,7 @@ pub fn execute(
     info!(sql = sql_text);
     if let Some((database_instance_context, _)) = db_inst_ctx_controller.get(database_instance_id) {
         let db = &database_instance_context.relational_db;
-        let ctx = ExecutionContext::sql(db.id());
+        let ctx = ExecutionContext::sql(db.address());
         db.with_auto_commit(&ctx, |tx| {
             run(&database_instance_context.relational_db, tx, &sql_text, auth)
         })
@@ -64,7 +64,7 @@ pub fn execute_single_sql(
     ast: CrudExpr,
     auth: AuthCtx,
 ) -> Result<Vec<MemTable>, DBError> {
-    let ctx = ExecutionContext::sql(db.id());
+    let ctx = ExecutionContext::sql(db.address());
     let p = &mut DbProgram::new(&ctx, db, tx, auth);
     let q = Expr::Crud(Box::new(ast));
 
@@ -82,7 +82,7 @@ pub fn execute_sql(
     auth: AuthCtx,
 ) -> Result<Vec<MemTable>, DBError> {
     let total = ast.len();
-    let ctx = ExecutionContext::sql(db.id());
+    let ctx = ExecutionContext::sql(db.address());
     let p = &mut DbProgram::new(&ctx, db, tx, auth);
     let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
 

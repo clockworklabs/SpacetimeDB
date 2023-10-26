@@ -198,7 +198,7 @@ pub struct IndexSemiJoin<'a, Rhs: RelOps> {
     // A reference to the current transaction.
     pub tx: &'a MutTxId,
     // The execution context for the current transaction.
-    ctx: &'a ExecutionContext,
+    ctx: &'a ExecutionContext<'a>,
 }
 
 impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
@@ -238,7 +238,7 @@ impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
 /// A [ProgramVm] implementation that carry a [RelationalDB] for it
 /// query execution
 pub struct DbProgram<'db, 'tx> {
-    ctx: &'tx ExecutionContext,
+    ctx: &'tx ExecutionContext<'tx>,
     pub(crate) env: EnvDb,
     pub(crate) stats: HashMap<String, u64>,
     pub(crate) db: &'db RelationalDB,

@@ -1,15 +1,15 @@
-use crate::host::ReducerId;
 use derive_more::Display;
+use spacetimedb_lib::Address;
 
 /// Represents the context under which a database runtime method is executed.
 /// In particular it provides details about the currently executing txn to runtime operations.
 /// More generally it acts as a container for information that database operations may require to function correctly.
 #[derive(Default)]
-pub struct ExecutionContext {
+pub struct ExecutionContext<'a> {
     // The database on which a transaction is being executed.
-    database_id: u64,
+    database: Address,
     // The reducer from which the current transaction originated.
-    reducer_id: Option<ReducerId>,
+    reducer: Option<&'a str>,
     // The type of transaction that is being executed.
     txn_type: TransactionType,
 }
@@ -31,45 +31,45 @@ impl Default for TransactionType {
     }
 }
 
-impl ExecutionContext {
+impl<'a> ExecutionContext<'a> {
     /// Returns an [ExecutionContext] for a reducer transaction.
-    pub fn reducer(database_id: u64, reducer_id: ReducerId) -> Self {
+    pub fn reducer(database: Address, name: &'a str) -> Self {
         Self {
-            database_id,
-            reducer_id: Some(reducer_id),
+            database,
+            reducer: Some(name),
             txn_type: TransactionType::Reducer,
         }
     }
 
     /// Returns an [ExecutionContext] for a sql or subscription transaction.
-    pub fn sql(database_id: u64) -> Self {
+    pub fn sql(database: Address) -> Self {
         Self {
-            database_id,
-            reducer_id: None,
+            database,
+            reducer: None,
             txn_type: TransactionType::Sql,
         }
     }
 
     /// Returns an [ExecutionContext] for an internal database operation.
-    pub fn internal(database_id: u64) -> Self {
+    pub fn internal(database: Address) -> Self {
         Self {
-            database_id,
-            reducer_id: None,
+            database,
+            reducer: None,
             txn_type: TransactionType::Internal,
         }
     }
 
-    /// Returns the id of the database on which we are operating.
+    /// Returns the address of the database on which we are operating.
     #[inline]
-    pub fn database_id(&self) -> u64 {
-        self.database_id
+    pub fn database(&self) -> Address {
+        self.database
     }
 
-    /// Returns the id of the reducer that is being executed.
+    /// Returns the name of the reducer that is being executed.
     /// Returns [None] if this is not a reducer context.
     #[inline]
-    pub fn reducer_id(&self) -> Option<ReducerId> {
-        self.reducer_id
+    pub fn reducer_name(&self) -> Option<&str> {
+        self.reducer
     }
 
     /// Returns the type of transaction that is being executed.

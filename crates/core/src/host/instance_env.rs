@@ -119,7 +119,7 @@ impl InstanceEnv {
     pub fn insert(&self, table_id: TableId, buffer: &[u8]) -> Result<ProductValue, NodesError> {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;
-        let ctx = ExecutionContext::internal(stdb.id());
+        let ctx = ExecutionContext::internal(stdb.address());
         let ret = stdb
             .insert_bytes_as_row(tx, table_id, buffer)
             .inspect_err_(|e| match e {
