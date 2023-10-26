@@ -446,15 +446,21 @@ pub trait Tx {
     type TxId;
 
     fn begin_tx(&self) -> Self::TxId;
-    fn release_tx(&self, tx: Self::TxId);
+    fn release_tx(&self, ctx: &ExecutionContext, tx: Self::TxId);
 }
 
 pub trait MutTx {
     type MutTxId;
 
     fn begin_mut_tx(&self) -> Self::MutTxId;
-    fn rollback_mut_tx(&self, tx: Self::MutTxId);
-    fn commit_mut_tx(&self, tx: Self::MutTxId) -> Result<Option<TxData>>;
+    fn commit_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTxId) -> Result<Option<TxData>>;
+    fn rollback_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTxId);
+
+    #[cfg(test)]
+    fn commit_mut_tx_for_test(&self, tx: Self::MutTxId) -> Result<Option<TxData>>;
+
+    #[cfg(test)]
+    fn rollback_mut_tx_for_test(&self, tx: Self::MutTxId);
 }
 
 pub trait TxDatastore: DataRow + Tx {

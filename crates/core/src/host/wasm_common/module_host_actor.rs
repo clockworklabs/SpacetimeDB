@@ -253,7 +253,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         let auth = AuthCtx::new(self.database_instance_context.identity, caller_identity);
         // TODO(jgilles): make this a read-only TX when those get added
 
-        db.with_read_only(|tx| {
+        db.with_read_only(&ExecutionContext::sql(db.address()), |tx| {
             log::debug!("One-off query: {query}");
 
             let compiled = sql::compiler::compile_sql(db, tx, &query)?
@@ -324,11 +324,11 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
     #[tracing::instrument(skip(self, args), fields(db_id = self.instance.instance_env().dbic.database_id))]
     fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<ReducerCallResult> {
         let timestamp = Timestamp::now();
-
         let stdb = &*self.database_instance_context().relational_db;
+        let ctx = ExecutionContext::internal(stdb.address());
         let tx = stdb.begin_tx();
         let (tx, ()) = stdb
-            .with_auto_rollback(tx, |tx| {
+            .with_auto_rollback(&ctx, tx, |tx| {
                 for schema in get_tabledefs(&self.info) {
                     let schema = schema?;
                     let table_name = schema.table_name.clone();
@@ -345,7 +345,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
 
         let rcr = match self.info.reducers.lookup_id(INIT_DUNDER) {
             None => {
-                stdb.commit_tx(&ExecutionContext::internal(stdb.address()), tx)?;
+                stdb.commit_tx(&ctx, tx)?;
                 ReducerCallResult {
                     outcome: ReducerOutcome::Committed,
                     energy_used: EnergyDiff::ZERO,
@@ -552,9 +552,10 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             .with_label_values(&address, reducer_name)
             .observe(timings.total_duration.as_secs_f64());
 
+        let ctx = ExecutionContext::reducer(address, reducer_name);
         let status = match call_result {
             Err(err) => {
-                stdb.rollback_tx(tx);
+                stdb.rollback_tx(&ctx, tx);
 
                 T::log_traceback("reducer", reducer_name, &err);
 
@@ -568,17 +569,14 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 }
             }
             Ok(Err(errmsg)) => {
-                stdb.rollback_tx(tx);
+                stdb.rollback_tx(&ctx, tx);
 
                 log::info!("reducer returned error: {errmsg}");
 
                 EventStatus::Failed(errmsg.into())
             }
             Ok(Ok(())) => {
-                if let Some((tx_data, bytes_written)) = stdb
-                    .commit_tx(&ExecutionContext::reducer(address, reducer_name), tx)
-                    .unwrap()
-                {
+                if let Some((tx_data, bytes_written)) = stdb.commit_tx(&ctx, tx).unwrap() {
                     // TODO(cloutiertyler): This tracking doesn't really belong here if we want to write transactions to disk
                     // in batches. This is because it's possible for a tiny reducer call to trigger a whole commit to be written to disk.
                     // We should track the commit sizes instead internally to the CommitLog probably.
