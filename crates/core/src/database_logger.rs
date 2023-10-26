@@ -147,7 +147,7 @@ impl DatabaseLogger {
         self.file.seek(SeekFrom::End(0)).unwrap();
     }
 
-    pub fn write(&mut self, level: LogLevel, &record: &Record<'_>, bt: &dyn BacktraceProvider) {
+    pub fn write(&self, level: LogLevel, &record: &Record<'_>, bt: &dyn BacktraceProvider) {
         let (trace, frames);
         let event = match level {
             LogLevel::Error => LogEvent::Error(record),
@@ -163,7 +163,7 @@ impl DatabaseLogger {
         };
         let mut buf = serde_json::to_string(&event).unwrap();
         buf.push('\n');
-        self.file.write_all(buf.as_bytes()).unwrap();
+        (&self.file).write_all(buf.as_bytes()).unwrap();
         let _ = self.tx.send(buf.into());
     }
 
@@ -191,9 +191,9 @@ impl DatabaseLogger {
         text[text.len() - off_from_end..].to_owned()
     }
 
-    pub fn system_logger(&mut self) -> &mut SystemLogger {
+    pub fn system_logger(&self) -> &SystemLogger {
         // SAFETY: SystemLogger is repr(transparent) over DatabaseLogger
-        unsafe { &mut *(self as *mut DatabaseLogger as *mut SystemLogger) }
+        unsafe { &*(self as *const DatabaseLogger as *const SystemLogger) }
     }
 }
 
@@ -205,17 +205,17 @@ pub struct SystemLogger {
 }
 
 impl SystemLogger {
-    pub fn info(&mut self, msg: &str) {
+    pub fn info(&self, msg: &str) {
         self.inner
             .write(crate::database_logger::LogLevel::Info, &Self::record(msg), &())
     }
 
-    pub fn warn(&mut self, msg: &str) {
+    pub fn warn(&self, msg: &str) {
         self.inner
             .write(crate::database_logger::LogLevel::Warn, &Self::record(msg), &())
     }
 
-    pub fn error(&mut self, msg: &str) {
+    pub fn error(&self, msg: &str) {
         self.inner
             .write(crate::database_logger::LogLevel::Error, &Self::record(msg), &())
     }

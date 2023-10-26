@@ -17,7 +17,7 @@ pub struct DatabaseInstanceContext {
     pub database_id: u64,
     pub identity: Identity,
     pub address: Address,
-    pub logger: Arc<parking_lot::Mutex<DatabaseLogger>>,
+    pub logger: Arc<DatabaseLogger>,
     pub relational_db: Arc<RelationalDB>,
     pub publisher_address: Option<Address>,
 }
@@ -82,7 +82,7 @@ impl DatabaseInstanceContext {
             database_id,
             identity,
             address,
-            logger: Arc::new(parking_lot::Mutex::new(DatabaseLogger::open(log_path))),
+            logger: Arc::new(DatabaseLogger::open(log_path)),
             relational_db: Arc::new(
                 RelationalDB::open(
                     db_path,

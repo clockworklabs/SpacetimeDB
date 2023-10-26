@@ -26,7 +26,7 @@ pub fn update_database(
     proposed_tables: Vec<TableDef>,
     fence: u128,
     module_hash: Hash,
-    system_logger: &mut SystemLogger,
+    system_logger: &SystemLogger,
 ) -> anyhow::Result<Result<MutTxId, UpdateDatabaseError>> {
     let (tx, res) = stdb.with_auto_rollback::<_, _, anyhow::Error>(tx, |tx| {
         let existing_tables = stdb.get_all_tables(tx)?;
@@ -68,7 +68,7 @@ pub fn update_database(
 fn schema_updates(
     existing_tables: Vec<Cow<'_, TableSchema>>,
     proposed_tables: Vec<TableDef>,
-    system_logger: &mut SystemLogger,
+    system_logger: &SystemLogger,
 ) -> anyhow::Result<SchemaUpdates> {
     // Until we know how to migrate schemas, we only accept `TableDef`s for
     // existing tables which are equal sans their indexes.

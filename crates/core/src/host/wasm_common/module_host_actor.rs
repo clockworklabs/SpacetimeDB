@@ -138,7 +138,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             "Making new module host actor for database {}",
             database_instance_context.address
         );
-        let log_tx = database_instance_context.logger.lock().tx.clone();
+        let log_tx = database_instance_context.logger.tx.clone();
 
         FuncNames::check_required(|name| module.get_export(name))?;
         let mut func_names = FuncNames::default();
@@ -236,7 +236,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
     }
 
     fn inject_logs(&self, log_level: LogLevel, message: &str) {
-        self.database_instance_context.logger.lock().write(
+        self.database_instance_context.logger.write(
             log_level,
             &Record {
                 target: None,
@@ -406,7 +406,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
             proposed_tables,
             fence,
             self.info.module_hash,
-            &mut self.system_logger(),
+            self.system_logger(),
         )?;
         let tx = match res {
             Ok(tx) => tx,
@@ -629,9 +629,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
     // Helpers - NOT API
 
-    fn system_logger(&self) -> parking_lot::MappedMutexGuard<'_, SystemLogger> {
-        parking_lot::MutexGuard::map(self.database_instance_context().logger.lock(), |logger| {
-            logger.system_logger()
-        })
+    fn system_logger(&self) -> &SystemLogger {
+        self.database_instance_context().logger.system_logger()
     }
 }
