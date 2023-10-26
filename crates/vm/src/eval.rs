@@ -76,62 +76,65 @@ fn build_typed<P: ProgramVm>(p: &mut P, node: Expr) -> ExprOpt {
                 ExprOpt::CallLambda(name, params.collect())
             }
         }
-        Expr::Crud(q) => match *q {
-            CrudExpr::Query(q) => {
-                let source = build_query_opt(q);
+        Expr::Crud(q) => {
+            let q = q.optimize();
+            match q {
+                CrudExpr::Query(q) => {
+                    let source = build_query_opt(q);
 
-                ExprOpt::Query(Box::new(source))
-            }
-            CrudExpr::Insert { source, rows: data } => {
-                let source = build_source(source);
-                let mut rows = Vec::with_capacity(data.len());
-                for x in data {
-                    let mut row = Vec::with_capacity(x.len());
-                    for v in x {
-                        match v {
-                            FieldExpr::Name(x) => {
-                                todo!("Deal with idents in insert?: {}", x)
-                            }
-                            FieldExpr::Value(x) => {
-                                row.push(x);
+                    ExprOpt::Query(Box::new(source))
+                }
+                CrudExpr::Insert { source, rows: data } => {
+                    let source = build_source(source);
+                    let mut rows = Vec::with_capacity(data.len());
+                    for x in data {
+                        let mut row = Vec::with_capacity(x.len());
+                        for v in x {
+                            match v {
+                                FieldExpr::Name(x) => {
+                                    todo!("Deal with idents in insert?: {}", x)
+                                }
+                                FieldExpr::Value(x) => {
+                                    row.push(x);
+                                }
                             }
                         }
+                        rows.push(ProductValue::new(&row))
                     }
-                    rows.push(ProductValue::new(&row))
+                    ExprOpt::Crud(Box::new(CrudExprOpt::Insert { source, rows }))
                 }
-                ExprOpt::Crud(Box::new(CrudExprOpt::Insert { source, rows }))
-            }
-            CrudExpr::Update { delete, assignments } => {
-                let delete = build_query_opt(delete);
+                CrudExpr::Update { delete, assignments } => {
+                    let delete = build_query_opt(delete);
 
-                ExprOpt::Crud(Box::new(CrudExprOpt::Update { delete, assignments }))
-            }
-            CrudExpr::Delete { query } => {
-                let query = build_query_opt(query);
+                    ExprOpt::Crud(Box::new(CrudExprOpt::Update { delete, assignments }))
+                }
+                CrudExpr::Delete { query } => {
+                    let query = build_query_opt(query);
 
-                ExprOpt::Crud(Box::new(CrudExprOpt::Delete { query }))
+                    ExprOpt::Crud(Box::new(CrudExprOpt::Delete { query }))
+                }
+                CrudExpr::CreateTable {
+                    name,
+                    columns,
+                    table_type,
+                    table_access,
+                } => ExprOpt::Crud(Box::new(CrudExprOpt::CreateTable {
+                    name,
+                    columns,
+                    table_type,
+                    table_access,
+                })),
+                CrudExpr::Drop {
+                    name,
+                    kind,
+                    table_access,
+                } => ExprOpt::Crud(Box::new(CrudExprOpt::Drop {
+                    name,
+                    kind,
+                    table_access,
+                })),
             }
-            CrudExpr::CreateTable {
-                name,
-                columns,
-                table_type,
-                table_access,
-            } => ExprOpt::Crud(Box::new(CrudExprOpt::CreateTable {
-                name,
-                columns,
-                table_type,
-                table_access,
-            })),
-            CrudExpr::Drop {
-                name,
-                kind,
-                table_access,
-            } => ExprOpt::Crud(Box::new(CrudExprOpt::Drop {
-                name,
-                kind,
-                table_access,
-            })),
-        },
+        }
         x => {
             todo!("{:?}", x)
         }
@@ -728,7 +731,7 @@ mod tests {
     fn test_select() {
         let p = &mut Program::new(AuthCtx::for_testing());
         let input = MemTable::from_value(scalar(1));
-        let field = input.get_field(0).unwrap().clone();
+        let field = input.get_field_pos(0).unwrap().clone();
 
         let q = query(input).with_select_cmp(OpCmp::Eq, field, scalar(1));
 
@@ -748,7 +751,7 @@ mod tests {
         let p = &mut Program::new(AuthCtx::for_testing());
         let input = scalar(1);
         let table = MemTable::from_value(scalar(1));
-        let field = table.get_field(0).unwrap().clone();
+        let field = table.get_field_pos(0).unwrap().clone();
 
         let source = query(table.clone());
         let q = source.clone().with_project(&[field.into()], None);
@@ -777,7 +780,7 @@ mod tests {
     fn test_join_inner() {
         let p = &mut Program::new(AuthCtx::for_testing());
         let table = MemTable::from_value(scalar(1));
-        let field = table.get_field(0).unwrap().clone();
+        let field = table.get_field_pos(0).unwrap().clone();
 
         let q = query(table.clone()).with_join_inner(table, field.clone(), field);
         let result = match run_ast(p, q.into()) {
@@ -831,7 +834,7 @@ mod tests {
         let row = product!(scalar(1u64), scalar("health"));
 
         let input = mem_table(inv, vec![row]);
-        let field = input.get_field(0).unwrap().clone();
+        let field = input.get_field_pos(0).unwrap().clone();
 
         let q = query(input.clone()).with_join_inner(input, field.clone(), field);
 

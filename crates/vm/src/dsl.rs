@@ -5,7 +5,6 @@ use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::relation::{DbTable, Header, MemTable};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
-use spacetimedb_sats::product_type::ProductType;
 use spacetimedb_sats::product_value::ProductValue;
 use std::collections::HashMap;
 
@@ -35,21 +34,20 @@ where
     MemTable::from_iter(head.into(), iter.into_iter().map(Into::into))
 }
 
-pub fn db_table_raw(
-    head: ProductType,
-    name: String,
+pub fn db_table_raw<T: Into<Header>>(
+    head: T,
     table_id: TableId,
     table_type: StTableType,
     table_access: StAccess,
 ) -> DbTable {
-    let header = Header::from_product_type(name, head);
-    DbTable::new(header, table_id, table_type, table_access)
+    DbTable::new(head.into(), table_id, table_type, table_access)
 }
 
 /// Create a [DbTable] of type [StTableType::User] and derive `StAccess::for_name(name)`.
-pub fn db_table(head: ProductType, name: String, table_id: TableId) -> DbTable {
-    let access = StAccess::for_name(&name);
-    db_table_raw(head, name, table_id, StTableType::User, access)
+pub fn db_table<T: Into<Header>>(head: T, table_id: TableId) -> DbTable {
+    let head = head.into();
+    let access = StAccess::for_name(&head.table_name);
+    db_table_raw(head, table_id, StTableType::User, access)
 }
 
 pub fn bin_op<O, A, B>(op: O, a: A, b: B) -> Expr

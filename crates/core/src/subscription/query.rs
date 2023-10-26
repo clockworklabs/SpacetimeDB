@@ -47,6 +47,8 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
         t.head.fields.push(Column::new(
             FieldName::named(&t.head.table_name, OP_TYPE_FIELD_NAME),
             AlgebraicType::U8,
+            t.head.fields.len().into(),
+            false,
         ));
         for row in &data.ops {
             let mut new = row.row.clone();
@@ -270,7 +272,7 @@ mod tests {
             ops: vec![op],
         };
 
-        let q = QueryExpr::new(db_table((&schema).into(), table_name.to_owned(), table_id));
+        let q = QueryExpr::new(db_table(&schema, table_id));
 
         Ok((schema, table, data, q))
     }
@@ -408,7 +410,7 @@ mod tests {
         let table_id = create_table_with_rows(&db, &mut tx, "test", schema.clone(), &[])?;
 
         // select * from test
-        let query: QuerySet = QueryExpr::new(db_table(schema.clone(), "test".to_string(), table_id)).try_into()?;
+        let query: QuerySet = QueryExpr::new(db_table(schema.clone(), table_id)).try_into()?;
 
         let op = TableOp {
             op_type: 0,
@@ -758,7 +760,7 @@ mod tests {
         check_query(&db, &table, &mut tx, &q, &data)?;
 
         //SELECT * FROM inventory
-        let q_all = QueryExpr::new(db_table((&schema).into(), "_inventory".to_owned(), schema.table_id));
+        let q_all = QueryExpr::new(db_table(&schema, schema.table_id));
         //SELECT * FROM inventory WHERE inventory_id = 1
         let q_id =
             q_all
@@ -794,7 +796,7 @@ mod tests {
 
         check_query_incr(&db, &mut tx, &s, &update, 1, &[row])?;
 
-        let q = QueryExpr::new(db_table((&schema).into(), "_inventory".to_owned(), schema.table_id));
+        let q = QueryExpr::new(db_table(&schema, schema.table_id));
 
         let q = to_mem_table(q, &data);
         //Try access the private table
@@ -831,12 +833,12 @@ mod tests {
         let (schema, _table, _data, _q) = make_inv(&db, &mut tx, StAccess::Private)?;
 
         //SELECT * FROM inventory
-        let q_all = QueryExpr::new(db_table((&schema).into(), "inventory".to_owned(), schema.table_id));
+        let q_all = QueryExpr::new(db_table(&schema, schema.table_id));
         //SELECT * FROM inventory WHERE inventory_id = 1
         let q_id =
             q_all
                 .clone()
-                .with_select_cmp(OpCmp::Eq, FieldName::named("inventory", "inventory_id"), scalar(1u64));
+                .with_select_cmp(OpCmp::Eq, FieldName::named("_inventory", "inventory_id"), scalar(1u64));
 
         let s = [q_all, q_id]
             .into_iter()

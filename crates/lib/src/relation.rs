@@ -8,7 +8,7 @@ use crate::auth::{StAccess, StTableType};
 use crate::error::RelationError;
 use crate::table::ColumnDef;
 use crate::DataKey;
-use spacetimedb_primitives::TableId;
+use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::product_value::ProductValue;
 use spacetimedb_sats::satn::Satn;
@@ -160,11 +160,18 @@ pub struct ColumnOnlyField<'a> {
 pub struct Column {
     pub field: FieldName,
     pub algebraic_type: AlgebraicType,
+    pub col_id: ColId,
+    pub is_indexed: bool,
 }
 
 impl Column {
-    pub fn new(field: FieldName, algebraic_type: AlgebraicType) -> Self {
-        Self { field, algebraic_type }
+    pub fn new(field: FieldName, algebraic_type: AlgebraicType, col_id: ColId, is_indexed: bool) -> Self {
+        Self {
+            field,
+            algebraic_type,
+            col_id,
+            is_indexed,
+        }
     }
 
     pub fn as_without_table(&self) -> ColumnOnlyField {
@@ -213,7 +220,7 @@ impl Header {
                     None => FieldName::Pos { table, field: pos },
                     Some(field) => FieldName::Name { table, field },
                 };
-                Column::new(name, f.algebraic_type)
+                Column::new(name, f.algebraic_type, ColId(pos as u32), false)
             })
             .collect();
 
@@ -286,6 +293,8 @@ impl Header {
                             field: pos,
                         },
                         col.type_of(),
+                        pos.into(),
+                        false,
                     ));
                 }
             }
@@ -554,7 +563,7 @@ impl MemTable {
         }
     }
 
-    pub fn get_field(&self, pos: usize) -> Option<&FieldName> {
+    pub fn get_field_pos(&self, pos: usize) -> Option<&FieldName> {
         self.head.fields.get(pos).map(|x| &x.field)
     }
 

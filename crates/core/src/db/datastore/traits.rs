@@ -3,7 +3,7 @@ use crate::execution_context::ExecutionContext;
 use anyhow::Context;
 use nonempty::NonEmpty;
 use spacetimedb_lib::auth::{StAccess, StTableType};
-use spacetimedb_lib::relation::{DbTable, FieldName, FieldOnly, Header, TableField};
+use spacetimedb_lib::relation::{Column, DbTable, FieldName, FieldOnly, Header, TableField};
 use spacetimedb_lib::{ColumnIndexAttribute, DataKey, Hash};
 use spacetimedb_primitives::{ColId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::product_value::InvalidFieldError;
@@ -249,7 +249,7 @@ impl From<&TableSchema> for ProductType {
 impl From<&TableSchema> for SourceExpr {
     fn from(value: &TableSchema) -> Self {
         SourceExpr::DbTable(DbTable::new(
-            Header::from_product_type(value.table_name.clone(), value.into()),
+            value.into(),
             value.table_id,
             value.table_type,
             value.table_access,
@@ -265,7 +265,19 @@ impl From<&TableSchema> for DbTable {
 
 impl From<&TableSchema> for Header {
     fn from(value: &TableSchema) -> Self {
-        Header::from_product_type(value.table_name.clone(), value.into())
+        Header::new(
+            value.table_name.clone(),
+            value
+                .columns
+                .iter()
+                .map(|x| {
+                    let field = FieldName::named(&value.table_name, &x.col_name);
+                    let is_indexed = value.get_index_by_field(&field).is_some();
+
+                    Column::new(field, x.col_type.clone(), x.col_id, is_indexed)
+                })
+                .collect(),
+        )
     }
 }
 
