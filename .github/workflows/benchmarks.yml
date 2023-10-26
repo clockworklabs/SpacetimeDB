@@ -34,6 +34,7 @@ jobs:
         if: ${{ github.event_name == 'issue_comment' }}
         env:
           COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
+          GH_TOKEN: ${{ secrets.ORG_READ_TOKEN }}
         run: |
           if [[ $(gh api --paginate /orgs/{owner}/members --jq 'any(.login == env.COMMENT_AUTHOR)') != true ]]; then
             gh pr comment $PR_NUMBER -b "Sorry, you don't have permission to run benchmarks."
