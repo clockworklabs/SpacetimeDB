@@ -291,6 +291,19 @@ impl ControlDb {
         Ok(result)
     }
 
+    pub fn get_emails_for_identity(&self, identity: Identity) -> Result<Vec<IdentityEmail>> {
+        let mut result = Vec::<IdentityEmail>::new();
+        let tree = self.db.open_tree("email")?;
+        for i in tree.iter() {
+            let (_, value) = i?;
+            let iemail: IdentityEmail = bsatn::from_slice(&value)?;
+            if iemail.identity == identity {
+                result.push(iemail);
+            }
+        }
+        Ok(result)
+    }
+
     pub fn get_databases(&self) -> Result<Vec<Database>> {
         let tree = self.db.open_tree("database")?;
         let mut databases = Vec::new();

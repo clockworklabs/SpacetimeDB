@@ -130,6 +130,23 @@ pub async fn set_email<S: ControlStateWriteAccess>(
     Ok(())
 }
 
+pub async fn check_email<S: ControlStateWriteAccess>(
+    State(ctx): State<S>,
+    Path(SetEmailParams { identity }): Path<SetEmailParams>,
+    auth: SpacetimeAuthHeader,
+) -> axum::response::Result<impl IntoResponse> {
+    let identity = identity.into();
+    let auth = auth.get().ok_or(StatusCode::BAD_REQUEST)?;
+
+    if auth.identity != identity {
+        return Err(StatusCode::UNAUTHORIZED.into());
+    }
+    
+    let emails = ctx.get_emails(&identity).await.map_err(log_and_500)?;
+
+    Ok(emails)
+}
+
 #[derive(Deserialize)]
 pub struct GetDatabasesParams {
     identity: IdentityForUrl,
@@ -216,5 +233,6 @@ where
         .route("/websocket_token", post(create_websocket_token::<S>))
         .route("/:identity/verify", get(validate_token))
         .route("/:identity/set-email", post(set_email::<S>))
+        .route("/:identity/email", get(check_email::<S>))
         .route("/:identity/databases", get(get_databases::<S>))
 }

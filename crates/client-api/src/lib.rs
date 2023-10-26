@@ -147,6 +147,7 @@ pub trait ControlStateWriteAccess: Send + Sync {
     // Identities
     async fn create_identity(&self) -> spacetimedb::control_db::Result<Identity>;
     async fn add_email(&self, identity: &Identity, email: &str) -> spacetimedb::control_db::Result<()>;
+    async fn get_emails(&self, identity: &Identity) -> spacetimedb::control_db::Result<Vec<String>>;
     async fn insert_recovery_code(
         &self,
         identity: &Identity,
@@ -257,6 +258,10 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for ArcEnv<T> 
 
     async fn add_email(&self, identity: &Identity, email: &str) -> spacetimedb::control_db::Result<()> {
         self.0.add_email(identity, email).await
+    }
+
+    async fn get_emails(&self, identity: &Identity) -> spacetimedb::control_db::Result<Vec<String>> {
+        self.0.get_emails(identity).await
     }
 
     async fn insert_recovery_code(
@@ -410,6 +415,10 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
 
     async fn add_email(&self, identity: &Identity, email: &str) -> spacetimedb::control_db::Result<()> {
         (**self).add_email(identity, email).await
+    }
+
+    async fn get_emails(&self, identity: &Identity) -> spacetimedb::control_db::Result<Vec<String>> {
+        (**self).get_emails(identity).await
     }
 
     async fn insert_recovery_code(

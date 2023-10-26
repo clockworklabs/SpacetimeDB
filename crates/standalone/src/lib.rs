@@ -368,6 +368,10 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             .await
     }
 
+    async fn get_emails(&self, identity: &Identity) -> spacetimedb::control_db::Result<Vec<String>> {
+        self.control_db.get_emails_for_identity(*identity).await
+    }
+
     async fn insert_recovery_code(
         &self,
         _identity: &Identity,
