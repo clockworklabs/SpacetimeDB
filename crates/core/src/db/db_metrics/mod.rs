@@ -75,6 +75,16 @@ metrics_group!(
         #[help = "The cumulative number of rolled back transactions"]
         #[labels(txn_type: TransactionType, db: Address, reducer: str)]
         pub rdb_num_txns_rolledback: IntCounterVec,
+
+        #[name = spacetime_txn_elapsed_time_ns]
+        #[help = "The total elapsed (wall) time of a transaction (nanoseconds)"]
+        #[labels(txn_type: TransactionType, db: Address, reducer: str)]
+        pub rdb_txn_elapsed_time_ns: HistogramVec,
+
+        #[name = spacetime_txn_cpu_time_ns]
+        #[help = "The time spent executing a transaction (nanoseconds), excluding time spent waiting to acquire database locks"]
+        #[labels(txn_type: TransactionType, db: Address, reducer: str)]
+        pub rdb_txn_cpu_time_ns: HistogramVec,
     }
 );
 

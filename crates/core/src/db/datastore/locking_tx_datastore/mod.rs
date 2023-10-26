@@ -13,6 +13,7 @@ use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     ops::{Deref, RangeBounds},
     sync::Arc,
+    time::{Duration, Instant},
     vec,
 };
 
@@ -119,6 +120,8 @@ impl<'a> DataRef<'a> {
 
 pub struct MutTxId {
     lock: ArcMutexGuard<RawMutex, Inner>,
+    lock_wait_time: Duration,
+    timer: Instant,
 }
 
 struct CommittedState {
@@ -1972,29 +1975,55 @@ impl traits::MutTx for Locking {
     type MutTxId = MutTxId;
 
     fn begin_mut_tx(&self) -> Self::MutTxId {
+        let timer = Instant::now();
         let mut inner = self.inner.lock_arc();
+        let lock_wait_time = timer.elapsed();
         if inner.tx_state.is_some() {
             panic!("The previous transaction was not properly rolled back or committed.");
         }
         inner.tx_state = Some(TxState::new());
-        MutTxId { lock: inner }
+        MutTxId {
+            lock: inner,
+            lock_wait_time,
+            timer,
+        }
     }
 
     fn rollback_mut_tx(&self, ctx: &ExecutionContext, mut tx: Self::MutTxId) {
+        let elapsed_time = tx.timer.elapsed();
+        let cpu_time = elapsed_time - tx.lock_wait_time;
         DB_METRICS
             .rdb_num_txns_rolledback
             .with_label_values(&ctx.txn_type(), &ctx.database(), ctx.reducer_name().unwrap_or(""))
             .inc();
+        DB_METRICS
+            .rdb_txn_cpu_time_ns
+            .with_label_values(&ctx.txn_type(), &ctx.database(), ctx.reducer_name().unwrap_or(""))
+            .observe(cpu_time.as_nanos() as f64);
+        DB_METRICS
+            .rdb_txn_elapsed_time_ns
+            .with_label_values(&ctx.txn_type(), &ctx.database(), ctx.reducer_name().unwrap_or(""))
+            .observe(elapsed_time.as_nanos() as f64);
         tx.lock.rollback();
     }
 
     fn commit_mut_tx(&self, ctx: &ExecutionContext, mut tx: Self::MutTxId) -> super::Result<Option<TxData>> {
+        let elapsed_time = tx.timer.elapsed();
+        let cpu_time = elapsed_time - tx.lock_wait_time;
         // Note, we record empty transactions in our metrics.
         // That is, transactions that don't write any rows to the commit log.
         DB_METRICS
             .rdb_num_txns_committed
             .with_label_values(&ctx.txn_type(), &ctx.database(), ctx.reducer_name().unwrap_or(""))
             .inc();
+        DB_METRICS
+            .rdb_txn_cpu_time_ns
+            .with_label_values(&ctx.txn_type(), &ctx.database(), ctx.reducer_name().unwrap_or(""))
+            .observe(cpu_time.as_nanos() as f64);
+        DB_METRICS
+            .rdb_txn_elapsed_time_ns
+            .with_label_values(&ctx.txn_type(), &ctx.database(), ctx.reducer_name().unwrap_or(""))
+            .observe(elapsed_time.as_nanos() as f64);
         tx.lock.commit()
     }
 
