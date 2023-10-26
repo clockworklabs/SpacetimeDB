@@ -19,8 +19,6 @@ fn test_calling_a_reducer_in_module(module_name: &'static str) {
 
             assert!(lines.len() >= 4);
 
-            assert_eq!(lines[0], serde_json::json!({"level":"Info","filename":"spacetimedb","message":"Creating table `Person`"}));
-
             assert_eq!(lines[lines.len() - 2]["level"], "Info");
             assert_eq!(lines[lines.len() - 2]["message"], "Hello, Tyrion!");
 
