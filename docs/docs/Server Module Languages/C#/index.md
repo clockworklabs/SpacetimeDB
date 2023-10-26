@@ -39,7 +39,7 @@ spacetime init --lang csharp server
 
 To the top of `server/Lib.cs`, add some imports we'll be using:
 
-```C#
+```csharp
 using System.Runtime.CompilerServices;
 using SpacetimeDB.Module;
 using static SpacetimeDB.Runtime;
@@ -66,29 +66,29 @@ For each `User`, we'll store their `Identity`, an optional name they can set to 
 
 In `server/Lib.cs`, add the definition of the table `User` to the `Module` class:
 
-```C#
-    [SpacetimeDB.Table]
-    public partial class User
-    {
-        [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
-        public Identity Identity;
-        public string? Name;
-        public bool Online;
-    }
+```csharp
+[SpacetimeDB.Table]
+public partial class User
+{
+    [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+    public Identity Identity;
+    public string? Name;
+    public bool Online;
+}
 ```
 
 For each `Message`, we'll store the `Identity` of the user who sent it, the `Timestamp` when it was sent, and the text of the message.
 
 In `server/Lib.cs`, add the definition of the table `Message` to the `Module` class:
 
-```C#
-    [SpacetimeDB.Table]
-    public partial class Message
-    {
-        public Identity Sender;
-        public long Sent;
-        public string Text = "";
-    }
+```csharp
+[SpacetimeDB.Table]
+public partial class Message
+{
+    public Identity Sender;
+    public long Sent;
+    public string Text = "";
+}
 ```
 
 ## Set users' names
@@ -101,19 +101,19 @@ It's also possible to call `SetName` via the SpacetimeDB CLI's `spacetime call` 
 
 In `server/Lib.cs`, add to the `Module` class:
 
-```C#
-    [SpacetimeDB.Reducer]
-    public static void SetName(DbEventArgs dbEvent, string name)
-    {
-        name = ValidateName(name);
+```csharp
+[SpacetimeDB.Reducer]
+public static void SetName(DbEventArgs dbEvent, string name)
+{
+    name = ValidateName(name);
 
-        var user = User.FindByIdentity(dbEvent.Sender);
-        if (user is not null)
-        {
-            user.Name = name;
-            User.UpdateByIdentity(dbEvent.Sender, user);
-        }
+    var user = User.FindByIdentity(dbEvent.Sender);
+    if (user is not null)
+    {
+        user.Name = name;
+        User.UpdateByIdentity(dbEvent.Sender, user);
     }
+}
 ```
 
 For now, we'll just do a bare minimum of validation, rejecting the empty name. You could extend this in various ways, like:
@@ -126,16 +126,16 @@ For now, we'll just do a bare minimum of validation, rejecting the empty name. Y
 
 In `server/Lib.cs`, add to the `Module` class:
 
-```C#
-    /// Takes a name and checks if it's acceptable as a user's name.
-    public static string ValidateName(string name)
+```csharp
+/// Takes a name and checks if it's acceptable as a user's name.
+public static string ValidateName(string name)
+{
+    if (string.IsNullOrEmpty(name))
     {
-        if (string.IsNullOrEmpty(name))
-        {
-            throw new Exception("Names must not be empty");
-        }
-        return name;
+        throw new Exception("Names must not be empty");
     }
+    return name;
+}
 ```
 
 ## Send messages
@@ -144,35 +144,35 @@ We define a reducer `SendMessage`, which clients will call to send messages. It 
 
 In `server/Lib.cs`, add to the `Module` class:
 
-```C#
-    [SpacetimeDB.Reducer]
-    public static void SendMessage(DbEventArgs dbEvent, string text)
+```csharp
+[SpacetimeDB.Reducer]
+public static void SendMessage(DbEventArgs dbEvent, string text)
+{
+    text = ValidateMessage(text);
+    Log(text);
+    new Message
     {
-        text = ValidateMessage(text);
-        Log(text);
-        new Message
-        {
-            Sender = dbEvent.Sender,
-            Text = text,
-            Sent = dbEvent.Time.ToUnixTimeMilliseconds(),
-        }.Insert();
-    }
+        Sender = dbEvent.Sender,
+        Text = text,
+        Sent = dbEvent.Time.ToUnixTimeMilliseconds(),
+    }.Insert();
+}
 ```
 
 We'll want to validate messages' texts in much the same way we validate users' chosen names. As above, we'll do the bare minimum, rejecting only empty messages.
 
 In `server/Lib.cs`, add to the `Module` class:
 
-```C#
-    /// Takes a message's text and checks if it's acceptable to send.
-    public static string ValidateMessage(string text)
+```csharp
+/// Takes a message's text and checks if it's acceptable to send.
+public static string ValidateMessage(string text)
+{
+    if (string.IsNullOrEmpty(text))
     {
-        if (string.IsNullOrEmpty(text))
-        {
-            throw new ArgumentException("Messages must not be empty");
-        }
-        return text;
+        throw new ArgumentException("Messages must not be empty");
     }
+    return text;
+}
 ```
 
 You could extend the validation in `ValidateMessage` in similar ways to `ValidateName`, or add additional checks to `SendMessage`, like:
@@ -188,56 +188,56 @@ We'll use `User.FilterByIdentity` to look up a `User` row for `dbEvent.Sender`, 
 
 In `server/Lib.cs`, add the definition of the connect reducer to the `Module` class:
 
-```C#
-    [SpacetimeDB.Reducer(ReducerKind.Connect)]
-    public static void OnConnect(DbEventArgs dbEventArgs)
-    {
-        Log($"Connect {dbEventArgs.Sender}");
-        var user = User.FindByIdentity(dbEventArgs.Sender);
+```csharp
+[SpacetimeDB.Reducer(ReducerKind.Connect)]
+public static void OnConnect(DbEventArgs dbEventArgs)
+{
+    Log($"Connect {dbEventArgs.Sender}");
+    var user = User.FindByIdentity(dbEventArgs.Sender);
 
-        if (user is not null)
-        {
-            // If this is a returning user, i.e., we already have a `User` with this `Identity`,
-            // set `Online: true`, but leave `Name` and `Identity` unchanged.
-            user.Online = true;
-            User.UpdateByIdentity(dbEventArgs.Sender, user);
-        }
-        else
-        {
-            // If this is a new user, create a `User` object for the `Identity`,
-            // which is online, but hasn't set a name.
-            new User
-            {
-                Name = null,
-                Identity = dbEventArgs.Sender,
-                Online = true,
-            }.Insert();
-        }
+    if (user is not null)
+    {
+        // If this is a returning user, i.e., we already have a `User` with this `Identity`,
+        // set `Online: true`, but leave `Name` and `Identity` unchanged.
+        user.Online = true;
+        User.UpdateByIdentity(dbEventArgs.Sender, user);
     }
+    else
+    {
+        // If this is a new user, create a `User` object for the `Identity`,
+        // which is online, but hasn't set a name.
+        new User
+        {
+            Name = null,
+            Identity = dbEventArgs.Sender,
+            Online = true,
+        }.Insert();
+    }
+}
 ```
 
 Similarly, whenever a client disconnects, the module will execute the `OnDisconnect` event if it's registered with `ReducerKind.Disconnect`. We'll use it to un-set the `Online` status of the `User` for the disconnected client.
 
 Add the following code after the `OnConnect` lambda:
 
-```C#
-    [SpacetimeDB.Reducer(ReducerKind.Disconnect)]
-    public static void OnDisconnect(DbEventArgs dbEventArgs)
-    {
-        var user = User.FindByIdentity(dbEventArgs.Sender);
+```csharp
+[SpacetimeDB.Reducer(ReducerKind.Disconnect)]
+public static void OnDisconnect(DbEventArgs dbEventArgs)
+{
+    var user = User.FindByIdentity(dbEventArgs.Sender);
 
-        if (user is not null)
-        {
-            // This user should exist, so set `Online: false`.
-            user.Online = false;
-            User.UpdateByIdentity(dbEventArgs.Sender, user);
-        }
-        else
-        {
-            // User does not exist, log warning
-            Log($"Warning: No user found for disconnected client.");
-        }
+    if (user is not null)
+    {
+        // This user should exist, so set `Online: false`.
+        user.Online = false;
+        User.UpdateByIdentity(dbEventArgs.Sender, user);
     }
+    else
+    {
+        // User does not exist, log warning
+        Log($"Warning: No user found for disconnected client.");
+    }
+}
 ```
 
 ## Publish the module
