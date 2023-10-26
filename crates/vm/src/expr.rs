@@ -562,13 +562,6 @@ pub enum Query {
 }
 
 impl Query {
-    pub fn sources_for_opt(&self) -> QuerySources {
-        match self {
-            Self::Select(..) | Self::Project(..) | Self::IndexScan(_) | Self::IndexJoin(_) => QuerySources::None,
-            Self::JoinInner(join) => QuerySources::Expr(join.rhs.sources_for_opt()),
-        }
-    }
-
     /// Iterate over all [`SourceExpr`]s involved in the [`Query`].
     ///
     /// Sources are yielded from left to right. Duplicates are not filtered out.
@@ -710,16 +703,6 @@ impl QueryExpr {
         Self {
             source: source.into(),
             query: vec![],
-        }
-    }
-
-    /// Iterate over all [`SourceExpr`]s involved in the [`QueryExpr`].
-    ///
-    /// Sources are yielded from left to right. Duplicates are not filtered out.
-    pub fn sources_for_opt(&self) -> QueryExprSources {
-        QueryExprSources {
-            head: Some(self.source.clone()),
-            tail: self.query.iter().map(Query::sources_for_opt).collect(),
         }
     }
 
