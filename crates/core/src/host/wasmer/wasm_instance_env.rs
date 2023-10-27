@@ -13,6 +13,7 @@ use crate::host::wasm_common::{
     instrumentation::{Call, CallTimes},
     AbiRuntimeError, BufferIdx, BufferIterIdx, BufferIters, Buffers, TimingSpan, TimingSpanIdx, TimingSpanSet,
 };
+use crate::host::ReducerId;
 use wasmer::{FunctionEnvMut, MemoryAccessError, RuntimeError, ValueType, WasmPtr};
 
 use crate::host::instance_env::InstanceEnv;
@@ -67,7 +68,7 @@ pub(super) struct WasmInstanceEnv {
     call_times: CallTimes,
 
     /// The last, including current, reducer to be executed by this environment.
-    reducer_id: u64,
+    reducer_id: ReducerId,
 }
 
 type WasmResult<T> = Result<T, WasmError>;
@@ -96,7 +97,7 @@ impl WasmInstanceEnv {
             timing_spans: Default::default(),
             reducer_start,
             call_times: CallTimes::new(),
-            reducer_id: 0,
+            reducer_id: ReducerId::from(0),
         }
     }
 
@@ -129,8 +130,9 @@ impl WasmInstanceEnv {
     }
 
     /// Signal to this `WasmInstanceEnv` that a reducer call is beginning.
-    pub fn start_reducer(&mut self) {
+    pub fn start_reducer(&mut self, reducer_id: ReducerId) {
         self.reducer_start = Instant::now();
+        self.reducer_id = reducer_id;
     }
 
     /// Signal to this `WasmInstanceEnv` that a reducer call is over.
@@ -151,11 +153,6 @@ impl WasmInstanceEnv {
             total_duration,
             wasm_instance_env_call_times,
         }
-    }
-
-    /// Provide this environment with information about the current reducer being executed.
-    pub fn set_reducer_id(&mut self, id: u64) {
-        self.reducer_id = id;
     }
 
     /// Returns an execution context for a reducer call.

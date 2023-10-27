@@ -123,7 +123,7 @@ impl CommitLog {
                     let metric = rows_inserted.with_label_values(
                         &ctx.txn_type(),
                         &ctx.database_id(),
-                        &ctx.reducer_id().unwrap_or(0),
+                        &ctx.reducer_id().unwrap_or_default(),
                         &table_id,
                     );
                     metric.inc();
@@ -134,7 +134,7 @@ impl CommitLog {
                     let metric = rows_deleted.with_label_values(
                         &ctx.txn_type(),
                         &ctx.database_id(),
-                        &ctx.reducer_id().unwrap_or(0),
+                        &ctx.reducer_id().unwrap_or_default(),
                         &table_id,
                     );
                     metric.inc();

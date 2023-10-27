@@ -7,6 +7,7 @@ pub mod messages;
 pub mod ostorage;
 pub mod relational_db;
 mod relational_operators;
+pub mod update;
 
 pub use spacetimedb_lib::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 

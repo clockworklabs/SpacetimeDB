@@ -190,8 +190,8 @@ public static class FFI
     // Note: this is accessed by C bindings.
     private static string? CallReducer(
         uint id,
-        byte[] sender_identity,
-        byte[] sender_address,
+        byte[] caller_identity,
+        byte[] caller_address,
         ulong timestamp,
         byte[] args
     )
@@ -200,7 +200,7 @@ public static class FFI
         {
             using var stream = new MemoryStream(args);
             using var reader = new BinaryReader(stream);
-            reducers[(int)id].Invoke(reader, new(sender_identity, sender_address, timestamp));
+            reducers[(int)id].Invoke(reader, new(caller_identity, caller_address, timestamp));
             if (stream.Position != stream.Length)
             {
                 throw new Exception("Unrecognised extra bytes in the reducer arguments");

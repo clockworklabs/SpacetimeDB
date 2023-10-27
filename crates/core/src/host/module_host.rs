@@ -1,9 +1,10 @@
 use super::host_controller::HostThreadpool;
-use super::{ArgsTuple, EnergyDiff, InvalidReducerArguments, ReducerArgs, ReducerCallResult, Timestamp};
+use super::{ArgsTuple, EnergyDiff, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
 use crate::client::ClientConnectionSender;
 use crate::database_logger::LogLevel;
 use crate::db::datastore::traits::{TxData, TxOp};
 use crate::db::relational_db::RelationalDB;
+use crate::db::update::UpdateDatabaseError;
 use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
@@ -203,10 +204,35 @@ pub struct ModuleInfo {
     pub address: Address,
     pub module_hash: Hash,
     pub typespace: Typespace,
-    pub reducers: IndexMap<String, ReducerDef>,
+    pub reducers: ReducersMap,
     pub catalog: HashMap<String, EntityDef>,
     pub log_tx: tokio::sync::broadcast::Sender<bytes::Bytes>,
     pub subscription: ModuleSubscriptionManager,
+}
+
+pub struct ReducersMap(pub IndexMap<String, ReducerDef>);
+
+impl fmt::Debug for ReducersMap {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl std::ops::Index<ReducerId> for ReducersMap {
+    type Output = ReducerDef;
+    fn index(&self, index: ReducerId) -> &Self::Output {
+        &self.0[index.0 as usize]
+    }
+}
+
+impl ReducersMap {
+    pub fn lookup_id(&self, reducer_name: &str) -> Option<ReducerId> {
+        self.0.get_index_of(reducer_name).map(ReducerId::from)
+    }
+
+    pub fn lookup(&self, reducer_name: &str) -> Option<(ReducerId, &ReducerDef)> {
+        self.0.get_full(reducer_name).map(|(id, _, def)| (id.into(), def))
+    }
 }
 
 pub trait Module: Send + Sync + 'static {
@@ -242,14 +268,16 @@ pub trait ModuleInstance: Send + 'static {
 
     fn update_database(&mut self, fence: u128) -> anyhow::Result<UpdateDatabaseResult>;
 
-    fn call_reducer(
-        &mut self,
-        caller_identity: Identity,
-        caller_address: Option<Address>,
-        client: Option<ClientConnectionSender>,
-        reducer_id: usize,
-        args: ArgsTuple,
-    ) -> ReducerCallResult;
+    fn call_reducer(&mut self, params: CallReducerParams) -> ReducerCallResult;
+}
+
+pub struct CallReducerParams {
+    pub timestamp: Timestamp,
+    pub caller_identity: Identity,
+    pub caller_address: Address,
+    pub client: Option<ClientConnectionSender>,
+    pub reducer_id: ReducerId,
+    pub args: ArgsTuple,
 }
 
 // TODO: figure out how we want to handle traps. maybe it should just not return to the LendingPool and
@@ -281,17 +309,8 @@ impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
         self.check_trap();
         ret
     }
-    fn call_reducer(
-        &mut self,
-        caller_identity: Identity,
-        caller_address: Option<Address>,
-        client: Option<ClientConnectionSender>,
-        reducer_id: usize,
-        args: ArgsTuple,
-    ) -> ReducerCallResult {
-        let ret = self
-            .inst
-            .call_reducer(caller_identity, caller_address, client, reducer_id, args);
+    fn call_reducer(&mut self, params: CallReducerParams) -> ReducerCallResult {
+        let ret = self.inst.call_reducer(params);
         self.check_trap();
         ret
     }
@@ -431,14 +450,6 @@ pub struct UpdateDatabaseSuccess {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum UpdateDatabaseError {
-    #[error("incompatible schema changes for: {tables:?}")]
-    IncompatibleSchema { tables: Vec<String> },
-    #[error(transparent)]
-    Database(#[from] DBError),
-}
-
-#[derive(thiserror::Error, Debug)]
 #[error("no such module")]
 pub struct NoSuchModule;
 
@@ -540,17 +551,27 @@ impl ModuleHost {
         reducer_name: &str,
         args: ReducerArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
-        let (reducer_id, _, schema) = self
+        let (reducer_id, schema) = self
             .info
             .reducers
-            .get_full(reducer_name)
+            .lookup(reducer_name)
             .ok_or(ReducerCallError::NoSuchReducer)?;
 
         let args = args.into_tuple(self.info.typespace.with_type(schema))?;
+        let caller_address = caller_address.unwrap_or(Address::__DUMMY);
 
-        self.call(move |inst| inst.call_reducer(caller_identity, caller_address, client, reducer_id, args))
-            .await
-            .map_err(Into::into)
+        self.call(move |inst| {
+            inst.call_reducer(CallReducerParams {
+                timestamp: Timestamp::now(),
+                caller_identity,
+                caller_address,
+                client,
+                reducer_id,
+                args,
+            })
+        })
+        .await
+        .map_err(Into::into)
     }
 
     pub async fn call_reducer(

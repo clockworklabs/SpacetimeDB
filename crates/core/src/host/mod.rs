@@ -11,7 +11,7 @@ use spacetimedb_sats::WithTypespace;
 
 mod host_controller;
 pub(crate) mod module_host;
-pub use module_host::{UpdateDatabaseError, UpdateDatabaseResult, UpdateDatabaseSuccess};
+pub use module_host::{UpdateDatabaseResult, UpdateDatabaseSuccess};
 pub mod scheduler;
 mod wasmer;
 
@@ -54,7 +54,7 @@ impl ReducerArgs {
             },
             ReducerArgs::Nullary => {
                 anyhow::ensure!(schema.ty().args.is_empty(), "failed to typecheck args");
-                ArgsTuple::default()
+                ArgsTuple::nullary()
             }
         })
     }
@@ -68,6 +68,17 @@ pub struct ArgsTuple {
 }
 
 impl ArgsTuple {
+    #[allow(clippy::declare_interior_mutable_const)] // false positive on Bytes
+    const NULLARY: Self = ArgsTuple {
+        tuple: spacetimedb_sats::product![],
+        bsatn: Some(Bytes::new()),
+        json: Some(ByteString::from_static("[]")),
+    };
+
+    pub const fn nullary() -> Self {
+        Self::NULLARY
+    }
+
     pub fn get_bsatn(&mut self) -> &Bytes {
         self.bsatn
             .get_or_insert_with(|| bsatn::to_vec(&self.tuple).unwrap().into())
@@ -84,11 +95,20 @@ impl ArgsTuple {
 
 impl Default for ArgsTuple {
     fn default() -> Self {
-        Self {
-            tuple: spacetimedb_sats::product![],
-            bsatn: Some(Bytes::new()),
-            json: Some("[]".into()),
-        }
+        Self::nullary()
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default)]
+pub struct ReducerId(u32);
+impl std::fmt::Display for ReducerId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+impl From<usize> for ReducerId {
+    fn from(id: usize) -> Self {
+        Self(id as u32)
     }
 }
 

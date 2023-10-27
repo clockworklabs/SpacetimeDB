@@ -1696,7 +1696,7 @@ impl Drop for Iter<'_> {
             .with_label_values(
                 &self.ctx.txn_type(),
                 &self.ctx.database_id(),
-                &self.ctx.reducer_id().unwrap_or(0),
+                &self.ctx.reducer_id().unwrap_or_default(),
                 &self.table_id.into(),
             )
             .inc_by(self.committed_rows_fetched);

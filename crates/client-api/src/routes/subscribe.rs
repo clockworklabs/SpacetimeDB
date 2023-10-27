@@ -62,7 +62,7 @@ where
         .map(Address::from)
         .unwrap_or_else(generate_random_address);
 
-    if client_address == Address::__dummy() {
+    if client_address == Address::__DUMMY {
         Err((
             StatusCode::BAD_REQUEST,
             "Invalid client address: the all-zeros Address is reserved.",
