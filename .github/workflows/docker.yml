@@ -5,7 +5,7 @@ on:
     branches:
       - master
       - staging
-      - development
+      - dev
     tags:
       - 'v*'
 
@@ -13,7 +13,7 @@ on:
 jobs:
   docker-amd64:
     runs-on: bare-metal
-    name: Build DockerHub Container
+    name: Build DockerHub AMD64 Container
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -27,6 +27,7 @@ jobs:
             type=ref,event=branch,prefix=branch-
             type=sha,prefix=commit-
             type=ref,event=tag
+            type=raw,value=latest,enable=false
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
       - name: Cache Docker layers
@@ -64,7 +65,7 @@ jobs:
 
   docker-arm64:
     runs-on: arm-runner
-    name: Build DockerHub Container
+    name: Build DockerHub ARM64 Container
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -78,6 +79,7 @@ jobs:
             type=ref,event=branch,prefix=branch-
             type=sha,prefix=commit-
             type=ref,event=tag
+            type=raw,value=latest,enable=false
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
       - name: Cache Docker layers
