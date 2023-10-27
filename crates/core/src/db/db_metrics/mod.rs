@@ -51,6 +51,11 @@ metrics_group!(
         #[labels(table_id: u32)]
         pub rdb_delete_by_rel_time: HistogramVec,
 
+        #[name = spacetime_scheduled_reducer_delay_ns]
+        #[help = "The amount of time (nanoseconds) a reducer has been delayed past its scheduled execution time"]
+        #[labels(db: Address, reducer: str)]
+        pub scheduled_reducer_delay_ns: HistogramVec,
+
         #[name = spacetime_num_rows_inserted_cumulative]
         #[help = "The cumulative number of rows inserted into a table"]
         #[labels(txn_type: TransactionType, db: Address, reducer: str, table_id: u32)]

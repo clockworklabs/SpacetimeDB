@@ -6,7 +6,10 @@ use sled::transaction::{ConflictableTransactionError::Abort as TxAbort, Transact
 use spacetimedb_lib::bsatn;
 use spacetimedb_lib::bsatn::ser::BsatnError;
 use tokio::sync::mpsc;
+use tokio_util::time::delay_queue::Expired;
 use tokio_util::time::{delay_queue, DelayQueue};
+
+use crate::db::db_metrics::DB_METRICS;
 
 use super::module_host::WeakModuleHost;
 use super::{ModuleHost, ReducerArgs, ReducerCallError, Timestamp};
@@ -236,9 +239,7 @@ impl SchedulerActor {
                     Some(MsgOrExit::Exit) | None => break,
                 },
                 Some(scheduled) = self.queue.next() => {
-                    let id = scheduled.into_inner();
-                    self.key_map.remove(&id);
-                    self.handle_queued(id).await;
+                    self.handle_queued(scheduled).await;
                 }
             }
         }
@@ -258,7 +259,10 @@ impl SchedulerActor {
         }
     }
 
-    async fn handle_queued(&self, id: ScheduledReducerId) {
+    async fn handle_queued(&mut self, id: Expired<ScheduledReducerId>) {
+        let delay = id.deadline().elapsed();
+        let id = id.into_inner();
+        self.key_map.remove(&id);
         let Some(module_host) = self.module_host.upgrade() else {
             return;
         };
@@ -266,6 +270,12 @@ impl SchedulerActor {
             return;
         };
         let scheduled: ScheduledReducer = bsatn::from_slice(&scheduled).unwrap();
+        // Note, we are only tracking the time a reducer spends delayed in the queue.
+        // This does not account for any time the executing thread spends blocked by the os.
+        DB_METRICS
+            .scheduled_reducer_delay_ns
+            .with_label_values(&module_host.info().address, &scheduled.reducer)
+            .observe(delay.as_nanos() as f64);
         let db = self.db.clone();
         tokio::spawn(async move {
             let info = module_host.info();
