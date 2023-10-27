@@ -279,11 +279,8 @@ impl Iterator for IterSegment {
 
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.inner.next()?;
-        Some(next.map(|bytes| {
-            // It seems very improbable that `decode` is infallible...
-            let (commit, _) = Commit::decode(bytes);
-            commit
-        }))
+        let io = |e| io::Error::new(io::ErrorKind::InvalidData, e);
+        Some(next.and_then(|bytes| Commit::decode(&mut bytes.as_slice()).map_err(io)))
     }
 }
 

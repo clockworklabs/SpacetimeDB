@@ -1,12 +1,31 @@
-pub use spacetimedb_lib::DataKey;
+use std::fmt;
 
+use anyhow::Context as _;
+pub use spacetimedb_lib::DataKey;
+use spacetimedb_sats::buffer::{BufReader, BufWriter, DecodeError};
+
+/// A single write operation within a [`super::transaction::Transaction`].
+///
+/// Encoding:
+///
+/// ```text
+/// <flags(1)><set_id(4)><value(1-33)>
+/// ```
 #[derive(Debug, Copy, Clone)]
 pub struct Write {
     pub operation: Operation,
-    pub set_id: u32,
+    pub set_id: u32, // aka table id
     pub data_key: DataKey,
 }
 
+/// The operation of a [`Write`], either insert or delete.
+///
+/// Encoded as a single byte with bits:
+///
+/// ```text
+/// 0   = insert / delete
+/// 1-7 = unused
+/// ```
 #[derive(Debug, Copy, Clone)]
 #[repr(u8)]
 pub enum Operation {
@@ -28,60 +47,66 @@ impl Operation {
             _ => Self::Insert,
         }
     }
-}
 
-impl Write {
-    // write_flags:
-    // b0 = insert/delete,
-    // b1 = unused,
-    // b2 = unused,
-    // b3,b4,b5,b6,b7 unused
-    // write: <write_flags(1)><set_id(4)><value(1-33)>
-    pub fn decode(bytes: impl AsRef<[u8]>) -> (Self, usize) {
-        let bytes = &mut bytes.as_ref();
-        let mut read_count = 0;
-
-        let flags = bytes[read_count];
-        read_count += 1;
-
+    pub fn decode<'a>(reader: &mut impl BufReader<'a>) -> Result<Self, DecodeError> {
+        let flags = reader.get_u8()?;
         let op = (flags & 0b1000_0000) >> 7;
 
-        let mut dst = [0u8; 4];
-        dst.copy_from_slice(&bytes[read_count..read_count + 4]);
-        let set_id = u32::from_le_bytes(dst);
-        read_count += 4;
-
-        let mut reader = &bytes[read_count..];
-        let orig_len = reader.len();
-        let value = DataKey::decode(&mut reader).unwrap();
-        read_count += orig_len - reader.len();
-
-        (
-            Write {
-                operation: Operation::from_u8(op),
-                set_id,
-                data_key: value,
-            },
-            read_count,
-        )
+        Ok(Self::from_u8(op))
     }
 
     pub fn encoded_len(&self) -> usize {
-        // 1 for flags, 4 for set_id
-        let mut count = 1 + 4;
+        1
+    }
+
+    pub fn encode(&self, writer: &mut impl BufWriter) {
+        let mut flags = 0u8;
+        flags = if self.to_u8() != 0 { flags | 0b1000_0000 } else { flags };
+        writer.put_u8(flags);
+    }
+}
+
+/// Error context for [`Write::decode`].
+enum Context {
+    Op,
+    SetId,
+    DataKey,
+}
+
+impl fmt::Display for Context {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Failed to decode `Write`: ")?;
+        match self {
+            Self::Op => f.write_str("operation flags"),
+            Self::SetId => f.write_str("set id"),
+            Self::DataKey => f.write_str("data key"),
+        }
+    }
+}
+
+impl Write {
+    pub fn decode<'a>(reader: &mut impl BufReader<'a>) -> anyhow::Result<Self> {
+        let operation = Operation::decode(reader).context(Context::Op)?;
+        let set_id = reader.get_u32().context(Context::SetId)?;
+        let data_key = DataKey::decode(reader).context(Context::DataKey)?;
+
+        Ok(Self {
+            operation,
+            set_id,
+            data_key,
+        })
+    }
+
+    pub fn encoded_len(&self) -> usize {
+        let mut count = self.operation.encoded_len();
+        count += 4; // set_id
         count += self.data_key.encoded_len();
         count
     }
 
-    pub fn encode(&self, bytes: &mut Vec<u8>) {
-        let mut flags: u8 = 0;
-        flags = if self.operation.to_u8() != 0 {
-            flags | 0b1000_0000
-        } else {
-            flags
-        };
-        bytes.push(flags);
-        bytes.extend(self.set_id.to_le_bytes());
-        self.data_key.encode(bytes);
+    pub fn encode(&self, writer: &mut impl BufWriter) {
+        self.operation.encode(writer);
+        writer.put_u32(self.set_id);
+        self.data_key.encode(writer);
     }
 }
