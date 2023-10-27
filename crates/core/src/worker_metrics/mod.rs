@@ -65,22 +65,8 @@ metrics_group!(
 
         #[name = spacetime_worker_instance_operation_queue_length]
         #[help = "Length of the wait queue for access to a module instance."]
-        #[labels(identity: Identity, module_hash: Hash)]
+        #[labels(identity: Identity, module_hash: Hash, database_address: Address)]
         pub instance_queue_length: IntGaugeVec,
-        // #[name = spacetime_instance_env_delete_pk]
-        // #[help = "Time spent by reducers deleting rows by pk (InstanceEnv::delete_pk)"]
-        // #[labels(database_address, table_id)]
-        // pub instance_env_delete_pk: HistogramVec,
-
-        // #[name = spacetime_instance_env_delete_value]
-        // #[help = "Time spent by reducers deleting rows (InstanceEnv::delete_value)"]
-        // #[labels(database_address, table_id)]
-        // pub instance_env_delete_value: HistogramVec,
-
-        // #[name = spacetime_instance_env_delete_range]
-        // #[help = "Time spent by reducers deleting rows ranges eq (InstanceEnv::delete_range)"]
-        // #[labels(database_address, table_id)]
-        // pub instance_env_delete_range: HistogramVec,
     }
 );
 
