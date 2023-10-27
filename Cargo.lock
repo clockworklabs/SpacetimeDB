@@ -4263,6 +4263,7 @@ name = "spacetimedb-sats"
 version = "0.7.3"
 dependencies = [
  "arrayvec",
+ "bit-set",
  "bitflags 2.4.1",
  "bytes",
  "decorum",
@@ -4273,6 +4274,7 @@ dependencies = [
  "proptest",
  "proptest-derive",
  "rand 0.8.5",
+ "scopeguard",
  "serde",
  "sha3",
  "smallvec",

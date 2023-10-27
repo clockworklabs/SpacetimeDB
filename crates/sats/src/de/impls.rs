@@ -1,15 +1,16 @@
+use super::{
+    map_len_err, BasicMapVisitor, BasicSatsNonEmptyVisitor, BasicVecVisitor, Deserialize, DeserializeSeed,
+    Deserializer, Error, FieldNameVisitor, ProductKind, ProductVisitor, SeqProductAccess, SliceVisitor, SumAccess,
+    SumVisitor, VariantAccess, VariantVisitor,
+};
+use crate::{
+    AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, MapType, MapValue, ProductType, ProductTypeElement,
+    ProductValue, SatsNonEmpty, SatsSlice, SatsStr, SatsString, SatsVec, SumType, SumValue, WithTypespace, F32, F64,
+};
+use bit_set::BitSet;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::marker::PhantomData;
-use crate::{
-    AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, MapType, MapValue, ProductType,
-    ProductTypeElement, ProductValue, SatsSlice, SatsStr, SatsString, SatsVec, SumType, SumValue, WithTypespace, F32,
-    F64, SatsNonEmpty,
-};
-use super::{
-    BasicMapVisitor, BasicVecVisitor, Deserialize, DeserializeSeed, Deserializer, Error, FieldNameVisitor, ProductKind,
-    ProductVisitor, SeqProductAccess, SliceVisitor, SumAccess, SumVisitor, VariantAccess, VariantVisitor, map_len_err, BasicSatsNonEmptyVisitor,
-};
 
 /// Implements [`Deserialize`] for a type in a simplified manner.
 ///
@@ -544,19 +545,33 @@ pub fn visit_named_product<'de, A: super::NamedProductAccess<'de>>(
     visitor: &impl ProductVisitor<'de>,
     mut tup: A,
 ) -> Result<ProductValue, A::Error> {
-    let elems = elems_tys.ty();
-    let mut elements = vec![None; elems.len()];
     let kind = visitor.product_kind();
+
+    let elems = elems_tys.ty();
+    let mut init_idx = BitSet::with_capacity(elems.len());
+    let mut elements = Vec::with_capacity(elems.len());
+    let uninit = elements.spare_capacity_mut();
+
+    // In case we leave early,
+    // either due to an unexpected panic (bug),
+    // or due to an error resulting from user input,
+    // let's make sure we drop any initialized elements.
+    let mut g = scopeguard::guard((uninit, &mut init_idx), |(uninit, init_idx)| {
+        for idx in init_idx.iter() {
+            // SAFETY: It's in the `init_idx` set, so we've initialized it.
+            unsafe { uninit[idx].assume_init_drop() };
+        }
+    });
 
     // Deserialize a product value corresponding to each product type field.
     // This is worst case quadratic in complexity
     // as fields can be specified out of order (value side) compared to `elems` (type side).
     for _ in 0..elems.len() {
-        // Deserialize a field name, match against the element types, .
+        // Deserialize a field name, match against the element types.
         let index = tup.get_field_ident(TupleNameVisitor { elems, kind })?.ok_or_else(|| {
             // Couldn't deserialize a field name.
             // Find the first field name we haven't filled an element for.
-            let missing = elements.iter().position(|field| field.is_none()).unwrap();
+            let missing = (0..elems.len()).position(|pos| !g.1.contains(pos)).unwrap();
             let field_name = elems[missing].name();
             Error::missing_field(missing, field_name.map(|n| &**n), visitor)
         })?;
@@ -564,26 +579,26 @@ pub fn visit_named_product<'de, A: super::NamedProductAccess<'de>>(
         let element = &elems[index];
 
         // By index we can select which element to deserialize a value for.
-        let slot = &mut elements[index];
-        if slot.is_some() {
+        if g.1.contains(index) {
             return Err(Error::duplicate_field(index, element.name().map(|n| &**n), visitor));
         }
 
         // Deserialize the value for this field's type.
-        *slot = Some(tup.get_field_value_seed(elems_tys.with(&element.algebraic_type))?);
+        g.0[index].write(tup.get_field_value_seed(elems_tys.with(&element.algebraic_type))?);
+        g.1.insert(index);
     }
+    drop(g);
 
-    // Get rid of the `Option<_>` layer.
-    let elements = elements
-        .into_iter()
-        // We reached here, so we know nothing was missing, i.e., `None`.
-        .map(|x| x.unwrap_or_else(|| unreachable!("visit_named_product")))
-        .collect();
+    // SAFETY: We reached here.
+    // This means there were no duplicate fields and nothing missing.
+    // Thus we have initialized every index in `0..elems.len()`.
+    unsafe { elements.set_len(elems.len()) };
+
     // SAFETY: The original `elements` was created with `elems.len()`
     // which we statically know to be `<= u32::MAX`.
     // We never pushed to `elements` or the flattened verson,
     // so this still holds.
-    let elements = unsafe { SatsVec::from_boxed_unchecked(elements) };
+    let elements = unsafe { SatsVec::from_boxed_unchecked(elements.into()) };
 
     Ok(ProductValue { elements })
 }
