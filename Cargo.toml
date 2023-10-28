@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "crates/data-structures",
   "crates/standalone",
   "crates/lib",
   "crates/core",
