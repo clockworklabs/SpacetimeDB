@@ -56,15 +56,7 @@ pub trait WasmInstance: Send + Sync + 'static {
 
     type Trap;
 
-    fn call_reducer(
-        &mut self,
-        reducer_id: ReducerId,
-        budget: EnergyQuanta,
-        caller_identity: &Identity,
-        caller_address: &Address,
-        timestamp: Timestamp,
-        arg_bytes: Bytes,
-    ) -> ExecuteResult<Self::Trap>;
+    fn call_reducer(&mut self, op: ReducerOp<'_>, budget: EnergyQuanta) -> ExecuteResult<Self::Trap>;
 
     fn log_traceback(func_type: &str, func: &str, trap: &Self::Trap);
 }
@@ -280,7 +272,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
 
     fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error> {
         let db = &*self.database_instance_context.relational_db;
-        db.with_auto_commit(&ExecutionContext::internal(db.id()), |tx| {
+        db.with_auto_commit(&ExecutionContext::internal(db.address()), |tx| {
             let tables = db.get_all_tables(tx)?;
             // We currently have unique table names,
             // so we can assume there's only one table to clear.
@@ -353,7 +345,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
 
         let rcr = match self.info.reducers.lookup_id(INIT_DUNDER) {
             None => {
-                stdb.commit_tx(&ExecutionContext::internal(stdb.id()), tx)?;
+                stdb.commit_tx(&ExecutionContext::internal(stdb.address()), tx)?;
                 ReducerCallResult {
                     outcome: ReducerOutcome::Committed,
                     energy_used: EnergyDiff::ZERO,
@@ -415,7 +407,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
 
         let update_result = match self.info.reducers.lookup_id(UPDATE_DUNDER) {
             None => {
-                stdb.commit_tx(&ExecutionContext::internal(stdb.id()), tx)?;
+                stdb.commit_tx(&ExecutionContext::internal(stdb.address()), tx)?;
                 None
             }
 
@@ -487,8 +479,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
         let dbic = self.database_instance_context();
         let stdb = &*dbic.relational_db.clone();
-
-        let database_id = dbic.database_id;
         let address = dbic.address;
         let reducer_name = &*self.info.reducers[reducer_id].name;
         WORKER_METRICS
@@ -511,6 +501,15 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         };
         let budget = self.energy_monitor.reducer_budget(&energy_fingerprint);
 
+        let op = ReducerOp {
+            id: reducer_id,
+            name: reducer_name,
+            caller_identity: &caller_identity,
+            caller_address: &caller_address,
+            timestamp,
+            arg_bytes: args.get_bsatn().clone(),
+        };
+
         let tx = tx.unwrap_or_else(|| stdb.begin_tx());
         let tx_slot = self.instance.instance_env().tx.clone();
 
@@ -522,16 +521,8 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         )
         .entered();
 
-        let (tx, result) = tx_slot.set(tx, || {
-            self.instance.call_reducer(
-                reducer_id,
-                budget,
-                &caller_identity,
-                &caller_address,
-                timestamp,
-                args.get_bsatn().clone(),
-            )
-        });
+        let (tx, result) = tx_slot.set(tx, || self.instance.call_reducer(op, budget));
+
         let ExecuteResult {
             energy,
             timings,
@@ -585,7 +576,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             }
             Ok(Ok(())) => {
                 if let Some((tx_data, bytes_written)) = stdb
-                    .commit_tx(&ExecutionContext::reducer(database_id, reducer_id), tx)
+                    .commit_tx(&ExecutionContext::reducer(address, reducer_name), tx)
                     .unwrap()
                 {
                     // TODO(cloutiertyler): This tracking doesn't really belong here if we want to write transactions to disk
@@ -632,4 +623,14 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     fn system_logger(&self) -> &SystemLogger {
         self.database_instance_context().logger.system_logger()
     }
+}
+
+#[derive(Debug)]
+pub struct ReducerOp<'a> {
+    pub id: ReducerId,
+    pub name: &'a str,
+    pub caller_identity: &'a Identity,
+    pub caller_address: &'a Address,
+    pub timestamp: Timestamp,
+    pub arg_bytes: Bytes,
 }

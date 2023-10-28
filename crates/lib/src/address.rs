@@ -23,6 +23,12 @@ pub struct Address {
 
 impl_st!([] Address, _ts => AlgebraicType::product([("__address_bytes", AlgebraicType::bytes())]));
 
+impl Default for Address {
+    fn default() -> Self {
+        Self::ZERO
+    }
+}
+
 impl fmt::Display for Address {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad(&self.to_hex())

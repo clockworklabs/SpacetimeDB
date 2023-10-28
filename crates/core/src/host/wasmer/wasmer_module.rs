@@ -1,11 +1,10 @@
 use super::wasm_instance_env::WasmInstanceEnv;
 use super::Mem;
 use crate::host::instance_env::InstanceEnv;
-use crate::host::wasm_common::module_host_actor::{DescribeError, InitializationError};
+use crate::host::wasm_common::module_host_actor::{DescribeError, InitializationError, ReducerOp};
 use crate::host::wasm_common::*;
-use crate::host::{EnergyQuanta, ReducerId, Timestamp};
+use crate::host::EnergyQuanta;
 use bytes::Bytes;
-use spacetimedb_lib::{Address, Identity};
 use wasmer::{
     imports, AsStoreMut, Engine, ExternType, Function, FunctionEnv, Imports, Instance, Module, RuntimeError, Store,
     TypedFunction,
@@ -246,12 +245,8 @@ impl module_host_actor::WasmInstance for WasmerInstance {
 
     fn call_reducer(
         &mut self,
-        reducer_id: ReducerId,
+        op: ReducerOp<'_>,
         budget: EnergyQuanta,
-        caller_identity: &Identity,
-        caller_address: &Address,
-        timestamp: Timestamp,
-        arg_bytes: Bytes,
     ) -> module_host_actor::ExecuteResult<Self::Trap> {
         let store = &mut self.store;
         let instance = &self.instance;
@@ -260,20 +255,20 @@ impl module_host_actor::WasmInstance for WasmerInstance {
 
         let mut make_buf = |data| self.env.as_mut(store).insert_buffer(data);
 
-        let identity_buf = make_buf(caller_identity.as_bytes().to_vec().into());
-        let address_buf = make_buf(caller_address.as_slice().to_vec().into());
-        let args_buf = make_buf(arg_bytes);
+        let identity_buf = make_buf(op.caller_identity.as_bytes().to_vec().into());
+        let address_buf = make_buf(op.caller_address.as_slice().to_vec().into());
+        let args_buf = make_buf(op.arg_bytes);
 
-        self.env.as_mut(store).start_reducer(reducer_id);
+        self.env.as_mut(store).start_reducer(op.name);
 
         let result = self
             .call_reducer
             .call(
                 store,
-                reducer_id.0,
+                op.id.0,
                 identity_buf.0,
                 address_buf.0,
-                timestamp.0,
+                op.timestamp.0,
                 args_buf.0,
             )
             .and_then(|errbuf| {

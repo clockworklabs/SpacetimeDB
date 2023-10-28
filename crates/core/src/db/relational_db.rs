@@ -45,7 +45,7 @@ pub struct RelationalDB {
     pub(crate) inner: Locking,
     commit_log: CommitLog,
     _lock: Arc<File>,
-    id: u64,
+    address: Address,
 }
 
 impl DataRow for RelationalDB {
@@ -68,10 +68,10 @@ impl RelationalDB {
         root: impl AsRef<Path>,
         message_log: Option<Arc<Mutex<MessageLog>>>,
         odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
-        id: u64,
         address: Address,
         fsync: bool,
     ) -> Result<Self, DBError> {
+        let db_address = address;
         let address = address.to_hex();
         log::debug!("[{}] DATABASE: OPENING", address);
 
@@ -86,7 +86,7 @@ impl RelationalDB {
         lock.try_lock_exclusive()
             .map_err(|err| DatabaseError::DatabasedOpened(root.to_path_buf(), err.into()))?;
 
-        let datastore = Locking::bootstrap(id)?;
+        let datastore = Locking::bootstrap(db_address)?;
         log::debug!("[{}] Replaying transaction log.", address);
         let mut segment_index = 0;
         let mut last_logged_percentage = 0;
@@ -162,16 +162,16 @@ impl RelationalDB {
             inner: datastore,
             commit_log,
             _lock: Arc::new(lock),
-            id,
+            address: db_address,
         };
 
         log::trace!("[{}] DATABASE: OPENED", address);
         Ok(db)
     }
 
-    /// Returns the id for this database
-    pub fn id(&self) -> u64 {
-        self.id
+    /// Returns the address for this database
+    pub fn address(&self) -> Address {
+        self.address
     }
 
     /// Obtain a read-only view of this database's [`CommitLog`].
@@ -208,7 +208,7 @@ impl RelationalDB {
 
     pub fn get_all_tables<'tx>(&self, tx: &'tx MutTxId) -> Result<Vec<Cow<'tx, TableSchema>>, DBError> {
         self.inner
-            .get_all_tables_mut_tx(&ExecutionContext::internal(self.id), tx)
+            .get_all_tables_mut_tx(&ExecutionContext::internal(self.address), tx)
     }
 
     #[tracing::instrument(skip_all)]
@@ -564,7 +564,7 @@ impl RelationalDB {
     #[tracing::instrument(skip_all)]
     pub fn clear_table(&self, tx: &mut MutTxId, table_id: TableId) -> Result<(), DBError> {
         let relation = self
-            .iter(&ExecutionContext::internal(self.id), tx, table_id)?
+            .iter(&ExecutionContext::internal(self.address), tx, table_id)?
             .map(|data| RowId(*data.id()))
             .collect::<Vec<_>>();
         self.delete(tx, table_id, relation);
@@ -631,7 +631,7 @@ pub fn open_db(path: impl AsRef<Path>, in_memory: bool, fsync: bool) -> Result<R
         Some(Arc::new(Mutex::new(MessageLog::open(path.join("mlog"))?)))
     };
     let odb = Arc::new(Mutex::new(make_default_ostorage(in_memory, path.join("odb"))?));
-    let stdb = RelationalDB::open(path, mlog, odb, 0, Address::zero(), fsync)?;
+    let stdb = RelationalDB::open(path, mlog, odb, Address::zero(), fsync)?;
 
     Ok(stdb)
 }
@@ -747,7 +747,7 @@ mod tests {
             tmp_dir.path().join("odb"),
         )?));
 
-        match RelationalDB::open(tmp_dir.path(), mlog, odb, 0, Address::zero(), true) {
+        match RelationalDB::open(tmp_dir.path(), mlog, odb, Address::zero(), true) {
             Ok(_) => {
                 panic!("Allowed to open database twice")
             }
