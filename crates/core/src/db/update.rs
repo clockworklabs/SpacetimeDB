@@ -6,6 +6,7 @@ use spacetimedb_lib::Hash;
 
 use crate::database_logger::SystemLogger;
 use crate::error::DBError;
+use crate::execution_context::ExecutionContext;
 
 use super::datastore::locking_tx_datastore::MutTxId;
 use super::datastore::traits::{IndexDef, TableDef, TableSchema};
@@ -28,7 +29,8 @@ pub fn update_database(
     module_hash: Hash,
     system_logger: &SystemLogger,
 ) -> anyhow::Result<Result<MutTxId, UpdateDatabaseError>> {
-    let (tx, res) = stdb.with_auto_rollback::<_, _, anyhow::Error>(tx, |tx| {
+    let ctx = ExecutionContext::internal(stdb.address());
+    let (tx, res) = stdb.with_auto_rollback::<_, _, anyhow::Error>(&ctx, tx, |tx| {
         let existing_tables = stdb.get_all_tables(tx)?;
         let updates = crate::db::update::schema_updates(existing_tables, proposed_tables, system_logger)?;
 
@@ -61,7 +63,7 @@ pub fn update_database(
 
         Ok(Ok(()))
     })?;
-    Ok(stdb.rollback_on_err(tx, res).map(|(tx, ())| tx))
+    Ok(stdb.rollback_on_err(&ctx, tx, res).map(|(tx, ())| tx))
 }
 
 /// Compute the diff between the current and proposed schema.

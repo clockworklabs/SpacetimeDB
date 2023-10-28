@@ -84,7 +84,7 @@ impl DatabaseUpdate {
                 ops: table_row_operations,
             });
         }
-        stdb.rollback_tx(tx);
+        stdb.rollback_tx(&ctx, tx);
 
         DatabaseUpdate { tables: table_updates }
     }

@@ -263,15 +263,15 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn rollback_tx(&self, tx: MutTxId) {
+    pub fn rollback_tx(&self, ctx: &ExecutionContext, tx: MutTxId) {
         log::trace!("ROLLBACK TX");
-        self.inner.rollback_mut_tx(tx)
+        self.inner.rollback_mut_tx(ctx, tx)
     }
 
     #[tracing::instrument(skip_all)]
     pub fn commit_tx(&self, ctx: &ExecutionContext, tx: MutTxId) -> Result<Option<(TxData, Option<usize>)>, DBError> {
         log::trace!("COMMIT TX");
-        if let Some(tx_data) = self.inner.commit_mut_tx(tx)? {
+        if let Some(tx_data) = self.inner.commit_mut_tx(ctx, tx)? {
             let bytes_written = self.commit_log.append_tx(ctx, &tx_data, &self.inner)?;
             return Ok(Some((tx_data, bytes_written)));
         }
@@ -322,12 +322,12 @@ impl RelationalDB {
     /// Similar in purpose to [`Self::with_auto_commit`], but returns the
     /// [`MutTxId`] alongside the `Ok` result of the function `F` without
     /// committing the transaction.
-    pub fn with_auto_rollback<F, A, E>(&self, mut tx: MutTxId, f: F) -> Result<(MutTxId, A), E>
+    pub fn with_auto_rollback<F, A, E>(&self, ctx: &ExecutionContext, mut tx: MutTxId, f: F) -> Result<(MutTxId, A), E>
     where
         F: FnOnce(&mut MutTxId) -> Result<A, E>,
     {
         let res = f(&mut tx);
-        self.rollback_on_err(tx, res)
+        self.rollback_on_err(ctx, tx, res)
     }
 
     /// Run a fallible function in a transaction.
@@ -339,14 +339,14 @@ impl RelationalDB {
     /// TODO(jgilles): when we support actual read-only transactions, use those here instead.
     /// TODO(jgilles, kim): get this merged with the above function (two people had similar ideas
     /// at the same time)
-    pub fn with_read_only<F, A, E>(&self, f: F) -> Result<A, E>
+    pub fn with_read_only<F, A, E>(&self, ctx: &ExecutionContext, f: F) -> Result<A, E>
     where
         F: FnOnce(&mut MutTxId) -> Result<A, E>,
         E: From<DBError>,
     {
         let mut tx = self.begin_tx();
         let res = f(&mut tx);
-        self.rollback_tx(tx);
+        self.rollback_tx(ctx, tx);
         res
     }
 
@@ -357,7 +357,7 @@ impl RelationalDB {
         E: From<DBError>,
     {
         if res.is_err() {
-            self.rollback_tx(tx);
+            self.rollback_tx(ctx, tx);
         } else {
             match self.commit_tx(ctx, tx).map_err(E::from)? {
                 Some(_) => (),
@@ -369,10 +369,15 @@ impl RelationalDB {
 
     /// Roll back transaction `tx` if `res` is `Err`, otherwise return it
     /// alongside the `Ok` value.
-    pub fn rollback_on_err<A, E>(&self, tx: MutTxId, res: Result<A, E>) -> Result<(MutTxId, A), E> {
+    pub fn rollback_on_err<A, E>(
+        &self,
+        ctx: &ExecutionContext,
+        tx: MutTxId,
+        res: Result<A, E>,
+    ) -> Result<(MutTxId, A), E> {
         match res {
             Err(e) => {
-                self.rollback_tx(tx);
+                self.rollback_tx(ctx, tx);
                 Err(e)
             }
             Ok(a) => Ok((tx, a)),
@@ -924,7 +929,7 @@ mod tests {
         let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
         schema.table_name = "MyTable".to_string();
         let table_id = stdb.create_table(&mut tx, schema)?;
-        stdb.rollback_tx(tx);
+        stdb.rollback_tx(&ExecutionContext::default(), tx);
 
         let mut tx = stdb.begin_tx();
         let result = stdb.drop_table(&mut tx, table_id);
@@ -937,21 +942,22 @@ mod tests {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_tx();
+        let ctx = ExecutionContext::default();
 
         let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
         schema.table_name = "MyTable".to_string();
         let table_id = stdb.create_table(&mut tx, schema)?;
-        stdb.commit_tx(&ExecutionContext::default(), tx)?;
+        stdb.commit_tx(&ctx, tx)?;
 
         let mut tx = stdb.begin_tx();
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(-1)])?;
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(0)])?;
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(1)])?;
-        stdb.rollback_tx(tx);
+        stdb.rollback_tx(&ctx, tx);
 
         let tx = stdb.begin_tx();
         let mut rows = stdb
-            .iter(&ExecutionContext::default(), &tx, table_id)?
+            .iter(&ctx, &tx, table_id)?
             .map(|r| *r.view().elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
         rows.sort();

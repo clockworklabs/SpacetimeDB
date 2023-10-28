@@ -65,6 +65,16 @@ metrics_group!(
         #[help = "The cumulative number of rows fetched from a table"]
         #[labels(txn_type: TransactionType, db: Address, reducer: str, table_id: u32)]
         pub rdb_num_rows_fetched: IntCounterVec,
+
+        #[name = spacetime_num_txns_committed_cumulative]
+        #[help = "The cumulative number of committed transactions"]
+        #[labels(txn_type: TransactionType, db: Address, reducer: str)]
+        pub rdb_num_txns_committed: IntCounterVec,
+
+        #[name = spacetime_num_txns_rolledback_cumulative]
+        #[help = "The cumulative number of rolled back transactions"]
+        #[labels(txn_type: TransactionType, db: Address, reducer: str)]
+        pub rdb_num_txns_rolledback: IntCounterVec,
     }
 );
 
