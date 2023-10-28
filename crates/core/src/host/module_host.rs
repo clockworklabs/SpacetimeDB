@@ -476,9 +476,10 @@ pub enum InitDatabaseError {
 impl ModuleHost {
     pub fn new(threadpool: Arc<HostThreadpool>, mut module: impl Module) -> Self {
         let info = module.info();
-        let waiter_gauge = WORKER_METRICS
-            .instance_queue_length
-            .with_label_values(&info.identity, &info.module_hash);
+        let waiter_gauge =
+            WORKER_METRICS
+                .instance_queue_length
+                .with_label_values(&info.identity, &info.module_hash, &info.address);
         let instance_pool = LendingPool::new(waiter_gauge);
         instance_pool.add_multiple(module.initial_instances()).unwrap();
         let inner = Arc::new(HostControllerActor {
