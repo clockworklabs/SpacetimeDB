@@ -1,11 +1,9 @@
 use anyhow::Context as _;
-use hex::FromHex as _;
-use sats::{impl_deserialize, impl_serialize, impl_st, AlgebraicType};
+use hex::FromHex;
 use spacetimedb_bindings_macro::{Deserialize, Serialize};
+use spacetimedb_sats::hex::{encode as hex_encode, HexString};
+use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, AlgebraicType};
 use std::{fmt, net::Ipv6Addr};
-
-use crate::hex::HexString;
-use crate::sats;
 
 /// This is the address for a SpacetimeDB database or client connection.
 ///
@@ -65,7 +63,7 @@ impl Address {
     }
 
     pub fn to_hex(self) -> HexString<16> {
-        crate::hex::encode(self.as_slice())
+        hex_encode(self.as_slice())
     }
 
     pub fn abbreviate(&self) -> [u8; 8] {
@@ -73,7 +71,7 @@ impl Address {
     }
 
     pub fn to_abbreviated_hex(self) -> HexString<8> {
-        crate::hex::encode(&self.abbreviate())
+        hex_encode(&self.abbreviate())
     }
 
     pub fn from_slice(slice: impl AsRef<[u8]>) -> Self {
@@ -174,12 +172,13 @@ impl<'de> serde::Deserialize<'de> for Address {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use spacetimedb_sats::bsatn;
 
     #[test]
     fn test_bsatn_roundtrip() {
         let addr = Address::from_u128(rand::random());
-        let ser = sats::bsatn::to_vec(&addr).unwrap();
-        let de = sats::bsatn::from_slice(&ser).unwrap();
+        let ser = bsatn::to_vec(&addr).unwrap();
+        let de = bsatn::from_slice(&ser).unwrap();
         assert_eq!(addr, de);
     }
 

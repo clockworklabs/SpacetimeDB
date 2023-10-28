@@ -1,6 +1,6 @@
 use crate::db::ostorage::ObjectDB;
-use crate::hash::{hash_bytes, Hash};
 use hex;
+use spacetimedb_sats::hash::{hash_bytes, Hash};
 
 use std::{
     collections::HashMap,
@@ -210,8 +210,8 @@ fn hex_prefixes() -> Vec<String> {
 mod tests {
     use crate::db::ostorage::{hashmap_object_db::HashMapObjectDB, ObjectDB};
     use crate::error::DBError;
-    use crate::hash::hash_bytes;
     use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_sats::hash::hash_bytes;
     use tempfile::TempDir;
 
     const TEST_DB_DIR_PREFIX: &str = "objdb_test";

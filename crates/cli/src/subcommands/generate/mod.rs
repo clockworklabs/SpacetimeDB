@@ -6,7 +6,8 @@ use clap::ArgAction::SetTrue;
 use convert_case::{Case, Casing};
 use duct::cmd;
 use spacetimedb_lib::sats::{AlgebraicType, Typespace};
-use spacetimedb_lib::{bsatn, MiscModuleExport, ModuleDef, ReducerDef, TableDef, TypeAlias, MODULE_ABI_MAJOR_VERSION};
+use spacetimedb_lib::{bsatn, MiscModuleExport, ModuleDef, ReducerDef, TypeAlias};
+use spacetimedb_lib::{TableDef, MODULE_ABI_MAJOR_VERSION};
 use wasmtime::{AsContext, Caller};
 
 mod code_indenter;
@@ -190,7 +191,6 @@ pub fn extract_from_moduledef(module: ModuleDef) -> (GenCtx, impl Iterator<Item 
     for (typeref, name) in name_info {
         names[typeref.idx()] = Some(name.clone())
     }
-
     let ctx = GenCtx { typespace, names };
     let iter = itertools::chain!(
         misc_exports.into_iter().map(GenItem::from_misc_export),

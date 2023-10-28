@@ -1,7 +1,7 @@
-use spacetimedb_lib::auth::{StAccess, StTableType};
-use spacetimedb_lib::error::RelationError;
-use spacetimedb_lib::table::{ColumnDef, ProductTypeMeta};
-use spacetimedb_lib::ColumnIndexAttribute;
+use spacetimedb_sats::db::auth::{StAccess, StTableType};
+use spacetimedb_sats::db::def::{ConstraintFlags, Constraints, TableSchema};
+use spacetimedb_sats::db::def::{FieldDef, ProductTypeMeta};
+use spacetimedb_sats::db::error::RelationError;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductTypeElement};
 use sqlparser::ast::{
     Assignment, BinaryOperator, ColumnDef as SqlColumnDef, ColumnOption, DataType, ExactNumberInfo, Expr as SqlExpr,
@@ -14,10 +14,10 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::{MutTxDatastore, TableSchema};
+use crate::db::datastore::traits::MutTxDatastore;
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
-use spacetimedb_lib::relation::{extract_table_field, FieldExpr, FieldName};
+use spacetimedb_sats::relation::{extract_table_field, FieldExpr, FieldName};
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::expr::{ColumnOp, DbType, Expr};
 use spacetimedb_vm::operator::{OpCmp, OpLogic, OpQuery};
@@ -123,12 +123,6 @@ pub enum Join {
     Inner { rhs: TableSchema, on: OnExpr },
 }
 
-#[derive(Clone)]
-pub struct FromField {
-    pub field: FieldName,
-    pub column: ColumnDef,
-}
-
 /// The list of tables in `... FROM table1 [JOIN table2] ...`
 pub struct From {
     pub root: TableSchema,
@@ -179,13 +173,14 @@ impl From {
 
     /// Returns all the fields matching `f` as a `Vec<FromField>`,
     /// including the ones inside the joins.
-    pub fn find_field(&self, f: &str) -> Result<Vec<FromField>, RelationError> {
+    pub fn find_field(&self, f: &str) -> Result<Vec<FieldDef>, RelationError> {
         let field = extract_table_field(f)?;
-        let fields = self.iter_tables().filter_map(|t| {
-            let f = t.normalize_field(&field);
-            t.get_column_by_field(&f).map(|column| FromField {
-                field: f,
-                column: column.into(),
+        let fields = self.iter_tables().flat_map(|t| {
+            t.columns.iter().filter_map(|column| {
+                (column.col_name == field.field).then(|| FieldDef {
+                    column: column.clone(),
+                    table_name: field.table.unwrap_or(&t.table_name).to_string(),
+                })
             })
         });
 
@@ -194,7 +189,7 @@ impl From {
 
     /// Checks if the field `named` matches exactly once in all the tables
     /// including the ones inside the joins
-    pub fn resolve_field(&self, named: &str) -> Result<FromField, PlanError> {
+    pub fn resolve_field(&self, named: &str) -> Result<FieldDef, PlanError> {
         let fields = self.find_field(named)?;
 
         match fields.len() {
@@ -209,7 +204,7 @@ impl From {
             1 => Ok(fields[0].clone()),
             _ => Err(PlanError::AmbiguousField {
                 field: named.into(),
-                found: fields.iter().map(|x| x.field.clone()).collect(),
+                found: fields.into_iter().map(Into::into).collect(),
             }),
         }
     }
@@ -253,12 +248,12 @@ fn extract_field(table: &From, of: &SqlExpr) -> Result<Option<ProductTypeElement
     match of {
         SqlExpr::Identifier(x) => {
             let f = table.resolve_field(&x.value)?;
-            Ok(Some(f.column.column))
+            Ok(Some(f.into()))
         }
         SqlExpr::CompoundIdentifier(ident) => {
             let col_name = compound_ident(ident);
             let f = table.resolve_field(&col_name)?;
-            Ok(Some(f.column.column))
+            Ok(Some(f.into()))
         }
         _ => Ok(None),
     }
@@ -291,10 +286,10 @@ fn infer_number(field: Option<&ProductTypeElement>, value: &str, is_long: bool) 
 /// Compiles a [SqlExpr] expression into a [ColumnOp]
 fn compile_expr_value(table: &From, field: Option<&ProductTypeElement>, of: SqlExpr) -> Result<ColumnOp, PlanError> {
     Ok(ColumnOp::Field(match of {
-        SqlExpr::Identifier(name) => FieldExpr::Name(table.resolve_field(&name.value)?.field),
+        SqlExpr::Identifier(name) => FieldExpr::Name(table.resolve_field(&name.value)?.into()),
         SqlExpr::CompoundIdentifier(ident) => {
             let col_name = compound_ident(&ident);
-            table.resolve_field(&col_name)?.field.into()
+            FieldExpr::Name(table.resolve_field(&col_name)?.into())
         }
         SqlExpr::Value(x) => FieldExpr::Value(match x {
             Value::Number(value, is_long) => infer_number(field, &value, is_long)?,
@@ -754,9 +749,9 @@ fn column_def_type(named: &String, is_null: bool, data_type: &DataType) -> Resul
     Ok(if is_null { AlgebraicType::option(ty) } else { ty })
 }
 
-/// Extract the column attributes into [ColumnIndexAttribute]
-fn compile_column_option(col: &SqlColumnDef) -> Result<(bool, ColumnIndexAttribute), PlanError> {
-    let mut attr = ColumnIndexAttribute::UNSET;
+/// Extract the column attributes into [ColumnAttribute]
+fn compile_column_option(col: &SqlColumnDef) -> Result<(bool, Constraints), PlanError> {
+    let mut attr = Constraints::unset();
     let mut is_null = false;
 
     for x in &col.options {
@@ -768,11 +763,11 @@ fn compile_column_option(col: &SqlColumnDef) -> Result<(bool, ColumnIndexAttribu
                 is_null = false;
             }
             ColumnOption::Unique { is_primary } => {
-                attr = if *is_primary {
-                    ColumnIndexAttribute::PRIMARY_KEY
+                attr = attr.push(if *is_primary {
+                    ConstraintFlags::PRIMARY_KEY
                 } else {
-                    ColumnIndexAttribute::UNIQUE
-                };
+                    ConstraintFlags::UNIQUE
+                });
             }
             ColumnOption::Generated {
                 generated_as,
@@ -783,7 +778,7 @@ fn compile_column_option(col: &SqlColumnDef) -> Result<(bool, ColumnIndexAttribu
 
                 match generated_as {
                     GeneratedAs::ByDefault => {
-                        attr |= ColumnIndexAttribute::IDENTITY;
+                        attr = attr.push(ConstraintFlags::IDENTITY);
                     }
                     x => {
                         return Err(PlanError::Unsupported {

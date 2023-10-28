@@ -1,28 +1,24 @@
-use nonempty::NonEmpty;
-use parking_lot::{Mutex, MutexGuard};
-use spacetimedb_lib::{bsatn, IndexType, ProductValue};
-use std::ops::DerefMut;
-use std::sync::Arc;
-
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::{MutTxId, RowId};
-use crate::db::datastore::traits::IndexDef;
 use crate::error::{IndexError, NodesError};
 use crate::execution_context::ExecutionContext;
 use crate::util::ResultInspectExt;
-
-use super::scheduler::{ScheduleError, ScheduledReducerId, Scheduler};
-use super::timestamp::Timestamp;
 use crate::vm::DbProgram;
+use nonempty::NonEmpty;
+use parking_lot::{Mutex, MutexGuard};
 use spacetimedb_lib::filter::CmpArgs;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::operator::OpQuery;
-use spacetimedb_lib::relation::{FieldExpr, FieldName};
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::buffer::BufWriter;
-use spacetimedb_sats::{ProductType, Typespace};
+use spacetimedb_sats::db::def::{IndexDef, IndexType};
+use spacetimedb_sats::relation::{FieldExpr, FieldName};
+use spacetimedb_sats::{bsatn, ProductType, ProductValue, Typespace};
 use spacetimedb_vm::expr::{Code, ColumnOp};
+use std::num::NonZeroU32;
+use std::ops::DerefMut;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct InstanceEnv {
@@ -221,7 +217,7 @@ impl InstanceEnv {
         index_name: String,
         table_id: TableId,
         index_type: u8,
-        col_ids: Vec<u8>,
+        col_ids: Vec<ColId>,
     ) -> Result<(), NodesError> {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;
@@ -234,9 +230,7 @@ impl InstanceEnv {
             IndexType::Hash => todo!("Hash indexes not yet supported"),
         };
 
-        let cols = NonEmpty::from_slice(&col_ids)
-            .expect("Attempt to create an index with zero columns")
-            .map(Into::into);
+        let cols = NonEmpty::from_slice(&col_ids).expect("Attempt to create an index with zero columns");
 
         let is_unique = stdb.column_attrs(tx, table_id, &cols)?.has_unique();
 
@@ -248,7 +242,7 @@ impl InstanceEnv {
             index_type,
         };
 
-        stdb.create_index(tx, index)?;
+        stdb.create_index(tx, table_id, index)?;
 
         Ok(())
     }

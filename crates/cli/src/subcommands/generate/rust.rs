@@ -1,11 +1,12 @@
 use super::code_indenter::CodeIndenter;
 use super::{GenCtx, GenItem};
 use convert_case::{Case, Casing};
+use spacetimedb_lib::sats::db::attr::ColumnAttribute;
 use spacetimedb_lib::sats::{
     AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, ProductTypeElement, SumType,
     SumTypeVariant,
 };
-use spacetimedb_lib::{ColumnIndexAttribute, ReducerDef, TableDef};
+use spacetimedb_lib::{ReducerDef, TableDef};
 use std::collections::HashSet;
 use std::fmt::Write;
 
@@ -488,7 +489,7 @@ fn print_table_filter_methods(
     out: &mut Indenter,
     table_type_name: &str,
     elements: &[ProductTypeElement],
-    attrs: &[ColumnIndexAttribute],
+    attrs: &[ColumnAttribute],
 ) {
     write!(out, "impl {} ", table_type_name).unwrap();
     out.delimited_block(

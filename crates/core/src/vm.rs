@@ -1,16 +1,16 @@
 //! The [DbProgram] that execute arbitrary queries & code against the database.
 use crate::db::cursor::{CatalogCursor, IndexCursor, TableCursor};
 use crate::db::datastore::locking_tx_datastore::{IterByColEq, MutTxId};
-use crate::db::datastore::traits::{ColumnDef, IndexDef, TableDef};
 use crate::db::relational_db::RelationalDB;
 use crate::execution_context::ExecutionContext;
 use itertools::Itertools;
-use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::{DbTable, FieldExpr, FieldName, Relation};
-use spacetimedb_lib::relation::{Header, MemTable, RelIter, RelValue, RowCount, Table};
-use spacetimedb_lib::table::ProductTypeMeta;
 use spacetimedb_primitives::{ColId, TableId};
+use spacetimedb_sats::db::auth::{StAccess, StTableType};
+use spacetimedb_sats::db::def::{ColumnDef, IndexDef, ProductTypeMeta, TableDef};
+use spacetimedb_sats::relation::{
+    DbTable, FieldExpr, FieldName, Header, MemTable, RelIter, RelValue, Relation, RowCount, Table,
+};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::env::EnvDb;
 use spacetimedb_vm::errors::ErrorVm;
@@ -38,10 +38,14 @@ pub fn build_query<'a>(
         result = match op {
             Query::IndexScan(IndexScan {
                 table,
-                col_id,
+                columns,
                 lower_bound,
                 upper_bound,
-            }) if db_table => iter_by_col_range(ctx, stdb, tx, table, col_id, (lower_bound, upper_bound))?,
+            }) if db_table => {
+                assert_eq!(columns.len(), 1, "Only support single column IndexScan");
+                let col_id = columns.head;
+                iter_by_col_range(ctx, stdb, tx, table, col_id, (lower_bound, upper_bound))?
+            }
             Query::IndexScan(index_scan) => {
                 let header = result.head().clone();
                 let cmp: ColumnOp = index_scan.into();
@@ -316,6 +320,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         table_access: StAccess,
     ) -> Result<Code, ErrorVm> {
         let mut cols = Vec::new();
+
         let mut indexes = Vec::new();
         for (i, column) in columns.columns.elements.iter().enumerate() {
             let meta = columns.attr[i];
@@ -362,6 +367,9 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
                 if let Some(id) = self.db.sequence_id_from_name(self.tx, name)? {
                     self.db.drop_sequence(self.tx, id)?;
                 }
+            }
+            DbType::Constraint => {
+                todo!()
             }
         }
 
@@ -531,16 +539,16 @@ pub(crate) mod tests {
     use crate::db::datastore::system_tables::{
         st_columns_schema, st_indexes_schema, st_sequences_schema, st_table_schema, StColumnFields, StColumnRow,
         StIndexFields, StIndexRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, ST_COLUMNS_ID,
-        ST_SEQUENCES_ID, ST_TABLES_ID,
+        ST_COLUMNS_NAME, ST_INDEXES_NAME, ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID, ST_TABLES_NAME,
     };
     use crate::db::relational_db::tests_utils::make_test_db;
-    use crate::db::relational_db::{ST_COLUMNS_NAME, ST_INDEXES_NAME, ST_SEQUENCES_NAME, ST_TABLES_NAME};
     use crate::execution_context::ExecutionContext;
     use nonempty::NonEmpty;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_lib::relation::{DbTable, FieldName};
-    use spacetimedb_lib::IndexType;
     use spacetimedb_primitives::TableId;
+    use spacetimedb_sats::db::auth::{StAccess, StTableType};
+    use spacetimedb_sats::db::def::{ColumnDef, IndexDef, IndexType};
+    use spacetimedb_sats::relation::{DbTable, FieldName};
     use spacetimedb_sats::{product, AlgebraicType, ProductType, ProductValue};
     use spacetimedb_vm::dsl::*;
     use spacetimedb_vm::eval::run_ast;
@@ -688,7 +696,7 @@ pub(crate) mod tests {
             .with_select_cmp(
                 OpCmp::Eq,
                 FieldName::named(ST_COLUMNS_NAME, StColumnFields::TableId.name()),
-                scalar(ST_COLUMNS_ID.0),
+                scalar(ST_COLUMNS_ID),
             )
             .with_select_cmp(
                 OpCmp::Eq,
@@ -729,7 +737,7 @@ pub(crate) mod tests {
 
         let mut tx = db.begin_tx();
         let index = IndexDef::new("idx_1".into(), table_id, 0.into(), true);
-        let index_id = db.create_index(&mut tx, index)?;
+        let index_id = db.create_index(&mut tx, table_id, index)?;
 
         let p = &mut DbProgram::new(&ctx, &db, &mut tx, AuthCtx::for_testing());
 
@@ -743,11 +751,11 @@ pub(crate) mod tests {
             ST_INDEXES_NAME,
             StIndexRow {
                 index_id,
-                index_name: "idx_1".to_owned(),
                 table_id,
+                index_name: "idx_1".to_string(),
+                index_type: IndexType::BTree,
                 cols: NonEmpty::new(0.into()),
                 is_unique: true,
-                index_type: IndexType::BTree,
             }
             .into(),
             q,

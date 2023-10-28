@@ -3,7 +3,8 @@ use spacetimedb_sats::buffer::{BufReader, BufWriter};
 use std::{fmt, sync::Arc};
 
 use super::transaction::Transaction;
-use crate::hash::Hash;
+use spacetimedb_sats::hash::Hash;
+use std::sync::Arc;
 
 #[cfg(test)]
 use proptest::prelude::*;

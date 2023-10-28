@@ -538,7 +538,7 @@ impl WasmInstanceEnv {
             let name = Self::read_string(&caller, mem, name, name_len)?;
 
             // Query the table id.
-            Ok(caller.data().instance_env.get_table_id(name)?.0)
+            Ok(caller.data().instance_env.get_table_id(name)?.into())
         })
     }
 
@@ -575,7 +575,11 @@ impl WasmInstanceEnv {
 
             // Read the column ids on which to create an index from WASM memory.
             // This may be one column or an index on several columns.
-            let cols = mem.read_bytes(&caller, col_ids, col_len)?;
+            let cols = mem
+                .read_bytes(&caller, col_ids, col_len)?
+                .into_iter()
+                .map(Into::into)
+                .collect();
 
             caller
                 .data()

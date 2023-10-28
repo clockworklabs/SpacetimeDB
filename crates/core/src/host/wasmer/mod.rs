@@ -1,22 +1,18 @@
+use super::scheduler::Scheduler;
+use super::wasm_common::{abi, module_host_actor::WasmModuleHostActor, ModuleCreationError};
+use super::{EnergyMonitor, EnergyQuanta};
+use crate::database_instance_context::DatabaseInstanceContext;
+use crate::error::NodesError;
+use spacetimedb_sats::hash::Hash;
 use std::sync::Arc;
-
 use wasmer::wasmparser::Operator;
 use wasmer::{AsStoreRef, CompilerConfig, EngineBuilder, Memory, MemoryAccessError, Module, RuntimeError, WasmPtr};
 use wasmer_middlewares::Metering;
-
-use crate::database_instance_context::DatabaseInstanceContext;
-use crate::error::NodesError;
-use crate::hash::Hash;
+use wasmer_module::WasmerModule;
 
 mod opcode_cost;
 mod wasm_instance_env;
 mod wasmer_module;
-
-use wasmer_module::WasmerModule;
-
-use super::scheduler::Scheduler;
-use super::wasm_common::{abi, module_host_actor::WasmModuleHostActor, ModuleCreationError};
-use super::{EnergyMonitor, EnergyQuanta};
 
 pub fn make_actor(
     dbic: Arc<DatabaseInstanceContext>,

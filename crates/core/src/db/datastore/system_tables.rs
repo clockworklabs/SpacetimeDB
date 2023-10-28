@@ -1,15 +1,14 @@
-use super::traits::{ColumnSchema, IndexSchema, SequenceSchema, TableSchema};
-use crate::db::datastore::traits::ConstraintSchema;
 use crate::error::{DBError, TableError};
 use core::fmt;
 use nonempty::NonEmpty;
 use once_cell::sync::Lazy;
-use spacetimedb_lib::auth::{StAccess, StTableType};
-use spacetimedb_lib::{ColumnIndexAttribute, Hash, IndexType};
-use spacetimedb_primitives::{ColId, IndexId, SequenceId, TableId};
+use spacetimedb_primitives::*;
+use spacetimedb_sats::db::auth::{StAccess, StTableType};
+use spacetimedb_sats::db::def::*;
+use spacetimedb_sats::hash::Hash;
+use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::{
-    impl_deserialize, impl_serialize, product, product_value::InvalidFieldError, AlgebraicType, AlgebraicValue,
-    ArrayValue, ProductType, ProductValue,
+    impl_deserialize, impl_serialize, product, AlgebraicType, AlgebraicValue, ArrayValue, ProductType, ProductValue,
 };
 
 /// The static ID of the table that defines tables
@@ -70,7 +69,11 @@ impl SystemTables {
     pub(crate) fn total_constraints_indexes() -> usize {
         Self::tables()
             .iter()
-            .flat_map(|x| x.constraints.iter().filter(|x| x.kind != ColumnIndexAttribute::UNSET))
+            .flat_map(|x| {
+                x.constraints
+                    .iter()
+                    .filter(|x| x.constraints.kind() != ConstraintKind::UNSET)
+            })
             .count()
     }
 
@@ -288,7 +291,7 @@ pub fn st_columns_schema() -> TableSchema {
         constraints: vec![ConstraintSchema {
             constraint_id: ST_CONSTRAINT_ID_INDEX_HACK.0.into(),
             constraint_name: "ct_columns_table_id".to_string(),
-            kind: ColumnIndexAttribute::INDEXED,
+            constraints: Constraints::indexed(),
             table_id: ST_COLUMNS_ID,
             //TODO: Change to multi-columns when PR for it land: StColumnFields::ColId as u32
             columns: StColumnFields::TableId.into(),
@@ -328,7 +331,7 @@ pub fn st_indexes_schema() -> TableSchema {
             ColumnSchema {
                 table_id: ST_INDEXES_ID,
                 col_id: StIndexFields::IndexName.col_id(),
-                col_name: StIndexFields::IndexName.col_name(),
+                col_name: StIndexFields::IndexName.name().to_string(),
                 col_type: AlgebraicType::String,
                 is_autoinc: false,
             },
@@ -385,7 +388,7 @@ pub(crate) fn st_sequences_schema() -> TableSchema {
             ColumnSchema {
                 table_id: ST_SEQUENCES_ID,
                 col_id: StSequenceFields::SequenceId.col_id(),
-                col_name: StSequenceFields::SequenceId.col_name(),
+                col_name: StSequenceFields::SequenceId.name().into(),
                 col_type: AlgebraicType::U32,
                 is_autoinc: true,
             },
@@ -695,7 +698,7 @@ impl From<StColumnRow<String>> for ProductValue {
         product![
             x.table_id,
             x.col_id,
-            x.col_name,
+            AlgebraicValue::String(x.col_name.to_owned()),
             AlgebraicValue::Bytes(bytes),
             x.is_autoinc,
         ]
@@ -867,9 +870,9 @@ impl From<StSequenceRow<String>> for SequenceSchema {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct StConstraintRow<Name: AsRef<str>> {
-    pub(crate) constraint_id: IndexId,
+    pub(crate) constraint_id: ConstraintId,
     pub(crate) constraint_name: Name,
-    pub(crate) kind: ColumnIndexAttribute,
+    pub(crate) kind: Constraints,
     pub(crate) table_id: TableId,
     pub(crate) columns: NonEmpty<ColId>,
 }
@@ -894,7 +897,7 @@ impl<'a> TryFrom<&'a ProductValue> for StConstraintRow<&'a str> {
             .into();
         let constraint_name = row.field_as_str(StConstraintFields::ConstraintName as usize, None)?;
         let kind = row.field_as_u8(StConstraintFields::Kind as usize, None)?;
-        let kind = ColumnIndexAttribute::try_from(kind).expect("Fail to decode ColumnIndexAttribute");
+        let kind = Constraints::try_from(kind).expect("Fail to decode Constraint");
         let table_id = row.field_as_u32(StConstraintFields::TableId as usize, None)?.into();
         let columns = to_cols(
             row,

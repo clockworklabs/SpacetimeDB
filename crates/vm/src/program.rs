@@ -2,7 +2,7 @@
 //!
 //! It carries an [EnvDb] with the functions, idents, types.
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::{MemTable, RelIter, Relation, Table};
+use spacetimedb_sats::relation::{MemTable, RelIter, Relation, Table};
 use std::collections::HashMap;
 
 use crate::env::EnvDb;

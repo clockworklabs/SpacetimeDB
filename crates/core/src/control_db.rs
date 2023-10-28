@@ -4,11 +4,11 @@ use anyhow::{anyhow, Context};
 
 use crate::address::Address;
 
-use crate::hash::hash_bytes;
 use crate::host::EnergyQuanta;
 use crate::identity::Identity;
 use crate::messages::control_db::{Database, DatabaseInstance, EnergyBalance, IdentityEmail, Node};
 use crate::stdb_path;
+use spacetimedb_sats::hash::hash_bytes;
 
 use spacetimedb_lib::name::{DomainName, DomainParsingError, InsertDomainResult, RegisterTldResult, Tld, TldRef};
 use spacetimedb_lib::recovery::RecoveryCode;

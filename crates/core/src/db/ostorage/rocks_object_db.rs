@@ -1,8 +1,8 @@
 use crate::db::ostorage::ObjectDB;
 use crate::error::DBError;
-use crate::hash::{hash_bytes, Hash};
 use bytes::Bytes;
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
+use spacetimedb_sats::hash::{hash_bytes, Hash};
 use std::fs;
 use std::path::Path;
 
@@ -78,8 +78,8 @@ mod tests {
     use crate::db::ostorage::rocks_object_db::RocksDBObjectDB;
     use crate::db::ostorage::ObjectDB;
     use crate::error::DBError;
-    use crate::hash::hash_bytes;
     use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_sats::hash::hash_bytes;
     use tempfile::TempDir;
 
     const TEST_DB_DIR_PREFIX: &str = "rocksdb_test";

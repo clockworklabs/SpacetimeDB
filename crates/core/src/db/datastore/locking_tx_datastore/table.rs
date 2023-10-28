@@ -2,10 +2,10 @@ use super::{
     btree_index::{BTreeIndex, BTreeIndexRangeIter},
     RowId,
 };
-use crate::db::datastore::traits::TableSchema;
 use indexmap::IndexMap;
 use nonempty::NonEmpty;
 use spacetimedb_primitives::ColId;
+use spacetimedb_sats::db::def::TableSchema;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
 use std::{collections::HashMap, ops::RangeBounds};
 

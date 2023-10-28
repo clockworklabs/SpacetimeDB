@@ -16,16 +16,11 @@ use crate::{
     error::DBError,
     execution_context::ExecutionContext,
 };
-
 use anyhow::Context;
-use spacetimedb_lib::{
-    hash::{hash_bytes, Hash},
-    DataKey,
-};
-
-use std::io;
-use std::sync::Arc;
-use std::sync::{Mutex, MutexGuard};
+use spacetimedb_sats::hash::{hash_bytes, Hash};
+use spacetimedb_sats::DataKey;
+use std::sync::{Arc, Mutex};
+use std::{io, sync::MutexGuard};
 
 #[derive(Clone)]
 pub struct CommitLog {
@@ -357,11 +352,10 @@ impl From<message_log::Segments> for Iter {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use spacetimedb_lib::data_key::InlineData;
-    use tempfile::TempDir;
-
     use crate::db::ostorage::memory_object_db::MemoryObjectDB;
+    use spacetimedb_sats::data_key::InlineData;
+    use spacetimedb_sats::DataKey;
+    use tempfile::TempDir;
 
     #[test]
     fn test_iter_commits() {

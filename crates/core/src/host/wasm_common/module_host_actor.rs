@@ -1,21 +1,9 @@
-use std::sync::Arc;
-use std::time::Duration;
-
-use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::TableDef;
-use crate::execution_context::ExecutionContext;
-use crate::sql;
-use crate::util::{const_unwrap, ResultInspectExt};
-use anyhow::{anyhow, Context};
-use bytes::Bytes;
-use spacetimedb_lib::buffer::DecodeError;
-use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::{bsatn, Address, ModuleDef};
-use spacetimedb_vm::expr::CrudExpr;
-
+use super::instrumentation::CallTimes;
+use super::*;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{LogLevel, Record, SystemLogger};
-use crate::hash::Hash;
+use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::execution_context::ExecutionContext;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_host::{
     CallReducerParams, DatabaseUpdate, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo,
@@ -27,11 +15,21 @@ use crate::host::{
     ReducerId, ReducerOutcome, Timestamp,
 };
 use crate::identity::Identity;
+use crate::sql;
 use crate::subscription::module_subscription_actor::{ModuleSubscriptionManager, SubscriptionEventSender};
+use crate::util::{const_unwrap, ResultInspectExt};
 use crate::worker_metrics::WORKER_METRICS;
-
-use super::instrumentation::CallTimes;
-use super::*;
+use anyhow::{anyhow, Context};
+use bytes::Bytes;
+use spacetimedb_lib::buffer::DecodeError;
+use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::{bsatn, Address, ModuleDef};
+use spacetimedb_sats::db::def::{ColumnDef, IndexDef, IndexType, TableDef};
+use spacetimedb_sats::hash::Hash;
+use spacetimedb_sats::WithTypespace;
+use spacetimedb_vm::expr::CrudExpr;
+use std::sync::Arc;
+use std::time::Duration;
 
 pub trait WasmModule: Send + 'static {
     type Instance: WasmInstance;
@@ -248,7 +246,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         &self,
         caller_identity: Identity,
         query: String,
-    ) -> Result<Vec<spacetimedb_lib::relation::MemTable>, DBError> {
+    ) -> Result<Vec<spacetimedb_sats::relation::MemTable>, DBError> {
         let db = &self.database_instance_context.relational_db;
         let auth = AuthCtx::new(self.database_instance_context.identity, caller_identity);
         // TODO(jgilles): make this a read-only TX when those get added
@@ -309,11 +307,92 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     }
 }
 
+/// The magic table id zero, for use in [`IndexDef`]s.
+///
+/// The actual table id is usually not yet known when constructing an
+/// [`IndexDef`]. [`AUTO_TABLE_ID`] can be used instead, which the storage
+/// engine will replace with the actual table id upon creation of the table
+/// respectively index.
+pub const AUTO_TABLE_ID: TableId = TableId(0);
+
+fn from_lib_tabledef(table: WithTypespace<'_, spacetimedb_lib::TableDef>) -> anyhow::Result<TableDef> {
+    let schema = table
+        .map(|t| &t.data)
+        .resolve_refs()
+        .context("recursive types not yet supported")?;
+    let schema = schema.into_product().ok().context("table not a product type?")?;
+    let table = table.ty();
+    anyhow::ensure!(
+        table.column_attrs.len() == schema.elements.len(),
+        "mismatched number of columns"
+    );
+
+    let mut columns = Vec::with_capacity(schema.elements.len());
+    let mut indexes = Vec::new();
+    for (col_id, (ty, col_attr)) in std::iter::zip(&schema.elements, &table.column_attrs).enumerate() {
+        let col = ColumnDef {
+            col_name: ty.name.clone().context("column without name")?,
+            col_type: ty.algebraic_type.clone(),
+            is_autoinc: col_attr.has_autoinc(),
+        };
+
+        let index_for_column = table.indexes.iter().find(|index| {
+            // Ignore multi-column indexes
+            index.cols.tail.is_empty() && index.cols.head.idx() == col_id
+        });
+
+        // If there's an index defined for this column already, use it,
+        // making sure that it is unique if the column has a unique constraint
+        let index_info = if let Some(index) = index_for_column {
+            Some((index.name.clone(), index.index_type))
+        } else if col_attr.has_unique() {
+            // If you didn't find an index, but the column is unique then create a unique btree index
+            // anyway.
+            Some((format!("{}_{}_unique", table.name, col.col_name), IndexType::BTree))
+        } else {
+            None
+        };
+        if let Some((name, ty)) = index_info {
+            match ty {
+                IndexType::BTree => {}
+                // TODO
+                IndexType::Hash => anyhow::bail!("hash indexes not yet supported"),
+            }
+            indexes.push(IndexDef::new(
+                name,
+                AUTO_TABLE_ID, // Will be ignored
+                col_id.into(),
+                col_attr.has_unique(),
+            ))
+        }
+        columns.push(col);
+    }
+
+    // Multi-column indexes cannot be unique (yet), so just add them.
+    indexes.extend(table.indexes.iter().filter_map(|index| {
+        (index.cols.len() > 1).then(|| IndexDef {
+            table_id: AUTO_TABLE_ID,
+            cols: index.cols.clone(),
+            name: index.name.clone(),
+            is_unique: false,
+            index_type: IndexType::BTree,
+        })
+    }));
+
+    Ok(TableDef {
+        table_name: table.name.clone(),
+        columns,
+        indexes,
+        table_type: table.table_type,
+        table_access: table.table_access,
+    })
+}
+
 fn get_tabledefs(info: &ModuleInfo) -> impl Iterator<Item = anyhow::Result<TableDef>> + '_ {
     info.catalog
         .values()
         .filter_map(EntityDef::as_table)
-        .map(|table| TableDef::from_lib_tabledef(info.typespace.with_type(table)))
+        .map(|table| from_lib_tabledef(info.typespace.with_type(table)))
 }
 
 impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {

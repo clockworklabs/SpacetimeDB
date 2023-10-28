@@ -4,12 +4,10 @@ use crate::{
     ResultBench,
 };
 use spacetimedb::db::relational_db::{open_db, RelationalDB};
-use spacetimedb::{
-    db::datastore::traits::{IndexDef, TableDef},
-    execution_context::ExecutionContext,
-};
+use spacetimedb::execution_context::ExecutionContext;
 use spacetimedb_lib::sats::AlgebraicValue;
 use spacetimedb_primitives::{ColId, TableId};
+use spacetimedb_sats::db::def::{IndexDef, TableDef};
 use std::hint::black_box;
 use tempfile::TempDir;
 
@@ -48,13 +46,14 @@ impl BenchDatabase for SpacetimeRaw {
             match index_strategy {
                 IndexStrategy::Unique => {
                     self.db
-                        .create_index(tx, IndexDef::new("id".to_string(), table_id, 0.into(), true))?;
+                        .create_index(tx, table_id, IndexDef::new("id".to_string(), table_id, 0.into(), true))?;
                 }
                 IndexStrategy::NonUnique => (),
                 IndexStrategy::MultiIndex => {
                     for (i, column) in T::product_type().elements.iter().enumerate() {
                         self.db.create_index(
                             tx,
+                            table_id,
                             IndexDef::new(column.name.clone().unwrap(), table_id, i.into(), false),
                         )?;
                     }

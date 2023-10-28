@@ -1,7 +1,5 @@
-use crate::{
-    hash::{hash_bytes, Hash},
-    stdb_path,
-};
+use crate::stdb_path;
+use spacetimedb_sats::hash::{hash_bytes, Hash};
 
 pub struct ObjectDb {
     db: sled::Db,

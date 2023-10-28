@@ -1,8 +1,8 @@
-use crate::hash::hash_bytes;
 use crate::host::wasmer;
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleHostContext;
 use anyhow::Context;
+use spacetimedb_sats::hash::hash_bytes;
 // use parking_lot::{Condvar, Mutex};
 use parking_lot::Mutex;
 use serde::Serialize;

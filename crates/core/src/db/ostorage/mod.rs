@@ -1,7 +1,6 @@
 use crate::error::DBError;
 use bytes;
-
-use crate::hash::Hash;
+use spacetimedb_sats::hash::Hash;
 
 pub mod memory_object_db;
 

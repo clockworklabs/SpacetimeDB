@@ -1,18 +1,13 @@
-use core::fmt;
-use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap};
-
-use anyhow::Context;
-use spacetimedb_lib::Hash;
-
 use crate::database_logger::SystemLogger;
 use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
-
-use super::datastore::locking_tx_datastore::MutTxId;
-use super::datastore::traits::{IndexDef, TableDef, TableSchema};
-use super::relational_db::RelationalDB;
+use anyhow::Context;
+use core::fmt;
 use spacetimedb_primitives::IndexId;
+use spacetimedb_sats::db::def::{IndexDef, TableDef, TableSchema};
+use spacetimedb_sats::hash::Hash;
+use std::borrow::Cow;
+use std::collections::{BTreeMap, HashMap};
 
 #[derive(thiserror::Error, Debug)]
 pub enum UpdateDatabaseError {

@@ -1,9 +1,9 @@
 use crate::db::ostorage::ObjectDB;
 use crate::error::DBError;
-use crate::hash::{hash_bytes, Hash};
 use bytes::Bytes;
 use sled;
 use sled::Mode::HighThroughput;
+use spacetimedb_sats::hash::{hash_bytes, Hash};
 use std::path::Path;
 
 pub struct SledObjectDB {
@@ -57,9 +57,8 @@ impl ObjectDB for SledObjectDB {
 mod tests {
     use crate::db::ostorage::sled_object_db::SledObjectDB;
     use crate::db::ostorage::ObjectDB;
-
     use crate::error::DBError;
-    use crate::hash::hash_bytes;
+    use spacetimedb_sats::hash::hash_bytes;
     use tempfile::TempDir;
 
     const TEST_DB_DIR_PREFIX: &str = "sledb_test";

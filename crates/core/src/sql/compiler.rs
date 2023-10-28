@@ -1,13 +1,14 @@
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::TableSchema;
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
 use crate::sql::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
-use spacetimedb_lib::auth::{StAccess, StTableType};
-use spacetimedb_lib::relation::{self, DbTable, FieldExpr, FieldName, Header};
-use spacetimedb_lib::table::ProductTypeMeta;
+use nonempty::NonEmpty;
+use spacetimedb_lib::operator::OpQuery;
 use spacetimedb_primitives::ColId;
-use spacetimedb_sats::AlgebraicValue;
+use spacetimedb_sats::db::auth::{StAccess, StTableType};
+use spacetimedb_sats::db::def::{IndexSchema, ProductTypeMeta, TableSchema};
+use spacetimedb_sats::relation::{self, DbTable, FieldExpr, FieldName, Header};
+use spacetimedb_sats::{AlgebraicValue, ProductType};
 use spacetimedb_vm::dsl::{db_table, db_table_raw, query};
 use spacetimedb_vm::expr::{ColumnOp, CrudExpr, DbType, Expr, QueryExpr, SourceExpr};
 use spacetimedb_vm::operator::OpCmp;
@@ -37,7 +38,7 @@ fn expr_for_projection(table: &From, of: Expr) -> Result<FieldExpr, PlanError> {
         Expr::Ident(x) => {
             let f = table.resolve_field(&x)?;
 
-            Ok(FieldExpr::Name(f.field))
+            Ok(FieldExpr::Name(f.into()))
         }
         Expr::Value(x) => Ok(FieldExpr::Value(x)),
         x => unreachable!("Wrong expression in SQL query {:?}", x),
@@ -292,12 +293,12 @@ fn compile_statement(statement: SqlAst) -> Result<CrudExpr, PlanError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::datastore::traits::{ColumnDef, IndexDef, TableDef};
     use crate::db::relational_db::tests_utils::make_test_db;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::operator::OpQuery;
-    use spacetimedb_lib::relation::DbTable;
+    use spacetimedb_sats::relation::DbTable;
     use spacetimedb_primitives::TableId;
+    use spacetimedb_sats::db::def::{ColumnDef, IndexDef, TableDef};
     use spacetimedb_sats::AlgebraicType;
     use spacetimedb_vm::expr::{IndexJoin, IndexScan, JoinExpr, Query};
     use std::ops::Bound;
@@ -346,12 +347,12 @@ mod tests {
     ) -> TableId {
         if let Query::IndexScan(IndexScan {
             table,
-            col_id,
+            columns,
             lower_bound,
             upper_bound,
         }) = op
         {
-            assert_eq!(col_id, col, "Columns don't match");
+            assert_eq!(columns, col.into(), "Columns don't match");
             assert_eq!(lower_bound, low_bound, "Lower bound don't match");
             assert_eq!(upper_bound, up_bound, "Upper bound don't match");
             table.table_id
