@@ -96,7 +96,7 @@ impl DatabaseUpdate {
                 .tables
                 .into_iter()
                 .map(|table| TableUpdate {
-                    table_id: table.table_id.0,
+                    table_id: table.table_id.into(),
                     table_name: table.table_name,
                     table_row_operations: table
                         .ops
@@ -128,7 +128,7 @@ impl DatabaseUpdate {
                 .tables
                 .into_iter()
                 .map(|table| TableUpdateJson {
-                    table_id: table.table_id.0,
+                    table_id: table.table_id.into(),
                     table_name: table.table_name,
                     table_row_operations: table
                         .ops

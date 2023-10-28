@@ -1,5 +1,6 @@
 use auth::StAccess;
 use auth::StTableType;
+use derive_more::Display;
 use sats::impl_serialize;
 pub use spacetimedb_sats::buffer;
 pub mod address;
@@ -195,14 +196,36 @@ pub struct TypeAlias {
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
 pub struct IndexDef {
     pub name: String,
-    pub ty: IndexType,
-    pub col_ids: Vec<u8>,
+    pub index_type: IndexType,
+    pub cols: Vec<u8>,
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Display, de::Deserialize, ser::Serialize)]
 pub enum IndexType {
     BTree,
     Hash,
+}
+
+impl TryFrom<u8> for IndexType {
+    type Error = ();
+    fn try_from(v: u8) -> Result<Self, Self::Error> {
+        match v {
+            0 => Ok(IndexType::BTree),
+            1 => Ok(IndexType::Hash),
+            _ => Err(()),
+        }
+    }
+}
+
+impl TryFrom<&str> for IndexType {
+    type Error = ();
+    fn try_from(v: &str) -> Result<Self, Self::Error> {
+        match v {
+            "BTree" => Ok(IndexType::BTree),
+            "Hash" => Ok(IndexType::Hash),
+            _ => Err(()),
+        }
+    }
 }
 
 // NOTE: Duplicated in `crates/bindings-macro/src/lib.rs`
@@ -226,16 +249,16 @@ bitflags::bitflags! {
 }
 
 impl ColumnIndexAttribute {
-    pub const fn is_unique(self) -> bool {
+    pub const fn has_unique(self) -> bool {
         self.contains(Self::UNIQUE)
     }
-    pub const fn is_indexed(self) -> bool {
+    pub const fn has_indexed(self) -> bool {
         self.contains(Self::INDEXED)
     }
-    pub const fn is_autoinc(self) -> bool {
+    pub const fn has_autoinc(self) -> bool {
         self.contains(Self::AUTO_INC)
     }
-    pub const fn is_primary(self) -> bool {
+    pub const fn has_primary(self) -> bool {
         self.contains(Self::PRIMARY_KEY)
     }
 }

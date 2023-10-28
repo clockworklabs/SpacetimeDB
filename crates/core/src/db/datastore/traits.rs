@@ -4,7 +4,7 @@ use anyhow::Context;
 use nonempty::NonEmpty;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::relation::{Column, DbTable, FieldName, FieldOnly, Header, TableField};
-use spacetimedb_lib::{ColumnIndexAttribute, DataKey, Hash};
+use spacetimedb_lib::{ColumnIndexAttribute, DataKey, Hash, IndexType};
 use spacetimedb_primitives::{ColId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, WithTypespace};
@@ -12,6 +12,8 @@ use spacetimedb_vm::expr::SourceExpr;
 use std::iter;
 use std::{borrow::Cow, ops::RangeBounds, sync::Arc};
 
+#[cfg(test)]
+use super::locking_tx_datastore::SystemTableQuery;
 use super::{system_tables::StTableRow, Result};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,6 +49,7 @@ pub struct IndexSchema {
     pub(crate) index_name: String,
     pub(crate) is_unique: bool,
     pub(crate) cols: NonEmpty<ColId>,
+    pub(crate) index_type: IndexType,
 }
 
 /// This type is just the [IndexSchema] without the autoinc fields
@@ -56,6 +59,7 @@ pub struct IndexDef {
     pub(crate) cols: NonEmpty<ColId>,
     pub(crate) name: String,
     pub(crate) is_unique: bool,
+    pub(crate) index_type: IndexType,
 }
 
 impl IndexDef {
@@ -65,6 +69,7 @@ impl IndexDef {
             name,
             is_unique,
             table_id,
+            index_type: IndexType::BTree,
         }
     }
 }
@@ -76,6 +81,7 @@ impl From<IndexSchema> for IndexDef {
             cols: value.cols,
             name: value.index_name,
             is_unique: value.is_unique,
+            index_type: value.index_type,
         }
     }
 }
@@ -147,7 +153,7 @@ pub struct ConstraintSchema {
     pub(crate) constraint_name: String,
     pub(crate) kind: ColumnIndexAttribute,
     pub(crate) table_id: TableId,
-    pub(crate) columns: Vec<ColId>,
+    pub(crate) columns: NonEmpty<ColId>,
 }
 
 /// This type is just the [ConstraintSchema] without the autoinc fields
@@ -216,7 +222,7 @@ impl TableSchema {
             .map(|pos| {
                 self.get_column(pos).ok_or(
                     InvalidFieldError {
-                        col_pos: pos,
+                        col_pos: pos.into(),
                         name: None,
                     }
                     .into(),
@@ -335,19 +341,19 @@ impl TableDef {
             let col = ColumnDef {
                 col_name: ty.name.clone().context("column without name")?,
                 col_type: ty.algebraic_type.clone(),
-                is_autoinc: col_attr.is_autoinc(),
+                is_autoinc: col_attr.has_autoinc(),
             };
 
             let index_for_column = table.indexes.iter().find(|index| {
                 // Ignore multi-column indexes
-                matches!(*index.col_ids, [index_col_id] if index_col_id as usize == col_id)
+                matches!(*index.cols, [index_col_id] if index_col_id as usize == col_id)
             });
 
             // If there's an index defined for this column already, use it,
             // making sure that it is unique if the column has a unique constraint
             let index_info = if let Some(index) = index_for_column {
-                Some((index.name.clone(), index.ty))
-            } else if col_attr.is_unique() {
+                Some((index.name.clone(), index.index_type))
+            } else if col_attr.has_unique() {
                 // If you didn't find an index, but the column is unique then create a unique btree index
                 // anyway.
                 Some((
@@ -367,7 +373,7 @@ impl TableDef {
                     name,
                     AUTO_TABLE_ID,
                     ColId(col_id as u32),
-                    col_attr.is_unique(),
+                    col_attr.has_unique(),
                 ))
             }
             columns.push(col);
@@ -375,7 +381,7 @@ impl TableDef {
 
         // Multi-column indexes cannot be unique (yet), so just add them.
         let multi_col_indexes = table.indexes.iter().filter_map(|index| {
-            if let [a, b, rest @ ..] = &index.col_ids[..] {
+            if let [a, b, rest @ ..] = &*index.cols {
                 Some(IndexDef {
                     table_id: AUTO_TABLE_ID,
                     cols: NonEmpty {
@@ -386,6 +392,7 @@ impl TableDef {
                     },
                     name: index.name.clone(),
                     is_unique: false,
+                    index_type: IndexType::BTree,
                 })
             } else {
                 None
@@ -550,6 +557,9 @@ pub trait TxDatastore: DataRow + Tx {
         table_id: TableId,
         row_id: &'a Self::RowId,
     ) -> Result<Option<Self::DataRef<'a>>>;
+
+    #[cfg(test)]
+    fn query_st_tables<'a>(&'a self, ctx: &'a ExecutionContext<'a>, tx: &'a Self::TxId) -> SystemTableQuery<'a>;
 }
 
 pub trait MutTxDatastore: TxDatastore + MutTx {
@@ -692,7 +702,7 @@ mod tests {
     use nonempty::NonEmpty;
     use spacetimedb_lib::{
         auth::{StAccess, StTableType},
-        ColumnIndexAttribute,
+        ColumnIndexAttribute, IndexType,
     };
     use spacetimedb_primitives::ColId;
     use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductType, ProductTypeElement, Typespace};
@@ -708,13 +718,13 @@ mod tests {
             indexes: vec![
                 spacetimedb_lib::IndexDef {
                     name: "id_and_name".into(),
-                    ty: spacetimedb_lib::IndexType::BTree,
-                    col_ids: vec![0, 1],
+                    index_type: spacetimedb_lib::IndexType::BTree,
+                    cols: [0, 1].into(),
                 },
                 spacetimedb_lib::IndexDef {
                     name: "just_name".into(),
-                    ty: spacetimedb_lib::IndexType::BTree,
-                    col_ids: vec![1],
+                    index_type: spacetimedb_lib::IndexType::BTree,
+                    cols: [1].into(),
                 },
             ],
             table_type: StTableType::User,
@@ -750,24 +760,27 @@ mod tests {
             indexes: vec![
                 IndexDef {
                     table_id: AUTO_TABLE_ID,
-                    cols: NonEmpty::new(ColId(0)),
+                    cols: ColId(0).into(),
                     name: "Person_id_unique".into(),
                     is_unique: true,
+                    index_type: IndexType::BTree,
                 },
                 IndexDef {
                     table_id: AUTO_TABLE_ID,
                     cols: NonEmpty {
                         head: ColId(0),
-                        tail: vec![ColId(1)],
+                        tail: [ColId(1)].into(),
                     },
                     name: "id_and_name".into(),
                     is_unique: false,
+                    index_type: IndexType::BTree,
                 },
                 IndexDef {
                     table_id: AUTO_TABLE_ID,
-                    cols: NonEmpty::new(ColId(1)),
+                    cols: ColId(1).into(),
                     name: "just_name".into(),
                     is_unique: false,
+                    index_type: IndexType::BTree,
                 },
             ],
             table_type: StTableType::User,

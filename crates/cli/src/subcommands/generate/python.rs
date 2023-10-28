@@ -241,7 +241,7 @@ fn autogen_python_product_table_common(
                 .unwrap()
                 .iter()
                 .enumerate()
-                .find_map(|(idx, attr)| attr.is_primary().then_some(idx))
+                .find_map(|(idx, attr)| attr.has_primary().then_some(idx))
                 .map(|idx| {
                     let field_name = product_type.elements[idx]
                         .name
@@ -326,14 +326,14 @@ fn autogen_python_product_table_common(
                     .to_case(Case::Snake);
 
                 writeln!(output, "@classmethod").unwrap();
-                if attr.is_unique() {
+                if attr.has_unique() {
                     writeln!(output, "def filter_by_{field_name}(cls, {field_name}) -> {name}:").unwrap();
                 } else {
                     writeln!(output, "def filter_by_{field_name}(cls, {field_name}) -> List[{name}]:").unwrap();
                 }
                 {
                     indent_scope!(output);
-                    if attr.is_unique() {
+                    if attr.has_unique() {
                         writeln!(output, "return next(iter([column_value for column_value in SpacetimeDBClient.instance._get_table_cache(\"{name}\").values() if column_value.{field_name} == {field_name}]), None)").unwrap();
                     } else {
                         writeln!(output, "return [column_value for column_value in SpacetimeDBClient.instance._get_table_cache(\"{name}\").values() if column_value.{field_name} == {field_name}]").unwrap();

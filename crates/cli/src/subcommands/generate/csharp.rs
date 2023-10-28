@@ -652,7 +652,7 @@ fn autogen_csharp_product_table_common(
                 let indexed_fields: Vec<(&ProductTypeElement, String)> = column_attrs
                     .iter()
                     .enumerate()
-                    .filter(|a| a.1.is_unique() || a.1.is_primary())
+                    .filter(|a| a.1.has_unique() || a.1.has_primary())
                     .map(|a| &product_type.elements[a.0])
                     .map(|f| (f, f.name.as_ref().unwrap().replace("r#", "").to_case(Case::Pascal)))
                     .collect();
@@ -928,7 +928,7 @@ fn autogen_csharp_access_funcs_for_struct(
         .iter()
         .copied()
         .enumerate()
-        .partition::<Vec<_>, _>(|(_, attr)| attr.is_unique());
+        .partition::<Vec<_>, _>(|(_, attr)| attr.has_unique());
     let unique_it = unique.into_iter().chain(nonunique);
     writeln!(
         output,
@@ -954,8 +954,8 @@ fn autogen_csharp_access_funcs_for_struct(
     let mut primary_col_idx = None;
 
     for (col_i, attr) in unique_it {
-        let is_unique = attr.is_unique();
-        let is_primary = attr.is_primary();
+        let is_unique = attr.has_unique();
+        let is_primary = attr.has_primary();
         if is_primary {
             if primary_col_idx.is_some() {
                 panic!("Multiple primary columns defined for table: {}", table_name);

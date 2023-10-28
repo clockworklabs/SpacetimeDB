@@ -671,6 +671,7 @@ mod tests {
     #![allow(clippy::disallowed_macros)]
 
     use nonempty::NonEmpty;
+    use spacetimedb_lib::IndexType;
     use spacetimedb_primitives::ColId;
     use std::sync::{Arc, Mutex};
 
@@ -712,6 +713,7 @@ mod tests {
             cols: NonEmpty::collect(cols.iter().copied().map(Into::into)).unwrap(),
             name: name.to_string(),
             is_unique: false,
+            index_type: IndexType::BTree,
         }
     }
 
