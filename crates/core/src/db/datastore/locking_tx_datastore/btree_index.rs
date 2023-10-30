@@ -62,6 +62,7 @@ impl Iterator for BTreeIndexIter<'_> {
 /// [BTreeIndex]
 pub struct BTreeIndexRangeIter<'a> {
     range_iter: btree_set::Range<'a, IndexKey>,
+    keys_scanned: u64,
 }
 
 impl<'a> Iterator for BTreeIndexRangeIter<'a> {
@@ -69,7 +70,18 @@ impl<'a> Iterator for BTreeIndexRangeIter<'a> {
 
     #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Option<Self::Item> {
-        self.range_iter.next().map(|key| &key.row_id)
+        if let Some(key) = self.range_iter.next() {
+            self.keys_scanned += 1;
+            Some(&key.row_id)
+        } else {
+            None
+        }
+    }
+}
+
+impl BTreeIndexRangeIter<'_> {
+    pub fn keys_scanned(&self) -> u64 {
+        self.keys_scanned
     }
 }
 
@@ -161,6 +173,7 @@ impl BTreeIndex {
         let end = map(range.end_bound(), DataKey::max_datakey());
         BTreeIndexRangeIter {
             range_iter: self.idx.range((start, end)),
+            keys_scanned: 0,
         }
     }
 
