@@ -606,10 +606,10 @@ pub(crate) mod tests {
         let row = product!(1u64, "health");
         let table_id = create_table_from_program(p, "inventory", head.clone(), &[row])?;
 
-        let inv = db_table(head, "inventory".to_owned(), table_id);
+        let inv = db_table(head, table_id);
 
         let data = MemTable::from_value(scalar(1u64));
-        let rhs = data.get_field(0).unwrap().clone();
+        let rhs = data.get_field_pos(0).unwrap().clone();
 
         let q = query(inv).with_join_inner(data, FieldName::positional("inventory", 0), rhs);
 

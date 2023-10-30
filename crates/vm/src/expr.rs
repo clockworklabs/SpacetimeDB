@@ -2,7 +2,7 @@ use derive_more::From;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::error::AuthError;
 use spacetimedb_lib::relation::{
-    DbTable, FieldExpr, FieldName, Header, MemTable, RelValueRef, Relation, RowCount, Table,
+    Column, DbTable, FieldExpr, FieldName, Header, MemTable, RelValueRef, Relation, RowCount, Table,
 };
 use spacetimedb_lib::table::ProductTypeMeta;
 use spacetimedb_lib::Identity;
@@ -303,6 +303,15 @@ impl From<SourceExpr> for Table {
     }
 }
 
+impl From<&SourceExpr> for DbTable {
+    fn from(value: &SourceExpr) -> Self {
+        match value {
+            SourceExpr::MemTable(_) => unreachable!(),
+            SourceExpr::DbTable(t) => t.clone(),
+        }
+    }
+}
+
 impl SourceExpr {
     pub fn get_db_table(&self) -> Option<&DbTable> {
         match self {
@@ -330,6 +339,17 @@ impl SourceExpr {
             SourceExpr::MemTable(x) => x.table_access,
             SourceExpr::DbTable(x) => x.table_access,
         }
+    }
+
+    /// Check if the `name` of the [FieldName] exist on this [SourceExpr]
+    ///
+    /// Warning: It ignores the `table_name`
+    pub fn get_column_by_field<'a>(&'a self, field: &'a FieldName) -> Option<&Column> {
+        match self {
+            SourceExpr::MemTable(x) => &x.head,
+            SourceExpr::DbTable(x) => &x.head,
+        }
+        .column(field)
     }
 }
 
@@ -425,6 +445,15 @@ pub enum CrudExpr {
         kind: DbType,
         table_access: StAccess,
     },
+}
+
+impl CrudExpr {
+    pub fn optimize(self) -> Self {
+        match self {
+            CrudExpr::Query(x) => CrudExpr::Query(x.optimize()),
+            _ => self,
+        }
+    }
 }
 
 // impl AuthAccess for CrudExpr {
@@ -543,6 +572,85 @@ impl Query {
             Self::IndexJoin(join) => QuerySources::Expr(join.probe_side.sources()),
             Self::JoinInner(join) => QuerySources::Expr(join.rhs.sources()),
         }
+    }
+}
+
+// IndexArgument represents an equality or range predicate that can be answered
+// using an index.
+pub enum IndexArgument {
+    Eq {
+        col_id: ColId,
+        value: AlgebraicValue,
+    },
+    LowerBound {
+        col_id: ColId,
+        value: AlgebraicValue,
+        inclusive: bool,
+    },
+    UpperBound {
+        col_id: ColId,
+        value: AlgebraicValue,
+        inclusive: bool,
+    },
+}
+
+// Sargable stands for Search ARGument ABLE.
+// A sargable predicate is one that can be answered using an index.
+fn is_sargable(table: &SourceExpr, op: &ColumnOp) -> Option<IndexArgument> {
+    if let ColumnOp::Cmp {
+        op: OpQuery::Cmp(op),
+        lhs,
+        rhs,
+    } = op
+    {
+        // lhs must be a field
+        let ColumnOp::Field(FieldExpr::Name(ref name)) = **lhs else {
+            return None;
+        };
+        // rhs must be a value
+        let ColumnOp::Field(FieldExpr::Value(ref value)) = **rhs else {
+            return None;
+        };
+        // lhs field must exist
+        let column = table.get_column_by_field(name)?;
+        // lhs field must have an index
+        if !column.is_indexed {
+            return None;
+        }
+
+        match op {
+            OpCmp::Eq => Some(IndexArgument::Eq {
+                col_id: column.col_id,
+                value: value.clone(),
+            }),
+            // a < 5 => exclusive upper bound
+            OpCmp::Lt => Some(IndexArgument::UpperBound {
+                col_id: column.col_id,
+                value: value.clone(),
+                inclusive: false,
+            }),
+            // a > 5 => exclusive lower bound
+            OpCmp::Gt => Some(IndexArgument::LowerBound {
+                col_id: column.col_id,
+                value: value.clone(),
+                inclusive: false,
+            }),
+            // a <= 5 => inclusive upper bound
+            OpCmp::LtEq => Some(IndexArgument::UpperBound {
+                col_id: column.col_id,
+                value: value.clone(),
+                inclusive: true,
+            }),
+            // a >= 5 => inclusive lower bound
+            OpCmp::GtEq => Some(IndexArgument::LowerBound {
+                col_id: column.col_id,
+                value: value.clone(),
+                inclusive: true,
+            }),
+            OpCmp::NotEq => None,
+        }
+    } else {
+        None
     }
 }
 
@@ -985,6 +1093,139 @@ impl QueryExpr {
         } else {
             Bound::Excluded(value)
         }
+    }
+
+    // Try to turn an applicable join into an index join.
+    // An applicable join is one that can use an index to probe the lhs.
+    // It must also project only the columns from the lhs.
+    //
+    // Ex. SELECT Left.* FROM Left JOIN Right ON Left.id = Right.id ...
+    // where `Left` has an index defined on `id`.
+    fn try_index_join(mut query: QueryExpr) -> QueryExpr {
+        // We expect 2 and only 2 operations - a join followed by a wildcard projection.
+        if query.query.len() != 2 {
+            return query;
+        }
+
+        let Some(table) = query.source.get_db_table().cloned() else {
+            return query;
+        };
+
+        let source = query.source;
+        let second = query.query.pop().unwrap();
+        let first = query.query.pop().unwrap();
+
+        // An applicable join must be followed by a wildcard projection.
+        let Query::Project(_, Some(wildcard_table_id)) = second else {
+            return QueryExpr {
+                source,
+                query: vec![first, second],
+            };
+        };
+
+        match first {
+            Query::JoinInner(JoinExpr {
+                rhs: probe_side,
+                col_lhs: index_field,
+                col_rhs: probe_field,
+            }) => {
+                if !probe_side.query.is_empty() && wildcard_table_id == table.table_id {
+                    // An applicable join must have an index defined on the correct field.
+                    if let Some(col) = table.head.column(&index_field) {
+                        if col.is_indexed {
+                            let index_join = IndexJoin {
+                                probe_side,
+                                probe_field,
+                                index_header: table.head.clone(),
+                                index_table: table.table_id,
+                                index_col: col.col_id,
+                            };
+                            return QueryExpr {
+                                source,
+                                query: vec![Query::IndexJoin(index_join)],
+                            };
+                        }
+                    }
+                }
+                let first = Query::JoinInner(JoinExpr {
+                    rhs: probe_side,
+                    col_lhs: index_field,
+                    col_rhs: probe_field,
+                });
+                QueryExpr {
+                    source,
+                    query: vec![first, second],
+                }
+            }
+            first => QueryExpr {
+                source,
+                query: vec![first, second],
+            },
+        }
+    }
+
+    /// Look for filters that could use indexes
+    fn optimize_select(mut q: QueryExpr, op: ColumnOp, tables: &[SourceExpr]) -> QueryExpr {
+        'outer: for ref op in op.to_vec() {
+            // Go through each table schema referenced in the query.
+            // Find the first sargable condition and short-circuit.
+            for schema in tables {
+                match is_sargable(schema, op) {
+                    // found sargable equality condition for one of the table schemas
+                    Some(IndexArgument::Eq { col_id, value }) => {
+                        q = q.with_index_eq(schema.into(), col_id, value);
+                        continue 'outer;
+                    }
+                    // found sargable range condition for one of the table schemas
+                    Some(IndexArgument::LowerBound {
+                        col_id,
+                        value,
+                        inclusive,
+                    }) => {
+                        q = q.with_index_lower_bound(schema.into(), col_id, value, inclusive);
+                        continue 'outer;
+                    }
+                    // found sargable range condition for one of the table schemas
+                    Some(IndexArgument::UpperBound {
+                        col_id,
+                        value,
+                        inclusive,
+                    }) => {
+                        q = q.with_index_upper_bound(schema.into(), col_id, value, inclusive);
+                        continue 'outer;
+                    }
+                    None => {}
+                }
+            }
+            // filter condition cannot be answered using an index
+            q = q.with_select(op.clone());
+        }
+
+        q
+    }
+
+    pub fn optimize(self) -> Self {
+        let mut q = Self {
+            source: self.source.clone(),
+            query: Vec::with_capacity(self.query.len()),
+        };
+
+        let tables = self.sources();
+        let tables: Vec<_> = core::iter::once(QuerySources::One(tables.head))
+            .chain(tables.tail)
+            .flat_map(|x| x.into_iter())
+            .collect();
+
+        for query in self.query {
+            match query {
+                Query::Select(op) => {
+                    q = Self::optimize_select(q, op, &tables);
+                }
+                Query::JoinInner(join) => q = q.with_join_inner(join.rhs.optimize(), join.col_lhs, join.col_rhs),
+                _ => q.query.push(query),
+            };
+        }
+        Self::try_index_join(q)
     }
 }
 

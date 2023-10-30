@@ -4461,6 +4461,7 @@ version = "0.7.1"
 dependencies = [
  "anyhow",
  "derive_more",
+ "nonempty",
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-sats",

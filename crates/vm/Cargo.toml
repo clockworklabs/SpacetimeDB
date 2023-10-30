@@ -12,6 +12,7 @@ spacetimedb-primitives = { path = "../primitives", version = "0.7.1" }
 
 anyhow.workspace = true
 derive_more.workspace = true
+nonempty.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 
