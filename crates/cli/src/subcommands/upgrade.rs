@@ -90,7 +90,8 @@ pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
     }
 
     // Download the archive from the URL
-    let temp_path = tempfile::tempdir()?.into_path().join(download_name);
+    let temp_dir = tempfile::tempdir()?.into_path();
+    let temp_path = &temp_dir.join(download_name.clone());
     let response = reqwest::blocking::get(&asset.unwrap().browser_download_url)?;
     fs::write(&temp_path, response.bytes()?)?;
 
@@ -98,13 +99,15 @@ pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
         let tar_gz = fs::File::open(&temp_path)?;
         let tar = GzDecoder::new(tar_gz);
         let mut archive = Archive::new(tar);
-        archive.unpack("/tmp/")?;
+        archive.unpack(&temp_dir)?;
     }
 
-    let new_exe_path = if download_name.ends_with(".tar.gz") {
-        "/tmp/spacetime".to_string()
-    } else {
+    let new_exe_path = if temp_path.ends_with(".exe") {
         temp_path.clone()
+    } else if download_name.ends_with(".tar.gz") {
+        temp_dir.join("spacetime")
+    } else {
+        return Err(anyhow::anyhow!("Unsupported download type"));
     };
 
     fs::copy(&new_exe_path, current_exe_path)?;
