@@ -13,6 +13,10 @@ harness = false
 name = "generic"
 harness = false
 
+[[bench]]
+name = "callgrind"
+harness = false
+
 [[bin]]
 name = "summarize"
 
@@ -47,3 +51,13 @@ tempdir.workspace = true
 tokio.workspace = true
 tracing-subscriber.workspace = true
 walkdir.workspace = true
+itertools.workspace = true
+
+# we've forked iai-callgrind to add custom entrypoint support.
+# FIXME(jgilles): revert to depending on the crates version if we ever get that upstreamed.
+
+# iai-callgrind = "0.7.2"
+iai-callgrind = { git = "https://github.com/clockworklabs/iai-callgrind.git", branch = "main" }
+iai-callgrind-runner = { git = "https://github.com/clockworklabs/iai-callgrind.git", branch = "main" }
+iai-callgrind-macros = { git = "https://github.com/clockworklabs/iai-callgrind.git", branch = "main" }
+

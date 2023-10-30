@@ -1,3 +1,4 @@
+use serde::Deserialize;
 use spacetimedb_lib::sats;
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -96,13 +97,16 @@ impl BenchTable for Location {
 }
 
 /// How we configure the indexes for a table used in benchmarks.
-#[derive(PartialEq, Copy, Clone, Debug)]
+#[derive(PartialEq, Copy, Clone, Debug, Deserialize)]
 pub enum IndexStrategy {
     /// Unique "id" field at index 0
+    #[serde(alias = "unique")]
     Unique,
     /// No unique field or indexes
+    #[serde(alias = "non_unique")]
     NonUnique,
     /// Non-unique index on all fields
+    #[serde(alias = "multi_index")]
     MultiIndex,
 }
 
@@ -134,7 +138,7 @@ pub fn snake_case_table_name<T: BenchTable>(style: IndexStrategy) -> String {
 }
 
 // ---------- data synthesis ----------
-
+#[derive(Clone)]
 pub struct XorShiftLite(pub u64);
 impl XorShiftLite {
     fn gen(&mut self) -> u64 {
@@ -177,6 +181,34 @@ impl RandomTable for Location {
 pub fn create_sequential<T: RandomTable>(seed: u64, count: u32, buckets: u64) -> Vec<T> {
     let mut rng = XorShiftLite(seed);
     (0..count).map(|id| T::gen(id, &mut rng, buckets)).collect()
+}
+
+/// Create a table whose first `identical` rows are identical except for their `id` column.
+/// The remainder of the rows in the table are random. The total size of the table is `total`.
+/// Intended for filter benchmarks.
+pub fn create_partly_identical<T: RandomTable>(seed: u64, identical: u64, total: u64) -> Vec<T> {
+    // large to avoid duplicates.
+    // technically, overlaps with the identical part of the table can still occur;
+    // in a given row+column, this happens with probability 1 / 2^32, which is negligible.
+    // We use u32::max because sqlite sometimes chokes on large u64s.
+    let buckets = u32::MAX as u64;
+
+    let mut rng = XorShiftLite(seed);
+    let mut result = Vec::with_capacity(total as usize);
+    let mut id = 0;
+    for _ in 0..identical {
+        // clone to preserve rng state
+        let mut rng_ = rng.clone();
+        result.push(T::gen(id as u32, &mut rng_, buckets));
+        id += 1;
+    }
+    // advance rng
+    drop(T::gen(id as u32, &mut rng, buckets));
+    for _ in identical..total {
+        result.push(T::gen(id as u32, &mut rng, buckets));
+        id += 1;
+    }
+    result
 }
 
 /// May contain repeated IDs!
@@ -279,7 +311,7 @@ pub fn nth_name(n: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{nth_name, XorShiftLite};
+    use super::{create_partly_identical, nth_name, XorShiftLite};
 
     #[test]
     fn test_nth_name() {
@@ -302,6 +334,28 @@ mod tests {
                     nth_name(prev)
                 );
             }
+        }
+    }
+
+    #[test]
+    fn test_partly_identical() {
+        use crate::schemas::Person;
+
+        let identical = 100;
+        let total = 2000;
+
+        let data = create_partly_identical::<Person>(0xdeadbeef, identical, total);
+        let p1 = data[0].clone();
+
+        for i in 1..(identical as usize) {
+            assert_ne!(p1.id, data[i].id, "identical part should still have distinct ids");
+            assert_eq!(p1.name, data[i].name, "names should be identical");
+            assert_eq!(p1.age, data[i].age, "ages should be identical");
+        }
+        for i in (identical as usize)..(total as usize) {
+            assert_ne!(p1.id, data[i].id, "identical part should still have distinct ids");
+            assert_ne!(p1.name, data[i].name, "names should not be identical");
+            assert_ne!(p1.age, data[i].age, "ages should not be identical");
         }
     }
 }

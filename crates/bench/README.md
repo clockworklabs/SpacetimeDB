@@ -1,9 +1,81 @@
 # spacetimedb-bench
-Benchmarking suite for SpacetimeDB using [Criterion](https://github.com/bheisler/criterion.rs). Provides comparisons between the underlying spacetime datastore, spacetime modules, and sqlite.
+Benchmarking suite for SpacetimeDB using [Criterion](https://github.com/bheisler/criterion.rs) and [Callgrind](https://valgrind.org/docs/manual/cl-manual.html) (via [iai-callgrind](https://github.com/clockworklabs/iai-callgrind)). Provides comparisons between the underlying spacetime datastore, spacetime modules, and sqlite.
 
+To run the criterion benchmarks:
+
+```bash
+cargo bench --bench generic --bench special
+```
+
+To run the callgrind benchmarks, you need valgrind installed.
+The easiest way to get it is to use the docker image in this folder.
+There's a handy script:
+```bash
+# enter a prepared docker image with valgrind & a rust toolchain available.
+# mounts the host SpacetimeDB folder to `/projects/SpacetimeDB`.
+bash iai-docker.sh 
+```
+Then, in the docker image:
+```bash
+cd /projects/SpacetimeDB/crates/bench
+cargo bench --bench iai
+```
+To avoid fighting with the host system, the docker image uses a separate CARGO_TARGET_DIR.
+This will be visible on the host system as `SpacetimeDB/linux-target`.
+Callgrind benchmark outputs will be placed in the folder `SpacetimeDB/linux-target/iai`. 
+
+## Generating reports
+
+There are a lot of benchmarks and it can be hard to read terminal output.
+
+To generate a nicely formatted markdown report, you can use the "summarize" binary.
+This is used on CI (see [`../../.github/workflows/benchmarks.yml`](../../.github/workflows/benchmarks.yml), and
+[`../../.github/workflows/callgrind_benchmarks.yml`](../../.github/workflows/callgrind_benchmarks.yml)).
+
+### Criterion
+
+To generate a report without comparisons, use:
+```bash
+cargo bench --bench generic --bench special -- --save-baseline current
+cargo run --bin summarize markdown-report current
+```
+
+To compare to another branch, do:
+```bash
+git checkout master
+cargo bench --bench generic --bench special -- --save-baseline base
+git checkout high-octane-feature-branch
+cargo bench --bench generic --bench special -- --save-baseline current
+cargo run --bin summarize markdown-report current base
+```
+
+Of course, this will take about an hour, so it might be better to let the CI do it for you.
+
+
+### Callgrind
+
+To generate a report, first:
+```bash
+bash iai-docker.sh 
+```
+Then, in the docker image:
+```bash
+cd /projects/SpacetimeDB/crates/bench
+cargo bench --bench iai -- --save-summary pretty-json
+cargo run --bin summarize pack-callgrind current
+cargo run --bin summarize markdown-report-callgrind current
+```
+
+If you have multiple branches, generate separate packed json files for them,
+then use 
+
+```bash
+cargo run --bin summarize markdown-report-callgrind current base
+```
+
+
+## Criterion benchmarks
 Timings for spacetime modules should be understood as *latencies to call a spacetime reducer without network delays*. They include serialization and deserialization times for any arguments passed. There are also separate benchmarks that measure these times on their own.
-
-## Benchmark structure
 
 The complete structure (not yet fully implemented) is as follows:
 
@@ -57,27 +129,6 @@ cargo bench -- 'mem/.*/unique'
 ```
 Will run benchmarks involving unique primary keys against all databases, without writing to disc.
 
-## Pretty report
-To generate a nicely formatted markdown report, you can use the "summarize" binary.
-This is used on CI (see [`../../.github/workflows/benchmarks.yml`](../../.github/workflows/benchmarks.yml)).
-
-To generate a report without comparisons, use:
-```bash
-cargo bench --bench generic --bench special -- --save-baseline current
-cargo run --bin summarize markdown-report current
-```
-
-To compare to another branch, do:
-```bash
-git checkout master
-cargo bench --bench generic --bench special -- --save-baseline base
-git checkout high-octane-feature-branch
-cargo bench --bench generic --bench special -- --save-baseline current
-cargo run --bin summarize markdown-report current base
-```
-
-Of course, this will take about an hour, so it might be better to let the CI do it for you.
-
 ## Adding more
 
 There are two ways to write benchmarks:
@@ -108,16 +159,6 @@ To add a new generic benchmark, you'll need to:
 ## Install tools
 
 There are also some scripts that rely on external tools to extract data from the benchmarks.
-
-### Critcmp
-
-- [critcmp](https://github.com/BurntSushi/critcmp) can be used to generate tables
-    summarizing changes to criterion.rs benchmarks.
-
-```bash
-cargo install critcmp
-```
-
 
 ### OSX Only
 

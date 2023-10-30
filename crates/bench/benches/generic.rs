@@ -247,7 +247,6 @@ fn iterate<DB: BenchDatabase, T: BenchTable + RandomTable>(
     Ok(())
 }
 
-/// Implements both "filter" and "find" benchmarks.
 #[inline(never)]
 fn filter<DB: BenchDatabase, T: BenchTable + RandomTable>(
     g: &mut Group,
@@ -304,7 +303,6 @@ fn filter<DB: BenchDatabase, T: BenchTable + RandomTable>(
     Ok(())
 }
 
-/// Implements both "filter" and "find" benchmarks.
 #[inline(never)]
 fn find<DB: BenchDatabase, T: BenchTable + RandomTable>(
     g: &mut Group,
