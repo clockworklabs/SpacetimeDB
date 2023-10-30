@@ -9,6 +9,7 @@ use spacetimedb_primitives::{ColId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, WithTypespace};
 use spacetimedb_vm::expr::SourceExpr;
+use std::iter;
 use std::{borrow::Cow, ops::RangeBounds, sync::Arc};
 
 use super::{system_tables::StTableRow, Result};
@@ -306,6 +307,8 @@ impl TableDef {
             "mismatched number of columns"
         );
 
+        // Build single-column index definitions, determining `is_unique` from
+        // their respective column attributes.
         let mut columns = Vec::with_capacity(schema.elements.len());
         let mut indexes = Vec::new();
         for (col_id, (ty, col_attr)) in std::iter::zip(&schema.elements, &table.column_attrs).enumerate() {
@@ -349,6 +352,26 @@ impl TableDef {
             }
             columns.push(col);
         }
+
+        // Multi-column indexes cannot be unique (yet), so just add them.
+        let multi_col_indexes = table.indexes.iter().filter_map(|index| {
+            if let [a, b, rest @ ..] = &index.col_ids[..] {
+                Some(IndexDef {
+                    table_id: TableId(0), // Will be ignored
+                    cols: NonEmpty {
+                        head: ColId::from(*a),
+                        tail: iter::once(ColId::from(*b))
+                            .chain(rest.iter().copied().map(Into::into))
+                            .collect(),
+                    },
+                    name: index.name.clone(),
+                    is_unique: false,
+                })
+            } else {
+                None
+            }
+        });
+        indexes.extend(multi_col_indexes);
 
         Ok(TableDef {
             table_name: table.name.clone(),
