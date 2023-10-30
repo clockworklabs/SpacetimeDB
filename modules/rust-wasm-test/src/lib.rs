@@ -44,6 +44,13 @@ pub struct _Private {
     name: String,
 }
 
+#[spacetimedb(table)]
+#[spacetimedb(index(btree, name = "multi_column_index", x, y))]
+pub struct Point {
+  x: i64,
+  y: i64,
+}
+
 pub type TestAlias = TestA;
 
 // #[spacetimedb(migrate)]
