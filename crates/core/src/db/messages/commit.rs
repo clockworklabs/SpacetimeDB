@@ -5,6 +5,11 @@ use std::{fmt, sync::Arc};
 use super::transaction::Transaction;
 use crate::hash::Hash;
 
+#[cfg(test)]
+use proptest::prelude::*;
+#[cfg(test)]
+use proptest_derive::Arbitrary;
+
 /// A commit is one record in the write-ahead log.
 ///
 /// Encoding:
@@ -12,10 +17,12 @@ use crate::hash::Hash;
 /// ```text
 /// [0u8 | 1u8<hash(32)>]<commit_offset(8)><min_tx_offset<8>[<transaction>...]
 /// ```
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq)]
+#[cfg_attr(test, derive(Arbitrary))]
 pub struct Commit {
     /// The [`Hash`] over the encoded bytes of the previous commit, or `None` if
     /// it is the very first commit.
+    #[cfg_attr(test, proptest(strategy = "arbitrary::parent_commit_hash()"))]
     pub parent_commit_hash: Option<Hash>,
     /// Counter of all commits in a log.
     pub commit_offset: u64,
@@ -25,7 +32,23 @@ pub struct Commit {
     /// when the [`Commit`] is constructed.
     pub min_tx_offset: u64,
     /// The [`Transaction`]s in this commit, usually only one.
+    #[cfg_attr(test, proptest(strategy = "arbitrary::transactions()"))]
     pub transactions: Vec<Arc<Transaction>>,
+}
+
+#[cfg(test)]
+mod arbitrary {
+    use super::*;
+
+    pub fn parent_commit_hash() -> impl Strategy<Value = Option<Hash>> {
+        any::<Option<[u8; 32]>>().prop_map(|maybe_hash| maybe_hash.map(|data| Hash { data }))
+    }
+
+    pub fn transactions() -> impl Strategy<Value = Vec<Arc<Transaction>>> {
+        // We only ever commit a single transaction, but for the sake of test
+        // coverage let's generate like two handful.
+        prop::collection::vec(any::<Arc<Transaction>>(), 1..8)
+    }
 }
 
 /// Error context for [`Commit::decode`]
@@ -116,6 +139,24 @@ impl Commit {
         writer.put_u64(self.min_tx_offset);
         for tx in &self.transactions {
             tx.encode(writer);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    proptest! {
+        // Generating arbitrary commits is quite slow, so limit this test to
+        // just a few cases.
+        #![proptest_config(ProptestConfig::with_cases(64))]
+        #[test]
+        fn prop_commit_encoding_roundtrip(commit in any::<Commit>()) {
+            let mut buf = Vec::new();
+            commit.encode(&mut buf);
+            let decoded = Commit::decode(&mut buf.as_slice()).unwrap();
+            prop_assert_eq!(commit, decoded)
         }
     }
 }

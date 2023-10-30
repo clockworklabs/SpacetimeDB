@@ -4,6 +4,11 @@ use std::fmt;
 
 use super::write::Write;
 
+#[cfg(test)]
+use proptest::prelude::*;
+#[cfg(test)]
+use proptest_derive::Arbitrary;
+
 /// A transaction, consisting of one or more [`Write`]s.
 ///
 /// Encoding:
@@ -11,9 +16,21 @@ use super::write::Write;
 /// ```text
 /// <n(4)>[<write_0(6-38)...<write_n(6-38)>]
 /// ```
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
+#[cfg_attr(test, derive(Arbitrary))]
 pub struct Transaction {
+    #[cfg_attr(test, proptest(strategy = "arbitrary::writes()"))]
     pub writes: Vec<Write>,
+}
+
+#[cfg(test)]
+mod arbitrary {
+    use super::*;
+
+    pub fn writes() -> impl Strategy<Value = Vec<Write>> {
+        // Limit to 64 for performance reasons.
+        prop::collection::vec(any::<Write>(), 1..64)
+    }
 }
 
 /// Error context for [`Transaction::decode`].

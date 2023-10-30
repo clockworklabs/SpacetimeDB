@@ -4,6 +4,11 @@ use anyhow::Context as _;
 pub use spacetimedb_lib::DataKey;
 use spacetimedb_sats::buffer::{BufReader, BufWriter, DecodeError};
 
+#[cfg(test)]
+use proptest::prelude::*;
+#[cfg(test)]
+use proptest_derive::Arbitrary;
+
 /// A single write operation within a [`super::transaction::Transaction`].
 ///
 /// Encoding:
@@ -11,11 +16,25 @@ use spacetimedb_sats::buffer::{BufReader, BufWriter, DecodeError};
 /// ```text
 /// <flags(1)><set_id(4)><value(1-33)>
 /// ```
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
+#[cfg_attr(test, derive(Arbitrary))]
 pub struct Write {
     pub operation: Operation,
     pub set_id: u32, // aka table id
+    #[cfg_attr(test, proptest(strategy = "arbitrary::datakey()"))]
     pub data_key: DataKey,
+}
+
+#[cfg(test)]
+mod arbitrary {
+    use super::*;
+
+    pub fn datakey() -> impl Strategy<Value = DataKey> {
+        prop_oneof![
+            prop::collection::vec(any::<u8>(), 0..31).prop_map(DataKey::from_data),
+            prop::collection::vec(any::<u8>(), 31..255).prop_map(DataKey::from_data)
+        ]
+    }
 }
 
 /// The operation of a [`Write`], either insert or delete.
@@ -26,7 +45,8 @@ pub struct Write {
 /// 0   = insert / delete
 /// 1-7 = unused
 /// ```
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(test, derive(Arbitrary))]
 #[repr(u8)]
 pub enum Operation {
     Delete = 0,

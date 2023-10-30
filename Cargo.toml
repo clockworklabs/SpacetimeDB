@@ -122,6 +122,7 @@ postgres-types = "0.2.5"
 proc-macro2 = "1.0"
 prometheus = "0.13.0"
 proptest = "1.2.0"
+proptest-derive = "0.4.0"
 prost = "0.10"
 prost-build = { version = "0.10" }
 quick-junit = { version = "0.3.2" }
