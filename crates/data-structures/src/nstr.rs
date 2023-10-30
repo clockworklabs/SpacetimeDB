@@ -8,6 +8,9 @@ use core::{fmt, ops::Deref, str};
 
 /// A UTF-8 string of known length `N`.
 ///
+/// The notion of length is that of the standard library's `String` type.
+/// That is, the length is in bytes, not chars or graphemes.
+///
 /// It holds that `size_of::<NStr<N>>() == N`
 /// but `&NStr<N>` is always word sized.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -35,7 +38,7 @@ pub const fn __nstr<const N: usize>(s: &str) -> NStr<N> {
     NStr(dst)
 }
 
-/// Constructs an `NStr<N>` given a string literal of length `N`.
+/// Constructs an `NStr<N>` given a string literal of `N` bytes in length.
 ///
 /// # Example
 ///
@@ -46,6 +49,7 @@ pub const fn __nstr<const N: usize>(s: &str) -> NStr<N> {
 /// assert_eq!(s.len(), 3);
 /// assert_eq!(format!("{s}"), "foo");
 /// assert_eq!(format!("{s:?}"), "foo");
+/// ```
 #[macro_export]
 macro_rules! nstr {
     ($lit:literal) => {
