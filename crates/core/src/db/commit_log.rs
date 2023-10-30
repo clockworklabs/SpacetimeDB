@@ -289,13 +289,27 @@ struct IterSegment {
     inner: message_log::IterSegment,
 }
 
+impl IterSegment {
+    fn bytes_read(&self) -> u64 {
+        self.inner.bytes_read()
+    }
+}
+
 impl Iterator for IterSegment {
     type Item = io::Result<Commit>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.inner.next()?;
+
+        let ctx = || {
+            format!(
+                "Failed to decode commit in segment {:0>20} at byte offset: {}",
+                self.inner.segment(),
+                self.bytes_read()
+            )
+        };
         let io = |e| io::Error::new(io::ErrorKind::InvalidData, e);
-        Some(next.and_then(|bytes| Commit::decode(&mut bytes.as_slice()).map_err(io)))
+        Some(next.and_then(|bytes| Commit::decode(&mut bytes.as_slice()).with_context(ctx).map_err(io)))
     }
 }
 
@@ -314,9 +328,8 @@ impl Iterator for Iter {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            if let Some(mut commits) = self.commits.take() {
+            if let Some(commits) = self.commits.as_mut() {
                 if let Some(commit) = commits.next() {
-                    self.commits = Some(commits);
                     return Some(commit);
                 }
             }
