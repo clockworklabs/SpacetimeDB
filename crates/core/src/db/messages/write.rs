@@ -29,7 +29,12 @@ pub struct Write {
 mod arbitrary {
     use super::*;
 
+    // [`DataKey`] is defined in `lib`, so we can't have an [`Arbitrary`] impl
+    // for it just yet due to orphan rules.
     pub fn datakey() -> impl Strategy<Value = DataKey> {
+        // Create [`DataKey::Inline`] and [`DataKey::Hash`] with the same
+        // probability. [`DataKey::from_data`] will take care of choosing the
+        // variant based in the input length.
         prop_oneof![
             prop::collection::vec(any::<u8>(), 0..31).prop_map(DataKey::from_data),
             prop::collection::vec(any::<u8>(), 31..255).prop_map(DataKey::from_data)

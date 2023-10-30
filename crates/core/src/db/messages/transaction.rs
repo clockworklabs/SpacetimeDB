@@ -27,8 +27,8 @@ pub struct Transaction {
 mod arbitrary {
     use super::*;
 
+    // Limit to 64 for performance reasons.
     pub fn writes() -> impl Strategy<Value = Vec<Write>> {
-        // Limit to 64 for performance reasons.
         prop::collection::vec(any::<Write>(), 1..64)
     }
 }

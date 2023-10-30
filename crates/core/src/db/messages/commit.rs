@@ -40,13 +40,17 @@ pub struct Commit {
 mod arbitrary {
     use super::*;
 
+    // [`Hash`] is defined in `lib`, so we can't have an [`Arbitrary`] impl for
+    // it just yet due to orphan rules.
     pub fn parent_commit_hash() -> impl Strategy<Value = Option<Hash>> {
         any::<Option<[u8; 32]>>().prop_map(|maybe_hash| maybe_hash.map(|data| Hash { data }))
     }
 
+    // Custom strategy to apply an upper bound on the number of [`Transaction`]s
+    // generated.
+    //
+    // We only ever commit a single transaction in practice.
     pub fn transactions() -> impl Strategy<Value = Vec<Arc<Transaction>>> {
-        // We only ever commit a single transaction, but for the sake of test
-        // coverage let's generate like two handful.
         prop::collection::vec(any::<Arc<Transaction>>(), 1..8)
     }
 }
