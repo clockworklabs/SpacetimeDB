@@ -150,7 +150,7 @@ impl BTreeIndex {
     /// Returns `true` if the [BTreeIndex] contains a value for the specified `value`.
     #[tracing::instrument(skip_all)]
     pub(crate) fn contains_any(&self, value: &AlgebraicValue) -> bool {
-        self.hash_idx.contains_key(value)
+        self.hash_idx.get(value).map_or(false, |x| !x.is_empty())
     }
 
     /// Returns an iterator over the `RowId`s in the [BTreeIndex]
