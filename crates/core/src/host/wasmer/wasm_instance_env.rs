@@ -3,16 +3,17 @@
 use std::time::Instant;
 
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
+use crate::db::db_metrics::DB_METRICS;
 use crate::execution_context::ExecutionContext;
 use crate::host::scheduler::{ScheduleError, ScheduledReducerId};
 use crate::host::timestamp::Timestamp;
 use crate::host::wasm_common::instrumentation;
 use crate::host::wasm_common::module_host_actor::ExecutionTimings;
 use crate::host::wasm_common::{
-    err_to_errno,
-    instrumentation::{Call, CallTimes},
-    AbiRuntimeError, BufferIdx, BufferIterIdx, BufferIters, Buffers, TimingSpan, TimingSpanIdx, TimingSpanSet,
+    err_to_errno, instrumentation::CallTimes, AbiRuntimeError, BufferIdx, BufferIterIdx, BufferIters, Buffers,
+    TimingSpan, TimingSpanIdx, TimingSpanSet,
 };
+use crate::host::AbiCall;
 use wasmer::{FunctionEnvMut, MemoryAccessError, RuntimeError, ValueType, WasmPtr};
 
 use crate::host::instance_env::InstanceEnv;
@@ -170,7 +171,7 @@ impl WasmInstanceEnv {
     fn cvt(
         mut caller: FunctionEnvMut<'_, Self>,
         func: &'static str,
-        call: Call,
+        call: AbiCall,
         f: impl FnOnce(FunctionEnvMut<'_, Self>, &Mem) -> WasmResult<()>,
     ) -> RtResult<u16> {
         let span_start = span::CallSpanStart::new(call);
@@ -216,7 +217,7 @@ impl WasmInstanceEnv {
     fn cvt_ret<T: ValueType>(
         caller: FunctionEnvMut<'_, Self>,
         func: &'static str,
-        call: Call,
+        call: AbiCall,
         out: WasmPtr<T>,
         f: impl FnOnce(FunctionEnvMut<'_, Self>, &Mem) -> WasmResult<T>,
     ) -> RtResult<u16> {
@@ -230,7 +231,7 @@ impl WasmInstanceEnv {
     /// This is the version of `cvt` or `cvt_ret` for functions with no return value.
     /// One of `cvt`, `cvt_ret`, or `cvt_noret` should be used in the implementation of any
     /// host call, to provide consistent error handling and instrumentation.
-    fn cvt_noret(mut caller: FunctionEnvMut<'_, Self>, call: Call, f: impl FnOnce(FunctionEnvMut<'_, Self>, &Mem)) {
+    fn cvt_noret(mut caller: FunctionEnvMut<'_, Self>, call: AbiCall, f: impl FnOnce(FunctionEnvMut<'_, Self>, &Mem)) {
         let span_start = span::CallSpanStart::new(call);
 
         // Call `f` with the caller and a handle to the memory.
@@ -274,30 +275,36 @@ impl WasmInstanceEnv {
         time: u64,
         out: WasmPtr<u64>,
     ) -> RtResult<()> {
-        Self::cvt_ret(caller, "schedule_reducer", Call::ScheduleReducer, out, |caller, mem| {
-            // Read the index name as a string from `(name, name_len)`.
-            let name = Self::read_string(&caller, mem, name, name_len)?;
+        Self::cvt_ret(
+            caller,
+            "schedule_reducer",
+            AbiCall::ScheduleReducer,
+            out,
+            |caller, mem| {
+                // Read the index name as a string from `(name, name_len)`.
+                let name = Self::read_string(&caller, mem, name, name_len)?;
 
-            // Read the reducer's arguments as a byte slice.
-            let args = mem.read_bytes(&caller, args, args_len)?;
+                // Read the reducer's arguments as a byte slice.
+                let args = mem.read_bytes(&caller, args, args_len)?;
 
-            // Schedule it!
-            // TODO: Be more strict re. types by avoiding newtype unwrapping here? (impl ValueType?)
-            // Noa: This would be nice but I think the eventual goal/desire is to switch to wasmtime,
-            //      which doesn't allow user types to impl ValueType.
-            //      Probably the correct API choice, but makes things a bit less ergonomic sometimes.
-            let ScheduledReducerId(id) = caller
-                .data()
-                .instance_env
-                .schedule(name, args, Timestamp(time))
-                .map_err(|e| match e {
-                    ScheduleError::DelayTooLong(_) => RuntimeError::new("requested delay is too long"),
-                    ScheduleError::IdTransactionError(_) => {
-                        RuntimeError::new("transaction to acquire ScheduleReducerId failed")
-                    }
-                })?;
-            Ok(id)
-        })
+                // Schedule it!
+                // TODO: Be more strict re. types by avoiding newtype unwrapping here? (impl ValueType?)
+                // Noa: This would be nice but I think the eventual goal/desire is to switch to wasmtime,
+                //      which doesn't allow user types to impl ValueType.
+                //      Probably the correct API choice, but makes things a bit less ergonomic sometimes.
+                let ScheduledReducerId(id) = caller
+                    .data()
+                    .instance_env
+                    .schedule(name, args, Timestamp(time))
+                    .map_err(|e| match e {
+                        ScheduleError::DelayTooLong(_) => RuntimeError::new("requested delay is too long"),
+                        ScheduleError::IdTransactionError(_) => {
+                            RuntimeError::new("transaction to acquire ScheduleReducerId failed")
+                        }
+                    })?;
+                Ok(id)
+            },
+        )
         .map(|_| ())
     }
 
@@ -306,7 +313,7 @@ impl WasmInstanceEnv {
     /// This assumes that the reducer hasn't already been executed.
     #[tracing::instrument(skip_all)]
     pub fn cancel_reducer(caller: FunctionEnvMut<'_, Self>, id: u64) {
-        Self::cvt_noret(caller, Call::CancelReducer, |caller, _mem| {
+        Self::cvt_noret(caller, AbiCall::CancelReducer, |caller, _mem| {
             caller.data().instance_env.cancel_reducer(ScheduledReducerId(id))
         })
     }
@@ -337,7 +344,7 @@ impl WasmInstanceEnv {
         message: WasmPtr<u8>,
         message_len: u32,
     ) {
-        Self::cvt_noret(caller, Call::ConsoleLog, |caller, mem| {
+        Self::cvt_noret(caller, AbiCall::ConsoleLog, |caller, mem| {
             // Reads a string lossily from the slice `(ptr, len)` in WASM memory.
             let read_str = |ptr, len| {
                 mem.read_bytes(&caller, ptr, len)
@@ -390,14 +397,22 @@ impl WasmInstanceEnv {
     ///   according to the `ProductType` that the table's schema specifies.
     #[tracing::instrument(skip_all)]
     pub fn insert(caller: FunctionEnvMut<'_, Self>, table_id: u32, row: WasmPtr<u8>, row_len: u32) -> RtResult<u16> {
-        Self::cvt(caller, "insert", Call::Insert, |caller, mem| {
+        let ctx = caller.data().reducer_context();
+        let txn_type = &ctx.txn_type();
+        let db = &ctx.database();
+        let reducer = &ctx.reducer_name().unwrap_or_default().to_owned();
+        let syscall = &AbiCall::Insert;
+        let start = Instant::now();
+
+        let result = Self::cvt(caller, "insert", AbiCall::Insert, |caller, mem| {
             // Read the row from WASM memory into a buffer.
             let mut row_buffer = mem.read_bytes(&caller, row, row_len)?;
 
             // Insert the row into the DB. We get back the decoded version.
             // Then re-encode and write that back into WASM memory at `row`.
             // We're doing this because of autoinc.
-            let new_row = caller.data().instance_env.insert(table_id.into(), &row_buffer)?;
+            let ctx = caller.data().reducer_context();
+            let new_row = caller.data().instance_env.insert(&ctx, table_id.into(), &row_buffer)?;
             row_buffer.clear();
             new_row.encode(&mut row_buffer);
             assert_eq!(
@@ -407,7 +422,16 @@ impl WasmInstanceEnv {
             );
             mem.set_bytes(&caller, row, row_len, &row_buffer)?;
             Ok(())
-        })
+        });
+
+        // TODO: Instead of writing this metric on every insert call,
+        // we should aggregate and write at the end of the transaction.
+        DB_METRICS
+            .wasm_abi_call_duration_ns
+            .with_label_values(txn_type, db, reducer, syscall)
+            .observe(start.elapsed().as_nanos() as f64);
+
+        result
     }
 
     /// Deletes all rows in the table identified by `table_id`
@@ -436,15 +460,36 @@ impl WasmInstanceEnv {
         value_len: u32,
         out: WasmPtr<u32>,
     ) -> RtResult<u16> {
-        Self::cvt_ret(caller, "delete_by_col_eq", Call::DeleteByColEq, out, |caller, mem| {
-            let ctx = caller.data().reducer_context();
-            let value = mem.read_bytes(&caller, value, value_len)?;
-            let count = caller
-                .data()
-                .instance_env
-                .delete_by_col_eq(&ctx, table_id.into(), col_id.into(), &value)?;
-            Ok(count.get())
-        })
+        let ctx = caller.data().reducer_context();
+        let txn_type = &ctx.txn_type();
+        let db = &ctx.database();
+        let reducer = &ctx.reducer_name().unwrap_or_default().to_owned();
+        let syscall = &AbiCall::DeleteByColEq;
+        let start = Instant::now();
+
+        let result = Self::cvt_ret(
+            caller,
+            "delete_by_col_eq",
+            AbiCall::DeleteByColEq,
+            out,
+            |caller, mem| {
+                let ctx = caller.data().reducer_context();
+                let value = mem.read_bytes(&caller, value, value_len)?;
+                let count =
+                    caller
+                        .data()
+                        .instance_env
+                        .delete_by_col_eq(&ctx, table_id.into(), col_id.into(), &value)?;
+                Ok(count.get())
+            },
+        );
+
+        DB_METRICS
+            .wasm_abi_call_duration_ns
+            .with_label_values(txn_type, db, reducer, syscall)
+            .observe(start.elapsed().as_nanos() as f64);
+
+        result
     }
 
     /// Queries the `table_id` associated with the given (table) `name`
@@ -464,7 +509,7 @@ impl WasmInstanceEnv {
         name_len: u32,
         out: WasmPtr<u32>,
     ) -> RtResult<u16> {
-        Self::cvt_ret(caller, "get_table_id", Call::GetTableId, out, |caller, mem| {
+        Self::cvt_ret(caller, "get_table_id", AbiCall::GetTableId, out, |caller, mem| {
             // Read the table name from WASM memory.
             let name = Self::read_string(&caller, mem, name, name_len)?;
 
@@ -500,7 +545,7 @@ impl WasmInstanceEnv {
         col_ids: WasmPtr<u8>,
         col_len: u32,
     ) -> RtResult<u16> {
-        Self::cvt(caller, "create_index", Call::CreateIndex, |caller, mem| {
+        Self::cvt(caller, "create_index", AbiCall::CreateIndex, |caller, mem| {
             // Read the index name from WASM memory.
             let index_name = Self::read_string(&caller, mem, index_name, index_name_len)?;
 
@@ -542,22 +587,42 @@ impl WasmInstanceEnv {
         val_len: u32,
         out: WasmPtr<BufferIdx>,
     ) -> RtResult<u16> {
-        Self::cvt_ret(caller, "iter_by_col_eq", Call::IterByColEq, out, |mut caller, mem| {
-            // Read the test value from WASM memory.
-            let value = mem.read_bytes(&caller, val, val_len)?;
+        let ctx = caller.data().reducer_context();
+        let txn_type = &ctx.txn_type();
+        let db = &ctx.database();
+        let reducer = &ctx.reducer_name().unwrap_or_default().to_owned();
+        let syscall = &AbiCall::IterByColEq;
+        let start = Instant::now();
 
-            // Retrieve the execution context for the current reducer.
-            let ctx = caller.data().reducer_context();
+        let result = Self::cvt_ret(
+            caller,
+            "iter_by_col_eq",
+            AbiCall::IterByColEq,
+            out,
+            |mut caller, mem| {
+                // Read the test value from WASM memory.
+                let value = mem.read_bytes(&caller, val, val_len)?;
 
-            // Find the relevant rows.
-            let data = caller
-                .data()
-                .instance_env
-                .iter_by_col_eq(&ctx, table_id.into(), col_id.into(), &value)?;
+                // Retrieve the execution context for the current reducer.
+                let ctx = caller.data().reducer_context();
 
-            // Insert the encoded + concatenated rows into a new buffer and return its id.
-            Ok(caller.data_mut().buffers.insert(data.into()))
-        })
+                // Find the relevant rows.
+                let data = caller
+                    .data()
+                    .instance_env
+                    .iter_by_col_eq(&ctx, table_id.into(), col_id.into(), &value)?;
+
+                // Insert the encoded + concatenated rows into a new buffer and return its id.
+                Ok(caller.data_mut().buffers.insert(data.into()))
+            },
+        );
+
+        DB_METRICS
+            .wasm_abi_call_duration_ns
+            .with_label_values(txn_type, db, reducer, syscall)
+            .observe(start.elapsed().as_nanos() as f64);
+
+        result
     }
 
     /// Start iteration on each row, as bytes, of a table identified by `table_id`.
@@ -569,7 +634,14 @@ impl WasmInstanceEnv {
     /// - a table with the provided `table_id` doesn't exist
     // #[tracing::instrument(skip_all)]
     pub fn iter_start(caller: FunctionEnvMut<'_, Self>, table_id: u32, out: WasmPtr<BufferIterIdx>) -> RtResult<u16> {
-        Self::cvt_ret(caller, "iter_start", Call::IterStart, out, |mut caller, _mem| {
+        let ctx = caller.data().reducer_context();
+        let txn_type = &ctx.txn_type();
+        let db = &ctx.database();
+        let reducer = &ctx.reducer_name().unwrap_or_default().to_owned();
+        let syscall = &AbiCall::IterStart;
+        let start = Instant::now();
+
+        let result = Self::cvt_ret(caller, "iter_start", AbiCall::IterStart, out, |mut caller, _mem| {
             // Retrieve the execution context for the current reducer.
             let ctx = caller.data().reducer_context();
 
@@ -579,7 +651,14 @@ impl WasmInstanceEnv {
             // Register the iterator and get back the index to write to `out`.
             // Calls to the iterator are done through dynamic dispatch.
             Ok(caller.data_mut().iters.insert(chunks.into_iter()))
-        })
+        });
+
+        DB_METRICS
+            .wasm_abi_call_duration_ns
+            .with_label_values(txn_type, db, reducer, syscall)
+            .observe(start.elapsed().as_nanos() as f64);
+
+        result
     }
 
     /// Like [`WasmInstanceEnv::iter_start`], start iteration on each row,
@@ -603,10 +682,17 @@ impl WasmInstanceEnv {
         filter_len: u32,
         out: WasmPtr<BufferIterIdx>,
     ) -> RtResult<u16> {
-        Self::cvt_ret(
+        let ctx = caller.data().reducer_context();
+        let txn_type = &ctx.txn_type();
+        let db = &ctx.database();
+        let reducer = &ctx.reducer_name().unwrap_or_default().to_owned();
+        let syscall = &AbiCall::IterStartFiltered;
+        let start = Instant::now();
+
+        let result = Self::cvt_ret(
             caller,
             "iter_start_filtered",
-            Call::IterStartFiltered,
+            AbiCall::IterStartFiltered,
             out,
             |mut caller, _mem| {
                 // Read the slice `(filter, filter_len)`.
@@ -625,7 +711,14 @@ impl WasmInstanceEnv {
                 // Calls to the iterator are done through dynamic dispatch.
                 Ok(caller.data_mut().iters.insert(chunks.into_iter()))
             },
-        )
+        );
+
+        DB_METRICS
+            .wasm_abi_call_duration_ns
+            .with_label_values(txn_type, db, reducer, syscall)
+            .observe(start.elapsed().as_nanos() as f64);
+
+        result
     }
 
     /// Advances the registered iterator with the index given by `iter_key`.
@@ -641,7 +734,7 @@ impl WasmInstanceEnv {
     /// - advancing the iterator resulted in an error
     // #[tracing::instrument(skip_all)]
     pub fn iter_next(caller: FunctionEnvMut<'_, Self>, iter_key: u32, out: WasmPtr<BufferIdx>) -> RtResult<u16> {
-        Self::cvt_ret(caller, "iter_next", Call::IterNext, out, |mut caller, _mem| {
+        Self::cvt_ret(caller, "iter_next", AbiCall::IterNext, out, |mut caller, _mem| {
             let data_mut = caller.data_mut();
 
             // Retrieve the iterator by `iter_key`.
@@ -663,7 +756,7 @@ impl WasmInstanceEnv {
     /// Returns an error if the iterator does not exist.
     // #[tracing::instrument(skip_all)]
     pub fn iter_drop(caller: FunctionEnvMut<'_, Self>, iter_key: u32) -> RtResult<u16> {
-        Self::cvt(caller, "iter_drop", Call::IterDrop, |mut caller, _mem| {
+        Self::cvt(caller, "iter_drop", AbiCall::IterDrop, |mut caller, _mem| {
             caller
                 .data_mut()
                 .iters

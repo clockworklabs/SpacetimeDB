@@ -23,16 +23,20 @@
 
 use std::time::{Duration, Instant};
 
-use enum_map::{enum_map, Enum, EnumMap};
+use enum_map::{enum_map, EnumMap};
+
+use crate::host::AbiCall;
 
 #[allow(unused)]
 pub mod noop {
+    use crate::host::AbiCall;
+
     use super::*;
 
     pub struct CallSpanStart;
 
     impl CallSpanStart {
-        pub fn new(_call: Call) -> Self {
+        pub fn new(_call: AbiCall) -> Self {
             Self
         }
 
@@ -48,15 +52,17 @@ pub mod noop {
 
 #[allow(unused)]
 pub mod op {
+    use crate::host::AbiCall;
+
     use super::*;
 
     pub struct CallSpanStart {
-        call: Call,
+        call: AbiCall,
         start: Instant,
     }
 
     impl CallSpanStart {
-        pub fn new(call: Call) -> Self {
+        pub fn new(call: AbiCall) -> Self {
             let start = Instant::now();
             Self { call, start }
         }
@@ -70,7 +76,7 @@ pub mod op {
 
     #[derive(Debug)]
     pub struct CallSpan {
-        pub(super) call: Call,
+        pub(super) call: AbiCall,
         pub(super) duration: Duration,
     }
 
@@ -79,27 +85,10 @@ pub mod op {
     }
 }
 
-/// Tags for each call that a `WasmInstanceEnv` can make.
-#[derive(Debug, Enum)]
-pub enum Call {
-    CancelReducer,
-    ConsoleLog,
-    CreateIndex,
-    DeleteByColEq,
-    GetTableId,
-    Insert,
-    IterByColEq,
-    IterDrop,
-    IterNext,
-    IterStart,
-    IterStartFiltered,
-    ScheduleReducer,
-}
-
 #[derive(Debug)]
-/// Associates each `Call` tag with a cumulative total `Duration` spent within that call.
+/// Associates each `AbiCall` tag with a cumulative total `Duration` spent within that call.
 pub struct CallTimes {
-    times: EnumMap<Call, Duration>,
+    times: EnumMap<AbiCall, Duration>,
 }
 
 impl CallTimes {
@@ -110,7 +99,7 @@ impl CallTimes {
     }
 
     /// Track a particular `CallSpan` by adding its duration to the
-    /// associated `Call`'s timing information.
+    /// associated `AbiCall`'s timing information.
     pub fn span(&mut self, span: op::CallSpan) {
         self.times[span.call] += span.duration;
     }

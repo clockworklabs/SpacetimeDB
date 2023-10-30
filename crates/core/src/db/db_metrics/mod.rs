@@ -1,4 +1,4 @@
-use crate::{execution_context::TransactionType, util::typed_prometheus::metrics_group};
+use crate::{execution_context::TransactionType, host::AbiCall, util::typed_prometheus::metrics_group};
 use once_cell::sync::Lazy;
 use prometheus::{Histogram, HistogramVec, IntCounterVec};
 use spacetimedb_lib::Address;
@@ -90,6 +90,11 @@ metrics_group!(
         #[help = "The time spent executing a transaction (nanoseconds), excluding time spent waiting to acquire database locks"]
         #[labels(txn_type: TransactionType, db: Address, reducer: str)]
         pub rdb_txn_cpu_time_ns: HistogramVec,
+
+        #[name = spacetime_wasm_abi_call_duration_ns]
+        #[help = "The total duration of a spacetime wasm abi call (nanoseconds); includes row serialization and copying into wasm memory"]
+        #[labels(txn_type: TransactionType, db: Address, reducer: str, call: AbiCall)]
+        pub wasm_abi_call_duration_ns: HistogramVec,
     }
 );
 
