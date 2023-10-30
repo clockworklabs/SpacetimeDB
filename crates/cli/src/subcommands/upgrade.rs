@@ -72,8 +72,25 @@ pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
         ));
     }
 
+    println!(
+        "You are currently running version {} of spacetime. The version you're upgrading to is {}.",
+        version::CLI_VERSION,
+        release.tag_name
+    );
+    println!(
+        "This will replace the current executable at {}.",
+        current_exe_path.display()
+    );
+    println!("Do you want to continue? [y/N]");
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+    if input.trim().to_lowercase() != "y" || input.trim().to_lowercase() != "yes" {
+        println!("Aborting upgrade.");
+        return Ok(());
+    }
+
     // Download the archive from the URL
-    let temp_path = format!("/tmp/{}", download_name);
+    let temp_path = tempfile::tempdir()?.into_path().join(download_name);
     let response = reqwest::blocking::get(&asset.unwrap().browser_download_url)?;
     fs::write(&temp_path, response.bytes()?)?;
 
