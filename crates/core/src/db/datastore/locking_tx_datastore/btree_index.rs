@@ -164,7 +164,7 @@ impl BTreeIndex {
     #[tracing::instrument(skip_all)]
     pub(crate) fn seek<'a>(&'a self, range: &impl RangeBounds<AlgebraicValue>) -> BTreeIndexRangeIter<'a> {
         match (range.start_bound(), range.end_bound()) {
-            (Bound::Included(start), Bound::Excluded(end)) if start == end && self.is_unique => {
+            (Bound::Included(start), Bound::Excluded(end)) if start == end => {
                 itertools::Either::Left(self.hash_idx.get(start).into_iter().flatten())
             }
             (start, end) => itertools::Either::Right({
