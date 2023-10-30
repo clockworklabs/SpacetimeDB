@@ -1,6 +1,6 @@
 [package]
 name = "spacetimedb-sats"
-version = "0.7.1"
+version = "0.7.2"
 edition = "2021"
 license-file = "LICENSE"
 description = "Spacetime Algebraic Type Notation"
@@ -11,8 +11,8 @@ description = "Spacetime Algebraic Type Notation"
 serde = ["dep:serde", "hex"]
 
 [dependencies]
-spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.7.1" }
-spacetimedb-primitives = { path = "../primitives", version = "0.7.1" }
+spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.7.2" }
+spacetimedb-primitives = { path = "../primitives", version = "0.7.2" }
 
 arrayvec.workspace = true
 decorum.workspace = true

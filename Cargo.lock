@@ -4099,7 +4099,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "bytes",
  "derive_more",
@@ -4115,7 +4115,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bench"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "ahash 0.8.3",
  "anyhow",
@@ -4146,7 +4146,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-macro"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "bitflags 2.4.1",
  "humantime",
@@ -4157,7 +4157,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-sys"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "getrandom",
  "spacetimedb-primitives",
@@ -4165,7 +4165,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-cli"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "base64 0.21.4",
@@ -4202,7 +4202,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-client-api"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4234,7 +4234,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-client-api-messages"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "prost",
  "prost-build",
@@ -4243,7 +4243,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-core"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4324,11 +4324,11 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-data-structures"
-version = "0.7.1"
+version = "0.7.2"
 
 [[package]]
 name = "spacetimedb-lib"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "bitflags 2.4.1",
@@ -4355,7 +4355,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-primitives"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "nonempty",
 ]
@@ -4369,7 +4369,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-sats"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "arrayvec",
  "bytes",
@@ -4390,7 +4390,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-sdk"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "anymap",
@@ -4416,7 +4416,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-standalone"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4461,7 +4461,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-vm"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "derive_more",
