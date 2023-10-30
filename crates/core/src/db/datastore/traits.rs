@@ -9,6 +9,7 @@ use spacetimedb_primitives::{ColId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, WithTypespace};
 use spacetimedb_vm::expr::SourceExpr;
+use std::iter;
 use std::{borrow::Cow, ops::RangeBounds, sync::Arc};
 
 use super::{system_tables::StTableRow, Result};
@@ -295,6 +296,14 @@ impl TableDef {
     }
 }
 
+/// The magic table id zero, for use in [`IndexDef`]s.
+///
+/// The actual table id is usually not yet known when constructing an
+/// [`IndexDef`]. [`AUTO_TABLE_ID`] can be used instead, which the storage
+/// engine will replace with the actual table id upon creation of the table
+/// respectively index.
+pub const AUTO_TABLE_ID: TableId = TableId(0);
+
 /// This type is just the [TableSchema] without the autoinc fields
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableDef {
@@ -318,6 +327,8 @@ impl TableDef {
             "mismatched number of columns"
         );
 
+        // Build single-column index definitions, determining `is_unique` from
+        // their respective column attributes.
         let mut columns = Vec::with_capacity(schema.elements.len());
         let mut indexes = Vec::new();
         for (col_id, (ty, col_attr)) in std::iter::zip(&schema.elements, &table.column_attrs).enumerate() {
@@ -354,13 +365,33 @@ impl TableDef {
                 }
                 indexes.push(IndexDef::new(
                     name,
-                    TableId(0), // Will be ignored
+                    AUTO_TABLE_ID,
                     ColId(col_id as u32),
                     col_attr.is_unique(),
                 ))
             }
             columns.push(col);
         }
+
+        // Multi-column indexes cannot be unique (yet), so just add them.
+        let multi_col_indexes = table.indexes.iter().filter_map(|index| {
+            if let [a, b, rest @ ..] = &index.col_ids[..] {
+                Some(IndexDef {
+                    table_id: AUTO_TABLE_ID,
+                    cols: NonEmpty {
+                        head: ColId::from(*a),
+                        tail: iter::once(ColId::from(*b))
+                            .chain(rest.iter().copied().map(Into::into))
+                            .collect(),
+                    },
+                    name: index.name.clone(),
+                    is_unique: false,
+                })
+            } else {
+                None
+            }
+        });
+        indexes.extend(multi_col_indexes);
 
         Ok(TableDef {
             table_name: table.name.clone(),
@@ -654,4 +685,102 @@ pub trait MutProgrammable: MutTxDatastore {
     /// token `fence` must be verified to be greater than in any previous
     /// invocations of this method.
     fn set_program_hash(&self, tx: &mut Self::MutTxId, fence: Self::FencingToken, hash: Hash) -> Result<()>;
+}
+
+#[cfg(test)]
+mod tests {
+    use nonempty::NonEmpty;
+    use spacetimedb_lib::{
+        auth::{StAccess, StTableType},
+        ColumnIndexAttribute,
+    };
+    use spacetimedb_primitives::ColId;
+    use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductType, ProductTypeElement, Typespace};
+
+    use super::{ColumnDef, IndexDef, TableDef, AUTO_TABLE_ID};
+
+    #[test]
+    fn test_tabledef_from_lib_tabledef() -> anyhow::Result<()> {
+        let lib_table_def = spacetimedb_lib::TableDef {
+            name: "Person".into(),
+            data: AlgebraicTypeRef(0),
+            column_attrs: vec![ColumnIndexAttribute::IDENTITY, ColumnIndexAttribute::UNSET],
+            indexes: vec![
+                spacetimedb_lib::IndexDef {
+                    name: "id_and_name".into(),
+                    ty: spacetimedb_lib::IndexType::BTree,
+                    col_ids: vec![0, 1],
+                },
+                spacetimedb_lib::IndexDef {
+                    name: "just_name".into(),
+                    ty: spacetimedb_lib::IndexType::BTree,
+                    col_ids: vec![1],
+                },
+            ],
+            table_type: StTableType::User,
+            table_access: StAccess::Public,
+        };
+        let row_type = ProductType::new(vec![
+            ProductTypeElement {
+                name: Some("id".into()),
+                algebraic_type: AlgebraicType::U32,
+            },
+            ProductTypeElement {
+                name: Some("name".into()),
+                algebraic_type: AlgebraicType::String,
+            },
+        ]);
+
+        let mut datastore_schema =
+            TableDef::from_lib_tabledef(Typespace::new(vec![row_type.into()]).with_type(&lib_table_def))?;
+        let mut expected_schema = TableDef {
+            table_name: "Person".into(),
+            columns: vec![
+                ColumnDef {
+                    col_name: "id".into(),
+                    col_type: AlgebraicType::U32,
+                    is_autoinc: true,
+                },
+                ColumnDef {
+                    col_name: "name".into(),
+                    col_type: AlgebraicType::String,
+                    is_autoinc: false,
+                },
+            ],
+            indexes: vec![
+                IndexDef {
+                    table_id: AUTO_TABLE_ID,
+                    cols: NonEmpty::new(ColId(0)),
+                    name: "Person_id_unique".into(),
+                    is_unique: true,
+                },
+                IndexDef {
+                    table_id: AUTO_TABLE_ID,
+                    cols: NonEmpty {
+                        head: ColId(0),
+                        tail: vec![ColId(1)],
+                    },
+                    name: "id_and_name".into(),
+                    is_unique: false,
+                },
+                IndexDef {
+                    table_id: AUTO_TABLE_ID,
+                    cols: NonEmpty::new(ColId(1)),
+                    name: "just_name".into(),
+                    is_unique: false,
+                },
+            ],
+            table_type: StTableType::User,
+            table_access: StAccess::Public,
+        };
+
+        for schema in [&mut datastore_schema, &mut expected_schema] {
+            schema.columns.sort_by(|a, b| a.col_name.cmp(&b.col_name));
+            schema.indexes.sort_by(|a, b| a.name.cmp(&b.name));
+        }
+
+        assert_eq!(expected_schema, datastore_schema);
+
+        Ok(())
+    }
 }
