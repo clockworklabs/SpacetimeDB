@@ -4,6 +4,7 @@ use anyhow::Context;
 use bytes::Bytes;
 use bytestring::ByteString;
 use derive_more::Display;
+use enum_map::Enum;
 use spacetimedb_lib::de::serde::SeedWrapper;
 use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::{bsatn, Hash, Identity};
@@ -168,11 +169,19 @@ impl EnergyMonitor for NullEnergyMonitor {
     }
 }
 
-#[derive(Debug, Display)]
-pub enum SysCall {
-    Insert,
+/// Tags for each call that a `WasmInstanceEnv` can make.
+#[derive(Debug, Display, Enum)]
+pub enum AbiCall {
+    CancelReducer,
+    ConsoleLog,
+    CreateIndex,
     DeleteByColEq,
+    GetTableId,
+    Insert,
     IterByColEq,
-    IterChunks,
-    IterChunksFiltered,
+    IterDrop,
+    IterNext,
+    IterStart,
+    IterStartFiltered,
+    ScheduleReducer,
 }
