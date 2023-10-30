@@ -1,6 +1,6 @@
 [package]
 name = "spacetimedb-core"
-version = "0.7.1"
+version = "0.7.2"
 edition = "2021"
 license-file = "LICENSE"
 description = "The core library for SpacetimeDB"
@@ -18,11 +18,11 @@ name = "odb_flavor_bench"
 harness = false
 
 [dependencies]
-spacetimedb-lib = { path = "../lib", version = "0.7.1" }
-spacetimedb-sats = { path = "../sats", version = "0.7.1" }
-spacetimedb-vm = { path = "../vm", version = "0.7.1" }
-spacetimedb-client-api-messages = { path = "../client-api-messages", version = "0.7.1" }
-spacetimedb-primitives = { path = "../primitives", version = "0.7.1" }
+spacetimedb-lib = { path = "../lib", version = "0.7.2" }
+spacetimedb-sats = { path = "../sats", version = "0.7.2" }
+spacetimedb-vm = { path = "../vm", version = "0.7.2" }
+spacetimedb-client-api-messages = { path = "../client-api-messages", version = "0.7.2" }
+spacetimedb-primitives = { path = "../primitives", version = "0.7.2" }
 
 anyhow.workspace = true
 async-trait.workspace = true
