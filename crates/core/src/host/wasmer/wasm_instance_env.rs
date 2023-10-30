@@ -3,6 +3,7 @@
 use std::time::Instant;
 
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
+use crate::db::db_metrics::DB_METRICS;
 use crate::execution_context::ExecutionContext;
 use crate::host::scheduler::{ScheduleError, ScheduledReducerId};
 use crate::host::timestamp::Timestamp;
@@ -13,6 +14,7 @@ use crate::host::wasm_common::{
     instrumentation::{Call, CallTimes},
     AbiRuntimeError, BufferIdx, BufferIterIdx, BufferIters, Buffers, TimingSpan, TimingSpanIdx, TimingSpanSet,
 };
+use crate::host::SysCall;
 use wasmer::{FunctionEnvMut, MemoryAccessError, RuntimeError, ValueType, WasmPtr};
 
 use crate::host::instance_env::InstanceEnv;
@@ -390,14 +392,22 @@ impl WasmInstanceEnv {
     ///   according to the `ProductType` that the table's schema specifies.
     #[tracing::instrument(skip_all)]
     pub fn insert(caller: FunctionEnvMut<'_, Self>, table_id: u32, row: WasmPtr<u8>, row_len: u32) -> RtResult<u16> {
-        Self::cvt(caller, "insert", Call::Insert, |caller, mem| {
+        let ctx = caller.data().reducer_context();
+        let txn_type = &ctx.txn_type();
+        let db = &ctx.database();
+        let reducer = &ctx.reducer_name().unwrap_or_default().to_owned();
+        let syscall = &SysCall::Insert;
+        let start = Instant::now();
+
+        let result = Self::cvt(caller, "insert", Call::Insert, |caller, mem| {
             // Read the row from WASM memory into a buffer.
             let mut row_buffer = mem.read_bytes(&caller, row, row_len)?;
 
             // Insert the row into the DB. We get back the decoded version.
             // Then re-encode and write that back into WASM memory at `row`.
             // We're doing this because of autoinc.
-            let new_row = caller.data().instance_env.insert(table_id.into(), &row_buffer)?;
+            let ctx = caller.data().reducer_context();
+            let new_row = caller.data().instance_env.insert(&ctx, table_id.into(), &row_buffer)?;
             row_buffer.clear();
             new_row.encode(&mut row_buffer);
             assert_eq!(
@@ -407,7 +417,16 @@ impl WasmInstanceEnv {
             );
             mem.set_bytes(&caller, row, row_len, &row_buffer)?;
             Ok(())
-        })
+        });
+
+        // TODO: Instead of writing this metric on every insert call,
+        // we should aggregate and write at the end of the transaction.
+        DB_METRICS
+            .wasm_abi_call_duration_ns
+            .with_label_values(txn_type, db, reducer, syscall)
+            .observe(start.elapsed().as_nanos() as f64);
+
+        result
     }
 
     /// Deletes all rows in the table identified by `table_id`
@@ -436,7 +455,14 @@ impl WasmInstanceEnv {
         value_len: u32,
         out: WasmPtr<u32>,
     ) -> RtResult<u16> {
-        Self::cvt_ret(caller, "delete_by_col_eq", Call::DeleteByColEq, out, |caller, mem| {
+        let ctx = caller.data().reducer_context();
+        let txn_type = &ctx.txn_type();
+        let db = &ctx.database();
+        let reducer = &ctx.reducer_name().unwrap_or_default().to_owned();
+        let syscall = &SysCall::DeleteByColEq;
+        let start = Instant::now();
+
+        let result = Self::cvt_ret(caller, "delete_by_col_eq", Call::DeleteByColEq, out, |caller, mem| {
             let ctx = caller.data().reducer_context();
             let value = mem.read_bytes(&caller, value, value_len)?;
             let count = caller
@@ -444,7 +470,14 @@ impl WasmInstanceEnv {
                 .instance_env
                 .delete_by_col_eq(&ctx, table_id.into(), col_id.into(), &value)?;
             Ok(count.get())
-        })
+        });
+
+        DB_METRICS
+            .wasm_abi_call_duration_ns
+            .with_label_values(txn_type, db, reducer, syscall)
+            .observe(start.elapsed().as_nanos() as f64);
+
+        result
     }
 
     /// Queries the `table_id` associated with the given (table) `name`
@@ -542,7 +575,14 @@ impl WasmInstanceEnv {
         val_len: u32,
         out: WasmPtr<BufferIdx>,
     ) -> RtResult<u16> {
-        Self::cvt_ret(caller, "iter_by_col_eq", Call::IterByColEq, out, |mut caller, mem| {
+        let ctx = caller.data().reducer_context();
+        let txn_type = &ctx.txn_type();
+        let db = &ctx.database();
+        let reducer = &ctx.reducer_name().unwrap_or_default().to_owned();
+        let syscall = &SysCall::IterByColEq;
+        let start = Instant::now();
+
+        let result = Self::cvt_ret(caller, "iter_by_col_eq", Call::IterByColEq, out, |mut caller, mem| {
             // Read the test value from WASM memory.
             let value = mem.read_bytes(&caller, val, val_len)?;
 
@@ -557,7 +597,14 @@ impl WasmInstanceEnv {
 
             // Insert the encoded + concatenated rows into a new buffer and return its id.
             Ok(caller.data_mut().buffers.insert(data.into()))
-        })
+        });
+
+        DB_METRICS
+            .wasm_abi_call_duration_ns
+            .with_label_values(txn_type, db, reducer, syscall)
+            .observe(start.elapsed().as_nanos() as f64);
+
+        result
     }
 
     /// Start iteration on each row, as bytes, of a table identified by `table_id`.
@@ -569,7 +616,14 @@ impl WasmInstanceEnv {
     /// - a table with the provided `table_id` doesn't exist
     // #[tracing::instrument(skip_all)]
     pub fn iter_start(caller: FunctionEnvMut<'_, Self>, table_id: u32, out: WasmPtr<BufferIterIdx>) -> RtResult<u16> {
-        Self::cvt_ret(caller, "iter_start", Call::IterStart, out, |mut caller, _mem| {
+        let ctx = caller.data().reducer_context();
+        let txn_type = &ctx.txn_type();
+        let db = &ctx.database();
+        let reducer = &ctx.reducer_name().unwrap_or_default().to_owned();
+        let syscall = &SysCall::IterChunks;
+        let start = Instant::now();
+
+        let result = Self::cvt_ret(caller, "iter_start", Call::IterStart, out, |mut caller, _mem| {
             // Retrieve the execution context for the current reducer.
             let ctx = caller.data().reducer_context();
 
@@ -579,7 +633,14 @@ impl WasmInstanceEnv {
             // Register the iterator and get back the index to write to `out`.
             // Calls to the iterator are done through dynamic dispatch.
             Ok(caller.data_mut().iters.insert(chunks.into_iter()))
-        })
+        });
+
+        DB_METRICS
+            .wasm_abi_call_duration_ns
+            .with_label_values(txn_type, db, reducer, syscall)
+            .observe(start.elapsed().as_nanos() as f64);
+
+        result
     }
 
     /// Like [`WasmInstanceEnv::iter_start`], start iteration on each row,
@@ -603,7 +664,14 @@ impl WasmInstanceEnv {
         filter_len: u32,
         out: WasmPtr<BufferIterIdx>,
     ) -> RtResult<u16> {
-        Self::cvt_ret(
+        let ctx = caller.data().reducer_context();
+        let txn_type = &ctx.txn_type();
+        let db = &ctx.database();
+        let reducer = &ctx.reducer_name().unwrap_or_default().to_owned();
+        let syscall = &SysCall::IterChunksFiltered;
+        let start = Instant::now();
+
+        let result = Self::cvt_ret(
             caller,
             "iter_start_filtered",
             Call::IterStartFiltered,
@@ -625,7 +693,14 @@ impl WasmInstanceEnv {
                 // Calls to the iterator are done through dynamic dispatch.
                 Ok(caller.data_mut().iters.insert(chunks.into_iter()))
             },
-        )
+        );
+
+        DB_METRICS
+            .wasm_abi_call_duration_ns
+            .with_label_values(txn_type, db, reducer, syscall)
+            .observe(start.elapsed().as_nanos() as f64);
+
+        result
     }
 
     /// Advances the registered iterator with the index given by `iter_key`.

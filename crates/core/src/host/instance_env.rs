@@ -116,10 +116,9 @@ impl InstanceEnv {
         log::trace!("MOD({}): {}", self.dbic.address.to_abbreviated_hex(), record.message);
     }
 
-    pub fn insert(&self, table_id: TableId, buffer: &[u8]) -> Result<ProductValue, NodesError> {
+    pub fn insert(&self, ctx: &ExecutionContext, table_id: TableId, buffer: &[u8]) -> Result<ProductValue, NodesError> {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;
-        let ctx = ExecutionContext::internal(stdb.address());
         let ret = stdb
             .insert_bytes_as_row(tx, table_id, buffer)
             .inspect_err_(|e| match e {
@@ -130,7 +129,7 @@ impl InstanceEnv {
                     value: _,
                 }) => {}
                 _ => {
-                    let res = stdb.table_name_from_id(&ctx, tx, table_id);
+                    let res = stdb.table_name_from_id(ctx, tx, table_id);
                     if let Ok(Some(table_name)) = res {
                         log::debug!("insert(table: {table_name}, table_id: {table_id}): {e}")
                     } else {
