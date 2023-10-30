@@ -47,8 +47,8 @@ pub struct _Private {
 #[spacetimedb(table)]
 #[spacetimedb(index(btree, name = "multi_column_index", x, y))]
 pub struct Point {
-  x: i64,
-  y: i64,
+    x: i64,
+    y: i64,
 }
 
 pub type TestAlias = TestA;
