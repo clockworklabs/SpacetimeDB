@@ -30,6 +30,7 @@ pub use spacetimedb_sats::hash;
 pub mod protobuf {
     pub use spacetimedb_client_api_messages::*;
 }
+pub mod callgrind_flag;
 pub mod client;
 pub mod config;
 pub mod control_db;

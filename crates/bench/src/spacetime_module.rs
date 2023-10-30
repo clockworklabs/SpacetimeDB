@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use spacetimedb::db::{Config, FsyncPolicy, Storage};
 use spacetimedb_lib::{
     sats::{product, ArrayValue},
@@ -71,7 +73,14 @@ impl BenchDatabase for SpacetimeModule {
             },
             storage: if in_memory { Storage::Memory } else { Storage::Disk },
         };
-        let module = runtime.block_on(async { BENCHMARKS_MODULE.load_module(config).await });
+
+        let module = runtime.block_on(async {
+            // We keep a saved database at "crates/bench/.spacetime".
+            // This is mainly used for caching wasmtime native artifacts.
+            BENCHMARKS_MODULE
+                .load_module(config, Some(Path::new(env!("CARGO_MANIFEST_DIR"))))
+                .await
+        });
 
         for thing in module.client.module.catalog().iter() {
             log::trace!("SPACETIME_MODULE: LOADED: {} {:?}", thing.0, thing.1.ty());

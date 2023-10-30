@@ -25,7 +25,7 @@ fn custom_module_benchmarks(c: &mut Criterion) {
         storage: Storage::Memory,
         fsync: spacetimedb::db::FsyncPolicy::Never,
     };
-    let module = runtime.block_on(async { BENCHMARKS_MODULE.load_module(config).await });
+    let module = runtime.block_on(async { BENCHMARKS_MODULE.load_module(config, None).await });
 
     let args = sats::product!["0".repeat(65536)];
     c.bench_function("stdb_module/large_arguments/64KiB", |b| {
