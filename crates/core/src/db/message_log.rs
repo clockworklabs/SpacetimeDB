@@ -335,9 +335,10 @@ impl TryFrom<SegmentView> for IterSegment {
     type Error = io::Error;
 
     fn try_from(view: SegmentView) -> Result<Self, Self::Error> {
+        let segment = view.offset();
         File::try_from(view)
             .map(BufReader::new)
-            .map(|file| IterSegment { file })
+            .map(|file| IterSegment { segment, read: 0, file })
     }
 }
 
@@ -354,10 +355,25 @@ impl TryFrom<SegmentView> for File {
 /// Created by [`SegmentView::try_iter`].
 #[must_use = "iterators are lazy and do nothing unless consumed"]
 pub struct IterSegment {
+    segment: u64,
+    read: u64,
     file: BufReader<File>,
 }
 
 impl IterSegment {
+    /// Return the id of the segment being iterated over.
+    ///
+    /// The segment id is the `min_offset`, but that information is not
+    /// meaningful here -- the value returned should be treated  as opaque.
+    pub fn segment(&self) -> u64 {
+        self.segment
+    }
+
+    /// Return the number of bytes read from the segment file so far.
+    pub fn bytes_read(&self) -> u64 {
+        self.read
+    }
+
     fn read_exact_or_none(&mut self, buf: &mut [u8]) -> Option<io::Result<()>> {
         match self.file.read_exact(buf) {
             Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => None,
@@ -375,12 +391,14 @@ impl Iterator for IterSegment {
         if let Err(e) = self.read_exact_or_none(&mut buf)? {
             return Some(Err(e));
         }
+        self.read += HEADER_SIZE as u64;
 
         let message_len = u32::from_le_bytes(buf);
         let mut buf = vec![0; message_len as usize];
         if let Err(e) = self.read_exact_or_none(&mut buf)? {
             return Some(Err(e));
         }
+        self.read += message_len as u64;
 
         Some(Ok(buf))
     }
