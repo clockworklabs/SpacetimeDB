@@ -71,6 +71,16 @@ metrics_group!(
         #[labels(txn_type: TransactionType, db: Address, reducer: str, table_id: u32)]
         pub rdb_num_rows_fetched: IntCounterVec,
 
+        #[name = spacetime_num_index_keys_scanned_cumulative]
+        #[help = "The cumulative number of keys scanned from an index"]
+        #[labels(txn_type: TransactionType, db: Address, reducer: str, table_id: u32)]
+        pub rdb_num_keys_scanned: IntCounterVec,
+
+        #[name = spacetime_num_index_seeks_cumulative]
+        #[help = "The cumulative number of index seeks"]
+        #[labels(txn_type: TransactionType, db: Address, reducer: str, table_id: u32)]
+        pub rdb_num_index_seeks: IntCounterVec,
+
         #[name = spacetime_num_txns_committed_cumulative]
         #[help = "The cumulative number of committed transactions"]
         #[labels(txn_type: TransactionType, db: Address, reducer: str)]
