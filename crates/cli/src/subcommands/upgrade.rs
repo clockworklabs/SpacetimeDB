@@ -176,10 +176,10 @@ pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
 
     let temp_dir = tempfile::tempdir()?.into_path();
     let temp_path = &temp_dir.join(download_name.clone());
-    download_with_progress(&client, &asset.unwrap().browser_download_url, &temp_path).await?;
+    download_with_progress(&client, &asset.unwrap().browser_download_url, temp_path).await?;
 
     if download_name.to_lowercase().ends_with(".tar.gz") || download_name.to_lowercase().ends_with("tgz") {
-        let tar_gz = fs::File::open(&temp_path)?;
+        let tar_gz = fs::File::open(temp_path)?;
         let tar = GzDecoder::new(tar_gz);
         let mut archive = Archive::new(tar);
         let mut spacetime_found = false;
@@ -198,7 +198,7 @@ pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
         }
     }
 
-    let new_exe_path = if temp_path.ends_with(".exe") {
+    let new_exe_path = if temp_path.to_str().unwrap().ends_with(".exe") {
         temp_path.clone()
     } else if download_name.ends_with(".tar.gz") {
         temp_dir.join("spacetime")
@@ -210,8 +210,8 @@ pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
     // Move the current executable into a temporary directory, which will later be deleted by the OS
     let current_exe_temp_dir = env::temp_dir();
     let current_exe_to_temp = current_exe_temp_dir.join("spacetime_old");
-    fs::rename(&current_exe_path, &current_exe_to_temp)?;
-    fs::rename(&new_exe_path, &current_exe_path)?;
+    fs::rename(&current_exe_path, current_exe_to_temp)?;
+    fs::rename(new_exe_path, &current_exe_path)?;
     fs::remove_dir_all(&temp_dir)?;
 
     println!("spacetime has been updated to version {}", release_version);
