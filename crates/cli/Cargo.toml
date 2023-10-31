@@ -31,10 +31,13 @@ dirs.workspace = true
 duct.workspace = true
 email_address.workspace = true
 futures.workspace = true
+flate2.workspace = true
 is-terminal.workspace = true
 itertools.workspace = true
+indicatif.workspace = true
 jsonwebtoken.workspace = true
 mimalloc.workspace = true
+regex.workspace = true
 reqwest.workspace = true
 rustyline.workspace = true
 serde = { workspace = true, features = ["derive"] }
@@ -42,6 +45,7 @@ serde_json = { workspace = true, features = ["raw_value", "preserve_order"] }
 slab.workspace = true
 syntect.workspace = true
 tabled.workspace = true
+tar.workspace = true
 tempfile.workspace = true
 termcolor.workspace = true
 tokio.workspace = true
