@@ -5,7 +5,7 @@ use crate::host::wasm_common::module_host_actor::{AbiVersionError, DescribeError
 use crate::host::wasm_common::*;
 use crate::host::EnergyQuanta;
 use bytes::Bytes;
-use spacetimedb_lib::{VersionTuple};
+use spacetimedb_lib::VersionTuple;
 use wasmer::{
     imports, AsStoreMut, Engine, ExternType, Function, FunctionEnv, Imports, Instance, Module, RuntimeError, Store,
     TypedFunction, WasmPtr,
