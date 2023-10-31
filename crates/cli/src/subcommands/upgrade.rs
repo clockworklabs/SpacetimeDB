@@ -207,7 +207,9 @@ pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
         return Err(anyhow::anyhow!("Unsupported download type"));
     };
 
-    fs::copy(&new_exe_path, current_exe_path)?;
+    let backup_exe_path = current_exe_path.with_extension("prev");
+    fs::rename(&current_exe_path, &backup_exe_path)?;
+    fs::rename(&new_exe_path, &current_exe_path)?;
     fs::remove_dir_all(&temp_dir)?;
     println!("spacetime has been updated to version {}", release_version);
 
