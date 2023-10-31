@@ -1,8 +1,6 @@
 use super::RowId;
 use crate::{db::datastore::traits::IndexSchema, error::DBError};
-use indexmap::IndexMap;
 use nonempty::NonEmpty;
-use smallvec::SmallVec;
 use spacetimedb_lib::{data_key::ToDataKey, DataKey};
 use spacetimedb_primitives::{ColId, IndexId, TableId};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
@@ -47,40 +45,45 @@ impl IndexKey {
     }
 }
 
-pub struct RangeRowIdIter<'a> {
-    range_iter: btree_set::Range<'a, IndexKey>,
+pub struct BTreeIndexIter<'a> {
+    iter: btree_set::Iter<'a, IndexKey>,
 }
 
-impl<'a> Iterator for RangeRowIdIter<'a> {
-    type Item = &'a RowId;
+impl Iterator for BTreeIndexIter<'_> {
+    type Item = RowId;
 
     #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Option<Self::Item> {
-        self.range_iter.next().map(|key| &key.row_id)
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.range_iter.size_hint()
+        self.iter.next().map(|key| key.row_id)
     }
 }
 
 /// An iterator for the rows that match a value [AlgebraicValue] on the
 /// [BTreeIndex]
-pub type BTreeIndexRangeIter<'a> = itertools::Either<
-    itertools::Either<
-        std::option::IntoIter<&'a RowId>,
-        std::iter::Flatten<std::option::IntoIter<&'a SmallVec<[RowId; 1]>>>,
-    >,
-    RangeRowIdIter<'a>,
->;
-
-const fn _assert_index_range_iter(arg: BTreeIndexRangeIter<'_>) -> impl Iterator<Item = &'_ RowId> {
-    arg
+pub struct BTreeIndexRangeIter<'a> {
+    range_iter: btree_set::Range<'a, IndexKey>,
+    num_keys_scanned: u64,
 }
 
-enum HashIdx {
-    Unique(IndexMap<AlgebraicValue, RowId>),
-    MaybeUnique(IndexMap<AlgebraicValue, SmallVec<[RowId; 1]>>),
+impl<'a> Iterator for BTreeIndexRangeIter<'a> {
+    type Item = &'a RowId;
+
+    #[tracing::instrument(skip_all)]
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(key) = self.range_iter.next() {
+            self.num_keys_scanned += 1;
+            Some(&key.row_id)
+        } else {
+            None
+        }
+    }
+}
+
+impl BTreeIndexRangeIter<'_> {
+    /// Returns the current number of keys the iterator has scanned.
+    pub fn keys_scanned(&self) -> u64 {
+        self.num_keys_scanned
+    }
 }
 
 pub(crate) struct BTreeIndex {
@@ -90,7 +93,6 @@ pub(crate) struct BTreeIndex {
     pub(crate) name: String,
     pub(crate) is_unique: bool,
     idx: BTreeSet<IndexKey>,
-    hash_idx: HashIdx,
 }
 
 impl BTreeIndex {
@@ -108,11 +110,6 @@ impl BTreeIndex {
             name,
             is_unique,
             idx: BTreeSet::new(),
-            hash_idx: if is_unique {
-                HashIdx::Unique(Default::default())
-            } else {
-                HashIdx::MaybeUnique(Default::default())
-            },
         }
     }
 
@@ -126,15 +123,6 @@ impl BTreeIndex {
         let col_value = self.get_fields(row)?;
         let key = IndexKey::from_row(&col_value, row.to_data_key());
         self.idx.insert(key);
-        let row_id = RowId(row.to_data_key());
-        match &mut self.hash_idx {
-            HashIdx::Unique(x) => {
-                x.insert(col_value, row_id);
-            }
-            HashIdx::MaybeUnique(x) => {
-                x.entry(col_value).or_default().push(row_id);
-            }
-        }
         Ok(())
     }
 
@@ -142,74 +130,51 @@ impl BTreeIndex {
     pub(crate) fn delete(&mut self, col_value: &AlgebraicValue, row_id: &RowId) {
         let key = IndexKey::from_row(col_value, row_id.0);
         self.idx.remove(&key);
-        match &mut self.hash_idx {
-            HashIdx::Unique(x) => {
-                x.remove(col_value);
-            }
-            HashIdx::MaybeUnique(x) => {
-                if let Some(row_ids) = x.get_mut(col_value) {
-                    if let Some(idx) = row_ids.iter().position(|x| x == row_id) {
-                        row_ids.swap_remove(idx);
-                    }
-                }
-            }
-        }
     }
 
     #[tracing::instrument(skip_all)]
-    pub(crate) fn get_row_that_violates_unique_constraint<'a>(&'a self, row: &AlgebraicValue) -> Option<&'a RowId> {
-        match &self.hash_idx {
-            HashIdx::Unique(x) => x.get(row),
-            _ => None,
+    pub(crate) fn violates_unique_constraint(&self, row: &ProductValue) -> bool {
+        if self.is_unique {
+            let col_value = self.get_fields(row).unwrap();
+            return self.contains_any(&col_value);
         }
+        false
     }
 
     #[tracing::instrument(skip_all)]
-    pub(crate) fn violates_unique_constraint(&self, row: &AlgebraicValue) -> bool {
-        self.get_row_that_violates_unique_constraint(row).is_some()
+    pub(crate) fn get_rows_that_violate_unique_constraint<'a>(
+        &'a self,
+        row: &'a AlgebraicValue,
+    ) -> Option<BTreeIndexRangeIter<'a>> {
+        self.is_unique.then(|| self.seek(row))
     }
 
     /// Returns `true` if the [BTreeIndex] contains a value for the specified `value`.
     #[tracing::instrument(skip_all)]
     pub(crate) fn contains_any(&self, value: &AlgebraicValue) -> bool {
-        match &self.hash_idx {
-            HashIdx::Unique(x) => x.contains_key(value),
-            HashIdx::MaybeUnique(x) => x.get(value).map_or(false, |x| !x.is_empty()),
-        }
+        self.seek(value).next().is_some()
     }
 
     /// Returns an iterator over the `RowId`s in the [BTreeIndex]
     #[tracing::instrument(skip_all)]
-    pub(crate) fn scan(&self) -> impl Iterator<Item = &'_ RowId> {
-        match &self.hash_idx {
-            HashIdx::Unique(x) => itertools::Either::Left(x.values()),
-            HashIdx::MaybeUnique(x) => itertools::Either::Right(x.values().flatten()),
-        }
+    pub(crate) fn scan(&self) -> BTreeIndexIter<'_> {
+        BTreeIndexIter { iter: self.idx.iter() }
     }
 
     /// Returns an iterator over the [BTreeIndex] that yields all the `RowId`s
     /// that fall within the specified `range`.
     #[tracing::instrument(skip_all)]
     pub(crate) fn seek<'a>(&'a self, range: &impl RangeBounds<AlgebraicValue>) -> BTreeIndexRangeIter<'a> {
-        match (range.start_bound(), range.end_bound()) {
-            (Bound::Included(start), Bound::Included(end)) if start == end => itertools::Either::Left({
-                match &self.hash_idx {
-                    HashIdx::Unique(x) => itertools::Either::Left(x.get(start).into_iter()),
-                    HashIdx::MaybeUnique(x) => itertools::Either::Right(x.get(start).into_iter().flatten()),
-                }
-            }),
-            (start, end) => itertools::Either::Right({
-                let map = |bound, datakey| match bound {
-                    Bound::Included(x) => Bound::Included(IndexKey::from_row(x, datakey)),
-                    Bound::Excluded(x) => Bound::Excluded(IndexKey::from_row(x, datakey)),
-                    Bound::Unbounded => Bound::Unbounded,
-                };
-                let start = map(start, DataKey::min_datakey());
-                let end = map(end, DataKey::max_datakey());
-                RangeRowIdIter {
-                    range_iter: self.idx.range((start, end)),
-                }
-            }),
+        let map = |bound, datakey| match bound {
+            Bound::Included(x) => Bound::Included(IndexKey::from_row(x, datakey)),
+            Bound::Excluded(x) => Bound::Excluded(IndexKey::from_row(x, datakey)),
+            Bound::Unbounded => Bound::Unbounded,
+        };
+        let start = map(range.start_bound(), DataKey::min_datakey());
+        let end = map(range.end_bound(), DataKey::max_datakey());
+        BTreeIndexRangeIter {
+            range_iter: self.idx.range((start, end)),
+            num_keys_scanned: 0,
         }
     }
 

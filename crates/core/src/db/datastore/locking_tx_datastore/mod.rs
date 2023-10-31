@@ -1,4 +1,5 @@
 mod btree_index;
+mod hash_index;
 mod sequence;
 mod table;
 
