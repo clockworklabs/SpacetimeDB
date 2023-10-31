@@ -142,8 +142,11 @@ pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
         .user_agent(format!("SpacetimeDB CLI/{}", version::CLI_VERSION))
         .build()?;
 
+    print!("Finding version...");
+    std::io::stdout().flush()?;
     let release: Release = client.get(url).send().await?.json().await?;
     let release_version = clean_version(&release.tag_name).unwrap();
+    println!("done.");
 
     if release_version == version::CLI_VERSION {
         println!("You're already running the latest version: {}", version::CLI_VERSION);
