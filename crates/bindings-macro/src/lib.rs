@@ -654,18 +654,22 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
 
         unique_delete_funcs.push(quote! {
             #vis fn #delete_func_ident(#column_ident: &#column_type) -> bool {
-                spacetimedb::query::delete_by_field::<Self, #column_type, #column_index>(#column_ident)
+                spacetimedb::query::delete_by_unique_field::<Self, #column_type, #column_index>(#column_ident)
             }
         });
     }
 
-    let non_primary_filter_func = nonunique_columns.into_iter().filter_map(|column| {
+    let mut non_primary_filter_funcs = Vec::new();
+    let mut non_primary_delete_funcs = Vec::new();
+
+    for column in nonunique_columns.into_iter() {
         let vis = column.field.vis;
         let column_ident = column.field.ident.unwrap();
         let column_type = column.field.ty;
         let column_index = column.index;
 
         let filter_func_ident = format_ident!("filter_by_{}", column_ident);
+        let delete_func_ident = format_ident!("delete_by_{}", column_ident);
 
         let skip = if let syn::Type::Path(p) = column_type {
             // TODO: this is janky as heck
@@ -678,17 +682,22 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
         };
 
         if skip {
-            return None;
+            continue;
         }
 
-        Some(quote! {
+        non_primary_filter_funcs.push(quote! {
             // TODO: should we expose spacetimedb::query::FilterByIter ?
             #vis fn #filter_func_ident<'a>(#column_ident: &#column_type) -> impl Iterator<Item = Self> {
                 spacetimedb::query::filter_by_field::<Self, #column_type, #column_index>(#column_ident)
             }
-        })
-    });
-    let non_primary_filter_func = non_primary_filter_func.collect::<Vec<_>>();
+        });
+
+        non_primary_delete_funcs.push(quote! {
+            #vis fn #delete_func_ident<'a>(#column_ident: &#column_type) -> u32 {
+                spacetimedb::query::delete_by_field::<Self, #column_type, #column_index>(#column_ident)
+            }
+        });
+    }
 
     let insert_result = if has_unique {
         quote!(std::result::Result<Self, spacetimedb::UniqueConstraintViolation<Self>>)
@@ -811,7 +820,8 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
             #(#unique_delete_funcs)*
 
             #db_iter
-            #(#non_primary_filter_func)*
+            #(#non_primary_filter_funcs)*
+            #(#non_primary_delete_funcs)*
         }
 
         #schema_impl
