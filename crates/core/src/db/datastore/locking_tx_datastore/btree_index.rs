@@ -157,20 +157,16 @@ impl BTreeIndex {
     }
 
     #[tracing::instrument(skip_all)]
-    pub(crate) fn violates_unique_constraint(&self, row: &ProductValue) -> bool {
-        if let HashIdx::Unique(hash_idx) = &self.hash_idx {
-            let col_value = self.get_fields(row).unwrap();
-            return hash_idx.contains_key(&col_value);
+    pub(crate) fn get_row_that_violates_unique_constraint<'a>(&'a self, row: &AlgebraicValue) -> Option<&'a RowId> {
+        match &self.hash_idx {
+            HashIdx::Unique(x) => x.get(row),
+            _ => None,
         }
-        false
     }
 
     #[tracing::instrument(skip_all)]
-    pub(crate) fn get_rows_that_violate_unique_constraint<'a>(
-        &'a self,
-        row: &'a AlgebraicValue,
-    ) -> Option<BTreeIndexRangeIter<'a>> {
-        self.is_unique.then(|| self.seek(row))
+    pub(crate) fn violates_unique_constraint(&self, row: &AlgebraicValue) -> bool {
+        self.get_row_that_violates_unique_constraint(row).is_some()
     }
 
     /// Returns `true` if the [BTreeIndex] contains a value for the specified `value`.
