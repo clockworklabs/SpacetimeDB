@@ -88,16 +88,10 @@ async fn get_release_tag_from_version(release_version: &str) -> Result<Option<St
 }
 
 async fn download_with_progress(client: &reqwest::Client, url: &str, temp_path: &Path) -> Result<(), anyhow::Error> {
-    // Initial request to get the Content-Length
     let response = client.get(url).send().await?;
-
     let total_size = match response.headers().get(reqwest::header::CONTENT_LENGTH) {
         Some(size) => size.to_str().unwrap().parse::<u64>().unwrap(),
-        None => {
-            // Handle the case where Content-Length might not be provided
-            // Setting to a default or estimating another way
-            0 // This is just a placeholder; ideally you'd have a better estimate or handle this case differently
-        }
+        None => 0,
     };
 
     let pb = ProgressBar::new(total_size);
@@ -180,11 +174,8 @@ pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
         return Ok(());
     }
 
-    // Download the archive from the URL
     let temp_dir = tempfile::tempdir()?.into_path();
     let temp_path = &temp_dir.join(download_name.clone());
-
-    // Call the download_with_progress function
     download_with_progress(&client, &asset.unwrap().browser_download_url, &temp_path).await?;
 
     if download_name.to_lowercase().ends_with(".tar.gz") || download_name.to_lowercase().ends_with("tgz") {
@@ -212,10 +203,10 @@ pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
     } else if download_name.ends_with(".tar.gz") {
         temp_dir.join("spacetime")
     } else {
+        fs::remove_dir_all(&temp_dir)?;
         return Err(anyhow::anyhow!("Unsupported download type"));
     };
 
-    // Install new exe and cleanup temp files
     fs::copy(&new_exe_path, current_exe_path)?;
     fs::remove_dir_all(&temp_dir)?;
     println!("spacetime has been updated to version {}", release_version);
