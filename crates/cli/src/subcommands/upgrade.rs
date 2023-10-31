@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::{env, fs};
 
 extern crate regex;
@@ -5,9 +6,12 @@ extern crate regex;
 use crate::version;
 use clap::{Arg, ArgMatches};
 use flate2::read::GzDecoder;
+use futures::stream::StreamExt;
+use indicatif::{ProgressBar, ProgressStyle};
 use regex::Regex;
 use serde::Deserialize;
 use serde_json::Value;
+use std::path::Path;
 use tar::Archive;
 
 pub fn cli() -> clap::Command {
@@ -56,28 +60,64 @@ fn clean_version(version: &str) -> Option<String> {
         .map(|match_| match_.as_str().to_string())
 }
 
-fn get_release_tag_from_version(release_version: &str) -> Result<Option<String>, reqwest::Error> {
+async fn get_release_tag_from_version(release_version: &str) -> Result<Option<String>, reqwest::Error> {
     let release_version = format!("v{}-beta", release_version);
     let url = "https://api.github.com/repos/clockworklabs/SpacetimeDB/releases";
-    let client = reqwest::blocking::Client::new();
+    let client = reqwest::Client::builder()
+        .user_agent(format!("SpacetimeDB CLI/{}", version::CLI_VERSION))
+        .build()?;
     let releases: Vec<Value> = client
         .get(url)
         .header(
             reqwest::header::USER_AGENT,
             format!("SpacetimeDB CLI/{}", version::CLI_VERSION).as_str(),
         )
-        .send()?
-        .json()?;
+        .send()
+        .await?
+        .json()
+        .await?;
 
     for release in releases.iter() {
         if let Some(release_tag) = release["tag_name"].as_str() {
-            println!("Release: {}", release_tag.clone());
             if release_tag.starts_with(&release_version) {
                 return Ok(Some(release_tag.to_string()));
             }
         }
     }
     Ok(None)
+}
+
+async fn download_with_progress(client: &reqwest::Client, url: &str, temp_path: &Path) -> Result<(), anyhow::Error> {
+    // Initial request to get the Content-Length
+    let response = client.get(url).send().await?;
+
+    let total_size = match response.headers().get(reqwest::header::CONTENT_LENGTH) {
+        Some(size) => size.to_str().unwrap().parse::<u64>().unwrap(),
+        None => {
+            // Handle the case where Content-Length might not be provided
+            // Setting to a default or estimating another way
+            0 // This is just a placeholder; ideally you'd have a better estimate or handle this case differently
+        }
+    };
+
+    let pb = ProgressBar::new(total_size);
+    pb.set_style(
+        ProgressStyle::default_bar().template("{spinner} Downloading update... {bytes}/{total_bytes} ({eta})"),
+    );
+
+    let mut file = fs::File::create(temp_path)?;
+    let mut downloaded_bytes = 0;
+
+    let mut response_stream = response.bytes_stream();
+    while let Some(chunk) = response_stream.next().await {
+        let chunk = chunk?;
+        downloaded_bytes += chunk.len();
+        pb.set_position(downloaded_bytes as u64);
+        file.write_all(&chunk)?;
+    }
+
+    pb.finish_with_message("Download complete.");
+    Ok(())
 }
 
 pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
@@ -87,7 +127,7 @@ pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
     let url = match version {
         None => "https://api.github.com/repos/clockworklabs/SpacetimeDB/releases/latest".to_string(),
         Some(release_version) => {
-            let release_tag = get_release_tag_from_version(release_version)?;
+            let release_tag = get_release_tag_from_version(release_version).await?;
             if release_tag.is_none() {
                 return Err(anyhow::anyhow!("No release found for version {}", release_version));
             }
@@ -128,10 +168,11 @@ pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
         "This will replace the current executable at {}.",
         current_exe_path.display()
     );
-    println!("Do you want to continue? [y/N]");
+    print!("Do you want to continue? [y/N] ");
+    std::io::stdout().flush()?;
     let mut input = String::new();
     std::io::stdin().read_line(&mut input)?;
-    if input.trim().to_lowercase() != "y" || input.trim().to_lowercase() != "yes" {
+    if input.trim().to_lowercase() != "y" && input.trim().to_lowercase() != "yes" {
         println!("Aborting upgrade.");
         return Ok(());
     }
@@ -139,14 +180,28 @@ pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
     // Download the archive from the URL
     let temp_dir = tempfile::tempdir()?.into_path();
     let temp_path = &temp_dir.join(download_name.clone());
-    let response = reqwest::blocking::get(&asset.unwrap().browser_download_url)?;
-    fs::write(&temp_path, response.bytes()?)?;
 
-    if download_name.ends_with(".tar.gz") {
+    // Call the download_with_progress function
+    download_with_progress(&client, &asset.unwrap().browser_download_url, &temp_path).await?;
+
+    if download_name.to_lowercase().ends_with(".tar.gz") || download_name.to_lowercase().ends_with("tgz") {
         let tar_gz = fs::File::open(&temp_path)?;
         let tar = GzDecoder::new(tar_gz);
         let mut archive = Archive::new(tar);
-        archive.unpack(&temp_dir)?;
+        let mut spacetime_found = false;
+        for mut file in archive.entries()?.filter_map(|e| e.ok()) {
+            if let Ok(path) = file.path() {
+                if path.ends_with("spacetime") {
+                    spacetime_found = true;
+                    file.unpack(temp_dir.join("spacetime"))?;
+                }
+            }
+        }
+
+        if !spacetime_found {
+            fs::remove_dir_all(&temp_dir)?;
+            return Err(anyhow::anyhow!("Spacetime executable not found in archive"));
+        }
     }
 
     let new_exe_path = if temp_path.ends_with(".exe") {
@@ -157,14 +212,10 @@ pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
         return Err(anyhow::anyhow!("Unsupported download type"));
     };
 
+    // Install new exe and cleanup temp files
     fs::copy(&new_exe_path, current_exe_path)?;
-
-    fs::remove_file(&temp_path)?;
-    if download_name.ends_with(".tar.gz") {
-        fs::remove_file(new_exe_path)?;
-    }
-
-    println!("spacetime has been updated!");
+    fs::remove_dir_all(&temp_dir)?;
+    println!("spacetime has been updated to version {}", release_version);
 
     Ok(())
 }

@@ -34,6 +34,7 @@ futures.workspace = true
 flate2.workspace = true
 is-terminal.workspace = true
 itertools.workspace = true
+indicatif.workspace = true
 jsonwebtoken.workspace = true
 mimalloc.workspace = true
 regex.workspace = true
