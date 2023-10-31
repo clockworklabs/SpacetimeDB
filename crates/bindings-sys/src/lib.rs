@@ -688,6 +688,7 @@ pub fn cancel_reducer(id: u64) {
 }
 
 pub use raw::{Buffer, BufferIter};
+use spacetimedb_primitives::{TableId, ColId};
 
 impl Buffer {
     /// Returns the number of bytes of the data stored in the buffer.

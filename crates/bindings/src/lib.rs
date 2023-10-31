@@ -260,7 +260,7 @@ fn buffer_table_iter(
         .expect("Couldn't decode the filter query");
 
     // Create the iterator.
-    let mut iter = sys::iter(table_id, filter.as_deref())?;
+    let mut iter = sys::iter(TableId(table_id), filter.as_deref())?;
 
     // First item is an encoded schema.
     let schema_raw = iter
@@ -408,7 +408,7 @@ pub trait TableType: SpacetimeType + DeserializeOwned + Serialize {
 
     /// Returns an iterator over the rows in this table.
     fn iter() -> TableIter<Self> {
-        table_iter(Self::table_id(), None).unwrap()
+        table_iter(Self::table_id().0, None).unwrap()
     }
 
     /// Returns an iterator filtered by `filter` over the rows in this table.
@@ -416,7 +416,7 @@ pub trait TableType: SpacetimeType + DeserializeOwned + Serialize {
     /// **NOTE:** Do not use directly. This is exposed as `query!(...)`.
     #[doc(hidden)]
     fn iter_filtered(filter: spacetimedb_lib::filter::Expr) -> TableIter<Self> {
-        table_iter(Self::table_id(), Some(filter)).unwrap()
+        table_iter(Self::table_id().0, Some(filter)).unwrap()
     }
 }
 
