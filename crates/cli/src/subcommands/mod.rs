@@ -13,4 +13,5 @@ pub mod publish;
 pub mod repl;
 pub mod server;
 pub mod sql;
+pub mod upgrade;
 pub mod version;
