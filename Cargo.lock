@@ -4195,6 +4195,7 @@ dependencies = [
  "itertools 0.11.0",
  "jsonwebtoken",
  "mimalloc",
+ "regex",
  "reqwest",
  "rustyline",
  "serde",

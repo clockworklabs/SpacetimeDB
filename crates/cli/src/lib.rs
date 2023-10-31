@@ -56,6 +56,7 @@ pub async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Re
         "server" => server::exec(config, args).await,
         #[cfg(feature = "standalone")]
         "start" => start::exec(args).await,
+        "upgrade" => upgrade::exec(args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
 }
