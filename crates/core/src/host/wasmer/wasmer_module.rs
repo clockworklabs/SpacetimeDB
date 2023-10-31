@@ -1,11 +1,11 @@
 use super::wasm_instance_env::WasmInstanceEnv;
 use super::Mem;
 use crate::host::instance_env::InstanceEnv;
-use crate::host::wasm_common::module_host_actor::{AbiVersionError, DescribeError, InitializationError};
+use crate::host::wasm_common::module_host_actor::{AbiVersionError, DescribeError, InitializationError, ReducerOp};
 use crate::host::wasm_common::*;
 use crate::host::EnergyQuanta;
 use bytes::Bytes;
-use spacetimedb_lib::{Address, Identity, VersionTuple};
+use spacetimedb_lib::{VersionTuple};
 use wasmer::{
     imports, AsStoreMut, Engine, ExternType, Function, FunctionEnv, Imports, Instance, Module, RuntimeError, Store,
     TypedFunction, WasmPtr,

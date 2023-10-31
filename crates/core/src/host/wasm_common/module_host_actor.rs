@@ -10,7 +10,7 @@ use anyhow::{anyhow, Context};
 use bytes::Bytes;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::{bsatn, Address, IndexType, ModuleDef, VersionTuple};
+use spacetimedb_lib::{bsatn, Address, ModuleDef, VersionTuple};
 use spacetimedb_vm::expr::CrudExpr;
 
 use crate::database_instance_context::DatabaseInstanceContext;
