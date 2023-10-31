@@ -9,6 +9,9 @@ use spacetimedb_sats::{AlgebraicValue, ProductValue};
 
 /// An iterator for the rows that match a value [AlgebraicValue] on the
 /// [HashIndex]
+/// We unify iterators over Option<&SmallVec<[&RowId; 1]>> and Option<&RowId>
+/// into a common denominator - an iterator over &[RowId] - to avoid overhead
+/// of an extra enum around different variants.
 pub type HashIndexSeekIter<'a> = std::slice::Iter<'a, RowId>;
 
 const fn _assert_index_seek_iter(arg: HashIndexSeekIter<'_>) -> impl Iterator<Item = &'_ RowId> {
@@ -16,7 +19,10 @@ const fn _assert_index_seek_iter(arg: HashIndexSeekIter<'_>) -> impl Iterator<It
 }
 
 enum HashIdx {
+    // If we know the key is unique, we can reduce size of the index by always storing just one RowId.
     Unique(IndexMap<AlgebraicValue, RowId>),
+    // Otherwise we store a SmallVec of RowIds to avoid allocation for the common case of still
+    // having just one row with given key.
     MaybeUnique(IndexMap<AlgebraicValue, SmallVec<[RowId; 1]>>),
 }
 

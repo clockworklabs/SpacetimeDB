@@ -1,18 +1,50 @@
 use super::{
     btree_index::{BTreeIndex, BTreeIndexRangeIter},
+    hash_index::HashIndex,
     RowId,
 };
-use crate::db::datastore::traits::TableSchema;
+use crate::{db::datastore::traits::TableSchema, error::DBError};
 use indexmap::IndexMap;
 use nonempty::NonEmpty;
 use spacetimedb_primitives::ColId;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
 use std::{collections::HashMap, ops::RangeBounds};
 
+#[derive(Default)]
+pub(crate) struct ColIndexes {
+    btree: Option<BTreeIndex>,
+    hash: Option<HashIndex>,
+}
+
+impl ColIndexes {
+    pub(crate) fn insert(&mut self, row: &ProductValue) -> Result<(), DBError> {
+        if let Some(btree) = &mut self.btree {
+            btree.insert(row)?;
+        }
+        if let Some(hash) = &mut self.hash {
+            hash.insert(row)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn delete(&mut self, col_value: &AlgebraicValue, row_id: &RowId) {
+        if let Some(btree) = &mut self.btree {
+            btree.delete(col_value, row_id);
+        }
+        if let Some(hash) = &mut self.hash {
+            hash.delete(col_value, row_id);
+        }
+    }
+
+    pub(crate) fn seek(&self, range: &impl RangeBounds<AlgebraicValue>) -> BTreeIndexRangeIter<'_> {
+        self.btree.as_ref().unwrap().seek(range)
+    }
+}
+
 pub(crate) struct Table {
     pub(crate) row_type: ProductType,
     pub(crate) schema: TableSchema,
-    pub(crate) indexes: HashMap<NonEmpty<ColId>, BTreeIndex>,
+    pub(crate) indexes: HashMap<NonEmpty<ColId>, ColIndexes>,
     pub(crate) rows: IndexMap<RowId, ProductValue>,
 }
 
@@ -26,9 +58,14 @@ impl Table {
         }
     }
 
-    pub(crate) fn insert_index(&mut self, mut index: BTreeIndex) {
+    pub(crate) fn insert_btree_index(&mut self, mut index: BTreeIndex) {
         index.build_from_rows(self.scan_rows()).unwrap();
-        self.indexes.insert(index.cols.clone(), index);
+        self.indexes.entry(index.cols.clone()).or_default().btree = Some(index);
+    }
+
+    pub(crate) fn insert_hash_index(&mut self, mut index: HashIndex) {
+        index.build_from_rows(self.scan_rows()).unwrap();
+        self.indexes.entry(index.cols.clone()).or_default().hash = Some(index);
     }
 
     pub(crate) fn insert(&mut self, row_id: RowId, row: ProductValue) {

@@ -170,7 +170,7 @@ impl CommittedState {
             // Add all newly created indexes to the committed state
             for (_, index) in table.indexes {
                 if !commit_table.indexes.contains_key(&index.cols) {
-                    commit_table.insert_index(index);
+                    commit_table.insert_btree_index(index);
                 }
             }
         }
