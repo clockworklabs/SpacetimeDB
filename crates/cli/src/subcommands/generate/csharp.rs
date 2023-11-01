@@ -589,6 +589,7 @@ fn autogen_csharp_product_table_common(
     writeln!(output, "{{").unwrap();
     {
         indent_scope!(output);
+        writeln!(output, "[Newtonsoft.Json.JsonObject(Newtonsoft.Json.MemberSerialization.OptIn)]").unwrap();
         writeln!(output, "public partial class {name} : IDatabaseTable").unwrap();
         writeln!(output, "{{").unwrap();
         {
