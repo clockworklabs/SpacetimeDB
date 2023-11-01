@@ -492,6 +492,36 @@ impl WasmInstanceEnv {
         result
     }
 
+    /// Deletes those rows, in the table identified by `table_id`,
+    /// that match any row in `relation`.
+    ///
+    /// Matching is defined by first BSATN-decoding
+    /// the byte string pointed to at by `relation` to a `Vec<ProductValue>`
+    /// according to the row schema of the table
+    /// and then using `Ord for AlgebraicValue`.
+    ///
+    /// The number of rows deleted is written to the WASM pointer `out`.
+    ///
+    /// Returns an error if
+    /// - a table with the provided `table_id` doesn't exist
+    /// - `(relation, relation_len)` doesn't decode from BSATN to a `Vec<ProductValue>`
+    ///   according to the `ProductValue` that the table's schema specifies for rows.
+    /// - `relation + relation_len` overflows a 64-bit integer
+    /// - writing to `out` would overflow a 32-bit integer
+    #[tracing::instrument(skip_all)]
+    pub fn delete_by_rel(
+        caller: FunctionEnvMut<'_, Self>,
+        table_id: u32,
+        relation: WasmPtr<u8>,
+        relation_len: u32,
+        out: WasmPtr<u32>,
+    ) -> RtResult<u16> {
+        Self::cvt_ret(caller, "delete_by_rel", AbiCall::DeleteByRel, out, |caller, mem| {
+            let relation = mem.read_bytes(&caller, relation, relation_len)?;
+            Ok(caller.data().instance_env.delete_by_rel(table_id.into(), &relation)?)
+        })
+    }
+
     /// Queries the `table_id` associated with the given (table) `name`
     /// where `name` points to a UTF-8 slice in WASM memory of `name_len` bytes.
     ///

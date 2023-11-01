@@ -248,7 +248,7 @@ impl RelationalDB {
         bytes: &[u8],
     ) -> Result<AlgebraicValue, DBError> {
         let schema = self.schema_for_column(tx, table_id, col_id)?;
-        Ok(AlgebraicValue::decode(&schema, &mut &bytes[..])?)
+        Ok(AlgebraicValue::decode(&schema, &mut &*bytes)?)
     }
 
     /// Begin a transaction.

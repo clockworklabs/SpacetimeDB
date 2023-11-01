@@ -176,6 +176,7 @@ pub enum AbiCall {
     ConsoleLog,
     CreateIndex,
     DeleteByColEq,
+    DeleteByRel,
     GetTableId,
     Insert,
     IterByColEq,
