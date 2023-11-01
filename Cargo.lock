@@ -4388,6 +4388,7 @@ dependencies = [
  "insta",
  "itertools 0.11.0",
  "proptest",
+ "proptest-derive",
  "rand",
  "serde",
  "serde_json",
