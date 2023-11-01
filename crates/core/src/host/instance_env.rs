@@ -182,6 +182,8 @@ impl InstanceEnv {
 
         // Find the row schema using it to decode a vector of product values.
         let row_ty = stdb.row_schema_for_table(tx, table_id)?;
+        // `TableType::delete` cares about a single element
+        // so in that case we can avoid the allocation by using `smallvec`.
         let relation = ProductValue::decode_smallvec(&row_ty, &mut &*relation).map_err(NodesError::DecodeRow)?;
 
         // Delete them and return how many we deleted.

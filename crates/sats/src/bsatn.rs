@@ -58,7 +58,7 @@ macro_rules! codec_funcs {
                 crate::WithTypespace::new(&Typespace::new(Vec::new()), ty).deserialize(Deserializer::new(bytes))
             }
 
-            /// Decode a vector of values from `bytes` with each valeu typed at `ty`.
+            /// Decode a vector of values from `bytes` with each value typed at `ty`.
             pub fn decode_smallvec<'a>(
                 ty: &<Self as crate::Value>::Type,
                 bytes: &mut impl BufReader<'a>,
