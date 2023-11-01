@@ -17,6 +17,7 @@ pub use spacetimedb_lib::ser::Serialize;
 use spacetimedb_lib::{bsatn, ColumnIndexAttribute, IndexType, PrimaryKey, ProductType, ProductValue};
 use std::cell::RefCell;
 use std::marker::PhantomData;
+use std::slice::from_ref;
 use std::{fmt, panic};
 
 pub use spacetimedb_bindings_macro::{duration, query, spacetimedb, TableType};
@@ -198,6 +199,33 @@ pub fn delete_by_col_eq(table_id: TableId, col_id: u8, value: &impl Serialize) -
     })
 }
 
+/// Deletes those rows, in the table identified by `table_id`,
+/// that match any row in `relation`.
+///
+/// The `relation` will be BSATN encoded to `[ProductValue]`
+/// i.e., a list of product values, so each element in `relation`
+/// must serialize to what a `ProductValue` would in BSATN.
+///
+/// Matching is then defined by first BSATN-decoding
+/// the resulting bsatn to a `Vec<ProductValue>`
+/// according to the row schema of the table
+/// and then using `Ord for AlgebraicValue`.
+///
+/// Returns the number of rows deleted.
+///
+/// Returns an error if
+/// - a table with the provided `table_id` doesn't exist
+/// - `(relation, relation_len)` doesn't decode from BSATN to a `Vec<ProductValue>`
+///
+/// Panics when serialization fails.
+pub fn delete_by_rel(table_id: TableId, relation: &[impl Serialize]) -> Result<u32> {
+    with_row_buf(|bytes| {
+        // Encode `value` as BSATN into `bytes` and then use that.
+        bsatn::to_writer(bytes, relation).unwrap();
+        sys::delete_by_rel(table_id, bytes)
+    })
+}
+
 /// A table iterator which yields values of the `TableType` corresponding to the table.
 type TableTypeTableIter<T> = RawTableIter<TableTypeBufferDeserialize<T>>;
 
@@ -341,6 +369,15 @@ pub trait TableType: SpacetimeType + DeserializeOwned + Serialize {
     #[doc(hidden)]
     fn iter_filtered(filter: spacetimedb_lib::filter::Expr) -> TableIter<Self> {
         table_iter(Self::table_id(), Some(filter)).unwrap()
+    }
+
+    /// Deletes this row `self` from the table.
+    ///
+    /// Returns `true` if the row was deleted.
+    fn delete(&self) -> bool {
+        let count = delete_by_rel(Self::table_id(), from_ref(self)).unwrap();
+        debug_assert!(count < 2);
+        count == 1
     }
 }
 

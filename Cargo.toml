@@ -149,6 +149,7 @@ sha1 = "0.10.1"
 sha3 = "0.10.0"
 slab = "0.4.7"
 sled = "0.34.7"
+smallvec = { version = "1.11.1", features = ["union", "const_generics"] }
 sqlparser = "0.38.0"
 sqllogictest-engines = "0.17"
 sqllogictest = "0.17"

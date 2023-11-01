@@ -22,6 +22,7 @@ hex = { workspace = true, optional = true }
 itertools.workspace = true
 nonempty.workspace = true
 serde = { workspace = true, optional = true }
+smallvec.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 

@@ -4416,6 +4416,7 @@ dependencies = [
  "proptest",
  "rand",
  "serde",
+ "smallvec",
  "spacetimedb-bindings-macro",
  "spacetimedb-primitives",
  "thiserror",
