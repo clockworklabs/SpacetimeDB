@@ -167,7 +167,7 @@ impl CommitLog {
                 }
             }
 
-            let mut bytes = Vec::new();
+            let mut bytes = Vec::with_capacity(unwritten_commit.encoded_len());
             unwritten_commit.encode(&mut bytes);
 
             unwritten_commit.parent_commit_hash = Some(hash_bytes(&bytes));
