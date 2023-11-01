@@ -7,6 +7,7 @@ use crate::hex::HexString;
 pub const HASH_SIZE: usize = 32;
 
 #[derive(Eq, PartialEq, PartialOrd, Ord, Clone, Copy, Hash)]
+#[cfg_attr(any(test, feature = "proptest"), derive(proptest_derive::Arbitrary))]
 pub struct Hash {
     pub data: [u8; HASH_SIZE],
 }
