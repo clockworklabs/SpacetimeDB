@@ -22,7 +22,6 @@ use proptest_derive::Arbitrary;
 pub struct Commit {
     /// The [`Hash`] over the encoded bytes of the previous commit, or `None` if
     /// it is the very first commit.
-    #[cfg_attr(test, proptest(strategy = "arbitrary::parent_commit_hash()"))]
     pub parent_commit_hash: Option<Hash>,
     /// Counter of all commits in a log.
     pub commit_offset: u64,
@@ -39,13 +38,6 @@ pub struct Commit {
 #[cfg(test)]
 mod arbitrary {
     use super::*;
-
-    // [`Hash`] is defined in `lib`, so we can't have an [`Arbitrary`] impl for
-    // it just yet due to orphan rules.
-    pub fn parent_commit_hash() -> impl Strategy<Value = Option<Hash>> {
-        any::<Option<[u8; 32]>>().prop_map(|maybe_hash| maybe_hash.map(|data| Hash { data }))
-    }
-
     // Custom strategy to apply an upper bound on the number of [`Transaction`]s
     // generated.
     //

@@ -4,7 +4,13 @@ use std::ops::Deref;
 use crate::buffer::{BufReader, BufWriter, DecodeError};
 use crate::hash::hash_bytes;
 
+#[cfg(any(test, feature = "proptest"))]
+use proptest::prelude::*;
+#[cfg(any(test, feature = "proptest"))]
+use proptest_derive::Arbitrary;
+
 #[derive(Debug, Copy, Clone, PartialEq, Ord, PartialOrd, Eq, Hash)]
+#[cfg_attr(any(test, feature = "proptest"), derive(Arbitrary))]
 pub enum DataKey {
     Data(InlineData),
     Hash(super::Hash),
@@ -75,6 +81,16 @@ impl fmt::Debug for InlineData {
         f.write_char('"')?;
         fmt::Display::fmt(&(**self).escape_ascii(), f)?;
         f.write_char('"')
+    }
+}
+
+#[cfg(any(test, feature = "proptest"))]
+impl Arbitrary for InlineData {
+    type Parameters = ();
+    type Strategy = prop::strategy::Map<prop::collection::VecStrategy<prop::num::u8::Any>, fn(Vec<u8>) -> InlineData>;
+
+    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+        prop::collection::vec(any::<u8>(), 0..MAX_INLINE).prop_map(|bytes| InlineData::from_bytes(&bytes).unwrap())
     }
 }
 

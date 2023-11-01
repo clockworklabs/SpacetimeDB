@@ -99,6 +99,8 @@ odb_sled = []
 default = ["odb_sled"]
 
 [dev-dependencies]
+spacetimedb-lib = { path = "../lib", features = ["proptest"] }
+
 rusqlite.workspace = true
 criterion.workspace = true
 proptest.workspace = true
