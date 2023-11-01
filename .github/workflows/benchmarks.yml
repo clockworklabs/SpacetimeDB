@@ -64,6 +64,10 @@ jobs:
         uses: actions/checkout@v3
         with:
           ref: ${{ env.PR_REF || github.ref }}
+          # if we're on master we want to know what the sha of HEAD~1 is so
+          # that we can compare results from it to HEAD (in the "Fetch markdown
+          # summary PR" step). otherwise, we can use a fully shallow checkout
+          fetch-depth: ${{ env.PR_NUMBER && 1 || 2 }}
 
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1
@@ -145,7 +149,6 @@ jobs:
             OLD=master
             NEW=pr-$PR_NUMBER
           else
-            git fetch
             OLD=$(git rev-parse HEAD~1)
             NEW=$GITHUB_SHA
           fi
