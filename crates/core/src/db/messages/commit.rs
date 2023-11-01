@@ -152,15 +152,27 @@ mod tests {
     use super::*;
 
     proptest! {
-        // Generating arbitrary commits is quite slow, so limit this test to
-        // just a few cases.
+        // Generating arbitrary commits is quite slow, so limit to just a few
+        // cases.
+        //
+        // Note that this config applies to all `#[test]`s within the enclosing
+        // `proptest!`.
         #![proptest_config(ProptestConfig::with_cases(64))]
+
+
         #[test]
         fn prop_commit_encoding_roundtrip(commit in any::<Commit>()) {
             let mut buf = Vec::new();
             commit.encode(&mut buf);
             let decoded = Commit::decode(&mut buf.as_slice()).unwrap();
             prop_assert_eq!(commit, decoded)
+        }
+
+        #[test]
+        fn prop_encoded_len_is_encoded_len(commit in any::<Commit>()) {
+            let mut buf = Vec::new();
+            commit.encode(&mut buf);
+            prop_assert_eq!(buf.len(), commit.encoded_len())
         }
     }
 }
