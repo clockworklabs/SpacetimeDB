@@ -111,9 +111,7 @@ impl Commit {
     }
 
     pub fn encoded_len(&self) -> usize {
-        let mut count = 0;
-
-        count += 1; // tag for option
+        let mut count = 1; // tag for option
         if let Some(hash) = self.parent_commit_hash {
             count += hash.data.len();
         }
