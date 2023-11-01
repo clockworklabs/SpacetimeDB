@@ -162,6 +162,24 @@ pub mod raw {
             out: *mut u32,
         ) -> u16;
 
+        /// Deletes those rows, in the table identified by `table_id`,
+        /// that match any row in `relation`.
+        ///
+        /// Matching is defined by first BSATN-decoding
+        /// the byte string pointed to at by `relation` to a `Vec<ProductValue>`
+        /// according to the row schema of the table
+        /// and then using `Ord for AlgebraicValue`.
+        ///
+        /// The number of rows deleted is written to the WASM pointer `out`.
+        ///
+        /// Returns an error if
+        /// - a table with the provided `table_id` doesn't exist
+        /// - `(relation, relation_len)` doesn't decode from BSATN to a `Vec<ProductValue>`
+        ///   according to the `ProductValue` that the table's schema specifies for rows.
+        /// - `relation + relation_len` overflows a 64-bit integer
+        /// - writing to `out` would overflow a 32-bit integer
+        pub fn _delete_by_rel(table_id: TableId, relation: *const u8, relation_len: usize, out: *mut u32) -> u16;
+
         /// Start iteration on each row, as bytes, of a table identified by `table_id`.
         ///
         /// The iterator is registered in the host environment
@@ -591,6 +609,24 @@ pub fn insert(table_id: TableId, row: &mut [u8]) -> Result<(), Errno> {
 #[inline]
 pub fn delete_by_col_eq(table_id: TableId, col_id: ColId, value: &[u8]) -> Result<u32, Errno> {
     unsafe { call(|out| raw::_delete_by_col_eq(table_id, col_id, value.as_ptr(), value.len(), out)) }
+}
+
+/// Deletes those rows, in the table identified by `table_id`,
+/// that match any row in `relation`.
+///
+/// Matching is defined by first BSATN-decoding
+/// the byte string pointed to at by `relation` to a `Vec<ProductValue>`
+/// according to the row schema of the table
+/// and then using `Ord for AlgebraicValue`.
+///
+/// Returns the number of rows deleted.
+///
+/// Returns an error if
+/// - a table with the provided `table_id` doesn't exist
+/// - `(relation, relation_len)` doesn't decode from BSATN to a `Vec<ProductValue>`
+#[inline]
+pub fn delete_by_rel(table_id: TableId, relation: &[u8]) -> Result<u32, Errno> {
+    unsafe { call(|out| raw::_delete_by_rel(table_id, relation.as_ptr(), relation.len(), out)) }
 }
 
 /// Returns an iterator for each row, as bytes, of a table identified by `table_id`.

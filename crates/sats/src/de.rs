@@ -7,6 +7,7 @@ pub mod serde;
 
 #[doc(hidden)]
 pub use impls::{visit_named_product, visit_seq_product};
+use smallvec::SmallVec;
 
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
@@ -580,6 +581,18 @@ pub trait MapAccess<'de> {
     }
 }
 
+impl<'de, A: MapAccess<'de>> ArrayAccess<'de> for A {
+    type Element = (A::Key, A::Value);
+    type Error = A::Error;
+
+    fn next_element(&mut self) -> Result<Option<Self::Element>, Self::Error> {
+        self.next_entry()
+    }
+    fn size_hint(&self) -> Option<usize> {
+        self.size_hint()
+    }
+}
+
 /// `DeserializeSeed` is the stateful form of the [`Deserialize`] trait.
 pub trait DeserializeSeed<'de> {
     /// The type produced by using this seed.
@@ -635,18 +648,61 @@ impl<'de, T: Deserialize<'de>> DeserializeSeed<'de> for PhantomData<T> {
     }
 }
 
+/// A vector with two operations: `with_capacity` and `push`.
+pub trait GrowingVec<T> {
+    /// Create the collection with the given capacity.
+    fn with_capacity(cap: usize) -> Self;
+
+    /// Push to the vector the `elem`.
+    fn push(&mut self, elem: T);
+}
+
+impl<T> GrowingVec<T> for Vec<T> {
+    fn with_capacity(cap: usize) -> Self {
+        Self::with_capacity(cap)
+    }
+    fn push(&mut self, elem: T) {
+        self.push(elem)
+    }
+}
+
+impl<T, const N: usize> GrowingVec<T> for SmallVec<[T; N]> {
+    fn with_capacity(cap: usize) -> Self {
+        Self::with_capacity(cap)
+    }
+    fn push(&mut self, elem: T) {
+        self.push(elem)
+    }
+}
+
+/// A basic implementation of `ArrayVisitor::visit` using the provided size hint.
+pub fn array_visit<'de, A: ArrayAccess<'de>, V: GrowingVec<A::Element>>(mut access: A) -> Result<V, A::Error> {
+    let mut v = V::with_capacity(access.size_hint().unwrap_or(0));
+    while let Some(x) = access.next_element()? {
+        v.push(x)
+    }
+    Ok(v)
+}
+
 /// An implementation of [`ArrayVisitor<'de, T>`] where the output is a `Vec<T>`.
 pub struct BasicVecVisitor;
 
 impl<'de, T> ArrayVisitor<'de, T> for BasicVecVisitor {
     type Output = Vec<T>;
 
-    fn visit<A: ArrayAccess<'de, Element = T>>(self, mut vec: A) -> Result<Self::Output, A::Error> {
-        let mut v = Vec::with_capacity(vec.size_hint().unwrap_or(0));
-        while let Some(el) = vec.next_element()? {
-            v.push(el)
-        }
-        Ok(v)
+    fn visit<A: ArrayAccess<'de, Element = T>>(self, vec: A) -> Result<Self::Output, A::Error> {
+        array_visit(vec)
+    }
+}
+
+/// An implementation of [`ArrayVisitor<'de, T>`] where the output is a `SmallVec<[T; N]>`.
+pub struct BasicSmallVecVisitor<const N: usize>;
+
+impl<'de, T, const N: usize> ArrayVisitor<'de, T> for BasicSmallVecVisitor<N> {
+    type Output = SmallVec<[T; N]>;
+
+    fn visit<A: ArrayAccess<'de, Element = T>>(self, vec: A) -> Result<Self::Output, A::Error> {
+        array_visit(vec)
     }
 }
 
@@ -656,12 +712,8 @@ pub struct BasicMapVisitor;
 impl<'de, K: Ord, V> MapVisitor<'de, K, V> for BasicMapVisitor {
     type Output = BTreeMap<K, V>;
 
-    fn visit<A: MapAccess<'de, Key = K, Value = V>>(self, mut map: A) -> Result<Self::Output, A::Error> {
-        let mut m = Vec::with_capacity(map.size_hint().unwrap_or(0));
-        while let Some(entry) = map.next_entry()? {
-            m.push(entry)
-        }
-        Ok(m.into_iter().collect())
+    fn visit<A: MapAccess<'de, Key = K, Value = V>>(self, map: A) -> Result<Self::Output, A::Error> {
+        Ok(array_visit::<_, Vec<_>>(map)?.into_iter().collect())
     }
 }
 

@@ -1,7 +1,8 @@
 use crate::buffer::{BufReader, BufWriter};
-use crate::de::{Deserialize, DeserializeSeed};
+use crate::de::{BasicSmallVecVisitor, Deserialize, DeserializeSeed, Deserializer as _};
 use crate::ser::Serialize;
 use crate::Typespace;
+use smallvec::SmallVec;
 
 pub mod de;
 pub mod ser;
@@ -49,12 +50,23 @@ macro_rules! codec_funcs {
     };
     (val: $ty:ty) => {
         impl $ty {
+            /// Decode a value from `bytes` typed at `ty`.
             pub fn decode<'a>(
-                algebraic_type: &<Self as crate::Value>::Type,
+                ty: &<Self as crate::Value>::Type,
                 bytes: &mut impl BufReader<'a>,
             ) -> Result<Self, DecodeError> {
-                crate::WithTypespace::new(&Typespace::new(Vec::new()), algebraic_type)
-                    .deserialize(Deserializer::new(bytes))
+                crate::WithTypespace::new(&Typespace::new(Vec::new()), ty).deserialize(Deserializer::new(bytes))
+            }
+
+            /// Decode a vector of values from `bytes` with each value typed at `ty`.
+            pub fn decode_smallvec<'a>(
+                ty: &<Self as crate::Value>::Type,
+                bytes: &mut impl BufReader<'a>,
+            ) -> Result<SmallVec<[Self; 1]>, DecodeError> {
+                Deserializer::new(bytes).deserialize_array_seed(
+                    BasicSmallVecVisitor,
+                    crate::WithTypespace::new(&Typespace::new(Vec::new()), ty),
+                )
             }
 
             pub fn encode(&self, bytes: &mut impl BufWriter) {

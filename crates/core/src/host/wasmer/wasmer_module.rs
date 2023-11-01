@@ -59,6 +59,11 @@ impl WasmerModule {
                     env,
                     WasmInstanceEnv::delete_by_col_eq,
                 ),
+                "_delete_by_rel" => Function::new_typed_with_env(
+                    store,
+                    env,
+                    WasmInstanceEnv::delete_by_rel,
+                ),
                 "_insert" => Function::new_typed_with_env(
                     store,
                     env,

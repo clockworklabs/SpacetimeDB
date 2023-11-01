@@ -151,7 +151,7 @@ impl InstanceEnv {
     /// Deletes all rows in the table identified by `table_id`
     /// where the column identified by `cols` equates to `value`.
     ///
-    /// Returns an error if no columns were deleted or if the column wasn't found.
+    /// Returns an error if no rows were deleted or if the column wasn't found.
     #[tracing::instrument(skip(self, ctx, value))]
     pub fn delete_by_col_eq(
         &self,
@@ -175,6 +175,26 @@ impl InstanceEnv {
         // Delete them and count how many we deleted and error if none.
         let count = stdb.delete(tx, table_id, rows_to_delete);
         NonZeroU32::new(count).ok_or(NodesError::ColumnValueNotFound)
+    }
+
+    /// Deletes all rows in the table identified by `table_id`
+    /// where the rows match one in `relation`
+    /// which is a bsatn encoding of `Vec<ProductValue>`.
+    ///
+    /// Returns an error if no rows were deleted.
+    #[tracing::instrument(skip(self, relation))]
+    pub fn delete_by_rel(&self, table_id: TableId, relation: &[u8]) -> Result<u32, NodesError> {
+        let stdb = &*self.dbic.relational_db;
+        let tx = &mut *self.get_tx()?;
+
+        // Find the row schema using it to decode a vector of product values.
+        let row_ty = stdb.row_schema_for_table(tx, table_id)?;
+        // `TableType::delete` cares about a single element
+        // so in that case we can avoid the allocation by using `smallvec`.
+        let relation = ProductValue::decode_smallvec(&row_ty, &mut &*relation).map_err(NodesError::DecodeRow)?;
+
+        // Delete them and return how many we deleted.
+        Ok(stdb.delete_by_rel(tx, table_id, relation))
     }
 
     /// Returns the `table_id` associated with the given `table_name`.
