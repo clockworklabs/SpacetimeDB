@@ -158,35 +158,71 @@ struct MemView([u8]);
 
 impl MemView {
     fn from_slice_mut(v: &mut [u8]) -> &mut Self {
+        // SAFETY: MemView is repr(transparent) over [u8]
         unsafe { &mut *(v as *mut [u8] as *mut MemView) }
     }
     fn from_slice(v: &[u8]) -> &Self {
+        // SAFETY: MemView is repr(transparent) over [u8]
         unsafe { &*(v as *const [u8] as *const MemView) }
     }
-    fn deref_slice(&self, offset: WasmPtr<u8>, len: u32) -> Result<&[u8], WasmError> {
+    fn deref_slice(&self, offset: WasmPtr<u8>, len: u32) -> Result<&[u8], MemError> {
+        if offset == 0 {
+            return Err(MemError::Null);
+        }
         self.0
             .get(offset as usize..)
             .and_then(|s| s.get(..len as usize))
-            .ok_or_else(|| WasmError::Wasm(wasmtime::Trap::MemoryOutOfBounds.into()))
+            .ok_or(MemError::OutOfBounds)
     }
-    fn deref_str(&self, offset: WasmPtr<u8>, len: u32) -> Result<&str, WasmError> {
+    fn deref_str(&self, offset: WasmPtr<u8>, len: u32) -> Result<&str, MemError> {
         let b = self.deref_slice(offset, len)?;
-        std::str::from_utf8(b).map_err(|e| WasmError::Wasm(e.into()))
+        std::str::from_utf8(b).map_err(MemError::Utf8)
     }
-    fn deref_str_lossy(&self, offset: WasmPtr<u8>, len: u32) -> Result<Cow<str>, WasmError> {
+    fn deref_str_lossy(&self, offset: WasmPtr<u8>, len: u32) -> Result<Cow<str>, MemError> {
         self.deref_slice(offset, len).map(String::from_utf8_lossy)
     }
-    fn opt_deref_str_lossy(&self, offset: WasmPtr<u8>, len: u32) -> Result<Option<Cow<str>>, WasmError> {
+    fn deref_slice_mut(&mut self, offset: WasmPtr<u8>, len: u32) -> Result<&mut [u8], MemError> {
         if offset == 0 {
-            Ok(None)
-        } else {
-            self.deref_str_lossy(offset, len).map(Some)
+            return Err(MemError::Null);
         }
-    }
-    fn deref_slice_mut(&mut self, offset: WasmPtr<u8>, len: u32) -> Result<&mut [u8], WasmError> {
         self.0
             .get_mut(offset as usize..)
             .and_then(|s| s.get_mut(..len as usize))
-            .ok_or_else(|| WasmError::Wasm(wasmtime::Trap::MemoryOutOfBounds.into()))
+            .ok_or(MemError::OutOfBounds)
+    }
+}
+
+enum MemError {
+    OutOfBounds,
+    Null,
+    Utf8(std::str::Utf8Error),
+}
+
+impl From<MemError> for anyhow::Error {
+    fn from(err: MemError) -> Self {
+        match err {
+            MemError::OutOfBounds => wasmtime::Trap::MemoryOutOfBounds.into(),
+            MemError::Null => anyhow::anyhow!("passed a null pointer to a spacetime function"),
+            MemError::Utf8(e) => e.into(),
+        }
+    }
+}
+
+impl From<MemError> for WasmError {
+    fn from(err: MemError) -> Self {
+        WasmError::Wasm(err.into())
+    }
+}
+
+trait NullableMemOp<T> {
+    fn check_nullptr(self) -> Result<Option<T>, WasmError>;
+}
+impl<T> NullableMemOp<T> for Result<T, MemError> {
+    fn check_nullptr(self) -> Result<Option<T>, WasmError> {
+        match self {
+            Ok(x) => Ok(Some(x)),
+            Err(MemError::Null) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
     }
 }

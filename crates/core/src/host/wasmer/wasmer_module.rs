@@ -9,14 +9,6 @@ use anyhow::anyhow;
 use bytes::Bytes;
 use wasmtime::{AsContext, AsContextMut, ExternType, Instance, InstancePre, Linker, Store, TypedFunc, WasmBacktrace};
 
-// fn get_remaining_points(ctx: &mut impl AsStoreMut, instance: &Instance) -> u64 {
-//     let remaining_points = wasmer_metering::get_remaining_points(ctx, instance);
-//     match remaining_points {
-//         wasmer_metering::MeteringPoints::Remaining(x) => x,
-//         wasmer_metering::MeteringPoints::Exhausted => 0,
-//     }
-// }
-
 fn log_traceback(func_type: &str, func: &str, e: &wasmtime::Error) {
     log::info!("{} \"{}\" runtime error: {}", func_type, func, e);
     if let Some(bt) = e.downcast_ref::<WasmBacktrace>() {

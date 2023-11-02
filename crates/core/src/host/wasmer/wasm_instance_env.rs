@@ -19,7 +19,7 @@ use wasmtime::{AsContext, Caller, StoreContext, StoreContextMut};
 
 use crate::host::instance_env::InstanceEnv;
 
-use super::{Mem, MemView, WasmError, WasmPointee, WasmPtr};
+use super::{Mem, MemView, NullableMemOp, WasmError, WasmPointee, WasmPtr};
 
 #[cfg(not(feature = "spacetimedb-wasm-instance-env-times"))]
 use instrumentation::noop as span;
@@ -345,8 +345,8 @@ impl WasmInstanceEnv {
             let (mem, env) = Self::mem_env_const(&caller);
 
             // Read the `target`, `filename`, and `message` strings from WASM memory.
-            let target = mem.opt_deref_str_lossy(target, target_len)?;
-            let filename = mem.opt_deref_str_lossy(filename, filename_len)?;
+            let target = mem.deref_str_lossy(target, target_len).check_nullptr()?;
+            let filename = mem.deref_str_lossy(filename, filename_len).check_nullptr()?;
             let message = mem.deref_str_lossy(message, message_len)?;
 
             // The line number cannot be `u32::MAX` as this represents `Option::None`.
