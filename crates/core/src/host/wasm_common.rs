@@ -221,7 +221,7 @@ pub trait ResourceIndex {
 
 macro_rules! decl_index {
     ($name:ident => $resource:ty) => {
-        #[derive(Copy, Clone)] // , wasmer::ValueType
+        #[derive(Copy, Clone)]
         #[repr(transparent)]
         pub(super) struct $name(pub u32);
 

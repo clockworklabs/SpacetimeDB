@@ -12,7 +12,7 @@ use std::time::Duration;
 mod host_controller;
 pub(crate) mod module_host;
 pub mod scheduler;
-mod wasmer;
+mod wasmtime;
 // Visible for integration testing.
 pub mod instance_env;
 mod timestamp;

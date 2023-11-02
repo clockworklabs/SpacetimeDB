@@ -10,9 +10,9 @@ use crate::error::NodesError;
 use crate::hash::Hash;
 
 mod wasm_instance_env;
-mod wasmer_module;
+mod wasmtime_module;
 
-use wasmer_module::WasmerModule;
+use wasmtime_module::WasmtimeModule;
 
 use self::wasm_instance_env::WasmInstanceEnv;
 
@@ -32,7 +32,7 @@ static ENGINE: Lazy<Engine> = Lazy::new(|| {
 
 static LINKER: Lazy<Linker<WasmInstanceEnv>> = Lazy::new(|| {
     let mut linker = Linker::new(&ENGINE);
-    WasmerModule::link_imports(&mut linker).unwrap();
+    WasmtimeModule::link_imports(&mut linker).unwrap();
     linker
 });
 
@@ -51,14 +51,14 @@ pub fn make_actor(
     let abi = abi::determine_spacetime_abi(func_imports, |imp| imp.module())?;
 
     if let Some(abi) = abi {
-        abi::verify_supported(WasmerModule::IMPLEMENTED_ABI, abi)?;
+        abi::verify_supported(WasmtimeModule::IMPLEMENTED_ABI, abi)?;
     }
 
     let module = LINKER
         .instantiate_pre(&module)
         .map_err(InitializationError::Instantiation)?;
 
-    let module = WasmerModule::new(module);
+    let module = WasmtimeModule::new(module);
 
     WasmModuleHostActor::new(dbic, module_hash, module, scheduler, energy_monitor).map_err(Into::into)
 }

@@ -24,20 +24,20 @@ fn log_traceback(func_type: &str, func: &str, e: &wasmtime::Error) {
 }
 
 #[derive(Clone)]
-pub struct WasmerModule {
+pub struct WasmtimeModule {
     module: InstancePre<WasmInstanceEnv>,
 }
 
-impl WasmerModule {
+impl WasmtimeModule {
     pub(super) fn new(module: InstancePre<WasmInstanceEnv>) -> Self {
-        WasmerModule { module }
+        WasmtimeModule { module }
     }
 
     pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(7, 0);
 
     pub(super) fn link_imports(linker: &mut Linker<WasmInstanceEnv>) -> anyhow::Result<()> {
         #[allow(clippy::assertions_on_constants)]
-        const _: () = assert!(WasmerModule::IMPLEMENTED_ABI.major == spacetimedb_lib::MODULE_ABI_MAJOR_VERSION);
+        const _: () = assert!(WasmtimeModule::IMPLEMENTED_ABI.major == spacetimedb_lib::MODULE_ABI_MAJOR_VERSION);
         linker
             .func_wrap("spacetime_7.0", "_schedule_reducer", WasmInstanceEnv::schedule_reducer)?
             .func_wrap("spacetime_7.0", "_cancel_reducer", WasmInstanceEnv::cancel_reducer)?
@@ -65,8 +65,8 @@ impl WasmerModule {
     }
 }
 
-impl module_host_actor::WasmModule for WasmerModule {
-    type Instance = WasmerInstance;
+impl module_host_actor::WasmModule for WasmtimeModule {
+    type Instance = WasmtimeInstance;
     type InstancePre = Self;
 
     type ExternType = ExternType;
@@ -91,8 +91,8 @@ impl module_host_actor::WasmModule for WasmerModule {
     }
 }
 
-impl module_host_actor::WasmInstancePre for WasmerModule {
-    type Instance = WasmerInstance;
+impl module_host_actor::WasmInstancePre for WasmtimeModule {
+    type Instance = WasmtimeInstance;
 
     fn instantiate(&self, env: InstanceEnv, func_names: &FuncNames) -> Result<Self::Instance, InitializationError> {
         let env = WasmInstanceEnv::new(env);
@@ -144,7 +144,7 @@ impl module_host_actor::WasmInstancePre for WasmerModule {
             .get_typed_func(&mut store, CALL_REDUCER_DUNDER)
             .expect("no call_reducer");
 
-        Ok(WasmerInstance {
+        Ok(WasmtimeInstance {
             store,
             instance,
             call_reducer,
@@ -152,13 +152,13 @@ impl module_host_actor::WasmInstancePre for WasmerModule {
     }
 }
 
-pub struct WasmerInstance {
+pub struct WasmtimeInstance {
     store: Store<WasmInstanceEnv>,
     instance: Instance,
     call_reducer: TypedFunc<(u32, u32, u32, u64, u32), u32>,
 }
 
-impl module_host_actor::WasmInstance for WasmerInstance {
+impl module_host_actor::WasmInstance for WasmtimeInstance {
     fn extract_descriptions(&mut self) -> Result<Bytes, DescribeError> {
         let describer_func_name = DESCRIBE_MODULE_DUNDER;
         let describer = self.instance.get_func(&mut self.store, describer_func_name).unwrap();
