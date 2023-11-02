@@ -19,8 +19,8 @@ pub fn cli() -> clap::Command {
             Arg::new("host_type")
                 .long("host-type")
                 .short('t')
-                .value_parser(["wasmer"])
-                .default_value("wasmer")
+                .value_parser(["wasmtime"])
+                .default_value("wasmtime")
                 .help("The type of host that should be for hosting this module"),
         )
         .arg(

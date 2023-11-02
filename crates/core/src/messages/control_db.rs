@@ -67,5 +67,5 @@ pub struct NodeStatus {
 #[strum(serialize_all = "lowercase")]
 #[repr(i32)]
 pub enum HostType {
-    Wasmer = 0,
+    Wasmtime = 0,
 }

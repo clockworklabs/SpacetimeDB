@@ -15,7 +15,7 @@ mod host_controller;
 pub(crate) mod module_host;
 pub use module_host::{UpdateDatabaseResult, UpdateDatabaseSuccess};
 pub mod scheduler;
-mod wasmer;
+mod wasmtime;
 
 // Visible for integration testing.
 pub mod instance_env;

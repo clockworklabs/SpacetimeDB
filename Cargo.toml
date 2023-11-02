@@ -181,12 +181,6 @@ uuid = { version = "1.2.1", features = ["v4"] }
 walkdir = "2.2.5"
 wasmbin = "0.6"
 
-# wasmer prior to 4.1.1 had a signal handling bug on macOS.
-wasmer = "4.1.1"
-wasmer-middlewares = "4.1.1"
-wasmer-types = "4.1.1"
-wasmer-vm = "4.1.1"
-
 wasmtime = { version = "14", default-features = false, features = ["cranelift"] }
 
 # We use the "ondemand" feature to allow connecting after the start,

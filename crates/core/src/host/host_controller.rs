@@ -1,9 +1,8 @@
 use crate::hash::hash_bytes;
-use crate::host::wasmer;
+use crate::host;
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleHostContext;
 use anyhow::Context;
-// use parking_lot::{Condvar, Mutex};
 use parking_lot::Mutex;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -266,13 +265,13 @@ impl HostController {
         let module_hash = hash_bytes(&mhc.program_bytes);
         let (threadpool, energy_monitor) = (self.threadpool.clone(), self.energy_monitor.clone());
         let module_host = match mhc.host_type {
-            HostType::Wasmer => {
+            HostType::Wasmtime => {
                 // make_actor with block_in_place since it's going to take some time to compute.
                 let start = Instant::now();
                 let actor = tokio::task::block_in_place(|| {
-                    wasmer::make_actor(mhc.dbic, module_hash, &mhc.program_bytes, mhc.scheduler, energy_monitor)
+                    host::wasmtime::make_actor(mhc.dbic, module_hash, &mhc.program_bytes, mhc.scheduler, energy_monitor)
                 })?;
-                log::trace!("wasmer::make_actor blocked for {:?}", start.elapsed());
+                log::trace!("wasmtime::make_actor blocked for {:?}", start.elapsed());
                 ModuleHost::new(threadpool, actor)
             }
         };
