@@ -15,11 +15,11 @@ use crate::host::wasm_common::{
 };
 use crate::host::AbiCall;
 use anyhow::{anyhow, Context};
-use wasmtime::{AsContext, Caller, StoreContext, StoreContextMut};
+use wasmtime::{AsContext, Caller, StoreContextMut};
 
 use crate::host::instance_env::InstanceEnv;
 
-use super::{Mem, MemView, WasmError, WasmPointee, WasmPtr};
+use super::{Mem, MemView, NullableMemOp, WasmError, WasmPointee, WasmPtr};
 
 #[cfg(not(feature = "spacetimedb-wasm-instance-env-times"))]
 use instrumentation::noop as span;
@@ -103,18 +103,10 @@ impl WasmInstanceEnv {
     pub fn get_mem(&self) -> Mem {
         self.mem.expect("Initialized memory")
     }
-    fn mem<'a>(ctx: impl Into<StoreContextMut<'a, Self>>) -> &'a mut MemView {
-        Self::mem_env(ctx).0
-    }
     fn mem_env<'a>(ctx: impl Into<StoreContextMut<'a, Self>>) -> (&'a mut MemView, &'a mut Self) {
         let ctx = ctx.into();
         let mem = ctx.data().get_mem();
-        mem.view_and_store(ctx)
-    }
-    fn mem_env_const<'a>(ctx: impl Into<StoreContext<'a, Self>>) -> (&'a MemView, &'a Self) {
-        let ctx = ctx.into();
-        let env = ctx.data();
-        (env.get_mem().view_const(ctx), env)
+        mem.view_and_store_mut(ctx)
     }
 
     /// Return a reference to the `InstanceEnv`,
@@ -236,7 +228,10 @@ impl WasmInstanceEnv {
         f: impl FnOnce(&mut Caller<'_, Self>) -> WasmResult<T>,
     ) -> RtResult<u32> {
         Self::cvt(caller, call, |caller| {
-            f(caller).and_then(|ret| ret.write_to(Self::mem(caller), out))
+            f(caller).and_then(|ret| {
+                let (mem, _) = Self::mem_env(caller);
+                ret.write_to(mem, out)
+            })
         })
     }
 
@@ -342,11 +337,12 @@ impl WasmInstanceEnv {
         message_len: u32,
     ) {
         let do_console_log = |caller: &mut Caller<'_, Self>| -> WasmResult<()> {
-            let (mem, env) = Self::mem_env_const(&caller);
+            let env = caller.data();
+            let mem = env.get_mem().view(&caller);
 
             // Read the `target`, `filename`, and `message` strings from WASM memory.
-            let target = mem.opt_deref_str_lossy(target, target_len)?;
-            let filename = mem.opt_deref_str_lossy(filename, filename_len)?;
+            let target = mem.deref_str_lossy(target, target_len).check_nullptr()?;
+            let filename = mem.deref_str_lossy(filename, filename_len).check_nullptr()?;
             let message = mem.deref_str_lossy(message, message_len)?;
 
             // The line number cannot be `u32::MAX` as this represents `Option::None`.
