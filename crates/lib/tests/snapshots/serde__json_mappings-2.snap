@@ -4,7 +4,7 @@ expression: "de_json({\n    \"foo\": 5654,\n    \"bar\": [1, 15, 44],\n    \"baz
 ---
 (
     foo = 5654,
-    bar = [1, 15, 44],
+    bar = 010f2c,
     baz = [
         "it's 🥶°C",
     ],

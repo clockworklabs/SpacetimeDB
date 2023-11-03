@@ -290,7 +290,7 @@ impl<'a, 'b> ser::Serializer for SatnFormatter<'a, 'b> {
     }
 
     fn serialize_bytes(mut self, v: &[u8]) -> Result<Self::Ok, Self::Error> {
-        write!(self, "{:?}", v)
+        write!(self, "{}", hex::encode(v))
     }
 
     fn serialize_array(mut self, _len: usize) -> Result<Self::SerializeArray, Self::Error> {
