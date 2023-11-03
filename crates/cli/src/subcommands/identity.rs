@@ -243,34 +243,39 @@ fn get_subcommands() -> Vec<Command> {
     ]
 }
 
-pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(config: Config, args: &ArgMatches, server: Option<&str>) -> Result<(), anyhow::Error> {
     let (cmd, subcommand_args) = args.subcommand().expect("Subcommand required");
-    exec_subcommand(config, cmd, subcommand_args).await
+    exec_subcommand(config, cmd, subcommand_args, server).await
 }
 
-async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
+async fn exec_subcommand(
+    config: Config,
+    cmd: &str,
+    args: &ArgMatches,
+    server: Option<&str>,
+) -> Result<(), anyhow::Error> {
     match cmd {
-        "list" => exec_list(config, args).await,
-        "set-default" => exec_set_default(config, args).await,
-        "init-default" => exec_init_default(config, args).await,
-        "new" => exec_new(config, args).await,
+        "list" => exec_list(config, args, server).await,
+        "set-default" => exec_set_default(config, args, server).await,
+        "init-default" => exec_init_default(config, args, server).await,
+        "new" => exec_new(config, args, server).await,
         "remove" => exec_remove(config, args).await,
         "set-name" => exec_set_name(config, args).await,
         "import" => exec_import(config, args).await,
-        "set-email" => exec_set_email(config, args).await,
-        "find" => exec_find(config, args).await,
+        "set-email" => exec_set_email(config, args, server).await,
+        "find" => exec_find(config, args, server).await,
         "token" => exec_token(config, args).await,
-        "recover" => exec_recover(config, args).await,
+        "recover" => exec_recover(config, args, server).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
 }
 
 /// Executes the `identity set-default` command which sets the default identity.
-async fn exec_set_default(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+async fn exec_set_default(mut config: Config, args: &ArgMatches, server: Option<&str>) -> Result<(), anyhow::Error> {
     let identity = config.resolve_name_to_identity(args.get_one::<String>("identity").unwrap())?;
     config.set_default_identity(
         identity.to_hex().to_string(),
-        args.get_one::<String>("server").map(|s| s.as_ref()),
+        server,
     )?;
     config.save();
     Ok(())
@@ -280,16 +285,11 @@ async fn exec_set_default(mut config: Config, args: &ArgMatches) -> Result<(), a
 //  single command, but I'm separating it out into its own command for now for
 //  simplicity.
 /// Executes the `identity init-default` command which initializes the default identity.
-async fn exec_init_default(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+async fn exec_init_default(mut config: Config, args: &ArgMatches, server: Option<&str>) -> Result<(), anyhow::Error> {
     let nickname = args.get_one::<String>("name").map(|s| s.to_owned());
     let quiet = args.get_flag("quiet");
 
-    let init_default_result = init_default(
-        &mut config,
-        nickname,
-        args.get_one::<String>("server").map(|s| s.as_ref()),
-    )
-    .await?;
+    let init_default_result = init_default(&mut config, nickname, server).await?;
     let identity_config = init_default_result.identity_config;
     let result_type = init_default_result.result_type;
 
@@ -380,10 +380,9 @@ async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
 }
 
 /// Executes the `identity new` command which creates a new identity.
-async fn exec_new(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+async fn exec_new(mut config: Config, args: &ArgMatches, server: Option<&str>) -> Result<(), anyhow::Error> {
     let save = !args.get_flag("no-save");
     let alias = args.get_one::<String>("name");
-    let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let default = *args.get_one::<bool>("default").unwrap();
 
     if let Some(alias) = alias {
@@ -478,7 +477,7 @@ struct LsRow {
 }
 
 /// Executes the `identity list` command which lists all identities in the config.
-async fn exec_list(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+async fn exec_list(config: Config, args: &ArgMatches, server: Option<&str>) -> Result<(), anyhow::Error> {
     let mut rows: Vec<LsRow> = Vec::new();
 
     if *args.get_one::<bool>("all").unwrap() {
@@ -490,8 +489,6 @@ async fn exec_list(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
             });
         }
     } else {
-        let server = args.get_one::<String>("server").map(|s| s.as_ref());
-
         let server_name = config.server_nick_or_host(server)?;
         let decoding_key = config.server_decoding_key(server).with_context(|| {
             format!(
@@ -541,9 +538,8 @@ struct GetIdentityResponseEntry {
 }
 
 /// Executes the `identity find` command which finds an identity by email.
-async fn exec_find(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+async fn exec_find(config: Config, args: &ArgMatches, server: Option<&str>) -> Result<(), anyhow::Error> {
     let email = args.get_one::<String>("email").unwrap().clone();
-    let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let client = reqwest::Client::new();
     let builder = client.get(format!("{}/identity?email={}", config.get_host_url(server)?, email));
 
@@ -593,10 +589,16 @@ async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), anyh
 }
 
 /// Executes the `identity set-email` command which sets the email for an identity.
-async fn exec_set_email(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+async fn exec_set_email(config: Config, args: &ArgMatches, server: Option<&str>) -> Result<(), anyhow::Error> {
     let email = args.get_one::<String>("email").unwrap().clone();
+<<<<<<< HEAD
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let identity = args.get_one::<String>("identity").unwrap();
+=======
+    let identity = config
+        .resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_ref()))?
+        .unwrap();
+>>>>>>> 8771e065 (Addressed all other places where we use '-s' or '--server')
     let identity_config = config
         .get_identity_config(identity)
         .ok_or_else(|| anyhow::anyhow!("Missing identity credentials for identity: {identity}"))?;
@@ -623,10 +625,18 @@ async fn exec_set_email(config: Config, args: &ArgMatches) -> Result<(), anyhow:
 }
 
 /// Executes the `identity recover` command which recovers an identity from an email.
+<<<<<<< HEAD
 async fn exec_recover(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let identity = args.get_one::<Identity>("identity").unwrap();
     let email = args.get_one::<String>("email").unwrap();
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
+=======
+async fn exec_recover(mut config: Config, args: &ArgMatches, server: Option<&str>) -> Result<(), anyhow::Error> {
+    let email = args.get_one::<String>("email").unwrap();
+    let identity = config
+        .resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_str()))?
+        .unwrap();
+>>>>>>> 8771e065 (Addressed all other places where we use '-s' or '--server')
 
     let query_params = [
         ("email", email.as_str()),

@@ -42,14 +42,14 @@ pub async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Re
 
     match cmd {
         "version" => version::exec(config, args).await,
-        "identity" => identity::exec(config, args).await,
+        "identity" => identity::exec(config, args, server).await,
         "call" => call::exec(config, args, server).await,
         "describe" => describe::exec(config, args, server).await,
-        "energy" => energy::exec(config, args).await,
+        "energy" => energy::exec(config, args, server).await,
         "publish" => publish::exec(config, args, server).await,
         "delete" => delete::exec(config, args, server).await,
-        "logs" => logs::exec(config, args).await,
-        "sql" => sql::exec(config, args).await,
+        "logs" => logs::exec(config, args, server).await,
+        "sql" => sql::exec(config, args, server).await,
         "dns" => dns::exec(config, args, server).await,
         "generate" => generate::exec(args),
         "list" => list::exec(config, args, server).await,

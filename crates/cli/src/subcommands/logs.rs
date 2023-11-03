@@ -84,8 +84,7 @@ struct LogsParams {
     follow: bool,
 }
 
-pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let server = args.get_one::<String>("server").map(|s| s.as_ref());
+pub async fn exec(mut config: Config, args: &ArgMatches, server: Option<&str>) -> Result<(), anyhow::Error> {
     let identity = args.get_one::<String>("identity");
     let num_lines = args.get_one::<u32>("num_lines").copied();
     let database = args.get_one::<String>("database").unwrap();

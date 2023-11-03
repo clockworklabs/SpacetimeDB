@@ -24,7 +24,7 @@ fn get_command() -> Command {
             Arg::new("server")
                 .long("server")
                 .short('s')
-                .help("The name of the server to use for subcommands. See spacetime server for more information"),
+                .help("The name of the server to use for subcommands. See `spacetime server` for more information"),
         )
         .after_help("Run `spacetime help` for more detailed information.")
         .subcommand_required(true)

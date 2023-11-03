@@ -53,16 +53,13 @@ pub fn cli() -> clap::Command {
                 .action(ArgAction::SetTrue)
                 .help("If this flag is present, no identity will be provided when querying the database")
         )
-        .arg(
-            Arg::new("server")
-                .long("server")
-                .short('s')
-                .help("The nickname, host name or URL of the server hosting the database"),
-        )
 }
 
-pub(crate) async fn parse_req(mut config: Config, args: &ArgMatches) -> Result<Connection, anyhow::Error> {
-    let server = args.get_one::<String>("server").map(|s| s.as_ref());
+pub(crate) async fn parse_req(
+    mut config: Config,
+    args: &ArgMatches,
+    server: Option<&str>,
+) -> Result<Connection, anyhow::Error> {
     let database = args.get_one::<String>("database").unwrap();
     let as_identity = args.get_one::<String>("as_identity");
     let anon_identity = args.get_flag("anon_identity");
@@ -152,16 +149,16 @@ fn stmt_result_to_table(stmt_result: &StmtResultJson) -> anyhow::Result<tabled::
     Ok(table)
 }
 
-pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(config: Config, args: &ArgMatches, server: Option<&str>) -> Result<(), anyhow::Error> {
     let interactive = args.get_one::<bool>("interactive").unwrap_or(&false);
     if *interactive {
-        let con = parse_req(config, args).await?;
+        let con = parse_req(config, args, server).await?;
 
         crate::repl::exec(con).await?;
     } else {
         let query = args.get_one::<String>("query").unwrap();
 
-        let con = parse_req(config, args).await?;
+        let con = parse_req(config, args, server).await?;
         let api = ClientApi::new(con);
 
         run_sql(api.sql(), query, false).await?;

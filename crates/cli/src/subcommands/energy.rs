@@ -22,12 +22,6 @@ fn get_energy_subcommands() -> Vec<clap::Command> {
                     .long_help(
                     "The identity to check the balance for. If no identity is provided, the default one will be used.",
                 ),
-            )
-            .arg(
-                Arg::new("server")
-                    .long("server")
-                    .short('s')
-                    .help("The nickname, host name or URL of the server from which to request balance information"),
             ),
         clap::Command::new("set-balance")
             .about("Update the current budget balance for a database")
@@ -45,12 +39,6 @@ fn get_energy_subcommands() -> Vec<clap::Command> {
                     ),
             )
             .arg(
-                Arg::new("server")
-                    .long("server")
-                    .short('s')
-                    .help("The nickname, host name or URL of the server on which to update the identity's balance"),
-            )
-            .arg(
                 Arg::new("quiet")
                     .long("quiet")
                     .short('q')
@@ -60,25 +48,29 @@ fn get_energy_subcommands() -> Vec<clap::Command> {
     ]
 }
 
-async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
+async fn exec_subcommand(
+    config: Config,
+    cmd: &str,
+    args: &ArgMatches,
+    server: Option<&str>,
+) -> Result<(), anyhow::Error> {
     match cmd {
-        "status" => exec_status(config, args).await,
-        "set-balance" => exec_update_balance(config, args).await,
+        "status" => exec_status(config, args, server).await,
+        "set-balance" => exec_update_balance(config, args, server).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
 }
 
-pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(config: Config, args: &ArgMatches, server: Option<&str>) -> Result<(), anyhow::Error> {
     let (cmd, subcommand_args) = args.subcommand().expect("Subcommand required");
-    exec_subcommand(config, cmd, subcommand_args).await
+    exec_subcommand(config, cmd, subcommand_args, server).await
 }
 
-async fn exec_update_balance(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+async fn exec_update_balance(config: Config, args: &ArgMatches, server: Option<&str>) -> Result<(), anyhow::Error> {
     // let project_name = args.value_of("project name").unwrap();
     let identity = args.get_one::<String>("identity");
     let balance = *args.get_one::<i128>("balance").unwrap();
     let quiet = args.get_flag("quiet");
-    let server = args.get_one::<String>("server").map(|s| s.as_ref());
 
     let hex_id = resolve_id_or_default(identity, &config, server)?;
     let res = set_balance(&reqwest::Client::new(), &config, &hex_id, balance, server).await?;
@@ -90,10 +82,9 @@ async fn exec_update_balance(config: Config, args: &ArgMatches) -> Result<(), an
     Ok(())
 }
 
-async fn exec_status(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+async fn exec_status(config: Config, args: &ArgMatches, server: Option<&str>) -> Result<(), anyhow::Error> {
     // let project_name = args.value_of("project name").unwrap();
     let identity = args.get_one::<String>("identity");
-    let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let hex_id = resolve_id_or_default(identity, &config, server)?;
 
     let status = reqwest::Client::new()
