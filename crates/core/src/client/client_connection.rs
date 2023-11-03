@@ -113,6 +113,8 @@ impl ClientConnection {
         // Buffer up to 64 client messages
         let (sendtx, sendrx) = mpsc::channel::<DataMessage>(64);
 
+        let db = module.info().address;
+
         let sender = ClientConnectionSender { id, protocol, sendtx };
         let this = Self {
             sender,
@@ -121,7 +123,7 @@ impl ClientConnection {
         };
 
         let actor_fut = actor(this.clone(), sendrx);
-        let gauge_guard = WORKER_METRICS.connected_clients.inc_scope();
+        let gauge_guard = WORKER_METRICS.connected_clients.with_label_values(&db).inc_scope();
         tokio::spawn(actor_fut.map(|()| drop(gauge_guard)));
 
         Ok(this)
