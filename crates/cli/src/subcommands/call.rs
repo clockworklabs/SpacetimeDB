@@ -29,12 +29,6 @@ pub fn cli() -> clap::Command {
         )
         .arg(Arg::new("arguments").help("arguments formatted as JSON").num_args(1..))
         .arg(
-            Arg::new("server")
-                .long("server")
-                .short('s')
-                .help("The nickname, host name or URL of the server hosting the database"),
-        )
-        .arg(
             Arg::new("as_identity")
                 .long("as-identity")
                 .short('i')
