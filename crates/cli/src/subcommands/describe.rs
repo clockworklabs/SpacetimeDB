@@ -38,12 +38,6 @@ pub fn cli() -> clap::Command {
                 .action(SetTrue)
                 .help("If this flag is present, no identity will be provided when describing the database"),
         )
-        .arg(
-            Arg::new("server")
-                .long("server")
-                .short('s')
-                .help("The nickname, host name or URL of the server hosting the database"),
-        )
         .after_help("Run `spacetime help describe` for more detailed information.\n")
 }
 

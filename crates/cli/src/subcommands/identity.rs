@@ -273,10 +273,7 @@ async fn exec_subcommand(
 /// Executes the `identity set-default` command which sets the default identity.
 async fn exec_set_default(mut config: Config, args: &ArgMatches, server: Option<&str>) -> Result<(), anyhow::Error> {
     let identity = config.resolve_name_to_identity(args.get_one::<String>("identity").unwrap())?;
-    config.set_default_identity(
-        identity.to_hex().to_string(),
-        server,
-    )?;
+    config.set_default_identity(identity.to_hex().to_string(), server)?;
     config.save();
     Ok(())
 }
@@ -591,14 +588,7 @@ async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), anyh
 /// Executes the `identity set-email` command which sets the email for an identity.
 async fn exec_set_email(config: Config, args: &ArgMatches, server: Option<&str>) -> Result<(), anyhow::Error> {
     let email = args.get_one::<String>("email").unwrap().clone();
-<<<<<<< HEAD
-    let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let identity = args.get_one::<String>("identity").unwrap();
-=======
-    let identity = config
-        .resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_ref()))?
-        .unwrap();
->>>>>>> 8771e065 (Addressed all other places where we use '-s' or '--server')
     let identity_config = config
         .get_identity_config(identity)
         .ok_or_else(|| anyhow::anyhow!("Missing identity credentials for identity: {identity}"))?;
@@ -625,18 +615,9 @@ async fn exec_set_email(config: Config, args: &ArgMatches, server: Option<&str>)
 }
 
 /// Executes the `identity recover` command which recovers an identity from an email.
-<<<<<<< HEAD
-async fn exec_recover(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+async fn exec_recover(mut config: Config, args: &ArgMatches, server: Option<&str>) -> Result<(), anyhow::Error> {
     let identity = args.get_one::<Identity>("identity").unwrap();
     let email = args.get_one::<String>("email").unwrap();
-    let server = args.get_one::<String>("server").map(|s| s.as_ref());
-=======
-async fn exec_recover(mut config: Config, args: &ArgMatches, server: Option<&str>) -> Result<(), anyhow::Error> {
-    let email = args.get_one::<String>("email").unwrap();
-    let identity = config
-        .resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_str()))?
-        .unwrap();
->>>>>>> 8771e065 (Addressed all other places where we use '-s' or '--server')
 
     let query_params = [
         ("email", email.as_str()),
