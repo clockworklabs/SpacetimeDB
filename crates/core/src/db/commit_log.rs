@@ -111,8 +111,9 @@ impl CommitLog {
         let mut unwritten_commit = self.unwritten_commit.lock().unwrap();
         let mut writes = Vec::with_capacity(tx_data.records.len());
 
-        let rows_inserted = &DB_METRICS.rdb_num_rows_inserted;
-        let rows_deleted = &DB_METRICS.rdb_num_rows_deleted;
+        let txn_type = &ctx.txn_type();
+        let db = &ctx.database();
+        let reducer = &ctx.reducer_name().unwrap_or_default();
 
         for record in &tx_data.records {
             let table_id: u32 = record.table_id.into();
@@ -120,24 +121,22 @@ impl CommitLog {
             let operation = match record.op {
                 TxOp::Insert(_) => {
                     // Increment rows inserted metric
-                    let metric = rows_inserted.with_label_values(
-                        &ctx.txn_type(),
-                        &ctx.database(),
-                        ctx.reducer_name().unwrap_or_default(),
-                        &table_id,
-                    );
-                    metric.inc();
+                    DB_METRICS
+                        .rdb_num_rows_inserted
+                        .with_label_values(txn_type, db, reducer, &table_id)
+                        .inc();
+                    // Increment table rows gauge
+                    DB_METRICS.rdb_num_table_rows.with_label_values(db, &table_id).inc();
                     Operation::Insert
                 }
                 TxOp::Delete => {
                     // Increment rows deleted metric
-                    let metric = rows_deleted.with_label_values(
-                        &ctx.txn_type(),
-                        &ctx.database(),
-                        ctx.reducer_name().unwrap_or_default(),
-                        &table_id,
-                    );
-                    metric.inc();
+                    DB_METRICS
+                        .rdb_num_rows_deleted
+                        .with_label_values(txn_type, db, reducer, &table_id)
+                        .inc();
+                    // Decrement table rows gauge
+                    DB_METRICS.rdb_num_table_rows.with_label_values(db, &table_id).dec();
                     Operation::Delete
                 }
             };
