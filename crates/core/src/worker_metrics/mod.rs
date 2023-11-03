@@ -1,13 +1,14 @@
 use crate::util::typed_prometheus::metrics_group;
 use once_cell::sync::Lazy;
-use prometheus::{Gauge, GaugeVec, HistogramVec, IntCounterVec, IntGauge, IntGaugeVec};
+use prometheus::{Gauge, GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
 use spacetimedb_lib::{Address, Hash, Identity};
 
 metrics_group!(
     pub struct WorkerMetrics {
         #[name = spacetime_worker_connected_clients]
         #[help = "Number of clients connected to the worker."]
-        pub connected_clients: IntGauge,
+        #[labels(database_address: Address)]
+        pub connected_clients: IntGaugeVec,
 
         #[name = spacetime_websocket_requests]
         #[help = "Number of websocket request messages"]
