@@ -33,7 +33,7 @@ pub struct Identity {
     __identity_bytes: [u8; 32],
 }
 
-impl_st!([] Identity, _ts => AlgebraicType::product([("__identity_bytes", AlgebraicType::bytes())]));
+impl_st!([] Identity, _ts => Identity::get_type());
 
 impl Identity {
     /// Returns an `Identity` defined as the given `bytes` byte array.
@@ -51,6 +51,10 @@ impl Identity {
     #[doc(hidden)]
     pub fn __dummy() -> Self {
         Self::from_byte_array([0; 32])
+    }
+
+    pub fn get_type() -> AlgebraicType {
+        AlgebraicType::product([("__identity_bytes", AlgebraicType::bytes())])
     }
 
     /// Returns a borrowed view of the byte array defining this `Identity`.

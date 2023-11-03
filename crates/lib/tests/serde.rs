@@ -56,6 +56,7 @@ fn test_json_mappings() {
             enumm([("Hash", AlgebraicType::bytes()), ("Unit", AlgebraicType::unit())]).into(),
         ),
         ("and_peggy", AlgebraicType::option(AlgebraicType::F64)),
+        ("identity", Identity::get_type()),
     ]);
     let data = r#"
 {
@@ -63,7 +64,8 @@ fn test_json_mappings() {
     "bar": "404040FFFF0A48656C6C6F",
     "baz": ["heyyyyyy", "hooo"],
     "quux": { "Hash": "54a3e6d2b0959deaacf102292b1cbd6fcbb8cf237f73306e27ed82c3153878aa" },
-    "and_peggy": { "some": 3.141592653589793238426 }
+    "and_peggy": { "some": 3.141592653589793238426 },
+    "identity": ["0000000000000000000000000000000000000000000000000000000000000000"]
 }
 "#; // all of those ^^^^^^ digits are from memory
     de_json_snapshot!(schema, data);
@@ -73,7 +75,8 @@ fn test_json_mappings() {
     "bar": [1, 15, 44],
     "baz": ["it's 🥶°C"],
     "quux": { "Unit": [] },
-    "and_peggy": null
+    "and_peggy": null,
+    "identity": ["0000000000000000000000000000000000000000000000000000000000000000"]
 }
 "#;
     de_json_snapshot!(schema, data);
