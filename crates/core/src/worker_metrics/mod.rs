@@ -66,7 +66,7 @@ metrics_group!(
 
         #[name = spacetime_worker_instance_operation_queue_length]
         #[help = "Length of the wait queue for access to a module instance."]
-        #[labels(identity: Identity, module_hash: Hash, database_address: Address)]
+        #[labels(identity: Identity, module_hash: Hash, database_address: Address, reducer_symbol: str)]
         pub instance_queue_length: IntGaugeVec,
 
         #[name = spacetime_system_disk_space_total_bytes]
