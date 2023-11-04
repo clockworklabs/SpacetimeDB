@@ -2080,13 +2080,13 @@ impl traits::MutTx for Locking {
             .with_label_values(&ctx.txn_type(), &ctx.database(), ctx.reducer_name().unwrap_or(""))
             .inc();
         DB_METRICS
-            .rdb_txn_cpu_time_ns
+            .rdb_txn_cpu_time_sec
             .with_label_values(&ctx.txn_type(), &ctx.database(), ctx.reducer_name().unwrap_or(""))
-            .observe(cpu_time.as_nanos() as f64);
+            .observe(cpu_time.as_secs_f64());
         DB_METRICS
-            .rdb_txn_elapsed_time_ns
+            .rdb_txn_elapsed_time_sec
             .with_label_values(&ctx.txn_type(), &ctx.database(), ctx.reducer_name().unwrap_or(""))
-            .observe(elapsed_time.as_nanos() as f64);
+            .observe(elapsed_time.as_secs_f64());
         tx.lock.rollback();
     }
 
@@ -2100,13 +2100,13 @@ impl traits::MutTx for Locking {
             .with_label_values(&ctx.txn_type(), &ctx.database(), ctx.reducer_name().unwrap_or(""))
             .inc();
         DB_METRICS
-            .rdb_txn_cpu_time_ns
+            .rdb_txn_cpu_time_sec
             .with_label_values(&ctx.txn_type(), &ctx.database(), ctx.reducer_name().unwrap_or(""))
-            .observe(cpu_time.as_nanos() as f64);
+            .observe(cpu_time.as_secs_f64());
         DB_METRICS
-            .rdb_txn_elapsed_time_ns
+            .rdb_txn_elapsed_time_sec
             .with_label_values(&ctx.txn_type(), &ctx.database(), ctx.reducer_name().unwrap_or(""))
-            .observe(elapsed_time.as_nanos() as f64);
+            .observe(elapsed_time.as_secs_f64());
         tx.lock.commit()
     }
 

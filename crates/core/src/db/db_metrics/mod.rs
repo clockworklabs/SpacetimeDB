@@ -51,10 +51,10 @@ metrics_group!(
         #[labels(table_id: u32)]
         pub rdb_delete_by_rel_time: HistogramVec,
 
-        #[name = spacetime_scheduled_reducer_delay_ns]
-        #[help = "The amount of time (nanoseconds) a reducer has been delayed past its scheduled execution time"]
+        #[name = spacetime_scheduled_reducer_delay_sec]
+        #[help = "The amount of time (in seconds) a reducer has been delayed past its scheduled execution time"]
         #[labels(db: Address, reducer: str)]
-        pub scheduled_reducer_delay_ns: HistogramVec,
+        pub scheduled_reducer_delay_sec: HistogramVec,
 
         #[name = spacetime_num_rows_inserted_cumulative]
         #[help = "The cumulative number of rows inserted into a table"]
@@ -91,20 +91,20 @@ metrics_group!(
         #[labels(txn_type: TransactionType, db: Address, reducer: str)]
         pub rdb_num_txns_rolledback: IntCounterVec,
 
-        #[name = spacetime_txn_elapsed_time_ns]
-        #[help = "The total elapsed (wall) time of a transaction (nanoseconds)"]
+        #[name = spacetime_txn_elapsed_time_sec]
+        #[help = "The total elapsed (wall) time of a transaction (in seconds)"]
         #[labels(txn_type: TransactionType, db: Address, reducer: str)]
-        pub rdb_txn_elapsed_time_ns: HistogramVec,
+        pub rdb_txn_elapsed_time_sec: HistogramVec,
 
-        #[name = spacetime_txn_cpu_time_ns]
-        #[help = "The time spent executing a transaction (nanoseconds), excluding time spent waiting to acquire database locks"]
+        #[name = spacetime_txn_cpu_time_sec]
+        #[help = "The time spent executing a transaction (in seconds), excluding time spent waiting to acquire database locks"]
         #[labels(txn_type: TransactionType, db: Address, reducer: str)]
-        pub rdb_txn_cpu_time_ns: HistogramVec,
+        pub rdb_txn_cpu_time_sec: HistogramVec,
 
-        #[name = spacetime_wasm_abi_call_duration_ns]
-        #[help = "The total duration of a spacetime wasm abi call (nanoseconds); includes row serialization and copying into wasm memory"]
+        #[name = spacetime_wasm_abi_call_duration_sec]
+        #[help = "The total duration of a spacetime wasm abi call (in seconds); includes row serialization and copying into wasm memory"]
         #[labels(txn_type: TransactionType, db: Address, reducer: str, call: AbiCall)]
-        pub wasm_abi_call_duration_ns: HistogramVec,
+        pub wasm_abi_call_duration_sec: HistogramVec,
     }
 );
 
