@@ -273,9 +273,9 @@ impl SchedulerActor {
         // Note, we are only tracking the time a reducer spends delayed in the queue.
         // This does not account for any time the executing thread spends blocked by the os.
         DB_METRICS
-            .scheduled_reducer_delay_ns
+            .scheduled_reducer_delay_sec
             .with_label_values(&module_host.info().address, &scheduled.reducer)
-            .observe(delay.as_nanos() as f64);
+            .observe(delay.as_secs_f64());
         let db = self.db.clone();
         tokio::spawn(async move {
             let info = module_host.info();
