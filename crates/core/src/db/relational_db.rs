@@ -395,7 +395,12 @@ impl RelationalDB {
             .rdb_drop_table_time
             .with_label_values(&table_id.0)
             .start_timer();
-        self.inner.drop_table_mut_tx(tx, table_id)
+        self.inner.drop_table_mut_tx(tx, table_id).map(|_| {
+            DB_METRICS
+                .rdb_num_table_rows
+                .with_label_values(&self.address, &table_id.into())
+                .set(0)
+        })
     }
 
     /// Rename a table.
