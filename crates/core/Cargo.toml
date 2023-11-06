@@ -75,6 +75,7 @@ tempfile.workspace = true
 thiserror.workspace = true
 tokio-util.workspace = true
 tokio.workspace = true
+toml.workspace = true
 tracing-appender.workspace = true
 tracing-core.workspace = true
 tracing-flame.workspace = true
@@ -85,7 +86,7 @@ tracing.workspace = true
 url.workspace = true
 urlencoding.workspace = true
 uuid.workspace = true
-wasmtime.workspace = true
+wasmtime = { workspace = true, features = ["cache"] }
 # Rocksdb ostorage backend, linked only if "rocksdb" feature enabled.
 rocksdb = {workspace = true, optional = true}
 
