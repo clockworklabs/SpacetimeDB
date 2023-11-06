@@ -104,12 +104,12 @@ fn test_decode() -> ResultTest<()> {
         publisher_address: Some(Address::zero()),
     };
 
-    let id = cdb.insert_database(db.clone())?;
+    cdb.insert_database(db.clone())?;
 
     let dbs = cdb.get_databases()?;
 
     assert_eq!(dbs.len(), 1);
-    assert_eq!(dbs[0].id, id);
+    assert_eq!(dbs[0].identity, id);
 
     let mut new_database_instance = DatabaseInstance {
         id: 0,

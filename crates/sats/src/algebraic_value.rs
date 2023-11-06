@@ -333,7 +333,7 @@ mod tests {
         let array = AlgebraicType::array(AlgebraicType::U8);
         let value = AlgebraicValue::Array([3u8].into());
         let typespace = Typespace::new(vec![]);
-        assert_eq!(in_space(&typespace, &array, &value).to_satn(), "03");
+        assert_eq!(in_space(&typespace, &array, &value).to_satn(), "0x03");
     }
 
     #[test]

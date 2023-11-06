@@ -4,18 +4,18 @@ expression: "de_json({\n    \"foo\": 42,\n    \"bar\": \"404040FFFF0A48656C6C6F\
 ---
 (
     foo = 42,
-    bar = 404040ffff0a48656c6c6f,
+    bar = 0x404040ffff0a48656c6c6f,
     baz = [
         "heyyyyyy",
         "hooo",
     ],
     quux = (
-        Hash = 54a3e6d2b0959deaacf102292b1cbd6fcbb8cf237f73306e27ed82c3153878aa,
+        Hash = 0x54a3e6d2b0959deaacf102292b1cbd6fcbb8cf237f73306e27ed82c3153878aa,
     ),
     and_peggy = (
         some = 3.141592653589793,
     ),
     identity = (
-        __identity_bytes = 0000000000000000000000000000000000000000000000000000000000000000,
+        __identity_bytes = 0x0000000000000000000000000000000000000000000000000000000000000000,
     ),
 )
