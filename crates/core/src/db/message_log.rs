@@ -13,6 +13,8 @@ use crate::error::DBError;
 #[cfg(target_family = "windows")]
 use std::os::windows::fs::FileExt;
 
+use super::messages::commit::Commit;
+
 const HEADER_SIZE: usize = 4;
 
 /// Options for opening a [`MessageLog`], similar to [`fs::OpenOptions`].
@@ -228,6 +230,13 @@ impl MessageLog {
         self.options.max_segment_size
     }
 
+    /// Total number of segments currently comprising the log.
+    ///
+    /// Equivalent to `self.segments().count()`, but more efficient.
+    pub fn total_segments(&self) -> usize {
+        self.segments.len()
+    }
+
     pub fn get_root(&self) -> PathBuf {
         self.root.clone()
     }
@@ -311,6 +320,7 @@ impl MessageLog {
     ///
     /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/V2_chap02.html#tag_15_09_07
     pub fn reset_to(&mut self, offset: u64) -> Result<(), DBError> {
+        log::debug!("Resetting message log to offset {offset}");
         if offset == 0 {
             fs::remove_dir_all(&self.root)?;
             *self = self.options.open(&self.root)?;
@@ -418,6 +428,13 @@ impl SegmentView {
         self.try_into()
     }
 
+    /// Obtain an iterator over the [`Commit`]s the segment contains.
+    ///
+    /// Convenience for `self.try_into_iter().map(|i| i.commits())`.
+    pub fn try_into_iter_commits(self) -> io::Result<impl Iterator<Item = io::Result<Commit>>> {
+        self.try_into_iter().map(|i| i.commits())
+    }
+
     /// Turn this [`SegmentView`] into a [`Read`]able [`File`].
     pub fn try_into_file(self) -> io::Result<File> {
         self.try_into()
@@ -467,12 +484,10 @@ impl IterSegment {
         self.read
     }
 
-    fn read_exact_or_none(&mut self, buf: &mut [u8]) -> Option<io::Result<()>> {
-        match self.file.read_exact(buf) {
-            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => None,
-            Err(e) => Some(Err(e)),
-            Ok(()) => Some(Ok(())),
-        }
+    /// Turn this iterator into an iterator yielding [`Commit`]s
+    /// instead of raw bytes.
+    pub fn commits(self) -> impl Iterator<Item = io::Result<Commit>> {
+        super::commit_log::IterSegment::from(self)
     }
 }
 
@@ -481,14 +496,18 @@ impl Iterator for IterSegment {
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut buf = [0; HEADER_SIZE];
-        if let Err(e) = self.read_exact_or_none(&mut buf)? {
-            return Some(Err(e));
+        if let Err(e) = self.file.read_exact(&mut buf) {
+            if e.kind() == io::ErrorKind::UnexpectedEof {
+                return None;
+            } else {
+                return Some(Err(e));
+            }
         }
         self.read += HEADER_SIZE as u64;
 
         let message_len = u32::from_le_bytes(buf);
         let mut buf = vec![0; message_len as usize];
-        if let Err(e) = self.read_exact_or_none(&mut buf)? {
+        if let Err(e) = self.file.read_exact(&mut buf) {
             return Some(Err(e));
         }
         self.read += message_len as u64;

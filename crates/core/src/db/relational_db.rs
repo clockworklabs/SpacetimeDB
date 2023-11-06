@@ -5,23 +5,24 @@ use super::message_log::MessageLog;
 use super::ostorage::memory_object_db::MemoryObjectDB;
 use super::relational_operators::Relation;
 use crate::address::Address;
-use crate::db::commit_log;
 use crate::db::db_metrics::DB_METRICS;
 use crate::db::messages::commit::Commit;
 use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 use crate::db::ostorage::ObjectDB;
 use crate::error::{DBError, DatabaseError, IndexError, TableError};
 use crate::execution_context::ExecutionContext;
+use crate::hash::Hash;
+use anyhow::anyhow;
 use fs2::FileExt;
 use nonempty::NonEmpty;
 use spacetimedb_lib::PrimaryKey;
 use spacetimedb_primitives::{ColId, ColumnIndexAttribute, IndexId, SequenceId, TableId};
 use spacetimedb_sats::data_key::ToDataKey;
 use spacetimedb_sats::db::def::{IndexDef, SequenceDef, TableDef, TableSchema};
-use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use std::borrow::Cow;
 use std::fs::{create_dir_all, File};
+use std::io;
 use std::ops::RangeBounds;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -94,33 +95,68 @@ impl RelationalDB {
             let mut last_commit_offset = None;
             let mut last_hash: Option<Hash> = None;
             if let Some(message_log) = &message_log {
-                let message_log = message_log.lock().unwrap();
+                let mut message_log = message_log.lock().unwrap();
                 let max_offset = message_log.open_segment_max_offset;
-                for commit in commit_log::Iter::from(message_log.segments()) {
-                    let commit = commit?;
+                let total_segments = message_log.total_segments();
 
-                    segment_index += 1;
-                    last_hash = commit.parent_commit_hash;
-                    last_commit_offset = Some(commit.commit_offset);
-                    for transaction in commit.transactions {
-                        transaction_offset += 1;
-                        // NOTE: Although I am creating a blobstore transaction in a
-                        // one to one fashion for each message log transaction, this
-                        // is just to reduce memory usage while inserting. We don't
-                        // really care about inserting these transactionally as long
-                        // as all of the writes get inserted.
-                        datastore.replay_transaction(&transaction, odb.clone())?;
+                'replay: for (segment_offset, segment) in message_log.segments().enumerate() {
+                    for commit in segment.try_into_iter_commits()? {
+                        let commit = match commit {
+                            Ok(commit) => commit,
+                            Err(e) if matches!(e.kind(), io::ErrorKind::InvalidData | io::ErrorKind::UnexpectedEof) => {
+                                log::warn!("Corrupt commit after offset {last_commit_offset:?}");
 
-                        let percentage = f64::floor((segment_index as f64 / max_offset as f64) * 100.0) as i32;
-                        if percentage > last_logged_percentage && percentage % 10 == 0 {
-                            last_logged_percentage = percentage;
-                            log::debug!(
-                                "[{}] Loaded {}% ({}/{})",
-                                address,
-                                percentage,
-                                transaction_offset,
-                                max_offset
-                            );
+                                // We expect that partial writes can occur at
+                                // the end of the log, but a corrupted segment
+                                // in the middle indicates something else is
+                                // wrong.
+                                if segment_offset < total_segments - 1 {
+                                    return Err(e.into());
+                                }
+
+                                // Else, truncate the current segment. This
+                                // allows to continue appending to the log
+                                // without hitting above condition.
+                                message_log.reset_to(last_commit_offset.unwrap_or(0))?;
+                                break 'replay;
+                            }
+                            Err(e) => return Err(e.into()),
+                        };
+                        segment_index += 1;
+                        last_hash = commit.parent_commit_hash;
+
+                        // Check that the commit sequence is contiguous.
+                        if let Some(last) = last_commit_offset {
+                            if last != commit.commit_offset - 1 {
+                                return Err(DBError::from(anyhow!("Non-contiguous commit offset")));
+                            }
+                        } else if commit.commit_offset > 0 {
+                            return Err(DBError::from(anyhow!(
+                                "Non-zero initial commit: {}",
+                                commit.commit_offset
+                            )));
+                        }
+                        last_commit_offset = Some(commit.commit_offset);
+                        for transaction in commit.transactions {
+                            transaction_offset += 1;
+                            // NOTE: Although I am creating a blobstore transaction in a
+                            // one to one fashion for each message log transaction, this
+                            // is just to reduce memory usage while inserting. We don't
+                            // really care about inserting these transactionally as long
+                            // as all of the writes get inserted.
+                            datastore.replay_transaction(&transaction, odb.clone())?;
+
+                            let percentage = f64::floor((segment_index as f64 / max_offset as f64) * 100.0) as i32;
+                            if percentage > last_logged_percentage && percentage % 10 == 0 {
+                                last_logged_percentage = percentage;
+                                log::debug!(
+                                    "[{}] Loaded {}% ({}/{})",
+                                    address,
+                                    percentage,
+                                    transaction_offset,
+                                    max_offset
+                                );
+                            }
                         }
                     }
                 }
@@ -671,15 +707,32 @@ mod tests {
 
     use super::*;
 
+    use nonempty::NonEmpty;
     use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::db::def::{ColumnDef, IndexDef, IndexType, TableDef};
+    use std::fs::File;
+    use std::io;
+    use std::path::Path;
     use std::sync::{Arc, Mutex};
+    use tempfile::TempDir;
 
-    use crate::db::datastore::system_tables::*;
-    use crate::db::message_log::MessageLog;
+    use super::RelationalDB;
+    use crate::address::Address;
+    use crate::db::datastore::locking_tx_datastore::IterByColEq;
+    use crate::db::datastore::system_tables::StIndexRow;
+    use crate::db::datastore::system_tables::StSequenceRow;
+    use crate::db::datastore::system_tables::StTableRow;
+    use crate::db::datastore::system_tables::ST_INDEXES_ID;
+    use crate::db::datastore::system_tables::ST_SEQUENCES_ID;
+    use crate::db::message_log::{MessageLog, SegmentView};
+    use crate::db::ostorage::sled_object_db::SledObjectDB;
+    use crate::db::ostorage::ObjectDB;
+    use crate::db::relational_db::make_default_ostorage;
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::db::relational_db::{open_db, ST_TABLES_ID};
+    use crate::execution_context::ExecutionContext;
     use spacetimedb_sats::product;
 
     fn column(name: &str, ty: AlgebraicType) -> ColumnDef {
@@ -1434,4 +1487,100 @@ mod tests {
 
     //     Ok(())
     // }
+
+    #[test]
+    fn test_replay_corrupted_log() -> ResultTest<()> {
+        let tmp = TempDir::with_prefix("stdb_test")?;
+        let mlog_path = tmp.path().join("mlog");
+        let mlog = MessageLog::options()
+            // 64KiB should create like 11 segments
+            .max_segment_size(64 * 1024)
+            .open(&mlog_path)
+            .map(Mutex::new)
+            .map(Arc::new)?;
+        let odb = SledObjectDB::open(tmp.path().join("odb"))
+            .map(|odb| Box::new(odb) as Box<dyn ObjectDB + Send>)
+            .map(Mutex::new)
+            .map(Arc::new)?;
+        let db = RelationalDB::open(tmp.path(), Some(mlog.clone()), odb.clone(), Address::zero(), false)?;
+        let ctx = ExecutionContext::default();
+
+        let table_id = db.with_auto_commit(&ctx, |tx| {
+            db.create_table(
+                tx,
+                table(
+                    "Account",
+                    vec![ColumnDef {
+                        is_autoinc: true,
+                        ..column("deposit", AlgebraicType::U64)
+                    }],
+                    vec![],
+                ),
+            )
+        })?;
+
+        fn balance(ctx: &ExecutionContext, db: &RelationalDB, table_id: TableId) -> ResultTest<u64> {
+            let balance = db.with_auto_commit(ctx, |tx| -> ResultTest<u64> {
+                let last = db
+                    .iter(ctx, tx, table_id)?
+                    .last()
+                    .map(|row| row.view().field_as_u64(0, None))
+                    .transpose()?
+                    .unwrap_or_default();
+                Ok(last)
+            })?;
+
+            Ok(balance)
+        }
+
+        // Deposit some coins, creating 10,000 transactions.
+        for _ in 0..10_000 {
+            db.with_auto_commit(&ctx, |tx| db.insert(tx, table_id, product![AlgebraicValue::U64(0)]))?;
+        }
+        assert_eq!(10_000, balance(&ctx, &db, table_id)?);
+
+        drop(db);
+        odb.lock().unwrap().sync_all()?;
+        mlog.lock().unwrap().sync_all()?;
+
+        let db = RelationalDB::open(tmp.path(), Some(mlog.clone()), odb.clone(), Address::zero(), false)?;
+        assert_eq!(10_000, balance(&ctx, &db, table_id)?);
+
+        let total_segments = mlog.lock().unwrap().total_segments();
+        assert!(total_segments > 3, "expected more than 3 segments");
+
+        fn invalidate(mlog_path: &Path, segment: SegmentView) -> io::Result<()> {
+            eprintln!("invalidating segment {:0>20}", segment.offset());
+            let mlog_segment = File::options().write(true).open(
+                mlog_path
+                    .join(format!("{:0>20}", segment.offset()))
+                    .with_extension("log"),
+            )?;
+            let len = mlog_segment.metadata()?.len();
+            mlog_segment.set_len(len - 1)
+        }
+
+        // Close the db and pop a byte from the end of the message log.
+        drop(db);
+        let last_segment = mlog.lock().unwrap().segments().last().unwrap();
+        invalidate(&mlog_path, last_segment)?;
+
+        let db = RelationalDB::open(tmp.path(), Some(mlog.clone()), odb.clone(), Address::zero(), false)?;
+        // Assert that the final tx is lost and 1 bitcoin was burned.
+        assert_eq!(9_999, balance(&ctx, &db, table_id)?);
+
+        let total_segments2 = mlog.lock().unwrap().total_segments();
+        assert_eq!(total_segments, total_segments2, "no segment should have beeen removed");
+
+        // Now let's poke a segment somewhere in the middle of the log.
+        drop(db);
+        let segment = mlog.lock().unwrap().segments().nth(2).unwrap();
+        invalidate(&mlog_path, segment)?;
+
+        let db = RelationalDB::open(tmp.path(), Some(mlog), odb, Address::zero(), false);
+        eprintln!("{db:?}");
+        assert!(db.is_err(), "`RelationalDB::open` should have returned an error");
+
+        Ok(())
+    }
 }
