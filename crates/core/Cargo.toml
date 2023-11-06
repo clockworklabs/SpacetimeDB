@@ -101,6 +101,8 @@ default = ["odb_sled"]
 [dev-dependencies]
 rusqlite.workspace = true
 criterion.workspace = true
+proptest.workspace = true
+proptest-derive.workspace = true
 rand.workspace = true
 
 [build-dependencies]

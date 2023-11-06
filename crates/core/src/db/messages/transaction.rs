@@ -1,38 +1,69 @@
+use anyhow::Context as _;
+use spacetimedb_sats::buffer::{BufReader, BufWriter};
+use std::fmt;
+
 use super::write::Write;
 
-// aka Record
-// Must be atomically, durably written to disk
-#[derive(Debug, Clone)]
+#[cfg(test)]
+use proptest::prelude::*;
+#[cfg(test)]
+use proptest_derive::Arbitrary;
+
+/// A transaction, consisting of one or more [`Write`]s.
+///
+/// Encoding:
+///
+/// ```text
+/// <n(4)>[<write_0(6-38)...<write_n(6-38)>]
+/// ```
+#[derive(Debug, Clone, Default, PartialEq)]
+#[cfg_attr(test, derive(Arbitrary))]
 pub struct Transaction {
+    #[cfg_attr(test, proptest(strategy = "arbitrary::writes()"))]
     pub writes: Vec<Write>,
+}
+
+#[cfg(test)]
+mod arbitrary {
+    use super::*;
+
+    // Limit to 64 for performance reasons.
+    pub fn writes() -> impl Strategy<Value = Vec<Write>> {
+        prop::collection::vec(any::<Write>(), 1..64)
+    }
+}
+
+/// Error context for [`Transaction::decode`].
+enum Context {
+    Len,
+    Write(u32),
+}
+
+impl fmt::Display for Context {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Failed to decode `Transaction`: ")?;
+        match self {
+            Self::Len => f.write_str("number of writes"),
+            Self::Write(n) => f.write_str(&format!("write {n}")),
+        }
+    }
 }
 
 // tx: [<write>...(dedupped and sorted_numerically)]*
 impl Transaction {
-    pub fn decode(bytes: impl AsRef<[u8]>) -> (Self, usize) {
-        let bytes = &mut bytes.as_ref();
-        if bytes.is_empty() {
-            return (Transaction { writes: Vec::new() }, 0);
+    pub fn decode<'a>(reader: &mut impl BufReader<'a>) -> anyhow::Result<Self> {
+        if reader.remaining() == 0 {
+            return Ok(Self::default());
         }
 
-        let mut bytes_read = 0;
-
-        let mut dst = [0u8; 4];
-        dst.copy_from_slice(&bytes[bytes_read..bytes_read + 4]);
-        let writes_count = u32::from_le_bytes(dst);
-        bytes_read += 4;
-
-        let mut writes: Vec<Write> = Vec::with_capacity(writes_count as usize);
-
-        let mut count = 0;
-        while bytes_read < bytes.len() && count < writes_count {
-            let (write, read) = Write::decode(&bytes[bytes_read..]);
-            bytes_read += read;
+        let n = reader.get_u32().context(Context::Len)?;
+        let mut writes = Vec::with_capacity(n as usize);
+        for i in 0..n {
+            let write = Write::decode(reader).with_context(|| Context::Write(i))?;
             writes.push(write);
-            count += 1;
         }
 
-        (Transaction { writes }, bytes_read)
+        Ok(Self { writes })
     }
 
     pub fn encoded_len(&self) -> usize {
@@ -43,11 +74,10 @@ impl Transaction {
         count
     }
 
-    pub fn encode(&self, bytes: &mut Vec<u8>) {
-        bytes.extend((self.writes.len() as u32).to_le_bytes());
-
+    pub fn encode(&self, writer: &mut impl BufWriter) {
+        writer.put_u32(self.writes.len() as u32);
         for write in &self.writes {
-            write.encode(bytes);
+            write.encode(writer);
         }
     }
 }
