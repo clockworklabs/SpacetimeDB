@@ -110,6 +110,21 @@ metrics_group!(
         #[help = "The total duration of a spacetime wasm abi call (in seconds); includes row serialization and copying into wasm memory"]
         #[labels(txn_type: TransactionType, db: Address, reducer: str, call: AbiCall)]
         pub wasm_abi_call_duration_sec: HistogramVec,
+
+        #[name = spacetime_message_log_size_bytes]
+        #[help = "For a given database, the number of bytes occupied by its message log"]
+        #[labels(db: Address)]
+        pub message_log_size: IntGaugeVec,
+
+        #[name = spacetime_object_db_disk_usage]
+        #[help = "For a given database, the number of bytes occupied by large object storage"]
+        #[labels(db: Address)]
+        pub object_db_disk_usage: IntGaugeVec,
+
+        #[name = spacetime_module_log_file_size_bytes]
+        #[help = "For a given module, the size of its log file (in bytes)"]
+        #[labels(db: Address)]
+        pub module_log_file_size: IntGaugeVec,
     }
 );
 

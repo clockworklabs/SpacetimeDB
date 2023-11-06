@@ -1,7 +1,9 @@
 use std::sync::Arc;
 use std::{collections::HashMap, sync::Mutex};
 
+use crate::db::db_metrics::DB_METRICS;
 use crate::host::scheduler::Scheduler;
+use crate::worker_metrics::WORKER_METRICS;
 
 use super::database_instance_context::DatabaseInstanceContext;
 
@@ -32,5 +34,42 @@ impl DatabaseInstanceContextController {
     pub fn remove(&self, database_instance_id: u64) -> Option<(Arc<DatabaseInstanceContext>, Scheduler)> {
         let mut contexts = self.contexts.lock().unwrap();
         contexts.remove(&database_instance_id)
+    }
+
+    #[tracing::instrument(skip_all)]
+    pub fn update_metrics(&self) {
+        // Update global disk usage metrics
+        if let Ok(info) = sys_info::disk_info() {
+            WORKER_METRICS.system_disk_space_free.set(info.free as i64);
+            WORKER_METRICS.system_disk_space_total.set(info.total as i64);
+        }
+        // Update memory usage metrics
+        if let Ok(info) = sys_info::mem_info() {
+            WORKER_METRICS.system_memory_free.set(info.free as i64);
+            WORKER_METRICS.system_memory_total.set(info.total as i64);
+        }
+        for (db, _) in self.contexts.lock().unwrap().values() {
+            // Use the previous gauge value if there is an issue getting the file size.
+            if let Ok(num_bytes) = db.message_log_size_on_disk() {
+                DB_METRICS
+                    .message_log_size
+                    .with_label_values(&db.address)
+                    .set(num_bytes as i64);
+            }
+            // Use the previous gauge value if there is an issue getting the file size.
+            if let Ok(num_bytes) = db.object_db_size_on_disk() {
+                DB_METRICS
+                    .object_db_disk_usage
+                    .with_label_values(&db.address)
+                    .set(num_bytes as i64);
+            }
+            // Use the previous gauge value if there is an issue getting the file size.
+            if let Ok(num_bytes) = db.log_file_size() {
+                DB_METRICS
+                    .module_log_file_size
+                    .with_label_values(&db.address)
+                    .set(num_bytes as i64);
+            }
+        }
     }
 }

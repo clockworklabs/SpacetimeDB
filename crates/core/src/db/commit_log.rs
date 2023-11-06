@@ -188,6 +188,22 @@ pub struct CommitLogView {
 }
 
 impl CommitLogView {
+    /// The number of bytes on disk occupied by the [MessageLog].
+    pub fn message_log_size_on_disk(&self) -> Result<u64, DBError> {
+        if let Some(ref mlog) = self.mlog {
+            let guard = mlog.lock().unwrap();
+            Ok(guard.size())
+        } else {
+            Ok(0)
+        }
+    }
+
+    /// The number of bytes on disk occupied by the [ObjectDB].
+    pub fn object_db_size_on_disk(&self) -> Result<u64, DBError> {
+        let guard = self.odb.lock().unwrap();
+        guard.size_on_disk()
+    }
+
     /// Obtain an iterator over a snapshot of the raw message log segments.
     ///
     /// See also: [`MessageLog::segments`]
