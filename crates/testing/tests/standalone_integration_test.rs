@@ -60,7 +60,7 @@ fn test_calling_a_reducer_with_private_table() {
             let lines = module.read_log(Some(10)).await;
             let lines: Vec<&str> = lines.trim().split('\n').collect();
 
-            assert_eq!(lines.len(), 8);
+            assert_eq!(lines.len(), 9);
 
             let json: Value = serde_json::from_str(lines[6]).unwrap();
             assert_eq!(json["message"], Value::String("Private, Tyrion!".to_string()));
