@@ -38,8 +38,6 @@ use crate::{
     execution_context::ExecutionContext,
 };
 use anyhow::anyhow;
-#[cfg(test)]
-use itertools::Itertools;
 use nonempty::NonEmpty;
 use parking_lot::{lock_api::ArcMutexGuard, Mutex, RawMutex};
 use spacetimedb_lib::{
@@ -332,87 +330,6 @@ impl SequencesState {
 
     pub fn get_sequence_mut(&mut self, seq_id: SequenceId) -> Option<&mut Sequence> {
         self.sequences.get_mut(&seq_id)
-    }
-}
-
-/// Utility to query the system tables and return their concrete table row
-#[cfg(test)]
-pub struct SystemTableQuery<'a> {
-    db: &'a Inner,
-    ctx: &'a ExecutionContext<'a>,
-}
-
-#[cfg(test)]
-impl SystemTableQuery<'_> {
-    pub fn scan_st_tables(&self) -> super::Result<Vec<StTableRow<String>>> {
-        Ok(self
-            .db
-            .iter(self.ctx, &ST_TABLES_ID)?
-            .map(|x| StTableRow::try_from(x.view()).unwrap().to_owned())
-            .sorted_by_key(|x| x.table_id)
-            .collect::<Vec<_>>())
-    }
-
-    pub fn scan_st_tables_by_col(
-        &self,
-        cols: impl Into<NonEmpty<ColId>>,
-        value: AlgebraicValue,
-    ) -> super::Result<Vec<StTableRow<String>>> {
-        Ok(self
-            .db
-            .iter_by_col_eq(self.ctx, &ST_TABLES_ID, cols, value)?
-            .map(|x| StTableRow::try_from(x.view()).unwrap().to_owned())
-            .sorted_by_key(|x| x.table_id)
-            .collect::<Vec<_>>())
-    }
-
-    pub fn scan_st_columns(&self) -> super::Result<Vec<StColumnRow<String>>> {
-        Ok(self
-            .db
-            .iter(self.ctx, &ST_COLUMNS_ID)?
-            .map(|x| StColumnRow::try_from(x.view()).unwrap().to_owned())
-            .sorted_by_key(|x| (x.table_id, x.col_id))
-            .collect::<Vec<_>>())
-    }
-
-    pub fn scan_st_columns_by_col(
-        &self,
-        cols: impl Into<NonEmpty<ColId>>,
-        value: AlgebraicValue,
-    ) -> super::Result<Vec<StColumnRow<String>>> {
-        Ok(self
-            .db
-            .iter_by_col_eq(self.ctx, &ST_COLUMNS_ID, cols, value)?
-            .map(|x| StColumnRow::try_from(x.view()).unwrap().to_owned())
-            .sorted_by_key(|x| (x.table_id, x.col_id))
-            .collect::<Vec<_>>())
-    }
-
-    pub fn scan_st_constraints(&self) -> super::Result<Vec<StConstraintRow<String>>> {
-        Ok(self
-            .db
-            .iter(self.ctx, &ST_CONSTRAINTS_ID)?
-            .map(|x| StConstraintRow::try_from(x.view()).unwrap().to_owned())
-            .sorted_by_key(|x| x.constraint_id)
-            .collect::<Vec<_>>())
-    }
-
-    pub fn scan_st_sequences(&self) -> super::Result<Vec<StSequenceRow<String>>> {
-        Ok(self
-            .db
-            .iter(self.ctx, &ST_SEQUENCES_ID)?
-            .map(|x| StSequenceRow::try_from(x.view()).unwrap().to_owned())
-            .sorted_by_key(|x| (x.table_id, x.sequence_id))
-            .collect::<Vec<_>>())
-    }
-
-    pub fn scan_st_indexes(&self) -> super::Result<Vec<StIndexRow<String>>> {
-        Ok(self
-            .db
-            .iter(self.ctx, &ST_INDEXES_ID)?
-            .map(|x| StIndexRow::try_from(x.view()).unwrap().to_owned())
-            .sorted_by_key(|x| x.index_id)
-            .collect::<Vec<_>>())
     }
 }
 
@@ -1622,11 +1539,6 @@ impl Inner {
         self.tx_state = None;
         // TODO: Check that no sequences exceed their allocation after the rollback.
     }
-
-    #[cfg(test)]
-    fn query_st_tables<'a>(&'a self, ctx: &'a ExecutionContext<'a>) -> SystemTableQuery<'a> {
-        SystemTableQuery { db: self, ctx }
-    }
 }
 
 #[derive(Clone)]
@@ -2145,11 +2057,6 @@ impl TxDatastore for Locking {
     ) -> super::Result<Option<Self::DataRef<'a>>> {
         self.get_mut_tx(tx, table_id, row_id)
     }
-
-    #[cfg(test)]
-    fn query_st_tables<'a>(&'a self, ctx: &'a ExecutionContext<'a>, tx: &'a Self::TxId) -> SystemTableQuery<'a> {
-        tx.lock.query_st_tables(ctx)
-    }
 }
 
 impl traits::MutTx for Locking {
@@ -2457,8 +2364,12 @@ impl traits::MutProgrammable for Locking {
 
 #[cfg(test)]
 mod tests {
-    use super::{ColId, Locking, MutTxId, StTableRow, TxDatastore};
-    use crate::db::datastore::system_tables::{StColumnRow, StConstraintRow, StIndexRow, StSequenceRow};
+    use super::{ColId, Inner, Locking, MutTxId, StTableRow};
+    use crate::db::datastore::system_tables::{
+        StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, ST_COLUMNS_ID, ST_CONSTRAINTS_ID, ST_INDEXES_ID,
+        ST_SEQUENCES_ID, ST_TABLES_ID,
+    };
+    use crate::db::datastore::Result;
     use crate::execution_context::ExecutionContext;
     use crate::{
         db::datastore::traits::{
@@ -2466,6 +2377,7 @@ mod tests {
         },
         error::{DBError, IndexError},
     };
+    use itertools::Itertools;
     use nonempty::NonEmpty;
     use spacetimedb_lib::Address;
     use spacetimedb_lib::{
@@ -2475,6 +2387,90 @@ mod tests {
     };
     use spacetimedb_primitives::TableId;
     use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductValue};
+
+    /// Utility to query the system tables and return their concrete table row
+    pub struct SystemTableQuery<'a> {
+        db: &'a Inner,
+        ctx: &'a ExecutionContext<'a>,
+    }
+
+    fn query_st_tables<'a>(ctx: &'a ExecutionContext<'a>, tx: &'a MutTxId) -> SystemTableQuery<'a> {
+        let db = &*tx.lock;
+        SystemTableQuery { db, ctx }
+    }
+
+    impl SystemTableQuery<'_> {
+        pub fn scan_st_tables(&self) -> Result<Vec<StTableRow<String>>> {
+            Ok(self
+                .db
+                .iter(self.ctx, &ST_TABLES_ID)?
+                .map(|x| StTableRow::try_from(x.view()).unwrap().to_owned())
+                .sorted_by_key(|x| x.table_id)
+                .collect::<Vec<_>>())
+        }
+
+        pub fn scan_st_tables_by_col(
+            &self,
+            cols: impl Into<NonEmpty<ColId>>,
+            value: AlgebraicValue,
+        ) -> Result<Vec<StTableRow<String>>> {
+            Ok(self
+                .db
+                .iter_by_col_eq(self.ctx, &ST_TABLES_ID, cols, value)?
+                .map(|x| StTableRow::try_from(x.view()).unwrap().to_owned())
+                .sorted_by_key(|x| x.table_id)
+                .collect::<Vec<_>>())
+        }
+
+        pub fn scan_st_columns(&self) -> Result<Vec<StColumnRow<String>>> {
+            Ok(self
+                .db
+                .iter(self.ctx, &ST_COLUMNS_ID)?
+                .map(|x| StColumnRow::try_from(x.view()).unwrap().to_owned())
+                .sorted_by_key(|x| (x.table_id, x.col_id))
+                .collect::<Vec<_>>())
+        }
+
+        pub fn scan_st_columns_by_col(
+            &self,
+            cols: impl Into<NonEmpty<ColId>>,
+            value: AlgebraicValue,
+        ) -> Result<Vec<StColumnRow<String>>> {
+            Ok(self
+                .db
+                .iter_by_col_eq(self.ctx, &ST_COLUMNS_ID, cols, value)?
+                .map(|x| StColumnRow::try_from(x.view()).unwrap().to_owned())
+                .sorted_by_key(|x| (x.table_id, x.col_id))
+                .collect::<Vec<_>>())
+        }
+
+        pub fn scan_st_constraints(&self) -> Result<Vec<StConstraintRow<String>>> {
+            Ok(self
+                .db
+                .iter(self.ctx, &ST_CONSTRAINTS_ID)?
+                .map(|x| StConstraintRow::try_from(x.view()).unwrap().to_owned())
+                .sorted_by_key(|x| x.constraint_id)
+                .collect::<Vec<_>>())
+        }
+
+        pub fn scan_st_sequences(&self) -> Result<Vec<StSequenceRow<String>>> {
+            Ok(self
+                .db
+                .iter(self.ctx, &ST_SEQUENCES_ID)?
+                .map(|x| StSequenceRow::try_from(x.view()).unwrap().to_owned())
+                .sorted_by_key(|x| (x.table_id, x.sequence_id))
+                .collect::<Vec<_>>())
+        }
+
+        pub fn scan_st_indexes(&self) -> Result<Vec<StIndexRow<String>>> {
+            Ok(self
+                .db
+                .iter(self.ctx, &ST_INDEXES_ID)?
+                .map(|x| StIndexRow::try_from(x.view()).unwrap().to_owned())
+                .sorted_by_key(|x| x.index_id)
+                .collect::<Vec<_>>())
+        }
+    }
 
     fn u32_str_u32(a: u32, b: &str, c: u32) -> ProductValue {
         product![a, b, c]
@@ -2681,7 +2677,7 @@ mod tests {
         let datastore = get_datastore()?;
         let tx = datastore.begin_mut_tx();
         let ctx = ExecutionContext::default();
-        let query = datastore.query_st_tables(&ctx, &tx);
+        let query = query_st_tables(&ctx, &tx);
         #[rustfmt::skip]
         assert_eq!(query.scan_st_tables()?, map_array([
             TableRow { id: 0, name: "st_table", ty: StTableType::System, access: StAccess::Public },
@@ -2761,9 +2757,9 @@ mod tests {
 
     #[test]
     fn test_create_table_pre_commit() -> ResultTest<()> {
-        let (datastore, tx, table_id) = setup_table()?;
+        let (_, tx, table_id) = setup_table()?;
         let ctx = ExecutionContext::default();
-        let query = datastore.query_st_tables(&ctx, &tx);
+        let query = query_st_tables(&ctx, &tx);
 
         let table_rows = query.scan_st_tables_by_col(ColId(0), table_id.into())?;
         #[rustfmt::skip]
@@ -2782,7 +2778,7 @@ mod tests {
         datastore.commit_mut_tx_for_test(tx)?;
         let tx = datastore.begin_mut_tx();
         let ctx = ExecutionContext::default();
-        let query = datastore.query_st_tables(&ctx, &tx);
+        let query = query_st_tables(&ctx, &tx);
 
         let table_rows = query.scan_st_tables_by_col(ColId(0), table_id.into())?;
         #[rustfmt::skip]
@@ -2801,7 +2797,7 @@ mod tests {
         datastore.rollback_mut_tx_for_test(tx);
         let tx = datastore.begin_mut_tx();
         let ctx = ExecutionContext::default();
-        let query = datastore.query_st_tables(&ctx, &tx);
+        let query = query_st_tables(&ctx, &tx);
 
         let table_rows = query.scan_st_tables_by_col(ColId(0), table_id.into())?;
         assert_eq!(table_rows, []);
@@ -3043,7 +3039,7 @@ mod tests {
         let index_def = IndexDef::new("age_idx".to_string(), table_id, 2.into(), true);
         datastore.create_index_mut_tx(&mut tx, index_def)?;
         let ctx = ExecutionContext::default();
-        let query = datastore.query_st_tables(&ctx, &tx);
+        let query = query_st_tables(&ctx, &tx);
 
         let index_rows = query.scan_st_indexes()?;
         #[rustfmt::skip]
@@ -3086,7 +3082,7 @@ mod tests {
         datastore.commit_mut_tx_for_test(tx)?;
         let mut tx = datastore.begin_mut_tx();
         let ctx = ExecutionContext::default();
-        let query = datastore.query_st_tables(&ctx, &tx);
+        let query = query_st_tables(&ctx, &tx);
 
         let index_rows = query.scan_st_indexes()?;
         #[rustfmt::skip]
@@ -3130,7 +3126,7 @@ mod tests {
         datastore.rollback_mut_tx_for_test(tx);
         let mut tx = datastore.begin_mut_tx();
         let ctx = ExecutionContext::default();
-        let query = datastore.query_st_tables(&ctx, &tx);
+        let query = query_st_tables(&ctx, &tx);
 
         let index_rows = query.scan_st_indexes()?;
         #[rustfmt::skip]

@@ -12,8 +12,6 @@ use spacetimedb_vm::expr::SourceExpr;
 use std::iter;
 use std::{borrow::Cow, ops::RangeBounds, sync::Arc};
 
-#[cfg(test)]
-use super::locking_tx_datastore::SystemTableQuery;
 use super::{system_tables::StTableRow, Result};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -557,9 +555,6 @@ pub trait TxDatastore: DataRow + Tx {
         table_id: TableId,
         row_id: &'a Self::RowId,
     ) -> Result<Option<Self::DataRef<'a>>>;
-
-    #[cfg(test)]
-    fn query_st_tables<'a>(&'a self, ctx: &'a ExecutionContext<'a>, tx: &'a Self::TxId) -> SystemTableQuery<'a>;
 }
 
 pub trait MutTxDatastore: TxDatastore + MutTx {
