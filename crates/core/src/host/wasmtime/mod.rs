@@ -8,6 +8,7 @@ use wasmtime::{Engine, Linker, Module, StoreContext, StoreContextMut};
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::error::NodesError;
 use crate::hash::Hash;
+use crate::stdb_path;
 
 mod wasm_instance_env;
 mod wasmtime_module;
@@ -27,8 +28,26 @@ static ENGINE: Lazy<Engine> = Lazy::new(|| {
         .cranelift_opt_level(wasmtime::OptLevel::Speed)
         .consume_fuel(true)
         .wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Enable);
+
+    let cache_config = toml::toml! {
+        // see <https://docs.wasmtime.dev/cli-cache.html> for options here
+        [cache]
+        enabled = true
+        directory = (toml::Value::try_from(stdb_path("worker_node/wasmtime_cache")).unwrap())
+    };
+    // ignore errors for this - if we're not able to set up caching, that's fine, it's just an optimization
+    let _ = set_cache_config(&mut config, cache_config);
+
     Engine::new(&config).unwrap()
 });
+
+fn set_cache_config(config: &mut wasmtime::Config, cache_config: toml::value::Table) -> anyhow::Result<()> {
+    use std::io::Write;
+    let tmpfile = tempfile::NamedTempFile::new()?;
+    write!(&tmpfile, "{cache_config}")?;
+    config.cache_config_load(tmpfile.path())?;
+    Ok(())
+}
 
 static LINKER: Lazy<Linker<WasmInstanceEnv>> = Lazy::new(|| {
     let mut linker = Linker::new(&ENGINE);
