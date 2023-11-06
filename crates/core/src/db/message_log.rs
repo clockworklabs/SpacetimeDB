@@ -1,6 +1,6 @@
 use std::{
     fs::{self, File},
-    io::{self, BufReader, BufWriter, Read, Write},
+    io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
 };
 
@@ -159,13 +159,6 @@ impl MessageLog {
         OpenOptions::default()
     }
 
-    #[tracing::instrument]
-    pub fn reset_hard(&mut self) -> Result<(), DBError> {
-        fs::remove_dir_all(&self.root)?;
-        *self = Self::open(&self.root)?;
-        Ok(())
-    }
-
     #[tracing::instrument(skip_all)]
     pub fn append(&mut self, message: impl AsRef<[u8]>) -> Result<(), DBError> {
         let message = message.as_ref();
@@ -285,6 +278,105 @@ impl MessageLog {
             root,
             inner: Vec::from(&self.segments[pos..]).into_iter(),
         }
+    }
+
+    /// Truncate the log to message offset `offset`.
+    ///
+    /// **This method destructively modifies the on-disk log!**
+    ///
+    /// After `reset_to` returns successfully, the message `offset` will be the
+    /// last message in the log. That is:
+    ///
+    ///   * `reset_to(0)` will leave exactly zero messages in the log
+    ///   * `reset_to(1)` will leave exactly  one message  in the log
+    ///   * `reset_to(n)` will leave `min(n, open_segment_max_offset)`
+    ///     messages in the log
+    ///
+    /// Segments with an offset range greater than `offset` will be removed.
+    /// Note that this may interfere with readers which operate on a snapshot
+    /// of the internal state of [`MessageLog`] (i.e. the [`Segments`] iterator).
+    ///
+    /// Setting the new offset (i.e. `self.open_segment_max_offset`) is
+    /// **not atomic**, because [`MessageLog`] operates on multiple segment
+    /// files internally.
+    ///
+    /// For example, the given `offset` may require some number of segment files
+    /// at the end of the log to be deleted. Deleting a file could fail, in
+    /// which case this method returns an error. The new offset in this case
+    /// will be the max offset of the segment which could not be deleted, but
+    /// potentially be greater than `offset`.
+    ///
+    /// However, file operations (`unlink`, `ftruncate`) are guaranteed to be
+    /// atomic, to the extent required by [POSIX].
+    ///
+    /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/V2_chap02.html#tag_15_09_07
+    pub fn reset_to(&mut self, offset: u64) -> Result<(), DBError> {
+        if offset == 0 {
+            fs::remove_dir_all(&self.root)?;
+            *self = self.options.open(&self.root)?;
+
+            return Ok(());
+        }
+        if offset >= self.open_segment_max_offset {
+            return Ok(());
+        }
+
+        while let Some(segment) = self.segments.pop() {
+            let path = self.root.join(segment.name()).with_extension("log");
+            if segment.min_offset > offset {
+                // Segment is outside the offset, so remove it wholesale.
+                fs::remove_file(path)?;
+                self.total_size -= segment.size;
+                self.open_segment_max_offset = segment.min_offset - 1;
+            } else {
+                // Read record-wise until we find the byte offset.
+                // TODO(kim): Use an offset index to seek closer to `offset`.
+                let new_segment_size = {
+                    let file = File::open(&path)?;
+                    let mut iter = IterSegment {
+                        segment: segment.min_offset,
+                        read: 0,
+                        file: BufReader::new(file),
+                    };
+
+                    let to_retain = self.open_segment_max_offset - offset;
+                    let mut retained = 0;
+                    for message in iter.by_ref().take(to_retain as usize) {
+                        let _ = message?;
+                        retained += 1;
+                    }
+                    // We maintain that:
+                    //
+                    //  segment.min_offset <= offset <= self.open_segment_max_offset
+                    //
+                    // `iter` yielding fewer elements thus breaks our invariants.
+                    assert_eq!(
+                        to_retain, retained,
+                        "Open segment shorter than expected: {retained} instead of {to_retain}"
+                    );
+                    segment.size - iter.bytes_read()
+                };
+
+                // Truncate file to byte offset.
+                let mut file = File::options().read(true).write(true).open(path)?;
+                file.set_len(new_segment_size)?;
+                file.seek(SeekFrom::End(0))?;
+
+                self.total_size -= segment.size;
+                self.total_size += new_segment_size;
+                self.segments.push(Segment {
+                    size: new_segment_size,
+                    ..segment
+                });
+                self.open_segment_max_offset = offset;
+                self.open_segment_file = BufWriter::new(file);
+
+                return Ok(());
+            }
+        }
+
+        // TODO(kim): Consider using `NonEmpty` for the segment list.
+        unreachable!("The segment with min offset 0 did not exist")
     }
 
     fn open_segment(&self) -> &Segment {
@@ -436,6 +528,8 @@ impl Iterator for Segments {
 mod tests {
     #![allow(clippy::disallowed_macros)]
 
+    use std::path::Path;
+
     use super::MessageLog;
     use spacetimedb_lib::error::ResultTest;
     use tempfile::{self, TempDir};
@@ -495,18 +589,11 @@ mod tests {
     #[test]
     fn test_segments_iter() -> ResultTest<()> {
         let tmp = TempDir::with_prefix("message_log_test")?;
-        let path = tmp.path();
 
-        const MESSAGE: &[u8] = b"fee fi fo fum";
+        const SEGMENTS: usize = 3;
         const MESSAGES_PER_SEGMENT: usize = 10_000;
-        const SEGMENT_SIZE: usize = MESSAGES_PER_SEGMENT * (MESSAGE.len() + super::HEADER_SIZE);
-        const TOTAL_MESSAGES: usize = (MESSAGES_PER_SEGMENT * 3) - 1;
 
-        let mut message_log = MessageLog::options().max_segment_size(SEGMENT_SIZE as u64).open(path)?;
-        for _ in 0..TOTAL_MESSAGES {
-            message_log.append(MESSAGE)?;
-        }
-        message_log.sync_all()?;
+        let message_log = fill_log(tmp.path(), SEGMENTS, MESSAGES_PER_SEGMENT, b"foo fi fo fum")?;
 
         let segments = message_log.segments().count();
         assert_eq!(3, segments);
@@ -529,28 +616,117 @@ mod tests {
     #[test]
     fn test_segment_iter() -> ResultTest<()> {
         let tmp = TempDir::with_prefix("message_log_test")?;
-        let path = tmp.path();
 
         const MESSAGE: &[u8] = b"fee fi fo fum";
+        const SEGMENTS: usize = 3;
         const MESSAGES_PER_SEGMENT: usize = 10_000;
-        const SEGMENT_SIZE: usize = MESSAGES_PER_SEGMENT * (MESSAGE.len() + super::HEADER_SIZE);
-        const TOTAL_MESSAGES: usize = (MESSAGES_PER_SEGMENT * 3) - 1;
 
-        let mut message_log = MessageLog::options().max_segment_size(SEGMENT_SIZE as u64).open(path)?;
-        for _ in 0..TOTAL_MESSAGES {
-            message_log.append(MESSAGE)?;
-        }
-        message_log.sync_all()?;
-
+        let mlog = fill_log(tmp.path(), SEGMENTS, MESSAGES_PER_SEGMENT, MESSAGE)?;
         let mut count = 0;
-        for segment in message_log.segments() {
+        for segment in mlog.segments() {
             for message in segment.try_into_iter()? {
                 assert_eq!(message?, MESSAGE);
                 count += 1;
             }
         }
-        assert_eq!(count, TOTAL_MESSAGES);
+        assert_eq!(count, MESSAGES_PER_SEGMENT * SEGMENTS);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_truncate() -> ResultTest<()> {
+        let tmp = TempDir::with_prefix("message_log_test")?;
+
+        const MESSAGE: &[u8] = b"bleep bloop bleep";
+        const SEGMENTS: usize = 3;
+        const MESSAGES_PER_SEGMENT: usize = 10_000;
+
+        fn go(mlog: &mut MessageLog, offset: u64) {
+            let last_segments_len = mlog.segments.len();
+            let last_max_offset = mlog.open_segment_max_offset;
+            let last_open_segment_size = mlog.open_segment().size;
+
+            mlog.reset_to(offset).unwrap();
+            assert_eq!(
+                offset, mlog.open_segment_max_offset,
+                "offset must be reset to argument\n{:#?}",
+                mlog
+            );
+            assert_eq!(
+                mlog.total_size,
+                mlog.segments.iter().map(|s| s.size).sum::<u64>(),
+                "total size must be the sum of segment sizes\n{:#?}",
+                mlog
+            );
+
+            if offset == 0 {
+                assert_eq!(1, mlog.segments.len(), "one segment must exist");
+                assert_eq!(0, mlog.open_segment().min_offset);
+                assert_eq!(0, mlog.open_segment().size)
+            } else {
+                let on_segment_boundary = (offset % MESSAGES_PER_SEGMENT as u64) == 0;
+                if !on_segment_boundary {
+                    let entries_delta = last_max_offset - offset;
+                    let size_delta = entries_delta * (MESSAGE.len() + super::HEADER_SIZE) as u64;
+                    assert_eq!(
+                        mlog.open_segment().size,
+                        last_open_segment_size - size_delta,
+                        "open segment should have been truncated by {} entries, {} bytes\n{:#?}",
+                        entries_delta,
+                        size_delta,
+                        mlog
+                    );
+                } else {
+                    assert_eq!(
+                        last_segments_len - 1,
+                        mlog.segments.len(),
+                        "last segment should be gone\n{:#?}",
+                        mlog
+                    );
+                }
+            }
+        }
+
+        let mut mlog = fill_log(tmp.path(), SEGMENTS, MESSAGES_PER_SEGMENT, MESSAGE)?;
+        for offset in [29_999, 22_000, 20_000, 15_000, 10_000, 0] {
+            go(&mut mlog, offset)
+        }
+
+        // The log is now empty.
+        // As a sanity check, assert that we're not off by one on the offset.
+        mlog.append(b"retain me")?;
+        mlog.append(MESSAGE)?;
+        mlog.sync_all()?;
+        mlog.reset_to(1)?;
+        assert_eq!(
+            b"retain me",
+            mlog.segments()
+                .next()
+                .unwrap()
+                .try_into_iter()
+                .unwrap()
+                .map(Result::unwrap)
+                .last()
+                .unwrap()
+                .as_slice(),
+            "last message in log should be 'retain me'\n{:#?}",
+            mlog
+        );
+
+        Ok(())
+    }
+
+    fn fill_log(path: &Path, segments: usize, messages_per_segment: usize, message: &[u8]) -> ResultTest<MessageLog> {
+        let segment_size = messages_per_segment * (message.len() + super::HEADER_SIZE);
+        let total_messages = messages_per_segment * segments;
+
+        let mut mlog = MessageLog::options().max_segment_size(segment_size as u64).open(path)?;
+        for _ in 0..total_messages {
+            mlog.append(message)?;
+        }
+        mlog.sync_all()?;
+
+        Ok(mlog)
     }
 }
