@@ -282,8 +282,9 @@ impl From<&CommitLog> for CommitLogView {
     }
 }
 
+/// Iterator over a single [`MessageLog`] segment, yielding [`Commit`]s.
 #[must_use = "iterators are lazy and do nothing unless consumed"]
-struct IterSegment {
+pub struct IterSegment {
     inner: message_log::IterSegment,
 }
 
@@ -308,6 +309,12 @@ impl Iterator for IterSegment {
         };
         let io = |e| io::Error::new(io::ErrorKind::InvalidData, e);
         Some(next.and_then(|bytes| Commit::decode(&mut bytes.as_slice()).with_context(ctx).map_err(io)))
+    }
+}
+
+impl From<message_log::IterSegment> for IterSegment {
+    fn from(inner: message_log::IterSegment) -> Self {
+        Self { inner }
     }
 }
 
