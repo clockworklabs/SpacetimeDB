@@ -4430,6 +4430,11 @@ dependencies = [
 [[package]]
 name = "spacetimedb-data-structures"
 version = "0.7.3"
+dependencies = [
+ "nonempty",
+ "serde",
+ "thiserror",
+]
 
 [[package]]
 name = "spacetimedb-lib"
