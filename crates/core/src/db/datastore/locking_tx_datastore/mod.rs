@@ -364,6 +364,12 @@ impl Inner {
     }
 
     fn bootstrap_system_table(&mut self, schema: TableSchema) -> Result<(), DBError> {
+        // Reset the row count metric for this system table
+        DB_METRICS
+            .rdb_num_table_rows
+            .with_label_values(&self.database_address, &schema.table_id.into())
+            .set(0);
+
         let table_id = schema.table_id;
 
         // Insert the table row into st_tables, creating st_tables if it's missing
@@ -379,6 +385,12 @@ impl Inner {
         let row: ProductValue = row.into();
         let data_key = row.to_data_key();
         st_tables.rows.insert(RowId(data_key), row);
+
+        // Increment row count for st_tables
+        DB_METRICS
+            .rdb_num_table_rows
+            .with_label_values(&self.database_address, &ST_TABLES_ID.into())
+            .inc();
 
         // Insert the columns into st_columns
         let first_col_id = schema.columns.first().unwrap().col_id;
@@ -399,6 +411,11 @@ impl Inner {
                     self.committed_state
                         .get_or_create_table(ST_COLUMNS_ID, &ST_COLUMNS_ROW_TYPE, &st_columns_schema());
                 st_columns.rows.insert(RowId(data_key), row);
+                // Increment row count for st_columns
+                DB_METRICS
+                    .rdb_num_table_rows
+                    .with_label_values(&self.database_address, &ST_COLUMNS_ID.into())
+                    .inc();
             }
 
             // If any columns are auto incrementing, we need to create a sequence
@@ -435,6 +452,11 @@ impl Inner {
                 let row = ProductValue::from(row);
                 let data_key = row.to_data_key();
                 st_sequences.rows.insert(RowId(data_key), row);
+                // Increment row count for st_sequences
+                DB_METRICS
+                    .rdb_num_table_rows
+                    .with_label_values(&self.database_address, &ST_SEQUENCES_ID.into())
+                    .inc();
             }
         }
 
@@ -462,6 +484,12 @@ impl Inner {
             let row = ProductValue::from(row);
             let data_key = row.to_data_key();
             st_constraints.rows.insert(RowId(data_key), row);
+
+            // Increment row count for st_constraints
+            DB_METRICS
+                .rdb_num_table_rows
+                .with_label_values(&self.database_address, &ST_CONSTRAINTS_ID.into())
+                .inc();
 
             //Check if add an index:
             match constraint.kind {
@@ -498,6 +526,12 @@ impl Inner {
             let row = ProductValue::from(row);
             let data_key = row.to_data_key();
             st_indexes.rows.insert(RowId(data_key), row);
+
+            // Increment row count for st_indexes
+            DB_METRICS
+                .rdb_num_table_rows
+                .with_label_values(&self.database_address, &ST_INDEXES_ID.into())
+                .inc();
         }
 
         Ok(())
@@ -1640,6 +1674,10 @@ impl Locking {
             match write.operation {
                 Operation::Delete => {
                     Self::table_rows(&mut inner, table_id, schema, row_type).remove(&RowId(write.data_key));
+                    DB_METRICS
+                        .rdb_num_table_rows
+                        .with_label_values(&inner.database_address, &table_id.into())
+                        .dec();
                 }
                 Operation::Insert => {
                     let product_value = match write.data_key {
@@ -1657,6 +1695,10 @@ impl Locking {
                     };
                     Self::table_rows(&mut inner, table_id, schema, row_type)
                         .insert(RowId(write.data_key), product_value);
+                    DB_METRICS
+                        .rdb_num_table_rows
+                        .with_label_values(&inner.database_address, &table_id.into())
+                        .inc();
                 }
             }
         }

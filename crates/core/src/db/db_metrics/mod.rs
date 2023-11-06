@@ -1,6 +1,6 @@
 use crate::{execution_context::TransactionType, host::AbiCall, util::typed_prometheus::metrics_group};
 use once_cell::sync::Lazy;
-use prometheus::{Histogram, HistogramVec, IntCounterVec};
+use prometheus::{Histogram, HistogramVec, IntCounterVec, IntGaugeVec};
 use spacetimedb_lib::Address;
 
 metrics_group!(
@@ -55,6 +55,11 @@ metrics_group!(
         #[help = "The amount of time (in seconds) a reducer has been delayed past its scheduled execution time"]
         #[labels(db: Address, reducer: str)]
         pub scheduled_reducer_delay_sec: HistogramVec,
+
+        #[name = spacetime_num_table_rows]
+        #[help = "The number of rows in a table"]
+        #[labels(db: Address, table_id: u32)]
+        pub rdb_num_table_rows: IntGaugeVec,
 
         #[name = spacetime_num_rows_inserted_cumulative]
         #[help = "The cumulative number of rows inserted into a table"]
