@@ -11,4 +11,4 @@ bench = false
 
 [dependencies]
 getrandom = {workspace = true, optional = true}
-spacetimedb-primitives = { path = "../primitives" }
+spacetimedb-primitives = { path = "../primitives", version = "0.7.2" }
