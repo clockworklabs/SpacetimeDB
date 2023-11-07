@@ -67,6 +67,7 @@ describe("SpacetimeDBClient", () => {
         IdentityToken: {
           identity: "an-identity",
           token: "a-token",
+          address: "00FF00",
         },
       },
     };
@@ -100,6 +101,7 @@ describe("SpacetimeDBClient", () => {
         IdentityToken: {
           identity: "an-identity",
           token: "a-token",
+          address: "00FF00",
         },
       },
     };
@@ -150,6 +152,7 @@ describe("SpacetimeDBClient", () => {
           timestamp: 1681391805281203,
           status: "committed",
           caller_identity: "00FF01",
+          caller_address: "00FF00",
           function_call: {
             reducer: "create_player",
             args: '["A Player",[0.2, 0.3]]',
@@ -221,6 +224,7 @@ describe("SpacetimeDBClient", () => {
         IdentityToken: {
           identity: "an-identity",
           token: "a-token",
+          address: "00FF00",
         },
       },
     };
@@ -267,7 +271,8 @@ describe("SpacetimeDBClient", () => {
         event: {
           timestamp: 1681391805281203,
           status: "committed",
-          caller_identity: "identity-0",
+          caller_identity: "00FF01",
+          caller_address: "00FF00",
           function_call: {
             reducer: "create_player",
             args: '["A Player",[0.2, 0.3]]',
@@ -336,7 +341,8 @@ describe("SpacetimeDBClient", () => {
         event: {
           timestamp: 1681391805281203,
           status: "committed",
-          caller_identity: "identity-0",
+          caller_identity: "00FF01",
+          caller_address: "00FF00",
           function_call: {
             reducer: "create_player",
             args: '["A Player",[0.2, 0.3]]',
@@ -391,6 +397,7 @@ describe("SpacetimeDBClient", () => {
         IdentityToken: {
           identity: "an-identity",
           token: "a-token",
+          address: "00FF00",
         },
       },
     };
@@ -443,7 +450,8 @@ describe("SpacetimeDBClient", () => {
         event: {
           timestamp: 1681391805281203,
           status: "committed",
-          caller_identity: "identity-0",
+          caller_identity: "00FF01",
+          caller_address: "00FF00",
           function_call: {
             reducer: "create_user",
             args: '["A User",[0.2, 0.3]]',

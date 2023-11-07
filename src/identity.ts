@@ -21,13 +21,13 @@ export class Identity {
   /**
    * Creates a new `Identity`.
    */
-  constructor(data: { __identity_bytes: string } | Uint8Array) {
+  constructor(data: string | Uint8Array) {
     // we get a JSON with __identity_bytes when getting a token with a JSON API
     // and an Uint8Array when using BSATN
     this.data =
       data.constructor === Uint8Array
         ? uint8ArrayToHexString(data as Uint8Array)
-        : (data as { __identity_bytes: string }).__identity_bytes;
+        : (data as string);
   }
 
   /**
@@ -52,6 +52,6 @@ export class Identity {
    * Parse an Identity from a hexadecimal string.
    */
   static fromString(str: string): Identity {
-    return new Identity({ __identity_bytes: str });
+    return new Identity(str);
   }
 }
