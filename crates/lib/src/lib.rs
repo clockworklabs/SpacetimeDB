@@ -1,6 +1,5 @@
 use auth::StAccess;
 use auth::StTableType;
-use derive_more::Display;
 use sats::impl_serialize;
 pub use spacetimedb_sats::buffer;
 pub mod address;
@@ -200,10 +199,17 @@ pub struct IndexDef {
     pub cols: Vec<u8>,
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Display, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
+#[repr(u8)]
 pub enum IndexType {
-    BTree,
-    Hash,
+    BTree = 0,
+    Hash = 1,
+}
+
+impl From<IndexType> for u8 {
+    fn from(value: IndexType) -> Self {
+        value as u8
+    }
 }
 
 impl TryFrom<u8> for IndexType {
@@ -212,17 +218,6 @@ impl TryFrom<u8> for IndexType {
         match v {
             0 => Ok(IndexType::BTree),
             1 => Ok(IndexType::Hash),
-            _ => Err(()),
-        }
-    }
-}
-
-impl TryFrom<&str> for IndexType {
-    type Error = ();
-    fn try_from(v: &str) -> Result<Self, Self::Error> {
-        match v {
-            "BTree" => Ok(IndexType::BTree),
-            "Hash" => Ok(IndexType::Hash),
             _ => Err(()),
         }
     }

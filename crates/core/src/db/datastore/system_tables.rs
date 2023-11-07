@@ -305,7 +305,7 @@ pub static ST_COLUMNS_ROW_TYPE: Lazy<ProductType> =
 ///
 /// | index_id | table_id | index_name  | columns | is_unique | index_type |
 /// |----------|----------|-------------|---------|-----------|------------|
-/// | 1        |          | "ix_sample" | [1]     | false     | "Btree"    |
+/// | 1        |          | "ix_sample" | [1]     | false     | "btree"    |
 pub fn st_indexes_schema() -> TableSchema {
     TableSchema {
         table_id: ST_INDEXES_ID,
@@ -350,7 +350,7 @@ pub fn st_indexes_schema() -> TableSchema {
                 table_id: ST_INDEXES_ID,
                 col_id: StIndexFields::IndexType.col_id(),
                 col_name: StIndexFields::IndexType.col_name(),
-                col_type: AlgebraicType::String,
+                col_type: AlgebraicType::U8,
                 is_autoinc: false,
             },
         ],
@@ -746,7 +746,7 @@ impl<'a> TryFrom<&'a ProductValue> for StIndexRow<&'a str> {
         let index_id = row.field_as_u32(StIndexFields::IndexId as usize, None)?.into();
         let table_id = row.field_as_u32(StIndexFields::TableId as usize, None)?.into();
         let index_name = row.field_as_str(StIndexFields::IndexName as usize, None)?;
-        let index_type = row.field_as_str(StIndexFields::IndexType as usize, None)?;
+        let index_type = row.field_as_u8(StIndexFields::IndexType as usize, None)?;
         let index_type = IndexType::try_from(index_type).map_err(|_| InvalidFieldError {
             col_pos: StIndexFields::IndexType.col_id(),
             name: Some(StIndexFields::IndexType.name()),
@@ -771,7 +771,7 @@ impl From<StIndexRow<String>> for ProductValue {
             x.index_id,
             x.table_id,
             x.index_name,
-            x.index_type.to_string(),
+            u8::from(x.index_type),
             ArrayValue::from(cols),
             x.is_unique,
         ]
