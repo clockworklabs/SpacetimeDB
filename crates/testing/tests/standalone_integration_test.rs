@@ -62,9 +62,9 @@ fn test_calling_a_reducer_with_private_table() {
 
             assert_eq!(lines.len(), 9);
 
-            let json: Value = serde_json::from_str(lines[6]).unwrap();
-            assert_eq!(json["message"], Value::String("Private, Tyrion!".to_string()));
             let json: Value = serde_json::from_str(lines[7]).unwrap();
+            assert_eq!(json["message"], Value::String("Private, Tyrion!".to_string()));
+            let json: Value = serde_json::from_str(lines[8]).unwrap();
             assert_eq!(json["message"], Value::String("Private, World!".to_string()));
         },
     );
