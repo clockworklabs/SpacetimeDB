@@ -35,18 +35,47 @@ pub struct CommitLog {
 }
 
 impl CommitLog {
-    pub fn new(mlog: MessageLog, odb: Box<dyn ObjectDB>, unwritten_commit: Commit, fsync: bool) -> Self {
-        let encode_buf = Vec::with_capacity(unwritten_commit.encoded_len());
+    pub fn open<F>(mlog: MessageLog, odb: Box<dyn ObjectDB>, fsync: bool, mut replay: F) -> Result<Self, DBError>
+    where
+        F: FnMut(Commit, &dyn ObjectDB) -> Result<(), DBError>,
+    {
+        let unwritten_commit = {
+            let mut transaction_offset = 0;
+            let mut last_commit_offset = None;
+            let mut last_hash: Option<Hash> = None;
+            for commit in Iter::from(mlog.segments()) {
+                let commit = commit?;
+
+                last_hash = commit.parent_commit_hash;
+                last_commit_offset = Some(commit.commit_offset);
+                transaction_offset += commit.transactions.len() as u64;
+
+                replay(commit, &odb)?;
+            }
+
+            let commit_offset = if let Some(last_commit_offset) = last_commit_offset {
+                last_commit_offset + 1
+            } else {
+                0
+            };
+
+            Commit {
+                parent_commit_hash: last_hash,
+                commit_offset,
+                min_tx_offset: transaction_offset,
+                transactions: Vec::new(),
+            }
+        };
+
+        let encode_buf = vec![0; unwritten_commit.encoded_len()];
         let writer = Arc::new(RwLock::new(MessageLogWriter {
             mlog,
             unwritten_commit,
             encode_buf,
         }));
-        Self {
-            writer,
-            odb: Arc::new(odb),
-            fsync,
-        }
+        let odb = Arc::new(odb);
+
+        Ok(Self { writer, odb, fsync })
     }
 
     /// Persist to disk the [Tx] result into the [MessageLog].
@@ -398,19 +427,9 @@ mod tests {
             }
             mlog.sync_all().unwrap();
         }
-        let odb = MemoryObjectDB::default();
-
-        let log = CommitLog::new(
-            mlog,
-            Box::new(odb),
-            Commit {
-                parent_commit_hash: None,
-                commit_offset: 0,
-                min_tx_offset: 0,
-                transactions: Vec::new(),
-            },
-            false, // fsync
-        );
+        let odb = Box::<MemoryObjectDB>::default();
+        let fsync = false;
+        let log = CommitLog::open(mlog, odb, fsync, |_, _| Ok(())).unwrap();
 
         let view = CommitLogView::from(&log);
         let commits = view.iter().map(Result::unwrap).count();

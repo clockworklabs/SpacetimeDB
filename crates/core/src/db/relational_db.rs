@@ -9,8 +9,8 @@ use super::Config;
 use crate::address::Address;
 use crate::db::db_metrics::DB_METRICS;
 use crate::db::messages::commit::Commit;
-use crate::db::ostorage;
-use crate::db::{commit_log, FsyncPolicy, Storage};
+use crate::db::ostorage::{self, ObjectDB};
+use crate::db::{FsyncPolicy, Storage};
 use crate::error::{DBError, DatabaseError, IndexError, TableError};
 use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
@@ -87,76 +87,55 @@ impl RelationalDB {
                 let odb = ostorage::persistent(root.join("odb"))?;
 
                 log::debug!("[{}] Replaying transaction log.", address);
-                let mut segment_index = 0;
+
+                let max_commit_offset = message_log.open_segment_max_offset;
+                let mut commit_offset = 0;
+                let mut transaction_offset = 0;
                 let mut last_logged_percentage = 0;
-                let unwritten_commit = {
-                    let mut transaction_offset = 0;
-                    let mut last_commit_offset = None;
-                    let mut last_hash: Option<Hash> = None;
-                    let max_offset = message_log.open_segment_max_offset;
-                    for commit in commit_log::Iter::from(message_log.segments()) {
-                        let commit = commit?;
+                let replay_commit = |commit: Commit, odb: &dyn ObjectDB| -> Result<(), DBError> {
+                    commit_offset += 1;
 
-                        segment_index += 1;
-                        last_hash = commit.parent_commit_hash;
-                        last_commit_offset = Some(commit.commit_offset);
-                        for transaction in commit.transactions {
-                            transaction_offset += 1;
-                            // NOTE: Although I am creating a blobstore transaction in a
-                            // one to one fashion for each message log transaction, this
-                            // is just to reduce memory usage while inserting. We don't
-                            // really care about inserting these transactionally as long
-                            // as all of the writes get inserted.
-                            datastore.replay_transaction(&transaction, &odb)?;
-
-                            let percentage = f64::floor((segment_index as f64 / max_offset as f64) * 100.0) as i32;
-                            if percentage > last_logged_percentage && percentage % 10 == 0 {
-                                last_logged_percentage = percentage;
-                                log::debug!(
-                                    "[{}] Loaded {}% ({}/{})",
-                                    address,
-                                    percentage,
-                                    transaction_offset,
-                                    max_offset
-                                );
-                            }
-                        }
+                    for transaction in commit.transactions {
+                        transaction_offset += 1;
+                        // NOTE: Although I am creating a blobstore transaction in a
+                        // one to one fashion for each message log transaction, this
+                        // is just to reduce memory usage while inserting. We don't
+                        // really care about inserting these transactionally as long
+                        // as all of the writes get inserted.
+                        datastore.replay_transaction(&transaction, odb)?;
                     }
 
-                    // The purpose of this is to rebuild the state of the datastore
-                    // after having inserted all of rows from the message log.
-                    // This is necessary because, for example, inserting a row into `st_table`
-                    // is not equivalent to calling `create_table`.
-                    // There may eventually be better way to do this, but this will have to do for now.
-                    datastore.rebuild_state_after_replay()?;
-
-                    let commit_offset = if let Some(last_commit_offset) = last_commit_offset {
-                        last_commit_offset + 1
-                    } else {
-                        0
-                    };
-
-                    log::debug!(
-                        "[{}] Initialized with {} commits and tx offset {}",
-                        address,
-                        commit_offset,
-                        transaction_offset
-                    );
-
-                    Commit {
-                        parent_commit_hash: last_hash,
-                        commit_offset,
-                        min_tx_offset: transaction_offset,
-                        transactions: Vec::new(),
+                    let percentage = f64::floor((commit_offset as f64 / max_commit_offset as f64) * 100.0) as i32;
+                    if percentage > last_logged_percentage && percentage % 10 == 0 {
+                        last_logged_percentage = percentage;
+                        log::debug!(
+                            "[{}] Loaded {}% ({}/{})",
+                            address,
+                            percentage,
+                            transaction_offset,
+                            max_commit_offset
+                        );
                     }
+
+                    Ok(())
                 };
 
-                Some(CommitLog::new(
-                    message_log,
-                    odb,
-                    unwritten_commit,
-                    config.fsync != FsyncPolicy::Never,
-                ))
+                let commit_log = CommitLog::open(message_log, odb, config.fsync != FsyncPolicy::Never, replay_commit)?;
+                // The purpose of this is to rebuild the state of the datastore
+                // after having inserted all of rows from the message log.
+                // This is necessary because, for example, inserting a row into `st_table`
+                // is not equivalent to calling `create_table`.
+                // There may eventually be better way to do this, but this will have to do for now.
+                datastore.rebuild_state_after_replay()?;
+
+                log::debug!(
+                    "[{}] Initialized with {} commits and tx offset {}",
+                    address,
+                    commit_offset,
+                    transaction_offset
+                );
+
+                Some(commit_log)
             }
         };
 
