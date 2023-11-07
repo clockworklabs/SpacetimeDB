@@ -143,13 +143,12 @@ pub async fn check_email<S: ControlStateReadAccess>(
         return Err(StatusCode::UNAUTHORIZED.into());
     }
 
-    let emails_raw = ctx.get_emails(&identity).await.map_err(log_and_500)?;
-
-    let mut emails = Vec::new();
-
-    for email in emails_raw {
-        emails.push(email.email);
-    }
+    let emails = ctx
+        .get_emails_for_identity(&identity)
+        .map_err(log_and_500)?
+        .into_iter()
+        .map(|IdentityEmail { email, .. }| email)
+        .collect::<Vec<_>>();
 
     Ok(axum::Json(emails))
 }
