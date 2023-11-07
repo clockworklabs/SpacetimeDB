@@ -2115,39 +2115,45 @@ impl traits::MutTx for Locking {
     }
 
     fn rollback_mut_tx(&self, ctx: &ExecutionContext, mut tx: Self::MutTxId) {
+        let txn_type = &ctx.txn_type();
+        let db = &ctx.database();
+        let reducer = ctx.reducer_name().unwrap_or_default();
         let elapsed_time = tx.timer.elapsed();
         let cpu_time = elapsed_time - tx.lock_wait_time;
         DB_METRICS
-            .rdb_num_txns_rolledback
-            .with_label_values(&ctx.txn_type(), &ctx.database(), ctx.reducer_name().unwrap_or(""))
+            .rdb_num_txns
+            .with_label_values(txn_type, db, reducer, &false)
             .inc();
         DB_METRICS
             .rdb_txn_cpu_time_sec
-            .with_label_values(&ctx.txn_type(), &ctx.database(), ctx.reducer_name().unwrap_or(""))
+            .with_label_values(txn_type, db, reducer)
             .observe(cpu_time.as_secs_f64());
         DB_METRICS
             .rdb_txn_elapsed_time_sec
-            .with_label_values(&ctx.txn_type(), &ctx.database(), ctx.reducer_name().unwrap_or(""))
+            .with_label_values(txn_type, db, reducer)
             .observe(elapsed_time.as_secs_f64());
         tx.lock.rollback();
     }
 
     fn commit_mut_tx(&self, ctx: &ExecutionContext, mut tx: Self::MutTxId) -> super::Result<Option<TxData>> {
+        let txn_type = &ctx.txn_type();
+        let db = &ctx.database();
+        let reducer = ctx.reducer_name().unwrap_or_default();
         let elapsed_time = tx.timer.elapsed();
         let cpu_time = elapsed_time - tx.lock_wait_time;
         // Note, we record empty transactions in our metrics.
         // That is, transactions that don't write any rows to the commit log.
         DB_METRICS
-            .rdb_num_txns_committed
-            .with_label_values(&ctx.txn_type(), &ctx.database(), ctx.reducer_name().unwrap_or(""))
+            .rdb_num_txns
+            .with_label_values(txn_type, db, reducer, &true)
             .inc();
         DB_METRICS
             .rdb_txn_cpu_time_sec
-            .with_label_values(&ctx.txn_type(), &ctx.database(), ctx.reducer_name().unwrap_or(""))
+            .with_label_values(txn_type, db, reducer)
             .observe(cpu_time.as_secs_f64());
         DB_METRICS
             .rdb_txn_elapsed_time_sec
-            .with_label_values(&ctx.txn_type(), &ctx.database(), ctx.reducer_name().unwrap_or(""))
+            .with_label_values(txn_type, db, reducer)
             .observe(elapsed_time.as_secs_f64());
         tx.lock.commit()
     }
