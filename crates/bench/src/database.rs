@@ -1,3 +1,4 @@
+use spacetimedb::db;
 use spacetimedb_lib::AlgebraicValue;
 
 use crate::schemas::{BenchTable, IndexStrategy};
@@ -13,7 +14,7 @@ pub trait BenchDatabase: Sized {
 
     type TableId: Clone + 'static;
 
-    fn build(in_memory: bool, fsync: bool) -> ResultBench<Self>
+    fn build(config: db::Config) -> ResultBench<Self>
     where
         Self: Sized;
 

@@ -4,14 +4,13 @@ use super::datastore::traits::{
     DataRow, IndexDef, MutProgrammable, MutTx, MutTxDatastore, Programmable, SequenceDef, TableDef, TableSchema, TxData,
 };
 use super::message_log::MessageLog;
-use super::ostorage::memory_object_db::MemoryObjectDB;
 use super::relational_operators::Relation;
+use super::Config;
 use crate::address::Address;
-use crate::db::commit_log;
 use crate::db::db_metrics::DB_METRICS;
 use crate::db::messages::commit::Commit;
-use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
-use crate::db::ostorage::ObjectDB;
+use crate::db::ostorage;
+use crate::db::{commit_log, FsyncPolicy, Storage};
 use crate::error::{DBError, DatabaseError, IndexError, TableError};
 use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
@@ -25,7 +24,7 @@ use std::borrow::Cow;
 use std::fs::{create_dir_all, File};
 use std::ops::RangeBounds;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 pub const ST_TABLES_NAME: &str = "st_table";
 pub const ST_COLUMNS_NAME: &str = "st_columns";
@@ -43,7 +42,7 @@ pub const ST_TABLE_ID_START: TableId = TableId(2);
 pub struct RelationalDB {
     // TODO(cloutiertyler): This should not be public
     pub(crate) inner: Locking,
-    commit_log: CommitLog,
+    commit_log: Option<CommitLog>,
     _lock: Arc<File>,
     address: Address,
 }
@@ -64,13 +63,7 @@ impl std::fmt::Debug for RelationalDB {
 }
 
 impl RelationalDB {
-    pub fn open(
-        root: impl AsRef<Path>,
-        message_log: Option<Arc<Mutex<MessageLog>>>,
-        odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
-        address: Address,
-        fsync: bool,
-    ) -> Result<Self, DBError> {
+    pub fn open(root: impl AsRef<Path>, config: Config, address: Address) -> Result<Self, DBError> {
         let db_address = address;
         let address = address.to_hex();
         log::debug!("[{}] DATABASE: OPENING", address);
@@ -87,74 +80,85 @@ impl RelationalDB {
             .map_err(|err| DatabaseError::DatabasedOpened(root.to_path_buf(), err.into()))?;
 
         let datastore = Locking::bootstrap(db_address)?;
-        log::debug!("[{}] Replaying transaction log.", address);
-        let mut segment_index = 0;
-        let mut last_logged_percentage = 0;
-        let unwritten_commit = {
-            let mut transaction_offset = 0;
-            let mut last_commit_offset = None;
-            let mut last_hash: Option<Hash> = None;
-            if let Some(message_log) = &message_log {
-                let message_log = message_log.lock().unwrap();
-                let max_offset = message_log.open_segment_max_offset;
-                for commit in commit_log::Iter::from(message_log.segments()) {
-                    let commit = commit?;
+        let commit_log = match config.storage {
+            Storage::Memory => None,
+            Storage::Disk => {
+                let message_log = MessageLog::open(root.join("mlog"))?;
+                let mut odb = ostorage::persistent(root.join("odb"))?;
 
-                    segment_index += 1;
-                    last_hash = commit.parent_commit_hash;
-                    last_commit_offset = Some(commit.commit_offset);
-                    for transaction in commit.transactions {
-                        transaction_offset += 1;
-                        // NOTE: Although I am creating a blobstore transaction in a
-                        // one to one fashion for each message log transaction, this
-                        // is just to reduce memory usage while inserting. We don't
-                        // really care about inserting these transactionally as long
-                        // as all of the writes get inserted.
-                        datastore.replay_transaction(&transaction, odb.clone())?;
+                log::debug!("[{}] Replaying transaction log.", address);
+                let mut segment_index = 0;
+                let mut last_logged_percentage = 0;
+                let unwritten_commit = {
+                    let mut transaction_offset = 0;
+                    let mut last_commit_offset = None;
+                    let mut last_hash: Option<Hash> = None;
+                    let max_offset = message_log.open_segment_max_offset;
+                    for commit in commit_log::Iter::from(message_log.segments()) {
+                        let commit = commit?;
 
-                        let percentage = f64::floor((segment_index as f64 / max_offset as f64) * 100.0) as i32;
-                        if percentage > last_logged_percentage && percentage % 10 == 0 {
-                            last_logged_percentage = percentage;
-                            log::debug!(
-                                "[{}] Loaded {}% ({}/{})",
-                                address,
-                                percentage,
-                                transaction_offset,
-                                max_offset
-                            );
+                        segment_index += 1;
+                        last_hash = commit.parent_commit_hash;
+                        last_commit_offset = Some(commit.commit_offset);
+                        for transaction in commit.transactions {
+                            transaction_offset += 1;
+                            // NOTE: Although I am creating a blobstore transaction in a
+                            // one to one fashion for each message log transaction, this
+                            // is just to reduce memory usage while inserting. We don't
+                            // really care about inserting these transactionally as long
+                            // as all of the writes get inserted.
+                            datastore.replay_transaction(&transaction, &mut odb)?;
+
+                            let percentage = f64::floor((segment_index as f64 / max_offset as f64) * 100.0) as i32;
+                            if percentage > last_logged_percentage && percentage % 10 == 0 {
+                                last_logged_percentage = percentage;
+                                log::debug!(
+                                    "[{}] Loaded {}% ({}/{})",
+                                    address,
+                                    percentage,
+                                    transaction_offset,
+                                    max_offset
+                                );
+                            }
                         }
                     }
-                }
 
-                // The purpose of this is to rebuild the state of the datastore
-                // after having inserted all of rows from the message log.
-                // This is necessary because, for example, inserting a row into `st_table`
-                // is not equivalent to calling `create_table`.
-                // There may eventually be better way to do this, but this will have to do for now.
-                datastore.rebuild_state_after_replay()?;
-            }
+                    // The purpose of this is to rebuild the state of the datastore
+                    // after having inserted all of rows from the message log.
+                    // This is necessary because, for example, inserting a row into `st_table`
+                    // is not equivalent to calling `create_table`.
+                    // There may eventually be better way to do this, but this will have to do for now.
+                    datastore.rebuild_state_after_replay()?;
 
-            let commit_offset = if let Some(last_commit_offset) = last_commit_offset {
-                last_commit_offset + 1
-            } else {
-                0
-            };
+                    let commit_offset = if let Some(last_commit_offset) = last_commit_offset {
+                        last_commit_offset + 1
+                    } else {
+                        0
+                    };
 
-            log::debug!(
-                "[{}] Initialized with {} commits and tx offset {}",
-                address,
-                commit_offset,
-                transaction_offset
-            );
+                    log::debug!(
+                        "[{}] Initialized with {} commits and tx offset {}",
+                        address,
+                        commit_offset,
+                        transaction_offset
+                    );
 
-            Commit {
-                parent_commit_hash: last_hash,
-                commit_offset,
-                min_tx_offset: transaction_offset,
-                transactions: Vec::new(),
+                    Commit {
+                        parent_commit_hash: last_hash,
+                        commit_offset,
+                        min_tx_offset: transaction_offset,
+                        transactions: Vec::new(),
+                    }
+                };
+
+                Some(CommitLog::new(
+                    message_log,
+                    odb,
+                    unwritten_commit,
+                    config.fsync != FsyncPolicy::Never,
+                ))
             }
         };
-        let commit_log = CommitLog::new(message_log, odb.clone(), unwritten_commit, fsync);
 
         // i.e. essentially bootstrap the creation of the schema
         // tables by hard coding the schema of the schema tables
@@ -175,8 +179,10 @@ impl RelationalDB {
     }
 
     /// Obtain a read-only view of this database's [`CommitLog`].
-    pub fn commit_log(&self) -> CommitLogView {
-        CommitLogView::from(&self.commit_log)
+    ///
+    /// Returns `None` if the database is configured as in-memory only.
+    pub fn commit_log(&self) -> Option<CommitLogView> {
+        self.commit_log.as_ref().map(CommitLogView::from)
     }
 
     #[tracing::instrument(skip_all)]
@@ -272,7 +278,11 @@ impl RelationalDB {
     pub fn commit_tx(&self, ctx: &ExecutionContext, tx: MutTxId) -> Result<Option<(TxData, Option<usize>)>, DBError> {
         log::trace!("COMMIT TX");
         if let Some(tx_data) = self.inner.commit_mut_tx(ctx, tx)? {
-            let bytes_written = self.commit_log.append_tx(ctx, &tx_data, &self.inner)?;
+            let bytes_written = if let Some(commit_log) = self.commit_log.as_ref() {
+                commit_log.append_tx(ctx, &tx_data, &self.inner)?
+            } else {
+                None
+            };
             return Ok(Some((tx_data, bytes_written)));
         }
         Ok(None)
@@ -625,32 +635,6 @@ impl RelationalDB {
     }
 }
 
-fn make_default_ostorage(in_memory: bool, path: impl AsRef<Path>) -> Result<Box<dyn ObjectDB + Send>, DBError> {
-    Ok(if in_memory {
-        Box::<MemoryObjectDB>::default()
-    } else {
-        Box::new(HashMapObjectDB::open(path)?)
-    })
-}
-
-pub fn open_db(path: impl AsRef<Path>, in_memory: bool, fsync: bool) -> Result<RelationalDB, DBError> {
-    let path = path.as_ref();
-    let mlog = if in_memory {
-        None
-    } else {
-        Some(Arc::new(Mutex::new(MessageLog::open(path.join("mlog"))?)))
-    };
-    let odb = Arc::new(Mutex::new(make_default_ostorage(in_memory, path.join("odb"))?));
-    let stdb = RelationalDB::open(path, mlog, odb, Address::zero(), fsync)?;
-
-    Ok(stdb)
-}
-
-pub fn open_log(path: impl AsRef<Path>) -> Result<Arc<Mutex<MessageLog>>, DBError> {
-    let path = path.as_ref().to_path_buf();
-    Ok(Arc::new(Mutex::new(MessageLog::open(path.join("mlog"))?)))
-}
-
 #[cfg(test)]
 pub(crate) mod tests_utils {
     use super::*;
@@ -659,9 +643,11 @@ pub(crate) mod tests_utils {
     // Utility for creating a database on a TempDir
     pub(crate) fn make_test_db() -> Result<(RelationalDB, TempDir), DBError> {
         let tmp_dir = TempDir::with_prefix("stdb_test")?;
-        let in_memory = false;
-        let fsync = false;
-        let stdb = open_db(&tmp_dir, in_memory, fsync)?;
+        let config = Config {
+            fsync: FsyncPolicy::Never,
+            storage: Storage::Disk,
+        };
+        let stdb = RelationalDB::open(tmp_dir.path(), config, Address::zero())?;
         Ok((stdb, tmp_dir))
     }
 }
@@ -672,7 +658,6 @@ mod tests {
 
     use nonempty::NonEmpty;
     use spacetimedb_primitives::ColId;
-    use std::sync::{Arc, Mutex};
 
     use crate::address::Address;
     use crate::db::datastore::locking_tx_datastore::IterByColEq;
@@ -684,12 +669,13 @@ mod tests {
     use crate::db::datastore::traits::ColumnDef;
     use crate::db::datastore::traits::IndexDef;
     use crate::db::datastore::traits::TableDef;
-    use crate::db::message_log::MessageLog;
-    use crate::db::relational_db::{open_db, ST_TABLES_ID};
+    use crate::db::relational_db::ST_TABLES_ID;
+    use crate::db::Config;
+    use crate::db::FsyncPolicy;
+    use crate::db::Storage;
     use crate::execution_context::ExecutionContext;
 
     use super::RelationalDB;
-    use crate::db::relational_db::make_default_ostorage;
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::error::{DBError, DatabaseError, IndexError};
     use spacetimedb_lib::auth::StAccess;
@@ -750,14 +736,11 @@ mod tests {
 
         stdb.commit_tx(&ExecutionContext::default(), tx)?;
 
-        let mlog = Some(Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?)));
-        let in_memory = false;
-        let odb = Arc::new(Mutex::new(make_default_ostorage(
-            in_memory,
-            tmp_dir.path().join("odb"),
-        )?));
-
-        match RelationalDB::open(tmp_dir.path(), mlog, odb, Address::zero(), true) {
+        let config = Config {
+            fsync: FsyncPolicy::EveryTx,
+            storage: Storage::Disk,
+        };
+        match RelationalDB::open(tmp_dir.path(), config, Address::zero()) {
             Ok(_) => {
                 panic!("Allowed to open database twice")
             }
@@ -1095,7 +1078,11 @@ mod tests {
         drop(stdb);
 
         dbg!("reopen...");
-        let stdb = open_db(&tmp_dir, false, true)?;
+        let config = Config {
+            fsync: FsyncPolicy::EveryTx,
+            storage: Storage::Disk,
+        };
+        let stdb = RelationalDB::open(&tmp_dir, config, Address::zero())?;
 
         let mut tx = stdb.begin_tx();
 

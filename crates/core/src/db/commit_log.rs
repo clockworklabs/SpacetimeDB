@@ -18,35 +18,34 @@ use crate::{
 };
 
 use anyhow::Context;
+use parking_lot::{Mutex, RwLock};
 use spacetimedb_lib::{
     hash::{hash_bytes, Hash},
     DataKey,
 };
 
-use std::io;
 use std::sync::Arc;
-use std::sync::{Mutex, MutexGuard};
+use std::{io, ops::DerefMut};
 
 #[derive(Clone)]
 pub struct CommitLog {
-    mlog: Option<Arc<Mutex<MessageLog>>>,
+    inner: Arc<RwLock<CommitLogInner>>,
+    // TODO(kim): Avoid this Mutex -- ObjectDB should be `Send + Sync` itself.
     odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
-    unwritten_commit: Arc<Mutex<Commit>>,
-    fsync: bool,
 }
 
 impl CommitLog {
-    pub fn new(
-        mlog: Option<Arc<Mutex<MessageLog>>>,
-        odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
-        unwritten_commit: Commit,
-        fsync: bool,
-    ) -> Self {
-        Self {
+    pub fn new(mlog: MessageLog, odb: Box<dyn ObjectDB + Send>, unwritten_commit: Commit, fsync: bool) -> Self {
+        let encode_buf = Vec::with_capacity(unwritten_commit.encoded_len());
+        let inner = Arc::new(RwLock::new(CommitLogInner {
             mlog,
-            odb,
-            unwritten_commit: Arc::new(Mutex::new(unwritten_commit)),
+            unwritten_commit,
+            encode_buf,
             fsync,
+        }));
+        Self {
+            inner,
+            odb: Arc::new(Mutex::new(odb)),
         }
     }
 
@@ -58,49 +57,60 @@ impl CommitLog {
         &self,
         ctx: &ExecutionContext,
         tx_data: &TxData,
-        datastore: &D,
+        _datastore: &D,
     ) -> Result<Option<usize>, DBError>
     where
         D: MutTxDatastore<RowId = RowId>,
     {
-        if let Some(mlog) = &self.mlog {
-            let mut mlog = mlog.lock().unwrap();
-            self.generate_commit(ctx, tx_data, datastore)
-                .as_deref()
-                .map(|bytes| self.append_commit_bytes(&mut mlog, bytes))
-                .transpose()
-        } else {
-            Ok(None)
-        }
+        let mut inner = self.inner.write();
+        let odb = self.odb.lock();
+        inner.append(odb, ctx, tx_data)
     }
+}
 
-    // For testing -- doesn't require a `MutTxDatastore`, which is currently
-    // unused anyway.
-    fn append_commit_bytes(&self, mlog: &mut MutexGuard<'_, MessageLog>, commit: &[u8]) -> Result<usize, DBError> {
-        mlog.append(commit)?;
-        if self.fsync {
-            let offset = mlog.open_segment_max_offset;
-            // Sync the odb first, as the mlog depends on its data. This is
-            // not an atomicity guarantee, but the error context may help
-            // with forensics.
-            let mut odb = self.odb.lock().unwrap();
-            odb.sync_all()
-                .with_context(|| format!("Error syncing odb to disk. Log offset: {offset}"))?;
-            mlog.sync_all()
-                .with_context(|| format!("Error syncing mlog to disk. Log offset: {offset}"))?;
-            log::trace!("DATABASE: FSYNC");
-        } else {
-            mlog.flush()?;
-        }
-        Ok(commit.len())
-    }
+struct CommitLogInner {
+    mlog: MessageLog,
+    unwritten_commit: Commit,
+    encode_buf: Vec<u8>,
+    fsync: bool,
+}
 
-    fn generate_commit<D: MutTxDatastore<RowId = RowId>>(
-        &self,
+impl CommitLogInner {
+    pub fn append(
+        &mut self,
+        mut odb: impl DerefMut<Target = Box<dyn ObjectDB + Send>>,
         ctx: &ExecutionContext,
         tx_data: &TxData,
-        _datastore: &D,
-    ) -> Option<Vec<u8>> {
+    ) -> Result<Option<usize>, DBError> {
+        if let Some(len) = self.generate_commit(&mut odb, ctx, tx_data) {
+            self.mlog.append(&self.encode_buf[..len])?;
+
+            if self.fsync {
+                let offset = self.mlog.open_segment_max_offset;
+                // Sync to odb first, as the mlog depends on its data. This is
+                // not an atomicity guarantee, but the error context may help
+                // with forensics.
+                odb.as_mut()
+                    .sync_all()
+                    .with_context(|| format!("Error syncing odb to disk. Log offset: {offset}"))?;
+                self.mlog
+                    .sync_all()
+                    .with_context(|| format!("Error syncing mlog to disk. Log offset: {offset}"))?;
+                log::trace!("DATABASE: FSYNC");
+            }
+
+            Ok(Some(len))
+        } else {
+            Ok(Some(0))
+        }
+    }
+
+    fn generate_commit(
+        &mut self,
+        odb: &mut Box<dyn ObjectDB + Send>,
+        ctx: &ExecutionContext,
+        tx_data: &TxData,
+    ) -> Option<usize> {
         // We are not creating a commit for empty transactions.
         // The reason for this is that empty transactions get encoded as 0 bytes,
         // so a commit containing an empty transaction contains no useful information.
@@ -108,7 +118,7 @@ impl CommitLog {
             return None;
         }
 
-        let mut unwritten_commit = self.unwritten_commit.lock().unwrap();
+        let unwritten_commit = &mut self.unwritten_commit;
         let mut writes = Vec::with_capacity(tx_data.records.len());
 
         let txn_type = &ctx.txn_type();
@@ -154,27 +164,30 @@ impl CommitLog {
         const COMMIT_SIZE: usize = 1;
 
         if unwritten_commit.transactions.len() >= COMMIT_SIZE {
-            {
-                let mut guard = self.odb.lock().unwrap();
-                for record in &tx_data.records {
-                    match &record.op {
-                        TxOp::Insert(bytes) => {
-                            guard.add(Vec::clone(bytes));
-                        }
-                        TxOp::Delete => continue,
+            for record in &tx_data.records {
+                match &record.op {
+                    TxOp::Insert(bytes) => {
+                        // TODO(kim): Avoid this clone -- ObjectDB could take a
+                        // slice and clone internally if needed.
+                        odb.add(Vec::clone(bytes));
                     }
+                    TxOp::Delete => continue,
                 }
             }
 
-            let mut bytes = Vec::with_capacity(unwritten_commit.encoded_len());
-            unwritten_commit.encode(&mut bytes);
+            let encoded_len = unwritten_commit.encoded_len();
+            if encoded_len > self.encode_buf.len() {
+                self.encode_buf.resize(encoded_len, 0);
+            }
+            unwritten_commit.encode(&mut self.encode_buf.as_mut_slice());
+            let encoded_bytes = &self.encode_buf[..encoded_len];
 
-            unwritten_commit.parent_commit_hash = Some(hash_bytes(&bytes));
+            unwritten_commit.parent_commit_hash = Some(hash_bytes(encoded_bytes));
             unwritten_commit.commit_offset += 1;
             unwritten_commit.min_tx_offset += unwritten_commit.transactions.len() as u64;
             unwritten_commit.transactions.clear();
 
-            Some(bytes)
+            Some(encoded_len)
         } else {
             None
         }
@@ -183,7 +196,7 @@ impl CommitLog {
 
 /// A read-only view of a [`CommitLog`].
 pub struct CommitLogView {
-    mlog: Option<Arc<Mutex<MessageLog>>>,
+    inner: Arc<RwLock<CommitLogInner>>,
     odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
 }
 
@@ -216,12 +229,8 @@ impl CommitLogView {
     ///
     /// See [`MessageLog::segments_from`] for more information.
     pub fn message_log_segments_from(&self, offset: u64) -> message_log::Segments {
-        if let Some(mlog) = &self.mlog {
-            let mlog = mlog.lock().unwrap();
-            mlog.segments_from(offset)
-        } else {
-            message_log::Segments::empty()
-        }
+        let inner = self.inner.read();
+        inner.mlog.segments_from(offset)
     }
 
     /// Obtain an iterator over the [`Commit`]s in the log.
@@ -268,8 +277,8 @@ impl CommitLogView {
 
         let odb = self.odb.clone();
         commit.transactions.iter().flat_map(hashes).map(move |hash| {
-            let odb = odb.lock().unwrap();
-            odb.get(hash)
+            odb.lock()
+                .get(hash)
                 .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("Missing object: {hash}")))
         })
     }
@@ -278,7 +287,7 @@ impl CommitLogView {
 impl From<&CommitLog> for CommitLogView {
     fn from(log: &CommitLog) -> Self {
         Self {
-            mlog: log.mlog.clone(),
+            inner: log.inner.clone(),
             odb: log.odb.clone(),
         }
     }
@@ -398,30 +407,29 @@ mod tests {
         const TOTAL_MESSAGES: usize = (COMMITS_PER_SEGMENT * 3) - 1;
         let segment_size: usize = COMMITS_PER_SEGMENT * (commit_bytes.len() + 4);
 
-        let mlog = message_log::MessageLog::options()
+        let mut mlog = message_log::MessageLog::options()
             .max_segment_size(segment_size as u64)
             .open(tmp.path())
             .unwrap();
+        {
+            for _ in 0..TOTAL_MESSAGES {
+                mlog.append(&commit_bytes).unwrap();
+            }
+            mlog.sync_all().unwrap();
+        }
         let odb = MemoryObjectDB::default();
 
         let log = CommitLog::new(
-            Some(Arc::new(Mutex::new(mlog))),
-            Arc::new(Mutex::new(Box::new(odb))),
+            mlog,
+            Box::new(odb),
             Commit {
                 parent_commit_hash: None,
                 commit_offset: 0,
                 min_tx_offset: 0,
                 transactions: Vec::new(),
             },
-            true, // fsync
+            false, // fsync
         );
-
-        {
-            let mut guard = log.mlog.as_ref().unwrap().lock().unwrap();
-            for _ in 0..TOTAL_MESSAGES {
-                log.append_commit_bytes(&mut guard, &commit_bytes).unwrap();
-            }
-        }
 
         let view = CommitLogView::from(&log);
         let commits = view.iter().map(Result::unwrap).count();

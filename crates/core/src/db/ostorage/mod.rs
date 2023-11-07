@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use crate::error::DBError;
 use bytes;
 
@@ -21,4 +23,19 @@ pub trait ObjectDB {
     fn flush(&mut self) -> Result<(), DBError>;
     fn sync_all(&mut self) -> Result<(), DBError>;
     fn size_on_disk(&self) -> Result<u64, DBError>;
+}
+
+/// Create an instance of an on-disk object store using the default implementation.
+pub fn persistent(path: impl AsRef<Path>) -> Result<Box<dyn ObjectDB + Send>, DBError> {
+    #[cfg(feature = "odb_sled")]
+    let odb = sled_object_db::SledObjectDB::open(path)?;
+    #[cfg(not(feature = "odb_sled"))]
+    let odb = hashmap_object_db::HashMapObjectDB::open(path)?;
+
+    Ok(Box::new(odb))
+}
+
+/// Create an ephemeral (in-memory) object store using the default implementation.
+pub fn ephemeral() -> Result<Box<dyn ObjectDB + Send>, DBError> {
+    Ok(Box::<memory_object_db::MemoryObjectDB>::default())
 }
