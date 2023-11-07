@@ -1,12 +1,12 @@
 use super::{
-    datastore::traits::{MutTxDatastore, TxData},
+    datastore::traits::TxData,
     message_log::{self, MessageLog},
     messages::commit::Commit,
     ostorage::ObjectDB,
 };
 use crate::{
     db::{
-        datastore::{locking_tx_datastore::RowId, traits::TxOp},
+        datastore::traits::TxOp,
         db_metrics::DB_METRICS,
         messages::{
             transaction::Transaction,
@@ -53,15 +53,7 @@ impl CommitLog {
     ///
     /// Returns `Some(n_bytes_written)` if `commit_result` was persisted, `None` if it doesn't have bytes to write.
     #[tracing::instrument(skip_all)]
-    pub fn append_tx<D>(
-        &self,
-        ctx: &ExecutionContext,
-        tx_data: &TxData,
-        _datastore: &D,
-    ) -> Result<Option<usize>, DBError>
-    where
-        D: MutTxDatastore<RowId = RowId>,
-    {
+    pub fn append_tx(&self, ctx: &ExecutionContext, tx_data: &TxData) -> Result<Option<usize>, DBError> {
         let mut writer = self.writer.write();
         let bytes_written = writer.append(&self.odb, ctx, tx_data)?;
         if self.fsync {

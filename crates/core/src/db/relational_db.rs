@@ -279,7 +279,7 @@ impl RelationalDB {
         log::trace!("COMMIT TX");
         if let Some(tx_data) = self.inner.commit_mut_tx(ctx, tx)? {
             let bytes_written = if let Some(commit_log) = self.commit_log.as_ref() {
-                commit_log.append_tx(ctx, &tx_data, &self.inner)?
+                commit_log.append_tx(ctx, &tx_data)?
             } else {
                 None
             };
