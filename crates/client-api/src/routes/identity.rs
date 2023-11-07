@@ -4,11 +4,12 @@ use http::StatusCode;
 use serde::{Deserialize, Serialize};
 
 use spacetimedb::auth::identity::encode_token_with_expiry;
+use spacetimedb::messages::control_db::IdentityEmail;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::{Address, Identity};
 
 use crate::auth::{SpacetimeAuth, SpacetimeAuthHeader};
-use crate::{log_and_500, ControlStateDelegate, ControlStateWriteAccess, NodeDelegate};
+use crate::{log_and_500, ControlStateDelegate, ControlStateReadAccess, ControlStateWriteAccess, NodeDelegate};
 
 #[derive(Deserialize)]
 pub struct CreateIdentityQueryParams {
@@ -130,7 +131,7 @@ pub async fn set_email<S: ControlStateWriteAccess>(
     Ok(())
 }
 
-pub async fn check_email<S: ControlStateWriteAccess>(
+pub async fn check_email<S: ControlStateReadAccess>(
     State(ctx): State<S>,
     Path(SetEmailParams { identity }): Path<SetEmailParams>,
     auth: SpacetimeAuthHeader,

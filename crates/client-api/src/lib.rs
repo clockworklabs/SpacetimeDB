@@ -111,6 +111,7 @@ pub trait ControlStateReadAccess {
 
     // Identities
     fn get_identities_for_email(&self, email: &str) -> spacetimedb::control_db::Result<Vec<IdentityEmail>>;
+    fn get_emails_for_identity(&self, identity: &Identity) -> spacetimedb::control_db::Result<Vec<IdentityEmail>>;
     fn get_recovery_codes(&self, email: &str) -> spacetimedb::control_db::Result<Vec<RecoveryCode>>;
 
     // Energy
@@ -147,7 +148,6 @@ pub trait ControlStateWriteAccess: Send + Sync {
     // Identities
     async fn create_identity(&self) -> spacetimedb::control_db::Result<Identity>;
     async fn add_email(&self, identity: &Identity, email: &str) -> spacetimedb::control_db::Result<()>;
-    async fn get_emails(&self, identity: &Identity) -> spacetimedb::control_db::Result<Vec<IdentityEmail>>;
     async fn insert_recovery_code(
         &self,
         identity: &Identity,
@@ -214,6 +214,9 @@ impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for ArcEnv<T> {
     fn get_identities_for_email(&self, email: &str) -> spacetimedb::control_db::Result<Vec<IdentityEmail>> {
         self.0.get_identities_for_email(email)
     }
+    fn get_emails_for_identity(&self, identity: &Identity) -> spacetimedb::control_db::Result<Vec<IdentityEmail>> {
+        self.0.get_emails_for_identity(identity)
+    }
     fn get_recovery_codes(&self, email: &str) -> spacetimedb::control_db::Result<Vec<RecoveryCode>> {
         self.0.get_recovery_codes(email)
     }
@@ -258,10 +261,6 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for ArcEnv<T> 
 
     async fn add_email(&self, identity: &Identity, email: &str) -> spacetimedb::control_db::Result<()> {
         self.0.add_email(identity, email).await
-    }
-
-    async fn get_emails(&self, identity: &Identity) -> spacetimedb::control_db::Result<Vec<IdentityEmail>> {
-        self.0.get_emails(identity).await
     }
 
     async fn insert_recovery_code(
@@ -371,6 +370,9 @@ impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
     fn get_identities_for_email(&self, email: &str) -> spacetimedb::control_db::Result<Vec<IdentityEmail>> {
         (**self).get_identities_for_email(email)
     }
+    fn get_emails_for_identity(&self, identity: &Identity) -> spacetimedb::control_db::Result<Vec<IdentityEmail>> {
+        (**self).get_emails_for_identity(identity)
+    }
     fn get_recovery_codes(&self, email: &str) -> spacetimedb::control_db::Result<Vec<RecoveryCode>> {
         (**self).get_recovery_codes(email)
     }
@@ -415,10 +417,6 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
 
     async fn add_email(&self, identity: &Identity, email: &str) -> spacetimedb::control_db::Result<()> {
         (**self).add_email(identity, email).await
-    }
-
-    async fn get_emails(&self, identity: &Identity) -> spacetimedb::control_db::Result<Vec<IdentityEmail>> {
-        (**self).get_emails(identity).await
     }
 
     async fn insert_recovery_code(
