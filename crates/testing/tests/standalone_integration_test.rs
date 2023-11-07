@@ -8,6 +8,8 @@ fn init() {
             "spacetimedb=trace,spacetimedb_client_api=trace,spacetimedb_lib=trace,spacetimedb_standalone=trace",
         )
         .is_test(true)
+        // `try_init` and ignore failures to continue if a logger is already registered.
+        // This allows us to call `init` at the start of every test without a `once_cell` or similar.
         .try_init();
 }
 
