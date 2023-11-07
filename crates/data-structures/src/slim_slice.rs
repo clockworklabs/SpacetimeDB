@@ -1,3 +1,62 @@
+//! Defines slimmer versions of slices, both shared, mutable, and owned.
+//!
+//! They are slimmer in the sense that whereas e.g.,
+//! `size_of::<Box<[T]>>() == 16`, on a 64-bit machine,
+//! a `SlimSliceBox<T>` only takes up 12 bytes.
+//! These 4 bytes in difference can help
+//! when these types are stored in enum variants
+//! due to alignment and the space needed for storing tags.
+//!
+//! The difference size (4 bytes), is due to storing the length as a `u32`
+//! rather than storing the length as a `usize` (`u64` on 64-bit machine).
+//! This implies that the length can be at most `u32::MAX`,
+//! so no more elements than that can be stored or pointed to with these types.
+//!
+//! Because hitting `u32::MAX` is substantially more likely than `u64::MAX`,
+//! the risk of overflow is greater.
+//! To mitigate this issue, rather than default to panicing,
+//! this module tries, for the most part,
+//! to force its user to handle any overflow
+//! when converting to the slimmer types.
+//!
+//! The slimmer types include:
+//!
+//! - [`SlimSliceBox<T>`], a slimmer version of `Box<[T]>`
+//! - [`SlimNonEmptyBox<T>`], a slimmer version of `NonEmpty<T>`
+//!   but without the growing functionality.
+//! - [`SlimStrBox`], a slimmer version of `Box<str>`
+//! - [`SlimSlice<'a, T>`], a slimmer verion of `&'a [T]`
+//! - [`SlimSliceMut<'a, T>`], a slimmer version of `&'a mut [T]`
+//! - [`SlimStr<'a>`], a slimmer version of `&'a str`
+//! - [`SlimStrMut<'a>`], a slimmer version of `&'a mut str`
+//!
+//! The following convenience conversion functions are provided:
+//!
+//! - [`slice`] converts `&[T] -> SlimSlice<T>`, panicing on overflow
+//! - [`slice_mut`] converts `&mut [T] -> SlimSliceMut<T>`, panicing on overflow
+//! - [`str`] converts `&str -> SlimStr`, panicing on overflow
+//! - [`str_mut`] converts `&mut str -> SlimStrMut`, panicing on overflow
+//! - [`string`] converts `&str -> SlimStrBox`, panicing on overflow
+//!
+//! These conversions should be reserved for cases where it is known
+//! that the length `<= u32::MAX` and should be used sparingly.
+//!
+//! Some auxiliary and utility functionality is provided:
+//!
+//! - [`SlimSliceBoxCollected<T>`] exists to indirectly provide `FromIterator<A>`
+//!   for [`SlimSliceBox<T>`]
+//!
+//! - [`LenTooLong<T>`], the error type when a conversion to a slimmer type
+//!   would result in a length overflow.
+//!   Optionally, the to-convert object is provided back to the user
+//!   for handling
+//!
+//! - [`try_into`] tries to convert the input to a slim type
+//!   and forgets the input if an error occurred
+//!
+//! - [`SafelyExchangeable<T>`] is implemented to assert that `Self`
+//!   is safely transmutable, including when stored in a collection, to type `T`
+
 use core::{
     borrow::Borrow,
     cmp::Ordering,
@@ -18,9 +77,12 @@ use thiserror::Error;
 // Errors
 // =============================================================================
 
+/// An error signifying that a container's size was over `u32::MAX`.
+///
+/// Optionally, the to-convert object is provided back to the user for handling.
+/// This is what the generic parameter `T` is for.
 #[derive(Error, Debug)]
 #[error("The length `{len}` was too long")]
-/// An error signifying that a container's size was over `u32::MAX`.
 pub struct LenTooLong<T = ()> {
     /// The size of the container that was too large.
     pub len: usize,
@@ -94,7 +156,7 @@ impl<const N: usize> AssertU32<N> {
 /// It is not sufficient that ´Self` and `T` have the same representation.
 /// That is, validity requirements are not enough.
 /// The safety requirements must also be the same.
-pub unsafe trait SafelyExchangeable<U> {}
+pub unsafe trait SafelyExchangeable<T> {}
 
 #[inline]
 fn transmute_safely_exchangeable<T, U: SafelyExchangeable<T>>(x: T) -> U {
@@ -524,14 +586,14 @@ impl<A> FromIterator<A> for SlimSliceBoxCollected<A> {
 
 /// A non-empty slim owned slice.
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
-pub struct SlimNonEmpty<T> {
+pub struct SlimNonEmptyBox<T> {
     /// The head of the list, ensuring there's at least one element.
     pub head: T,
     /// The tail of the list. Invariant `tail.len() < u32::MAX`.
     tail: SlimSliceBox<T>,
 }
 
-impl<T> SlimNonEmpty<T> {
+impl<T> SlimNonEmptyBox<T> {
     /// Returns the non-empty vector `[head]`.
     #[inline]
     pub fn new(head: T) -> Self {
@@ -549,8 +611,8 @@ impl<T> SlimNonEmpty<T> {
     ///
     /// This will not reallocate.
     #[inline]
-    pub fn map_safely_exchangeable<U: SafelyExchangeable<T>>(self) -> SlimNonEmpty<U> {
-        SlimNonEmpty {
+    pub fn map_safely_exchangeable<U: SafelyExchangeable<T>>(self) -> SlimNonEmptyBox<U> {
+        SlimNonEmptyBox {
             head: transmute_safely_exchangeable(self.head),
             tail: self.tail.map_safely_exchangeable(),
         }
@@ -564,7 +626,7 @@ impl<T> SlimNonEmpty<T> {
     }
 }
 
-impl<T> From<T> for SlimNonEmpty<T> {
+impl<T> From<T> for SlimNonEmptyBox<T> {
     #[inline]
     fn from(value: T) -> Self {
         Self::new(value)
@@ -595,7 +657,7 @@ impl<T> ExactSizeIterator for Iter<'_, T> {
 
 impl<T> core::iter::FusedIterator for Iter<'_, T> {}
 
-impl<T> TryFrom<NonEmpty<T>> for SlimNonEmpty<T> {
+impl<T> TryFrom<NonEmpty<T>> for SlimNonEmptyBox<T> {
     type Error = LenTooLong<NonEmpty<T>>;
 
     #[inline]
@@ -612,9 +674,9 @@ impl<T> TryFrom<NonEmpty<T>> for SlimNonEmpty<T> {
     }
 }
 
-impl<T> From<SlimNonEmpty<T>> for SlimSliceBox<T> {
+impl<T> From<SlimNonEmptyBox<T>> for SlimSliceBox<T> {
     #[inline]
-    fn from(value: SlimNonEmpty<T>) -> Self {
+    fn from(value: SlimNonEmptyBox<T>) -> Self {
         // Construct `[head] ++ tail`.
         let mut vec = Vec::with_capacity(1 + value.tail.len());
         vec.push(value.head);
@@ -627,7 +689,7 @@ impl<T> From<SlimNonEmpty<T>> for SlimSliceBox<T> {
     }
 }
 
-impl<T: Clone> TryFrom<&SlimSliceBox<T>> for SlimNonEmpty<T> {
+impl<T: Clone> TryFrom<&SlimSliceBox<T>> for SlimNonEmptyBox<T> {
     type Error = ();
 
     #[inline]
