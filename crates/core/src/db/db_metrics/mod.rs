@@ -86,15 +86,10 @@ metrics_group!(
         #[labels(txn_type: TransactionType, db: Address, reducer: str, table_id: u32)]
         pub rdb_num_index_seeks: IntCounterVec,
 
-        #[name = spacetime_num_txns_committed_cumulative]
-        #[help = "The cumulative number of committed transactions"]
-        #[labels(txn_type: TransactionType, db: Address, reducer: str)]
-        pub rdb_num_txns_committed: IntCounterVec,
-
-        #[name = spacetime_num_txns_rolledback_cumulative]
-        #[help = "The cumulative number of rolled back transactions"]
-        #[labels(txn_type: TransactionType, db: Address, reducer: str)]
-        pub rdb_num_txns_rolledback: IntCounterVec,
+        #[name = spacetime_num_txns_cumulative]
+        #[help = "The cumulative number of transactions, including both commits and rollbacks"]
+        #[labels(txn_type: TransactionType, db: Address, reducer: str, committed: bool)]
+        pub rdb_num_txns: IntCounterVec,
 
         #[name = spacetime_txn_elapsed_time_sec]
         #[help = "The total elapsed (wall) time of a transaction (in seconds)"]
