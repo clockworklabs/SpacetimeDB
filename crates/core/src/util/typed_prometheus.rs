@@ -122,6 +122,7 @@ impl_prometheusvalue_string!(
     Address,
     TransactionType,
     AbiCall,
+    bool,
     u8,
     u16,
     u32,
