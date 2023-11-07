@@ -6,7 +6,6 @@ on:
       - master
       - staging
       - dev
-      - release/*
     tags:
       - 'v*'
 

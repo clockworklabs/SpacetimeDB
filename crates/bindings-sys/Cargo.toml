@@ -1,6 +1,6 @@
 [package]
 name = "spacetimedb-bindings-sys"
-version = "0.7.2"
+version = "0.7.3"
 edition = "2021"
 license-file = "LICENSE"
 description = "Easy support for interacting between SpacetimeDB and Rust."
@@ -11,4 +11,4 @@ bench = false
 
 [dependencies]
 getrandom = {workspace = true, optional = true}
-spacetimedb-primitives = { path = "../primitives", version = "0.7.2" }
+spacetimedb-primitives = { path = "../primitives", version = "0.7.3" }
