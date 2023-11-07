@@ -22,6 +22,8 @@
 //! The slimmer types include:
 //!
 //! - [`SlimSliceBox<T>`], a slimmer version of `Box<[T]>`
+//! - [`SlimSmallSliceBox<T, N>`], a slimmer version of `SmallVec<[T; N]>`
+//!   but without the growing functionality.
 //! - [`SlimNonEmptyBox<T>`], a slimmer version of `NonEmpty<T>`
 //!   but without the growing functionality.
 //! - [`SlimStrBox`], a slimmer version of `Box<str>`
@@ -581,8 +583,77 @@ impl<A> FromIterator<A> for SlimSliceBoxCollected<A> {
 }
 
 // =============================================================================
+// Owned boxed slice with SSO
+// =============================================================================
+
+pub struct SlimSmallSliceBox<T, const N: usize>(SlimSmallSliceBoxData<T, N>);
+
+/// The representation of [`SlimSmallSliceBox<T>`].
+///
+/// The parameter `N` is the number of elements that can be inline.
+enum SlimSmallSliceBoxData<T, const N: usize> {
+    /// The data is inline, not using any indirections.
+    Inline([T; N]),
+    /// The data is boxed up.
+    Heap(SlimSliceBox<T>),
+}
+
+impl<T, const N: usize> From<[T; N]> for SlimSmallSliceBox<T, N> {
+    fn from(value: [T; N]) -> Self {
+        #[allow(clippy::let_unit_value)]
+        let () = AssertU32::<N>::OK;
+
+        Self(SlimSmallSliceBoxData::Inline(value))
+    }
+}
+
+impl<T, const N: usize> From<SlimSliceBox<T>> for SlimSmallSliceBox<T, N> {
+    fn from(value: SlimSliceBox<T>) -> Self {
+        Self(SlimSmallSliceBoxData::Heap(value))
+    }
+}
+
+impl<T, const N: usize> From<SlimSmallSliceBox<T, N>> for SlimSliceBox<T> {
+    fn from(SlimSmallSliceBox(value): SlimSmallSliceBox<T, N>) -> Self {
+        match value {
+            SlimSmallSliceBoxData::Inline(i) => i.into(),
+            SlimSmallSliceBoxData::Heap(h) => h,
+        }
+    }
+}
+
+impl<T, const N: usize> Deref for SlimSmallSliceBox<T, N> {
+    type Target = [T];
+    fn deref(&self) -> &Self::Target {
+        match &self.0 {
+            SlimSmallSliceBoxData::Inline(i) => i,
+            SlimSmallSliceBoxData::Heap(h) => h,
+        }
+    }
+}
+
+impl<T, const N: usize> DerefMut for SlimSmallSliceBox<T, N> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match &mut self.0 {
+            SlimSmallSliceBoxData::Inline(i) => i,
+            SlimSmallSliceBoxData::Heap(h) => h,
+        }
+    }
+}
+
+// =============================================================================
 // Non-empty owned boxed slice
 // =============================================================================
+
+// TODO(Centril): This type was introduced because `NonEmpty<T>`
+// was used to store `cols: NonEmpty<ColId>`.
+// However, it is not efficient to store `cols` this way because
+// we need to convert <=> `ArrayValue` and <=> view `cols` as `&[ColId]`.
+// As `SlimNonEmptyBox<T>` and `NonEmpty<T>` store `head` in a separate allocation,
+// this makes a direct conversion to `&[ColId]` impossible and <=> `ArrayValue` slow.
+// Instead of dealing with non-emptiness at the representation layer,
+// we can use `SlimSmallSliceBox<T>`, and if needs be,
+// add non-emptiness purely as a logical layer.
 
 /// A non-empty slim owned slice.
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
