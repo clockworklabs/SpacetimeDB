@@ -20,4 +20,5 @@ pub trait ObjectDB {
     fn get(&self, hash: Hash) -> Option<bytes::Bytes>;
     fn flush(&mut self) -> Result<(), DBError>;
     fn sync_all(&mut self) -> Result<(), DBError>;
+    fn size_on_disk(&self) -> Result<u64, DBError>;
 }

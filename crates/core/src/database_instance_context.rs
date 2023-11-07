@@ -6,6 +6,7 @@ use crate::db::ostorage::sled_object_db::SledObjectDB;
 use crate::db::ostorage::ObjectDB;
 use crate::db::relational_db::RelationalDB;
 use crate::db::{Config, FsyncPolicy, Storage};
+use crate::error::DBError;
 use crate::identity::Identity;
 use crate::messages::control_db::Database;
 use std::path::{Path, PathBuf};
@@ -92,5 +93,20 @@ impl DatabaseInstanceContext {
 
     pub(crate) fn make_default_ostorage(path: impl AsRef<Path>) -> Box<dyn ObjectDB + Send> {
         Box::new(SledObjectDB::open(path).unwrap())
+    }
+
+    /// The number of bytes on disk occupied by the [MessageLog].
+    pub fn message_log_size_on_disk(&self) -> Result<u64, DBError> {
+        self.relational_db.commit_log().message_log_size_on_disk()
+    }
+
+    /// The number of bytes on disk occupied by the [ObjectDB].
+    pub fn object_db_size_on_disk(&self) -> Result<u64, DBError> {
+        self.relational_db.commit_log().object_db_size_on_disk()
+    }
+
+    /// The size of the log file.
+    pub fn log_file_size(&self) -> Result<u64, DBError> {
+        self.logger.size()
     }
 }

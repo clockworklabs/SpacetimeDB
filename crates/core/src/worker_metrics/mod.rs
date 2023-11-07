@@ -1,6 +1,6 @@
 use crate::util::typed_prometheus::metrics_group;
 use once_cell::sync::Lazy;
-use prometheus::{Gauge, GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
+use prometheus::{Gauge, GaugeVec, HistogramVec, IntCounterVec, IntGauge, IntGaugeVec};
 use spacetimedb_lib::{Address, Hash, Identity};
 
 metrics_group!(
@@ -68,6 +68,22 @@ metrics_group!(
         #[help = "Length of the wait queue for access to a module instance."]
         #[labels(identity: Identity, module_hash: Hash, database_address: Address)]
         pub instance_queue_length: IntGaugeVec,
+
+        #[name = spacetime_system_disk_space_total_bytes]
+        #[help = "A node's total disk space (in bytes)"]
+        pub system_disk_space_total: IntGauge,
+
+        #[name = spacetime_system_disk_space_free_bytes]
+        #[help = "A node's free (unused) disk space (in bytes)"]
+        pub system_disk_space_free: IntGauge,
+
+        #[name = spacetime_system_memory_total_bytes]
+        #[help = "A node's total available memory (in bytes)"]
+        pub system_memory_total: IntGauge,
+
+        #[name = spacetime_system_memory_free_bytes]
+        #[help = "A node's current available (free) memory (in bytes)"]
+        pub system_memory_free: IntGauge,
     }
 );
 

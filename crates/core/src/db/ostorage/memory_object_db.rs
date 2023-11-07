@@ -31,4 +31,8 @@ impl ObjectDB for MemoryObjectDB {
     fn sync_all(&mut self) -> Result<(), crate::error::DBError> {
         Ok(())
     }
+
+    fn size_on_disk(&self) -> Result<u64, crate::error::DBError> {
+        Ok(0)
+    }
 }

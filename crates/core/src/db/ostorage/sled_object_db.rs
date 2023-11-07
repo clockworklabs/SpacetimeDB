@@ -17,7 +17,6 @@ impl SledObjectDB {
             .flush_every_ms(Some(50))
             .mode(HighThroughput);
         let db = config.open()?;
-
         Ok(Self { db })
     }
 }
@@ -47,6 +46,10 @@ impl ObjectDB for SledObjectDB {
 
     fn sync_all(&mut self) -> Result<(), DBError> {
         self.flush()
+    }
+
+    fn size_on_disk(&self) -> Result<u64, DBError> {
+        Ok(self.db.size_on_disk()?)
     }
 }
 
