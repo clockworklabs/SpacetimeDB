@@ -84,7 +84,7 @@ impl RelationalDB {
             Storage::Memory => None,
             Storage::Disk => {
                 let message_log = MessageLog::open(root.join("mlog"))?;
-                let mut odb = ostorage::persistent(root.join("odb"))?;
+                let odb = ostorage::persistent(root.join("odb"))?;
 
                 log::debug!("[{}] Replaying transaction log.", address);
                 let mut segment_index = 0;
@@ -107,7 +107,7 @@ impl RelationalDB {
                             // is just to reduce memory usage while inserting. We don't
                             // really care about inserting these transactionally as long
                             // as all of the writes get inserted.
-                            datastore.replay_transaction(&transaction, &mut odb)?;
+                            datastore.replay_transaction(&transaction, &odb)?;
 
                             let percentage = f64::floor((segment_index as f64 / max_offset as f64) * 100.0) as i32;
                             if percentage > last_logged_percentage && percentage % 10 == 0 {

@@ -1661,11 +1661,7 @@ impl Locking {
             .rows
     }
 
-    pub fn replay_transaction(
-        &self,
-        transaction: &Transaction,
-        odb: &mut Box<dyn ObjectDB + Send>,
-    ) -> Result<(), DBError> {
+    pub fn replay_transaction(&self, transaction: &Transaction, odb: &dyn ObjectDB) -> Result<(), DBError> {
         let mut inner = self.inner.lock();
         for write in &transaction.writes {
             let table_id = TableId(write.set_id);

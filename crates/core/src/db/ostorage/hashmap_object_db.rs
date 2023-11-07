@@ -1,6 +1,7 @@
 use crate::db::ostorage::ObjectDB;
 use crate::hash::{hash_bytes, Hash};
 use hex;
+use parking_lot::RwLock;
 
 use std::{
     collections::HashMap,
@@ -14,13 +15,57 @@ use crate::error::DBError;
 use std::os::unix::prelude::MetadataExt;
 
 pub struct HashMapObjectDB {
+    inner: RwLock<Inner>,
+}
+
+impl HashMapObjectDB {
+    pub fn open(path: impl AsRef<Path>) -> Result<Self, DBError> {
+        let inner = Inner::open(path)?;
+        Ok(Self {
+            inner: RwLock::new(inner),
+        })
+    }
+
+    pub fn total_key_size_bytes(&self) -> u64 {
+        self.inner.read().total_key_size_bytes()
+    }
+
+    pub fn total_obj_size_bytes(&self) -> u64 {
+        self.inner.read().total_obj_size_bytes()
+    }
+
+    pub fn total_mem_size_bytes(&self) -> u64 {
+        self.inner.read().total_mem_size_bytes()
+    }
+}
+
+impl ObjectDB for HashMapObjectDB {
+    fn add(&self, bytes: &[u8]) -> Hash {
+        let mut inner = self.inner.write();
+        inner.add(bytes)
+    }
+
+    fn get(&self, hash: Hash) -> Option<bytes::Bytes> {
+        self.inner.read().get(hash)
+    }
+
+    fn flush(&self) -> Result<(), DBError> {
+        self.inner.write().flush()
+    }
+
+    fn sync_all(&self) -> Result<(), DBError> {
+        self.inner.write().sync_all()
+    }
+}
+
+struct Inner {
     root: PathBuf,
     map: HashMap<Hash, Vec<u8>>,
     obj_size: u64,
     unsynced: Vec<File>,
 }
 
-impl HashMapObjectDB {
+impl Inner {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, DBError> {
         let root = path.as_ref();
 
@@ -123,11 +168,9 @@ impl HashMapObjectDB {
 
         Ok(())
     }
-}
 
-impl ObjectDB for HashMapObjectDB {
-    fn add(&mut self, bytes: Vec<u8>) -> Hash {
-        let hash = hash_bytes(&bytes);
+    fn add(&mut self, bytes: &[u8]) -> Hash {
+        let hash = hash_bytes(bytes);
         if self.map.contains_key(&hash) {
             return hash;
         }
@@ -137,7 +180,7 @@ impl ObjectDB for HashMapObjectDB {
         let path = self.root.join(folder).join(filename);
 
         let mut unsynced = OpenOptions::new().write(true).create(true).open(path).unwrap();
-        unsynced.write_all(&bytes).unwrap();
+        unsynced.write_all(bytes).unwrap();
         self.unsynced.push(unsynced);
 
         // Currently this is hardcoded to be something a bit bigger than one, but
@@ -156,7 +199,7 @@ impl ObjectDB for HashMapObjectDB {
         }
 
         self.obj_size += bytes.len() as u64;
-        self.map.insert(hash, bytes);
+        self.map.insert(hash, bytes.to_vec());
 
         hash
     }
@@ -226,10 +269,10 @@ mod tests {
 
     #[test]
     fn test_add_and_get() -> ResultTest<()> {
-        let (mut db, _tmp_dir) = setup()?;
+        let (db, _tmp_dir) = setup()?;
 
-        let hash1 = db.add(TEST_DATA1.to_vec());
-        let hash2 = db.add(TEST_DATA2.to_vec());
+        let hash1 = db.add(TEST_DATA1);
+        let hash2 = db.add(TEST_DATA2);
 
         let result = db.get(hash1).unwrap();
         assert_eq!(TEST_DATA1.to_vec(), result);
@@ -242,10 +285,10 @@ mod tests {
 
     #[test]
     fn test_flush() -> ResultTest<()> {
-        let (mut db, _tmp_dir) = setup()?;
+        let (db, _tmp_dir) = setup()?;
 
-        db.add(TEST_DATA1.to_vec());
-        db.add(TEST_DATA2.to_vec());
+        db.add(TEST_DATA1);
+        db.add(TEST_DATA2);
 
         assert!(db.flush().is_ok());
         Ok(())
@@ -253,10 +296,10 @@ mod tests {
 
     #[test]
     fn test_flush_sync_all() -> ResultTest<()> {
-        let (mut db, _tmp_dir) = setup()?;
+        let (db, _tmp_dir) = setup()?;
 
-        db.add(TEST_DATA1.to_vec());
-        db.add(TEST_DATA2.to_vec());
+        db.add(TEST_DATA1);
+        db.add(TEST_DATA2);
 
         assert!(db.sync_all().is_ok());
         Ok(())
@@ -264,9 +307,9 @@ mod tests {
 
     #[test]
     fn test_miss() -> ResultTest<()> {
-        let (mut db, _tmp_dir) = setup()?;
+        let (db, _tmp_dir) = setup()?;
 
-        let _hash2 = db.add(TEST_DATA2.to_vec());
+        let _hash2 = db.add(TEST_DATA2);
 
         let hash = hash_bytes(TEST_DATA1);
         let result = db.get(hash);
@@ -277,16 +320,16 @@ mod tests {
 
     #[test]
     fn test_size() -> ResultTest<()> {
-        let (mut db, _tmp_dir) = setup()?;
+        let (db, _tmp_dir) = setup()?;
 
-        let hash1 = db.add(TEST_DATA1.to_vec());
-        db.add(TEST_DATA1.to_vec());
+        let hash1 = db.add(TEST_DATA1);
+        db.add(TEST_DATA1);
 
         assert_eq!(db.total_key_size_bytes(), hash1.data.len() as u64);
         assert_eq!(db.total_obj_size_bytes(), TEST_DATA1.len() as u64);
         assert_eq!(db.total_mem_size_bytes(), (TEST_DATA1.len() + hash1.data.len()) as u64);
 
-        let hash2 = db.add(TEST_DATA2.to_vec());
+        let hash2 = db.add(TEST_DATA2);
         assert_eq!(db.total_key_size_bytes(), (hash1.data.len() + hash2.data.len()) as u64);
         assert_eq!(db.total_obj_size_bytes(), (TEST_DATA1.len() + TEST_DATA2.len()) as u64);
         assert_eq!(

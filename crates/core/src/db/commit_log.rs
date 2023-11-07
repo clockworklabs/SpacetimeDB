@@ -18,34 +18,34 @@ use crate::{
 };
 
 use anyhow::Context;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use spacetimedb_lib::{
     hash::{hash_bytes, Hash},
     DataKey,
 };
 
+use std::io;
 use std::sync::Arc;
-use std::{io, ops::DerefMut};
 
 #[derive(Clone)]
 pub struct CommitLog {
-    inner: Arc<RwLock<CommitLogInner>>,
-    // TODO(kim): Avoid this Mutex -- ObjectDB should be `Send + Sync` itself.
-    odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
+    writer: Arc<RwLock<MessageLogWriter>>,
+    odb: Arc<Box<dyn ObjectDB>>,
+    fsync: bool,
 }
 
 impl CommitLog {
-    pub fn new(mlog: MessageLog, odb: Box<dyn ObjectDB + Send>, unwritten_commit: Commit, fsync: bool) -> Self {
+    pub fn new(mlog: MessageLog, odb: Box<dyn ObjectDB>, unwritten_commit: Commit, fsync: bool) -> Self {
         let encode_buf = Vec::with_capacity(unwritten_commit.encoded_len());
-        let inner = Arc::new(RwLock::new(CommitLogInner {
+        let writer = Arc::new(RwLock::new(MessageLogWriter {
             mlog,
             unwritten_commit,
             encode_buf,
-            fsync,
         }));
         Self {
-            inner,
-            odb: Arc::new(Mutex::new(odb)),
+            writer,
+            odb: Arc::new(odb),
+            fsync,
         }
     }
 
@@ -62,55 +62,51 @@ impl CommitLog {
     where
         D: MutTxDatastore<RowId = RowId>,
     {
-        let mut inner = self.inner.write();
-        let odb = self.odb.lock();
-        inner.append(odb, ctx, tx_data)
+        let mut writer = self.writer.write();
+        let bytes_written = writer.append(&self.odb, ctx, tx_data)?;
+        if self.fsync {
+            let offset = writer.mlog.open_segment_max_offset;
+            // Sync the odb first, as the mlog depends on its data. This is
+            // not an atomicity guarantee, but the error context may help
+            // with forensics.
+            self.odb
+                .sync_all()
+                .with_context(|| format!("Error syncing odb to disk. Log offset: {offset}"))?;
+            writer
+                .mlog
+                .sync_all()
+                .with_context(|| format!("Error syncing mlog to disk. Log offset: {offset}"))?;
+            log::trace!("DATABASE: FSYNC");
+        } else {
+            writer.mlog.flush()?;
+        }
+
+        Ok(bytes_written)
     }
 }
 
-struct CommitLogInner {
+struct MessageLogWriter {
     mlog: MessageLog,
     unwritten_commit: Commit,
     encode_buf: Vec<u8>,
-    fsync: bool,
 }
 
-impl CommitLogInner {
+impl MessageLogWriter {
     pub fn append(
         &mut self,
-        mut odb: impl DerefMut<Target = Box<dyn ObjectDB + Send>>,
+        odb: &dyn ObjectDB,
         ctx: &ExecutionContext,
         tx_data: &TxData,
     ) -> Result<Option<usize>, DBError> {
-        if let Some(len) = self.generate_commit(&mut odb, ctx, tx_data) {
+        if let Some(len) = self.generate_commit(odb, ctx, tx_data) {
             self.mlog.append(&self.encode_buf[..len])?;
-
-            if self.fsync {
-                let offset = self.mlog.open_segment_max_offset;
-                // Sync to odb first, as the mlog depends on its data. This is
-                // not an atomicity guarantee, but the error context may help
-                // with forensics.
-                odb.as_mut()
-                    .sync_all()
-                    .with_context(|| format!("Error syncing odb to disk. Log offset: {offset}"))?;
-                self.mlog
-                    .sync_all()
-                    .with_context(|| format!("Error syncing mlog to disk. Log offset: {offset}"))?;
-                log::trace!("DATABASE: FSYNC");
-            }
-
             Ok(Some(len))
         } else {
             Ok(Some(0))
         }
     }
 
-    fn generate_commit(
-        &mut self,
-        odb: &mut Box<dyn ObjectDB + Send>,
-        ctx: &ExecutionContext,
-        tx_data: &TxData,
-    ) -> Option<usize> {
+    fn generate_commit(&mut self, odb: &dyn ObjectDB, ctx: &ExecutionContext, tx_data: &TxData) -> Option<usize> {
         // We are not creating a commit for empty transactions.
         // The reason for this is that empty transactions get encoded as 0 bytes,
         // so a commit containing an empty transaction contains no useful information.
@@ -167,9 +163,7 @@ impl CommitLogInner {
             for record in &tx_data.records {
                 match &record.op {
                     TxOp::Insert(bytes) => {
-                        // TODO(kim): Avoid this clone -- ObjectDB could take a
-                        // slice and clone internally if needed.
-                        odb.add(Vec::clone(bytes));
+                        odb.add(bytes);
                     }
                     TxOp::Delete => continue,
                 }
@@ -196,8 +190,7 @@ impl CommitLogInner {
 
 /// A read-only view of a [`CommitLog`].
 pub struct CommitLogView {
-    inner: Arc<RwLock<CommitLogInner>>,
-    odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
+    inner: CommitLog,
 }
 
 impl CommitLogView {
@@ -229,7 +222,7 @@ impl CommitLogView {
     ///
     /// See [`MessageLog::segments_from`] for more information.
     pub fn message_log_segments_from(&self, offset: u64) -> message_log::Segments {
-        let inner = self.inner.read();
+        let inner = self.inner.writer.read();
         inner.mlog.segments_from(offset)
     }
 
@@ -275,10 +268,9 @@ impl CommitLogView {
             })
         }
 
-        let odb = self.odb.clone();
+        let odb = self.inner.odb.clone();
         commit.transactions.iter().flat_map(hashes).map(move |hash| {
-            odb.lock()
-                .get(hash)
+            odb.get(hash)
                 .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("Missing object: {hash}")))
         })
     }
@@ -286,10 +278,7 @@ impl CommitLogView {
 
 impl From<&CommitLog> for CommitLogView {
     fn from(log: &CommitLog) -> Self {
-        Self {
-            inner: log.inner.clone(),
-            odb: log.odb.clone(),
-        }
+        Self { inner: log.clone() }
     }
 }
 

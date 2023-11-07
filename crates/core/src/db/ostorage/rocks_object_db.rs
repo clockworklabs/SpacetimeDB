@@ -34,12 +34,12 @@ impl RocksDBObjectDB {
 }
 
 impl ObjectDB for RocksDBObjectDB {
-    fn add(&mut self, bytes: Vec<u8>) -> Hash {
-        let hash = hash_bytes(&bytes);
+    fn add(&self, bytes: &[u8]) -> Hash {
+        let hash = hash_bytes(bytes);
 
         let cf = self.db.cf_handle(RocksDBObjectDB::OBJECTS_CF).unwrap();
 
-        self.db.put_cf(&cf, hash.data.as_slice(), bytes.as_slice()).unwrap();
+        self.db.put_cf(&cf, hash.data.as_slice(), bytes).unwrap();
 
         hash
     }
@@ -56,14 +56,14 @@ impl ObjectDB for RocksDBObjectDB {
         }
     }
 
-    fn flush(&mut self) -> Result<(), DBError> {
+    fn flush(&self) -> Result<(), DBError> {
         match self.db.flush() {
             Ok(_) => Ok(()),
             Err(e) => Err(DBError::RocksDbError(e)),
         }
     }
 
-    fn sync_all(&mut self) -> Result<(), DBError> {
+    fn sync_all(&self) -> Result<(), DBError> {
         self.flush()
     }
 
@@ -93,10 +93,10 @@ mod tests {
 
     #[test]
     fn test_add_and_get() -> ResultTest<()> {
-        let mut db = setup()?;
+        let db = setup()?;
 
-        let hash1 = db.add(TEST_DATA1.to_vec());
-        let hash2 = db.add(TEST_DATA2.to_vec());
+        let hash1 = db.add(TEST_DATA1);
+        let hash2 = db.add(TEST_DATA2);
 
         let result = db.get(hash1).unwrap();
         assert_eq!(TEST_DATA1, result.to_vec().as_slice());
@@ -108,10 +108,10 @@ mod tests {
 
     #[test]
     fn test_flush() -> ResultTest<()> {
-        let mut db = setup()?;
+        let db = setup()?;
 
-        db.add(TEST_DATA1.to_vec());
-        db.add(TEST_DATA2.to_vec());
+        db.add(TEST_DATA1);
+        db.add(TEST_DATA2);
 
         assert!(db.flush().is_ok());
         Ok(())
@@ -119,10 +119,10 @@ mod tests {
 
     #[test]
     fn test_flush_sync_all() -> ResultTest<()> {
-        let mut db = setup()?;
+        let db = setup()?;
 
-        db.add(TEST_DATA1.to_vec());
-        db.add(TEST_DATA2.to_vec());
+        db.add(TEST_DATA1);
+        db.add(TEST_DATA2);
 
         assert!(db.sync_all().is_ok());
         Ok(())
@@ -130,9 +130,9 @@ mod tests {
 
     #[test]
     fn test_miss() -> ResultTest<()> {
-        let mut db = setup()?;
+        let db = setup()?;
 
-        let _hash2 = db.add(TEST_DATA2.to_vec());
+        let _hash2 = db.add(TEST_DATA2);
 
         let hash = hash_bytes(TEST_DATA1);
         let result = db.get(hash);
