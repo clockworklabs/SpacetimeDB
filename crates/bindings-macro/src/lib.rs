@@ -641,18 +641,21 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
         unique_fields.push(column_index);
 
         unique_filter_funcs.push(quote! {
+            #[inline(never)]
             #vis fn #filter_func_ident(#column_ident: &#column_type) -> Option<Self> {
                 spacetimedb::query::filter_by_unique_field::<Self, #column_type, #column_index>(#column_ident)
             }
         });
 
         unique_update_funcs.push(quote! {
+            #[inline(never)]
             #vis fn #update_func_ident(#column_ident: &#column_type, value: Self) -> bool {
                 spacetimedb::query::update_by_field::<Self, #column_type, #column_index>(#column_ident, value)
             }
         });
 
         unique_delete_funcs.push(quote! {
+            #[inline(never)]
             #vis fn #delete_func_ident(#column_ident: &#column_type) -> bool {
                 spacetimedb::query::delete_by_field::<Self, #column_type, #column_index>(#column_ident)
             }
@@ -683,6 +686,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
 
         Some(quote! {
             // TODO: should we expose spacetimedb::query::FilterByIter ?
+            #[inline(never)]
             #vis fn #filter_func_ident<'a>(#column_ident: &#column_type) -> impl Iterator<Item = Self> {
                 spacetimedb::query::filter_by_field::<Self, #column_type, #column_index>(#column_ident)
             }
@@ -698,6 +702,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
 
     let db_insert = quote! {
         #[allow(unused_variables)]
+        #[inline(never)]
         pub fn insert(ins: #original_struct_ident) -> #insert_result {
             <Self as spacetimedb::TableType>::insert(ins)
         }
@@ -705,6 +710,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
 
     let db_iter = quote! {
         #[allow(unused_variables)]
+        #[inline(never)]
         pub fn iter() -> spacetimedb::TableIter<Self> {
             <Self as spacetimedb::TableType>::iter()
         }
