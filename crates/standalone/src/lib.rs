@@ -163,6 +163,8 @@ fn get_key_path(env: &str) -> Option<PathBuf> {
 #[async_trait]
 impl spacetimedb_client_api::NodeDelegate for StandaloneEnv {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
+        // Note, we update certain metrics such as disk usage on demand.
+        self.db_inst_ctx_controller.update_metrics();
         self.metrics_registry.gather()
     }
 

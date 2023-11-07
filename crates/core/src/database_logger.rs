@@ -1,4 +1,5 @@
 use crate::address::Address;
+use crate::error::DBError;
 use std::fs::OpenOptions;
 use std::fs::{self, File};
 use std::io::{prelude::*, SeekFrom};
@@ -140,6 +141,10 @@ impl DatabaseLogger {
         let file = OpenOptions::new().create(true).append(true).open(&filepath).unwrap();
         let (tx, _) = broadcast::channel(64);
         Self { file, tx }
+    }
+
+    pub fn size(&self) -> Result<u64, DBError> {
+        Ok(self.file.metadata()?.len())
     }
 
     pub fn _delete(&mut self) {
