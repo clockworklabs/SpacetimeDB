@@ -437,9 +437,24 @@ pub fn autogen_typescript_sum(ctx: &GenCtx, name: &str, sum_type: &SumType) -> S
             };
             writeln!(
                 output,
-                "export type {variant_name} = {{ tag: \"{variant_name}\"; value: {a_type} }};"
+                "export type {variant_name} = {{ tag: \"{variant_name}\", value: {a_type} }};"
             )
             .unwrap();
+
+            // export an object or a function representing an enum value, so people
+            // can pass it as an argument
+            match variant.algebraic_type {
+                AlgebraicType::Product(_) => writeln!(
+                    output,
+                    "export const {variant_name} = {{ tag: \"{variant_name}\", value: undefined }};"
+                )
+                .unwrap(),
+                _ => writeln!(
+                    output,
+                    "export const {variant_name} = (value: {a_type}): {variant_name} => {{ return {{ tag: \"{variant_name}\", value }} }};"
+                )
+                .unwrap(),
+            };
         }
 
         writeln!(output).unwrap();
