@@ -10,6 +10,8 @@ members = [
   "crates/bindings-macro",
   "crates/cli",
   "crates/sats",
+  "crates/slang",
+  "crates/sir",
   "crates/testing",
   "crates/vm",
   "crates/client-api",

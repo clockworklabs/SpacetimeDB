@@ -1,0 +1,18 @@
+[package]
+name = "spacetimedb-sir"
+version = "0.7.2"
+edition = "2021"
+license-file = "LICENSE"
+description = "The low-level AST/Language definition"
+
+[dependencies]
+spacetimedb-sats = { path = "../sats" }
+spacetimedb-slang= { path = "../slang" }
+spacetimedb-primitives = { path = "../primitives" }
+spacetimedb-lib = { path = "../lib" }
+
+derive_more.workspace = true
+nonempty.workspace = true
+thiserror.workspace = true
+wasmtime.workspace = true
+tracing.workspace = true

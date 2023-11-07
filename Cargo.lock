@@ -4465,6 +4465,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-sir"
+version = "0.7.2"
+dependencies = [
+ "derive_more",
+ "nonempty",
+ "spacetimedb-lib",
+ "spacetimedb-primitives",
+ "spacetimedb-sats",
+ "spacetimedb-slang",
+ "thiserror",
+ "tracing",
+ "wasmtime",
+]
+
+[[package]]
+name = "spacetimedb-slang"
+version = "0.7.2"
+dependencies = [
+ "derive_more",
+ "nonempty",
+ "spacetimedb-lib",
+ "spacetimedb-sats",
+ "thiserror",
+]
+
+[[package]]
 name = "spacetimedb-standalone"
 version = "0.7.3"
 dependencies = [
