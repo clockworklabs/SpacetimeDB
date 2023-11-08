@@ -1,14 +1,11 @@
 # Description of Changes
 
+Please describe your change, mention any related tickets, and so on here.
 
-# API and ABI
+# API and ABI breaking changes
 
- - [ ] This is a breaking change to the module ABI
- - [ ] This is a breaking change to the module API
- - [ ] This is a breaking change to the ClientAPI
- - [ ] This is a breaking change to the SDK API
-
-*If the API is breaking, please state below what will break*
+If this is an API or ABI breaking change, please apply the
+corresponding GitHub label.
 
 # Expected complexity level and risk
 
