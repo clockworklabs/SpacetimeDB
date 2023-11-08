@@ -254,17 +254,21 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn commit_tx(&self, ctx: &ExecutionContext, tx: MutTxId) -> Result<Option<(TxData, Option<usize>)>, DBError> {
+    pub fn commit_tx(&self, ctx: &ExecutionContext, tx: MutTxId) -> Result<Option<(TxData, usize)>, DBError> {
         log::trace!("COMMIT TX");
-        if let Some(tx_data) = self.inner.commit_mut_tx(ctx, tx)? {
-            let bytes_written = if let Some(commit_log) = self.commit_log.as_ref() {
-                commit_log.append_tx(ctx, &tx_data)?
-            } else {
-                None
-            };
-            return Ok(Some((tx_data, bytes_written)));
-        }
-        Ok(None)
+        let res = if let Some(tx_data) = self.inner.commit_mut_tx(ctx, tx)? {
+            self.commit_log
+                .as_ref()
+                .map(|commit_log| {
+                    let bytes_written = commit_log.append_tx(ctx, &tx_data)?;
+                    Ok::<_, DBError>((tx_data, bytes_written))
+                })
+                .transpose()?
+        } else {
+            None
+        };
+
+        Ok(res)
     }
 
     /// Run a fallible function in a transaction.

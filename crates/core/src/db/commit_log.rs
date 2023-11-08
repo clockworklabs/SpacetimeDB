@@ -79,11 +79,12 @@ impl CommitLog {
         Ok(Self { writer, odb, fsync })
     }
 
-    /// Persist to disk the [Tx] result into the [MessageLog].
+    /// Persist [`TxData`] into the log.
     ///
-    /// Returns `Some(n_bytes_written)` if `commit_result` was persisted, `None` if it doesn't have bytes to write.
+    /// Returns the number of bytes written: zero if an empty transaction was
+    /// given, otherwise the size of encoding `tx_data` into a message log entry.
     #[tracing::instrument(skip_all)]
-    pub fn append_tx(&self, ctx: &ExecutionContext, tx_data: &TxData) -> Result<Option<usize>, DBError> {
+    pub fn append_tx(&self, ctx: &ExecutionContext, tx_data: &TxData) -> Result<usize, DBError> {
         let mut writer = self.writer.write();
         let bytes_written = writer.append(&self.odb, ctx, tx_data)?;
         match self.fsync {
@@ -115,17 +116,12 @@ struct MessageLogWriter {
 }
 
 impl MessageLogWriter {
-    pub fn append(
-        &mut self,
-        odb: &dyn ObjectDB,
-        ctx: &ExecutionContext,
-        tx_data: &TxData,
-    ) -> Result<Option<usize>, DBError> {
+    pub fn append(&mut self, odb: &dyn ObjectDB, ctx: &ExecutionContext, tx_data: &TxData) -> Result<usize, DBError> {
         if let Some(len) = self.generate_commit(odb, ctx, tx_data) {
             self.mlog.append(&self.encode_buf[..len])?;
-            Ok(Some(len))
+            Ok(len)
         } else {
-            Ok(Some(0))
+            Ok(0)
         }
     }
 
