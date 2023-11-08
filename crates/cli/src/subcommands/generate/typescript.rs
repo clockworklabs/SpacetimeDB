@@ -256,10 +256,16 @@ fn convert_product_type<'a>(
         for (_, elem) in product_type.elements.iter().enumerate() {
             writeln!(
                 f,
-                "{INDENT}new ProductTypeElement({}, {}),",
+                "{INDENT}new ProductTypeElement(\"{}\", {}),",
                 elem.name
                     .to_owned()
-                    .map(|s| format!("\"{s}\""))
+                    .map(|s| {
+                        if s == "__identity_bytes" {
+                            s
+                        } else {
+                            typescript_field_name(s.to_case(Case::Camel))
+                        }
+                    })
                     .unwrap_or("null".into()),
                 convert_algebraic_type(ctx, &elem.algebraic_type, ref_prefix)
             )?;
