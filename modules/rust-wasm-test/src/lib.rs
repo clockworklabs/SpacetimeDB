@@ -127,7 +127,7 @@ pub fn test(ctx: ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC) -> an
         });
     }
 
-    let multi_row_count = query!(|row: Point| row.x >= 0 && row.x <= 200).count();
+    let multi_row_count = query!(|row: Point| row.x >= 0 && row.y <= 200).count();
 
     log::info!("Row count filtered by multi-column condition: {:?}", multi_row_count);
 

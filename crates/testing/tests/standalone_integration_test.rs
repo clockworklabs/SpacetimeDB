@@ -102,7 +102,7 @@ fn test_call_query_macro() {
             let json: Value = serde_json::from_str(lines[11]).unwrap();
             assert_eq!(
                 json["message"],
-                Value::String("Row count filtered by multi-column condition: 201".to_string())
+                Value::String("Row count filtered by multi-column condition: 199".to_string())
             );
         },
     );
