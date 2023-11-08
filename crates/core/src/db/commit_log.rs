@@ -185,25 +185,8 @@ impl MessageLogWriter {
             }
         }
 
-        // Number of [`Write`]s considered a large transaction.
-        const LARGE_TRANSACTION_WRITES: usize = 128;
-        // Encoded size of a large commit, 5KiB-ish.
-        //
-        // 49: commit <tag><hash><commit_offset><min_tx_offset>
-        //  4: transaction <length>
-        // 38: write <flags><set_id><data_key>
-        const LARGE_COMMIT_BYTES: usize = 49 + 4 + (LARGE_TRANSACTION_WRITES * 38);
-
         let encoded_len = unwritten_commit.encoded_len();
-        // Ensure encoded bytes fit into buffer.
-        if encoded_len > self.encode_buf.len() {
-            self.encode_buf.resize(encoded_len, 0);
-        }
-        // Reclaim memory, assuming very large transactions are uncommon.
-        if self.encode_buf.capacity() > LARGE_COMMIT_BYTES {
-            self.encode_buf.truncate(encoded_len);
-            self.encode_buf.shrink_to_fit();
-        }
+        self.reserve(encoded_len);
         unwritten_commit.encode(&mut self.encode_buf.as_mut_slice());
         let encoded_bytes = &self.encode_buf[..encoded_len];
 
@@ -213,6 +196,36 @@ impl MessageLogWriter {
         unwritten_commit.transactions.clear();
 
         Some(encoded_len)
+    }
+
+    /// Reserve sufficient memory in `self.encode_buf` to fit `encoded_len`.
+    ///
+    /// We assume that databases will generally exhibit regular transaction
+    /// patterns, and that large (> 64 [`Write`]s) transactions are rare.
+    ///
+    /// Thus, we preallocate memory to fit the largest `encoded_len` seen, and
+    /// only reclaim if the capacity exceeds the threshold for a large
+    /// transaction. That is, allocated memory will usually stay constant with
+    /// an upper bound at ~2.5KiB (currently).
+    fn reserve(&mut self, encoded_len: usize) {
+        // Number of [`Write`]s considered a large transaction.
+        const LARGE_TRANSACTION_WRITES: usize = 64;
+        // Encoded size of a large commit, 2.5KiB-ish.
+        //
+        // 49: commit <tag><hash><commit_offset><min_tx_offset>
+        //  4: transaction <length>
+        // 38: write <flags><set_id><data_key>
+        const LARGE_COMMIT_BYTES: usize = 49 + 4 + (LARGE_TRANSACTION_WRITES * 38);
+
+        // Ensure encoded bytes fit into buffer.
+        if encoded_len > self.encode_buf.len() {
+            self.encode_buf.resize(encoded_len, 0);
+        }
+        // Reclaim memory, assuming very large transactions are uncommon.
+        if self.encode_buf.capacity() > LARGE_COMMIT_BYTES {
+            self.encode_buf.truncate(encoded_len);
+            self.encode_buf.shrink_to_fit();
+        }
     }
 }
 
