@@ -111,6 +111,7 @@ pub trait ControlStateReadAccess {
 
     // Identities
     fn get_identities_for_email(&self, email: &str) -> spacetimedb::control_db::Result<Vec<IdentityEmail>>;
+    fn get_emails_for_identity(&self, identity: &Identity) -> spacetimedb::control_db::Result<Vec<IdentityEmail>>;
     fn get_recovery_codes(&self, email: &str) -> spacetimedb::control_db::Result<Vec<RecoveryCode>>;
 
     // Energy
@@ -212,6 +213,9 @@ impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for ArcEnv<T> {
     // Identities
     fn get_identities_for_email(&self, email: &str) -> spacetimedb::control_db::Result<Vec<IdentityEmail>> {
         self.0.get_identities_for_email(email)
+    }
+    fn get_emails_for_identity(&self, identity: &Identity) -> spacetimedb::control_db::Result<Vec<IdentityEmail>> {
+        self.0.get_emails_for_identity(identity)
     }
     fn get_recovery_codes(&self, email: &str) -> spacetimedb::control_db::Result<Vec<RecoveryCode>> {
         self.0.get_recovery_codes(email)
@@ -365,6 +369,9 @@ impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
     // Identities
     fn get_identities_for_email(&self, email: &str) -> spacetimedb::control_db::Result<Vec<IdentityEmail>> {
         (**self).get_identities_for_email(email)
+    }
+    fn get_emails_for_identity(&self, identity: &Identity) -> spacetimedb::control_db::Result<Vec<IdentityEmail>> {
+        (**self).get_emails_for_identity(identity)
     }
     fn get_recovery_codes(&self, email: &str) -> spacetimedb::control_db::Result<Vec<RecoveryCode>> {
         (**self).get_recovery_codes(email)

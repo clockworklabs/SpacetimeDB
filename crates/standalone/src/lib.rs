@@ -255,6 +255,10 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
         self.control_db.get_identities_for_email(email)
     }
 
+    fn get_emails_for_identity(&self, identity: &Identity) -> spacetimedb::control_db::Result<Vec<IdentityEmail>> {
+        self.control_db.get_emails_for_identity(identity)
+    }
+
     fn get_recovery_codes(&self, email: &str) -> spacetimedb::control_db::Result<Vec<RecoveryCode>> {
         self.control_db.spacetime_get_recovery_codes(email)
     }
