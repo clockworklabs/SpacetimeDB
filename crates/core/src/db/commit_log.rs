@@ -177,11 +177,11 @@ impl MessageLogWriter {
         unwritten_commit.transactions.push(Arc::new(transaction));
 
         for record in &tx_data.records {
-            match &record.op {
-                TxOp::Insert(bytes) => {
+            match (&record.key, &record.op) {
+                (DataKey::Hash(_), TxOp::Insert(bytes)) => {
                     odb.add(bytes);
                 }
-                TxOp::Delete => continue,
+                _ => continue,
             }
         }
 
