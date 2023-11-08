@@ -6,6 +6,7 @@ on:
       - '**'
     branches:
       - master
+      - release/*
 
 jobs:
   macos-cli:
