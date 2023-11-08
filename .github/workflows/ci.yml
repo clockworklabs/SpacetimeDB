@@ -20,6 +20,14 @@ jobs:
       - name: Stop containers 
         if: always()
         run: docker compose down
+  publish_dry_run:
+    name: Publish Dry Run
+    runs-on: spacetimedb-runner
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+      - name: Publish Dry Run
+        run: tools/publish-crates.sh --dry-run
 
   test:
     name: Test Suite
