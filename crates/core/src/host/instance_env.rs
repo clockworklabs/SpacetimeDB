@@ -1,7 +1,6 @@
 use nonempty::NonEmpty;
 use parking_lot::{Mutex, MutexGuard};
 use spacetimedb_lib::{bsatn, ProductValue};
-use std::num::NonZeroU32;
 use std::ops::DerefMut;
 use std::sync::Arc;
 
@@ -152,7 +151,7 @@ impl InstanceEnv {
         table_id: TableId,
         col_id: ColId,
         value: &[u8],
-    ) -> Result<NonZeroU32, NodesError> {
+    ) -> Result<u32, NodesError> {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;
 
@@ -165,9 +164,8 @@ impl InstanceEnv {
             .map(|x| RowId(*x.id()))
             .collect::<Vec<_>>();
 
-        // Delete them and count how many we deleted and error if none.
-        let count = stdb.delete(tx, table_id, rows_to_delete);
-        NonZeroU32::new(count).ok_or(NodesError::ColumnValueNotFound)
+        // Delete them and count how many we deleted.
+        Ok(stdb.delete(tx, table_id, rows_to_delete))
     }
 
     /// Deletes all rows in the table identified by `table_id`
