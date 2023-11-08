@@ -1,0 +1,41 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!159 &1
+EditorSettings:
+  m_ObjectHideFlags: 0
+  serializedVersion: 11
+  m_SerializationMode: 2
+  m_LineEndingsForNewScripts: 0
+  m_DefaultBehaviorMode: 1
+  m_PrefabRegularEnvironment: {fileID: 0}
+  m_PrefabUIEnvironment: {fileID: 0}
+  m_SpritePackerMode: 5
+  m_SpritePackerPaddingPower: 1
+  m_Bc7TextureCompressor: 0
+  m_EtcTextureCompressorBehavior: 1
+  m_EtcTextureFastCompressor: 1
+  m_EtcTextureNormalCompressor: 2
+  m_EtcTextureBestCompressor: 4
+  m_ProjectGenerationIncludedExtensions: txt;xml;fnt;cd;asmdef;asmref;rsp
+  m_ProjectGenerationRootNamespace: 
+  m_EnableTextureStreamingInEditMode: 1
+  m_EnableTextureStreamingInPlayMode: 1
+  m_AsyncShaderCompilation: 1
+  m_CachingShaderPreprocessor: 1
+  m_PrefabModeAllowAutoSave: 1
+  m_EnterPlayModeOptionsEnabled: 0
+  m_EnterPlayModeOptions: 3
+  m_GameObjectNamingDigits: 1
+  m_GameObjectNamingScheme: 0
+  m_AssetNamingUsesSpace: 1
+  m_UseLegacyProbeSampleCount: 0
+  m_SerializeInlineMappingsOnOneLine: 1
+  m_DisableCookiesInLightmapper: 1
+  m_AssetPipelineMode: 1
+  m_CacheServerMode: 0
+  m_CacheServerEndpoint: 
+  m_CacheServerNamespacePrefix: default
+  m_CacheServerEnableDownload: 1
+  m_CacheServerEnableUpload: 1
+  m_CacheServerEnableAuth: 0
+  m_CacheServerEnableTls: 0
