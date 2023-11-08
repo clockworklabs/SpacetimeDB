@@ -81,7 +81,6 @@ fn test_call_query_macro() {
 
             let lines = module.read_log(Some(13)).await;
             let lines: Vec<&str> = lines.trim().split('\n').collect();
-            dbg!(&lines);
 
             assert_eq!(lines.len(), 13);
 
