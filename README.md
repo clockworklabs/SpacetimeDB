@@ -59,15 +59,15 @@
 
 <br>
 
-## What is [SpacetimeDB](https://spacetimedb.com)?
+## Welcome to [SpacetimeDB](https://spacetimedb.com)?
 
-You can think of SpacetimeDB as both a database and server combined into one.
+SpacetimeDB is a unique fusion of database and server functionalities, designed to streamline your application development process.
 
-It is a relational database system that lets you upload your application logic directly into the database by way of fancy stored procedures called "modules."
+This innovative system operates as a relational database, offering the capability to seamlessly integrate your application logic directly within the database through specialized stored procedures known as "modules."
 
-Instead of deploying a web or game server that sits in between your clients and your database, your clients connect directly to the database and execute your application logic inside the database itself. You can write all of your permission and authorization logic right inside your module just as you would in a normal server.
+Unlike the traditional approach of deploying intermediary web or game servers between your clients and the database, SpacetimeDB empowers your clients to connect directly to the database, enabling them to execute your application logic within the database environment itself. Within your module, you have the freedom to craft permission and authorization logic in the same manner as you would with a conventional server.
 
-This means that you can write your entire application in a single language, Rust, and deploy it as a single binary. No more microservices, no more containers, no more Kubernetes, no more Docker, no more VMs, no more DevOps, no more infrastructure, no more ops, no more servers.
+This groundbreaking approach allows you to develop your entire application using a single programming language, such as Rust, and package it as a singular binary. With SpacetimeDB, you can bid farewell to the complexities of microservices, containers, Kubernetes, Docker, VMs, DevOps, infrastructure management, and the need for additional server resources.
 
 <figure>
     <img src="./images/basic-architecture-diagram.png" alt="SpacetimeDB Architecture" style="width:100%">
