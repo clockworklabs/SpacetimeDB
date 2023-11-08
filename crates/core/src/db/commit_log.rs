@@ -3,6 +3,7 @@ use super::{
     message_log::{self, MessageLog},
     messages::commit::Commit,
     ostorage::ObjectDB,
+    FsyncPolicy,
 };
 use crate::{
     db::{
@@ -31,11 +32,11 @@ use std::sync::Arc;
 pub struct CommitLog {
     writer: Arc<RwLock<MessageLogWriter>>,
     odb: Arc<Box<dyn ObjectDB>>,
-    fsync: bool,
+    fsync: FsyncPolicy,
 }
 
 impl CommitLog {
-    pub fn open<F>(mlog: MessageLog, odb: Box<dyn ObjectDB>, fsync: bool, mut replay: F) -> Result<Self, DBError>
+    pub fn open<F>(mlog: MessageLog, odb: Box<dyn ObjectDB>, fsync: FsyncPolicy, mut replay: F) -> Result<Self, DBError>
     where
         F: FnMut(Commit, &dyn ObjectDB) -> Result<(), DBError>,
     {
@@ -85,21 +86,22 @@ impl CommitLog {
     pub fn append_tx(&self, ctx: &ExecutionContext, tx_data: &TxData) -> Result<Option<usize>, DBError> {
         let mut writer = self.writer.write();
         let bytes_written = writer.append(&self.odb, ctx, tx_data)?;
-        if self.fsync {
-            let offset = writer.mlog.open_segment_max_offset;
-            // Sync the odb first, as the mlog depends on its data. This is
-            // not an atomicity guarantee, but the error context may help
-            // with forensics.
-            self.odb
-                .sync_all()
-                .with_context(|| format!("Error syncing odb to disk. Log offset: {offset}"))?;
-            writer
-                .mlog
-                .sync_all()
-                .with_context(|| format!("Error syncing mlog to disk. Log offset: {offset}"))?;
-            log::trace!("DATABASE: FSYNC");
-        } else {
-            writer.mlog.flush()?;
+        match self.fsync {
+            FsyncPolicy::Never => writer.mlog.flush()?,
+            FsyncPolicy::EveryTx => {
+                let offset = writer.mlog.open_segment_max_offset;
+                // Sync the odb first, as the mlog depends on its data. This is
+                // not an atomicity guarantee, but the error context may help
+                // with forensics.
+                self.odb
+                    .sync_all()
+                    .with_context(|| format!("Error syncing odb to disk. Log offset: {offset}"))?;
+                writer
+                    .mlog
+                    .sync_all()
+                    .with_context(|| format!("Error syncing mlog to disk. Log offset: {offset}"))?;
+                log::trace!("DATABASE: FSYNC");
+            }
         }
 
         Ok(bytes_written)
@@ -431,8 +433,7 @@ mod tests {
             mlog.sync_all().unwrap();
         }
         let odb = Box::<MemoryObjectDB>::default();
-        let fsync = false;
-        let log = CommitLog::open(mlog, odb, fsync, |_, _| Ok(())).unwrap();
+        let log = CommitLog::open(mlog, odb, FsyncPolicy::Never, |_, _| Ok(())).unwrap();
 
         let view = CommitLogView::from(&log);
         let commits = view.iter().map(Result::unwrap).count();

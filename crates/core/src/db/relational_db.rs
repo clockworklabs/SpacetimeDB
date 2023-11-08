@@ -10,7 +10,7 @@ use crate::address::Address;
 use crate::db::db_metrics::DB_METRICS;
 use crate::db::messages::commit::Commit;
 use crate::db::ostorage::{self, ObjectDB};
-use crate::db::{FsyncPolicy, Storage};
+use crate::db::Storage;
 use crate::error::{DBError, DatabaseError, IndexError, TableError};
 use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
@@ -120,7 +120,7 @@ impl RelationalDB {
                     Ok(())
                 };
 
-                let commit_log = CommitLog::open(message_log, odb, config.fsync != FsyncPolicy::Never, replay_commit)?;
+                let commit_log = CommitLog::open(message_log, odb, config.fsync, replay_commit)?;
                 // The purpose of this is to rebuild the state of the datastore
                 // after having inserted all of rows from the message log.
                 // This is necessary because, for example, inserting a row into `st_table`
@@ -617,6 +617,7 @@ impl RelationalDB {
 #[cfg(test)]
 pub(crate) mod tests_utils {
     use super::*;
+    use crate::db::FsyncPolicy;
     use tempfile::TempDir;
 
     // Utility for creating a database on a TempDir
