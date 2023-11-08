@@ -228,6 +228,10 @@ impl MessageLog {
         self.options.max_segment_size
     }
 
+    pub fn num_segments(&self) -> usize {
+        self.segments.len()
+    }
+
     pub fn get_root(&self) -> PathBuf {
         self.root.clone()
     }

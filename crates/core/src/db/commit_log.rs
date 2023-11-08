@@ -44,14 +44,32 @@ impl CommitLog {
             let mut transaction_offset = 0;
             let mut last_commit_offset = None;
             let mut last_hash: Option<Hash> = None;
-            for commit in Iter::from(mlog.segments()) {
-                let commit = commit?;
 
-                last_hash = commit.parent_commit_hash;
-                last_commit_offset = Some(commit.commit_offset);
-                transaction_offset += commit.transactions.len() as u64;
+            let total_segments = mlog.num_segments();
+            'replay: for (segment_offset, segment) in mlog.segments().enumerate() {
+                for commit in segment.try_into_iter().map(IterSegment::from)? {
+                    let commit = match commit {
+                        Ok(commit) => commit,
+                        Err(e) if e.kind() == io::ErrorKind::InvalidData => {
+                            // Let's only truncate if we're in the last segment.
+                            if segment_offset + 1 < total_segments {
+                                return Err(e.into());
+                            }
 
-                replay(commit, &odb)?;
+                            let offset = last_commit_offset.unwrap_or_default();
+                            log::warn!("Corrupt commit after offset {offset}");
+                            mlog.reset_to(offset)?;
+                            break 'replay;
+                        }
+                        Err(e) => return Err(e.into()),
+                    };
+
+                    last_hash = commit.parent_commit_hash;
+                    last_commit_offset = Some(commit.commit_offset);
+                    transaction_offset += commit.transactions.len() as u64;
+
+                    replay(commit, &odb)?;
+                }
             }
 
             let commit_offset = if let Some(last_commit_offset) = last_commit_offset {
@@ -343,6 +361,12 @@ impl Iterator for IterSegment {
         };
         let io = |e| io::Error::new(io::ErrorKind::InvalidData, e);
         Some(next.and_then(|bytes| Commit::decode(&mut bytes.as_slice()).with_context(ctx).map_err(io)))
+    }
+}
+
+impl From<message_log::IterSegment> for IterSegment {
+    fn from(inner: message_log::IterSegment) -> Self {
+        Self { inner }
     }
 }
 
