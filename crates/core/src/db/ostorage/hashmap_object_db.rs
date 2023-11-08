@@ -56,6 +56,10 @@ impl ObjectDB for HashMapObjectDB {
     fn sync_all(&self) -> Result<(), DBError> {
         self.inner.write().sync_all()
     }
+
+    fn size_on_disk(&self) -> Result<u64, DBError> {
+        Ok(self.total_obj_size_bytes())
+    }
 }
 
 struct Inner {
@@ -228,10 +232,6 @@ impl Inner {
             file.sync_all()?;
         }
         Ok(())
-    }
-
-    fn size_on_disk(&self) -> Result<u64, DBError> {
-        Ok(self.total_mem_size_bytes())
     }
 }
 

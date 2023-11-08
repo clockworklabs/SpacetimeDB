@@ -70,12 +70,20 @@ impl DatabaseInstanceContext {
 
     /// The number of bytes on disk occupied by the [MessageLog].
     pub fn message_log_size_on_disk(&self) -> Result<u64, DBError> {
-        self.relational_db.commit_log().message_log_size_on_disk()
+        if let Some(commit_log) = self.relational_db.commit_log() {
+            commit_log.message_log_size_on_disk()
+        } else {
+            Ok(0)
+        }
     }
 
     /// The number of bytes on disk occupied by the [ObjectDB].
     pub fn object_db_size_on_disk(&self) -> Result<u64, DBError> {
-        self.relational_db.commit_log().object_db_size_on_disk()
+        if let Some(commit_log) = self.relational_db.commit_log() {
+            commit_log.object_db_size_on_disk()
+        } else {
+            Ok(0)
+        }
     }
 
     /// The size of the log file.
