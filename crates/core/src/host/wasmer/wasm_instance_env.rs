@@ -481,7 +481,7 @@ impl WasmInstanceEnv {
                         .data()
                         .instance_env
                         .delete_by_col_eq(&ctx, table_id.into(), col_id.into(), &value)?;
-                Ok(count.get())
+                Ok(count)
             },
         )
     }
