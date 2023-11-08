@@ -178,34 +178,43 @@ impl MessageLogWriter {
         let transaction = Transaction { writes };
         unwritten_commit.transactions.push(Arc::new(transaction));
 
-        const COMMIT_SIZE: usize = 1;
-
-        if unwritten_commit.transactions.len() >= COMMIT_SIZE {
-            for record in &tx_data.records {
-                match &record.op {
-                    TxOp::Insert(bytes) => {
-                        odb.add(bytes);
-                    }
-                    TxOp::Delete => continue,
+        for record in &tx_data.records {
+            match &record.op {
+                TxOp::Insert(bytes) => {
+                    odb.add(bytes);
                 }
+                TxOp::Delete => continue,
             }
-
-            let encoded_len = unwritten_commit.encoded_len();
-            if encoded_len > self.encode_buf.len() {
-                self.encode_buf.resize(encoded_len, 0);
-            }
-            unwritten_commit.encode(&mut self.encode_buf.as_mut_slice());
-            let encoded_bytes = &self.encode_buf[..encoded_len];
-
-            unwritten_commit.parent_commit_hash = Some(hash_bytes(encoded_bytes));
-            unwritten_commit.commit_offset += 1;
-            unwritten_commit.min_tx_offset += unwritten_commit.transactions.len() as u64;
-            unwritten_commit.transactions.clear();
-
-            Some(encoded_len)
-        } else {
-            None
         }
+
+        // Number of [`Write`]s considered a large transaction.
+        const LARGE_TRANSACTION_WRITES: usize = 128;
+        // Encoded size of a large commit, 5KiB-ish.
+        //
+        // 49: commit <tag><hash><commit_offset><min_tx_offset>
+        //  4: transaction <length>
+        // 38: write <flags><set_id><data_key>
+        const LARGE_COMMIT_BYTES: usize = 49 + 4 + (LARGE_TRANSACTION_WRITES * 38);
+
+        let encoded_len = unwritten_commit.encoded_len();
+        // Ensure encoded bytes fit into buffer.
+        if encoded_len > self.encode_buf.len() {
+            self.encode_buf.resize(encoded_len, 0);
+        }
+        // Reclaim memory, assuming very large transactions are uncommon.
+        if self.encode_buf.capacity() > LARGE_COMMIT_BYTES {
+            self.encode_buf.truncate(encoded_len);
+            self.encode_buf.shrink_to_fit();
+        }
+        unwritten_commit.encode(&mut self.encode_buf.as_mut_slice());
+        let encoded_bytes = &self.encode_buf[..encoded_len];
+
+        unwritten_commit.parent_commit_hash = Some(hash_bytes(encoded_bytes));
+        unwritten_commit.commit_offset += 1;
+        unwritten_commit.min_tx_offset += unwritten_commit.transactions.len() as u64;
+        unwritten_commit.transactions.clear();
+
+        Some(encoded_len)
     }
 }
 
