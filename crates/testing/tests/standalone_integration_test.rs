@@ -2,10 +2,23 @@ use serde_json::Value;
 use serial_test::serial;
 use spacetimedb_testing::modules::{CompilationMode, CompiledModule, DEFAULT_CONFIG};
 
+fn init() {
+    let _ = env_logger::builder()
+        .parse_filters(
+            "spacetimedb=trace,spacetimedb_client_api=trace,spacetimedb_lib=trace,spacetimedb_standalone=trace",
+        )
+        .is_test(true)
+        // `try_init` and ignore failures to continue if a logger is already registered.
+        // This allows us to call `init` at the start of every test without a `once_cell` or similar.
+        .try_init();
+}
+
 // The tests MUST be run in sequence because they read the OS environment
 // and can cause a race when run in parallel.
 
 fn test_calling_a_reducer_in_module(module_name: &'static str) {
+    init();
+
     CompiledModule::compile(module_name, CompilationMode::Debug).with_module_async(
         DEFAULT_CONFIG,
         |module| async move {
@@ -49,6 +62,8 @@ fn test_calling_a_reducer_csharp() {
 #[test]
 #[serial]
 fn test_calling_a_reducer_with_private_table() {
+    init();
+
     CompiledModule::compile("rust-wasm-test", CompilationMode::Debug).with_module_async(
         DEFAULT_CONFIG,
         |module| async move {
