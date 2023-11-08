@@ -193,7 +193,7 @@ impl WasmInstanceEnv {
         Err(match err {
             WasmError::Db(err) => match err_to_errno(&err) {
                 Some(errno) => {
-                    log::info!("abi call to {func} returned a normal error: {err:#}");
+                    log::debug!("abi call to {func} returned a normal error: {err:#}");
                     return Ok(errno);
                 }
                 None => RuntimeError::user(Box::new(AbiRuntimeError { func, err })),
