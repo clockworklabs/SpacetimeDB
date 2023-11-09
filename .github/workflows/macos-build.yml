@@ -24,7 +24,7 @@ jobs:
         run: |
           cargo build --release -p spacetimedb-cli
           mkdir build
-          cp -Sv target/release/spacetime build/spacetime
+          cp --sparse=never target/release/spacetime build/spacetime
           sudo apt install libarchive-tools
           cd build && tar -czf spacetime.darwin-amd64.tar.gz spacetime
           rm spacetime
@@ -32,7 +32,7 @@ jobs:
       - name: Compile Aarch64
         run: |
           cargo build --release -p spacetimedb-cli --target=aarch64-apple-darwin
-          cp -Sv target/aarch64-apple-darwin/release/spacetime build/spacetime
+          cp --sparse=never target/aarch64-apple-darwin/release/spacetime build/spacetime
           cd build && tar -czf spacetime.darwin-arm64.tar.gz spacetime
           rm spacetime
 
