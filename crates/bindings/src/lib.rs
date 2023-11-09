@@ -125,7 +125,7 @@ pub fn insert<T: TableType>(table_id: TableId, row: T) -> T::InsertResult {
             let mut i = 0;
             let mut x = false;
             while i < T::COLUMN_ATTRS.len() {
-                if T::COLUMN_ATTRS[i].is_autoinc() {
+                if T::COLUMN_ATTRS[i].has_autoinc() {
                     x = true;
                     break;
                 }

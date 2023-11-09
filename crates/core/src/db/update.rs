@@ -247,7 +247,10 @@ fn equiv(a: &TableDef, b: &TableDef) -> bool {
 mod tests {
     use anyhow::bail;
     use nonempty::NonEmpty;
-    use spacetimedb_lib::auth::{StAccess, StTableType};
+    use spacetimedb_lib::{
+        auth::{StAccess, StTableType},
+        IndexType,
+    };
     use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::AlgebraicType;
 
@@ -341,6 +344,7 @@ mod tests {
                 index_name: "Person_id_unique".into(),
                 is_unique: true,
                 cols: NonEmpty::new(ColId(0)),
+                index_type: IndexType::BTree,
             }],
             // Constraints are possibly not empty when loaded from an actual
             // database, but not inspected by `schema_updates`.
@@ -370,6 +374,7 @@ mod tests {
                 },
                 name: "Person_id_and_name".into(),
                 is_unique: false,
+                index_type: IndexType::BTree,
             }],
             table_type: StTableType::User,
             table_access: StAccess::Public,

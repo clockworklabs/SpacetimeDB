@@ -1,6 +1,3 @@
-use std::collections::HashMap;
-use tracing::info;
-
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::traits::TableSchema;
 use crate::db::relational_db::RelationalDB;
@@ -14,6 +11,8 @@ use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_vm::dsl::{db_table, db_table_raw, query};
 use spacetimedb_vm::expr::{ColumnOp, CrudExpr, DbType, Expr, QueryExpr, SourceExpr};
 use spacetimedb_vm::operator::OpCmp;
+use std::collections::HashMap;
+use tracing::info;
 
 /// Compile the `SQL` expression into a `ast`
 #[tracing::instrument(skip_all)]
@@ -292,30 +291,23 @@ fn compile_statement(statement: SqlAst) -> Result<CrudExpr, PlanError> {
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Bound;
-
     use super::*;
-    use itertools::Itertools;
+    use crate::db::datastore::traits::{ColumnDef, IndexDef, TableDef};
+    use crate::db::relational_db::tests_utils::make_test_db;
+    use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::operator::OpQuery;
-    use spacetimedb_lib::{
-        auth::{StAccess, StTableType},
-        error::ResultTest,
-    };
+    use spacetimedb_lib::relation::DbTable;
     use spacetimedb_primitives::TableId;
     use spacetimedb_sats::AlgebraicType;
     use spacetimedb_vm::expr::{IndexJoin, IndexScan, JoinExpr, Query};
-
-    use crate::db::{
-        datastore::traits::{ColumnDef, IndexDef, TableDef},
-        relational_db::tests_utils::make_test_db,
-    };
+    use std::ops::Bound;
 
     fn create_table(
         db: &RelationalDB,
         tx: &mut MutTxId,
         name: &str,
         schema: &[(&str, AlgebraicType)],
-        indexes: &[(u32, &str)],
+        indexes: &[(ColId, &str)],
     ) -> ResultTest<TableId> {
         let table_name = name.to_string();
         let table_type = StTableType::User;
@@ -328,12 +320,12 @@ mod tests {
                 col_type: col_type.clone(),
                 is_autoinc: false,
             })
-            .collect_vec();
+            .collect();
 
         let indexes = indexes
             .iter()
-            .map(|(col_id, index_name)| IndexDef::new(index_name.to_string(), 0.into(), ColId(*col_id), false))
-            .collect_vec();
+            .map(|(col_id, index_name)| IndexDef::new(index_name.to_string(), 0.into(), *col_id, false))
+            .collect();
 
         let schema = TableDef {
             table_name,
@@ -359,9 +351,9 @@ mod tests {
             upper_bound,
         }) = op
         {
-            assert_eq!(col_id, col, "Columns not match");
-            assert_eq!(lower_bound, low_bound, "Lower bound not match");
-            assert_eq!(upper_bound, up_bound, "Upper bound not match");
+            assert_eq!(col_id, col, "Columns don't match");
+            assert_eq!(lower_bound, low_bound, "Lower bound don't match");
+            assert_eq!(upper_bound, up_bound, "Upper bound don't match");
             table.table_id
         } else {
             panic!("Expected IndexScan, got {op}");
@@ -404,7 +396,7 @@ mod tests {
 
         // Create table [test] with index on [a]
         let schema = &[("a", AlgebraicType::U64)];
-        let indexes = &[(0, "a")];
+        let indexes = &[(0.into(), "a")];
         create_table(&db, &mut tx, "test", schema, indexes)?;
 
         // Compile query
@@ -419,19 +411,13 @@ mod tests {
 
         assert_eq!(1, ops.len());
 
-        // Assert index scan
-        let Query::IndexScan(IndexScan {
-            table: _,
-            col_id,
-            lower_bound: Bound::Included(u),
-            upper_bound: Bound::Included(v),
-        }) = ops.remove(0)
-        else {
-            panic!("Expected IndexScan");
-        };
-        assert_eq!(u, v);
-        assert_eq!(col_id, 0.into());
-        assert_eq!(v, AlgebraicValue::U64(1));
+        // Assert index scan.
+        assert_index_scan(
+            ops.swap_remove(0),
+            0.into(),
+            Bound::Included(1u64.into()),
+            Bound::Included(1u64.into()),
+        );
         Ok(())
     }
 
@@ -442,7 +428,7 @@ mod tests {
 
         // Create table [test] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1, "b")];
+        let indexes = &[(1.into(), "b")];
         create_table(&db, &mut tx, "test", schema, indexes)?;
 
         // Note, order matters - the sargable predicate occurs last which means
@@ -472,7 +458,7 @@ mod tests {
 
         // Create table [test] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1, "b")];
+        let indexes = &[(1.into(), "b")];
         create_table(&db, &mut tx, "test", schema, indexes)?;
 
         // Note, order matters - the sargable predicate occurs first which
@@ -488,19 +474,13 @@ mod tests {
 
         assert_eq!(2, ops.len());
 
-        // Assert index scan
-        let Query::IndexScan(IndexScan {
-            table: _,
-            col_id,
-            lower_bound: Bound::Included(u),
-            upper_bound: Bound::Included(v),
-        }) = ops.remove(0)
-        else {
-            panic!("Expected IndexScan");
-        };
-        assert_eq!(u, v);
-        assert_eq!(col_id, 1.into());
-        assert_eq!(v, AlgebraicValue::U64(2));
+        // Assert index scan.
+        assert_index_scan(
+            ops.swap_remove(0),
+            1.into(),
+            Bound::Included(2u64.into()),
+            Bound::Included(2u64.into()),
+        );
         Ok(())
     }
 
@@ -511,7 +491,7 @@ mod tests {
 
         // Create table [test] with indexes on [a] and [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(0, "a"), (1, "b")];
+        let indexes = &[(0.into(), "a"), (1.into(), "b")];
         create_table(&db, &mut tx, "test", schema, indexes)?;
 
         // Compile query
@@ -540,7 +520,7 @@ mod tests {
 
         // Create table [test] with indexes on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1, "b")];
+        let indexes = &[(1.into(), "b")];
         create_table(&db, &mut tx, "test", schema, indexes)?;
 
         // Compile query
@@ -572,7 +552,7 @@ mod tests {
 
         // Create table [test] with indexes on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1, "b")];
+        let indexes = &[(1.into(), "b")];
         create_table(&db, &mut tx, "test", schema, indexes)?;
 
         // Compile query
@@ -604,7 +584,7 @@ mod tests {
 
         // Create table [test] with indexes on [a] and [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(0, "a"), (1, "b")];
+        let indexes = &[(0.into(), "a"), (1.into(), "b")];
         create_table(&db, &mut tx, "test", schema, indexes)?;
 
         // Note, order matters - the equality condition occurs first which
@@ -641,7 +621,7 @@ mod tests {
 
         // Create table [lhs] with index on [a]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(0, "a")];
+        let indexes = &[(0.into(), "a")];
         let lhs_id = create_table(&db, &mut tx, "lhs", schema, indexes)?;
 
         // Create table [rhs] with no indexes
@@ -873,12 +853,12 @@ mod tests {
 
         // Create table [lhs] with index on [a]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(0, "a")];
+        let indexes = &[(0.into(), "a")];
         let lhs_id = create_table(&db, &mut tx, "lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [c]
         let schema = &[("b", AlgebraicType::U64), ("c", AlgebraicType::U64)];
-        let indexes = &[(1, "c")];
+        let indexes = &[(1.into(), "c")];
         let rhs_id = create_table(&db, &mut tx, "rhs", schema, indexes)?;
 
         // Should push the sargable equality condition into the join's left arg.
@@ -957,7 +937,7 @@ mod tests {
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1, "b")];
+        let indexes = &[(1.into(), "b")];
         let lhs_id = create_table(&db, &mut tx, "lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [b, c]
@@ -966,7 +946,7 @@ mod tests {
             ("c", AlgebraicType::U64),
             ("d", AlgebraicType::U64),
         ];
-        let indexes = &[(0, "b"), (1, "c")];
+        let indexes = &[(0.into(), "b"), (1.into(), "c")];
         let rhs_id = create_table(&db, &mut tx, "rhs", schema, indexes)?;
 
         // Should generate an index join since there is an index on `lhs.b`.

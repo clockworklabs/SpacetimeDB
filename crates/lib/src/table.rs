@@ -102,7 +102,7 @@ impl ProductTypeMeta {
     ) -> impl Iterator<Item = (ColumnDef, &'a mut AlgebraicValue)> + 'a {
         self.iter()
             .zip(row.elements.iter_mut())
-            .filter(|(col, _)| col.attr.is_autoinc())
+            .filter(|(col, _)| col.attr.has_autoinc())
     }
 }
 

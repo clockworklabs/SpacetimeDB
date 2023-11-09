@@ -1,6 +1,6 @@
 use nonempty::NonEmpty;
 use parking_lot::{Mutex, MutexGuard};
-use spacetimedb_lib::{bsatn, ProductValue};
+use spacetimedb_lib::{bsatn, IndexType, ProductValue};
 use std::ops::DerefMut;
 use std::sync::Arc;
 
@@ -124,7 +124,7 @@ impl InstanceEnv {
                 crate::error::DBError::Index(IndexError::UniqueConstraintViolation {
                     constraint_name: _,
                     table_name: _,
-                    col_names: _,
+                    cols: _,
                     value: _,
                 }) => {}
                 _ => {
@@ -228,25 +228,24 @@ impl InstanceEnv {
 
         // TODO(george) This check should probably move towards src/db/index, but right
         // now the API is pretty hardwired towards btrees.
-        //
-        // TODO(george) Dedup the constant here.
+        let index_type = IndexType::try_from(index_type).map_err(|_| NodesError::BadIndexType(index_type))?;
         match index_type {
-            0 => (),
-            1 => todo!("Hash indexes not yet supported"),
-            _ => return Err(NodesError::BadIndexType(index_type)),
+            IndexType::BTree => {}
+            IndexType::Hash => todo!("Hash indexes not yet supported"),
         };
 
         let cols = NonEmpty::from_slice(&col_ids)
             .expect("Attempt to create an index with zero columns")
             .map(Into::into);
 
-        let is_unique = stdb.column_attrs(tx, table_id, &cols)?.is_unique();
+        let is_unique = stdb.column_attrs(tx, table_id, &cols)?.has_unique();
 
         let index = IndexDef {
             table_id,
             cols,
             name: index_name,
             is_unique,
+            index_type,
         };
 
         stdb.create_index(tx, index)?;

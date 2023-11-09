@@ -319,7 +319,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         let mut indexes = Vec::new();
         for (i, column) in columns.columns.elements.iter().enumerate() {
             let meta = columns.attr[i];
-            if meta.is_unique() {
+            if meta.has_unique() {
                 indexes.push(IndexDef::new(
                     format!("{}_{}_idx", table_name, i),
                     0.into(), // Ignored
@@ -330,7 +330,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
             cols.push(ColumnDef {
                 col_name: column.name.clone().unwrap_or(i.to_string()),
                 col_type: column.algebraic_type.clone(),
-                is_autoinc: meta.is_autoinc(),
+                is_autoinc: meta.has_autoinc(),
             })
         }
         self.db.create_table(
@@ -539,6 +539,7 @@ pub(crate) mod tests {
     use nonempty::NonEmpty;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::relation::{DbTable, FieldName};
+    use spacetimedb_lib::IndexType;
     use spacetimedb_primitives::TableId;
     use spacetimedb_sats::{product, AlgebraicType, ProductType, ProductValue};
     use spacetimedb_vm::dsl::*;
@@ -746,6 +747,7 @@ pub(crate) mod tests {
                 table_id,
                 cols: NonEmpty::new(0.into()),
                 is_unique: true,
+                index_type: IndexType::BTree,
             }
             .into(),
             q,

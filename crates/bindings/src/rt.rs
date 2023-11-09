@@ -417,8 +417,8 @@ impl From<crate::IndexDef<'_>> for spacetimedb_lib::IndexDef {
     fn from(index: crate::IndexDef<'_>) -> spacetimedb_lib::IndexDef {
         spacetimedb_lib::IndexDef {
             name: index.name.to_owned(),
-            ty: index.ty,
-            col_ids: index.col_ids.to_owned(),
+            index_type: index.ty,
+            cols: index.col_ids.to_owned(),
         }
     }
 }

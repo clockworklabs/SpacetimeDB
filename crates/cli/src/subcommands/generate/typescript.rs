@@ -690,7 +690,7 @@ fn autogen_typescript_product_table_common(
                 .unwrap()
                 .iter()
                 .enumerate()
-                .find_map(|(idx, attr)| attr.is_primary().then_some(idx))
+                .find_map(|(idx, attr)| attr.has_primary().then_some(idx))
                 .map(|idx| {
                     let field_name = product_type.elements[idx]
                         .name
@@ -958,7 +958,7 @@ fn autogen_typescript_access_funcs_for_struct(
         .iter()
         .copied()
         .enumerate()
-        .partition::<Vec<_>, _>(|(_, attr)| attr.is_unique());
+        .partition::<Vec<_>, _>(|(_, attr)| attr.has_unique());
     let it = unique.into_iter().chain(nonunique);
 
     writeln!(output, "public static count(): number").unwrap();
@@ -984,7 +984,7 @@ fn autogen_typescript_access_funcs_for_struct(
     writeln!(output).unwrap();
 
     for (col_i, attr) in it {
-        let is_unique = attr.is_unique();
+        let is_unique = attr.has_unique();
         let field = &product_type.elements[col_i];
         let field_name = field.name.as_ref().expect("autogen'd tuples should have field names");
         let field_type = &field.algebraic_type;
