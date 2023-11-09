@@ -4,7 +4,7 @@ use crate::de::BasicVecVisitor;
 use crate::product_value::InvalidFieldError;
 use crate::relation::{DbTable, FieldName, FieldOnly, Header, TableField};
 use crate::ser::SerializeArray;
-use crate::{de, ser, AlgebraicValue, ProductValue};
+use crate::{de, impl_deserialize, impl_serialize, ser, AlgebraicValue, ProductValue};
 use crate::{AlgebraicType, ProductType, ProductTypeElement};
 use derive_more::Display;
 use nonempty::NonEmpty;
@@ -232,12 +232,18 @@ impl<T: ser::Serialize> ser::Serialize for NonEmpty<T> {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Display)]
 #[repr(u8)]
 pub enum IndexType {
     BTree = 0,
     Hash = 1,
 }
+
+impl_serialize!([] IndexType, (self, ser) => u8::from(*self).serialize(ser));
+impl_deserialize!([] IndexType, de => {
+    let x = u8::deserialize(de)?;
+    x.try_into().map_err(|_| de::Error::custom(format_args!("unrecognized index type `{x}`")))
+});
 
 impl From<IndexType> for u8 {
     fn from(value: IndexType) -> Self {

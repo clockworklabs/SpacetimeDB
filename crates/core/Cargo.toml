@@ -101,6 +101,7 @@ default = ["odb_sled"]
 
 [dev-dependencies]
 spacetimedb-lib = { path = "../lib", features = ["proptest"] }
+spacetimedb-sats = { path = "../sats", version = "0.7.3", features = ["proptest"] }
 
 rusqlite.workspace = true
 criterion.workspace = true

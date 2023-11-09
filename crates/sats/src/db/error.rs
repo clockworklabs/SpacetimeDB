@@ -126,7 +126,7 @@ pub enum SchemaError {
     EmptyName { table: String, ty: DefType, id: u32 },
     #[error("Attempt to define a column with more than 1 auto_inc sequence: Table: `{table}`, Field: `{field}`")]
     OneAutoInc { table: String, field: String },
-    #[error("Only Btree Indexes are supported: Table: `{table}`, Index: `{index}` is a `{index_type}`")]
+    #[error("Only Btree Indexes are supported: Table: `{table}`, Index: `{index}` is an `{index_type}`")]
     OnlyBtree {
         table: String,
         index: String,

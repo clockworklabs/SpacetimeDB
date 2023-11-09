@@ -1,10 +1,8 @@
+use super::transaction::Transaction;
 use anyhow::{bail, Context as _};
 use spacetimedb_sats::buffer::{BufReader, BufWriter};
-use std::{fmt, sync::Arc};
-
-use super::transaction::Transaction;
 use spacetimedb_sats::hash::Hash;
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 #[cfg(test)]
 use proptest::prelude::*;

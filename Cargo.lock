@@ -4432,6 +4432,7 @@ dependencies = [
  "itertools 0.11.0",
  "nonempty",
  "proptest",
+ "proptest-derive",
  "rand",
  "serde",
  "sha3",

@@ -21,6 +21,8 @@ mod wasmer;
 pub mod instance_env;
 mod timestamp;
 mod wasm_common;
+#[cfg(test)]
+pub(crate) use wasm_common::module_host_actor::from_lib_tabledef;
 
 pub use host_controller::{
     DescribedEntityType, EnergyDiff, EnergyQuanta, HostController, ReducerCallResult, ReducerOutcome, UpdateOutcome,

@@ -1,5 +1,5 @@
 use derive_more::From;
-use spacetimedb_primitives::TableId;
+use spacetimedb_primitives::{TableId, ColId};
 use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
 use std::fmt;

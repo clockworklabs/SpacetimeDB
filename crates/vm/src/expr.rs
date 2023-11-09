@@ -17,7 +17,7 @@ use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{ProductTypeMeta, TableSchema};
 use spacetimedb_sats::db::error::AuthError;
 use spacetimedb_sats::relation::{
-    DbTable, FieldExpr, FieldName, Header, MemTable, RelValueRef, Relation, RowCount, Table,
+    DbTable, FieldExpr, FieldName, Header, MemTable, RelValueRef, Relation, RowCount, Table, Column,
 };
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
@@ -1188,7 +1188,7 @@ impl QueryExpr {
                 match is_sargable(schema, op) {
                     // found sargable equality condition for one of the table schemas
                     Some(IndexArgument::Eq { col_id, value }) => {
-                        q = q.with_index_eq(schema.into(), col_id, value);
+                        q = q.with_index_eq(schema.into(), col_id.into(), value);
                         continue 'outer;
                     }
                     // found sargable range condition for one of the table schemas
@@ -1197,7 +1197,7 @@ impl QueryExpr {
                         value,
                         inclusive,
                     }) => {
-                        q = q.with_index_lower_bound(schema.into(), col_id, value, inclusive);
+                        q = q.with_index_lower_bound(schema.into(), col_id.into(), value, inclusive);
                         continue 'outer;
                     }
                     // found sargable range condition for one of the table schemas
@@ -1206,7 +1206,7 @@ impl QueryExpr {
                         value,
                         inclusive,
                     }) => {
-                        q = q.with_index_upper_bound(schema.into(), col_id, value, inclusive);
+                        q = q.with_index_upper_bound(schema.into(), col_id.into(), value, inclusive);
                         continue 'outer;
                     }
                     None => {}

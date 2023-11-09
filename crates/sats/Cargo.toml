@@ -9,6 +9,8 @@ description = "Spacetime Algebraic Type Notation"
 
 [features]
 serde = ["dep:serde"]
+# Allows using `Arbitrary` impls defined in this crate.
+proptest = ["dep:proptest", "dep:proptest-derive"]
 
 [dependencies]
 spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.7.3" }
@@ -28,7 +30,14 @@ smallvec.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 
+# For the 'proptest' feature.
+proptest = { workspace = true, optional = true }
+proptest-derive = { workspace = true, optional = true }
+
 [dev-dependencies]
 bytes.workspace = true
-proptest.workspace = true
 rand.workspace = true
+
+# Also as dev-dependencies for use in _this_ crate's tests.
+proptest.workspace = true
+proptest-derive.workspace = true

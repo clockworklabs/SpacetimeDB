@@ -6,6 +6,16 @@ use nonempty::NonEmpty;
 #[repr(transparent)]
 pub struct TableId(pub u32);
 
+impl TableId {
+    /// The magic table id zero, for use in [`IndexDef`]s.
+    ///
+    /// The actual table id is usually not yet known when constructing an
+    /// [`IndexDef`]. [`AUTO_TABLE_ID`] can be used instead, which the storage
+    /// engine will replace with the actual table id upon creation of the table
+    /// respectively index.
+    pub const AUTO_FOR_INDEX: Self = Self(0);
+}
+
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
 #[repr(transparent)]
 pub struct ColId(pub u32);

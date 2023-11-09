@@ -4,7 +4,6 @@ use crate::operator::*;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
-use spacetimedb_sats::product_type::ProductType;
 use spacetimedb_sats::product_value::ProductValue;
 use spacetimedb_sats::relation::{DbTable, Header, MemTable};
 use std::collections::HashMap;

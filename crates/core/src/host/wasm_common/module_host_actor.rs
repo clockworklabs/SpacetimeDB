@@ -24,6 +24,7 @@ use bytes::Bytes;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{bsatn, Address, ModuleDef};
+use spacetimedb_primitives::TableId;
 use spacetimedb_sats::db::def::{ColumnDef, IndexDef, IndexType, TableDef};
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::WithTypespace;
@@ -307,15 +308,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     }
 }
 
-/// The magic table id zero, for use in [`IndexDef`]s.
-///
-/// The actual table id is usually not yet known when constructing an
-/// [`IndexDef`]. [`AUTO_TABLE_ID`] can be used instead, which the storage
-/// engine will replace with the actual table id upon creation of the table
-/// respectively index.
-pub const AUTO_TABLE_ID: TableId = TableId(0);
-
-fn from_lib_tabledef(table: WithTypespace<'_, spacetimedb_lib::TableDef>) -> anyhow::Result<TableDef> {
+pub(crate) fn from_lib_tabledef(table: WithTypespace<'_, spacetimedb_lib::TableDef>) -> anyhow::Result<TableDef> {
     let schema = table
         .map(|t| &t.data)
         .resolve_refs()
@@ -360,7 +353,7 @@ fn from_lib_tabledef(table: WithTypespace<'_, spacetimedb_lib::TableDef>) -> any
             }
             indexes.push(IndexDef::new(
                 name,
-                AUTO_TABLE_ID, // Will be ignored
+                TableId::AUTO_FOR_INDEX, // Will be ignored
                 col_id.into(),
                 col_attr.has_unique(),
             ))
@@ -371,7 +364,7 @@ fn from_lib_tabledef(table: WithTypespace<'_, spacetimedb_lib::TableDef>) -> any
     // Multi-column indexes cannot be unique (yet), so just add them.
     indexes.extend(table.indexes.iter().filter_map(|index| {
         (index.cols.len() > 1).then(|| IndexDef {
-            table_id: AUTO_TABLE_ID,
+            table_id: TableId::AUTO_FOR_INDEX,
             cols: index.cols.clone(),
             name: index.name.clone(),
             is_unique: false,

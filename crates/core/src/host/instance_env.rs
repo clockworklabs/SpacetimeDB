@@ -16,9 +16,11 @@ use spacetimedb_sats::db::def::{IndexDef, IndexType};
 use spacetimedb_sats::relation::{FieldExpr, FieldName};
 use spacetimedb_sats::{bsatn, ProductType, ProductValue, Typespace};
 use spacetimedb_vm::expr::{Code, ColumnOp};
-use std::num::NonZeroU32;
 use std::ops::DerefMut;
 use std::sync::Arc;
+
+use super::Timestamp;
+use super::scheduler::{Scheduler, ScheduledReducerId, ScheduleError};
 
 #[derive(Clone)]
 pub struct InstanceEnv {

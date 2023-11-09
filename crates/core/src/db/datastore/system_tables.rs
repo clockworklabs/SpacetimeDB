@@ -331,7 +331,7 @@ pub fn st_indexes_schema() -> TableSchema {
             ColumnSchema {
                 table_id: ST_INDEXES_ID,
                 col_id: StIndexFields::IndexName.col_id(),
-                col_name: StIndexFields::IndexName.name().to_string(),
+                col_name: StIndexFields::IndexName.col_name(),
                 col_type: AlgebraicType::String,
                 is_autoinc: false,
             },
@@ -388,7 +388,7 @@ pub(crate) fn st_sequences_schema() -> TableSchema {
             ColumnSchema {
                 table_id: ST_SEQUENCES_ID,
                 col_id: StSequenceFields::SequenceId.col_id(),
-                col_name: StSequenceFields::SequenceId.name().into(),
+                col_name: StSequenceFields::SequenceId.col_name(),
                 col_type: AlgebraicType::U32,
                 is_autoinc: true,
             },
@@ -698,7 +698,7 @@ impl From<StColumnRow<String>> for ProductValue {
         product![
             x.table_id,
             x.col_id,
-            AlgebraicValue::String(x.col_name.to_owned()),
+            x.col_name,
             AlgebraicValue::Bytes(bytes),
             x.is_autoinc,
         ]

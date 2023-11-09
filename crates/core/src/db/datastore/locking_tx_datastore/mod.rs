@@ -484,7 +484,7 @@ impl Inner {
                 .inc();
 
             //TODO: This is a bug fixed in PR#267
-            let index_id = constraint.constraint_id;
+            let index_id = IndexId(constraint.constraint_id.into());
 
             //Check if add an index:
             match constraint.constraints {
@@ -2368,7 +2368,9 @@ impl traits::MutProgrammable for Locking {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::datastore::Result;
     use crate::error::IndexError;
+    use itertools::Itertools;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_sats::product;
 

@@ -9,6 +9,9 @@ use spacetimedb_sats::hash::Hash;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 
+use super::datastore::locking_tx_datastore::MutTxId;
+use super::relational_db::RelationalDB;
+
 #[derive(thiserror::Error, Debug)]
 pub enum UpdateDatabaseError {
     #[error("incompatible schema changes for: {tables:?}")]
@@ -52,7 +55,7 @@ pub fn update_database(
 
                 for index_def in indexes_to_create {
                     system_logger.info(&format!("Creating index `{}`", index_def.name));
-                    stdb.create_index(tx, index_def)?;
+                    stdb.create_index(tx, index_def.table_id, index_def)?;
                 }
             }
 
@@ -242,14 +245,10 @@ fn equiv(a: &TableDef, b: &TableDef) -> bool {
 mod tests {
     use anyhow::bail;
     use nonempty::NonEmpty;
-    use spacetimedb_lib::{
-        auth::{StAccess, StTableType},
-        IndexType,
-    };
     use spacetimedb_primitives::{ColId, TableId};
+    use spacetimedb_sats::db::auth::{StAccess, StTableType};
+    use spacetimedb_sats::db::def::{ColumnDef, ColumnSchema, IndexSchema, IndexType};
     use spacetimedb_sats::AlgebraicType;
-
-    use crate::db::datastore::traits::{ColumnDef, ColumnSchema, IndexSchema, AUTO_TABLE_ID};
 
     use super::*;
 
@@ -362,7 +361,7 @@ mod tests {
                 },
             ],
             indexes: vec![IndexDef {
-                table_id: AUTO_TABLE_ID,
+                table_id: TableId::AUTO_FOR_INDEX,
                 cols: NonEmpty {
                     head: ColId(0),
                     tail: vec![ColId(1)],
