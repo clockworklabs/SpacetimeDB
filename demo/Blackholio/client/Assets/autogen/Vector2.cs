@@ -7,6 +7,7 @@ using SpacetimeDB;
 
 namespace SpacetimeDB.Types
 {
+	[Newtonsoft.Json.JsonObject(Newtonsoft.Json.MemberSerialization.OptIn)]
 	public partial class Vector2 : IDatabaseTable
 	{
 		[Newtonsoft.Json.JsonProperty("x")]

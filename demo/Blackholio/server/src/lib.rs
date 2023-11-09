@@ -3,12 +3,19 @@ use rand::Rng;
 use std::time::Duration;
 
 #[spacetimedb(table)]
+pub struct Config {
+    #[primarykey]
+    pub id: u32,
+    pub world_size: u64,
+}
+
+#[spacetimedb(table)]
 pub struct Entity {
     #[autoinc]
     #[primarykey]
     pub id: u32,
     pub position: Vector2,
-    pub radius: u32,
+    pub mass: u32,
 }
 
 #[spacetimedb(table)]
@@ -55,12 +62,12 @@ impl Vector2 {
     }
 }
 
-const WORLD_SIZE: f64 = 1000.0;
-const START_PLAYER_RADIUS: u32 = 5;
+const START_PLAYER_MASS: u32 = 5;
 
 #[spacetimedb(init)]
 pub fn init() -> Result<(), String> {
     log::info!("Initializing...");
+    Config::insert(Config { id: 0, world_size: 1000 })?;
     spawn_food()?;
     move_all_players()?;
     Ok(())
@@ -92,12 +99,13 @@ pub fn connect(ctx: ReducerContext) -> Result<(), String> {
 #[spacetimedb(reducer)]
 pub fn create_player(ctx: ReducerContext, name: String) -> Result<(), String> {
     let mut rng = rand::thread_rng();
-    let x = rng.gen_range(START_PLAYER_RADIUS as f32..(WORLD_SIZE as f32 - START_PLAYER_RADIUS as f32));
-    let y = rng.gen_range(START_PLAYER_RADIUS as f32..(WORLD_SIZE as f32 - START_PLAYER_RADIUS as f32));
+    let world_size = Config::filter_by_id(&0).ok_or("Config not found")?.world_size;
+    let x = rng.gen_range(START_PLAYER_MASS as f32..(world_size as f32 - START_PLAYER_MASS as f32));
+    let y = rng.gen_range(START_PLAYER_MASS as f32..(world_size as f32 - START_PLAYER_MASS as f32));
     let entity = Entity::insert(Entity {
         id: 0,
         position: Vector2 { x, y },
-        radius: START_PLAYER_RADIUS,
+        mass: START_PLAYER_MASS,
     })?;
 
     Circle::insert(Circle {
@@ -121,19 +129,26 @@ pub fn update_player_input(ctx: ReducerContext, direction: Vector2, magnitude: f
 }
 
 fn is_overlapping(entity1: &Entity, entity2: &Entity) -> bool {
+    let entity1_radius = mass_to_radius(entity1.mass);
+    let entity2_radius = mass_to_radius(entity2.mass);
     let distance = ((entity1.position.x - entity2.position.x).powi(2) + (entity1.position.y - entity2.position.y).powi(2)).sqrt();
-    distance < (entity1.radius + entity2.radius) as f32
+    distance < (entity1_radius + entity2_radius)
+}
+
+fn mass_to_radius(mass: u32) -> f32 {
+    (mass as f32).sqrt()
 }
 
 #[spacetimedb(reducer)]
 pub fn move_all_players() -> Result<(), String> {
+    let world_size = Config::filter_by_id(&0).ok_or("Config not found")?.world_size;
     for circle in Circle::iter() {
         let mut circle_entity = Entity::filter_by_id(&circle.entity_id).ok_or("Entity not found")?;
+        let circle_radius = mass_to_radius(circle_entity.mass);
         let x = circle_entity.position.x + circle.direction.x * circle.magnitude;
         let y = circle_entity.position.y + circle.direction.y * circle.magnitude;
-        circle_entity.position.x = x.clamp(0.0, WORLD_SIZE as f32);
-        circle_entity.position.y = y.clamp(0.0, WORLD_SIZE as f32);
-        log::info!("Move player: {} {}", x, y);
+        circle_entity.position.x = x.clamp(circle_radius, world_size as f32 - circle_radius);
+        circle_entity.position.y = y.clamp(circle_radius, world_size as f32 - circle_radius);
 
         // Check to see if we're overlapping with food
         for food in Food::iter() {
@@ -142,7 +157,7 @@ pub fn move_all_players() -> Result<(), String> {
                 // We're overlapping with food, so eat it
                 Entity::delete_by_id(&food.entity_id);
                 Food::delete_by_entity_id(&food.entity_id);
-                circle_entity.radius += food_entity.radius;
+                circle_entity.mass += food_entity.mass;
             }
         }
 
@@ -177,13 +192,16 @@ pub fn spawn_food() -> Result<(), String> {
         return Ok(());
     }
 
+    let food_mass = 1;
     let mut rng = rand::thread_rng();
-    let x = rng.gen_range(0.0..WORLD_SIZE) as f32;
-    let y = rng.gen_range(0.0..WORLD_SIZE) as f32;
+    let world_size = Config::filter_by_id(&0).ok_or("Config not found")?.world_size;
+    let food_radius = mass_to_radius(food_mass);
+    let x = rng.gen_range(food_radius..world_size as f32 - food_radius);
+    let y = rng.gen_range(food_radius..world_size as f32 - food_radius);
     let entity = Entity::insert(Entity {
         id: 0,
         position: Vector2 { x, y },
-        radius: 1,
+        mass: food_mass
     })?;
     Food::insert(Food { entity_id: entity.id })?;
     log::info!("Spawned food! {}", entity.id);

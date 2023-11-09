@@ -98,4 +98,5 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   updatesPerSecond: 20
+  targetCameraSize: 50
   rend: {fileID: 2753275671783793823}

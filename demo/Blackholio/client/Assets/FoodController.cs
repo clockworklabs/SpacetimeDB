@@ -23,11 +23,12 @@ public class FoodController : MonoBehaviour
             x = entity.Position.X,
             y = entity.Position.Y,
         };
+        var foodRadius = GameManager.MassToRadius(entity.Mass);
         transform.localScale = new Vector3
         {
-            x = entity.Radius * 2,
-            y = entity.Radius * 2,
-            z = entity.Radius * 2,
+            x = foodRadius * 2,
+            y = foodRadius * 2,
+            z = foodRadius * 2,
         };
         transform.position = position;
         rend.material.color = GameManager.GetRandomColor(entity.Id);

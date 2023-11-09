@@ -97,4 +97,9 @@ public class GameManager : MonoBehaviour
     {
         return colorPalette[entityId % colorPalette.Length];
     }
+
+    public static float MassToRadius(uint mass)
+    {
+        return Mathf.Sqrt(mass);
+    }
 }

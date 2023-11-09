@@ -7,6 +7,7 @@ using SpacetimeDB;
 
 namespace SpacetimeDB.Types
 {
+	[Newtonsoft.Json.JsonObject(Newtonsoft.Json.MemberSerialization.OptIn)]
 	public partial class Circle : IDatabaseTable
 	{
 		[Newtonsoft.Json.JsonProperty("circle_id")]

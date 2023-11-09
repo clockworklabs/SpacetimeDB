@@ -1,11 +1,7 @@
 using System;
-using System.Collections;
-using System.Collections.Generic;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 using UnityEngine;
-using UnityEngine.Assertions.Must;
-using Event = ClientApi.Event;
 using Vector2 = SpacetimeDB.Types.Vector2;
 
 public class PlayerController : MonoBehaviour
@@ -14,12 +10,14 @@ public class PlayerController : MonoBehaviour
     public float targetCameraSize = 50;
     public Renderer rend;
 
-    private float? lastMovementUpdate;
+    private float? lastMovementSendUpdate;
+    private float? previousPositionReceiveUpdateTime;
+    private Vector3? previousPosition;
     
     public Identity? identity;
     
-    private Vector3? previousPosition;
     private Vector3? targetPosition;
+    private float? targetPositionReceiveUpdateTime;
     private Vector3? targetScale;
     private float? previousCameraSize;
     private float? lastRowUpdate;
@@ -37,20 +35,21 @@ public class PlayerController : MonoBehaviour
             Local = this;
         }
 
-        var circlePosition = Entity.FilterById(playerCircle.EntityId);
+        var entity = Entity.FilterById(playerCircle.EntityId);
         previousPosition = targetPosition = transform.position = new UnityEngine.Vector2
         {
-            x = circlePosition.Position.X,
-            y = circlePosition.Position.Y,
+            x = entity.Position.X,
+            y = entity.Position.Y,
         };
                      
+        var playerRadius = GameManager.MassToRadius(entity.Mass);
         targetScale = transform.localScale = new Vector3
         {
-            x = circlePosition.Radius * 2,
-            y = circlePosition.Radius * 2,
-            z = circlePosition.Radius * 2,
+            x = playerRadius * 2,
+            y = playerRadius * 2,
+            z = playerRadius * 2,
         };
-        rend.material.color = GameManager.GetRandomColor(circlePosition.Id);
+        rend.material.color = GameManager.GetRandomColor(entity.Id);
     }
 
     public void OnDestroy()
@@ -69,29 +68,26 @@ public class PlayerController : MonoBehaviour
                 {
                     return;
                 }
-               
+
                 previousPosition = targetPosition;
-                if (targetPosition.HasValue)
-                {
-                    transform.position = targetPosition.Value;
-                }
+                previousPositionReceiveUpdateTime = targetPositionReceiveUpdateTime;
                 targetPosition = new UnityEngine.Vector2
                 {
                     x = newObj.Position.X,
                     y = newObj.Position.Y,
                 };
-                
+
+                var playerRadius = GameManager.MassToRadius(newObj.Mass);
                 targetScale = new Vector3
                 {
-                    x = newObj.Radius * 2,
-                    y = newObj.Radius * 2,
-                    z = newObj.Radius * 2,
+                    x = playerRadius * 2,
+                    y = playerRadius * 2,
+                    z = playerRadius * 2,
                 };
 
-                previousCameraSize = targetCameraSize;
-                targetCameraSize = newObj.Radius * 2 + 50.0f;
-                // For next stream, we should track updates per thing so that we aren't interrupting animations
-                lastUpdateTime = Time.time;
+                previousPosition = transform.position;
+                targetPositionReceiveUpdateTime = Time.time;
+                previousCameraSize = targetCameraSize = playerRadius * 2 + 50.0f;
                 break;
             case SpacetimeDBClient.TableOp.Delete:
                 var oldCircle = Circle.FilterByEntityId(oldObj.Id);
@@ -107,11 +103,11 @@ public class PlayerController : MonoBehaviour
     public void Update()
     {
         // Fix interp values
-        var interpValue = Time.time - pre / updatesPerSecond;
-        if (targetPosition.HasValue && previousPosition.HasValue)
+        if (targetPosition.HasValue && targetPositionReceiveUpdateTime.HasValue 
+                                    && previousPosition.HasValue && previousPositionReceiveUpdateTime.HasValue)
         {
             transform.position = Vector3.Lerp(previousPosition.Value, 
-                targetPosition.Value, interpValue);
+                targetPosition.Value, Time.deltaTime / (targetPositionReceiveUpdateTime.Value - previousPositionReceiveUpdateTime.Value));
         }
 
         if (targetScale.HasValue)
@@ -123,16 +119,16 @@ public class PlayerController : MonoBehaviour
         if (localIdentity == identity && previousCameraSize.HasValue)
         {
             GameManager.localCamera.orthographicSize =
-                Mathf.Lerp(previousCameraSize.Value, targetCameraSize, interpValue / 10);
+                Mathf.Lerp(previousCameraSize.Value, targetCameraSize, Time.time / 10);
         }
         
         if (!identity.HasValue || localIdentity != identity.Value || 
-            (lastMovementUpdate.HasValue && Time.time - lastMovementUpdate.Value < 1.0f / updatesPerSecond))
+            (lastMovementSendUpdate.HasValue && Time.time - lastMovementSendUpdate.Value < 1.0f / updatesPerSecond))
         {
             return;
         }
 
-        lastMovementUpdate = Time.time;
+        lastMovementSendUpdate = Time.time;
         
         var mousePosition = new UnityEngine.Vector2
         {
