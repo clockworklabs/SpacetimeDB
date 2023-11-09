@@ -1,4 +1,4 @@
-use spacetimedb::db::{Config, FsyncPolicy, Storage};
+use spacetimedb::db::Config;
 use spacetimedb_lib::{
     sats::{product, ArrayValue},
     AlgebraicValue, ProductValue,
@@ -58,19 +58,11 @@ impl BenchDatabase for SpacetimeModule {
 
     type TableId = TableId;
 
-    fn build(in_memory: bool, fsync: bool) -> ResultBench<Self>
+    fn build(config: Config) -> ResultBench<Self>
     where
         Self: Sized,
     {
         let runtime = start_runtime();
-        let config = Config {
-            fsync: if fsync {
-                FsyncPolicy::EveryTx
-            } else {
-                FsyncPolicy::Never
-            },
-            storage: if in_memory { Storage::Memory } else { Storage::Disk },
-        };
         let module = runtime.block_on(async { BENCHMARKS_MODULE.load_module(config).await });
 
         for thing in module.client.module.catalog().iter() {

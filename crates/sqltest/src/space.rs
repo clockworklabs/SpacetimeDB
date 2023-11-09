@@ -1,12 +1,13 @@
 use crate::db::DBRunner;
 use async_trait::async_trait;
-use spacetimedb::db::relational_db::{open_db, RelationalDB};
+use spacetimedb::db::{self, relational_db::RelationalDB};
 use spacetimedb::error::DBError;
 use spacetimedb::execution_context::ExecutionContext;
 use spacetimedb::sql::compiler::compile_sql;
 use spacetimedb::sql::execute::execute_sql;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::MemTable;
+use spacetimedb_lib::Address;
 use spacetimedb_sats::meta_type::MetaType;
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, BuiltinType};
@@ -69,9 +70,11 @@ pub struct SpaceDb {
 impl SpaceDb {
     pub fn new() -> anyhow::Result<Self> {
         let tmp_dir = TempDir::with_prefix("stdb_test")?;
-        let in_memory = false;
-        let fsync = false;
-        let conn = open_db(&tmp_dir, in_memory, fsync)?;
+        let config = db::Config {
+            fsync: db::FsyncPolicy::Never,
+            storage: db::Storage::Disk,
+        };
+        let conn = RelationalDB::open(tmp_dir.path(), config, Address::zero())?;
         Ok(Self {
             conn,
             tmp_dir,

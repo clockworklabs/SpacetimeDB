@@ -3,12 +3,15 @@ use crate::{
     schemas::{table_name, BenchTable, IndexStrategy},
     ResultBench,
 };
-use spacetimedb::db::relational_db::{open_db, RelationalDB};
+use spacetimedb::db::relational_db::RelationalDB;
 use spacetimedb::{
-    db::datastore::traits::{IndexDef, TableDef},
+    db::{
+        self,
+        datastore::traits::{IndexDef, TableDef},
+    },
     execution_context::ExecutionContext,
 };
-use spacetimedb_lib::sats::AlgebraicValue;
+use spacetimedb_lib::{sats::AlgebraicValue, Address};
 use spacetimedb_primitives::{ColId, TableId};
 use std::hint::black_box;
 use tempfile::TempDir;
@@ -26,12 +29,12 @@ impl BenchDatabase for SpacetimeRaw {
     }
     type TableId = TableId;
 
-    fn build(in_memory: bool, fsync: bool) -> ResultBench<Self>
+    fn build(config: db::Config) -> ResultBench<Self>
     where
         Self: Sized,
     {
         let temp_dir = TempDir::with_prefix("stdb_test")?;
-        let db = open_db(temp_dir.path(), in_memory, fsync)?;
+        let db = RelationalDB::open(temp_dir.path(), config, Address::zero())?;
 
         Ok(SpacetimeRaw {
             db,

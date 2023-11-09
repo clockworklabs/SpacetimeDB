@@ -16,6 +16,7 @@ mod tests {
         sqlite::SQLite,
         ResultBench,
     };
+    use spacetimedb::db::{Config, FsyncPolicy, Storage};
     use std::{io, sync::Once};
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -48,7 +49,10 @@ mod tests {
     ) -> ResultBench<()> {
         prepare_tests();
 
-        let mut db = DB::build(in_memory, false)?;
+        let mut db = DB::build(Config {
+            fsync: FsyncPolicy::Never,
+            storage: if in_memory { Storage::Memory } else { Storage::Disk },
+        })?;
         let table_id = db.create_table::<T>(index_strategy)?;
         assert_eq!(db.count_table(&table_id)?, 0, "tables should begin empty");
 

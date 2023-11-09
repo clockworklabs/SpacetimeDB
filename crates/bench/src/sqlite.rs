@@ -6,6 +6,7 @@ use crate::{
 use ahash::AHashMap;
 use lazy_static::lazy_static;
 use rusqlite::Connection;
+use spacetimedb::db::{self, FsyncPolicy, Storage};
 use spacetimedb_lib::sats::{AlgebraicType, AlgebraicValue, ProductType};
 use std::{
     fmt::Write,
@@ -26,19 +27,18 @@ impl BenchDatabase for SQLite {
         "sqlite"
     }
 
-    fn build(in_memory: bool, fsync: bool) -> ResultBench<Self>
+    fn build(config: db::Config) -> ResultBench<Self>
     where
         Self: Sized,
     {
         let temp_dir = TempDir::with_prefix("sqlite_test")?;
-        let db = if in_memory {
-            Connection::open_in_memory()?
-        } else {
-            Connection::open(temp_dir.path().join("test.db"))?
+        let db = match config.storage {
+            Storage::Memory => Connection::open_in_memory()?,
+            Storage::Disk => Connection::open(temp_dir.path().join("test.db"))?,
         };
         // For sqlite benchmarks we should set synchronous to either full or off which more
         // closely aligns with wal_fsync=true and wal_fsync=false respectively in stdb.
-        db.execute_batch(if fsync {
+        db.execute_batch(if config.fsync == FsyncPolicy::EveryTx {
             "PRAGMA journal_mode = WAL; PRAGMA synchronous = full;"
         } else {
             "PRAGMA journal_mode = WAL; PRAGMA synchronous = off;"
