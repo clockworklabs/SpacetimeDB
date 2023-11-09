@@ -136,20 +136,6 @@ pub fn test(ctx: ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC) -> an
 }
 
 #[spacetimedb(reducer)]
-pub fn test_query(ctx: ReducerContext) -> anyhow::Result<()> {
-    test(
-        ctx,
-        TestAlias {
-            x: 0,
-            y: 2,
-            z: "Macro".into(),
-        },
-        TestB { foo: "Foo".into() },
-        TestC::Bar,
-    )
-}
-
-#[spacetimedb(reducer)]
 pub fn add_player(name: String) -> Result<(), String> {
     TestE::insert(TestE { id: 0, name })?;
     Ok(())

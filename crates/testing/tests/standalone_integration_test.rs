@@ -76,7 +76,13 @@ fn test_call_query_macro() {
     CompiledModule::compile("rust-wasm-test", CompilationMode::Debug).with_module_async(
         DEFAULT_CONFIG,
         |module| async move {
-            let json = r#"{"call": {"fn": "test_query", "args": []}}"#.to_string();
+            let json = r#"
+{"call": {"fn": "test", "args":[            
+    {"x":0, "y":2, "z":"Macro"},
+    {"foo":"Foo"},
+    {"Foo": {} }
+]}}"#
+                .to_string();
             module.send(json).await.unwrap();
 
             let lines = module.read_log(Some(13)).await;
