@@ -1,7 +1,7 @@
 use derive_more::From;
 
 use crate::iterator::RelOps;
-use spacetimedb_sats::{AlgebraicType, ProductValue};
+use spacetimedb_sats::AlgebraicType;
 
 pub type IterRows<'a> = dyn RelOps + 'a;
 

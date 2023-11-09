@@ -38,12 +38,12 @@ pub(crate) mod tests {
         let mut db = MemDb::new();
         let inv = ProductType::from([(None, AlgebraicType::I32), (Some("0_0"), AlgebraicType::I32)]);
 
-        let t = mem_table(inv, product!(scalar(1), scalar(1)));
-        db.add_table(t);
+        let t = mem_table(inv, vec![product!(scalar(1), scalar(1))]);
+        let table_id = db.add_table(t);
 
         let mut p = Program::new(db);
 
-        let q = Qir::new(RelId::MemTable(0.into()), QirOp::Scan);
+        let q = Qir::new(RelId::MemTable(table_id.into()), QirOp::Scan);
 
         let result = eval_sir(&mut p, q.into());
 

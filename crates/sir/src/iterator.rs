@@ -30,10 +30,7 @@ pub trait RelOps {
 
     /// Utility to collect the results into a [Vec]
     #[inline]
-    fn collect_vec(mut self) -> Result<Vec<RelValue>, ErrorVm>
-    where
-        Self: Sized,
-    {
+    fn collect_vec(&mut self) -> Result<Vec<RelValue>, ErrorVm> {
         let count = self.stat().rows;
         let estimate = count.max.unwrap_or(count.min);
         let mut result = Vec::with_capacity(estimate);
@@ -90,6 +87,12 @@ impl RelOps for RelIter<&MemTable> {
             Ok(None)
         }
     }
+
+    /// Utility to collect the results into a [Vec]
+    #[inline]
+    fn collect_vec(&mut self) -> Result<Vec<RelValue>, ErrorVm> {
+        Ok(self.of.data.clone())
+    }
 }
 
 impl RelOps for TableGenerator<'_> {
@@ -112,5 +115,11 @@ impl RelOps for TableGenerator<'_> {
         } else {
             Ok(None)
         }
+    }
+
+    /// Utility to collect the results into a [Vec]
+    #[inline]
+    fn collect_vec(&mut self) -> Result<Vec<RelValue>, ErrorVm> {
+        self.iter.collect_vec()
     }
 }

@@ -5,7 +5,7 @@ use crate::iterator::{RelIter, RelOps};
 use crate::program::DbCtx;
 use crate::table::TableGenerator;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::{MemTable, Relation, RowCount};
+use spacetimedb_lib::relation::{MemTable, RowCount};
 
 pub struct MemDb {
     tables: Arena<String, MemTable>,
@@ -46,7 +46,7 @@ impl DbCtx for MemDb {
     fn eval_query(&mut self, query: Qir) -> Result<SirResult, ErrorVm> {
         let source = self.table_generator(query.source, query.ops.first().clone())?;
         let table_access = *source.access();
-        let r = build_query(source, query)?;
+        let mut r = build_query(source, query)?;
         let head = r.head().clone();
 
         let rows = r.collect_vec()?;

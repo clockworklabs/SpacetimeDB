@@ -1,4 +1,3 @@
-use crate::ast::RelId;
 use spacetimedb_lib::relation::RowCount;
 use std::time::Instant;
 
