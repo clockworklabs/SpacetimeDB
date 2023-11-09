@@ -25,7 +25,6 @@ jobs:
           cargo build --release -p spacetimedb-cli
           mkdir build
           dd if=target/release/spacetime of=build/spacetime conv=noerror,sync  
-          sudo apt install libarchive-tools
           cd build && tar -czf spacetime.darwin-amd64.tar.gz spacetime
           rm spacetime
 
