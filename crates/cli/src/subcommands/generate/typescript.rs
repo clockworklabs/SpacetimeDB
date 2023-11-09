@@ -1164,7 +1164,7 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
     writeln!(output).unwrap();
 
     writeln!(output, "// @ts-ignore").unwrap();
-    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, IDatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, Address, ReducerEvent, Reducer }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
+    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, IDatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, Address, ReducerEvent, Reducer, SpacetimeDBClient }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
 
     let mut imports = Vec::new();
     generate_imports(
@@ -1192,26 +1192,56 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
         let arg_type_str = ty_fmt(ctx, &arg.algebraic_type, "");
 
         func_arguments.push(format!("{arg_name}: {arg_type_str}"));
-        arg_names.push(format!("{}", serialize_type(ctx, &arg.algebraic_type, &arg_name, "")));
+        arg_names.push(format!("{}", &arg_name));
     }
 
-    writeln!(output, "export class {reducer_name_pascal_case}Reducer extends Reducer").unwrap();
+    let full_reducer_name = format!("{reducer_name_pascal_case}Reducer");
+
+    writeln!(output, "export class {full_reducer_name} extends Reducer").unwrap();
     writeln!(output, "{{").unwrap();
 
     {
         indent_scope!(output);
 
-        writeln!(output, "public static call({})", func_arguments.join(", ")).unwrap();
-        writeln!(output, "{{").unwrap();
+        writeln!(output, "private client: SpacetimeDBClient;\n").unwrap();
+
+        writeln!(output, "private static reducer?: {full_reducer_name};").unwrap();
+        writeln!(output, "private static getReducer(): {full_reducer_name} {{").unwrap();
         {
             indent_scope!(output);
 
-            writeln!(output, "if (__SPACETIMEDB__.spacetimeDBClient) {{").unwrap();
+            writeln!(output, "if (!this.reducer && __SPACETIMEDB__.spacetimeDBClient) {{").unwrap();
+            writeln!(output, "\tthis.reducer = new this(__SPACETIMEDB__.spacetimeDBClient);").unwrap();
+            writeln!(output, "}}").unwrap();
+
+            writeln!(output, "\nif (this.reducer) {{ return this.reducer; }} else {{").unwrap();
             writeln!(
                 output,
-                "const serializer = __SPACETIMEDB__.spacetimeDBClient.getSerializer();"
+                "\tthrow(\"You need to instantiate a client in order to use reducers.\");"
             )
             .unwrap();
+            writeln!(output, "}}").unwrap();
+        }
+        writeln!(output, "}}\n").unwrap();
+
+        writeln!(output, "constructor(client: SpacetimeDBClient) {{").unwrap();
+        writeln!(output, "\tsuper();").unwrap();
+        writeln!(output, "\tthis.client = client;").unwrap();
+        writeln!(output, "}}\n").unwrap();
+
+        writeln!(output, "public static call({}) {{", func_arguments.join(", ")).unwrap();
+        {
+            indent_scope!(output);
+
+            writeln!(output, "this.getReducer().call({});", arg_names.join(", ")).unwrap();
+        }
+        writeln!(output, "}}\n").unwrap();
+
+        writeln!(output, "public call({}) {{", func_arguments.join(", ")).unwrap();
+        {
+            indent_scope!(output);
+
+            writeln!(output, "const serializer = this.client.getSerializer();").unwrap();
 
             let mut arg_names = Vec::new();
             for arg in reducer.args.iter() {
@@ -1228,12 +1258,7 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
                 arg_names.push(arg_name);
             }
 
-            writeln!(
-                output,
-                "\t__SPACETIMEDB__.spacetimeDBClient.call(\"{func_name}\", serializer);"
-            )
-            .unwrap();
-            writeln!(output, "}}").unwrap();
+            writeln!(output, "this.client.call(\"{func_name}\", serializer);").unwrap();
         }
         // Closing brace for reducer
         writeln!(output, "}}").unwrap();
@@ -1280,23 +1305,34 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
         writeln!(output, "}}").unwrap();
 
         writeln!(output).unwrap();
+
+        writeln!(
+            output,
+            "public static on(callback: (reducerEvent: ReducerEvent, reducerArgs: any[]) => void) {{"
+        )
+        .unwrap();
+        {
+            indent_scope!(output);
+
+            writeln!(output, "this.getReducer().on(callback);").unwrap();
+        }
+        writeln!(output, "}}").unwrap();
+
         // OnCreatePlayerEvent(dbEvent.Status, Identity.From(dbEvent.CallerIdentity.ToByteArray()), args[0].ToObject<string>());
         writeln!(
             output,
-            "public static on(callback: (reducerEvent: ReducerEvent, reducerArgs: any[]) => void)"
+            "public on(callback: (reducerEvent: ReducerEvent, reducerArgs: any[]) => void)"
         )
         .unwrap();
         writeln!(output, "{{").unwrap();
         {
             indent_scope!(output);
 
-            writeln!(output, "if (__SPACETIMEDB__.spacetimeDBClient) {{").unwrap();
             writeln!(
                 output,
-                "\t__SPACETIMEDB__.spacetimeDBClient.on(\"reducer:{reducer_name_pascal_case}\", callback);"
+                "this.client.on(\"reducer:{reducer_name_pascal_case}\", callback);"
             )
             .unwrap();
-            writeln!(output, "}}").unwrap();
         }
 
         // Closing brace for Event parsing function
