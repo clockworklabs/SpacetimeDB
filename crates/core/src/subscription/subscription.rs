@@ -13,15 +13,17 @@
 //! evaluated [incrementally][`QuerySet::eval_incr`] whenever a transaction
 //! commits updates to the database.
 //!
-//! Incremental evaluation is straightforward if a query selects from a single
-//! table (`SELECT * FROM table WHERE ...`). For join queries, however, it is
-//! not obvious how to compute the minimal set of operations for the client to
-//! synchronize its state. In general, we conjecture that server-side
-//! materialized views are necessary. We find, however, that a particular kind
-//! of join query _can_ be evaluated incrementally without materialized views,
-//! as described in the following section:
+//! Incremental evaluation is supported for queries of the form:
 //!
-#![doc = include_str!("../../../../docs/incremental-joins.md")]
+//! * `SELECT .. FROM t [WHERE ...]`
+//! * `SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id [WHERE rhs...]`
+//!
+//! The latter form is described as a semjoin with a primary-foreign key
+//! relationship. That is, one row in lhs matches one row in rhs, only the lhs
+//! is projected, and any `WHERE` predicates apply to the rhs.
+//!
+//! A [`QuerySet`] can only be constructed from supported queries.
+//!
 
 use anyhow::Context;
 use derive_more::{Deref, DerefMut, From, IntoIterator};
@@ -519,7 +521,10 @@ impl<'a> IncrementalJoin<'a> {
     /// * `\`:  Set difference.
     /// * `||`: Concatenation.
     ///
-    /// For a more in-depth discussion, see the [module-level documentation](./index.html).
+    //
+    // Based on the internal design doc:
+    // https://www.notion.so/clockworklabs/Incremental-Evaluation-for-Joins-in-Bitcraft-062612b06a9646b2b6206d6a578790c1?pvs=4
+    //
     pub fn eval(
         &self,
         db: &RelationalDB,
