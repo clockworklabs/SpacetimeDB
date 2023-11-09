@@ -10,9 +10,9 @@ use std::fmt;
 /// as arrays are homogenous dynamically sized product types.
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum ArrayValue {
-    /// An array of [`SumValue`](crate::SumValue)s.
+    /// An array of [`SumValue`]s.
     Sum(Vec<SumValue>),
-    /// An array of [`ProductValue`](crate::ProductValue)s.
+    /// An array of [`ProductValue`]s.
     Product(Vec<ProductValue>),
     /// An array of [`bool`]s.
     Bool(Vec<bool>),

@@ -219,7 +219,7 @@ All throughputs are single-threaded.
 
     writeln!(&mut result, "## Full table iterate")?;
     let table = extract_benchmarks_to_table(
-        r"(?x) (?P<db>[^/]+) / (?P<on_disk>[^/]+) / iterate / 
+        r"(?x) (?P<db>[^/]+) / (?P<on_disk>[^/]+) / iterate /
                         (?P<schema>[^/]+) / (?P<index_type>[^/]+) ",
         &old,
         &new,
@@ -241,7 +241,7 @@ All throughputs are single-threaded.
     writeln!(&mut result, "## Filter")?;
     let table = extract_benchmarks_to_table(
         r"(?x) (?P<db>[^/]+) / (?P<on_disk>[^/]+) / filter /
-                (?P<key_type>[^/]+) / (?P<index_strategy>[^/]+) / 
+                (?P<key_type>[^/]+) / (?P<index_strategy>[^/]+) /
                 load = (?P<load>[^/]+) / count = (?P<count>[^/]+)",
         &old,
         &new,
@@ -472,7 +472,7 @@ fn emojify(text: &str) -> String {
 ///
 /// Unfortunately, there is no published library for this, so we use the schema
 /// from `critcmp` under the MIT license:
-/// https://github.com/BurntSushi/critcmp/blob/daaf0383c3981c98a6eaaef47142755e5bddb3c4/src/data.rs
+/// <https://github.com/BurntSushi/critcmp/blob/daaf0383c3981c98a6eaaef47142755e5bddb3c4/src/data.rs>
 ///
 /// TODO(jgilles): update this if we update our Criterion version past 0.4.
 #[allow(unused)]

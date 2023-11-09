@@ -27,7 +27,8 @@ impl<'a> TableCursor<'a> {
 }
 
 /// A relational iterator wrapping a storage level index iterator.
-/// A relational iterator returns [RelValue]s whereas storage iterators return [DataRef]s.
+/// A relational iterator returns [spacetimedb_lib::relation::RelValue]s whereas
+/// storage iterators return [super::datastore::locking_tx_datastore::DataRef]s.
 pub struct IndexCursor<'a, R: RangeBounds<AlgebraicValue>> {
     pub table: DbTable,
     pub iter: IterByColRange<'a, R>,
@@ -39,7 +40,7 @@ impl<'a, R: RangeBounds<AlgebraicValue>> IndexCursor<'a, R> {
     }
 }
 
-/// Common wrapper for relational iterators of [Catalog].
+/// Common wrapper for relational iterators of the catalog.
 pub struct CatalogCursor<I> {
     pub(crate) table: DbTable,
     #[allow(dead_code)]

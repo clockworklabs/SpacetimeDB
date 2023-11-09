@@ -8,9 +8,9 @@
 //!
 //! Generate the AST (that could be invalid according to the semantics).
 //!
-//! This step is outside the [vm] and can be done, for example, by the SQL layer.
+//! This step is outside the VM and can be done, for example, by the SQL layer.
 //!
-//! Use [dsl] to build the [expr:Expr] that build the AST.
+//! Use [dsl] to build the [expr::Expr] that build the AST.
 //!
 //! 2- AST validation
 //!

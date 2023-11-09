@@ -97,7 +97,7 @@ pub trait Serializer: Sized {
     fn serialize_array(self, len: usize) -> Result<Self::SerializeArray, Self::Error>;
 
     /// Begin to serialize a variably sized map.
-    /// This call must be followed by zero or more calls to [`SerializeMap::serialize_element`],
+    /// This call must be followed by zero or more calls to [`SerializeMap::serialize_entry`],
     /// then a call to [`SerializeMap::end`].
     ///
     /// The argument is the number of elements in the map.

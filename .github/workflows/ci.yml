@@ -17,7 +17,7 @@ jobs:
         run: docker compose up -d
       - name: Run smoketests
         run: test/run-smoke-tests.sh --parallel -x bitcraftmini-pretest
-      - name: Stop containers 
+      - name: Stop containers
         if: always()
         run: docker compose down
 
@@ -53,6 +53,23 @@ jobs:
 
       - name: Run cargo clippy
         run: cargo clippy --all --tests --features odb_rocksdb,odb_sled -- -D warnings
+
+  docs:
+    name: Docs
+    runs-on: spacetimedb-runner
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      # Nightly required until -Zlints is stable
+      - uses: dtolnay/rust-toolchain@nightly
+
+      # `--exclude spacetimedb` required because both `core` and `bindings`
+      # rename themselves to `spacetimedb`. By sheer coincidence, `bindings` is
+      # actually excluded, which is what we want because docs.rs will build them
+      # for us.
+      - name: Build docs
+        run: cargo +nightly doc -Zlints --no-deps --document-private-items --workspace --exclude spacetimedb
 
   wasm_bindings:
     name: Build and test wasm bindings

@@ -20,6 +20,9 @@ cli = ["clap"]
 # Allows using `Arbitrary` impls defined in this crate.
 proptest = ["dep:proptest", "dep:proptest-derive"]
 
+[lints]
+workspace = true
+
 [dependencies]
 spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.7.3" }
 spacetimedb-sats = { path = "../sats", version = "0.7.3" }

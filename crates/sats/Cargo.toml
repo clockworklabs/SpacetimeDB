@@ -7,6 +7,9 @@ description = "Spacetime Algebraic Type Notation"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[lints]
+workspace = true
+
 [features]
 serde = ["dep:serde", "hex"]
 

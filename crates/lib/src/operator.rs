@@ -1,5 +1,5 @@
 //! Operators are implemented as "alias" of functions that are loaded
-//! at the start of the [ProgramVm] creation, ie:
+//! at the start of the `ProgramVm` creation, ie:
 //!
 //! `+` == std::math::add
 //!

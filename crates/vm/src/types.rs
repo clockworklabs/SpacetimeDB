@@ -7,8 +7,10 @@ use spacetimedb_sats::algebraic_type::map_notation::fmt_algebraic_type;
 use spacetimedb_sats::algebraic_type::AlgebraicType;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 
-/// Describe a `type`. In the case of [Ty::Unknown] the type of [Expr] is
-/// not yet know and should be resolved by the type-checker.
+/// Describe a `type`.
+///
+/// In the case of [Ty::Unknown] the type of the expression is not yet know and
+/// should be resolved by the type-checker.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, From)]
 pub enum Ty {
     Unknown,
