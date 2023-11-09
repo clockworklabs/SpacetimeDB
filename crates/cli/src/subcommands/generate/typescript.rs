@@ -907,11 +907,6 @@ fn autogen_typescript_product_table_common(
     writeln!(output, "}}").unwrap();
 
     writeln!(output, "\nexport default {struct_name_pascal_case};").unwrap();
-    writeln!(
-        output,
-        "\n__SPACETIMEDB__.registerComponent(\"{struct_name_pascal_case}\", {struct_name_pascal_case});"
-    )
-    .unwrap();
 
     output.into_inner()
 }
@@ -1169,7 +1164,7 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
     writeln!(output).unwrap();
 
     writeln!(output, "// @ts-ignore").unwrap();
-    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, IDatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, Address, ReducerEvent }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
+    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, IDatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, Address, ReducerEvent, Reducer }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
 
     let mut imports = Vec::new();
     generate_imports(
@@ -1200,7 +1195,7 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
         arg_names.push(format!("{}", serialize_type(ctx, &arg.algebraic_type, &arg_name, "")));
     }
 
-    writeln!(output, "export class {reducer_name_pascal_case}Reducer").unwrap();
+    writeln!(output, "export class {reducer_name_pascal_case}Reducer extends Reducer").unwrap();
     writeln!(output, "{{").unwrap();
 
     {
@@ -1311,22 +1306,6 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
     writeln!(output, "}}").unwrap();
 
     writeln!(output).unwrap();
-
-    writeln!(
-        output,
-        "__SPACETIMEDB__.reducers.set(\"{reducer_name_pascal_case}\", {reducer_name_pascal_case}Reducer);"
-    )
-    .unwrap();
-
-    writeln!(output, "if (__SPACETIMEDB__.spacetimeDBClient) {{").unwrap();
-
-    {
-        indent_scope!(output);
-
-        writeln!(output, "__SPACETIMEDB__.spacetimeDBClient.registerReducer(\"{reducer_name_pascal_case}\", {reducer_name_pascal_case}Reducer);").unwrap();
-    }
-
-    writeln!(output, "}}").unwrap();
 
     writeln!(output, "\nexport default {reducer_name_pascal_case}Reducer").unwrap();
 
