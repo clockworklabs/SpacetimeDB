@@ -664,7 +664,7 @@ fn autogen_typescript_product_table_common(
     writeln!(output).unwrap();
 
     writeln!(output, "// @ts-ignore").unwrap();
-    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, IDatabaseTable, AlgebraicValue, ReducerEvent, Identity, Address }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
+    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, IDatabaseTable, AlgebraicValue, ReducerEvent, Identity, Address, ClientDB }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
 
     let mut imports = Vec::new();
     generate_imports(ctx, &product_type.elements, &mut imports, None);
@@ -681,6 +681,7 @@ fn autogen_typescript_product_table_common(
     {
         indent_scope!(output);
 
+        writeln!(output, "public static db: ClientDB = __SPACETIMEDB__.clientDB;").unwrap();
         writeln!(output, "public static tableName = \"{struct_name_pascal_case}\";").unwrap();
 
         let mut constructor_signature = Vec::new();
@@ -819,7 +820,7 @@ fn autogen_typescript_product_table_common(
                 indent_scope!(output);
                 writeln!(
                     output,
-                    "__SPACETIMEDB__.clientDB.getTable(\"{struct_name_pascal_case}\").onInsert(callback);"
+                    "this.db.getTable(\"{struct_name_pascal_case}\").onInsert(callback);"
                 )
                 .unwrap();
             }
@@ -832,7 +833,7 @@ fn autogen_typescript_product_table_common(
                 indent_scope!(output);
                 writeln!(
                     output,
-                    "__SPACETIMEDB__.clientDB.getTable(\"{struct_name_pascal_case}\").onUpdate(callback);"
+                    "this.db.getTable(\"{struct_name_pascal_case}\").onUpdate(callback);"
                 )
                 .unwrap();
             }
@@ -849,7 +850,7 @@ fn autogen_typescript_product_table_common(
                 indent_scope!(output);
                 writeln!(
                     output,
-                    "__SPACETIMEDB__.clientDB.getTable(\"{struct_name_pascal_case}\").onDelete(callback);"
+                    "this.db.getTable(\"{struct_name_pascal_case}\").onDelete(callback);"
                 )
                 .unwrap();
             }
@@ -866,7 +867,7 @@ fn autogen_typescript_product_table_common(
                 indent_scope!(output);
                 writeln!(
                     output,
-                    "__SPACETIMEDB__.clientDB.getTable(\"{struct_name_pascal_case}\").removeOnInsert(callback);"
+                    "this.db.getTable(\"{struct_name_pascal_case}\").removeOnInsert(callback);"
                 )
                 .unwrap();
             }
@@ -879,7 +880,7 @@ fn autogen_typescript_product_table_common(
                 indent_scope!(output);
                 writeln!(
                     output,
-                    "__SPACETIMEDB__.clientDB.getTable(\"{struct_name_pascal_case}\").removeOnUpdate(callback);"
+                    "this.db.getTable(\"{struct_name_pascal_case}\").removeOnUpdate(callback);"
                 )
                 .unwrap();
             }
@@ -896,7 +897,7 @@ fn autogen_typescript_product_table_common(
                 indent_scope!(output);
                 writeln!(
                     output,
-                    "__SPACETIMEDB__.clientDB.getTable(\"{struct_name_pascal_case}\").removeOnDelete(callback);"
+                    "this.db.getTable(\"{struct_name_pascal_case}\").removeOnDelete(callback);"
                 )
                 .unwrap();
             }
@@ -977,11 +978,7 @@ fn autogen_typescript_access_funcs_for_struct(
 
     writeln!(output, "public static count(): number").unwrap();
     indented_block(output, |output| {
-        writeln!(
-            output,
-            "return __SPACETIMEDB__.clientDB.getTable(\"{table_name}\").count();",
-        )
-        .unwrap();
+        writeln!(output, "return this.db.getTable(\"{table_name}\").count();",).unwrap();
     });
 
     writeln!(output).unwrap();
@@ -990,7 +987,7 @@ fn autogen_typescript_access_funcs_for_struct(
     indented_block(output, |output| {
         writeln!(
             output,
-            "return __SPACETIMEDB__.clientDB.getTable(\"{table_name}\").getInstances() as unknown as {table_name}[];",
+            "return this.db.getTable(\"{table_name}\").getInstances() as unknown as {table_name}[];",
         )
         .unwrap();
     });
@@ -1060,7 +1057,7 @@ fn autogen_typescript_access_funcs_for_struct(
             }
             writeln!(
                 output,
-                "for(let instance of __SPACETIMEDB__.clientDB.getTable(\"{table_name}\").getInstances())"
+                "for(let instance of this.db.getTable(\"{table_name}\").getInstances())"
             )
             .unwrap();
             writeln!(output, "{{").unwrap();
