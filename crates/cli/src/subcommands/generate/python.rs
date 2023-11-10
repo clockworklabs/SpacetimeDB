@@ -1,9 +1,10 @@
 use super::util::fmt_fn;
 
 use convert_case::{Case, Casing};
+use spacetimedb_lib::sats::db::attr::ColumnIndexAttribute;
 use spacetimedb_lib::{
     sats::{AlgebraicType::Builtin, AlgebraicTypeRef, ArrayType, BuiltinType, MapType},
-    AlgebraicType, ColumnIndexAttribute, ProductType, ProductTypeElement, ReducerDef, SumType, TableDef,
+    AlgebraicType, ProductType, ProductTypeElement, ReducerDef, SumType, TableDef,
 };
 use std::fmt::{self, Write};
 

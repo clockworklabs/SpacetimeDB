@@ -1,7 +1,8 @@
+use crate::hash::Hash;
 use crate::util::typed_prometheus::metrics_group;
 use once_cell::sync::Lazy;
 use prometheus::{Gauge, GaugeVec, HistogramVec, IntCounterVec, IntGauge, IntGaugeVec};
-use spacetimedb_lib::{Address, Hash, Identity};
+use spacetimedb_lib::{Address, Identity};
 
 metrics_group!(
     pub struct WorkerMetrics {

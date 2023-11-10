@@ -13,10 +13,7 @@ use super::{
         SEQUENCE_ID_SEQUENCE_ID, ST_COLUMNS_ID, ST_COLUMNS_ROW_TYPE, ST_INDEXES_ID, ST_INDEX_ROW_TYPE, ST_MODULE_ID,
         ST_SEQUENCES_ID, ST_SEQUENCE_ROW_TYPE, ST_TABLES_ID, ST_TABLE_ROW_TYPE, TABLE_ID_SEQUENCE_ID, WASM_MODULE,
     },
-    traits::{
-        self, DataRow, IndexDef, IndexSchema, MutTx, MutTxDatastore, SequenceDef, TableDef, TableSchema, TxData,
-        TxDatastore,
-    },
+    traits::{self, DataRow, MutTx, MutTxDatastore, TxData, TxDatastore},
 };
 use crate::db::datastore::system_tables::{
     st_constraints_schema, st_module_schema, table_name_is_system, StColumnFields, StConstraintRow, StIndexFields,
@@ -27,10 +24,7 @@ use crate::db::db_metrics::DB_METRICS;
 use crate::{
     db::datastore::traits::{TxOp, TxRecord},
     db::{
-        datastore::{
-            system_tables::{st_columns_schema, st_indexes_schema, st_sequences_schema, st_table_schema},
-            traits::ColumnSchema,
-        },
+        datastore::system_tables::{st_columns_schema, st_indexes_schema, st_sequences_schema, st_table_schema},
         messages::{transaction::Transaction, write::Operation},
         ostorage::ObjectDB,
     },
@@ -40,13 +34,16 @@ use crate::{
 use anyhow::anyhow;
 use nonempty::NonEmpty;
 use parking_lot::{lock_api::ArcMutexGuard, Mutex, RawMutex};
-use spacetimedb_lib::{
-    auth::{StAccess, StTableType},
-    data_key::ToDataKey,
-    relation::RelValue,
-    Address, DataKey, Hash, IndexType,
-};
+use spacetimedb_lib::Address;
 use spacetimedb_primitives::{ColId, IndexId, SequenceId, TableId};
+use spacetimedb_sats::db::def::{ColumnSchema, IndexDef, IndexSchema, IndexType, SequenceDef, TableDef, TableSchema};
+use spacetimedb_sats::hash::Hash;
+use spacetimedb_sats::{
+    data_key::ToDataKey,
+    db::auth::{StAccess, StTableType},
+    relation::RelValue,
+    DataKey,
+};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use std::{
     borrow::Cow,
@@ -486,7 +483,7 @@ impl Inner {
                 .inc();
 
             //TODO: This is a bug fixed in PR#267
-            let index_id = constraint.constraint_id;
+            let index_id = IndexId(constraint.constraint_id.0);
 
             //Check if add an index:
             match constraint.kind {
@@ -606,7 +603,7 @@ impl Inner {
         let rows = self.iter_by_col_eq(&ctx, &table_id, col_id, value)?;
         let ids_to_delete = rows.map(|row| RowId(*row.id())).collect::<Vec<_>>();
         if ids_to_delete.is_empty() {
-            return Err(TableError::IdNotFound(table_id).into());
+            return Err(TableError::IdNotFound(table_id, table_id.0).into());
         }
         self.delete(&table_id, ids_to_delete);
 
@@ -866,7 +863,9 @@ impl Inner {
         .collect::<Vec<_>>();
         assert!(rows.len() <= 1, "Expected at most one row in st_tables for table_id");
 
-        let row = rows.first().ok_or_else(|| TableError::IdNotFound(table_id))?;
+        let row = rows
+            .first()
+            .ok_or_else(|| TableError::IdNotFound(table_id, table_id.0))?;
         let el = StTableRow::try_from(row.view())?;
         let table_name = el.table_name.to_owned();
         let table_id = el.table_id;
@@ -951,7 +950,9 @@ impl Inner {
         let ctx = ExecutionContext::internal(self.database_address);
         let mut row_iter = self.iter_by_col_eq(&ctx, &ST_TABLES_ID, StTableFields::TableId, table_id.into())?;
 
-        let row = row_iter.next().ok_or_else(|| TableError::IdNotFound(table_id))?;
+        let row = row_iter
+            .next()
+            .ok_or_else(|| TableError::IdNotFound(ST_TABLES_ID, table_id.0))?;
         let row_id = RowId(*row.id);
         let mut el = StTableRow::try_from(row.view())?;
         el.table_name = new_name;
@@ -1002,6 +1003,10 @@ impl Inner {
             index.table_id,
             index.cols
         );
+        // Create the index in memory
+        if !self.table_exists(&index.table_id) {
+            return Err(TableError::IdNotFound(ST_INDEXES_ID, index.table_id.0).into());
+        }
         // Insert the index row into st_indexes
         // NOTE: Because st_indexes has a unique index on index_name, this will
         // fail if the index already exists.
@@ -1015,10 +1020,6 @@ impl Inner {
         };
         let index_id = StIndexRow::try_from(&self.insert(ST_INDEXES_ID, row.into())?)?.index_id;
 
-        // Create the index in memory
-        if !self.table_exists(&index.table_id) {
-            return Err(TableError::IdNotFound(index.table_id).into());
-        }
         self.create_index_internal(index_id, index)?;
 
         log::trace!("INDEX CREATED: id = {}", index_id);
@@ -1254,7 +1255,7 @@ impl Inner {
             table
         } else {
             let Some(committed_table) = self.committed_state.tables.get(&table_id) else {
-                return Err(TableError::IdNotFound(table_id).into());
+                return Err(TableError::IdNotFoundState(table_id).into());
             };
             let table = Table {
                 row_type: committed_table.row_type.clone(),
@@ -1353,7 +1354,7 @@ impl Inner {
 
     fn get<'a>(&'a self, table_id: &TableId, row_id: &'a RowId) -> super::Result<Option<DataRef<'a>>> {
         if !self.table_exists(table_id) {
-            return Err(TableError::IdNotFound(*table_id).into());
+            return Err(TableError::IdNotFound(ST_TABLES_ID, table_id.0).into());
         }
         match self.tx_state.as_ref().unwrap().get_row_op(table_id, row_id) {
             RowState::Committed(_) => unreachable!("a row cannot be committed in a tx state"),
@@ -1446,7 +1447,7 @@ impl Inner {
         if self.table_exists(table_id) {
             return Ok(Iter::new(ctx, *table_id, self));
         }
-        Err(TableError::IdNotFound(*table_id).into())
+        Err(TableError::IdNotFound(ST_TABLES_ID, table_id.0).into())
     }
 
     /// Returns an iterator,
@@ -2364,28 +2365,16 @@ impl traits::MutProgrammable for Locking {
 
 #[cfg(test)]
 mod tests {
-    use super::{ColId, Inner, Locking, MutTxId, StTableRow};
-    use crate::db::datastore::system_tables::{
-        StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, ST_COLUMNS_ID, ST_CONSTRAINTS_ID, ST_INDEXES_ID,
-        ST_SEQUENCES_ID, ST_TABLES_ID,
-    };
+    use super::*;
+
+    use crate::db::datastore::system_tables::{StConstraintRow, ST_CONSTRAINTS_ID};
     use crate::db::datastore::Result;
-    use crate::execution_context::ExecutionContext;
-    use crate::{
-        db::datastore::traits::{
-            ColumnDef, ColumnSchema, IndexDef, IndexSchema, MutTx, MutTxDatastore, TableDef, TableSchema,
-        },
-        error::{DBError, IndexError},
-    };
+    use crate::error::IndexError;
     use itertools::Itertools;
     use nonempty::NonEmpty;
-    use spacetimedb_lib::Address;
-    use spacetimedb_lib::{
-        auth::{StAccess, StTableType},
-        error::ResultTest,
-        ColumnIndexAttribute, IndexType,
-    };
-    use spacetimedb_primitives::TableId;
+    use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_sats::db::auth::{StAccess, StTableType};
+    use spacetimedb_sats::db::def::{ColumnDef, Constraints};
     use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductValue};
 
     /// Utility to query the system tables and return their concrete table row
@@ -2744,13 +2733,12 @@ mod tests {
             SequenceRow { id: 3, name: "constraint_id_seq", table: 4, col_pos: 0, start: 1 },
         ]));
         #[rustfmt::skip]
-        assert_eq!(query.scan_st_constraints()?, vec![StConstraintRow {
-            constraint_id: 5.into(),
-            constraint_name: "ct_columns_table_id".to_string(),
-            kind: ColumnIndexAttribute::INDEXED,
-            table_id: 1.into(),
-            columns: col(0),
-        }]);
+        assert_eq!(
+            query.scan_st_constraints()?,
+            vec![
+                StConstraintRow{ constraint_id: 5.into(), constraint_name: "ct_columns_table_id".to_string(), kind: Constraints::indexed(), table_id: 1.into(), columns: col(0) },
+            ]
+        );
         datastore.rollback_mut_tx_for_test(tx);
         Ok(())
     }

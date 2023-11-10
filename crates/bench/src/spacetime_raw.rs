@@ -4,10 +4,8 @@ use crate::{
     ResultBench,
 };
 use spacetimedb::db::relational_db::{open_db, RelationalDB};
-use spacetimedb::{
-    db::datastore::traits::{IndexDef, TableDef},
-    execution_context::ExecutionContext,
-};
+use spacetimedb::execution_context::ExecutionContext;
+use spacetimedb_lib::sats::db::def::{IndexDef, TableDef};
 use spacetimedb_lib::sats::AlgebraicValue;
 use spacetimedb_primitives::{ColId, TableId};
 use std::hint::black_box;

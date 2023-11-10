@@ -1,8 +1,8 @@
+use anyhow::Context as _;
 use std::fmt;
 
-use anyhow::Context as _;
-pub use spacetimedb_lib::DataKey;
 use spacetimedb_sats::buffer::{BufReader, BufWriter, DecodeError};
+pub use spacetimedb_sats::DataKey;
 
 #[cfg(test)]
 use proptest_derive::Arbitrary;

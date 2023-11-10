@@ -1,7 +1,7 @@
-use spacetimedb_lib::auth::{StAccess, StTableType};
-use spacetimedb_lib::error::RelationError;
-use spacetimedb_lib::table::{ColumnDef, ProductTypeMeta};
-use spacetimedb_lib::ColumnIndexAttribute;
+use spacetimedb_sats::db::attr::ColumnIndexAttribute;
+use spacetimedb_sats::db::auth::{StAccess, StTableType};
+use spacetimedb_sats::db::def::{ColumnDefMeta, ProductTypeMeta, TableSchema};
+use spacetimedb_sats::db::error::RelationError;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductTypeElement};
 use sqlparser::ast::{
     Assignment, BinaryOperator, ColumnDef as SqlColumnDef, ColumnOption, DataType, ExactNumberInfo, Expr as SqlExpr,
@@ -14,10 +14,10 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::{MutTxDatastore, TableSchema};
+use crate::db::datastore::traits::MutTxDatastore;
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
-use spacetimedb_lib::relation::{extract_table_field, FieldExpr, FieldName};
+use spacetimedb_sats::relation::{extract_table_field, FieldExpr, FieldName};
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::expr::{ColumnOp, DbType, Expr};
 use spacetimedb_vm::operator::{OpCmp, OpLogic, OpQuery};
@@ -126,7 +126,7 @@ pub enum Join {
 #[derive(Clone)]
 pub struct FromField {
     pub field: FieldName,
-    pub column: ColumnDef,
+    pub column: ColumnDefMeta,
 }
 
 /// The list of tables in `... FROM table1 [JOIN table2] ...`

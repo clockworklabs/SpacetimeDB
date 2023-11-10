@@ -1,5 +1,5 @@
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::MemTable;
+use spacetimedb_sats::relation::MemTable;
 use spacetimedb_sats::{ProductType, ProductValue};
 use spacetimedb_vm::eval::run_ast;
 use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
@@ -105,9 +105,10 @@ pub(crate) mod tests {
     use crate::db::relational_db::{ST_TABLES_ID, ST_TABLES_NAME};
     use crate::vm::tests::create_table_with_rows;
     use itertools::Itertools;
-    use spacetimedb_lib::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_lib::relation::{Header, RelValue};
+    use spacetimedb_primitives::ColId;
+    use spacetimedb_sats::db::auth::{StAccess, StTableType};
+    use spacetimedb_sats::relation::{Header, RelValue};
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
     use spacetimedb_vm::dsl::{mem_table, scalar};
     use spacetimedb_vm::eval::create_game_data;
@@ -546,7 +547,7 @@ pub(crate) mod tests {
             .map(|x| {
                 x.data
                     .into_iter()
-                    .map(|x| x.data.field_as_str(1, None).unwrap().to_string())
+                    .map(|x| x.data.field_as_str(ColId(1), None).unwrap().to_string())
                     .collect::<Vec<_>>()
             })
             .collect();

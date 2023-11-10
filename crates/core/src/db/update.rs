@@ -3,16 +3,16 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 
 use anyhow::Context;
-use spacetimedb_lib::Hash;
 
 use crate::database_logger::SystemLogger;
 use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
 
 use super::datastore::locking_tx_datastore::MutTxId;
-use super::datastore::traits::{IndexDef, TableDef, TableSchema};
 use super::relational_db::RelationalDB;
 use spacetimedb_primitives::IndexId;
+use spacetimedb_sats::db::def::{IndexDef, TableDef, TableSchema};
+use spacetimedb_sats::hash::Hash;
 
 #[derive(thiserror::Error, Debug)]
 pub enum UpdateDatabaseError {
@@ -245,18 +245,15 @@ fn equiv(a: &TableDef, b: &TableDef) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use anyhow::bail;
     use nonempty::NonEmpty;
-    use spacetimedb_lib::{
-        auth::{StAccess, StTableType},
-        IndexType,
-    };
     use spacetimedb_primitives::{ColId, TableId};
+    use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::AlgebraicType;
 
-    use crate::db::datastore::traits::{ColumnDef, ColumnSchema, IndexSchema, AUTO_TABLE_ID};
-
-    use super::*;
+    use spacetimedb_sats::db::def::{ColumnDef, ColumnSchema, IndexSchema, IndexType, AUTO_TABLE_ID};
 
     #[test]
     fn test_updates_new_table() -> anyhow::Result<()> {

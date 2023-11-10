@@ -1,5 +1,6 @@
+use crate::hash::Hash;
 use prometheus::core::{Metric, MetricVec, MetricVecBuilder};
-use spacetimedb_lib::{Address, Hash, Identity};
+use spacetimedb_lib::{Address, Identity};
 
 #[macro_export]
 macro_rules! metrics_group {

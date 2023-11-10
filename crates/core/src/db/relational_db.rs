@@ -1,8 +1,6 @@
 use super::commit_log::{CommitLog, CommitLogView};
 use super::datastore::locking_tx_datastore::{DataRef, Iter, IterByColEq, IterByColRange, Locking, MutTxId, RowId};
-use super::datastore::traits::{
-    DataRow, IndexDef, MutProgrammable, MutTx, MutTxDatastore, Programmable, SequenceDef, TableDef, TableSchema, TxData,
-};
+use super::datastore::traits::{DataRow, MutProgrammable, MutTx, MutTxDatastore, Programmable, TxData};
 use super::message_log::MessageLog;
 use super::ostorage::memory_object_db::MemoryObjectDB;
 use super::relational_operators::Relation;
@@ -14,12 +12,14 @@ use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 use crate::db::ostorage::ObjectDB;
 use crate::error::{DBError, DatabaseError, IndexError, TableError};
 use crate::execution_context::ExecutionContext;
-use crate::hash::Hash;
 use fs2::FileExt;
 use nonempty::NonEmpty;
-use spacetimedb_lib::ColumnIndexAttribute;
-use spacetimedb_lib::{data_key::ToDataKey, PrimaryKey};
+use spacetimedb_lib::PrimaryKey;
 use spacetimedb_primitives::{ColId, IndexId, SequenceId, TableId};
+use spacetimedb_sats::data_key::ToDataKey;
+use spacetimedb_sats::db::attr::ColumnIndexAttribute;
+use spacetimedb_sats::db::def::{IndexDef, SequenceDef, TableDef, TableSchema};
+use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use std::borrow::Cow;
 use std::fs::{create_dir_all, File};
@@ -670,33 +670,17 @@ pub(crate) mod tests_utils {
 mod tests {
     #![allow(clippy::disallowed_macros)]
 
-    use nonempty::NonEmpty;
-    use spacetimedb_lib::IndexType;
-    use spacetimedb_primitives::ColId;
+    use super::*;
+
+    use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_sats::db::auth::{StAccess, StTableType};
+    use spacetimedb_sats::db::def::{ColumnDef, IndexDef, IndexType, TableDef};
     use std::sync::{Arc, Mutex};
 
-    use crate::address::Address;
-    use crate::db::datastore::locking_tx_datastore::IterByColEq;
-    use crate::db::datastore::system_tables::StIndexRow;
-    use crate::db::datastore::system_tables::StSequenceRow;
-    use crate::db::datastore::system_tables::StTableRow;
-    use crate::db::datastore::system_tables::ST_INDEXES_ID;
-    use crate::db::datastore::system_tables::ST_SEQUENCES_ID;
-    use crate::db::datastore::traits::ColumnDef;
-    use crate::db::datastore::traits::IndexDef;
-    use crate::db::datastore::traits::TableDef;
+    use crate::db::datastore::system_tables::*;
     use crate::db::message_log::MessageLog;
-    use crate::db::relational_db::{open_db, ST_TABLES_ID};
-    use crate::execution_context::ExecutionContext;
-
-    use super::RelationalDB;
-    use crate::db::relational_db::make_default_ostorage;
     use crate::db::relational_db::tests_utils::make_test_db;
-    use crate::error::{DBError, DatabaseError, IndexError};
-    use spacetimedb_lib::auth::StAccess;
-    use spacetimedb_lib::auth::StTableType;
-    use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_lib::{AlgebraicType, AlgebraicValue, ProductType};
+    use crate::db::relational_db::{open_db, ST_TABLES_ID};
     use spacetimedb_sats::product;
 
     fn column(name: &str, ty: AlgebraicType) -> ColumnDef {

@@ -14,7 +14,7 @@ extern crate proc_macro;
 use std::collections::HashMap;
 use std::time::Duration;
 
-use bitflags::{bitflags, Flags};
+use bitflags::Flags;
 use module::{derive_deserialize, derive_satstype, derive_serialize};
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, quote_spanned, TokenStreamExt};
@@ -24,6 +24,9 @@ use syn::{
     parse_quote, BinOp, Expr, ExprBinary, ExprLit, ExprUnary, FnArg, Ident, ItemFn, ItemStruct, Member, Token, Type,
     UnOp,
 };
+#[path = "../../sats/src/db/attr.rs"]
+mod attr;
+use attr::ColumnIndexAttribute;
 
 mod sym {
     /// A symbol known at compile-time against
@@ -302,7 +305,7 @@ fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtr
     // // TODO: better (non-string-based) validation for these
     // if !matches!(
     //     &*arg1.to_token_stream().to_string(),
-    //     "spacetimedb::spacetimedb_lib::hash::Hash" | "Hash"
+    //     "spacetimedb::spacetimedb_sats::hash::Hash" | "Hash"
     // ) {
     //     return Err(syn::Error::new_spanned(
     //         &arg1,
@@ -433,26 +436,6 @@ struct Column<'a> {
     index: u8,
     field: &'a module::SatsField<'a>,
     attr: ColumnIndexAttribute,
-}
-
-// TODO: any way to avoid duplication with same structure in bindings crate? Extra crate?
-bitflags! {
-    #[derive(Debug, Default, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
-    struct ColumnIndexAttribute: u8 {
-        const UNSET = Self::empty().bits();
-        ///  Index no unique
-        const INDEXED = 0b0001;
-        /// Generate the next [Sequence]
-        const AUTO_INC = 0b0010;
-        /// Index unique
-        const UNIQUE = Self::INDEXED.bits() | 0b0100;
-        /// Unique + AutoInc
-        const IDENTITY = Self::UNIQUE.bits() | Self::AUTO_INC.bits();
-        /// Primary key column (implies Unique)
-        const PRIMARY_KEY = Self::UNIQUE.bits() | 0b1000;
-        /// PrimaryKey + AutoInc
-        const PRIMARY_KEY_AUTO = Self::PRIMARY_KEY.bits() | Self::AUTO_INC.bits();
-    }
 }
 
 fn spacetimedb_table(item: TokenStream) -> syn::Result<TokenStream> {
@@ -613,7 +596,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
         let name = name.as_deref().unwrap_or("default_index");
         indexes.push(quote!(spacetimedb::IndexDef {
             name: #name,
-            ty: spacetimedb::spacetimedb_lib::IndexType::#ty,
+            ty: spacetimedb::sats::db::def::IndexType::#ty,
             col_ids: &[#(#col_ids),*],
         }));
     }
@@ -725,8 +708,8 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
     let tabletype_impl = quote! {
         impl spacetimedb::TableType for #original_struct_ident {
             const TABLE_NAME: &'static str = #table_name;
-            const COLUMN_ATTRS: &'static [spacetimedb::spacetimedb_lib::ColumnIndexAttribute] = &[
-                #(spacetimedb::spacetimedb_lib::ColumnIndexAttribute::#column_attrs),*
+            const COLUMN_ATTRS: &'static [spacetimedb::sats::db::attr::ColumnIndexAttribute] = &[
+                #(spacetimedb::sats::db::attr::ColumnIndexAttribute::#column_attrs),*
             ];
             const INDEXES: &'static [spacetimedb::IndexDef<'static>] = &[#(#indexes),*];
             type InsertResult = #insert_result;

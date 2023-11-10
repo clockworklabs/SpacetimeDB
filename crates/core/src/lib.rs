@@ -25,8 +25,8 @@ pub mod db;
 pub mod messages;
 pub use spacetimedb_lib::Identity;
 pub mod error;
-pub use spacetimedb_lib::hash;
 pub use spacetimedb_lib::identity;
+pub use spacetimedb_sats::hash;
 pub mod protobuf {
     pub use spacetimedb_client_api_messages::*;
 }

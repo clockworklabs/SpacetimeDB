@@ -1,28 +1,17 @@
 use derive_more::From;
+use spacetimedb_primitives::{ColId, TableId};
 use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
-use crate::auth::{StAccess, StTableType};
-use crate::error::RelationError;
-use crate::table::ColumnDef;
-use crate::DataKey;
-use spacetimedb_primitives::{ColId, TableId};
-use spacetimedb_sats::algebraic_value::AlgebraicValue;
-use spacetimedb_sats::product_value::ProductValue;
-use spacetimedb_sats::satn::Satn;
-use spacetimedb_sats::{algebraic_type, AlgebraicType, ProductType, ProductTypeElement, Typespace, WithTypespace};
-
-impl ColumnDef {
-    pub fn name(&self) -> FieldOnly {
-        if let Some(name) = &self.column.name {
-            FieldOnly::Name(name)
-        } else {
-            FieldOnly::Pos(self.pos)
-        }
-    }
-}
+use crate::algebraic_value::AlgebraicValue;
+use crate::data_key::DataKey;
+use crate::db::auth::{StAccess, StTableType};
+use crate::db::error::RelationError;
+use crate::product_value::ProductValue;
+use crate::satn::Satn;
+use crate::{algebraic_type, AlgebraicType, ProductType, ProductTypeElement, Typespace, WithTypespace};
 
 pub fn calculate_hash<T: Hash>(t: &T) -> u64 {
     let mut s = DefaultHasher::new();

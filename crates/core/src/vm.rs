@@ -1,16 +1,15 @@
 //! The [DbProgram] that execute arbitrary queries & code against the database.
 use crate::db::cursor::{CatalogCursor, IndexCursor, TableCursor};
 use crate::db::datastore::locking_tx_datastore::{IterByColEq, MutTxId};
-use crate::db::datastore::traits::{ColumnDef, IndexDef, TableDef};
 use crate::db::relational_db::RelationalDB;
 use crate::execution_context::ExecutionContext;
 use itertools::Itertools;
-use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::{DbTable, FieldExpr, FieldName, Relation};
-use spacetimedb_lib::relation::{Header, MemTable, RelIter, RelValue, RowCount, Table};
-use spacetimedb_lib::table::ProductTypeMeta;
 use spacetimedb_primitives::{ColId, TableId};
+use spacetimedb_sats::db::auth::{StAccess, StTableType};
+use spacetimedb_sats::db::def::{ColumnDef, IndexDef, ProductTypeMeta, TableDef};
+use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldName, Relation};
+use spacetimedb_sats::relation::{Header, MemTable, RelIter, RelValue, RowCount, Table};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::env::EnvDb;
 use spacetimedb_vm::errors::ErrorVm;
@@ -538,9 +537,9 @@ pub(crate) mod tests {
     use crate::execution_context::ExecutionContext;
     use nonempty::NonEmpty;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_lib::relation::{DbTable, FieldName};
-    use spacetimedb_lib::IndexType;
     use spacetimedb_primitives::TableId;
+    use spacetimedb_sats::db::def::IndexType;
+    use spacetimedb_sats::relation::{DbTable, FieldName};
     use spacetimedb_sats::{product, AlgebraicType, ProductType, ProductValue};
     use spacetimedb_vm::dsl::*;
     use spacetimedb_vm::eval::run_ast;

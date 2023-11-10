@@ -19,9 +19,9 @@ use crate::worker_metrics::WORKER_METRICS;
 use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
 use futures::{Future, FutureExt};
 use indexmap::IndexMap;
-use spacetimedb_lib::relation::MemTable;
 use spacetimedb_lib::{Address, ReducerDef, TableDef};
 use spacetimedb_primitives::TableId;
+use spacetimedb_sats::relation::MemTable;
 use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
 use std::collections::HashMap;
 use std::fmt;
@@ -248,7 +248,7 @@ pub trait Module: Send + Sync + 'static {
         &self,
         caller_identity: Identity,
         query: String,
-    ) -> Result<Vec<spacetimedb_lib::relation::MemTable>, DBError>;
+    ) -> Result<Vec<spacetimedb_sats::relation::MemTable>, DBError>;
     fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error>;
 
     #[cfg(feature = "tracelogging")]
@@ -343,7 +343,7 @@ trait DynModuleHost: Send + Sync + 'static {
         &self,
         caller_identity: Identity,
         query: String,
-    ) -> Result<Vec<spacetimedb_lib::relation::MemTable>, DBError>;
+    ) -> Result<Vec<spacetimedb_sats::relation::MemTable>, DBError>;
     fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error>;
     fn start(&self);
     fn exit(&self) -> Closed<'_>;
@@ -433,7 +433,7 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
         &self,
         caller_identity: Identity,
         query: String,
-    ) -> Result<Vec<spacetimedb_lib::relation::MemTable>, DBError> {
+    ) -> Result<Vec<spacetimedb_sats::relation::MemTable>, DBError> {
         self.module.one_off_query(caller_identity, query)
     }
 

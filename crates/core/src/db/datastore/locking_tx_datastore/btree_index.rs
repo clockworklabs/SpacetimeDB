@@ -1,13 +1,10 @@
 use super::RowId;
-use crate::{
-    db::datastore::locking_tx_datastore::Table,
-    db::datastore::traits::IndexSchema,
-    error::{DBError, IndexError},
-};
+use crate::db::datastore::locking_tx_datastore::table::Table;
+use crate::error::{DBError, IndexError};
 use nonempty::NonEmpty;
-use spacetimedb_lib::{data_key::ToDataKey, DataKey, IndexType};
 use spacetimedb_primitives::{ColId, IndexId, TableId};
-use spacetimedb_sats::{AlgebraicValue, ProductValue};
+use spacetimedb_sats::db::def::{IndexSchema, IndexType};
+use spacetimedb_sats::{data_key::ToDataKey, AlgebraicValue, DataKey, ProductValue};
 use std::{
     collections::{btree_set, BTreeSet},
     ops::{Bound, RangeBounds},

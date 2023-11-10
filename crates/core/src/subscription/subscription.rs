@@ -25,11 +25,11 @@
 
 use anyhow::Context;
 use derive_more::{Deref, DerefMut, From, IntoIterator};
-use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::{DbTable, MemTable, RelValue};
-use spacetimedb_lib::{DataKey, PrimaryKey};
-use spacetimedb_sats::{AlgebraicValue, ProductValue};
+use spacetimedb_lib::PrimaryKey;
+use spacetimedb_sats::db::auth::{StAccess, StTableType};
+use spacetimedb_sats::relation::{DbTable, MemTable, RelValue};
+use spacetimedb_sats::{AlgebraicValue, DataKey, ProductValue};
 use spacetimedb_vm::expr::{self, IndexJoin, QueryExpr, SourceExpr};
 use std::collections::{btree_set, BTreeSet, HashMap, HashSet};
 use std::ops::Deref;

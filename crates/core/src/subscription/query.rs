@@ -6,9 +6,8 @@ use crate::sql::compiler::compile_sql;
 use crate::sql::execute::execute_single_sql;
 use crate::subscription::subscription::QuerySet;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::{Column, FieldName, MemTable, RelValue};
-use spacetimedb_lib::DataKey;
-use spacetimedb_sats::AlgebraicType;
+use spacetimedb_sats::relation::{Column, FieldName, MemTable, RelValue};
+use spacetimedb_sats::{AlgebraicType, DataKey};
 use spacetimedb_vm::expr::{self, Crud, CrudExpr, DbType, QueryExpr, SourceExpr};
 
 pub const SUBSCRIBE_TO_ALL_QUERY: &str = "SELECT * FROM *";
@@ -160,19 +159,17 @@ pub fn classify(expr: &QueryExpr) -> Option<Supported> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::datastore::traits::{ColumnDef, IndexDef, TableDef, TableSchema};
     use crate::db::relational_db::tests_utils::make_test_db;
-    use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp};
+    use crate::host::module_host::{DatabaseUpdate, TableOp};
     use crate::sql::execute::run;
-    use crate::subscription::subscription::QuerySet;
     use crate::vm::tests::create_table_with_rows;
     use itertools::Itertools;
-    use spacetimedb_lib::auth::{StAccess, StTableType};
-    use spacetimedb_lib::data_key::ToDataKey;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_lib::relation::FieldName;
     use spacetimedb_lib::Identity;
-    use spacetimedb_primitives::{ColId, TableId};
+    use spacetimedb_primitives::*;
+    use spacetimedb_sats::data_key::ToDataKey;
+    use spacetimedb_sats::db::auth::{StAccess, StTableType};
+    use spacetimedb_sats::db::def::*;
     use spacetimedb_sats::{product, ProductType, ProductValue};
     use spacetimedb_vm::dsl::{db_table, mem_table, scalar};
     use spacetimedb_vm::operator::OpCmp;
