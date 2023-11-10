@@ -101,7 +101,44 @@ impl RelationalDB {
                 'replay: for (segment_offset, segment) in message_log.segments().enumerate() {
                     for commit in segment.try_into_iter_commits()? {
                         let commit = match commit {
-                            Ok(commit) => commit,
+                            Ok(commit) => {
+                                // We may decode a commit just fine, and detect
+                                // that it's not well-formed only later when
+                                // trying to decode the payload.
+                                // As a cheaper alternative to verifying the
+                                // parent hash, let's check if the commit
+                                // sequence is contiguous.
+                                let expected = last_commit_offset.map(|last| last + 1).unwrap_or(0);
+                                if commit.commit_offset != expected {
+                                    let msg =
+                                        format!("Out-of-order commit {}, expected {}", commit.commit_offset, expected);
+                                    log::warn!("{msg}");
+
+                                    // If this is not at the end of the log,
+                                    // report as corrupted but leave files as is
+                                    // for forensics.
+                                    if segment_offset < total_segments - 1 {
+                                        return Err(LogReplayError::TrailingSegments {
+                                            segment_offset,
+                                            total_segments,
+                                            commit_offset: last_commit_offset.unwrap_or_default(),
+                                            source: io::Error::new(io::ErrorKind::Other, msg),
+                                        }
+                                        .into());
+                                    }
+
+                                    let reset_offset = expected.saturating_sub(1);
+                                    message_log
+                                        .reset_to(reset_offset)
+                                        .map_err(|source| LogReplayError::Reset {
+                                            offset: reset_offset,
+                                            source,
+                                        })?;
+                                    break 'replay;
+                                } else {
+                                    commit
+                                }
+                            }
                             Err(e) if matches!(e.kind(), io::ErrorKind::InvalidData | io::ErrorKind::UnexpectedEof) => {
                                 log::warn!("Corrupt commit after offset {}", last_commit_offset.unwrap_or_default());
 
@@ -142,23 +179,6 @@ impl RelationalDB {
                         };
                         segment_index += 1;
                         last_hash = commit.parent_commit_hash;
-
-                        // Check that the commit sequence is contiguous.
-                        if let Some(last) = last_commit_offset {
-                            if last != commit.commit_offset - 1 {
-                                return Err(LogReplayError::CommitSequence {
-                                    offset: commit.commit_offset,
-                                    expected: last + 1,
-                                }
-                                .into());
-                            }
-                        } else if commit.commit_offset > 0 {
-                            return Err(LogReplayError::CommitSequence {
-                                offset: commit.commit_offset,
-                                expected: 0,
-                            }
-                            .into());
-                        }
                         last_commit_offset = Some(commit.commit_offset);
                         for transaction in commit.transactions {
                             transaction_offset += 1;
