@@ -436,13 +436,13 @@ mod tests {
 
         // No slicing yet, so offsets on segment boundaries yield an additional
         // COMMITS_PER_SEGMENT.
-        let commits = view.iter_from(20_001).map(Result::unwrap).count();
+        let commits = view.iter_from(20_000).map(Result::unwrap).count();
         assert_eq!(9999, commits);
 
-        let commits = view.iter_from(10_001).map(Result::unwrap).count();
+        let commits = view.iter_from(10_000).map(Result::unwrap).count();
         assert_eq!(19_999, commits);
 
-        let commits = view.iter_from(10_000).map(Result::unwrap).count();
+        let commits = view.iter_from(9_999).map(Result::unwrap).count();
         assert_eq!(29_999, commits);
     }
 }
