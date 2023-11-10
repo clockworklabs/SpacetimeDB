@@ -106,7 +106,15 @@ public class PlayerController : MonoBehaviour
         if (identity.HasValue && localIdentity == identity.Value)
         {
             var circle = Circle.FilterByCircleId(identity.Value);
+            if (circle == null)
+            {
+                return;
+            }
             var entity = Entity.FilterById(circle.EntityId);
+            if (entity == null)
+            {
+                return;
+            }
             GUI.Label(new Rect(0, 0, 100, 50), $"Mass: {entity.Mass}");
         }
     }

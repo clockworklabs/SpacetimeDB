@@ -75,7 +75,7 @@ public class GameManager : MonoBehaviour
         Food.OnInsert += FoodOnOnInsert;
 
         // Now that we’ve registered all our callbacks, lets connect to spacetimedb
-        SpacetimeDBClient.instance.Connect(AuthToken.Token, "localhost:3000", "untitled-circle-game");
+        SpacetimeDBClient.instance.Connect(AuthToken.Token, "https://testnet.spacetimedb.com", "untitled-circle-game-2");
         localCamera = Camera.main;
     }
 

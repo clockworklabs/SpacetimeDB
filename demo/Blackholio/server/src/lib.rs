@@ -170,17 +170,18 @@ pub fn move_all_players() -> Result<(), String> {
         }
 
         // Check to see if we're overlapping with another player
-        for circle in Circle::iter() {
-            if circle.circle_id == circle.circle_id {
+        for other_circle in Circle::iter() {
+            if other_circle.circle_id == circle.circle_id {
                 continue;
             }
-            let other_entity = Entity::filter_by_id(&circle.entity_id).ok_or("Entity not found")?;
+            let other_entity = Entity::filter_by_id(&other_circle.entity_id).ok_or("Entity not found")?;
             let mass_ratio = other_entity.mass as f32 / circle_entity.mass as f32;
 
             if is_overlapping(&circle_entity, &other_entity) && mass_ratio < 0.85 {
+                log::info!("Player {} is eating player {}!", circle.name, other_circle.name);
                 // We're overlapping with another player, so eat them
                 Entity::delete_by_id(&other_entity.id);
-                Circle::delete_by_circle_id(&circle.circle_id);
+                Circle::delete_by_circle_id(&other_circle.circle_id);
                 circle_entity.mass += other_entity.mass;
             }
         }
