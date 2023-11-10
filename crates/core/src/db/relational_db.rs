@@ -732,15 +732,14 @@ pub(crate) mod tests_utils {
 mod tests {
     #![allow(clippy::disallowed_macros)]
 
-    use super::*;
-
     use nonempty::NonEmpty;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::db::def::{ColumnDef, IndexDef, IndexType, TableDef};
     use std::fs::File;
-    use std::io;
+    use std::io::{self, Seek, SeekFrom, Write};
+    use std::ops::Range;
     use std::path::Path;
     use std::sync::{Arc, Mutex};
     use tempfile::TempDir;
@@ -759,7 +758,9 @@ mod tests {
     use crate::db::relational_db::make_default_ostorage;
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::db::relational_db::{open_db, ST_TABLES_ID};
+    use crate::error::{DBError, DatabaseError, IndexError, LogReplayError};
     use crate::execution_context::ExecutionContext;
+    use spacetimedb_lib::{AlgebraicType, AlgebraicValue, ProductType};
     use spacetimedb_sats::product;
 
     fn column(name: &str, ty: AlgebraicType) -> ColumnDef {
@@ -1519,9 +1520,13 @@ mod tests {
     fn test_replay_corrupted_log() -> ResultTest<()> {
         let tmp = TempDir::with_prefix("stdb_test")?;
         let mlog_path = tmp.path().join("mlog");
+
+        const NUM_TRANSACTIONS: usize = 10_000;
+        // 64KiB should create like 11 segments
+        const MAX_SEGMENT_SIZE: u64 = 64 * 1024;
+
         let mlog = MessageLog::options()
-            // 64KiB should create like 11 segments
-            .max_segment_size(64 * 1024)
+            .max_segment_size(MAX_SEGMENT_SIZE)
             .open(&mlog_path)
             .map(Mutex::new)
             .map(Arc::new)?;
@@ -1529,7 +1534,8 @@ mod tests {
             .map(|odb| Box::new(odb) as Box<dyn ObjectDB + Send>)
             .map(Mutex::new)
             .map(Arc::new)?;
-        let db = RelationalDB::open(tmp.path(), Some(mlog.clone()), odb.clone(), Address::zero(), false)?;
+        let reopen_db = || RelationalDB::open(tmp.path(), Some(mlog.clone()), odb.clone(), Address::zero(), false);
+        let db = reopen_db()?;
         let ctx = ExecutionContext::default();
 
         let table_id = db.with_auto_commit(&ctx, |tx| {
@@ -1560,53 +1566,103 @@ mod tests {
             Ok(balance)
         }
 
-        // Deposit some coins, creating 10,000 transactions.
-        for _ in 0..10_000 {
+        // Invalidate a segment by shrinking the file by one byte.
+        fn invalidate_shrink(mlog_path: &Path, segment: SegmentView) -> io::Result<()> {
+            let segment_file = File::options().write(true).open(
+                mlog_path
+                    .join(format!("{:0>20}", segment.offset()))
+                    .with_extension("log"),
+            )?;
+            let len = segment_file.metadata()?.len();
+            eprintln!("shrink segment segment={segment:?} len={len}");
+            segment_file.set_len(len - 1)?;
+            segment_file.sync_all()
+        }
+
+        // Invalidate a segment by overwriting some portion of the file.
+        fn invalidate_overwrite(mlog_path: &Path, segment: SegmentView) -> io::Result<()> {
+            let mut segment_file = File::options().write(true).open(
+                mlog_path
+                    .join(format!("{:0>20}", segment.offset()))
+                    .with_extension("log"),
+            )?;
+
+            let len = segment_file.metadata()?.len();
+            let ofs = len / 2;
+            eprintln!("overwrite segment={segment:?} len={len} ofs={ofs}");
+            segment_file.seek(SeekFrom::Start(ofs))?;
+            segment_file.write_all(&[255, 255, 255, 255])?;
+            segment_file.sync_all()
+        }
+
+        // Create transactions.
+        for _ in 0..NUM_TRANSACTIONS {
             db.with_auto_commit(&ctx, |tx| db.insert(tx, table_id, product![AlgebraicValue::U64(0)]))?;
         }
-        assert_eq!(10_000, balance(&ctx, &db, table_id)?);
+        assert_eq!(NUM_TRANSACTIONS as u64, balance(&ctx, &db, table_id)?);
 
         drop(db);
         odb.lock().unwrap().sync_all()?;
         mlog.lock().unwrap().sync_all()?;
 
-        let db = RelationalDB::open(tmp.path(), Some(mlog.clone()), odb.clone(), Address::zero(), false)?;
-        assert_eq!(10_000, balance(&ctx, &db, table_id)?);
+        // The state must be the same after reopening the db.
+        let db = reopen_db()?;
+        assert_eq!(NUM_TRANSACTIONS as u64, balance(&ctx, &db, table_id)?);
 
         let total_segments = mlog.lock().unwrap().total_segments();
         assert!(total_segments > 3, "expected more than 3 segments");
 
-        fn invalidate(mlog_path: &Path, segment: SegmentView) -> io::Result<()> {
-            eprintln!("invalidating segment {:0>20}", segment.offset());
-            let mlog_segment = File::options().write(true).open(
-                mlog_path
-                    .join(format!("{:0>20}", segment.offset()))
-                    .with_extension("log"),
-            )?;
-            let len = mlog_segment.metadata()?.len();
-            mlog_segment.set_len(len - 1)
-        }
-
         // Close the db and pop a byte from the end of the message log.
         drop(db);
         let last_segment = mlog.lock().unwrap().segments().last().unwrap();
-        invalidate(&mlog_path, last_segment)?;
+        invalidate_shrink(&mlog_path, last_segment.clone())?;
 
-        let db = RelationalDB::open(tmp.path(), Some(mlog.clone()), odb.clone(), Address::zero(), false)?;
-        // Assert that the final tx is lost and 1 bitcoin was burned.
-        assert_eq!(9_999, balance(&ctx, &db, table_id)?);
+        // Assert that the final tx is lost.
+        let db = reopen_db()?;
+        assert_eq!((NUM_TRANSACTIONS - 1) as u64, balance(&ctx, &db, table_id)?);
+        assert_eq!(
+            total_segments,
+            mlog.lock().unwrap().total_segments(),
+            "no segment should have beeen removed"
+        );
 
-        let total_segments2 = mlog.lock().unwrap().total_segments();
-        assert_eq!(total_segments, total_segments2, "no segment should have beeen removed");
-
-        // Now let's poke a segment somewhere in the middle of the log.
+        // Overwrite some portion of the last segment.
         drop(db);
-        let segment = mlog.lock().unwrap().segments().nth(2).unwrap();
-        invalidate(&mlog_path, segment)?;
+        let segment_range = Range {
+            start: last_segment.offset(),
+            end: (NUM_TRANSACTIONS - 1) as u64,
+        };
+        invalidate_overwrite(&mlog_path, last_segment)?;
+        let db = reopen_db()?;
+        let balance = balance(&ctx, &db, table_id)?;
+        assert!(
+            segment_range.contains(&balance),
+            "balance {balance} should fall within {segment_range:?}"
+        );
+        assert_eq!(
+            total_segments,
+            mlog.lock().unwrap().total_segments(),
+            "no segment should have beeen removed"
+        );
 
-        let db = RelationalDB::open(tmp.path(), Some(mlog), odb, Address::zero(), false);
-        eprintln!("{db:?}");
-        assert!(db.is_err(), "`RelationalDB::open` should have returned an error");
+        // Now, let's poke a segment somewhere in the middle of the log.
+        drop(db);
+        let segment = mlog.lock().unwrap().segments().nth(5).unwrap();
+        invalidate_shrink(&mlog_path, segment)?;
+
+        let res = reopen_db();
+        if !matches!(res, Err(DBError::LogReplay(LogReplayError::TrailingSegments { .. }))) {
+            panic!("Expected replay error but got: {res:?}")
+        }
+
+        // The same should happen if we overwrite instead of shrink.
+        let segment = mlog.lock().unwrap().segments().nth(5).unwrap();
+        invalidate_overwrite(&mlog_path, segment)?;
+
+        let res = reopen_db();
+        if !matches!(res, Err(DBError::LogReplay(LogReplayError::TrailingSegments { .. }))) {
+            panic!("Expected replay error but got: {res:?}")
+        }
 
         Ok(())
     }
