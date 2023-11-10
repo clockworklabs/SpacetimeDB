@@ -1,4 +1,5 @@
 using System;
+using System.Security.Cryptography.X509Certificates;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 using UnityEngine;
@@ -100,6 +101,16 @@ public class PlayerController : MonoBehaviour
         }
     }
 
+    private void OnGUI()
+    {
+        if (identity.HasValue && localIdentity == identity.Value)
+        {
+            var circle = Circle.FilterByCircleId(identity.Value);
+            var entity = Entity.FilterById(circle.EntityId);
+            GUI.Label(new Rect(0, 0, 100, 50), $"Mass: {entity.Mass}");
+        }
+    }
+
     public void Update()
     {
         // Fix interp values
@@ -107,7 +118,8 @@ public class PlayerController : MonoBehaviour
                                     && previousPosition.HasValue && previousPositionReceiveUpdateTime.HasValue)
         {
             transform.position = Vector3.Lerp(previousPosition.Value, 
-                targetPosition.Value, Time.deltaTime / (targetPositionReceiveUpdateTime.Value - previousPositionReceiveUpdateTime.Value));
+                targetPosition.Value, (Time.time - targetPositionReceiveUpdateTime.Value) 
+                                      / (targetPositionReceiveUpdateTime.Value - previousPositionReceiveUpdateTime.Value));
         }
 
         if (targetScale.HasValue)

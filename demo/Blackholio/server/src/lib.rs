@@ -62,7 +62,10 @@ impl Vector2 {
     }
 }
 
-const START_PLAYER_MASS: u32 = 5;
+const START_PLAYER_MASS: u32 = 12;
+const START_PLAYER_SPEED: u32 = 10;
+const FOOD_MASS_MIN: u32 = 2;
+const FOOD_MASS_MAX: u32 = 4;
 
 #[spacetimedb(init)]
 pub fn init() -> Result<(), String> {
@@ -70,6 +73,7 @@ pub fn init() -> Result<(), String> {
     Config::insert(Config { id: 0, world_size: 1000 })?;
     spawn_food()?;
     move_all_players()?;
+    circle_decay()?;
     Ok(())
 }
 
@@ -139,14 +143,18 @@ fn mass_to_radius(mass: u32) -> f32 {
     (mass as f32).sqrt()
 }
 
+fn mass_to_max_move_speed(mass: u32) -> f32 {
+    2.0 * START_PLAYER_SPEED as f32 / (1.0 + (mass as f32 / START_PLAYER_MASS as f32).sqrt())
+}
+
 #[spacetimedb(reducer)]
 pub fn move_all_players() -> Result<(), String> {
     let world_size = Config::filter_by_id(&0).ok_or("Config not found")?.world_size;
     for circle in Circle::iter() {
         let mut circle_entity = Entity::filter_by_id(&circle.entity_id).ok_or("Entity not found")?;
         let circle_radius = mass_to_radius(circle_entity.mass);
-        let x = circle_entity.position.x + circle.direction.x * circle.magnitude;
-        let y = circle_entity.position.y + circle.direction.y * circle.magnitude;
+        let x = circle_entity.position.x + circle.direction.x * circle.magnitude * mass_to_max_move_speed(circle_entity.mass);
+        let y = circle_entity.position.y + circle.direction.y * circle.magnitude * mass_to_max_move_speed(circle_entity.mass);
         circle_entity.position.x = x.clamp(circle_radius, world_size as f32 - circle_radius);
         circle_entity.position.y = y.clamp(circle_radius, world_size as f32 - circle_radius);
 
@@ -162,18 +170,20 @@ pub fn move_all_players() -> Result<(), String> {
         }
 
         // Check to see if we're overlapping with another player
-        // for circle in Circle::iter() {
-        //     if circle.circle_id == circle.circle_id {
-        //         continue;
-        //     }
-        //     let other_entity = Entity::filter_by_id(&circle.entity_id).ok_or("Entity not found")?;
-        //     if is_overlapping(&circle_entity, &other_entity) && circle_entity.size - 5 > other_entity.size {
-        //         // We're overlapping with another player, so eat them
-        //         Entity::delete_by_id(&other_entity.id);
-        //         Circle::delete_by_circle_id(&circle.circle_id);
-        //         circle_entity.size += other_entity.size;
-        //     }
-        // }
+        for circle in Circle::iter() {
+            if circle.circle_id == circle.circle_id {
+                continue;
+            }
+            let other_entity = Entity::filter_by_id(&circle.entity_id).ok_or("Entity not found")?;
+            let mass_ratio = other_entity.mass as f32 / circle_entity.mass as f32;
+
+            if is_overlapping(&circle_entity, &other_entity) && mass_ratio < 0.85 {
+                // We're overlapping with another player, so eat them
+                Entity::delete_by_id(&other_entity.id);
+                Circle::delete_by_circle_id(&circle.circle_id);
+                circle_entity.mass += other_entity.mass;
+            }
+        }
 
         Entity::update_by_id(&circle_entity.id.clone(), circle_entity);
     }
@@ -185,15 +195,15 @@ pub fn move_all_players() -> Result<(), String> {
 #[spacetimedb(reducer)]
 pub fn spawn_food() -> Result<(), String> {
     // Is there too much food already? Are there no players yet?
-    if Food::iter().count() > 200
+    if Food::iter().count() > 600
     // || Circle::iter().count() == 0
     {
-        schedule!(Duration::from_millis(100), spawn_food());
+        schedule!(Duration::from_millis(500), spawn_food());
         return Ok(());
     }
 
-    let food_mass = 1;
     let mut rng = rand::thread_rng();
+    let food_mass = rng.gen_range(FOOD_MASS_MIN..FOOD_MASS_MAX);
     let world_size = Config::filter_by_id(&0).ok_or("Config not found")?.world_size;
     let food_radius = mass_to_radius(food_mass);
     let x = rng.gen_range(food_radius..world_size as f32 - food_radius);
@@ -207,5 +217,21 @@ pub fn spawn_food() -> Result<(), String> {
     log::info!("Spawned food! {}", entity.id);
 
     spawn_food().unwrap();
+    Ok(())
+}
+
+#[spacetimedb(reducer)]
+pub fn circle_decay() -> Result<(), String> {
+    for circle in Circle::iter() {
+        let mut circle_entity = Entity::filter_by_id(&circle.entity_id).ok_or("Entity not found")?;
+        if circle_entity.mass <= START_PLAYER_MASS {
+            continue;
+        }
+        circle_entity.mass = (circle_entity.mass as f32 * 0.99) as u32;
+        let id = circle_entity.id;
+        Entity::update_by_id(&id, circle_entity);
+    }
+
+    schedule!(Duration::from_millis(5000), circle_decay());
     Ok(())
 }
