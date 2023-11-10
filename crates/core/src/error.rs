@@ -217,8 +217,6 @@ impl<'a, T: ?Sized + 'a> From<PoisonError<std::sync::MutexGuard<'a, T>>> for DBE
 
 #[derive(Debug, Error)]
 pub enum LogReplayError {
-    #[error("Expected commit offset {}, but encountered {}", .expected, .offset)]
-    CommitSequence { offset: u64, expected: u64 },
     #[error(
         "Error reading segment {}/{} at commit {}: {}",
         .segment_offset,
