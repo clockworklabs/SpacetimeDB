@@ -9,10 +9,9 @@ use crate::db::db_metrics::DB_METRICS;
 use crate::db::messages::commit::Commit;
 use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 use crate::db::ostorage::ObjectDB;
-use crate::error::{DBError, DatabaseError, IndexError, TableError};
+use crate::error::{DBError, DatabaseError, IndexError, LogReplayError, TableError};
 use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
-use anyhow::anyhow;
 use fs2::FileExt;
 use nonempty::NonEmpty;
 use spacetimedb_lib::PrimaryKey;
@@ -104,23 +103,42 @@ impl RelationalDB {
                         let commit = match commit {
                             Ok(commit) => commit,
                             Err(e) if matches!(e.kind(), io::ErrorKind::InvalidData | io::ErrorKind::UnexpectedEof) => {
-                                log::warn!("Corrupt commit after offset {last_commit_offset:?}");
+                                log::warn!("Corrupt commit after offset {}", last_commit_offset.unwrap_or_default());
 
                                 // We expect that partial writes can occur at
                                 // the end of the log, but a corrupted segment
                                 // in the middle indicates something else is
                                 // wrong.
                                 if segment_offset < total_segments - 1 {
-                                    return Err(e.into());
+                                    return Err(LogReplayError::TrailingSegments {
+                                        segment_offset,
+                                        total_segments,
+                                        commit_offset: last_commit_offset.unwrap_or_default(),
+                                        source: e,
+                                    }
+                                    .into());
                                 }
 
                                 // Else, truncate the current segment. This
                                 // allows to continue appending to the log
                                 // without hitting above condition.
-                                message_log.reset_to(last_commit_offset.unwrap_or(0))?;
+                                let reset_offset = last_commit_offset.unwrap_or_default();
+                                message_log
+                                    .reset_to(reset_offset)
+                                    .map_err(|source| LogReplayError::Reset {
+                                        offset: reset_offset,
+                                        source,
+                                    })?;
                                 break 'replay;
                             }
-                            Err(e) => return Err(e.into()),
+                            Err(e) => {
+                                return Err(LogReplayError::Io {
+                                    segment_offset,
+                                    commit_offset: last_commit_offset.unwrap_or_default(),
+                                    source: e,
+                                }
+                                .into())
+                            }
                         };
                         segment_index += 1;
                         last_hash = commit.parent_commit_hash;
@@ -128,13 +146,18 @@ impl RelationalDB {
                         // Check that the commit sequence is contiguous.
                         if let Some(last) = last_commit_offset {
                             if last != commit.commit_offset - 1 {
-                                return Err(DBError::from(anyhow!("Non-contiguous commit offset")));
+                                return Err(LogReplayError::CommitSequence {
+                                    offset: commit.commit_offset,
+                                    expected: last + 1,
+                                }
+                                .into());
                             }
                         } else if commit.commit_offset > 0 {
-                            return Err(DBError::from(anyhow!(
-                                "Non-zero initial commit: {}",
-                                commit.commit_offset
-                            )));
+                            return Err(LogReplayError::CommitSequence {
+                                offset: commit.commit_offset,
+                                expected: 0,
+                            }
+                            .into());
                         }
                         last_commit_offset = Some(commit.commit_offset);
                         for transaction in commit.transactions {
@@ -673,7 +696,9 @@ pub fn open_db(path: impl AsRef<Path>, in_memory: bool, fsync: bool) -> Result<R
     let mlog = if in_memory {
         None
     } else {
-        Some(Arc::new(Mutex::new(MessageLog::open(path.join("mlog"))?)))
+        Some(Arc::new(Mutex::new(
+            MessageLog::open(path.join("mlog")).map_err(|e| DBError::Other(e.into()))?,
+        )))
     };
     let odb = Arc::new(Mutex::new(make_default_ostorage(in_memory, path.join("odb"))?));
     let stdb = RelationalDB::open(path, mlog, odb, Address::zero(), fsync)?;
@@ -683,7 +708,9 @@ pub fn open_db(path: impl AsRef<Path>, in_memory: bool, fsync: bool) -> Result<R
 
 pub fn open_log(path: impl AsRef<Path>) -> Result<Arc<Mutex<MessageLog>>, DBError> {
     let path = path.as_ref().to_path_buf();
-    Ok(Arc::new(Mutex::new(MessageLog::open(path.join("mlog"))?)))
+    Ok(Arc::new(Mutex::new(
+        MessageLog::open(path.join("mlog")).map_err(|e| DBError::Other(e.into()))?,
+    )))
 }
 
 #[cfg(test)]

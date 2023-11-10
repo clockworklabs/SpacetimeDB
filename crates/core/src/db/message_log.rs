@@ -6,16 +6,39 @@ use std::{
 
 #[cfg(target_family = "unix")]
 use std::os::unix::fs::FileExt;
-
-use anyhow::{anyhow, Context};
-
-use crate::error::DBError;
 #[cfg(target_family = "windows")]
 use std::os::windows::fs::FileExt;
+
+use derive_more::Display;
+use thiserror::Error;
 
 use super::messages::commit::Commit;
 
 const HEADER_SIZE: usize = 4;
+
+/// Error returned by [`OpenOptions::open`] or [`MessageLog::open`].
+#[derive(Debug, Error)]
+#[error("Failed to open message log at `{path}`: {kind}")]
+pub struct OpenError {
+    kind: OpenErrorKind,
+    path: String,
+    #[source]
+    source: Option<io::Error>,
+}
+
+#[derive(Debug, Display)]
+pub enum OpenErrorKind {
+    #[display(fmt = "Could not create root directory")]
+    CreateRoot,
+    #[display(fmt = "Could not read directory or -entry")]
+    ReadDir,
+    #[display(fmt = "Could not parse file name as offset")]
+    ParseOffset,
+    #[display(fmt = "Could not open segment file")]
+    OpenSegment,
+    #[display(fmt = "Failed to read segment at byte offset {offset}")]
+    ReadSegment { offset: u64 },
+}
 
 /// Options for opening a [`MessageLog`], similar to [`fs::OpenOptions`].
 #[derive(Clone, Copy, Debug)]
@@ -35,27 +58,40 @@ impl OpenOptions {
 
     /// Open the [`MessageLog`] at `path` with the options in self.
     #[tracing::instrument(skip_all)]
-    pub fn open(&self, path: impl AsRef<Path>) -> Result<MessageLog, DBError> {
+    pub fn open(&self, path: impl AsRef<Path>) -> Result<MessageLog, OpenError> {
+        use OpenErrorKind::*;
+
+        fn err<S>(kind: OpenErrorKind, path: &Path) -> impl FnOnce(S) -> OpenError
+        where
+            S: Into<Option<io::Error>>,
+        {
+            let path = path.display().to_string();
+            move |source| OpenError {
+                kind,
+                path,
+                source: source.into(),
+            }
+        }
+
         let root = path.as_ref();
-        fs::create_dir_all(root).with_context(|| format!("could not create root directory: {}", root.display()))?;
+        fs::create_dir_all(root).map_err(err(CreateRoot, root))?;
 
         let mut segments = Vec::new();
         let mut total_size = 0;
-        for file in fs::read_dir(root).with_context(|| format!("unable to read root directory: {}", root.display()))? {
-            let dir_entry = file?;
+        for file in fs::read_dir(root).map_err(err(ReadDir, root))? {
+            let dir_entry = file.map_err(err(ReadDir, root))?;
             let path = dir_entry.path();
             if let Some(ext) = path.extension() {
                 if ext != "log" {
                     continue;
                 }
-                let file_stem = path
+                let offset = path
                     .file_stem()
-                    .map(|os| os.to_string_lossy())
-                    .ok_or_else(|| anyhow!("unexpected .log file: {}", path.display()))?;
-                let offset = file_stem
+                    .unwrap_or_default()
+                    .to_string_lossy()
                     .parse::<u64>()
-                    .with_context(|| format!("could not parse log offset from: {}", path.display()))?;
-                let size = dir_entry.metadata()?.len();
+                    .map_err(|_| err(ParseOffset, &path)(None))?;
+                let size = dir_entry.metadata().map_err(err(ReadDir, &path))?.len();
 
                 total_size += size;
                 segments.push(Segment {
@@ -77,16 +113,19 @@ impl OpenOptions {
             .read(true)
             .append(true)
             .create(true)
-            .open(&last_segment_path)?;
+            .open(&last_segment_path)
+            .map_err(err(OpenSegment, &last_segment_path))?;
 
         let mut max_offset = last_segment.min_offset;
         let mut cursor: u64 = 0;
         while cursor < last_segment.size {
             let mut buf = [0; HEADER_SIZE];
             #[cfg(target_family = "windows")]
-            file.seek_read(&mut buf, cursor)?;
+            file.seek_read(&mut buf, cursor)
+                .map_err(err(ReadSegment { offset: cursor }, &last_segment_path))?;
             #[cfg(target_family = "unix")]
-            file.read_exact_at(&mut buf, cursor)?;
+            file.read_exact_at(&mut buf, cursor)
+                .map_err(err(ReadSegment { offset: cursor }, &last_segment_path))?;
             let message_len = u32::from_le_bytes(buf);
 
             max_offset += 1;
@@ -153,7 +192,7 @@ impl std::fmt::Debug for MessageLog {
 // TODO: do we build the concept of batches into the message log?
 impl MessageLog {
     #[tracing::instrument(skip(path))]
-    pub fn open(path: impl AsRef<Path>) -> Result<Self, DBError> {
+    pub fn open(path: impl AsRef<Path>) -> Result<Self, OpenError> {
         OpenOptions::default().open(path)
     }
 
@@ -162,7 +201,7 @@ impl MessageLog {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn append(&mut self, message: impl AsRef<[u8]>) -> Result<(), DBError> {
+    pub fn append(&mut self, message: impl AsRef<[u8]>) -> io::Result<()> {
         let message = message.as_ref();
         let mess_size = message.len() as u32;
         let size: u32 = mess_size + HEADER_SIZE as u32;
@@ -204,7 +243,7 @@ impl MessageLog {
     // https://stackoverflow.com/questions/42442387/is-write-safe-to-be-called-from-multiple-threads-simultaneously/42442926#42442926
     // https://github.com/facebook/rocksdb/wiki/WAL-Performance
     #[tracing::instrument]
-    pub fn flush(&mut self) -> Result<(), DBError> {
+    pub fn flush(&mut self) -> io::Result<()> {
         self.open_segment_file.flush()?;
         Ok(())
     }
@@ -214,7 +253,7 @@ impl MessageLog {
     // to be for sure durably written.
     // SEE: https://stackoverflow.com/questions/69819990/whats-the-difference-between-flush-and-sync-all
     #[tracing::instrument]
-    pub fn sync_all(&mut self) -> Result<(), DBError> {
+    pub fn sync_all(&mut self) -> io::Result<()> {
         log::trace!("fsync log file");
         self.flush()?;
         let file = self.open_segment_file.get_ref();
@@ -319,11 +358,14 @@ impl MessageLog {
     /// atomic, to the extent required by [POSIX].
     ///
     /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/V2_chap02.html#tag_15_09_07
-    pub fn reset_to(&mut self, offset: u64) -> Result<(), DBError> {
+    pub fn reset_to(&mut self, offset: u64) -> io::Result<()> {
         log::debug!("Resetting message log to offset {offset}");
         if offset == 0 {
             fs::remove_dir_all(&self.root)?;
-            *self = self.options.open(&self.root)?;
+            *self = self
+                .options
+                .open(&self.root)
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
             return Ok(());
         }
