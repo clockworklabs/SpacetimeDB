@@ -1,5 +1,6 @@
 use nonempty::NonEmpty;
 use parking_lot::{Mutex, MutexGuard};
+use smallvec::SmallVec;
 use spacetimedb_lib::{bsatn, ProductValue};
 use std::ops::DerefMut;
 use std::sync::Arc;
@@ -162,7 +163,9 @@ impl InstanceEnv {
         let rows_to_delete = stdb
             .iter_by_col_eq(ctx, tx, table_id, col_id, eq_value)?
             .map(|x| RowId(*x.id()))
-            .collect::<Vec<_>>();
+            // `delete_by_field` only cares about 1 element,
+            // so optimize for that.
+            .collect::<SmallVec<[_; 1]>>();
 
         // Delete them and count how many we deleted.
         Ok(stdb.delete(tx, table_id, rows_to_delete))

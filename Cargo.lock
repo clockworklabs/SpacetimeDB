@@ -4344,6 +4344,7 @@ dependencies = [
  "sha1",
  "slab",
  "sled",
+ "smallvec",
  "spacetimedb-client-api-messages",
  "spacetimedb-lib",
  "spacetimedb-primitives",

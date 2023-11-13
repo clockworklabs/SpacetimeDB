@@ -60,6 +60,7 @@ rayon-core.workspace = true
 regex.workspace = true
 rustc-demangle.workspace = true
 rustc-hash.workspace = true
+smallvec.workspace = true
 scopeguard.workspace = true
 sendgrid.workspace = true
 serde.workspace = true
