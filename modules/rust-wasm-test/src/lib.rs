@@ -1,6 +1,7 @@
 #![allow(clippy::disallowed_names)]
 use spacetimedb::{
-    delete_by_col_eq, query, spacetimedb, AlgebraicValue, Deserialize, ReducerContext, SpacetimeType, Timestamp,
+    delete_by_col_eq, query, spacetimedb, AlgebraicValue, Deserialize, ReducerContext, SpacetimeType, TableType,
+    Timestamp,
 };
 use spacetimedb_lib::bsatn;
 
@@ -84,8 +85,8 @@ pub fn test(ctx: ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC) -> an
         TestC::Foo => log::info!("Foo"),
         TestC::Bar => log::info!("Bar"),
     }
-
-    for i in 0..10 {
+    let table_id = TestA::table_id();
+    for i in 0..1000 {
         TestA::insert(TestA {
             x: i + arg.x,
             y: i + arg.y,
@@ -98,7 +99,7 @@ pub fn test(ctx: ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC) -> an
     log::info!("Row count before delete: {:?}", row_count);
 
     for row in 5..10 {
-        delete_by_col_eq(1.into(), 0, &AlgebraicValue::U32(row))?;
+        delete_by_col_eq(table_id, 0, &AlgebraicValue::U32(row))?;
     }
 
     let row_count = TestA::iter().count();
@@ -116,6 +117,19 @@ pub fn test(ctx: ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC) -> an
     let other_row_count = query!(|row: TestA| row.x >= 0 && row.x <= u32::MAX).count();
 
     log::info!("Row count filtered by condition: {:?}", other_row_count);
+
+    log::info!("MultiColumn");
+
+    for i in 0i64..1000 {
+        Point::insert(Point {
+            x: i + arg.x as i64,
+            y: i + arg.y as i64,
+        });
+    }
+
+    let multi_row_count = query!(|row: Point| row.x >= 0 && row.y <= 200).count();
+
+    log::info!("Row count filtered by multi-column condition: {:?}", multi_row_count);
 
     log::info!("END");
     Ok(())

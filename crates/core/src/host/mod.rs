@@ -112,7 +112,7 @@ impl From<usize> for ReducerId {
 }
 
 #[derive(thiserror::Error, Debug)]
-#[error("invalid arguments for reducer {reducer}")]
+#[error("invalid arguments for reducer {reducer}: {err}")]
 pub struct InvalidReducerArguments {
     #[source]
     err: anyhow::Error,

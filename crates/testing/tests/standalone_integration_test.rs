@@ -84,3 +84,47 @@ fn test_calling_a_reducer_with_private_table() {
         },
     );
 }
+
+#[test]
+#[serial]
+fn test_call_query_macro() {
+    CompiledModule::compile("rust-wasm-test", CompilationMode::Debug).with_module_async(
+        DEFAULT_CONFIG,
+        |module| async move {
+            let json = r#"
+{"call": {"fn": "test", "args":[            
+    {"x":0, "y":2, "z":"Macro"},
+    {"foo":"Foo"},
+    {"Foo": {} }
+]}}"#
+                .to_string();
+            module.send(json).await.unwrap();
+
+            let lines = module.read_log(Some(13)).await;
+            let lines: Vec<&str> = lines.trim().split('\n').collect();
+
+            assert_eq!(lines.len(), 13);
+
+            let json: Value = serde_json::from_str(lines[6]).unwrap();
+            assert_eq!(
+                json["message"],
+                Value::String("Row count before delete: 1000".to_string())
+            );
+            let json: Value = serde_json::from_str(lines[8]).unwrap();
+            assert_eq!(
+                json["message"],
+                Value::String("Row count after delete: 995".to_string())
+            );
+            let json: Value = serde_json::from_str(lines[9]).unwrap();
+            assert_eq!(
+                json["message"],
+                Value::String("Row count filtered by condition: 995".to_string())
+            );
+            let json: Value = serde_json::from_str(lines[11]).unwrap();
+            assert_eq!(
+                json["message"],
+                Value::String("Row count filtered by multi-column condition: 199".to_string())
+            );
+        },
+    );
+}
