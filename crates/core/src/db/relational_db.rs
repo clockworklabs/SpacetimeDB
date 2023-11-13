@@ -2,12 +2,11 @@ use fs2::FileExt;
 use nonempty::NonEmpty;
 use std::borrow::Cow;
 use std::fs::{create_dir_all, File};
-use std::io;
 use std::ops::RangeBounds;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use super::commit_log::{CommitLog, CommitLogView};
+use super::commit_log::{CommitLog, CommitLogMut};
 use super::datastore::locking_tx_datastore::Locking;
 use super::datastore::locking_tx_datastore::{DataRef, Iter, IterByColEq, IterByColRange, MutTxId, RowId};
 use super::datastore::traits::{MutProgrammable, MutTx, MutTxDatastore, Programmable, TxData};
@@ -17,10 +16,9 @@ use super::relational_operators::Relation;
 use crate::address::Address;
 use crate::db::datastore::traits::DataRow;
 use crate::db::db_metrics::DB_METRICS;
-use crate::db::messages::commit::Commit;
 use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 use crate::db::ostorage::ObjectDB;
-use crate::error::{DBError, DatabaseError, IndexError, LogReplayError, TableError};
+use crate::error::{DBError, DatabaseError, IndexError, TableError};
 use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
 use spacetimedb_lib::PrimaryKey;
@@ -33,7 +31,7 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue}
 pub struct RelationalDB {
     // TODO(cloutiertyler): This should not be public
     pub(crate) inner: Locking,
-    commit_log: CommitLog,
+    commit_log: Option<CommitLogMut>,
     _lock: Arc<File>,
     address: Address,
 }
@@ -77,153 +75,54 @@ impl RelationalDB {
             .map_err(|err| DatabaseError::DatabasedOpened(root.to_path_buf(), err.into()))?;
 
         let datastore = Locking::bootstrap(db_address)?;
-        log::debug!("[{}] Replaying transaction log.", address);
-        let mut segment_index = 0;
-        let mut last_logged_percentage = 0;
-        let unwritten_commit = {
-            let mut transaction_offset = 0;
-            let mut last_commit_offset = None;
-            let mut last_hash: Option<Hash> = None;
-            if let Some(message_log) = &message_log {
-                let mut message_log = message_log.lock().unwrap();
-                let max_offset = message_log.open_segment_max_offset;
-                let total_segments = message_log.total_segments();
+        let mut transaction_offset = 0;
+        let commit_log = message_log
+            .map(|mlog| {
+                log::debug!("[{}] Replaying transaction log.", address);
+                let mut last_logged_percentage = 0;
 
-                'replay: for (segment_offset, segment) in message_log.segments().enumerate() {
-                    for commit in segment.try_into_iter_commits()? {
-                        let commit = match commit {
-                            Ok(commit) => {
-                                // We may decode a commit just fine, and detect
-                                // that it's not well-formed only later when
-                                // trying to decode the payload.
-                                // As a cheaper alternative to verifying the
-                                // parent hash, let's check if the commit
-                                // sequence is contiguous.
-                                let expected = last_commit_offset.map(|last| last + 1).unwrap_or(0);
-                                if commit.commit_offset != expected {
-                                    let msg =
-                                        format!("Out-of-order commit {}, expected {}", commit.commit_offset, expected);
-                                    log::warn!("{msg}");
+                let commit_log = CommitLog::new(mlog, odb);
+                let max_commit_offset = commit_log.max_commit_offset();
 
-                                    // If this is not at the end of the log,
-                                    // report as corrupted but leave files as is
-                                    // for forensics.
-                                    if segment_offset < total_segments - 1 {
-                                        return Err(LogReplayError::TrailingSegments {
-                                            segment_offset,
-                                            total_segments,
-                                            commit_offset: last_commit_offset.unwrap_or_default(),
-                                            source: io::Error::new(io::ErrorKind::Other, msg),
-                                        }
-                                        .into());
-                                    }
-
-                                    let reset_offset = expected.saturating_sub(1);
-                                    message_log
-                                        .reset_to(reset_offset)
-                                        .map_err(|source| LogReplayError::Reset {
-                                            offset: reset_offset,
-                                            source,
-                                        })?;
-                                    break 'replay;
-                                } else {
-                                    commit
-                                }
-                            }
-                            Err(e) if matches!(e.kind(), io::ErrorKind::InvalidData | io::ErrorKind::UnexpectedEof) => {
-                                log::warn!("Corrupt commit after offset {}", last_commit_offset.unwrap_or_default());
-
-                                // We expect that partial writes can occur at
-                                // the end of the log, but a corrupted segment
-                                // in the middle indicates something else is
-                                // wrong.
-                                if segment_offset < total_segments - 1 {
-                                    return Err(LogReplayError::TrailingSegments {
-                                        segment_offset,
-                                        total_segments,
-                                        commit_offset: last_commit_offset.unwrap_or_default(),
-                                        source: e,
-                                    }
-                                    .into());
-                                }
-
-                                // Else, truncate the current segment. This
-                                // allows to continue appending to the log
-                                // without hitting above condition.
-                                let reset_offset = last_commit_offset.unwrap_or_default();
-                                message_log
-                                    .reset_to(reset_offset)
-                                    .map_err(|source| LogReplayError::Reset {
-                                        offset: reset_offset,
-                                        source,
-                                    })?;
-                                break 'replay;
-                            }
-                            Err(e) => {
-                                return Err(LogReplayError::Io {
-                                    segment_offset,
-                                    commit_offset: last_commit_offset.unwrap_or_default(),
-                                    source: e,
-                                }
-                                .into())
-                            }
-                        };
-                        segment_index += 1;
-                        last_hash = commit.parent_commit_hash;
-                        last_commit_offset = Some(commit.commit_offset);
-                        for transaction in commit.transactions {
-                            transaction_offset += 1;
-                            // NOTE: Although I am creating a blobstore transaction in a
-                            // one to one fashion for each message log transaction, this
-                            // is just to reduce memory usage while inserting. We don't
-                            // really care about inserting these transactionally as long
-                            // as all of the writes get inserted.
-                            datastore.replay_transaction(&transaction, odb.clone())?;
-
-                            let percentage = f64::floor((segment_index as f64 / max_offset as f64) * 100.0) as i32;
-                            if percentage > last_logged_percentage && percentage % 10 == 0 {
-                                last_logged_percentage = percentage;
-                                log::debug!(
-                                    "[{}] Loaded {}% ({}/{})",
-                                    address,
-                                    percentage,
-                                    transaction_offset,
-                                    max_offset
-                                );
-                            }
-                        }
+                let commit_log = commit_log.replay(|commit, odb| {
+                    transaction_offset += commit.transactions.len();
+                    for transaction in commit.transactions {
+                        datastore.replay_transaction(&transaction, odb.clone())?;
                     }
-                }
 
-                // The purpose of this is to rebuild the state of the datastore
-                // after having inserted all of rows from the message log.
-                // This is necessary because, for example, inserting a row into `st_table`
-                // is not equivalent to calling `create_table`.
-                // There may eventually be better way to do this, but this will have to do for now.
-                datastore.rebuild_state_after_replay()?;
-            }
+                    let percentage =
+                        f64::floor((commit.commit_offset as f64 / max_commit_offset as f64) * 100.0) as i32;
+                    if percentage > last_logged_percentage && percentage % 10 == 0 {
+                        last_logged_percentage = percentage;
+                        log::debug!(
+                            "[{}] Loaded {}% ({}/{})",
+                            address,
+                            percentage,
+                            transaction_offset,
+                            max_commit_offset
+                        );
+                    }
 
-            let commit_offset = if let Some(last_commit_offset) = last_commit_offset {
-                last_commit_offset + 1
-            } else {
-                0
-            };
+                    Ok(())
+                })?;
 
-            log::debug!(
-                "[{}] Initialized with {} commits and tx offset {}",
-                address,
-                commit_offset,
-                transaction_offset
-            );
+                Ok::<_, DBError>(commit_log.with_fsync(fsync))
+            })
+            .transpose()?;
 
-            Commit {
-                parent_commit_hash: last_hash,
-                commit_offset,
-                min_tx_offset: transaction_offset,
-                transactions: Vec::new(),
-            }
-        };
-        let commit_log = CommitLog::new(message_log, odb.clone(), unwritten_commit, fsync);
+        // The purpose of this is to rebuild the state of the datastore
+        // after having inserted all of rows from the message log.
+        // This is necessary because, for example, inserting a row into `st_table`
+        // is not equivalent to calling `create_table`.
+        // There may eventually be better way to do this, but this will have to do for now.
+        datastore.rebuild_state_after_replay()?;
+
+        log::debug!(
+            "[{}] Initialized with {} commits and tx offset {}",
+            address,
+            commit_log.as_ref().map(|log| log.commit_offset()).unwrap_or_default(),
+            transaction_offset
+        );
 
         // i.e. essentially bootstrap the creation of the schema
         // tables by hard coding the schema of the schema tables
@@ -244,8 +143,8 @@ impl RelationalDB {
     }
 
     /// Obtain a read-only view of this database's [`CommitLog`].
-    pub fn commit_log(&self) -> CommitLogView {
-        CommitLogView::from(&self.commit_log)
+    pub fn commit_log(&self) -> Option<CommitLog> {
+        self.commit_log.as_ref().map(CommitLog::from)
     }
 
     #[tracing::instrument(skip_all)]
@@ -341,7 +240,12 @@ impl RelationalDB {
     pub fn commit_tx(&self, ctx: &ExecutionContext, tx: MutTxId) -> Result<Option<(TxData, Option<usize>)>, DBError> {
         log::trace!("COMMIT TX");
         if let Some(tx_data) = self.inner.commit_mut_tx(ctx, tx)? {
-            let bytes_written = self.commit_log.append_tx(ctx, &tx_data, &self.inner)?;
+            let bytes_written = self
+                .commit_log
+                .as_ref()
+                .map(|commit_log| commit_log.append_tx(ctx, &tx_data, &self.inner))
+                .transpose()?
+                .flatten();
             return Ok(Some((tx_data, bytes_written)));
         }
         Ok(None)
@@ -755,12 +659,13 @@ mod tests {
     use crate::db::message_log::SegmentView;
     use crate::db::ostorage::sled_object_db::SledObjectDB;
     use crate::db::relational_db::tests_utils::make_test_db;
+    use crate::error::LogReplayError;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::db::def::{ColumnDef, IndexType};
     use spacetimedb_sats::product;
-    use std::io::{Seek, SeekFrom, Write};
+    use std::io::{self, Seek, SeekFrom, Write};
     use std::ops::Range;
     use tempfile::TempDir;
 
