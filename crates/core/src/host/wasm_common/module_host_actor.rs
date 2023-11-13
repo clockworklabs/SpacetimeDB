@@ -27,7 +27,9 @@ use crate::host::{
     ReducerId, ReducerOutcome, Timestamp,
 };
 use crate::identity::Identity;
+use crate::sql;
 use crate::subscription::module_subscription_actor::{ModuleSubscriptionManager, SubscriptionEventSender};
+use crate::util::{const_unwrap, ResultInspectExt};
 use crate::worker_metrics::WORKER_METRICS;
 
 use super::instrumentation::CallTimes;
@@ -81,7 +83,6 @@ pub(crate) struct WasmModuleHostActor<T: WasmModule> {
     module: T::InstancePre,
     initial_instance: Option<Box<WasmModuleInstance<T::Instance>>>,
     database_instance_context: Arc<DatabaseInstanceContext>,
-    event_tx: SubscriptionEventSender,
     scheduler: Scheduler,
     func_names: Arc<FuncNames>,
     info: Arc<ModuleInfo>,
@@ -151,7 +152,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 
         let owner_identity = database_instance_context.identity;
         let relational_db = database_instance_context.relational_db.clone();
-        let (subscription, event_tx) = ModuleSubscriptionManager::spawn(relational_db, owner_identity);
+        let subscription = ModuleSubscriptionManager::spawn(relational_db, owner_identity);
 
         let uninit_instance = module.instantiate_pre()?;
         let mut instance = uninit_instance.instantiate(
@@ -191,7 +192,6 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             initial_instance: None,
             func_names,
             info,
-            event_tx,
             database_instance_context,
             scheduler,
             energy_monitor,
@@ -207,7 +207,6 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         WasmModuleInstance {
             instance,
             info: self.info.clone(),
-            event_tx: self.event_tx.clone(),
             energy_monitor: self.energy_monitor.clone(),
             trapped: false,
         }
@@ -302,7 +301,6 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
 pub struct WasmModuleInstance<T: WasmInstance> {
     instance: T,
     info: Arc<ModuleInfo>,
-    event_tx: SubscriptionEventSender,
     energy_monitor: Arc<dyn EnergyMonitor>,
     trapped: bool,
 }
@@ -619,7 +617,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             energy_quanta_used: energy.used,
             host_execution_duration: timings.total_duration,
         };
-        self.event_tx.broadcast_event_blocking(client.as_ref(), event);
+        self.info.subscription.broadcast_event_blocking(client.as_ref(), event);
 
         ReducerCallResult {
             outcome,
