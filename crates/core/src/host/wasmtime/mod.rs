@@ -82,11 +82,10 @@ pub fn make_actor(
     WasmModuleHostActor::new(dbic, module_hash, module, scheduler, energy_monitor).map_err(Into::into)
 }
 
-#[derive(Debug, thiserror::Error)]
-#[error(transparent)]
+#[derive(Debug, derive_more::From)]
 enum WasmError {
-    Db(#[from] NodesError),
-    Wasm(#[from] anyhow::Error),
+    Db(NodesError),
+    Wasm(anyhow::Error),
 }
 
 #[derive(Copy, Clone)]
@@ -184,6 +183,8 @@ impl MemView {
         // SAFETY: MemView is repr(transparent) over [u8]
         unsafe { &*(v as *const [u8] as *const MemView) }
     }
+
+    /// Get a byte slice of wasm memory given a pointer and a length.
     fn deref_slice(&self, offset: WasmPtr<u8>, len: u32) -> Result<&[u8], MemError> {
         if offset == 0 {
             return Err(MemError::Null);
@@ -193,13 +194,20 @@ impl MemView {
             .and_then(|s| s.get(..len as usize))
             .ok_or(MemError::OutOfBounds)
     }
+
+    /// Get a utf8 slice of wasm memory given a pointer and a length.
     fn deref_str(&self, offset: WasmPtr<u8>, len: u32) -> Result<&str, MemError> {
         let b = self.deref_slice(offset, len)?;
         std::str::from_utf8(b).map_err(MemError::Utf8)
     }
+
+    /// Lossily get a utf8 slice of wasm memory given a pointer and a length, converting any
+    /// non-utf8 bytes to `U+FFFD REPLACEMENT CHARACTER`.
     fn deref_str_lossy(&self, offset: WasmPtr<u8>, len: u32) -> Result<Cow<str>, MemError> {
         self.deref_slice(offset, len).map(String::from_utf8_lossy)
     }
+
+    /// Get a mutable byte slice of wasm memory given a pointer and a length;
     fn deref_slice_mut(&mut self, offset: WasmPtr<u8>, len: u32) -> Result<&mut [u8], MemError> {
         if offset == 0 {
             return Err(MemError::Null);
@@ -211,20 +219,15 @@ impl MemView {
     }
 }
 
+/// An error that can result from operations on [`MemView`].
+#[derive(thiserror::Error, Debug)]
 enum MemError {
+    #[error("out of bounds pointer passed to a spacetime function")]
     OutOfBounds,
+    #[error("null pointer passed to a spacetime function")]
     Null,
-    Utf8(std::str::Utf8Error),
-}
-
-impl From<MemError> for anyhow::Error {
-    fn from(err: MemError) -> Self {
-        match err {
-            MemError::OutOfBounds => wasmtime::Trap::MemoryOutOfBounds.into(),
-            MemError::Null => anyhow::anyhow!("passed a null pointer to a spacetime function"),
-            MemError::Utf8(e) => e.into(),
-        }
-    }
+    #[error("invalid utf8 passed to a spacetime function")]
+    Utf8(#[from] std::str::Utf8Error),
 }
 
 impl From<MemError> for WasmError {
@@ -233,6 +236,8 @@ impl From<MemError> for WasmError {
     }
 }
 
+/// Extension trait to gracefully handle null `WasmPtr`s, e.g.
+/// `mem.deref_slice(ptr, len).check_nullptr()? == Option<&[u8]>`.
 trait NullableMemOp<T> {
     fn check_nullptr(self) -> Result<Option<T>, WasmError>;
 }
