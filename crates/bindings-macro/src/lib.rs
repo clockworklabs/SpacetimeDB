@@ -24,9 +24,7 @@ use syn::{
     parse_quote, BinOp, Expr, ExprBinary, ExprLit, ExprUnary, FnArg, Ident, ItemFn, ItemStruct, Member, Token, Type,
     UnOp,
 };
-#[path = "../../sats/src/db/attr.rs"]
-mod attr;
-use attr::ColumnIndexAttribute;
+use spacetimedb_primitives::ColumnIndexAttribute;
 
 mod sym {
     /// A symbol known at compile-time against

@@ -1,8 +1,17 @@
-use spacetimedb_sats::db::attr::ColumnIndexAttribute;
+use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::db::datastore::traits::MutTxDatastore;
+use crate::db::relational_db::RelationalDB;
+use crate::error::{DBError, PlanError};
+use spacetimedb_primitives::ColumnIndexAttribute;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{ColumnDefMeta, ProductTypeMeta, TableSchema};
 use spacetimedb_sats::db::error::RelationError;
+use spacetimedb_sats::relation::{extract_table_field, FieldExpr, FieldName};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductTypeElement};
+use spacetimedb_vm::errors::ErrorVm;
+use spacetimedb_vm::expr::{ColumnOp, DbType, Expr};
+use spacetimedb_vm::operator::{OpCmp, OpLogic, OpQuery};
+use spacetimedb_vm::ops::parse::parse;
 use sqlparser::ast::{
     Assignment, BinaryOperator, ColumnDef as SqlColumnDef, ColumnOption, DataType, ExactNumberInfo, Expr as SqlExpr,
     GeneratedAs, HiveDistributionStyle, Ident, JoinConstraint, JoinOperator, ObjectName, ObjectType, Query, Select,
@@ -12,16 +21,6 @@ use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
 use std::borrow::Cow;
 use std::collections::HashMap;
-
-use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::MutTxDatastore;
-use crate::db::relational_db::RelationalDB;
-use crate::error::{DBError, PlanError};
-use spacetimedb_sats::relation::{extract_table_field, FieldExpr, FieldName};
-use spacetimedb_vm::errors::ErrorVm;
-use spacetimedb_vm::expr::{ColumnOp, DbType, Expr};
-use spacetimedb_vm::operator::{OpCmp, OpLogic, OpQuery};
-use spacetimedb_vm::ops::parse::parse;
 
 /// Simplify to detect features of the syntax we don't support yet
 /// Because we use [PostgreSqlDialect] in the compiler step it already protect against features

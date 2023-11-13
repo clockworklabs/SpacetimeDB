@@ -4194,6 +4194,7 @@ dependencies = [
  "humantime",
  "proc-macro2",
  "quote",
+ "spacetimedb-primitives",
  "syn 2.0.38",
 ]
 
@@ -4407,6 +4408,7 @@ dependencies = [
 name = "spacetimedb-primitives"
 version = "0.7.3"
 dependencies = [
+ "bitflags 2.4.1",
  "nonempty",
 ]
 

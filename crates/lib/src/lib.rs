@@ -1,15 +1,16 @@
 use anyhow::Context;
-use sats::impl_serialize;
-pub use spacetimedb_sats::buffer;
+use spacetimedb_primitives::{ColId, ColumnIndexAttribute};
+use spacetimedb_sats::db::auth::{StAccess, StTableType};
+use spacetimedb_sats::db::def::{ColumnDef, IndexType, AUTO_TABLE_ID};
+use spacetimedb_sats::{impl_serialize, WithTypespace};
 use std::iter;
+
 pub mod address;
 pub mod filter;
 pub mod identity;
-pub use spacetimedb_sats::de;
 pub mod name;
 pub mod operator;
 pub mod primary_key;
-pub use spacetimedb_sats::ser;
 pub mod type_def {
     pub use spacetimedb_sats::{AlgebraicType, ProductType, ProductTypeElement, SumType};
 }
@@ -24,20 +25,12 @@ pub mod recovery;
 pub mod util;
 pub mod version;
 
-pub use spacetimedb_sats::bsatn;
-
 pub use address::Address;
 pub use identity::Identity;
 pub use primary_key::PrimaryKey;
-use spacetimedb_primitives::ColId;
+pub use spacetimedb_sats::{self as sats, bsatn, buffer, de, ser};
 pub use type_def::*;
 pub use type_value::{AlgebraicValue, ProductValue};
-
-pub use spacetimedb_sats as sats;
-use spacetimedb_sats::db::attr::ColumnIndexAttribute;
-use spacetimedb_sats::db::auth::{StAccess, StTableType};
-use spacetimedb_sats::db::def::{ColumnDef, IndexType, AUTO_TABLE_ID};
-use spacetimedb_sats::WithTypespace;
 
 pub const MODULE_ABI_MAJOR_VERSION: u16 = 7;
 

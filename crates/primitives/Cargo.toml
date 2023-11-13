@@ -7,3 +7,4 @@ description = "Primitives such as TableId and ColumnIndexAttribute"
 
 [dependencies]
 nonempty.workspace = true
+bitflags.workspace = true

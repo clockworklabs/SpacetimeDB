@@ -1,8 +1,3 @@
-use derive_more::Display;
-use nonempty::NonEmpty;
-use spacetimedb_primitives::*;
-
-use crate::db::attr::{AttributeKind, ColumnIndexAttribute};
 use crate::db::auth::{StAccess, StTableType};
 use crate::de::BasicVecVisitor;
 use crate::product_value::InvalidFieldError;
@@ -10,6 +5,9 @@ use crate::relation::{Column, DbTable, FieldName, FieldOnly, Header, TableField}
 use crate::ser::SerializeArray;
 use crate::{de, ser, AlgebraicValue, ProductValue};
 use crate::{AlgebraicType, ProductType, ProductTypeElement};
+use derive_more::Display;
+use nonempty::NonEmpty;
+use spacetimedb_primitives::{AttributeKind, ColId, ColumnIndexAttribute, ConstraintId, IndexId, SequenceId, TableId};
 
 /// The default preallocation amount for sequences.
 pub const SEQUENCE_PREALLOCATION_AMOUNT: i128 = 4_096;
