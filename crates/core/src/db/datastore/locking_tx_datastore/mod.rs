@@ -2733,12 +2733,13 @@ mod tests {
             SequenceRow { id: 3, name: "constraint_id_seq", table: 4, col_pos: 0, start: 1 },
         ]));
         #[rustfmt::skip]
-        assert_eq!(
-            query.scan_st_constraints()?,
-            vec![
-                StConstraintRow{ constraint_id: 5.into(), constraint_name: "ct_columns_table_id".to_string(), kind: Constraints::indexed(), table_id: 1.into(), columns: col(0) },
-            ]
-        );
+        assert_eq!(query.scan_st_constraints()?, vec![StConstraintRow {
+            constraint_id: 5.into(),
+            constraint_name: "ct_columns_table_id".to_string(),
+            kind: Constraints::indexed(),
+            table_id: 1.into(),
+            columns: col(0),
+        }]);
         datastore.rollback_mut_tx_for_test(tx);
         Ok(())
     }
