@@ -106,7 +106,6 @@ pub(crate) mod tests {
     use crate::vm::tests::create_table_with_rows;
     use itertools::Itertools;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_primitives::ColId;
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::relation::{Header, RelValue};
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
@@ -547,7 +546,7 @@ pub(crate) mod tests {
             .map(|x| {
                 x.data
                     .into_iter()
-                    .map(|x| x.data.field_as_str(ColId(1), None).unwrap().to_string())
+                    .map(|x| x.data.field_as_str(1, None).unwrap().to_string())
                     .collect::<Vec<_>>()
             })
             .collect();

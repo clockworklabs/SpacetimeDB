@@ -480,7 +480,7 @@ impl TableSchema {
         columns
             .map(|pos| {
                 self.get_column(usize::from(pos)).ok_or(InvalidFieldError {
-                    col_pos: pos,
+                    index: pos.idx(),
                     name: None,
                 })
             })

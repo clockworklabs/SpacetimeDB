@@ -64,10 +64,10 @@ impl crate::Value for ProductValue {
 
 /// An error that occurs when a field, of a product value, is accessed that doesn't exist.
 #[derive(thiserror::Error, Debug, Copy, Clone)]
-#[error("Field at position {col_pos} named: {name:?} not found or has an invalid type")]
+#[error("Field at position {index} named: {name:?} not found or has an invalid type")]
 pub struct InvalidFieldError {
-    /// The claimed col_pos of the field within the product value.
-    pub col_pos: ColId,
+    /// The claimed index of the field within the product value.
+    pub index: usize,
     /// The name of the field, if any.
     pub name: Option<&'static str>,
 }
@@ -77,10 +77,7 @@ impl ProductValue {
     ///
     /// The `name` is non-functional and is only used for error-messages.
     pub fn get_field(&self, index: usize, name: Option<&'static str>) -> Result<&AlgebraicValue, InvalidFieldError> {
-        self.elements.get(index).ok_or(InvalidFieldError {
-            col_pos: index.into(),
-            name,
-        })
+        self.elements.get(index).ok_or(InvalidFieldError { index, name })
     }
 
     /// This function is used to project fields based on the provided `indexes`.
@@ -129,65 +126,65 @@ impl ProductValue {
     /// and then runs it through the function `f` which possibly returns a `T` derived from `value`.
     pub fn extract_field<'a, T>(
         &'a self,
-        col_pos: ColId,
+        index: usize,
         name: Option<&'static str>,
         f: impl 'a + Fn(&'a AlgebraicValue) -> Option<T>,
     ) -> Result<T, InvalidFieldError> {
-        f(self.get_field(col_pos.into(), name)?).ok_or(InvalidFieldError { col_pos, name })
+        f(self.get_field(index, name)?).ok_or(InvalidFieldError { index, name })
     }
 
     /// Interprets the value at field of `self` identified by `index` as a `bool`.
-    pub fn field_as_bool(&self, index: ColId, named: Option<&'static str>) -> Result<bool, InvalidFieldError> {
+    pub fn field_as_bool(&self, index: usize, named: Option<&'static str>) -> Result<bool, InvalidFieldError> {
         self.extract_field(index, named, |f| f.as_bool().copied())
     }
 
     /// Interprets the value at field of `self` identified by `index` as a `u8`.
-    pub fn field_as_u8(&self, index: ColId, named: Option<&'static str>) -> Result<u8, InvalidFieldError> {
+    pub fn field_as_u8(&self, index: usize, named: Option<&'static str>) -> Result<u8, InvalidFieldError> {
         self.extract_field(index, named, |f| f.as_u8().copied())
     }
 
     /// Interprets the value at field of `self` identified by `index` as a `u32`.
-    pub fn field_as_u32(&self, index: ColId, named: Option<&'static str>) -> Result<u32, InvalidFieldError> {
+    pub fn field_as_u32(&self, index: usize, named: Option<&'static str>) -> Result<u32, InvalidFieldError> {
         self.extract_field(index, named, |f| f.as_u32().copied())
     }
 
     /// Interprets the value at field of `self` identified by `index` as a `u64`.
-    pub fn field_as_u64(&self, index: ColId, named: Option<&'static str>) -> Result<u64, InvalidFieldError> {
+    pub fn field_as_u64(&self, index: usize, named: Option<&'static str>) -> Result<u64, InvalidFieldError> {
         self.extract_field(index, named, |f| f.as_u64().copied())
     }
 
     /// Interprets the value at field of `self` identified by `index` as a `i64`.
-    pub fn field_as_i64(&self, index: ColId, named: Option<&'static str>) -> Result<i64, InvalidFieldError> {
+    pub fn field_as_i64(&self, index: usize, named: Option<&'static str>) -> Result<i64, InvalidFieldError> {
         self.extract_field(index, named, |f| f.as_i64().copied())
     }
 
     /// Interprets the value at field of `self` identified by `index` as a `i128`.
-    pub fn field_as_i128(&self, index: ColId, named: Option<&'static str>) -> Result<i128, InvalidFieldError> {
+    pub fn field_as_i128(&self, index: usize, named: Option<&'static str>) -> Result<i128, InvalidFieldError> {
         self.extract_field(index, named, |f| f.as_i128().copied())
     }
 
     /// Interprets the value at field of `self` identified by `index` as a `u128`.
-    pub fn field_as_u128(&self, index: ColId, named: Option<&'static str>) -> Result<u128, InvalidFieldError> {
+    pub fn field_as_u128(&self, index: usize, named: Option<&'static str>) -> Result<u128, InvalidFieldError> {
         self.extract_field(index, named, |f| f.as_u128().copied())
     }
 
     /// Interprets the value at field of `self` identified by `index` as a string slice.
-    pub fn field_as_str(&self, index: ColId, named: Option<&'static str>) -> Result<&str, InvalidFieldError> {
+    pub fn field_as_str(&self, index: usize, named: Option<&'static str>) -> Result<&str, InvalidFieldError> {
         self.extract_field(index, named, |f| f.as_string()).map(|x| &**x)
     }
 
     /// Interprets the value at field of `self` identified by `index` as a byte slice.
-    pub fn field_as_bytes(&self, index: ColId, named: Option<&'static str>) -> Result<&[u8], InvalidFieldError> {
+    pub fn field_as_bytes(&self, index: usize, named: Option<&'static str>) -> Result<&[u8], InvalidFieldError> {
         self.extract_field(index, named, |f| f.as_bytes())
     }
 
     /// Interprets the value at field of `self` identified by `index` as a array.
-    pub fn field_as_array(&self, index: ColId, named: Option<&'static str>) -> Result<&ArrayValue, InvalidFieldError> {
+    pub fn field_as_array(&self, index: usize, named: Option<&'static str>) -> Result<&ArrayValue, InvalidFieldError> {
         self.extract_field(index, named, |f| f.as_array())
     }
 
     /// Interprets the value at field of `self` identified by `index` as a `SumValue`.
-    pub fn field_as_sum(&self, index: ColId, named: Option<&'static str>) -> Result<SumValue, InvalidFieldError> {
+    pub fn field_as_sum(&self, index: usize, named: Option<&'static str>) -> Result<SumValue, InvalidFieldError> {
         self.extract_field(index, named, |f| f.as_sum().cloned())
     }
 }
