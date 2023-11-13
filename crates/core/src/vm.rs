@@ -1,14 +1,10 @@
 //! The [DbProgram] that execute arbitrary queries & code against the database.
-use std::collections::HashMap;
-use std::ops::RangeBounds;
-
-use itertools::Itertools;
-use tracing::debug;
 
 use crate::db::cursor::{CatalogCursor, IndexCursor, TableCursor};
 use crate::db::datastore::locking_tx_datastore::{IterByColEq, MutTxId};
 use crate::db::relational_db::RelationalDB;
 use crate::execution_context::ExecutionContext;
+use itertools::Itertools;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
@@ -23,6 +19,9 @@ use spacetimedb_vm::eval::IterRows;
 use spacetimedb_vm::expr::*;
 use spacetimedb_vm::program::{ProgramRef, ProgramVm};
 use spacetimedb_vm::rel_ops::RelOps;
+use std::collections::HashMap;
+use std::ops::RangeBounds;
+use tracing::debug;
 
 //TODO: This is partially duplicated from the `vm` crate to avoid borrow checker issues
 //and pull all that crate in core. Will be revisited after trait refactor

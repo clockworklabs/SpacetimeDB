@@ -1,7 +1,12 @@
+use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::db::datastore::traits::MutTxDatastore;
+use crate::db::relational_db::RelationalDB;
+use crate::error::{DBError, PlanError};
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{ConstraintFlags, Constraints, TableSchema};
 use spacetimedb_sats::db::def::{FieldDef, ProductTypeMeta};
 use spacetimedb_sats::db::error::RelationError;
+use spacetimedb_sats::relation::{extract_table_field, FieldExpr, FieldName};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductTypeElement};
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::expr::{ColumnOp, DbType, Expr};
@@ -16,12 +21,6 @@ use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
 use std::borrow::Cow;
 use std::collections::HashMap;
-
-use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::MutTxDatastore;
-use crate::db::relational_db::RelationalDB;
-use crate::error::{DBError, PlanError};
-use spacetimedb_sats::relation::{extract_table_field, FieldExpr, FieldName};
 
 /// Simplify to detect features of the syntax we don't support yet
 /// Because we use [PostgreSqlDialect] in the compiler step it already protect against features
@@ -177,14 +176,10 @@ impl From {
         let field = extract_table_field(f)?;
         let fields = self.iter_tables().flat_map(|t| {
             t.columns.iter().filter_map(|column| {
-                if column.col_name == field.field {
-                    Some(FieldDef {
-                        column: column.clone(),
-                        table_name: field.table.unwrap_or(&t.table_name).to_string(),
-                    })
-                } else {
-                    None
-                }
+                (column.col_name == field.field).then(|| FieldDef {
+                    column: column.clone(),
+                    table_name: field.table.unwrap_or(&t.table_name).to_string(),
+                })
             })
         });
 

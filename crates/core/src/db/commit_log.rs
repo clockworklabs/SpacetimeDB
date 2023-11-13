@@ -1,7 +1,3 @@
-use anyhow::Context;
-use std::io;
-use std::sync::{Arc, Mutex, MutexGuard};
-
 use super::{
     datastore::traits::{MutTxDatastore, TxData},
     message_log::{self, MessageLog},
@@ -20,8 +16,11 @@ use crate::{
     error::DBError,
     execution_context::ExecutionContext,
 };
+use anyhow::Context;
 use spacetimedb_sats::hash::{hash_bytes, Hash};
 use spacetimedb_sats::DataKey;
+use std::io;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 #[derive(Clone)]
 pub struct CommitLog {

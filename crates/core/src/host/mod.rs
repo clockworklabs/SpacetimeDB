@@ -1,13 +1,13 @@
-use std::time::Duration;
-
 use anyhow::Context;
 use bytes::Bytes;
 use bytestring::ByteString;
+use derive_more::Display;
+use enum_map::Enum;
 use spacetimedb_lib::de::serde::SeedWrapper;
 use spacetimedb_lib::de::DeserializeSeed;
-use spacetimedb_lib::{bsatn, Identity};
-use spacetimedb_lib::{ProductValue, ReducerDef};
+use spacetimedb_lib::{bsatn, Identity, ProductValue, ReducerDef};
 use spacetimedb_sats::WithTypespace;
+use std::time::Duration;
 
 mod host_controller;
 pub(crate) mod module_host;
@@ -18,8 +18,6 @@ pub mod instance_env;
 mod timestamp;
 mod wasm_common;
 
-use derive_more::Display;
-use enum_map::Enum;
 pub use host_controller::{
     DescribedEntityType, EnergyDiff, EnergyQuanta, HostController, ReducerCallResult, ReducerOutcome, UpdateOutcome,
 };

@@ -2,7 +2,6 @@ use crate::error::{DBError, TableError};
 use core::fmt;
 use nonempty::NonEmpty;
 use once_cell::sync::Lazy;
-
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::*;
@@ -734,17 +733,14 @@ impl StIndexRow<&str> {
 }
 
 fn to_cols(row: &ProductValue, col_pos: ColId, col_name: &'static str) -> Result<NonEmpty<ColId>, DBError> {
-    let col_pos = col_pos.idx();
-    let cols = row.field_as_array(col_pos, Some(col_name))?;
+    let index = col_pos.idx();
+    let name = Some(col_name);
+    let cols = row.field_as_array(index, name)?;
     if let ArrayValue::U32(x) = &cols {
         let x: Vec<_> = x.iter().map(|x| ColId::from(*x)).collect();
         Ok(NonEmpty::from_slice(&x).unwrap())
     } else {
-        Err(InvalidFieldError {
-            name: Some(col_name),
-            col_pos: col_pos.into(),
-        }
-        .into())
+        Err(InvalidFieldError { name, index }.into())
     }
 }
 
@@ -756,7 +752,7 @@ impl<'a> TryFrom<&'a ProductValue> for StIndexRow<&'a str> {
         let index_name = row.field_as_str(StIndexFields::IndexName.col_idx(), None)?;
         let index_type = row.field_as_u8(StIndexFields::IndexType.col_idx(), None)?;
         let index_type = IndexType::try_from(index_type).map_err(|_| InvalidFieldError {
-            col_pos: StIndexFields::IndexType.col_id(),
+            index: StIndexFields::IndexType.col_idx(),
             name: Some(StIndexFields::IndexType.name()),
         })?;
         let columns = to_cols(row, StIndexFields::Columns.col_id(), StIndexFields::Columns.name())?;

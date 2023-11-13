@@ -1,14 +1,9 @@
-use derive_more::From;
-use nonempty::NonEmpty;
-use std::cmp::Ordering;
-use std::collections::{HashMap, VecDeque};
-use std::fmt;
-use std::ops::Bound;
-
 use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
 use crate::functions::{FunDef, Param};
 use crate::operator::{Op, OpCmp, OpLogic, OpQuery};
 use crate::types::Ty;
+use derive_more::From;
+use nonempty::NonEmpty;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::algebraic_type::AlgebraicType;
@@ -19,8 +14,11 @@ use spacetimedb_sats::db::error::AuthError;
 use spacetimedb_sats::relation::{
     Column, DbTable, FieldExpr, FieldName, Header, MemTable, RelValueRef, Relation, RowCount, Table,
 };
-use spacetimedb_sats::satn::Satn;
-use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
+use spacetimedb_sats::{satn::Satn, ProductValue, Typespace, WithTypespace};
+use std::cmp::Ordering;
+use std::collections::{HashMap, VecDeque};
+use std::fmt;
+use std::ops::Bound;
 
 /// A `index` into the list of [Fun]
 pub type FunctionId = usize;
@@ -230,7 +228,7 @@ impl From<IndexScan> for ColumnOp {
     fn from(value: IndexScan) -> Self {
         let table = value.table;
         let columns = value.columns;
-        assert_eq!(columns.len(), 1, "Not yet supported multi-column predicates");
+        assert_eq!(columns.len(), 1, "multi-column predicates are not yet supported");
 
         let field = table.head.fields[usize::from(columns.head)].field.clone();
         match (value.lower_bound, value.upper_bound) {
@@ -329,15 +327,6 @@ impl SourceExpr {
     }
 }
 
-impl From<SourceExpr> for Table {
-    fn from(value: SourceExpr) -> Self {
-        match value {
-            SourceExpr::MemTable(t) => Table::MemTable(t),
-            SourceExpr::DbTable(t) => Table::DbTable(t),
-        }
-    }
-}
-
 impl Relation for SourceExpr {
     fn head(&self) -> &Header {
         match self {
@@ -359,6 +348,15 @@ impl From<Table> for SourceExpr {
         match value {
             Table::MemTable(t) => SourceExpr::MemTable(t),
             Table::DbTable(t) => SourceExpr::DbTable(t),
+        }
+    }
+}
+
+impl From<SourceExpr> for Table {
+    fn from(value: SourceExpr) -> Self {
+        match value {
+            SourceExpr::MemTable(t) => Table::MemTable(t),
+            SourceExpr::DbTable(t) => Table::DbTable(t),
         }
     }
 }

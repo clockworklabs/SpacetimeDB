@@ -5,8 +5,8 @@ use std::fmt::{self, Write};
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::db::attr::ColumnAttribute;
 use spacetimedb_lib::sats::{
-    AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, ProductTypeElement, SumType,
-    SumTypeVariant,
+    AlgebraicType, AlgebraicType::Builtin, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType,
+    ProductTypeElement, SumType, SumTypeVariant,
 };
 use spacetimedb_lib::{ReducerDef, TableDef};
 
@@ -142,7 +142,6 @@ fn convert_type<'a>(
         }
         AlgebraicType::Sum(sum_type) => {
             if let Some(inner_ty) = sum_type.as_option() {
-                use AlgebraicType::Builtin;
                 match inner_ty {
                     Builtin(ty) => match ty {
                         BuiltinType::Bool
@@ -316,8 +315,8 @@ fn serialize_type<'a>(
             }
         }
         AlgebraicType::Builtin(BuiltinType::Array(ArrayType { elem_ty })) => match &**elem_ty {
-            AlgebraicType::Builtin(BuiltinType::U8) => write!(f, "Array.from({value})"),
-            AlgebraicType::Builtin(_) => write!(f, "{value}"),
+            Builtin(BuiltinType::U8) => write!(f, "Array.from({value})"),
+            Builtin(_) => write!(f, "{value}"),
             t => write!(f, "{value}.map(el => {})", serialize_type(ctx, t, "el", prefix)),
         },
         AlgebraicType::Builtin(_) => write!(f, "{value}"),
@@ -596,7 +595,7 @@ fn generate_imports_variants(
 
 fn _generate_imports(ctx: &GenCtx, ty: &AlgebraicType, imports: &mut Vec<String>, prefix: Option<&str>) {
     match ty {
-        AlgebraicType::Builtin(b) => match b {
+        Builtin(b) => match b {
             BuiltinType::Array(ArrayType { elem_ty }) => _generate_imports(ctx, elem_ty, imports, prefix),
             BuiltinType::Map(map_type) => {
                 _generate_imports(ctx, &map_type.key_ty, imports, prefix);

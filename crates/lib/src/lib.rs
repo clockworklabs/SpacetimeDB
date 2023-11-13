@@ -1,9 +1,9 @@
 use anyhow::Context;
 use spacetimedb_primitives::ColId;
+use spacetimedb_sats::db::attr::ColumnAttribute;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{ColumnDef, IndexDef, IndexType, AUTO_TABLE_ID};
 use spacetimedb_sats::{impl_serialize, WithTypespace};
-use std::iter;
 
 pub mod address;
 pub mod filter;
@@ -124,7 +124,7 @@ impl TableDef {
 
             let index_for_column = table.indexes.iter().find(|index| {
                 // Ignore multi-column indexes
-                matches!(index.cols.split_first(), (index_col_id,[]) if index_col_id.idx() == col_id)
+                index.cols.tail.is_empty() && index.cols.head.idx() == col_id
             });
 
             // If there's an index defined for this column already, use it,
@@ -156,18 +156,14 @@ impl TableDef {
 
         // Multi-column indexes cannot be unique (yet), so just add them.
         let multi_col_indexes = table.indexes.iter().filter_map(|index| {
-            if let (a, [b, rest @ ..]) = index.cols.split_first() {
-                let idx = spacetimedb_sats::db::def::IndexDef::new_cols(
+            (index.cols.len() > 1).then(|| {
+                spacetimedb_sats::db::def::IndexDef::new_cols(
                     index.name.clone(),
                     AUTO_TABLE_ID,
                     false,
-                    (*a, iter::once(*b).chain(rest.iter().copied()).collect()),
-                );
-
-                Some(idx)
-            } else {
-                None
-            }
+                    index.cols.clone(),
+                )
+            })
         });
         indexes.extend(multi_col_indexes);
 

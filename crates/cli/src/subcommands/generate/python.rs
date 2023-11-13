@@ -3,7 +3,7 @@ use super::util::fmt_fn;
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::db::attr::ColumnAttribute;
 use spacetimedb_lib::{
-    sats::{AlgebraicTypeRef, ArrayType, BuiltinType, MapType},
+    sats::{AlgebraicType::Builtin, AlgebraicTypeRef, ArrayType, BuiltinType, MapType},
     AlgebraicType, ProductType, ProductTypeElement, ReducerDef, SumType, TableDef,
 };
 use std::fmt::{self, Write};
@@ -160,7 +160,7 @@ fn generate_imports(ctx: &GenCtx, elements: &Vec<ProductTypeElement>, imports: &
 
 fn _generate_imports(ctx: &GenCtx, ty: &AlgebraicType, imports: &mut Vec<String>) {
     match ty {
-        AlgebraicType::Builtin(b) => match b {
+        Builtin(b) => match b {
             BuiltinType::Array(ArrayType { elem_ty }) => _generate_imports(ctx, elem_ty, imports),
             BuiltinType::Map(map_type) => {
                 _generate_imports(ctx, &map_type.key_ty, imports);
@@ -389,7 +389,7 @@ fn autogen_python_product_table_common(
                     AlgebraicType::Product(_) => {
                         reducer_args.push(format!("self.{python_field_name}"));
                     }
-                    AlgebraicType::Builtin(_) => {
+                    Builtin(_) => {
                         reducer_args.push(format!("self.{python_field_name}"));
                     }
                     AlgebraicType::Ref(type_ref) => {

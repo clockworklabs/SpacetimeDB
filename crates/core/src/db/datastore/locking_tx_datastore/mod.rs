@@ -2,24 +2,11 @@ mod btree_index;
 mod sequence;
 mod table;
 
-use nonempty::NonEmpty;
-use parking_lot::{lock_api::ArcMutexGuard, Mutex, RawMutex};
-
 use self::{
     btree_index::{BTreeIndex, BTreeIndexRangeIter},
     sequence::Sequence,
     table::Table,
 };
-use anyhow::anyhow;
-use std::time::{Duration, Instant};
-use std::{
-    borrow::Cow,
-    collections::{BTreeMap, BTreeSet, HashMap},
-    ops::{Deref, RangeBounds},
-    sync::Arc,
-    vec,
-};
-
 use super::{
     system_tables::{
         StColumnRow, StIndexRow, StSequenceRow, StTableRow, ST_COLUMNS_ID, ST_COLUMNS_ROW_TYPE, ST_INDEXES_ID,
@@ -45,6 +32,9 @@ use crate::{
     error::{DBError, TableError},
     execution_context::ExecutionContext,
 };
+use anyhow::anyhow;
+use nonempty::NonEmpty;
+use parking_lot::{lock_api::ArcMutexGuard, Mutex, RawMutex};
 use spacetimedb_lib::Address;
 use spacetimedb_primitives::{ColId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::data_key::{DataKey, ToDataKey};
@@ -54,6 +44,14 @@ use spacetimedb_sats::relation::RelValue;
 use spacetimedb_sats::{
     db::auth::{StAccess, StTableType},
     AlgebraicType, AlgebraicValue, ProductType, ProductValue,
+};
+use std::time::{Duration, Instant};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, BTreeSet, HashMap},
+    ops::{Deref, RangeBounds},
+    sync::Arc,
+    vec,
 };
 use thiserror::Error;
 
@@ -2371,10 +2369,9 @@ impl traits::MutProgrammable for Locking {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use itertools::Itertools;
-
     use crate::db::datastore::Result;
     use crate::error::IndexError;
+    use itertools::Itertools;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_sats::product;
 

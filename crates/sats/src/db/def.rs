@@ -1,7 +1,3 @@
-use derive_more::Display;
-use nonempty::NonEmpty;
-use spacetimedb_primitives::*;
-
 use crate::db::auth::{StAccess, StTableType};
 use crate::de::BasicVecVisitor;
 use crate::product_value::InvalidFieldError;
@@ -9,6 +5,9 @@ use crate::relation::{Column, DbTable, FieldName, FieldOnly, Header, TableField}
 use crate::ser::SerializeArray;
 use crate::{de, impl_deserialize, impl_serialize, ser, AlgebraicValue, ProductValue};
 use crate::{AlgebraicType, ProductType, ProductTypeElement};
+use derive_more::Display;
+use nonempty::NonEmpty;
+use spacetimedb_primitives::*;
 
 /// The default preallocation amount for sequences.
 pub const SEQUENCE_PREALLOCATION_AMOUNT: i128 = 4_096;
@@ -169,10 +168,10 @@ impl TryFrom<u8> for Constraints {
     }
 }
 
-impl TryFrom<ColumnIndexAttribute> for Constraints {
+impl TryFrom<ColumnAttribute> for Constraints {
     type Error = ();
 
-    fn try_from(value: ColumnIndexAttribute) -> Result<Self, Self::Error> {
+    fn try_from(value: ColumnAttribute) -> Result<Self, Self::Error> {
         Ok(match value.kind() {
             AttributeKind::UNSET => Self::unset(),
             AttributeKind::INDEXED => Self::indexed(),
@@ -289,7 +288,7 @@ impl IndexDef {
         }
     }
 
-    pub fn new_cols<Col: Into<NonEmpty<ColId>>>(name: String, table_id: TableId, is_unique: bool, cols: Col) -> Self {
+    pub fn new_cols(name: String, table_id: TableId, is_unique: bool, cols: impl Into<NonEmpty<ColId>>) -> Self {
         Self {
             cols: cols.into(),
             name,
@@ -538,10 +537,8 @@ impl TableSchema {
     pub fn project(&self, columns: impl Iterator<Item = ColId>) -> Result<Vec<&ColumnSchema>, InvalidFieldError> {
         columns
             .map(|pos| {
-                self.get_column(usize::from(pos)).ok_or(InvalidFieldError {
-                    col_pos: pos,
-                    name: None,
-                })
+                let index = pos.idx();
+                self.get_column(index).ok_or(InvalidFieldError { index, name: None })
             })
             .collect()
     }

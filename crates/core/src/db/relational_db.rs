@@ -8,6 +8,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use super::commit_log::{CommitLog, CommitLogView};
+use super::datastore::locking_tx_datastore::Locking;
 use super::datastore::locking_tx_datastore::{DataRef, Iter, IterByColEq, IterByColRange, MutTxId, RowId};
 use super::datastore::traits::{MutProgrammable, MutTx, MutTxDatastore, Programmable, TxData};
 use super::message_log::MessageLog;
@@ -24,13 +25,10 @@ use crate::error::{DBError, DatabaseError, IndexError, TableError};
 use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
 use spacetimedb_lib::PrimaryKey;
-use spacetimedb_primitives::*;
+use spacetimedb_primitives::{ColId, ColumnAttribute, IndexId, SequenceId, TableId};
 use spacetimedb_sats::data_key::ToDataKey;
-use spacetimedb_sats::db::attr::ColumnAttribute;
-use spacetimedb_sats::db::def::*;
+use spacetimedb_sats::db::def::{IndexDef, SequenceDef, TableDef, TableSchema};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
-
-use super::datastore::locking_tx_datastore::Locking;
 
 #[derive(Clone)]
 pub struct RelationalDB {
@@ -759,6 +757,7 @@ mod tests {
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
+    use spacetimedb_sats::db::def::{ColumnDef, IndexType};
     use spacetimedb_sats::product;
 
     fn column(name: &str, ty: AlgebraicType) -> ColumnDef {

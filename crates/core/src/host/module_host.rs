@@ -1,13 +1,3 @@
-use std::collections::HashMap;
-use std::fmt;
-use std::sync::{Arc, Weak};
-use std::time::Duration;
-
-use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
-use futures::{Future, FutureExt};
-use indexmap::IndexMap;
-use tokio::sync::oneshot;
-
 use super::host_controller::HostThreadpool;
 use super::{ArgsTuple, EnergyDiff, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
 use crate::client::ClientConnectionSender;
@@ -26,10 +16,18 @@ use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed, W
 use crate::util::notify_once::NotifyOnce;
 use crate::util::prometheus_handle::{GaugeInc, IntGaugeExt};
 use crate::worker_metrics::WORKER_METRICS;
+use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
+use futures::{Future, FutureExt};
+use indexmap::IndexMap;
 use spacetimedb_lib::{Address, ReducerDef, TableDef};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::relation::MemTable;
 use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
+use std::collections::HashMap;
+use std::fmt;
+use std::sync::{Arc, Weak};
+use std::time::Duration;
+use tokio::sync::oneshot;
 
 #[derive(Debug, Default, Clone)]
 pub struct DatabaseUpdate {
