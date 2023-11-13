@@ -1,7 +1,7 @@
 #![no_std]
 
-mod ids;
 mod attr;
+mod ids;
 
-pub use ids::{ColId, ConstraintId, IndexId, SequenceId, TableId};
 pub use attr::{AttributeKind, ColumnIndexAttribute};
+pub use ids::{ColId, ConstraintId, IndexId, SequenceId, TableId};

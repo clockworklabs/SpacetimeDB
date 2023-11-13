@@ -18,13 +18,13 @@ use bitflags::Flags;
 use module::{derive_deserialize, derive_satstype, derive_serialize};
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, quote_spanned, TokenStreamExt};
+use spacetimedb_primitives::ColumnIndexAttribute;
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
 use syn::{
     parse_quote, BinOp, Expr, ExprBinary, ExprLit, ExprUnary, FnArg, Ident, ItemFn, ItemStruct, Member, Token, Type,
     UnOp,
 };
-use spacetimedb_primitives::ColumnIndexAttribute;
 
 mod sym {
     /// A symbol known at compile-time against
