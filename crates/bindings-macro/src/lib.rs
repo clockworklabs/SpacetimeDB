@@ -18,13 +18,15 @@ use bitflags::Flags;
 use module::{derive_deserialize, derive_satstype, derive_serialize};
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, quote_spanned, TokenStreamExt};
-use spacetimedb_primitives::ColumnIndexAttribute;
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
 use syn::{
     parse_quote, BinOp, Expr, ExprBinary, ExprLit, ExprUnary, FnArg, Ident, ItemFn, ItemStruct, Member, Token, Type,
     UnOp,
 };
+#[path = "../../sats/src/db/attr.rs"]
+mod attr;
+use attr::ColumnAttribute;
 
 mod sym {
     /// A symbol known at compile-time against
@@ -433,7 +435,7 @@ fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtr
 struct Column<'a> {
     index: u8,
     field: &'a module::SatsField<'a>,
-    attr: ColumnIndexAttribute,
+    attr: ColumnAttribute,
 }
 
 fn spacetimedb_table(item: TokenStream) -> syn::Result<TokenStream> {
@@ -527,19 +529,19 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
             .try_into()
             .map_err(|_| syn::Error::new_spanned(field.ident, "too many columns; the most a table can have is 256"))?;
 
-        let mut col_attr = ColumnIndexAttribute::UNSET;
+        let mut col_attr = ColumnAttribute::UNSET;
         for attr in field.original_attrs {
             let Some(attr) = ColumnAttr::parse(attr)? else { continue };
             let duplicate = |span| syn::Error::new(span, "duplicate attribute");
             let (extra_col_attr, span) = match attr {
-                ColumnAttr::Unique(span) => (ColumnIndexAttribute::UNIQUE, span),
-                ColumnAttr::Autoinc(span) => (ColumnIndexAttribute::AUTO_INC, span),
-                ColumnAttr::Primarykey(span) => (ColumnIndexAttribute::PRIMARY_KEY, span),
+                ColumnAttr::Unique(span) => (ColumnAttribute::UNIQUE, span),
+                ColumnAttr::Autoinc(span) => (ColumnAttribute::AUTO_INC, span),
+                ColumnAttr::Primarykey(span) => (ColumnAttribute::PRIMARY_KEY, span),
             };
             // do those attributes intersect (not counting the INDEXED bit which is present in all attributes)?
             // this will check that no two attributes both have UNIQUE, AUTOINC or PRIMARY_KEY bits set
             if !(col_attr & extra_col_attr)
-                .difference(ColumnIndexAttribute::INDEXED)
+                .difference(ColumnAttribute::INDEXED)
                 .is_empty()
             {
                 return Err(duplicate(span));
@@ -547,7 +549,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
             col_attr |= extra_col_attr;
         }
 
-        if col_attr.contains(ColumnIndexAttribute::AUTO_INC) {
+        if col_attr.contains(ColumnAttribute::AUTO_INC) {
             let valid_for_autoinc = if let syn::Type::Path(p) = field.ty {
                 // TODO: this is janky as heck
                 matches!(
@@ -599,9 +601,8 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
         }));
     }
 
-    let (unique_columns, nonunique_columns): (Vec<_>, Vec<_>) = columns
-        .iter()
-        .partition(|x| x.attr.contains(ColumnIndexAttribute::UNIQUE));
+    let (unique_columns, nonunique_columns): (Vec<_>, Vec<_>) =
+        columns.iter().partition(|x| x.attr.contains(ColumnAttribute::UNIQUE));
 
     let has_unique = !unique_columns.is_empty();
 
@@ -696,7 +697,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
     let schema_impl = derive_satstype(&sats_ty, false);
     let column_attrs = columns.iter().map(|col| {
         Ident::new(
-            ColumnIndexAttribute::FLAGS
+            ColumnAttribute::FLAGS
                 .iter()
                 .find_map(|f| (col.attr == *f.value()).then_some(f.name()))
                 .expect("Invalid column attribute"),
@@ -706,8 +707,8 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
     let tabletype_impl = quote! {
         impl spacetimedb::TableType for #original_struct_ident {
             const TABLE_NAME: &'static str = #table_name;
-            const COLUMN_ATTRS: &'static [spacetimedb::sats::db::attr::ColumnIndexAttribute] = &[
-                #(spacetimedb::sats::db::attr::ColumnIndexAttribute::#column_attrs),*
+            const COLUMN_ATTRS: &'static [spacetimedb::sats::db::attr::ColumnAttribute] = &[
+                #(spacetimedb::sats::db::attr::ColumnAttribute::#column_attrs),*
             ];
             const INDEXES: &'static [spacetimedb::IndexDef<'static>] = &[#(#indexes),*];
             type InsertResult = #insert_result;

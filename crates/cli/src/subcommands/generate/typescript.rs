@@ -3,10 +3,10 @@ use super::util::fmt_fn;
 use std::fmt::{self, Write};
 
 use convert_case::{Case, Casing};
-use spacetimedb_lib::sats::db::attr::ColumnIndexAttribute;
+use spacetimedb_lib::sats::db::attr::ColumnAttribute;
 use spacetimedb_lib::sats::{
-    AlgebraicType, AlgebraicType::Builtin, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType,
-    ProductTypeElement, SumType, SumTypeVariant,
+    AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, ProductTypeElement, SumType,
+    SumTypeVariant,
 };
 use spacetimedb_lib::{ReducerDef, TableDef};
 
@@ -142,6 +142,7 @@ fn convert_type<'a>(
         }
         AlgebraicType::Sum(sum_type) => {
             if let Some(inner_ty) = sum_type.as_option() {
+                use AlgebraicType::Builtin;
                 match inner_ty {
                     Builtin(ty) => match ty {
                         BuiltinType::Bool
@@ -315,8 +316,8 @@ fn serialize_type<'a>(
             }
         }
         AlgebraicType::Builtin(BuiltinType::Array(ArrayType { elem_ty })) => match &**elem_ty {
-            Builtin(BuiltinType::U8) => write!(f, "Array.from({value})"),
-            Builtin(_) => write!(f, "{value}"),
+            AlgebraicType::Builtin(BuiltinType::U8) => write!(f, "Array.from({value})"),
+            AlgebraicType::Builtin(_) => write!(f, "{value}"),
             t => write!(f, "{value}.map(el => {})", serialize_type(ctx, t, "el", prefix)),
         },
         AlgebraicType::Builtin(_) => write!(f, "{value}"),
@@ -595,7 +596,7 @@ fn generate_imports_variants(
 
 fn _generate_imports(ctx: &GenCtx, ty: &AlgebraicType, imports: &mut Vec<String>, prefix: Option<&str>) {
     match ty {
-        Builtin(b) => match b {
+        AlgebraicType::Builtin(b) => match b {
             BuiltinType::Array(ArrayType { elem_ty }) => _generate_imports(ctx, elem_ty, imports, prefix),
             BuiltinType::Map(map_type) => {
                 _generate_imports(ctx, &map_type.key_ty, imports, prefix);
@@ -629,7 +630,7 @@ fn autogen_typescript_product_table_common(
     ctx: &GenCtx,
     name: &str,
     product_type: &ProductType,
-    column_attrs: Option<&[ColumnIndexAttribute]>,
+    column_attrs: Option<&[ColumnAttribute]>,
 ) -> String {
     let mut output = CodeIndenter::new(String::new());
 
@@ -953,7 +954,7 @@ fn autogen_typescript_access_funcs_for_struct(
     struct_name_pascal_case: &str,
     product_type: &ProductType,
     table_name: &str,
-    column_attrs: &[ColumnIndexAttribute],
+    column_attrs: &[ColumnAttribute],
 ) {
     let (unique, nonunique) = column_attrs
         .iter()

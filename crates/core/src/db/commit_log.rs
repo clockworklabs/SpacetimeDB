@@ -1,3 +1,7 @@
+use anyhow::Context;
+use std::io;
+use std::sync::{Arc, Mutex, MutexGuard};
+
 use super::{
     datastore::traits::{MutTxDatastore, TxData},
     message_log::{self, MessageLog},
@@ -16,14 +20,8 @@ use crate::{
     error::DBError,
     execution_context::ExecutionContext,
 };
-
-use anyhow::Context;
 use spacetimedb_sats::hash::{hash_bytes, Hash};
-
 use spacetimedb_sats::DataKey;
-use std::io;
-use std::sync::Arc;
-use std::sync::{Mutex, MutexGuard};
 
 #[derive(Clone)]
 pub struct CommitLog {
@@ -248,7 +246,7 @@ impl CommitLogView {
     /// the transactions in a [`Commit`].
     ///
     /// The iterator attempts to read each large object in turn, yielding an
-    /// [`io::Error`] with kind [`io::ErrorKind::NotFound`] if the object was
+    /// [`io::Error`] with constraints [`io::ErrorKind::NotFound`] if the object was
     /// not found.
     //
     // TODO(kim): We probably want a more efficient way to stream the contents

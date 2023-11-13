@@ -2,15 +2,14 @@ use crate::error::{DBError, TableError};
 use core::fmt;
 use nonempty::NonEmpty;
 use once_cell::sync::Lazy;
-use spacetimedb_primitives::{ColId, ConstraintId, IndexId, SequenceId, TableId};
+
+use spacetimedb_primitives::*;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
-use spacetimedb_sats::db::def::{
-    ColumnSchema, ConstraintSchema, Constraints, IndexSchema, IndexType, SequenceSchema, TableSchema,
-};
+use spacetimedb_sats::db::def::*;
 use spacetimedb_sats::hash::Hash;
+use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::{
-    impl_deserialize, impl_serialize, product, product_value::InvalidFieldError, AlgebraicType, AlgebraicValue,
-    ArrayValue, ProductType, ProductValue,
+    impl_deserialize, impl_serialize, product, AlgebraicType, AlgebraicValue, ArrayValue, ProductType, ProductValue,
 };
 
 /// The static ID of the table that defines tables
@@ -71,7 +70,7 @@ impl SystemTables {
     pub(crate) fn total_constraints_indexes() -> usize {
         Self::tables()
             .iter()
-            .flat_map(|x| x.constraints.iter().filter(|x| x.kind != Constraints::unset()))
+            .flat_map(|x| x.constraints.iter().filter(|x| x.constraints != Constraints::unset()))
             .count()
     }
 
@@ -169,14 +168,14 @@ st_fields_enum!(
 st_fields_enum!(enum StConstraintFields {
     "constraint_id", ConstraintId = 0,
     "constraint_name", ConstraintName = 1,
-    "kind", Kind = 2,
+    "constraints", Constraints = 2,
     "table_id", TableId = 3,
     "columns", Columns = 4,
 });
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StModuleFields {
     "program_hash", ProgramHash = 0,
-    "kind", Kind = 1,
+    "constraints", Kind = 1,
     "epoch", Epoch = 2,
 });
 
@@ -297,10 +296,10 @@ pub fn st_columns_schema() -> TableSchema {
         constraints: vec![ConstraintSchema {
             constraint_id: ST_CONSTRAINT_ID_INDEX_HACK.0.into(),
             constraint_name: "ct_columns_table_id".to_string(),
-            kind: Constraints::indexed(),
+            constraints: Constraints::indexed(),
             table_id: ST_COLUMNS_ID,
             //TODO: Change to multi-columns when PR for it land: StColumnFields::ColId as u32
-            columns: NonEmpty::new(StColumnFields::TableId.col_id()),
+            columns: StColumnFields::TableId.into(),
         }],
         table_type: StTableType::System,
         table_access: StAccess::Public,
@@ -475,9 +474,9 @@ pub static ST_SEQUENCE_ROW_TYPE: Lazy<ProductType> =
 
 /// System Table [ST_CONSTRAINTS_NAME]
 ///
-/// | constraint_id | constraint_name      | kind | table_id | columns |
-/// |---------------|-------------------- -|------|-------|------------|
-/// | 1             | "unique_customer_id" | 1    | 100   | [1, 4]     |
+/// | constraint_id | constraint_name      | constraints | table_id | columns |
+/// |---------------|-------------------- -|-------------|-------|------------|
+/// | 1             | "unique_customer_id" | 1           | 100   | [1, 4]     |
 pub(crate) fn st_constraints_schema() -> TableSchema {
     TableSchema {
         table_id: ST_CONSTRAINTS_ID,
@@ -499,8 +498,8 @@ pub(crate) fn st_constraints_schema() -> TableSchema {
             },
             ColumnSchema {
                 table_id: ST_CONSTRAINTS_ID,
-                col_id: StConstraintFields::Kind.col_id(),
-                col_name: StConstraintFields::Kind.col_name(),
+                col_id: StConstraintFields::Constraints.col_id(),
+                col_name: StConstraintFields::Constraints.col_name(),
                 col_type: AlgebraicType::U32,
                 is_autoinc: false,
             },
@@ -543,10 +542,10 @@ pub static ST_CONSTRAINT_ROW_TYPE: Lazy<ProductType> =
 /// SpacetimeDB module associated with the database:
 ///
 /// * `program_hash` is the [`Hash`] of the raw bytes of the (compiled) module.
-/// * `kind` is the [`ModuleKind`] (currently always [`WASM_MODULE`]).
+/// * `constraints` is the [`ModuleKind`] (currently always [`WASM_MODULE`]).
 /// * `epoch` is a _fencing token_ used to protect against concurrent updates.
 ///
-/// | program_hash        | kind     | epoch |
+/// | program_hash        | constraints     | epoch |
 /// |---------------------|----------|-------|
 /// | [250, 207, 5, ...]  | 0        | 42    |
 pub(crate) fn st_module_schema() -> TableSchema {
@@ -735,15 +734,15 @@ impl StIndexRow<&str> {
 }
 
 fn to_cols(row: &ProductValue, col_pos: ColId, col_name: &'static str) -> Result<NonEmpty<ColId>, DBError> {
-    let index = col_pos.idx();
-    let cols = row.field_as_array(index, Some(col_name))?;
+    let col_pos = col_pos.idx();
+    let cols = row.field_as_array(col_pos, Some(col_name))?;
     if let ArrayValue::U32(x) = &cols {
         let x: Vec<_> = x.iter().map(|x| ColId::from(*x)).collect();
         Ok(NonEmpty::from_slice(&x).unwrap())
     } else {
         Err(InvalidFieldError {
             name: Some(col_name),
-            index,
+            col_pos: col_pos.into(),
         }
         .into())
     }
@@ -757,11 +756,12 @@ impl<'a> TryFrom<&'a ProductValue> for StIndexRow<&'a str> {
         let index_name = row.field_as_str(StIndexFields::IndexName.col_idx(), None)?;
         let index_type = row.field_as_u8(StIndexFields::IndexType.col_idx(), None)?;
         let index_type = IndexType::try_from(index_type).map_err(|_| InvalidFieldError {
-            index: StIndexFields::IndexType.col_idx(),
+            col_pos: StIndexFields::IndexType.col_id(),
             name: Some(StIndexFields::IndexType.name()),
         })?;
         let columns = to_cols(row, StIndexFields::Columns.col_id(), StIndexFields::Columns.name())?;
         let is_unique = row.field_as_bool(StIndexFields::IsUnique.col_idx(), None)?;
+
         Ok(StIndexRow {
             index_id,
             table_id,
@@ -878,7 +878,7 @@ impl From<StSequenceRow<String>> for SequenceSchema {
 pub struct StConstraintRow<Name: AsRef<str>> {
     pub(crate) constraint_id: ConstraintId,
     pub(crate) constraint_name: Name,
-    pub(crate) kind: Constraints,
+    pub(crate) constraints: Constraints,
     pub(crate) table_id: TableId,
     pub(crate) columns: NonEmpty<ColId>,
 }
@@ -888,7 +888,7 @@ impl StConstraintRow<&str> {
         StConstraintRow {
             constraint_id: self.constraint_id,
             constraint_name: self.constraint_name.to_string(),
-            kind: self.kind,
+            constraints: self.constraints,
             table_id: self.table_id,
             columns: self.columns.clone(),
         }
@@ -902,8 +902,8 @@ impl<'a> TryFrom<&'a ProductValue> for StConstraintRow<&'a str> {
             .field_as_u32(StConstraintFields::ConstraintId.col_idx(), None)?
             .into();
         let constraint_name = row.field_as_str(StConstraintFields::ConstraintName.col_idx(), None)?;
-        let kind = row.field_as_u8(StConstraintFields::Kind.col_idx(), None)?;
-        let kind = Constraints::try_from(kind).expect("Fail to decode Constraints");
+        let constraints = row.field_as_u8(StConstraintFields::Constraints.col_idx(), None)?;
+        let constraints = Constraints::try_from(constraints).expect("Fail to decode Constraints");
         let table_id = row.field_as_u32(StConstraintFields::TableId.col_idx(), None)?.into();
         let columns = to_cols(
             row,
@@ -914,7 +914,7 @@ impl<'a> TryFrom<&'a ProductValue> for StConstraintRow<&'a str> {
         Ok(StConstraintRow {
             constraint_id,
             constraint_name,
-            kind,
+            constraints,
             table_id,
             columns,
         })
@@ -928,14 +928,14 @@ impl From<StConstraintRow<String>> for ProductValue {
         product![
             x.constraint_id,
             x.constraint_name,
-            x.kind.bits(),
+            x.constraints.bits(),
             x.table_id,
             ArrayValue::from(cols)
         ]
     }
 }
 
-/// Indicates the kind of module the `program_hash` of a [`StModuleRow`]
+/// Indicates the constraints of module the `program_hash` of a [`StModuleRow`]
 /// describes.
 ///
 /// More or less a placeholder to allow for future non-WASM hosts without
@@ -945,7 +945,7 @@ pub struct ModuleKind(u8);
 
 /// The [`ModuleKind`] of WASM-based modules.
 ///
-/// This is currently the only known kind.
+/// This is currently the only known constraints.
 pub const WASM_MODULE: ModuleKind = ModuleKind(0);
 
 impl_serialize!([] ModuleKind, (self, ser) => self.0.serialize(ser));

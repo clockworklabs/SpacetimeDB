@@ -538,7 +538,7 @@ impl WasmInstanceEnv {
             let name = Self::read_string(&caller, mem, name, name_len)?;
 
             // Query the table id.
-            Ok(caller.data().instance_env.get_table_id(name)?.0)
+            Ok(caller.data().instance_env.get_table_id(name)?.into())
         })
     }
 

@@ -57,7 +57,7 @@ pub fn update_database(
 
                 for index_def in indexes_to_create {
                     system_logger.info(&format!("Creating index `{}`", index_def.name));
-                    stdb.create_index(tx, index_def)?;
+                    stdb.create_index(tx, index_def.table_id, index_def)?;
                 }
             }
 

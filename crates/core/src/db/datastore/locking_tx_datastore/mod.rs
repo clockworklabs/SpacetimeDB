@@ -2,23 +2,37 @@ mod btree_index;
 mod sequence;
 mod table;
 
+use nonempty::NonEmpty;
+use parking_lot::{lock_api::ArcMutexGuard, Mutex, RawMutex};
+
 use self::{
     btree_index::{BTreeIndex, BTreeIndexRangeIter},
     sequence::Sequence,
     table::Table,
 };
+use anyhow::anyhow;
+use std::time::{Duration, Instant};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, BTreeSet, HashMap},
+    ops::{Deref, RangeBounds},
+    sync::Arc,
+    vec,
+};
+
 use super::{
     system_tables::{
-        self, StColumnRow, StIndexRow, StModuleRow, StSequenceRow, StTableRow, INDEX_ID_SEQUENCE_ID,
-        SEQUENCE_ID_SEQUENCE_ID, ST_COLUMNS_ID, ST_COLUMNS_ROW_TYPE, ST_INDEXES_ID, ST_INDEX_ROW_TYPE, ST_MODULE_ID,
-        ST_SEQUENCES_ID, ST_SEQUENCE_ROW_TYPE, ST_TABLES_ID, ST_TABLE_ROW_TYPE, TABLE_ID_SEQUENCE_ID, WASM_MODULE,
+        StColumnRow, StIndexRow, StSequenceRow, StTableRow, ST_COLUMNS_ID, ST_COLUMNS_ROW_TYPE, ST_INDEXES_ID,
+        ST_INDEX_ROW_TYPE, ST_SEQUENCES_ID, ST_SEQUENCE_ROW_TYPE, ST_TABLES_ID, ST_TABLE_ROW_TYPE,
     },
     traits::{self, DataRow, MutTx, MutTxDatastore, TxData, TxDatastore},
 };
+use crate::db::datastore::system_tables;
 use crate::db::datastore::system_tables::{
     st_constraints_schema, st_module_schema, table_name_is_system, StColumnFields, StConstraintRow, StIndexFields,
-    StSequenceFields, StTableFields, SystemTables, CONSTRAINT_ID_SEQUENCE_ID, ST_CONSTRAINTS_ID,
-    ST_CONSTRAINT_ROW_TYPE, ST_MODULE_ROW_TYPE,
+    StModuleRow, StSequenceFields, StTableFields, SystemTables, CONSTRAINT_ID_SEQUENCE_ID, INDEX_ID_SEQUENCE_ID,
+    SEQUENCE_ID_SEQUENCE_ID, ST_CONSTRAINTS_ID, ST_CONSTRAINT_ROW_TYPE, ST_MODULE_ID, ST_MODULE_ROW_TYPE,
+    TABLE_ID_SEQUENCE_ID, WASM_MODULE,
 };
 use crate::db::db_metrics::DB_METRICS;
 use crate::{
@@ -31,27 +45,15 @@ use crate::{
     error::{DBError, TableError},
     execution_context::ExecutionContext,
 };
-use anyhow::anyhow;
-use nonempty::NonEmpty;
-use parking_lot::{lock_api::ArcMutexGuard, Mutex, RawMutex};
 use spacetimedb_lib::Address;
 use spacetimedb_primitives::{ColId, IndexId, SequenceId, TableId};
-use spacetimedb_sats::db::def::{ColumnSchema, IndexDef, IndexSchema, IndexType, SequenceDef, TableDef, TableSchema};
+use spacetimedb_sats::data_key::{DataKey, ToDataKey};
+use spacetimedb_sats::db::def::*;
 use spacetimedb_sats::hash::Hash;
+use spacetimedb_sats::relation::RelValue;
 use spacetimedb_sats::{
-    data_key::ToDataKey,
     db::auth::{StAccess, StTableType},
-    relation::RelValue,
-    DataKey,
-};
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
-use std::{
-    borrow::Cow,
-    collections::{BTreeMap, BTreeSet, HashMap},
-    ops::{Deref, RangeBounds},
-    sync::Arc,
-    time::{Duration, Instant},
-    vec,
+    AlgebraicType, AlgebraicValue, ProductType, ProductValue,
 };
 use thiserror::Error;
 
@@ -75,6 +77,8 @@ pub enum SequenceError {
     NotInteger { col: String, found: AlgebraicType },
     #[error("Sequence ID `{0}` still had no values left after allocation.")]
     UnableToAllocate(SequenceId),
+    #[error("Autoinc constraint on table {0:?} spans more than one column: {1:?}")]
+    MultiColumnAutoInc(TableId, NonEmpty<ColId>),
 }
 
 const SEQUENCE_PREALLOCATION_AMOUNT: i128 = 4_096;
@@ -468,7 +472,7 @@ impl Inner {
             let row = StConstraintRow {
                 constraint_id: constraint.constraint_id,
                 constraint_name: constraint.constraint_name.clone(),
-                kind: constraint.kind,
+                constraints: constraint.constraints,
                 table_id,
                 columns: constraint.columns,
             };
@@ -486,7 +490,7 @@ impl Inner {
             let index_id = IndexId(constraint.constraint_id.0);
 
             //Check if add an index:
-            match constraint.kind {
+            match constraint.constraints {
                 x if x.has_unique() => IndexSchema {
                     index_id,
                     table_id,
@@ -503,7 +507,7 @@ impl Inner {
                     is_unique: false,
                     index_type: IndexType::BTree,
                 },
-                x => panic!("Adding constraint of kind `{x:?}` is not supported yet."),
+                x => panic!("Adding constraint of constraints `{x:?}` is not supported yet."),
             }
         }));
 
@@ -603,7 +607,7 @@ impl Inner {
         let rows = self.iter_by_col_eq(&ctx, &table_id, col_id, value)?;
         let ids_to_delete = rows.map(|row| RowId(*row.id())).collect::<Vec<_>>();
         if ids_to_delete.is_empty() {
-            return Err(TableError::IdNotFound(table_id, table_id.0).into());
+            return Err(TableError::IdNotFound(table_id, col_id.0).into());
         }
         self.delete(&table_id, ids_to_delete);
 
@@ -865,7 +869,8 @@ impl Inner {
 
         let row = rows
             .first()
-            .ok_or_else(|| TableError::IdNotFound(table_id, table_id.0))?;
+            .ok_or_else(|| TableError::IdNotFound(ST_TABLES_ID, table_id.0))?;
+
         let el = StTableRow::try_from(row.view())?;
         let table_name = el.table_name.to_owned();
         let table_id = el.table_id;
@@ -1023,6 +1028,7 @@ impl Inner {
         self.create_index_internal(index_id, index)?;
 
         log::trace!("INDEX CREATED: id = {}", index_id);
+
         Ok(index_id)
     }
 
@@ -2362,20 +2368,15 @@ impl traits::MutProgrammable for Locking {
         Ok(())
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use itertools::Itertools;
 
-    use crate::db::datastore::system_tables::{StConstraintRow, ST_CONSTRAINTS_ID};
     use crate::db::datastore::Result;
     use crate::error::IndexError;
-    use itertools::Itertools;
-    use nonempty::NonEmpty;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_sats::db::auth::{StAccess, StTableType};
-    use spacetimedb_sats::db::def::{ColumnDef, Constraints};
-    use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductValue};
+    use spacetimedb_sats::product;
 
     /// Utility to query the system tables and return their concrete table row
     pub struct SystemTableQuery<'a> {
@@ -2708,12 +2709,12 @@ mod tests {
 
             ColRow { table: 4, pos: 0, name: "constraint_id", ty: AlgebraicType::U32, autoinc: true },
             ColRow { table: 4, pos: 1, name: "constraint_name", ty: AlgebraicType::String, autoinc: false },
-            ColRow { table: 4, pos: 2, name: "kind", ty: AlgebraicType::U32, autoinc: false },
+            ColRow { table: 4, pos: 2, name: "constraints", ty: AlgebraicType::U32, autoinc: false },
             ColRow { table: 4, pos: 3, name: "table_id", ty: AlgebraicType::U32, autoinc: false },
             ColRow { table: 4, pos: 4, name: "columns", ty: AlgebraicType::array(AlgebraicType::U32), autoinc: false },
 
             ColRow { table: 5, pos: 0, name: "program_hash", ty: AlgebraicType::array(AlgebraicType::U8), autoinc: false },
-            ColRow { table: 5, pos: 1, name: "kind", ty: AlgebraicType::U8, autoinc: false },
+            ColRow { table: 5, pos: 1, name: "constraints", ty: AlgebraicType::U8, autoinc: false },
             ColRow { table: 5, pos: 2, name: "epoch", ty: AlgebraicType::U128, autoinc: false },
         ]));
         #[rustfmt::skip]
@@ -2736,7 +2737,7 @@ mod tests {
         assert_eq!(query.scan_st_constraints()?, vec![StConstraintRow {
             constraint_id: 5.into(),
             constraint_name: "ct_columns_table_id".to_string(),
-            kind: Constraints::indexed(),
+            constraints: Constraints::indexed(),
             table_id: 1.into(),
             columns: col(0),
         }]);

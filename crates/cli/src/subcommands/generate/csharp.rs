@@ -3,7 +3,7 @@ use super::util::fmt_fn;
 use std::fmt::{self, Write};
 
 use convert_case::{Case, Casing};
-use spacetimedb_lib::sats::db::attr::ColumnIndexAttribute;
+use spacetimedb_lib::sats::db::attr::ColumnAttribute;
 use spacetimedb_lib::sats::{
     AlgebraicType, AlgebraicType::Builtin, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, SumType,
 };
@@ -565,7 +565,7 @@ fn autogen_csharp_product_table_common(
     ctx: &GenCtx,
     name: &str,
     product_type: &ProductType,
-    column_attrs: Option<&[ColumnIndexAttribute]>,
+    column_attrs: Option<&[ColumnAttribute]>,
     namespace: &str,
 ) -> String {
     let mut output = CodeIndenter::new(String::new());
@@ -923,7 +923,7 @@ fn autogen_csharp_access_funcs_for_struct(
     struct_name_pascal_case: &str,
     product_type: &ProductType,
     table_name: &str,
-    column_attrs: &[ColumnIndexAttribute],
+    column_attrs: &[ColumnAttribute],
 ) -> bool {
     let (unique, nonunique) = column_attrs
         .iter()

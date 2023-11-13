@@ -223,7 +223,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
 
 /// Describes a programmable [`TxDatastore`].
 ///
-/// A programmable datastore is one which has a program of some kind associated
+/// A programmable datastore is one which has a program of some constraints associated
 /// with it.
 pub trait Programmable: TxDatastore {
     /// Retrieve the [`Hash`] of the program currently associated with the
@@ -254,7 +254,7 @@ pub trait MutProgrammable: MutTxDatastore {
 mod tests {
     use nonempty::NonEmpty;
     use spacetimedb_primitives::ColId;
-    use spacetimedb_sats::db::attr::ColumnIndexAttribute;
+    use spacetimedb_sats::db::attr::ColumnAttribute;
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::db::def::{IndexType, AUTO_TABLE_ID};
     use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductType, ProductTypeElement, Typespace};
@@ -266,18 +266,20 @@ mod tests {
         let lib_table_def = spacetimedb_lib::TableDef {
             name: "Person".into(),
             data: AlgebraicTypeRef(0),
-            column_attrs: vec![ColumnIndexAttribute::IDENTITY, ColumnIndexAttribute::UNSET],
+            column_attrs: vec![ColumnAttribute::IDENTITY, ColumnAttribute::UNSET],
             indexes: vec![
-                spacetimedb_lib::IndexDef {
-                    name: "id_and_name".into(),
-                    index_type: IndexType::BTree,
-                    cols: [0, 1].into(),
-                },
-                spacetimedb_lib::IndexDef {
-                    name: "just_name".into(),
-                    index_type: IndexType::BTree,
-                    cols: [1].into(),
-                },
+                IndexDef::new_cols(
+                    "id_and_name".into(),
+                    AUTO_TABLE_ID,
+                    false,
+                    NonEmpty::from_slice(&[0.into(), 1.into()]).unwrap(),
+                ),
+                IndexDef::new_cols(
+                    "just_name".into(),
+                    AUTO_TABLE_ID,
+                    false,
+                    NonEmpty::from_slice(&[1.into()]).unwrap(),
+                ),
             ],
             table_type: StTableType::User,
             table_access: StAccess::Public,

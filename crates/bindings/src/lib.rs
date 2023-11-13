@@ -13,14 +13,15 @@ mod timestamp;
 use crate::sats::db::def::IndexType;
 use spacetimedb_lib::buffer::{BufReader, BufWriter, Cursor, DecodeError};
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, impl_st};
+pub use spacetimedb_lib::ser::Serialize;
 use spacetimedb_lib::{bsatn, PrimaryKey, ProductType, ProductValue};
-use spacetimedb_primitives::ColumnIndexAttribute;
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::slice::from_ref;
 use std::{fmt, panic};
 use sys::{Buffer, BufferIter};
 
+use crate::sats::db::attr::ColumnAttribute;
 pub use log;
 pub use sats::SpacetimeType;
 pub use spacetimedb_bindings_macro::{duration, query, spacetimedb, TableType};
@@ -28,7 +29,6 @@ pub use spacetimedb_bindings_sys as sys;
 pub use spacetimedb_lib;
 pub use spacetimedb_lib::de::{Deserialize, DeserializeOwned};
 pub use spacetimedb_lib::sats;
-pub use spacetimedb_lib::ser::Serialize;
 pub use spacetimedb_lib::Address;
 pub use spacetimedb_lib::AlgebraicValue;
 pub use spacetimedb_lib::Identity;
@@ -345,7 +345,7 @@ impl<T: TableType> Iterator for TableIter<T> {
 /// Additionally, the type knows its own table name, its column attributes, and indices.
 pub trait TableType: SpacetimeType + DeserializeOwned + Serialize {
     const TABLE_NAME: &'static str;
-    const COLUMN_ATTRS: &'static [ColumnIndexAttribute];
+    const COLUMN_ATTRS: &'static [ColumnAttribute];
     const INDEXES: &'static [IndexDef<'static>];
     type InsertResult: sealed::InsertResult<T = Self>;
 

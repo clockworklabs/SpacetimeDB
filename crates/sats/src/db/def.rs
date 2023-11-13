@@ -1,3 +1,7 @@
+use derive_more::Display;
+use nonempty::NonEmpty;
+use spacetimedb_primitives::*;
+
 use crate::db::auth::{StAccess, StTableType};
 use crate::de::BasicVecVisitor;
 use crate::product_value::InvalidFieldError;
@@ -5,9 +9,6 @@ use crate::relation::{Column, DbTable, FieldName, FieldOnly, Header, TableField}
 use crate::ser::SerializeArray;
 use crate::{de, impl_deserialize, impl_serialize, ser, AlgebraicValue, ProductValue};
 use crate::{AlgebraicType, ProductType, ProductTypeElement};
-use derive_more::Display;
-use nonempty::NonEmpty;
-use spacetimedb_primitives::{AttributeKind, ColId, ColumnIndexAttribute, ConstraintId, IndexId, SequenceId, TableId};
 
 /// The default preallocation amount for sequences.
 pub const SEQUENCE_PREALLOCATION_AMOUNT: i128 = 4_096;
@@ -332,23 +333,117 @@ impl From<&ColumnSchema> for ProductTypeElement {
 #[derive(Clone)]
 pub struct ColumnDefMeta {
     pub column: ProductTypeElement,
-    pub attr: ColumnIndexAttribute,
+    pub attr: Constraints,
     pub pos: usize,
 }
 
-impl From<&ColumnSchema> for ColumnDefMeta {
-    fn from(value: &ColumnSchema) -> Self {
+/// Describe the columns + meta attributes
+/// TODO(cloutiertyler): This type should be deprecated and replaced with
+/// ColumnDef or ColumnSchema where appropriate
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+pub struct ProductTypeMeta {
+    pub columns: ProductType,
+    pub attr: Vec<Constraints>,
+}
+
+impl ProductTypeMeta {
+    pub fn new(columns: ProductType) -> Self {
         Self {
-            column: ProductTypeElement::from(value),
-            // TODO(cloutiertyler): !!! This is not correct !!! We do not have the information regarding constraints here.
-            // We should remove this field from the ColumnDef struct.
-            attr: if value.is_autoinc {
-                ColumnIndexAttribute::AUTO_INC
-            } else {
-                ColumnIndexAttribute::UNSET
-            },
-            pos: value.col_id.idx(),
+            attr: vec![Constraints::unset(); columns.elements.len()],
+            columns,
         }
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            attr: Vec::with_capacity(capacity),
+            columns: ProductType::new(Vec::with_capacity(capacity)),
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.columns.elements.clear();
+        self.attr.clear();
+    }
+
+    pub fn push(&mut self, name: &str, ty: AlgebraicType, attr: Constraints) {
+        self.columns
+            .elements
+            .push(ProductTypeElement::new(ty, Some(name.to_string())));
+        self.attr.push(attr);
+    }
+
+    /// Removes the data at position `index` and returns it.
+    ///
+    /// # Panics
+    ///
+    /// If `index` is out of bounds.
+    pub fn remove(&mut self, index: usize) -> (ProductTypeElement, Constraints) {
+        (self.columns.elements.remove(index), self.attr.remove(index))
+    }
+
+    /// Return mutable references to the data at position `index`, or `None` if
+    /// the index is out of bounds.
+    pub fn get_mut(&mut self, index: usize) -> Option<(&mut ProductTypeElement, &mut Constraints)> {
+        self.columns
+            .elements
+            .get_mut(index)
+            .and_then(|pte| self.attr.get_mut(index).map(|attr| (pte, attr)))
+    }
+
+    pub fn with_attributes(iter: impl Iterator<Item = (ProductTypeElement, Constraints)>) -> Self {
+        let mut columns = Vec::new();
+        let mut attrs = Vec::new();
+        for (col, attr) in iter {
+            columns.push(col);
+            attrs.push(attr);
+        }
+        Self {
+            attr: attrs,
+            columns: ProductType::new(columns),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.columns.elements.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.columns.elements.is_empty()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = ColumnDefMeta> + '_ {
+        self.columns
+            .elements
+            .iter()
+            .zip(self.attr.iter())
+            .enumerate()
+            .map(|(pos, (column, attr))| ColumnDefMeta {
+                column: column.clone(),
+                attr: *attr,
+                pos,
+            })
+    }
+
+    pub fn with_defaults<'a>(
+        &'a self,
+        row: &'a mut ProductValue,
+    ) -> impl Iterator<Item = (ColumnDefMeta, &'a mut AlgebraicValue)> + 'a {
+        self.iter()
+            .zip(row.elements.iter_mut())
+            .filter(|(col, _)| col.attr.has_autoinc())
+    }
+}
+
+impl From<ProductType> for ProductTypeMeta {
+    fn from(value: ProductType) -> Self {
+        ProductTypeMeta::new(value)
+    }
+}
+
+impl From<ProductTypeMeta> for ProductType {
+    fn from(value: ProductTypeMeta) -> Self {
+        value.columns
     }
 }
 
@@ -374,7 +469,7 @@ impl From<ColumnSchema> for ColumnDef {
 pub struct ConstraintSchema {
     pub constraint_id: ConstraintId,
     pub constraint_name: String,
-    pub kind: Constraints,
+    pub constraints: Constraints,
     pub table_id: TableId,
     pub columns: NonEmpty<ColId>,
 }
@@ -444,7 +539,7 @@ impl TableSchema {
         columns
             .map(|pos| {
                 self.get_column(usize::from(pos)).ok_or(InvalidFieldError {
-                    index: pos.idx(),
+                    col_pos: pos,
                     name: None,
                 })
             })
@@ -570,13 +665,7 @@ impl From<&TableSchema> for TableDef {
 
 impl From<TableSchema> for TableDef {
     fn from(value: TableSchema) -> Self {
-        Self {
-            table_name: value.table_name,
-            columns: value.columns.into_iter().map(Into::into).collect(),
-            indexes: value.indexes.into_iter().map(Into::into).collect(),
-            table_type: value.table_type,
-            table_access: value.table_access,
-        }
+        (&value).into()
     }
 }
 
@@ -603,115 +692,5 @@ impl From<FieldDef> for ProductTypeElement {
     fn from(value: FieldDef) -> Self {
         let f: FieldName = (&value).into();
         ProductTypeElement::new(value.column.col_type, Some(f.to_string()))
-    }
-}
-
-/// Describe the columns + meta attributes
-/// TODO(cloutiertyler): This type should be deprecated and replaced with
-/// ColumnDef or ColumnSchema where appropriate
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
-pub struct ProductTypeMeta {
-    pub columns: ProductType,
-    pub attr: Vec<ColumnIndexAttribute>,
-}
-
-impl ProductTypeMeta {
-    pub fn new(columns: ProductType) -> Self {
-        Self {
-            attr: vec![ColumnIndexAttribute::UNSET; columns.elements.len()],
-            columns,
-        }
-    }
-
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            attr: Vec::with_capacity(capacity),
-            columns: ProductType::new(Vec::with_capacity(capacity)),
-        }
-    }
-
-    pub fn clear(&mut self) {
-        self.columns.elements.clear();
-        self.attr.clear();
-    }
-
-    pub fn push(&mut self, name: &str, ty: AlgebraicType, attr: ColumnIndexAttribute) {
-        self.columns
-            .elements
-            .push(ProductTypeElement::new(ty, Some(name.to_string())));
-        self.attr.push(attr);
-    }
-
-    /// Removes the data at position `index` and returns it.
-    ///
-    /// # Panics
-    ///
-    /// If `index` is out of bounds.
-    pub fn remove(&mut self, index: usize) -> (ProductTypeElement, ColumnIndexAttribute) {
-        (self.columns.elements.remove(index), self.attr.remove(index))
-    }
-
-    /// Return mutable references to the data at position `index`, or `None` if
-    /// the index is out of bounds.
-    pub fn get_mut(&mut self, index: usize) -> Option<(&mut ProductTypeElement, &mut ColumnIndexAttribute)> {
-        self.columns
-            .elements
-            .get_mut(index)
-            .and_then(|pte| self.attr.get_mut(index).map(|attr| (pte, attr)))
-    }
-
-    pub fn with_attributes(iter: impl Iterator<Item = (ProductTypeElement, ColumnIndexAttribute)>) -> Self {
-        let mut columns = Vec::new();
-        let mut attrs = Vec::new();
-        for (col, attr) in iter {
-            columns.push(col);
-            attrs.push(attr);
-        }
-        Self {
-            attr: attrs,
-            columns: ProductType::new(columns),
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        self.columns.elements.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.columns.elements.is_empty()
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = ColumnDefMeta> + '_ {
-        self.columns
-            .elements
-            .iter()
-            .zip(self.attr.iter())
-            .enumerate()
-            .map(|(pos, (column, attr))| ColumnDefMeta {
-                column: column.clone(),
-                attr: *attr,
-                pos,
-            })
-    }
-
-    pub fn with_defaults<'a>(
-        &'a self,
-        row: &'a mut ProductValue,
-    ) -> impl Iterator<Item = (ColumnDefMeta, &'a mut AlgebraicValue)> + 'a {
-        self.iter()
-            .zip(row.elements.iter_mut())
-            .filter(|(col, _)| col.attr.has_autoinc())
-    }
-}
-
-impl From<ProductType> for ProductTypeMeta {
-    fn from(value: ProductType) -> Self {
-        ProductTypeMeta::new(value)
-    }
-}
-
-impl From<ProductTypeMeta> for ProductType {
-    fn from(value: ProductTypeMeta) -> Self {
-        value.columns
     }
 }

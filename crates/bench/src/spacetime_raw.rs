@@ -9,7 +9,7 @@ use spacetimedb_lib::sats::db::def::{IndexDef, TableDef};
 use spacetimedb_lib::sats::AlgebraicValue;
 use spacetimedb_primitives::{ColId, TableId};
 use std::hint::black_box;
-use tempfile::TempDir;
+use tempdir::TempDir;
 
 pub type DbResult = (RelationalDB, TempDir, u32);
 
@@ -28,7 +28,7 @@ impl BenchDatabase for SpacetimeRaw {
     where
         Self: Sized,
     {
-        let temp_dir = TempDir::with_prefix("stdb_test")?;
+        let temp_dir = TempDir::new("stdb_test")?;
         let db = open_db(temp_dir.path(), in_memory, fsync)?;
 
         Ok(SpacetimeRaw {
@@ -46,13 +46,14 @@ impl BenchDatabase for SpacetimeRaw {
             match index_strategy {
                 IndexStrategy::Unique => {
                     self.db
-                        .create_index(tx, IndexDef::new("id".to_string(), table_id, 0.into(), true))?;
+                        .create_index(tx, table_id, IndexDef::new("id".to_string(), table_id, 0.into(), true))?;
                 }
                 IndexStrategy::NonUnique => (),
                 IndexStrategy::MultiIndex => {
                     for (i, column) in T::product_type().elements.iter().enumerate() {
                         self.db.create_index(
                             tx,
+                            table_id,
                             IndexDef::new(column.name.clone().unwrap(), table_id, i.into(), false),
                         )?;
                     }
