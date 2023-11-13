@@ -1,14 +1,15 @@
 use derive_more::From;
-use spacetimedb_lib::auth::{StAccess, StTableType};
-use spacetimedb_lib::error::AuthError;
-use spacetimedb_lib::relation::{
-    Column, DbTable, FieldExpr, FieldName, Header, MemTable, RelValueRef, Relation, RowCount, Table,
-};
-use spacetimedb_lib::table::ProductTypeMeta;
+
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::algebraic_type::AlgebraicType;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
+use spacetimedb_sats::db::auth::{StAccess, StTableType};
+use spacetimedb_sats::db::def::{ProductTypeMeta, TableSchema};
+use spacetimedb_sats::db::error::AuthError;
+use spacetimedb_sats::relation::{
+    Column, DbTable, FieldExpr, FieldName, Header, MemTable, RelValueRef, Relation, RowCount, Table,
+};
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
 use std::cmp::Ordering;
@@ -285,33 +286,6 @@ pub enum SourceExpr {
     DbTable(DbTable),
 }
 
-impl From<Table> for SourceExpr {
-    fn from(value: Table) -> Self {
-        match value {
-            Table::MemTable(t) => SourceExpr::MemTable(t),
-            Table::DbTable(t) => SourceExpr::DbTable(t),
-        }
-    }
-}
-
-impl From<SourceExpr> for Table {
-    fn from(value: SourceExpr) -> Self {
-        match value {
-            SourceExpr::MemTable(t) => Table::MemTable(t),
-            SourceExpr::DbTable(t) => Table::DbTable(t),
-        }
-    }
-}
-
-impl From<&SourceExpr> for DbTable {
-    fn from(value: &SourceExpr) -> Self {
-        match value {
-            SourceExpr::MemTable(_) => unreachable!(),
-            SourceExpr::DbTable(t) => t.clone(),
-        }
-    }
-}
-
 impl SourceExpr {
     pub fn get_db_table(&self) -> Option<&DbTable> {
         match self {
@@ -365,6 +339,44 @@ impl Relation for SourceExpr {
         match self {
             SourceExpr::MemTable(x) => x.row_count(),
             SourceExpr::DbTable(x) => x.row_count(),
+        }
+    }
+}
+
+impl From<Table> for SourceExpr {
+    fn from(value: Table) -> Self {
+        match value {
+            Table::MemTable(t) => SourceExpr::MemTable(t),
+            Table::DbTable(t) => SourceExpr::DbTable(t),
+        }
+    }
+}
+
+impl From<SourceExpr> for Table {
+    fn from(value: SourceExpr) -> Self {
+        match value {
+            SourceExpr::MemTable(t) => Table::MemTable(t),
+            SourceExpr::DbTable(t) => Table::DbTable(t),
+        }
+    }
+}
+
+impl From<&TableSchema> for SourceExpr {
+    fn from(value: &TableSchema) -> Self {
+        SourceExpr::DbTable(DbTable::new(
+            value.into(),
+            value.table_id,
+            value.table_type,
+            value.table_access,
+        ))
+    }
+}
+
+impl From<&SourceExpr> for DbTable {
+    fn from(value: &SourceExpr) -> Self {
+        match value {
+            SourceExpr::MemTable(_) => unreachable!(),
+            SourceExpr::DbTable(t) => t.clone(),
         }
     }
 }

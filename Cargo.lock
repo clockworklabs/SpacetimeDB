@@ -4145,6 +4145,7 @@ dependencies = [
  "bytes",
  "derive_more",
  "log",
+ "nonempty",
  "once_cell",
  "rand",
  "scoped-tls",
@@ -4193,6 +4194,7 @@ dependencies = [
  "humantime",
  "proc-macro2",
  "quote",
+ "spacetimedb-primitives",
  "syn 2.0.38",
 ]
 
@@ -4406,6 +4408,7 @@ dependencies = [
 name = "spacetimedb-primitives"
 version = "0.7.3"
 dependencies = [
+ "bitflags 2.4.1",
  "nonempty",
 ]
 
@@ -4421,6 +4424,7 @@ name = "spacetimedb-sats"
 version = "0.7.3"
 dependencies = [
  "arrayvec",
+ "bitflags 2.4.1",
  "bytes",
  "decorum",
  "derive_more",
@@ -4429,8 +4433,10 @@ dependencies = [
  "itertools 0.11.0",
  "nonempty",
  "proptest",
+ "proptest-derive",
  "rand",
  "serde",
+ "sha3",
  "smallvec",
  "spacetimedb-bindings-macro",
  "spacetimedb-primitives",

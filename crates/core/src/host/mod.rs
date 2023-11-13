@@ -1,31 +1,28 @@
-use std::time::Duration;
+mod host_controller;
+pub(crate) mod module_host;
+pub mod scheduler;
+mod wasmer;
+// Visible for integration testing.
+pub mod instance_env;
+mod timestamp;
+mod wasm_common;
 
 use anyhow::Context;
 use bytes::Bytes;
 use bytestring::ByteString;
 use derive_more::Display;
 use enum_map::Enum;
-use spacetimedb_lib::de::serde::SeedWrapper;
-use spacetimedb_lib::de::DeserializeSeed;
-use spacetimedb_lib::{bsatn, Hash, Identity};
-use spacetimedb_lib::{ProductValue, ReducerDef};
-use spacetimedb_sats::WithTypespace;
-
-mod host_controller;
-pub(crate) mod module_host;
-pub use module_host::{UpdateDatabaseResult, UpdateDatabaseSuccess};
-pub mod scheduler;
-mod wasmer;
-
-// Visible for integration testing.
-pub mod instance_env;
-mod timestamp;
-mod wasm_common;
-
 pub use host_controller::{
     DescribedEntityType, EnergyDiff, EnergyQuanta, HostController, ReducerCallResult, ReducerOutcome, UpdateOutcome,
 };
 pub use module_host::{ModuleHost, NoSuchModule};
+pub use module_host::{UpdateDatabaseResult, UpdateDatabaseSuccess};
+use spacetimedb_lib::de::serde::SeedWrapper;
+use spacetimedb_lib::de::DeserializeSeed;
+use spacetimedb_lib::{bsatn, Identity};
+use spacetimedb_lib::{ProductValue, ReducerDef};
+use spacetimedb_sats::WithTypespace;
+use std::time::Duration;
 pub use timestamp::Timestamp;
 
 #[derive(Debug)]
@@ -123,6 +120,7 @@ pub struct InvalidReducerArguments {
 }
 
 pub use module_host::{EntityDef, ReducerCallError};
+use spacetimedb_sats::hash::Hash;
 
 fn from_json_seed<'de, T: serde::de::DeserializeSeed<'de>>(s: &'de str, seed: T) -> anyhow::Result<T::Value> {
     let mut de = serde_json::Deserializer::from_str(s);

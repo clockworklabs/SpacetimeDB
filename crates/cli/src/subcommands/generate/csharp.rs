@@ -3,10 +3,11 @@ use super::util::fmt_fn;
 use std::fmt::{self, Write};
 
 use convert_case::{Case, Casing};
+use spacetimedb_lib::sats::db::attr::ColumnIndexAttribute;
 use spacetimedb_lib::sats::{
     AlgebraicType, AlgebraicType::Builtin, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, SumType,
 };
-use spacetimedb_lib::{ColumnIndexAttribute, ProductTypeElement, ReducerDef, TableDef};
+use spacetimedb_lib::{ProductTypeElement, ReducerDef, TableDef};
 
 use super::code_indenter::CodeIndenter;
 use super::{GenCtx, GenItem, INDENT};

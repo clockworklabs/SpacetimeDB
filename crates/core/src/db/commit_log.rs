@@ -18,11 +18,9 @@ use crate::{
 };
 
 use anyhow::Context;
-use spacetimedb_lib::{
-    hash::{hash_bytes, Hash},
-    DataKey,
-};
+use spacetimedb_sats::hash::{hash_bytes, Hash};
 
+use spacetimedb_sats::DataKey;
 use std::io;
 use std::sync::Arc;
 use std::sync::{Mutex, MutexGuard};
@@ -357,11 +355,10 @@ impl From<message_log::Segments> for Iter {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use spacetimedb_lib::data_key::InlineData;
     use tempfile::TempDir;
 
     use crate::db::ostorage::memory_object_db::MemoryObjectDB;
+    use spacetimedb_sats::data_key::InlineData;
 
     #[test]
     fn test_iter_commits() {

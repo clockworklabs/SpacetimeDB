@@ -64,10 +64,10 @@ impl crate::Value for ProductValue {
 
 /// An error that occurs when a field, of a product value, is accessed that doesn't exist.
 #[derive(thiserror::Error, Debug, Copy, Clone)]
-#[error("Field at position {col_pos} named: {name:?} not found or has an invalid type")]
+#[error("Field at position {index} named: {name:?} not found or has an invalid type")]
 pub struct InvalidFieldError {
-    /// The claimed col_pos of the field within the product value.
-    pub col_pos: ColId,
+    /// The claimed index of the field within the product value.
+    pub index: usize,
     /// The name of the field, if any.
     pub name: Option<&'static str>,
 }
@@ -77,10 +77,7 @@ impl ProductValue {
     ///
     /// The `name` is non-functional and is only used for error-messages.
     pub fn get_field(&self, index: usize, name: Option<&'static str>) -> Result<&AlgebraicValue, InvalidFieldError> {
-        self.elements.get(index).ok_or(InvalidFieldError {
-            col_pos: index.into(),
-            name,
-        })
+        self.elements.get(index).ok_or(InvalidFieldError { index, name })
     }
 
     /// This function is used to project fields based on the provided `indexes`.
@@ -133,10 +130,7 @@ impl ProductValue {
         name: Option<&'static str>,
         f: impl 'a + Fn(&'a AlgebraicValue) -> Option<T>,
     ) -> Result<T, InvalidFieldError> {
-        f(self.get_field(index, name)?).ok_or(InvalidFieldError {
-            col_pos: index.into(),
-            name,
-        })
+        f(self.get_field(index, name)?).ok_or(InvalidFieldError { index, name })
     }
 
     /// Interprets the value at field of `self` identified by `index` as a `bool`.
@@ -184,7 +178,7 @@ impl ProductValue {
         self.extract_field(index, named, |f| f.as_bytes())
     }
 
-    /// Interprets the value at field of `self` identified by `index` as an `ArrayValue`.
+    /// Interprets the value at field of `self` identified by `index` as a array.
     pub fn field_as_array(&self, index: usize, named: Option<&'static str>) -> Result<&ArrayValue, InvalidFieldError> {
         self.extract_field(index, named, |f| f.as_array())
     }

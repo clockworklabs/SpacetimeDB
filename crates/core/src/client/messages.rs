@@ -1,7 +1,5 @@
 use base64::Engine;
 use prost::Message as _;
-use spacetimedb_client_api_messages::client_api::{OneOffQueryResponse, OneOffTable};
-use spacetimedb_lib::{relation::MemTable, Address};
 
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
 use crate::identity::Identity;
@@ -10,6 +8,9 @@ use crate::json::client_api::{
     TransactionUpdateJson,
 };
 use crate::protobuf::client_api::{event, message, Event, FunctionCall, IdentityToken, Message, TransactionUpdate};
+use spacetimedb_client_api_messages::client_api::{OneOffQueryResponse, OneOffTable};
+use spacetimedb_lib::Address;
+use spacetimedb_sats::relation::MemTable;
 
 use super::{DataMessage, Protocol};
 

@@ -1,18 +1,18 @@
+use std::collections::HashMap;
+use tracing::info;
+
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::TableSchema;
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
 use crate::sql::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
-use spacetimedb_lib::auth::{StAccess, StTableType};
-use spacetimedb_lib::relation::{self, DbTable, FieldExpr, FieldName, Header};
-use spacetimedb_lib::table::ProductTypeMeta;
 use spacetimedb_primitives::ColId;
+use spacetimedb_sats::db::auth::{StAccess, StTableType};
+use spacetimedb_sats::db::def::{ProductTypeMeta, TableSchema};
+use spacetimedb_sats::relation::{self, DbTable, FieldExpr, FieldName, Header};
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_vm::dsl::{db_table, db_table_raw, query};
 use spacetimedb_vm::expr::{ColumnOp, CrudExpr, DbType, Expr, QueryExpr, SourceExpr};
 use spacetimedb_vm::operator::OpCmp;
-use std::collections::HashMap;
-use tracing::info;
 
 /// Compile the `SQL` expression into a `ast`
 #[tracing::instrument(skip_all)]
@@ -292,15 +292,15 @@ fn compile_statement(statement: SqlAst) -> Result<CrudExpr, PlanError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::datastore::traits::{ColumnDef, IndexDef, TableDef};
+    use std::ops::Bound;
+
     use crate::db::relational_db::tests_utils::make_test_db;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::operator::OpQuery;
-    use spacetimedb_lib::relation::DbTable;
     use spacetimedb_primitives::TableId;
+    use spacetimedb_sats::db::def::{ColumnDef, IndexDef, TableDef};
     use spacetimedb_sats::AlgebraicType;
     use spacetimedb_vm::expr::{IndexJoin, IndexScan, JoinExpr, Query};
-    use std::ops::Bound;
 
     fn create_table(
         db: &RelationalDB,

@@ -7,9 +7,10 @@ use std::marker::PhantomData;
 use std::sync::Mutex;
 use std::time::Duration;
 
+use crate::sats::db::auth::{StAccess, StTableType};
 use crate::timestamp::with_timestamp_set;
 use crate::{sys, ReducerContext, ScheduleToken, SpacetimeType, TableType, Timestamp};
-use spacetimedb_lib::auth::{StAccess, StTableType};
+pub use once_cell::sync::{Lazy, OnceCell};
 use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, AlgebraicType, AlgebraicTypeRef, ProductTypeElement};
@@ -17,8 +18,6 @@ use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
 use spacetimedb_lib::{bsatn, Address, Identity, MiscModuleExport, ModuleDef, ReducerDef, TableDef, TypeAlias};
 use spacetimedb_primitives::TableId;
 use sys::Buffer;
-
-pub use once_cell::sync::{Lazy, OnceCell};
 
 /// The `sender` invokes `reducer` at `timestamp` and provides it with the given `args`.
 ///
