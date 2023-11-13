@@ -3,7 +3,7 @@ use crate::de::BasicVecVisitor;
 use crate::product_value::InvalidFieldError;
 use crate::relation::{Column, DbTable, FieldName, FieldOnly, Header, TableField};
 use crate::ser::SerializeArray;
-use crate::{de, ser, AlgebraicValue, ProductValue};
+use crate::{de, impl_deserialize, impl_serialize, ser, AlgebraicValue, ProductValue};
 use crate::{AlgebraicType, ProductType, ProductTypeElement};
 use derive_more::Display;
 use nonempty::NonEmpty;
@@ -56,53 +56,45 @@ pub struct Constraints {
 }
 
 impl Constraints {
+    /// Creates a new `Constraints` instance with the given `attr` flags.
+    #[inline(always)]
+    const fn new(attr: ConstraintFlags) -> Self {
+        Self { attr }
+    }
+
     /// Creates a new `Constraints` instance with no constraints set.
     pub const fn unset() -> Self {
-        Constraints {
-            attr: ConstraintFlags::UNSET,
-        }
+        Self::new(ConstraintFlags::UNSET)
     }
 
     /// Creates a new `Constraints` instance with [ConstraintFlags::INDEXED] set.
     pub const fn indexed() -> Self {
-        Constraints {
-            attr: ConstraintFlags::INDEXED,
-        }
+        Self::new(ConstraintFlags::INDEXED)
     }
 
     /// Creates a new `Constraints` instance with [ConstraintAttribute::UNIQUE' constraint set.
     pub const fn unique() -> Self {
-        Constraints {
-            attr: ConstraintFlags::UNIQUE,
-        }
+        Self::new(ConstraintFlags::UNIQUE)
     }
 
     /// Creates a new `Constraints` instance with [ConstraintFlags::IDENTITY] set.
     pub const fn identity() -> Self {
-        Constraints {
-            attr: ConstraintFlags::IDENTITY,
-        }
+        Self::new(ConstraintFlags::IDENTITY)
     }
 
     /// Creates a new `Constraints` instance with [ConstraintFlags::PRIMARY_KEY] set.
     pub const fn primary_key() -> Self {
-        Constraints {
-            attr: ConstraintFlags::PRIMARY_KEY,
-        }
+        Self::new(ConstraintFlags::PRIMARY_KEY)
     }
 
     /// Creates a new `Constraints` instance with [ConstraintFlags::PRIMARY_KEY_AUTO] set.
     pub const fn primary_key_auto() -> Self {
-        Constraints {
-            attr: ConstraintFlags::PRIMARY_KEY_AUTO,
-        }
+        Self::new(ConstraintFlags::PRIMARY_KEY_AUTO)
     }
 
     /// Creates a new `Constraints` instance with [ConstraintFlags::PRIMARY_KEY_IDENTITY] set.
     pub const fn primary_key_identity() -> Self {
-        Constraints {
-            attr: ConstraintFlags::PRIMARY_KEY_IDENTITY,
-        }
+        Self::new(ConstraintFlags::PRIMARY_KEY_IDENTITY)
     }
 
     /// Adds a constraint to the existing constraints.
@@ -116,7 +108,7 @@ impl Constraints {
     /// assert!(constraints.has_indexed());
     /// ```
     pub fn push(self, attr: ConstraintFlags) -> Self {
-        Constraints { attr: self.attr | attr }
+        Self::new(self.attr | attr)
     }
 
     /// Returns the bits representing the constraints.
@@ -165,16 +157,14 @@ impl Constraints {
 
 impl From<ConstraintFlags> for Constraints {
     fn from(attr: ConstraintFlags) -> Self {
-        Constraints { attr }
+        Self::new(attr)
     }
 }
 
 impl TryFrom<u8> for Constraints {
     type Error = ();
     fn try_from(v: u8) -> Result<Self, Self::Error> {
-        Ok(Constraints {
-            attr: ConstraintFlags::from_bits(v).ok_or(())?,
-        })
+        ConstraintFlags::from_bits(v).ok_or(()).map(Self::new)
     }
 }
 
@@ -183,53 +173,38 @@ impl TryFrom<ColumnIndexAttribute> for Constraints {
 
     fn try_from(value: ColumnIndexAttribute) -> Result<Self, Self::Error> {
         Ok(match value.kind() {
-            AttributeKind::UNSET => Constraints::unset(),
-            AttributeKind::INDEXED => Constraints::indexed(),
-            AttributeKind::UNIQUE => Constraints::unique(),
-            AttributeKind::IDENTITY => Constraints::identity(),
-            AttributeKind::PRIMARY_KEY => Constraints::primary_key(),
-            AttributeKind::PRIMARY_KEY_AUTO => Constraints::primary_key_auto(),
-            AttributeKind::PRIMARY_KEY_IDENTITY => Constraints::primary_key_identity(),
+            AttributeKind::UNSET => Self::unset(),
+            AttributeKind::INDEXED => Self::indexed(),
+            AttributeKind::UNIQUE => Self::unique(),
+            AttributeKind::IDENTITY => Self::identity(),
+            AttributeKind::PRIMARY_KEY => Self::primary_key(),
+            AttributeKind::PRIMARY_KEY_AUTO => Self::primary_key_auto(),
+            AttributeKind::PRIMARY_KEY_IDENTITY => Self::primary_key_identity(),
             AttributeKind::AUTO_INC => return Err(()),
         })
     }
 }
 
-impl<'de> de::Deserialize<'de> for Constraints {
-    fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Self::try_from(deserializer.deserialize_u8()?)
-            .map_err(|_| de::Error::custom("invalid bitflags for Constraints"))
-    }
-}
+impl_deserialize!([] Constraints, de => Self::try_from(de.deserialize_u8()?)
+    .map_err(|_| de::Error::custom("invalid bitflags for `Constraints`"))
+);
+impl_serialize!([] Constraints, (self, ser) => ser.serialize_u8(self.bits()));
 
-impl ser::Serialize for Constraints {
-    fn serialize<S: ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_u8(self.bits())
-    }
-}
-
-impl<'de, T: de::Deserialize<'de> + Clone> de::Deserialize<'de> for NonEmpty<T> {
-    fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let arr: Vec<T> = deserializer.deserialize_array(BasicVecVisitor)?;
-        NonEmpty::from_slice(&arr).ok_or_else(|| {
-            de::Error::custom(format!(
-                "invalid NonEmpty<{}>. Len is {}",
-                std::any::type_name::<T>(),
-                arr.len()
-            ))
-        })
-    }
-}
-
-impl<T: ser::Serialize> ser::Serialize for NonEmpty<T> {
-    fn serialize<S: ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut arr = serializer.serialize_array(self.len())?;
-        for x in self {
-            arr.serialize_element(x)?;
-        }
-        arr.end()
-    }
-}
+impl_deserialize!([T: de::Deserialize<'de> + Clone] NonEmpty<T>, de => {
+    let arr: Vec<T> = de.deserialize_array(BasicVecVisitor)?;
+    Self::from_slice(&arr).ok_or_else(|| {
+        de::Error::custom(format!(
+            "invalid NonEmpty<{}>. Len is {}",
+            std::any::type_name::<T>(),
+            arr.len()
+        ))
+    })
+});
+impl_serialize!([T: ser::Serialize] NonEmpty<T>, (self, ser) => {
+    let mut arr = ser.serialize_array(self.len())?;
+    self.into_iter().try_for_each(|x| arr.serialize_element(x))?;
+    arr.end()
+});
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Display, de::Deserialize, ser::Serialize)]
 #[sats(crate = crate)]
