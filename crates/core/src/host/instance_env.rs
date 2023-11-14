@@ -1,7 +1,6 @@
 use nonempty::NonEmpty;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
-use spacetimedb_lib::{bsatn, ProductValue};
 use std::ops::DerefMut;
 use std::sync::Arc;
 
