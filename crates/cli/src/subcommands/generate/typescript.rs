@@ -664,7 +664,7 @@ fn autogen_typescript_product_table_common(
     writeln!(output).unwrap();
 
     writeln!(output, "// @ts-ignore").unwrap();
-    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, IDatabaseTable, AlgebraicValue, ReducerEvent, Identity, Address, ClientDB }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
+    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, IDatabaseTable, AlgebraicValue, ReducerEvent, Identity, Address, ClientDB, SpacetimeDBClient, _tableProxy }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
 
     let mut imports = Vec::new();
     generate_imports(ctx, &product_type.elements, &mut imports, None);
@@ -745,6 +745,15 @@ fn autogen_typescript_product_table_common(
 
         writeln!(output, "}}").unwrap();
 
+        writeln!(output).unwrap();
+
+        writeln!(
+            output,
+            "public static with(client: SpacetimeDBClient): typeof {struct_name_pascal_case} {{"
+        )
+        .unwrap();
+        writeln!(output, "\treturn _tableProxy<{struct_name_pascal_case}>({struct_name_pascal_case}, client) as unknown as typeof {struct_name_pascal_case};").unwrap();
+        writeln!(output, "}}").unwrap();
         writeln!(output).unwrap();
 
         writeln!(
@@ -1202,6 +1211,15 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
 
         writeln!(output, "private client: SpacetimeDBClient;\n").unwrap();
 
+        writeln!(
+            output,
+            "public static with(client: SpacetimeDBClient): {full_reducer_name} {{"
+        )
+        .unwrap();
+        writeln!(output, "\treturn new this(client);").unwrap();
+        writeln!(output, "}}").unwrap();
+        writeln!(output).unwrap();
+
         writeln!(output, "private static reducer?: {full_reducer_name};").unwrap();
         writeln!(output, "private static getReducer(): {full_reducer_name} {{").unwrap();
         {
@@ -1305,7 +1323,8 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
 
         writeln!(
             output,
-            "public static on(callback: (reducerEvent: ReducerEvent, reducerArgs: any[]) => void) {{"
+            "public static on(callback: (reducerEvent: ReducerEvent, {}) => void) {{",
+            func_arguments.join(", ")
         )
         .unwrap();
         {
@@ -1318,7 +1337,8 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
         // OnCreatePlayerEvent(dbEvent.Status, Identity.From(dbEvent.CallerIdentity.ToByteArray()), args[0].ToObject<string>());
         writeln!(
             output,
-            "public on(callback: (reducerEvent: ReducerEvent, reducerArgs: any[]) => void)"
+            "public on(callback: (reducerEvent: ReducerEvent, {}) => void)",
+            func_arguments.join(", ")
         )
         .unwrap();
         writeln!(output, "{{").unwrap();
