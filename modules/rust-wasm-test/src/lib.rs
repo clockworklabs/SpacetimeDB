@@ -52,6 +52,15 @@ pub struct Point {
     y: i64,
 }
 
+// Test we can compile multiple constraints
+#[spacetimedb(table)]
+struct PkMultiIdentity {
+    #[primarykey]
+    id: u32,
+    #[unique]
+    #[autoinc]
+    other: u32,
+}
 pub type TestAlias = TestA;
 
 // #[spacetimedb(migrate)]

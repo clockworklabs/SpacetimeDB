@@ -242,7 +242,7 @@ fn autogen_python_product_table_common(
                 .unwrap()
                 .iter()
                 .enumerate()
-                .find_map(|(idx, attr)| attr.has_primary().then_some(idx))
+                .find_map(|(idx, attr)| attr.has_primary_key().then_some(idx))
                 .map(|idx| {
                     let field_name = product_type.elements[idx]
                         .name

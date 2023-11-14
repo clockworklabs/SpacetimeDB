@@ -408,7 +408,7 @@ fn find_primary_key_column_index(ctx: &GenCtx, table: &TableDef) -> Option<usize
         .column_attrs
         .iter()
         .enumerate()
-        .filter_map(|(i, attr)| attr.has_primary().then_some(i))
+        .filter_map(|(i, attr)| attr.has_primary_key().then_some(i))
         .collect::<Vec<_>>();
     match primaries.len() {
         2.. => {
