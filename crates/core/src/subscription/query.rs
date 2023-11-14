@@ -4,7 +4,8 @@ use crate::error::{DBError, SubscriptionError};
 use crate::host::module_host::DatabaseTableUpdate;
 use crate::sql::compiler::compile_sql;
 use crate::sql::execute::execute_single_sql;
-use crate::subscription::subscription::QuerySet;
+use crate::sql::query_debug_info::QueryDebugInfo;
+use crate::subscription::subscription::{QuerySet, SupportedQuery};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_sats::relation::{Column, FieldName, MemTable, RelValue};
 use spacetimedb_sats::{AlgebraicType, DataKey};
@@ -69,9 +70,10 @@ pub(crate) fn run_query(
     db: &RelationalDB,
     tx: &mut MutTxId,
     query: &QueryExpr,
+    query_debug_info: &QueryDebugInfo,
     auth: AuthCtx,
 ) -> Result<Vec<MemTable>, DBError> {
-    execute_single_sql(db, tx, CrudExpr::Query(query.clone()), auth)
+    execute_single_sql(db, tx, CrudExpr::Query(query.clone()), query_debug_info, auth)
 }
 
 // TODO: It's semantically wrong to `SUBSCRIBE_TO_ALL_QUERY`
@@ -123,8 +125,13 @@ pub fn compile_read_only_query(
         }
     }
 
+    let source: QueryDebugInfo = QueryDebugInfo::from_source(input);
+
     if !queries.is_empty() {
-        Ok(queries.into_iter().map(TryFrom::try_from).collect::<Result<_, _>>()?)
+        Ok(queries
+            .into_iter()
+            .map(|query| SupportedQuery::new(query, source.clone()))
+            .collect::<Result<_, _>>()?)
     } else {
         Err(SubscriptionError::Empty.into())
     }
@@ -330,7 +337,7 @@ mod tests {
         data: &DatabaseTableUpdate,
     ) -> ResultTest<()> {
         let q = to_mem_table(q.clone(), data);
-        let result = run_query(db, tx, &q, AuthCtx::for_testing())?;
+        let result = run_query(db, tx, &q, &QueryDebugInfo::unknown(), AuthCtx::for_testing())?;
 
         assert_eq!(
             Some(table.as_without_table_name()),
@@ -801,6 +808,7 @@ mod tests {
             &db,
             &mut tx,
             &q,
+            &QueryDebugInfo::unknown(),
             AuthCtx::new(Identity::__dummy(), Identity::from_byte_array([1u8; 32])),
         ) {
             Ok(_) => {
@@ -919,7 +927,13 @@ mod tests {
         let qset = compile_read_only_query(&db, &tx, &AuthCtx::for_testing(), sql_query)?;
 
         for q in qset {
-            let result = run_query(&db, &mut tx, q.as_expr(), AuthCtx::for_testing())?;
+            let result = run_query(
+                &db,
+                &mut tx,
+                q.as_expr(),
+                &QueryDebugInfo::unknown(),
+                AuthCtx::for_testing(),
+            )?;
             assert_eq!(result.len(), 1, "Join query did not return any rows");
         }
 

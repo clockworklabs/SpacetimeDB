@@ -13,6 +13,8 @@ use crate::execution_context::ExecutionContext;
 use crate::sql::compiler::compile_sql;
 use crate::vm::DbProgram;
 
+use super::query_debug_info::QueryDebugInfo;
+
 pub struct StmtResult {
     pub schema: ProductType,
     pub rows: Vec<ProductValue>,
@@ -32,7 +34,7 @@ pub fn execute(
     info!(sql = sql_text);
     if let Some((database_instance_context, _)) = db_inst_ctx_controller.get(database_instance_id) {
         let db = &database_instance_context.relational_db;
-        let ctx = ExecutionContext::sql(db.address());
+        let ctx = ExecutionContext::sql(db.address(), QueryDebugInfo::from_source(&sql_text));
         db.with_auto_commit(&ctx, |tx| {
             run(&database_instance_context.relational_db, tx, &sql_text, auth)
         })
@@ -62,9 +64,10 @@ pub fn execute_single_sql(
     db: &RelationalDB,
     tx: &mut MutTxId,
     ast: CrudExpr,
+    query_debug_info: &QueryDebugInfo,
     auth: AuthCtx,
 ) -> Result<Vec<MemTable>, DBError> {
-    let ctx = ExecutionContext::sql(db.address());
+    let ctx = ExecutionContext::sql(db.address(), query_debug_info.clone());
     let p = &mut DbProgram::new(&ctx, db, tx, auth);
     let q = Expr::Crud(Box::new(ast));
 
@@ -79,10 +82,11 @@ pub fn execute_sql(
     db: &RelationalDB,
     tx: &mut MutTxId,
     ast: Vec<CrudExpr>,
+    query_debug_info: &QueryDebugInfo,
     auth: AuthCtx,
 ) -> Result<Vec<MemTable>, DBError> {
     let total = ast.len();
-    let ctx = ExecutionContext::sql(db.address());
+    let ctx = ExecutionContext::sql(db.address(), query_debug_info.clone());
     let p = &mut DbProgram::new(&ctx, db, tx, auth);
     let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
 
@@ -95,7 +99,7 @@ pub fn execute_sql(
 #[tracing::instrument(skip_all)]
 pub fn run(db: &RelationalDB, tx: &mut MutTxId, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
     let ast = compile_sql(db, tx, sql_text)?;
-    execute_sql(db, tx, ast, auth)
+    execute_sql(db, tx, ast, &QueryDebugInfo::from_source(sql_text), auth)
 }
 
 #[cfg(test)]

@@ -36,6 +36,7 @@ use std::ops::Deref;
 
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::error::DBError;
+use crate::sql::query_debug_info::QueryDebugInfo;
 use crate::subscription::query::{run_query, OP_TYPE_FIELD_NAME};
 use crate::{
     client::{ClientActorId, ClientConnectionSender},
@@ -83,9 +84,20 @@ impl Subscription {
 pub struct SupportedQuery {
     kind: query::Supported,
     expr: QueryExpr,
+    /// The text of the query, available on a best-effort basis.
+    query_debug_info: QueryDebugInfo,
 }
 
 impl SupportedQuery {
+    pub fn new(expr: QueryExpr, query_text: QueryDebugInfo) -> Result<Self, DBError> {
+        let kind = query::classify(&expr).context("Unsupported query expression")?;
+        Ok(Self {
+            kind,
+            expr,
+            query_debug_info: query_text,
+        })
+    }
+
     pub fn kind(&self) -> query::Supported {
         self.kind
     }
@@ -100,7 +112,11 @@ impl TryFrom<QueryExpr> for SupportedQuery {
 
     fn try_from(expr: QueryExpr) -> Result<Self, Self::Error> {
         let kind = query::classify(&expr).context("Unsupported query expression")?;
-        Ok(Self { kind, expr })
+        Ok(Self {
+            kind,
+            expr,
+            query_debug_info: QueryDebugInfo::unknown(),
+        })
     }
 }
 
@@ -182,6 +198,7 @@ impl QuerySet {
             .map(|src| SupportedQuery {
                 kind: query::Supported::Scan,
                 expr: QueryExpr::new(src),
+                query_debug_info: QueryDebugInfo::from_source(format!("SELECT * FROM {}", src.table_name)),
             })
             .collect();
 
@@ -205,7 +222,12 @@ impl QuerySet {
         let mut table_ops = HashMap::new();
         let mut seen = HashSet::new();
 
-        for SupportedQuery { kind, expr } in self {
+        for SupportedQuery {
+            kind,
+            expr,
+            query_debug_info,
+        } in self
+        {
             use query::Supported::*;
             match kind {
                 Scan => {
@@ -223,7 +245,7 @@ impl QuerySet {
                         let plan = query::to_mem_table(expr.clone(), table);
 
                         // Evaluate the new plan and capture the new row operations
-                        for op in eval_incremental(relational_db, tx, &auth, &plan)?
+                        for op in eval_incremental(relational_db, tx, &auth, &plan, query_debug_info)?
                             .filter_map(|op| seen.insert((table.table_id, op.row_pk)).then(|| op.into()))
                         {
                             table_row_operations.push(op);
@@ -232,7 +254,7 @@ impl QuerySet {
                 }
 
                 Semijoin => {
-                    if let Some(plan) = IncrementalJoin::new(expr, database_update.tables.iter())? {
+                    if let Some(plan) = IncrementalJoin::new(expr, query_debug_info, database_update.tables.iter())? {
                         let table_id = plan.lhs.table.table_id;
                         let header = &plan.lhs.table.head;
 
@@ -280,13 +302,16 @@ impl QuerySet {
         let mut table_ops = HashMap::new();
         let mut seen = HashSet::new();
 
-        for SupportedQuery { expr, .. } in self {
+        for SupportedQuery {
+            expr, query_debug_info, ..
+        } in self
+        {
             if let Some(t) = expr.source.get_db_table() {
                 // Get the TableOps for this table
                 let (_, table_row_operations) = table_ops
                     .entry(t.table_id)
                     .or_insert_with(|| (t.head.table_name.clone(), vec![]));
-                for table in run_query(relational_db, tx, expr, auth)? {
+                for table in run_query(relational_db, tx, expr, query_debug_info, auth)? {
                     for row in table.data {
                         let row_pk = pk_for_row(&row);
 
@@ -350,8 +375,9 @@ fn eval_incremental(
     tx: &mut MutTxId,
     auth: &AuthCtx,
     expr: &QueryExpr,
+    query_debug_info: &QueryDebugInfo,
 ) -> Result<impl Iterator<Item = Op>, DBError> {
-    let results = run_query(db, tx, expr, *auth)?;
+    let results = run_query(db, tx, expr, query_debug_info, *auth)?;
     let ops = results
         .into_iter()
         .filter(|result| !result.data.is_empty())
@@ -391,6 +417,7 @@ fn eval_incremental(
 /// Helper for evaluating a [`query::Supported::Semijoin`].
 struct IncrementalJoin<'a> {
     expr: &'a QueryExpr,
+    query_debug_info: &'a QueryDebugInfo,
     lhs: JoinSide<'a>,
     rhs: JoinSide<'a>,
 }
@@ -441,6 +468,7 @@ impl<'a> IncrementalJoin<'a> {
     /// An error is returned if the expression is not well-formed.
     pub fn new(
         expr: &'a QueryExpr,
+        query_debug_info: &'a QueryDebugInfo,
         updates: impl Iterator<Item = &'a DatabaseTableUpdate>,
     ) -> anyhow::Result<Option<Self>> {
         let mut lhs = expr
@@ -484,7 +512,12 @@ impl<'a> IncrementalJoin<'a> {
         if lhs.updates.ops.is_empty() && rhs.updates.ops.is_empty() {
             Ok(None)
         } else {
-            Ok(Some(Self { expr, lhs, rhs }))
+            Ok(Some(Self {
+                expr,
+                query_debug_info,
+                lhs,
+                rhs,
+            }))
         }
     }
 
@@ -531,9 +564,9 @@ impl<'a> IncrementalJoin<'a> {
             let rhs_virt = self.to_mem_table_rhs(self.rhs.inserts());
 
             // {A+ join B}
-            let a = eval_incremental(db, tx, auth, &lhs_virt)?;
+            let a = eval_incremental(db, tx, auth, &lhs_virt, self.query_debug_info)?;
             // {A join B+}
-            let b = run_query(db, tx, &rhs_virt, *auth)?
+            let b = run_query(db, tx, &rhs_virt, self.query_debug_info, *auth)?
                 .into_iter()
                 .filter(|result| !result.data.is_empty())
                 .flat_map(|result| {
@@ -555,9 +588,9 @@ impl<'a> IncrementalJoin<'a> {
             let rhs_virt = self.to_mem_table_rhs(self.rhs.deletes());
 
             // {A- join B}
-            let a = eval_incremental(db, tx, auth, &lhs_virt)?;
+            let a = eval_incremental(db, tx, auth, &lhs_virt, self.query_debug_info)?;
             // {A join B-}
-            let b = run_query(db, tx, &rhs_virt, *auth)?
+            let b = run_query(db, tx, &rhs_virt, self.query_debug_info, *auth)?
                 .into_iter()
                 .filter(|result| !result.data.is_empty())
                 .flat_map(|result| {
@@ -570,7 +603,13 @@ impl<'a> IncrementalJoin<'a> {
                     })
                 });
             // {A- join B-}
-            let c = eval_incremental(db, tx, auth, &query::to_mem_table(rhs_virt, &self.lhs.deletes()))?;
+            let c = eval_incremental(
+                db,
+                tx,
+                auth,
+                &query::to_mem_table(rhs_virt, &self.lhs.deletes()),
+                self.query_debug_info,
+            )?;
             // {A- join B} U {A join B-} U {A- join B-}
             let mut set = a.map(|op| (op.row_pk, op)).collect::<HashMap<PrimaryKey, Op>>();
             set.extend(b.map(|op| (op.row_pk, op)));

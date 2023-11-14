@@ -6,6 +6,7 @@ use super::{
 };
 use crate::host::module_host::{EventStatus, ModuleEvent};
 use crate::protobuf::client_api::Subscribe;
+use crate::sql::query_debug_info::QueryDebugInfo;
 use crate::{
     client::{
         messages::{CachedMessage, SubscriptionUpdateMessage, TransactionUpdateMessage},
@@ -183,8 +184,18 @@ impl ModuleSubscriptionActor {
     ) -> Result<(), DBError> {
         //Split logic to properly handle `Error` + `Tx`
         let mut tx = self.relational_db.begin_tx();
+
+        // only used for finishing the transaction;
+        // individual queries are given their own ExecutionContexts in _add_subscription.
+        let mut src = "/* SUBSCRIBE */".to_string();
+        for query in subscription.query_strings.iter() {
+            src.push_str(query);
+            src.push_str("; ");
+        }
+
         let result = self._add_subscription(sender, subscription, &mut tx).await;
-        let ctx = ExecutionContext::sql(self.relational_db.address());
+
+        let ctx = ExecutionContext::sql(self.relational_db.address(), QueryDebugInfo::from_source(&src));
         self.relational_db.finish_tx(&ctx, tx, result)
     }
 
@@ -232,7 +243,10 @@ impl ModuleSubscriptionActor {
         //Split logic to properly handle `Error` + `Tx`
         let mut tx = self.relational_db.begin_tx();
         let result = self._broadcast_commit_event(event, &mut tx).await;
-        let ctx = ExecutionContext::sql(self.relational_db.address());
+        let ctx = ExecutionContext::sql(
+            self.relational_db.address(),
+            QueryDebugInfo::from_source("/* BROADCAST COMMIT EVENT */"),
+        );
         self.relational_db.finish_tx(&ctx, tx, result)
     }
 }
