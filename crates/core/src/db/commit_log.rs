@@ -245,7 +245,7 @@ impl CommitLogView {
     /// the transactions in a [`Commit`].
     ///
     /// The iterator attempts to read each large object in turn, yielding an
-    /// [`io::Error`] with constraints [`io::ErrorKind::NotFound`] if the object was
+    /// [`io::Error`] with kind [`io::ErrorKind::NotFound`] if the object was
     /// not found.
     //
     // TODO(kim): We probably want a more efficient way to stream the contents

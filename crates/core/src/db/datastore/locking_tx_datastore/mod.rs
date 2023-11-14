@@ -505,7 +505,7 @@ impl Inner {
                     is_unique: false,
                     index_type: IndexType::BTree,
                 },
-                x => panic!("Adding constraint of constraints `{x:?}` is not supported yet."),
+                x => panic!("Adding constraint of kind `{x:?}` is not supported yet."),
             }
         }));
 
@@ -2711,7 +2711,7 @@ mod tests {
             ColRow { table: 4, pos: 4, name: "columns", ty: AlgebraicType::array(AlgebraicType::U32), autoinc: false },
 
             ColRow { table: 5, pos: 0, name: "program_hash", ty: AlgebraicType::array(AlgebraicType::U8), autoinc: false },
-            ColRow { table: 5, pos: 1, name: "constraints", ty: AlgebraicType::U8, autoinc: false },
+            ColRow { table: 5, pos: 1, name: "kind", ty: AlgebraicType::U8, autoinc: false },
             ColRow { table: 5, pos: 2, name: "epoch", ty: AlgebraicType::U128, autoinc: false },
         ]));
         #[rustfmt::skip]

@@ -46,14 +46,13 @@ impl BenchDatabase for SpacetimeRaw {
             match index_strategy {
                 IndexStrategy::Unique => {
                     self.db
-                        .create_index(tx, table_id, IndexDef::new("id".to_string(), table_id, 0.into(), true))?;
+                        .create_index(tx, IndexDef::new("id".to_string(), table_id, 0.into(), true))?;
                 }
                 IndexStrategy::NonUnique => (),
                 IndexStrategy::MultiIndex => {
                     for (i, column) in T::product_type().elements.iter().enumerate() {
                         self.db.create_index(
                             tx,
-                            table_id,
                             IndexDef::new(column.name.clone().unwrap(), table_id, i.into(), false),
                         )?;
                     }

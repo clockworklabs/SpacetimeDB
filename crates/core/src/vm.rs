@@ -737,7 +737,7 @@ pub(crate) mod tests {
 
         let mut tx = db.begin_tx();
         let index = IndexDef::new("idx_1".into(), table_id, 0.into(), true);
-        let index_id = db.create_index(&mut tx, table_id, index)?;
+        let index_id = db.create_index(&mut tx, index)?;
 
         let p = &mut DbProgram::new(&ctx, &db, &mut tx, AuthCtx::for_testing());
 

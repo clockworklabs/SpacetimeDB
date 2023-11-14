@@ -174,7 +174,7 @@ st_fields_enum!(enum StConstraintFields {
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StModuleFields {
     "program_hash", ProgramHash = 0,
-    "constraints", Kind = 1,
+    "kind", Kind = 1,
     "epoch", Epoch = 2,
 });
 
@@ -544,7 +544,7 @@ pub static ST_CONSTRAINT_ROW_TYPE: Lazy<ProductType> =
 /// * `constraints` is the [`ModuleKind`] (currently always [`WASM_MODULE`]).
 /// * `epoch` is a _fencing token_ used to protect against concurrent updates.
 ///
-/// | program_hash        | constraints     | epoch |
+/// | program_hash        | kind     | epoch |
 /// |---------------------|----------|-------|
 /// | [250, 207, 5, ...]  | 0        | 42    |
 pub(crate) fn st_module_schema() -> TableSchema {
@@ -931,7 +931,7 @@ impl From<StConstraintRow<String>> for ProductValue {
     }
 }
 
-/// Indicates the constraints of module the `program_hash` of a [`StModuleRow`]
+/// Indicates the kind of module the `program_hash` of a [`StModuleRow`]
 /// describes.
 ///
 /// More or less a placeholder to allow for future non-WASM hosts without
@@ -941,7 +941,7 @@ pub struct ModuleKind(u8);
 
 /// The [`ModuleKind`] of WASM-based modules.
 ///
-/// This is currently the only known constraints.
+/// This is currently the only known kind.
 pub const WASM_MODULE: ModuleKind = ModuleKind(0);
 
 impl_serialize!([] ModuleKind, (self, ser) => self.0.serialize(ser));

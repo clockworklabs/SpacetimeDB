@@ -548,7 +548,7 @@ impl RelationalDB {
     ///
     /// NOTE: It loads the data from the table into it before returning
     #[tracing::instrument(skip(self, tx, index), fields(index=index.name))]
-    pub fn create_index(&self, tx: &mut MutTxId, table_id: TableId, index: IndexDef) -> Result<IndexId, DBError> {
+    pub fn create_index(&self, tx: &mut MutTxId, index: IndexDef) -> Result<IndexId, DBError> {
         self.inner.create_index_mut_tx(tx, index)
     }
 

@@ -223,7 +223,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
 
 /// Describes a programmable [`TxDatastore`].
 ///
-/// A programmable datastore is one which has a program of some constraints associated
+/// A programmable datastore is one which has a program of some kind associated
 /// with it.
 pub trait Programmable: TxDatastore {
     /// Retrieve the [`Hash`] of the program currently associated with the

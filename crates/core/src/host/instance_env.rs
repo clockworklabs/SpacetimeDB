@@ -250,7 +250,7 @@ impl InstanceEnv {
             index_type,
         };
 
-        stdb.create_index(tx, table_id, index)?;
+        stdb.create_index(tx, index)?;
 
         Ok(())
     }
