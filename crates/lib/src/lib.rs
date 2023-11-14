@@ -29,6 +29,9 @@ pub use address::Address;
 pub use identity::Identity;
 pub use primary_key::PrimaryKey;
 pub use spacetimedb_sats::{self as sats, bsatn, buffer, de, ser};
+pub use spacetimedb_sats::hash::{self, hash_bytes, Hash};
+pub use spacetimedb_sats::DataKey;
+pub use spacetimedb_sats::relation;
 pub use type_def::*;
 pub use type_value::{AlgebraicValue, ProductValue};
 
