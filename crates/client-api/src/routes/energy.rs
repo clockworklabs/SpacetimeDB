@@ -46,11 +46,10 @@ pub async fn add_energy<S: ControlStateDelegate>(
     let mut balance = ctx
         .get_energy_balance(&auth.identity)
         .map_err(log_and_500)?
-        .map(|quanta| quanta.0)
-        .unwrap_or(0);
+        .map_or(0, |quanta| quanta.get());
 
     if let Some(satoshi) = amount {
-        ctx.add_energy(&auth.identity, EnergyQuanta(satoshi))
+        ctx.add_energy(&auth.identity, EnergyQuanta::new(satoshi))
             .await
             .map_err(log_and_500)?;
         balance += satoshi;
@@ -68,8 +67,7 @@ fn get_budget_inner(ctx: impl ControlStateDelegate, identity: &Identity) -> axum
     let balance = ctx
         .get_energy_balance(identity)
         .map_err(log_and_500)?
-        .map(|quanta| quanta.0)
-        .unwrap_or(0);
+        .map_or(0, |quanta| quanta.get());
 
     let response_json = json!({
         // Note: balance must be returned as a string to avoid truncation.
@@ -114,18 +112,17 @@ pub async fn set_energy_balance<S: ControlStateDelegate>(
     let current_balance = ctx
         .get_energy_balance(&identity)
         .map_err(log_and_500)?
-        .map(|quanta| quanta.0)
-        .unwrap_or(0);
+        .map_or(0, |quanta| quanta.get());
 
     let balance: i128 = if desired_balance > current_balance {
         let delta = desired_balance - current_balance;
-        ctx.add_energy(&identity, EnergyQuanta(delta))
+        ctx.add_energy(&identity, EnergyQuanta::new(delta))
             .await
             .map_err(log_and_500)?;
         delta
     } else {
         let delta = current_balance - desired_balance;
-        ctx.withdraw_energy(&identity, EnergyQuanta(delta))
+        ctx.withdraw_energy(&identity, EnergyQuanta::new(delta))
             .await
             .map_err(log_and_500)?;
         delta

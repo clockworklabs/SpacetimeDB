@@ -14,11 +14,12 @@ use crate::host::wasm_common::{
     TimingSpan, TimingSpanIdx, TimingSpanSet,
 };
 use crate::host::AbiCall;
-use wasmer::{FunctionEnvMut, MemoryAccessError, RuntimeError, ValueType, WasmPtr};
+use anyhow::{anyhow, Context};
+use wasmtime::{AsContext, Caller, StoreContextMut};
 
 use crate::host::instance_env::InstanceEnv;
 
-use super::{Mem, WasmError};
+use super::{Mem, MemView, NullableMemOp, WasmError, WasmPointee, WasmPtr};
 
 #[cfg(not(feature = "spacetimedb-wasm-instance-env-times"))]
 use instrumentation::noop as span;
@@ -72,16 +73,7 @@ pub(super) struct WasmInstanceEnv {
 }
 
 type WasmResult<T> = Result<T, WasmError>;
-type RtResult<T> = Result<T, RuntimeError>;
-
-fn mem_err(err: MemoryAccessError) -> RuntimeError {
-    match err {
-        MemoryAccessError::HeapOutOfBounds | MemoryAccessError::Overflow => {
-            RuntimeError::from(wasmer_vm::Trap::lib(wasmer_vm::TrapCode::HeapAccessOutOfBounds))
-        }
-        _ => RuntimeError::user(err.into()),
-    }
-}
+type RtResult<T> = anyhow::Result<T>;
 
 /// Wraps an `InstanceEnv` with the magic necessary to push
 /// and pull bytes from webassembly memory.
@@ -108,8 +100,13 @@ impl WasmInstanceEnv {
     }
 
     /// Returns a reference to the memory, assumed to be initialized.
-    pub fn mem(&self) -> Mem {
-        self.mem.clone().expect("Initialized memory")
+    pub fn get_mem(&self) -> Mem {
+        self.mem.expect("Initialized memory")
+    }
+    fn mem_env<'a>(ctx: impl Into<StoreContextMut<'a, Self>>) -> (&'a mut MemView, &'a mut Self) {
+        let ctx = ctx.into();
+        let mem = ctx.data().get_mem();
+        mem.view_and_store_mut(ctx)
     }
 
     /// Return a reference to the `InstanceEnv`,
@@ -160,6 +157,19 @@ impl WasmInstanceEnv {
         ExecutionContext::reducer(self.instance_env().dbic.address, self.reducer_name.as_str())
     }
 
+    // TODO: make this part of cvt(), maybe?
+    /// Gather the appropriate metadata and log a wasm_abi_call_duration_ns with the given AbiCall & duration
+    fn start_abi_call_timer(&self, call: AbiCall) -> prometheus::HistogramTimer {
+        let ctx = self.reducer_context();
+        let txn_type = ctx.txn_type();
+        let db = ctx.database();
+
+        DB_METRICS
+            .wasm_abi_call_duration_sec
+            .with_label_values(&txn_type, &db, &self.reducer_name, &call)
+            .start_timer()
+    }
+
     /// Call the function `f` with the name `func`.
     /// The function `f` is provided with the callers environment and the host's memory.
     ///
@@ -169,16 +179,14 @@ impl WasmInstanceEnv {
     /// Some database errors are logged but are otherwise regarded as `Ok(_)`.
     /// See `err_to_errno` for a list.
     fn cvt(
-        mut caller: FunctionEnvMut<'_, Self>,
-        func: &'static str,
-        call: AbiCall,
-        f: impl FnOnce(FunctionEnvMut<'_, Self>, &Mem) -> WasmResult<()>,
-    ) -> RtResult<u16> {
-        let span_start = span::CallSpanStart::new(call);
+        mut caller: Caller<'_, Self>,
+        func: AbiCall,
+        f: impl FnOnce(&mut Caller<'_, Self>) -> WasmResult<()>,
+    ) -> RtResult<u32> {
+        let span_start = span::CallSpanStart::new(func);
 
         // Call `f` with the caller and a handle to the memory.
-        let mem = caller.data().mem();
-        let result = f(caller.as_mut(), &mem);
+        let result = f(&mut caller);
 
         // Track the span of this call.
         let span = span_start.end();
@@ -194,11 +202,10 @@ impl WasmInstanceEnv {
             WasmError::Db(err) => match err_to_errno(&err) {
                 Some(errno) => {
                     log::debug!("abi call to {func} returned a normal error: {err:#}");
-                    return Ok(errno);
+                    return Ok(errno.into());
                 }
-                None => RuntimeError::user(Box::new(AbiRuntimeError { func, err })),
+                None => anyhow::Error::from(AbiRuntimeError { func, err }),
             },
-            WasmError::Mem(err) => mem_err(err),
             WasmError::Wasm(err) => err,
         })
     }
@@ -214,15 +221,17 @@ impl WasmInstanceEnv {
     /// as it helps with upholding the safety invariants of [`bindings_sys::call`].
     ///
     /// Returns an error if writing `T` to `out` errors.
-    fn cvt_ret<T: ValueType>(
-        caller: FunctionEnvMut<'_, Self>,
-        func: &'static str,
+    fn cvt_ret<T: WasmPointee>(
+        caller: Caller<'_, Self>,
         call: AbiCall,
         out: WasmPtr<T>,
-        f: impl FnOnce(FunctionEnvMut<'_, Self>, &Mem) -> WasmResult<T>,
-    ) -> RtResult<u16> {
-        Self::cvt(caller, func, call, |mut caller, mem| {
-            f(caller.as_mut(), mem).and_then(|ret| out.write(&mem.view(&caller), ret).map_err(Into::into))
+        f: impl FnOnce(&mut Caller<'_, Self>) -> WasmResult<T>,
+    ) -> RtResult<u32> {
+        Self::cvt(caller, call, |caller| {
+            f(caller).and_then(|ret| {
+                let (mem, _) = Self::mem_env(caller);
+                ret.write_to(mem, out)
+            })
         })
     }
 
@@ -231,25 +240,14 @@ impl WasmInstanceEnv {
     /// This is the version of `cvt` or `cvt_ret` for functions with no return value.
     /// One of `cvt`, `cvt_ret`, or `cvt_noret` should be used in the implementation of any
     /// host call, to provide consistent error handling and instrumentation.
-    fn cvt_noret(mut caller: FunctionEnvMut<'_, Self>, call: AbiCall, f: impl FnOnce(FunctionEnvMut<'_, Self>, &Mem)) {
+    fn cvt_noret(mut caller: Caller<'_, Self>, call: AbiCall, f: impl FnOnce(&mut Caller<'_, Self>)) {
         let span_start = span::CallSpanStart::new(call);
 
         // Call `f` with the caller and a handle to the memory.
-        let mem = caller.data().mem();
-        f(caller.as_mut(), &mem);
+        f(&mut caller);
 
         let span = span_start.end();
         span::record_span(&mut caller.data_mut().call_times, span);
-    }
-
-    /// Reads a string from WASM memory starting at `ptr` and lasting `len` bytes.
-    ///
-    /// Returns an error if:
-    /// - `ptr + len` overflows a 64-bit address.
-    /// - the string was not valid UTF-8
-    fn read_string(caller: &FunctionEnvMut<'_, Self>, mem: &Mem, ptr: WasmPtr<u8>, len: u32) -> RtResult<String> {
-        let bytes = mem.read_bytes(&caller, ptr, len)?;
-        String::from_utf8(bytes).map_err(|_| RuntimeError::new("name must be utf8"))
     }
 
     /// Schedules a reducer to be called asynchronously at `time`.
@@ -267,7 +265,7 @@ impl WasmInstanceEnv {
     /// - writing to `out` overflows a 64-bit integer
     #[tracing::instrument(skip_all)]
     pub fn schedule_reducer(
-        caller: FunctionEnvMut<'_, Self>,
+        caller: Caller<'_, Self>,
         name: WasmPtr<u8>,
         name_len: u32,
         args: WasmPtr<u8>,
@@ -275,36 +273,30 @@ impl WasmInstanceEnv {
         time: u64,
         out: WasmPtr<u64>,
     ) -> RtResult<()> {
-        Self::cvt_ret(
-            caller,
-            "schedule_reducer",
-            AbiCall::ScheduleReducer,
-            out,
-            |caller, mem| {
-                // Read the index name as a string from `(name, name_len)`.
-                let name = Self::read_string(&caller, mem, name, name_len)?;
+        Self::cvt_ret(caller, AbiCall::ScheduleReducer, out, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+            // Read the index name as a string from `(name, name_len)`.
+            let name = mem.deref_str(name, name_len)?.to_owned();
 
-                // Read the reducer's arguments as a byte slice.
-                let args = mem.read_bytes(&caller, args, args_len)?;
+            // Read the reducer's arguments as a byte slice.
+            let args = mem.deref_slice(args, args_len)?.to_vec();
 
-                // Schedule it!
-                // TODO: Be more strict re. types by avoiding newtype unwrapping here? (impl ValueType?)
-                // Noa: This would be nice but I think the eventual goal/desire is to switch to wasmtime,
-                //      which doesn't allow user types to impl ValueType.
-                //      Probably the correct API choice, but makes things a bit less ergonomic sometimes.
-                let ScheduledReducerId(id) = caller
-                    .data()
-                    .instance_env
+            // Schedule it!
+            // TODO: Be more strict re. types by avoiding newtype unwrapping here? (impl ValueType?)
+            // Noa: This would be nice but I think the eventual goal/desire is to switch to wasmtime,
+            //      which doesn't allow user types to impl ValueType.
+            //      Probably the correct API choice, but makes things a bit less ergonomic sometimes.
+            let ScheduledReducerId(id) =
+                env.instance_env
                     .schedule(name, args, Timestamp(time))
                     .map_err(|e| match e {
-                        ScheduleError::DelayTooLong(_) => RuntimeError::new("requested delay is too long"),
+                        ScheduleError::DelayTooLong(_) => anyhow!("requested delay is too long"),
                         ScheduleError::IdTransactionError(_) => {
-                            RuntimeError::new("transaction to acquire ScheduleReducerId failed")
+                            anyhow!("transaction to acquire ScheduleReducerId failed")
                         }
                     })?;
-                Ok(id)
-            },
-        )
+            Ok(id)
+        })
         .map(|_| ())
     }
 
@@ -312,8 +304,8 @@ impl WasmInstanceEnv {
     ///
     /// This assumes that the reducer hasn't already been executed.
     #[tracing::instrument(skip_all)]
-    pub fn cancel_reducer(caller: FunctionEnvMut<'_, Self>, id: u64) {
-        Self::cvt_noret(caller, AbiCall::CancelReducer, |caller, _mem| {
+    pub fn cancel_reducer(caller: Caller<'_, Self>, id: u64) {
+        Self::cvt_noret(caller, AbiCall::CancelReducer, |caller| {
             caller.data().instance_env.cancel_reducer(ScheduledReducerId(id))
         })
     }
@@ -334,8 +326,8 @@ impl WasmInstanceEnv {
     /// [`target`]: https://docs.rs/log/latest/log/struct.Record.html#method.target
     #[tracing::instrument(skip_all)]
     pub fn console_log(
-        caller: FunctionEnvMut<'_, Self>,
-        level: u8,
+        caller: Caller<'_, Self>,
+        level: u32,
         target: WasmPtr<u8>,
         target_len: u32,
         filename: WasmPtr<u8>,
@@ -344,39 +336,32 @@ impl WasmInstanceEnv {
         message: WasmPtr<u8>,
         message_len: u32,
     ) {
-        Self::cvt_noret(caller, AbiCall::ConsoleLog, |caller, mem| {
-            // Reads a string lossily from the slice `(ptr, len)` in WASM memory.
-            let read_str = |ptr, len| {
-                mem.read_bytes(&caller, ptr, len)
-                    .map(crate::util::string_from_utf8_lossy_owned)
+        let do_console_log = |caller: &mut Caller<'_, Self>| -> WasmResult<()> {
+            let env = caller.data();
+            let mem = env.get_mem().view(&caller);
+
+            // Read the `target`, `filename`, and `message` strings from WASM memory.
+            let target = mem.deref_str_lossy(target, target_len).check_nullptr()?;
+            let filename = mem.deref_str_lossy(filename, filename_len).check_nullptr()?;
+            let message = mem.deref_str_lossy(message, message_len)?;
+
+            // The line number cannot be `u32::MAX` as this represents `Option::None`.
+            let line_number = (line_number != u32::MAX).then_some(line_number);
+
+            let record = Record {
+                target: target.as_deref(),
+                filename: filename.as_deref(),
+                line_number,
+                message: &message,
             };
 
-            // Reads as string optionally, unless `ptr.is_null()`.
-            let read_opt_str = |ptr: WasmPtr<_>, len| (!ptr.is_null()).then(|| read_str(ptr, len)).transpose();
-
-            let _ = (|| -> Result<_, MemoryAccessError> {
-                // Read the `target`, `filename`, and `message` strings from WASM memory.
-                let target = read_opt_str(target, target_len)?;
-                let filename = read_opt_str(filename, filename_len)?;
-                let message = read_str(message, message_len)?;
-
-                // The line number cannot be `u32::MAX` as this represents `Option::None`.
-                let line_number = (line_number != u32::MAX).then_some(line_number);
-
-                let record = Record {
-                    target: target.as_deref(),
-                    filename: filename.as_deref(),
-                    line_number,
-                    message: &message,
-                };
-
-                // Write the log record to the `DatabaseLogger` in the database instance context (dbic).
-                caller
-                    .data()
-                    .instance_env
-                    .console_log(level.into(), &record, &WasmerBacktraceProvider);
-                Ok(())
-            })();
+            // Write the log record to the `DatabaseLogger` in the database instance context (dbic).
+            env.instance_env
+                .console_log((level as u8).into(), &record, &caller.as_context());
+            Ok(())
+        };
+        Self::cvt_noret(caller, AbiCall::ConsoleLog, |caller| {
+            let _ = do_console_log(caller);
         })
     }
 
@@ -396,37 +381,23 @@ impl WasmInstanceEnv {
     /// - `(row, row_len)` doesn't decode from BSATN to a `ProductValue`
     ///   according to the `ProductType` that the table's schema specifies.
     #[tracing::instrument(skip_all)]
-    pub fn insert(caller: FunctionEnvMut<'_, Self>, table_id: u32, row: WasmPtr<u8>, row_len: u32) -> RtResult<u16> {
-        let ctx = caller.data().reducer_context();
-        let txn_type = &ctx.txn_type();
-        let db = &ctx.database();
-        let reducer = &ctx.reducer_name().unwrap_or_default().to_owned();
-        let syscall = &AbiCall::Insert;
-
+    pub fn insert(caller: Caller<'_, Self>, table_id: u32, row: WasmPtr<u8>, row_len: u32) -> RtResult<u32> {
         // TODO: Instead of writing this metric on every insert call,
         // we should aggregate and write at the end of the transaction.
-        let _guard = DB_METRICS
-            .wasm_abi_call_duration_sec
-            .with_label_values(txn_type, db, reducer, syscall)
-            .start_timer();
+        let _guard = caller.data().start_abi_call_timer(AbiCall::Insert);
 
-        Self::cvt(caller, "insert", AbiCall::Insert, |caller, mem| {
+        Self::cvt(caller, AbiCall::Insert, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+
             // Read the row from WASM memory into a buffer.
-            let mut row_buffer = mem.read_bytes(&caller, row, row_len)?;
+            let row_buffer = mem.deref_slice_mut(row, row_len)?;
 
             // Insert the row into the DB. We get back the decoded version.
             // Then re-encode and write that back into WASM memory at `row`.
             // We're doing this because of autoinc.
-            let ctx = caller.data().reducer_context();
-            let new_row = caller.data().instance_env.insert(&ctx, table_id.into(), &row_buffer)?;
-            row_buffer.clear();
-            new_row.encode(&mut row_buffer);
-            assert_eq!(
-                row_buffer.len(),
-                row_len as usize,
-                "autoinc'd row is different encoded size from original row"
-            );
-            mem.set_bytes(&caller, row, row_len, &row_buffer)?;
+            let ctx = env.reducer_context();
+            let new_row = env.instance_env.insert(&ctx, table_id.into(), row_buffer)?;
+            new_row.encode(&mut { row_buffer });
             Ok(())
         })
     }
@@ -450,40 +421,24 @@ impl WasmInstanceEnv {
     /// - writing to `out` would overflow a 32-bit integer
     #[tracing::instrument(skip_all)]
     pub fn delete_by_col_eq(
-        caller: FunctionEnvMut<'_, Self>,
+        caller: Caller<'_, Self>,
         table_id: u32,
         col_id: u32,
         value: WasmPtr<u8>,
         value_len: u32,
         out: WasmPtr<u32>,
-    ) -> RtResult<u16> {
-        let ctx = caller.data().reducer_context();
-        let txn_type = &ctx.txn_type();
-        let db = &ctx.database();
-        let reducer = &ctx.reducer_name().unwrap_or_default().to_owned();
-        let syscall = &AbiCall::DeleteByColEq;
+    ) -> RtResult<u32> {
+        let _guard = caller.data().start_abi_call_timer(AbiCall::DeleteByColEq);
 
-        let _guard = DB_METRICS
-            .wasm_abi_call_duration_sec
-            .with_label_values(txn_type, db, reducer, syscall)
-            .start_timer();
-
-        Self::cvt_ret(
-            caller,
-            "delete_by_col_eq",
-            AbiCall::DeleteByColEq,
-            out,
-            |caller, mem| {
-                let ctx = caller.data().reducer_context();
-                let value = mem.read_bytes(&caller, value, value_len)?;
-                let count =
-                    caller
-                        .data()
-                        .instance_env
-                        .delete_by_col_eq(&ctx, table_id.into(), col_id.into(), &value)?;
-                Ok(count)
-            },
-        )
+        Self::cvt_ret(caller, AbiCall::DeleteByColEq, out, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+            let ctx = env.reducer_context();
+            let value = mem.deref_slice(value, value_len)?;
+            let count = env
+                .instance_env
+                .delete_by_col_eq(&ctx, table_id.into(), col_id.into(), value)?;
+            Ok(count)
+        })
     }
 
     /// Deletes those rows, in the table identified by `table_id`,
@@ -504,15 +459,16 @@ impl WasmInstanceEnv {
     /// - writing to `out` would overflow a 32-bit integer
     #[tracing::instrument(skip_all)]
     pub fn delete_by_rel(
-        caller: FunctionEnvMut<'_, Self>,
+        caller: Caller<'_, Self>,
         table_id: u32,
         relation: WasmPtr<u8>,
         relation_len: u32,
         out: WasmPtr<u32>,
-    ) -> RtResult<u16> {
-        Self::cvt_ret(caller, "delete_by_rel", AbiCall::DeleteByRel, out, |caller, mem| {
-            let relation = mem.read_bytes(&caller, relation, relation_len)?;
-            Ok(caller.data().instance_env.delete_by_rel(table_id.into(), &relation)?)
+    ) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::DeleteByRel, out, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+            let relation = mem.deref_slice(relation, relation_len)?;
+            Ok(env.instance_env.delete_by_rel(table_id.into(), relation)?)
         })
     }
 
@@ -528,17 +484,18 @@ impl WasmInstanceEnv {
     /// - writing to `out` overflows a 32-bit integer
     #[tracing::instrument(skip_all)]
     pub fn get_table_id(
-        caller: FunctionEnvMut<'_, Self>,
+        caller: Caller<'_, Self>,
         name: WasmPtr<u8>,
         name_len: u32,
         out: WasmPtr<u32>,
-    ) -> RtResult<u16> {
-        Self::cvt_ret(caller, "get_table_id", AbiCall::GetTableId, out, |caller, mem| {
+    ) -> RtResult<u32> {
+        Self::cvt_ret::<u32>(caller, AbiCall::GetTableId, out, |caller| {
+            let (mem, env) = Self::mem_env(caller);
             // Read the table name from WASM memory.
-            let name = Self::read_string(&caller, mem, name, name_len)?;
+            let name = mem.deref_str(name, name_len)?;
 
             // Query the table id.
-            Ok(caller.data().instance_env.get_table_id(name)?.into())
+            Ok(env.instance_env.get_table_id(name)?.into())
         })
     }
 
@@ -561,26 +518,25 @@ impl WasmInstanceEnv {
     /// Panics if `index_type == 1` or `col_ids.len() != 1`.
     #[tracing::instrument(skip_all)]
     pub fn create_index(
-        caller: FunctionEnvMut<'_, Self>,
+        caller: Caller<'_, Self>,
         index_name: WasmPtr<u8>,
         index_name_len: u32,
         table_id: u32,
-        index_type: u8,
+        index_type: u32,
         col_ids: WasmPtr<u8>,
         col_len: u32,
-    ) -> RtResult<u16> {
-        Self::cvt(caller, "create_index", AbiCall::CreateIndex, |caller, mem| {
+    ) -> RtResult<u32> {
+        Self::cvt(caller, AbiCall::CreateIndex, |caller| {
+            let (mem, env) = Self::mem_env(caller);
             // Read the index name from WASM memory.
-            let index_name = Self::read_string(&caller, mem, index_name, index_name_len)?;
+            let index_name = mem.deref_str(index_name, index_name_len)?.to_owned();
 
             // Read the column ids on which to create an index from WASM memory.
             // This may be one column or an index on several columns.
-            let cols = mem.read_bytes(&caller, col_ids, col_len)?;
+            let cols = mem.deref_slice(col_ids, col_len)?.to_vec();
 
-            caller
-                .data()
-                .instance_env
-                .create_index(index_name, table_id.into(), index_type, cols)?;
+            env.instance_env
+                .create_index(index_name, table_id.into(), index_type as u8, cols)?;
             Ok(())
         })
     }
@@ -604,46 +560,31 @@ impl WasmInstanceEnv {
     /// - `val + val_len` overflows a 64-bit integer
     #[tracing::instrument(skip_all)]
     pub fn iter_by_col_eq(
-        caller: FunctionEnvMut<'_, Self>,
+        caller: Caller<'_, Self>,
         table_id: u32,
         col_id: u32,
         val: WasmPtr<u8>,
         val_len: u32,
         out: WasmPtr<BufferIdx>,
-    ) -> RtResult<u16> {
-        let ctx = caller.data().reducer_context();
-        let txn_type = &ctx.txn_type();
-        let db = &ctx.database();
-        let reducer = &ctx.reducer_name().unwrap_or_default().to_owned();
-        let syscall = &AbiCall::IterByColEq;
+    ) -> RtResult<u32> {
+        let _guard = caller.data().start_abi_call_timer(AbiCall::IterByColEq);
 
-        let _guard = DB_METRICS
-            .wasm_abi_call_duration_sec
-            .with_label_values(txn_type, db, reducer, syscall)
-            .start_timer();
+        Self::cvt_ret(caller, AbiCall::IterByColEq, out, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+            // Read the test value from WASM memory.
+            let value = mem.deref_slice(val, val_len)?;
 
-        Self::cvt_ret(
-            caller,
-            "iter_by_col_eq",
-            AbiCall::IterByColEq,
-            out,
-            |mut caller, mem| {
-                // Read the test value from WASM memory.
-                let value = mem.read_bytes(&caller, val, val_len)?;
+            // Retrieve the execution context for the current reducer.
+            let ctx = env.reducer_context();
 
-                // Retrieve the execution context for the current reducer.
-                let ctx = caller.data().reducer_context();
+            // Find the relevant rows.
+            let data = env
+                .instance_env
+                .iter_by_col_eq(&ctx, table_id.into(), col_id.into(), value)?;
 
-                // Find the relevant rows.
-                let data = caller
-                    .data()
-                    .instance_env
-                    .iter_by_col_eq(&ctx, table_id.into(), col_id.into(), &value)?;
-
-                // Insert the encoded + concatenated rows into a new buffer and return its id.
-                Ok(caller.data_mut().buffers.insert(data.into()))
-            },
-        )
+            // Insert the encoded + concatenated rows into a new buffer and return its id.
+            Ok(env.buffers.insert(data.into()))
+        })
     }
 
     /// Start iteration on each row, as bytes, of a table identified by `table_id`.
@@ -654,28 +595,19 @@ impl WasmInstanceEnv {
     /// Returns an error if
     /// - a table with the provided `table_id` doesn't exist
     // #[tracing::instrument(skip_all)]
-    pub fn iter_start(caller: FunctionEnvMut<'_, Self>, table_id: u32, out: WasmPtr<BufferIterIdx>) -> RtResult<u16> {
-        let ctx = caller.data().reducer_context();
-        let txn_type = &ctx.txn_type();
-        let db = &ctx.database();
-        let reducer = &ctx.reducer_name().unwrap_or_default().to_owned();
-        let syscall = &AbiCall::IterStart;
+    pub fn iter_start(caller: Caller<'_, Self>, table_id: u32, out: WasmPtr<BufferIterIdx>) -> RtResult<u32> {
+        let _guard = caller.data().start_abi_call_timer(AbiCall::IterStart);
 
-        let _guard = DB_METRICS
-            .wasm_abi_call_duration_sec
-            .with_label_values(txn_type, db, reducer, syscall)
-            .start_timer();
-
-        Self::cvt_ret(caller, "iter_start", AbiCall::IterStart, out, |mut caller, _mem| {
+        Self::cvt_ret(caller, AbiCall::IterStart, out, |caller| {
+            let env = caller.data_mut();
             // Retrieve the execution context for the current reducer.
-            let ctx = caller.data().reducer_context();
-
+            let ctx = env.reducer_context();
             // Collect the iterator chunks.
-            let chunks = caller.data().instance_env.iter_chunks(&ctx, table_id.into())?;
+            let chunks = env.instance_env.iter_chunks(&ctx, table_id.into())?;
 
             // Register the iterator and get back the index to write to `out`.
             // Calls to the iterator are done through dynamic dispatch.
-            Ok(caller.data_mut().iters.insert(chunks.into_iter()))
+            Ok(env.iters.insert(chunks.into_iter()))
         })
     }
 
@@ -694,46 +626,29 @@ impl WasmInstanceEnv {
     /// - `filter + filter_len` overflows a 64-bit integer
     // #[tracing::instrument(skip_all)]
     pub fn iter_start_filtered(
-        caller: FunctionEnvMut<'_, Self>,
+        caller: Caller<'_, Self>,
         table_id: u32,
         filter: WasmPtr<u8>,
         filter_len: u32,
         out: WasmPtr<BufferIterIdx>,
-    ) -> RtResult<u16> {
-        let ctx = caller.data().reducer_context();
-        let txn_type = &ctx.txn_type();
-        let db = &ctx.database();
-        let reducer = &ctx.reducer_name().unwrap_or_default().to_owned();
-        let syscall = &AbiCall::IterStartFiltered;
+    ) -> RtResult<u32> {
+        let _guard = caller.data().start_abi_call_timer(AbiCall::IterStartFiltered);
 
-        let _guard = DB_METRICS
-            .wasm_abi_call_duration_sec
-            .with_label_values(txn_type, db, reducer, syscall)
-            .start_timer();
+        Self::cvt_ret(caller, AbiCall::IterStartFiltered, out, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+            // Retrieve the execution context for the current reducer.
+            let ctx = env.reducer_context();
 
-        Self::cvt_ret(
-            caller,
-            "iter_start_filtered",
-            AbiCall::IterStartFiltered,
-            out,
-            |mut caller, _mem| {
-                // Read the slice `(filter, filter_len)`.
-                let filter = caller.data().mem().read_bytes(&caller, filter, filter_len)?;
+            // Read the slice `(filter, filter_len)`.
+            let filter = mem.deref_slice(filter, filter_len)?;
 
-                // Retrieve the execution context for the current reducer.
-                let ctx = caller.data().reducer_context();
+            // Construct the iterator.
+            let chunks = env.instance_env.iter_filtered_chunks(&ctx, table_id.into(), filter)?;
 
-                // Construct the iterator.
-                let chunks = caller
-                    .data()
-                    .instance_env
-                    .iter_filtered_chunks(&ctx, table_id.into(), &filter)?;
-
-                // Register the iterator and get back the index to write to `out`.
-                // Calls to the iterator are done through dynamic dispatch.
-                Ok(caller.data_mut().iters.insert(chunks.into_iter()))
-            },
-        )
+            // Register the iterator and get back the index to write to `out`.
+            // Calls to the iterator are done through dynamic dispatch.
+            Ok(env.iters.insert(chunks.into_iter()))
+        })
     }
 
     /// Advances the registered iterator with the index given by `iter_key`.
@@ -748,20 +663,17 @@ impl WasmInstanceEnv {
     /// - writing to `out` would overflow a 32-bit integer
     /// - advancing the iterator resulted in an error
     // #[tracing::instrument(skip_all)]
-    pub fn iter_next(caller: FunctionEnvMut<'_, Self>, iter_key: u32, out: WasmPtr<BufferIdx>) -> RtResult<u16> {
-        Self::cvt_ret(caller, "iter_next", AbiCall::IterNext, out, |mut caller, _mem| {
-            let data_mut = caller.data_mut();
+    pub fn iter_next(caller: Caller<'_, Self>, iter_key: u32, out: WasmPtr<BufferIdx>) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::IterNext, out, |caller| {
+            let env = caller.data_mut();
 
             // Retrieve the iterator by `iter_key`.
-            let iter = data_mut
-                .iters
-                .get_mut(BufferIterIdx(iter_key))
-                .ok_or_else(|| RuntimeError::new("no such iterator"))?;
+            let iter = env.iters.get_mut(BufferIterIdx(iter_key)).context("no such iterator")?;
 
             // Advance the iterator.
             Ok(iter
                 .next()
-                .map_or(BufferIdx::INVALID, |buf| data_mut.buffers.insert(buf.into())))
+                .map_or(BufferIdx::INVALID, |buf| env.insert_buffer(buf.into())))
         })
     }
 
@@ -770,14 +682,14 @@ impl WasmInstanceEnv {
     ///
     /// Returns an error if the iterator does not exist.
     // #[tracing::instrument(skip_all)]
-    pub fn iter_drop(caller: FunctionEnvMut<'_, Self>, iter_key: u32) -> RtResult<u16> {
-        Self::cvt(caller, "iter_drop", AbiCall::IterDrop, |mut caller, _mem| {
+    pub fn iter_drop(caller: Caller<'_, Self>, iter_key: u32) -> RtResult<u32> {
+        Self::cvt(caller, AbiCall::IterDrop, |caller| {
             caller
                 .data_mut()
                 .iters
                 .take(BufferIterIdx(iter_key))
-                .ok_or_else(|| RuntimeError::new("no such iterator").into())
-                .map(drop)
+                .context("no such iterator")?;
+            Ok(())
         })
     }
 
@@ -788,13 +700,13 @@ impl WasmInstanceEnv {
     ///
     /// Returns an error if the buffer does not exist.
     // #[tracing::instrument(skip_all)]
-    pub fn buffer_len(caller: FunctionEnvMut<'_, Self>, buffer: u32) -> RtResult<u32> {
+    pub fn buffer_len(caller: Caller<'_, Self>, buffer: u32) -> RtResult<u32> {
         caller
             .data()
             .buffers
             .get(BufferIdx(buffer))
             .map(|b| b.len() as u32)
-            .ok_or_else(|| RuntimeError::new("no such buffer"))
+            .context("no such buffer")
     }
 
     /// Consumes the `buffer`,
@@ -804,20 +716,12 @@ impl WasmInstanceEnv {
     /// - the buffer does not exist
     /// - `dst + dst_len` overflows a 64-bit integer
     // #[tracing::instrument(skip_all)]
-    pub fn buffer_consume(
-        mut caller: FunctionEnvMut<'_, Self>,
-        buffer: u32,
-        dst: WasmPtr<u8>,
-        dst_len: u32,
-    ) -> RtResult<()> {
-        let buf = caller
-            .data_mut()
-            .buffers
-            .take(BufferIdx(buffer))
-            .ok_or_else(|| RuntimeError::new("no such buffer"))?;
-        dst.slice(&caller.data().mem().view(&caller), dst_len)
-            .and_then(|slice| slice.write_slice(&buf))
-            .map_err(mem_err)
+    pub fn buffer_consume(mut caller: Caller<'_, Self>, buffer: u32, dst: WasmPtr<u8>, dst_len: u32) -> RtResult<()> {
+        let (mem, env) = Self::mem_env(&mut caller);
+        let buf = env.take_buffer(BufferIdx(buffer)).context("no such buffer")?;
+        anyhow::ensure!(dst_len as usize == buf.len(), "bad length passed to buffer_consume");
+        mem.deref_slice_mut(dst, dst_len)?.copy_from_slice(&buf);
+        Ok(())
     }
 
     /// Creates a buffer of size `data_len` in the host environment.
@@ -830,30 +734,24 @@ impl WasmInstanceEnv {
     ///
     /// Returns an error if `data + data_len` overflows a 64-bit integer.
     // #[tracing::instrument(skip_all)]
-    pub fn buffer_alloc(mut caller: FunctionEnvMut<'_, Self>, data: WasmPtr<u8>, data_len: u32) -> RtResult<u32> {
-        let buf = caller
-            .data()
-            .mem()
-            .read_bytes(&caller, data, data_len)
-            .map_err(mem_err)?;
-        Ok(caller.data_mut().buffers.insert(buf.into()).0)
+    pub fn buffer_alloc(mut caller: Caller<'_, Self>, data: WasmPtr<u8>, data_len: u32) -> RtResult<u32> {
+        let (mem, env) = Self::mem_env(&mut caller);
+        let buf = mem.deref_slice(data, data_len)?;
+        Ok(env.buffers.insert(buf.to_vec().into()).0)
     }
 
-    pub fn span_start(mut caller: FunctionEnvMut<'_, Self>, name: WasmPtr<u8>, name_len: u32) -> RtResult<u32> {
-        let name = caller
-            .data()
-            .mem()
-            .read_bytes(&caller, name, name_len)
-            .map_err(mem_err)?;
-        Ok(caller.data_mut().timing_spans.insert(TimingSpan::new(name)).0)
+    pub fn span_start(mut caller: Caller<'_, Self>, name: WasmPtr<u8>, name_len: u32) -> RtResult<u32> {
+        let (mem, env) = Self::mem_env(&mut caller);
+        let name = mem.deref_slice(name, name_len)?.to_vec();
+        Ok(env.timing_spans.insert(TimingSpan::new(name)).0)
     }
 
-    pub fn span_end(mut caller: FunctionEnvMut<'_, Self>, span_id: u32) -> RtResult<()> {
+    pub fn span_end(mut caller: Caller<'_, Self>, span_id: u32) -> RtResult<()> {
         let span = caller
             .data_mut()
             .timing_spans
             .take(TimingSpanIdx(span_id))
-            .ok_or_else(|| RuntimeError::new("no such timing span"))?;
+            .context("no such timing span")?;
 
         let elapsed = span.start.elapsed();
 
@@ -866,32 +764,27 @@ impl WasmInstanceEnv {
             line_number: None,
             message: &message,
         };
-        caller.data().instance_env.console_log(
-            crate::database_logger::LogLevel::Info,
-            &record,
-            &WasmerBacktraceProvider,
-        );
+        caller
+            .data()
+            .instance_env
+            .console_log(crate::database_logger::LogLevel::Info, &record, &caller.as_context());
         Ok(())
     }
 }
 
-struct WasmerBacktraceProvider;
-impl BacktraceProvider for WasmerBacktraceProvider {
+impl<T> BacktraceProvider for wasmtime::StoreContext<'_, T> {
     fn capture(&self) -> Box<dyn ModuleBacktrace> {
-        Box::new(RuntimeError::new(""))
+        Box::new(wasmtime::WasmBacktrace::capture(self))
     }
 }
 
-impl ModuleBacktrace for RuntimeError {
+impl ModuleBacktrace for wasmtime::WasmBacktrace {
     fn frames(&self) -> Vec<BacktraceFrame<'_>> {
-        self.trace()
+        self.frames()
             .iter()
-            .map(|f| {
-                let module = f.module_name();
-                BacktraceFrame {
-                    module_name: (module != "<module>").then_some(module),
-                    func_name: f.function_name(),
-                }
+            .map(|f| BacktraceFrame {
+                module_name: None,
+                func_name: f.func_name(),
             })
             .collect()
     }

@@ -27,7 +27,7 @@ impl StandaloneEnergyMonitor {
 impl EnergyMonitor for StandaloneEnergyMonitor {
     fn reducer_budget(&self, _fingerprint: &EnergyMonitorFingerprint<'_>) -> EnergyQuanta {
         // Infinitely large reducer budget in Standalone
-        EnergyQuanta(i128::max_value())
+        EnergyQuanta::new(i128::max_value())
     }
 
     fn record(
@@ -73,7 +73,7 @@ impl Inner {
             .control_db
             .get_energy_balance(&fingerprint.module_identity)
             .unwrap()
-            .unwrap_or(EnergyQuanta(0));
-        EnergyQuanta(i128::max(balance.0, 0))
+            .unwrap_or(EnergyQuanta::ZERO);
+        std::cmp::max(balance, EnergyQuanta::ZERO)
     }
 }

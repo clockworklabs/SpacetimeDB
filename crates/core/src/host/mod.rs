@@ -12,7 +12,7 @@ use std::time::Duration;
 mod host_controller;
 pub(crate) mod module_host;
 pub mod scheduler;
-mod wasmer;
+mod wasmtime;
 // Visible for integration testing.
 pub mod instance_env;
 mod timestamp;
@@ -168,7 +168,7 @@ impl EnergyMonitor for NullEnergyMonitor {
 }
 
 /// Tags for each call that a `WasmInstanceEnv` can make.
-#[derive(Debug, Display, Enum)]
+#[derive(Debug, Display, Enum, Clone, Copy)]
 pub enum AbiCall {
     CancelReducer,
     ConsoleLog,
