@@ -653,7 +653,7 @@ fn autogen_csharp_product_table_common(
                 let indexed_fields: Vec<(&ProductTypeElement, String)> = column_attrs
                     .iter()
                     .enumerate()
-                    .filter(|a| a.1.has_unique() || a.1.has_primary())
+                    .filter(|a| a.1.has_unique() || a.1.has_primary_key())
                     .map(|a| &product_type.elements[a.0])
                     .map(|f| (f, f.name.as_ref().unwrap().replace("r#", "").to_case(Case::Pascal)))
                     .collect();
@@ -956,7 +956,7 @@ fn autogen_csharp_access_funcs_for_struct(
 
     for (col_i, attr) in unique_it {
         let is_unique = attr.has_unique();
-        let is_primary = attr.has_primary();
+        let is_primary = attr.has_primary_key();
         if is_primary {
             if primary_col_idx.is_some() {
                 panic!("Multiple primary columns defined for table: {}", table_name);

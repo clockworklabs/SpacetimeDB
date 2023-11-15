@@ -2,8 +2,9 @@ use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::traits::MutTxDatastore;
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
+use spacetimedb_primitives::Constraints;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
-use spacetimedb_sats::db::def::{ConstraintFlags, Constraints, TableSchema};
+use spacetimedb_sats::db::def::TableSchema;
 use spacetimedb_sats::db::def::{FieldDef, ProductTypeMeta};
 use spacetimedb_sats::db::error::RelationError;
 use spacetimedb_sats::relation::{extract_table_field, FieldExpr, FieldName};
@@ -763,9 +764,9 @@ fn compile_column_option(col: &SqlColumnDef) -> Result<(bool, Constraints), Plan
             }
             ColumnOption::Unique { is_primary } => {
                 attr = attr.push(if *is_primary {
-                    ConstraintFlags::PRIMARY_KEY
+                    Constraints::primary_key()
                 } else {
-                    ConstraintFlags::UNIQUE
+                    Constraints::unique()
                 });
             }
             ColumnOption::Generated {
@@ -777,7 +778,7 @@ fn compile_column_option(col: &SqlColumnDef) -> Result<(bool, Constraints), Plan
 
                 match generated_as {
                     GeneratedAs::ByDefault => {
-                        attr = attr.push(ConstraintFlags::IDENTITY);
+                        attr = attr.push(Constraints::identity());
                     }
                     x => {
                         return Err(PlanError::Unsupported {
