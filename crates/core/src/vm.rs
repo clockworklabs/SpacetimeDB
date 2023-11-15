@@ -7,7 +7,7 @@ use crate::execution_context::ExecutionContext;
 use itertools::Itertools;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::{DbTable, FieldExpr, FieldName, Relation};
+use spacetimedb_lib::relation::{DbTable, FieldExpr, FieldName, RelValueRef, Relation};
 use spacetimedb_lib::relation::{Header, MemTable, RelIter, RelValue, RowCount, Table};
 use spacetimedb_lib::table::ProductTypeMeta;
 use spacetimedb_primitives::{ColId, TableId};
@@ -48,13 +48,31 @@ pub fn build_query<'a>(
                 let iter = result.select(move |row| cmp.compare(row, &header));
                 Box::new(iter)
             }
+            // If this is an index join between two virtual tables, replace with an inner join.
+            // Such a plan is possible under incremental evaluation,
+            // when there are updates to both base tables,
+            // however an index lookup is invalid on a virtual table.
+            //
+            // TODO: This logic should be entirely encapsulated within the query planner.
+            // It should not be possible for the planner to produce an invalid plan.
+            Query::IndexJoin(join)
+                if !db_table
+                    && matches!(join.probe_side.source, SourceExpr::MemTable(_))
+                    && join.probe_side.source.table_name() != result.head().table_name =>
+            {
+                let join: JoinExpr = join.into();
+                let iter = join_inner(ctx, stdb, tx, result, join, true)?;
+                Box::new(iter)
+            }
             Query::IndexJoin(IndexJoin {
                 probe_side,
                 probe_field,
                 index_header,
+                index_select,
                 index_table,
                 index_col,
-            }) if db_table => {
+                return_index_rows,
+            }) => {
                 let probe_side = build_query(ctx, stdb, tx, probe_side.into())?;
                 Box::new(IndexSemiJoin {
                     ctx,
@@ -63,15 +81,12 @@ pub fn build_query<'a>(
                     probe_side,
                     probe_field,
                     index_header,
+                    index_select,
                     index_table,
                     index_col,
                     index_iter: None,
+                    return_index_rows,
                 })
-            }
-            Query::IndexJoin(join) => {
-                let join: JoinExpr = join.into();
-                let iter = join_inner(ctx, stdb, tx, result, join, true)?;
-                Box::new(iter)
             }
             Query::Select(cmp) => {
                 let header = result.head().clone();
@@ -184,12 +199,15 @@ pub struct IndexSemiJoin<'a, Rhs: RelOps> {
     // The field whose value will be used to probe the index.
     pub probe_field: FieldName,
     // The header for the index side of the join.
-    // Also the return header since we are returning values from the index side.
     pub index_header: Header,
+    // An optional predicate to evaluate over the matching rows of the index.
+    pub index_select: Option<ColumnOp>,
     // The table id on which the index is defined.
     pub index_table: TableId,
     // The column id for which the index is defined.
     pub index_col: ColId,
+    // Is this a left or right semijion?
+    pub return_index_rows: bool,
     // An iterator for the index side.
     // A new iterator will be instantiated for each row on the probe side.
     pub index_iter: Option<IterByColEq<'a>>,
@@ -201,9 +219,32 @@ pub struct IndexSemiJoin<'a, Rhs: RelOps> {
     ctx: &'a ExecutionContext<'a>,
 }
 
+impl<'a, Rhs: RelOps> IndexSemiJoin<'a, Rhs> {
+    fn filter(&self, index_row: RelValueRef) -> Result<bool, ErrorVm> {
+        if let Some(op) = &self.index_select {
+            Ok(op.compare(index_row, &self.index_header)?)
+        } else {
+            Ok(true)
+        }
+    }
+
+    fn map(&self, index_row: RelValue, probe_row: Option<RelValue>) -> RelValue {
+        if let Some(value) = probe_row {
+            if !self.return_index_rows {
+                return value;
+            }
+        }
+        index_row
+    }
+}
+
 impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
     fn head(&self) -> &Header {
-        &self.index_header
+        if self.return_index_rows {
+            &self.index_header
+        } else {
+            self.probe_side.head()
+        }
     }
 
     fn row_count(&self) -> RowCount {
@@ -213,8 +254,13 @@ impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
     #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
         // Return a value from the current index iterator, if not exhausted.
-        if let Some(value) = self.index_iter.as_mut().and_then(|iter| iter.next()) {
-            return Ok(Some(value.to_rel_value()));
+        if self.return_index_rows {
+            while let Some(value) = self.index_iter.as_mut().and_then(|iter| iter.next()) {
+                let value = value.to_rel_value();
+                if self.filter(value.as_val_ref())? {
+                    return Ok(Some(self.map(value, None)));
+                }
+            }
         }
         // Otherwise probe the index with a row from the probe side.
         while let Some(row) = self.probe_side.next()? {
@@ -224,9 +270,12 @@ impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
                     let col_id = self.index_col;
                     let value = value.clone();
                     let mut index_iter = self.db.iter_by_col_eq(self.ctx, self.tx, table_id, col_id, value)?;
-                    if let Some(value) = index_iter.next() {
-                        self.index_iter = Some(index_iter);
-                        return Ok(Some(value.to_rel_value()));
+                    while let Some(value) = index_iter.next() {
+                        let value = value.to_rel_value();
+                        if self.filter(value.as_val_ref())? {
+                            self.index_iter = Some(index_iter);
+                            return Ok(Some(self.map(value, Some(row))));
+                        }
                     }
                 }
             }
