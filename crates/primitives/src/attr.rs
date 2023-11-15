@@ -109,17 +109,17 @@ impl ColumnAttribute {
 
     /// Checks if the 'INDEXED' constraint is set.
     pub const fn has_indexed(&self) -> bool {
-        self.contains(ColumnIndexAttribute::INDEXED)
+        self.contains(ColumnAttribute::INDEXED)
     }
 
     /// Checks if the 'PRIMARY_KEY' constraint is set.
     pub const fn has_primary_key(&self) -> bool {
-        self.contains(ColumnIndexAttribute::PRIMARY_KEY)
-            || self.contains(ColumnIndexAttribute::PRIMARY_KEY_AUTO)
-            || self.contains(ColumnIndexAttribute::PRIMARY_KEY_IDENTITY)
+        self.contains(ColumnAttribute::PRIMARY_KEY)
+            || self.contains(ColumnAttribute::PRIMARY_KEY_AUTO)
+            || self.contains(ColumnAttribute::PRIMARY_KEY_IDENTITY)
     }
 
-    /// Returns the [ColumnIndexAttribute] of constraints as an enum variant.
+    /// Returns the [ColumnAttribute] of constraints as an enum variant.
     ///
     /// NOTE: This represent the higher possible representation of a constraints, so for example
     /// `IDENTITY` imply that is `INDEXED, UNIQUE`
@@ -141,49 +141,49 @@ impl ColumnAttribute {
 /// Represents `constraints` for a database `table`.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
 pub struct Constraints {
-    attr: ColumnIndexAttribute,
+    attr: ColumnAttribute,
 }
 
 impl Constraints {
     /// Creates a new `Constraints` instance with the given `attr` flags.
     #[inline(always)]
-    const fn new(attr: ColumnIndexAttribute) -> Self {
+    const fn new(attr: ColumnAttribute) -> Self {
         Self { attr }
     }
 
     /// Creates a new `Constraints` instance with no constraints set.
     pub const fn unset() -> Self {
-        Self::new(ColumnIndexAttribute::UNSET)
+        Self::new(ColumnAttribute::UNSET)
     }
 
-    /// Creates a new `Constraints` instance with [ColumnIndexAttribute::INDEXED] set.
+    /// Creates a new `Constraints` instance with [ColumnAttribute::INDEXED] set.
     pub const fn indexed() -> Self {
-        Self::new(ColumnIndexAttribute::INDEXED)
+        Self::new(ColumnAttribute::INDEXED)
     }
 
-    /// Creates a new `Constraints` instance with [ColumnIndexAttribute::UNIQUE] constraint set.
+    /// Creates a new `Constraints` instance with [ColumnAttribute::UNIQUE] constraint set.
     pub const fn unique() -> Self {
-        Self::new(ColumnIndexAttribute::UNIQUE)
+        Self::new(ColumnAttribute::UNIQUE)
     }
 
-    /// Creates a new `Constraints` instance with [ColumnIndexAttribute::IDENTITY] set.
+    /// Creates a new `Constraints` instance with [ColumnAttribute::IDENTITY] set.
     pub const fn identity() -> Self {
-        Self::new(ColumnIndexAttribute::IDENTITY)
+        Self::new(ColumnAttribute::IDENTITY)
     }
 
-    /// Creates a new `Constraints` instance with [ColumnIndexAttribute::PRIMARY_KEY] set.
+    /// Creates a new `Constraints` instance with [ColumnAttribute::PRIMARY_KEY] set.
     pub const fn primary_key() -> Self {
-        Self::new(ColumnIndexAttribute::PRIMARY_KEY)
+        Self::new(ColumnAttribute::PRIMARY_KEY)
     }
 
-    /// Creates a new `Constraints` instance with [ColumnIndexAttribute::PRIMARY_KEY_AUTO] set.
+    /// Creates a new `Constraints` instance with [ColumnAttribute::PRIMARY_KEY_AUTO] set.
     pub const fn primary_key_auto() -> Self {
-        Self::new(ColumnIndexAttribute::PRIMARY_KEY_AUTO)
+        Self::new(ColumnAttribute::PRIMARY_KEY_AUTO)
     }
 
-    /// Creates a new `Constraints` instance with [ColumnIndexAttribute::PRIMARY_KEY_IDENTITY] set.
+    /// Creates a new `Constraints` instance with [ColumnAttribute::PRIMARY_KEY_IDENTITY] set.
     pub const fn primary_key_identity() -> Self {
-        Self::new(ColumnIndexAttribute::PRIMARY_KEY_IDENTITY)
+        Self::new(ColumnAttribute::PRIMARY_KEY_IDENTITY)
     }
 
     /// Adds a constraint to the existing constraints.
@@ -211,13 +211,13 @@ impl Constraints {
     /// `IDENTITY` imply that is `INDEXED, UNIQUE`
     pub fn kind(&self) -> ConstraintKind {
         match self {
-            x if x.attr == ColumnIndexAttribute::UNSET => ConstraintKind::UNSET,
-            x if x.attr == ColumnIndexAttribute::INDEXED => ConstraintKind::INDEXED,
-            x if x.attr == ColumnIndexAttribute::UNIQUE => ConstraintKind::UNIQUE,
-            x if x.attr == ColumnIndexAttribute::IDENTITY => ConstraintKind::IDENTITY,
-            x if x.attr == ColumnIndexAttribute::PRIMARY_KEY => ConstraintKind::PRIMARY_KEY,
-            x if x.attr == ColumnIndexAttribute::PRIMARY_KEY_AUTO => ConstraintKind::PRIMARY_KEY_AUTO,
-            x if x.attr == ColumnIndexAttribute::PRIMARY_KEY_IDENTITY => ConstraintKind::PRIMARY_KEY_IDENTITY,
+            x if x.attr == ColumnAttribute::UNSET => ConstraintKind::UNSET,
+            x if x.attr == ColumnAttribute::INDEXED => ConstraintKind::INDEXED,
+            x if x.attr == ColumnAttribute::UNIQUE => ConstraintKind::UNIQUE,
+            x if x.attr == ColumnAttribute::IDENTITY => ConstraintKind::IDENTITY,
+            x if x.attr == ColumnAttribute::PRIMARY_KEY => ConstraintKind::PRIMARY_KEY,
+            x if x.attr == ColumnAttribute::PRIMARY_KEY_AUTO => ConstraintKind::PRIMARY_KEY_AUTO,
+            x if x.attr == ColumnAttribute::PRIMARY_KEY_IDENTITY => ConstraintKind::PRIMARY_KEY_IDENTITY,
             x => unreachable!("Unexpected value {x:?}"),
         }
     }
@@ -247,14 +247,14 @@ impl Constraints {
 impl TryFrom<u8> for Constraints {
     type Error = ();
     fn try_from(v: u8) -> Result<Self, Self::Error> {
-        ColumnIndexAttribute::from_bits(v).ok_or(()).map(Self::new)
+        ColumnAttribute::from_bits(v).ok_or(()).map(Self::new)
     }
 }
 
-impl TryFrom<ColumnIndexAttribute> for Constraints {
+impl TryFrom<ColumnAttribute> for Constraints {
     type Error = ();
 
-    fn try_from(value: ColumnIndexAttribute) -> Result<Self, Self::Error> {
+    fn try_from(value: ColumnAttribute) -> Result<Self, Self::Error> {
         Ok(match value.kind() {
             AttributeKind::UNSET => Self::unset(),
             AttributeKind::INDEXED => Self::indexed(),

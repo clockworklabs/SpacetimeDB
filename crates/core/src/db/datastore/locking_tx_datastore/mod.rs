@@ -2373,6 +2373,7 @@ mod tests {
     use crate::error::IndexError;
     use itertools::Itertools;
     use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_primitives::Constraints;
     use spacetimedb_sats::product;
 
     /// Utility to query the system tables and return their concrete table row
