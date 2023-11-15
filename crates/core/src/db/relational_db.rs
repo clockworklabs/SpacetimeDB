@@ -15,13 +15,12 @@ use super::message_log::MessageLog;
 use super::ostorage::memory_object_db::MemoryObjectDB;
 use super::relational_operators::Relation;
 use crate::address::Address;
-use crate::db::commit_log;
 use crate::db::datastore::traits::DataRow;
 use crate::db::db_metrics::DB_METRICS;
 use crate::db::messages::commit::Commit;
 use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 use crate::db::ostorage::ObjectDB;
-use crate::error::{DBError, DatabaseError, IndexError, TableError};
+use crate::error::{DBError, DatabaseError, IndexError, LogReplayError, TableError};
 use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
 use spacetimedb_lib::PrimaryKey;
@@ -753,12 +752,17 @@ mod tests {
     use crate::db::datastore::system_tables::{
         StIndexRow, StSequenceRow, StTableRow, ST_INDEXES_ID, ST_SEQUENCES_ID, ST_TABLES_ID,
     };
+    use crate::db::message_log::SegmentView;
+    use crate::db::ostorage::sled_object_db::SledObjectDB;
     use crate::db::relational_db::tests_utils::make_test_db;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::db::def::{ColumnDef, IndexType};
     use spacetimedb_sats::product;
+    use std::io::{Seek, SeekFrom, Write};
+    use std::ops::Range;
+    use tempfile::TempDir;
 
     fn column(name: &str, ty: AlgebraicType) -> ColumnDef {
         ColumnDef {
