@@ -2,6 +2,13 @@ use spacetimedb::{spacetimedb, ReducerContext, Identity, SpacetimeType, schedule
 use rand::Rng;
 use std::time::Duration;
 
+// TODO:
+// - Remove players when they are eaten on the client + death + respawn screen
+// - Player splitting + increased area of view
+// - Viruses
+// - Ejecting mass
+// - Leaderboard
+
 #[spacetimedb(table)]
 pub struct Config {
     #[primarykey]
@@ -104,8 +111,10 @@ pub fn connect(ctx: ReducerContext) -> Result<(), String> {
 pub fn create_player(ctx: ReducerContext, name: String) -> Result<(), String> {
     let mut rng = rand::thread_rng();
     let world_size = Config::filter_by_id(&0).ok_or("Config not found")?.world_size;
-    let x = rng.gen_range(START_PLAYER_MASS as f32..(world_size as f32 - START_PLAYER_MASS as f32));
-    let y = rng.gen_range(START_PLAYER_MASS as f32..(world_size as f32 - START_PLAYER_MASS as f32));
+    let x = rng.gen_range(START_PLAYER_MASS as f32..
+        (world_size as f32 - START_PLAYER_MASS as f32));
+    let y = rng.gen_range(START_PLAYER_MASS as f32..
+        (world_size as f32 - START_PLAYER_MASS as f32));
     let entity = Entity::insert(Entity {
         id: 0,
         position: Vector2 { x, y },
@@ -124,8 +133,10 @@ pub fn create_player(ctx: ReducerContext, name: String) -> Result<(), String> {
 }
 
 #[spacetimedb(reducer)]
-pub fn update_player_input(ctx: ReducerContext, direction: Vector2, magnitude: f32) -> Result<(), String> {
-    let mut circle = Circle::filter_by_circle_id(&ctx.sender).ok_or("Circle not found")?;
+pub fn update_player_input(ctx: ReducerContext,
+                           direction: Vector2, magnitude: f32) -> Result<(), String> {
+    let mut circle = Circle::filter_by_circle_id(
+        &ctx.sender).ok_or("Circle not found")?;
     circle.direction = direction.normalize();
     circle.magnitude = magnitude.clamp(0.0, 1.0);
     Circle::update_by_circle_id(&ctx.sender, circle);
@@ -178,7 +189,6 @@ pub fn move_all_players() -> Result<(), String> {
             let mass_ratio = other_entity.mass as f32 / circle_entity.mass as f32;
 
             if is_overlapping(&circle_entity, &other_entity) && mass_ratio < 0.85 {
-                log::info!("Player {} is eating player {}!", circle.name, other_circle.name);
                 // We're overlapping with another player, so eat them
                 Entity::delete_by_id(&other_entity.id);
                 Circle::delete_by_circle_id(&other_circle.circle_id);
