@@ -8,12 +8,17 @@ using Vector2 = SpacetimeDB.Types.Vector2;
 public class PlayerController : MonoBehaviour
 {
     public int updatesPerSecond = 20;
+    public int lerpUpdatesPerSecond = 5;
     public float targetCameraSize = 50;
     public Renderer rend;
+    public TMPro.TextMeshProUGUI usernameDisplay;
 
     private float? lastMovementSendUpdate;
-    private float? previousPositionReceiveUpdateTime;
-    private Vector3? previousPosition;
+    private float lerpTimePassed;
+    private Vector3 positionLerp1;
+    private Vector3 positionLerp2;
+
+    private Vector3? targetLerpPosition;
     
     public Identity? identity;
     
@@ -37,7 +42,7 @@ public class PlayerController : MonoBehaviour
         }
 
         var entity = Entity.FilterById(playerCircle.EntityId);
-        previousPosition = targetPosition = transform.position = new UnityEngine.Vector2
+        targetPosition = positionLerp1 = positionLerp2 = transform.position = new UnityEngine.Vector2
         {
             x = entity.Position.X,
             y = entity.Position.Y,
@@ -51,6 +56,7 @@ public class PlayerController : MonoBehaviour
             z = playerRadius * 2,
         };
         rend.material.color = GameManager.GetRandomColor(entity.Id);
+        usernameDisplay.text = playerCircle.Name;
     }
 
     public void OnDestroy()
@@ -70,8 +76,6 @@ public class PlayerController : MonoBehaviour
                     return;
                 }
 
-                previousPosition = targetPosition;
-                previousPositionReceiveUpdateTime = targetPositionReceiveUpdateTime;
                 targetPosition = new UnityEngine.Vector2
                 {
                     x = newObj.Position.X,
@@ -86,8 +90,6 @@ public class PlayerController : MonoBehaviour
                     z = playerRadius * 2,
                 };
 
-                previousPosition = transform.position;
-                targetPositionReceiveUpdateTime = Time.time;
                 previousCameraSize = targetCameraSize = playerRadius * 2 + 50.0f;
                 break;
             case SpacetimeDBClient.TableOp.Delete:
@@ -121,13 +123,16 @@ public class PlayerController : MonoBehaviour
 
     public void Update()
     {
-        // Fix interp values
-        if (targetPosition.HasValue && targetPositionReceiveUpdateTime.HasValue 
-                                    && previousPosition.HasValue && previousPositionReceiveUpdateTime.HasValue)
+        // Interpolate positions
+        lerpTimePassed += Time.deltaTime;
+        transform.position = Vector3.Lerp(positionLerp1, positionLerp2, 
+            lerpTimePassed / (1.0f / lerpUpdatesPerSecond));
+        if (lerpTimePassed >= 1.0f / lerpUpdatesPerSecond && targetPosition.HasValue)
         {
-            transform.position = Vector3.Lerp(previousPosition.Value, 
-                targetPosition.Value, (Time.time - targetPositionReceiveUpdateTime.Value) 
-                                      / (targetPositionReceiveUpdateTime.Value - previousPositionReceiveUpdateTime.Value));
+            // Take new positions
+            lerpTimePassed = 0.0f;
+            positionLerp1 = transform.position;
+            positionLerp2 = targetPosition.Value;
         }
 
         if (targetScale.HasValue)

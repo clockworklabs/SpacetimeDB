@@ -68,14 +68,13 @@ public class GameManager : MonoBehaviour
         // Called after our local cache is populated from a Subscribe call
         SpacetimeDBClient.instance.onSubscriptionApplied += () =>
         {
-            Reducer.CreatePlayer("" + Random.Range(100000, 999999));
         };
 
         Circle.OnInsert += CircleOnOnInsert;
         Food.OnInsert += FoodOnOnInsert;
 
         // Now that we’ve registered all our callbacks, lets connect to spacetimedb
-        SpacetimeDBClient.instance.Connect(AuthToken.Token, "https://testnet.spacetimedb.com", "untitled-circle-game-2");
+        SpacetimeDBClient.instance.Connect(AuthToken.Token, "http://localhost:3000", "untitled-circle-game");
         localCamera = Camera.main;
     }
 
