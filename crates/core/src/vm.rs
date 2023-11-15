@@ -48,13 +48,23 @@ pub fn build_query<'a>(
                 let iter = result.select(move |row| cmp.compare(row, &header));
                 Box::new(iter)
             }
+            Query::IndexJoin(join)
+                if !db_table
+                    && matches!(join.probe_side.source, SourceExpr::MemTable(_))
+                    && join.probe_side.source.table_name() != result.head().table_name =>
+            {
+                let join: JoinExpr = join.into();
+                let iter = join_inner(ctx, stdb, tx, result, join, true)?;
+                Box::new(iter)
+            }
             Query::IndexJoin(IndexJoin {
                 probe_side,
                 probe_field,
                 index_header,
                 index_table,
                 index_col,
-            }) if db_table => {
+                return_index_rows,
+            }) => {
                 let probe_side = build_query(ctx, stdb, tx, probe_side.into())?;
                 Box::new(IndexSemiJoin {
                     ctx,
@@ -67,11 +77,6 @@ pub fn build_query<'a>(
                     index_col,
                     index_iter: None,
                 })
-            }
-            Query::IndexJoin(join) => {
-                let join: JoinExpr = join.into();
-                let iter = join_inner(ctx, stdb, tx, result, join, true)?;
-                Box::new(iter)
             }
             Query::Select(cmp) => {
                 let header = result.head().clone();

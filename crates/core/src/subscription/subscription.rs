@@ -527,7 +527,9 @@ impl<'a> IncrementalJoin<'a> {
         auth: &AuthCtx,
     ) -> Result<impl Iterator<Item = Op>, DBError> {
         let mut inserts = {
-            let lhs_virt = query::to_mem_table(self.expr.clone(), &self.lhs.inserts());
+            // Replan query after replacing left table with virtual table,
+            // since join order may need to be reversed.
+            let lhs_virt = query::to_mem_table(self.expr.clone(), &self.lhs.inserts()).optimize();
             let rhs_virt = self.to_mem_table_rhs(self.rhs.inserts());
 
             // {A+ join B}
@@ -551,7 +553,9 @@ impl<'a> IncrementalJoin<'a> {
             set
         };
         let mut deletes = {
-            let lhs_virt = query::to_mem_table(self.expr.clone(), &self.lhs.deletes());
+            // Replan query after replacing left table with virtual table,
+            // since join order may need to be reversed.
+            let lhs_virt = query::to_mem_table(self.expr.clone(), &self.lhs.deletes()).optimize();
             let rhs_virt = self.to_mem_table_rhs(self.rhs.deletes());
 
             // {A- join B}
