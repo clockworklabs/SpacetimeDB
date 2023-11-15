@@ -230,17 +230,6 @@ impl TryFrom<u8> for IndexType {
     }
 }
 
-impl TryFrom<&str> for IndexType {
-    type Error = ();
-    fn try_from(v: &str) -> Result<Self, Self::Error> {
-        match v {
-            "BTree" => Ok(IndexType::BTree),
-            "Hash" => Ok(IndexType::Hash),
-            _ => Err(()),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SequenceSchema {
     pub sequence_id: SequenceId,
