@@ -382,14 +382,16 @@ impl From<&SourceExpr> for DbTable {
 }
 
 // A descriptor for an index join operation.
-// The semantics are that of a semi-join with rows from the index side being returned.
+// The semantics are those of a semijoin with rows from the index or the probe side being returned.
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct IndexJoin {
     pub probe_side: QueryExpr,
     pub probe_field: FieldName,
     pub index_header: Header,
+    pub index_select: Option<ColumnOp>,
     pub index_table: TableId,
     pub index_col: ColId,
+    pub return_index_rows: bool,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
@@ -1150,8 +1152,10 @@ impl QueryExpr {
                                 probe_side,
                                 probe_field,
                                 index_header: table.head.clone(),
+                                index_select: None,
                                 index_table: table.table_id,
                                 index_col: col.col_id,
+                                return_index_rows: true,
                             };
                             return QueryExpr {
                                 source,
@@ -1751,8 +1755,10 @@ mod tests {
                     table_name: "bar".into(),
                     fields: vec![],
                 },
+                index_select: None,
                 index_table: 42.into(),
                 index_col: 22.into(),
+                return_index_rows: true,
             }),
             Query::JoinInner(JoinExpr {
                 rhs: mem_table.into(),
