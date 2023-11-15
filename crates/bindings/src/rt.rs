@@ -1,23 +1,25 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
-use std::any::TypeId;
-use std::collections::{btree_map, BTreeMap};
-use std::fmt;
-use std::marker::PhantomData;
-use std::sync::Mutex;
-use std::time::Duration;
-
 use crate::sats::db::auth::{StAccess, StTableType};
+use crate::sats::db::def::{IndexDef, AUTO_TABLE_ID};
 use crate::timestamp::with_timestamp_set;
 use crate::{sys, ReducerContext, ScheduleToken, SpacetimeType, TableType, Timestamp};
-pub use once_cell::sync::{Lazy, OnceCell};
+use nonempty::NonEmpty;
 use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, AlgebraicType, AlgebraicTypeRef, ProductTypeElement};
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
 use spacetimedb_lib::{bsatn, Address, Identity, MiscModuleExport, ModuleDef, ReducerDef, TableDef, TypeAlias};
 use spacetimedb_primitives::TableId;
+use std::any::TypeId;
+use std::collections::{btree_map, BTreeMap};
+use std::fmt;
+use std::marker::PhantomData;
+use std::sync::Mutex;
+use std::time::Duration;
 use sys::Buffer;
+
+pub use once_cell::sync::{Lazy, OnceCell};
 
 /// The `sender` invokes `reducer` at `timestamp` and provides it with the given `args`.
 ///
@@ -400,26 +402,26 @@ pub fn register_reftype<T: SpacetimeType>() {
 pub fn register_table<T: TableType>() {
     register_describer(|module| {
         let data = *T::make_type(module).as_ref().unwrap();
+
+        let indexes = T::COLUMN_ATTRS.iter().zip(T::INDEXES.iter()).map(|(attr, idx)| {
+            IndexDef::new_cols(
+                idx.name.into(),
+                AUTO_TABLE_ID,
+                attr.has_unique(),
+                NonEmpty::from_slice(idx.col_ids).unwrap_or_default().map(Into::into),
+            )
+        });
+
         let schema = TableDef {
             name: T::TABLE_NAME.into(),
             data,
             column_attrs: T::COLUMN_ATTRS.to_owned(),
-            indexes: T::INDEXES.iter().copied().map(Into::into).collect(),
+            indexes: indexes.collect(),
             table_type: StTableType::User,
             table_access: StAccess::for_name(T::TABLE_NAME),
         };
         module.module.tables.push(schema)
     })
-}
-
-impl From<crate::IndexDef<'_>> for spacetimedb_lib::IndexDef {
-    fn from(index: crate::IndexDef<'_>) -> spacetimedb_lib::IndexDef {
-        spacetimedb_lib::IndexDef {
-            name: index.name.to_owned(),
-            index_type: index.ty,
-            cols: index.col_ids.to_owned(),
-        }
-    }
 }
 
 /// Registers a describer for the reducer `I` with arguments `A`.

@@ -24,7 +24,7 @@ pub enum AttributeKind {
 // and is distinct to `Constraints` in `sats/db/def.rs`
 bitflags! {
     #[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
-    pub struct ColumnIndexAttribute: u8 {
+    pub struct ColumnAttribute: u8 {
         const UNSET = Self::empty().bits();
         ///  Index no unique
         const INDEXED = 0b0001;
@@ -43,7 +43,7 @@ bitflags! {
     }
 }
 
-impl TryFrom<u8> for ColumnIndexAttribute {
+impl TryFrom<u8> for ColumnAttribute {
     type Error = ();
 
     fn try_from(v: u8) -> Result<Self, Self::Error> {
@@ -51,23 +51,19 @@ impl TryFrom<u8> for ColumnIndexAttribute {
     }
 }
 
-impl ColumnIndexAttribute {
+impl ColumnAttribute {
     /// Checks if either 'IDENTITY' or 'PRIMARY_KEY_AUTO' constraints are set because the imply the use of
     /// auto increment sequence.
     pub const fn has_autoinc(&self) -> bool {
-        self.contains(ColumnIndexAttribute::IDENTITY)
-            || self.contains(ColumnIndexAttribute::PRIMARY_KEY_AUTO)
-            || self.contains(ColumnIndexAttribute::AUTO_INC)
+        self.contains(Self::IDENTITY) || self.contains(Self::PRIMARY_KEY_AUTO) || self.contains(Self::AUTO_INC)
     }
 
     pub const fn has_unique(&self) -> bool {
-        self.contains(ColumnIndexAttribute::UNIQUE)
+        self.contains(Self::UNIQUE)
     }
 
     pub const fn has_primary(&self) -> bool {
-        self.contains(ColumnIndexAttribute::IDENTITY)
-            || self.contains(ColumnIndexAttribute::PRIMARY_KEY)
-            || self.contains(ColumnIndexAttribute::PRIMARY_KEY_AUTO)
+        self.contains(Self::IDENTITY) || self.contains(Self::PRIMARY_KEY) || self.contains(Self::PRIMARY_KEY_AUTO)
     }
 
     /// Returns the [ColumnIndexAttribute] of constraints as an enum variant.

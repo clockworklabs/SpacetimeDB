@@ -6,9 +6,10 @@ use std::time::Duration;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{bsatn, Address, ModuleDef};
-use spacetimedb_sats::db::def::TableDef;
 use spacetimedb_vm::expr::CrudExpr;
 
+use super::instrumentation::CallTimes;
+use super::*;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{LogLevel, Record, SystemLogger};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
@@ -29,9 +30,7 @@ use crate::sql;
 use crate::subscription::module_subscription_actor::{ModuleSubscriptionManager, SubscriptionEventSender};
 use crate::util::{const_unwrap, ResultInspectExt};
 use crate::worker_metrics::WORKER_METRICS;
-
-use super::instrumentation::CallTimes;
-use super::*;
+use spacetimedb_sats::db::def::TableDef;
 
 pub trait WasmModule: Send + 'static {
     type Instance: WasmInstance;

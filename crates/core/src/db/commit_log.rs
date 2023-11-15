@@ -16,14 +16,11 @@ use crate::{
     error::DBError,
     execution_context::ExecutionContext,
 };
-
 use anyhow::Context;
 use spacetimedb_sats::hash::{hash_bytes, Hash};
-
 use spacetimedb_sats::DataKey;
 use std::io;
-use std::sync::Arc;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 #[derive(Clone)]
 pub struct CommitLog {

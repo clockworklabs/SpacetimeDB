@@ -1,9 +1,9 @@
 use anyhow::Context;
-use spacetimedb_primitives::{ColId, ColumnIndexAttribute};
+use spacetimedb_primitives::ColId;
+use spacetimedb_sats::db::attr::ColumnAttribute;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
-use spacetimedb_sats::db::def::{ColumnDef, IndexType, AUTO_TABLE_ID};
+use spacetimedb_sats::db::def::{ColumnDef, IndexDef, IndexType, AUTO_TABLE_ID};
 use spacetimedb_sats::{impl_serialize, WithTypespace};
-use std::iter;
 
 pub mod address;
 pub mod filter;
@@ -85,13 +85,6 @@ impl std::fmt::Display for VersionTuple {
 
 extern crate self as spacetimedb_lib;
 
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
-pub struct IndexDef {
-    pub name: String,
-    pub index_type: IndexType,
-    pub cols: Vec<u8>,
-}
-
 //WARNING: Change this structure(or any of their members) is an ABI change.
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
 #[sats(crate = crate)]
@@ -99,7 +92,7 @@ pub struct TableDef {
     pub name: String,
     /// data should always point to a ProductType in the typespace
     pub data: sats::AlgebraicTypeRef,
-    pub column_attrs: Vec<ColumnIndexAttribute>,
+    pub column_attrs: Vec<ColumnAttribute>,
     pub indexes: Vec<IndexDef>,
     pub table_type: StTableType,
     pub table_access: StAccess,
@@ -131,7 +124,7 @@ impl TableDef {
 
             let index_for_column = table.indexes.iter().find(|index| {
                 // Ignore multi-column indexes
-                matches!(*index.cols, [index_col_id] if index_col_id as usize == col_id)
+                index.cols.tail.is_empty() && index.cols.head.idx() == col_id
             });
 
             // If there's an index defined for this column already, use it,
@@ -163,23 +156,14 @@ impl TableDef {
 
         // Multi-column indexes cannot be unique (yet), so just add them.
         let multi_col_indexes = table.indexes.iter().filter_map(|index| {
-            if let [a, b, rest @ ..] = &*index.cols {
-                let idx = spacetimedb_sats::db::def::IndexDef::new_cols(
+            (index.cols.len() > 1).then(|| {
+                spacetimedb_sats::db::def::IndexDef::new_cols(
                     index.name.clone(),
                     AUTO_TABLE_ID,
                     false,
-                    (
-                        ColId::from(*a),
-                        iter::once(ColId::from(*b))
-                            .chain(rest.iter().copied().map(Into::into))
-                            .collect(),
-                    ),
-                );
-
-                Some(idx)
-            } else {
-                None
-            }
+                    index.cols.clone(),
+                )
+            })
         });
         indexes.extend(multi_col_indexes);
 

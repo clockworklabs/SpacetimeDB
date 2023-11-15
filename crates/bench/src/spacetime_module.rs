@@ -201,7 +201,7 @@ impl BenchDatabase for SpacetimeModule {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct TableId {
     pascal_case: String,
     snake_case: String,

@@ -1,24 +1,5 @@
-use super::commit_log::{CommitLog, CommitLogView};
-use super::datastore::locking_tx_datastore::{DataRef, Iter, IterByColEq, IterByColRange, Locking, MutTxId, RowId};
-use super::datastore::traits::{DataRow, MutProgrammable, MutTx, MutTxDatastore, Programmable, TxData};
-use super::message_log::MessageLog;
-use super::ostorage::memory_object_db::MemoryObjectDB;
-use super::relational_operators::Relation;
-use crate::address::Address;
-use crate::db::db_metrics::DB_METRICS;
-use crate::db::messages::commit::Commit;
-use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
-use crate::db::ostorage::ObjectDB;
-use crate::error::{DBError, DatabaseError, IndexError, LogReplayError, TableError};
-use crate::execution_context::ExecutionContext;
-use crate::hash::Hash;
 use fs2::FileExt;
 use nonempty::NonEmpty;
-use spacetimedb_lib::PrimaryKey;
-use spacetimedb_primitives::{ColId, ColumnIndexAttribute, IndexId, SequenceId, TableId};
-use spacetimedb_sats::data_key::ToDataKey;
-use spacetimedb_sats::db::def::{IndexDef, SequenceDef, TableDef, TableSchema};
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use std::borrow::Cow;
 use std::fs::{create_dir_all, File};
 use std::io;
@@ -26,17 +7,27 @@ use std::ops::RangeBounds;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-pub const ST_TABLES_NAME: &str = "st_table";
-pub const ST_COLUMNS_NAME: &str = "st_columns";
-pub const ST_SEQUENCES_NAME: &str = "st_sequence";
-pub const ST_INDEXES_NAME: &str = "st_indexes";
-
-/// The static ID of the table that defines tables
-pub const ST_TABLES_ID: TableId = TableId(0);
-/// The static ID of the table that defines columns
-pub const ST_COLUMNS_ID: TableId = TableId(1);
-/// The ID that we can start use to generate user tables that will not conflict with the bootstrapped ones.
-pub const ST_TABLE_ID_START: TableId = TableId(2);
+use super::commit_log::{CommitLog, CommitLogView};
+use super::datastore::locking_tx_datastore::Locking;
+use super::datastore::locking_tx_datastore::{DataRef, Iter, IterByColEq, IterByColRange, MutTxId, RowId};
+use super::datastore::traits::{MutProgrammable, MutTx, MutTxDatastore, Programmable, TxData};
+use super::message_log::MessageLog;
+use super::ostorage::memory_object_db::MemoryObjectDB;
+use super::relational_operators::Relation;
+use crate::address::Address;
+use crate::db::datastore::traits::DataRow;
+use crate::db::db_metrics::DB_METRICS;
+use crate::db::messages::commit::Commit;
+use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
+use crate::db::ostorage::ObjectDB;
+use crate::error::{DBError, DatabaseError, IndexError, LogReplayError, TableError};
+use crate::execution_context::ExecutionContext;
+use crate::hash::Hash;
+use spacetimedb_lib::PrimaryKey;
+use spacetimedb_primitives::{ColId, ColumnAttribute, IndexId, SequenceId, TableId};
+use spacetimedb_sats::data_key::ToDataKey;
+use spacetimedb_sats::db::def::{IndexDef, SequenceDef, TableDef, TableSchema};
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 
 #[derive(Clone)]
 pub struct RelationalDB {
@@ -512,7 +503,7 @@ impl RelationalDB {
         tx: &mut MutTxId,
         table_id: TableId,
         cols: &NonEmpty<ColId>,
-    ) -> Result<ColumnIndexAttribute, DBError> {
+    ) -> Result<ColumnAttribute, DBError> {
         let table = self.inner.schema_for_table_mut_tx(tx, table_id)?;
         let columns = table.project_not_empty(cols)?;
         // Verify we don't have more than 1 auto_inc in the list of columns
@@ -526,15 +517,15 @@ impl RelationalDB {
             )));
         };
         let unique_index = table.indexes.iter().find(|x| &x.cols == cols).map(|x| x.is_unique);
-        let mut attr = ColumnIndexAttribute::UNSET;
+        let mut attr = ColumnAttribute::UNSET;
         if is_autoinc {
-            attr |= ColumnIndexAttribute::AUTO_INC;
+            attr |= ColumnAttribute::AUTO_INC;
         }
         if let Some(is_unique) = unique_index {
             attr |= if is_unique {
-                ColumnIndexAttribute::UNIQUE
+                ColumnAttribute::UNIQUE
             } else {
-                ColumnIndexAttribute::INDEXED
+                ColumnAttribute::INDEXED
             };
         }
         Ok(attr)
@@ -667,7 +658,12 @@ impl RelationalDB {
 
     /// Add a [Sequence] into the database instance, generates a stable [SequenceId] for it that will persist on restart.
     #[tracing::instrument(skip(self, tx, seq), fields(seq=seq.sequence_name))]
-    pub fn create_sequence(&self, tx: &mut MutTxId, seq: SequenceDef) -> Result<SequenceId, DBError> {
+    pub fn create_sequence(
+        &mut self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        seq: SequenceDef,
+    ) -> Result<SequenceId, DBError> {
         self.inner.create_sequence_mut_tx(tx, seq)
     }
 
@@ -752,36 +748,21 @@ pub(crate) mod tests_utils {
 mod tests {
     #![allow(clippy::disallowed_macros)]
 
-    use nonempty::NonEmpty;
+    use super::*;
+    use crate::db::datastore::system_tables::{
+        StIndexRow, StSequenceRow, StTableRow, ST_INDEXES_ID, ST_SEQUENCES_ID, ST_TABLES_ID,
+    };
+    use crate::db::message_log::SegmentView;
+    use crate::db::ostorage::sled_object_db::SledObjectDB;
+    use crate::db::relational_db::tests_utils::make_test_db;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
-    use spacetimedb_sats::db::def::{ColumnDef, IndexDef, IndexType, TableDef};
-    use std::fs::File;
-    use std::io::{self, Seek, SeekFrom, Write};
-    use std::ops::Range;
-    use std::path::Path;
-    use std::sync::{Arc, Mutex};
-    use tempfile::TempDir;
-
-    use super::RelationalDB;
-    use crate::address::Address;
-    use crate::db::datastore::locking_tx_datastore::IterByColEq;
-    use crate::db::datastore::system_tables::StIndexRow;
-    use crate::db::datastore::system_tables::StSequenceRow;
-    use crate::db::datastore::system_tables::StTableRow;
-    use crate::db::datastore::system_tables::ST_INDEXES_ID;
-    use crate::db::datastore::system_tables::ST_SEQUENCES_ID;
-    use crate::db::message_log::{MessageLog, SegmentView};
-    use crate::db::ostorage::sled_object_db::SledObjectDB;
-    use crate::db::ostorage::ObjectDB;
-    use crate::db::relational_db::make_default_ostorage;
-    use crate::db::relational_db::tests_utils::make_test_db;
-    use crate::db::relational_db::{open_db, ST_TABLES_ID};
-    use crate::error::{DBError, DatabaseError, IndexError, LogReplayError};
-    use crate::execution_context::ExecutionContext;
-    use spacetimedb_lib::{AlgebraicType, AlgebraicValue, ProductType};
+    use spacetimedb_sats::db::def::{ColumnDef, IndexType};
     use spacetimedb_sats::product;
+    use std::io::{Seek, SeekFrom, Write};
+    use std::ops::Range;
+    use tempfile::TempDir;
 
     fn column(name: &str, ty: AlgebraicType) -> ColumnDef {
         ColumnDef {

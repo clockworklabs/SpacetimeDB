@@ -37,7 +37,7 @@ fn expr_for_projection(table: &From, of: Expr) -> Result<FieldExpr, PlanError> {
         Expr::Ident(x) => {
             let f = table.resolve_field(&x)?;
 
-            Ok(FieldExpr::Name(f.field))
+            Ok(FieldExpr::Name(f.into()))
         }
         Expr::Value(x) => Ok(FieldExpr::Value(x)),
         x => unreachable!("Wrong expression in SQL query {:?}", x),
@@ -346,12 +346,12 @@ mod tests {
     ) -> TableId {
         if let Query::IndexScan(IndexScan {
             table,
-            col_id,
+            columns,
             lower_bound,
             upper_bound,
         }) = op
         {
-            assert_eq!(col_id, col, "Columns don't match");
+            assert_eq!(columns, col.into(), "Columns don't match");
             assert_eq!(lower_bound, low_bound, "Lower bound don't match");
             assert_eq!(upper_bound, up_bound, "Upper bound don't match");
             table.table_id

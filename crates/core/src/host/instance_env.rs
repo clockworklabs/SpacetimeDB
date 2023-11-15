@@ -1,19 +1,17 @@
 use nonempty::NonEmpty;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
-use spacetimedb_lib::{bsatn, ProductValue};
 use std::ops::DerefMut;
 use std::sync::Arc;
 
+use super::scheduler::{ScheduleError, ScheduledReducerId, Scheduler};
+use super::timestamp::Timestamp;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::{MutTxId, RowId};
 use crate::error::{IndexError, NodesError};
 use crate::execution_context::ExecutionContext;
 use crate::util::ResultInspectExt;
-
-use super::scheduler::{ScheduleError, ScheduledReducerId, Scheduler};
-use super::timestamp::Timestamp;
 use crate::vm::DbProgram;
 use spacetimedb_lib::filter::CmpArgs;
 use spacetimedb_lib::identity::AuthCtx;
@@ -22,7 +20,7 @@ use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::buffer::BufWriter;
 use spacetimedb_sats::db::def::{IndexDef, IndexType};
 use spacetimedb_sats::relation::{FieldExpr, FieldName};
-use spacetimedb_sats::{ProductType, Typespace};
+use spacetimedb_sats::{bsatn, ProductType, ProductValue, Typespace};
 use spacetimedb_vm::expr::{Code, ColumnOp};
 
 #[derive(Clone)]
