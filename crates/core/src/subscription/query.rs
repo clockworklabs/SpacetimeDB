@@ -499,13 +499,14 @@ mod tests {
         let indexes = &[(0.into(), "id")];
         let lhs_id = create_table(&db, &mut tx, "lhs", schema, indexes)?;
 
-        // Create table [rhs] with no indexes
+        // Create table [rhs] with index on [id]
         let schema = &[
             ("rid", AlgebraicType::I32),
             ("id", AlgebraicType::I32),
             ("y", AlgebraicType::I32),
         ];
-        let rhs_id = create_table(&db, &mut tx, "rhs", schema, &[])?;
+        let indexes = &[(1.into(), "id")];
+        let rhs_id = create_table(&db, &mut tx, "rhs", schema, indexes)?;
 
         // Insert into lhs
         for i in 0..5 {
