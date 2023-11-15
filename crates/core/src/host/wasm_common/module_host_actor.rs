@@ -4,8 +4,6 @@ use std::time::Duration;
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::traits::TableDef;
 use crate::execution_context::ExecutionContext;
-use crate::sql;
-use crate::util::{const_unwrap, ResultInspectExt};
 use anyhow::{anyhow, Context};
 use bytes::Bytes;
 use spacetimedb_lib::buffer::DecodeError;
@@ -28,7 +26,7 @@ use crate::host::{
 };
 use crate::identity::Identity;
 use crate::sql;
-use crate::subscription::module_subscription_actor::{ModuleSubscriptionManager, SubscriptionEventSender};
+use crate::subscription::module_subscription_actor::ModuleSubscriptionManager;
 use crate::util::{const_unwrap, ResultInspectExt};
 use crate::worker_metrics::WORKER_METRICS;
 

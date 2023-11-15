@@ -63,7 +63,6 @@ pub fn build_query<'a>(
                 index_header,
                 index_table,
                 index_col,
-                return_index_rows,
             }) => {
                 let probe_side = build_query(ctx, stdb, tx, probe_side.into())?;
                 Box::new(IndexSemiJoin {
