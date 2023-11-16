@@ -68,7 +68,7 @@ use core::{
     mem,
     mem::ManuallyDrop,
     ops::{Deref, DerefMut},
-    ptr::{read, slice_from_raw_parts_mut, NonNull},
+    ptr::{slice_from_raw_parts_mut, NonNull},
     slice,
     str::{from_utf8_unchecked, from_utf8_unchecked_mut},
 };
