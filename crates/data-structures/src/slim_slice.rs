@@ -164,9 +164,12 @@ pub unsafe trait SafelyExchangeable<T> {}
 fn transmute_safely_exchangeable<T, U: SafelyExchangeable<T>>(x: T) -> U {
     let x = ManuallyDrop::new(x);
     // SAFETY: Caller has proven that `x` is valid for `U`.
-    // The reference is also properly aligned
-    // and valid for reads by virtue of `&*x`.
-    unsafe { read(&*x as *const T as *const U) }
+    // so `&x` is also valid for `size_of::<U>`.
+    // The type `T` and `U` are known to have the same size.
+    //
+    // Also, taking a copy is not a problem, even when `!(T: Copy)`,
+    // as due to `ManuallyDrop` above, this is really a move of `x: T` to `U`.
+    unsafe { mem::transmute_copy(&x) }
 }
 
 /// Implementation detail of the other types.
