@@ -10,20 +10,14 @@ jobs:
     name: Contributor Membership Check
     runs-on: spacetimedb-runner
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
-      
-      - name: Set up Node.js
-        uses: actions/setup-node@v2
-        with:
-          node-version: '16'
-
-      - name: Install dependencies
-        run: |
-          npm install @octokit/rest @actions/core @actions/github node-fetch
-
       - name: Verify author is contributor
-        run: node .github/scripts/checkMembership.mjs
         env:
           GITHUB_TOKEN: ${{ secrets.ORG_READ_TOKEN }}
+          CONTRIB_ORG: clockworklabs
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          if [[ $(gh api --paginate /orgs/$CONTRIB_ORG/members --jq 'any(.login == env.PR_AUTHOR)') != true ]]; then
+            echo "::error::$PR_AUTHOR is not a member of the organization"
+            exit 1
+          fi
 
