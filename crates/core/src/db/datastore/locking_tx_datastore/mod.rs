@@ -1649,15 +1649,21 @@ impl Locking {
                 }
                 Operation::Insert => {
                     let product_value = match write.data_key {
-                        DataKey::Data(data) => ProductValue::decode(&row_type, &mut &data[..]).unwrap_or_else(|_| {
-                            panic!("Couldn't decode product value to {:?} from message log", row_type)
+                        DataKey::Data(data) => ProductValue::decode(&row_type, &mut &data[..]).unwrap_or_else(|e| {
+                            panic!(
+                                "Couldn't decode product value from message log: `{}`. Expected row type: {:?}",
+                                e, row_type
+                            )
                         }),
                         DataKey::Hash(hash) => {
                             let data = odb.lock().unwrap().get(hash).unwrap_or_else(|| {
                                 panic!("Object {hash} referenced from transaction not present in object DB");
                             });
-                            ProductValue::decode(&row_type, &mut &data[..]).unwrap_or_else(|_| {
-                                panic!("Couldn't decode product value to {:?} from message log", row_type)
+                            ProductValue::decode(&row_type, &mut &data[..]).unwrap_or_else(|e| {
+                                panic!(
+                                    "Couldn't decode product value {} from object DB: `{}`. Expected row type: {:?}",
+                                    hash, e, row_type
+                                )
                             })
                         }
                     };
