@@ -1151,7 +1151,7 @@ impl<'a, T> TryFrom<&'a [T]> for SlimSlice<'a, T> {
 ///
 /// Panics when `slice.len() > u32::MAX`.
 #[inline]
-pub fn slice<T>(s: &[T]) -> SlimSlice<'_, T> {
+pub fn from_slice<T>(s: &[T]) -> SlimSlice<'_, T> {
     expect_fit(s)
 }
 
@@ -1318,7 +1318,7 @@ impl<'a, T> TryFrom<&'a mut [T]> for SlimSliceMut<'a, T> {
 ///
 /// Panics when `slice.len() > u32::MAX`.
 #[inline]
-pub fn slice_mut<T>(s: &mut [T]) -> SlimSliceMut<'_, T> {
+pub fn from_slice_mut<T>(s: &mut [T]) -> SlimSliceMut<'_, T> {
     expect_fit(s)
 }
 
@@ -1477,7 +1477,7 @@ impl<'a> TryFrom<&'a str> for SlimStr<'a> {
 ///
 /// Panics when `str.len() > u32::MAX`.
 #[inline]
-pub const fn str(s: &str) -> SlimStr<'_> {
+pub const fn from_str(s: &str) -> SlimStr<'_> {
     if s.len() > u32::MAX as usize {
         panic!("length didn't fit in `u32`");
     }
@@ -1490,8 +1490,8 @@ pub const fn str(s: &str) -> SlimStr<'_> {
 ///
 /// Panics when `str.len() > u32::MAX`.
 #[inline]
-pub fn string(s: &str) -> SlimStrBox {
-    str(s).into()
+pub fn from_string(s: &str) -> SlimStrBox {
+    from_str(s).into()
 }
 
 // =============================================================================
@@ -1658,7 +1658,7 @@ impl<'a> TryFrom<&'a mut str> for SlimStrMut<'a> {
 ///
 /// Panics when `str.len() > u32::MAX`.
 #[inline]
-pub fn str_mut(s: &mut str) -> SlimStrMut<'_> {
+pub fn from_str_mut(s: &mut str) -> SlimStrMut<'_> {
     expect_fit(s)
 }
 
@@ -1766,7 +1766,7 @@ mod tests {
     fn various_boxed_strs() -> [[SlimStrBox; 2]; 7] {
         [
             [nstr!("foo"), nstr!("fop")],
-            test_strings().map(|s| string(&s)),
+            test_strings().map(|s| from_string(&s)),
             test_strings().map(SlimStrBox::from_string),
             test_strings().map(Box::from).map(SlimStrBox::from_boxed),
             test_strings().map(|s| SlimStrBox::try_from(s).unwrap()),
@@ -1798,8 +1798,8 @@ mod tests {
     #[test]
     fn str_mut_call() {
         let [mut s1, mut s2] = test_strings();
-        let s1 = &mut str_mut(s1.as_mut_str());
-        let s2 = &mut str_mut(s2.as_mut_str());
+        let s1 = &mut from_str_mut(s1.as_mut_str());
+        let s2 = &mut from_str_mut(s2.as_mut_str());
         assert_str_mut_properties(s1, s2);
     }
 
@@ -1836,7 +1836,7 @@ mod tests {
     #[test]
     fn str_call() {
         let [s1, s2] = test_strings();
-        assert_str_properties(&str(&s1), &str(&s2));
+        assert_str_properties(&from_str(&s1), &from_str(&s2));
     }
 
     #[test]
@@ -1878,8 +1878,8 @@ mod tests {
     #[test]
     fn slice_mut_call() {
         let [mut s1, mut s2] = test_slices();
-        let s1 = &mut slice_mut(s1.as_mut());
-        let s2 = &mut slice_mut(s2.as_mut());
+        let s1 = &mut from_slice_mut(s1.as_mut());
+        let s2 = &mut from_slice_mut(s2.as_mut());
         assert_slice_mut_properties(s1, s2);
     }
 
@@ -1914,7 +1914,7 @@ mod tests {
     #[test]
     fn slice_call() {
         let [s1, s2] = test_slices();
-        assert_slice_properties(&slice(&s1), &slice(&s2));
+        assert_slice_properties(&from_slice(&s1), &from_slice(&s2));
     }
 
     #[test]
