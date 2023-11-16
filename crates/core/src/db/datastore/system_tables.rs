@@ -341,6 +341,13 @@ pub fn st_indexes_schema() -> TableSchema {
             },
             ColumnSchema {
                 table_id: ST_INDEXES_ID,
+                col_id: StIndexFields::IndexType.col_id(),
+                col_name: StIndexFields::IndexType.col_name(),
+                col_type: AlgebraicType::U8,
+                is_autoinc: false,
+            },
+            ColumnSchema {
+                table_id: ST_INDEXES_ID,
                 col_id: StIndexFields::Columns.col_id(),
                 col_name: StIndexFields::Columns.col_name(),
                 col_type: AlgebraicType::array(AlgebraicType::U32),
@@ -351,13 +358,6 @@ pub fn st_indexes_schema() -> TableSchema {
                 col_id: StIndexFields::IsUnique.col_id(),
                 col_name: StIndexFields::IsUnique.col_name(),
                 col_type: AlgebraicType::Bool,
-                is_autoinc: false,
-            },
-            ColumnSchema {
-                table_id: ST_INDEXES_ID,
-                col_id: StIndexFields::IndexType.col_id(),
-                col_name: StIndexFields::IndexType.col_name(),
-                col_type: AlgebraicType::U8,
                 is_autoinc: false,
             },
         ],
