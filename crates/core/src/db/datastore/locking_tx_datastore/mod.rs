@@ -2701,9 +2701,9 @@ mod tests {
             ColRow { table: 3, pos: 0, name: "index_id", ty: AlgebraicType::U32, autoinc: true },
             ColRow { table: 3, pos: 1, name: "table_id", ty: AlgebraicType::U32, autoinc: false },
             ColRow { table: 3, pos: 2, name: "index_name", ty: AlgebraicType::String, autoinc: false },
-            ColRow { table: 3, pos: 3, name: "columns", ty: AlgebraicType::array(AlgebraicType::U32), autoinc: false },
-            ColRow { table: 3, pos: 4, name: "is_unique", ty: AlgebraicType::Bool, autoinc: false },
-            ColRow { table: 3, pos: 5, name: "index_type", ty: AlgebraicType::U8, autoinc: false },
+            ColRow { table: 3, pos: 3, name: "index_type", ty: AlgebraicType::U8, autoinc: false },
+            ColRow { table: 3, pos: 4, name: "columns", ty: AlgebraicType::array(AlgebraicType::U32), autoinc: false },
+            ColRow { table: 3, pos: 5, name: "is_unique", ty: AlgebraicType::Bool, autoinc: false },
 
             ColRow { table: 4, pos: 0, name: "constraint_id", ty: AlgebraicType::U32, autoinc: true },
             ColRow { table: 4, pos: 1, name: "constraint_name", ty: AlgebraicType::String, autoinc: false },
