@@ -10,6 +10,7 @@ public class GameManager : MonoBehaviour
 {
     public PlayerController playerPrefab;
     public FoodController foodPrefab;
+    public GameObject deathScreen;
     
     public static Color[] colorPalette = new[]
     {
@@ -65,31 +66,50 @@ public class GameManager : MonoBehaviour
             Debug.Log("Got identity.");
         };
 
-        // Called after our local cache is populated from a Subscribe call
-        SpacetimeDBClient.instance.onSubscriptionApplied += () =>
-        {
-        };
-
-        Circle.OnInsert += CircleOnOnInsert;
+        Circle.OnInsert += CircleOnInsert;
+        Circle.OnDelete += CircleOnDelete;
+        Entity.OnUpdate += EntityOnUpdate;
         Food.OnInsert += FoodOnOnInsert;
 
         // Now that we’ve registered all our callbacks, lets connect to spacetimedb
-        SpacetimeDBClient.instance.Connect(AuthToken.Token, "https://testnet.spacetimedb.com", "untitled-circle-game-3");
+        SpacetimeDBClient.instance.Connect(AuthToken.Token, "https://testnet.spacetimedb.com", "untitled-circle-game-4");
         localCamera = Camera.main;
     }
 
-    private void FoodOnOnInsert(Food insertedValue, ReducerEvent dbevent)
+    private void EntityOnUpdate(Entity oldEntity, Entity newEntity, ReducerEvent dbEvent)
+    {
+        if(PlayerController.playersByEntityId.TryGetValue(newEntity.Id, out var player))
+        {
+            player.UpdatePosition(newEntity);
+        }
+    }
+
+    private void CircleOnDelete(Circle deletedCircle, ReducerEvent dbEvent)
+    {
+        // This means we got eaten
+        if(PlayerController.playersByEntityId.TryGetValue(deletedCircle.EntityId, out var player))
+        {
+            // If the local player died, show the death screen
+            if (player.IsLocalPlayer())
+            {
+                deathScreen.SetActive(true);    
+            }
+            player.Despawn(); 
+        }
+    }
+    
+    private void FoodOnOnInsert(Food insertedValue, ReducerEvent dbEvent)
     {
         // Spawn the new food
         var food = Instantiate(foodPrefab);
         food.Spawn(insertedValue.EntityId);
     }
 
-    private void CircleOnOnInsert(Circle insertedValue, ReducerEvent dbevent)
+    private void CircleOnInsert(Circle insertedValue, ReducerEvent dbEvent)
     {
         // Spawn the new player
         var player = Instantiate(playerPrefab);
-        player.Spawn(insertedValue.CircleId, insertedValue);
+        player.Spawn(insertedValue, insertedValue);
     }
 
     public static Color GetRandomColor(uint entityId)
@@ -100,5 +120,11 @@ public class GameManager : MonoBehaviour
     public static float MassToRadius(uint mass)
     {
         return Mathf.Sqrt(mass);
+    }
+
+    public void Respawn()
+    {
+        deathScreen.SetActive(false);
+        Reducer.Respawn();
     }
 }

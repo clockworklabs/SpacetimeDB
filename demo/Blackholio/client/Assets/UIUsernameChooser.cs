@@ -15,9 +15,9 @@ public class UIUsernameChooser : MonoBehaviour
 
     private void Start()
     {
-        Circle.OnInsert += (newCircle, _) =>
+        Player.OnInsert += (newPlayer, _) =>
         {
-            if (newCircle.CircleId == PlayerController.localIdentity)
+            if (newPlayer.PlayerId == PlayerController.localIdentity)
             {
                 // We have a player
                gameObject.SetActive(false); 

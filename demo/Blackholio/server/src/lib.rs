@@ -8,6 +8,7 @@ use std::time::Duration;
 // - Viruses
 // - Ejecting mass
 // - Leaderboard
+// - Overlap amount should be more significant in order to eat
 
 #[spacetimedb(table)]
 pub struct Config {
@@ -28,19 +29,24 @@ pub struct Entity {
 #[spacetimedb(table)]
 pub struct Circle {
     #[primarykey]
-    pub circle_id: Identity,
-    #[unique]
     pub entity_id: u32,
-    #[unique]
-    pub name: String,
     pub direction: Vector2,
     pub magnitude: f32,
 }
 
 #[spacetimedb(table)]
+pub struct Player {
+    #[primarykey]
+    player_id: Identity,
+    #[unique]
+    entity_id: u32,
+    name: String,
+}
+
+#[spacetimedb(table)]
 pub struct LoggedOutCircle {
     #[unique]
-    circle_id: Identity,
+    player_id: Identity,
     circle: Circle,
     entity: Entity,
 }
@@ -86,60 +92,75 @@ pub fn init() -> Result<(), String> {
 
 #[spacetimedb(disconnect)]
 pub fn disconnect(ctx: ReducerContext) -> Result<(), String> {
-    let circle = Circle::filter_by_circle_id(&ctx.sender).ok_or("Circle not found")?;
-    let entity = Entity::filter_by_id(&circle.entity_id).ok_or("Entity not found")?;
-    Entity::delete_by_id(&entity.id);
+    let player = Player::filter_by_player_id(&ctx.sender).ok_or("Player not found")?;
+    let circle = Circle::filter_by_entity_id(&player.entity_id).ok_or("Could not find circle")?;
+    let entity = Entity::filter_by_id(&player.entity_id).ok_or("Could not find circle")?;
+    Entity::delete_by_id(&player.entity_id);
+    Circle::delete_by_entity_id(&player.entity_id);
     LoggedOutCircle::insert(LoggedOutCircle {
-        circle_id: circle.circle_id,
+        player_id: player.player_id,
         circle,
         entity,
     })?;
-    Circle::delete_by_circle_id(&ctx.sender);
     Ok(())
 }
 
 #[spacetimedb(connect)]
 pub fn connect(ctx: ReducerContext) -> Result<(), String> {
-    let logged_out_circle = LoggedOutCircle::filter_by_circle_id(&ctx.sender).ok_or("Logged out circle not found")?;
+    let logged_out_circle = LoggedOutCircle::filter_by_player_id(&ctx.sender).ok_or("Logged out circle not found")?;
     Circle::insert(logged_out_circle.circle)?;
     Entity::insert(logged_out_circle.entity)?;
-    LoggedOutCircle::delete_by_circle_id(&ctx.sender);
+    LoggedOutCircle::delete_by_player_id(&ctx.sender);
     Ok(())
 }
 
 #[spacetimedb(reducer)]
 pub fn create_player(ctx: ReducerContext, name: String) -> Result<(), String> {
+    let entity = spawn_circle(None)?;
+    Player::insert(Player {
+        player_id: ctx.sender,
+        entity_id: entity.id,
+        name,
+    })?;
+
+    Ok(())
+}
+
+#[spacetimedb(reducer)]
+pub fn respawn(ctx: ReducerContext) -> Result<(), String> {
+    let player = Player::filter_by_player_id(&ctx.sender).ok_or("No such player found")?;
+    spawn_circle(Some(player.entity_id))?;
+    Ok(())
+}
+
+fn spawn_circle(entity_id: Option<u32>) -> Result<Entity, String> {
     let mut rng = rand::thread_rng();
     let world_size = Config::filter_by_id(&0).ok_or("Config not found")?.world_size;
-    let x = rng.gen_range(START_PLAYER_MASS as f32..
-        (world_size as f32 - START_PLAYER_MASS as f32));
-    let y = rng.gen_range(START_PLAYER_MASS as f32..
-        (world_size as f32 - START_PLAYER_MASS as f32));
+    let player_start_radius = mass_to_radius(START_PLAYER_MASS);
+    let x = rng.gen_range(player_start_radius..(world_size as f32 - player_start_radius));
+    let y = rng.gen_range(player_start_radius..(world_size as f32 - player_start_radius));
     let entity = Entity::insert(Entity {
-        id: 0,
+        id: entity_id.unwrap_or(0),
         position: Vector2 { x, y },
         mass: START_PLAYER_MASS,
     })?;
 
     Circle::insert(Circle {
         entity_id: entity.id,
-        circle_id: ctx.sender,
-        name,
         direction: Vector2 { x: 0.0, y: 1.0 },
         magnitude: 0.0,
     })?;
-
-    Ok(())
+    Ok(entity)
 }
 
 #[spacetimedb(reducer)]
 pub fn update_player_input(ctx: ReducerContext,
                            direction: Vector2, magnitude: f32) -> Result<(), String> {
-    let mut circle = Circle::filter_by_circle_id(
-        &ctx.sender).ok_or("Circle not found")?;
+    let player = Player::filter_by_player_id(&ctx.sender).ok_or("Player not found")?;
+    let mut circle = Circle::filter_by_entity_id(&player.entity_id).ok_or("Circle not found")?;
     circle.direction = direction.normalize();
     circle.magnitude = magnitude.clamp(0.0, 1.0);
-    Circle::update_by_circle_id(&ctx.sender, circle);
+    Circle::update_by_entity_id(&player.entity_id, circle);
     Ok(())
 }
 
@@ -182,7 +203,7 @@ pub fn move_all_players() -> Result<(), String> {
 
         // Check to see if we're overlapping with another player
         for other_circle in Circle::iter() {
-            if other_circle.circle_id == circle.circle_id {
+            if other_circle.entity_id == circle.entity_id {
                 continue;
             }
             let other_entity = Entity::filter_by_id(&other_circle.entity_id).ok_or("Entity not found")?;
@@ -191,7 +212,7 @@ pub fn move_all_players() -> Result<(), String> {
             if is_overlapping(&circle_entity, &other_entity) && mass_ratio < 0.85 {
                 // We're overlapping with another player, so eat them
                 Entity::delete_by_id(&other_entity.id);
-                Circle::delete_by_circle_id(&other_circle.circle_id);
+                Circle::delete_by_entity_id(&other_circle.entity_id);
                 circle_entity.mass += other_entity.mass;
             }
         }

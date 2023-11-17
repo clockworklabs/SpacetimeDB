@@ -11,8 +11,10 @@ namespace SpacetimeDB.Types
 	public enum ReducerType
 	{
 		None,
+		CircleDecay,
 		CreatePlayer,
 		MoveAllPlayers,
+		Respawn,
 		SpawnFood,
 		UpdatePlayerInput,
 	}
@@ -27,6 +29,14 @@ namespace SpacetimeDB.Types
 			Reducer = reducer;
 		}
 
+		public CircleDecayArgsStruct CircleDecayArgs
+		{
+			get
+			{
+				if (Reducer != ReducerType.CircleDecay) throw new SpacetimeDB.ReducerMismatchException(Reducer.ToString(), "CircleDecay");
+				return (CircleDecayArgsStruct)Args;
+			}
+		}
 		public CreatePlayerArgsStruct CreatePlayerArgs
 		{
 			get
@@ -41,6 +51,14 @@ namespace SpacetimeDB.Types
 			{
 				if (Reducer != ReducerType.MoveAllPlayers) throw new SpacetimeDB.ReducerMismatchException(Reducer.ToString(), "MoveAllPlayers");
 				return (MoveAllPlayersArgsStruct)Args;
+			}
+		}
+		public RespawnArgsStruct RespawnArgs
+		{
+			get
+			{
+				if (Reducer != ReducerType.Respawn) throw new SpacetimeDB.ReducerMismatchException(Reducer.ToString(), "Respawn");
+				return (RespawnArgsStruct)Args;
 			}
 		}
 		public SpawnFoodArgsStruct SpawnFoodArgs
@@ -64,6 +82,12 @@ namespace SpacetimeDB.Types
 		{
 			switch (Reducer)
 			{
+				case ReducerType.CircleDecay:
+				{
+					var args = CircleDecayArgs;
+					return new object[] {
+					};
+				}
 				case ReducerType.CreatePlayer:
 				{
 					var args = CreatePlayerArgs;
@@ -74,6 +98,12 @@ namespace SpacetimeDB.Types
 				case ReducerType.MoveAllPlayers:
 				{
 					var args = MoveAllPlayersArgs;
+					return new object[] {
+					};
+				}
+				case ReducerType.Respawn:
+				{
+					var args = RespawnArgs;
 					return new object[] {
 					};
 				}

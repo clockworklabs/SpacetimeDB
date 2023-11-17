@@ -10,47 +10,32 @@ namespace SpacetimeDB.Types
 	[Newtonsoft.Json.JsonObject(Newtonsoft.Json.MemberSerialization.OptIn)]
 	public partial class Circle : IDatabaseTable
 	{
-		[Newtonsoft.Json.JsonProperty("circle_id")]
-		public SpacetimeDB.Identity CircleId;
 		[Newtonsoft.Json.JsonProperty("entity_id")]
 		public uint EntityId;
-		[Newtonsoft.Json.JsonProperty("name")]
-		public string Name;
 		[Newtonsoft.Json.JsonProperty("direction")]
 		public SpacetimeDB.Types.Vector2 Direction;
 		[Newtonsoft.Json.JsonProperty("magnitude")]
 		public float Magnitude;
 
-		private static Dictionary<SpacetimeDB.Identity, Circle> CircleId_Index = new Dictionary<SpacetimeDB.Identity, Circle>(16);
 		private static Dictionary<uint, Circle> EntityId_Index = new Dictionary<uint, Circle>(16);
-		private static Dictionary<string, Circle> Name_Index = new Dictionary<string, Circle>(16);
 
 		private static void InternalOnValueInserted(object insertedValue)
 		{
 			var val = (Circle)insertedValue;
-			CircleId_Index[val.CircleId] = val;
 			EntityId_Index[val.EntityId] = val;
-			Name_Index[val.Name] = val;
 		}
 
 		private static void InternalOnValueDeleted(object deletedValue)
 		{
 			var val = (Circle)deletedValue;
-			CircleId_Index.Remove(val.CircleId);
 			EntityId_Index.Remove(val.EntityId);
-			Name_Index.Remove(val.Name);
 		}
 
 		public static SpacetimeDB.SATS.AlgebraicType GetAlgebraicType()
 		{
 			return SpacetimeDB.SATS.AlgebraicType.CreateProductType(new SpacetimeDB.SATS.ProductTypeElement[]
 			{
-				new SpacetimeDB.SATS.ProductTypeElement("circle_id", SpacetimeDB.SATS.AlgebraicType.CreateProductType(new SpacetimeDB.SATS.ProductTypeElement[]
-			{
-				new SpacetimeDB.SATS.ProductTypeElement("__identity_bytes", SpacetimeDB.SATS.AlgebraicType.CreateArrayType(SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.U8))),
-			})),
 				new SpacetimeDB.SATS.ProductTypeElement("entity_id", SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.U32)),
-				new SpacetimeDB.SATS.ProductTypeElement("name", SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.String)),
 				new SpacetimeDB.SATS.ProductTypeElement("direction", SpacetimeDB.Types.Vector2.GetAlgebraicType()),
 				new SpacetimeDB.SATS.ProductTypeElement("magnitude", SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.F32)),
 			});
@@ -64,11 +49,9 @@ namespace SpacetimeDB.Types
 			var productValue = value.AsProductValue();
 			return new Circle
 			{
-				CircleId = SpacetimeDB.Identity.From(productValue.elements[0].AsProductValue().elements[0].AsBytes()),
-				EntityId = productValue.elements[1].AsU32(),
-				Name = productValue.elements[2].AsString(),
-				Direction = (SpacetimeDB.Types.Vector2)(productValue.elements[3]),
-				Magnitude = productValue.elements[4].AsF32(),
+				EntityId = productValue.elements[0].AsU32(),
+				Direction = (SpacetimeDB.Types.Vector2)(productValue.elements[1]),
+				Magnitude = productValue.elements[2].AsF32(),
 			};
 		}
 
@@ -83,21 +66,9 @@ namespace SpacetimeDB.Types
 		{
 			return SpacetimeDBClient.clientDB.Count("Circle");
 		}
-		public static Circle FilterByCircleId(SpacetimeDB.Identity value)
-		{
-			CircleId_Index.TryGetValue(value, out var r);
-			return r;
-		}
-
 		public static Circle FilterByEntityId(uint value)
 		{
 			EntityId_Index.TryGetValue(value, out var r);
-			return r;
-		}
-
-		public static Circle FilterByName(string value)
-		{
-			Name_Index.TryGetValue(value, out var r);
 			return r;
 		}
 
@@ -106,7 +77,7 @@ namespace SpacetimeDB.Types
 			foreach(var entry in SpacetimeDBClient.clientDB.GetEntries("Circle"))
 			{
 				var productValue = entry.Item1.AsProductValue();
-				var compareValue = (float)productValue.elements[4].AsF32();
+				var compareValue = (float)productValue.elements[2].AsF32();
 				if (compareValue == value) {
 					yield return (Circle)entry.Item2;
 				}

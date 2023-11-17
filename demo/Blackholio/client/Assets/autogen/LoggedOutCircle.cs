@@ -10,32 +10,32 @@ namespace SpacetimeDB.Types
 	[Newtonsoft.Json.JsonObject(Newtonsoft.Json.MemberSerialization.OptIn)]
 	public partial class LoggedOutCircle : IDatabaseTable
 	{
-		[Newtonsoft.Json.JsonProperty("circle_id")]
-		public SpacetimeDB.Identity CircleId;
+		[Newtonsoft.Json.JsonProperty("player_id")]
+		public SpacetimeDB.Identity PlayerId;
 		[Newtonsoft.Json.JsonProperty("circle")]
 		public SpacetimeDB.Types.Circle Circle;
 		[Newtonsoft.Json.JsonProperty("entity")]
 		public SpacetimeDB.Types.Entity Entity;
 
-		private static Dictionary<SpacetimeDB.Identity, LoggedOutCircle> CircleId_Index = new Dictionary<SpacetimeDB.Identity, LoggedOutCircle>(16);
+		private static Dictionary<SpacetimeDB.Identity, LoggedOutCircle> PlayerId_Index = new Dictionary<SpacetimeDB.Identity, LoggedOutCircle>(16);
 
 		private static void InternalOnValueInserted(object insertedValue)
 		{
 			var val = (LoggedOutCircle)insertedValue;
-			CircleId_Index[val.CircleId] = val;
+			PlayerId_Index[val.PlayerId] = val;
 		}
 
 		private static void InternalOnValueDeleted(object deletedValue)
 		{
 			var val = (LoggedOutCircle)deletedValue;
-			CircleId_Index.Remove(val.CircleId);
+			PlayerId_Index.Remove(val.PlayerId);
 		}
 
 		public static SpacetimeDB.SATS.AlgebraicType GetAlgebraicType()
 		{
 			return SpacetimeDB.SATS.AlgebraicType.CreateProductType(new SpacetimeDB.SATS.ProductTypeElement[]
 			{
-				new SpacetimeDB.SATS.ProductTypeElement("circle_id", SpacetimeDB.SATS.AlgebraicType.CreateProductType(new SpacetimeDB.SATS.ProductTypeElement[]
+				new SpacetimeDB.SATS.ProductTypeElement("player_id", SpacetimeDB.SATS.AlgebraicType.CreateProductType(new SpacetimeDB.SATS.ProductTypeElement[]
 			{
 				new SpacetimeDB.SATS.ProductTypeElement("__identity_bytes", SpacetimeDB.SATS.AlgebraicType.CreateArrayType(SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.U8))),
 			})),
@@ -52,7 +52,7 @@ namespace SpacetimeDB.Types
 			var productValue = value.AsProductValue();
 			return new LoggedOutCircle
 			{
-				CircleId = SpacetimeDB.Identity.From(productValue.elements[0].AsProductValue().elements[0].AsBytes()),
+				PlayerId = SpacetimeDB.Identity.From(productValue.elements[0].AsProductValue().elements[0].AsBytes()),
 				Circle = (SpacetimeDB.Types.Circle)(productValue.elements[1]),
 				Entity = (SpacetimeDB.Types.Entity)(productValue.elements[2]),
 			};
@@ -69,9 +69,9 @@ namespace SpacetimeDB.Types
 		{
 			return SpacetimeDBClient.clientDB.Count("LoggedOutCircle");
 		}
-		public static LoggedOutCircle FilterByCircleId(SpacetimeDB.Identity value)
+		public static LoggedOutCircle FilterByPlayerId(SpacetimeDB.Identity value)
 		{
-			CircleId_Index.TryGetValue(value, out var r);
+			PlayerId_Index.TryGetValue(value, out var r);
 			return r;
 		}
 

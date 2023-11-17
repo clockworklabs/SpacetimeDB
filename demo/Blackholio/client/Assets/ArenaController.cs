@@ -36,7 +36,8 @@ public class ArenaController : MonoBehaviour
             backgroundInstance.transform.position = new Vector3((float)worldSize / 2, (float)worldSize / 2);
             
             // Start the camera in the middle of the screen for setup, but only if we have no player
-            if (Circle.FilterByCircleId(PlayerController.localIdentity) == null)
+            var player = Player.FilterByPlayerId(PlayerController.localIdentity);
+            if (player != null && Circle.FilterByEntityId(player.EntityId) == null)
             {
                 GameManager.localCamera.transform.position = new Vector3((float)worldSize / 2, (float)worldSize / 2, -10.0f);
             }
