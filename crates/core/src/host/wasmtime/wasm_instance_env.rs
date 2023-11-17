@@ -282,10 +282,6 @@ impl WasmInstanceEnv {
             let args = mem.deref_slice(args, args_len)?.to_vec();
 
             // Schedule it!
-            // TODO: Be more strict re. types by avoiding newtype unwrapping here? (impl ValueType?)
-            // Noa: This would be nice but I think the eventual goal/desire is to switch to wasmtime,
-            //      which doesn't allow user types to impl ValueType.
-            //      Probably the correct API choice, but makes things a bit less ergonomic sometimes.
             let ScheduledReducerId(id) =
                 env.instance_env
                     .schedule(name, args, Timestamp(time))

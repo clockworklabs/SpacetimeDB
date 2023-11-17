@@ -236,6 +236,7 @@ macro_rules! decl_index {
         }
 
         impl $name {
+            // for WasmPointee to work in crate::host::wasmtime
             #[allow(unused)]
             #[doc(hidden)]
             pub(super) fn to_le_bytes(self) -> [u8; 4] {
