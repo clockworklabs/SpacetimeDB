@@ -34,7 +34,7 @@ public class PlayerController : MonoBehaviour
 
     public static Dictionary<uint, PlayerController> playersByEntityId = new Dictionary<uint, PlayerController>();
 
-    public void Spawn(Circle circle, Circle playerCircle)
+    public void Spawn(Circle circle)
     {
         var player = Player.FilterByEntityId(circle.EntityId);
         identity = player.PlayerId;
@@ -45,7 +45,7 @@ public class PlayerController : MonoBehaviour
             Local = this;
         }
 
-        var entity = Entity.FilterById(playerCircle.EntityId);
+        var entity = Entity.FilterById(circle.EntityId);
         targetPosition = positionLerp1 = positionLerp2 = transform.position = new UnityEngine.Vector2
         {
             x = entity.Position.X,

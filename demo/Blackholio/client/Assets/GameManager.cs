@@ -70,10 +70,27 @@ public class GameManager : MonoBehaviour
         Circle.OnDelete += CircleOnDelete;
         Entity.OnUpdate += EntityOnUpdate;
         Food.OnInsert += FoodOnOnInsert;
+        Player.OnInsert += PlayerOnInsert;
+        
+        SpacetimeDBClient.instance.onUnhandledReducerError += InstanceOnUnhandledReducerError;
 
         // Now that we’ve registered all our callbacks, lets connect to spacetimedb
         SpacetimeDBClient.instance.Connect(AuthToken.Token, "https://testnet.spacetimedb.com", "untitled-circle-game-4");
         localCamera = Camera.main;
+    }
+
+    private void InstanceOnUnhandledReducerError(ReducerEventBase obj)
+    {
+        Debug.LogError(obj.ErrMessage);
+    }
+
+    private void PlayerOnInsert(Player insertedPlayer, ReducerEvent dbEvent)
+    {
+        if (insertedPlayer.PlayerId == PlayerController.localIdentity && Circle.FilterByEntityId(insertedPlayer.EntityId) == null)
+        {
+            // We have a player, but no circle, let's respawn
+            Respawn();
+        }    
     }
 
     private void EntityOnUpdate(Entity oldEntity, Entity newEntity, ReducerEvent dbEvent)
@@ -109,7 +126,7 @@ public class GameManager : MonoBehaviour
     {
         // Spawn the new player
         var player = Instantiate(playerPrefab);
-        player.Spawn(insertedValue, insertedValue);
+        player.Spawn(insertedValue);
     }
 
     public static Color GetRandomColor(uint entityId)

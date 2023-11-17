@@ -181,9 +181,12 @@ fn mass_to_max_move_speed(mass: u32) -> f32 {
 
 #[spacetimedb(reducer)]
 pub fn move_all_players() -> Result<(), String> {
+    schedule!(Duration::from_millis(50), move_all_players());
     let world_size = Config::filter_by_id(&0).ok_or("Config not found")?.world_size;
     for circle in Circle::iter() {
-        let mut circle_entity = Entity::filter_by_id(&circle.entity_id).ok_or("Entity not found")?;
+        let Some(mut circle_entity) = Entity::filter_by_id(&circle.entity_id) else {
+            continue;
+        };
         let circle_radius = mass_to_radius(circle_entity.mass);
         let x = circle_entity.position.x + circle.direction.x * circle.magnitude * mass_to_max_move_speed(circle_entity.mass);
         let y = circle_entity.position.y + circle.direction.y * circle.magnitude * mass_to_max_move_speed(circle_entity.mass);
@@ -220,7 +223,6 @@ pub fn move_all_players() -> Result<(), String> {
         Entity::update_by_id(&circle_entity.id.clone(), circle_entity);
     }
 
-    schedule!(Duration::from_millis(50), move_all_players());
     Ok(())
 }
 
