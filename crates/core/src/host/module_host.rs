@@ -584,6 +584,8 @@ impl ModuleHost {
             .lookup(reducer_name)
             .ok_or(ReducerCallError::NoSuchReducer)?;
 
+        log::debug!("Call reducer: {reducer_name}");
+
         let args = args.into_tuple(self.info.typespace.with_type(schema))?;
         let caller_address = caller_address.unwrap_or(Address::__DUMMY);
 

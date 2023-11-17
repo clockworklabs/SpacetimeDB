@@ -16,6 +16,7 @@ use crate::{
 use crate::{db::datastore::locking_tx_datastore::MutTxId, execution_context::ExecutionContext};
 use crate::{db::relational_db::RelationalDB, error::DBError};
 use futures::{stream::FuturesUnordered, FutureExt, StreamExt};
+use itertools::Itertools;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
 use tokio::sync::mpsc;
@@ -147,6 +148,8 @@ impl ModuleSubscriptionActor {
 
         let database_update = sub.queries.eval(&self.relational_db, tx, auth)?;
 
+        log::debug!("Sending a subscription update for tables: {}", database_update.tables.iter().map(|t| t.table_name.clone() ).join(", "));
+
         let sender = sub.subscribers().last().unwrap();
 
         // NOTE: It is important to send the state in this thread because if you spawn a new
@@ -195,6 +198,9 @@ impl ModuleSubscriptionActor {
                 event: &mut event,
                 database_update: incr,
             };
+
+            log::debug!("Sending transaction message to subscribers: {:?}", message.event.function_call.reducer);
+
             let mut message = CachedMessage::new(message);
 
             for subscriber in subscription.subscribers() {
