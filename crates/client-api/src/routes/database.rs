@@ -19,7 +19,7 @@ use spacetimedb::host::ReducerOutcome;
 use spacetimedb::host::UpdateDatabaseSuccess;
 use spacetimedb::identity::Identity;
 use spacetimedb::json::client_api::StmtResultJson;
-use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType};
+use spacetimedb::messages::control_db::{Database, DatabaseInstance};
 use spacetimedb::sql::execute::execute;
 use spacetimedb_lib::address::AddressForUrl;
 use spacetimedb_lib::identity::AuthCtx;
@@ -386,9 +386,7 @@ pub async fn info<S: ControlStateDelegate>(
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
     log::trace!("Fetched database from the worker db for address: {address:?}");
 
-    let host_type = match database.host_type {
-        HostType::Wasmer => "wasmer",
-    };
+    let host_type: &str = database.host_type.as_ref();
     let response_json = json!({
         "address": database.address,
         "identity": database.identity,
