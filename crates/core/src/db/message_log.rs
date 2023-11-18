@@ -155,14 +155,20 @@ impl Default for OpenOptions {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-struct Segment {
-    min_offset: u64,
-    size: u64,
+/// A segment of a [`MessageLog`].
+///
+/// Represents a physical file holding a subset of the log.
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+pub struct Segment {
+    /// Message offset this segment starts with (zero-based).
+    pub min_offset: u64,
+    /// Size in bytes of this segment.
+    pub size: u64,
 }
 
 impl Segment {
-    fn name(&self) -> String {
+    /// Name of this segment, as it appears in its file name.
+    pub fn name(&self) -> String {
         format!("{:0>20}", self.min_offset)
     }
 }
@@ -477,6 +483,12 @@ impl SegmentView {
     /// Turn this [`SegmentView`] into a [`Read`]able [`File`].
     pub fn try_into_file(self) -> io::Result<File> {
         self.try_into()
+    }
+}
+
+impl From<SegmentView> for Segment {
+    fn from(SegmentView { info, .. }: SegmentView) -> Self {
+        info
     }
 }
 
