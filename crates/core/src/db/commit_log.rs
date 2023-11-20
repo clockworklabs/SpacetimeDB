@@ -3,6 +3,7 @@ use super::{
     message_log::{self, MessageLog},
     messages::commit::Commit,
     ostorage::ObjectDB,
+    FsyncPolicy,
 };
 use crate::{
     db::{
@@ -145,7 +146,7 @@ impl CommitLog {
             mlog: self.mlog.clone(),
             odb: self.odb.clone(),
             unwritten_commit: Arc::new(Mutex::new(unwritten_commit)),
-            fsync: false,
+            fsync: FsyncPolicy::Never,
         })
     }
 
@@ -239,27 +240,33 @@ pub struct CommitLogMut {
     mlog: Arc<Mutex<MessageLog>>,
     odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
     unwritten_commit: Arc<Mutex<Commit>>,
-    // TODO(kim): Use FsyncPolicy instead of bool.
-    fsync: bool,
+    fsync: FsyncPolicy,
 }
 
 impl CommitLogMut {
-    pub fn set_fsync(&mut self, fsync: bool) {
+    /// Change the [`FsyncPolicy`].
+    ///
+    /// In effect for the next call to [`CommitLogMut::append_tx`].
+    pub fn set_fsync(&mut self, fsync: FsyncPolicy) {
         self.fsync = fsync
     }
 
-    pub fn with_fsync(mut self, fsync: bool) -> Self {
-        self.fsync = fsync;
-        self
+    /// Change the [`FsyncPolicy`].
+    ///
+    /// In effect for the next call to [`CommitLogMut::append_tx`].
+    pub fn with_fsync(self, fsync: FsyncPolicy) -> Self {
+        Self { fsync, ..self }
     }
 
+    /// Return the latest commit offset.
     pub fn commit_offset(&self) -> u64 {
         self.mlog.lock().unwrap().open_segment_max_offset
     }
 
-    /// Persist to disk the [Tx] result into the [MessageLog].
+    /// Append the result of committed transaction [`TxData`] to the log.
     ///
-    /// Returns `Some(n_bytes_written)` if `commit_result` was persisted, `None` if it doesn't have bytes to write.
+    /// Returns the number of bytes written, or `None` if it was an empty
+    /// transaction (i.e. one which did not modify any rows).
     #[tracing::instrument(skip_all)]
     pub fn append_tx<D>(
         &self,
@@ -270,6 +277,11 @@ impl CommitLogMut {
     where
         D: MutTxDatastore<RowId = RowId>,
     {
+        // IMPORTANT: writes to the log must be sequential, so as to maintain
+        // the commit order. `generate_commit` establishes an order between
+        // [`Commit`] payloads, so the lock must be acquired here.
+        //
+        // See also: https://github.com/clockworklabs/SpacetimeDB/pull/465
         let mut mlog = self.mlog.lock().unwrap();
         self.generate_commit(ctx, tx_data, datastore)
             .as_deref()
@@ -281,20 +293,22 @@ impl CommitLogMut {
     // unused anyway.
     fn append_commit_bytes(&self, mlog: &mut MutexGuard<'_, MessageLog>, commit: &[u8]) -> Result<usize, DBError> {
         mlog.append(commit)?;
-        if self.fsync {
-            let offset = mlog.open_segment_max_offset;
-            // Sync the odb first, as the mlog depends on its data. This is
-            // not an atomicity guarantee, but the error context may help
-            // with forensics.
-            let mut odb = self.odb.lock().unwrap();
-            odb.sync_all()
-                .with_context(|| format!("Error syncing odb to disk. Log offset: {offset}"))?;
-            mlog.sync_all()
-                .with_context(|| format!("Error syncing mlog to disk. Log offset: {offset}"))?;
-            log::trace!("DATABASE: FSYNC");
-        } else {
-            mlog.flush()?;
+        match self.fsync {
+            FsyncPolicy::Never => mlog.flush()?,
+            FsyncPolicy::EveryTx => {
+                let offset = mlog.open_segment_max_offset;
+                // Sync the odb first, as the mlog depends on its data. This is
+                // not an atomicity guarantee, but the error context may help
+                // with forensics.
+                let mut odb = self.odb.lock().unwrap();
+                odb.sync_all()
+                    .with_context(|| format!("Error syncing odb to disk. Log offset: {offset}"))?;
+                mlog.sync_all()
+                    .with_context(|| format!("Error syncing mlog to disk. Log offset: {offset}"))?;
+                log::trace!("DATABASE: FSYNC");
+            }
         }
+
         Ok(commit.len())
     }
 
@@ -642,7 +656,7 @@ mod tests {
         let log = CommitLog::new(Arc::new(Mutex::new(mlog)), Arc::new(Mutex::new(Box::new(odb))))
             .to_mut()
             .unwrap()
-            .with_fsync(true);
+            .with_fsync(FsyncPolicy::EveryTx);
 
         {
             let mut guard = log.mlog.lock().unwrap();

@@ -18,6 +18,7 @@ use crate::db::datastore::traits::DataRow;
 use crate::db::db_metrics::DB_METRICS;
 use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 use crate::db::ostorage::ObjectDB;
+use crate::db::FsyncPolicy;
 use crate::error::{DBError, DatabaseError, IndexError, TableError};
 use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
@@ -105,6 +106,12 @@ impl RelationalDB {
 
                     Ok(())
                 })?;
+
+                let fsync = if fsync {
+                    FsyncPolicy::EveryTx
+                } else {
+                    FsyncPolicy::Never
+                };
 
                 Ok::<_, DBError>(commit_log.with_fsync(fsync))
             })
