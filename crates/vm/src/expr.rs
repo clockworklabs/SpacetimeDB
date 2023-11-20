@@ -3,9 +3,9 @@ use crate::functions::{FunDef, Param};
 use crate::operator::{Op, OpCmp, OpLogic, OpQuery};
 use crate::types::Ty;
 use derive_more::From;
-use nonempty::NonEmpty;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::{ColId, TableId};
+use spacetimedb_sats::{SatsString, SatsVec, SatsSlice, SatsNonEmpty};
 use spacetimedb_sats::algebraic_type::AlgebraicType;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
@@ -230,7 +230,7 @@ impl From<IndexScan> for ColumnOp {
         let columns = value.columns;
         assert_eq!(columns.len(), 1, "multi-column predicates are not yet supported");
 
-        let field = table.head.fields[usize::from(columns.head)].field.clone();
+        let field = table.head.fields[usize::from(columns[0])].field.clone();
         match (value.lower_bound, value.upper_bound) {
             // Inclusive lower bound => field >= value
             (Bound::Included(value), Bound::Unbounded) => ColumnOp::Cmp {
@@ -450,7 +450,7 @@ pub enum CrudExpr {
     Query(QueryExpr),
     Insert {
         source: SourceExpr,
-        rows: Vec<Vec<FieldExpr>>,
+        rows: Vec<SatsVec<FieldExpr>>,
     },
     Update {
         delete: QueryExpr,
@@ -460,13 +460,13 @@ pub enum CrudExpr {
         query: QueryExpr,
     },
     CreateTable {
-        name: String,
+        name: SatsString,
         columns: ProductTypeMeta,
         table_type: StTableType,
         table_access: StAccess,
     },
     Drop {
-        name: String,
+        name: SatsString,
         kind: DbType,
         table_access: StAccess,
     },
@@ -502,7 +502,7 @@ impl CrudExpr {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct IndexScan {
     pub table: DbTable,
-    pub columns: NonEmpty<ColId>,
+    pub columns: SatsNonEmpty<ColId>,
     pub lower_bound: Bound<AlgebraicValue>,
     pub upper_bound: Bound<AlgebraicValue>,
 }
@@ -579,7 +579,7 @@ pub enum Query {
     // Projects a set of columns.
     // The second argument is the table id for a qualified wildcard project.
     // If present, further optimzations are possible.
-    Project(Vec<FieldExpr>, Option<TableId>),
+    Project(SatsVec<FieldExpr>, Option<TableId>),
     // A join of two relations (base or intermediate) based on equality.
     // Equivalent to a Nested Loop Join.
     // Its operands my use indexes but the join itself does not.
@@ -744,7 +744,7 @@ impl QueryExpr {
     // Generate an index scan for an equality predicate if this is the first operator.
     // Otherwise generate a select.
     // TODO: Replace these methods with a proper query optimization pass.
-    pub fn with_index_eq(mut self, table: DbTable, columns: NonEmpty<ColId>, value: AlgebraicValue) -> Self {
+    pub fn with_index_eq(mut self, table: DbTable, columns: SatsNonEmpty<ColId>, value: AlgebraicValue) -> Self {
         // if this is the first operator in the list, generate index scan
         let Some(query) = self.query.pop() else {
             self.query.push(Query::IndexScan(IndexScan {
@@ -819,7 +819,7 @@ impl QueryExpr {
     pub fn with_index_lower_bound(
         mut self,
         table: DbTable,
-        columns: NonEmpty<ColId>,
+        columns: SatsNonEmpty<ColId>,
         value: AlgebraicValue,
         inclusive: bool,
     ) -> Self {
@@ -927,7 +927,7 @@ impl QueryExpr {
     pub fn with_index_upper_bound(
         mut self,
         table: DbTable,
-        columns: NonEmpty<ColId>,
+        columns: SatsNonEmpty<ColId>,
         value: AlgebraicValue,
         inclusive: bool,
     ) -> Self {
@@ -1098,7 +1098,7 @@ impl QueryExpr {
     // Appends a project operation to the query operator pipeline.
     // The `wildcard_table_id` represents a projection of the form `table.*`.
     // This is used to determine if an inner join can be rewritten as an index join.
-    pub fn with_project(self, cols: &[FieldExpr], wildcard_table_id: Option<TableId>) -> Self {
+    pub fn with_project(self, cols: &SatsSlice<FieldExpr>, wildcard_table_id: Option<TableId>) -> Self {
         let mut x = self;
         if !cols.is_empty() {
             x.query.push(Query::Project(cols.into(), wildcard_table_id));
@@ -1455,13 +1455,13 @@ pub enum CrudExprOpt {
         query: QueryExprOpt,
     },
     CreateTable {
-        name: String,
+        name: SatsString,
         columns: ProductTypeMeta,
         table_type: StTableType,
         table_access: StAccess,
     },
     Drop {
-        name: String,
+        name: SatsString,
         kind: DbType,
         table_access: StAccess,
     },
@@ -1717,13 +1717,13 @@ pub enum CrudCode {
         query: QueryCode,
     },
     CreateTable {
-        name: String,
+        name: SatsString,
         columns: ProductTypeMeta,
         table_type: StTableType,
         table_access: StAccess,
     },
     Drop {
-        name: String,
+        name: SatsString,
         kind: DbType,
         table_access: StAccess,
     },
@@ -1809,7 +1809,7 @@ impl From<Code> for CodeResult {
 
 #[cfg(test)]
 mod tests {
-    use spacetimedb_sats::ProductType;
+    use spacetimedb_sats::from_string;
 
     use super::*;
 
@@ -1823,16 +1823,16 @@ mod tests {
         [
             Table::MemTable(MemTable {
                 head: Header {
-                    table_name: "foo".into(),
-                    fields: vec![],
+                    table_name: from_string("foo"),
+                    fields: [].into(),
                 },
                 data: vec![],
                 table_access: StAccess::Private,
             }),
             Table::DbTable(DbTable {
                 head: Header {
-                    table_name: "foo".into(),
-                    fields: vec![],
+                    table_name: from_string("foo"),
+                    fields: [].into(),
                 },
                 table_id: 42.into(),
                 table_type: StTableType::User,
@@ -1850,19 +1850,19 @@ mod tests {
         [
             Query::IndexScan(IndexScan {
                 table: db_table,
-                columns: NonEmpty::new(42.into()),
+                columns: SatsNonEmpty::new(42.into()),
                 lower_bound: Bound::Included(22.into()),
                 upper_bound: Bound::Unbounded,
             }),
             Query::IndexJoin(IndexJoin {
                 probe_side: mem_table.clone().into(),
                 probe_field: FieldName::Name {
-                    table: "foo".into(),
-                    field: "bar".into(),
+                    table: from_string("foo"),
+                    field: from_string("bar"),
                 },
                 index_header: Header {
-                    table_name: "bar".into(),
-                    fields: vec![],
+                    table_name: from_string("bar"),
+                    fields: [].into(),
                 },
                 index_select: None,
                 index_table: 42.into(),
@@ -1872,12 +1872,12 @@ mod tests {
             Query::JoinInner(JoinExpr {
                 rhs: mem_table.into(),
                 col_rhs: FieldName::Name {
-                    table: "foo".into(),
-                    field: "id".into(),
+                    table: from_string("foo"),
+                    field: from_string("id"),
                 },
                 col_lhs: FieldName::Name {
-                    table: "bar".into(),
-                    field: "id".into(),
+                    table: from_string("bar"),
+                    field: from_string("id"),
                 },
             }),
         ]
@@ -1965,9 +1965,9 @@ mod tests {
     #[test]
     fn test_auth_crud_code_create_table() {
         let crud = CrudCode::CreateTable {
-            name: "etcpasswd".into(),
+            name: from_string("etcpasswd"),
             columns: ProductTypeMeta {
-                columns: ProductType { elements: vec![] },
+                columns: [].into(),
                 attr: vec![],
             },
             table_type: StTableType::System, // hah!
@@ -1979,7 +1979,7 @@ mod tests {
     #[test]
     fn test_auth_crud_code_drop() {
         let crud = CrudCode::Drop {
-            name: "etcpasswd".into(),
+            name: from_string("etcpasswd"),
             kind: DbType::Table,
             table_access: StAccess::Public,
         };

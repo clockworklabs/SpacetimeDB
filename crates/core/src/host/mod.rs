@@ -5,8 +5,8 @@ use derive_more::Display;
 use enum_map::Enum;
 use spacetimedb_lib::de::serde::SeedWrapper;
 use spacetimedb_lib::de::DeserializeSeed;
-use spacetimedb_lib::{bsatn, Identity, ProductValue, ReducerDef};
-use spacetimedb_sats::WithTypespace;
+use spacetimedb_lib::{Identity, ReducerDef};
+use spacetimedb_sats::{bsatn, ProductValue, SatsString, SatsVec, WithTypespace};
 use std::time::Duration;
 
 mod host_controller;
@@ -69,7 +69,7 @@ pub struct ArgsTuple {
 impl ArgsTuple {
     #[allow(clippy::declare_interior_mutable_const)] // false positive on Bytes
     const NULLARY: Self = ArgsTuple {
-        tuple: spacetimedb_sats::product![],
+        tuple: ProductValue::new(SatsVec::empty()),
         bsatn: Some(Bytes::new()),
         json: Some(ByteString::from_static("[]")),
     };
@@ -116,7 +116,7 @@ impl From<usize> for ReducerId {
 pub struct InvalidReducerArguments {
     #[source]
     err: anyhow::Error,
-    reducer: String,
+    reducer: SatsString,
 }
 
 pub use module_host::{EntityDef, ReducerCallError};

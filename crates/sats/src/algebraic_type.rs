@@ -4,10 +4,13 @@ pub mod map_notation;
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::ValueSerializer;
 use crate::meta_type::MetaType;
-use crate::{de::Deserialize, ser::Serialize, MapType};
-use crate::{AlgebraicTypeRef, AlgebraicValue, ArrayType, ProductType, SumType, SumTypeVariant};
+use crate::{de::Deserialize, ser::Serialize};
+use crate::{
+    static_assert_size, AlgebraicTypeRef, AlgebraicValue, ArrayType, MapType, ProductType, SumType, SumTypeVariant,
+};
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
+use spacetimedb_data_structures::slim_slice::SlimSliceBoxCollected;
 
 /// The SpacetimeDB Algebraic Type System (SATS) is a structural type system in
 /// which a nominal type system can be constructed.
@@ -28,11 +31,9 @@ use enum_as_inner::EnumAsInner;
 /// type Option<T> = (some: T | none: ())
 /// type Ref = &0
 ///
-/// type AlgebraicType = (sum: SumType | product: ProductType | builtin: BuiltinType | set: AlgebraicType)
 /// type Catalog<T> = (name: String, indices: Set<Set<Tag>>, relation: Set<>)
 /// type CatalogEntry = { name: string, indexes: {some type}, relation: Relation }
 /// type ElementValue = (tag: Tag, value: AlgebraicValue)
-/// type AlgebraicValue = (sum: ElementValue | product: {ElementValue} | builtin: BuiltinValue | set: {AlgebraicValue})
 /// type Any = (value: Bytes, type: AlgebraicType)
 ///
 /// type Table<Row: ProductType> = (
@@ -151,6 +152,11 @@ pub enum AlgebraicType {
     String,
 }
 
+#[cfg(target_arch = "wasm32")]
+static_assert_size!(AlgebraicType, 12);
+#[cfg(not(target_arch = "wasm32"))]
+static_assert_size!(AlgebraicType, 16);
+
 impl MetaType for AlgebraicType {
     /// This is a static function that constructs the type of `AlgebraicType`
     /// and returns it as an `AlgebraicType`.
@@ -201,6 +207,10 @@ impl AlgebraicType {
         self.is_scalar() || self.is_string()
     }
 
+    pub fn is_numeric(&self) -> bool {
+        self.is_int() || self.is_float()
+    }
+
     /// Returns whether this type is one which holds a scalar value.
     ///
     /// A scalar value is one not made up of other values, i.e., not composite.
@@ -208,7 +218,7 @@ impl AlgebraicType {
     /// i.e., integer and float types are scalar.
     /// References to other types, i.e., [`AlgebraicType::Ref`]s are not scalar.
     pub fn is_scalar(&self) -> bool {
-        self.is_bool() || self.is_int() || self.is_float()
+        self.is_bool() || self.is_numeric()
     }
 
     /// Returns whether the type is a signed integer type.
@@ -282,11 +292,17 @@ impl AlgebraicType {
 
     /// Returns a sum type of unit variants with names taken from `var_names`.
     pub fn simple_enum<'a>(var_names: impl Iterator<Item = &'a str>) -> Self {
-        Self::sum(var_names.into_iter().map(SumTypeVariant::unit).collect::<Vec<_>>())
+        Self::sum(
+            var_names
+                .into_iter()
+                .map(SumTypeVariant::unit)
+                .collect::<SlimSliceBoxCollected<_>>()
+                .unwrap(),
+        )
     }
 
     pub fn as_value(&self) -> AlgebraicValue {
-        self.serialize(ValueSerializer).unwrap_or_else(|x| match x {})
+        self.serialize(ValueSerializer).expect("unexpected `len >= u32::MAX`")
     }
 
     pub fn from_value(value: &AlgebraicValue) -> Result<Self, ValueDeserializeError> {

@@ -1,11 +1,8 @@
 use bytestring::ByteString;
 use serde::Serialize;
-use spacetimedb_lib::Address;
-use spacetimedb_lib::AlgebraicValue;
-use spacetimedb_lib::Identity;
-use spacetimedb_lib::ProductType;
-
 use serde_with::serde_as;
+use spacetimedb_lib::{Address, Identity};
+use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
 
 struct Sats;
 
@@ -114,5 +111,5 @@ pub struct OneOffQueryResponseJson {
 #[derive(Debug, Clone, Serialize)]
 pub struct OneOffTableJson {
     pub table_name: String,
-    pub rows: Vec<Vec<AlgebraicValue>>,
+    pub rows: Vec<ProductValue>,
 }

@@ -1,23 +1,21 @@
-use core::fmt;
-use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap};
-
-use anyhow::Context;
-
+use super::datastore::locking_tx_datastore::MutTxId;
+use super::relational_db::RelationalDB;
 use crate::database_logger::SystemLogger;
 use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
-
-use super::datastore::locking_tx_datastore::MutTxId;
-use super::relational_db::RelationalDB;
+use anyhow::Context;
+use core::fmt;
 use spacetimedb_primitives::IndexId;
 use spacetimedb_sats::db::def::{IndexDef, TableDef, TableSchema};
 use spacetimedb_sats::hash::Hash;
+use spacetimedb_sats::SatsString;
+use std::borrow::Cow;
+use std::collections::{BTreeMap, HashMap};
 
 #[derive(thiserror::Error, Debug)]
 pub enum UpdateDatabaseError {
     #[error("incompatible schema changes for: {tables:?}")]
-    IncompatibleSchema { tables: Vec<String> },
+    IncompatibleSchema { tables: Vec<SatsString> },
     #[error(transparent)]
     Database(#[from] DBError),
 }
@@ -102,7 +100,7 @@ impl fmt::Display for TaintReason {
 /// A table with name `table_name` marked tainted for reason [`TaintReason`].
 #[derive(Debug, PartialEq)]
 pub struct Tainted {
-    pub table_name: String,
+    pub table_name: SatsString,
     pub reason: TaintReason,
 }
 
@@ -113,7 +111,7 @@ pub enum SchemaUpdates {
     /// The schema can be updates.
     Updates {
         /// Tables to create.
-        new_tables: HashMap<String, TableDef>,
+        new_tables: HashMap<SatsString, TableDef>,
         /// Indexes to drop.
         ///
         /// Should be processed _before_ `indexes_to_create`, as we might be
@@ -148,20 +146,19 @@ pub fn schema_updates(
     let mut indexes_to_create = Vec::new();
     let mut indexes_to_drop = Vec::new();
 
-    let mut known_tables: BTreeMap<String, Cow<TableSchema>> = existing_tables
+    let mut known_tables: BTreeMap<_, _> = existing_tables
         .into_iter()
         .map(|schema| (schema.table_name.clone(), schema))
         .collect();
 
     for proposed_schema_def in proposed_tables {
-        let proposed_table_name = &proposed_schema_def.table_name;
-        if let Some(known_schema) = known_tables.remove(proposed_table_name) {
+        if let Some(known_schema) = known_tables.remove(&proposed_schema_def.table_name) {
             let table_id = known_schema.table_id;
             let known_schema_def = TableDef::from(known_schema.as_ref());
             // If the schemas differ the update should be rejected.
             if !equiv(&known_schema_def, &proposed_schema_def) {
                 tainted_tables.push(Tainted {
-                    table_name: proposed_table_name.to_owned(),
+                    table_name: proposed_schema_def.table_name,
                     reason: TaintReason::IncompatibleSchema,
                 });
             } else {
@@ -196,7 +193,7 @@ pub fn schema_updates(
                 }
             }
         } else {
-            new_tables.insert(proposed_table_name.to_owned(), proposed_schema_def);
+            new_tables.insert(proposed_schema_def.table_name.clone(), proposed_schema_def);
         }
     }
     // We may at some point decide to drop orphaned tables automatically,
@@ -204,7 +201,7 @@ pub fn schema_updates(
     for orphan in known_tables.into_keys() {
         if !orphan.starts_with("st_") {
             tainted_tables.push(Tainted {
-                table_name: orphan,
+                table_name: orphan.clone(),
                 reason: TaintReason::Orphaned,
             });
         }
@@ -248,10 +245,9 @@ mod tests {
     use super::*;
 
     use anyhow::bail;
-    use nonempty::NonEmpty;
     use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
-    use spacetimedb_sats::AlgebraicType;
+    use spacetimedb_sats::{nstr, AlgebraicType};
 
     use spacetimedb_sats::db::def::{ColumnDef, ColumnSchema, IndexSchema, IndexType, AUTO_TABLE_ID};
 
@@ -259,38 +255,41 @@ mod tests {
     fn test_updates_new_table() -> anyhow::Result<()> {
         let current = vec![Cow::Owned(TableSchema {
             table_id: TableId(42),
-            table_name: "Person".into(),
-            columns: vec![ColumnSchema {
+            table_name: nstr!("Person"),
+            columns: [ColumnSchema {
                 table_id: TableId(42),
                 col_id: ColId(0),
-                col_name: "name".into(),
+                col_name: nstr!("name"),
                 col_type: AlgebraicType::String,
                 is_autoinc: false,
-            }],
-            indexes: vec![],
-            constraints: vec![],
+            }]
+            .into(),
+            indexes: [].into(),
+            constraints: [].into(),
             table_type: StTableType::User,
             table_access: StAccess::Public,
         })];
         let proposed = vec![
             TableDef {
-                table_name: "Person".into(),
-                columns: vec![ColumnDef {
-                    col_name: "name".into(),
+                table_name: nstr!("Person"),
+                columns: [ColumnDef {
+                    col_name: nstr!("name"),
                     col_type: AlgebraicType::String,
                     is_autoinc: false,
-                }],
-                indexes: vec![],
+                }]
+                .into(),
+                indexes: [].into(),
                 table_type: StTableType::User,
                 table_access: StAccess::Public,
             },
             TableDef {
-                table_name: "Pet".into(),
-                columns: vec![ColumnDef {
-                    col_name: "furry".into(),
+                table_name: nstr!("Pet"),
+                columns: [ColumnDef {
+                    col_name: nstr!("furry"),
                     col_type: AlgebraicType::Bool,
                     is_autoinc: false,
-                }],
+                }]
+                .into(),
                 indexes: vec![],
                 table_type: StTableType::User,
                 table_access: StAccess::Public,
@@ -318,58 +317,58 @@ mod tests {
     fn test_updates_alter_indexes() -> anyhow::Result<()> {
         let current = vec![Cow::Owned(TableSchema {
             table_id: TableId(42),
-            table_name: "Person".into(),
-            columns: vec![
+            table_name: nstr!("Person"),
+            columns: [
                 ColumnSchema {
                     table_id: TableId(42),
                     col_id: ColId(0),
-                    col_name: "id".into(),
+                    col_name: nstr!("id"),
                     col_type: AlgebraicType::U32,
                     is_autoinc: true,
                 },
                 ColumnSchema {
                     table_id: TableId(42),
                     col_id: ColId(1),
-                    col_name: "name".into(),
+                    col_name: nstr!("name"),
                     col_type: AlgebraicType::String,
                     is_autoinc: false,
                 },
-            ],
-            indexes: vec![IndexSchema {
+            ]
+            .into(),
+            indexes: [IndexSchema {
                 index_id: IndexId(0),
                 table_id: TableId(42),
-                index_name: "Person_id_unique".into(),
+                index_name: nstr!("Person_id_unique"),
                 is_unique: true,
-                cols: NonEmpty::new(ColId(0)),
+                cols: ColId(0).into(),
                 index_type: IndexType::BTree,
-            }],
+            }]
+            .into(),
             // Constraints are possibly not empty when loaded from an actual
             // database, but not inspected by `schema_updates`.
-            constraints: vec![],
+            constraints: [].into(),
             table_type: StTableType::User,
             table_access: StAccess::Public,
         })];
         let mut proposed = vec![TableDef {
-            table_name: "Person".into(),
-            columns: vec![
+            table_name: nstr!("Person"),
+            columns: [
                 ColumnDef {
-                    col_name: "id".into(),
+                    col_name: nstr!("id"),
                     col_type: AlgebraicType::U32,
                     is_autoinc: true,
                 },
                 ColumnDef {
-                    col_name: "name".into(),
+                    col_name: nstr!("name"),
                     col_type: AlgebraicType::String,
                     is_autoinc: false,
                 },
-            ],
+            ]
+            .into(),
             indexes: vec![IndexDef {
                 table_id: AUTO_TABLE_ID,
-                cols: NonEmpty {
-                    head: ColId(0),
-                    tail: vec![ColId(1)],
-                },
-                name: "Person_id_and_name".into(),
+                cols: [0, 1].map(ColId).into(),
+                name: nstr!("Person_id_and_name"),
                 is_unique: false,
                 index_type: IndexType::BTree,
             }],
@@ -410,34 +409,36 @@ mod tests {
     fn test_updates_schema_mismatch() -> anyhow::Result<()> {
         let current = vec![Cow::Owned(TableSchema {
             table_id: TableId(42),
-            table_name: "Person".into(),
-            columns: vec![ColumnSchema {
+            table_name: nstr!("Person"),
+            columns: [ColumnSchema {
                 table_id: TableId(42),
                 col_id: ColId(0),
-                col_name: "name".into(),
+                col_name: nstr!("name"),
                 col_type: AlgebraicType::String,
                 is_autoinc: false,
-            }],
-            indexes: vec![],
-            constraints: vec![],
+            }]
+            .into(),
+            indexes: [].into(),
+            constraints: [].into(),
             table_type: StTableType::User,
             table_access: StAccess::Public,
         })];
         let proposed = vec![TableDef {
-            table_name: "Person".into(),
-            columns: vec![
+            table_name: nstr!("Person"),
+            columns: [
                 ColumnDef {
-                    col_name: "id".into(),
+                    col_name: nstr!("id"),
                     col_type: AlgebraicType::U32,
                     is_autoinc: true,
                 },
                 ColumnDef {
-                    col_name: "name".into(),
+                    col_name: nstr!("name"),
                     col_type: AlgebraicType::String,
                     is_autoinc: false,
                 },
-            ],
-            indexes: vec![],
+            ]
+            .into(),
+            indexes: [].into(),
             table_type: StTableType::User,
             table_access: StAccess::Public,
         }];
@@ -448,7 +449,7 @@ mod tests {
                 assert_eq!(
                     tainted[0],
                     Tainted {
-                        table_name: "Person".into(),
+                        table_name: nstr!("Person"),
                         reason: TaintReason::IncompatibleSchema,
                     }
                 );
@@ -466,27 +467,29 @@ mod tests {
     fn test_updates_orphaned_table() -> anyhow::Result<()> {
         let current = vec![Cow::Owned(TableSchema {
             table_id: TableId(42),
-            table_name: "Person".into(),
-            columns: vec![ColumnSchema {
+            table_name: nstr!("Person"),
+            columns: [ColumnSchema {
                 table_id: TableId(42),
                 col_id: ColId(0),
-                col_name: "name".into(),
+                col_name: nstr!("name"),
                 col_type: AlgebraicType::String,
                 is_autoinc: false,
-            }],
-            indexes: vec![],
-            constraints: vec![],
+            }]
+            .into(),
+            indexes: [].into(),
+            constraints: [].into(),
             table_type: StTableType::User,
             table_access: StAccess::Public,
         })];
         let proposed = vec![TableDef {
-            table_name: "Pet".into(),
-            columns: vec![ColumnDef {
-                col_name: "furry".into(),
+            table_name: nstr!("Pet"),
+            columns: [ColumnDef {
+                col_name: nstr!("furry"),
                 col_type: AlgebraicType::Bool,
                 is_autoinc: false,
-            }],
-            indexes: vec![],
+            }]
+            .into(),
+            indexes: [].into(),
             table_type: StTableType::User,
             table_access: StAccess::Public,
         }];
@@ -497,7 +500,7 @@ mod tests {
                 assert_eq!(
                     tainted[0],
                     Tainted {
-                        table_name: "Person".into(),
+                        table_name: nstr!("Person"),
                         reason: TaintReason::Orphaned,
                     }
                 );

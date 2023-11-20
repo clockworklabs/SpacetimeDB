@@ -240,6 +240,7 @@ impl<'de, V: super::FieldNameVisitor<'de>> serde::Visitor<'de> for FieldNameVisi
     }
 
     fn visit_str<E: serde::Error>(self, v: &str) -> Result<Self::Value, E> {
+        let v = v.try_into().map_err(|_| E::custom("str len overflowed `u32::MAX`"))?;
         self.visitor.visit(v).map_err(unwrap_error)
     }
 }

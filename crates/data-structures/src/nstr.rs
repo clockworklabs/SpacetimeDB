@@ -54,7 +54,7 @@ pub const fn __nstr<const N: usize>(s: &str) -> NStr<N> {
 #[macro_export]
 macro_rules! nstr {
     ($lit:literal) => {
-        $crate::nstr::__nstr::<{ $lit.len() }>($lit).into()
+        $crate::nstr::__nstr::<{ $lit.len() }>($lit)
     };
 }
 
@@ -87,5 +87,11 @@ impl<const N: usize> fmt::Debug for NStr<N> {
 impl<const N: usize> fmt::Display for NStr<N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.deref())
+    }
+}
+
+impl<const N: usize> From<NStr<N>> for String {
+    fn from(value: NStr<N>) -> Self {
+        value.deref().into()
     }
 }

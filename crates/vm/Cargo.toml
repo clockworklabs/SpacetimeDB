@@ -6,13 +6,13 @@ license-file = "LICENSE"
 description = "A VM for SpacetimeDB"
 
 [dependencies]
-spacetimedb-sats= { path = "../sats", version = "0.7.3" }
+spacetimedb-data-structures = { path = "../data-structures", version = "0.7.3" }
+spacetimedb-sats = { path = "../sats", version = "0.7.3" }
 spacetimedb-lib = { path = "../lib", version = "0.7.3" }
 spacetimedb-primitives = { path = "../primitives", version = "0.7.3" }
 
 anyhow.workspace = true
 derive_more.workspace = true
-nonempty.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 

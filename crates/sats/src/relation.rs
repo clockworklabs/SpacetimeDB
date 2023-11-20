@@ -1,17 +1,20 @@
-use derive_more::From;
-use spacetimedb_primitives::{ColId, TableId};
-use std::cmp::Ordering;
-use std::collections::hash_map::DefaultHasher;
-use std::fmt;
-use std::hash::{Hash, Hasher};
-
-use crate::algebraic_value::AlgebraicValue;
+use crate::algebraic_type;
 use crate::data_key::DataKey;
 use crate::db::auth::{StAccess, StTableType};
 use crate::db::error::RelationError;
 use crate::product_value::ProductValue;
 use crate::satn::Satn;
-use crate::{algebraic_type, AlgebraicType, ProductType, ProductTypeElement, Typespace, WithTypespace};
+use crate::{
+    from_str, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, SatsSlice, SatsStr, SatsString, SatsVec,
+    Typespace, WithTypespace,
+};
+use derive_more::From;
+use spacetimedb_data_structures::slim_slice::{try_into, LenTooLong};
+use spacetimedb_primitives::{ColId, TableId};
+use std::cmp::Ordering;
+use std::collections::hash_map::DefaultHasher;
+use std::fmt;
+use std::hash::{Hash, Hasher};
 
 pub fn calculate_hash<T: Hash>(t: &T) -> u64 {
     let mut s = DefaultHasher::new();
@@ -59,21 +62,21 @@ impl fmt::Display for FieldOnly<'_> {
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub enum FieldName {
-    Name { table: String, field: String },
-    Pos { table: String, field: usize },
+    Name { table: SatsString, field: SatsString },
+    Pos { table: SatsString, field: usize },
 }
 
 impl FieldName {
     pub fn named(table: &str, field: &str) -> Self {
         Self::Name {
-            table: table.to_string(),
-            field: field.to_string(),
+            table: from_str(table).into(),
+            field: from_str(field).into(),
         }
     }
 
     pub fn positional(table: &str, field: usize) -> Self {
         Self::Pos {
-            table: table.to_string(),
+            table: from_str(table).into(),
             field,
         }
     }
@@ -90,14 +93,14 @@ impl FieldName {
         }
     }
 
-    pub fn field_name(&self) -> Option<&str> {
+    pub fn field_name(&self) -> Option<&SatsStr> {
         match self {
-            FieldName::Name { field, .. } => Some(field),
+            FieldName::Name { field, .. } => Some(field.shared_ref()),
             FieldName::Pos { .. } => None,
         }
     }
 
-    pub fn into_field_name(self) -> Option<String> {
+    pub fn into_field_name(self) -> Option<SatsString> {
         match self {
             FieldName::Name { field, .. } => Some(field),
             FieldName::Pos { .. } => None,
@@ -178,46 +181,41 @@ pub struct HeaderOnlyField<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Header {
-    pub table_name: String,
-    pub fields: Vec<Column>,
+    pub table_name: SatsString,
+    pub fields: SatsVec<Column>,
 }
 
 impl From<Header> for ProductType {
     fn from(value: Header) -> Self {
-        ProductType::from_iter(
-            value
-                .fields
-                .into_iter()
-                .map(|x| ProductTypeElement::new(x.algebraic_type, x.field.into_field_name())),
-        )
+        value
+            .fields
+            .map(|x| ProductTypeElement::new(x.algebraic_type, x.field.into_field_name()))
+            .into()
     }
 }
 
 impl Header {
-    pub fn new(table_name: String, fields: Vec<Column>) -> Self {
+    pub fn new(table_name: SatsString, fields: SatsVec<Column>) -> Self {
         Self { table_name, fields }
     }
 
-    pub fn from_product_type(table_name: String, fields: ProductType) -> Self {
-        let cols = fields
-            .elements
-            .into_iter()
-            .enumerate()
-            .map(|(pos, f)| {
-                let table = table_name.clone();
-                let name = match f.name {
-                    None => FieldName::Pos { table, field: pos },
-                    Some(field) => FieldName::Name { table, field },
-                };
-                Column::new(name, f.algebraic_type, ColId(pos as u32), false)
-            })
-            .collect();
-
+    pub fn from_product_type(table_name: SatsString, fields: ProductType) -> Self {
+        let mut pos = 0;
+        let cols = fields.elements.map(|f| {
+            let table = table_name.clone();
+            let name = match f.name {
+                None => FieldName::Pos { table, field: pos },
+                Some(field) => FieldName::Name { table, field },
+            };
+            let col_id = pos.into();
+            pos += 1;
+            Column::new(name, f.algebraic_type, col_id, false)
+        });
         Self::new(table_name, cols)
     }
 
     pub fn for_mem_table(fields: ProductType) -> Self {
-        let table_name = format!("mem#{:x}", calculate_hash(&fields));
+        let table_name = SatsString::from_string(format!("mem#{:x}", calculate_hash(&fields)));
         Self::from_product_type(table_name, fields)
     }
 
@@ -228,15 +226,15 @@ impl Header {
     }
 
     pub fn ty(&self) -> ProductType {
-        ProductType::from_iter(
-            self.fields
-                .iter()
-                .map(|x| (x.field.field_name(), x.algebraic_type.clone())),
-        )
+        self.fields
+            .map_borrowed(|x| {
+                ProductTypeElement::new(x.algebraic_type.clone(), x.field.field_name().map(SatsString::from))
+            })
+            .into()
     }
 
-    pub fn find_by_name(&self, field_name: &str) -> Option<&Column> {
-        self.fields.iter().find(|x| x.field.field_name() == Some(field_name))
+    pub fn find_by_name(&self, field_name: SatsStr) -> Option<&Column> {
+        self.fields.iter().find(|x| x.field.field_name() == Some(&field_name))
     }
 
     pub fn column_pos<'a>(&'a self, col: &'a FieldName) -> Option<usize> {
@@ -260,7 +258,7 @@ impl Header {
         self.fields.iter().find(|f| &f.field == col)
     }
 
-    pub fn project<T>(&self, cols: &[T]) -> Result<Self, RelationError>
+    pub fn project<T>(&self, cols: &SatsSlice<'_, T>) -> Result<Self, RelationError>
     where
         T: Into<FieldExpr> + Clone,
     {
@@ -289,32 +287,37 @@ impl Header {
             }
         }
 
+        // SAFETY: We know `cols.len() <= u32::MAX`
+        // and since we iterate at most that many times
+        // and push once per iteration,
+        // we know that `p.len() <= cols.len() <= u32::MAX` holds.
+        let p = unsafe { SatsVec::from_boxed_unchecked(p.into()) };
+
         Ok(Self::new(self.table_name.clone(), p))
     }
 
     /// Adds the fields from `right` to this [`Header`],
     /// renaming duplicated fields with a counter like `a, a => a, a0`.
-    pub fn extend(&self, right: &Self) -> Self {
+    pub fn extend(&self, right: &Self) -> Result<Self, LenTooLong> {
         let count = self.fields.len() + right.fields.len();
-        let mut fields = self.fields.clone();
-        fields.reserve(count - fields.len());
+        let mut fields = Vec::with_capacity(count);
+        fields.extend(self.fields.iter().cloned());
 
         let mut cont = 0;
-        //Avoid duplicated field names...
+        // Avoid duplicated field names...
         for mut f in right.fields.iter().cloned() {
-            if f.field.table() == self.table_name && self.column_pos(&f.field).is_some() {
-                let name = format!("{}_{}", f.field.field(), cont);
-                f.field = FieldName::Name {
-                    table: f.field.table().into(),
-                    field: name,
-                };
+            if self.table_name == f.field.table() && self.column_pos(&f.field).is_some() {
+                let field = SatsString::from_string(format!("{}_{}", f.field.field(), cont));
+                let table = from_str(f.field.table()).into();
+                f.field = FieldName::Name { table, field };
 
                 cont += 1;
             }
             fields.push(f);
         }
 
-        Self::new(self.table_name.clone(), fields)
+        let fields = try_into(fields)?;
+        Ok(Self::new(self.table_name.clone(), fields))
     }
 }
 
@@ -432,10 +435,10 @@ impl<'a> RelValueRef<'a> {
         Ok(val)
     }
 
-    pub fn project(&self, cols: &[FieldExpr], header: &'a Header) -> Result<ProductValue, RelationError> {
+    pub fn project(&self, cols: &SatsSlice<FieldExpr>, header: &'a Header) -> Result<ProductValue, RelationError> {
         let mut elements = Vec::with_capacity(cols.len());
 
-        for col in cols {
+        for col in cols.iter() {
             match col {
                 FieldExpr::Name(col) => {
                     if let Some(pos) = header.column_pos(col) {
@@ -450,7 +453,10 @@ impl<'a> RelValueRef<'a> {
             }
         }
 
-        Ok(ProductValue::new(&elements))
+        // SAFETY: `cols.len() <= u32::MAX` is statically known.
+        // In the loop above, we push no more than 1 element per `col in cols`.
+        // Thus, we also know `elements.len() <= u32::MAX`.
+        Ok(unsafe { SatsVec::from_boxed_unchecked(elements.into()) }.into())
     }
 }
 
@@ -474,11 +480,23 @@ impl RelValue {
         RelValueRef::new(&self.data)
     }
 
-    pub fn extend(self, with: RelValue) -> RelValue {
-        let mut x = self;
-        x.id = None;
-        x.data.elements.extend(with.data.elements);
-        x
+    /// Concatenates `with` to `self`, i.e., returns `self ++ with`.
+    ///
+    /// The `id` of the resulting `RelValue` is `None` as logically,
+    /// the value does not exist in the table.
+    pub fn extend(mut self, with: RelValue) -> Result<RelValue, LenTooLong<Vec<AlgebraicValue>>> {
+        // Cleared as `self.extend(with)` no longer belongs to a table.
+        self.id = None;
+
+        debug_assert!(!self.data.elements.is_empty() && !with.data.elements.is_empty());
+
+        let mut data = Vec::with_capacity(self.data.elements.len() + with.data.elements.len());
+        data.append(&mut self.data.elements.into());
+        data.append(&mut with.data.elements.into());
+        let elements = data.try_into()?;
+        self.data = ProductValue { elements };
+
+        Ok(self)
     }
 }
 
@@ -556,7 +574,7 @@ impl MemTable {
         self.head.fields.get(pos).map(|x| &x.field)
     }
 
-    pub fn get_field_named(&self, name: &str) -> Option<&FieldName> {
+    pub fn get_field_named(&self, name: SatsStr) -> Option<&FieldName> {
         self.head.find_by_name(name).map(|x| &x.field)
     }
 }

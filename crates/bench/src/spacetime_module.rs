@@ -117,7 +117,7 @@ impl BenchDatabase for SpacetimeModule {
 
         let count = runtime.block_on(async move {
             let name = format!("count_{}", table_id.snake_case);
-            module.call_reducer_binary(&name, ProductValue::new(&[])).await?;
+            module.call_reducer_binary(&name, ProductValue::new([].into())).await?;
             let logs = module.read_log(Some(1)).await;
             let message = serde_json::from_str::<LoggerRecord>(&logs)?;
             if !message.message.starts_with("COUNT: ") {
@@ -135,7 +135,9 @@ impl BenchDatabase for SpacetimeModule {
         let module = module.as_mut().unwrap();
 
         runtime.block_on(async move {
-            module.call_reducer_binary("empty", ProductValue::new(&[])).await?;
+            module
+                .call_reducer_binary("empty", ProductValue::new([].into()))
+                .await?;
             Ok(())
         })
     }
@@ -154,7 +156,12 @@ impl BenchDatabase for SpacetimeModule {
     }
 
     fn insert_bulk<T: BenchTable>(&mut self, table_id: &Self::TableId, rows: Vec<T>) -> ResultBench<()> {
-        let rows = rows.into_iter().map(|row| row.into_product_value()).collect();
+        let rows = rows
+            .into_iter()
+            .map(|row| row.into_product_value())
+            .collect::<Box<[_]>>()
+            .try_into()
+            .unwrap();
         let args = product![ArrayValue::Product(rows)];
         let SpacetimeModule { runtime, module } = self;
         let module = module.as_mut().unwrap();
@@ -173,7 +180,7 @@ impl BenchDatabase for SpacetimeModule {
 
         runtime.block_on(async move {
             module
-                .call_reducer_binary(&reducer_name, ProductValue::new(&[]))
+                .call_reducer_binary(&reducer_name, ProductValue::new([].into()))
                 .await?;
             Ok(())
         })
@@ -194,7 +201,12 @@ impl BenchDatabase for SpacetimeModule {
 
         runtime.block_on(async move {
             module
-                .call_reducer_binary(&reducer_name, ProductValue { elements: vec![value] })
+                .call_reducer_binary(
+                    &reducer_name,
+                    ProductValue {
+                        elements: [value].into(),
+                    },
+                )
                 .await?;
             Ok(())
         })

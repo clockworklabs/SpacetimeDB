@@ -22,6 +22,7 @@ proptest = ["dep:proptest", "dep:proptest-derive"]
 
 [dependencies]
 spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.7.3" }
+spacetimedb-data-structures = { path = "../data-structures", version = "0.7.3" }
 spacetimedb-sats = { path = "../sats", version = "0.7.3" }
 spacetimedb-primitives = { path = "../primitives", version = "0.7.3" }
 

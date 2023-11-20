@@ -1,4 +1,5 @@
 use spacetimedb_lib::ProductValue;
+use spacetimedb_sats::AlgebraicValue;
 use std::{collections::HashSet, marker::PhantomData};
 
 // NOTE
@@ -97,6 +98,9 @@ where
     }
 }
 
+/// Projects an iterator of product values
+/// into one of its columns as given by `cols`
+/// which identifies the indicies of the columns to *exclude*.
 // See: https://users.rust-lang.org/t/how-to-use-adapters-closures-for-intoiterator-implementation/46121
 pub struct Project<S: Iterator<Item = ProductValue>> {
     source: S,
@@ -104,12 +108,13 @@ pub struct Project<S: Iterator<Item = ProductValue>> {
 }
 
 impl<S: Iterator<Item = ProductValue>> Iterator for Project<S> {
-    type Item = ProductValue;
+    type Item = Vec<AlgebraicValue>;
 
-    fn next(&mut self) -> Option<ProductValue> {
-        self.source.next().map(|mut row| {
+    fn next(&mut self) -> Option<Self::Item> {
+        self.source.next().map(|row| {
+            let mut row = Vec::from(row.elements);
             for &i in self.cols.iter().rev() {
-                row.elements.remove(i as usize);
+                row.remove(i as usize);
             }
             row
         })

@@ -22,7 +22,7 @@ use indexmap::IndexMap;
 use spacetimedb_lib::{Address, ReducerDef, TableDef};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::relation::MemTable;
-use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
+use spacetimedb_sats::{ProductValue, SatsString, Typespace, WithTypespace};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Weak};
@@ -59,12 +59,10 @@ impl DatabaseUpdate {
                 map.get_mut(&record.table_id).unwrap()
             };
 
-            let (row, row_pk) = (record.product_value.clone(), record.key.to_bytes());
-
             vec.push(TableOp {
                 op_type: op,
-                row_pk,
-                row,
+                row_pk: record.key.to_bytes().into(),
+                row: record.product_value.clone(),
             });
         }
 
@@ -81,7 +79,7 @@ impl DatabaseUpdate {
             };
             table_updates.push(DatabaseTableUpdate {
                 table_id,
-                table_name: table_name.to_owned(),
+                table_name: table_name.into(),
                 ops: table_row_operations,
             });
         }
@@ -97,7 +95,7 @@ impl DatabaseUpdate {
                 .into_iter()
                 .map(|table| TableUpdate {
                     table_id: table.table_id.into(),
-                    table_name: table.table_name,
+                    table_name: table.table_name.into(),
                     table_row_operations: table
                         .ops
                         .into_iter()
@@ -110,7 +108,7 @@ impl DatabaseUpdate {
                                 } else {
                                     table_row_operation::OperationType::Delete.into()
                                 },
-                                row_pk: op.row_pk,
+                                row_pk: op.row_pk.into(),
                                 row: row_bytes,
                             }
                         })
@@ -129,7 +127,7 @@ impl DatabaseUpdate {
                 .into_iter()
                 .map(|table| TableUpdateJson {
                     table_id: table.table_id.into(),
-                    table_name: table.table_name,
+                    table_name: table.table_name.into(),
                     table_row_operations: table
                         .ops
                         .into_iter()
@@ -142,7 +140,7 @@ impl DatabaseUpdate {
                                     "delete".into()
                                 },
                                 row_pk,
-                                row: op.row.elements,
+                                row: op.row.elements.into(),
                             }
                         })
                         .collect(),
@@ -155,21 +153,21 @@ impl DatabaseUpdate {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatabaseTableUpdate {
     pub table_id: TableId,
-    pub table_name: String,
+    pub table_name: SatsString,
     pub ops: Vec<TableOp>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableOp {
     pub op_type: u8,
-    pub row_pk: Vec<u8>,
+    pub row_pk: Box<[u8]>,
     pub row: ProductValue,
 }
 
 #[derive(Debug, Clone)]
 pub enum EventStatus {
     Committed(DatabaseUpdate),
-    Failed(String),
+    Failed(Box<str>),
     OutOfEnergy,
 }
 
@@ -184,7 +182,7 @@ impl EventStatus {
 
 #[derive(Debug, Clone)]
 pub struct ModuleFunctionCall {
-    pub reducer: String,
+    pub reducer: SatsString,
     pub args: ArgsTuple,
 }
 
@@ -206,12 +204,12 @@ pub struct ModuleInfo {
     pub module_hash: Hash,
     pub typespace: Typespace,
     pub reducers: ReducersMap,
-    pub catalog: HashMap<String, EntityDef>,
+    pub catalog: HashMap<SatsString, EntityDef>,
     pub log_tx: tokio::sync::broadcast::Sender<bytes::Bytes>,
     pub subscription: ModuleSubscriptionManager,
 }
 
-pub struct ReducersMap(pub IndexMap<String, ReducerDef>);
+pub struct ReducersMap(pub IndexMap<SatsString, ReducerDef>);
 
 impl fmt::Debug for ReducersMap {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

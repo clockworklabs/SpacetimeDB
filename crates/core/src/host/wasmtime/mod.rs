@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use once_cell::sync::Lazy;
+use spacetimedb_sats::SatsStr;
 use wasmtime::{Engine, Linker, Module, StoreContext, StoreContextMut};
 
 use crate::database_instance_context::DatabaseInstanceContext;
@@ -196,9 +197,10 @@ impl MemView {
     }
 
     /// Get a utf8 slice of wasm memory given a pointer and a length.
-    fn deref_str(&self, offset: WasmPtr<u8>, len: u32) -> Result<&str, MemError> {
+    fn deref_str(&self, offset: WasmPtr<u8>, len: u32) -> Result<SatsStr<'_>, MemError> {
         let b = self.deref_slice(offset, len)?;
-        std::str::from_utf8(b).map_err(MemError::Utf8)
+        let s = std::str::from_utf8(b).map_err(MemError::Utf8)?;
+        Ok(unsafe { s.try_into().unwrap_unchecked() })
     }
 
     /// Lossily get a utf8 slice of wasm memory given a pointer and a length, converting any

@@ -1,10 +1,10 @@
 #![allow(clippy::too_many_arguments)]
 
-use std::time::Instant;
-
+use super::{Mem, MemView, NullableMemOp, WasmError, WasmPointee, WasmPtr};
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
 use crate::db::db_metrics::DB_METRICS;
 use crate::execution_context::ExecutionContext;
+use crate::host::instance_env::InstanceEnv;
 use crate::host::scheduler::{ScheduleError, ScheduledReducerId};
 use crate::host::timestamp::Timestamp;
 use crate::host::wasm_common::instrumentation;
@@ -15,11 +15,9 @@ use crate::host::wasm_common::{
 };
 use crate::host::AbiCall;
 use anyhow::{anyhow, Context};
+use spacetimedb_sats::{SatsNonEmpty, SatsVec};
+use std::time::Instant;
 use wasmtime::{AsContext, Caller, StoreContextMut};
-
-use crate::host::instance_env::InstanceEnv;
-
-use super::{Mem, MemView, NullableMemOp, WasmError, WasmPointee, WasmPtr};
 
 #[cfg(not(feature = "spacetimedb-wasm-instance-env-times"))]
 use instrumentation::noop as span;
@@ -284,7 +282,7 @@ impl WasmInstanceEnv {
             // Schedule it!
             let ScheduledReducerId(id) =
                 env.instance_env
-                    .schedule(name, args, Timestamp(time))
+                    .schedule(name.into(), args, Timestamp(time))
                     .map_err(|e| match e {
                         ScheduleError::DelayTooLong(_) => anyhow!("requested delay is too long"),
                         ScheduleError::IdTransactionError(_) => {
@@ -491,7 +489,7 @@ impl WasmInstanceEnv {
             let name = mem.deref_str(name, name_len)?;
 
             // Query the table id.
-            Ok(env.instance_env.get_table_id(name)?.into())
+            Ok(env.instance_env.get_table_id(name.into())?.into())
         })
     }
 
@@ -524,12 +522,21 @@ impl WasmInstanceEnv {
     ) -> RtResult<u32> {
         Self::cvt(caller, AbiCall::CreateIndex, |caller| {
             let (mem, env) = Self::mem_env(caller);
+
             // Read the index name from WASM memory.
-            let index_name = mem.deref_str(index_name, index_name_len)?.to_owned();
+            let index_name = mem.deref_str(index_name, index_name_len)?.into();
 
             // Read the column ids on which to create an index from WASM memory.
             // This may be one column or an index on several columns.
-            let cols = mem.deref_slice(col_ids, col_len)?.to_vec();
+            let cols: SatsVec<_> = mem
+                .deref_slice(col_ids, col_len)?
+                .iter()
+                .copied()
+                .map(Into::into)
+                .collect::<Vec<_>>()
+                .try_into()
+                .expect("The number of columns in the index exceeded `u32::MAX`");
+            let cols: SatsNonEmpty<_> = cols.try_into().expect("Attempt to create an index with zero columns");
 
             env.instance_env
                 .create_index(index_name, table_id.into(), index_type as u8, cols)?;

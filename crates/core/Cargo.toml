@@ -18,6 +18,7 @@ name = "odb_flavor_bench"
 harness = false
 
 [dependencies]
+spacetimedb-data-structures = { path = "../data-structures", version = "0.7.3" }
 spacetimedb-lib = { path = "../lib", version = "0.7.3" }
 spacetimedb-sats = { path = "../sats", version = "0.7.3" }
 spacetimedb-vm = { path = "../vm", version = "0.7.3" }
@@ -48,7 +49,6 @@ itertools.workspace = true
 jsonwebtoken.workspace = true
 lazy_static.workspace = true
 log.workspace = true
-nonempty.workspace = true
 once_cell.workspace = true
 openssl.workspace = true
 parking_lot.workspace = true

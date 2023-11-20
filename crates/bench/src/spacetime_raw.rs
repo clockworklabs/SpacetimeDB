@@ -6,8 +6,9 @@ use crate::{
 use spacetimedb::db::relational_db::{open_db, RelationalDB};
 use spacetimedb::execution_context::ExecutionContext;
 use spacetimedb_lib::sats::db::def::{IndexDef, TableDef};
-use spacetimedb_lib::sats::AlgebraicValue;
+use spacetimedb_lib::sats::{AlgebraicValue, SatsString};
 use spacetimedb_primitives::{ColId, TableId};
+use spacetimedb_sats::nstr;
 use std::hint::black_box;
 use tempdir::TempDir;
 
@@ -38,15 +39,15 @@ impl BenchDatabase for SpacetimeRaw {
     }
 
     fn create_table<T: BenchTable>(&mut self, index_strategy: IndexStrategy) -> ResultBench<Self::TableId> {
-        let name = table_name::<T>(index_strategy);
+        let name = SatsString::from_string(table_name::<T>(index_strategy));
         self.db.with_auto_commit(&ExecutionContext::default(), |tx| {
             let table_def = TableDef::from(T::product_type());
             let table_id = self.db.create_table(tx, table_def)?;
-            self.db.rename_table(tx, table_id, &name)?;
+            self.db.rename_table(tx, table_id, name)?;
             match index_strategy {
                 IndexStrategy::Unique => {
                     self.db
-                        .create_index(tx, IndexDef::new("id".to_string(), table_id, 0.into(), true))?;
+                        .create_index(tx, IndexDef::new(nstr!("id"), table_id, 0.into(), true))?;
                 }
                 IndexStrategy::NonUnique => (),
                 IndexStrategy::MultiIndex => {

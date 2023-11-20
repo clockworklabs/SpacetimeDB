@@ -72,7 +72,6 @@ use core::{
     slice,
     str::{from_utf8_unchecked, from_utf8_unchecked_mut},
 };
-use nonempty::NonEmpty;
 use thiserror::Error;
 
 // =============================================================================
@@ -186,7 +185,7 @@ struct SlimRawSlice<T> {
 impl<T> SlimRawSlice<T> {
     /// Returns a dangling slim raw slice.
     #[inline]
-    fn dangling() -> Self {
+    const fn dangling() -> Self {
         let ptr = NonNull::dangling();
         Self { len: 0, ptr }
     }
@@ -206,7 +205,7 @@ impl<T> SlimRawSlice<T> {
 
     /// Split `self` into a raw pointer and the slice length.
     #[inline]
-    fn split(self) -> (*mut T, usize) {
+    const fn split(self) -> (*mut T, usize) {
         (self.ptr.as_ptr(), self.len as usize)
     }
 
@@ -231,7 +230,7 @@ impl<T> SlimRawSlice<T> {
     ///   must not "wrap around" the address space.
     #[allow(clippy::needless_lifetimes)]
     #[inline]
-    unsafe fn deref<'a>(&'a self) -> &'a [T] {
+    const unsafe fn deref<'a>(&'a self) -> &'a [T] {
         let (ptr, len) = self.split();
         // SAFETY: caller is responsible for these.
         unsafe { slice::from_raw_parts(ptr, len) }
@@ -313,11 +312,9 @@ mod slim_slice_box {
         #[inline]
         fn drop(&mut self) {
             // Get us an owned `SlimSliceBox<T>`
-            // by replacing `self` with garbage that won't be dropped
+            // by replacing `self` with an empty box that won't be dropped
             // as the drop glue for the constituent fields does nothing.
-            let raw = SlimRawSlice::dangling();
-            let owned = PhantomData;
-            let this = mem::replace(self, Self { raw, owned });
+            let this = mem::replace(self, Self::empty());
 
             // Convert into `Box<[T]>` and let it deal with dropping.
             drop(into_box(this));
@@ -325,6 +322,13 @@ mod slim_slice_box {
     }
 
     impl<T> SlimSliceBox<T> {
+        /// Returns an empty `SlimSliceBox<T>`.
+        pub const fn empty() -> Self {
+            let raw = SlimRawSlice::dangling();
+            let owned = PhantomData;
+            Self { raw, owned }
+        }
+
         /// Converts `boxed` to `Self` without checking `boxed.len() <= u32::MAX`.
         ///
         /// # Safety
@@ -586,99 +590,48 @@ impl<A> FromIterator<A> for SlimSliceBoxCollected<A> {
 }
 
 // =============================================================================
-// Owned boxed slice with SSO
-// =============================================================================
-
-pub struct SlimSmallSliceBox<T, const N: usize>(SlimSmallSliceBoxData<T, N>);
-
-/// The representation of [`SlimSmallSliceBox<T>`].
-///
-/// The parameter `N` is the number of elements that can be inline.
-enum SlimSmallSliceBoxData<T, const N: usize> {
-    /// The data is inline, not using any indirections.
-    Inline([T; N]),
-    /// The data is boxed up.
-    Heap(SlimSliceBox<T>),
-}
-
-impl<T, const N: usize> From<[T; N]> for SlimSmallSliceBox<T, N> {
-    fn from(value: [T; N]) -> Self {
-        #[allow(clippy::let_unit_value)]
-        let () = AssertU32::<N>::OK;
-
-        Self(SlimSmallSliceBoxData::Inline(value))
-    }
-}
-
-impl<T, const N: usize> From<SlimSliceBox<T>> for SlimSmallSliceBox<T, N> {
-    fn from(value: SlimSliceBox<T>) -> Self {
-        Self(SlimSmallSliceBoxData::Heap(value))
-    }
-}
-
-impl<T, const N: usize> From<SlimSmallSliceBox<T, N>> for SlimSliceBox<T> {
-    fn from(SlimSmallSliceBox(value): SlimSmallSliceBox<T, N>) -> Self {
-        match value {
-            SlimSmallSliceBoxData::Inline(i) => i.into(),
-            SlimSmallSliceBoxData::Heap(h) => h,
-        }
-    }
-}
-
-impl<T, const N: usize> Deref for SlimSmallSliceBox<T, N> {
-    type Target = [T];
-    fn deref(&self) -> &Self::Target {
-        match &self.0 {
-            SlimSmallSliceBoxData::Inline(i) => i,
-            SlimSmallSliceBoxData::Heap(h) => h,
-        }
-    }
-}
-
-impl<T, const N: usize> DerefMut for SlimSmallSliceBox<T, N> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        match &mut self.0 {
-            SlimSmallSliceBoxData::Inline(i) => i,
-            SlimSmallSliceBoxData::Heap(h) => h,
-        }
-    }
-}
-
-// =============================================================================
 // Non-empty owned boxed slice
 // =============================================================================
 
-// TODO(Centril): This type was introduced because `NonEmpty<T>`
-// was used to store `cols: NonEmpty<ColId>`.
-// However, it is not efficient to store `cols` this way because
-// we need to convert <=> `ArrayValue` and <=> view `cols` as `&[ColId]`.
-// As `SlimNonEmptyBox<T>` and `NonEmpty<T>` store `head` in a separate allocation,
-// this makes a direct conversion to `&[ColId]` impossible and <=> `ArrayValue` slow.
-// Instead of dealing with non-emptiness at the representation layer,
-// we can use `SlimSmallSliceBox<T>`, and if needs be,
-// add non-emptiness purely as a logical layer.
+// We use this type for e.g., `SlimNonEmptyBox<ColId>`.
 
 /// A non-empty slim owned slice.
-#[derive(Clone, Eq, PartialEq, Hash, Debug)]
-pub struct SlimNonEmptyBox<T> {
-    /// The head of the list, ensuring there's at least one element.
-    pub head: T,
-    /// The tail of the list. Invariant `tail.len() < u32::MAX`.
-    tail: SlimSliceBox<T>,
+#[derive(Clone, Eq, PartialEq, PartialOrd, Ord, Hash, Debug)]
+pub struct SlimNonEmptyBox<T>(SlimNonEmptyBoxData<T>);
+
+/// The representation of [`SlimNonEmptyBox<T>`].
+#[derive(Clone, Eq, PartialEq, PartialOrd, Ord, Hash, Debug)]
+enum SlimNonEmptyBoxData<T> {
+    /// A single element, always stored inline.
+    Inline([T; 1]),
+    /// At least one element, always boxed up.
+    Heap(SlimSliceBox<T>),
+}
+
+impl<T> Deref for SlimNonEmptyBox<T> {
+    type Target = [T];
+    fn deref(&self) -> &Self::Target {
+        match &self.0 {
+            SlimNonEmptyBoxData::Inline(i) => i,
+            SlimNonEmptyBoxData::Heap(h) => h,
+        }
+    }
+}
+
+impl<T> DerefMut for SlimNonEmptyBox<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match &mut self.0 {
+            SlimNonEmptyBoxData::Inline(i) => i,
+            SlimNonEmptyBoxData::Heap(h) => h,
+        }
+    }
 }
 
 impl<T> SlimNonEmptyBox<T> {
     /// Returns the non-empty vector `[head]`.
     #[inline]
     pub fn new(head: T) -> Self {
-        Self { head, tail: [].into() }
-    }
-
-    /// Returns the length of the vector.
-    #[allow(clippy::len_without_is_empty)]
-    #[inline]
-    pub fn len(&self) -> usize {
-        1 + self.tail.len()
+        Self(SlimNonEmptyBoxData::Inline([head]))
     }
 
     /// Map every element `x: T` to `U` by transmuting.
@@ -686,17 +639,10 @@ impl<T> SlimNonEmptyBox<T> {
     /// This will not reallocate.
     #[inline]
     pub fn map_safely_exchangeable<U: SafelyExchangeable<T>>(self) -> SlimNonEmptyBox<U> {
-        SlimNonEmptyBox {
-            head: transmute_safely_exchangeable(self.head),
-            tail: self.tail.map_safely_exchangeable(),
+        match self.0 {
+            SlimNonEmptyBoxData::Inline([i]) => transmute_safely_exchangeable::<T, U>(i).into(),
+            SlimNonEmptyBoxData::Heap(h) => SlimNonEmptyBox(SlimNonEmptyBoxData::Heap(h.map_safely_exchangeable())),
         }
-    }
-
-    /// Returns an iterator over borrowed elements of the vector.
-    #[inline]
-    pub fn iter(&self) -> Iter<'_, T> {
-        let elems = Some((&self.head, &*self.tail));
-        Iter { elems }
     }
 }
 
@@ -707,74 +653,39 @@ impl<T> From<T> for SlimNonEmptyBox<T> {
     }
 }
 
-pub struct Iter<'a, T> {
-    elems: Option<(&'a T, &'a [T])>,
-}
-
-impl<'a, T> Iterator for Iter<'a, T> {
-    type Item = &'a T;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        let (next, tail) = self.elems.take().unzip();
-        self.elems = tail.unwrap_or_default().split_first();
-        next
-    }
-}
-
-impl<T> ExactSizeIterator for Iter<'_, T> {
-    #[inline]
-    fn len(&self) -> usize {
-        self.elems.map_or(0, |(_, tail)| 1 + tail.len())
-    }
-}
-
-impl<T> core::iter::FusedIterator for Iter<'_, T> {}
-
-impl<T> TryFrom<NonEmpty<T>> for SlimNonEmptyBox<T> {
-    type Error = LenTooLong<NonEmpty<T>>;
-
-    #[inline]
-    fn try_from(value: NonEmpty<T>) -> Result<Self, Self::Error> {
-        ensure_len_fits!(value);
-
-        // SAFETY: Ensured ^-- that `([head] ++ tail).len() <= u32::MAX`.
-        // This implies `[head].len() + tail.len() <= u32::MAX`
-        // so `1 + tail.len() <= u32::MAX`
-        // so `tail.len() <= u32::MAX` also holds.
-        let tail = unsafe { SlimSliceBox::from_boxed_unchecked(value.tail.into()) };
-
-        Ok(Self { head: value.head, tail })
-    }
-}
-
 impl<T> From<SlimNonEmptyBox<T>> for SlimSliceBox<T> {
     #[inline]
     fn from(value: SlimNonEmptyBox<T>) -> Self {
-        // Construct `[head] ++ tail`.
-        let mut vec = Vec::with_capacity(1 + value.tail.len());
-        vec.push(value.head);
-        vec.append(&mut value.tail.into());
-
-        // SAFETY: By (invariant) `tail.len() < u32::MAX`
-        // we also know that `1 + tail.len() <= u32::MAX`
-        // thus `vec.len() <= u32::MAX` which is our safety requirement.
-        unsafe { Self::from_boxed_unchecked(vec.into()) }
+        match value.0 {
+            SlimNonEmptyBoxData::Inline(i) => i.into(),
+            SlimNonEmptyBoxData::Heap(h) => h,
+        }
     }
 }
 
-impl<T: Clone> TryFrom<&SlimSliceBox<T>> for SlimNonEmptyBox<T> {
+impl<T, const N: usize> From<[T; N]> for SlimNonEmptyBox<T> {
+    #[inline]
+    fn from(value: [T; N]) -> Self {
+        if N == 1 {
+            // SAFETY: This is a no-op, we're transmuting `[T; N => 1]` to `[T, 1]`
+            // but we have to do this to convince the type system.
+            let [value]: [T; 1] = unsafe { mem::transmute_copy(&value) };
+            value.into()
+        } else {
+            value.into()
+        }
+    }
+}
+
+impl<T> TryFrom<SlimSliceBox<T>> for SlimNonEmptyBox<T> {
     type Error = ();
 
     #[inline]
-    fn try_from(value: &SlimSliceBox<T>) -> Result<Self, Self::Error> {
-        let [head, tail @ ..] = &**value else {
+    fn try_from(value: SlimSliceBox<T>) -> Result<Self, Self::Error> {
+        if value.is_empty() {
             return Err(());
-        };
-        let head = head.clone();
-        // SAFETY: We know that `tail.len() < u32::MAX`.
-        let tail = unsafe { SlimSliceBox::from_boxed_unchecked(tail.to_owned().into()) };
-        Ok(Self { head, tail })
+        }
+        Ok(Self(SlimNonEmptyBoxData::Heap(value)))
     }
 }
 
@@ -1768,7 +1679,7 @@ mod tests {
 
     fn various_boxed_strs() -> [[SlimStrBox; 2]; 7] {
         [
-            [nstr!("foo"), nstr!("fop")],
+            [nstr!("foo"), nstr!("fop")].map(Into::into),
             test_strings().map(|s| from_string(&s)),
             test_strings().map(SlimStrBox::from_string),
             test_strings().map(Box::from).map(SlimStrBox::from_boxed),

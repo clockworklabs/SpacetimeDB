@@ -2,13 +2,13 @@ use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::traits::MutTxDatastore;
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
+use spacetimedb_data_structures::slim_slice::{try_into, SlimSliceBoxCollected};
 use spacetimedb_primitives::Constraints;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::TableSchema;
 use spacetimedb_sats::db::def::{FieldDef, ProductTypeMeta};
-use spacetimedb_sats::db::error::RelationError;
-use spacetimedb_sats::relation::{extract_table_field, FieldExpr, FieldName};
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductTypeElement};
+use spacetimedb_sats::relation::{extract_table_field, FieldExpr, FieldName, TableField};
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductTypeElement, SatsStr, SatsString, SatsVec};
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::expr::{ColumnOp, DbType, Expr};
 use spacetimedb_vm::operator::{OpCmp, OpLogic, OpQuery};
@@ -80,12 +80,14 @@ macro_rules! unsupported{
 
 /// A convenient wrapper for a table name (that comes from an `ObjectName`).
 pub struct Table {
-    pub(crate) name: String,
+    pub(crate) name: SatsString,
 }
 
 impl Table {
     pub fn new(name: ObjectName) -> Self {
-        Self { name: name.to_string() }
+        Self {
+            name: SatsString::from_string(name.to_string()),
+        }
     }
 }
 
@@ -94,7 +96,7 @@ pub enum Column {
     /// Any expression, not followed by `[ AS ] alias`
     UnnamedExpr(Expr),
     /// An qualified `table.*`
-    QualifiedWildcard { table: String },
+    QualifiedWildcard { table: SatsString },
     /// An unqualified `SELECT *`
     Wildcard,
 }
@@ -139,7 +141,7 @@ impl From {
 
         // Check if the field are inverted:
         // FROM t1 JOIN t2 ON t2.id = t1.id
-        let on = if on.rhs.table() == x.root.table_name && x.root.get_column_by_field(&on.rhs).is_some() {
+        let on = if on.rhs.table() == &*x.root.table_name && x.root.get_column_by_field(&on.rhs).is_some() {
             OnExpr {
                 op: on.op.reverse(),
                 lhs: on.rhs,
@@ -166,20 +168,22 @@ impl From {
         }))
     }
 
-    /// Returns all the table names as a `Vec<String>`, including the ones inside the joins.
-    pub fn table_names(&self) -> Vec<String> {
-        self.iter_tables().map(|x| x.table_name.clone()).collect()
+    /// Returns all the table names as a `Vec<String>`,
+    /// including the ones inside the joins.
+    pub fn table_names(&self) -> impl Iterator<Item = &str> {
+        self.iter_tables().map(|x| &*x.table_name)
     }
 
     /// Returns all the fields matching `f` as a `Vec<FromField>`,
     /// including the ones inside the joins.
-    pub fn find_field(&self, f: &str) -> Result<Vec<FieldDef>, RelationError> {
-        let field = extract_table_field(f)?;
+    pub fn find_field(&self, f: &str) -> Result<Vec<FieldDef>, PlanError> {
+        let TableField { field, table } = extract_table_field(f)?;
+        let table: Option<SatsStr<'_>> = table.map(try_into).transpose()?;
         let fields = self.iter_tables().flat_map(|t| {
             t.columns.iter().filter_map(|column| {
-                (column.col_name == field.field).then(|| FieldDef {
+                (column.col_name == field).then(|| FieldDef {
                     column: column.clone(),
-                    table_name: field.table.unwrap_or(&t.table_name).to_string(),
+                    table_name: table.as_ref().unwrap_or(t.table_name.shared_ref()).into(),
                 })
             })
         });
@@ -198,7 +202,7 @@ impl From {
 
                 Err(PlanError::UnknownField {
                     field: FieldName::named(field.table.unwrap_or("?"), field.field),
-                    tables: self.table_names(),
+                    tables: self.table_names().map(|n| n.to_owned()).collect(),
                 })
             }
             1 => Ok(fields[0].clone()),
@@ -214,13 +218,13 @@ impl From {
 pub enum SqlAst {
     Select {
         from: From,
-        project: Vec<Column>,
+        project: SatsVec<Column>,
         selection: Option<Selection>,
     },
     Insert {
         table: TableSchema,
-        columns: Vec<FieldName>,
-        values: Vec<Vec<FieldExpr>>,
+        columns: SatsVec<FieldName>,
+        values: Vec<SatsVec<FieldExpr>>,
     },
     Update {
         table: TableSchema,
@@ -232,31 +236,26 @@ pub enum SqlAst {
         selection: Option<Selection>,
     },
     CreateTable {
-        table: String,
+        table: SatsString,
         columns: ProductTypeMeta,
         table_type: StTableType,
         table_access: StAccess,
     },
     Drop {
-        name: String,
+        name: SatsString,
         kind: DbType,
         table_access: StAccess,
     },
 }
 
 fn extract_field(table: &From, of: &SqlExpr) -> Result<Option<ProductTypeElement>, PlanError> {
-    match of {
-        SqlExpr::Identifier(x) => {
-            let f = table.resolve_field(&x.value)?;
-            Ok(Some(f.into()))
-        }
-        SqlExpr::CompoundIdentifier(ident) => {
-            let col_name = compound_ident(ident);
-            let f = table.resolve_field(&col_name)?;
-            Ok(Some(f.into()))
-        }
-        _ => Ok(None),
-    }
+    let field = match of {
+        SqlExpr::Identifier(x) => table.resolve_field(&x.value)?,
+        SqlExpr::CompoundIdentifier(ident) => table.resolve_field(&compound_ident(ident))?,
+        _ => return Ok(None),
+    };
+    let pte = field.try_into()?;
+    Ok(Some(pte))
 }
 
 /// Parses `value` according to the type of the field, as provided by `field`.
@@ -293,8 +292,7 @@ fn compile_expr_value(table: &From, field: Option<&ProductTypeElement>, of: SqlE
         }
         SqlExpr::Value(x) => FieldExpr::Value(match x {
             Value::Number(value, is_long) => infer_number(field, &value, is_long)?,
-            Value::SingleQuotedString(s) => AlgebraicValue::String(s),
-            Value::DoubleQuotedString(s) => AlgebraicValue::String(s),
+            Value::SingleQuotedString(s) | Value::DoubleQuotedString(s) => AlgebraicValue::String(try_into(s)?),
             Value::Boolean(x) => AlgebraicValue::Bool(x),
             Value::Null => AlgebraicValue::OptionNone(),
             x => {
@@ -410,8 +408,8 @@ fn compile_where(table: &From, filter: Option<SqlExpr>) -> Result<Option<Selecti
 /// Fails if the table `name` and/or `table_id` is not found
 fn find_table<'tx>(db: &RelationalDB, tx: &'tx MutTxId, t: Table) -> Result<Cow<'tx, TableSchema>, PlanError> {
     let table_id = db
-        .table_id_from_name(tx, &t.name)?
-        .ok_or(PlanError::UnknownTable { table: t.name.clone() })?;
+        .table_id_from_name(tx, t.name.clone())?
+        .ok_or_else(|| PlanError::UnknownTable { table: t.name.clone() })?;
     if !db.inner.table_id_exists(tx, &table_id) {
         return Err(PlanError::UnknownTable { table: t.name });
     }
@@ -533,7 +531,7 @@ fn compile_select_item(from: &From, select_item: SelectItem) -> Result<Column, P
             feature: "ExprWithAlias".into(),
         }),
         SelectItem::QualifiedWildcard(ident, _) => Ok(Column::QualifiedWildcard {
-            table: ident.to_string(),
+            table: SatsString::from_string(ident.to_string()),
         }),
         SelectItem::Wildcard(_) => Ok(Column::Wildcard),
     }
@@ -543,11 +541,13 @@ fn compile_select_item(from: &From, select_item: SelectItem) -> Result<Column, P
 fn compile_select(db: &RelationalDB, tx: &MutTxId, select: Select) -> Result<SqlAst, PlanError> {
     let from = compile_from(db, tx, &select.from)?;
     // SELECT ...
-    let mut project = Vec::new();
-    for select_item in select.projection {
-        let col = compile_select_item(&from, select_item)?;
-        project.push(col);
-    }
+    let project = select
+        .projection
+        .into_iter()
+        .map(|select_item| compile_select_item(&from, select_item))
+        .collect::<Result<SlimSliceBoxCollected<_>, _>>()?
+        .inner
+        .map_err(|e| e.forget())?;
 
     let selection = compile_where(&from, select.selection)?;
 
@@ -616,15 +616,12 @@ fn compile_insert(
     db: &RelationalDB,
     tx: &MutTxId,
     table_name: ObjectName,
-    columns: Vec<Ident>,
+    columns: SatsVec<Ident>,
     data: &Values,
 ) -> Result<SqlAst, PlanError> {
     let table = find_table(db, tx, Table::new(table_name))?.into_owned();
 
-    let columns = columns
-        .into_iter()
-        .map(|x| FieldName::named(&table.table_name, &x.to_string()))
-        .collect();
+    let columns = columns.map(|x| FieldName::named(&table.table_name, &x.to_string()));
 
     let table = From::new(table);
 
@@ -637,6 +634,7 @@ fn compile_insert(
             row.push(compile_expr_field(&table, field.as_ref(), v.clone())?);
         }
 
+        let row = try_into(row)?;
         values.push(row);
     }
     Ok(SqlAst::Insert {
@@ -718,7 +716,7 @@ fn column_size(column: &SqlColumnDef) -> Option<u64> {
 
 /// Infer the column [AlgebraicType] from the [DataType] + `is_null` definition
 //NOTE: We don't support `SERIAL` as recommended in https://wiki.postgresql.org/wiki/Don%27t_Do_This#Don.27t_use_serial
-fn column_def_type(named: &String, is_null: bool, data_type: &DataType) -> Result<AlgebraicType, PlanError> {
+fn column_def_type(named: &str, is_null: bool, data_type: &DataType) -> Result<AlgebraicType, PlanError> {
     let ty = match data_type {
         DataType::Char(_) | DataType::Varchar(_) | DataType::Nvarchar(_) | DataType::Text | DataType::String => {
             AlgebraicType::String
@@ -800,7 +798,6 @@ fn compile_column_option(col: &SqlColumnDef) -> Result<(bool, Constraints), Plan
 
 /// Compiles the `CREATE TABLE ...` clause
 fn compile_create_table(table: Table, cols: Vec<SqlColumnDef>) -> Result<SqlAst, PlanError> {
-    let table = table.name;
     let mut columns = ProductTypeMeta::with_capacity(cols.len());
 
     for col in cols {
@@ -810,16 +807,16 @@ fn compile_create_table(table: Table, cols: Vec<SqlColumnDef>) -> Result<SqlAst,
             });
         }
 
-        let name = col.name.to_string();
+        let name: SatsString = try_into(col.name.to_string())?;
         let (is_null, attr) = compile_column_option(&col)?;
         let ty = column_def_type(&name, is_null, &col.data_type)?;
 
-        columns.push(&name, ty, attr);
+        columns.push(name, ty, attr);
     }
 
     Ok(SqlAst::CreateTable {
-        table_access: StAccess::for_name(&table),
-        table,
+        table_access: StAccess::for_name(&table.name),
+        table: table.name,
         columns,
         table_type: StTableType::User,
     })
@@ -837,7 +834,7 @@ fn compile_drop(name: &ObjectName, kind: ObjectType) -> Result<SqlAst, PlanError
         }
     };
 
-    let name = name.to_string();
+    let name: SatsString = try_into(name.to_string())?;
     Ok(SqlAst::Drop {
         table_access: StAccess::for_name(&name),
         name,
@@ -882,6 +879,7 @@ fn compile_statement(db: &RelationalDB, tx: &MutTxId, statement: Statement) -> R
                     }
                 };
 
+                let columns = try_into(columns)?;
                 return compile_insert(db, tx, table_name, columns, values);
             };
 

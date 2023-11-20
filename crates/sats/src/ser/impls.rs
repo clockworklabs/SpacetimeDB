@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    AlgebraicType, AlgebraicValue, ArrayValue, MapType, MapValue, ProductValue, SumValue, ValueWithType, F32, F64,
+    AlgebraicType, AlgebraicValue, ArrayValue, MapType, MapValue, ProductValue, SatsString, SatsVec, SumValue,
+    ValueWithType, F32, F64, SatsNonEmpty,
 };
 
 use super::{Serialize, SerializeArray, SerializeMap, SerializeNamedProduct, SerializeSeqProduct, Serializer};
@@ -72,6 +73,9 @@ impl_serialize!([T: Serialize] [T], (self, ser) => T::__serialize_array(self, se
 impl_serialize!([T: Serialize, const N: usize] [T; N], (self, ser) => T::__serialize_array(self, ser));
 impl_serialize!([T: Serialize + ?Sized] Box<T>, (self, ser) => (**self).serialize(ser));
 impl_serialize!([T: Serialize + ?Sized] &T, (self, ser) => (**self).serialize(ser));
+impl_serialize!([T: Serialize] SatsVec<T>, (self, ser) => (**self).serialize(ser));
+impl_serialize!([T: Serialize] SatsNonEmpty<T>, (self, ser) => (**self).serialize(ser));
+impl_serialize!([] SatsString, (self, ser) => ser.serialize_str(self));
 impl_serialize!([] String, (self, ser) => ser.serialize_str(self));
 impl_serialize!([T: Serialize] Option<T>, (self, ser) => match self {
     Some(v) => ser.serialize_variant(0, Some("some"), v),
@@ -102,8 +106,8 @@ impl_serialize!([] AlgebraicValue, (self, ser) => match self {
     Self::U32(v) => ser.serialize_u32(*v),
     Self::I64(v) => ser.serialize_i64(*v),
     Self::U64(v) => ser.serialize_u64(*v),
-    Self::I128(v) => ser.serialize_i128(*v),
-    Self::U128(v) => ser.serialize_u128(*v),
+    Self::I128(v) => ser.serialize_i128(**v),
+    Self::U128(v) => ser.serialize_u128(**v),
     Self::F32(v) => ser.serialize_f32((*v).into()),
     Self::F64(v) => ser.serialize_f64((*v).into()),
     // Self::Bytes(v) => ser.serialize_bytes(v),
@@ -148,28 +152,28 @@ impl_serialize!([] ValueWithType<'_, AlgebraicValue>, (self, ser) => {
             (AlgebraicValue::Sum(val), AlgebraicType::Sum(ty)) => self.with(ty, val).serialize(ser),
             (AlgebraicValue::Product(val), AlgebraicType::Product(ty)) => self.with(ty, val).serialize(ser),
             (AlgebraicValue::Array(val), AlgebraicType::Array(ty)) => self.with(ty, val).serialize(ser),
-            (AlgebraicValue::Map(val), AlgebraicType::Map(ty)) => self.with(&**ty, val).serialize(ser),
-            (AlgebraicValue::Bool(v), &AlgebraicType::Bool) => ser.serialize_bool(*v),
-            (AlgebraicValue::I8(v), &AlgebraicType::I8) => ser.serialize_i8(*v),
-            (AlgebraicValue::U8(v), &AlgebraicType::U8) => ser.serialize_u8(*v),
-            (AlgebraicValue::I16(v), &AlgebraicType::I16) => ser.serialize_i16(*v),
-            (AlgebraicValue::U16(v), &AlgebraicType::U16) => ser.serialize_u16(*v),
-            (AlgebraicValue::I32(v), &AlgebraicType::I32) => ser.serialize_i32(*v),
-            (AlgebraicValue::U32(v), &AlgebraicType::U32) => ser.serialize_u32(*v),
-            (AlgebraicValue::I64(v), &AlgebraicType::I64) => ser.serialize_i64(*v),
-            (AlgebraicValue::U64(v), &AlgebraicType::U64) => ser.serialize_u64(*v),
-            (AlgebraicValue::I128(v), &AlgebraicType::I128) => ser.serialize_i128(*v),
-            (AlgebraicValue::U128(v), &AlgebraicType::U128) => ser.serialize_u128(*v),
-            (AlgebraicValue::F32(v), &AlgebraicType::F32) => ser.serialize_f32((*v).into()),
-            (AlgebraicValue::F64(v), &AlgebraicType::F64) => ser.serialize_f64((*v).into()),
-            (AlgebraicValue::String(s), &AlgebraicType::String) => ser.serialize_str(s),
+            (AlgebraicValue::Map(val), AlgebraicType::Map(ty)) => self.with(&**ty, &**val).serialize(ser),
+            (AlgebraicValue::Bool(v), AlgebraicType::Bool) => ser.serialize_bool(*v),
+            (AlgebraicValue::I8(v), AlgebraicType::I8) => ser.serialize_i8(*v),
+            (AlgebraicValue::U8(v), AlgebraicType::U8) => ser.serialize_u8(*v),
+            (AlgebraicValue::I16(v), AlgebraicType::I16) => ser.serialize_i16(*v),
+            (AlgebraicValue::U16(v), AlgebraicType::U16) => ser.serialize_u16(*v),
+            (AlgebraicValue::I32(v), AlgebraicType::I32) => ser.serialize_i32(*v),
+            (AlgebraicValue::U32(v), AlgebraicType::U32) => ser.serialize_u32(*v),
+            (AlgebraicValue::I64(v), AlgebraicType::I64) => ser.serialize_i64(*v),
+            (AlgebraicValue::U64(v), AlgebraicType::U64) => ser.serialize_u64(*v),
+            (AlgebraicValue::I128(v), AlgebraicType::I128) => ser.serialize_i128(**v),
+            (AlgebraicValue::U128(v), AlgebraicType::U128) => ser.serialize_u128(**v),
+            (AlgebraicValue::F32(v), AlgebraicType::F32) => ser.serialize_f32((*v).into()),
+            (AlgebraicValue::F64(v), AlgebraicType::F64) => ser.serialize_f64((*v).into()),
+            (AlgebraicValue::String(s), AlgebraicType::String) => ser.serialize_str(s),
             (val, ty) => panic!("mismatched value and schema : {val:?} {ty:?}"),
         };
     }
 });
 impl_serialize!(
     [T: crate::Value] where [for<'a> ValueWithType<'a, T>: Serialize]
-    ValueWithType<'_, Vec<T>>,
+    ValueWithType<'_, SatsVec<T>>,
     (self, ser) => {
         let mut vec = ser.serialize_array(self.value().len())?;
         for val in self.iter() {
@@ -189,7 +193,7 @@ impl_serialize!([] ValueWithType<'_, ProductValue>, (self, ser) => {
     assert_eq!(val.len(), self.ty().elements.len());
     let mut prod = ser.serialize_named_product(val.len())?;
     for (val, el_ty) in val.iter().zip(&*self.ty().elements) {
-        prod.serialize_element(el_ty.name(), &self.with(&el_ty.algebraic_type, val))?
+        prod.serialize_element(el_ty.name().copied(), &self.with(&el_ty.algebraic_type, val))?
     }
     prod.end()
 });

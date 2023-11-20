@@ -1,6 +1,6 @@
 use crate::errors::ErrorVm;
-use spacetimedb_sats::product_value::ProductValue;
 use spacetimedb_sats::relation::{FieldExpr, Header, RelValue, RelValueRef, RowCount};
+use spacetimedb_sats::{ProductValue, SatsSlice};
 use std::collections::HashMap;
 
 pub(crate) trait ResultExt<T> {
@@ -59,7 +59,7 @@ pub trait RelOps {
     ///
     /// It is the equivalent of a `SELECT` clause on SQL.
     #[inline]
-    fn project<P>(self, cols: &[FieldExpr], extractor: P) -> Result<Project<Self, P>, ErrorVm>
+    fn project<P>(self, cols: &SatsSlice<FieldExpr>, extractor: P) -> Result<Project<Self, P>, ErrorVm>
     where
         P: FnMut(RelValueRef) -> Result<ProductValue, ErrorVm>,
         Self: Sized,
@@ -75,7 +75,7 @@ pub trait RelOps {
     /// The left iterator can be arbitrarily long.
     ///
     /// It is therefore asymmetric (you can't flip the iterators to get a right_outer join).
-    ///    
+    ///
     /// Note:
     ///
     /// It is the equivalent of a `INNER JOIN` clause on SQL.
@@ -92,7 +92,7 @@ pub trait RelOps {
     where
         Self: Sized,
         Pred: FnMut(RelValueRef, RelValueRef) -> Result<bool, ErrorVm>,
-        Proj: FnMut(RelValue, RelValue) -> RelValue,
+        Proj: FnMut(RelValue, RelValue) -> Result<RelValue, ErrorVm>,
         KeyLhs: FnMut(RelValueRef) -> Result<ProductValue, ErrorVm>,
         KeyRhs: FnMut(RelValueRef) -> Result<ProductValue, ErrorVm>,
         Rhs: RelOps,
@@ -267,7 +267,7 @@ where
     KeyLhs: FnMut(RelValueRef) -> Result<ProductValue, ErrorVm>,
     KeyRhs: FnMut(RelValueRef) -> Result<ProductValue, ErrorVm>,
     Pred: FnMut(RelValueRef, RelValueRef) -> Result<bool, ErrorVm>,
-    Proj: FnMut(RelValue, RelValue) -> RelValue,
+    Proj: FnMut(RelValue, RelValue) -> Result<RelValue, ErrorVm>,
 {
     fn head(&self) -> &Header {
         &self.head
@@ -306,7 +306,7 @@ where
                 if let Some(rhs) = rvv.pop() {
                     if (self.predicate)(lhs.as_val_ref(), rhs.as_val_ref())? {
                         self.count.add_exact(1);
-                        return Ok(Some((self.projection)(lhs, rhs)));
+                        return Ok(Some((self.projection)(lhs, rhs)?));
                     }
                 }
             }

@@ -143,7 +143,7 @@ pub struct ReducerCallResult {
 #[derive(Clone, Debug)]
 pub enum ReducerOutcome {
     Committed,
-    Failed(String),
+    Failed(Box<str>),
     BudgetExceeded,
 }
 

@@ -319,7 +319,7 @@ pub fn autogen_typescript_sum(ctx: &GenCtx, name: &str, sum_type: &SumType) -> S
 
         writeln!(output).unwrap();
 
-        for variant in &sum_type.variants {
+        for variant in &*sum_type.variants {
             let variant_name = variant
                 .name
                 .as_ref()
@@ -512,12 +512,12 @@ fn _generate_imports(ctx: &GenCtx, ty: &AlgebraicType, imports: &mut Vec<String>
         }
         // Generate imports for the fields of anonymous sum types like `Option<T>`.
         AlgebraicType::Sum(s) => {
-            for variant in &s.variants {
+            for variant in &*s.variants {
                 _generate_imports(ctx, &variant.algebraic_type, imports, prefix);
             }
         }
         // Do we need to generate imports for fields of anonymous product types as well?
-        _ => (),
+        _ => {}
     }
 }
 
@@ -563,7 +563,7 @@ fn autogen_typescript_product_table_common(
 
         let mut constructor_signature = Vec::new();
         let mut constructor_assignments = Vec::new();
-        for field in &product_type.elements {
+        for field in &*product_type.elements {
             let field_name = field
                 .name
                 .as_ref()
@@ -636,7 +636,7 @@ fn autogen_typescript_product_table_common(
             writeln!(output, "return [").unwrap();
 
             let mut args = Vec::new();
-            for field in &product_type.elements {
+            for field in &*product_type.elements {
                 let field_name = field
                     .name
                     .as_ref()
@@ -1041,12 +1041,7 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
     writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, ProductTypeElement, IDatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, Address, ReducerEvent }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
 
     let mut imports = Vec::new();
-    generate_imports(
-        ctx,
-        &reducer.args.clone().into_iter().collect::<Vec<ProductTypeElement>>(),
-        &mut imports,
-        None,
-    );
+    generate_imports(ctx, &reducer.args, &mut imports, None);
 
     for import in imports {
         writeln!(output, "// @ts-ignore").unwrap();

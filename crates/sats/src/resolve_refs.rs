@@ -98,13 +98,12 @@ impl ResolveRefs for MapType {
 impl ResolveRefs for ProductType {
     type Output = Self;
     fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output> {
-        let elements = this
-            .ty()
+        this.ty()
             .elements
-            .iter()
-            .map(|el| this.with(el)._resolve_refs(state))
-            .collect::<Option<_>>()?;
-        Some(ProductType { elements })
+            .shared_ref()
+            .try_map(|el| this.with(el)._resolve_refs(state).ok_or(()))
+            .ok()
+            .map(ProductType::new)
     }
 }
 
@@ -121,13 +120,12 @@ impl ResolveRefs for ProductTypeElement {
 impl ResolveRefs for SumType {
     type Output = Self;
     fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output> {
-        let variants = this
-            .ty()
+        this.ty()
             .variants
-            .iter()
-            .map(|v| this.with(v)._resolve_refs(state))
-            .collect::<Option<Vec<_>>>()?;
-        Some(Self { variants })
+            .shared_ref()
+            .try_map(|v| this.with(v)._resolve_refs(state).ok_or(()))
+            .ok()
+            .map(SumType::new)
     }
 }
 

@@ -1,15 +1,18 @@
 use crate::error::{DBError, TableError};
-use core::fmt;
-use nonempty::NonEmpty;
 use once_cell::sync::Lazy;
+use spacetimedb_data_structures::slim_slice::{try_into, LenTooLong};
+use spacetimedb_data_structures::{nstr, nstr::NStr};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::*;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::{
-    impl_deserialize, impl_serialize, product, AlgebraicType, AlgebraicValue, ArrayValue, ProductType, ProductValue,
+    from_string, impl_deserialize, impl_serialize, product, AlgebraicType, AlgebraicValue, ArrayValue, ProductType,
+    ProductValue, SatsNonEmpty, SatsStr, SatsString, SatsVec,
 };
+use std::fmt;
+use std::ops::Deref;
 
 /// The static ID of the table that defines tables
 pub(crate) const ST_TABLES_ID: TableId = TableId(0);
@@ -25,12 +28,12 @@ pub(crate) const ST_CONSTRAINTS_ID: TableId = TableId(4);
 /// the database
 pub(crate) const ST_MODULE_ID: TableId = TableId(5);
 
-pub(crate) const ST_TABLES_NAME: &str = "st_table";
-pub(crate) const ST_COLUMNS_NAME: &str = "st_columns";
-pub(crate) const ST_SEQUENCES_NAME: &str = "st_sequence";
-pub(crate) const ST_INDEXES_NAME: &str = "st_indexes";
-pub(crate) const ST_CONSTRAINTS_NAME: &str = "st_constraints";
-pub(crate) const ST_MODULE_NAME: &str = "st_module";
+pub(crate) const ST_TABLES_NAME: NStr<8> = nstr!("st_table");
+pub(crate) const ST_COLUMNS_NAME: NStr<10> = nstr!("st_columns");
+pub(crate) const ST_SEQUENCES_NAME: NStr<11> = nstr!("st_sequence");
+pub(crate) const ST_INDEXES_NAME: NStr<10> = nstr!("st_indexes");
+pub(crate) const ST_CONSTRAINTS_NAME: NStr<14> = nstr!("st_constraints");
+pub(crate) const ST_MODULE_NAME: NStr<9> = nstr!("st_module");
 
 pub(crate) const TABLE_ID_SEQUENCE_ID: SequenceId = SequenceId(0);
 pub(crate) const SEQUENCE_ID_SEQUENCE_ID: SequenceId = SequenceId(1);
@@ -105,8 +108,8 @@ macro_rules! st_fields_enum {
             }
 
             #[inline]
-            pub fn col_name(self) -> String {
-                self.name().into()
+            pub fn col_name(self) -> SatsString {
+                from_string(self.name())
             }
 
             #[inline]
@@ -117,9 +120,9 @@ macro_rules! st_fields_enum {
             }
         }
 
-        impl From<$ty_name> for NonEmpty<ColId> {
+        impl From<$ty_name> for SatsNonEmpty<ColId> {
             fn from(value: $ty_name) -> Self {
-                NonEmpty::new(value.col_id())
+                value.col_id().into()
             }
         }
     }
@@ -178,6 +181,10 @@ st_fields_enum!(enum StModuleFields {
     "epoch", Epoch = 2,
 });
 
+fn cols_to_product_type(schema: TableSchema) -> ProductType {
+    schema.columns.map(|c| c.col_type.into()).into()
+}
+
 /// System Table [ST_TABLES_NAME]
 ///
 /// | table_id | table_name  | table_type | table_access |
@@ -187,7 +194,7 @@ pub fn st_table_schema() -> TableSchema {
     TableSchema {
         table_id: ST_TABLES_ID,
         table_name: ST_TABLES_NAME.into(),
-        columns: vec![
+        columns: [
             ColumnSchema {
                 table_id: ST_TABLES_ID,
                 col_id: StTableFields::TableId.col_id(),
@@ -216,14 +223,15 @@ pub fn st_table_schema() -> TableSchema {
                 col_type: AlgebraicType::String,
                 is_autoinc: false,
             },
-        ],
+        ]
+        .into(),
         constraints: vec![],
         indexes: vec![
             IndexSchema {
                 index_id: ST_TABLE_ID_INDEX_ID,
                 table_id: ST_TABLES_ID,
                 cols: StTableFields::TableId.into(),
-                index_name: "table_id_idx".into(),
+                index_name: from_string("table_id_idx"),
                 is_unique: true,
                 index_type: IndexType::BTree,
             },
@@ -231,7 +239,7 @@ pub fn st_table_schema() -> TableSchema {
                 index_id: ST_TABLE_NAME_INDEX_ID,
                 table_id: ST_TABLES_ID,
                 cols: StTableFields::TableName.into(),
-                index_name: "table_name_idx".into(),
+                index_name: from_string("table_name_idx"),
                 is_unique: true,
                 index_type: IndexType::BTree,
             },
@@ -241,8 +249,7 @@ pub fn st_table_schema() -> TableSchema {
     }
 }
 
-pub static ST_TABLE_ROW_TYPE: Lazy<ProductType> =
-    Lazy::new(|| ProductType::from_iter(st_table_schema().columns.iter().map(|c| c.col_type.clone())));
+pub static ST_TABLE_ROW_TYPE: Lazy<ProductType> = Lazy::new(|| cols_to_product_type(st_table_schema()));
 
 /// System Table [ST_COLUMNS_NAME]
 ///
@@ -254,7 +261,7 @@ pub fn st_columns_schema() -> TableSchema {
         table_id: ST_COLUMNS_ID,
         table_name: ST_COLUMNS_NAME.into(),
         indexes: vec![],
-        columns: vec![
+        columns: [
             ColumnSchema {
                 table_id: ST_COLUMNS_ID,
                 col_id: StColumnFields::TableId.col_id(),
@@ -290,11 +297,11 @@ pub fn st_columns_schema() -> TableSchema {
                 col_type: AlgebraicType::Bool,
                 is_autoinc: false,
             },
-        ],
+        ].into(),
         // TODO(cloutiertyler): (table_id, col_id) should be have a unique constraint
         constraints: vec![ConstraintSchema {
             constraint_id: ST_CONSTRAINT_ID_INDEX_HACK.0.into(),
-            constraint_name: "ct_columns_table_id".to_string(),
+            constraint_name: from_string("ct_columns_table_id"),
             constraints: Constraints::indexed(),
             table_id: ST_COLUMNS_ID,
             //TODO: Change to multi-columns when PR for it land: StColumnFields::ColId as u32
@@ -305,8 +312,7 @@ pub fn st_columns_schema() -> TableSchema {
     }
 }
 
-pub static ST_COLUMNS_ROW_TYPE: Lazy<ProductType> =
-    Lazy::new(|| ProductType::from_iter(st_columns_schema().columns.iter().map(|c| c.col_type.clone())));
+pub static ST_COLUMNS_ROW_TYPE: Lazy<ProductType> = Lazy::new(|| cols_to_product_type(st_columns_schema()));
 
 /// System Table [ST_INDEXES]
 ///
@@ -317,7 +323,7 @@ pub fn st_indexes_schema() -> TableSchema {
     TableSchema {
         table_id: ST_INDEXES_ID,
         table_name: ST_INDEXES_NAME.into(),
-        columns: vec![
+        columns: [
             ColumnSchema {
                 table_id: ST_INDEXES_ID,
                 col_id: StIndexFields::IndexId.col_id(),
@@ -360,14 +366,15 @@ pub fn st_indexes_schema() -> TableSchema {
                 col_type: AlgebraicType::Bool,
                 is_autoinc: false,
             },
-        ],
+        ]
+        .into(),
         // TODO: Unique constraint on index name?
         constraints: vec![],
         indexes: vec![IndexSchema {
             index_id: ST_INDEX_ID_INDEX_ID,
             table_id: ST_INDEXES_ID,
-            cols: NonEmpty::new(StIndexFields::IndexId.col_id()),
-            index_name: "index_id_idx".into(),
+            cols: StIndexFields::IndexId.col_id().into(),
+            index_name: from_string("index_id_idx"),
             is_unique: true,
             index_type: IndexType::BTree,
         }],
@@ -376,8 +383,7 @@ pub fn st_indexes_schema() -> TableSchema {
     }
 }
 
-pub static ST_INDEX_ROW_TYPE: Lazy<ProductType> =
-    Lazy::new(|| ProductType::from_iter(st_indexes_schema().columns.iter().map(|c| c.col_type.clone())));
+pub static ST_INDEX_ROW_TYPE: Lazy<ProductType> = Lazy::new(|| cols_to_product_type(st_indexes_schema()));
 
 /// System Table [ST_SEQUENCES]
 ///
@@ -388,7 +394,7 @@ pub(crate) fn st_sequences_schema() -> TableSchema {
     TableSchema {
         table_id: ST_SEQUENCES_ID,
         table_name: ST_SEQUENCES_NAME.into(),
-        columns: vec![
+        columns: [
             ColumnSchema {
                 table_id: ST_SEQUENCES_ID,
                 col_id: StSequenceFields::SequenceId.col_id(),
@@ -452,14 +458,15 @@ pub(crate) fn st_sequences_schema() -> TableSchema {
                 col_type: AlgebraicType::I128,
                 is_autoinc: false,
             },
-        ],
+        ]
+        .into(),
         // TODO: Unique constraint on sequence name?
         constraints: vec![],
         indexes: vec![IndexSchema {
             index_id: ST_SEQUENCE_ID_INDEX_ID,
             table_id: ST_SEQUENCES_ID,
-            cols: NonEmpty::new(StSequenceFields::SequenceId.col_id()),
-            index_name: "sequences_id_idx".into(),
+            cols: StSequenceFields::SequenceId.col_id().into(),
+            index_name: from_string("sequences_id_idx"),
             is_unique: true,
             index_type: IndexType::BTree,
         }],
@@ -468,8 +475,7 @@ pub(crate) fn st_sequences_schema() -> TableSchema {
     }
 }
 
-pub static ST_SEQUENCE_ROW_TYPE: Lazy<ProductType> =
-    Lazy::new(|| ProductType::from_iter(st_sequences_schema().columns.iter().map(|c| c.col_type.clone())));
+pub static ST_SEQUENCE_ROW_TYPE: Lazy<ProductType> = Lazy::new(|| cols_to_product_type(st_sequences_schema()));
 
 /// System Table [ST_CONSTRAINTS_NAME]
 ///
@@ -480,7 +486,7 @@ pub(crate) fn st_constraints_schema() -> TableSchema {
     TableSchema {
         table_id: ST_CONSTRAINTS_ID,
         table_name: ST_CONSTRAINTS_NAME.into(),
-        columns: vec![
+        columns: [
             ColumnSchema {
                 table_id: ST_CONSTRAINTS_ID,
                 col_id: StConstraintFields::ConstraintId.col_id(),
@@ -516,14 +522,15 @@ pub(crate) fn st_constraints_schema() -> TableSchema {
                 col_type: AlgebraicType::array(AlgebraicType::U32),
                 is_autoinc: false,
             },
-        ],
+        ]
+        .into(),
         // TODO: Unique constraint on sequence name?
         constraints: vec![],
         indexes: vec![IndexSchema {
             index_id: ST_CONSTRAINT_ID_INDEX_ID,
             table_id: ST_CONSTRAINTS_ID,
             cols: StConstraintFields::ConstraintId.into(),
-            index_name: "constraint_id_idx".into(),
+            index_name: from_string("constraint_id_idx"),
             is_unique: true,
             index_type: IndexType::BTree,
         }],
@@ -532,8 +539,7 @@ pub(crate) fn st_constraints_schema() -> TableSchema {
     }
 }
 
-pub static ST_CONSTRAINT_ROW_TYPE: Lazy<ProductType> =
-    Lazy::new(|| ProductType::from_iter(st_constraints_schema().columns.iter().map(|c| c.col_type.clone())));
+pub static ST_CONSTRAINT_ROW_TYPE: Lazy<ProductType> = Lazy::new(|| cols_to_product_type(st_constraints_schema()));
 
 /// System table [ST_MODULE_NAME]
 ///
@@ -551,7 +557,7 @@ pub(crate) fn st_module_schema() -> TableSchema {
     TableSchema {
         table_id: ST_MODULE_ID,
         table_name: ST_MODULE_NAME.into(),
-        columns: vec![
+        columns: [
             ColumnSchema {
                 table_id: ST_MODULE_ID,
                 col_id: StModuleFields::ProgramHash.col_id(),
@@ -573,7 +579,8 @@ pub(crate) fn st_module_schema() -> TableSchema {
                 col_type: AlgebraicType::U128,
                 is_autoinc: false,
             },
-        ],
+        ]
+        .into(),
         constraints: vec![],
         indexes: vec![],
         table_type: StTableType::System,
@@ -581,29 +588,29 @@ pub(crate) fn st_module_schema() -> TableSchema {
     }
 }
 
-pub static ST_MODULE_ROW_TYPE: Lazy<ProductType> =
-    Lazy::new(|| ProductType::from_iter(st_module_schema().columns.iter().map(|c| c.col_type.clone())));
+pub static ST_MODULE_ROW_TYPE: Lazy<ProductType> = Lazy::new(|| cols_to_product_type(st_module_schema()));
 
 pub(crate) fn table_name_is_system(table_name: &str) -> bool {
     table_name.starts_with("st_")
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct StTableRow<Name: AsRef<str>> {
+pub struct StTableRow<Name> {
     pub(crate) table_id: TableId,
     pub(crate) table_name: Name,
     pub(crate) table_type: StTableType,
     pub(crate) table_access: StAccess,
 }
 
-impl<'a> TryFrom<&'a ProductValue> for StTableRow<&'a str> {
+impl<'a> TryFrom<&'a ProductValue> for StTableRow<&'a SatsStr<'a>> {
     type Error = DBError;
     // TODO(cloutiertyler): Noa, can we just decorate `StTableRow` with Deserialize or something instead?
-    fn try_from(row: &'a ProductValue) -> Result<StTableRow<&'a str>, DBError> {
+    fn try_from(row: &'a ProductValue) -> Result<StTableRow<&'a SatsStr<'a>>, DBError> {
         let table_id = row.field_as_u32(StTableFields::TableId.col_idx(), None)?.into();
         let table_name = row.field_as_str(StTableFields::TableName.col_idx(), None)?;
         let table_type = row
             .field_as_str(StTableFields::TableType.col_idx(), None)?
+            .deref()
             .try_into()
             .map_err(|x: &str| TableError::DecodeField {
                 table: ST_TABLES_NAME.into(),
@@ -614,6 +621,7 @@ impl<'a> TryFrom<&'a ProductValue> for StTableRow<&'a str> {
 
         let table_access = row
             .field_as_str(StTableFields::TablesAccess.col_idx(), None)?
+            .deref()
             .try_into()
             .map_err(|x: &str| TableError::DecodeField {
                 table: ST_TABLES_NAME.into(),
@@ -631,30 +639,30 @@ impl<'a> TryFrom<&'a ProductValue> for StTableRow<&'a str> {
     }
 }
 
-impl StTableRow<&str> {
-    pub fn to_owned(&self) -> StTableRow<String> {
+impl StTableRow<&SatsStr<'_>> {
+    pub fn to_owned(&self) -> StTableRow<SatsString> {
         StTableRow {
             table_id: self.table_id,
-            table_name: self.table_name.to_owned(),
+            table_name: self.table_name.into(),
             table_type: self.table_type,
             table_access: self.table_access,
         }
     }
 }
 
-impl From<StTableRow<String>> for ProductValue {
-    fn from(x: StTableRow<String>) -> Self {
+impl From<StTableRow<SatsString>> for ProductValue {
+    fn from(x: StTableRow<SatsString>) -> Self {
         product![
             x.table_id,
             x.table_name,
-            x.table_type.as_str().to_owned(),
-            x.table_access.as_str().to_owned()
+            from_string(x.table_type.as_str()),
+            from_string(x.table_access.as_str()),
         ]
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct StColumnRow<Name: AsRef<str>> {
+pub struct StColumnRow<Name> {
     pub(crate) table_id: TableId,
     pub(crate) col_id: ColId,
     pub(crate) col_name: Name,
@@ -662,21 +670,21 @@ pub struct StColumnRow<Name: AsRef<str>> {
     pub(crate) is_autoinc: bool,
 }
 
-impl StColumnRow<&str> {
-    pub fn to_owned(&self) -> StColumnRow<String> {
+impl StColumnRow<&SatsStr<'_>> {
+    pub fn to_owned(&self) -> StColumnRow<SatsString> {
         StColumnRow {
             table_id: self.table_id,
             col_id: self.col_id,
-            col_name: self.col_name.to_owned(),
+            col_name: self.col_name.into(),
             col_type: self.col_type.clone(),
             is_autoinc: self.is_autoinc,
         }
     }
 }
 
-impl<'a> TryFrom<&'a ProductValue> for StColumnRow<&'a str> {
+impl<'a> TryFrom<&'a ProductValue> for StColumnRow<&'a SatsStr<'a>> {
     type Error = DBError;
-    fn try_from(row: &'a ProductValue) -> Result<StColumnRow<&'a str>, DBError> {
+    fn try_from(row: &'a ProductValue) -> Result<StColumnRow<&'a SatsStr<'a>>, DBError> {
         let table_id: TableId = row.field_as_u32(StColumnFields::TableId.col_idx(), None)?.into();
         let col_id = row.field_as_u32(StColumnFields::ColId.col_idx(), None)?.into();
         let col_name = row.field_as_str(StColumnFields::ColName.col_idx(), None)?;
@@ -695,36 +703,32 @@ impl<'a> TryFrom<&'a ProductValue> for StColumnRow<&'a str> {
     }
 }
 
-impl From<StColumnRow<String>> for ProductValue {
-    fn from(x: StColumnRow<String>) -> Self {
+impl TryFrom<StColumnRow<SatsString>> for ProductValue {
+    type Error = LenTooLong;
+    fn try_from(x: StColumnRow<SatsString>) -> Result<Self, LenTooLong> {
         let mut bytes = Vec::new();
         x.col_type.encode(&mut bytes);
-        product![
-            x.table_id,
-            x.col_id,
-            x.col_name,
-            AlgebraicValue::Bytes(bytes),
-            x.is_autoinc,
-        ]
+        let bytes = AlgebraicValue::Bytes(try_into(bytes)?);
+        Ok(product![x.table_id, x.col_id, x.col_name, bytes, x.is_autoinc])
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct StIndexRow<Name: AsRef<str>> {
+pub struct StIndexRow<Name> {
     pub(crate) index_id: IndexId,
     pub(crate) table_id: TableId,
     pub(crate) index_name: Name,
     pub(crate) index_type: IndexType,
-    pub(crate) cols: NonEmpty<ColId>,
+    pub(crate) cols: SatsNonEmpty<ColId>,
     pub(crate) is_unique: bool,
 }
 
-impl StIndexRow<&str> {
-    pub fn to_owned(&self) -> StIndexRow<String> {
+impl StIndexRow<&SatsStr<'_>> {
+    pub fn to_owned(&self) -> StIndexRow<SatsString> {
         StIndexRow {
             index_id: self.index_id,
             table_id: self.table_id,
-            index_name: self.index_name.to_owned(),
+            index_name: self.index_name.into(),
             cols: self.cols.clone(),
             is_unique: self.is_unique,
             index_type: self.index_type,
@@ -732,21 +736,21 @@ impl StIndexRow<&str> {
     }
 }
 
-fn to_cols(row: &ProductValue, col_pos: ColId, col_name: &'static str) -> Result<NonEmpty<ColId>, DBError> {
+fn to_cols(row: &ProductValue, col_pos: ColId, col_name: &'static str) -> Result<SatsNonEmpty<ColId>, DBError> {
     let index = col_pos.idx();
     let name = Some(col_name);
     let cols = row.field_as_array(index, name)?;
     if let ArrayValue::U32(x) = &cols {
-        let x: Vec<_> = x.iter().map(|x| ColId::from(*x)).collect();
-        Ok(NonEmpty::from_slice(&x).unwrap())
+        let cols: SatsNonEmpty<u32> = x.clone().try_into().unwrap();
+        Ok(cols.map_safely_exchangeable())
     } else {
         Err(InvalidFieldError { name, index }.into())
     }
 }
 
-impl<'a> TryFrom<&'a ProductValue> for StIndexRow<&'a str> {
+impl<'a> TryFrom<&'a ProductValue> for StIndexRow<&'a SatsStr<'a>> {
     type Error = DBError;
-    fn try_from(row: &'a ProductValue) -> Result<StIndexRow<&'a str>, DBError> {
+    fn try_from(row: &'a ProductValue) -> Result<StIndexRow<&'a SatsStr<'a>>, DBError> {
         let index_id = row.field_as_u32(StIndexFields::IndexId.col_idx(), None)?.into();
         let table_id = row.field_as_u32(StIndexFields::TableId.col_idx(), None)?.into();
         let index_name = row.field_as_str(StIndexFields::IndexName.col_idx(), None)?;
@@ -769,22 +773,16 @@ impl<'a> TryFrom<&'a ProductValue> for StIndexRow<&'a str> {
     }
 }
 
-impl From<StIndexRow<String>> for ProductValue {
-    fn from(x: StIndexRow<String>) -> Self {
-        let cols: Vec<_> = x.cols.iter().map(|x| u32::from(*x)).collect();
-        product![
-            x.index_id,
-            x.table_id,
-            x.index_name,
-            u8::from(x.index_type),
-            ArrayValue::from(cols),
-            x.is_unique,
-        ]
+impl From<StIndexRow<SatsString>> for ProductValue {
+    fn from(x: StIndexRow<SatsString>) -> Self {
+        let cols = ArrayValue::from(x.cols.map_safely_exchangeable::<u32>());
+        let index_type = u8::from(x.index_type);
+        product![x.index_id, x.table_id, x.index_name, index_type, cols, x.is_unique,]
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct StSequenceRow<Name: AsRef<str>> {
+pub struct StSequenceRow<Name> {
     pub(crate) sequence_id: SequenceId,
     pub(crate) sequence_name: Name,
     pub(crate) table_id: TableId,
@@ -796,11 +794,11 @@ pub struct StSequenceRow<Name: AsRef<str>> {
     pub(crate) allocated: i128,
 }
 
-impl<Name: AsRef<str>> StSequenceRow<Name> {
-    pub fn to_owned(&self) -> StSequenceRow<String> {
+impl StSequenceRow<&SatsStr<'_>> {
+    pub fn to_owned(&self) -> StSequenceRow<SatsString> {
         StSequenceRow {
             sequence_id: self.sequence_id,
-            sequence_name: self.sequence_name.as_ref().to_owned(),
+            sequence_name: self.sequence_name.into(),
             table_id: self.table_id,
             col_id: self.col_id,
             increment: self.increment,
@@ -812,9 +810,9 @@ impl<Name: AsRef<str>> StSequenceRow<Name> {
     }
 }
 
-impl<'a> TryFrom<&'a ProductValue> for StSequenceRow<&'a str> {
+impl<'a> TryFrom<&'a ProductValue> for StSequenceRow<&'a SatsStr<'a>> {
     type Error = DBError;
-    fn try_from(row: &'a ProductValue) -> Result<StSequenceRow<&'a str>, DBError> {
+    fn try_from(row: &'a ProductValue) -> Result<StSequenceRow<&'a SatsStr<'a>>, DBError> {
         let sequence_id = row.field_as_u32(StSequenceFields::SequenceId.col_idx(), None)?.into();
         let sequence_name = row.field_as_str(StSequenceFields::SequenceName.col_idx(), None)?;
         let table_id = row.field_as_u32(StSequenceFields::TableId.col_idx(), None)?.into();
@@ -838,8 +836,8 @@ impl<'a> TryFrom<&'a ProductValue> for StSequenceRow<&'a str> {
     }
 }
 
-impl From<StSequenceRow<String>> for ProductValue {
-    fn from(x: StSequenceRow<String>) -> Self {
+impl From<StSequenceRow<SatsString>> for ProductValue {
+    fn from(x: StSequenceRow<SatsString>) -> Self {
         product![
             x.sequence_id,
             x.sequence_name,
@@ -854,8 +852,8 @@ impl From<StSequenceRow<String>> for ProductValue {
     }
 }
 
-impl From<StSequenceRow<String>> for SequenceSchema {
-    fn from(sequence: StSequenceRow<String>) -> Self {
+impl From<StSequenceRow<SatsString>> for SequenceSchema {
+    fn from(sequence: StSequenceRow<SatsString>) -> Self {
         Self {
             sequence_id: sequence.sequence_id,
             sequence_name: sequence.sequence_name,
@@ -871,19 +869,19 @@ impl From<StSequenceRow<String>> for SequenceSchema {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct StConstraintRow<Name: AsRef<str>> {
+pub struct StConstraintRow<Name> {
     pub(crate) constraint_id: ConstraintId,
     pub(crate) constraint_name: Name,
     pub(crate) constraints: Constraints,
     pub(crate) table_id: TableId,
-    pub(crate) columns: NonEmpty<ColId>,
+    pub(crate) columns: SatsNonEmpty<ColId>,
 }
 
-impl StConstraintRow<&str> {
-    pub fn to_owned(&self) -> StConstraintRow<String> {
+impl StConstraintRow<&SatsStr<'_>> {
+    pub fn to_owned(&self) -> StConstraintRow<SatsString> {
         StConstraintRow {
             constraint_id: self.constraint_id,
-            constraint_name: self.constraint_name.to_string(),
+            constraint_name: self.constraint_name.into(),
             constraints: self.constraints,
             table_id: self.table_id,
             columns: self.columns.clone(),
@@ -891,9 +889,9 @@ impl StConstraintRow<&str> {
     }
 }
 
-impl<'a> TryFrom<&'a ProductValue> for StConstraintRow<&'a str> {
+impl<'a> TryFrom<&'a ProductValue> for StConstraintRow<&'a SatsStr<'a>> {
     type Error = DBError;
-    fn try_from(row: &'a ProductValue) -> Result<StConstraintRow<&'a str>, DBError> {
+    fn try_from(row: &'a ProductValue) -> Result<StConstraintRow<&'a SatsStr<'a>>, DBError> {
         let constraint_id = row
             .field_as_u32(StConstraintFields::ConstraintId.col_idx(), None)?
             .into();
@@ -917,16 +915,15 @@ impl<'a> TryFrom<&'a ProductValue> for StConstraintRow<&'a str> {
     }
 }
 
-impl From<StConstraintRow<String>> for ProductValue {
-    fn from(x: StConstraintRow<String>) -> Self {
-        let cols: Vec<_> = x.columns.iter().map(|x| u32::from(*x)).collect();
-
+impl From<StConstraintRow<SatsString>> for ProductValue {
+    fn from(x: StConstraintRow<SatsString>) -> Self {
+        let cols = ArrayValue::from(x.columns.map_safely_exchangeable::<u32>());
         product![
             x.constraint_id,
             x.constraint_name,
             x.constraints.bits(),
             x.table_id,
-            ArrayValue::from(cols)
+            cols,
         ]
     }
 }
@@ -1006,10 +1003,6 @@ impl From<&StModuleRow> for ProductValue {
             epoch: Epoch(epoch),
         }: &StModuleRow,
     ) -> Self {
-        product![
-            AlgebraicValue::Bytes(program_hash.as_slice().to_owned()),
-            AlgebraicValue::U8(*kind),
-            AlgebraicValue::U128(*epoch),
-        ]
+        product![<SatsVec<_>>::from(program_hash.data), *kind, *epoch]
     }
 }

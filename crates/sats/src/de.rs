@@ -5,10 +5,11 @@ mod impls;
 #[cfg(feature = "serde")]
 pub mod serde;
 
+use crate::{SatsNonEmpty, SatsVec};
 #[doc(hidden)]
 pub use impls::{visit_named_product, visit_seq_product};
 use smallvec::SmallVec;
-
+use spacetimedb_data_structures::slim_slice::{LenTooLong};
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -226,6 +227,11 @@ pub trait Error: Sized {
             Self::custom(format_args!("unknown variant `{name}`, there are no variants"))
         }
     }
+
+    /// The length `len` exceeded `u32::MAX`.
+    fn len_too_long(len: usize) -> Self {
+        Self::custom(format_args!("length `{len}` exceeded `u32::MAX`"))
+    }
 }
 
 /// Turns a closure `impl Fn(&mut Formatter) -> Result` into a `Display`able object.
@@ -279,6 +285,10 @@ fn fmt_invalid_len<'de>(
 
         write!(f, "{ty} {name} with {len} elements")
     })
+}
+
+pub(crate) fn map_len_err<T, E1, E2: Error>(res: Result<T, LenTooLong<E1>>) -> Result<T, E2> {
+    res.map_err(|e| E2::len_too_long(e.len))
 }
 
 /// A visitor walking through a [`Deserializer`] for products.
@@ -380,7 +390,7 @@ pub trait FieldNameVisitor<'de> {
     /// Provides the visitor the chance to add valid names into `names`.
     fn field_names(&self, names: &mut dyn ValidNames);
 
-    fn visit<E: Error>(self, name: &str) -> Result<Self::Output, E>;
+    fn visit<E: Error>(self, name: SatsStr<'_>) -> Result<Self::Output, E>;
 }
 
 /// A trait for types storing a set of valid names.
@@ -604,6 +614,7 @@ pub trait DeserializeSeed<'de> {
 }
 
 use crate::de::impls::BorrowedSliceVisitor;
+use crate::SatsStr;
 pub use spacetimedb_bindings_macro::Deserialize;
 
 /// A **datastructure** that can be deserialized from any data format supported by SATS.
@@ -703,6 +714,27 @@ impl<'de, T, const N: usize> ArrayVisitor<'de, T> for BasicSmallVecVisitor<N> {
 
     fn visit<A: ArrayAccess<'de, Element = T>>(self, vec: A) -> Result<Self::Output, A::Error> {
         array_visit(vec)
+    }
+}
+
+/// An implementation of [`ArrayVisitor<'de, T>`] where the output is a `SatsNonEmpty<T>`.
+pub struct BasicSatsNonEmptyVisitor;
+
+impl<'de, T> ArrayVisitor<'de, T> for BasicSatsNonEmptyVisitor {
+    type Output = SatsNonEmpty<T>;
+
+    fn visit<A: ArrayAccess<'de, Element = T>>(self, mut access: A) -> Result<Self::Output, A::Error> {
+        let err = || A::Error::custom("`SatsNonEmpty` requires at least one element");
+        if let Some(1) = access.size_hint() {
+            let Some(elem) = access.next_element()? else {
+                return Err(err());
+            };
+            Ok(elem.into())
+        } else {
+            let vec: Vec<T> = array_visit(access)?;
+            let sv = map_len_err(SatsVec::try_from(vec))?;
+            sv.try_into().map_err(|_| err())
+        }
     }
 }
 

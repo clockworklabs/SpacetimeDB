@@ -6,7 +6,10 @@ use spacetimedb_lib::{
     sats::{AlgebraicTypeRef, ArrayType},
     AlgebraicType, ProductType, ProductTypeElement, ReducerDef, SumType, TableDef,
 };
-use std::fmt::{self, Write};
+use std::{
+    fmt::{self, Write},
+    ops::Deref,
+};
 
 use super::{code_indenter::CodeIndenter, GenCtx, GenItem};
 
@@ -489,7 +492,7 @@ pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     writeln!(
         output,
         "def {}({}):",
-        reducer.name.to_case(Case::Snake),
+        reducer.name.deref().to_case(Case::Snake),
         func_arguments_str
     )
     .unwrap();
@@ -524,7 +527,7 @@ pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     writeln!(
         output,
         "def register_on_{}(callback: Callable[[Identity, Optional[Address], str, str{}], None]):",
-        reducer.name.to_case(Case::Snake),
+        reducer.name.deref().to_case(Case::Snake),
         callback_sig_str
     )
     .unwrap();

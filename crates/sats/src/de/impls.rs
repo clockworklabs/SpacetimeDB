@@ -1,19 +1,16 @@
+use super::{
+    map_len_err, BasicMapVisitor, BasicSatsNonEmptyVisitor, BasicVecVisitor, Deserialize, DeserializeSeed,
+    Deserializer, Error, FieldNameVisitor, ProductKind, ProductVisitor, SeqProductAccess, SliceVisitor, SumAccess,
+    SumVisitor, VariantAccess, VariantVisitor,
+};
+use crate::{
+    AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, MapType, MapValue, ProductType, ProductTypeElement,
+    ProductValue, SatsNonEmpty, SatsSlice, SatsStr, SatsString, SatsVec, SumType, SumValue, WithTypespace, F32, F64,
+};
+use bit_set::BitSet;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::marker::PhantomData;
-
-// use crate::type_value::{ElementValue, EnumValue};
-// use crate::{ProductTypeElement, SumType, PrimitiveType, ReducerDef, ProductType, ProductValue, AlgebraicType, AlgebraicValue};
-
-use crate::{
-    AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, MapType, MapValue, ProductType, ProductTypeElement,
-    ProductValue, SumType, SumValue, WithTypespace, F32, F64,
-};
-
-use super::{
-    BasicMapVisitor, BasicVecVisitor, Deserialize, DeserializeSeed, Deserializer, Error, FieldNameVisitor, ProductKind,
-    ProductVisitor, SeqProductAccess, SliceVisitor, SumAccess, SumVisitor, VariantAccess, VariantVisitor,
-};
 
 /// Implements [`Deserialize`] for a type in a simplified manner.
 ///
@@ -102,6 +99,16 @@ impl_deserialize!([T: Deserialize<'de>] Vec<T>, de => T::__deserialize_vec(de));
 impl_deserialize!([T: Deserialize<'de>, const N: usize] [T; N], de => T::__deserialize_array(de));
 impl_deserialize!([] Box<str>, de => String::deserialize(de).map(|s| s.into_boxed_str()));
 impl_deserialize!([T: Deserialize<'de>] Box<[T]>, de => Vec::deserialize(de).map(|s| s.into_boxed_slice()));
+
+impl_deserialize!([] SatsString, de => {
+    map_len_err(SatsString::try_from(String::deserialize(de)?))
+});
+impl_deserialize!([T: Deserialize<'de>] SatsVec<T>, de => {
+    map_len_err(SatsVec::try_from(Vec::deserialize(de)?))
+});
+impl_deserialize!([T: Deserialize<'de>] SatsNonEmpty<T>, de => {
+    de.deserialize_array(BasicSatsNonEmptyVisitor)
+});
 
 /// The visitor converts the slice to its owned version.
 struct OwnedSliceVisitor;
@@ -304,20 +311,20 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, AlgebraicType> {
             AlgebraicType::Product(prod) => self.with(prod).deserialize(de).map(Into::into),
             AlgebraicType::Array(ty) => self.with(ty).deserialize(de).map(Into::into),
             AlgebraicType::Map(ty) => self.with(&**ty).deserialize(de).map(Into::into),
-            &AlgebraicType::Bool => bool::deserialize(de).map(Into::into),
-            &AlgebraicType::I8 => i8::deserialize(de).map(Into::into),
-            &AlgebraicType::U8 => u8::deserialize(de).map(Into::into),
-            &AlgebraicType::I16 => i16::deserialize(de).map(Into::into),
-            &AlgebraicType::U16 => u16::deserialize(de).map(Into::into),
-            &AlgebraicType::I32 => i32::deserialize(de).map(Into::into),
-            &AlgebraicType::U32 => u32::deserialize(de).map(Into::into),
-            &AlgebraicType::I64 => i64::deserialize(de).map(Into::into),
-            &AlgebraicType::U64 => u64::deserialize(de).map(Into::into),
-            &AlgebraicType::I128 => i128::deserialize(de).map(Into::into),
-            &AlgebraicType::U128 => u128::deserialize(de).map(Into::into),
-            &AlgebraicType::F32 => f32::deserialize(de).map(Into::into),
-            &AlgebraicType::F64 => f64::deserialize(de).map(Into::into),
-            &AlgebraicType::String => String::deserialize(de).map(Into::into),
+            AlgebraicType::Bool => bool::deserialize(de).map(Into::into),
+            AlgebraicType::I8 => i8::deserialize(de).map(Into::into),
+            AlgebraicType::U8 => u8::deserialize(de).map(Into::into),
+            AlgebraicType::I16 => i16::deserialize(de).map(Into::into),
+            AlgebraicType::U16 => u16::deserialize(de).map(Into::into),
+            AlgebraicType::I32 => i32::deserialize(de).map(Into::into),
+            AlgebraicType::U32 => u32::deserialize(de).map(Into::into),
+            AlgebraicType::I64 => i64::deserialize(de).map(Into::into),
+            AlgebraicType::U64 => u64::deserialize(de).map(Into::into),
+            AlgebraicType::I128 => i128::deserialize(de).map(Into::into),
+            AlgebraicType::U128 => u128::deserialize(de).map(Into::into),
+            AlgebraicType::F32 => f32::deserialize(de).map(Into::into),
+            AlgebraicType::F64 => f64::deserialize(de).map(Into::into),
+            AlgebraicType::String => SatsString::deserialize(de).map(Into::into),
         }
     }
 }
@@ -399,11 +406,11 @@ impl<'de> ProductVisitor<'de> for WithTypespace<'_, ProductType> {
     }
 
     fn visit_seq_product<A: SeqProductAccess<'de>>(self, tup: A) -> Result<Self::Output, A::Error> {
-        visit_seq_product(self.map(|ty| &*ty.elements), &self, tup)
+        visit_seq_product(self.map(|ty| ty.elements.shared_ref()), &self, tup)
     }
 
     fn visit_named_product<A: super::NamedProductAccess<'de>>(self, tup: A) -> Result<Self::Output, A::Error> {
-        visit_named_product(self.map(|ty| &*ty.elements), &self, tup)
+        visit_named_product(self.map(|ty| ty.elements.shared_ref()), &self, tup)
     }
 }
 
@@ -414,9 +421,11 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
         /// Deserialize a vector and `map` it to the appropriate `ArrayValue` variant.
         fn de_array<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
             de: D,
-            map: impl FnOnce(Vec<T>) -> ArrayValue,
+            map: impl FnOnce(SatsVec<T>) -> ArrayValue,
         ) -> Result<ArrayValue, D::Error> {
-            de.deserialize_array(BasicVecVisitor).map(map)
+            let v = de.deserialize_array(BasicVecVisitor)?;
+            let v = map_len_err(v.try_into())?;
+            Ok(map(v))
         }
 
         let mut ty = &*self.ty().elem_ty;
@@ -429,32 +438,44 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
                     ty = self.resolve(*r).ty();
                     continue;
                 }
-                AlgebraicType::Sum(ty) => deserializer
-                    .deserialize_array_seed(BasicVecVisitor, self.with(ty))
-                    .map(ArrayValue::Sum),
-                AlgebraicType::Product(ty) => deserializer
-                    .deserialize_array_seed(BasicVecVisitor, self.with(ty))
-                    .map(ArrayValue::Product),
-                AlgebraicType::Array(ty) => deserializer
-                    .deserialize_array_seed(BasicVecVisitor, self.with(ty))
-                    .map(ArrayValue::Array),
-                AlgebraicType::Map(ty) => deserializer
-                    .deserialize_array_seed(BasicVecVisitor, self.with(&**ty))
-                    .map(ArrayValue::Map),
-                &AlgebraicType::Bool => de_array(deserializer, ArrayValue::Bool),
-                &AlgebraicType::I8 => de_array(deserializer, ArrayValue::I8),
-                &AlgebraicType::U8 => deserializer.deserialize_bytes(OwnedSliceVisitor).map(ArrayValue::U8),
-                &AlgebraicType::I16 => de_array(deserializer, ArrayValue::I16),
-                &AlgebraicType::U16 => de_array(deserializer, ArrayValue::U16),
-                &AlgebraicType::I32 => de_array(deserializer, ArrayValue::I32),
-                &AlgebraicType::U32 => de_array(deserializer, ArrayValue::U32),
-                &AlgebraicType::I64 => de_array(deserializer, ArrayValue::I64),
-                &AlgebraicType::U64 => de_array(deserializer, ArrayValue::U64),
-                &AlgebraicType::I128 => de_array(deserializer, ArrayValue::I128),
-                &AlgebraicType::U128 => de_array(deserializer, ArrayValue::U128),
-                &AlgebraicType::F32 => de_array(deserializer, ArrayValue::F32),
-                &AlgebraicType::F64 => de_array(deserializer, ArrayValue::F64),
-                &AlgebraicType::String => de_array(deserializer, ArrayValue::String),
+                AlgebraicType::Sum(ty) => {
+                    let v = deserializer.deserialize_array_seed(BasicVecVisitor, self.with(ty))?;
+                    let v = map_len_err(v.try_into())?;
+                    Ok(ArrayValue::Sum(v))
+                }
+                AlgebraicType::Product(ty) => {
+                    let v = deserializer.deserialize_array_seed(BasicVecVisitor, self.with(ty))?;
+                    let v = map_len_err(v.try_into())?;
+                    Ok(ArrayValue::Product(v))
+                }
+                AlgebraicType::Array(ty) => {
+                    let v = deserializer.deserialize_array_seed(BasicVecVisitor, self.with(ty))?;
+                    let v = map_len_err(v.try_into())?;
+                    Ok(ArrayValue::Array(v))
+                }
+                AlgebraicType::Map(ty) => {
+                    let v = deserializer.deserialize_array_seed(BasicVecVisitor, self.with(&**ty))?;
+                    let v = map_len_err(v.try_into())?;
+                    Ok(ArrayValue::Map(v))
+                }
+                AlgebraicType::Bool => de_array(deserializer, ArrayValue::Bool),
+                AlgebraicType::I8 => de_array(deserializer, ArrayValue::I8),
+                AlgebraicType::U8 => {
+                    let v = deserializer.deserialize_bytes(OwnedSliceVisitor)?;
+                    let v = map_len_err(v.try_into())?;
+                    Ok(ArrayValue::U8(v))
+                }
+                AlgebraicType::I16 => de_array(deserializer, ArrayValue::I16),
+                AlgebraicType::U16 => de_array(deserializer, ArrayValue::U16),
+                AlgebraicType::I32 => de_array(deserializer, ArrayValue::I32),
+                AlgebraicType::U32 => de_array(deserializer, ArrayValue::U32),
+                AlgebraicType::I64 => de_array(deserializer, ArrayValue::I64),
+                AlgebraicType::U64 => de_array(deserializer, ArrayValue::U64),
+                AlgebraicType::I128 => de_array(deserializer, ArrayValue::I128),
+                AlgebraicType::U128 => de_array(deserializer, ArrayValue::U128),
+                AlgebraicType::F32 => de_array(deserializer, ArrayValue::F32),
+                AlgebraicType::F64 => de_array(deserializer, ArrayValue::F64),
+                AlgebraicType::String => de_array(deserializer, ArrayValue::String),
             };
         }
     }
@@ -501,59 +522,83 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, MapType> {
 
 /// Deserialize, provided the fields' types, a product value with unnamed fields.
 pub fn visit_seq_product<'de, A: SeqProductAccess<'de>>(
-    elems: WithTypespace<[ProductTypeElement]>,
+    elems: WithTypespace<SatsSlice<'_, ProductTypeElement>>,
     visitor: &impl ProductVisitor<'de>,
     mut tup: A,
 ) -> Result<ProductValue, A::Error> {
-    let elements = elems.ty().iter().enumerate().map(|(i, el)| {
-        tup.next_element_seed(elems.with(&el.algebraic_type))?
-            .ok_or_else(|| Error::invalid_product_length(i, visitor))
-    });
-    let elements = elements.collect::<Result<_, _>>()?;
-    Ok(ProductValue { elements })
+    let mut i = 0;
+    elems
+        .ty()
+        .try_map(|el| {
+            let r = tup
+                .next_element_seed(elems.with(&el.algebraic_type))?
+                .ok_or_else(|| A::Error::invalid_product_length(i, visitor));
+            i += 1;
+            r
+        })
+        .map(ProductValue::new)
 }
 
 /// Deserialize, provided the fields' types, a product value with named fields.
 pub fn visit_named_product<'de, A: super::NamedProductAccess<'de>>(
-    elems_tys: WithTypespace<[ProductTypeElement]>,
+    elems_tys: WithTypespace<SatsSlice<'_, ProductTypeElement>>,
     visitor: &impl ProductVisitor<'de>,
     mut tup: A,
 ) -> Result<ProductValue, A::Error> {
-    let elems = elems_tys.ty();
-    let mut elements = vec![None; elems.len()];
     let kind = visitor.product_kind();
+
+    let elems = elems_tys.ty();
+    let mut init_idx = BitSet::with_capacity(elems.len());
+    let mut elements = Vec::with_capacity(elems.len());
+    let uninit = elements.spare_capacity_mut();
+
+    // In case we leave early,
+    // either due to an unexpected panic (bug),
+    // or due to an error resulting from user input,
+    // let's make sure we drop any initialized elements.
+    let mut g = scopeguard::guard((uninit, &mut init_idx), |(uninit, init_idx)| {
+        for idx in init_idx.iter() {
+            // SAFETY: It's in the `init_idx` set, so we've initialized it.
+            unsafe { uninit[idx].assume_init_drop() };
+        }
+    });
 
     // Deserialize a product value corresponding to each product type field.
     // This is worst case quadratic in complexity
     // as fields can be specified out of order (value side) compared to `elems` (type side).
     for _ in 0..elems.len() {
-        // Deserialize a field name, match against the element types, .
+        // Deserialize a field name, match against the element types.
         let index = tup.get_field_ident(TupleNameVisitor { elems, kind })?.ok_or_else(|| {
             // Couldn't deserialize a field name.
             // Find the first field name we haven't filled an element for.
-            let missing = elements.iter().position(|field| field.is_none()).unwrap();
+            let missing = (0..elems.len()).position(|pos| !g.1.contains(pos)).unwrap();
             let field_name = elems[missing].name();
-            Error::missing_field(missing, field_name, visitor)
+            Error::missing_field(missing, field_name.map(|n| &**n), visitor)
         })?;
 
         let element = &elems[index];
 
         // By index we can select which element to deserialize a value for.
-        let slot = &mut elements[index];
-        if slot.is_some() {
-            return Err(Error::duplicate_field(index, element.name(), visitor));
+        if g.1.contains(index) {
+            return Err(Error::duplicate_field(index, element.name().map(|n| &**n), visitor));
         }
 
         // Deserialize the value for this field's type.
-        *slot = Some(tup.get_field_value_seed(elems_tys.with(&element.algebraic_type))?);
+        g.0[index].write(tup.get_field_value_seed(elems_tys.with(&element.algebraic_type))?);
+        g.1.insert(index);
     }
+    drop(g);
 
-    // Get rid of the `Option<_>` layer.
-    let elements = elements
-        .into_iter()
-        // We reached here, so we know nothing was missing, i.e., `None`.
-        .map(|x| x.unwrap_or_else(|| unreachable!("visit_named_product")))
-        .collect();
+    // SAFETY: We reached here.
+    // This means there were no duplicate fields and nothing missing.
+    // Thus we have initialized every index in `0..elems.len()`.
+    unsafe { elements.set_len(elems.len()) };
+
+    // SAFETY: The original `elements` was created with `elems.len()`
+    // which we statically know to be `<= u32::MAX`.
+    // We never pushed to `elements` or the flattened verson,
+    // so this still holds.
+    let elements = unsafe { SatsVec::from_boxed_unchecked(elements.into()) };
 
     Ok(ProductValue { elements })
 }
@@ -571,19 +616,19 @@ impl FieldNameVisitor<'_> for TupleNameVisitor<'_> {
     type Output = usize;
 
     fn field_names(&self, names: &mut dyn super::ValidNames) {
-        names.extend(self.elems.iter().filter_map(|f| f.name()))
+        names.extend(self.elems.iter().filter_map(|f| f.name().map(|n| &**n)))
     }
 
     fn kind(&self) -> ProductKind {
         self.kind
     }
 
-    fn visit<E: Error>(self, name: &str) -> Result<Self::Output, E> {
+    fn visit<E: Error>(self, name: SatsStr<'_>) -> Result<Self::Output, E> {
         // Finds the index of a field with `name`.
         self.elems
             .iter()
-            .position(|f| f.has_name(name))
-            .ok_or_else(|| Error::unknown_field_name(name, &self))
+            .position(|f| f.has_name(&name))
+            .ok_or_else(|| Error::unknown_field_name(&name, &self))
     }
 }
 
