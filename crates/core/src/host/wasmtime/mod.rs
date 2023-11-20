@@ -69,9 +69,7 @@ pub fn make_actor(
         .filter(|imp| matches!(imp.ty(), wasmtime::ExternType::Func(_)));
     let abi = abi::determine_spacetime_abi(func_imports, |imp| imp.module())?;
 
-    if let Some(abi) = abi {
-        abi::verify_supported(WasmtimeModule::IMPLEMENTED_ABI, abi)?;
-    }
+    abi::verify_supported(WasmtimeModule::IMPLEMENTED_ABI, abi)?;
 
     let module = LINKER
         .instantiate_pre(&module)
