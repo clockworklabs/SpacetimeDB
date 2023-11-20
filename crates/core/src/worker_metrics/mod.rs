@@ -76,6 +76,11 @@ metrics_group!(
         #[buckets(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 25, 50)]
         pub instance_queue_length_histogram: HistogramVec,
 
+        #[name = spacetime_worker_wasm_instance_errors_cumulative]
+        #[help = "The number of fatal WASM instance errors, such as reducer panics."]
+        #[labels(identity: Identity, module_hash: Hash, database_address: Address, reducer_symbol: str)]
+        pub wasm_instance_errors: IntCounterVec,
+
         #[name = spacetime_system_disk_space_total_bytes]
         #[help = "A node's total disk space (in bytes)"]
         pub system_disk_space_total: IntGauge,
