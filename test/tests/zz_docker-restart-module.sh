@@ -9,17 +9,23 @@ set -euox pipefail
 
 source "./test/lib.include"
 
+# Note: creating indexes on `Person`
+# exercises more possible failure cases when replaying after restart
 cat > "${PROJECT_PATH}/src/lib.rs" << EOF
 use spacetimedb::{println, spacetimedb};
 
 #[spacetimedb(table)]
+#[spacetimedb(index(btree, name = "name_idx", name))]
 pub struct Person {
+    #[primarykey]
+    #[autoinc]
+    id: u32,
     name: String,
 }
 
 #[spacetimedb(reducer)]
 pub fn add(name: String) {
-    Person::insert(Person { name });
+Person::insert(Person { id: 0, name }).unwrap();
 }
 
 #[spacetimedb(reducer)]
@@ -42,7 +48,7 @@ run_test cargo run call "$IDENT" add Samantha
 run_test cargo run call "$IDENT" say_hello
 run_test cargo run logs "$IDENT" 100
 
-[ ' INFO: src/lib.rs:16: Hello, Samantha!' == "$(grep 'Samantha' "$TEST_OUT" | tail -n 4)" ]
-[ ' INFO: src/lib.rs:16: Hello, Julie!' == "$(grep 'Julie' "$TEST_OUT" | tail -n 4)" ]
-[ ' INFO: src/lib.rs:16: Hello, Robert!' == "$(grep 'Robert' "$TEST_OUT" | tail -n 4)" ]
-[ ' INFO: src/lib.rs:18: Hello, World!' == "$(grep 'World' "$TEST_OUT" | tail -n 4)" ]
+[ ' Hello, Samantha!' == "$(grep 'Samantha' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
+[ ' Hello, Julie!' == "$(grep 'Julie' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
+[ ' Hello, Robert!' == "$(grep 'Robert' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
+[ ' Hello, World!' == "$(grep 'World' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
