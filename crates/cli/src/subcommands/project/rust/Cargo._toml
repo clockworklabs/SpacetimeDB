@@ -8,6 +8,9 @@ edition = "2021"
 [lib]
 crate-type = ["cdylib"]
 
+[profile.release]
+debug = 1 # include some location information for backtraces
+
 [dependencies]
 spacetimedb = "1.0.0-rc3"
 log = "0.4"

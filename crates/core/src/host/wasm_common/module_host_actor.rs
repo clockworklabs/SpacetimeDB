@@ -57,11 +57,9 @@ pub trait WasmInstance: Send + Sync + 'static {
 
     fn instance_env(&self) -> &InstanceEnv;
 
-    type Trap: Send;
+    type Trap: std::fmt::Display + Send;
 
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: ReducerBudget) -> ExecuteResult<Self::Trap>;
-
-    fn log_traceback(func_type: &str, func: &str, trap: &Self::Trap);
 }
 
 pub struct EnergyStats {
@@ -484,7 +482,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
         let status = match call_result {
             Err(err) => {
-                T::log_traceback("reducer", reducer_name, &err);
+                log::info!("reducer {reducer_name:?} raised a runtime error (panic message in module logs): {err:#}");
 
                 WORKER_METRICS
                     .wasm_instance_errors
