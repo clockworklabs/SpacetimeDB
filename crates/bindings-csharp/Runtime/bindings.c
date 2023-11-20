@@ -1,781 +1,231 @@
 #include <assert.h>
-#include <mono-wasi/driver.h>
-#include <mono/metadata/appdomain.h>
-#include <mono/metadata/object.h>
+// #include <mono/metadata/appdomain.h>
+// #include <mono/metadata/object.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <string.h>
+#include <unistd.h>
 
-// My modified version of
-// https://github.com/dotnet/dotnet-wasi-sdk/blob/2dbb00c779180873d3ed985e59e431f56404d8da/src/Wasi.AspNetCore.Server.Native/native/dotnet_method.h
-#define INVOKE_DOTNET_METHOD(DLL_NAME, NAMESPACE, CLASS_NAME, METHOD_NAME,    \
-                             INSTANCE, ARGS...)                               \
-  ({                                                                          \
-    static MonoMethod* _method;                                               \
-    if (!_method) {                                                           \
-      _method = lookup_dotnet_method(DLL_NAME, NAMESPACE, CLASS_NAME,         \
-                                     METHOD_NAME, -1);                        \
-      assert(_method);                                                        \
-    }                                                                         \
-                                                                              \
-    MonoObject* _exception;                                                   \
-    MonoObject* _res = mono_wasm_invoke_method(_method, INSTANCE,             \
-                                               (void*[]){ARGS}, &_exception); \
-    assert(!_exception);                                                      \
-    _res;                                                                     \
-  })
+#include "driver.h"
 
-static void check_result(uint16_t result) {
-  if (result != 0) {
-    // TODO: figure out how to properly throw exception.
-    // `mono_raise_exception` for some reason always results in Wasm sig
-    // mismatch.
-    INVOKE_DOTNET_METHOD("SpacetimeDB.Runtime.dll", "SpacetimeDB", "Runtime",
-                         "ThrowForResult", NULL, &result);
-  }
+#define OPAQUE_TYPEDEF(name, T) \
+  typedef struct name {         \
+    T inner;                    \
+  } name
+
+OPAQUE_TYPEDEF(Status, uint16_t);
+OPAQUE_TYPEDEF(TableId, uint32_t);
+OPAQUE_TYPEDEF(ColId, uint32_t);
+OPAQUE_TYPEDEF(IndexType, uint8_t);
+OPAQUE_TYPEDEF(LogLevel, uint8_t);
+OPAQUE_TYPEDEF(ScheduleToken, uint64_t);
+OPAQUE_TYPEDEF(Buffer, uint32_t);
+OPAQUE_TYPEDEF(BufferIter, uint32_t);
+
+#define CSTR(s) (uint8_t*)s, sizeof(s) - 1
+
+#define IMPORT(ret, name, params, args)                             \
+  __attribute__((import_module("spacetime_7.0"),                    \
+                 import_name(#name))) extern ret name##_imp params; \
+  ret name params { return name##_imp args; }
+
+IMPORT(void, _console_log,
+       (LogLevel level, const uint8_t* target, uint32_t target_len,
+        const uint8_t* filename, uint32_t filename_len, uint32_t line_number,
+        const uint8_t* message, uint32_t message_len),
+       (level, target, target_len, filename, filename_len, line_number, message,
+        message_len));
+
+IMPORT(Status, _get_table_id,
+       (const uint8_t* name, uint32_t name_len, TableId* id),
+       (name, name_len, id));
+IMPORT(Status, _create_index,
+       (const uint8_t* index_name, uint32_t index_name_len, TableId table_id,
+        const ColId* col_ids, uint32_t col_ids_len, IndexType type),
+       (index_name, index_name_len, table_id, col_ids, col_ids_len, type));
+IMPORT(Status, _iter_by_col_eq,
+       (TableId table_id, ColId col_id, const uint8_t* value,
+        uint32_t value_len, BufferIter* iter),
+       (table_id, col_id, value, value_len, iter));
+IMPORT(Status, _insert, (TableId table_id, const uint8_t* row, uint32_t len),
+       (table_id, row, len));
+IMPORT(Status, _delete_by_col_eq,
+       (TableId table_id, ColId col_id, const uint8_t* value,
+        uint32_t value_len, uint32_t* num_deleted),
+       (table_id, col_id, value, value_len, num_deleted));
+IMPORT(Status, _delete_by_rel,
+       (TableId table_id, const uint8_t* relation, uint32_t relation_len,
+        uint32_t* num_deleted),
+       (table_id, relation, relation_len, num_deleted));
+IMPORT(Status, _iter_start, (TableId table_id, BufferIter* iter),
+       (table_id, iter));
+IMPORT(Status, _iter_start_filtered,
+       (TableId table_id, const uint8_t* filter, uint32_t filter_len,
+        BufferIter* iter),
+       (table_id, filter, filter_len, iter));
+IMPORT(Status, _iter_next, (BufferIter iter, Buffer* row), (iter, row));
+IMPORT(Status, _iter_drop, (BufferIter iter), (iter));
+IMPORT(void, _schedule_reducer,
+       (const uint8_t* name, uint32_t name_len, const uint8_t* args,
+        uint32_t args_len, uint64_t timestamp, ScheduleToken* token),
+       (name, name_len, args, args_len, timestamp, token));
+IMPORT(void, _cancel_reducer, (ScheduleToken token), (token));
+IMPORT(uint32_t, _buffer_len, (Buffer buf), (buf));
+IMPORT(void, _buffer_consume, (Buffer buf, uint8_t* dst, uint32_t dst_len),
+       (buf, dst, dst_len));
+IMPORT(Buffer, _buffer_alloc, (const uint8_t* data, uint32_t len), (data, len));
+
+static MonoClass* ffi_class;
+
+#define CEXPORT(name) __attribute__((export_name(#name))) name
+
+#define PREINIT(priority, name) void CEXPORT(__preinit__##priority##_##name)()
+
+PREINIT(10, startup) {
+  // mono_wasm_load_runtime("", 0);
+  // ^ not enough because it doesn't reach to assembly with Main function
+  // so module descriptor remains unpopulated. Invoke actual _start instead.
+  extern void _start();
+  _start();
+
+  ffi_class = mono_wasm_assembly_find_class(
+      mono_wasm_assembly_load("SpacetimeDB.Runtime.dll"), "SpacetimeDB.Module",
+      "FFI");
+  assert(ffi_class && "FFI class not found");
 }
 
-typedef struct {
-  uint32_t handle;
-} Buffer;
-
-typedef struct {
-  uint32_t handle;
-} BufferIter;
-
-typedef struct {
-  uint64_t handle;
-} ScheduleToken;
-
-#define INVALID_HANDLE ((uint32_t)-1)
-
-typedef struct {
-  char* ptr;
-  size_t len;
-} String;
-
-typedef struct {
-  uint8_t* ptr;
-  size_t len;
-} Bytes;
-
-static String to_string(MonoString* str) {
-  char* ptr = mono_string_to_utf8(str);
-  size_t len = strlen(ptr);
-  return (String){.ptr = ptr, .len = len};
-}
-
-static Bytes to_bytes(MonoArray* arr) {
-  // TODO: assert element type is byte.
-  return (Bytes){.ptr = mono_array_addr(arr, uint8_t, 0),
-                 .len = mono_array_length(arr)};
-}
-
-static void free_string(String span) {
-  free(span.ptr);
-}
-
-static MonoArray* stdb_buffer_consume(Buffer buf);
-
-// __attribute__((import_module("spacetime"),
-//                import_name("_create_table"))) extern uint16_t
-// _create_table(const char* name,
-//               size_t name_len,
-//               const uint8_t* schema,
-//               size_t schema_len,
-//               uint32_t* out);
-
-// static uint32_t stdb_create_table(MonoString* name_, MonoArray* schema_) {
-//   String name = to_string(name_);
-//   Bytes schema = to_bytes(schema_);
-
-//   uint32_t out;
-//   uint16_t result =
-//       _create_table(name.ptr, name.len, schema.ptr, schema.len, &out);
-
-//   free_string(name);
-
-//   check_result(result);
-
-//   return out;
-// }
-
-#define STDB_IMPORT_MODULE_MINOR(minor) "spacetime_7." #minor
-#define STDB_IMPORT_MODULE STDB_IMPORT_MODULE_MINOR(0)
-
-__attribute__((import_module(STDB_IMPORT_MODULE),
-               import_name("_get_table_id"))) extern uint16_t
-_get_table_id(const char* name, size_t name_len, uint32_t* out);
-
-static uint32_t stdb_get_table_id(MonoString* name_) {
-  String name = to_string(name_);
-
-  uint32_t out;
-  uint16_t result = _get_table_id(name.ptr, name.len, &out);
-
-  free_string(name);
-
-  check_result(result);
-
-  return out;
-}
-
-__attribute__((import_module(STDB_IMPORT_MODULE),
-               import_name("_create_index"))) extern uint16_t
-_create_index(const char* index_name,
-              size_t index_name_len,
-              uint32_t table_id,
-              uint8_t index_type,
-              const uint8_t* col_ids,
-              size_t col_len);
-
-static void stdb_create_index(MonoString* index_name_,
-                              uint32_t table_id,
-                              uint8_t index_type,
-                              MonoArray* col_ids_) {
-  String index_name = to_string(index_name_);
-  Bytes col_ids = to_bytes(col_ids_);
-
-  uint16_t result = _create_index(index_name.ptr, index_name.len, table_id,
-                                  index_type, col_ids.ptr, col_ids.len);
-
-  free_string(index_name);
-
-  check_result(result);
-}
-
-__attribute__((import_module(STDB_IMPORT_MODULE),
-               import_name("_iter_by_col_eq"))) extern uint16_t
-_iter_by_col_eq(uint32_t table_id,
-                uint32_t col_id,
-                const uint8_t* value,
-                size_t value_len,
-                Buffer* out);
-
-static MonoArray* stdb_iter_by_col_eq(uint32_t table_id,
-                                      uint32_t col_id,
-                                      MonoArray* value_) {
-  Bytes value = to_bytes(value_);
-
-  Buffer out;
-  uint16_t result =
-      _iter_by_col_eq(table_id, col_id, value.ptr, value.len, &out);
-
-  check_result(result);
-
-  return stdb_buffer_consume(out);
-}
-
-__attribute__((import_module(STDB_IMPORT_MODULE),
-               import_name("_insert"))) extern uint16_t
-_insert(uint32_t table_id, uint8_t* row, size_t row_len);
-
-static void stdb_insert(uint32_t table_id, MonoArray* row_) {
-  Bytes row = to_bytes(row_);
-
-  uint16_t result = _insert(table_id, row.ptr, row.len);
-
-  check_result(result);
-}
-
-// __attribute__((import_module(STDB_IMPORT_MODULE),
-//                import_name("_delete_pk"))) extern uint16_t
-// _delete_pk(uint32_t table_id, const uint8_t* pk, size_t pk_len);
-
-// static void stdb_delete_pk(uint32_t table_id, MonoArray* pk_) {
-//   Bytes pk = to_bytes(pk_);
-
-//   uint16_t result = _delete_pk(table_id, pk.ptr, pk.len);
-
-//   check_result(result);
-// }
-
-// __attribute__((import_module(STDB_IMPORT_MODULE),
-//                import_name("_delete_value"))) extern uint16_t
-// _delete_value(uint32_t table_id, const uint8_t* row, size_t row_len);
-
-// static void stdb_delete_value(uint32_t table_id, MonoArray* row_) {
-//   Bytes row = to_bytes(row_);
-
-//   uint16_t result = _delete_value(table_id, row.ptr, row.len);
-
-//   check_result(result);
-// }
-
-__attribute__((import_module(STDB_IMPORT_MODULE),
-               import_name("_delete_by_col_eq"))) extern uint16_t
-_delete_by_col_eq(uint32_t table_id,
-                  uint32_t col_id,
-                  const uint8_t* value,
-                  size_t value_len,
-                  uint32_t* out);
-
-static uint32_t stdb_delete_by_col_eq(uint32_t table_id,
-                                      uint32_t col_id,
-                                      MonoArray* value_) {
-  Bytes value = to_bytes(value_);
-
-  uint32_t out;
-  uint16_t result =
-      _delete_by_col_eq(table_id, col_id, value.ptr, value.len, &out);
-
-  check_result(result);
-
-  return out;
-}
-
-// __attribute__((import_module(STDB_IMPORT_MODULE),
-//                import_name("_delete_range"))) extern uint16_t
-// _delete_range(uint32_t table_id,
-//               uint32_t col_id,
-//               const uint8_t* range_start,
-//               size_t range_start_len,
-//               const uint8_t* range_end,
-//               size_t range_end_len,
-//               uint32_t* out);
-
-// static uint32_t stdb_delete_range(uint32_t table_id,
-//                                   uint32_t col_id,
-//                                   MonoArray* range_start_,
-//                                   MonoArray* range_end_) {
-//   Bytes range_start = to_bytes(range_start_);
-//   Bytes range_end = to_bytes(range_end_);
-
-//   uint32_t out;
-//   uint16_t result =
-//       _delete_range(table_id, col_id, range_start.ptr, range_start.len,
-//                     range_end.ptr, range_end.len, &out);
-
-//   check_result(result);
-
-//   return out;
-// }
-
-__attribute__((import_module(STDB_IMPORT_MODULE),
-               import_name("_iter_start"))) extern uint16_t
-_iter_start(uint32_t table_id, BufferIter* out);
-
-static void stdb_iter_start(uint32_t table_id, BufferIter* iter) {
-  uint16_t result = _iter_start(table_id, iter);
-
-  check_result(result);
-}
-
-__attribute__((import_module(STDB_IMPORT_MODULE),
-               import_name("_iter_start_filtered"))) extern uint16_t
-_iter_start_filtered(uint32_t table_id,
-                     const uint8_t* filter,
-                     size_t filter_len,
-                     BufferIter* out);
-
-static void stdb_iter_start_filtered(uint32_t table_id,
-                                     MonoArray* filter_,
-                                     BufferIter* iter) {
-  Bytes filter = to_bytes(filter_);
-
-  uint16_t result =
-      _iter_start_filtered(table_id, filter.ptr, filter.len, iter);
-
-  check_result(result);
-}
-
-__attribute__((import_module(STDB_IMPORT_MODULE),
-               import_name("_iter_next"))) extern uint16_t
-_iter_next(BufferIter iter, Buffer* out);
-
-static MonoArray* stdb_iter_next(BufferIter iter) {
-  Buffer out;
-  uint16_t result = _iter_next(iter, &out);
-
-  check_result(result);
-
-  return stdb_buffer_consume(out);
-}
-
-__attribute__((import_module(STDB_IMPORT_MODULE),
-               import_name("_iter_drop"))) extern uint16_t
-_iter_drop(BufferIter iter);
-
-static void stdb_iter_drop(BufferIter* iter) {
-  // Guard against attempts to double free
-  // (e.g. once via Dispose and once via destructor).
-  if (iter->handle == INVALID_HANDLE) {
-    return;
+#define EXPORT(ret, name, params, args...)                                    \
+  static MonoMethod* ffi_method_##name;                                       \
+  PREINIT(20, find_##name) {                                                  \
+    ffi_method_##name = mono_wasm_assembly_find_method(ffi_class, #name, -1); \
+    assert(ffi_method_##name && "FFI method not found");                      \
+  }                                                                           \
+  ret CEXPORT(name) params {                                                  \
+    MonoObject* res;                                                          \
+    mono_wasm_invoke_method_ref(ffi_method_##name, NULL, (void*[]){args},     \
+                                NULL, &res);                                  \
+    return *(ret*)mono_object_unbox(res);                                     \
   }
 
-  uint16_t result = _iter_drop(*iter);
+EXPORT(Buffer, __describe_module__, ());
 
-  iter->handle = INVALID_HANDLE;
-
-  check_result(result);
-}
-
-__attribute__((import_module(STDB_IMPORT_MODULE),
-               import_name("_console_log"))) extern void
-_console_log(uint8_t level,
-             const char* target,
-             size_t target_len,
-             const char* filename,
-             size_t filename_len,
-             uint32_t line_number,
-             const char* text,
-             size_t text_len);
-
-static void stdb_console_log(MonoString* text_,
-                             uint8_t level,
-                             MonoString* target_,
-                             MonoString* filename_,
-                             uint32_t line_number) {
-  String text = to_string(text_);
-  String target = to_string(target_);
-  String filename = to_string(filename_);
-
-  _console_log(level, target.ptr, target.len, filename.ptr, filename.len,
-               line_number, text.ptr, text.len);
-
-  free_string(text);
-  free_string(target);
-  free_string(filename);
-}
-
-__attribute__((import_module(STDB_IMPORT_MODULE),
-               import_name("_schedule_reducer"))) extern void
-_schedule_reducer(const char* name,
-                  size_t name_len,
-                  const uint8_t* args,
-                  size_t args_len,
-                  uint64_t time,
-                  ScheduleToken* out);
-
-static void stdb_schedule_reducer(
-    MonoString* name_,
-    MonoArray* args_,
-    // by-value uint64_t + other args corrupts stack in Mono's FFI for some
-    // reason pass by pointer instead
-    uint64_t* time_,
-    ScheduleToken* out) {
-  String name = to_string(name_);
-  Bytes args = to_bytes(args_);
-  uint64_t time = *time_;
-
-  _schedule_reducer(name.ptr, name.len, args.ptr, args.len, time, out);
-
-  free_string(name);
-}
-
-__attribute__((import_module(STDB_IMPORT_MODULE),
-               import_name("_cancel_reducer"))) extern void
-_cancel_reducer(ScheduleToken token);
-
-static void stdb_cancel_reducer(ScheduleToken* token) {
-  _cancel_reducer(*token);
-}
-
-__attribute__((import_module(STDB_IMPORT_MODULE),
-               import_name("_buffer_len"))) extern size_t
-_buffer_len(Buffer buf);
-
-__attribute__((import_module(STDB_IMPORT_MODULE),
-               import_name("_buffer_consume"))) extern void
-_buffer_consume(Buffer buf, uint8_t* into, size_t len);
-
-static MonoArray* stdb_buffer_consume(Buffer buf) {
-  if (buf.handle == INVALID_HANDLE) {
-    return NULL;
-  }
-  size_t len = _buffer_len(buf);
-  MonoArray* result =
-      mono_array_new(mono_domain_get(), mono_get_byte_class(), len);
-  _buffer_consume(buf, mono_array_addr(result, uint8_t, 0), len);
-  return result;
-}
-
-__attribute__((import_module(STDB_IMPORT_MODULE),
-               import_name("_buffer_alloc"))) extern Buffer
-_buffer_alloc(const uint8_t* data, size_t data_len);
-
-#define ATTACH(name, target_name) \
-  mono_add_internal_call("SpacetimeDB.Runtime::" target_name, name)
-
-void mono_stdb_attach_bindings() {
-  // ATTACH(stdb_create_table, "CreateTable");
-  ATTACH(stdb_get_table_id, "GetTableId");
-  ATTACH(stdb_create_index, "CreateIndex");
-  ATTACH(stdb_iter_by_col_eq, "IterByColEq");
-  ATTACH(stdb_insert, "Insert");
-  // ATTACH(stdb_delete_pk, "DeletePk");
-  // ATTACH(stdb_delete_value, "DeleteValue");
-  ATTACH(stdb_delete_by_col_eq, "DeleteByColEq");
-  // ATTACH(stdb_delete_range, "DeleteRange");
-  ATTACH(stdb_iter_start, "BufferIterStart");
-  ATTACH(stdb_iter_start_filtered, "BufferIterStartFiltered");
-  ATTACH(stdb_iter_next, "BufferIterNext");
-  ATTACH(stdb_iter_drop, "BufferIterDrop");
-  ATTACH(stdb_console_log, "Log");
-  ATTACH(stdb_schedule_reducer, "ScheduleReducer");
-  ATTACH(stdb_cancel_reducer, "CancelReducer");
-}
-
-__attribute__((export_name("__describe_module__"))) Buffer
-__describe_module__() {
-  MonoArray* bytes_arr = (MonoArray*)INVOKE_DOTNET_METHOD(
-      "SpacetimeDB.Runtime.dll", "SpacetimeDB.Module", "FFI", "DescribeModule",
-      NULL);
-  Bytes bytes = to_bytes(bytes_arr);
-  return _buffer_alloc(bytes.ptr, bytes.len);
-}
-
-static Buffer return_result_buf(MonoObject* str) {
-  if (str == NULL) {
-    return (Buffer){.handle = INVALID_HANDLE};
-  }
-  char* cstr = mono_string_to_utf8((MonoString*)str);
-  Buffer buf = _buffer_alloc((uint8_t*)cstr, strlen(cstr));
-  free(cstr);
-  return buf;
-}
-
-__attribute__((export_name("__call_reducer__"))) Buffer __call_reducer__(
-    uint32_t id,
-    Buffer caller_identity_,
-    Buffer caller_address_,
-    uint64_t timestamp,
-    Buffer args_) {
-  MonoArray* caller_identity = stdb_buffer_consume(caller_identity_);
-  MonoArray* caller_address = stdb_buffer_consume(caller_address_);
-  MonoArray* args = stdb_buffer_consume(args_);
-
-  return return_result_buf(INVOKE_DOTNET_METHOD(
-      "SpacetimeDB.Runtime.dll", "SpacetimeDB.Module", "FFI", "CallReducer",
-      NULL, &id, caller_identity, caller_address, &timestamp, args));
-}
-
-__attribute__((export_name("__identity_connected__"))) Buffer
-__identity_connected__(Buffer caller_identity_, Buffer caller_address_, uint64_t timestamp) {
-  MonoArray* caller_identity = stdb_buffer_consume(caller_identity_);
-  MonoArray* caller_address = stdb_buffer_consume(caller_address_);
-
-  return return_result_buf(
-      INVOKE_DOTNET_METHOD("SpacetimeDB.Runtime.dll", "SpacetimeDB", "Runtime",
-                           "IdentityConnected", NULL, caller_identity, caller_address, &timestamp));
-}
-
-__attribute__((export_name("__identity_disconnected__"))) Buffer
-__identity_disconnected__(Buffer caller_identity_, Buffer caller_address_, uint64_t timestamp) {
-  MonoArray* caller_identity = stdb_buffer_consume(caller_identity_);
-  MonoArray* caller_address = stdb_buffer_consume(caller_address_);
-
-  return return_result_buf(
-      INVOKE_DOTNET_METHOD("SpacetimeDB.Runtime.dll", "SpacetimeDB", "Runtime",
-                           "IdentityDisconnected", NULL, caller_identity, caller_address, &timestamp));
-}
+EXPORT(Buffer, __call_reducer__,
+       (uint32_t id, Buffer caller_identity, Buffer caller_address,
+        uint64_t timestamp, Buffer args),
+       &id, &caller_identity, &caller_address, &timestamp, &args);
 
 // Shims to avoid dependency on WASI in the generated Wasm file.
 
 #include <stdlib.h>
 #include <wasi/api.h>
 
+#pragma clang diagnostic ignored "-Wc2x-extensions"
+
 // Based on
 // https://github.com/WebAssembly/wasi-libc/blob/main/libc-bottom-half/sources/__wasilibc_real.c,
 
-int32_t __imported_wasi_snapshot_preview1_args_get(int32_t arg0, int32_t arg1) {
+#define WASI_NAME(name) __imported_wasi_snapshot_preview1_##name
+
+// Shim for WASI calls that always unconditionaly succeeds.
+// This is suitable for most (but not all) WASI functions used by .NET.
+#define WASI_SHIM(name, params) \
+  int32_t WASI_NAME(name) params { return 0; }
+
+WASI_SHIM(environ_get, (int32_t, int32_t));
+WASI_SHIM(environ_sizes_get, (int32_t, int32_t));
+WASI_SHIM(clock_time_get, (int32_t, int64_t, int32_t));
+WASI_SHIM(fd_advise, (int32_t, int64_t, int64_t, int32_t));
+WASI_SHIM(fd_allocate, (int32_t, int64_t, int64_t));
+WASI_SHIM(fd_close, (int32_t));
+WASI_SHIM(fd_datasync, (int32_t));
+WASI_SHIM(fd_fdstat_get, (int32_t, int32_t));
+WASI_SHIM(fd_fdstat_set_flags, (int32_t, int32_t));
+WASI_SHIM(fd_fdstat_set_rights, (int32_t, int64_t, int64_t));
+WASI_SHIM(fd_filestat_get, (int32_t, int32_t));
+WASI_SHIM(fd_filestat_set_size, (int32_t, int64_t));
+WASI_SHIM(fd_filestat_set_times, (int32_t, int64_t, int64_t, int32_t));
+WASI_SHIM(fd_pread, (int32_t, int32_t, int32_t, int64_t, int32_t));
+WASI_SHIM(fd_prestat_dir_name, (int32_t, int32_t, int32_t));
+WASI_SHIM(fd_pwrite, (int32_t, int32_t, int32_t, int64_t, int32_t));
+WASI_SHIM(fd_read, (int32_t, int32_t, int32_t, int32_t));
+WASI_SHIM(fd_readdir, (int32_t, int32_t, int32_t, int64_t, int32_t));
+WASI_SHIM(fd_renumber, (int32_t, int32_t));
+WASI_SHIM(fd_seek, (int32_t, int64_t, int32_t, int32_t));
+WASI_SHIM(fd_sync, (int32_t));
+WASI_SHIM(fd_tell, (int32_t, int32_t));
+WASI_SHIM(path_create_directory, (int32_t, int32_t, int32_t));
+WASI_SHIM(path_filestat_get, (int32_t, int32_t, int32_t, int32_t, int32_t));
+WASI_SHIM(path_filestat_set_times,
+          (int32_t, int32_t, int32_t, int32_t, int64_t, int64_t, int32_t));
+WASI_SHIM(path_link,
+          (int32_t, int32_t, int32_t, int32_t, int32_t, int32_t, int32_t));
+WASI_SHIM(path_open, (int32_t, int32_t, int32_t, int32_t, int32_t, int64_t,
+                      int64_t, int32_t, int32_t));
+WASI_SHIM(path_readlink,
+          (int32_t, int32_t, int32_t, int32_t, int32_t, int32_t));
+WASI_SHIM(path_remove_directory, (int32_t, int32_t, int32_t));
+WASI_SHIM(path_rename, (int32_t, int32_t, int32_t, int32_t, int32_t, int32_t));
+WASI_SHIM(path_symlink, (int32_t, int32_t, int32_t, int32_t, int32_t));
+WASI_SHIM(path_unlink_file, (int32_t, int32_t, int32_t));
+WASI_SHIM(poll_oneoff, (int32_t, int32_t, int32_t, int32_t));
+WASI_SHIM(sched_yield, ());
+WASI_SHIM(random_get, (int32_t, int32_t));
+WASI_SHIM(sock_accept, (int32_t, int32_t, int32_t));
+WASI_SHIM(sock_recv, (int32_t, int32_t, int32_t, int32_t, int32_t, int32_t));
+WASI_SHIM(sock_send, (int32_t, int32_t, int32_t, int32_t, int32_t));
+WASI_SHIM(sock_shutdown, (int32_t, int32_t));
+
+// Mono retrieves executable name via argv[0], so we need to shim it with
+// some dummy name instead of returning an empty argv[] array to avoid
+// assertion failures.
+const char executable_name[] = "stdb.wasm";
+
+int32_t WASI_NAME(args_sizes_get)(__wasi_size_t* argc,
+                                  __wasi_size_t* argv_buf_size) {
+  *argc = 1;
+  *argv_buf_size = sizeof(executable_name);
   return 0;
 }
 
-int32_t __imported_wasi_snapshot_preview1_args_sizes_get(int32_t arg0,
-                                                         int32_t arg1) {
+int32_t WASI_NAME(args_get)(uint8_t** argv, uint8_t* argv_buf) {
+  argv[0] = argv_buf;
+  __builtin_memcpy(argv_buf, executable_name, sizeof(executable_name));
   return 0;
 }
 
-int32_t __imported_wasi_snapshot_preview1_environ_get(int32_t arg0,
-                                                      int32_t arg1) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_environ_sizes_get(int32_t arg0,
-                                                            int32_t arg1) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_clock_res_get(int32_t arg0,
-                                                        uint64_t* timestamp) {
+// Clock resolution should be non-zero.
+int32_t WASI_NAME(clock_res_get)(int32_t, uint64_t* timestamp) {
   *timestamp = 1;
   return 0;
 }
 
-int32_t __imported_wasi_snapshot_preview1_clock_time_get(int32_t arg0,
-                                                         int64_t arg1,
-                                                         int32_t arg2) {
+// For `fd_write`, we need to at least collect and report sum of sizes.
+// If we report size 0, the caller will assume that the write failed and will
+// try again, which will result in an infinite loop.
+int32_t WASI_NAME(fd_write)(__wasi_fd_t fd, const __wasi_ciovec_t* iovs,
+                            size_t iovs_len, __wasi_size_t* retptr0) {
+  for (size_t i = 0; i < iovs_len; i++) {
+    // Note: this will produce ugly broken output, but there's not much we can
+    // do about it until we have proper line-buffered WASI writer in the core.
+    // It's better than nothing though.
+    _console_log_imp((LogLevel){fd == STDERR_FILENO ? /*WARN*/ 1 : /*INFO*/ 2},
+                     CSTR("wasi"), CSTR(__FILE__), __LINE__, iovs[i].buf,
+                     iovs[i].buf_len);
+    *retptr0 += iovs[i].buf_len;
+  }
   return 0;
 }
 
-int32_t __imported_wasi_snapshot_preview1_fd_advise(int32_t arg0,
-                                                    int64_t arg1,
-                                                    int64_t arg2,
-                                                    int32_t arg3) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_fd_write(int32_t arg0,
-                                                   int32_t arg1,
-                                                   int32_t arg2,
-                                                   int32_t arg3) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_fd_allocate(int32_t arg0,
-                                                      int64_t arg1,
-                                                      int64_t arg2) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_fd_close(int32_t arg0) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_fd_datasync(int32_t arg0) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_fd_fdstat_get(int32_t arg0,
-                                                        int32_t arg1) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_fd_fdstat_set_flags(int32_t arg0,
-                                                              int32_t arg1) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_fd_fdstat_set_rights(int32_t arg0,
-                                                               int64_t arg1,
-                                                               int64_t arg2) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_fd_filestat_get(int32_t arg0,
-                                                          int32_t arg1) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_fd_filestat_set_size(int32_t arg0,
-                                                               int64_t arg1) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_fd_filestat_set_times(int32_t arg0,
-                                                                int64_t arg1,
-                                                                int64_t arg2,
-                                                                int32_t arg3) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_fd_pread(int32_t arg0,
-                                                   int32_t arg1,
-                                                   int32_t arg2,
-                                                   int64_t arg3,
-                                                   int32_t arg4) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_fd_prestat_get(int32_t arg0,
-                                                         int32_t arg1) {
-  // Return this value to indicate there are no further preopens to iterate
-  // through
+// BADF indicates end of iteration for preopens; we must return it instead of
+// "success" to prevent infinite loop.
+int32_t WASI_NAME(fd_prestat_get)(int32_t, int32_t) {
   return __WASI_ERRNO_BADF;
 }
 
-int32_t __imported_wasi_snapshot_preview1_fd_prestat_dir_name(int32_t arg0,
-                                                              int32_t arg1,
-                                                              int32_t arg2) {
-  return 0;
-}
+// Actually exit runtime on `proc_exit`.
+_Noreturn void WASI_NAME(proc_exit)(int32_t code) { exit(code); }
 
-int32_t __imported_wasi_snapshot_preview1_fd_pwrite(int32_t arg0,
-                                                    int32_t arg1,
-                                                    int32_t arg2,
-                                                    int64_t arg3,
-                                                    int32_t arg4) {
-  return 0;
-}
+// There is another rogue import of sock_accept somewhere in .NET that doesn't
+// match the scheme above.
+// Maybe this one?
+// https://github.com/dotnet/runtime/blob/085ddb7f9b26f01ae1b6842db7eacb6b4042e031/src/mono/mono/component/mini-wasi-debugger.c#L12-L14
 
-int32_t __imported_wasi_snapshot_preview1_fd_read(int32_t arg0,
-                                                  int32_t arg1,
-                                                  int32_t arg2,
-                                                  int32_t arg3) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_fd_readdir(int32_t arg0,
-                                                     int32_t arg1,
-                                                     int32_t arg2,
-                                                     int64_t arg3,
-                                                     int32_t arg4) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_fd_renumber(int32_t arg0,
-                                                      int32_t arg1) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_fd_seek(int32_t arg0,
-                                                  int64_t arg1,
-                                                  int32_t arg2,
-                                                  int32_t arg3) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_fd_sync(int32_t arg0) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_fd_tell(int32_t arg0, int32_t arg1) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_path_create_directory(int32_t arg0,
-                                                                int32_t arg1,
-                                                                int32_t arg2) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_path_filestat_get(int32_t arg0,
-                                                            int32_t arg1,
-                                                            int32_t arg2,
-                                                            int32_t arg3,
-                                                            int32_t arg4) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_path_filestat_set_times(
-    int32_t arg0,
-    int32_t arg1,
-    int32_t arg2,
-    int32_t arg3,
-    int64_t arg4,
-    int64_t arg5,
-    int32_t arg6) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_path_link(int32_t arg0,
-                                                    int32_t arg1,
-                                                    int32_t arg2,
-                                                    int32_t arg3,
-                                                    int32_t arg4,
-                                                    int32_t arg5,
-                                                    int32_t arg6) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_path_open(int32_t arg0,
-                                                    int32_t arg1,
-                                                    int32_t arg2,
-                                                    int32_t arg3,
-                                                    int32_t arg4,
-                                                    int64_t arg5,
-                                                    int64_t arg6,
-                                                    int32_t arg7,
-                                                    int32_t arg8) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_path_readlink(int32_t arg0,
-                                                        int32_t arg1,
-                                                        int32_t arg2,
-                                                        int32_t arg3,
-                                                        int32_t arg4,
-                                                        int32_t arg5) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_path_remove_directory(int32_t arg0,
-                                                                int32_t arg1,
-                                                                int32_t arg2) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_path_rename(int32_t arg0,
-                                                      int32_t arg1,
-                                                      int32_t arg2,
-                                                      int32_t arg3,
-                                                      int32_t arg4,
-                                                      int32_t arg5) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_path_symlink(int32_t arg0,
-                                                       int32_t arg1,
-                                                       int32_t arg2,
-                                                       int32_t arg3,
-                                                       int32_t arg4) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_path_unlink_file(int32_t arg0,
-                                                           int32_t arg1,
-                                                           int32_t arg2) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_poll_oneoff(int32_t arg0,
-                                                      int32_t arg1,
-                                                      int32_t arg2,
-                                                      int32_t arg3) {
-  return 0;
-}
-
-_Noreturn void __imported_wasi_snapshot_preview1_proc_exit(int32_t arg0) {
-  exit(arg0);
-}
-
-int32_t __imported_wasi_snapshot_preview1_sched_yield() {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_random_get(int32_t arg0,
-                                                     int32_t arg1) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_sock_accept(int32_t arg0,
-                                                      int32_t arg1,
-                                                      int32_t arg2) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_sock_recv(int32_t arg0,
-                                                    int32_t arg1,
-                                                    int32_t arg2,
-                                                    int32_t arg3,
-                                                    int32_t arg4,
-                                                    int32_t arg5) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_sock_send(int32_t arg0,
-                                                    int32_t arg1,
-                                                    int32_t arg2,
-                                                    int32_t arg3,
-                                                    int32_t arg4) {
-  return 0;
-}
-
-int32_t __imported_wasi_snapshot_preview1_sock_shutdown(int32_t arg0,
-                                                        int32_t arg1) {
-  return 0;
-}
-
-#ifdef _REENTRANT
-int32_t __imported_wasi_thread_spawn(int32_t arg0) {
-  return 0;
-}
-#endif
-
-void _start();
-
-__attribute__((export_name("__preinit__10_init_csharp"))) void
-__preinit__10_init_csharp() {
-  _start();
-}
+int32_t sock_accept(int32_t, int32_t, int32_t) { return 0; }

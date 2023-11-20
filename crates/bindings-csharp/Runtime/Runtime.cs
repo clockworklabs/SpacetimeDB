@@ -4,20 +4,10 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using static System.Text.Encoding;
 
 public static class Runtime
 {
-    private static void ThrowForResult(ushort result)
-    {
-        throw new Exception($"SpacetimeDB error code: {result}");
-    }
-
-    [MethodImpl(MethodImplOptions.InternalCall)]
-    public static extern uint CreateTable(string name, byte[] schema);
-
-    [MethodImpl(MethodImplOptions.InternalCall)]
-    public static extern uint GetTableId(string name);
-
     [SpacetimeDB.Type]
     public enum IndexType : byte
     {
@@ -25,110 +15,63 @@ public static class Runtime
         Hash,
     }
 
-    [MethodImpl(MethodImplOptions.InternalCall)]
-    public static extern void CreateIndex(
-        string index_name,
-        uint table_id,
-        IndexType index_type,
-        byte[] col_ids
-    );
-
-    [MethodImpl(MethodImplOptions.InternalCall)]
-    public static extern byte[] IterByColEq(uint table_id, uint col_id, byte[] value);
-
-    [MethodImpl(MethodImplOptions.InternalCall)]
-    public extern static void Insert(uint tableId, byte[] row);
-
-    [MethodImpl(MethodImplOptions.InternalCall)]
-    public static extern void DeletePk(uint table_id, byte[] pk);
-
-    [MethodImpl(MethodImplOptions.InternalCall)]
-    public static extern void DeleteValue(uint table_id, byte[] row);
-
-    [MethodImpl(MethodImplOptions.InternalCall)]
-    public static extern uint DeleteByColEq(uint tableId, uint colId, byte[] value);
-
-    public static bool UpdateByColEq(uint tableId, uint colId, byte[] value, byte[] row)
+    private static byte[] Consume(this RawBindings.Buffer buffer)
     {
-        // Just like in Rust bindings, updating is just deleting and inserting for now.
-        if (DeleteByColEq(tableId, colId, value) > 0)
-        {
-            Insert(tableId, row);
-            return true;
-        }
-        else
-        {
-            return false;
-        }
+        var len = RawBindings._buffer_len(buffer);
+        var result = new byte[len];
+        RawBindings._buffer_consume(buffer, result, len);
+        return result;
     }
-
-    [MethodImpl(MethodImplOptions.InternalCall)]
-    public static extern uint DeleteRange(
-        uint tableId,
-        uint colId,
-        byte[] rangeStart,
-        byte[] rangeEnd
-    );
-
-    // Ideally these methods would be scoped under BufferIter,
-    // but Mono bindings don't seem to work correctly with nested
-    // classes.
-
-    [MethodImpl(MethodImplOptions.InternalCall)]
-    private static extern void BufferIterStart(uint table_id, out uint handle);
-
-    [MethodImpl(MethodImplOptions.InternalCall)]
-    private static extern void BufferIterStartFiltered(
-        uint table_id,
-        byte[] filter,
-        out uint handle
-    );
-
-    [MethodImpl(MethodImplOptions.InternalCall)]
-    private static extern byte[]? BufferIterNext(uint handle);
-
-    [MethodImpl(MethodImplOptions.InternalCall)]
-    private extern static void BufferIterDrop(ref uint handle);
 
     private class BufferIter : IEnumerator<byte[]>, IDisposable
     {
-        private uint handle;
+        private RawBindings.BufferIter handle;
         public byte[] Current { get; private set; } = new byte[0];
 
         object IEnumerator.Current => Current;
 
-        public BufferIter(uint table_id, byte[]? filterBytes)
+        public BufferIter(RawBindings.TableId table_id, byte[]? filterBytes)
         {
-            if (filterBytes is not null)
+            if (filterBytes is null)
             {
-                BufferIterStartFiltered(table_id, filterBytes, out handle);
+                RawBindings._iter_start(table_id, out handle);
             }
             else
             {
-                BufferIterStart(table_id, out handle);
+                RawBindings._iter_start_filtered(
+                    table_id,
+                    filterBytes,
+                    (uint)filterBytes.Length,
+                    out handle
+                );
             }
         }
 
         public bool MoveNext()
         {
-            Current = new byte[0];
-            var next = BufferIterNext(handle);
-            if (next is not null)
+            RawBindings._iter_next(handle, out var nextBuf);
+            if (nextBuf.Equals(RawBindings.Buffer.INVALID))
             {
-                Current = next;
+                return false;
             }
-            return next is not null;
+            Current = nextBuf.Consume();
+            return true;
         }
 
         public void Dispose()
         {
-            BufferIterDrop(ref handle);
+            if (!handle.Equals(RawBindings.BufferIter.INVALID))
+            {
+                RawBindings._iter_drop(handle);
+                handle = RawBindings.BufferIter.INVALID;
+                GC.SuppressFinalize(this);
+            }
         }
 
         // Free unmanaged resource just in case user hasn't disposed for some reason.
         ~BufferIter()
         {
-            // we already guard against double-free in stdb_iter_drop.
+            // we already guard against double-free in Dispose.
             Dispose();
         }
 
@@ -140,10 +83,10 @@ public static class Runtime
 
     public class RawTableIter : IEnumerable<byte[]>
     {
-        private readonly uint tableId;
+        private readonly RawBindings.TableId tableId;
         private readonly byte[]? filterBytes;
 
-        public RawTableIter(uint tableId, byte[]? filterBytes = null)
+        public RawTableIter(RawBindings.TableId tableId, byte[]? filterBytes = null)
         {
             this.tableId = tableId;
             this.filterBytes = filterBytes;
@@ -170,14 +113,29 @@ public static class Runtime
         Panic
     }
 
-    [MethodImpl(MethodImplOptions.InternalCall)]
-    public extern static void Log(
+    public static void Log(
         string text,
         LogLevel level = LogLevel.Info,
         [CallerMemberName] string target = "",
         [CallerFilePath] string filename = "",
         [CallerLineNumber] uint lineNumber = 0
-    );
+    )
+    {
+        var target_bytes = UTF8.GetBytes(target);
+        var filename_bytes = UTF8.GetBytes(filename);
+        var text_bytes = UTF8.GetBytes(text);
+
+        RawBindings._console_log(
+            (byte)level,
+            target_bytes,
+            (uint)target_bytes.Length,
+            filename_bytes,
+            (uint)filename_bytes.Length,
+            lineNumber,
+            text_bytes,
+            (uint)text_bytes.Length
+        );
+    }
 
     public struct Identity : IEquatable<Identity>
     {
@@ -241,7 +199,7 @@ public static class Runtime
                 // We need to set type info to inlined address type as `generate` CLI currently can't recognise type references for built-ins.
                 new SpacetimeDB.SATS.ProductType
                 {
-                  { "__address_bytes", SpacetimeDB.SATS.BuiltinType.BytesTypeInfo.AlgebraicType }
+                    { "__address_bytes", SpacetimeDB.SATS.BuiltinType.BytesTypeInfo.AlgebraicType }
                 },
                 // Concern: We use this "packed" representation (as Bytes)
                 //          in the caller_id field of reducer arguments,
@@ -274,34 +232,75 @@ public static class Runtime
         }
     }
 
-    [MethodImpl(MethodImplOptions.InternalCall)]
-    private extern static void ScheduleReducer(
-        string name,
-        byte[] args,
-        // by-value ulong + other args corrupts stack in Mono's FFI for some reason
-        // pass by reference (`in`) instead
-        in ulong time,
-        out ulong handle
-    );
-
-    [MethodImpl(MethodImplOptions.InternalCall)]
-    private extern static void CancelReducer(
-        // see ScheduleReducer for why we're using reference here
-        in ulong handle
-    );
-
     public class ScheduleToken
     {
-        private readonly ulong handle;
+        private readonly RawBindings.ScheduleToken handle;
 
-        public ScheduleToken(string name, byte[] args, DateTimeOffset time) =>
-            ScheduleReducer(
-                name,
+        public ScheduleToken(string name, byte[] args, DateTimeOffset time)
+        {
+            var name_bytes = UTF8.GetBytes(name);
+
+            RawBindings._schedule_reducer(
+                name_bytes,
+                (uint)name_bytes.Length,
                 args,
+                (uint)args.Length,
                 (ulong)((time - DateTimeOffset.UnixEpoch).Ticks / 10),
                 out handle
             );
+        }
 
-        public void Cancel() => CancelReducer(handle);
+        public void Cancel() => RawBindings._cancel_reducer(handle);
+    }
+
+    public static RawBindings.TableId GetTableId(string name)
+    {
+        var name_bytes = UTF8.GetBytes(name);
+        RawBindings._get_table_id(name_bytes, (uint)name_bytes.Length, out var out_);
+        return out_;
+    }
+
+    public static void Insert(RawBindings.TableId tableId, byte[] row)
+    {
+        RawBindings._insert(tableId, row, (uint)row.Length);
+    }
+
+    public static uint DeleteByColEq(
+        RawBindings.TableId tableId,
+        RawBindings.ColId colId,
+        byte[] value
+    )
+    {
+        RawBindings._delete_by_col_eq(tableId, colId, value, (uint)value.Length, out var out_);
+        return out_;
+    }
+
+    public static bool UpdateByColEq(
+        RawBindings.TableId tableId,
+        RawBindings.ColId colId,
+        byte[] value,
+        byte[] row
+    )
+    {
+        // Just like in Rust bindings, updating is just deleting and inserting for now.
+        if (DeleteByColEq(tableId, colId, value) > 0)
+        {
+            Insert(tableId, row);
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    public static byte[] IterByColEq(
+        RawBindings.TableId tableId,
+        RawBindings.ColId colId,
+        byte[] value
+    )
+    {
+        RawBindings._iter_by_col_eq(tableId, colId, value, (uint)value.Length, out var buf);
+        return buf.Consume();
     }
 }

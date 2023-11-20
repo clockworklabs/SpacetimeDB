@@ -1,8 +1,52 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
+  <PropertyGroup>
+    <WasmSingleFileBundle>true</WasmSingleFileBundle>
+    <TrimMode>full</TrimMode>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <DebuggerSupport>false</DebuggerSupport>
+    <EventSourceSupport>false</EventSourceSupport>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
+  </PropertyGroup>
+
   <ItemGroup>
-    <WasiNativeFileReference Include="$(MSBuildThisFileDirectory)../bindings.c" />
-    <WasiAfterRuntimeLoaded Include="mono_stdb_attach_bindings" />
+    <NativeFileReference Include="$(MSBuildThisFileDirectory)..\bindings.c" />
+    <_WasmNativeFileForLinking Include="@(NativeFileReference)" />
   </ItemGroup>
+
+  <!-- Auto-download WASI SDK on the first run. -->
+  <!-- Adapted from https://github.com/dotnet/dotnet-wasi-sdk/blob/2dbb00c779180873d3ed985e59e431f56404d8da/src/Wasi.Sdk/build/Wasi.Sdk.targets#L245-L262 -->
+  <!-- Executes before the errors in https://github.com/dotnet/runtime/blob/57fd56a99d4c97ac2f95fe84640f2a3f653f4dd7/src/mono/wasi/build/WasiApp.Native.targets#L41-L50. -->
+  <!-- TODO: remove when https://github.com/dotnet/runtime/issues/82788 is resolved. -->
+	<Target Name="ObtainWasiSdk" BeforeTargets="_SetupWasiSdk">
+		<PropertyGroup>
+      <WasiSdkVersion>20</WasiSdkVersion>
+
+			<WasiSdkDownloadTempFile>$([System.IO.Path]::Combine($(IntermediateOutputPath), "wasi-sdk.$(WasiSdkVersion).tar.gz"))</WasiSdkDownloadTempFile>
+
+      <WasiSdkFilenameSuffix Condition="$([MSBuild]::IsOSPlatform('Windows'))">.m-mingw</WasiSdkFilenameSuffix>
+      <WasiSdkFilenameSuffix Condition="$([MSBuild]::IsOSPlatform('Linux'))">-linux</WasiSdkFilenameSuffix>
+      <WasiSdkFilenameSuffix Condition="$([MSBuild]::IsOSPlatform('OSX'))">-macos</WasiSdkFilenameSuffix>
+
+      <WasiSdkUrl>https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-$(WasiSdkVersion)/wasi-sdk-$(WasiSdkVersion).0$(WasiSdkFilenameSuffix).tar.gz</WasiSdkUrl>
+
+      <WasiSdkRoot>$([System.IO.Path]::Combine($([System.Environment]::GetFolderPath(SpecialFolder.UserProfile)), '.wasi-sdk', "wasi-sdk-$(WasiSdkVersion)"))</WasiSdkRoot>
+      <WasiSysRoot>$([System.IO.Path]::Combine($(WasiSdkRoot), 'share', 'wasi-sysroot'))</WasiSysRoot>
+      <WasiClang>$([System.IO.Path]::Combine($(WasiSdkRoot), 'bin', 'clang'))</WasiClang>
+      <WasiClang Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(WasiClang).exe</WasiClang>
+		</PropertyGroup>
+
+    <DownloadFile
+            SourceUrl="$(WasiSdkUrl)"
+            DestinationFolder="$(IntermediateOutputPath)"
+            DestinationFileName="$([System.IO.Path]::GetFileName('$(WasiSdkDownloadTempFile)'))"
+            Condition="!Exists('$(WasiSdkDownloadTempFile)')" />
+
+    <Message Importance="high" Text="Extracting $(WasiSdkDownloadTempFile) to $(WasiSdkRoot)..." />
+    <MakeDir Directories="$(WasiSdkRoot)" />
+    <!-- Windows 10+ has tar built in, so this should work cross-platform -->
+    <Exec Command="tar -xf &quot;$(WasiSdkDownloadTempFile)&quot; -C &quot;$(WasiSdkRoot)&quot; --strip-components=1" Condition="!Exists('$(WasiClang)')" />
+	</Target>
 
 </Project>

@@ -1,0 +1,204 @@
+namespace SpacetimeDB;
+
+using System;
+// using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
+using System.Collections;
+using System.Collections.Generic;
+using static System.Text.Encoding;
+
+public static partial class RawBindings
+{
+    const string StdbNamespace = "bindings";
+
+    [CustomMarshaller(typeof(CheckedStatus), MarshalMode.ManagedToUnmanagedOut, typeof(StatusMarshaller))]
+    static class StatusMarshaller
+    {
+        public static CheckedStatus ConvertToManaged(ushort status)
+        {
+            if (status != 0)
+            {
+                throw new Exception(
+                    status switch
+                    {
+                        1 => "No such table",
+                        2 => "Value or range provided not found in table",
+                        3 => "Value with given unique identifier already exists",
+                        _ => $"SpacetimeDB error code {status}",
+                    }
+                );
+            }
+            return default;
+        }
+    }
+
+    [NativeMarshalling(typeof(StatusMarshaller))]
+    public struct CheckedStatus;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public readonly struct TableId
+    {
+        private readonly uint table_id;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public readonly struct ColId(byte col_id)
+    {
+        private readonly byte col_id = col_id;
+
+        public static explicit operator byte(ColId col_id) => col_id.col_id;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public readonly struct IndexType
+    {
+        private readonly byte index_type;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public readonly struct LogLevel(byte log_level)
+    {
+        private readonly byte log_level = log_level;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public readonly struct ScheduleToken
+    {
+        private readonly ulong schedule_token;
+    }
+
+    [CustomMarshaller(typeof(Buffer), MarshalMode.Default, typeof(BufferMarshaller))]
+    static class BufferMarshaller
+    {
+        public static Buffer ConvertToManaged(uint buf_handle) => new (buf_handle);
+
+        public static uint ConvertToUnmanaged(Buffer buf) => (uint)buf;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    [NativeMarshalling(typeof(BufferMarshaller))]
+    public readonly struct Buffer(uint handle) : IEquatable<Buffer>
+    {
+        private readonly uint handle = handle;
+        public static readonly Buffer INVALID = new (uint.MaxValue);
+
+        public bool Equals(Buffer other) => handle == other.handle;
+
+        public static explicit operator uint(Buffer buf) => buf.handle;
+
+        public override bool Equals(object? obj) => obj is Buffer other && Equals(other);
+        public override int GetHashCode() => handle.GetHashCode();
+        public static bool operator ==(Buffer left, Buffer right) => left.Equals(right);
+        public static bool operator !=(Buffer left, Buffer right) => !(left == right);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public readonly struct BufferIter(uint handle) : IEquatable<BufferIter>
+    {
+        private readonly uint handle = handle;
+        public static readonly BufferIter INVALID = new(uint.MaxValue);
+
+        public bool Equals(BufferIter other) => handle == other.handle;
+
+        public static explicit operator uint(BufferIter buf) => buf.handle;
+
+        public override bool Equals(object? obj) => obj is BufferIter other && Equals(other);
+        public override int GetHashCode() => handle.GetHashCode();
+        public static bool operator ==(BufferIter left, BufferIter right) => left.Equals(right);
+        public static bool operator !=(BufferIter left, BufferIter right) => !(left == right);
+    }
+
+    [LibraryImport("bindings")]
+    public static partial CheckedStatus _get_table_id([In] byte[] name, uint name_len, out TableId out_);
+
+    [LibraryImport("bindings")]
+    public static partial CheckedStatus _create_index(
+        [In] byte[] index_name,
+        uint index_name_len,
+        TableId table_id,
+        IndexType index_type,
+        [In] ColId[] col_ids,
+        uint col_len
+    );
+
+    [LibraryImport("bindings")]
+    public static partial CheckedStatus _iter_by_col_eq(
+        TableId table_id,
+        ColId col_id,
+        [In] byte[] value,
+        uint value_len,
+        out Buffer out_
+    );
+
+    [LibraryImport("bindings")]
+    public static partial CheckedStatus _insert(TableId table_id, byte[] row, uint row_len);
+
+    [LibraryImport("bindings")]
+    public static partial CheckedStatus _delete_by_col_eq(
+        TableId table_id,
+        ColId col_id,
+        [In] byte[] value,
+        uint value_len,
+        out uint out_
+    );
+
+    [LibraryImport("bindings")]
+    public static partial CheckedStatus _delete_by_rel(
+        TableId table_id,
+        [In] byte[] relation,
+        uint relation_len,
+        out uint out_
+    );
+
+    [LibraryImport("bindings")]
+    public static partial CheckedStatus _iter_start(TableId table_id, out BufferIter out_);
+
+    [LibraryImport("bindings")]
+    public static partial CheckedStatus _iter_start_filtered(
+        TableId table_id,
+        [In] byte[] filter,
+        uint filter_len,
+        out BufferIter out_
+    );
+
+    [LibraryImport("bindings")]
+    public static partial CheckedStatus _iter_next(BufferIter iter_handle, out Buffer out_);
+
+    [LibraryImport("bindings")]
+    public static partial CheckedStatus _iter_drop(BufferIter iter_handle);
+
+    [LibraryImport("bindings")]
+    public static partial void _console_log(
+        byte level,
+        [In] byte[] target,
+        uint target_len,
+        [In] byte[] filename,
+        uint filename_len,
+        uint line_number,
+        [In] byte[] message,
+        uint message_len
+    );
+
+    [LibraryImport("bindings")]
+    public static partial void _schedule_reducer(
+        [In] byte[] name,
+        uint name_len,
+        [In] byte[] args,
+        uint args_len,
+        ulong time,
+        out ScheduleToken out_
+    );
+
+    [LibraryImport("bindings")]
+    public static partial void _cancel_reducer(ScheduleToken schedule_token_handle);
+
+    [LibraryImport("bindings")]
+    public static partial uint _buffer_len(Buffer buf_handle);
+
+    [LibraryImport("bindings")]
+    public static partial void _buffer_consume(Buffer buf_handle, [MarshalUsing(CountElementName = nameof(dst_len))] [Out] byte[] dst, uint dst_len);
+
+    [LibraryImport("bindings")]
+    public static partial Buffer _buffer_alloc([In] byte[] data, uint data_len);
+}

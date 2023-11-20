@@ -4,9 +4,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Result<PathBuf> {
+    // Make sure that we have the wasm target installed (ok to run if its already installed)
+    cmd!("dotnet", "workload", "install", "wasi-experimental", "--skip-manifest-update").run()?;
+
     let config_name = if build_debug { "Debug" } else { "Release" };
 
-    let output_path = project_path.join(format!("bin/{config_name}/net7.0/StdbModule.wasm"));
+    let output_path = project_path.join(format!("bin/{config_name}/net8.0/wasi-wasm/AppBundle/StdbModule.wasm"));
 
     // delete existing wasm file if exists
     if output_path.exists() {

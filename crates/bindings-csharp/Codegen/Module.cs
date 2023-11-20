@@ -47,10 +47,7 @@ public class Module : IIncrementalGenerator
                                     a.AttributeClass?.ToDisplayString()
                                     == "SpacetimeDB.ColumnAttribute"
                             )
-                            .Select(
-                                a =>
-                                    (ColumnAttrs)a.ConstructorArguments[0].Value!
-                            )
+                            .Select(a => (ColumnAttrs)a.ConstructorArguments[0].Value!)
                             .SingleOrDefault();
 
                         if (indexKind.HasFlag(ColumnAttrs.AutoInc))
@@ -112,7 +109,7 @@ public class Module : IIncrementalGenerator
 
                     var extensions =
                         $@"
-                            private static readonly Lazy<uint> tableId = new (() => SpacetimeDB.Runtime.GetTableId(nameof({t.Name})));
+                            private static readonly Lazy<SpacetimeDB.RawBindings.TableId> tableId = new (() => SpacetimeDB.Runtime.GetTableId(nameof({t.Name})));
 
                             public static IEnumerable<{t.Name}> Iter() =>
                                 new SpacetimeDB.Runtime.RawTableIter(tableId.Value)
@@ -139,7 +136,11 @@ public class Module : IIncrementalGenerator
                             }}
                         ";
 
-                    foreach (var (f, index) in t.Fields.Select((f, i) => (f, i)))
+                    foreach (
+                        var (f, index) in t.Fields.Select(
+                            (f, i) => (f, $"new SpacetimeDB.RawBindings.ColId({i})")
+                        )
+                    )
                     {
                         if (f.IndexKind.HasFlag(ColumnAttrs.Unique))
                         {
@@ -273,6 +274,7 @@ public class Module : IIncrementalGenerator
             using SpacetimeDB.Module;
             using System.Runtime.CompilerServices;
             using static SpacetimeDB.Runtime;
+            using System.Diagnostics.CodeAnalysis;
 
             static class ModuleRegistration {{
                 {string.Join("\n", addReducers.Select(r => r.Class))}
@@ -281,6 +283,9 @@ public class Module : IIncrementalGenerator
                 // [ModuleInitializer] - doesn't work because assemblies are loaded lazily;
                 // might make use of it later down the line, but for now assume there is only one
                 // module so we can use `Main` instead.
+
+                // Prevent trimming of FFI exports that are invoked from C and not visible to C# trimmer.
+                [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(SpacetimeDB.Module.FFI))]
                 public static void Main() {{
                     // incredibly weird bugfix for incredibly weird bug
                     // see https://github.com/dotnet/dotnet-wasi-sdk/issues/24
