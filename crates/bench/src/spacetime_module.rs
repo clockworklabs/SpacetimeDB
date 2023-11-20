@@ -3,7 +3,7 @@ use spacetimedb_lib::{
     sats::{product, ArrayValue},
     AlgebraicValue, ProductValue,
 };
-use spacetimedb_testing::modules::{start_runtime, CompilationMode, CompiledModule, ModuleHandle};
+use spacetimedb_testing::modules::{start_runtime, CompilationMode, CompiledModule, LoggerRecord, ModuleHandle};
 use tokio::runtime::Runtime;
 
 use crate::{
@@ -205,18 +205,4 @@ impl BenchDatabase for SpacetimeModule {
 pub struct TableId {
     pascal_case: String,
     snake_case: String,
-}
-
-#[allow(unused)]
-/// Used to parse output from module logs.
-///
-/// Sync with: `core::database_logger::Record`. We can't use it
-/// directly because the types are wrong for deserialization.
-/// (Rust!)
-#[derive(serde::Deserialize)]
-struct LoggerRecord {
-    target: Option<String>,
-    filename: Option<String>,
-    line_number: Option<u32>,
-    message: String,
 }

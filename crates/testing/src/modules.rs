@@ -16,6 +16,8 @@ use spacetimedb::protobuf::client_api;
 use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, DatabaseDef, NodeDelegate};
 use spacetimedb_lib::sats;
 
+pub use spacetimedb::database_logger::LogLevel;
+
 use spacetimedb_standalone::StandaloneEnv;
 
 pub fn start_runtime() -> Runtime {
@@ -180,3 +182,17 @@ pub static DEFAULT_CONFIG: Config = Config {
     storage: Storage::Disk,
     fsync: FsyncPolicy::Never,
 };
+
+/// Used to parse output from module logs.
+///
+/// Sync with: `core::database_logger::Record`. We can't use it
+/// directly because the types are wrong for deserialization.
+/// (Rust!)
+#[derive(serde::Deserialize)]
+pub struct LoggerRecord {
+    pub level: LogLevel,
+    pub target: Option<String>,
+    pub filename: Option<String>,
+    pub line_number: Option<u32>,
+    pub message: String,
+}
