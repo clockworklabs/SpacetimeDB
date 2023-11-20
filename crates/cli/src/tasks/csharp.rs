@@ -3,10 +3,10 @@ use duct::cmd;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub(crate) fn build_csharp(project_path: &Path, _build_debug: bool) -> anyhow::Result<PathBuf> {
-    // NOTE: wasi.sdk does not currently optimize release
+pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Result<PathBuf> {
+    let config_name = if build_debug { "Debug" } else { "Release" };
 
-    let output_path = project_path.join("bin/Release/net7.0/StdbModule.wasm");
+    let output_path = project_path.join(format!("bin/{config_name}/net7.0/StdbModule.wasm"));
 
     // delete existing wasm file if exists
     if output_path.exists() {
@@ -22,7 +22,7 @@ pub(crate) fn build_csharp(project_path: &Path, _build_debug: bool) -> anyhow::R
     })?;
 
     // run dotnet publish using cmd macro
-    let result = cmd!("dotnet", "publish", "-c", "Release").dir(project_path).run();
+    let result = cmd!("dotnet", "publish", "-c", config_name).dir(project_path).run();
     match result {
         Ok(_) => {}
         Err(error) => {
