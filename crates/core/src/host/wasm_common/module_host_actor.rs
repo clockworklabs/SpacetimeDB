@@ -554,6 +554,11 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
                 T::log_traceback("reducer", reducer_name, &err);
 
+                WORKER_METRICS
+                    .wasm_instance_errors
+                    .with_label_values(&caller_identity, &self.info.module_hash, &caller_address, reducer_name)
+                    .inc();
+
                 // discard this instance
                 self.trapped = true;
 
