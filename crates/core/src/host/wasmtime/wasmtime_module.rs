@@ -106,8 +106,7 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
         store.data_mut().instantiate(mem);
 
         // Note: this budget is just for initializers
-        let (init_budget, _) = WasmtimeFuel::from_energy_quanta(EnergyQuanta::DEFAULT_BUDGET);
-        set_store_fuel(&mut store, init_budget);
+        set_store_fuel(&mut store, EnergyQuanta::DEFAULT_BUDGET);
 
         for preinit in &func_names.preinits {
             let func = instance.get_typed_func::<(), ()>(&mut store, preinit).unwrap();
@@ -199,8 +198,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         // note that this conversion is load-bearing - although we convert budget right back into
         // EnergyQuanta at the end of this function, from_energy_quanta clamps it to a u64 range.
         // otherwise, we'd return something like `used: i128::MAX - u64::MAX`, which is inaccurate.
-        let (budget, _excess_quanta) = WasmtimeFuel::from_energy_quanta(budget);
-        set_store_fuel(store, budget);
+        let budget: WasmtimeFuel = set_store_fuel(store, budget);
 
         let mut make_buf = |data| store.data_mut().insert_buffer(data);
 
@@ -252,18 +250,12 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
     }
 }
 
-fn set_store_fuel(store: &mut impl AsContextMut, fuel: WasmtimeFuel) {
-    let fuel = fuel.0;
-    let mut store = store.as_context_mut();
-    let rem = store.fuel_remaining().unwrap();
-    let diff = rem.abs_diff(fuel);
-    if rem < fuel {
-        store.add_fuel(diff).unwrap();
-    } else {
-        store.consume_fuel(diff).unwrap();
-    }
+fn set_store_fuel(store: &mut impl AsContextMut, fuel: EnergyQuanta) -> WasmtimeFuel {
+    let (fuel, _excess) = WasmtimeFuel::from_energy_quanta(fuel);
+    store.as_context_mut().set_fuel(fuel.0).unwrap();
+    fuel
 }
 
 fn get_store_fuel(store: &impl AsContext) -> WasmtimeFuel {
-    WasmtimeFuel(store.as_context().fuel_remaining().unwrap())
+    WasmtimeFuel(store.as_context().get_fuel().unwrap())
 }
