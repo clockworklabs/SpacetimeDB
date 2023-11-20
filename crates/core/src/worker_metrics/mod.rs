@@ -70,6 +70,12 @@ metrics_group!(
         #[labels(identity: Identity, module_hash: Hash, database_address: Address, reducer_symbol: str)]
         pub instance_queue_length: IntGaugeVec,
 
+        #[name = spacetime_worker_instance_operation_queue_length_histogram]
+        #[help = "Length of the wait queue for access to a module instance."]
+        #[labels(identity: Identity, module_hash: Hash, database_address: Address, reducer_symbol: str)]
+        #[buckets(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 25, 50)]
+        pub instance_queue_length_histogram: HistogramVec,
+
         #[name = spacetime_system_disk_space_total_bytes]
         #[help = "A node's total disk space (in bytes)"]
         pub system_disk_space_total: IntGauge,
