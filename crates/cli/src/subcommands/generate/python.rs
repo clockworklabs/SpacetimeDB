@@ -1,7 +1,7 @@
 use super::util::fmt_fn;
 
 use convert_case::{Case, Casing};
-use spacetimedb_lib::sats::db::attr::ColumnIndexAttribute;
+use spacetimedb_lib::sats::db::attr::ColumnAttribute;
 use spacetimedb_lib::{
     sats::{AlgebraicType::Builtin, AlgebraicTypeRef, ArrayType, BuiltinType, MapType},
     AlgebraicType, ProductType, ProductTypeElement, ReducerDef, SumType, TableDef,
@@ -188,7 +188,7 @@ fn autogen_python_product_table_common(
     ctx: &GenCtx,
     name: &str,
     product_type: &ProductType,
-    column_attrs: Option<&[ColumnIndexAttribute]>,
+    column_attrs: Option<&[ColumnAttribute]>,
 ) -> String {
     let is_table = column_attrs.is_some();
 
@@ -242,7 +242,7 @@ fn autogen_python_product_table_common(
                 .unwrap()
                 .iter()
                 .enumerate()
-                .find_map(|(idx, attr)| attr.has_primary().then_some(idx))
+                .find_map(|(idx, attr)| attr.has_primary_key().then_some(idx))
                 .map(|idx| {
                     let field_name = product_type.elements[idx]
                         .name

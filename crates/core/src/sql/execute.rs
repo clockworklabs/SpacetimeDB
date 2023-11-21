@@ -1,6 +1,6 @@
 use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::{ProductType, ProductValue};
 use spacetimedb_sats::relation::MemTable;
-use spacetimedb_sats::{ProductType, ProductValue};
 use spacetimedb_vm::eval::run_ast;
 use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
 use tracing::info;
@@ -106,8 +106,8 @@ pub fn run(db: &RelationalDB, tx: &mut MutTxId, sql_text: &str, auth: AuthCtx) -
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::db::datastore::system_tables::{ST_TABLES_ID, ST_TABLES_NAME};
     use crate::db::relational_db::tests_utils::make_test_db;
-    use crate::db::relational_db::{ST_TABLES_ID, ST_TABLES_NAME};
     use crate::vm::tests::create_table_with_rows;
     use itertools::Itertools;
     use spacetimedb_lib::error::ResultTest;

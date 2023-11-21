@@ -1,7 +1,7 @@
 use super::code_indenter::CodeIndenter;
 use super::{GenCtx, GenItem};
 use convert_case::{Case, Casing};
-use spacetimedb_lib::sats::db::attr::ColumnIndexAttribute;
+use spacetimedb_lib::sats::db::attr::ColumnAttribute;
 use spacetimedb_lib::sats::{
     AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, ProductTypeElement, SumType,
     SumTypeVariant,
@@ -408,7 +408,7 @@ fn find_primary_key_column_index(ctx: &GenCtx, table: &TableDef) -> Option<usize
         .column_attrs
         .iter()
         .enumerate()
-        .filter_map(|(i, attr)| attr.has_primary().then_some(i))
+        .filter_map(|(i, attr)| attr.has_primary_key().then_some(i))
         .collect::<Vec<_>>();
     match primaries.len() {
         2.. => {
@@ -489,7 +489,7 @@ fn print_table_filter_methods(
     out: &mut Indenter,
     table_type_name: &str,
     elements: &[ProductTypeElement],
-    attrs: &[ColumnIndexAttribute],
+    attrs: &[ColumnAttribute],
 ) {
     write!(out, "impl {} ", table_type_name).unwrap();
     out.delimited_block(

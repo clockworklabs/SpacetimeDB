@@ -27,7 +27,7 @@ pub struct ExecutionContext<'a> {
 /// A transaction can be executing a reducer.
 /// It can be used to satisfy a one-off sql query or subscription.
 /// It can also be an internal operation that is not associated with a reducer or sql request.
-#[derive(Clone, Copy, Display)]
+#[derive(Clone, Copy, Display, Hash, PartialEq, Eq)]
 pub enum TransactionType {
     Reducer,
     Sql,

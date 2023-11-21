@@ -1,5 +1,9 @@
+use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
+use crate::functions::{FunDef, Param};
+use crate::operator::{Op, OpCmp, OpLogic, OpQuery};
+use crate::types::Ty;
 use derive_more::From;
-
+use nonempty::NonEmpty;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::algebraic_type::AlgebraicType;
@@ -10,17 +14,11 @@ use spacetimedb_sats::db::error::AuthError;
 use spacetimedb_sats::relation::{
     Column, DbTable, FieldExpr, FieldName, Header, MemTable, RelValueRef, Relation, RowCount, Table,
 };
-use spacetimedb_sats::satn::Satn;
-use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
+use spacetimedb_sats::{satn::Satn, ProductValue, Typespace, WithTypespace};
 use std::cmp::Ordering;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::ops::Bound;
-
-use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
-use crate::functions::{FunDef, Param};
-use crate::operator::{Op, OpCmp, OpLogic, OpQuery};
-use crate::types::Ty;
 
 /// A `index` into the list of [Fun]
 pub type FunctionId = usize;
@@ -229,8 +227,10 @@ impl From<IndexScan> for Box<ColumnOp> {
 impl From<IndexScan> for ColumnOp {
     fn from(value: IndexScan) -> Self {
         let table = value.table;
-        let col_id = value.col_id;
-        let field = table.head.fields[col_id.idx()].field.clone();
+        let columns = value.columns;
+        assert_eq!(columns.len(), 1, "multi-column predicates are not yet supported");
+
+        let field = table.head.fields[usize::from(columns.head)].field.clone();
         match (value.lower_bound, value.upper_bound) {
             // Inclusive lower bound => field >= value
             (Bound::Included(value), Bound::Unbounded) => ColumnOp::Cmp {
@@ -260,13 +260,13 @@ impl From<IndexScan> for ColumnOp {
             (lower_bound, upper_bound) => {
                 let lhs = IndexScan {
                     table: table.clone(),
-                    col_id,
+                    columns: columns.clone(),
                     lower_bound,
                     upper_bound: Bound::Unbounded,
                 };
                 let rhs = IndexScan {
                     table,
-                    col_id,
+                    columns,
                     lower_bound: Bound::Unbounded,
                     upper_bound,
                 };
@@ -276,6 +276,16 @@ impl From<IndexScan> for ColumnOp {
                     rhs: rhs.into(),
                 }
             }
+        }
+    }
+}
+
+impl From<Query> for Option<ColumnOp> {
+    fn from(value: Query) -> Self {
+        match value {
+            Query::IndexScan(op) => Some(op.into()),
+            Query::Select(op) => Some(op),
+            _ => None,
         }
     }
 }
@@ -382,14 +392,16 @@ impl From<&SourceExpr> for DbTable {
 }
 
 // A descriptor for an index join operation.
-// The semantics are that of a semi-join with rows from the index side being returned.
+// The semantics are those of a semijoin with rows from the index or the probe side being returned.
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct IndexJoin {
     pub probe_side: QueryExpr,
     pub probe_field: FieldName,
     pub index_header: Header,
+    pub index_select: Option<ColumnOp>,
     pub index_table: TableId,
     pub index_col: ColId,
+    pub return_index_rows: bool,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
@@ -420,6 +432,7 @@ pub enum DbType {
     Table,
     Index,
     Sequence,
+    Constraint,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
@@ -489,7 +502,7 @@ impl CrudExpr {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct IndexScan {
     pub table: DbTable,
-    pub col_id: ColId,
+    pub columns: NonEmpty<ColId>,
     pub lower_bound: Bound<AlgebraicValue>,
     pub upper_bound: Bound<AlgebraicValue>,
 }
@@ -536,7 +549,7 @@ impl Ord for IndexScan {
             return order;
         };
 
-        let order = self.col_id.cmp(&other.col_id);
+        let order = self.columns.cmp(&other.columns);
         let Ordering::Equal = order else {
             return order;
         };
@@ -731,12 +744,12 @@ impl QueryExpr {
     // Generate an index scan for an equality predicate if this is the first operator.
     // Otherwise generate a select.
     // TODO: Replace these methods with a proper query optimization pass.
-    pub fn with_index_eq(mut self, table: DbTable, col_id: ColId, value: AlgebraicValue) -> Self {
+    pub fn with_index_eq(mut self, table: DbTable, columns: NonEmpty<ColId>, value: AlgebraicValue) -> Self {
         // if this is the first operator in the list, generate index scan
         let Some(query) = self.query.pop() else {
             self.query.push(Query::IndexScan(IndexScan {
                 table,
-                col_id,
+                columns,
                 lower_bound: Bound::Included(value.clone()),
                 upper_bound: Bound::Included(value),
             }));
@@ -755,14 +768,14 @@ impl QueryExpr {
                     },
                 ..
             }) if table.table_id != rhs_table_id => {
-                self = self.with_index_eq(table, col_id, value);
+                self = self.with_index_eq(table, columns, value);
                 self.query.push(query);
                 self
             }
             // try to push below join's rhs
             Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs }) => {
                 self.query.push(Query::JoinInner(JoinExpr {
-                    rhs: rhs.with_index_eq(table, col_id, value),
+                    rhs: rhs.with_index_eq(table, columns, value),
                     col_lhs,
                     col_rhs,
                 }));
@@ -775,7 +788,7 @@ impl QueryExpr {
                     lhs: filter.into(),
                     rhs: IndexScan {
                         table,
-                        col_id,
+                        columns,
                         lower_bound: Bound::Included(value.clone()),
                         upper_bound: Bound::Included(value),
                     }
@@ -789,7 +802,7 @@ impl QueryExpr {
                 self.query.push(Query::Select(
                     IndexScan {
                         table,
-                        col_id,
+                        columns,
                         lower_bound: Bound::Included(value.clone()),
                         upper_bound: Bound::Included(value),
                     }
@@ -806,7 +819,7 @@ impl QueryExpr {
     pub fn with_index_lower_bound(
         mut self,
         table: DbTable,
-        col_id: ColId,
+        columns: NonEmpty<ColId>,
         value: AlgebraicValue,
         inclusive: bool,
     ) -> Self {
@@ -814,7 +827,7 @@ impl QueryExpr {
         let Some(query) = self.query.pop() else {
             self.query.push(Query::IndexScan(IndexScan {
                 table,
-                col_id,
+                columns,
                 lower_bound: Self::bound(value, inclusive),
                 upper_bound: Bound::Unbounded,
             }));
@@ -833,14 +846,14 @@ impl QueryExpr {
                     },
                 ..
             }) if table.table_id != rhs_table_id => {
-                self = self.with_index_lower_bound(table, col_id, value, inclusive);
+                self = self.with_index_lower_bound(table, columns, value, inclusive);
                 self.query.push(query);
                 self
             }
             // try to push below join's rhs
             Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs }) => {
                 self.query.push(Query::JoinInner(JoinExpr {
-                    rhs: rhs.with_index_lower_bound(table, col_id, value, inclusive),
+                    rhs: rhs.with_index_lower_bound(table, columns, value, inclusive),
                     col_lhs,
                     col_rhs,
                 }));
@@ -848,14 +861,14 @@ impl QueryExpr {
             }
             // merge with a preceding upper bounded index scan (inclusive)
             Query::IndexScan(IndexScan {
-                col_id: lhs_col_id,
+                columns: lhs_col_id,
                 lower_bound: Bound::Unbounded,
                 upper_bound: Bound::Included(upper),
                 ..
-            }) if col_id == lhs_col_id => {
+            }) if columns == lhs_col_id => {
                 self.query.push(Query::IndexScan(IndexScan {
                     table,
-                    col_id,
+                    columns,
                     lower_bound: Self::bound(value, inclusive),
                     upper_bound: Bound::Included(upper),
                 }));
@@ -863,14 +876,14 @@ impl QueryExpr {
             }
             // merge with a preceding upper bounded index scan (exclusive)
             Query::IndexScan(IndexScan {
-                col_id: lhs_col_id,
+                columns: lhs_col_id,
                 lower_bound: Bound::Unbounded,
                 upper_bound: Bound::Excluded(upper),
                 ..
-            }) if col_id == lhs_col_id => {
+            }) if columns == lhs_col_id => {
                 self.query.push(Query::IndexScan(IndexScan {
                     table,
-                    col_id,
+                    columns,
                     lower_bound: Self::bound(value, inclusive),
                     upper_bound: Bound::Excluded(upper),
                 }));
@@ -883,7 +896,7 @@ impl QueryExpr {
                     lhs: filter.into(),
                     rhs: IndexScan {
                         table,
-                        col_id,
+                        columns,
                         lower_bound: Self::bound(value, inclusive),
                         upper_bound: Bound::Unbounded,
                     }
@@ -897,7 +910,7 @@ impl QueryExpr {
                 self.query.push(Query::Select(
                     IndexScan {
                         table,
-                        col_id,
+                        columns,
                         lower_bound: Self::bound(value, inclusive),
                         upper_bound: Bound::Unbounded,
                     }
@@ -914,7 +927,7 @@ impl QueryExpr {
     pub fn with_index_upper_bound(
         mut self,
         table: DbTable,
-        col_id: ColId,
+        columns: NonEmpty<ColId>,
         value: AlgebraicValue,
         inclusive: bool,
     ) -> Self {
@@ -922,7 +935,7 @@ impl QueryExpr {
         let Some(query) = self.query.pop() else {
             self.query.push(Query::IndexScan(IndexScan {
                 table,
-                col_id,
+                columns,
                 lower_bound: Bound::Unbounded,
                 upper_bound: Self::bound(value, inclusive),
             }));
@@ -941,14 +954,14 @@ impl QueryExpr {
                     },
                 ..
             }) if table.table_id != rhs_table_id => {
-                self = self.with_index_upper_bound(table, col_id, value, inclusive);
+                self = self.with_index_upper_bound(table, columns, value, inclusive);
                 self.query.push(query);
                 self
             }
             // try to push below join's rhs
             Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs }) => {
                 self.query.push(Query::JoinInner(JoinExpr {
-                    rhs: rhs.with_index_upper_bound(table, col_id, value, inclusive),
+                    rhs: rhs.with_index_upper_bound(table, columns, value, inclusive),
                     col_lhs,
                     col_rhs,
                 }));
@@ -956,14 +969,14 @@ impl QueryExpr {
             }
             // merge with a preceding lower bounded index scan (inclusive)
             Query::IndexScan(IndexScan {
-                col_id: lhs_col_id,
+                columns: lhs_col_id,
                 lower_bound: Bound::Included(lower),
                 upper_bound: Bound::Unbounded,
                 ..
-            }) if col_id == lhs_col_id => {
+            }) if columns == lhs_col_id => {
                 self.query.push(Query::IndexScan(IndexScan {
                     table,
-                    col_id,
+                    columns,
                     lower_bound: Bound::Included(lower),
                     upper_bound: Self::bound(value, inclusive),
                 }));
@@ -971,14 +984,14 @@ impl QueryExpr {
             }
             // merge with a preceding lower bounded index scan (inclusive)
             Query::IndexScan(IndexScan {
-                col_id: lhs_col_id,
+                columns: lhs_col_id,
                 lower_bound: Bound::Excluded(lower),
                 upper_bound: Bound::Unbounded,
                 ..
-            }) if col_id == lhs_col_id => {
+            }) if columns == lhs_col_id => {
                 self.query.push(Query::IndexScan(IndexScan {
                     table,
-                    col_id,
+                    columns,
                     lower_bound: Bound::Excluded(lower),
                     upper_bound: Self::bound(value, inclusive),
                 }));
@@ -991,7 +1004,7 @@ impl QueryExpr {
                     lhs: filter.into(),
                     rhs: IndexScan {
                         table,
-                        col_id,
+                        columns,
                         lower_bound: Bound::Unbounded,
                         upper_bound: Self::bound(value, inclusive),
                     }
@@ -1005,7 +1018,7 @@ impl QueryExpr {
                 self.query.push(Query::Select(
                     IndexScan {
                         table,
-                        col_id,
+                        columns,
                         lower_bound: Bound::Unbounded,
                         upper_bound: Self::bound(value, inclusive),
                     }
@@ -1149,8 +1162,10 @@ impl QueryExpr {
                                 probe_side,
                                 probe_field,
                                 index_header: table.head.clone(),
+                                index_select: None,
                                 index_table: table.table_id,
                                 index_col: col.col_id,
+                                return_index_rows: true,
                             };
                             return QueryExpr {
                                 source,
@@ -1185,7 +1200,7 @@ impl QueryExpr {
                 match is_sargable(schema, op) {
                     // found sargable equality condition for one of the table schemas
                     Some(IndexArgument::Eq { col_id, value }) => {
-                        q = q.with_index_eq(schema.into(), col_id, value);
+                        q = q.with_index_eq(schema.into(), col_id.into(), value);
                         continue 'outer;
                     }
                     // found sargable range condition for one of the table schemas
@@ -1194,7 +1209,7 @@ impl QueryExpr {
                         value,
                         inclusive,
                     }) => {
-                        q = q.with_index_lower_bound(schema.into(), col_id, value, inclusive);
+                        q = q.with_index_lower_bound(schema.into(), col_id.into(), value, inclusive);
                         continue 'outer;
                     }
                     // found sargable range condition for one of the table schemas
@@ -1203,7 +1218,7 @@ impl QueryExpr {
                         value,
                         inclusive,
                     }) => {
-                        q = q.with_index_upper_bound(schema.into(), col_id, value, inclusive);
+                        q = q.with_index_upper_bound(schema.into(), col_id.into(), value, inclusive);
                         continue 'outer;
                     }
                     None => {}
@@ -1214,6 +1229,97 @@ impl QueryExpr {
         }
 
         q
+    }
+
+    // Is this an incremental evaluation of an index join {L+ join R}
+    fn is_incremental_index_join(&self) -> bool {
+        if self.query.len() != 1 {
+            return false;
+        }
+        // Is this in index join?
+        let Query::IndexJoin(IndexJoin {
+            probe_side:
+                QueryExpr {
+                    source: SourceExpr::DbTable(rhs_table),
+                    query: selections,
+                },
+            probe_field,
+            index_select: None,
+            return_index_rows: true,
+            ..
+        }) = &self.query[0]
+        else {
+            return false;
+        };
+        // Is this an incremental evaluation of updates to the left hand table?
+        let SourceExpr::MemTable(_) = self.source else {
+            return false;
+        };
+        // Does the right hand table have an index on the join field?
+        let Some(Column { is_indexed: true, .. }) = rhs_table.head.column(probe_field) else {
+            return false;
+        };
+        // The original probe side must consist of an optional index scan,
+        // followed by an arbitrary number of selections.
+        selections
+            .iter()
+            .all(|op| matches!(op, Query::Select(_)) || matches!(op, Query::IndexScan(_)))
+    }
+
+    // Assuming this is an incremental evaluation of an index join {L+ join R},
+    // swap the index and probe sides to avoid scanning all of R.
+    fn optimize_incremental_index_join(mut self) -> Option<IndexJoin> {
+        // This is an index join.
+        let Some(Query::IndexJoin(IndexJoin {
+            probe_side:
+                QueryExpr {
+                    source: SourceExpr::DbTable(rhs_table),
+                    query: selections,
+                },
+            probe_field,
+            index_header,
+            index_table: _,
+            index_col,
+            index_select: None,
+            return_index_rows: true,
+        })) = self.query.pop()
+        else {
+            return None;
+        };
+        // This is an incremental evaluation of updates to the left hand table.
+        let SourceExpr::MemTable(index_side_updates) = self.source else {
+            return None;
+        };
+        let index_column = index_header.fields.iter().find(|column| column.col_id == index_col)?;
+        let probe_column = rhs_table.head.column(&probe_field)?;
+        // Merge all selections from the original probe side into a single predicate.
+        // This includes an index scan if present.
+        let predicate = selections.iter().cloned().fold(None, |acc, op| {
+            <Query as Into<Option<ColumnOp>>>::into(op).map(|op| {
+                if let Some(predicate) = acc {
+                    ColumnOp::new(OpQuery::Logic(OpLogic::And), predicate, op)
+                } else {
+                    op
+                }
+            })
+        });
+        Some(IndexJoin {
+            // The new probe side consists of the updated rows.
+            probe_side: index_side_updates.into(),
+            // The new probe field is the previous index field.
+            probe_field: index_column.field.clone(),
+            // The original probe table is now the table that is being probed.
+            index_header: rhs_table.head.clone(),
+            // Any selections from the original probe side are pulled above the index lookup.
+            index_select: predicate,
+            // The original probe table is now the table that is being probed.
+            index_table: rhs_table.table_id,
+            // The new index field is the previous probe field.
+            index_col: probe_column.col_id,
+            // Because we have swapped the original index and probe sides of the join,
+            // the new index join needs to return rows from the probe side instead of the index side.
+            return_index_rows: false,
+        })
     }
 
     pub fn optimize(self) -> Self {
@@ -1227,6 +1333,14 @@ impl QueryExpr {
             .chain(tables.tail)
             .flat_map(|x| x.into_iter())
             .collect();
+
+        if self.is_incremental_index_join() {
+            // The above check guarantees that the optimization will succeed,
+            // and therefore it is safe to unwrap.
+            let index_join = self.optimize_incremental_index_join().unwrap();
+            q.query.push(Query::IndexJoin(index_join));
+            return q;
+        }
 
         for query in self.query {
             match query {
@@ -1736,7 +1850,7 @@ mod tests {
         [
             Query::IndexScan(IndexScan {
                 table: db_table,
-                col_id: 42.into(),
+                columns: NonEmpty::new(42.into()),
                 lower_bound: Bound::Included(22.into()),
                 upper_bound: Bound::Unbounded,
             }),
@@ -1750,8 +1864,10 @@ mod tests {
                     table_name: "bar".into(),
                     fields: vec![],
                 },
+                index_select: None,
                 index_table: 42.into(),
                 index_col: 22.into(),
+                return_index_rows: true,
             }),
             Query::JoinInner(JoinExpr {
                 rhs: mem_table.into(),

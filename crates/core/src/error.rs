@@ -1,3 +1,4 @@
+use std::io;
 use std::num::ParseIntError;
 use std::path::PathBuf;
 use std::sync::{MutexGuard, PoisonError};
@@ -173,6 +174,8 @@ pub enum DBError {
     },
     #[error("SqlError: {error}, executing: `{sql}`")]
     Plan { sql: String, error: PlanError },
+    #[error("Error replaying the commit log: {0}")]
+    LogReplay(#[from] LogReplayError),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -210,6 +213,42 @@ impl<'a, T: ?Sized + 'a> From<PoisonError<std::sync::MutexGuard<'a, T>>> for DBE
     fn from(err: PoisonError<MutexGuard<'_, T>>) -> Self {
         DBError::MessageLogPoisoned(err.to_string())
     }
+}
+
+#[derive(Debug, Error)]
+pub enum LogReplayError {
+    #[error(
+        "Error reading segment {}/{} at commit {}: {}",
+        .segment_offset,
+        .total_segments,
+        .commit_offset,
+        .source
+    )]
+    TrailingSegments {
+        segment_offset: usize,
+        total_segments: usize,
+        commit_offset: u64,
+        #[source]
+        source: io::Error,
+    },
+    #[error("Could not reset log to offset {}: {}", .offset, .source)]
+    Reset {
+        offset: u64,
+        #[source]
+        source: io::Error,
+    },
+    #[error(
+        "Unexpected I/O error reading commit {} from segment {}: {}",
+        .commit_offset,
+        .segment_offset,
+        .source
+    )]
+    Io {
+        segment_offset: usize,
+        commit_offset: u64,
+        #[source]
+        source: io::Error,
+    },
 }
 
 #[derive(Error, Debug)]

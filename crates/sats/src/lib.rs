@@ -33,7 +33,7 @@ pub use algebraic_value::{AlgebraicValue, F32, F64};
 pub use array_type::ArrayType;
 pub use array_value::ArrayValue;
 pub use builtin_type::BuiltinType;
-pub use data_key::DataKey;
+pub use data_key::{DataKey, ToDataKey};
 pub use map_type::MapType;
 pub use map_value::MapValue;
 pub use product_type::ProductType;

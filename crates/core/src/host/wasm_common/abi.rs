@@ -5,7 +5,7 @@ const MODULE_PREFIX: &str = "spacetime_";
 pub fn determine_spacetime_abi<I>(
     imports: impl IntoIterator<Item = I>,
     get_module: impl Fn(&I) -> &str,
-) -> Result<Option<VersionTuple>, AbiVersionError> {
+) -> Result<VersionTuple, AbiVersionError> {
     let it = imports.into_iter().filter_map(|imp| {
         let s = get_module(&imp);
         let err = || AbiVersionError::Parse { module: s.to_owned() };
@@ -15,16 +15,10 @@ pub fn determine_spacetime_abi<I>(
             Ok(VersionTuple { major, minor })
         })
     });
-    itertools::process_results(it, |mut it| try_reduce(&mut it, refine_ver_req))?
-}
-
-// TODO: replace with Iterator::try_reduce once stabilized
-fn try_reduce<I: Iterator, E>(
-    it: &mut I,
-    f: impl FnMut(I::Item, I::Item) -> Result<I::Item, E>,
-) -> Result<Option<I::Item>, E> {
-    let Some(first) = it.next() else { return Ok(None) };
-    it.try_fold(first, f).map(Some)
+    itertools::process_results(it, |mut it| {
+        let first = it.next().ok_or(AbiVersionError::NotDetected)?;
+        it.try_fold(first, refine_ver_req)
+    })?
 }
 
 fn refine_ver_req(ver: VersionTuple, new: VersionTuple) -> Result<VersionTuple, AbiVersionError> {
@@ -54,4 +48,7 @@ pub enum AbiVersionError {
         got: VersionTuple,
         implements: VersionTuple,
     },
+    // TODO: (by 1.0, maybe) remove the parenthetical from this error message
+    #[error("unable to determine ABI of module (may be on an spacetime version < 0.8)")]
+    NotDetected,
 }

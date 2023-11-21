@@ -11,7 +11,7 @@
   <PropertyGroup>
     <Version>$(AssemblyVersion)</Version>
     <Title>SpacetimeDB Module Runtime</Title>
-    <Authors>ingvar_clockwork</Authors>
+    <Authors>RReverser</Authors>
     <Company>Clockwork Labs</Company>
     <Product>SpacetimeDB</Product>
     <Description>The SpacetimeDB Runtime implements the database runtime bindings for writing SpacetimeDB modules in C#.</Description>

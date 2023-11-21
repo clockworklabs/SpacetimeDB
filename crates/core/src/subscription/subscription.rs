@@ -25,12 +25,6 @@
 
 use anyhow::Context;
 use derive_more::{Deref, DerefMut, From, IntoIterator};
-use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::PrimaryKey;
-use spacetimedb_sats::db::auth::{StAccess, StTableType};
-use spacetimedb_sats::relation::{DbTable, MemTable, RelValue};
-use spacetimedb_sats::{AlgebraicValue, DataKey, ProductValue};
-use spacetimedb_vm::expr::{self, IndexJoin, QueryExpr, SourceExpr};
 use std::collections::{btree_set, BTreeSet, HashMap, HashSet};
 use std::ops::Deref;
 
@@ -43,6 +37,12 @@ use crate::{
     db::relational_db::RelationalDB,
     host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp},
 };
+use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::PrimaryKey;
+use spacetimedb_sats::db::auth::{StAccess, StTableType};
+use spacetimedb_sats::relation::{DbTable, MemTable, RelValue};
+use spacetimedb_sats::{AlgebraicValue, DataKey, ProductValue};
+use spacetimedb_vm::expr::{self, IndexJoin, QueryExpr, SourceExpr};
 
 use super::query;
 
@@ -562,7 +562,9 @@ impl<'a> IncrementalJoin<'a> {
         auth: &AuthCtx,
     ) -> Result<impl Iterator<Item = Op>, DBError> {
         let mut inserts = {
-            let lhs_virt = query::to_mem_table(self.expr.clone(), &self.lhs.inserts());
+            // Replan query after replacing left table with virtual table,
+            // since join order may need to be reversed.
+            let lhs_virt = query::to_mem_table(self.expr.clone(), &self.lhs.inserts()).optimize();
             let rhs_virt = self.to_mem_table_rhs(self.rhs.inserts());
 
             // {A+ join B}
@@ -586,7 +588,9 @@ impl<'a> IncrementalJoin<'a> {
             set
         };
         let mut deletes = {
-            let lhs_virt = query::to_mem_table(self.expr.clone(), &self.lhs.deletes());
+            // Replan query after replacing left table with virtual table,
+            // since join order may need to be reversed.
+            let lhs_virt = query::to_mem_table(self.expr.clone(), &self.lhs.deletes()).optimize();
             let rhs_virt = self.to_mem_table_rhs(self.rhs.deletes());
 
             // {A- join B}

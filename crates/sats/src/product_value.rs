@@ -178,7 +178,7 @@ impl ProductValue {
         self.extract_field(index, named, |f| f.as_bytes())
     }
 
-    /// Interprets the value at field of `self` identified by `index` as a array.
+    /// Interprets the value at field of `self` identified by `index` as an `ArrayValue`.
     pub fn field_as_array(&self, index: usize, named: Option<&'static str>) -> Result<&ArrayValue, InvalidFieldError> {
         self.extract_field(index, named, |f| f.as_array())
     }

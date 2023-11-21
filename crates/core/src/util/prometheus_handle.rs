@@ -7,7 +7,7 @@ pub struct GaugeInc {
 impl Drop for GaugeInc {
     #[inline]
     fn drop(&mut self) {
-        self.gauge.dec()
+        self.gauge.dec();
     }
 }
 

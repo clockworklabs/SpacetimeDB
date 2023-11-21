@@ -6,14 +6,39 @@ use std::{
 
 #[cfg(target_family = "unix")]
 use std::os::unix::fs::FileExt;
-
-use anyhow::{anyhow, Context};
-
-use crate::error::DBError;
 #[cfg(target_family = "windows")]
 use std::os::windows::fs::FileExt;
 
+use derive_more::Display;
+use thiserror::Error;
+
+use super::messages::commit::Commit;
+
 const HEADER_SIZE: usize = 4;
+
+/// Error returned by [`OpenOptions::open`] or [`MessageLog::open`].
+#[derive(Debug, Error)]
+#[error("Failed to open message log at `{path}`: {kind}")]
+pub struct OpenError {
+    kind: OpenErrorKind,
+    path: String,
+    #[source]
+    source: Option<io::Error>,
+}
+
+#[derive(Debug, Display)]
+pub enum OpenErrorKind {
+    #[display(fmt = "Could not create root directory")]
+    CreateRoot,
+    #[display(fmt = "Could not read directory or -entry")]
+    ReadDir,
+    #[display(fmt = "Could not parse file name as offset")]
+    ParseOffset,
+    #[display(fmt = "Could not open segment file")]
+    OpenSegment,
+    #[display(fmt = "Failed to read segment at byte offset {offset}")]
+    ReadSegment { offset: u64 },
+}
 
 /// Options for opening a [`MessageLog`], similar to [`fs::OpenOptions`].
 #[derive(Clone, Copy, Debug)]
@@ -33,27 +58,40 @@ impl OpenOptions {
 
     /// Open the [`MessageLog`] at `path` with the options in self.
     #[tracing::instrument(skip_all)]
-    pub fn open(&self, path: impl AsRef<Path>) -> Result<MessageLog, DBError> {
+    pub fn open(&self, path: impl AsRef<Path>) -> Result<MessageLog, OpenError> {
+        use OpenErrorKind::*;
+
+        fn err<S>(kind: OpenErrorKind, path: &Path) -> impl FnOnce(S) -> OpenError
+        where
+            S: Into<Option<io::Error>>,
+        {
+            let path = path.display().to_string();
+            move |source| OpenError {
+                kind,
+                path,
+                source: source.into(),
+            }
+        }
+
         let root = path.as_ref();
-        fs::create_dir_all(root).with_context(|| format!("could not create root directory: {}", root.display()))?;
+        fs::create_dir_all(root).map_err(err(CreateRoot, root))?;
 
         let mut segments = Vec::new();
         let mut total_size = 0;
-        for file in fs::read_dir(root).with_context(|| format!("unable to read root directory: {}", root.display()))? {
-            let dir_entry = file?;
+        for file in fs::read_dir(root).map_err(err(ReadDir, root))? {
+            let dir_entry = file.map_err(err(ReadDir, root))?;
             let path = dir_entry.path();
             if let Some(ext) = path.extension() {
                 if ext != "log" {
                     continue;
                 }
-                let file_stem = path
+                let offset = path
                     .file_stem()
-                    .map(|os| os.to_string_lossy())
-                    .ok_or_else(|| anyhow!("unexpected .log file: {}", path.display()))?;
-                let offset = file_stem
+                    .unwrap_or_default()
+                    .to_string_lossy()
                     .parse::<u64>()
-                    .with_context(|| format!("could not parse log offset from: {}", path.display()))?;
-                let size = dir_entry.metadata()?.len();
+                    .map_err(|_| err(ParseOffset, &path)(None))?;
+                let size = dir_entry.metadata().map_err(err(ReadDir, &path))?.len();
 
                 total_size += size;
                 segments.push(Segment {
@@ -75,16 +113,19 @@ impl OpenOptions {
             .read(true)
             .append(true)
             .create(true)
-            .open(&last_segment_path)?;
+            .open(&last_segment_path)
+            .map_err(err(OpenSegment, &last_segment_path))?;
 
         let mut max_offset = last_segment.min_offset;
         let mut cursor: u64 = 0;
         while cursor < last_segment.size {
             let mut buf = [0; HEADER_SIZE];
             #[cfg(target_family = "windows")]
-            file.seek_read(&mut buf, cursor)?;
+            file.seek_read(&mut buf, cursor)
+                .map_err(err(ReadSegment { offset: cursor }, &last_segment_path))?;
             #[cfg(target_family = "unix")]
-            file.read_exact_at(&mut buf, cursor)?;
+            file.read_exact_at(&mut buf, cursor)
+                .map_err(err(ReadSegment { offset: cursor }, &last_segment_path))?;
             let message_len = u32::from_le_bytes(buf);
 
             max_offset += 1;
@@ -114,14 +155,20 @@ impl Default for OpenOptions {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-struct Segment {
-    min_offset: u64,
-    size: u64,
+/// A segment of a [`MessageLog`].
+///
+/// Represents a physical file holding a subset of the log.
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+pub struct Segment {
+    /// Message offset this segment starts with (zero-based).
+    pub min_offset: u64,
+    /// Size in bytes of this segment.
+    pub size: u64,
 }
 
 impl Segment {
-    fn name(&self) -> String {
+    /// Name of this segment, as it appears in its file name.
+    pub fn name(&self) -> String {
         format!("{:0>20}", self.min_offset)
     }
 }
@@ -151,7 +198,7 @@ impl std::fmt::Debug for MessageLog {
 // TODO: do we build the concept of batches into the message log?
 impl MessageLog {
     #[tracing::instrument(skip(path))]
-    pub fn open(path: impl AsRef<Path>) -> Result<Self, DBError> {
+    pub fn open(path: impl AsRef<Path>) -> Result<Self, OpenError> {
         OpenOptions::default().open(path)
     }
 
@@ -160,7 +207,7 @@ impl MessageLog {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn append(&mut self, message: impl AsRef<[u8]>) -> Result<(), DBError> {
+    pub fn append(&mut self, message: impl AsRef<[u8]>) -> io::Result<()> {
         let message = message.as_ref();
         let mess_size = message.len() as u32;
         let size: u32 = mess_size + HEADER_SIZE as u32;
@@ -169,7 +216,7 @@ impl MessageLog {
         if end_size > self.options.max_segment_size {
             self.flush()?;
             self.segments.push(Segment {
-                min_offset: self.open_segment_max_offset + 1,
+                min_offset: self.open_segment_max_offset,
                 size: 0,
             });
 
@@ -202,7 +249,7 @@ impl MessageLog {
     // https://stackoverflow.com/questions/42442387/is-write-safe-to-be-called-from-multiple-threads-simultaneously/42442926#42442926
     // https://github.com/facebook/rocksdb/wiki/WAL-Performance
     #[tracing::instrument]
-    pub fn flush(&mut self) -> Result<(), DBError> {
+    pub fn flush(&mut self) -> io::Result<()> {
         self.open_segment_file.flush()?;
         Ok(())
     }
@@ -212,7 +259,7 @@ impl MessageLog {
     // to be for sure durably written.
     // SEE: https://stackoverflow.com/questions/69819990/whats-the-difference-between-flush-and-sync-all
     #[tracing::instrument]
-    pub fn sync_all(&mut self) -> Result<(), DBError> {
+    pub fn sync_all(&mut self) -> io::Result<()> {
         log::trace!("fsync log file");
         self.flush()?;
         let file = self.open_segment_file.get_ref();
@@ -226,6 +273,13 @@ impl MessageLog {
 
     pub fn max_segment_size(&self) -> u64 {
         self.options.max_segment_size
+    }
+
+    /// Total number of segments currently comprising the log.
+    ///
+    /// Equivalent to `self.segments().count()`, but more efficient.
+    pub fn total_segments(&self) -> usize {
+        self.segments.len()
     }
 
     pub fn get_root(&self) -> PathBuf {
@@ -310,10 +364,14 @@ impl MessageLog {
     /// atomic, to the extent required by [POSIX].
     ///
     /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/V2_chap02.html#tag_15_09_07
-    pub fn reset_to(&mut self, offset: u64) -> Result<(), DBError> {
+    pub fn reset_to(&mut self, offset: u64) -> io::Result<()> {
+        log::info!("Resetting message log to offset {offset}");
         if offset == 0 {
             fs::remove_dir_all(&self.root)?;
-            *self = self.options.open(&self.root)?;
+            *self = self
+                .options
+                .open(&self.root)
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
             return Ok(());
         }
@@ -339,28 +397,25 @@ impl MessageLog {
                         file: BufReader::new(file),
                     };
 
-                    let to_retain = self.open_segment_max_offset - offset;
-                    let mut retained = 0;
-                    for message in iter.by_ref().take(to_retain as usize) {
+                    log::debug!("segment min_offset={}", segment.min_offset);
+                    for i in segment.min_offset..offset {
+                        let message = iter.by_ref().next().ok_or_else(|| {
+                            io::Error::new(
+                                io::ErrorKind::UnexpectedEof,
+                                format!("Open segment shorter than expected: {i}"),
+                            )
+                        })?;
                         // Give up on I/O errors while reading the next message.
                         let _ = message?;
-                        retained += 1;
                     }
-                    // We maintain that:
-                    //
-                    //  segment.min_offset <= offset <= self.open_segment_max_offset
-                    //
-                    // `iter` yielding fewer elements thus breaks our invariants.
-                    assert_eq!(
-                        to_retain, retained,
-                        "Open segment shorter than expected: {retained} instead of {to_retain}"
-                    );
-                    segment.size - iter.bytes_read()
+                    iter.bytes_read()
                 };
 
+                log::debug!("new segment size {new_segment_size}");
                 // Truncate file to byte offset.
                 let mut file = File::options().read(true).write(true).open(path)?;
                 file.set_len(new_segment_size)?;
+                file.sync_all()?;
                 file.seek(SeekFrom::End(0))?;
 
                 self.total_size -= segment.size;
@@ -418,9 +473,22 @@ impl SegmentView {
         self.try_into()
     }
 
+    /// Obtain an iterator over the [`Commit`]s the segment contains.
+    ///
+    /// Convenience for `self.try_into_iter().map(|i| i.commits())`.
+    pub fn try_into_iter_commits(self) -> io::Result<impl Iterator<Item = io::Result<Commit>>> {
+        self.try_into_iter().map(|i| i.commits())
+    }
+
     /// Turn this [`SegmentView`] into a [`Read`]able [`File`].
     pub fn try_into_file(self) -> io::Result<File> {
         self.try_into()
+    }
+}
+
+impl From<SegmentView> for Segment {
+    fn from(SegmentView { info, .. }: SegmentView) -> Self {
+        info
     }
 }
 
@@ -429,9 +497,11 @@ impl TryFrom<SegmentView> for IterSegment {
 
     fn try_from(view: SegmentView) -> Result<Self, Self::Error> {
         let segment = view.offset();
-        File::try_from(view)
-            .map(BufReader::new)
-            .map(|file| IterSegment { segment, read: 0, file })
+        File::try_from(view).map(|file| IterSegment {
+            segment,
+            read: 0,
+            file: BufReader::new(file),
+        })
     }
 }
 
@@ -467,12 +537,10 @@ impl IterSegment {
         self.read
     }
 
-    fn read_exact_or_none(&mut self, buf: &mut [u8]) -> Option<io::Result<()>> {
-        match self.file.read_exact(buf) {
-            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => None,
-            Err(e) => Some(Err(e)),
-            Ok(()) => Some(Ok(())),
-        }
+    /// Turn this iterator into an iterator yielding [`Commit`]s
+    /// instead of raw bytes.
+    pub fn commits(self) -> impl Iterator<Item = io::Result<Commit>> {
+        super::commit_log::IterSegment::from(self)
     }
 }
 
@@ -481,14 +549,18 @@ impl Iterator for IterSegment {
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut buf = [0; HEADER_SIZE];
-        if let Err(e) = self.read_exact_or_none(&mut buf)? {
-            return Some(Err(e));
+        if let Err(e) = self.file.read_exact(&mut buf) {
+            if e.kind() == io::ErrorKind::UnexpectedEof {
+                return None;
+            } else {
+                return Some(Err(e));
+            }
         }
         self.read += HEADER_SIZE as u64;
 
         let message_len = u32::from_le_bytes(buf);
         let mut buf = vec![0; message_len as usize];
-        if let Err(e) = self.read_exact_or_none(&mut buf)? {
+        if let Err(e) = self.file.read_exact(&mut buf) {
             return Some(Err(e));
         }
         self.read += message_len as u64;
@@ -531,7 +603,7 @@ mod tests {
 
     use std::path::Path;
 
-    use super::MessageLog;
+    use super::{MessageLog, Segment, HEADER_SIZE};
     use spacetimedb_lib::error::ResultTest;
     use tempfile::{self, TempDir};
 
@@ -602,13 +674,16 @@ mod tests {
         let segments = message_log.segments_from(1_000_000).count();
         assert_eq!(0, segments);
 
-        let segments = message_log.segments_from(20_001).count();
+        let segments = message_log.segments_from(20_000).count();
         assert_eq!(1, segments);
 
-        let segments = message_log.segments_from(10_001).count();
+        let segments = message_log.segments_from(10_000).count();
         assert_eq!(2, segments);
 
-        let segments = message_log.segments_from(10_000).count();
+        let segments = message_log.segments_from(9_999).count();
+        assert_eq!(3, segments);
+
+        let segments = message_log.segments_from(0).count();
         assert_eq!(3, segments);
 
         Ok(())
@@ -643,10 +718,25 @@ mod tests {
         const SEGMENTS: usize = 3;
         const MESSAGES_PER_SEGMENT: usize = 10_000;
 
+        #[derive(Debug)]
+        struct Snapshot {
+            segments: Vec<Segment>,
+            total_size: u64,
+            max_offset: u64,
+        }
+
+        impl From<&MessageLog> for Snapshot {
+            fn from(mlog: &MessageLog) -> Self {
+                Self {
+                    segments: mlog.segments.clone(),
+                    total_size: mlog.total_size,
+                    max_offset: mlog.open_segment_max_offset,
+                }
+            }
+        }
+
         fn go(mlog: &mut MessageLog, offset: u64) {
-            let last_segments_len = mlog.segments.len();
-            let last_max_offset = mlog.open_segment_max_offset;
-            let last_open_segment_size = mlog.open_segment().size;
+            let snapshot = Snapshot::from(&*mlog);
 
             mlog.reset_to(offset).unwrap();
             assert_eq!(
@@ -657,7 +747,20 @@ mod tests {
             assert_eq!(
                 mlog.total_size,
                 mlog.segments.iter().map(|s| s.size).sum::<u64>(),
-                "total size must be the sum of segment sizes\n{:#?}",
+                "reset to {}: total size must be the sum of segment sizes\n{:#?}",
+                offset,
+                mlog
+            );
+            let entries_delta = snapshot.max_offset - offset;
+            let size_delta = entries_delta * (MESSAGE.len() + HEADER_SIZE) as u64;
+            assert_eq!(
+                mlog.total_size,
+                snapshot.total_size - size_delta,
+                "reset to {}: size should have been reduced by {} entries / {} bytes\n{:#?}\n{:#?}",
+                offset,
+                entries_delta,
+                size_delta,
+                snapshot,
                 mlog
             );
 
@@ -665,28 +768,32 @@ mod tests {
                 assert_eq!(1, mlog.segments.len(), "one segment must exist");
                 assert_eq!(0, mlog.open_segment().min_offset);
                 assert_eq!(0, mlog.open_segment().size)
-            } else {
-                let on_segment_boundary = (offset % MESSAGES_PER_SEGMENT as u64) == 0;
-                if !on_segment_boundary {
-                    let entries_delta = last_max_offset - offset;
-                    let size_delta = entries_delta * (MESSAGE.len() + super::HEADER_SIZE) as u64;
-                    assert_eq!(
-                        mlog.open_segment().size,
-                        last_open_segment_size - size_delta,
-                        "open segment should have been truncated by {} entries, {} bytes\n{:#?}",
-                        entries_delta,
-                        size_delta,
-                        mlog
-                    );
-                } else {
-                    assert_eq!(
-                        last_segments_len - 1,
-                        mlog.segments.len(),
-                        "last segment should be gone\n{:#?}",
-                        mlog
-                    );
-                }
             }
+
+            let retained_segments = snapshot.segments.iter().filter(|segment| segment.min_offset <= offset);
+            let retained_segments_count = retained_segments.clone().count();
+            assert_eq!(
+                mlog.segments.len(),
+                retained_segments_count,
+                "reset to {}: {} segments should have been retained\n{:#?}\n{:#?}",
+                offset,
+                retained_segments_count,
+                snapshot,
+                mlog
+            );
+
+            let last_segment_size = retained_segments
+                .take(retained_segments_count - 1)
+                .fold(mlog.total_size, |acc, segment| acc - segment.size);
+            assert_eq!(
+                mlog.segments.last().unwrap().size,
+                last_segment_size,
+                "reset to {}: last segment should have size {}\n{:#?}\n{:#?}",
+                offset,
+                last_segment_size,
+                snapshot,
+                mlog,
+            );
         }
 
         let mut mlog = fill_log(tmp.path(), SEGMENTS, MESSAGES_PER_SEGMENT, MESSAGE)?;

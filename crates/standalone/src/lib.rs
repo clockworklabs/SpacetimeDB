@@ -12,12 +12,14 @@ use energy_monitor::StandaloneEnergyMonitor;
 use openssl::ec::{EcGroup, EcKey};
 use openssl::nid::Nid;
 use openssl::pkey::PKey;
+use scopeguard::defer_on_success;
 use spacetimedb::address::Address;
 use spacetimedb::auth::identity::{DecodingKey, EncodingKey};
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::control_db::{self, ControlDb};
 use spacetimedb::database_instance_context::DatabaseInstanceContext;
 use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
+use spacetimedb::db::db_metrics::MAX_TX_CPU_TIME;
 use spacetimedb::db::{db_metrics::DB_METRICS, Config};
 use spacetimedb::execution_context::ExecutionContext;
 use spacetimedb::host::EnergyQuanta;
@@ -30,7 +32,7 @@ use spacetimedb::module_host_context::ModuleHostContext;
 use spacetimedb::object_db::ObjectDb;
 use spacetimedb::sendgrid_controller::SendGridController;
 use spacetimedb::stdb_path;
-use spacetimedb::worker_metrics::WORKER_METRICS;
+use spacetimedb::worker_metrics::{MAX_QUEUE_LEN, MAX_REDUCER_DELAY, WORKER_METRICS};
 use spacetimedb_lib::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
 use spacetimedb_lib::recovery::RecoveryCode;
 use std::fs::File;
@@ -163,6 +165,14 @@ fn get_key_path(env: &str) -> Option<PathBuf> {
 #[async_trait]
 impl spacetimedb_client_api::NodeDelegate for StandaloneEnv {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
+        defer_on_success! {
+            // Reset max transaction cpu time metric
+            MAX_TX_CPU_TIME.lock().unwrap().clear();
+            // Reset max queue length metric
+            MAX_QUEUE_LEN.lock().unwrap().clear();
+            // Reset max reducer delay metric
+            MAX_REDUCER_DELAY.lock().unwrap().clear();
+        }
         // Note, we update certain metrics such as disk usage on demand.
         self.db_inst_ctx_controller.update_metrics();
         self.metrics_registry.gather()
@@ -304,7 +314,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                 id: 0,
                 address: spec.address,
                 identity: *identity,
-                host_type: HostType::Wasmer,
+                host_type: HostType::Wasmtime,
                 num_replicas: spec.num_replicas,
                 program_bytes_address,
                 publisher_address,
@@ -385,17 +395,17 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
 
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> spacetimedb::control_db::Result<()> {
         let mut balance = <Self as spacetimedb_client_api::ControlStateReadAccess>::get_energy_balance(self, identity)?
-            .map(|quanta| quanta.0)
-            .unwrap_or(0);
-        balance = balance.saturating_add(amount.0);
+            .map_or(0, |quanta| quanta.get());
+        balance = balance.saturating_add(amount.get());
 
-        self.control_db.set_energy_balance(*identity, EnergyQuanta(balance))
+        self.control_db
+            .set_energy_balance(*identity, EnergyQuanta::new(balance))
     }
     async fn withdraw_energy(&self, identity: &Identity, amount: EnergyQuanta) -> spacetimedb::control_db::Result<()> {
         let energy_balance = self.control_db.get_energy_balance(identity)?;
-        let energy_balance = energy_balance.unwrap_or(EnergyQuanta(0));
-        log::trace!("Withdrawing {} energy from {}", amount.0, identity);
-        log::trace!("Old balance: {}", energy_balance.0);
+        let energy_balance = energy_balance.unwrap_or(EnergyQuanta::new(0));
+        log::trace!("Withdrawing {} energy from {}", amount.get(), identity);
+        log::trace!("Old balance: {}", energy_balance.get());
         let new_balance = energy_balance - amount;
         self.control_db.set_energy_balance(*identity, new_balance.as_quanta())
     }

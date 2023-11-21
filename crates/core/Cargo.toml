@@ -60,6 +60,7 @@ rayon-core.workspace = true
 regex.workspace = true
 rustc-demangle.workspace = true
 rustc-hash.workspace = true
+smallvec.workspace = true
 scopeguard.workspace = true
 sendgrid.workspace = true
 serde.workspace = true
@@ -76,6 +77,7 @@ tempfile.workspace = true
 thiserror.workspace = true
 tokio-util.workspace = true
 tokio.workspace = true
+toml.workspace = true
 tracing-appender.workspace = true
 tracing-core.workspace = true
 tracing-flame.workspace = true
@@ -86,10 +88,7 @@ tracing.workspace = true
 url.workspace = true
 urlencoding.workspace = true
 uuid.workspace = true
-wasmer-middlewares.workspace = true
-wasmer-types.workspace = true
-wasmer-vm.workspace = true
-wasmer.workspace = true
+wasmtime = { workspace = true, features = ["cache"] }
 # Rocksdb ostorage backend, linked only if "rocksdb" feature enabled.
 rocksdb = {workspace = true, optional = true}
 

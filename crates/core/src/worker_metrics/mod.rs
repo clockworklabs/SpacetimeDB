@@ -1,3 +1,5 @@
+use std::{collections::HashMap, sync::Mutex};
+
 use crate::hash::Hash;
 use crate::util::typed_prometheus::metrics_group;
 use once_cell::sync::Lazy;
@@ -67,8 +69,34 @@ metrics_group!(
 
         #[name = spacetime_worker_instance_operation_queue_length]
         #[help = "Length of the wait queue for access to a module instance."]
-        #[labels(identity: Identity, module_hash: Hash, database_address: Address, reducer_symbol: str)]
+        #[labels(database_address: Address)]
         pub instance_queue_length: IntGaugeVec,
+
+        #[name = spacetime_worker_instance_operation_queue_length_max]
+        #[help = "Max length of the wait queue for access to a module instance."]
+        #[labels(database_address: Address)]
+        pub instance_queue_length_max: IntGaugeVec,
+
+        #[name = spacetime_worker_instance_operation_queue_length_histogram]
+        #[help = "Length of the wait queue for access to a module instance."]
+        #[labels(database_address: Address)]
+        #[buckets(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 25, 50)]
+        pub instance_queue_length_histogram: HistogramVec,
+
+        #[name = spacetime_scheduled_reducer_delay_sec]
+        #[help = "The amount of time (in seconds) a reducer has been delayed past its scheduled execution time"]
+        #[labels(db: Address, reducer: str)]
+        pub scheduled_reducer_delay_sec: HistogramVec,
+
+        #[name = spacetime_scheduled_reducer_delay_sec_max]
+        #[help = "The maximum duration (in seconds) a reducer has been delayed"]
+        #[labels(db: Address, reducer: str)]
+        pub scheduled_reducer_delay_sec_max: GaugeVec,
+
+        #[name = spacetime_worker_wasm_instance_errors_cumulative]
+        #[help = "The number of fatal WASM instance errors, such as reducer panics."]
+        #[labels(identity: Identity, module_hash: Hash, database_address: Address, reducer_symbol: str)]
+        pub wasm_instance_errors: IntCounterVec,
 
         #[name = spacetime_system_disk_space_total_bytes]
         #[help = "A node's total disk space (in bytes)"]
@@ -88,4 +116,6 @@ metrics_group!(
     }
 );
 
+pub static MAX_QUEUE_LEN: Lazy<Mutex<HashMap<Address, i64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+pub static MAX_REDUCER_DELAY: Lazy<Mutex<HashMap<u64, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 pub static WORKER_METRICS: Lazy<WorkerMetrics> = Lazy::new(WorkerMetrics::new);

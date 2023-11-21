@@ -27,7 +27,8 @@ jobs:
             type=ref,event=branch,prefix=branch-
             type=sha,prefix=commit-
             type=ref,event=tag
-            type=raw,value=latest,enable=false
+          flavor: |
+            latest=false
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
       - name: Cache Docker layers
@@ -79,7 +80,8 @@ jobs:
             type=ref,event=branch,prefix=branch-
             type=sha,prefix=commit-
             type=ref,event=tag
-            type=raw,value=latest,enable=false
+          flavor: |
+            latest=false
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
       - name: Cache Docker layers
