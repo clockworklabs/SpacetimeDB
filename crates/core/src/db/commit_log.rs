@@ -94,16 +94,22 @@ impl CommitLog {
                 match commit {
                     Ok((commit, objects)) => f(commit, &objects)?,
                     Err(ReplayError::Other { source }) => return Err(source.into()),
-
-                    // We expect that partial writes can occur at the end of a
-                    // segment. Trimming the log is, however, only safe if we're
-                    // at the end of the _log_.
+                    // Note that currently the commit offset is just a u64.
+                    // It does not have any additional structure or semantic validation.
+                    // Hence an OutOfOrder error does not imply an out of order write.
+                    // The commit itself may not even be valid.
+                    //
+                    // However until we improve the on-disk format,
+                    // We should not ignore such errors and truncate the log.
+                    // They could still point to a serious bug in the database,
+                    // such as not properly synchronizing access to the commit log,
+                    // among other things.
                     Err(ReplayError::OutOfOrder {
                         segment_offset,
                         last_commit_offset,
                         decoded_commit_offset,
                         expected,
-                    }) if segment_offset < total_segments - 1 => {
+                    }) => {
                         log::warn!("Out-of-order commit {}, expected {}", decoded_commit_offset, expected);
                         return Err(LogReplayError::TrailingSegments {
                             segment_offset,
@@ -113,6 +119,9 @@ impl CommitLog {
                         }
                         .into());
                     }
+                    // We expect that partial writes can occur at the end of a
+                    // segment. Trimming the log is, however, only safe if we're
+                    // at the end of the _log_.
                     Err(ReplayError::CorruptedData {
                         segment_offset,
                         last_commit_offset: commit_offset,
@@ -150,8 +159,7 @@ impl CommitLog {
                     // We are near the end of the log, so trim it to the known-
                     // good prefix.
                     Err(
-                        ReplayError::OutOfOrder { last_commit_offset, .. }
-                        | ReplayError::CorruptedData { last_commit_offset, .. }
+                        ReplayError::CorruptedData { last_commit_offset, .. }
                         | ReplayError::MissingObject { last_commit_offset, .. },
                     ) => {
                         mlog.reset_to(last_commit_offset)
