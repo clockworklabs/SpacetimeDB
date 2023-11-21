@@ -117,5 +117,5 @@ metrics_group!(
 );
 
 pub static MAX_QUEUE_LEN: Lazy<Mutex<HashMap<Address, i64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
-pub static MAX_REDUCER_DELAY: Lazy<Mutex<HashMap<(Address, String), f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+pub static MAX_REDUCER_DELAY: Lazy<Mutex<HashMap<u64, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 pub static WORKER_METRICS: Lazy<WorkerMetrics> = Lazy::new(WorkerMetrics::new);
