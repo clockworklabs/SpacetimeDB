@@ -4329,6 +4329,7 @@ dependencies = [
  "log",
  "openssl",
  "prometheus",
+ "scopeguard",
  "serde_json",
  "sled",
  "spacetimedb-client-api",

@@ -21,7 +21,7 @@ use crate::db::datastore::system_tables::{
     SEQUENCE_ID_SEQUENCE_ID, ST_CONSTRAINTS_ID, ST_CONSTRAINT_ROW_TYPE, ST_MODULE_ID, ST_MODULE_ROW_TYPE,
     TABLE_ID_SEQUENCE_ID, WASM_MODULE,
 };
-use crate::db::db_metrics::DB_METRICS;
+use crate::db::db_metrics::{DB_METRICS, MAX_TX_CPU_TIME};
 use crate::{
     db::datastore::traits::{TxOp, TxRecord},
     db::{
@@ -2115,6 +2115,9 @@ impl traits::MutTx for Locking {
         let reducer = ctx.reducer_name().unwrap_or_default();
         let elapsed_time = tx.timer.elapsed();
         let cpu_time = elapsed_time - tx.lock_wait_time;
+
+        let elapsed_time = elapsed_time.as_secs_f64();
+        let cpu_time = cpu_time.as_secs_f64();
         // Note, we record empty transactions in our metrics.
         // That is, transactions that don't write any rows to the commit log.
         DB_METRICS
@@ -2124,11 +2127,28 @@ impl traits::MutTx for Locking {
         DB_METRICS
             .rdb_txn_cpu_time_sec
             .with_label_values(txn_type, db, reducer)
-            .observe(cpu_time.as_secs_f64());
+            .observe(cpu_time);
         DB_METRICS
             .rdb_txn_elapsed_time_sec
             .with_label_values(txn_type, db, reducer)
-            .observe(elapsed_time.as_secs_f64());
+            .observe(elapsed_time);
+
+        let mut guard = MAX_TX_CPU_TIME.lock().unwrap();
+        let max_cpu_time = *guard
+            .entry((*txn_type, *db, reducer.to_owned()))
+            .and_modify(|max| {
+                if cpu_time > *max {
+                    *max = cpu_time;
+                }
+            })
+            .or_insert_with(|| cpu_time);
+
+        drop(guard);
+        DB_METRICS
+            .rdb_txn_cpu_time_sec_max
+            .with_label_values(txn_type, db, reducer)
+            .set(max_cpu_time);
+
         tx.lock.commit()
     }
 

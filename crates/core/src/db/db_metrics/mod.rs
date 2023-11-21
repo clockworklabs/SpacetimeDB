@@ -1,6 +1,8 @@
+use std::{collections::HashMap, sync::Mutex};
+
 use crate::{execution_context::TransactionType, host::AbiCall, util::typed_prometheus::metrics_group};
 use once_cell::sync::Lazy;
-use prometheus::{Histogram, HistogramVec, IntCounterVec, IntGaugeVec};
+use prometheus::{GaugeVec, Histogram, HistogramVec, IntCounterVec, IntGaugeVec};
 use spacetimedb_lib::Address;
 
 metrics_group!(
@@ -101,6 +103,11 @@ metrics_group!(
         #[labels(txn_type: TransactionType, db: Address, reducer: str)]
         pub rdb_txn_cpu_time_sec: HistogramVec,
 
+        #[name = spacetime_txn_cpu_time_sec_max]
+        #[help = "The cpu time of the longest running transaction (in seconds)"]
+        #[labels(txn_type: TransactionType, db: Address, reducer: str)]
+        pub rdb_txn_cpu_time_sec_max: GaugeVec,
+
         #[name = spacetime_wasm_abi_call_duration_sec]
         #[help = "The total duration of a spacetime wasm abi call (in seconds); includes row serialization and copying into wasm memory"]
         #[labels(txn_type: TransactionType, db: Address, reducer: str, call: AbiCall)]
@@ -123,4 +130,6 @@ metrics_group!(
     }
 );
 
+type Context = (TransactionType, Address, String);
+pub static MAX_TX_CPU_TIME: Lazy<Mutex<HashMap<Context, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 pub static DB_METRICS: Lazy<DbMetrics> = Lazy::new(DbMetrics::new);
