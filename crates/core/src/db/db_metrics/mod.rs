@@ -53,11 +53,6 @@ metrics_group!(
         #[labels(table_id: u32)]
         pub rdb_delete_by_rel_time: HistogramVec,
 
-        #[name = spacetime_scheduled_reducer_delay_sec]
-        #[help = "The amount of time (in seconds) a reducer has been delayed past its scheduled execution time"]
-        #[labels(db: Address, reducer: str)]
-        pub scheduled_reducer_delay_sec: HistogramVec,
-
         #[name = spacetime_num_table_rows]
         #[help = "The number of rows in a table"]
         #[labels(db: Address, table_id: u32)]
