@@ -3,7 +3,8 @@
   <PropertyGroup>
     <!-- needs to be exe for initializers to be embedded correctly -->
     <OutputType>Exe</OutputType>
-    <TargetFramework>net7.0</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
+    <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
@@ -11,10 +12,6 @@
   <ItemGroup>
     <PackageReference Include="SpacetimeDB.Codegen" Version="0.7.*" />
     <PackageReference Include="SpacetimeDB.Runtime" Version="0.7.*" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Wasi.Sdk" Version="0.1.4-preview.10020" />
   </ItemGroup>
 
 </Project>
