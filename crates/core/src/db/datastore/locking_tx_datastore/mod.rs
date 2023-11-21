@@ -14,7 +14,6 @@ use super::{
     },
     traits::{self, DataRow, MutTx, MutTxDatastore, TxData, TxDatastore},
 };
-use crate::db::datastore::system_tables;
 use crate::db::datastore::system_tables::{
     st_constraints_schema, st_module_schema, table_name_is_system, StColumnFields, StConstraintRow, StIndexFields,
     StModuleRow, StSequenceFields, StTableFields, SystemTables, CONSTRAINT_ID_SEQUENCE_ID, INDEX_ID_SEQUENCE_ID,
@@ -22,6 +21,7 @@ use crate::db::datastore::system_tables::{
     TABLE_ID_SEQUENCE_ID, WASM_MODULE,
 };
 use crate::db::db_metrics::{DB_METRICS, MAX_TX_CPU_TIME};
+use crate::{db::datastore::system_tables, execution_context::TransactionType};
 use crate::{
     db::datastore::traits::{TxOp, TxRecord},
     db::{
@@ -45,13 +45,17 @@ use spacetimedb_sats::{
     db::auth::{StAccess, StTableType},
     AlgebraicType, AlgebraicValue, ProductType, ProductValue,
 };
-use std::time::{Duration, Instant};
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet, HashMap},
+    hash::Hasher,
     ops::{Deref, RangeBounds},
     sync::Arc,
     vec,
+};
+use std::{
+    collections::hash_map::DefaultHasher,
+    time::{Duration, Instant},
 };
 use thiserror::Error;
 
@@ -2133,9 +2137,18 @@ impl traits::MutTx for Locking {
             .with_label_values(txn_type, db, reducer)
             .observe(elapsed_time);
 
+        fn hash(a: &TransactionType, b: &Address, c: &str) -> u64 {
+            use std::hash::Hash;
+            let mut hasher = DefaultHasher::new();
+            a.hash(&mut hasher);
+            b.hash(&mut hasher);
+            c.hash(&mut hasher);
+            hasher.finish()
+        }
+
         let mut guard = MAX_TX_CPU_TIME.lock().unwrap();
         let max_cpu_time = *guard
-            .entry((*txn_type, *db, reducer.to_owned()))
+            .entry(hash(txn_type, db, reducer))
             .and_modify(|max| {
                 if cpu_time > *max {
                     *max = cpu_time;

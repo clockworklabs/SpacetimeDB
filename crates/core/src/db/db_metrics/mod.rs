@@ -125,6 +125,5 @@ metrics_group!(
     }
 );
 
-type Context = (TransactionType, Address, String);
-pub static MAX_TX_CPU_TIME: Lazy<Mutex<HashMap<Context, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+pub static MAX_TX_CPU_TIME: Lazy<Mutex<HashMap<u64, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 pub static DB_METRICS: Lazy<DbMetrics> = Lazy::new(DbMetrics::new);
