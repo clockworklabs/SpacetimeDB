@@ -70,7 +70,7 @@ pub(crate) fn run_query(
     db: &RelationalDB,
     tx: &mut MutTxId,
     query: &QueryExpr,
-    query_debug_info: &QueryDebugInfo,
+    query_debug_info: Option<&QueryDebugInfo>,
     auth: AuthCtx,
 ) -> Result<Vec<MemTable>, DBError> {
     execute_single_sql(db, tx, CrudExpr::Query(query.clone()), query_debug_info, auth)
@@ -125,12 +125,12 @@ pub fn compile_read_only_query(
         }
     }
 
-    let source: QueryDebugInfo = QueryDebugInfo::from_source(input);
+    let info = QueryDebugInfo::from_source(input);
 
     if !queries.is_empty() {
         Ok(queries
             .into_iter()
-            .map(|query| SupportedQuery::new(query, source.clone()))
+            .map(|query| SupportedQuery::new(query, Some(info.clone())))
             .collect::<Result<_, _>>()?)
     } else {
         Err(SubscriptionError::Empty.into())
@@ -337,7 +337,7 @@ mod tests {
         data: &DatabaseTableUpdate,
     ) -> ResultTest<()> {
         let q = to_mem_table(q.clone(), data);
-        let result = run_query(db, tx, &q, &QueryDebugInfo::unknown(), AuthCtx::for_testing())?;
+        let result = run_query(db, tx, &q, None, AuthCtx::for_testing())?;
 
         assert_eq!(
             Some(table.as_without_table_name()),
@@ -808,7 +808,7 @@ mod tests {
             &db,
             &mut tx,
             &q,
-            &QueryDebugInfo::unknown(),
+            None,
             AuthCtx::new(Identity::__dummy(), Identity::from_byte_array([1u8; 32])),
         ) {
             Ok(_) => {
@@ -927,13 +927,7 @@ mod tests {
         let qset = compile_read_only_query(&db, &tx, &AuthCtx::for_testing(), sql_query)?;
 
         for q in qset {
-            let result = run_query(
-                &db,
-                &mut tx,
-                q.as_expr(),
-                &QueryDebugInfo::unknown(),
-                AuthCtx::for_testing(),
-            )?;
+            let result = run_query(&db, &mut tx, q.as_expr(), None, AuthCtx::for_testing())?;
             assert_eq!(result.len(), 1, "Join query did not return any rows");
         }
 

@@ -255,7 +255,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         // TODO(jgilles): make this a read-only TX when those get added
 
         db.with_read_only(
-            &ExecutionContext::sql(db.address(), QueryDebugInfo::from_source(&query)),
+            &ExecutionContext::sql(db.address(), Some(&QueryDebugInfo::from_source(&query))),
             |tx| {
                 log::debug!("One-off query: {query}");
 
@@ -269,7 +269,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
                         }
                     })
                     .collect::<Result<_, _>>()?;
-                sql::execute::execute_sql(db, tx, compiled, &QueryDebugInfo::from_source(&query), auth)
+                sql::execute::execute_sql(db, tx, compiled, Some(&QueryDebugInfo::from_source(&query)), auth)
             },
         )
     }

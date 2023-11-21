@@ -15,7 +15,10 @@ pub struct ExecutionContext<'a> {
     reducer: Option<&'a str>,
     /// The SQL query being executed, if any.
     /// Note: this will never be set at the same time as `reducer`.
-    query_debug_info: Option<QueryDebugInfo>,
+    /// It is also NOT guaranteed to be set, even if txn_type == Sql.
+    /// This is because some transactions tagged "SQL" don't exactly correspond
+    /// to any particular query.
+    query_debug_info: Option<&'a QueryDebugInfo>,
     // The type of transaction that is being executed.
     txn_type: TransactionType,
 }
@@ -49,11 +52,11 @@ impl<'a> ExecutionContext<'a> {
     }
 
     /// Returns an [ExecutionContext] for a sql or subscription transaction.
-    pub fn sql(database: Address, query_debug_info: QueryDebugInfo) -> Self {
+    pub fn sql(database: Address, query_debug_info: Option<&'a QueryDebugInfo>) -> Self {
         Self {
             database,
             reducer: None,
-            query_debug_info: Some(query_debug_info),
+            query_debug_info,
             txn_type: TransactionType::Sql,
         }
     }
@@ -85,7 +88,7 @@ impl<'a> ExecutionContext<'a> {
     /// Returns [None] if this is not a sql context.
     #[inline]
     pub fn query_debug_info(&self) -> Option<&QueryDebugInfo> {
-        self.query_debug_info.as_ref()
+        self.query_debug_info
     }
 
     /// Returns the type of transaction that is being executed.
