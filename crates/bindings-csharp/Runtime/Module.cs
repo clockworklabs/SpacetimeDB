@@ -178,28 +178,24 @@ public static class FFI
     // [UnmanagedCallersOnly(EntryPoint = "__describe_module__")]
     public static RawBindings.Buffer __describe_module__()
     {
+        // replace `module` with a temporary internal module that will register ModuleDef, AlgebraicType and other internal types
+        // during the ModuleDef.GetSatsTypeInfo() instead of exposing them via user's module.
+        var userModule = module;
         try
         {
-            // replace `module` with a temporary internal module that will register ModuleDef, AlgebraicType and other internal types
-            // during the ModuleDef.GetSatsTypeInfo() instead of exposing them via user's module.
-            var userModule = module;
-            try
-            {
-                module = new();
-                var moduleBytes = ModuleDef.GetSatsTypeInfo().ToBytes(userModule);
-                var res = RawBindings._buffer_alloc(moduleBytes, (uint)moduleBytes.Length);
-                return res;
-            }
-            finally
-            {
-                module = userModule;
-            }
+            module = new();
+            var moduleBytes = ModuleDef.GetSatsTypeInfo().ToBytes(userModule);
+            var res = RawBindings._buffer_alloc(moduleBytes, (uint)moduleBytes.Length);
+            return res;
         }
         catch (Exception e)
         {
-            var error_str = e.ToString();
-            Runtime.Log($"Error while describing the module: {error_str}", Runtime.LogLevel.Error);
+            Runtime.Log($"Error while describing the module: {e}", Runtime.LogLevel.Error);
             return RawBindings.Buffer.INVALID;
+        }
+        finally
+        {
+            module = userModule;
         }
     }
 
