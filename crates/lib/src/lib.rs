@@ -155,15 +155,8 @@ impl TableDef {
         }
 
         // Multi-column indexes cannot be unique (yet), so just add them.
-        let multi_col_indexes = table.indexes.iter().filter_map(|index| {
-            (index.cols.len() > 1).then(|| {
-                spacetimedb_sats::db::def::IndexDef::new_cols(
-                    index.name.clone(),
-                    AUTO_TABLE_ID,
-                    false,
-                    index.cols.clone(),
-                )
-            })
+        let multi_col_indexes = table.indexes.iter().filter(|index| index.cols.len() > 1).map(|index| {
+            spacetimedb_sats::db::def::IndexDef::new_cols(index.name.clone(), AUTO_TABLE_ID, false, index.cols.clone())
         });
         indexes.extend(multi_col_indexes);
 

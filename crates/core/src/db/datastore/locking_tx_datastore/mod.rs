@@ -299,7 +299,7 @@ impl TxState {
     }
 
     pub fn get_or_create_delete_table(&mut self, table_id: TableId) -> &mut BTreeSet<RowId> {
-        self.delete_tables.entry(table_id).or_insert_with(BTreeSet::new)
+        self.delete_tables.entry(table_id).or_default()
     }
 
     /// When there's an index on `cols`,

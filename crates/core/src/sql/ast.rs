@@ -176,12 +176,13 @@ impl From {
     pub fn find_field(&self, f: &str) -> Result<Vec<FieldDef>, RelationError> {
         let field = extract_table_field(f)?;
         let fields = self.iter_tables().flat_map(|t| {
-            t.columns.iter().filter_map(|column| {
-                (column.col_name == field.field).then(|| FieldDef {
+            t.columns
+                .iter()
+                .filter(|column| column.col_name == field.field)
+                .map(|column| FieldDef {
                     column: column.clone(),
                     table_name: field.table.unwrap_or(&t.table_name).to_string(),
                 })
-            })
         });
 
         Ok(fields.collect())
