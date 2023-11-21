@@ -15,8 +15,7 @@ required-features = ["serde"]
 
 [features]
 default = ["serde"]
-serde = ["dep:serde", "spacetimedb-sats/serde", "dep:serde_with", "chrono/serde"]
-cli = ["clap"]
+serde = ["dep:serde", "spacetimedb-sats/serde"]
 # Allows using `Arbitrary` impls defined in this crate.
 proptest = ["dep:proptest", "dep:proptest-derive"]
 
@@ -27,14 +26,11 @@ spacetimedb-primitives = { path = "../primitives", version = "0.7.3" }
 
 anyhow.workspace = true
 bitflags.workspace = true
-chrono = { workspace = true, optional = true }
-clap = {workspace = true, optional = true }
 derive_more.workspace = true
 enum-as-inner.workspace = true
 hex.workspace = true
 itertools.workspace = true
 serde = { workspace = true, optional = true }
-serde_with = {workspace = true, optional = true }
 thiserror.workspace = true
 tracing.workspace = true
 

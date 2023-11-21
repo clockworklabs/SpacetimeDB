@@ -12,8 +12,8 @@ use bytestring::ByteString;
 use http::{HeaderName, HeaderValue, Request, StatusCode};
 
 use spacetimedb::address::Address;
+use spacetimedb_api_common::name::DomainName;
 use spacetimedb_lib::address::AddressForUrl;
-use spacetimedb_lib::name::DomainName;
 
 use crate::routes::database::DomainParsingRejection;
 use crate::{log_and_500, ControlStateReadAccess};

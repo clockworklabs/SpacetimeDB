@@ -3996,6 +3996,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-api-common"
+version = "0.7.3"
+dependencies = [
+ "chrono",
+ "hex",
+ "itertools 0.11.0",
+ "proptest",
+ "serde",
+ "serde_json",
+ "spacetimedb-lib",
+ "spacetimedb-sats",
+ "thiserror",
+]
+
+[[package]]
 name = "spacetimedb-bench"
 version = "0.7.3"
 dependencies = [
@@ -4075,6 +4090,7 @@ dependencies = [
  "serde",
  "serde_json",
  "slab",
+ "spacetimedb-api-common",
  "spacetimedb-core",
  "spacetimedb-lib",
  "spacetimedb-standalone",
@@ -4113,6 +4129,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "spacetimedb-api-common",
  "spacetimedb-core",
  "spacetimedb-lib",
  "tempfile",
@@ -4187,6 +4204,7 @@ dependencies = [
  "slab",
  "sled",
  "smallvec",
+ "spacetimedb-api-common",
  "spacetimedb-client-api-messages",
  "spacetimedb-lib",
  "spacetimedb-primitives",
@@ -4229,8 +4247,6 @@ dependencies = [
  "anyhow",
  "bitflags 2.4.1",
  "bytes",
- "chrono",
- "clap",
  "derive_more",
  "enum-as-inner",
  "hex",
@@ -4241,7 +4257,6 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "serde_with",
  "spacetimedb-bindings-macro",
  "spacetimedb-primitives",
  "spacetimedb-sats",
@@ -4331,6 +4346,7 @@ dependencies = [
  "prometheus",
  "serde_json",
  "sled",
+ "spacetimedb-api-common",
  "spacetimedb-client-api",
  "spacetimedb-core",
  "spacetimedb-lib",

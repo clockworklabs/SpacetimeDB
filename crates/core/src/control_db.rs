@@ -10,8 +10,10 @@ use crate::identity::Identity;
 use crate::messages::control_db::{Database, DatabaseInstance, EnergyBalance, IdentityEmail, Node};
 use crate::stdb_path;
 
-use spacetimedb_lib::name::{DomainName, DomainParsingError, InsertDomainResult, RegisterTldResult, Tld, TldRef};
-use spacetimedb_lib::recovery::RecoveryCode;
+use spacetimedb_api_common::name::{
+    DomainName, DomainParsingError, InsertDomainResult, RegisterTldResult, Tld, TldRef,
+};
+use spacetimedb_api_common::recovery::RecoveryCode;
 use spacetimedb_sats::bsatn;
 
 #[cfg(test)]
