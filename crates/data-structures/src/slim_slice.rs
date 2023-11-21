@@ -1406,7 +1406,7 @@ impl Ord for SlimStr<'_> {
 impl PartialOrd for SlimStr<'_> {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.deref().partial_cmp(other.deref())
+        Some(self.cmp(other))
     }
 }
 impl PartialOrd<str> for SlimStr<'_> {
@@ -1585,7 +1585,7 @@ impl Ord for SlimStrMut<'_> {
 impl PartialOrd for SlimStrMut<'_> {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.deref().partial_cmp(other.deref())
+        Some(self.cmp(other))
     }
 }
 impl PartialOrd<str> for SlimStrMut<'_> {

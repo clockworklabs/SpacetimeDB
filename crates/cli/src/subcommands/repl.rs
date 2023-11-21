@@ -144,10 +144,10 @@ impl Completer for ReplHelper {
         }
         name = name.chars().rev().collect();
 
-        let mut completions: Vec<_> = AUTO_COMPLETE.split('\n').map(str::to_string).collect();
-        completions = completions
-            .iter()
-            .filter_map(|it| it.starts_with(&name).then(|| it.clone()))
+        let completions: Vec<_> = AUTO_COMPLETE
+            .split('\n')
+            .filter(|it| it.starts_with(&name))
+            .map(str::to_owned)
             .collect();
 
         Ok((name_pos, completions))
