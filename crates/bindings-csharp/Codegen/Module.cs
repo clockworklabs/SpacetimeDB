@@ -287,12 +287,6 @@ public class Module : IIncrementalGenerator
                 // Prevent trimming of FFI exports that are invoked from C and not visible to C# trimmer.
                 [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(SpacetimeDB.Module.FFI))]
                 public static void Main() {{
-                    // incredibly weird bugfix for incredibly weird bug
-                    // see https://github.com/dotnet/dotnet-wasi-sdk/issues/24
-                    // - looks like it has to be stringified at least once in Main or it will fail everywhere
-                    // - looks like ToString() will crash with stack overflow, but interpolation works
-                    var _bugFix = $""{{DateTimeOffset.UnixEpoch}}"";
-
                     {string.Join("\n", addReducers.Select(r => $"FFI.RegisterReducer(new {r.Name}());"))}
                     {string.Join("\n", addTables)}
                 }}
