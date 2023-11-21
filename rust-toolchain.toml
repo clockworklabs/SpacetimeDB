@@ -1,4 +1,5 @@
 [toolchain]
-channel = "1.72.0"
+# change crates/standalone/Dockerfile too!
+channel = "1.74.0"
 profile = "default"
 targets = ["wasm32-unknown-unknown"]

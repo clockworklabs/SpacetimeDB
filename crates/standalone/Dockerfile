@@ -3,7 +3,7 @@
 ARG CARGO_PROFILE=release
 
 
-FROM rust:1.72.0 AS chef
+FROM rust:1.74.0 AS chef
 RUN rust_target=$(rustc -vV | awk '/^host:/{ print $2 }') && \
   curl https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-$rust_target.tgz -fL | tar xz -C $CARGO_HOME/bin
 RUN cargo binstall -y cargo-chef@0.1.56
