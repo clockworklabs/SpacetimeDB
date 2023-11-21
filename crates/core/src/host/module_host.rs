@@ -332,10 +332,7 @@ impl fmt::Debug for ModuleHost {
 
 #[async_trait::async_trait]
 trait DynModuleHost: Send + Sync + 'static {
-    async fn get_instance(
-        &self,
-        ctx: (Identity, Hash, Address, &str),
-    ) -> Result<(&HostThreadpool, Box<dyn ModuleInstance>), NoSuchModule>;
+    async fn get_instance(&self, db: Address) -> Result<(&HostThreadpool, Box<dyn ModuleInstance>), NoSuchModule>;
     fn inject_logs(&self, log_level: LogLevel, message: &str);
     fn one_off_query(
         &self,
@@ -381,22 +378,19 @@ async fn select_first<A: Future, B: Future<Output = ()>>(fut_a: A, fut_b: B) -> 
 
 #[async_trait::async_trait]
 impl<T: Module> DynModuleHost for HostControllerActor<T> {
-    async fn get_instance(
-        &self,
-        ctx: (Identity, Hash, Address, &str),
-    ) -> Result<(&HostThreadpool, Box<dyn ModuleInstance>), NoSuchModule> {
+    async fn get_instance(&self, db: Address) -> Result<(&HostThreadpool, Box<dyn ModuleInstance>), NoSuchModule> {
         self.start.notified().await;
         // in the future we should do something like in the else branch here -- add more instances based on load.
         // we need to do write-skew retries first - right now there's only ever once instance per module.
         let inst = if true {
             self.instance_pool
-                .request_with_context(ctx)
+                .request_with_context(db)
                 .await
                 .map_err(|_| NoSuchModule)?
         } else {
             const GET_INSTANCE_TIMEOUT: Duration = Duration::from_millis(500);
             select_first(
-                self.instance_pool.request_with_context(ctx),
+                self.instance_pool.request_with_context(db),
                 tokio::time::sleep(GET_INSTANCE_TIMEOUT).map(|()| self.spinup_new_instance()),
             )
             .await
@@ -509,18 +503,12 @@ impl ModuleHost {
         &self.info.subscription
     }
 
-    async fn call<F, R>(&self, reducer_name: &str, f: F) -> Result<R, NoSuchModule>
+    async fn call<F, R>(&self, _reducer_name: &str, f: F) -> Result<R, NoSuchModule>
     where
         F: FnOnce(&mut dyn ModuleInstance) -> R + Send + 'static,
         R: Send + 'static,
     {
-        let context = (
-            self.info.identity,
-            self.info.module_hash,
-            self.info.address,
-            reducer_name,
-        );
-        let (threadpool, mut inst) = self.inner.get_instance(context).await?;
+        let (threadpool, mut inst) = self.inner.get_instance(self.info.address).await?;
 
         let (tx, rx) = oneshot::channel();
         threadpool.spawn(move || {
