@@ -9,10 +9,10 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use parking_lot::Mutex;
-use spacetimedb_lib::{Address, Hash, Identity};
+use spacetimedb_lib::Address;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
-use crate::worker_metrics::WORKER_METRICS;
+use crate::worker_metrics::{MAX_QUEUE_LEN, WORKER_METRICS};
 
 use super::notify_once::{NotifiedOnce, NotifyOnce};
 
@@ -54,28 +54,30 @@ impl<T> LendingPool<T> {
         Self::from_iter(std::iter::empty())
     }
 
-    pub fn request_with_context(
-        &self,
-        (identity, module_hash, database_address, reducer_symbol): (Identity, Hash, Address, &str),
-    ) -> impl Future<Output = Result<LentResource<T>, PoolClosed>> {
+    pub fn request_with_context(&self, db: Address) -> impl Future<Output = Result<LentResource<T>, PoolClosed>> {
         let acq = self.sem.clone().acquire_owned();
         let pool_inner = self.inner.clone();
 
-        let queue_len = WORKER_METRICS.instance_queue_length.with_label_values(
-            &identity,
-            &module_hash,
-            &database_address,
-            reducer_symbol,
-        );
-        let queue_len_histogram = WORKER_METRICS.instance_queue_length_histogram.with_label_values(
-            &identity,
-            &module_hash,
-            &database_address,
-            reducer_symbol,
-        );
+        let queue_len = WORKER_METRICS.instance_queue_length.with_label_values(&db);
+        let queue_len_max = WORKER_METRICS.instance_queue_length_max.with_label_values(&db);
+        let queue_len_histogram = WORKER_METRICS.instance_queue_length_histogram.with_label_values(&db);
 
         queue_len.inc();
-        queue_len_histogram.observe(queue_len.get() as f64);
+        let new_queue_len = queue_len.get();
+        queue_len_histogram.observe(new_queue_len as f64);
+
+        let mut guard = MAX_QUEUE_LEN.lock().unwrap();
+        let max_queue_len = *guard
+            .entry(db)
+            .and_modify(|max| {
+                if new_queue_len > *max {
+                    *max = new_queue_len;
+                }
+            })
+            .or_insert_with(|| new_queue_len);
+
+        drop(guard);
+        queue_len_max.set(max_queue_len);
 
         async move {
             let permit = acq.await.map_err(|_| PoolClosed)?;

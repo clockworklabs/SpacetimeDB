@@ -1,3 +1,5 @@
+use std::{collections::HashMap, sync::Mutex};
+
 use crate::hash::Hash;
 use crate::util::typed_prometheus::metrics_group;
 use once_cell::sync::Lazy;
@@ -67,12 +69,17 @@ metrics_group!(
 
         #[name = spacetime_worker_instance_operation_queue_length]
         #[help = "Length of the wait queue for access to a module instance."]
-        #[labels(identity: Identity, module_hash: Hash, database_address: Address, reducer_symbol: str)]
+        #[labels(database_address: Address)]
         pub instance_queue_length: IntGaugeVec,
+
+        #[name = spacetime_worker_instance_operation_queue_length_max]
+        #[help = "Max length of the wait queue for access to a module instance."]
+        #[labels(database_address: Address)]
+        pub instance_queue_length_max: IntGaugeVec,
 
         #[name = spacetime_worker_instance_operation_queue_length_histogram]
         #[help = "Length of the wait queue for access to a module instance."]
-        #[labels(identity: Identity, module_hash: Hash, database_address: Address, reducer_symbol: str)]
+        #[labels(database_address: Address)]
         #[buckets(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 25, 50)]
         pub instance_queue_length_histogram: HistogramVec,
 
@@ -99,4 +106,5 @@ metrics_group!(
     }
 );
 
+pub static MAX_QUEUE_LEN: Lazy<Mutex<HashMap<Address, i64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 pub static WORKER_METRICS: Lazy<WorkerMetrics> = Lazy::new(WorkerMetrics::new);
