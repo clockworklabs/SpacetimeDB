@@ -24,7 +24,7 @@ This means that you can write your entire application in a single language, Rust
 
 <figure>
     <img src="/images/basic-architecture-diagram.png" alt="SpacetimeDB Architecture" style="width:100%">
-    <figcaption style="margin-top: -55px;" align="center">
+    <figcaption style="margin-top: 10px;" align="center">
         <b align="center">SpacetimeDB application architecture</b>
         <span style="font-size: 14px">(elements in white are provided by SpacetimeDB)</span>
     </figcaption>
