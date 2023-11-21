@@ -32,7 +32,7 @@ use spacetimedb::module_host_context::ModuleHostContext;
 use spacetimedb::object_db::ObjectDb;
 use spacetimedb::sendgrid_controller::SendGridController;
 use spacetimedb::stdb_path;
-use spacetimedb::worker_metrics::{MAX_QUEUE_LEN, WORKER_METRICS};
+use spacetimedb::worker_metrics::{MAX_QUEUE_LEN, MAX_REDUCER_DELAY, WORKER_METRICS};
 use spacetimedb_lib::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
 use spacetimedb_lib::recovery::RecoveryCode;
 use std::fs::File;
@@ -170,6 +170,8 @@ impl spacetimedb_client_api::NodeDelegate for StandaloneEnv {
             MAX_TX_CPU_TIME.lock().unwrap().clear();
             // Reset max queue length metric
             MAX_QUEUE_LEN.lock().unwrap().clear();
+            // Reset max reducer delay metric
+            MAX_REDUCER_DELAY.lock().unwrap().clear();
         }
         // Note, we update certain metrics such as disk usage on demand.
         self.db_inst_ctx_controller.update_metrics();
