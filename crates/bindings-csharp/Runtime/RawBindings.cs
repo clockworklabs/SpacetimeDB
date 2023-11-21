@@ -10,8 +10,16 @@ using static System.Text.Encoding;
 
 public static partial class RawBindings
 {
+    // For now this must match the name of the `.c` file (`bindings.c`).
+    // In the future C# will allow to specify Wasm import namespace in
+    // `LibraryImport` directly.
     const string StdbNamespace = "bindings";
 
+    // This custom marshaller takes care of checking the status code
+    // returned from the host and throwing an exception if it's not 0.
+    // The only reason it doesn't return `void` is because the C# compiler
+    // doesn't treat `void` as a real type and doesn't allow it to be returned
+    // from custom marshallers, so we resort to an empty struct instead.
     [CustomMarshaller(typeof(CheckedStatus), MarshalMode.ManagedToUnmanagedOut, typeof(StatusMarshaller))]
     static class StatusMarshaller
     {
@@ -68,6 +76,10 @@ public static partial class RawBindings
         private readonly ulong schedule_token;
     }
 
+    // We need custom marshaller for `Buffer` because we return it by value
+    // instead of passing an `out` reference, and C# currently doesn't match
+    // the common Wasm C ABI in that a struct with a single field is supposed
+    // to have the same ABI as the field itself.
     [CustomMarshaller(typeof(Buffer), MarshalMode.Default, typeof(BufferMarshaller))]
     static class BufferMarshaller
     {
@@ -109,10 +121,10 @@ public static partial class RawBindings
         public static bool operator !=(BufferIter left, BufferIter right) => !(left == right);
     }
 
-    [LibraryImport("bindings")]
+    [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus _get_table_id([In] byte[] name, uint name_len, out TableId out_);
 
-    [LibraryImport("bindings")]
+    [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus _create_index(
         [In] byte[] index_name,
         uint index_name_len,
@@ -122,7 +134,7 @@ public static partial class RawBindings
         uint col_len
     );
 
-    [LibraryImport("bindings")]
+    [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus _iter_by_col_eq(
         TableId table_id,
         ColId col_id,
@@ -131,10 +143,10 @@ public static partial class RawBindings
         out Buffer out_
     );
 
-    [LibraryImport("bindings")]
+    [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus _insert(TableId table_id, byte[] row, uint row_len);
 
-    [LibraryImport("bindings")]
+    [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus _delete_by_col_eq(
         TableId table_id,
         ColId col_id,
@@ -143,7 +155,7 @@ public static partial class RawBindings
         out uint out_
     );
 
-    [LibraryImport("bindings")]
+    [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus _delete_by_rel(
         TableId table_id,
         [In] byte[] relation,
@@ -151,10 +163,10 @@ public static partial class RawBindings
         out uint out_
     );
 
-    [LibraryImport("bindings")]
+    [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus _iter_start(TableId table_id, out BufferIter out_);
 
-    [LibraryImport("bindings")]
+    [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus _iter_start_filtered(
         TableId table_id,
         [In] byte[] filter,
@@ -162,13 +174,13 @@ public static partial class RawBindings
         out BufferIter out_
     );
 
-    [LibraryImport("bindings")]
+    [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus _iter_next(BufferIter iter_handle, out Buffer out_);
 
-    [LibraryImport("bindings")]
+    [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus _iter_drop(BufferIter iter_handle);
 
-    [LibraryImport("bindings")]
+    [LibraryImport(StdbNamespace)]
     public static partial void _console_log(
         byte level,
         [In] byte[] target,
@@ -180,7 +192,7 @@ public static partial class RawBindings
         uint message_len
     );
 
-    [LibraryImport("bindings")]
+    [LibraryImport(StdbNamespace)]
     public static partial void _schedule_reducer(
         [In] byte[] name,
         uint name_len,
@@ -190,15 +202,15 @@ public static partial class RawBindings
         out ScheduleToken out_
     );
 
-    [LibraryImport("bindings")]
+    [LibraryImport(StdbNamespace)]
     public static partial void _cancel_reducer(ScheduleToken schedule_token_handle);
 
-    [LibraryImport("bindings")]
+    [LibraryImport(StdbNamespace)]
     public static partial uint _buffer_len(Buffer buf_handle);
 
-    [LibraryImport("bindings")]
+    [LibraryImport(StdbNamespace)]
     public static partial void _buffer_consume(Buffer buf_handle, [MarshalUsing(CountElementName = nameof(dst_len))] [Out] byte[] dst, uint dst_len);
 
-    [LibraryImport("bindings")]
+    [LibraryImport(StdbNamespace)]
     public static partial Buffer _buffer_alloc([In] byte[] data, uint data_len);
 }
