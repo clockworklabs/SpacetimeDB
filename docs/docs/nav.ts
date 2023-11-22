@@ -21,7 +21,7 @@ function section(title: string): NavSection {
   return { type: "section", title };
 }
 
-export default {
+const nav: Nav = {
   items: [
     section("Intro"),
     page("Overview/index.md", "Overview"),
@@ -72,4 +72,6 @@ export default {
     section("SQL"),
     page("SQL Reference/index.md", "SQL Reference"),
   ],
-} satisfies Nav;
+};
+
+export default nav;
