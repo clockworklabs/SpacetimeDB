@@ -34,6 +34,7 @@
 //! NOTE: We have [ConstraintKind] and [AttributeKind] intentionally semi-duplicated because
 //! the first is for the [Constrains] that are per-table and the second is for markers of the column.
 
+//TODO: This needs a proper refactor, and use types for `column attributes` and `table tributes`
 /// The assigned constraint for a `Table`
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
