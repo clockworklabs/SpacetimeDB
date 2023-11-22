@@ -15,6 +15,7 @@ use thiserror::Error;
 use super::messages::commit::Commit;
 
 const HEADER_SIZE: usize = 4;
+const CHECKSUM_SIZE: usize = 4;
 
 /// Error returned by [`OpenOptions::open`] or [`MessageLog::open`].
 #[derive(Debug, Error)]
@@ -129,7 +130,7 @@ impl OpenOptions {
             let message_len = u32::from_le_bytes(buf);
 
             max_offset += 1;
-            cursor += HEADER_SIZE as u64 + message_len as u64;
+            cursor += HEADER_SIZE as u64 + message_len as u64 + CHECKSUM_SIZE as u64;
         }
 
         let file = BufWriter::new(file);
@@ -206,13 +207,18 @@ impl MessageLog {
         OpenOptions::default()
     }
 
+    pub const fn message_size(message: &[u8]) -> u64 {
+        (HEADER_SIZE + message.len() + CHECKSUM_SIZE) as u64
+    }
+
     #[tracing::instrument(skip_all)]
     pub fn append(&mut self, message: impl AsRef<[u8]>) -> io::Result<()> {
         let message = message.as_ref();
-        let mess_size = message.len() as u32;
-        let size: u32 = mess_size + HEADER_SIZE as u32;
+        let checksum = crc32fast::hash(message);
 
-        let end_size = self.open_segment().size + size as u64;
+        let size = Self::message_size(message);
+
+        let end_size = self.open_segment().size + size;
         if end_size > self.options.max_segment_size {
             self.flush()?;
             self.segments.push(Segment {
@@ -232,12 +238,14 @@ impl MessageLog {
             self.open_segment_file = file;
         }
 
-        self.open_segment_file.write_all(&mess_size.to_le_bytes())?;
+        self.open_segment_file
+            .write_all(&(message.len() as u32).to_le_bytes())?;
         self.open_segment_file.write_all(message)?;
+        self.open_segment_file.write_all(&checksum.to_le_bytes())?;
 
-        self.open_segment_mut().size += size as u64;
+        self.open_segment_mut().size += size;
         self.open_segment_max_offset += 1;
-        self.total_size += size as u64;
+        self.total_size += size;
 
         Ok(())
     }
@@ -559,13 +567,23 @@ impl Iterator for IterSegment {
         self.read += HEADER_SIZE as u64;
 
         let message_len = u32::from_le_bytes(buf);
-        let mut buf = vec![0; message_len as usize];
-        if let Err(e) = self.file.read_exact(&mut buf) {
+        let mut message = vec![0; message_len as usize];
+        if let Err(e) = self.file.read_exact(&mut message) {
             return Some(Err(e));
         }
         self.read += message_len as u64;
 
-        Some(Ok(buf))
+        let mut buf = [0; CHECKSUM_SIZE];
+        if let Err(e) = self.file.read_exact(&mut buf) {
+            return Some(Err(e));
+        }
+        let checksum = u32::from_le_bytes(buf);
+        if checksum != crc32fast::hash(&message) {
+            return Some(Err(io::Error::new(io::ErrorKind::InvalidData, "Checksum mismatch")));
+        }
+        self.read += CHECKSUM_SIZE as u64;
+
+        Some(Ok(message))
     }
 }
 
@@ -603,7 +621,7 @@ mod tests {
 
     use std::path::Path;
 
-    use super::{MessageLog, Segment, HEADER_SIZE};
+    use super::{MessageLog, Segment};
     use spacetimedb_lib::error::ResultTest;
     use tempfile::{self, TempDir};
 
@@ -650,11 +668,12 @@ mod tests {
             duration.as_nanos() / MESSAGE_COUNT as u128
         );
         message_log.sync_all()?;
-        println!("total_size: {}", message_log.size());
+        let size = message_log.size();
+        println!("total_size: {}", size);
         drop(message_log);
 
         let message_log = MessageLog::open(path)?;
-        assert!(message_log.size() == 2_000_000);
+        assert!(message_log.size() == size);
 
         Ok(())
     }
@@ -717,6 +736,7 @@ mod tests {
         const MESSAGE: &[u8] = b"bleep bloop bleep";
         const SEGMENTS: usize = 3;
         const MESSAGES_PER_SEGMENT: usize = 10_000;
+        const MESSAGE_SIZE: u64 = MessageLog::message_size(MESSAGE);
 
         #[derive(Debug)]
         struct Snapshot {
@@ -752,7 +772,7 @@ mod tests {
                 mlog
             );
             let entries_delta = snapshot.max_offset - offset;
-            let size_delta = entries_delta * (MESSAGE.len() + HEADER_SIZE) as u64;
+            let size_delta = entries_delta * MESSAGE_SIZE;
             assert_eq!(
                 mlog.total_size,
                 snapshot.total_size - size_delta,
@@ -826,7 +846,8 @@ mod tests {
     }
 
     fn fill_log(path: &Path, segments: usize, messages_per_segment: usize, message: &[u8]) -> ResultTest<MessageLog> {
-        let segment_size = messages_per_segment * (message.len() + super::HEADER_SIZE);
+        let message_size = MessageLog::message_size(message) as usize;
+        let segment_size = messages_per_segment * message_size;
         let total_messages = messages_per_segment * segments;
 
         let mut mlog = MessageLog::options().max_segment_size(segment_size as u64).open(path)?;

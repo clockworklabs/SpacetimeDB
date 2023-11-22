@@ -642,7 +642,7 @@ mod tests {
 
         const COMMITS_PER_SEGMENT: usize = 10_000;
         const TOTAL_MESSAGES: usize = (COMMITS_PER_SEGMENT * 3) - 1;
-        let segment_size: usize = COMMITS_PER_SEGMENT * (commit_bytes.len() + 4);
+        let segment_size: usize = COMMITS_PER_SEGMENT * MessageLog::message_size(&commit_bytes) as usize;
 
         let mlog = message_log::MessageLog::options()
             .max_segment_size(segment_size as u64)

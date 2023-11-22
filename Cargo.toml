@@ -80,6 +80,7 @@ clap = { version = "4.2.4", features = ["derive"] }
 colored = "2.0.0"
 console = { version = "0.15.6" }
 convert_case = "0.6.0"
+crc32fast = "1.3.2"
 criterion = { version = "0.5.1", features = ["async", "async_tokio", "html_reports"] }
 crossbeam-channel = "0.5"
 cursive = { version = "0.20", default-features = false, features = ["crossterm-backend"] }

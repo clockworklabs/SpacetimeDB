@@ -4141,6 +4141,7 @@ dependencies = [
  "bytes",
  "bytestring",
  "clap",
+ "crc32fast",
  "criterion",
  "crossbeam-channel",
  "derive_more",
