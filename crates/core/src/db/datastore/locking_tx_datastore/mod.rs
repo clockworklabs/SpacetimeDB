@@ -602,7 +602,7 @@ impl MutTxId {
     /// have been created in memory, but tables with no rows will not have
     /// been created. This function ensures that they are created.
     fn build_missing_tables(&mut self, database_address: Address) -> super::Result<()> {
-        let st_tables = self.committed_state_read_lock.as_ref().unwrap().tables.get(&ST_TABLES_ID).unwrap();
+        let st_tables = self.committed_state_write_lock.as_ref().unwrap().tables.get(&ST_TABLES_ID).unwrap();
         let rows = st_tables.scan_rows().cloned().collect::<Vec<_>>();
         for row in rows {
             let table_row = StTableRow::try_from(&row)?;
@@ -1184,7 +1184,7 @@ impl MutTxId {
             .as_ref()
             .map(|tx_state| tx_state.insert_tables.contains_key(table_id))
             .unwrap_or(false)
-            || self.committed_state_read_lock.as_ref().map(|committed_state| committed_state.tables.contains_key(table_id))
+            || self.committed_state_write_lock.as_ref().map(|committed_state| committed_state.tables.contains_key(table_id))
             .unwrap_or(false)
     }
 
@@ -1279,7 +1279,7 @@ impl MutTxId {
         let insert_table = if let Some(table) = self.tx_state_lock.as_ref().unwrap().get_insert_table(&table_id) {
             table
         } else {
-            let Some(committed_table) = self.committed_state_read_lock.as_ref().unwrap().tables.get(&table_id) else {
+            let Some(committed_table) = self.committed_state_write_lock.as_ref().unwrap().tables.get(&table_id) else {
                 return Err(TableError::IdNotFoundState(table_id).into());
             };
             let table = Table {
@@ -1392,7 +1392,7 @@ impl MutTxId {
             RowState::Absent => {}
         }
         Ok(self
-            .committed_state_read_lock.as_ref().unwrap()
+            .committed_state_write_lock.as_ref().unwrap()
             .tables
             .get(table_id)
             .and_then(|table| table.get_row(row_id))
@@ -1408,7 +1408,7 @@ impl MutTxId {
         {
             return Some(row_type);
         }
-        self.committed_state_read_lock.as_ref().unwrap()
+        self.committed_state_write_lock.as_ref().unwrap()
             .tables
             .get(table_id)
             .map(|table| table.get_row_type())
@@ -1423,7 +1423,7 @@ impl MutTxId {
         {
             return Some(schema);
         }
-        self.committed_state_read_lock.as_ref().unwrap()
+        self.committed_state_write_lock.as_ref().unwrap()
             .tables
             .get(table_id)
             .map(|table| table.get_schema())
@@ -1521,14 +1521,14 @@ impl MutTxId {
                 table_id: *table_id,
                 tx_state,
                 inserted_rows,
-                committed_rows: self.committed_state_read_lock.as_ref().unwrap().index_seek(table_id, &cols, &range),
-                committed_state: &self.committed_state_read_lock.as_ref().unwrap(),
+                committed_rows: self.committed_state_write_lock.as_ref().unwrap().index_seek(table_id, &cols, &range),
+                committed_state: &self.committed_state_write_lock.as_ref().unwrap(),
                 num_committed_rows_fetched: 0,
             }))
         } else {
             // Either the current transaction has not modified this table, or the table is not
             // indexed.
-            match self.committed_state_read_lock.as_ref().unwrap().index_seek(table_id, &cols, &range) {
+            match self.committed_state_write_lock.as_ref().unwrap().index_seek(table_id, &cols, &range) {
                 //If we don't have `self.tx_state_lock` yet is likely we are running the bootstrap process
                 Some(committed_rows) => match self.tx_state_lock.as_ref() {
                     None => Ok(IterByColRange::Scan(ScanIterByColRange {
@@ -1540,7 +1540,7 @@ impl MutTxId {
                         ctx,
                         table_id: *table_id,
                         tx_state,
-                        committed_state: &self.committed_state_read_lock.as_ref().unwrap(),
+                        committed_state: &self.committed_state_write_lock.as_ref().unwrap(),
                         committed_rows,
                         num_committed_rows_fetched: 0,
                     })),
@@ -1632,7 +1632,7 @@ impl Locking {
         tx.build_missing_tables(self.inner.database_address)?;
         tx.committed_state_write_lock.as_mut().unwrap().build_indexes()?;
         tx.committed_state_write_lock.as_mut().unwrap().build_sequence_state(&mut tx.sequence_state_lock)?;
-
+        tx.commit()?;
         Ok(())
     }
 
@@ -1684,6 +1684,7 @@ impl Locking {
                 }
             }
         }
+        tx.commit()?;
         Ok(())
     }
 }
@@ -1783,7 +1784,7 @@ impl<'a> Iterator for Iter<'a> {
             match &mut self.stage {
                 ScanStage::Start => {
                     let _span = tracing::debug_span!("ScanStage::Start").entered();
-                    if let Some(table) = self.inner.committed_state_read_lock.as_ref().unwrap().tables.get(&table_id) {
+                    if let Some(table) = self.inner.committed_state_write_lock.as_ref().unwrap().tables.get(&table_id) {
                         // The committed state has changes for this table.
                         // Go through them in (1).
                         self.stage = ScanStage::Committed {
