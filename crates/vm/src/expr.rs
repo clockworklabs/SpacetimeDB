@@ -416,6 +416,7 @@ pub struct JoinExpr {
     pub col_rhs: FieldName,
 }
 
+//TODO: A posterior PR should fix the pass of multi-columns to the query optimization
 impl From<IndexJoin> for JoinExpr {
     fn from(value: IndexJoin) -> Self {
         let pos = value.index_col;

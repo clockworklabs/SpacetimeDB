@@ -592,7 +592,7 @@ impl TableSchema {
             .collect()
     }
 
-    /// Utility for project the fields from the supplied `indexes` that is a [NonEmpty<u32>],
+    /// Utility for project the fields from the supplied `indexes` that is a [NonEmpty<ColId>],
     /// used for when the list of field indexes have at least one value.
     pub fn project_not_empty(&self, indexes: NonEmpty<ColId>) -> Result<Vec<&ColumnSchema>, InvalidFieldError> {
         self.project(indexes.into_iter())
@@ -853,7 +853,7 @@ impl TableDef {
     /// # Parameters
     ///
     /// - `table_name`: The name of the table.
-    /// - `columns`: A slice of `ColumnDef` instances representing the columns of the table.
+    /// - `columns`: A `vec` of `ColumnDef` instances representing the columns of the table.
     ///
     pub fn new(table_name: String, columns: Vec<ColumnDef>) -> Self {
         Self {

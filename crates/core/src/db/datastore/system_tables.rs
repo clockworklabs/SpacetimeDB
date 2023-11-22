@@ -33,6 +33,7 @@ pub(crate) const ST_INDEXES_NAME: &str = "st_indexes";
 pub(crate) const ST_CONSTRAINTS_NAME: &str = "st_constraints";
 pub(crate) const ST_MODULE_NAME: &str = "st_module";
 
+// This help to keep the correct order when bootstrapping
 #[allow(non_camel_case_types)]
 #[derive(Debug, Display)]
 pub enum SystemTable {

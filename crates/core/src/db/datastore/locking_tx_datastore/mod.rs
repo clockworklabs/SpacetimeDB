@@ -1118,10 +1118,8 @@ impl Inner {
             AlgebraicValue::String(table_name.to_owned()),
         )
         .map(|mut iter| {
-            iter.next().map(|row| {
-                let id = *row.view().elements[0].as_u32().unwrap();
-                id.into()
-            })
+            iter.next()
+                .map(|row| TableId(*row.view().elements[0].as_u32().unwrap()))
         })
     }
 
@@ -1265,7 +1263,7 @@ impl Inner {
         )
         .map(|mut iter| {
             iter.next()
-                .map(|row| (*row.view().elements[0].as_u32().unwrap()).into())
+                .map(|row| IndexId(*row.view().elements[0].as_u32().unwrap()))
         })
     }
 
@@ -2536,7 +2534,6 @@ mod tests {
     use super::*;
     use crate::db::datastore::Result;
     use crate::error::IndexError;
-    use crate::execution_context::ExecutionContext;
     use itertools::Itertools;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_primitives::Constraints;

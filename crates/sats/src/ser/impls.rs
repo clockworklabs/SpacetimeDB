@@ -238,13 +238,3 @@ impl_serialize!([T: crate::ser::Serialize + Clone] NonEmpty<T>, (self, ser) => {
         }
         arr.end()
 });
-//
-// impl<T: ser::Serialize> ser::Serialize for NonEmpty<T> {
-//     fn serialize<S: ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-//         let mut arr = serializer.serialize_array(self.len())?;
-//         for x in self {
-//             arr.serialize_element(x)?;
-//         }
-//         arr.end()
-//     }
-// }
