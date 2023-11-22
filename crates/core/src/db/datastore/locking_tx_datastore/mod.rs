@@ -1632,11 +1632,7 @@ impl Locking {
             .rows
     }
 
-    pub fn replay_transaction(
-        &self,
-        transaction: &Transaction,
-        odb: Arc<std::sync::Mutex<Box<dyn ObjectDB + Send>>>,
-    ) -> Result<(), DBError> {
+    pub fn replay_transaction(&self, transaction: &Transaction, odb: &dyn ObjectDB) -> Result<(), DBError> {
         let mut inner = self.inner.lock();
         for write in &transaction.writes {
             let table_id = TableId(write.set_id);
@@ -1660,7 +1656,7 @@ impl Locking {
                             )
                         }),
                         DataKey::Hash(hash) => {
-                            let data = odb.lock().unwrap().get(hash).unwrap_or_else(|| {
+                            let data = odb.get(hash).unwrap_or_else(|| {
                                 panic!("Object {hash} referenced from transaction not present in object DB");
                             });
                             ProductValue::decode(&row_type, &mut &data[..]).unwrap_or_else(|e| {
