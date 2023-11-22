@@ -64,20 +64,23 @@ impl crate::Value for ProductValue {
 
 /// An error that occurs when a field, of a product value, is accessed that doesn't exist.
 #[derive(thiserror::Error, Debug, Copy, Clone)]
-#[error("Field at position {index} named: {name:?} not found or has an invalid type")]
+#[error("Field at position {col_pos} named: {name:?} not found or has an invalid type")]
 pub struct InvalidFieldError {
-    /// The claimed index of the field within the product value.
-    pub index: usize,
+    /// The claimed col_pos of the field within the product value.
+    pub col_pos: ColId,
     /// The name of the field, if any.
     pub name: Option<&'static str>,
 }
 
 impl ProductValue {
-    /// Borrow the value at field of `self` indentified by `index`.
+    /// Borrow the value at field of `self` identified by `col_pos`.
     ///
     /// The `name` is non-functional and is only used for error-messages.
-    pub fn get_field(&self, index: usize, name: Option<&'static str>) -> Result<&AlgebraicValue, InvalidFieldError> {
-        self.elements.get(index).ok_or(InvalidFieldError { index, name })
+    pub fn get_field(&self, col_pos: usize, name: Option<&'static str>) -> Result<&AlgebraicValue, InvalidFieldError> {
+        self.elements.get(col_pos).ok_or(InvalidFieldError {
+            col_pos: col_pos.into(),
+            name,
+        })
     }
 
     /// This function is used to project fields based on the provided `indexes`.
@@ -126,11 +129,14 @@ impl ProductValue {
     /// and then runs it through the function `f` which possibly returns a `T` derived from `value`.
     pub fn extract_field<'a, T>(
         &'a self,
-        index: usize,
+        col_pos: usize,
         name: Option<&'static str>,
         f: impl 'a + Fn(&'a AlgebraicValue) -> Option<T>,
     ) -> Result<T, InvalidFieldError> {
-        f(self.get_field(index, name)?).ok_or(InvalidFieldError { index, name })
+        f(self.get_field(col_pos, name)?).ok_or(InvalidFieldError {
+            col_pos: col_pos.into(),
+            name,
+        })
     }
 
     /// Interprets the value at field of `self` identified by `index` as a `bool`.

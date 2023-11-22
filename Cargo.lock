@@ -4009,6 +4009,7 @@ dependencies = [
  "lazy_static",
  "log",
  "mimalloc",
+ "nonempty",
  "rand 0.8.5",
  "regex",
  "rusqlite",

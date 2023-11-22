@@ -5,7 +5,8 @@ use derive_more::Display;
 use enum_map::Enum;
 use spacetimedb_lib::de::serde::SeedWrapper;
 use spacetimedb_lib::de::DeserializeSeed;
-use spacetimedb_lib::{bsatn, Identity, ProductValue, ReducerDef};
+use spacetimedb_lib::{bsatn, Identity};
+use spacetimedb_lib::{ProductValue, ReducerDef};
 use spacetimedb_sats::WithTypespace;
 use std::time::Duration;
 

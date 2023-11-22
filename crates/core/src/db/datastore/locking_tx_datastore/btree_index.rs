@@ -2,9 +2,10 @@ use super::RowId;
 use crate::db::datastore::locking_tx_datastore::table::Table;
 use crate::error::{DBError, IndexError};
 use nonempty::NonEmpty;
-use spacetimedb_primitives::{ColId, IndexId, TableId};
+use spacetimedb_primitives::*;
+use spacetimedb_sats::data_key::ToDataKey;
 use spacetimedb_sats::db::def::{IndexSchema, IndexType};
-use spacetimedb_sats::{data_key::ToDataKey, AlgebraicValue, DataKey, ProductValue};
+use spacetimedb_sats::{AlgebraicValue, DataKey, ProductValue};
 use std::{
     collections::{btree_set, BTreeSet},
     ops::{Bound, RangeBounds},
@@ -207,7 +208,7 @@ impl From<&BTreeIndex> for IndexSchema {
         IndexSchema {
             index_id: x.index_id,
             table_id: x.table_id,
-            cols: x.cols.clone(),
+            columns: x.cols.clone(),
             is_unique: x.is_unique,
             index_name: x.name.clone(),
             index_type: IndexType::BTree,

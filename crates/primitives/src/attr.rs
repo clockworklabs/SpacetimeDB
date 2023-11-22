@@ -222,6 +222,10 @@ impl Constraints {
         }
     }
 
+    pub fn contains(&self, other: &Self) -> bool {
+        self.attr.contains(other.attr)
+    }
+
     /// Checks if the 'UNIQUE' constraint is set.
     pub const fn has_unique(&self) -> bool {
         self.attr.has_unique()

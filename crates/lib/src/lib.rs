@@ -1,8 +1,5 @@
 use anyhow::Context;
-use spacetimedb_primitives::ColId;
-use spacetimedb_sats::db::attr::ColumnAttribute;
-use spacetimedb_sats::db::auth::{StAccess, StTableType};
-use spacetimedb_sats::db::def::{ColumnDef, IndexDef, IndexType, AUTO_TABLE_ID};
+use spacetimedb_sats::db::def::TableDef;
 use spacetimedb_sats::{impl_serialize, WithTypespace};
 
 pub mod address;
@@ -87,19 +84,14 @@ extern crate self as spacetimedb_lib;
 
 //WARNING: Change this structure(or any of their members) is an ABI change.
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
-#[sats(crate = crate)]
-pub struct TableDef {
-    pub name: String,
+pub struct TableDesc {
+    pub schema: TableDef,
     /// data should always point to a ProductType in the typespace
     pub data: sats::AlgebraicTypeRef,
-    pub column_attrs: Vec<ColumnAttribute>,
-    pub indexes: Vec<IndexDef>,
-    pub table_type: StTableType,
-    pub table_access: StAccess,
 }
 
-impl TableDef {
-    pub fn into_table_def(table: WithTypespace<'_, TableDef>) -> anyhow::Result<spacetimedb_sats::db::def::TableDef> {
+impl TableDesc {
+    pub fn into_table_def(table: WithTypespace<'_, TableDesc>) -> anyhow::Result<spacetimedb_sats::db::def::TableDef> {
         let schema = table
             .map(|t| &t.data)
             .resolve_refs()
@@ -107,66 +99,11 @@ impl TableDef {
         let schema = schema.into_product().ok().context("table not a product type?")?;
         let table = table.ty();
         anyhow::ensure!(
-            table.column_attrs.len() == schema.elements.len(),
+            table.schema.columns.len() == schema.elements.len(),
             "mismatched number of columns"
         );
 
-        // Build single-column index definitions, determining `is_unique` from
-        // their respective column attributes.
-        let mut columns = Vec::with_capacity(schema.elements.len());
-        let mut indexes = Vec::new();
-        for (col_id, (ty, col_attr)) in std::iter::zip(&schema.elements, &table.column_attrs).enumerate() {
-            let col = ColumnDef {
-                col_name: ty.name.clone().context("column without name")?,
-                col_type: ty.algebraic_type.clone(),
-                is_autoinc: col_attr.has_autoinc(),
-            };
-
-            let index_for_column = table.indexes.iter().find(|index| {
-                // Ignore multi-column indexes
-                index.cols.tail.is_empty() && index.cols.head.idx() == col_id
-            });
-
-            // If there's an index defined for this column already, use it,
-            // making sure that it is unique if the column has a unique constraint
-            let index_info = if let Some(index) = index_for_column {
-                Some((index.name.clone(), index.index_type))
-            } else if col_attr.has_unique() {
-                // If you didn't find an index, but the column is unique then create a unique btree index
-                // anyway.
-                Some((format!("{}_{}_unique", table.name, col.col_name), IndexType::BTree))
-            } else {
-                None
-            };
-            if let Some((name, ty)) = index_info {
-                match ty {
-                    IndexType::BTree => {}
-                    // TODO
-                    IndexType::Hash => anyhow::bail!("hash indexes not yet supported"),
-                }
-                indexes.push(spacetimedb_sats::db::def::IndexDef::new(
-                    name,
-                    AUTO_TABLE_ID,
-                    ColId(col_id as u32),
-                    col_attr.has_unique(),
-                ))
-            }
-            columns.push(col);
-        }
-
-        // Multi-column indexes cannot be unique (yet), so just add them.
-        let multi_col_indexes = table.indexes.iter().filter(|index| index.cols.len() > 1).map(|index| {
-            spacetimedb_sats::db::def::IndexDef::new_cols(index.name.clone(), AUTO_TABLE_ID, false, index.cols.clone())
-        });
-        indexes.extend(multi_col_indexes);
-
-        Ok(spacetimedb_sats::db::def::TableDef {
-            table_name: table.name.clone(),
-            columns,
-            indexes,
-            table_type: table.table_type,
-            table_access: table.table_access,
-        })
+        Ok(table.schema.clone())
     }
 }
 
@@ -242,7 +179,7 @@ impl_serialize!([] ReducerArgsWithSchema<'_>, (self, ser) => {
 #[derive(Debug, Clone, Default, de::Deserialize, ser::Serialize)]
 pub struct ModuleDef {
     pub typespace: sats::Typespace,
-    pub tables: Vec<TableDef>,
+    pub tables: Vec<TableDesc>,
     pub reducers: Vec<ReducerDef>,
     pub misc_exports: Vec<MiscModuleExport>,
 }

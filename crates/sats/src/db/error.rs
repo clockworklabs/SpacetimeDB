@@ -93,6 +93,8 @@ pub enum AuthError {
     SequencePrivate { named: String },
     #[error("Only the database owner can perform the requested operation")]
     OwnerRequired,
+    #[error("Constraint `{named}` is private")]
+    ConstraintPrivate { named: String },
 }
 
 #[derive(thiserror::Error, Debug)]

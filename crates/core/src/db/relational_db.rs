@@ -19,11 +19,11 @@ use crate::db::db_metrics::DB_METRICS;
 use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 use crate::db::ostorage::ObjectDB;
 use crate::db::FsyncPolicy;
-use crate::error::{DBError, DatabaseError, IndexError, TableError};
+use crate::error::{DBError, DatabaseError, TableError};
 use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
 use spacetimedb_lib::PrimaryKey;
-use spacetimedb_primitives::{ColId, ColumnAttribute, IndexId, SequenceId, TableId};
+use spacetimedb_primitives::*;
 use spacetimedb_sats::data_key::ToDataKey;
 use spacetimedb_sats::db::def::{IndexDef, SequenceDef, TableDef, TableSchema};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
@@ -409,35 +409,23 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn column_attrs(
+    pub fn column_constraints(
         &self,
         tx: &mut MutTxId,
         table_id: TableId,
         cols: &NonEmpty<ColId>,
-    ) -> Result<ColumnAttribute, DBError> {
+    ) -> Result<Constraints, DBError> {
         let table = self.inner.schema_for_table_mut_tx(tx, table_id)?;
-        let columns = table.project_not_empty(cols)?;
-        // Verify we don't have more than 1 auto_inc in the list of columns
-        let autoinc = columns.iter().filter(|x| x.is_autoinc).count();
-        let is_autoinc = if autoinc < 2 {
-            autoinc == 1
-        } else {
-            return Err(DBError::Index(IndexError::OneAutoInc(
-                table_id,
-                columns.iter().map(|x| x.col_name.clone()).collect(),
-            )));
-        };
-        let unique_index = table.indexes.iter().find(|x| &x.cols == cols).map(|x| x.is_unique);
-        let mut attr = ColumnAttribute::UNSET;
-        if is_autoinc {
-            attr |= ColumnAttribute::AUTO_INC;
-        }
+
+        let unique_index = table.indexes.iter().find(|x| &x.columns == cols).map(|x| x.is_unique);
+        let attr = Constraints::unset();
+
         if let Some(is_unique) = unique_index {
-            attr |= if is_unique {
-                ColumnAttribute::UNIQUE
+            attr.push(if is_unique {
+                Constraints::unique()
             } else {
-                ColumnAttribute::INDEXED
-            };
+                Constraints::indexed()
+            });
         }
         Ok(attr)
     }
@@ -452,14 +440,23 @@ impl RelationalDB {
         self.inner.sequence_id_from_name_mut_tx(tx, sequence_name)
     }
 
+    #[tracing::instrument(skip_all)]
+    pub fn constraint_id_from_name(
+        &self,
+        tx: &MutTxId,
+        constraint_name: &str,
+    ) -> Result<Option<ConstraintId>, DBError> {
+        self.inner.constraint_id_from_name(tx, constraint_name)
+    }
+
     /// Adds the [index::BTreeIndex] into the [ST_INDEXES_NAME] table
     ///
     /// Returns the `index_id`
     ///
     /// NOTE: It loads the data from the table into it before returning
-    #[tracing::instrument(skip(self, tx, index), fields(index=index.name))]
-    pub fn create_index(&self, tx: &mut MutTxId, index: IndexDef) -> Result<IndexId, DBError> {
-        self.inner.create_index_mut_tx(tx, index)
+    #[tracing::instrument(skip(self, tx, index), fields(index=index.index_name))]
+    pub fn create_index(&self, tx: &mut MutTxId, table_id: TableId, index: IndexDef) -> Result<IndexId, DBError> {
+        self.inner.create_index_mut_tx(tx, table_id, index)
     }
 
     /// Removes the [index::BTreeIndex] from the database by their `index_id`
@@ -575,13 +572,19 @@ impl RelationalDB {
         table_id: TableId,
         seq: SequenceDef,
     ) -> Result<SequenceId, DBError> {
-        self.inner.create_sequence_mut_tx(tx, seq)
+        self.inner.create_sequence_mut_tx(tx, table_id, seq)
     }
 
     ///Removes the [Sequence] from database instance
     #[tracing::instrument(skip(self, tx))]
     pub fn drop_sequence(&self, tx: &mut MutTxId, seq_id: SequenceId) -> Result<(), DBError> {
         self.inner.drop_sequence_mut_tx(tx, seq_id)
+    }
+
+    ///Removes the [Constraints] from database instance
+    #[tracing::instrument(skip(self, tx))]
+    pub fn drop_constraint(&self, tx: &mut MutTxId, constraint_id: ConstraintId) -> Result<(), DBError> {
+        self.inner.drop_constraint_mut_tx(tx, constraint_id)
     }
 
     /// Retrieve the [`Hash`] of the program (SpacetimeDB module) currently
@@ -661,16 +664,16 @@ mod tests {
 
     use super::*;
     use crate::db::datastore::system_tables::{
-        StIndexRow, StSequenceRow, StTableRow, ST_INDEXES_ID, ST_SEQUENCES_ID, ST_TABLES_ID,
+        StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINTS_ID, ST_INDEXES_ID, ST_SEQUENCES_ID,
+        ST_TABLES_ID,
     };
     use crate::db::message_log::SegmentView;
     use crate::db::ostorage::sled_object_db::SledObjectDB;
     use crate::db::relational_db::tests_utils::make_test_db;
+    use crate::error::IndexError;
     use crate::error::LogReplayError;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_primitives::{ColId, TableId};
-    use spacetimedb_sats::db::auth::{StAccess, StTableType};
-    use spacetimedb_sats::db::def::{ColumnDef, IndexType};
+    use spacetimedb_sats::db::def::{ColumnDef, ConstraintDef, IndexType};
     use spacetimedb_sats::product;
     use std::io::{self, Seek, SeekFrom, Write};
     use std::ops::Range;
@@ -680,28 +683,21 @@ mod tests {
         ColumnDef {
             col_name: name.to_string(),
             col_type: ty,
-            is_autoinc: false,
         }
     }
 
     fn index(name: &str, cols: &[u32]) -> IndexDef {
-        IndexDef {
-            table_id: 0.into(),
-            cols: NonEmpty::collect(cols.iter().copied().map(Into::into)).unwrap(),
-            name: name.to_string(),
-            is_unique: false,
-            index_type: IndexType::BTree,
-        }
+        IndexDef::btree(
+            name.into(),
+            NonEmpty::collect(cols.iter().copied().map(ColId)).unwrap(),
+            false,
+        )
     }
 
-    fn table(name: &str, columns: Vec<ColumnDef>, indexes: Vec<IndexDef>) -> TableDef {
-        TableDef {
-            table_name: name.to_string(),
-            columns,
-            indexes,
-            table_type: StTableType::User,
-            table_access: StAccess::Public,
-        }
+    fn table(name: &str, columns: Vec<ColumnDef>, indexes: Vec<IndexDef>, constraints: Vec<ConstraintDef>) -> TableDef {
+        TableDef::new(name.into(), columns)
+            .with_indexes(indexes)
+            .with_constraints(constraints)
     }
 
     #[test]
@@ -709,8 +705,7 @@ mod tests {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_tx();
-        let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
-        schema.table_name = "MyTable".to_string();
+        let schema = TableDef::from_product("MyTable", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         stdb.create_table(&mut tx, schema)?;
         stdb.commit_tx(&ExecutionContext::default(), tx)?;
 
@@ -723,8 +718,7 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
 
-        let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
-        schema.table_name = "MyTable".to_string();
+        let schema = TableDef::from_product("MyTable", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         stdb.create_table(&mut tx, schema)?;
 
         stdb.commit_tx(&ExecutionContext::default(), tx)?;
@@ -756,8 +750,7 @@ mod tests {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_tx();
-        let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
-        schema.table_name = "MyTable".to_string();
+        let schema = TableDef::from_product("MyTable", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         let table_id = stdb.create_table(&mut tx, schema)?;
         let t_id = stdb.table_id_from_name(&tx, "MyTable")?;
         assert_eq!(t_id, Some(table_id));
@@ -769,13 +762,12 @@ mod tests {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_tx();
-        let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
-        schema.table_name = "MyTable".to_string();
+        let schema = TableDef::from_product("MyTable", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         stdb.create_table(&mut tx, schema)?;
         let table_id = stdb.table_id_from_name(&tx, "MyTable")?.unwrap();
         let schema = stdb.schema_for_table(&tx, table_id)?;
         let col = schema.columns.iter().find(|x| x.col_name == "my_col").unwrap();
-        assert_eq!(col.col_id, 0.into());
+        assert_eq!(col.col_pos, 0.into());
         Ok(())
     }
 
@@ -784,8 +776,7 @@ mod tests {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_tx();
-        let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
-        schema.table_name = "MyTable".to_string();
+        let schema = TableDef::from_product("MyTable", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         stdb.create_table(&mut tx, schema.clone())?;
         let result = stdb.create_table(&mut tx, schema);
         result.expect_err("create_table should error when called twice");
@@ -798,8 +789,7 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
 
-        let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
-        schema.table_name = "MyTable".to_string();
+        let schema = TableDef::from_product("MyTable", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(-1)])?;
@@ -822,8 +812,7 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
 
-        let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
-        schema.table_name = "MyTable".to_string();
+        let schema = TableDef::from_product("MyTable", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(-1)])?;
@@ -848,8 +837,7 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
 
-        let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
-        schema.table_name = "MyTable".to_string();
+        let schema = TableDef::from_product("MyTable", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(-1)])?;
@@ -878,8 +866,7 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
 
-        let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
-        schema.table_name = "MyTable".to_string();
+        let schema = TableDef::from_product("MyTable", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(-1)])?;
@@ -910,8 +897,7 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
 
-        let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
-        schema.table_name = "MyTable".to_string();
+        let schema = TableDef::from_product("MyTable", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         let table_id = stdb.create_table(&mut tx, schema)?;
         stdb.rollback_tx(&ExecutionContext::default(), tx);
 
@@ -928,8 +914,7 @@ mod tests {
         let mut tx = stdb.begin_tx();
         let ctx = ExecutionContext::default();
 
-        let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
-        schema.table_name = "MyTable".to_string();
+        let schema = TableDef::from_product("MyTable", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         let table_id = stdb.create_table(&mut tx, schema)?;
         stdb.commit_tx(&ctx, tx)?;
 
@@ -951,25 +936,27 @@ mod tests {
         Ok(())
     }
 
+    fn table_auto_inc() -> TableDef {
+        TableDef::new(
+            "MyTable".into(),
+            vec![ColumnDef {
+                col_name: "my_col".to_string(),
+                col_type: AlgebraicType::I64,
+            }],
+        )
+        .with_column_constraint(Constraints::primary_key_auto(), ColId(0))
+        .unwrap()
+    }
+
     #[test]
     fn test_auto_inc() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_tx();
-        let schema = TableDef {
-            table_name: "MyTable".to_string(),
-            columns: vec![ColumnDef {
-                col_name: "my_col".to_string(),
-                col_type: AlgebraicType::I64,
-                is_autoinc: true,
-            }],
-            indexes: vec![],
-            table_type: StTableType::User,
-            table_access: StAccess::Public,
-        };
+        let schema = table_auto_inc();
         let table_id = stdb.create_table(&mut tx, schema)?;
 
-        let sequence = stdb.sequence_id_from_name(&tx, "MyTable_my_col_seq")?;
+        let sequence = stdb.sequence_id_from_name(&tx, "seq_MyTable_my_col_primary_key_auto")?;
         assert!(sequence.is_some(), "Sequence not created");
 
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(0)])?;
@@ -997,20 +984,10 @@ mod tests {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_tx();
-        let schema = TableDef {
-            table_name: "MyTable".to_string(),
-            columns: vec![ColumnDef {
-                col_name: "my_col".to_string(),
-                col_type: AlgebraicType::I64,
-                is_autoinc: true,
-            }],
-            indexes: vec![],
-            table_type: StTableType::User,
-            table_access: StAccess::Public,
-        };
+        let schema = table_auto_inc();
         let table_id = stdb.create_table(&mut tx, schema)?;
 
-        let sequence = stdb.sequence_id_from_name(&tx, "MyTable_my_col_seq")?;
+        let sequence = stdb.sequence_id_from_name(&tx, "seq_MyTable_my_col_primary_key_auto")?;
         assert!(sequence.is_some(), "Sequence not created");
 
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(5)])?;
@@ -1033,25 +1010,40 @@ mod tests {
         Ok(())
     }
 
+    fn table_indexed(is_unique: bool) -> TableDef {
+        TableDef::new(
+            "MyTable".into(),
+            vec![ColumnDef {
+                col_name: "my_col".to_string(),
+                col_type: AlgebraicType::I64,
+            }],
+        )
+        .with_indexes(vec![IndexDef {
+            columns: NonEmpty::new(0.into()),
+            index_name: "MyTable_my_col_idx".to_string(),
+            is_unique,
+            index_type: IndexType::BTree,
+        }])
+    }
+
     #[test]
     fn test_auto_inc_reload() -> ResultTest<()> {
         let (stdb, tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_tx();
-        let schema = TableDef {
-            table_name: "MyTable".to_string(),
-            columns: vec![ColumnDef {
+        let schema = TableDef::new(
+            "MyTable".into(),
+            vec![ColumnDef {
                 col_name: "my_col".to_string(),
                 col_type: AlgebraicType::I64,
-                is_autoinc: true,
             }],
-            indexes: vec![],
-            table_type: StTableType::User,
-            table_access: StAccess::Public,
-        };
+        )
+        .with_column_sequence(ColId(0))
+        .unwrap();
+
         let table_id = stdb.create_table(&mut tx, schema)?;
 
-        let sequence = stdb.sequence_id_from_name(&tx, "MyTable_my_col_seq")?;
+        let sequence = stdb.sequence_id_from_name(&tx, "seq_MyTable_my_col")?;
         assert!(sequence.is_some(), "Sequence not created");
 
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(0)])?;
@@ -1093,7 +1085,7 @@ mod tests {
         rows.sort();
 
         // Check the second row start after `SEQUENCE_PREALLOCATION_AMOUNT`
-        assert_eq!(rows, vec![1, 4099]);
+        assert_eq!(rows, vec![1, 4098]);
         Ok(())
     }
 
@@ -1102,22 +1094,7 @@ mod tests {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_tx();
-        let schema = TableDef {
-            table_name: "MyTable".to_string(),
-            columns: vec![ColumnDef {
-                col_name: "my_col".to_string(),
-                col_type: AlgebraicType::I64,
-                is_autoinc: false,
-            }],
-            indexes: vec![IndexDef::new(
-                "MyTable_my_col_idx".to_string(),
-                0.into(),
-                0.into(),
-                false,
-            )],
-            table_type: StTableType::User,
-            table_access: StAccess::Public,
-        };
+        let schema = table_indexed(false);
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         assert!(
@@ -1150,22 +1127,8 @@ mod tests {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_tx();
-        let schema = TableDef {
-            table_name: "MyTable".to_string(),
-            columns: vec![ColumnDef {
-                col_name: "my_col".to_string(),
-                col_type: AlgebraicType::I64,
-                is_autoinc: false,
-            }],
-            indexes: vec![IndexDef::new(
-                "MyTable_my_col_idx".to_string(),
-                0.into(),
-                0.into(),
-                true,
-            )],
-            table_type: StTableType::User,
-            table_access: StAccess::Public,
-        };
+
+        let schema = table_indexed(true);
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         assert!(
@@ -1197,22 +1160,22 @@ mod tests {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_tx();
-        let schema = TableDef {
-            table_name: "MyTable".to_string(),
-            columns: vec![ColumnDef {
+        let schema = TableDef::new(
+            "MyTable".into(),
+            vec![ColumnDef {
                 col_name: "my_col".to_string(),
                 col_type: AlgebraicType::I64,
-                is_autoinc: true,
             }],
-            indexes: vec![IndexDef::new(
-                "MyTable_my_col_idx".to_string(),
-                0.into(),
-                0.into(),
-                true,
-            )],
-            table_type: StTableType::User,
-            table_access: StAccess::Public,
-        };
+        )
+        .with_indexes(vec![IndexDef {
+            columns: NonEmpty::new(0.into()),
+            index_name: "MyTable_my_col_idx".to_string(),
+            is_unique: true,
+            index_type: IndexType::BTree,
+        }])
+        .with_column_constraint(Constraints::identity(), ColId(0))
+        .unwrap();
+
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         assert!(
@@ -1220,7 +1183,7 @@ mod tests {
             "Index not created"
         );
 
-        let sequence = stdb.sequence_id_from_name(&tx, "MyTable_my_col_seq")?;
+        let sequence = stdb.sequence_id_from_name(&tx, "seq_MyTable_my_col_identity")?;
         assert!(sequence.is_some(), "Sequence not created");
 
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(0)])?;
@@ -1248,69 +1211,86 @@ mod tests {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_tx();
-        let schema = TableDef {
-            table_name: "MyTable".to_string(),
-            columns: vec![
+        let schema = TableDef::new(
+            "MyTable".into(),
+            vec![
                 ColumnDef {
                     col_name: "col1".to_string(),
                     col_type: AlgebraicType::I64,
-                    is_autoinc: false,
                 },
                 ColumnDef {
                     col_name: "col2".to_string(),
                     col_type: AlgebraicType::I64,
-                    is_autoinc: true,
                 },
                 ColumnDef {
                     col_name: "col3".to_string(),
                     col_type: AlgebraicType::I64,
-                    is_autoinc: false,
                 },
                 ColumnDef {
                     col_name: "col4".to_string(),
                     col_type: AlgebraicType::I64,
-                    is_autoinc: true,
                 },
             ],
-            indexes: vec![
-                IndexDef::new("MyTable_col1_idx".to_string(), 0.into(), 0.into(), true),
-                IndexDef::new("MyTable_col3_idx".to_string(), 0.into(), 2.into(), false),
-                IndexDef::new("MyTable_col4_idx".to_string(), 0.into(), 3.into(), true),
-            ],
-            table_type: StTableType::User,
-            table_access: StAccess::Public,
-        };
+        )
+        .with_indexes(vec![
+            IndexDef::btree("MyTable_col1_idx".into(), ColId(0), true),
+            IndexDef::btree("MyTable_col3_idx".into(), ColId(0), false),
+            IndexDef::btree("MyTable_col4_idx".into(), ColId(0), true),
+        ])
+        .with_sequences(vec![SequenceDef::for_column("MyTable".into(), "col1".into(), 0.into())])
+        .with_constraints(vec![ConstraintDef::for_column(
+            "MyTable",
+            "col2",
+            Constraints::indexed(),
+            NonEmpty::new(1.into()),
+        )]);
+
+        let ctx = ExecutionContext::default();
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         let indexes = stdb
-            .iter(&ExecutionContext::default(), &tx, ST_INDEXES_ID)?
+            .iter(&ctx, &tx, ST_INDEXES_ID)?
             .map(|x| StIndexRow::try_from(x.view()).unwrap().to_owned())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
-        assert_eq!(indexes.len(), 3, "Wrong number of indexes");
+        assert_eq!(indexes.len(), 4, "Wrong number of indexes");
 
         let sequences = stdb
-            .iter(&ExecutionContext::default(), &tx, ST_SEQUENCES_ID)?
+            .iter(&ctx, &tx, ST_SEQUENCES_ID)?
             .map(|x| StSequenceRow::try_from(x.view()).unwrap().to_owned())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
-        assert_eq!(sequences.len(), 2, "Wrong number of sequences");
+        assert_eq!(sequences.len(), 1, "Wrong number of sequences");
+
+        let constraints = stdb
+            .iter(&ctx, &tx, ST_CONSTRAINTS_ID)?
+            .map(|x| StConstraintRow::try_from(x.view()).unwrap().to_owned())
+            .filter(|x| x.table_id == table_id)
+            .collect::<Vec<_>>();
+        assert_eq!(constraints.len(), 4, "Wrong number of constraints");
 
         stdb.drop_table(&mut tx, table_id)?;
 
         let indexes = stdb
-            .iter(&ExecutionContext::default(), &tx, ST_INDEXES_ID)?
+            .iter(&ctx, &tx, ST_INDEXES_ID)?
             .map(|x| StIndexRow::try_from(x.view()).unwrap().to_owned())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
-        assert_eq!(indexes.len(), 0, "Wrong number of indexes");
+        assert_eq!(indexes.len(), 0, "Wrong number of indexes DROP");
 
         let sequences = stdb
-            .iter(&ExecutionContext::default(), &tx, ST_SEQUENCES_ID)?
+            .iter(&ctx, &tx, ST_SEQUENCES_ID)?
             .map(|x| StSequenceRow::try_from(x.view()).unwrap().to_owned())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
-        assert_eq!(sequences.len(), 0, "Wrong number of sequences");
+        assert_eq!(sequences.len(), 0, "Wrong number of sequences DROP");
+
+        let constraints = stdb
+            .iter(&ctx, &tx, ST_CONSTRAINTS_ID)?
+            .map(|x| StConstraintRow::try_from(x.view()).unwrap().to_owned())
+            .filter(|x| x.table_id == table_id)
+            .collect::<Vec<_>>();
+        assert_eq!(constraints.len(), 0, "Wrong number of constraints DROP");
 
         Ok(())
     }
@@ -1320,24 +1300,22 @@ mod tests {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_tx();
+        let ctx = ExecutionContext::default();
 
-        let schema = TableDef {
-            table_name: "MyTable".to_string(),
-            columns: vec![ColumnDef {
+        let schema = TableDef::new(
+            "MyTable".into(),
+            vec![ColumnDef {
                 col_name: "my_col".to_string(),
                 col_type: AlgebraicType::I64,
-                is_autoinc: true,
             }],
-            indexes: vec![IndexDef::new(
-                "MyTable_my_col_idx".to_string(),
-                0.into(),
-                0.into(),
-                true,
-            )],
-            table_type: StTableType::User,
-            table_access: StAccess::Public,
-        };
-        let ctx = ExecutionContext::default();
+        )
+        .with_indexes(vec![IndexDef {
+            columns: NonEmpty::new(0.into()),
+            index_name: "MyTable_my_col_idx".to_string(),
+            is_unique: true,
+            index_type: IndexType::BTree,
+        }]);
+
         let table_id = stdb.create_table(&mut tx, schema)?;
         stdb.rename_table(&mut tx, table_id, "YourTable")?;
         let table_name = stdb.table_name_from_id(&ctx, &tx, table_id)?;
@@ -1367,7 +1345,7 @@ mod tests {
         ];
 
         let indexes = vec![index("0", &[0, 1])];
-        let schema = table("t", columns, indexes);
+        let schema = table("t", columns, indexes, vec![]);
 
         let mut tx = stdb.begin_tx();
         let table_id = stdb.create_table(&mut tx, schema)?;
@@ -1457,10 +1435,15 @@ mod tests {
                 table(
                     "Account",
                     vec![ColumnDef {
-                        is_autoinc: true,
                         ..column("deposit", AlgebraicType::U64)
                     }],
                     vec![],
+                    vec![ConstraintDef::for_column(
+                        "Account",
+                        "deposit",
+                        Constraints::identity(),
+                        NonEmpty::new(0.into()),
+                    )],
                 ),
             )
         })?;
