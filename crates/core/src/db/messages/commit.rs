@@ -1,4 +1,4 @@
-use anyhow::{bail, Context as _};
+use anyhow::{bail, ensure, Context as _};
 use spacetimedb_sats::buffer::{BufReader, BufWriter};
 use std::{fmt, sync::Arc};
 
@@ -102,6 +102,20 @@ impl Commit {
         })
     }
 
+    /// Decode a [`Commit`], fully consuming the input.
+    ///
+    /// Like [`Self::decode`], but returns an error if leftover data remains in
+    /// the buffer after decoding successfully. This can be useful to detect
+    /// framing errors when the protocol does not feature checksumming.
+    ///
+    /// Leftover data is defined as `BufReader::remaining(reader) > 0` after
+    /// decoding.
+    pub fn decode_exact<'a>(reader: &mut impl BufReader<'a>) -> anyhow::Result<Self> {
+        let commit = Self::decode(reader)?;
+        ensure!(reader.remaining() == 0, "Leftover data in input buffer");
+        Ok(commit)
+    }
+
     pub fn encoded_len(&self) -> usize {
         let mut count = 1; // tag for option
         if let Some(hash) = self.parent_commit_hash {
@@ -152,7 +166,7 @@ mod tests {
 
         #[test]
         fn prop_commit_encoding_roundtrip(commit in any::<Commit>()) {
-            let mut buf = Vec::new();
+            let mut buf = Vec::with_capacity(commit.encoded_len());
             commit.encode(&mut buf);
             let decoded = Commit::decode(&mut buf.as_slice()).unwrap();
             prop_assert_eq!(commit, decoded)
@@ -160,9 +174,21 @@ mod tests {
 
         #[test]
         fn prop_encoded_len_is_encoded_len(commit in any::<Commit>()) {
-            let mut buf = Vec::new();
+            let mut buf = Vec::with_capacity(commit.encoded_len());
             commit.encode(&mut buf);
             prop_assert_eq!(buf.len(), commit.encoded_len())
+        }
+
+        #[test]
+        fn prop_decode_exact_detects_leftover_data(commit in any::<Commit>()) {
+            let mut buf = Vec::with_capacity(commit.encoded_len() + 1);
+            commit.encode(&mut buf);
+            let result = Commit::decode_exact(&mut buf.as_slice());
+            prop_assert!(result.is_ok(), "Unexpected error: {result:?}");
+
+            buf.push(0);
+            let result = Commit::decode_exact(&mut buf.as_slice());
+            prop_assert!(result.is_err())
         }
     }
 }

@@ -430,7 +430,11 @@ impl Iterator for IterSegment {
             )
         };
         let io = |e| io::Error::new(io::ErrorKind::InvalidData, e);
-        Some(next.and_then(|bytes| Commit::decode(&mut bytes.as_slice()).with_context(ctx).map_err(io)))
+        Some(next.and_then(|bytes| {
+            Commit::decode_exact(&mut bytes.as_slice())
+                .with_context(ctx)
+                .map_err(io)
+        }))
     }
 }
 
