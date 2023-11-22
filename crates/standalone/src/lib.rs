@@ -314,7 +314,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                 id: 0,
                 address: spec.address,
                 identity: *identity,
-                host_type: HostType::Wasmtime,
+                host_type: HostType::Wasm,
                 num_replicas: spec.num_replicas,
                 program_bytes_address,
                 publisher_address,

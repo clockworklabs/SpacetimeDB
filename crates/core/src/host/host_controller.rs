@@ -265,7 +265,7 @@ impl HostController {
         let module_hash = hash_bytes(&mhc.program_bytes);
         let (threadpool, energy_monitor) = (self.threadpool.clone(), self.energy_monitor.clone());
         let module_host = match mhc.host_type {
-            HostType::Wasmtime => {
+            HostType::Wasm => {
                 // make_actor with block_in_place since it's going to take some time to compute.
                 let start = Instant::now();
                 let actor = tokio::task::block_in_place(|| {
