@@ -5,6 +5,7 @@ export type NavItem = NavPage | NavSection;
 export type NavPage = {
   type: "page";
   path: string;
+  slug: string;
   title: string;
   disabled?: boolean;
   href?: string;
@@ -14,8 +15,8 @@ type NavSection = {
   title: string;
 };
 
-function page(path: string, title: string, props?: { disabled?: boolean; href?: string; description?: string }): NavPage {
-  return { type: "page", path: path, title, ...props };
+function page(title: string, slug: string, path: string, props?: { disabled?: boolean; href?: string; description?: string }): NavPage {
+  return { type: "page", path, slug, title, ...props };
 }
 function section(title: string): NavSection {
   return { type: "section", title };
@@ -24,53 +25,53 @@ function section(title: string): NavSection {
 const nav: Nav = {
   items: [
     section("Intro"),
-    page("Overview/index.md", "Overview"),
-    page("Getting Started/index.md", "Getting Started"),
+    page("Overview", "index", "Overview/index.md"),
+    page("Getting Started", "getting-started", "Getting Started/index.md"),
 
     section("Deploying"),
-    page("Cloud Testnet/index.md", "Testnet"),
+    page("Testnet", "deploying/testnet", "Cloud Testnet/index.md"),
 
     section("Unity Tutorial"),
-    page("Unity Tutorial/Part 1 - Basic Multiplayer.md", "Part 1 - Basic Multiplayer"),
-    page("Unity Tutorial/Part 2 - Resources And Scheduling.md", "Part 2 - Resources And Scheduling"),
-    page("Unity Tutorial/Part 3 - BitCraft Mini.md", "Part 3 - BitCraft Mini"),
+    page("Part 1 - Basic Multiplayer", "unity/part-1",  "Unity Tutorial/Part 1 - Basic Multiplayer.md"),
+    page("Part 2 - Resources And Scheduling", "unity/part-2",  "Unity Tutorial/Part 2 - Resources And Scheduling.md"),
+    page("Part 3 - BitCraft Mini", "unity/part-3", "Unity Tutorial/Part 3 - BitCraft Mini.md"),
 
     section("Server Module Languages"),
-    page("Server Module Languages/index.md", "Overview"),
-    page("Server Module Languages/Rust/index.md", "Rust Quickstart"),
-    page("Server Module Languages/Rust/ModuleReference.md", "Rust Reference"),
-    page("Server Module Languages/C#/index.md", "C# Quickstart"),
-    page("Server Module Languages/C#/ModuleReference.md", "C# Reference"),
+    page("Overview", "modules", "Server Module Languages/index.md"),
+    page("Rust Quickstart", "modules/rust/quickstart",  "Server Module Languages/Rust/index.md"),
+    page("Rust Reference", "modules/rust", "Server Module Languages/Rust/ModuleReference.md"),
+    page("C# Quickstart", "modules/c-sharp/quickstart", "Server Module Languages/C#/index.md"),
+    page("C# Reference", "modules/c-sharp", "Server Module Languages/C#/ModuleReference.md"),
 
     section("Client SDK Languages"),
-    page("Client SDK Languages/index.md", "Overview"),
-    page("Client SDK Languages/Typescript/index.md", "Typescript Quickstart"),
-    page("Client SDK Languages/Typescript/SDK Reference.md", "Typescript Reference"),
-    page("Client SDK Languages/Rust/index.md", "Rust Quickstart"),
-    page("Client SDK Languages/Rust/SDK Reference.md", "Rust Reference"),
-    page("Client SDK Languages/Python/index.md", "Python Quickstart"),
-    page("Client SDK Languages/Python/SDK Reference.md", "Python Reference"),
-    page("Client SDK Languages/C#/index.md", "C# Quickstart"),
-    page("Client SDK Languages/C#/SDK Reference.md", "C# Reference"),
+    page("Overview", "sdks", "Client SDK Languages/index.md"),
+    page("Typescript Quickstart", "sdks/typescript/quickstart", "Client SDK Languages/Typescript/index.md"),
+    page("Typescript Reference", "sdks/typescript", "Client SDK Languages/Typescript/SDK Reference.md"),
+    page("Rust Quickstart", "sdks/rust/quickstart", "Client SDK Languages/Rust/index.md"),
+    page("Rust Reference", "sdks/rust", "Client SDK Languages/Rust/SDK Reference.md"),
+    page("Python Quickstart", "sdks/python/quickstart", "Client SDK Languages/Python/index.md"),
+    page("Python Reference", "sdks/python", "Client SDK Languages/Python/SDK Reference.md"),
+    page("C# Quickstart", "sdks/c-sharp/quickstart", "Client SDK Languages/C#/index.md"),
+    page("C# Reference", "sdks/c-sharp", "Client SDK Languages/C#/SDK Reference.md"),
 
     section("WebAssembly ABI"),
-    page("Module ABI Reference/index.md", "Module ABI Reference"),
+    page("Module ABI Reference", "webassembly-abi", "Module ABI Reference/index.md"),
 
     section("HTTP API"),
-    page("HTTP API Reference/index.md", "HTTP"),
-    page("HTTP API Reference/Identities.md", "`/identity`"),
-    page("HTTP API Reference/Databases.md", "`/database`"),
-    page("HTTP API Reference/Energy.md", "`/energy`"),
+    page("HTTP", "http", "HTTP API Reference/index.md"),
+    page("`/identity`", "http/identity", "HTTP API Reference/Identities.md"),
+    page("`/database`", "http/database", "HTTP API Reference/Databases.md"),
+    page("`/energy`", "http/energy", "HTTP API Reference/Energy.md"),
 
     section("WebSocket API Reference"),
-    page("WebSocket API Reference/index.md", "WebSocket"),
+    page("WebSocket", "ws", "WebSocket API Reference/index.md"),
 
     section("Data Format"),
-    page("SATN Reference/index.md", "SATN"),
-    page("SATN Reference/Binary Format.md", "BSATN"),
+    page("SATN", "satn", "SATN Reference/index.md"),
+    page("BSATN", "bsatn", "SATN Reference/Binary Format.md"),
 
     section("SQL"),
-    page("SQL Reference/index.md", "SQL Reference"),
+    page("SQL Reference", "sql", "SQL Reference/index.md"),
   ],
 };
 
