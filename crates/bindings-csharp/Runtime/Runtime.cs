@@ -64,6 +64,7 @@ public static class Runtime
             {
                 RawBindings._iter_drop(handle);
                 handle = RawBindings.BufferIter.INVALID;
+                // Avoid running ~BufferIter if Dispose was executed successfully.
                 GC.SuppressFinalize(this);
             }
         }

@@ -117,6 +117,8 @@ EXPORT(Buffer, __call_reducer__,
 #include <stdlib.h>
 #include <wasi/api.h>
 
+// Ignore warnings about anonymous parameters, this is to avoid having
+// to write `int arg0`, `int arg1`, etc. for every function.
 #pragma clang diagnostic ignored "-Wc2x-extensions"
 
 // Based on

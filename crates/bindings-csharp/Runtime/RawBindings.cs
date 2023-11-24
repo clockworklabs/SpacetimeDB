@@ -1,11 +1,10 @@
 namespace SpacetimeDB;
 
 using System;
-// using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-using System.Runtime.InteropServices.Marshalling;
 using System.Collections;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
 using static System.Text.Encoding;
 
 public static partial class RawBindings
@@ -20,7 +19,11 @@ public static partial class RawBindings
     // The only reason it doesn't return `void` is because the C# compiler
     // doesn't treat `void` as a real type and doesn't allow it to be returned
     // from custom marshallers, so we resort to an empty struct instead.
-    [CustomMarshaller(typeof(CheckedStatus), MarshalMode.ManagedToUnmanagedOut, typeof(StatusMarshaller))]
+    [CustomMarshaller(
+        typeof(CheckedStatus),
+        MarshalMode.ManagedToUnmanagedOut,
+        typeof(StatusMarshaller)
+    )]
     static class StatusMarshaller
     {
         public static CheckedStatus ConvertToManaged(ushort status)
@@ -83,7 +86,7 @@ public static partial class RawBindings
     [CustomMarshaller(typeof(Buffer), MarshalMode.Default, typeof(BufferMarshaller))]
     static class BufferMarshaller
     {
-        public static Buffer ConvertToManaged(uint buf_handle) => new (buf_handle);
+        public static Buffer ConvertToManaged(uint buf_handle) => new(buf_handle);
 
         public static uint ConvertToUnmanaged(Buffer buf) => (uint)buf;
     }
@@ -93,15 +96,18 @@ public static partial class RawBindings
     public readonly struct Buffer(uint handle) : IEquatable<Buffer>
     {
         private readonly uint handle = handle;
-        public static readonly Buffer INVALID = new (uint.MaxValue);
+        public static readonly Buffer INVALID = new(uint.MaxValue);
 
         public bool Equals(Buffer other) => handle == other.handle;
 
         public static explicit operator uint(Buffer buf) => buf.handle;
 
         public override bool Equals(object? obj) => obj is Buffer other && Equals(other);
+
         public override int GetHashCode() => handle.GetHashCode();
+
         public static bool operator ==(Buffer left, Buffer right) => left.Equals(right);
+
         public static bool operator !=(Buffer left, Buffer right) => !(left == right);
     }
 
@@ -116,13 +122,20 @@ public static partial class RawBindings
         public static explicit operator uint(BufferIter buf) => buf.handle;
 
         public override bool Equals(object? obj) => obj is BufferIter other && Equals(other);
+
         public override int GetHashCode() => handle.GetHashCode();
+
         public static bool operator ==(BufferIter left, BufferIter right) => left.Equals(right);
+
         public static bool operator !=(BufferIter left, BufferIter right) => !(left == right);
     }
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _get_table_id([In] byte[] name, uint name_len, out TableId out_);
+    public static partial CheckedStatus _get_table_id(
+        [In] byte[] name,
+        uint name_len,
+        out TableId out_
+    );
 
     [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus _create_index(
@@ -209,7 +222,11 @@ public static partial class RawBindings
     public static partial uint _buffer_len(Buffer buf_handle);
 
     [LibraryImport(StdbNamespace)]
-    public static partial void _buffer_consume(Buffer buf_handle, [MarshalUsing(CountElementName = nameof(dst_len))] [Out] byte[] dst, uint dst_len);
+    public static partial void _buffer_consume(
+        Buffer buf_handle,
+        [MarshalUsing(CountElementName = nameof(dst_len))] [Out] byte[] dst,
+        uint dst_len
+    );
 
     [LibraryImport(StdbNamespace)]
     public static partial Buffer _buffer_alloc([In] byte[] data, uint data_len);
