@@ -397,7 +397,7 @@ impl Inner {
             self.committed_state
                 .get_or_create_table(ST_COLUMNS_ID, &ST_COLUMNS_ROW_TYPE, &st_columns_schema());
 
-        for col in system_tables().iter().flat_map(|x| &x.columns) {
+        for col in system_tables().into_iter().flat_map(|x| x.columns) {
             let row = StColumnRow {
                 table_id: col.table_id,
                 col_pos: col.col_pos,
