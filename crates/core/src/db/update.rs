@@ -27,6 +27,21 @@ pub enum UpdateDatabaseError {
 // tables, and only accept updates which introduce new tables (beware of
 // ordering when comparing definition types!).
 
+/// Update the schema of database `stdb` in transaction `tx`.
+///
+/// The schema is updated to the [`TableDef`]s given in `proposed_tables`, as
+/// extracted from the stdb module with [`Hash`] `hash`. If this succeeds, the
+/// `__init__` reducer of the module is invoked, if one is defined. Lastly,
+/// the module hash is recorded in the system tables of `stdb` (see
+/// [`RelationalDB::set_program_hash`].
+///
+/// If any of the above fails, the transaction is rolled back.
+///
+/// NOTE: Only trivial schema transformations are supported currently, namely
+/// adding new tables and modifying indexes.
+///
+/// The `fence` parameter is used to order concurrent updates -- the transaction
+/// only commits successfully if the value is greater than the stored value.
 pub fn update_database(
     stdb: &RelationalDB,
     tx: MutTxId,

@@ -16,7 +16,7 @@ use scopeguard::defer_on_success;
 use spacetimedb::address::Address;
 use spacetimedb::auth::identity::{DecodingKey, EncodingKey};
 use spacetimedb::client::ClientActorIndex;
-use spacetimedb::control_db::{self, ControlDb};
+use spacetimedb::control_db::ControlDb;
 use spacetimedb::database_instance_context::DatabaseInstanceContext;
 use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
 use spacetimedb::db::db_metrics::MAX_TX_CPU_TIME;
@@ -248,16 +248,11 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
     }
 
     // Database instances
-    fn get_database_instance_by_id(&self, id: u64) -> spacetimedb::control_db::Result<Option<DatabaseInstance>> {
-        self.control_db.get_database_instance_by_id(id)
-    }
-
-    fn get_database_instances(&self) -> spacetimedb::control_db::Result<Vec<DatabaseInstance>> {
-        self.control_db.get_database_instances()
-    }
-
-    fn get_leader_database_instance_by_database(&self, database_id: u64) -> Option<DatabaseInstance> {
-        self.control_db.get_leader_database_instance_by_database(database_id)
+    fn get_leader_database_instance_by_database(
+        &self,
+        database: &Database,
+    ) -> spacetimedb::control_db::Result<Option<DatabaseInstance>> {
+        self.control_db.get_leader_database_instance_by_database(database)
     }
 
     // Identities
@@ -304,6 +299,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         let program_bytes_address = self.object_db.insert_object(spec.program_bytes)?;
         let mut database = match existing_db.as_ref() {
             Some(existing) => Database {
+                rev: existing.rev + 1,
                 address: spec.address,
                 num_replicas: spec.num_replicas,
                 program_bytes_address,
@@ -311,7 +307,8 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                 ..existing.clone()
             },
             None => Database {
-                id: 0,
+                id: 0, // auto-inc dummy
+                rev: 1,
                 address: spec.address,
                 identity: *identity,
                 host_type: HostType::Wasmtime,
@@ -323,29 +320,25 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
 
         if let Some(existing) = existing_db.as_ref() {
             if &existing.identity != identity {
-                return Err(anyhow!(
-                    "Permission denied: `{}` does not own database `{}`",
-                    identity.to_hex(),
-                    spec.address.to_abbreviated_hex()
-                )
-                .into());
+                return Err(spacetimedb::control_db::Error::PermissionDenied {
+                    identity: *identity,
+                    address: spec.address,
+                });
             }
             self.control_db.update_database(database.clone())?;
         } else {
             let id = self.control_db.insert_database(database.clone())?;
             database.id = id;
         }
-
-        let database_id = database.id;
         let should_update_instances = existing_db.is_some();
 
-        self.schedule_database(Some(database), existing_db).await?;
+        self.schedule_database(Some(&database), existing_db.as_ref()).await?;
 
         if should_update_instances {
             let leader = self
                 .control_db
-                .get_leader_database_instance_by_database(database_id)
-                .ok_or_else(|| anyhow!("Not found: leader instance for database {database_id}"))?;
+                .get_leader_database_instance_by_database(&database)?
+                .with_context(|| format!("Not found: leader instance for database {}", database.address))?;
             Ok(self.update_database_instance(leader).await?)
         } else {
             Ok(None)
@@ -357,19 +350,14 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             return Ok(());
         };
         if &database.identity != identity {
-            // TODO: `PermissionDenied` should be a variant of `Error`,
-            //       so we can match on it and return better error responses
-            //       from HTTP endpoints.
-            return Err(anyhow!(
-                "Permission denied: `{}` does not own database `{}`",
-                identity.to_hex(),
-                address.to_abbreviated_hex()
-            )
-            .into());
+            return Err(spacetimedb::control_db::Error::PermissionDenied {
+                identity: *identity,
+                address: *address,
+            });
         }
 
         self.control_db.delete_database(database.id)?;
-        self.schedule_database(None, Some(database)).await?;
+        self.schedule_database(None, Some(&database)).await?;
 
         Ok(())
     }
@@ -401,6 +389,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         self.control_db
             .set_energy_balance(*identity, EnergyQuanta::new(balance))
     }
+
     async fn withdraw_energy(&self, identity: &Identity, amount: EnergyQuanta) -> spacetimedb::control_db::Result<()> {
         let energy_balance = self.control_db.get_energy_balance(identity)?;
         let energy_balance = energy_balance.unwrap_or(EnergyQuanta::new(0));
@@ -447,9 +436,9 @@ impl StandaloneEnv {
         self.on_update_database_instance(&database_instance).await
     }
 
-    async fn delete_database_instance(&self, database_instance_id: u64) -> Result<(), anyhow::Error> {
-        self.control_db.delete_database_instance(database_instance_id)?;
-        self.on_delete_database_instance(database_instance_id).await?;
+    async fn delete_database_instance(&self, database_instance: DatabaseInstance) -> Result<(), anyhow::Error> {
+        self.control_db.delete_database_instance(database_instance.id)?;
+        self.on_delete_database_instance(&database_instance).await?;
 
         Ok(())
     }
@@ -458,37 +447,35 @@ impl StandaloneEnv {
     #[allow(clippy::comparison_chain)]
     async fn schedule_database(
         &self,
-        database: Option<Database>,
-        old_database: Option<Database>,
+        database: Option<&Database>,
+        old_database: Option<&Database>,
     ) -> Result<(), anyhow::Error> {
         let new_replicas = database.as_ref().map(|db| db.num_replicas).unwrap_or(0) as i32;
         let old_replicas = old_database.as_ref().map(|db| db.num_replicas).unwrap_or(0) as i32;
         let replica_diff = new_replicas - old_replicas;
 
-        let database_id = if let Some(database) = database {
+        let database = database.or(old_database).unwrap();
+        log::trace!(
+            "Scheduling database {}, new_replicas {new_replicas}, old_replicas {old_replicas}",
             database.id
-        } else {
-            old_database.unwrap().id
-        };
-
-        log::trace!("Scheduling database {database_id}, new_replicas {new_replicas}, old_replicas {old_replicas}");
+        );
 
         if replica_diff > 0 {
-            self.schedule_replicas(database_id, replica_diff as u32).await?;
+            self.schedule_replicas(database, replica_diff as u32).await?;
         } else if replica_diff < 0 {
-            self.deschedule_replicas(database_id, replica_diff.unsigned_abs())
-                .await?;
+            self.deschedule_replicas(database, replica_diff.unsigned_abs()).await?;
         }
 
         Ok(())
     }
 
-    async fn schedule_replicas(&self, database_id: u64, num_replicas: u32) -> Result<(), anyhow::Error> {
+    async fn schedule_replicas(&self, database: &Database, num_replicas: u32) -> Result<(), anyhow::Error> {
         // Just scheduling a bunch of replicas to the only machine
         for i in 0..num_replicas {
             let database_instance = DatabaseInstance {
                 id: 0,
-                database_id,
+                database_id: database.id,
+                database_rev: database.rev,
                 node_id: 0,
                 leader: i == 0,
             };
@@ -498,13 +485,15 @@ impl StandaloneEnv {
         Ok(())
     }
 
-    async fn deschedule_replicas(&self, database_id: u64, num_replicas: u32) -> Result<(), anyhow::Error> {
-        for _ in 0..num_replicas {
-            let instances = self.control_db.get_database_instances_by_database(database_id)?;
-            let Some(instance) = instances.last() else {
-                return Ok(());
-            };
-            self.delete_database_instance(instance.id).await?;
+    async fn deschedule_replicas(&self, database: &Database, num_replicas: u32) -> Result<(), anyhow::Error> {
+        let instances = self
+            .control_db
+            .get_database_instances_by_database(database.id)?
+            .into_iter()
+            .filter(|instance| instance.database_rev == database.rev)
+            .take(num_replicas as usize);
+        for instance in instances {
+            self.delete_database_instance(instance).await?;
         }
         Ok(())
     }
@@ -531,11 +520,7 @@ impl StandaloneEnv {
             }
 
             Ok(maybe_hash) => {
-                // Release tx due to locking semantics and acquire a control db
-                // lock instead.
                 stdb.commit_tx(&cx, tx)?;
-                let lock = self.lock_database_instance_for_update(instance.id)?;
-
                 if let Some(hash) = maybe_hash {
                     ensure!(
                         hash == database.program_bytes_address,
@@ -550,7 +535,9 @@ impl StandaloneEnv {
                         log::info!("Database already initialized with module {}", hash);
                     }
                 } else {
-                    self.host_controller.init_module_host(lock.token() as u128, ctx).await?;
+                    self.host_controller
+                        .init_module_host(instance.database_rev as u128, ctx)
+                        .await?;
                 }
 
                 Ok(())
@@ -585,18 +572,16 @@ impl StandaloneEnv {
             }
 
             Ok(maybe_hash) => {
-                // Release tx due to locking semantics and acquire a control db
-                // lock instead.
                 stdb.commit_tx(&cx, tx)?;
-                let lock = self.lock_database_instance_for_update(instance.id)?;
-
                 match maybe_hash {
                     None => {
                         log::warn!(
                             "Update requested on non-initialized database, initializing with module {}",
                             database.program_bytes_address
                         );
-                        self.host_controller.init_module_host(lock.token() as u128, ctx).await?;
+                        self.host_controller
+                            .init_module_host(instance.database_rev as u128, ctx)
+                            .await?;
                         Ok(None)
                     }
                     Some(hash) if hash == database.program_bytes_address => {
@@ -610,7 +595,7 @@ impl StandaloneEnv {
                             update_result,
                         } = self
                             .host_controller
-                            .update_module_host(lock.token() as u128, ctx)
+                            .update_module_host(instance.database_rev as u128, ctx)
                             .await?;
                         Ok(Some(update_result))
                     }
@@ -619,19 +604,14 @@ impl StandaloneEnv {
         }
     }
 
-    async fn on_delete_database_instance(&self, instance_id: u64) -> anyhow::Result<()> {
-        // Technically, delete doesn't require locking if a database instance
-        // cannot be resurrected after deletion. That, however, is not
-        // necessarily true currently (see TODO below).
-        let lock = self.lock_database_instance_for_update(instance_id)?;
-
+    async fn on_delete_database_instance(&self, instance: &DatabaseInstance) -> anyhow::Result<()> {
         // TODO(cloutiertyler): We should think about how to clean up
         // database instances which have been deleted. This will just drop
         // them from memory, but will not remove them from disk.  We need
         // some kind of database lifecycle manager long term.
-        let (_, scheduler) = self.db_inst_ctx_controller.remove(instance_id).unzip();
+        let (_, scheduler) = self.db_inst_ctx_controller.remove(instance.id).unzip();
         self.host_controller
-            .delete_module_host(lock.token() as u128, instance_id)
+            .delete_module_host(instance.database_rev as u128, instance.id)
             .await
             .unwrap();
         if let Some(scheduler) = scheduler {
@@ -639,11 +619,6 @@ impl StandaloneEnv {
         }
 
         Ok(())
-    }
-
-    fn lock_database_instance_for_update(&self, instance_id: u64) -> anyhow::Result<control_db::Lock> {
-        let key = format!("database_instance/{}", instance_id);
-        Ok(self.control_db.lock(key)?)
     }
 
     async fn load_module_host_context(

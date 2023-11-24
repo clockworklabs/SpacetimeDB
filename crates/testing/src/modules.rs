@@ -152,7 +152,10 @@ impl CompiledModule {
         .unwrap();
 
         let database = env.get_database_by_address(&db_address).unwrap().unwrap();
-        let instance = env.get_leader_database_instance_by_database(database.id).unwrap();
+        let instance = env
+            .get_leader_database_instance_by_database(&database)
+            .unwrap()
+            .unwrap();
 
         let client_id = ClientActorId {
             identity,

@@ -84,7 +84,8 @@ where
         .unwrap()
         .ok_or(StatusCode::BAD_REQUEST)?;
     let database_instance = ctx
-        .get_leader_database_instance_by_database(database.id)
+        .get_leader_database_instance_by_database(&database)
+        .map_err(log_and_500)?
         .ok_or(StatusCode::BAD_REQUEST)?;
     let instance_id = database_instance.id;
 

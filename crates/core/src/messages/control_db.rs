@@ -21,14 +21,30 @@ pub struct EnergyBalance {
     pub balance: i128,
 }
 
+/// Represents a logical database.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Database {
+    /// The unique identity of the database.
     pub id: u64,
+    /// The revision of the database.
+    ///
+    /// Incremented whenever the database is updated -- either by updating the
+    /// associated stdb module, or by clearing its state while preserving the
+    /// `address`.
+    ///
+    /// See also: [`DatabaseInstance::database_rev`]
+    pub rev: u64,
+    /// The stable address of the database.
     pub address: Address,
+    /// The owner of the database, usually the publisher.
     pub identity: Identity,
+    /// The runtime type of the associated stdb module.
     pub host_type: HostType,
+    /// The desired number of replica [`DatabaseInstance`]s.
     pub num_replicas: u32,
+    /// Content address of the associated stdb module.
     pub program_bytes_address: Hash,
+    /// The client address used when publishing the database.
     pub publisher_address: Option<Address>,
 }
 
@@ -36,13 +52,34 @@ pub struct Database {
 pub struct DatabaseStatus {
     pub state: String,
 }
+
+/// Represents a scheduled instance of a [`Database`].
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct DatabaseInstance {
+    /// The unique identity of the instance.
     pub id: u64,
+    /// The `id` of the logical [`Database`] this instance represents.
     pub database_id: u64,
+    /// The revision of the logical [`Database`] this instance corresponds to.
+    ///
+    /// Note that, at any point in time, [`DatabaseInstance`]s representing
+    /// different revisions may remain scheduled, possibly in different
+    /// lifecycle states. This field thus allows to determine which revision the
+    /// instance represents, even if the revision of the corresponding database
+    /// has changed meanwhile.
+    ///
+    /// See also: [`Database::rev`].
+    pub database_rev: u64,
+    /// The [`Node`] this instance is scheduled on.
+    ///
+    /// Note that this represents the _desired state_, the [`Node`] may not yet
+    /// have scheduled the instance.
     pub node_id: u64,
+    /// When there are multiple replicas of `(database_id, database_rev)`, this
+    /// instance is the designated leader.
     pub leader: bool,
 }
+
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct DatabaseInstanceStatus {
     pub state: String,

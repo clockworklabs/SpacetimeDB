@@ -82,7 +82,8 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     })?;
     let identity = database.identity;
     let database_instance = worker_ctx
-        .get_leader_database_instance_by_database(database.id)
+        .get_leader_database_instance_by_database(&database)
+        .map_err(log_and_500)?
         .ok_or((
             StatusCode::NOT_FOUND,
             "Database instance not scheduled to this node yet.",
@@ -209,10 +210,13 @@ async fn extract_db_call_info(
         (StatusCode::NOT_FOUND, "No such database.")
     })?;
 
-    let database_instance = ctx.get_leader_database_instance_by_database(database.id).ok_or((
-        StatusCode::NOT_FOUND,
-        "Database instance not scheduled to this node yet.",
-    ))?;
+    let database_instance = ctx
+        .get_leader_database_instance_by_database(&database)
+        .map_err(log_and_500)?
+        .ok_or((
+            StatusCode::NOT_FOUND,
+            "Database instance not scheduled to this node yet.",
+        ))?;
 
     Ok(DatabaseInformation {
         database_instance,
@@ -449,7 +453,8 @@ where
     }
 
     let database_instance = worker_ctx
-        .get_leader_database_instance_by_database(database.id)
+        .get_leader_database_instance_by_database(&database)
+        .map_err(log_and_500)?
         .ok_or((
             StatusCode::NOT_FOUND,
             "Database instance not scheduled to this node yet.",
@@ -541,7 +546,8 @@ where
     let auth = AuthCtx::new(database.identity, auth.identity);
     log::debug!("auth: {auth:?}");
     let database_instance = worker_ctx
-        .get_leader_database_instance_by_database(database.id)
+        .get_leader_database_instance_by_database(&database)
+        .map_err(log_and_500)?
         .ok_or((
             StatusCode::NOT_FOUND,
             "Database instance not scheduled to this node yet.",

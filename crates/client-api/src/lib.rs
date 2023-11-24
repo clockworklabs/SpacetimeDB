@@ -105,9 +105,10 @@ pub trait ControlStateReadAccess {
     fn get_databases(&self) -> spacetimedb::control_db::Result<Vec<Database>>;
 
     // Database instances
-    fn get_database_instance_by_id(&self, id: u64) -> spacetimedb::control_db::Result<Option<DatabaseInstance>>;
-    fn get_database_instances(&self) -> spacetimedb::control_db::Result<Vec<DatabaseInstance>>;
-    fn get_leader_database_instance_by_database(&self, database_id: u64) -> Option<DatabaseInstance>;
+    fn get_leader_database_instance_by_database(
+        &self,
+        database: &Database,
+    ) -> spacetimedb::control_db::Result<Option<DatabaseInstance>>;
 
     // Identities
     fn get_identities_for_email(&self, email: &str) -> spacetimedb::control_db::Result<Vec<IdentityEmail>>;
@@ -200,14 +201,11 @@ impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for ArcEnv<T> {
     }
 
     // Database instances
-    fn get_database_instance_by_id(&self, id: u64) -> spacetimedb::control_db::Result<Option<DatabaseInstance>> {
-        self.0.get_database_instance_by_id(id)
-    }
-    fn get_database_instances(&self) -> spacetimedb::control_db::Result<Vec<DatabaseInstance>> {
-        self.0.get_database_instances()
-    }
-    fn get_leader_database_instance_by_database(&self, database_id: u64) -> Option<DatabaseInstance> {
-        self.0.get_leader_database_instance_by_database(database_id)
+    fn get_leader_database_instance_by_database(
+        &self,
+        database: &Database,
+    ) -> spacetimedb::control_db::Result<Option<DatabaseInstance>> {
+        self.0.get_leader_database_instance_by_database(database)
     }
 
     // Identities
@@ -356,14 +354,11 @@ impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
     }
 
     // Database instances
-    fn get_database_instance_by_id(&self, id: u64) -> spacetimedb::control_db::Result<Option<DatabaseInstance>> {
-        (**self).get_database_instance_by_id(id)
-    }
-    fn get_database_instances(&self) -> spacetimedb::control_db::Result<Vec<DatabaseInstance>> {
-        (**self).get_database_instances()
-    }
-    fn get_leader_database_instance_by_database(&self, database_id: u64) -> Option<DatabaseInstance> {
-        (**self).get_leader_database_instance_by_database(database_id)
+    fn get_leader_database_instance_by_database(
+        &self,
+        database: &Database,
+    ) -> spacetimedb::control_db::Result<Option<DatabaseInstance>> {
+        (**self).get_leader_database_instance_by_database(database)
     }
 
     // Identities
