@@ -2847,8 +2847,8 @@ mod tests {
             ]),
             #[rustfmt::skip]
             constraints: map_array([
-                ConstraintRow{ constraint_id: 6, table_id: 6, columns: col(0), constraints: Constraints::indexed(), constraint_name: "ct_Foo_id_idx_indexed"},
-                ConstraintRow{ constraint_id: 7, table_id: 6, columns: col(1), constraints: Constraints::indexed(), constraint_name: "ct_Foo_name_idx_indexed"}
+                ConstraintRow { constraint_id: 6, table_id: 6, columns: col(0), constraints: Constraints::indexed(), constraint_name: "ct_Foo_id_idx_indexed" },
+                ConstraintRow { constraint_id: 7, table_id: 6, columns: col(1), constraints: Constraints::indexed(), constraint_name: "ct_Foo_name_idx_indexed" }
             ]),
             #[rustfmt::skip]
             sequences: map_array([
