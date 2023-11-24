@@ -575,7 +575,7 @@ pub fn autogen_typescript_table(ctx: &GenCtx, table: &TableDesc) -> String {
     let tuple = ctx.typespace[table.data].as_product().unwrap();
     autogen_typescript_product_table_common(
         ctx,
-        &table.schema.table_name.clone(),
+        &table.schema.table_name,
         tuple,
         Some(table.schema.clone().into_schema(0.into())),
     )

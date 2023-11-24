@@ -187,7 +187,7 @@ pub fn extract_from_moduledef(module: ModuleDef) -> (GenCtx, impl Iterator<Item 
     let tables: Vec<_> = tables
         .into_iter()
         .map(|mut x| {
-            x.schema.columns = typespace[x.data].as_product().unwrap().into();
+            x.schema.columns = typespace[x.data].as_product().unwrap().clone().into();
             x
         })
         .collect();

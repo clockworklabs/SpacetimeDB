@@ -560,7 +560,7 @@ pub fn autogen_csharp_table(ctx: &GenCtx, table: &TableDesc, namespace: &str) ->
     let tuple = ctx.typespace[table.data].as_product().unwrap();
     autogen_csharp_product_table_common(
         ctx,
-        &table.schema.table_name.clone(),
+        &table.schema.table_name,
         tuple,
         Some(
             table

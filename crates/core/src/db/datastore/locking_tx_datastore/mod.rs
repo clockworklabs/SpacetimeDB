@@ -132,10 +132,10 @@ impl CommittedState {
         Self { tables: HashMap::new() }
     }
 
-    fn get_or_create_table(&mut self, table_id: TableId, row_type: &ProductType, schema: &TableSchema) -> &mut Table {
+    fn get_or_create_table(&mut self, table_id: TableId, row_type: ProductType, schema: TableSchema) -> &mut Table {
         self.tables
             .entry(table_id)
-            .or_insert_with(|| Table::new(row_type.clone(), schema.clone()))
+            .or_insert_with(|| Table::new(row_type, schema))
     }
 
     fn get_table(&mut self, table_id: &TableId) -> Option<&mut Table> {
@@ -145,7 +145,7 @@ impl CommittedState {
     fn merge(&mut self, tx_state: TxState, memory: BTreeMap<DataKey, Arc<Vec<u8>>>) -> TxData {
         let mut tx_data = TxData { records: vec![] };
         for (table_id, table) in tx_state.insert_tables {
-            let commit_table = self.get_or_create_table(table_id, &table.row_type, &table.schema);
+            let commit_table = self.get_or_create_table(table_id, table.row_type.clone(), table.schema.clone());
             // The schema may have been modified in the transaction.
             commit_table.row_type = table.row_type;
             commit_table.schema = table.schema;
@@ -366,9 +366,9 @@ impl Inner {
         let mut sequences_start: HashMap<TableId, i128> = HashMap::with_capacity(10);
 
         // Insert the table row into st_tables, creating st_tables if it's missing
-        let st_tables = self
-            .committed_state
-            .get_or_create_table(ST_TABLES_ID, &ST_TABLE_ROW_TYPE, &st_table_schema());
+        let st_tables =
+            self.committed_state
+                .get_or_create_table(ST_TABLES_ID, ST_TABLE_ROW_TYPE.to_owned(), st_table_schema());
 
         // Insert the table row into `st_tables` for all system tables
         for schema in system_tables() {
@@ -393,9 +393,11 @@ impl Inner {
         }
 
         // Insert the columns into `st_columns`
-        let st_columns =
-            self.committed_state
-                .get_or_create_table(ST_COLUMNS_ID, &ST_COLUMNS_ROW_TYPE, &st_columns_schema());
+        let st_columns = self.committed_state.get_or_create_table(
+            ST_COLUMNS_ID,
+            ST_COLUMNS_ROW_TYPE.to_owned(),
+            st_columns_schema(),
+        );
 
         for col in system_tables().into_iter().flat_map(|x| x.columns) {
             let row = StColumnRow {
@@ -420,8 +422,8 @@ impl Inner {
         // Insert constraints into `st_constraints`
         let st_constraints = self.committed_state.get_or_create_table(
             ST_CONSTRAINTS_ID,
-            &ST_CONSTRAINT_ROW_TYPE,
-            &st_constraints_schema(),
+            ST_CONSTRAINT_ROW_TYPE.to_owned(),
+            st_constraints_schema(),
         );
 
         for (i, constraint) in system_tables()
@@ -452,12 +454,12 @@ impl Inner {
         // Insert the indexes into `st_indexes`
         let st_indexes =
             self.committed_state
-                .get_or_create_table(ST_INDEXES_ID, &ST_INDEX_ROW_TYPE, &st_indexes_schema());
+                .get_or_create_table(ST_INDEXES_ID, ST_INDEX_ROW_TYPE.to_owned(), st_indexes_schema());
 
         for (i, index) in system_tables()
             .iter()
             .flat_map(|x| &x.indexes)
-            .sorted_by_key(|x| (x.table_id, x.columns.clone()))
+            .sorted_by_key(|x| (&x.table_id, &x.columns))
             .enumerate()
         {
             let row = StIndexRow {
@@ -483,21 +485,23 @@ impl Inner {
         // We don't add the row here but with `MutProgrammable::set_program_hash`, but we need to register the table
         // in the internal state.
         self.committed_state
-            .get_or_create_table(ST_MODULE_ID, &ST_MODULE_ROW_TYPE, &st_module_schema());
+            .get_or_create_table(ST_MODULE_ID, ST_MODULE_ROW_TYPE.to_owned(), st_module_schema());
 
-        let st_sequences =
-            self.committed_state
-                .get_or_create_table(ST_SEQUENCES_ID, &ST_SEQUENCE_ROW_TYPE, &st_sequences_schema());
+        let st_sequences = self.committed_state.get_or_create_table(
+            ST_SEQUENCES_ID,
+            ST_SEQUENCE_ROW_TYPE.to_owned(),
+            st_sequences_schema(),
+        );
 
         // We create sequences last to get right the starting number
         // so, we don't sort here
-        for (i, col) in system_tables().iter().flat_map(|x| &x.sequences).enumerate() {
+        for (i, col) in system_tables().into_iter().flat_map(|x| x.sequences).enumerate() {
             //Is required to advance the start position before insert the row
             *sequences_start.entry(ST_SEQUENCES_ID).or_default() += 1;
 
             let row = StSequenceRow {
                 sequence_id: i.into(),
-                sequence_name: col.sequence_name.clone(),
+                sequence_name: col.sequence_name,
                 table_id: col.table_id,
                 col_pos: col.col_pos,
                 increment: col.increment,
@@ -595,11 +599,9 @@ impl Inner {
         <T as TryFrom<&'a ProductValue>>::Error: Into<DBError>,
     {
         let mut rows = self.iter_by_col_eq(ctx, &table_id, col_pos, value)?;
-        if let Some(row) = rows.next() {
-            Ok(Some(T::try_from(row.view()).map_err(Into::into)?))
-        } else {
-            Ok(None)
-        }
+        rows.next()
+            .map(|row| T::try_from(row.view()).map_err(Into::into))
+            .transpose()
     }
 
     fn drop_col_eq(&mut self, table_id: TableId, col_pos: ColId, value: AlgebraicValue) -> super::Result<()> {
@@ -615,11 +617,11 @@ impl Inner {
     }
 
     fn get_insert_table_mut(&mut self, table_id: TableId) -> super::Result<&mut Table> {
-        if let Some(insert_table) = self.tx_state.as_mut().unwrap().get_insert_table_mut(&table_id) {
-            Ok(insert_table)
-        } else {
-            Err(TableError::IdNotFoundState(table_id).into())
-        }
+        self.tx_state
+            .as_mut()
+            .unwrap()
+            .get_insert_table_mut(&table_id)
+            .ok_or_else(|| TableError::IdNotFoundState(table_id).into())
     }
 
     #[tracing::instrument(skip_all)]
@@ -878,7 +880,7 @@ impl Inner {
         // Remove the adjacent object that has an unset `id = 0`, they will be created below with the correct `id`
         schema_internal.clear_adjacent_schemas();
 
-        self.create_table_internal(table_id, table_schema.get_row_type(), &schema_internal)?;
+        self.create_table_internal(table_id, table_schema.get_row_type(), schema_internal)?;
 
         // Insert constraints into `st_constraints`
         for constraint in table_schema.constraints {
@@ -904,13 +906,13 @@ impl Inner {
         &mut self,
         table_id: TableId,
         row_type: ProductType,
-        schema: &TableSchema,
+        schema: TableSchema,
     ) -> super::Result<()> {
         self.tx_state
             .as_mut()
             .unwrap()
             .insert_tables
-            .insert(table_id, Table::new(row_type, schema.clone()));
+            .insert(table_id, Table::new(row_type, schema));
         Ok(())
     }
 
@@ -994,12 +996,7 @@ impl Inner {
 
         // Look up the constraints for the table in question.
         let mut constraints = Vec::new();
-        for data_ref in self.iter_by_col_eq(
-            &ctx,
-            &ST_CONSTRAINTS_ID,
-            StIndexFields::TableId,
-            AlgebraicValue::U32(table_id.into()),
-        )? {
+        for data_ref in self.iter_by_col_eq(&ctx, &ST_CONSTRAINTS_ID, StIndexFields::TableId, table_id.into())? {
             let row = data_ref.view();
 
             let el = StConstraintRow::try_from(row)?;
@@ -1157,18 +1154,20 @@ impl Inner {
 
         let mut index = IndexSchema::from_def(table_id, index);
         index.index_id = index_id;
-        self.create_index_internal(&index)?;
+        let index_name = index.index_name.clone();
+        let columns = index.columns.clone();
+        self.create_index_internal(index)?;
 
         log::trace!(
             "INDEX CREATED: {} for table: {} and col(s): {:?}",
-            index.index_name,
-            index.table_id,
-            index.columns
+            index_name,
+            table_id,
+            columns
         );
         Ok(index_id)
     }
 
-    fn create_index_internal(&mut self, index: &IndexSchema) -> super::Result<()> {
+    fn create_index_internal(&mut self, index: IndexSchema) -> super::Result<()> {
         let index_id = index.index_id;
 
         let insert_table =
@@ -1207,13 +1206,13 @@ impl Inner {
         insert_table.schema.indexes.push(IndexSchema {
             table_id: index.table_id,
             columns: index.columns.clone(),
-            index_name: index.index_name.to_string(),
+            index_name: index.index_name.clone(),
             is_unique: index.is_unique,
             index_id,
             index_type: index.index_type,
         });
 
-        insert_table.indexes.insert(index.columns.clone(), insert_index);
+        insert_table.indexes.insert(index.columns, insert_index);
         Ok(())
     }
 
@@ -1238,8 +1237,8 @@ impl Inner {
                 .collect();
 
             for col in cols {
-                table.indexes.remove(&col.clone());
                 table.schema.indexes.retain(|x| x.columns != col);
+                table.indexes.remove(&col);
             }
         };
 

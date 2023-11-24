@@ -1237,7 +1237,7 @@ mod tests {
             IndexDef::btree("MyTable_col3_idx".into(), ColId(0), false),
             IndexDef::btree("MyTable_col4_idx".into(), ColId(0), true),
         ])
-        .with_sequences(vec![SequenceDef::for_column("MyTable".into(), "col1".into(), 0.into())])
+        .with_sequences(vec![SequenceDef::for_column("MyTable", "col1", 0.into())])
         .with_constraints(vec![ConstraintDef::for_column(
             "MyTable",
             "col2",

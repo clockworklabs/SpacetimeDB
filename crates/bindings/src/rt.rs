@@ -410,7 +410,7 @@ pub fn register_table<T: TableType>() {
             .resolve_refs()
             .and_then(|x| {
                 if let Ok(x) = x.into_product() {
-                    let cols: Vec<ColumnDef> = (&x).into();
+                    let cols: Vec<ColumnDef> = x.into();
                     Some(cols)
                 } else {
                     None
@@ -441,11 +441,7 @@ pub fn register_table<T: TableType>() {
                 let col = &columns[col_pos];
 
                 if x.kind() == AttributeKind::AUTO_INC {
-                    Some(SequenceDef::for_column(
-                        T::TABLE_NAME.into(),
-                        col.col_name.clone(),
-                        col_pos.into(),
-                    ))
+                    Some(SequenceDef::for_column(T::TABLE_NAME, &col.col_name, col_pos.into()))
                 } else {
                     None
                 }

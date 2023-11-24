@@ -261,10 +261,16 @@ impl Header {
     /// Copy the [Constraints] that are referenced in the list of `for_columns`
     fn retain_constraints(&self, for_columns: &[ColId]) -> Vec<(NonEmpty<ColId>, Constraints)> {
         // Copy the constraints of the selected columns and retain the multi-column ones...
-        let mut constraints = self.constraints.clone();
-        constraints.retain(|(cols, _)| cols.iter().any(|c: &ColId| for_columns.contains(c)));
-
-        constraints
+        self.constraints
+            .iter()
+            .filter_map(|(cols, ct)| {
+                if cols.iter().any(|c: &ColId| for_columns.contains(c)) {
+                    Some((cols.clone(), *ct))
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     pub fn has_constraint(&self, field: &FieldName, constraint: Constraints) -> bool {

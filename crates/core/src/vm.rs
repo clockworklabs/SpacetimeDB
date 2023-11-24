@@ -574,11 +574,11 @@ pub(crate) mod tests {
     ) -> ResultTest<TableId> {
         let columns: Vec<_> = schema
             .elements
-            .iter()
+            .into_iter()
             .enumerate()
             .map(|(i, e)| ColumnDef {
-                col_name: e.name.clone().unwrap_or(i.to_string()),
-                col_type: e.algebraic_type.clone(),
+                col_name: e.name.unwrap_or(i.to_string()),
+                col_type: e.algebraic_type,
             })
             .collect();
 

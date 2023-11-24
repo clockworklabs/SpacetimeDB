@@ -183,11 +183,8 @@ fn compile_columns(table: &TableSchema, columns: Vec<FieldName>) -> DbTable {
             new.push(relation::Column::new(field, x.col_type.clone(), x.col_pos));
         }
     }
-
-    let constraints = table.get_constraints();
-
     DbTable::new(
-        Header::new(table.table_name.clone(), new, constraints),
+        Header::new(table.table_name.clone(), new, table.get_constraints()),
         table.table_id,
         table.table_type,
         table.table_access,

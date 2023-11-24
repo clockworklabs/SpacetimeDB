@@ -4,7 +4,6 @@ use crate::error::{DBError, IndexError};
 use nonempty::NonEmpty;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::data_key::ToDataKey;
-use spacetimedb_sats::db::def::{IndexSchema, IndexType};
 use spacetimedb_sats::{AlgebraicValue, DataKey, ProductValue};
 use std::{
     collections::{btree_set, BTreeSet},
@@ -199,19 +198,6 @@ impl BTreeIndex {
                 .map(|&x| table.schema.columns[usize::from(x)].col_name.clone())
                 .collect(),
             value,
-        }
-    }
-}
-
-impl From<&BTreeIndex> for IndexSchema {
-    fn from(x: &BTreeIndex) -> Self {
-        IndexSchema {
-            index_id: x.index_id,
-            table_id: x.table_id,
-            columns: x.cols.clone(),
-            is_unique: x.is_unique,
-            index_name: x.name.clone(),
-            index_type: IndexType::BTree,
         }
     }
 }

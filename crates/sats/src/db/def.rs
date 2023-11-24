@@ -96,10 +96,10 @@ impl SequenceDef {
     /// ```
     /// use spacetimedb_sats::db::def::*;
     ///
-    /// let sequence_def = SequenceDef::for_column("my_table".into(), "my_sequence".into(), 1.into());
+    /// let sequence_def = SequenceDef::for_column("my_table", "my_sequence", 1.into());
     /// assert_eq!(sequence_def.sequence_name, "seq_my_table_my_sequence");
     /// ```
-    pub fn for_column(table: String, seq_name: String, col_pos: ColId) -> Self {
+    pub fn for_column(table: &str, seq_name: &str, col_pos: ColId) -> Self {
         SequenceDef {
             sequence_name: format!("seq_{}_{}", table, seq_name),
             col_pos,
@@ -316,22 +316,22 @@ pub struct ColumnDef {
     pub col_type: AlgebraicType,
 }
 
-impl From<&ProductType> for Vec<ColumnDef> {
-    fn from(value: &ProductType) -> Self {
+impl From<ProductType> for Vec<ColumnDef> {
+    fn from(value: ProductType) -> Self {
         value
             .elements
-            .iter()
+            .into_iter()
             .enumerate()
             .map(|(pos, col)| {
-                let col_name = if let Some(name) = &col.name {
-                    name.clone()
+                let col_name = if let Some(name) = col.name {
+                    name
                 } else {
                     format!("col_{pos}")
                 };
 
                 ColumnDef {
                     col_name,
-                    col_type: col.algebraic_type.clone(),
+                    col_type: col.algebraic_type,
                 }
             })
             .collect()
@@ -892,7 +892,7 @@ impl TableDef {
         let mut column_name = Vec::with_capacity(columns.len());
         for col_pos in columns {
             if let Some(col) = self.get_column(col_pos.idx()) {
-                column_name.push(col.col_name.clone())
+                column_name.push(col.col_name.as_str())
             } else {
                 todo!("with_column_constraint")
             }
@@ -961,8 +961,8 @@ impl TableDef {
         };
 
         x.sequences.push(SequenceDef::for_column(
-            x.table_name.clone(),
-            x.generate_cols_name(&columns)?,
+            &x.table_name,
+            &x.generate_cols_name(&columns)?,
             col_pos,
         ));
         Ok(x)
@@ -975,11 +975,11 @@ impl TableDef {
         Self::new(
             table_name.into(),
             row.elements
-                .iter()
+                .into_iter()
                 .enumerate()
                 .map(|(col_pos, e)| ColumnDef {
-                    col_name: e.clone().name.unwrap_or_else(|| format!("col_{col_pos}")),
-                    col_type: e.algebraic_type.clone(),
+                    col_name: e.name.unwrap_or_else(|| format!("col_{col_pos}")),
+                    col_type: e.algebraic_type,
                 })
                 .collect::<Vec<_>>(),
         )
@@ -1014,7 +1014,7 @@ impl TableDef {
                 let name = x
                     .constraint_name
                     .trim_start_matches(&format!("ct_{}_", self.table_name));
-                let seq = SequenceDef::for_column(self.table_name.clone(), name.into(), col_id);
+                let seq = SequenceDef::for_column(&self.table_name, name, col_id);
                 if self
                     .sequences
                     .binary_search_by(|x| x.sequence_name.cmp(&seq.sequence_name))
