@@ -34,7 +34,10 @@ use crate::{
 };
 use anyhow::anyhow;
 use nonempty::NonEmpty;
-use parking_lot::{lock_api::{ArcMutexGuard, ArcRwLockWriteGuard, ArcRwLockReadGuard}, Mutex, RawMutex, RawRwLock, RwLock};
+use parking_lot::{
+    lock_api::{ArcMutexGuard, ArcRwLockReadGuard, ArcRwLockWriteGuard},
+    Mutex, RawMutex, RawRwLock, RwLock,
+};
 use spacetimedb_lib::Address;
 use spacetimedb_primitives::{ColId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::data_key::{DataKey, ToDataKey};
@@ -232,8 +235,7 @@ impl CommittedState {
         let table_id = schema.table_id;
 
         // Insert the table row into st_tables, creating st_tables if it's missing
-        let st_tables = self
-            .get_or_create_table(ST_TABLES_ID, &ST_TABLE_ROW_TYPE, &st_table_schema());
+        let st_tables = self.get_or_create_table(ST_TABLES_ID, &ST_TABLE_ROW_TYPE, &st_table_schema());
         let row = StTableRow {
             table_id,
             table_name: schema.table_name,
@@ -265,9 +267,7 @@ impl CommittedState {
             let row = ProductValue::from(row);
             let data_key = row.to_data_key();
             {
-                let st_columns =
-                    self
-                        .get_or_create_table(ST_COLUMNS_ID, &ST_COLUMNS_ROW_TYPE, &st_columns_schema());
+                let st_columns = self.get_or_create_table(ST_COLUMNS_ID, &ST_COLUMNS_ROW_TYPE, &st_columns_schema());
                 st_columns.rows.insert(RowId(data_key), row);
                 // Increment row count for st_columns
                 DB_METRICS
@@ -291,11 +291,8 @@ impl CommittedState {
                     ST_CONSTRAINTS_ID => (SystemTables::total_constraints() as i128, CONSTRAINT_ID_SEQUENCE_ID),
                     _ => unreachable!(),
                 };
-                let st_sequences = self.get_or_create_table(
-                    ST_SEQUENCES_ID,
-                    &ST_SEQUENCE_ROW_TYPE,
-                    &st_sequences_schema(),
-                );
+                let st_sequences =
+                    self.get_or_create_table(ST_SEQUENCES_ID, &ST_SEQUENCE_ROW_TYPE, &st_sequences_schema());
                 let row = StSequenceRow {
                     sequence_id: seq_id,
                     sequence_name: format!("{}_seq", col_name),
@@ -319,11 +316,8 @@ impl CommittedState {
         }
 
         //Insert constraints into `st_constraints`
-        let st_constraints = self.get_or_create_table(
-            ST_CONSTRAINTS_ID,
-            &ST_CONSTRAINT_ROW_TYPE,
-            &st_constraints_schema(),
-        );
+        let st_constraints =
+            self.get_or_create_table(ST_CONSTRAINTS_ID, &ST_CONSTRAINT_ROW_TYPE, &st_constraints_schema());
 
         let mut indexes = schema.indexes.clone();
         //TODO: The constraints are limited to 1 column until indexes are changed to deal with n-columns
@@ -375,9 +369,7 @@ impl CommittedState {
         }));
 
         // Insert the indexes into st_indexes
-        let st_indexes =
-            self
-                .get_or_create_table(ST_INDEXES_ID, &ST_INDEX_ROW_TYPE, &st_indexes_schema());
+        let st_indexes = self.get_or_create_table(ST_INDEXES_ID, &ST_INDEX_ROW_TYPE, &st_indexes_schema());
         for (_, index) in indexes.into_iter().enumerate() {
             let row = StIndexRow {
                 index_id: index.index_id,
@@ -444,6 +436,150 @@ impl CommittedState {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
+    fn schema_for_table(&self, table_id: TableId, database_address: Address) -> super::Result<Cow<'_, TableSchema>> {
+        if let Some(schema) = self.get_schema(&table_id) {
+            return Ok(Cow::Borrowed(schema));
+        }
+
+        let ctx = ExecutionContext::internal(database_address);
+
+        // Look up the table_name for the table in question.
+        let table_id_col = NonEmpty::new(StTableFields::TableId.col_id());
+
+        // TODO(george): As part of the bootstrapping process, we add a bunch of rows
+        // and only at very end do we patch things up and create table metadata, indexes,
+        // and so on. Early parts of that process insert rows, and need the schema to do
+        // so. We can't just call `iter_by_col_range` here as that would attempt to use the
+        // index which we haven't created yet. So instead we just manually Scan here.
+
+        let value: AlgebraicValue = table_id.into();
+        let rows =  self.tables.get(&ST_TABLES_ID).unwrap().rows.iter().filter(|(_, row)| {
+            let table_id = row.project_not_empty(&table_id_col).unwrap();
+            table_id == value
+        }).collect::<Vec<_>>();
+        assert!(rows.len() <= 1, "Expected at most one row in st_tables for table_id");
+
+        let row = rows
+            .first()
+            .ok_or_else(|| TableError::IdNotFound(ST_TABLES_ID, table_id.0))?;
+
+        let el = StTableRow::try_from(row.1)?;
+        let table_name = el.table_name.to_owned();
+        let table_id: AlgebraicValue = el.table_id.into();
+
+        // Look up the columns for the table in question.
+        let mut columns = Vec::new(); 
+        //for data_ref in self.iter_by_col_eq(&ctx, &ST_COLUMNS_ID, StTableFields::TableId, table_id.into())? {
+        let columns_iter =  self.tables.get(&ST_COLUMNS_ID).unwrap().rows.iter().filter(|(_, row)| {
+            let table_id = row.project_not_empty(&table_id_col).unwrap();
+            table_id == value
+        });
+        for (row_id, _) in columns_iter {
+            let data_ref = get_committed_row(self, &ST_COLUMNS_ID, row_id);
+            let row = data_ref.view();
+            let el = StColumnRow::try_from(row)?;
+            let col_schema = ColumnSchema {
+                table_id: el.table_id,
+                col_id: el.col_id,
+                col_name: el.col_name.into(),
+                col_type: el.col_type,
+                is_autoinc: el.is_autoinc,
+            };
+            columns.push(col_schema);
+        }
+
+        columns.sort_by_key(|col| col.col_id);
+        let mut indexes = Vec::new();
+
+        // Look up the indexes for the table in question.
+        if let Some(indexes_iter) = self
+            .index_seek(&ST_INDEXES_ID, &StIndexFields::TableId.into(), &table_id) {
+                for row_id in indexes_iter {
+                    let data_ref = get_committed_row(self, &ST_COLUMNS_ID, row_id);
+                    let row = data_ref.view();
+        
+                    let el = StIndexRow::try_from(row)?;
+                    let index_schema = IndexSchema {
+                        table_id: el.table_id,
+                        cols: el.cols,
+                        index_name: el.index_name.into(),
+                        is_unique: el.is_unique,
+                        index_id: el.index_id,
+                        index_type: el.index_type,
+                    };
+                    indexes.push(index_schema);
+            }
+        }
+
+        Ok(Cow::Owned(TableSchema {
+            columns,
+            table_id: el.table_id,
+            table_name,
+            indexes,
+            constraints: vec![],
+            table_type: el.table_type,
+            table_access: el.table_access,
+        }))
+    }
+
+    fn get_schema(&self, table_id: &TableId) -> Option<&TableSchema> {
+        self.tables.get(table_id).map(|table| table.get_schema())
+    }
+
+    fn get_row_type(&self, table_id: &TableId) -> Option<&ProductType> {
+        self
+            .tables
+            .get(table_id)
+            .map(|table| table.get_row_type())
+    }
+
+    fn row_type_for_table(&self, table_id: TableId, database_address: Address) -> super::Result<Cow<'_, ProductType>> {
+        // Fetch the `ProductType` from the in memory table if it exists.
+        // The `ProductType` is invalidated if the schema of the table changes.
+        if let Some(row_type) = self.get_row_type(&table_id) {
+            return Ok(Cow::Borrowed(row_type));
+        }
+
+        // Look up the columns for the table in question.
+        // NOTE: This is quite an expensive operation, although we only need
+        // to do this in situations where there is not currently an in memory
+        // representation of a table. This would happen in situations where
+        // we have created the table in the database, but have not yet
+        // represented in memory or inserted any rows into it.
+        let elements = match self.schema_for_table(table_id, database_address)? {
+            Cow::Borrowed(table_schema) => table_schema
+                .columns
+                .iter()
+                .map(|col| col.col_type.clone().into())
+                .collect(),
+            Cow::Owned(table_schema) => table_schema
+                .columns
+                .into_iter()
+                .map(|col| col.col_type.into())
+                .collect(),
+        };
+        Ok(Cow::Owned(ProductType { elements }))
+    }
+
+
+    /// After replaying all old transactions, tables which have rows will
+    /// have been created in memory, but tables with no rows will not have
+    /// been created. This function ensures that they are created.
+    fn build_missing_tables(&mut self, database_address: Address) -> super::Result<()> {
+        let st_tables = self.tables.get(&ST_TABLES_ID).unwrap();
+        let rows = st_tables.scan_rows().cloned().collect::<Vec<_>>();
+        for row in rows {
+            let table_row = StTableRow::try_from(&row)?;
+            let table_id = table_row.table_id;
+            if self.get_table(&table_id).is_none() {
+                let schema = self.schema_for_table(table_id, database_address)?.into_owned();
+                let row_type = self.row_type_for_table(table_id, database_address)?.into_owned();
+                self.tables.insert(table_id, Table::new(row_type, schema));
+            }
+        }
+        Ok(())
+    }
 }
 
 /// `TxState` tracks all of the modifications made during a particular transaction.
@@ -598,27 +734,13 @@ impl Inner {
 }
 
 impl MutTxId {
-    /// After replaying all old transactions, tables which have rows will
-    /// have been created in memory, but tables with no rows will not have
-    /// been created. This function ensures that they are created.
-    fn build_missing_tables(&mut self, database_address: Address) -> super::Result<()> {
-        let st_tables = self.committed_state_write_lock.as_ref().unwrap().tables.get(&ST_TABLES_ID).unwrap();
-        let rows = st_tables.scan_rows().cloned().collect::<Vec<_>>();
-        for row in rows {
-            let table_row = StTableRow::try_from(&row)?;
-            let table_id = table_row.table_id;
-            if self.committed_state_write_lock.as_mut().unwrap().get_table(&table_id).is_none() {
-                let schema = self.schema_for_table(table_id, database_address)?.into_owned();
-                let row_type = self.row_type_for_table(table_id, database_address)?.into_owned();
-                self.committed_state_write_lock.as_mut().unwrap()
-                    .tables
-                    .insert(table_id, Table::new(row_type, schema));
-            }
-        }
-        Ok(())
-    }
-
-    fn drop_col_eq(&mut self, table_id: TableId, col_id: ColId, value: AlgebraicValue, database_address: Address) -> super::Result<()> {
+    fn drop_col_eq(
+        &mut self,
+        table_id: TableId,
+        col_id: ColId,
+        value: AlgebraicValue,
+        database_address: Address,
+    ) -> super::Result<()> {
         let ctx = ExecutionContext::internal(database_address);
         let rows = self.iter_by_col_eq(&ctx, &table_id, col_id, value)?;
         let ids_to_delete = rows.map(|row| RowId(*row.id())).collect::<Vec<_>>();
@@ -631,11 +753,21 @@ impl MutTxId {
     }
 
     fn drop_table_from_st_tables(&mut self, table_id: TableId, database_address: Address) -> super::Result<()> {
-        self.drop_col_eq(ST_TABLES_ID, StTableFields::TableId.col_id(), table_id.into(), database_address)
+        self.drop_col_eq(
+            ST_TABLES_ID,
+            StTableFields::TableId.col_id(),
+            table_id.into(),
+            database_address,
+        )
     }
 
     fn drop_table_from_st_columns(&mut self, table_id: TableId, database_address: Address) -> super::Result<()> {
-        self.drop_col_eq(ST_COLUMNS_ID, StColumnFields::TableId.col_id(), table_id.into(), database_address)
+        self.drop_col_eq(
+            ST_COLUMNS_ID,
+            StColumnFields::TableId.col_id(),
+            table_id.into(),
+            database_address,
+        )
     }
 
     #[tracing::instrument(skip_all)]
@@ -712,7 +844,9 @@ impl MutTxId {
         let sequence_id = sequence_row.sequence_id;
 
         let schema = sequence_row.into();
-        self.sequence_state_lock.sequences.insert(sequence_id, Sequence::new(schema));
+        self.sequence_state_lock
+            .sequences
+            .insert(sequence_id, Sequence::new(schema));
 
         log::trace!("SEQUENCE CREATED: id = {}", sequence_id);
 
@@ -964,7 +1098,11 @@ impl MutTxId {
         // We will have to store the deletion in the TxState and then apply it to the CommittedState in commit.
 
         // NOT use unwrap
-        self.committed_state_write_lock.as_mut().unwrap().tables.remove(&table_id);
+        self.committed_state_write_lock
+            .as_mut()
+            .unwrap()
+            .tables
+            .remove(&table_id);
         Ok(())
     }
 
@@ -1050,25 +1188,34 @@ impl MutTxId {
         Ok(index_id)
     }
 
-    fn create_index_internal(&mut self, index_id: IndexId, index: IndexDef, database_address: Address) -> super::Result<()> {
-        let insert_table =
-            if let Some(insert_table) = self.tx_state_lock.as_mut().unwrap().get_insert_table_mut(&index.table_id) {
-                insert_table
-            } else {
-                let row_type = self.row_type_for_table(index.table_id, database_address)?.into_owned();
-                let schema = self.schema_for_table(index.table_id, database_address)?.into_owned();
-                self.tx_state_lock
-                    .as_mut()
-                    .unwrap()
-                    .insert_tables
-                    .insert(index.table_id, Table::new(row_type, schema));
+    fn create_index_internal(
+        &mut self,
+        index_id: IndexId,
+        index: IndexDef,
+        database_address: Address,
+    ) -> super::Result<()> {
+        let insert_table = if let Some(insert_table) = self
+            .tx_state_lock
+            .as_mut()
+            .unwrap()
+            .get_insert_table_mut(&index.table_id)
+        {
+            insert_table
+        } else {
+            let row_type = self.row_type_for_table(index.table_id, database_address)?.into_owned();
+            let schema = self.schema_for_table(index.table_id, database_address)?.into_owned();
+            self.tx_state_lock
+                .as_mut()
+                .unwrap()
+                .insert_tables
+                .insert(index.table_id, Table::new(row_type, schema));
 
-                self.tx_state_lock
-                    .as_mut()
-                    .unwrap()
-                    .get_insert_table_mut(&index.table_id)
-                    .unwrap()
-            };
+            self.tx_state_lock
+                .as_mut()
+                .unwrap()
+                .get_insert_table_mut(&index.table_id)
+                .unwrap()
+        };
 
         let mut insert_index = BTreeIndex::new(
             index_id,
@@ -1080,7 +1227,12 @@ impl MutTxId {
         insert_index.build_from_rows(insert_table.scan_rows())?;
 
         // NOTE: Also add all the rows in the already committed table to the index.
-        if let Some(committed_table) = self.committed_state_write_lock.as_mut().unwrap().get_table(&index.table_id) {
+        if let Some(committed_table) = self
+            .committed_state_write_lock
+            .as_mut()
+            .unwrap()
+            .get_table(&index.table_id)
+        {
             insert_index.build_from_rows(committed_table.scan_rows())?;
         }
 
@@ -1169,7 +1321,9 @@ impl MutTxId {
             RowState::Absent => (),
         }
         match self
-            .committed_state_write_lock.as_mut().unwrap()
+            .committed_state_write_lock
+            .as_mut()
+            .unwrap()
             .tables
             .get(table_id)
             .and_then(|table| table.rows.get(row_id))
@@ -1184,8 +1338,11 @@ impl MutTxId {
             .as_ref()
             .map(|tx_state| tx_state.insert_tables.contains_key(table_id))
             .unwrap_or(false)
-            || self.committed_state_write_lock.as_ref().map(|committed_state| committed_state.tables.contains_key(table_id))
-            .unwrap_or(false)
+            || self
+                .committed_state_write_lock
+                .as_ref()
+                .map(|committed_state| committed_state.tables.contains_key(table_id))
+                .unwrap_or(false)
     }
 
     fn algebraic_type_is_numeric(ty: &AlgebraicType) -> bool {
@@ -1217,7 +1374,12 @@ impl MutTxId {
     }
 
     #[tracing::instrument(skip_all)]
-    fn insert(&mut self, table_id: TableId, mut row: ProductValue, database_address: Address) -> super::Result<ProductValue> {
+    fn insert(
+        &mut self,
+        table_id: TableId,
+        mut row: ProductValue,
+        database_address: Address,
+    ) -> super::Result<ProductValue> {
         // TODO: Excuting schema_for_table for every row insert is expensive.
         // We should store the schema in the [Table] struct instead.
         let schema = self.schema_for_table(table_id, database_address)?;
@@ -1303,8 +1465,16 @@ impl MutTxId {
                     .collect(),
                 rows: Default::default(),
             };
-            self.tx_state_lock.as_mut().unwrap().insert_tables.insert(table_id, table);
-            self.tx_state_lock.as_ref().unwrap().get_insert_table(&table_id).unwrap()
+            self.tx_state_lock
+                .as_mut()
+                .unwrap()
+                .insert_tables
+                .insert(table_id, table);
+            self.tx_state_lock
+                .as_ref()
+                .unwrap()
+                .get_insert_table(&table_id)
+                .unwrap()
         };
 
         // Check unique constraints
@@ -1314,7 +1484,13 @@ impl MutTxId {
                 return Err(index.build_error_unique(insert_table, value).into());
             }
         }
-        if let Some(table) = self.committed_state_write_lock.as_mut().unwrap().tables.get_mut(&table_id) {
+        if let Some(table) = self
+            .committed_state_write_lock
+            .as_mut()
+            .unwrap()
+            .tables
+            .get_mut(&table_id)
+        {
             for index in table.indexes.values() {
                 let value = index.get_fields(&row)?;
                 let Some(violators) = index.get_rows_that_violate_unique_constraint(&value) else {
@@ -1392,7 +1568,9 @@ impl MutTxId {
             RowState::Absent => {}
         }
         Ok(self
-            .committed_state_write_lock.as_ref().unwrap()
+            .committed_state_write_lock
+            .as_ref()
+            .unwrap()
             .tables
             .get(table_id)
             .and_then(|table| table.get_row(row_id))
@@ -1408,7 +1586,9 @@ impl MutTxId {
         {
             return Some(row_type);
         }
-        self.committed_state_write_lock.as_ref().unwrap()
+        self.committed_state_write_lock
+            .as_ref()
+            .unwrap()
             .tables
             .get(table_id)
             .map(|table| table.get_row_type())
@@ -1452,7 +1632,12 @@ impl MutTxId {
             RowState::Insert(_) => {
                 // If the row is present because of a an insertion in this transaction,
                 // we need to remove it from the appropriate insert_table.
-                let insert_table = self.tx_state_lock.as_mut().unwrap().get_insert_table_mut(table_id).unwrap();
+                let insert_table = self
+                    .tx_state_lock
+                    .as_mut()
+                    .unwrap()
+                    .get_insert_table_mut(table_id)
+                    .unwrap();
                 insert_table.delete(row_id);
                 // True because we did delete a row.
                 true
@@ -1521,14 +1706,23 @@ impl MutTxId {
                 table_id: *table_id,
                 tx_state,
                 inserted_rows,
-                committed_rows: self.committed_state_write_lock.as_ref().unwrap().index_seek(table_id, &cols, &range),
+                committed_rows: self
+                    .committed_state_write_lock
+                    .as_ref()
+                    .unwrap()
+                    .index_seek(table_id, &cols, &range),
                 committed_state: &self.committed_state_write_lock.as_ref().unwrap(),
                 num_committed_rows_fetched: 0,
             }))
         } else {
             // Either the current transaction has not modified this table, or the table is not
             // indexed.
-            match self.committed_state_write_lock.as_ref().unwrap().index_seek(table_id, &cols, &range) {
+            match self
+                .committed_state_write_lock
+                .as_ref()
+                .unwrap()
+                .index_seek(table_id, &cols, &range)
+            {
                 //If we don't have `self.tx_state_lock` yet is likely we are running the bootstrap process
                 Some(committed_rows) => match self.tx_state_lock.as_ref() {
                     None => Ok(IterByColRange::Scan(ScanIterByColRange {
@@ -1557,7 +1751,11 @@ impl MutTxId {
     fn commit(&mut self) -> super::Result<Option<TxData>> {
         let tx_state = self.tx_state_lock.take().unwrap();
         let memory: BTreeMap<DataKey, Arc<Vec<u8>>> = std::mem::take(&mut self.memory_lock);
-        let tx_data = self.committed_state_write_lock.as_mut().unwrap().merge(tx_state, memory);
+        let tx_data = self
+            .committed_state_write_lock
+            .as_mut()
+            .unwrap()
+            .merge(tx_state, memory);
         Ok(Some(tx_data))
     }
 
@@ -1602,8 +1800,7 @@ impl Locking {
         // state. `bootstrap_system_table` initializes the others lazily, but
         // it doesn't know about `ST_MODULE_ROW_TYPE`. Perhaps the committed
         // state should be initialized eagerly here?
-        commit_state
-            .get_or_create_table(ST_MODULE_ID, &ST_MODULE_ROW_TYPE, &st_module_schema());
+        commit_state.get_or_create_table(ST_MODULE_ID, &ST_MODULE_ROW_TYPE, &st_module_schema());
         commit_state.bootstrap_system_table(st_module_schema(), database_address)?;
 
         // The database tables are now initialized with the correct data.
@@ -1625,31 +1822,37 @@ impl Locking {
     /// is not equivalent to calling `create_table`.
     /// There may eventually be better way to do this, but this will have to do for now.
     pub fn rebuild_state_after_replay(&self) -> Result<(), DBError> {
-        let mut tx = self.begin_mut_tx();
+        let mut committed_state = self.inner.committed_state.write_arc();
+        let mut sequence_state = self.inner.sequence_state.lock();
         // `build_missing_tables` must be called before indexes.
         // Honestly this should maybe just be one big procedure.
         // See John Carmack's philosophy on this.
-        tx.build_missing_tables(self.inner.database_address)?;
-        tx.committed_state_write_lock.as_mut().unwrap().build_indexes()?;
-        tx.committed_state_write_lock.as_mut().unwrap().build_sequence_state(&mut tx.sequence_state_lock)?;
-        tx.commit()?;
+        committed_state.build_missing_tables(self.inner.database_address)?;
+        committed_state.build_indexes()?;
+        committed_state.build_sequence_state(&mut sequence_state)?;
         Ok(())
     }
 
-    pub fn replay_transaction(
+    pub fn  replay_transaction(
         &self,
         transaction: &Transaction,
         odb: Arc<std::sync::Mutex<Box<dyn ObjectDB + Send>>>,
     ) -> Result<(), DBError> {
-        let mut tx = self.begin_mut_tx();
+        let mut committed_state = self.inner.committed_state.write_arc();
         for write in &transaction.writes {
             let table_id = TableId(write.set_id);
-            let schema = tx.schema_for_table(table_id, self.inner.database_address)?.into_owned();
-            let row_type = tx.row_type_for_table(table_id, self.inner.database_address)?.into_owned();
+            let schema = committed_state
+                .schema_for_table(table_id, self.inner.database_address)?
+                .into_owned();
+            let row_type = committed_state
+                .row_type_for_table(table_id, self.inner.database_address)?
+                .into_owned();
 
             match write.operation {
                 Operation::Delete => {
-                    tx.committed_state_write_lock.as_mut().unwrap().table_rows(table_id, schema, row_type).remove(&RowId(write.data_key));
+                    committed_state
+                        .table_rows(table_id, schema, row_type)
+                        .remove(&RowId(write.data_key));
                     DB_METRICS
                         .rdb_num_table_rows
                         .with_label_values(&self.inner.database_address, &table_id.into())
@@ -1675,7 +1878,8 @@ impl Locking {
                             })
                         }
                     };
-                    tx.committed_state_write_lock.as_mut().unwrap().table_rows(table_id, schema, row_type)
+                    committed_state
+                        .table_rows(table_id, schema, row_type)
                         .insert(RowId(write.data_key), product_value);
                     DB_METRICS
                         .rdb_num_table_rows
@@ -1684,7 +1888,6 @@ impl Locking {
                 }
             }
         }
-        tx.commit()?;
         Ok(())
     }
 }
@@ -1784,7 +1987,14 @@ impl<'a> Iterator for Iter<'a> {
             match &mut self.stage {
                 ScanStage::Start => {
                     let _span = tracing::debug_span!("ScanStage::Start").entered();
-                    if let Some(table) = self.inner.committed_state_write_lock.as_ref().unwrap().tables.get(&table_id) {
+                    if let Some(table) = self
+                        .inner
+                        .committed_state_write_lock
+                        .as_ref()
+                        .unwrap()
+                        .tables
+                        .get(&table_id)
+                    {
                         // The committed state has changes for this table.
                         // Go through them in (1).
                         self.stage = ScanStage::Committed {
@@ -2368,7 +2578,7 @@ impl traits::MutProgrammable for Locking {
                     kind: WASM_MODULE,
                     epoch: system_tables::Epoch(fence),
                 }),
-                self.inner.database_address
+                self.inner.database_address,
             )?;
             return Ok(());
         }
@@ -2386,7 +2596,7 @@ impl traits::MutProgrammable for Locking {
                 kind: WASM_MODULE,
                 epoch: system_tables::Epoch(fence),
             }),
-            self.inner.database_address
+            self.inner.database_address,
         )?;
         Ok(())
     }
