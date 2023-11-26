@@ -35,7 +35,7 @@ use crate::{
 use anyhow::anyhow;
 use nonempty::NonEmpty;
 use parking_lot::{
-    lock_api::{ArcMutexGuard, ArcRwLockReadGuard, ArcRwLockWriteGuard},
+    lock_api::{ArcMutexGuard, ArcRwLockWriteGuard},
     Mutex, RawMutex, RawRwLock, RwLock,
 };
 use spacetimedb_lib::Address;
@@ -116,7 +116,6 @@ impl<'a> DataRef<'a> {
 
 pub struct MutTxId {
     committed_state_write_lock: Option<ArcRwLockWriteGuard<RawRwLock, CommittedState>>,
-    committed_state_read_lock: Option<ArcRwLockReadGuard<RawRwLock, CommittedState>>,
     tx_state_lock: ArcMutexGuard<RawMutex, Option<TxState>>,
     sequence_state_lock: ArcMutexGuard<RawMutex, SequencesState>,
     memory_lock: ArcMutexGuard<RawMutex, BTreeMap<DataKey, Arc<Vec<u8>>>>,
@@ -2296,7 +2295,6 @@ impl traits::MutTx for Locking {
         let timer = Instant::now();
 
         let committed_state_write_lock = Some(self.inner.committed_state.write_arc());
-        let committed_state_read_lock = None;
         let sequence_state_lock = self.inner.sequence_state.lock_arc();
         let memory_lock = self.inner.memory.lock_arc();
         let lock_wait_time = timer.elapsed();
@@ -2307,7 +2305,6 @@ impl traits::MutTx for Locking {
         tx_state_lock.replace(TxState::new());
         MutTxId {
             committed_state_write_lock,
-            committed_state_read_lock,
             sequence_state_lock,
             tx_state_lock,
             memory_lock,
