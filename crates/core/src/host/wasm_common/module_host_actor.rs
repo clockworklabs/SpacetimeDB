@@ -27,6 +27,7 @@ use crate::host::{
 };
 use crate::identity::Identity;
 use crate::sql;
+use crate::sql::query_debug_info::QueryDebugInfo;
 use crate::subscription::module_subscription_actor::ModuleSubscriptionManager;
 use crate::util::{const_unwrap, ResultInspectExt};
 use crate::worker_metrics::WORKER_METRICS;
@@ -249,21 +250,24 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         let auth = AuthCtx::new(self.database_instance_context.identity, caller_identity);
         // TODO(jgilles): make this a read-only TX when those get added
 
-        db.with_read_only(&ExecutionContext::sql(db.address()), |tx| {
-            log::debug!("One-off query: {query}");
+        db.with_read_only(
+            &ExecutionContext::sql(db.address(), Some(&QueryDebugInfo::from_source(&query))),
+            |tx| {
+                log::debug!("One-off query: {query}");
 
-            let compiled = sql::compiler::compile_sql(db, tx, &query)?
-                .into_iter()
-                .map(|expr| {
-                    if matches!(expr, CrudExpr::Query { .. }) {
-                        Ok(expr)
-                    } else {
-                        Err(anyhow!("One-off queries are not allowed to modify the database"))
-                    }
-                })
-                .collect::<Result<_, _>>()?;
-            sql::execute::execute_sql(db, tx, compiled, auth)
-        })
+                let compiled = sql::compiler::compile_sql(db, tx, &query)?
+                    .into_iter()
+                    .map(|expr| {
+                        if matches!(expr, CrudExpr::Query { .. }) {
+                            Ok(expr)
+                        } else {
+                            Err(anyhow!("One-off queries are not allowed to modify the database"))
+                        }
+                    })
+                    .collect::<Result<_, _>>()?;
+                sql::execute::execute_sql(db, tx, compiled, Some(&QueryDebugInfo::from_source(&query)), auth)
+            },
+        )
     }
 
     fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error> {

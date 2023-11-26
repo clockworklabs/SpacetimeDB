@@ -31,6 +31,7 @@ http.workspace = true
 log.workspace = true
 openssl.workspace = true
 prometheus.workspace = true
+scopeguard.workspace = true
 sled.workspace = true
 tokio.workspace = true
 tower-http.workspace = true

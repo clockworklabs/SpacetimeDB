@@ -1,15 +1,17 @@
+use std::collections::hash_map::DefaultHasher;
+use std::hash::Hasher;
 use std::path::Path;
 
 use futures::StreamExt;
 use rustc_hash::FxHashMap;
 use sled::transaction::{ConflictableTransactionError::Abort as TxAbort, TransactionError};
-use spacetimedb_lib::bsatn;
 use spacetimedb_lib::bsatn::ser::BsatnError;
+use spacetimedb_lib::{bsatn, Address};
 use tokio::sync::mpsc;
 use tokio_util::time::delay_queue::Expired;
 use tokio_util::time::{delay_queue, DelayQueue};
 
-use crate::db::db_metrics::DB_METRICS;
+use crate::worker_metrics::{MAX_REDUCER_DELAY, WORKER_METRICS};
 
 use super::module_host::WeakModuleHost;
 use super::{ModuleHost, ReducerArgs, ReducerCallError, Timestamp};
@@ -260,7 +262,7 @@ impl SchedulerActor {
     }
 
     async fn handle_queued(&mut self, id: Expired<ScheduledReducerId>) {
-        let delay = id.deadline().elapsed();
+        let delay = id.deadline().elapsed().as_secs_f64();
         let id = id.into_inner();
         self.key_map.remove(&id);
         let Some(module_host) = self.module_host.upgrade() else {
@@ -270,12 +272,38 @@ impl SchedulerActor {
             return;
         };
         let scheduled: ScheduledReducer = bsatn::from_slice(&scheduled).unwrap();
+
+        fn hash(a: &Address, b: &str) -> u64 {
+            use std::hash::Hash;
+            let mut hasher = DefaultHasher::new();
+            a.hash(&mut hasher);
+            b.hash(&mut hasher);
+            hasher.finish()
+        }
+
+        let db = module_host.info().address;
+        let mut guard = MAX_REDUCER_DELAY.lock().unwrap();
+        let max_reducer_delay = *guard
+            .entry(hash(&db, &scheduled.reducer))
+            .and_modify(|max| {
+                if delay > *max {
+                    *max = delay;
+                }
+            })
+            .or_insert_with(|| delay);
+
         // Note, we are only tracking the time a reducer spends delayed in the queue.
         // This does not account for any time the executing thread spends blocked by the os.
-        DB_METRICS
+        WORKER_METRICS
             .scheduled_reducer_delay_sec
-            .with_label_values(&module_host.info().address, &scheduled.reducer)
-            .observe(delay.as_secs_f64());
+            .with_label_values(&db, &scheduled.reducer)
+            .observe(delay);
+        WORKER_METRICS
+            .scheduled_reducer_delay_sec_max
+            .with_label_values(&db, &scheduled.reducer)
+            .set(max_reducer_delay);
+        drop(guard);
+
         let db = self.db.clone();
         tokio::spawn(async move {
             let info = module_host.info();

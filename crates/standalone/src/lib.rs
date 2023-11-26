@@ -12,12 +12,14 @@ use energy_monitor::StandaloneEnergyMonitor;
 use openssl::ec::{EcGroup, EcKey};
 use openssl::nid::Nid;
 use openssl::pkey::PKey;
+use scopeguard::defer_on_success;
 use spacetimedb::address::Address;
 use spacetimedb::auth::identity::{DecodingKey, EncodingKey};
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::control_db::{self, ControlDb};
 use spacetimedb::database_instance_context::DatabaseInstanceContext;
 use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
+use spacetimedb::db::db_metrics::MAX_TX_CPU_TIME;
 use spacetimedb::db::{db_metrics::DB_METRICS, Config};
 use spacetimedb::execution_context::ExecutionContext;
 use spacetimedb::host::EnergyQuanta;
@@ -30,7 +32,7 @@ use spacetimedb::module_host_context::ModuleHostContext;
 use spacetimedb::object_db::ObjectDb;
 use spacetimedb::sendgrid_controller::SendGridController;
 use spacetimedb::stdb_path;
-use spacetimedb::worker_metrics::WORKER_METRICS;
+use spacetimedb::worker_metrics::{MAX_QUEUE_LEN, MAX_REDUCER_DELAY, WORKER_METRICS};
 use spacetimedb_lib::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
 use spacetimedb_lib::recovery::RecoveryCode;
 use std::fs::File;
@@ -163,6 +165,14 @@ fn get_key_path(env: &str) -> Option<PathBuf> {
 #[async_trait]
 impl spacetimedb_client_api::NodeDelegate for StandaloneEnv {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
+        defer_on_success! {
+            // Reset max transaction cpu time metric
+            MAX_TX_CPU_TIME.lock().unwrap().clear();
+            // Reset max queue length metric
+            MAX_QUEUE_LEN.lock().unwrap().clear();
+            // Reset max reducer delay metric
+            MAX_REDUCER_DELAY.lock().unwrap().clear();
+        }
         // Note, we update certain metrics such as disk usage on demand.
         self.db_inst_ctx_controller.update_metrics();
         self.metrics_registry.gather()
