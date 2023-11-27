@@ -438,8 +438,10 @@ impl CommittedState {
         }
         Ok(())
     }
-
-    fn iter_by_col<'a>(
+    
+    //TODO(shubham): Need to confirm, if indexes exist during bootstrap to be used here.
+    // This iter has only been implemented to use during bootstrap
+    fn iter_by_col_eq<'a> (
         &'a self,
         table_id: &'a TableId,
         table_id_col: &'a NonEmpty<ColId>,
@@ -469,7 +471,7 @@ impl CommittedState {
         let table_id_col = NonEmpty::new(StTableFields::TableId.col_id());
         let value: AlgebraicValue = table_id.into();
         let rows = self
-            .iter_by_col(&ST_TABLES_ID, &table_id_col, &value)?
+            .iter_by_col_eq(&ST_TABLES_ID, &table_id_col, &value)?
             .collect::<Vec<_>>();
         let row = rows
             .first()
@@ -481,7 +483,7 @@ impl CommittedState {
 
         // Look up the columns for the table in question.
         let mut columns = self
-            .iter_by_col(&ST_COLUMNS_ID, &NonEmpty::new(StColumnFields::TableId.col_id()), &value)?
+            .iter_by_col_eq(&ST_COLUMNS_ID, &NonEmpty::new(StColumnFields::TableId.col_id()), &value)?
             .map(|row| {
                 let el = StColumnRow::try_from(row.view())?;
                 Ok(ColumnSchema {
@@ -498,7 +500,7 @@ impl CommittedState {
 
         // Look up the indexes for the table in question.
         let indexes = self
-            .iter_by_col(&ST_INDEXES_ID, &StIndexFields::TableId.into(), &table_id_value)?
+            .iter_by_col_eq(&ST_INDEXES_ID, &StIndexFields::TableId.into(), &table_id_value)?
             .map(|row| {
                 let el = StIndexRow::try_from(row.view())?;
                 Ok(IndexSchema {
