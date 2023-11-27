@@ -1,14 +1,13 @@
 use crate::error::{DBError, TableError};
 use core::fmt;
 use nonempty::NonEmpty;
-use once_cell::sync::Lazy;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::*;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::{
-    impl_deserialize, impl_serialize, product, AlgebraicType, AlgebraicValue, ArrayValue, ProductType, ProductValue,
+    impl_deserialize, impl_serialize, product, AlgebraicType, AlgebraicValue, ArrayValue, ProductValue,
 };
 use strum::Display;
 
@@ -171,9 +170,6 @@ pub fn st_table_schema() -> TableSchema {
     .into_schema(ST_TABLES_ID)
 }
 
-pub static ST_TABLE_ROW_TYPE: Lazy<ProductType> =
-    Lazy::new(|| ProductType::from_iter(st_table_schema().columns.iter().map(|c| c.col_type.clone())));
-
 /// System Table [ST_COLUMNS_NAME]
 ///
 /// | table_id | col_id | col_name | col_type            |
@@ -198,9 +194,6 @@ pub fn st_columns_schema() -> TableSchema {
     .into_schema(ST_COLUMNS_ID)
 }
 
-pub static ST_COLUMNS_ROW_TYPE: Lazy<ProductType> =
-    Lazy::new(|| ProductType::from_iter(st_columns_schema().columns.iter().map(|c| c.col_type.clone())));
-
 /// System Table [ST_INDEXES]
 ///
 /// | index_id | table_id | index_name  | columns | is_unique | index_type |
@@ -224,9 +217,6 @@ pub fn st_indexes_schema() -> TableSchema {
     .unwrap()
     .into_schema(ST_INDEXES_ID)
 }
-
-pub static ST_INDEX_ROW_TYPE: Lazy<ProductType> =
-    Lazy::new(|| ProductType::from_iter(st_indexes_schema().columns.iter().map(|c| c.col_type.clone())));
 
 /// System Table [ST_SEQUENCES]
 ///
@@ -254,9 +244,6 @@ pub(crate) fn st_sequences_schema() -> TableSchema {
     .unwrap()
     .into_schema(ST_SEQUENCES_ID)
 }
-
-pub static ST_SEQUENCE_ROW_TYPE: Lazy<ProductType> =
-    Lazy::new(|| ProductType::from_iter(st_sequences_schema().columns.iter().map(|c| c.col_type.clone())));
 
 /// System Table [ST_CONSTRAINTS_NAME]
 ///
@@ -286,9 +273,6 @@ pub(crate) fn st_constraints_schema() -> TableSchema {
     .into_schema(ST_CONSTRAINTS_ID)
 }
 
-pub static ST_CONSTRAINT_ROW_TYPE: Lazy<ProductType> =
-    Lazy::new(|| ProductType::from_iter(st_constraints_schema().columns.iter().map(|c| c.col_type.clone())));
-
 /// System table [ST_MODULE_NAME]
 ///
 /// This table holds exactly one row, describing the latest version of the
@@ -316,9 +300,6 @@ pub(crate) fn st_module_schema() -> TableSchema {
     .with_type(StTableType::System)
     .into_schema(ST_MODULE_ID)
 }
-
-pub static ST_MODULE_ROW_TYPE: Lazy<ProductType> =
-    Lazy::new(|| ProductType::from_iter(st_module_schema().columns.iter().map(|c| c.col_type.clone())));
 
 pub(crate) fn table_name_is_system(table_name: &str) -> bool {
     table_name.starts_with("st_")

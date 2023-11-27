@@ -10,7 +10,7 @@ use std::str::Utf8Error;
 #[derive(Debug, Clone)]
 pub enum DecodeError {
     /// Not enough data was provided in the input.
-    BufferLength,
+    BufferLength(String),
     /// The tag does not exist for the sum.
     InvalidTag,
     /// Expected data to be UTF-8 but it wasn't.
@@ -22,7 +22,7 @@ pub enum DecodeError {
 impl fmt::Display for DecodeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DecodeError::BufferLength => f.write_str("data too short"),
+            DecodeError::BufferLength(object) => write!(f, "data too short for {object}"),
             DecodeError::InvalidTag => f.write_str("invalid tag for sum"),
             DecodeError::InvalidUtf8 => f.write_str("invalid utf8"),
             DecodeError::Other(err) => f.write_str(err),
@@ -219,7 +219,10 @@ impl BufWriter for &mut [u8] {
 impl<'de> BufReader<'de> for &'de [u8] {
     fn get_slice(&mut self, size: usize) -> Result<&'de [u8], DecodeError> {
         if self.len() < size {
-            return Err(DecodeError::BufferLength);
+            return Err(DecodeError::BufferLength(format!(
+                "[{self:?}].len({}) != {size}",
+                self.len()
+            )));
         }
         let (ret, rest) = self.split_at(size);
         *self = rest;
@@ -253,7 +256,7 @@ impl<'de, I: AsRef<[u8]>> BufReader<'de> for &'de Cursor<I> {
         // "Read" the slice `buf[pos..size]`.
         let ret = self.buf.as_ref()[self.pos.get()..]
             .get(..size)
-            .ok_or(DecodeError::BufferLength)?;
+            .ok_or(DecodeError::BufferLength("Cursor".into()))?;
 
         // Advance the cursor by `size` bytes.
         self.pos.set(self.pos.get() + size);

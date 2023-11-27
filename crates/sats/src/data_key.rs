@@ -131,7 +131,7 @@ impl DataKey {
         } else {
             let len = header;
             if len as usize > MAX_INLINE {
-                return Err(DecodeError::BufferLength);
+                return Err(DecodeError::BufferLength("DataKey".into()));
             }
             let mut buf = [0; MAX_INLINE];
             let data = bytes.get_slice(len as usize)?;

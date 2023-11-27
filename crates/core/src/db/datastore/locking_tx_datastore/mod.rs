@@ -26,16 +26,14 @@ use std::{
 
 use super::{
     system_tables::{
-        system_tables, StColumnRow, StIndexRow, StSequenceRow, StTableRow, SystemTable, ST_COLUMNS_ID,
-        ST_COLUMNS_ROW_TYPE, ST_INDEXES_ID, ST_INDEX_ROW_TYPE, ST_SEQUENCES_ID, ST_SEQUENCE_ROW_TYPE, ST_TABLES_ID,
-        ST_TABLE_ROW_TYPE,
+        system_tables, StColumnRow, StIndexRow, StSequenceRow, StTableRow, SystemTable, ST_COLUMNS_ID, ST_INDEXES_ID,
+        ST_SEQUENCES_ID, ST_TABLES_ID,
     },
     traits::{self, DataRow, MutTx, MutTxDatastore, TxData, TxDatastore},
 };
 use crate::db::datastore::system_tables::{
     st_constraints_schema, st_module_schema, table_name_is_system, StColumnFields, StConstraintFields, StConstraintRow,
-    StIndexFields, StModuleRow, StSequenceFields, StTableFields, ST_CONSTRAINTS_ID, ST_CONSTRAINT_ROW_TYPE,
-    ST_MODULE_ID, ST_MODULE_ROW_TYPE, WASM_MODULE,
+    StIndexFields, StModuleRow, StSequenceFields, StTableFields, ST_CONSTRAINTS_ID, ST_MODULE_ID, WASM_MODULE,
 };
 use crate::db::db_metrics::{DB_METRICS, MAX_TX_CPU_TIME};
 use crate::execution_context::ExecutionContext;
@@ -132,10 +130,8 @@ impl CommittedState {
         Self { tables: HashMap::new() }
     }
 
-    fn get_or_create_table(&mut self, table_id: TableId, row_type: ProductType, schema: TableSchema) -> &mut Table {
-        self.tables
-            .entry(table_id)
-            .or_insert_with(|| Table::new(row_type, schema))
+    fn get_or_create_table(&mut self, table_id: TableId, schema: TableSchema) -> &mut Table {
+        self.tables.entry(table_id).or_insert_with(|| Table::new(schema))
     }
 
     fn get_table(&mut self, table_id: &TableId) -> Option<&mut Table> {
@@ -145,9 +141,8 @@ impl CommittedState {
     fn merge(&mut self, tx_state: TxState, memory: BTreeMap<DataKey, Arc<Vec<u8>>>) -> TxData {
         let mut tx_data = TxData { records: vec![] };
         for (table_id, table) in tx_state.insert_tables {
-            let commit_table = self.get_or_create_table(table_id, table.row_type.clone(), table.schema.clone());
+            let commit_table = self.get_or_create_table(table_id, table.schema.clone());
             // The schema may have been modified in the transaction.
-            commit_table.row_type = table.row_type;
             commit_table.schema = table.schema;
 
             tx_data.records.extend(table.rows.into_iter().map(|(row_id, row)| {
@@ -366,9 +361,9 @@ impl Inner {
         let mut sequences_start: HashMap<TableId, i128> = HashMap::with_capacity(10);
 
         // Insert the table row into st_tables, creating st_tables if it's missing
-        let st_tables =
-            self.committed_state
-                .get_or_create_table(ST_TABLES_ID, ST_TABLE_ROW_TYPE.to_owned(), st_table_schema());
+        let st_tables = self
+            .committed_state
+            .get_or_create_table(ST_TABLES_ID, st_table_schema());
 
         // Insert the table row into `st_tables` for all system tables
         for schema in system_tables() {
@@ -393,11 +388,9 @@ impl Inner {
         }
 
         // Insert the columns into `st_columns`
-        let st_columns = self.committed_state.get_or_create_table(
-            ST_COLUMNS_ID,
-            ST_COLUMNS_ROW_TYPE.to_owned(),
-            st_columns_schema(),
-        );
+        let st_columns = self
+            .committed_state
+            .get_or_create_table(ST_COLUMNS_ID, st_columns_schema());
 
         for col in system_tables().into_iter().flat_map(|x| x.columns) {
             let row = StColumnRow {
@@ -420,11 +413,9 @@ impl Inner {
         // Insert the FK sorted by table/column so it show together when queried.
 
         // Insert constraints into `st_constraints`
-        let st_constraints = self.committed_state.get_or_create_table(
-            ST_CONSTRAINTS_ID,
-            ST_CONSTRAINT_ROW_TYPE.to_owned(),
-            st_constraints_schema(),
-        );
+        let st_constraints = self
+            .committed_state
+            .get_or_create_table(ST_CONSTRAINTS_ID, st_constraints_schema());
 
         for (i, constraint) in system_tables()
             .iter()
@@ -452,9 +443,9 @@ impl Inner {
         }
 
         // Insert the indexes into `st_indexes`
-        let st_indexes =
-            self.committed_state
-                .get_or_create_table(ST_INDEXES_ID, ST_INDEX_ROW_TYPE.to_owned(), st_indexes_schema());
+        let st_indexes = self
+            .committed_state
+            .get_or_create_table(ST_INDEXES_ID, st_indexes_schema());
 
         for (i, index) in system_tables()
             .iter()
@@ -485,13 +476,11 @@ impl Inner {
         // We don't add the row here but with `MutProgrammable::set_program_hash`, but we need to register the table
         // in the internal state.
         self.committed_state
-            .get_or_create_table(ST_MODULE_ID, ST_MODULE_ROW_TYPE.to_owned(), st_module_schema());
+            .get_or_create_table(ST_MODULE_ID, st_module_schema());
 
-        let st_sequences = self.committed_state.get_or_create_table(
-            ST_SEQUENCES_ID,
-            ST_SEQUENCE_ROW_TYPE.to_owned(),
-            st_sequences_schema(),
-        );
+        let st_sequences = self
+            .committed_state
+            .get_or_create_table(ST_SEQUENCES_ID, st_sequences_schema());
 
         // We create sequences last to get right the starting number
         // so, we don't sort here
@@ -578,10 +567,7 @@ impl Inner {
             let table_id = table_row.table_id;
             if self.committed_state.get_table(&table_id).is_none() {
                 let schema = self.schema_for_table(table_id)?.into_owned();
-                let row_type = self.row_type_for_table(table_id)?.into_owned();
-                self.committed_state
-                    .tables
-                    .insert(table_id, Table::new(row_type, schema));
+                self.committed_state.tables.insert(table_id, Table::new(schema));
             }
         }
         Ok(())
@@ -782,11 +768,11 @@ impl Inner {
 
         let mut constraint = ConstraintSchema::from_def(table_id, constraint);
         constraint.constraint_id = constraint_id;
-
         let insert_table = self.get_insert_table_mut(constraint.table_id)?;
-        insert_table.schema.update_constraint(constraint.clone());
+        let constraint_name = constraint.constraint_name.clone();
+        insert_table.schema.update_constraint(constraint);
 
-        log::trace!("CONSTRAINT CREATED: {}", constraint.constraint_name);
+        log::trace!("CONSTRAINT CREATED: {}", constraint_name);
 
         Ok(constraint_id)
     }
@@ -880,7 +866,7 @@ impl Inner {
         // Remove the adjacent object that has an unset `id = 0`, they will be created below with the correct `id`
         schema_internal.clear_adjacent_schemas();
 
-        self.create_table_internal(table_id, table_schema.get_row_type(), schema_internal)?;
+        self.create_table_internal(table_id, schema_internal)?;
 
         // Insert constraints into `st_constraints`
         for constraint in table_schema.constraints {
@@ -902,17 +888,12 @@ impl Inner {
         Ok(table_id)
     }
 
-    fn create_table_internal(
-        &mut self,
-        table_id: TableId,
-        row_type: ProductType,
-        schema: TableSchema,
-    ) -> super::Result<()> {
+    fn create_table_internal(&mut self, table_id: TableId, schema: TableSchema) -> super::Result<()> {
         self.tx_state
             .as_mut()
             .unwrap()
             .insert_tables
-            .insert(table_id, Table::new(row_type, schema));
+            .insert(table_id, Table::new(schema));
         Ok(())
     }
 
@@ -920,7 +901,7 @@ impl Inner {
         // Fetch the `ProductType` from the in memory table if it exists.
         // The `ProductType` is invalidated if the schema of the table changes.
         if let Some(row_type) = self.get_row_type(&table_id) {
-            return Ok(Cow::Borrowed(row_type));
+            return Ok(Cow::Owned(row_type));
         }
 
         // Look up the columns for the table in question.
@@ -929,24 +910,14 @@ impl Inner {
         // representation of a table. This would happen in situations where
         // we have created the table in the database, but have not yet
         // represented in memory or inserted any rows into it.
-        let elements = match self.schema_for_table(table_id)? {
-            Cow::Borrowed(table_schema) => table_schema
-                .columns
-                .iter()
-                .map(|col| col.col_type.clone().into())
-                .collect(),
-            Cow::Owned(table_schema) => table_schema
-                .columns
-                .into_iter()
-                .map(|col| col.col_type.into())
-                .collect(),
-        };
-        Ok(Cow::Owned(ProductType { elements }))
+        Ok(Cow::Owned(self.schema_for_table(table_id)?.get_row_type()))
     }
 
     // NOTE: It is essential to keep this function in sync with the
     // `Self::create_table`, as it must reflect the same steps used
     // to create database objects.
+    /// Return the [TableSchema] of the supplied `table_id` from the internal [Self::tx_state] if exist OR
+    /// query the store and add it to the internal [Self::tx_state], then return it.
     #[tracing::instrument(skip_all)]
     fn schema_for_table(&self, table_id: TableId) -> super::Result<Cow<'_, TableSchema>> {
         if let Some(schema) = self.get_schema(&table_id) {
@@ -1053,9 +1024,9 @@ impl Inner {
         }
 
         Ok(Cow::Owned(TableSchema {
-            columns,
             table_id,
             table_name,
+            columns,
             indexes,
             constraints,
             sequences,
@@ -1174,13 +1145,12 @@ impl Inner {
             if let Some(insert_table) = self.tx_state.as_mut().unwrap().get_insert_table_mut(&index.table_id) {
                 insert_table
             } else {
-                let row_type = self.row_type_for_table(index.table_id)?.into_owned();
                 let schema = self.schema_for_table(index.table_id)?.into_owned();
                 self.tx_state
                     .as_mut()
                     .unwrap()
                     .insert_tables
-                    .insert(index.table_id, Table::new(row_type, schema));
+                    .insert(index.table_id, Table::new(schema));
 
                 self.tx_state
                     .as_mut()
@@ -1323,7 +1293,7 @@ impl Inner {
     #[tracing::instrument(skip_all)]
     fn insert(&mut self, table_id: TableId, mut row: ProductValue) -> super::Result<ProductValue> {
         // TODO: Executing schema_for_table for every row insert is expensive.
-        // We should store the schema in the [Table] struct instead.
+        // However we ask for the schema in the [Table] struct instead.
         let schema = self.schema_for_table(table_id)?;
         let ctx = ExecutionContext::internal(self.database_address);
 
@@ -1381,7 +1351,6 @@ impl Inner {
                 return Err(TableError::IdNotFoundState(table_id).into());
             };
             let table = Table {
-                row_type: committed_table.row_type.clone(),
                 schema: committed_table.get_schema().clone(),
                 indexes: committed_table
                     .indexes
@@ -1458,7 +1427,7 @@ impl Inner {
             let insert_table = tx_state.get_insert_table_mut(&table_id).unwrap();
 
             // TODO(cloutiertyler): should probably also check that all the columns are correct? Perf considerations.
-            if insert_table.row_type.elements.len() != row.elements.len() {
+            if insert_table.schema.columns.len() != row.elements.len() {
                 return Err(TableError::RowInvalidType { table_id, row }.into());
             }
 
@@ -1497,7 +1466,7 @@ impl Inner {
             .map(|row| DataRef::new(row_id, row)))
     }
 
-    fn get_row_type(&self, table_id: &TableId) -> Option<&ProductType> {
+    fn get_row_type(&self, table_id: &TableId) -> Option<ProductType> {
         if let Some(row_type) = self
             .tx_state
             .as_ref()
@@ -1723,13 +1692,12 @@ impl Locking {
         inner: &mut Inner,
         table_id: TableId,
         schema: TableSchema,
-        row_type: ProductType,
     ) -> &mut indexmap::IndexMap<RowId, ProductValue> {
         &mut inner
             .committed_state
             .tables
             .entry(table_id)
-            .or_insert_with(|| Table::new(row_type, schema))
+            .or_insert_with(|| Table::new(schema))
             .rows
     }
 
@@ -1742,17 +1710,17 @@ impl Locking {
         for write in &transaction.writes {
             let table_id = TableId(write.set_id);
             let schema = inner.schema_for_table(table_id)?.into_owned();
-            let row_type = inner.row_type_for_table(table_id)?.into_owned();
 
             match write.operation {
                 Operation::Delete => {
-                    Self::table_rows(&mut inner, table_id, schema, row_type).remove(&RowId(write.data_key));
+                    Self::table_rows(&mut inner, table_id, schema).remove(&RowId(write.data_key));
                     DB_METRICS
                         .rdb_num_table_rows
                         .with_label_values(&inner.database_address, &table_id.into())
                         .dec();
                 }
                 Operation::Insert => {
+                    let row_type = schema.get_row_type();
                     let product_value = match write.data_key {
                         DataKey::Data(data) => ProductValue::decode(&row_type, &mut &data[..]).unwrap_or_else(|e| {
                             panic!(
@@ -1772,8 +1740,7 @@ impl Locking {
                             })
                         }
                     };
-                    Self::table_rows(&mut inner, table_id, schema, row_type)
-                        .insert(RowId(write.data_key), product_value);
+                    Self::table_rows(&mut inner, table_id, schema).insert(RowId(write.data_key), product_value);
                     DB_METRICS
                         .rdb_num_table_rows
                         .with_label_values(&inner.database_address, &table_id.into())
