@@ -1,13 +1,17 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
   <PropertyGroup>
+    <NativeLib>Shared</NativeLib>
     <WasmSingleFileBundle>true</WasmSingleFileBundle>
     <TrimMode>full</TrimMode>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <DebuggerSupport>false</DebuggerSupport>
-    <EventSourceSupport>false</EventSourceSupport>
+    <!-- <DebuggerSupport>false</DebuggerSupport> - disabled due to https://github.com/dotnet/runtime/issues/86186 which is not fixed in NAOT-LLVM -->
+    <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
+    <UseAppHost>false</UseAppHost>
     <UseSystemResourceKeys>true</UseSystemResourceKeys>
     <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
+    <SpacetimeNamespace>spacetime_7.0</SpacetimeNamespace>
+    <RestoreAdditionalProjectSources>https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json</RestoreAdditionalProjectSources>
   </PropertyGroup>
 
 </Project>

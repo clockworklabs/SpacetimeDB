@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -290,10 +291,7 @@ public class Module : IIncrementalGenerator
                 {string.Join("\n", addReducers.Select(r => r.Class))}
 
 #pragma warning disable CA2255
-                // [ModuleInitializer] - doesn't work because assemblies are loaded lazily;
-                // might make use of it later down the line, but for now assume there is only one
-                // module so we can use `Main` instead.
-
+                [ModuleInitializer]
                 // Prevent trimming of FFI exports that are invoked from C and not visible to C# trimmer.
                 [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(SpacetimeDB.Module.FFI))]
                 public static void Main() {{

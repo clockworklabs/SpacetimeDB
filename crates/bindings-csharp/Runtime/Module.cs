@@ -276,7 +276,7 @@ public static class FFI
         bool anonymous = false
     ) => module.SetTypeRef<T>(typeRef, type, anonymous);
 
-    // [UnmanagedCallersOnly(EntryPoint = "__describe_module__")]
+    [UnmanagedCallersOnly(EntryPoint = "__describe_module__")]
     public static RawBindings.Buffer __describe_module__()
     {
         // replace `module` with a temporary internal module that will register ModuleDef, AlgebraicType and other internal types
@@ -308,7 +308,7 @@ public static class FFI
         return result;
     }
 
-    // [UnmanagedCallersOnly(EntryPoint = "__call_reducer__")]
+    [UnmanagedCallersOnly(EntryPoint = "__call_reducer__")]
     public static RawBindings.Buffer __call_reducer__(
         uint id,
         RawBindings.Buffer caller_identity,

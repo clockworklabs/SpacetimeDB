@@ -1,8 +1,30 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
   <ItemGroup>
-    <NativeFileReference Include="$(MSBuildThisFileDirectory)..\bindings.c" />
-    <_WasmNativeFileForLinking Include="@(NativeFileReference)" />
+    <NativeLibrary Include="$(MSBuildThisFileDirectory)..\bindings.c" />
+    <UnmanagedEntryPointsAssembly Include="SpacetimeDB.Runtime" />
+    <WasmImport Include="$(SpacetimeNamespace)!_console_log" />
+    <WasmImport Include="$(SpacetimeNamespace)!_get_table_id" />
+    <WasmImport Include="$(SpacetimeNamespace)!_create_index" />
+    <WasmImport Include="$(SpacetimeNamespace)!_iter_by_col_eq" />
+    <WasmImport Include="$(SpacetimeNamespace)!_insert" />
+    <WasmImport Include="$(SpacetimeNamespace)!_delete_by_col_eq" />
+    <WasmImport Include="$(SpacetimeNamespace)!_delete_by_rel" />
+    <WasmImport Include="$(SpacetimeNamespace)!_iter_start" />
+    <WasmImport Include="$(SpacetimeNamespace)!_iter_start_filtered" />
+    <WasmImport Include="$(SpacetimeNamespace)!_iter_next" />
+    <WasmImport Include="$(SpacetimeNamespace)!_iter_drop" />
+    <WasmImport Include="$(SpacetimeNamespace)!_schedule_reducer" />
+    <WasmImport Include="$(SpacetimeNamespace)!_cancel_reducer" />
+    <WasmImport Include="$(SpacetimeNamespace)!_buffer_len" />
+    <WasmImport Include="$(SpacetimeNamespace)!_buffer_consume" />
+    <WasmImport Include="$(SpacetimeNamespace)!_buffer_alloc" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
+    <PackageReference Include="runtime.win-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
+    <PackageReference Include="Microsoft.NET.ILLink.Tasks" Version="8.0.0-*" Condition="'$(ILLinkTargetsPath)' == ''" />
   </ItemGroup>
 
   <!-- Auto-download WASI SDK on the first run. -->
