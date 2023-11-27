@@ -1,7 +1,7 @@
-use axum::body::Bytes;
+use axum::body::{Body, Bytes};
 use axum::extract::{DefaultBodyLimit, Path, Query, State};
 use axum::response::{ErrorResponse, IntoResponse};
-use axum::{headers, TypedHeader};
+use axum_extra::TypedHeader;
 use chrono::Utc;
 use futures::StreamExt;
 use http::StatusCode;
@@ -487,9 +487,9 @@ where
             .chain(stream)
             .map(Ok::<_, std::convert::Infallible>);
 
-        axum::body::boxed(axum::body::StreamBody::new(stream))
+        Body::from_stream(stream)
     } else {
-        axum::body::boxed(axum::body::Full::from(lines))
+        Body::from(lines)
     };
 
     Ok((

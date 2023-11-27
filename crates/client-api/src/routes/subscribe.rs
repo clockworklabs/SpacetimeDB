@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
-use axum::TypedHeader;
+use axum_extra::TypedHeader;
 use futures::{SinkExt, StreamExt};
 use http::{HeaderValue, StatusCode};
 use serde::Deserialize;
