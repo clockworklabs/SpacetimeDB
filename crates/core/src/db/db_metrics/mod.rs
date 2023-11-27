@@ -127,3 +127,7 @@ metrics_group!(
 
 pub static MAX_TX_CPU_TIME: Lazy<Mutex<HashMap<u64, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 pub static DB_METRICS: Lazy<DbMetrics> = Lazy::new(DbMetrics::new);
+
+pub fn reset_counters() {
+    MAX_TX_CPU_TIME.lock().unwrap().clear();
+}
