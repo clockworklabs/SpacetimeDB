@@ -438,10 +438,9 @@ impl CommittedState {
         }
         Ok(())
     }
-    
     //TODO(shubham): Need to confirm, if indexes exist during bootstrap to be used here.
     // This iter has only been implemented to use during bootstrap
-    fn iter_by_col_eq<'a> (
+    fn iter_by_col_eq<'a>(
         &'a self,
         table_id: &'a TableId,
         table_id_col: &'a NonEmpty<ColId>,
@@ -1451,7 +1450,7 @@ impl MutTxId {
         row.encode(&mut bytes);
         let data_key = DataKey::from_data(&bytes);
         let row_id = RowId(data_key);
-        let tx_state  = self.tx_state_lock.as_mut().unwrap();
+        let tx_state = self.tx_state_lock.as_mut().unwrap();
 
         // If the table does exist in the tx state, we need to create it based on the table in the
         // committed state. If the table does not exist in the committed state, it doesn't exist
@@ -1483,12 +1482,8 @@ impl MutTxId {
                     .collect(),
                 rows: Default::default(),
             };
-            tx_state
-                .insert_tables
-                .insert(table_id, table);
-            tx_state
-                .get_insert_table(&table_id)
-                .unwrap()
+            tx_state.insert_tables.insert(table_id, table);
+            tx_state.get_insert_table(&table_id).unwrap()
         };
 
         // Check unique constraints
@@ -1526,7 +1521,6 @@ impl MutTxId {
 
         // Now that we have checked all the constraints, we can perform the actual insertion.
         {
-
             // We have a few cases to consider, based on the history of this transaction, and
             // whether the row was already present or not at the start of this transaction.
             // 1. If the row was not originally present, and therefore also not deleted by
