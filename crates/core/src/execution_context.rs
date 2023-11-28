@@ -113,6 +113,14 @@ impl<'a> ExecutionContext<'a> {
         self.query_debug_info
     }
 
+    /// If this is a reducer context, returns the name of the reducer.
+    /// If this is a query context, returns the query string.
+    #[inline]
+    pub fn reducer_or_query(&self) -> &str {
+        self.reducer
+            .unwrap_or_else(|| self.query_debug_info.map(|info| info.source()).unwrap_or_default())
+    }
+
     /// Returns the type of workload that is being executed.
     #[inline]
     pub fn workload(&self) -> WorkloadType {

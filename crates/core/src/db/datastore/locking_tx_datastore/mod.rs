@@ -1723,7 +1723,7 @@ impl Drop for Iter<'_> {
             .with_label_values(
                 &self.ctx.workload(),
                 &self.ctx.database(),
-                self.ctx.reducer_name().unwrap_or_default(),
+                self.ctx.reducer_or_query(),
                 &self.table_id.into(),
             )
             .inc_by(self.num_committed_rows_fetched);
@@ -1843,7 +1843,7 @@ impl Drop for IndexSeekIterInner<'_> {
             .with_label_values(
                 &self.ctx.workload(),
                 &self.ctx.database(),
-                self.ctx.reducer_name().unwrap_or_default(),
+                self.ctx.reducer_or_query(),
                 &self.table_id.0,
             )
             .inc();
@@ -1854,7 +1854,7 @@ impl Drop for IndexSeekIterInner<'_> {
             .with_label_values(
                 &self.ctx.workload(),
                 &self.ctx.database(),
-                self.ctx.reducer_name().unwrap_or_default(),
+                self.ctx.reducer_or_query(),
                 &self.table_id.0,
             )
             .inc_by(self.committed_rows.as_ref().map_or(0, |iter| iter.keys_scanned()));
@@ -1865,7 +1865,7 @@ impl Drop for IndexSeekIterInner<'_> {
             .with_label_values(
                 &self.ctx.workload(),
                 &self.ctx.database(),
-                self.ctx.reducer_name().unwrap_or_default(),
+                self.ctx.reducer_or_query(),
                 &self.table_id.0,
             )
             .inc_by(self.num_committed_rows_fetched);
@@ -1917,7 +1917,7 @@ impl Drop for CommittedIndexIter<'_> {
             .with_label_values(
                 &self.ctx.workload(),
                 &self.ctx.database(),
-                self.ctx.reducer_name().unwrap_or_default(),
+                self.ctx.reducer_or_query(),
                 &self.table_id.0,
             )
             .inc();
@@ -1928,7 +1928,7 @@ impl Drop for CommittedIndexIter<'_> {
             .with_label_values(
                 &self.ctx.workload(),
                 &self.ctx.database(),
-                self.ctx.reducer_name().unwrap_or_default(),
+                self.ctx.reducer_or_query(),
                 &self.table_id.0,
             )
             .inc_by(self.committed_rows.keys_scanned());
@@ -1939,7 +1939,7 @@ impl Drop for CommittedIndexIter<'_> {
             .with_label_values(
                 &self.ctx.workload(),
                 &self.ctx.database(),
-                self.ctx.reducer_name().unwrap_or_default(),
+                self.ctx.reducer_or_query(),
                 &self.table_id.0,
             )
             .inc_by(self.num_committed_rows_fetched);
