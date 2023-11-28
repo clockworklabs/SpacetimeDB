@@ -1,28 +1,12 @@
-type Nav = {
-  items: NavItem[];
-};
-type NavItem = NavPage | NavSection;
-type NavPage = {
-  type: "page";
-  path: string;
-  slug: string;
-  title: string;
-  disabled?: boolean;
-  href?: string;
-};
-type NavSection = {
-  type: "section";
-  title: string;
-};
-
-function page(title: string, slug: string, path: string, props?: { disabled?: boolean; href?: string; description?: string }): NavPage {
+function page(title, slug, path, props) {
   return { type: "page", path, slug, title, ...props };
 }
-function section(title: string): NavSection {
+
+function section(title) {
   return { type: "section", title };
 }
 
-const nav: Nav = {
+const nav = {
   items: [
     section("Intro"),
     page("Overview", "index", "Overview/index.md"),
