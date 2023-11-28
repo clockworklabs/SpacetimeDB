@@ -6,7 +6,7 @@ We'll implement a command-line client for the module created in our Rust or C# M
 
 ## Project structure
 
-Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](/docs/server-languages/rust/rust-module-quickstart-guide) or [C# Module Quickstart](/docs/server-languages/csharp/csharp-module-quickstart-guide) guides:
+Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](/docs/modules/rust/quickstart) or [C# Module Quickstart](/docs/modules/c-sharp/quickstart) guides:
 
 ```bash
 cd quickstart-chat

@@ -1,6 +1,6 @@
 # SQL Support
 
-SpacetimeDB supports a subset of SQL as a query language. Developers can evaluate SQL queries against a Spacetime database via the `spacetime sql` command-line tool and the [`/database/sql/:name_or_address POST` HTTP endpoint](/docs/http-api-reference/databases#databasesqlname_or_address-post). Client developers also write SQL queries when subscribing to events in the [WebSocket API](/docs/websocket-api-reference#subscribe) or via an SDK `subscribe` function.
+SpacetimeDB supports a subset of SQL as a query language. Developers can evaluate SQL queries against a Spacetime database via the `spacetime sql` command-line tool and the [`/database/sql/:name_or_address POST` HTTP endpoint](/docs/http/database#databasesqlname_or_address-post). Client developers also write SQL queries when subscribing to events in the [WebSocket API](/docs/ws#subscribe) or via an SDK `subscribe` function.
 
 SpacetimeDB aims to support much of the [SQL 2016 standard](https://www.iso.org/standard/63555.html), and in particular aims to be compatible with [PostgreSQL](https://www.postgresql.org/).
 

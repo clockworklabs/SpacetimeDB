@@ -79,7 +79,7 @@ Open the Main scene in Unity and click on the `GameManager` object in the heirar
 
 ![GameManager-Inspector](/images/unity-tutorial/GameManager-Inspector.JPG)
 
-Update the module address with the address you got from the `spacetime publish` command. If you are using SpacetimeDB Cloud `testnet`, the host name should be `testnet.spacetimedb.com` and SSL Enabled should be checked. If you are running SpacetimeDB Standalone locally, the host name should be `localhost:3000` and SSL Enabled should be unchecked. For instructions on how to deploy to these environments, see the [Deployment Section](/docs/DeploymentOverview.md)
+Update the module address with the address you got from the `spacetime publish` command. If you are using SpacetimeDB Cloud `testnet`, the host name should be `testnet.spacetimedb.com` and SSL Enabled should be checked. If you are running SpacetimeDB Standalone locally, the host name should be `localhost:3000` and SSL Enabled should be unchecked. For instructions on how to deploy to these environments, see the [Deployment Section](/docs/deploying/testnet)
 
 ## 4. Play Mode
 
