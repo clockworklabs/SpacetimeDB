@@ -161,12 +161,12 @@ impl WasmInstanceEnv {
     /// Gather the appropriate metadata and log a wasm_abi_call_duration_ns with the given AbiCall & duration
     fn start_abi_call_timer(&self, call: AbiCall) -> prometheus::HistogramTimer {
         let ctx = self.reducer_context();
-        let txn_type = ctx.txn_type();
+        let workload = ctx.workload();
         let db = ctx.database();
 
         DB_METRICS
             .wasm_abi_call_duration_sec
-            .with_label_values(&txn_type, &db, &self.reducer_name, &call)
+            .with_label_values(&workload, &db, &self.reducer_name, &call)
             .start_timer()
     }
 

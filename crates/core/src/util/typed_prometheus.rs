@@ -128,7 +128,7 @@ macro_rules! metrics_vec {
 }
 pub use metrics_vec;
 
-use crate::{execution_context::TransactionType, host::AbiCall};
+use crate::{execution_context::WorkloadType, host::AbiCall};
 
 pub trait AsPrometheusLabel {
     type Str<'a>: AsRef<str> + 'a
@@ -156,7 +156,7 @@ impl_prometheusvalue_string!(
     Hash,
     Identity,
     Address,
-    TransactionType,
+    WorkloadType,
     AbiCall,
     bool,
     u8,

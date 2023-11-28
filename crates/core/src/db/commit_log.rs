@@ -328,7 +328,7 @@ impl CommitLogMut {
         let mut unwritten_commit = self.unwritten_commit.lock().unwrap();
         let mut writes = Vec::with_capacity(tx_data.records.len());
 
-        let txn_type = &ctx.txn_type();
+        let workload = &ctx.workload();
         let db = &ctx.database();
         let reducer = &ctx.reducer_name().unwrap_or_default();
 
@@ -340,7 +340,7 @@ impl CommitLogMut {
                     // Increment rows inserted metric
                     DB_METRICS
                         .rdb_num_rows_inserted
-                        .with_label_values(txn_type, db, reducer, &table_id)
+                        .with_label_values(workload, db, reducer, &table_id)
                         .inc();
                     // Increment table rows gauge
                     DB_METRICS.rdb_num_table_rows.with_label_values(db, &table_id).inc();
@@ -350,7 +350,7 @@ impl CommitLogMut {
                     // Increment rows deleted metric
                     DB_METRICS
                         .rdb_num_rows_deleted
-                        .with_label_values(txn_type, db, reducer, &table_id)
+                        .with_label_values(workload, db, reducer, &table_id)
                         .inc();
                     // Decrement table rows gauge
                     DB_METRICS.rdb_num_table_rows.with_label_values(db, &table_id).dec();
