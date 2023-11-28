@@ -16,12 +16,7 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
 
     let config_name = if build_debug { "Debug" } else { "Release" };
 
-    let output_path = project_path.join(format!("bin/{config_name}/net8.0/wasi-wasm/AppBundle/StdbModule.wasm"));
-
-    // delete existing wasm file if exists
-    if output_path.exists() {
-        std::fs::remove_file(&output_path)?;
-    }
+    let mut output_path = project_path.join(format!("bin/{config_name}/net8.0/wasi-wasm/AppBundle/StdbModule.wasm"));
 
     // Ensure the project path exists.
     fs::metadata(project_path).with_context(|| {
@@ -46,7 +41,14 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
 
     // check if file exists
     if !output_path.exists() {
-        anyhow::bail!("Failed to build project");
+        // check for the old .NET 7 path for projects that haven't migrated yet
+        output_path = project_path.join(format!("bin/{config_name}/net7.0/StdbModule.wasm"));
+        if output_path.exists() {
+            eprintln!("Warning: Your project is using the old .NET 7.0 WebAssembly bindings.");
+            eprintln!("Those will be deprecated in the future. Please migrate your project to the new .NET 8.0 template.");
+        } else {
+            anyhow::bail!("Built project successfully but couldn't find the output file.");
+        }
     }
 
     Ok(output_path)
