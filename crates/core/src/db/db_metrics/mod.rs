@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Mutex};
 
-use crate::{execution_context::TransactionType, host::AbiCall, util::typed_prometheus::metrics_group};
+use crate::{execution_context::WorkloadType, host::AbiCall, util::typed_prometheus::metrics_group};
 use once_cell::sync::Lazy;
 use prometheus::{GaugeVec, Histogram, HistogramVec, IntCounterVec, IntGaugeVec};
 use spacetimedb_lib::Address;
@@ -60,52 +60,52 @@ metrics_group!(
 
         #[name = spacetime_num_rows_inserted_cumulative]
         #[help = "The cumulative number of rows inserted into a table"]
-        #[labels(txn_type: TransactionType, db: Address, reducer: str, table_id: u32)]
+        #[labels(txn_type: WorkloadType, db: Address, reducer: str, table_id: u32)]
         pub rdb_num_rows_inserted: IntCounterVec,
 
         #[name = spacetime_num_rows_deleted_cumulative]
         #[help = "The cumulative number of rows deleted from a table"]
-        #[labels(txn_type: TransactionType, db: Address, reducer: str, table_id: u32)]
+        #[labels(txn_type: WorkloadType, db: Address, reducer: str, table_id: u32)]
         pub rdb_num_rows_deleted: IntCounterVec,
 
         #[name = spacetime_num_rows_fetched_cumulative]
         #[help = "The cumulative number of rows fetched from a table"]
-        #[labels(txn_type: TransactionType, db: Address, reducer: str, table_id: u32)]
+        #[labels(txn_type: WorkloadType, db: Address, reducer: str, table_id: u32)]
         pub rdb_num_rows_fetched: IntCounterVec,
 
         #[name = spacetime_num_index_keys_scanned_cumulative]
         #[help = "The cumulative number of keys scanned from an index"]
-        #[labels(txn_type: TransactionType, db: Address, reducer: str, table_id: u32)]
+        #[labels(txn_type: WorkloadType, db: Address, reducer: str, table_id: u32)]
         pub rdb_num_keys_scanned: IntCounterVec,
 
         #[name = spacetime_num_index_seeks_cumulative]
         #[help = "The cumulative number of index seeks"]
-        #[labels(txn_type: TransactionType, db: Address, reducer: str, table_id: u32)]
+        #[labels(txn_type: WorkloadType, db: Address, reducer: str, table_id: u32)]
         pub rdb_num_index_seeks: IntCounterVec,
 
         #[name = spacetime_num_txns_cumulative]
         #[help = "The cumulative number of transactions, including both commits and rollbacks"]
-        #[labels(txn_type: TransactionType, db: Address, reducer: str, committed: bool)]
+        #[labels(txn_type: WorkloadType, db: Address, reducer: str, committed: bool)]
         pub rdb_num_txns: IntCounterVec,
 
         #[name = spacetime_txn_elapsed_time_sec]
         #[help = "The total elapsed (wall) time of a transaction (in seconds)"]
-        #[labels(txn_type: TransactionType, db: Address, reducer: str)]
+        #[labels(txn_type: WorkloadType, db: Address, reducer: str)]
         pub rdb_txn_elapsed_time_sec: HistogramVec,
 
         #[name = spacetime_txn_cpu_time_sec]
         #[help = "The time spent executing a transaction (in seconds), excluding time spent waiting to acquire database locks"]
-        #[labels(txn_type: TransactionType, db: Address, reducer: str)]
+        #[labels(txn_type: WorkloadType, db: Address, reducer: str)]
         pub rdb_txn_cpu_time_sec: HistogramVec,
 
         #[name = spacetime_txn_cpu_time_sec_max]
         #[help = "The cpu time of the longest running transaction (in seconds)"]
-        #[labels(txn_type: TransactionType, db: Address, reducer: str)]
+        #[labels(txn_type: WorkloadType, db: Address, reducer: str)]
         pub rdb_txn_cpu_time_sec_max: GaugeVec,
 
         #[name = spacetime_wasm_abi_call_duration_sec]
         #[help = "The total duration of a spacetime wasm abi call (in seconds); includes row serialization and copying into wasm memory"]
-        #[labels(txn_type: TransactionType, db: Address, reducer: str, call: AbiCall)]
+        #[labels(txn_type: WorkloadType, db: Address, reducer: str, call: AbiCall)]
         pub wasm_abi_call_duration_sec: HistogramVec,
 
         #[name = spacetime_message_log_size_bytes]

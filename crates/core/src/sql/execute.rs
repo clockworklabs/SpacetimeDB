@@ -60,16 +60,15 @@ fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Result<(), DBErr
     Ok(())
 }
 
-#[tracing::instrument(skip(db, tx, auth))]
+#[tracing::instrument(skip_all)]
 pub fn execute_single_sql(
+    cx: &ExecutionContext,
     db: &RelationalDB,
     tx: &mut MutTxId,
     ast: CrudExpr,
-    query_debug_info: Option<&QueryDebugInfo>,
     auth: AuthCtx,
 ) -> Result<Vec<MemTable>, DBError> {
-    let ctx = ExecutionContext::sql(db.address(), query_debug_info);
-    let p = &mut DbProgram::new(&ctx, db, tx, auth);
+    let p = &mut DbProgram::new(cx, db, tx, auth);
     let q = Expr::Crud(Box::new(ast));
 
     let mut result = Vec::with_capacity(1);
