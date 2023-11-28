@@ -45,7 +45,9 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
         output_path = project_path.join(format!("bin/{config_name}/net7.0/StdbModule.wasm"));
         if output_path.exists() {
             eprintln!("Warning: Your project is using the old .NET 7.0 WebAssembly bindings.");
-            eprintln!("Those will be deprecated in the future. Please migrate your project to the new .NET 8.0 template.");
+            eprintln!(
+                "Those will be deprecated in the future. Please migrate your project to the new .NET 8.0 template."
+            );
         } else {
             anyhow::bail!("Built project successfully but couldn't find the output file.");
         }
