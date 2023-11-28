@@ -499,7 +499,7 @@ pub(crate) fn st_constraints_schema() -> TableSchema {
                 table_id: ST_CONSTRAINTS_ID,
                 col_id: StConstraintFields::Constraints.col_id(),
                 col_name: StConstraintFields::Constraints.col_name(),
-                col_type: AlgebraicType::U32,
+                col_type: AlgebraicType::U8,
                 is_autoinc: false,
             },
             ColumnSchema {
