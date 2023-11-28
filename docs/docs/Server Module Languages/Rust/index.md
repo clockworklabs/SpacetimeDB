@@ -267,6 +267,6 @@ spacetime sql <module-name> "SELECT * FROM Message"
 
 You can find the full code for this module [in the SpacetimeDB module examples](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/quickstart-chat).
 
-You've just set up your first database in SpacetimeDB! The next step would be to create a client module that interacts with this module. You can use any of SpacetimDB's supported client languages to do this. Take a look at the quickstart guide for your client language of choice: [Rust](/docs/client-languages/rust/rust-sdk-quickstart-guide), [C#](/docs/client-languages/csharp/csharp-sdk-quickstart-guide), [TypeScript](/docs/client-languages/typescript/typescript-sdk-quickstart-guide) or [Python](/docs/client-languages/python/python-sdk-quickstart-guide).
+You've just set up your first database in SpacetimeDB! The next step would be to create a client module that interacts with this module. You can use any of SpacetimDB's supported client languages to do this. Take a look at the quickstart guide for your client language of choice: [Rust](/docs/sdks/rust/quickstart), [C#](/docs/sdks/c-sharp/quickstart), [TypeScript](/docs/sdks/typescript/quickstart) or [Python](/docs/sdks/python/quickstart).
 
-If you are planning to use SpacetimeDB with the Unity3d game engine, you can skip right to the [Unity Comprehensive Tutorial](/docs/game-dev/unity-tutorial) or check out our example game, [BitcraftMini](/docs/game-dev/unity-tutorial-bitcraft-mini).
+If you are planning to use SpacetimeDB with the Unity3d game engine, you can skip right to the [Unity Comprehensive Tutorial](/docs/unity/part-1) or check out our example game, [BitcraftMini](/docs/unity/part-3).

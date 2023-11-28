@@ -6,9 +6,9 @@ Rather than a password, each Spacetime identity is associated with a private tok
 
 ### Generating identities and tokens
 
-Clients can request a new identity and token via [the `/identity POST` HTTP endpoint](/docs/http-api-reference/identities#identity-post).
+Clients can request a new identity and token via [the `/identity POST` HTTP endpoint](/docs/http/identity#identity-post).
 
-Alternately, a new identity and token will be generated during an anonymous connection via the [WebSocket API](/docs/websocket-api-reference), and passed to the client as [an `IdentityToken` message](/docs/websocket-api-reference#identitytoken).
+Alternately, a new identity and token will be generated during an anonymous connection via the [WebSocket API](/docs/ws), and passed to the client as [an `IdentityToken` message](/docs/ws#identitytoken).
 
 ### Encoding `Authorization` headers
 

@@ -1,6 +1,6 @@
 # SATN JSON Format
 
-The Spacetime Algebraic Type Notation JSON format defines how Spacetime `AlgebraicType`s and `AlgebraicValue`s are encoded as JSON. Algebraic types and values are JSON-encoded for transport via the [HTTP Databases API](/docs/http-api-reference/databases) and the [WebSocket text protocol](/docs/websocket-api-reference#text-protocol).
+The Spacetime Algebraic Type Notation JSON format defines how Spacetime `AlgebraicType`s and `AlgebraicValue`s are encoded as JSON. Algebraic types and values are JSON-encoded for transport via the [HTTP Databases API](/docs/http/database) and the [WebSocket text protocol](/docs/ws#text-protocol).
 
 ## Values
 
@@ -160,4 +160,4 @@ SATS array and map types are homogeneous, meaning that each array has a single e
 
 ### `AlgebraicTypeRef`
 
-`AlgebraicTypeRef`s are JSON-encoded as non-negative integers. These are indices into a typespace, like the one returned by the [`/database/schema/:name_or_address GET` HTTP endpoint](/docs/http-api-reference/databases#databaseschemaname_or_address-get).
+`AlgebraicTypeRef`s are JSON-encoded as non-negative integers. These are indices into a typespace, like the one returned by the [`/database/schema/:name_or_address GET` HTTP endpoint](/docs/http/database#databaseschemaname_or_address-get).

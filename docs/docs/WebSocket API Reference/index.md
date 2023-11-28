@@ -6,9 +6,9 @@ The SpacetimeDB SDKs comminicate with their corresponding database using the Web
 
 ## Connecting
 
-To initiate a WebSocket connection, send a `GET` request to the [`/database/subscribe/:name_or_address` endpoint](/docs/http-api-reference/databases#databasesubscribename_or_address-get) with headers appropriate to upgrade to a WebSocket connection as per [RFC 6455](https://datatracker.ietf.org/doc/html/rfc6455).
+To initiate a WebSocket connection, send a `GET` request to the [`/database/subscribe/:name_or_address` endpoint](/docs/http/database#databasesubscribename_or_address-get) with headers appropriate to upgrade to a WebSocket connection as per [RFC 6455](https://datatracker.ietf.org/doc/html/rfc6455).
 
-To re-connect with an existing identity, include its token in a [SpacetimeDB Authorization header](/docs/http-api-reference/authorization). Otherwise, a new identity and token will be generated for the client.
+To re-connect with an existing identity, include its token in a [SpacetimeDB Authorization header](/docs/http). Otherwise, a new identity and token will be generated for the client.
 
 ## Protocols
 
@@ -21,13 +21,13 @@ Clients connecting via WebSocket can choose between two protocols, [`v1.bin.spac
 
 ### Binary Protocol
 
-The SpacetimeDB binary WebSocket protocol, `v1.bin.spacetimedb`, encodes messages using [ProtoBuf 3](https://protobuf.dev), and reducer and row data using [BSATN](/docs/satn-reference/satn-reference-binary-format).
+The SpacetimeDB binary WebSocket protocol, `v1.bin.spacetimedb`, encodes messages using [ProtoBuf 3](https://protobuf.dev), and reducer and row data using [BSATN](/docs/bsatn).
 
 The binary protocol's messages are defined in [`client_api.proto`](https://github.com/clockworklabs/SpacetimeDB/blob/master/crates/client-api-messages/protobuf/client_api.proto).
 
 ### Text Protocol
 
-The SpacetimeDB text WebSocket protocol, `v1.text.spacetimedb`, encodes messages, reducer and row data as JSON. Reducer arguments and table rows are JSON-encoded according to the [SATN JSON format](/docs/satn-reference/satn-reference-json-format).
+The SpacetimeDB text WebSocket protocol, `v1.text.spacetimedb`, encodes messages, reducer and row data as JSON. Reducer arguments and table rows are JSON-encoded according to the [SATN JSON format](/docs/satn).
 
 ## Messages
 
@@ -82,7 +82,7 @@ SpacetimeDB responds to each `Subscribe` message with a [`SubscriptionUpdate` me
 
 Each `Subscribe` message establishes a new set of subscriptions, replacing all previous subscriptions. Clients which want to add a query to an existing subscription must send a `Subscribe` message containing all the previous queries in addition to the new query. In this case, the returned [`SubscriptionUpdate`](#subscriptionupdate) will contain all previously-subscribed rows in addition to the newly-subscribed rows.
 
-Each query must be a SQL `SELECT * FROM` statement on a single table with an optional `WHERE` clause. See the [SQL Reference](/docs/sql-reference) for the subset of SQL supported by SpacetimeDB.
+Each query must be a SQL `SELECT * FROM` statement on a single table with an optional `WHERE` clause. See the [SQL Reference](/docs/sql) for the subset of SQL supported by SpacetimeDB.
 
 ##### Binary: ProtoBuf definition
 
@@ -120,7 +120,7 @@ message Subscribe {
 
 #### `IdentityToken`
 
-Upon establishing a WebSocket connection, the server will send an `IdentityToken` message containing the client's identity and token. If the client included a [SpacetimeDB Authorization header](/docs/http-api-reference/authorization) in their connection request, the `IdentityToken` message will contain the same token used to connect, and its corresponding identity. If the client connected anonymously, SpacetimeDB will generate a new identity and token for the client.
+Upon establishing a WebSocket connection, the server will send an `IdentityToken` message containing the client's identity and token. If the client included a [SpacetimeDB Authorization header](/docs/http) in their connection request, the `IdentityToken` message will contain the same token used to connect, and its corresponding identity. If the client connected anonymously, SpacetimeDB will generate a new identity and token for the client.
 
 ##### Binary: ProtoBuf definition
 

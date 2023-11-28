@@ -44,7 +44,7 @@ The SpacetimeDB client C# for Rust contains all the tools you need to build nati
       - [Static Property `AuthToken.Token`](#static-property-authtokentoken)
       - [Static Method `AuthToken.SaveToken`](#static-method-authtokensavetoken)
     - [Class `Identity`](#class-identity)
-    - [Class `Address`](#class-address)
+    - [Class `Identity`](#class-identity-1)
   - [Customizing logging](#customizing-logging)
     - [Interface `ISpacetimeDBLogger`](#interface-ispacetimedblogger)
     - [Class `ConsoleLogger`](#class-consolelogger)
@@ -60,7 +60,7 @@ If you would like to create a console application using .NET, you can create a n
 dotnet add package spacetimedbsdk
 ```
 
-(See also the [CSharp Quickstart](./CSharpSDKQuickStart) for an in-depth example of such a console application.)
+(See also the [CSharp Quickstart](/docs/modules/c-sharp/quickstart) for an in-depth example of such a console application.)
 
 ### Using Unity
 
@@ -70,7 +70,7 @@ https://sdk.spacetimedb.com/SpacetimeDBUnitySDK.unitypackage
 
 In Unity navigate to the `Assets > Import Package > Custom Package...` menu in the menu bar. Select your `SpacetimeDBUnitySDK.unitypackage` file and leave all folders checked.
 
-(See also the [Unity Quickstart](./UnityQuickStart) and [Unity Tutorial](./UnityTutorialPart1).)
+(See also the [Unity Tutorial](/docs/unity/part-1).)
 
 ## Generate module bindings
 

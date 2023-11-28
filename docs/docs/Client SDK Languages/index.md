@@ -2,10 +2,10 @@
 
 The SpacetimeDB Client SDKs provide a comprehensive interface to interact with the SpacetimeDB server engine from various programming languages. Currently, SDKs are available for
 
-- [Rust](/docs/client-languages/rust/rust-sdk-reference) - [(Quickstart)](/docs/client-languages/rust/rust-sdk-quickstart-guide)
-- [C#](/docs/client-languages/csharp/csharp-sdk-reference) - [(Quickstart)](/docs/client-languages/csharp/csharp-sdk-quickstart-guide)
-- [TypeScript](/docs/client-languages/typescript/typescript-sdk-reference) - [(Quickstart)](client-languages/typescript/typescript-sdk-quickstart-guide)
-- [Python](/docs/client-languages/python/python-sdk-reference) - [(Quickstart)](/docs/python/python-sdk-quickstart-guide)
+- [Rust](/docs/sdks/rust) - [(Quickstart)](/docs/sdks/rust/quickstart)
+- [C#](/docs/sdks/c-sharp) - [(Quickstart)](/docs/sdks/c-sharp/quickstart)
+- [TypeScript](/docs/sdks/typescript) - [(Quickstart)](/docs/sdks/typescript/quickstart)
+- [Python](/docs/sdks/python) - [(Quickstart)](/docs/sdks/python/quickstart)
 
 ## Key Features
 

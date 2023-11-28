@@ -52,7 +52,7 @@ Each identity has a corresponding authentication token. The authentication token
 
 Additionally, each database has an owner `Identity`. Many database maintenance operations, like publishing a new version or evaluating arbitrary SQL queries, are restricted to only authenticated connections by the owner.
 
-SpacetimeDB provides tools in the CLI and the [client SDKs](/docs/client-languages/client-sdk-overview) for managing credentials.
+SpacetimeDB provides tools in the CLI and the [client SDKs](/docs/sdks) for managing credentials.
 
 ## Addresses
 
@@ -68,8 +68,8 @@ Each client connection has an `Address`. These addresses are opaque, and do not 
 
 Currently, Rust is the best-supported language for writing SpacetimeDB modules. Support for lots of other languages is in the works!
 
-- [Rust](/docs/server-languages/rust/rust-module-reference) - [(Quickstart)](/docs/server-languages/rust/rust-module-quickstart-guide)
-- [C#](/docs/server-languages/csharp/csharp-module-reference) - [(Quickstart)](/docs/server-languages/csharp/csharp-module-quickstart-guide)
+- [Rust](/docs/modules/rust) - [(Quickstart)](/docs/modules/rust/quickstart)
+- [C#](/docs/modules/c-sharp) - [(Quickstart)](/docs/modules/c-sharp/quickstart)
 - Python (Coming soon)
 - C# (Coming soon)
 - Typescript (Coming soon)
@@ -78,16 +78,16 @@ Currently, Rust is the best-supported language for writing SpacetimeDB modules. 
 
 ### Client-side SDKs
 
-- [Rust](/docs/client-languages/rust/rust-sdk-reference) - [(Quickstart)](/docs/client-languages/rust/rust-sdk-quickstart-guide)
-- [C#](/docs/client-languages/csharp/csharp-sdk-reference) - [(Quickstart)](/docs/client-languages/csharp/csharp-sdk-quickstart-guide)
-- [TypeScript](/docs/client-languages/typescript/typescript-sdk-reference) - [(Quickstart)](client-languages/typescript/typescript-sdk-quickstart-guide)
-- [Python](/docs/client-languages/python/python-sdk-reference) - [(Quickstart)](/docs/python/python-sdk-quickstart-guide)
+- [Rust](/docs/sdks/rust) - [(Quickstart)](/docs/sdks/rust/quickstart)
+- [C#](/docs/sdks/c-sharp) - [(Quickstart)](/docs/sdks/c-sharp/quickstart)
+- [TypeScript](/docs/sdks/typescript) - [(Quickstart)](/docs/sdks/typescript/quickstart)
+- [Python](/docs/sdks/python) - [(Quickstart)](/docs/sdks/python/quickstart)
 - C++ (Planned)
 - Lua (Planned)
 
 ### Unity
 
-SpacetimeDB was designed first and foremost as the backend for multiplayer Unity games. To learn more about using SpacetimeDB with Unity, jump on over to the [SpacetimeDB Unity Tutorial](/docs/unity-tutorial/unity-tutorial-part-1).
+SpacetimeDB was designed first and foremost as the backend for multiplayer Unity games. To learn more about using SpacetimeDB with Unity, jump on over to the [SpacetimeDB Unity Tutorial](/docs/unity/part-1).
 
 ## FAQ
 
@@ -101,7 +101,7 @@ SpacetimeDB was designed first and foremost as the backend for multiplayer Unity
    Just install our command line tool and then upload your application to the cloud.
 
 1. How do I create a new database with SpacetimeDB?
-   Follow our [Quick Start](/docs/quick-start) guide!
+   Follow our [Quick Start](/docs/getting-started) guide!
 
 TL;DR in an empty directory:
 
