@@ -2887,7 +2887,7 @@ mod tests {
 
             ColRow { table: 4, pos: 0, name: "constraint_id", ty: AlgebraicType::U32 },
             ColRow { table: 4, pos: 1, name: "constraint_name", ty: AlgebraicType::String },
-            ColRow { table: 4, pos: 2, name: "constraints", ty: AlgebraicType::U32 },
+            ColRow { table: 4, pos: 2, name: "constraints", ty: AlgebraicType::U8 },
             ColRow { table: 4, pos: 3, name: "table_id", ty: AlgebraicType::U32 },
             ColRow { table: 4, pos: 4, name: "columns", ty: AlgebraicType::array(AlgebraicType::U32) },
 

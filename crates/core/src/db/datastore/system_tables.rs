@@ -256,7 +256,7 @@ pub(crate) fn st_constraints_schema() -> TableSchema {
         vec![
             ColumnDef::sys(StConstraintFields::ConstraintId.name(), AlgebraicType::U32),
             ColumnDef::sys(StConstraintFields::ConstraintName.name(), AlgebraicType::String),
-            ColumnDef::sys(StConstraintFields::Constraints.name(), AlgebraicType::U32),
+            ColumnDef::sys(StConstraintFields::Constraints.name(), AlgebraicType::U8),
             ColumnDef::sys(StConstraintFields::TableId.name(), AlgebraicType::U32),
             ColumnDef::sys(
                 StConstraintFields::Columns.name(),

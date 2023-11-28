@@ -603,7 +603,6 @@ impl TableSchema {
             self.columns
                 .iter()
                 .map(|c| ProductTypeElement {
-                    //TODO: why this broke smoke?
                     name: Some(c.col_name.clone()),
                     algebraic_type: c.col_type.clone(),
                 })
