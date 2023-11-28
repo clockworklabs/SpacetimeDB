@@ -1198,7 +1198,7 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
         let arg_type_str = ty_fmt(ctx, &arg.algebraic_type, "");
 
         func_arguments.push(format!("{arg_name}: {arg_type_str}"));
-        arg_names.push(format!("{}", &arg_name));
+        arg_names.push(arg_name.to_string());
     }
 
     let full_reducer_name = format!("{reducer_name_pascal_case}Reducer");
