@@ -1,8 +1,8 @@
-export type Nav = {
+type Nav = {
   items: NavItem[];
 };
-export type NavItem = NavPage | NavSection;
-export type NavPage = {
+type NavItem = NavPage | NavSection;
+type NavPage = {
   type: "page";
   path: string;
   slug: string;
