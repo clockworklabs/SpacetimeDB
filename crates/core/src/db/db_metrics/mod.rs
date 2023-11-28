@@ -103,6 +103,16 @@ metrics_group!(
         #[labels(txn_type: WorkloadType, db: Address, reducer: str)]
         pub rdb_txn_cpu_time_sec_max: GaugeVec,
 
+        #[name = spacetime_query_cpu_time_sec]
+        #[help = "The time spent executing a query (in seconds)"]
+        #[labels(txn_type: WorkloadType, db: Address, query: str)]
+        pub rdb_query_cpu_time_sec: HistogramVec,
+
+        #[name = spacetime_query_cpu_time_sec_max]
+        #[help = "The cpu time of the longest running query (in seconds)"]
+        #[labels(txn_type: WorkloadType, db: Address, query: str)]
+        pub rdb_query_cpu_time_sec_max: GaugeVec,
+
         #[name = spacetime_wasm_abi_call_duration_sec]
         #[help = "The total duration of a spacetime wasm abi call (in seconds); includes row serialization and copying into wasm memory"]
         #[labels(db: Address, reducer: str, call: AbiCall)]
@@ -126,8 +136,10 @@ metrics_group!(
 );
 
 pub static MAX_TX_CPU_TIME: Lazy<Mutex<HashMap<u64, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+pub static MAX_QUERY_CPU_TIME: Lazy<Mutex<HashMap<u64, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 pub static DB_METRICS: Lazy<DbMetrics> = Lazy::new(DbMetrics::new);
 
 pub fn reset_counters() {
     MAX_TX_CPU_TIME.lock().unwrap().clear();
+    MAX_QUERY_CPU_TIME.lock().unwrap().clear();
 }
