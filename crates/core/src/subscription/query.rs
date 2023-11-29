@@ -1,13 +1,19 @@
+use std::collections::hash_map::DefaultHasher;
+use std::hash::Hasher;
+use std::time::Instant;
+
 use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::db::db_metrics::{DB_METRICS, MAX_QUERY_COMPILE_TIME};
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, SubscriptionError};
-use crate::execution_context::ExecutionContext;
+use crate::execution_context::{ExecutionContext, WorkloadType};
 use crate::host::module_host::DatabaseTableUpdate;
 use crate::sql::compiler::compile_sql;
 use crate::sql::execute::execute_single_sql;
 use crate::sql::query_debug_info::QueryDebugInfo;
 use crate::subscription::subscription::{QuerySet, SupportedQuery};
 use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::Address;
 use spacetimedb_sats::relation::{Column, FieldName, MemTable, RelValue};
 use spacetimedb_sats::AlgebraicType;
 use spacetimedb_sats::DataKey;
@@ -109,7 +115,11 @@ pub fn compile_read_only_query(
         return QuerySet::get_all(relational_db, tx, auth);
     }
 
-    let compiled = compile_sql(relational_db, tx, input)?;
+    let start = Instant::now();
+    let compiled = compile_sql(relational_db, tx, input).map(|expr| {
+        record_query_compilation_metrics(WorkloadType::Subscribe, &relational_db.address(), input, start);
+        expr
+    })?;
     let mut queries = Vec::with_capacity(compiled.len());
     for q in compiled {
         match q {
@@ -136,6 +146,40 @@ pub fn compile_read_only_query(
     } else {
         Err(SubscriptionError::Empty.into())
     }
+}
+
+fn record_query_compilation_metrics(workload: WorkloadType, db: &Address, query: &str, start: Instant) {
+    let compile_duration = start.elapsed().as_secs_f64();
+
+    DB_METRICS
+        .rdb_query_compile_time_sec
+        .with_label_values(&workload, db, query)
+        .observe(compile_duration);
+
+    fn hash(a: WorkloadType, b: &Address, c: &str) -> u64 {
+        use std::hash::Hash;
+        let mut hasher = DefaultHasher::new();
+        a.hash(&mut hasher);
+        b.hash(&mut hasher);
+        c.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    let max_compile_duration = *MAX_QUERY_COMPILE_TIME
+        .lock()
+        .unwrap()
+        .entry(hash(workload, db, query))
+        .and_modify(|max| {
+            if compile_duration > *max {
+                *max = compile_duration;
+            }
+        })
+        .or_insert_with(|| compile_duration);
+
+    DB_METRICS
+        .rdb_query_compile_time_sec_max
+        .with_label_values(&workload, db, query)
+        .set(max_compile_duration);
 }
 
 /// The kind of [`QueryExpr`] currently supported for incremental evaluation.
