@@ -36,3 +36,9 @@ impl ObjectDB for MemoryObjectDB {
         Ok(0)
     }
 }
+
+impl From<HashMap<Hash, Bytes>> for MemoryObjectDB {
+    fn from(objects: HashMap<Hash, Bytes>) -> Self {
+        Self { objects }
+    }
+}

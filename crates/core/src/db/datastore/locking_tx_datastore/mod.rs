@@ -21,7 +21,7 @@ use crate::db::datastore::system_tables::{
     TABLE_ID_SEQUENCE_ID, WASM_MODULE,
 };
 use crate::db::db_metrics::{DB_METRICS, MAX_TX_CPU_TIME};
-use crate::{db::datastore::system_tables, execution_context::TransactionType};
+use crate::{db::datastore::system_tables, execution_context::WorkloadType};
 use crate::{
     db::datastore::traits::{TxOp, TxRecord},
     db::{
@@ -1823,11 +1823,7 @@ impl Locking {
         Ok(())
     }
 
-    pub fn replay_transaction(
-        &self,
-        transaction: &Transaction,
-        odb: Arc<std::sync::Mutex<Box<dyn ObjectDB + Send>>>,
-    ) -> Result<(), DBError> {
+    pub fn replay_transaction(&self, transaction: &Transaction, odb: &dyn ObjectDB) -> Result<(), DBError> {
         let mut committed_state = self.committed_state.write_arc();
         for write in &transaction.writes {
             let table_id = TableId(write.set_id);
@@ -1857,7 +1853,7 @@ impl Locking {
                             )
                         }),
                         DataKey::Hash(hash) => {
-                            let data = odb.lock().unwrap().get(hash).unwrap_or_else(|| {
+                            let data = odb.get(hash).unwrap_or_else(|| {
                                 panic!("Object {hash} referenced from transaction not present in object DB");
                             });
                             ProductValue::decode(&row_type, &mut &data[..]).unwrap_or_else(|e| {
@@ -1919,9 +1915,9 @@ impl Drop for Iter<'_> {
         DB_METRICS
             .rdb_num_rows_fetched
             .with_label_values(
-                &self.ctx.txn_type(),
+                &self.ctx.workload(),
                 &self.ctx.database(),
-                self.ctx.reducer_name().unwrap_or_default(),
+                self.ctx.reducer_or_query(),
                 &self.table_id.into(),
             )
             .inc_by(self.num_committed_rows_fetched);
@@ -2039,9 +2035,9 @@ impl Drop for IndexSeekIterMutTxId<'_> {
         DB_METRICS
             .rdb_num_index_seeks
             .with_label_values(
-                &self.ctx.txn_type(),
+                &self.ctx.workload(),
                 &self.ctx.database(),
-                self.ctx.reducer_name().unwrap_or_default(),
+                self.ctx.reducer_or_query(),
                 &self.table_id.0,
             )
             .inc();
@@ -2050,9 +2046,9 @@ impl Drop for IndexSeekIterMutTxId<'_> {
         DB_METRICS
             .rdb_num_keys_scanned
             .with_label_values(
-                &self.ctx.txn_type(),
+                &self.ctx.workload(),
                 &self.ctx.database(),
-                self.ctx.reducer_name().unwrap_or_default(),
+                self.ctx.reducer_or_query(),
                 &self.table_id.0,
             )
             .inc_by(self.committed_rows.as_ref().map_or(0, |iter| iter.keys_scanned()));
@@ -2061,9 +2057,9 @@ impl Drop for IndexSeekIterMutTxId<'_> {
         DB_METRICS
             .rdb_num_rows_fetched
             .with_label_values(
-                &self.ctx.txn_type(),
+                &self.ctx.workload(),
                 &self.ctx.database(),
-                self.ctx.reducer_name().unwrap_or_default(),
+                self.ctx.reducer_or_query(),
                 &self.table_id.0,
             )
             .inc_by(self.num_committed_rows_fetched);
@@ -2113,9 +2109,9 @@ impl Drop for CommittedIndexIter<'_> {
         DB_METRICS
             .rdb_num_index_seeks
             .with_label_values(
-                &self.ctx.txn_type(),
+                &self.ctx.workload(),
                 &self.ctx.database(),
-                self.ctx.reducer_name().unwrap_or_default(),
+                self.ctx.reducer_or_query(),
                 &self.table_id.0,
             )
             .inc();
@@ -2124,9 +2120,9 @@ impl Drop for CommittedIndexIter<'_> {
         DB_METRICS
             .rdb_num_keys_scanned
             .with_label_values(
-                &self.ctx.txn_type(),
+                &self.ctx.workload(),
                 &self.ctx.database(),
-                self.ctx.reducer_name().unwrap_or_default(),
+                self.ctx.reducer_or_query(),
                 &self.table_id.0,
             )
             .inc_by(self.committed_rows.keys_scanned());
@@ -2135,9 +2131,9 @@ impl Drop for CommittedIndexIter<'_> {
         DB_METRICS
             .rdb_num_rows_fetched
             .with_label_values(
-                &self.ctx.txn_type(),
+                &self.ctx.workload(),
                 &self.ctx.database(),
-                self.ctx.reducer_name().unwrap_or_default(),
+                self.ctx.reducer_or_query(),
                 &self.table_id.0,
             )
             .inc_by(self.num_committed_rows_fetched);
@@ -2298,28 +2294,28 @@ impl traits::MutTx for Locking {
     }
 
     fn rollback_mut_tx(&self, ctx: &ExecutionContext, mut tx: Self::MutTxId) {
-        let txn_type = &ctx.txn_type();
+        let workload = &ctx.workload();
         let db = &ctx.database();
         let reducer = ctx.reducer_name().unwrap_or_default();
         let elapsed_time = tx.timer.elapsed();
         let cpu_time = elapsed_time - tx.lock_wait_time;
         DB_METRICS
             .rdb_num_txns
-            .with_label_values(txn_type, db, reducer, &false)
+            .with_label_values(workload, db, reducer, &false)
             .inc();
         DB_METRICS
             .rdb_txn_cpu_time_sec
-            .with_label_values(txn_type, db, reducer)
+            .with_label_values(workload, db, reducer)
             .observe(cpu_time.as_secs_f64());
         DB_METRICS
             .rdb_txn_elapsed_time_sec
-            .with_label_values(txn_type, db, reducer)
+            .with_label_values(workload, db, reducer)
             .observe(elapsed_time.as_secs_f64());
         tx.rollback();
     }
 
     fn commit_mut_tx(&self, ctx: &ExecutionContext, mut tx: Self::MutTxId) -> super::Result<Option<TxData>> {
-        let txn_type = &ctx.txn_type();
+        let workload = &ctx.workload();
         let db = &ctx.database();
         let reducer = ctx.reducer_name().unwrap_or_default();
         let elapsed_time = tx.timer.elapsed();
@@ -2331,18 +2327,18 @@ impl traits::MutTx for Locking {
         // That is, transactions that don't write any rows to the commit log.
         DB_METRICS
             .rdb_num_txns
-            .with_label_values(txn_type, db, reducer, &true)
+            .with_label_values(workload, db, reducer, &true)
             .inc();
         DB_METRICS
             .rdb_txn_cpu_time_sec
-            .with_label_values(txn_type, db, reducer)
+            .with_label_values(workload, db, reducer)
             .observe(cpu_time);
         DB_METRICS
             .rdb_txn_elapsed_time_sec
-            .with_label_values(txn_type, db, reducer)
+            .with_label_values(workload, db, reducer)
             .observe(elapsed_time);
 
-        fn hash(a: &TransactionType, b: &Address, c: &str) -> u64 {
+        fn hash(a: &WorkloadType, b: &Address, c: &str) -> u64 {
             use std::hash::Hash;
             let mut hasher = DefaultHasher::new();
             a.hash(&mut hasher);
@@ -2353,7 +2349,7 @@ impl traits::MutTx for Locking {
 
         let mut guard = MAX_TX_CPU_TIME.lock().unwrap();
         let max_cpu_time = *guard
-            .entry(hash(txn_type, db, reducer))
+            .entry(hash(workload, db, reducer))
             .and_modify(|max| {
                 if cpu_time > *max {
                     *max = cpu_time;
@@ -2364,7 +2360,7 @@ impl traits::MutTx for Locking {
         drop(guard);
         DB_METRICS
             .rdb_txn_cpu_time_sec_max
-            .with_label_values(txn_type, db, reducer)
+            .with_label_values(workload, db, reducer)
             .set(max_cpu_time);
 
         tx.commit()
@@ -2952,7 +2948,7 @@ mod tests {
 
             ColRow { table: 4, pos: 0, name: "constraint_id", ty: AlgebraicType::U32, autoinc: true },
             ColRow { table: 4, pos: 1, name: "constraint_name", ty: AlgebraicType::String, autoinc: false },
-            ColRow { table: 4, pos: 2, name: "constraints", ty: AlgebraicType::U32, autoinc: false },
+            ColRow { table: 4, pos: 2, name: "constraints", ty: AlgebraicType::U8, autoinc: false },
             ColRow { table: 4, pos: 3, name: "table_id", ty: AlgebraicType::U32, autoinc: false },
             ColRow { table: 4, pos: 4, name: "columns", ty: AlgebraicType::array(AlgebraicType::U32), autoinc: false },
 

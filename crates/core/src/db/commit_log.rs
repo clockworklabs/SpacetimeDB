@@ -2,7 +2,7 @@ use super::{
     datastore::traits::{MutTxDatastore, TxData},
     message_log::{self, MessageLog},
     messages::commit::Commit,
-    ostorage::ObjectDB,
+    ostorage::{memory_object_db::MemoryObjectDB, ObjectDB},
     FsyncPolicy,
 };
 use crate::{
@@ -20,8 +20,11 @@ use crate::{
 use anyhow::Context;
 use spacetimedb_sats::hash::{hash_bytes, Hash};
 use spacetimedb_sats::DataKey;
-use std::io;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::{
+    collections::{hash_map, HashMap},
+    io,
+    sync::{Arc, Mutex, MutexGuard},
+};
 
 /// A read-only handle to the commit log.
 #[derive(Clone)]
@@ -52,6 +55,12 @@ impl CommitLog {
     /// Traverse the log from the start, calling `F` with each [`Commit`]
     /// encountered.
     ///
+    /// The second parameter to `F` is an [`ObjectDB`] which is guaranteed to
+    /// contain all non-inline objects referenced from the corresponding commit.
+    /// If a commit is encountered for which an object cannot be resolved from
+    /// the [`CommitLog`]s underlying object storage, `replay` aborts and `F` is
+    /// not called.
+    ///
     /// The traversal performs some consistency checks, and _may_ perform error
     /// correction on the persistent log before returning.
     ///
@@ -63,8 +72,7 @@ impl CommitLog {
     /// and can thus safely be written to via the resulting [`CommitLogMut`].
     pub fn replay<F>(&self, mut f: F) -> Result<CommitLogMut, DBError>
     where
-        // TODO(kim): `&dyn ObjectDB` should suffice
-        F: FnMut(Commit, Arc<Mutex<Box<dyn ObjectDB + Send>>>) -> Result<(), DBError>,
+        F: FnMut(Commit, &dyn ObjectDB) -> Result<(), DBError>,
     {
         let unwritten_commit = {
             let mut mlog = self.mlog.lock().unwrap();
@@ -75,6 +83,8 @@ impl CommitLog {
                 last_commit_offset: None,
                 last_hash: None,
 
+                odb: self.odb.clone(),
+
                 segments,
                 segment_offset: 0,
                 current_segment: None,
@@ -82,7 +92,7 @@ impl CommitLog {
 
             for commit in &mut iter {
                 match commit {
-                    Ok(commit) => f(commit, self.odb.clone())?,
+                    Ok((commit, objects)) => f(commit, &objects)?,
                     Err(ReplayError::Other { source }) => return Err(source.into()),
 
                     // We expect that partial writes can occur at the end of a
@@ -117,12 +127,32 @@ impl CommitLog {
                         }
                         .into());
                     }
+                    Err(ReplayError::MissingObject {
+                        segment_offset,
+                        last_commit_offset,
+                        hash,
+                        referenced_from_commit_offset,
+                    }) if segment_offset < total_segments - 1 => {
+                        log::warn!(
+                            "Missing object {} referenced from {}",
+                            hash,
+                            referenced_from_commit_offset
+                        );
+                        return Err(LogReplayError::TrailingSegments {
+                            segment_offset,
+                            total_segments,
+                            commit_offset: last_commit_offset,
+                            source: io::Error::new(io::ErrorKind::Other, "Missing object"),
+                        }
+                        .into());
+                    }
 
                     // We are near the end of the log, so trim it to the known-
                     // good prefix.
                     Err(
                         ReplayError::OutOfOrder { last_commit_offset, .. }
-                        | ReplayError::CorruptedData { last_commit_offset, .. },
+                        | ReplayError::CorruptedData { last_commit_offset, .. }
+                        | ReplayError::MissingObject { last_commit_offset, .. },
                     ) => {
                         mlog.reset_to(last_commit_offset)
                             .map_err(|source| LogReplayError::Reset {
@@ -328,9 +358,9 @@ impl CommitLogMut {
         let mut unwritten_commit = self.unwritten_commit.lock().unwrap();
         let mut writes = Vec::with_capacity(tx_data.records.len());
 
-        let txn_type = &ctx.txn_type();
+        let workload = &ctx.workload();
         let db = &ctx.database();
-        let reducer = &ctx.reducer_name().unwrap_or_default();
+        let reducer_or_query = &ctx.reducer_or_query();
 
         for record in &tx_data.records {
             let table_id: u32 = record.table_id.into();
@@ -340,7 +370,7 @@ impl CommitLogMut {
                     // Increment rows inserted metric
                     DB_METRICS
                         .rdb_num_rows_inserted
-                        .with_label_values(txn_type, db, reducer, &table_id)
+                        .with_label_values(workload, db, reducer_or_query, &table_id)
                         .inc();
                     // Increment table rows gauge
                     DB_METRICS.rdb_num_table_rows.with_label_values(db, &table_id).inc();
@@ -350,7 +380,7 @@ impl CommitLogMut {
                     // Increment rows deleted metric
                     DB_METRICS
                         .rdb_num_rows_deleted
-                        .with_label_values(txn_type, db, reducer, &table_id)
+                        .with_label_values(workload, db, reducer_or_query, &table_id)
                         .inc();
                     // Decrement table rows gauge
                     DB_METRICS.rdb_num_table_rows.with_label_values(db, &table_id).dec();
@@ -490,10 +520,44 @@ struct Replay {
     last_commit_offset: Option<u64>,
     last_hash: Option<Hash>,
 
+    odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
+
     segments: message_log::Segments,
     segment_offset: usize,
 
     current_segment: Option<IterSegment>,
+}
+
+impl Replay {
+    fn collect_objects(&self, commit: &Commit) -> Result<MemoryObjectDB, ReplayError> {
+        let odb = self.odb.lock().unwrap();
+        let mut objects = HashMap::new();
+
+        let hashes = commit
+            .transactions
+            .iter()
+            .flat_map(|tx| &tx.writes)
+            .filter_map(|write| {
+                if let DataKey::Hash(hash) = write.data_key {
+                    Some(hash)
+                } else {
+                    None
+                }
+            });
+        for hash in hashes {
+            if let hash_map::Entry::Vacant(entry) = objects.entry(hash) {
+                let obj = odb.get(hash).ok_or(ReplayError::MissingObject {
+                    segment_offset: self.segment_offset,
+                    last_commit_offset: self.last_commit_offset.unwrap_or_default(),
+                    hash,
+                    referenced_from_commit_offset: commit.commit_offset,
+                })?;
+                entry.insert(obj);
+            }
+        }
+
+        Ok(objects.into())
+    }
 }
 
 enum ReplayError {
@@ -526,6 +590,17 @@ enum ReplayError {
         last_commit_offset: u64,
         source: io::Error,
     },
+    /// An object referenced from a [`Commit`] was not found in the object db.
+    ///
+    /// This error may occur in [`FsyncPolicy::Never`] mode, if the object db
+    /// happened to not be flushed to disk but the corresponding message log
+    /// write was.
+    MissingObject {
+        segment_offset: usize,
+        last_commit_offset: u64,
+        hash: Hash,
+        referenced_from_commit_offset: u64,
+    },
     /// Some other error occurred.
     ///
     /// May be a transient error. Processing should be aborted, and potentially
@@ -534,7 +609,7 @@ enum ReplayError {
 }
 
 impl Iterator for Replay {
-    type Item = Result<Commit, ReplayError>;
+    type Item = Result<(Commit, MemoryObjectDB), ReplayError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(cur) = self.current_segment.as_mut() {
@@ -563,11 +638,13 @@ impl Iterator for Replay {
                                 expected,
                             })
                         } else {
-                            self.last_commit_offset = Some(commit.commit_offset);
-                            self.last_hash = commit.parent_commit_hash;
-                            self.tx_offset += commit.transactions.len() as u64;
+                            self.collect_objects(&commit).map(|objects| {
+                                self.last_commit_offset = Some(commit.commit_offset);
+                                self.last_hash = commit.parent_commit_hash;
+                                self.tx_offset += commit.transactions.len() as u64;
 
-                            Ok(commit)
+                                (commit, objects)
+                            })
                         }
                     }
 
