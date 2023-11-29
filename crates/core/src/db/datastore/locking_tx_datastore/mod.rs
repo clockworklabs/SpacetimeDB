@@ -118,11 +118,15 @@ impl<'a> DataRef<'a> {
     }
 }
 
+// Type aliases for lock gaurds
+type SharedWriteGuard<T> = ArcRwLockWriteGuard<RawRwLock, T>;
+type SharedMutexGuard<T> = ArcMutexGuard<RawMutex, T>;
+
 pub struct MutTxId {
-    committed_state_write_lock: ArcRwLockWriteGuard<RawRwLock, CommittedState>,
-    tx_state_lock: ArcMutexGuard<RawMutex, Option<TxState>>,
-    sequence_state_lock: ArcMutexGuard<RawMutex, SequencesState>,
-    memory_lock: ArcMutexGuard<RawMutex, BTreeMap<DataKey, Arc<Vec<u8>>>>,
+    committed_state_write_lock: SharedWriteGuard<CommittedState>,
+    tx_state_lock: SharedMutexGuard<Option<TxState>>,
+    sequence_state_lock: SharedMutexGuard<SequencesState>,
+    memory_lock: SharedMutexGuard<BTreeMap<DataKey, Arc<Vec<u8>>>>,
     lock_wait_time: Duration,
     timer: Instant,
 }
@@ -1089,9 +1093,7 @@ impl MutTxId {
         // We will have to store the deletion in the TxState and then apply it to the CommittedState in commit.
 
         // NOT use unwrap
-        self.committed_state_write_lock
-            .tables
-            .remove(&table_id);
+        self.committed_state_write_lock.tables.remove(&table_id);
         Ok(())
     }
 
@@ -1216,10 +1218,7 @@ impl MutTxId {
         insert_index.build_from_rows(insert_table.scan_rows())?;
 
         // NOTE: Also add all the rows in the already committed table to the index.
-        if let Some(committed_table) = self
-            .committed_state_write_lock
-            .get_table(&index.table_id)
-        {
+        if let Some(committed_table) = self.committed_state_write_lock.get_table(&index.table_id) {
             insert_index.build_from_rows(committed_table.scan_rows())?;
         }
 
@@ -1323,9 +1322,7 @@ impl MutTxId {
             .as_ref()
             .map(|tx_state| tx_state.insert_tables.contains_key(table_id))
             .unwrap_or(false)
-            || self
-                .committed_state_write_lock
-                .tables.contains_key(table_id)
+            || self.committed_state_write_lock.tables.contains_key(table_id)
     }
 
     fn algebraic_type_is_numeric(ty: &AlgebraicType) -> bool {
@@ -1460,11 +1457,7 @@ impl MutTxId {
                 return Err(index.build_error_unique(insert_table, value).into());
             }
         }
-        if let Some(table) = self
-            .committed_state_write_lock
-            .tables
-            .get_mut(&table_id)
-        {
+        if let Some(table) = self.committed_state_write_lock.tables.get_mut(&table_id) {
             for index in table.indexes.values() {
                 let value = index.get_fields(&row)?;
                 let Some(violators) = index.get_rows_that_violate_unique_constraint(&value) else {
@@ -1674,19 +1667,14 @@ impl MutTxId {
                 table_id: *table_id,
                 tx_state,
                 inserted_rows,
-                committed_rows: self
-                    .committed_state_write_lock
-                    .index_seek(table_id, &cols, &range),
+                committed_rows: self.committed_state_write_lock.index_seek(table_id, &cols, &range),
                 committed_state: &self.committed_state_write_lock,
                 num_committed_rows_fetched: 0,
             }))
         } else {
             // Either the current transaction has not modified this table, or the table is not
             // indexed.
-            match self
-                .committed_state_write_lock
-                .index_seek(table_id, &cols, &range)
-            {
+            match self.committed_state_write_lock.index_seek(table_id, &cols, &range) {
                 //If we don't have `self.tx_state_lock` yet is likely we are running the bootstrap process
                 Some(committed_rows) => match self.tx_state_lock.as_ref() {
                     None => Ok(IterByColRange::Scan(ScanIterByColRange {
@@ -1715,9 +1703,7 @@ impl MutTxId {
     fn commit(&mut self) -> super::Result<Option<TxData>> {
         let tx_state = self.tx_state_lock.take().unwrap();
         let memory: BTreeMap<DataKey, Arc<Vec<u8>>> = std::mem::take(&mut self.memory_lock);
-        let tx_data = self
-            .committed_state_write_lock
-            .merge(tx_state, memory);
+        let tx_data = self.committed_state_write_lock.merge(tx_state, memory);
         Ok(Some(tx_data))
     }
 
@@ -1727,6 +1713,19 @@ impl MutTxId {
     }
 }
 
+/// Struct contains various database states, each protected by
+/// their own lock. To avoid deadlocks, it is crucial to acquire these locks
+/// in a consistent order throughout the application.
+///
+/// Lock Acquisition Order:
+/// 1. `memory`
+/// 2. `committed_state`
+/// 3. `tx_state`
+/// 4. `sequence_state`
+///
+/// All locking mechanisms are encapsulated within the struct through local methods.
+///
+/// Mutable transaction must aquire lock using Locking::begin_mut_tx() for consistency.
 #[derive(Clone)]
 pub struct Locking {
     /// All of the byte objects inserted in the current transaction.
@@ -1966,12 +1965,7 @@ impl<'a> Iterator for Iter<'a> {
             match &mut self.stage {
                 ScanStage::Start => {
                     let _span = tracing::debug_span!("ScanStage::Start").entered();
-                    if let Some(table) = self
-                        .tx
-                        .committed_state_write_lock
-                        .tables
-                        .get(&table_id)
-                    {
+                    if let Some(table) = self.tx.committed_state_write_lock.tables.get(&table_id) {
                         // The committed state has changes for this table.
                         // Go through them in (1).
                         self.stage = ScanStage::Committed {
@@ -2390,7 +2384,7 @@ impl MutTxDatastore for Locking {
     ///
     /// NOTE: If you change the system tables directly rather than using the
     /// provided functions for altering tables, then the cache may incorrectly
-    /// reflect the schema of the table.
+    /// reflect the schema of the table.q
     ///
     /// This function is known to be called quite frequently.
     fn row_type_for_table_mut_tx<'tx>(
