@@ -88,7 +88,7 @@ impl RelationalDB {
                 let commit_log = commit_log.replay(|commit, odb| {
                     transaction_offset += commit.transactions.len();
                     for transaction in commit.transactions {
-                        datastore.replay_transaction(&transaction, odb.clone())?;
+                        datastore.replay_transaction(&transaction, odb)?;
                     }
 
                     let percentage =

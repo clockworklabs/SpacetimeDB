@@ -15,26 +15,28 @@ pub struct ExecutionContext<'a> {
     reducer: Option<&'a str>,
     /// The SQL query being executed, if any.
     /// Note: this will never be set at the same time as `reducer`.
-    /// It is also NOT guaranteed to be set, even if txn_type == Sql.
+    /// It is also NOT guaranteed to be set, even if workload == Sql.
     /// This is because some transactions tagged "SQL" don't exactly correspond
     /// to any particular query.
     query_debug_info: Option<&'a QueryDebugInfo>,
-    // The type of transaction that is being executed.
-    txn_type: TransactionType,
+    // The type of workload that is being executed.
+    workload: WorkloadType,
 }
 
-/// Classifies a transaction according to where it originates.
+/// Classifies a transaction according to its workload.
 /// A transaction can be executing a reducer.
 /// It can be used to satisfy a one-off sql query or subscription.
 /// It can also be an internal operation that is not associated with a reducer or sql request.
 #[derive(Clone, Copy, Display, Hash, PartialEq, Eq)]
-pub enum TransactionType {
+pub enum WorkloadType {
     Reducer,
     Sql,
+    Subscribe,
+    Update,
     Internal,
 }
 
-impl Default for TransactionType {
+impl Default for WorkloadType {
     fn default() -> Self {
         Self::Internal
     }
@@ -47,17 +49,37 @@ impl<'a> ExecutionContext<'a> {
             database,
             reducer: Some(name),
             query_debug_info: None,
-            txn_type: TransactionType::Reducer,
+            workload: WorkloadType::Reducer,
         }
     }
 
-    /// Returns an [ExecutionContext] for a sql or subscription transaction.
+    /// Returns an [ExecutionContext] for a one-off sql query.
     pub fn sql(database: Address, query_debug_info: Option<&'a QueryDebugInfo>) -> Self {
         Self {
             database,
             reducer: None,
             query_debug_info,
-            txn_type: TransactionType::Sql,
+            workload: WorkloadType::Sql,
+        }
+    }
+
+    /// Returns an [ExecutionContext] for an initial subscribe call.
+    pub fn subscribe(database: Address, query_debug_info: Option<&'a QueryDebugInfo>) -> Self {
+        Self {
+            database,
+            reducer: None,
+            query_debug_info,
+            workload: WorkloadType::Subscribe,
+        }
+    }
+
+    /// Returns an [ExecutionContext] for a subscription update.
+    pub fn incremental_update(database: Address, query_debug_info: Option<&'a QueryDebugInfo>) -> Self {
+        Self {
+            database,
+            reducer: None,
+            query_debug_info,
+            workload: WorkloadType::Update,
         }
     }
 
@@ -67,7 +89,7 @@ impl<'a> ExecutionContext<'a> {
             database,
             reducer: None,
             query_debug_info: None,
-            txn_type: TransactionType::Internal,
+            workload: WorkloadType::Internal,
         }
     }
 
@@ -91,9 +113,17 @@ impl<'a> ExecutionContext<'a> {
         self.query_debug_info
     }
 
-    /// Returns the type of transaction that is being executed.
+    /// If this is a reducer context, returns the name of the reducer.
+    /// If this is a query context, returns the query string.
     #[inline]
-    pub fn txn_type(&self) -> TransactionType {
-        self.txn_type
+    pub fn reducer_or_query(&self) -> &str {
+        self.reducer
+            .unwrap_or_else(|| self.query_debug_info.map(|info| info.source()).unwrap_or_default())
+    }
+
+    /// Returns the type of workload that is being executed.
+    #[inline]
+    pub fn workload(&self) -> WorkloadType {
+        self.workload
     }
 }
