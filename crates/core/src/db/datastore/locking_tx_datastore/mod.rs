@@ -119,7 +119,7 @@ impl<'a> DataRef<'a> {
 }
 
 pub struct MutTxId {
-    committed_state_write_lock: Option<ArcRwLockWriteGuard<RawRwLock, CommittedState>>,
+    committed_state_write_lock: ArcRwLockWriteGuard<RawRwLock, CommittedState>,
     tx_state_lock: ArcMutexGuard<RawMutex, Option<TxState>>,
     sequence_state_lock: ArcMutexGuard<RawMutex, SequencesState>,
     memory_lock: ArcMutexGuard<RawMutex, BTreeMap<DataKey, Arc<Vec<u8>>>>,
@@ -1090,8 +1090,6 @@ impl MutTxId {
 
         // NOT use unwrap
         self.committed_state_write_lock
-            .as_mut()
-            .unwrap()
             .tables
             .remove(&table_id);
         Ok(())
@@ -1220,8 +1218,6 @@ impl MutTxId {
         // NOTE: Also add all the rows in the already committed table to the index.
         if let Some(committed_table) = self
             .committed_state_write_lock
-            .as_mut()
-            .unwrap()
             .get_table(&index.table_id)
         {
             insert_index.build_from_rows(committed_table.scan_rows())?;
@@ -1260,7 +1256,7 @@ impl MutTxId {
     }
 
     fn drop_index_internal(&mut self, index_id: &IndexId) {
-        for (_, table) in self.committed_state_write_lock.as_mut().unwrap().tables.iter_mut() {
+        for (_, table) in self.committed_state_write_lock.tables.iter_mut() {
             let mut cols = vec![];
             for index in table.indexes.values_mut() {
                 if index.index_id == *index_id {
@@ -1313,8 +1309,6 @@ impl MutTxId {
         }
         match self
             .committed_state_write_lock
-            .as_mut()
-            .unwrap()
             .tables
             .get(table_id)
             .and_then(|table| table.rows.get(row_id))
@@ -1331,9 +1325,7 @@ impl MutTxId {
             .unwrap_or(false)
             || self
                 .committed_state_write_lock
-                .as_ref()
-                .map(|committed_state| committed_state.tables.contains_key(table_id))
-                .unwrap_or(false)
+                .tables.contains_key(table_id)
     }
 
     fn algebraic_type_is_numeric(ty: &AlgebraicType) -> bool {
@@ -1433,7 +1425,7 @@ impl MutTxId {
         let insert_table = if let Some(table) = tx_state.get_insert_table(&table_id) {
             table
         } else {
-            let Some(committed_table) = self.committed_state_write_lock.as_ref().unwrap().tables.get(&table_id) else {
+            let Some(committed_table) = self.committed_state_write_lock.tables.get(&table_id) else {
                 return Err(TableError::IdNotFoundState(table_id).into());
             };
             let table = Table {
@@ -1470,8 +1462,6 @@ impl MutTxId {
         }
         if let Some(table) = self
             .committed_state_write_lock
-            .as_mut()
-            .unwrap()
             .tables
             .get_mut(&table_id)
         {
@@ -1551,8 +1541,6 @@ impl MutTxId {
         }
         Ok(self
             .committed_state_write_lock
-            .as_ref()
-            .unwrap()
             .tables
             .get(table_id)
             .and_then(|table| table.get_row(row_id))
@@ -1569,8 +1557,6 @@ impl MutTxId {
             return Some(row_type);
         }
         self.committed_state_write_lock
-            .as_ref()
-            .unwrap()
             .tables
             .get(table_id)
             .map(|table| table.get_row_type())
@@ -1586,8 +1572,6 @@ impl MutTxId {
             return Some(schema);
         }
         self.committed_state_write_lock
-            .as_ref()
-            .unwrap()
             .tables
             .get(table_id)
             .map(|table| table.get_schema())
@@ -1692,10 +1676,8 @@ impl MutTxId {
                 inserted_rows,
                 committed_rows: self
                     .committed_state_write_lock
-                    .as_ref()
-                    .unwrap()
                     .index_seek(table_id, &cols, &range),
-                committed_state: &self.committed_state_write_lock.as_ref().unwrap(),
+                committed_state: &self.committed_state_write_lock,
                 num_committed_rows_fetched: 0,
             }))
         } else {
@@ -1703,8 +1685,6 @@ impl MutTxId {
             // indexed.
             match self
                 .committed_state_write_lock
-                .as_ref()
-                .unwrap()
                 .index_seek(table_id, &cols, &range)
             {
                 //If we don't have `self.tx_state_lock` yet is likely we are running the bootstrap process
@@ -1718,7 +1698,7 @@ impl MutTxId {
                         ctx,
                         table_id: *table_id,
                         tx_state,
-                        committed_state: &self.committed_state_write_lock.as_ref().unwrap(),
+                        committed_state: &self.committed_state_write_lock,
                         committed_rows,
                         num_committed_rows_fetched: 0,
                     })),
@@ -1737,8 +1717,6 @@ impl MutTxId {
         let memory: BTreeMap<DataKey, Arc<Vec<u8>>> = std::mem::take(&mut self.memory_lock);
         let tx_data = self
             .committed_state_write_lock
-            .as_mut()
-            .unwrap()
             .merge(tx_state, memory);
         Ok(Some(tx_data))
     }
@@ -1991,8 +1969,6 @@ impl<'a> Iterator for Iter<'a> {
                     if let Some(table) = self
                         .tx
                         .committed_state_write_lock
-                        .as_ref()
-                        .unwrap()
                         .tables
                         .get(&table_id)
                     {
@@ -2296,7 +2272,7 @@ impl traits::MutTx for Locking {
     fn begin_mut_tx(&self) -> Self::MutTxId {
         let timer = Instant::now();
 
-        let committed_state_write_lock = Some(self.committed_state.write_arc());
+        let committed_state_write_lock = self.committed_state.write_arc();
         let sequence_state_lock = self.sequence_state.lock_arc();
         let memory_lock = self.memory.lock_arc();
         let lock_wait_time = timer.elapsed();
