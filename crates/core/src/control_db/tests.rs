@@ -98,7 +98,7 @@ fn test_decode() -> ResultTest<()> {
         id: 0,
         address: Default::default(),
         identity: id,
-        host_type: HostType::Wasmer,
+        host_type: HostType::Wasm,
         num_replicas: 0,
         program_bytes_address: Hash::ZERO,
         publisher_address: Some(Address::zero()),
