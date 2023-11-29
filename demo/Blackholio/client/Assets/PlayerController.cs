@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -27,6 +28,17 @@ public class PlayerController : MonoBehaviour
         {
             Local = this;
         }
+    }
+
+    private void OnDestroy()
+    {
+        // If we have any circles, destroy them
+        var circles = circlesByEntityId.Values.ToList();
+        foreach (var circle in circles)
+        {
+            Destroy(circle.gameObject);
+        }
+        circlesByEntityId.Clear();
     }
 
     public void SpawnCircle(Circle insertedCircle, CircleController circlePrefab)

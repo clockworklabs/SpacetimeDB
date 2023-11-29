@@ -78,6 +78,7 @@ public class GameManager : MonoBehaviour
         Entity.OnUpdate += EntityOnUpdate;
         Food.OnInsert += FoodOnOnInsert;
         Player.OnInsert += PlayerOnInsert;
+        Player.OnDelete += PlayerOnDelete;
         
         SpacetimeDBClient.instance.onUnhandledReducerError += InstanceOnUnhandledReducerError;
 
@@ -89,6 +90,14 @@ public class GameManager : MonoBehaviour
     private void InstanceOnUnhandledReducerError(ReducerEventBase obj)
     {
         Debug.LogError(obj.ErrMessage);
+    }
+    
+    private void PlayerOnDelete(Player deletedvalue, ReducerEvent dbevent)
+    {
+        if (playerIdToPlayerController.TryGetValue(deletedvalue.PlayerId, out var playerController))
+        {
+            Destroy(playerController.gameObject);
+        }
     }
 
     private void PlayerOnInsert(Player insertedPlayer, ReducerEvent dbEvent)
