@@ -14,6 +14,7 @@ namespace SpacetimeDB.Types
 		CircleDecay,
 		CreatePlayer,
 		MoveAllPlayers,
+		PlayerSplit,
 		Respawn,
 		SpawnFood,
 		UpdatePlayerInput,
@@ -51,6 +52,14 @@ namespace SpacetimeDB.Types
 			{
 				if (Reducer != ReducerType.MoveAllPlayers) throw new SpacetimeDB.ReducerMismatchException(Reducer.ToString(), "MoveAllPlayers");
 				return (MoveAllPlayersArgsStruct)Args;
+			}
+		}
+		public PlayerSplitArgsStruct PlayerSplitArgs
+		{
+			get
+			{
+				if (Reducer != ReducerType.PlayerSplit) throw new SpacetimeDB.ReducerMismatchException(Reducer.ToString(), "PlayerSplit");
+				return (PlayerSplitArgsStruct)Args;
 			}
 		}
 		public RespawnArgsStruct RespawnArgs
@@ -98,6 +107,12 @@ namespace SpacetimeDB.Types
 				case ReducerType.MoveAllPlayers:
 				{
 					var args = MoveAllPlayersArgs;
+					return new object[] {
+					};
+				}
+				case ReducerType.PlayerSplit:
+				{
+					var args = PlayerSplitArgs;
 					return new object[] {
 					};
 				}

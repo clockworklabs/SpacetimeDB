@@ -12,10 +12,14 @@ namespace SpacetimeDB.Types
 	{
 		[Newtonsoft.Json.JsonProperty("entity_id")]
 		public uint EntityId;
+		[Newtonsoft.Json.JsonProperty("player_id")]
+		public uint PlayerId;
 		[Newtonsoft.Json.JsonProperty("direction")]
 		public SpacetimeDB.Types.Vector2 Direction;
 		[Newtonsoft.Json.JsonProperty("magnitude")]
 		public float Magnitude;
+		[Newtonsoft.Json.JsonProperty("last_split_time")]
+		public ulong LastSplitTime;
 
 		private static Dictionary<uint, Circle> EntityId_Index = new Dictionary<uint, Circle>(16);
 
@@ -36,8 +40,10 @@ namespace SpacetimeDB.Types
 			return SpacetimeDB.SATS.AlgebraicType.CreateProductType(new SpacetimeDB.SATS.ProductTypeElement[]
 			{
 				new SpacetimeDB.SATS.ProductTypeElement("entity_id", SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.U32)),
+				new SpacetimeDB.SATS.ProductTypeElement("player_id", SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.U32)),
 				new SpacetimeDB.SATS.ProductTypeElement("direction", SpacetimeDB.Types.Vector2.GetAlgebraicType()),
 				new SpacetimeDB.SATS.ProductTypeElement("magnitude", SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.F32)),
+				new SpacetimeDB.SATS.ProductTypeElement("last_split_time", SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.U64)),
 			});
 		}
 
@@ -50,8 +56,10 @@ namespace SpacetimeDB.Types
 			return new Circle
 			{
 				EntityId = productValue.elements[0].AsU32(),
-				Direction = (SpacetimeDB.Types.Vector2)(productValue.elements[1]),
-				Magnitude = productValue.elements[2].AsF32(),
+				PlayerId = productValue.elements[1].AsU32(),
+				Direction = (SpacetimeDB.Types.Vector2)(productValue.elements[2]),
+				Magnitude = productValue.elements[3].AsF32(),
+				LastSplitTime = productValue.elements[4].AsU64(),
 			};
 		}
 
@@ -72,12 +80,36 @@ namespace SpacetimeDB.Types
 			return r;
 		}
 
+		public static System.Collections.Generic.IEnumerable<Circle> FilterByPlayerId(uint value)
+		{
+			foreach(var entry in SpacetimeDBClient.clientDB.GetEntries("Circle"))
+			{
+				var productValue = entry.Item1.AsProductValue();
+				var compareValue = (uint)productValue.elements[1].AsU32();
+				if (compareValue == value) {
+					yield return (Circle)entry.Item2;
+				}
+			}
+		}
+
 		public static System.Collections.Generic.IEnumerable<Circle> FilterByMagnitude(float value)
 		{
 			foreach(var entry in SpacetimeDBClient.clientDB.GetEntries("Circle"))
 			{
 				var productValue = entry.Item1.AsProductValue();
-				var compareValue = (float)productValue.elements[2].AsF32();
+				var compareValue = (float)productValue.elements[3].AsF32();
+				if (compareValue == value) {
+					yield return (Circle)entry.Item2;
+				}
+			}
+		}
+
+		public static System.Collections.Generic.IEnumerable<Circle> FilterByLastSplitTime(ulong value)
+		{
+			foreach(var entry in SpacetimeDBClient.clientDB.GetEntries("Circle"))
+			{
+				var productValue = entry.Item1.AsProductValue();
+				var compareValue = (ulong)productValue.elements[4].AsU64();
 				if (compareValue == value) {
 					yield return (Circle)entry.Item2;
 				}

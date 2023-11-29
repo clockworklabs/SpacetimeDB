@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 using UnityEngine;
@@ -36,8 +37,7 @@ public class ArenaController : MonoBehaviour
             backgroundInstance.transform.position = new Vector3((float)worldSize / 2, (float)worldSize / 2);
             
             // Start the camera in the middle of the screen for setup, but only if we have no player
-            var player = Player.FilterByPlayerId(PlayerController.localIdentity);
-            if (player != null && Circle.FilterByEntityId(player.EntityId) == null)
+            if (PlayerController.Local == null)
             {
                 GameManager.localCamera.transform.position = new Vector3((float)worldSize / 2, (float)worldSize / 2, -10.0f);
             }

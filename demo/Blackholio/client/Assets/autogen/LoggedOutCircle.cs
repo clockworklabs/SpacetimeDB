@@ -10,35 +10,35 @@ namespace SpacetimeDB.Types
 	[Newtonsoft.Json.JsonObject(Newtonsoft.Json.MemberSerialization.OptIn)]
 	public partial class LoggedOutCircle : IDatabaseTable
 	{
+		[Newtonsoft.Json.JsonProperty("logged_out_id")]
+		public uint LoggedOutId;
 		[Newtonsoft.Json.JsonProperty("player_id")]
-		public SpacetimeDB.Identity PlayerId;
+		public uint PlayerId;
 		[Newtonsoft.Json.JsonProperty("circle")]
 		public SpacetimeDB.Types.Circle Circle;
 		[Newtonsoft.Json.JsonProperty("entity")]
 		public SpacetimeDB.Types.Entity Entity;
 
-		private static Dictionary<SpacetimeDB.Identity, LoggedOutCircle> PlayerId_Index = new Dictionary<SpacetimeDB.Identity, LoggedOutCircle>(16);
+		private static Dictionary<uint, LoggedOutCircle> LoggedOutId_Index = new Dictionary<uint, LoggedOutCircle>(16);
 
 		private static void InternalOnValueInserted(object insertedValue)
 		{
 			var val = (LoggedOutCircle)insertedValue;
-			PlayerId_Index[val.PlayerId] = val;
+			LoggedOutId_Index[val.LoggedOutId] = val;
 		}
 
 		private static void InternalOnValueDeleted(object deletedValue)
 		{
 			var val = (LoggedOutCircle)deletedValue;
-			PlayerId_Index.Remove(val.PlayerId);
+			LoggedOutId_Index.Remove(val.LoggedOutId);
 		}
 
 		public static SpacetimeDB.SATS.AlgebraicType GetAlgebraicType()
 		{
 			return SpacetimeDB.SATS.AlgebraicType.CreateProductType(new SpacetimeDB.SATS.ProductTypeElement[]
 			{
-				new SpacetimeDB.SATS.ProductTypeElement("player_id", SpacetimeDB.SATS.AlgebraicType.CreateProductType(new SpacetimeDB.SATS.ProductTypeElement[]
-			{
-				new SpacetimeDB.SATS.ProductTypeElement("__identity_bytes", SpacetimeDB.SATS.AlgebraicType.CreateArrayType(SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.U8))),
-			})),
+				new SpacetimeDB.SATS.ProductTypeElement("logged_out_id", SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.U32)),
+				new SpacetimeDB.SATS.ProductTypeElement("player_id", SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.U32)),
 				new SpacetimeDB.SATS.ProductTypeElement("circle", SpacetimeDB.Types.Circle.GetAlgebraicType()),
 				new SpacetimeDB.SATS.ProductTypeElement("entity", SpacetimeDB.Types.Entity.GetAlgebraicType()),
 			});
@@ -52,9 +52,10 @@ namespace SpacetimeDB.Types
 			var productValue = value.AsProductValue();
 			return new LoggedOutCircle
 			{
-				PlayerId = SpacetimeDB.Identity.From(productValue.elements[0].AsProductValue().elements[0].AsBytes()),
-				Circle = (SpacetimeDB.Types.Circle)(productValue.elements[1]),
-				Entity = (SpacetimeDB.Types.Entity)(productValue.elements[2]),
+				LoggedOutId = productValue.elements[0].AsU32(),
+				PlayerId = productValue.elements[1].AsU32(),
+				Circle = (SpacetimeDB.Types.Circle)(productValue.elements[2]),
+				Entity = (SpacetimeDB.Types.Entity)(productValue.elements[3]),
 			};
 		}
 
@@ -69,21 +70,47 @@ namespace SpacetimeDB.Types
 		{
 			return SpacetimeDBClient.clientDB.Count("LoggedOutCircle");
 		}
-		public static LoggedOutCircle FilterByPlayerId(SpacetimeDB.Identity value)
+		public static LoggedOutCircle FilterByLoggedOutId(uint value)
 		{
-			PlayerId_Index.TryGetValue(value, out var r);
+			LoggedOutId_Index.TryGetValue(value, out var r);
 			return r;
 		}
 
-		public static bool ComparePrimaryKey(SpacetimeDB.SATS.AlgebraicType t, SpacetimeDB.SATS.AlgebraicValue _v1, SpacetimeDB.SATS.AlgebraicValue _v2)
+		public static System.Collections.Generic.IEnumerable<LoggedOutCircle> FilterByPlayerId(uint value)
 		{
-			return false;
+			foreach(var entry in SpacetimeDBClient.clientDB.GetEntries("LoggedOutCircle"))
+			{
+				var productValue = entry.Item1.AsProductValue();
+				var compareValue = (uint)productValue.elements[1].AsU32();
+				if (compareValue == value) {
+					yield return (LoggedOutCircle)entry.Item2;
+				}
+			}
+		}
+
+		public static bool ComparePrimaryKey(SpacetimeDB.SATS.AlgebraicType t, SpacetimeDB.SATS.AlgebraicValue v1, SpacetimeDB.SATS.AlgebraicValue v2)
+		{
+			var primaryColumnValue1 = v1.AsProductValue().elements[0];
+			var primaryColumnValue2 = v2.AsProductValue().elements[0];
+			return SpacetimeDB.SATS.AlgebraicValue.Compare(t.product.elements[0].algebraicType, primaryColumnValue1, primaryColumnValue2);
+		}
+
+		public static SpacetimeDB.SATS.AlgebraicValue GetPrimaryKeyValue(SpacetimeDB.SATS.AlgebraicValue v)
+		{
+			return v.AsProductValue().elements[0];
+		}
+
+		public static SpacetimeDB.SATS.AlgebraicType GetPrimaryKeyType(SpacetimeDB.SATS.AlgebraicType t)
+		{
+			return t.product.elements[0].algebraicType;
 		}
 
 		public delegate void InsertEventHandler(LoggedOutCircle insertedValue, SpacetimeDB.Types.ReducerEvent dbEvent);
+		public delegate void UpdateEventHandler(LoggedOutCircle oldValue, LoggedOutCircle newValue, SpacetimeDB.Types.ReducerEvent dbEvent);
 		public delegate void DeleteEventHandler(LoggedOutCircle deletedValue, SpacetimeDB.Types.ReducerEvent dbEvent);
 		public delegate void RowUpdateEventHandler(SpacetimeDBClient.TableOp op, LoggedOutCircle oldValue, LoggedOutCircle newValue, SpacetimeDB.Types.ReducerEvent dbEvent);
 		public static event InsertEventHandler OnInsert;
+		public static event UpdateEventHandler OnUpdate;
 		public static event DeleteEventHandler OnBeforeDelete;
 		public static event DeleteEventHandler OnDelete;
 		public static event RowUpdateEventHandler OnRowUpdate;
@@ -91,6 +118,11 @@ namespace SpacetimeDB.Types
 		public static void OnInsertEvent(object newValue, ClientApi.Event dbEvent)
 		{
 			OnInsert?.Invoke((LoggedOutCircle)newValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);
+		}
+
+		public static void OnUpdateEvent(object oldValue, object newValue, ClientApi.Event dbEvent)
+		{
+			OnUpdate?.Invoke((LoggedOutCircle)oldValue,(LoggedOutCircle)newValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);
 		}
 
 		public static void OnBeforeDeleteEvent(object oldValue, ClientApi.Event dbEvent)

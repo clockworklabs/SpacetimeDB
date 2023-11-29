@@ -1,6 +1,6 @@
-using System;
+using System.Collections;
 using System.Collections.Generic;
-using System.Security.Cryptography.X509Certificates;
+using System.Linq;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 using UnityEngine;
@@ -8,136 +8,111 @@ using Vector2 = SpacetimeDB.Types.Vector2;
 
 public class PlayerController : MonoBehaviour
 {
-    public int updatesPerSecond = 20;
-    public int lerpUpdatesPerSecond = 5;
+    private Dictionary<uint, CircleController> circlesByEntityId = new Dictionary<uint, CircleController>();
+
     public float targetCameraSize = 50;
-    public Renderer rend;
-    public TMPro.TextMeshProUGUI usernameDisplay;
+    public int updatesPerSecond = 20;
 
-    private float? lastMovementSendUpdate;
-    private float lerpTimePassed;
-    private Vector3 positionLerp1;
-    private Vector3 positionLerp2;
-
-    private Vector3? targetLerpPosition;
-
-    public Identity? identity;
-
-    private Vector3? targetPosition;
-    private float? targetPositionReceiveUpdateTime;
-    private Vector3? targetScale;
+    private Identity identity;
+    private uint playerId;
     private float? previousCameraSize;
-    private float? lastRowUpdate;
-
-    public static Identity localIdentity;
+    private float? lastMovementSendUpdate;
     public static PlayerController Local;
 
-    public static Dictionary<uint, PlayerController> playersByEntityId = new Dictionary<uint, PlayerController>();
-
-    public void Spawn(Circle circle)
+    public void Spawn(Identity identity)
     {
-        var player = Player.FilterByEntityId(circle.EntityId);
-        identity = player.PlayerId;
-        playersByEntityId[player.EntityId] = this;
-
-        if (localIdentity == identity)
+        this.identity = identity;
+        playerId = Player.FilterByIdentity(identity).PlayerId;
+        if (IsLocalPlayer())
         {
             Local = this;
         }
-
-        var entity = Entity.FilterById(circle.EntityId);
-        targetPosition = positionLerp1 = positionLerp2 = transform.position = new UnityEngine.Vector2
-        {
-            x = entity.Position.X,
-            y = entity.Position.Y,
-        };
-
-        var playerRadius = GameManager.MassToRadius(entity.Mass);
-        targetScale = transform.localScale = new Vector3
-        {
-            x = playerRadius * 2,
-            y = playerRadius * 2,
-            z = playerRadius * 2,
-        };
-        rend.material.color = GameManager.GetRandomColor(entity.Id);
-        usernameDisplay.text = player.Name;
     }
-    
-    public void Despawn()
+
+    public void SpawnCircle(Circle insertedCircle, CircleController circlePrefab)
     {
-        Destroy(gameObject);
-        if (identity.HasValue)
+        var circle = Instantiate(circlePrefab);
+        circle.Spawn(insertedCircle);
+        circlesByEntityId[insertedCircle.EntityId] = circle;
+    }
+
+    public void DespawnCircle(Circle deletedCircle)
+    {
+        // This means we got eaten
+        if (circlesByEntityId.TryGetValue(deletedCircle.EntityId, out var circle))
         {
-            var player = Player.FilterByPlayerId(identity.Value);
-            playersByEntityId.Remove(player.EntityId);
+            circlesByEntityId.Remove(deletedCircle.EntityId);
+            circle.Despawn();
+            // If the local player died, show the death screen
+
+            circle.Despawn();
+        }
+
+        // If the player has no more circles remaining, show the death screen
+        if (IsLocalPlayer() && !Circle.FilterByPlayerId(playerId).Any())
+        {
+            GameManager.instance.deathScreen.SetActive(true);
         }
     }
 
-    public void UpdatePosition(Entity entity)
+    public void CircleUpdate(Entity oldCircle, Entity newCircle)
     {
-        targetPosition = new UnityEngine.Vector2
+        if (!circlesByEntityId.TryGetValue(newCircle.Id, out var circle))
         {
-            x = entity.Position.X,
-            y = entity.Position.Y,
-        };
+            return;
+        }
 
-        var playerRadius = GameManager.MassToRadius(entity.Mass);
-        targetScale = new Vector3
-        {
-            x = playerRadius * 2,
-            y = playerRadius * 2,
-            z = playerRadius * 2,
-        };
-
+        circle.UpdatePosition(newCircle);
+        var playerRadius = GameManager.MassToRadius(TotalMass());
         previousCameraSize = targetCameraSize = playerRadius * 2 + 50.0f;
     }
 
+    private uint TotalMass() =>
+        (uint)circlesByEntityId.Values.Sum(a => Entity.FilterById(a.GetEntityId()).Mass);
+
     private void OnGUI()
     {
-        if (identity.HasValue && localIdentity == identity.Value)
+        if (!IsLocalPlayer())
         {
-            var player = Player.FilterByPlayerId(identity.Value);
-            if (player == null)
-            {
-                return;
-            }
-            var entity = Entity.FilterById(player.EntityId);
-            if (entity == null)
-            {
-                return;
-            }
-
-            GUI.Label(new Rect(0, 0, 100, 50), $"Mass: {entity.Mass}");
+            return;
         }
+
+        GUI.Label(new Rect(0, 0, 100, 50), $"Total Mass: {TotalMass()}");
+    }
+
+    public bool IsLocalPlayer() => GameManager.localIdentity.HasValue && identity == GameManager.localIdentity.Value;
+
+    public UnityEngine.Vector2 CalculateCenterOfMass()
+    {
+        var circles = circlesByEntityId.Values;        
+        float totalX = 0, totalY = 0;
+        float totalMass = 0;
+        foreach (var circle in circles)
+        {
+            var entity = circle.GetEntity();
+            var position = circle.transform.position;
+            totalX += position.x * entity.Mass;
+            totalY += position.y * entity.Mass;
+            totalMass += entity.Mass;
+        }
+
+        return new UnityEngine.Vector2(totalX / totalMass, totalY / totalMass);
     }
 
     public void Update()
     {
-        // Interpolate positions
-        lerpTimePassed += Time.deltaTime;
-        transform.position = Vector3.Lerp(positionLerp1, positionLerp2,
-            lerpTimePassed / (1.0f / lerpUpdatesPerSecond));
-        if (lerpTimePassed >= 1.0f / lerpUpdatesPerSecond && targetPosition.HasValue)
+        if (Input.GetKeyDown(KeyCode.Space))
         {
-            // Take new positions
-            lerpTimePassed = 0.0f;
-            positionLerp1 = transform.position;
-            positionLerp2 = targetPosition.Value;
+            Reducer.PlayerSplit();
         }
 
-        if (targetScale.HasValue)
-        {
-            transform.localScale = Vector3.MoveTowards(transform.localScale,
-                targetScale.Value, 0.2f);
-        }
-
-        if (localIdentity == identity && previousCameraSize.HasValue)
+        if (IsLocalPlayer() && previousCameraSize.HasValue)
         {
             GameManager.localCamera.orthographicSize =
                 Mathf.Lerp(previousCameraSize.Value, targetCameraSize, Time.time / 10);
         }
 
-        if (!identity.HasValue || localIdentity != identity.Value ||
+        if (!IsLocalPlayer() ||
             (lastMovementSendUpdate.HasValue && Time.time - lastMovementSendUpdate.Value < 1.0f / updatesPerSecond))
         {
             return;
@@ -168,6 +143,4 @@ public class PlayerController : MonoBehaviour
             Y = direction.y,
         }, magnitude);
     }
-
-    public bool IsLocalPlayer() => identity.HasValue && identity.Value == localIdentity;
 }

@@ -17,7 +17,8 @@ public class UIUsernameChooser : MonoBehaviour
     {
         Player.OnInsert += (newPlayer, _) =>
         {
-            if (newPlayer.PlayerId == PlayerController.localIdentity)
+            Debug.Log("Start - Checking identity");
+            if (newPlayer.Identity == GameManager.localIdentity)
             {
                 // We have a player
                gameObject.SetActive(false); 

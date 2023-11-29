@@ -12,7 +12,7 @@ GameObject:
   - component: {fileID: 2753275671783793823}
   - component: {fileID: 5181438745055576688}
   m_Layer: 0
-  m_Name: PlayerPrefab
+  m_Name: CirclePrefab
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -54,7 +54,7 @@ SpriteRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: a97c105638bdf8b4a8650670310a4cd3, type: 2}
+  - {fileID: 2100000, guid: 935bcdd8ae1fdd84ba42dd7ca677d38b, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0

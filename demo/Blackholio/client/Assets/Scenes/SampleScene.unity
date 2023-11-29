@@ -436,9 +436,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: aaf311e6a809fdf4d874741c6fd6db10, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  playerPrefab: {fileID: 5181438745055576688, guid: 3a285dad10ff54d4c9e97322286acb7a, type: 3}
+  circlePrefab: {fileID: 5181438745055576688, guid: 3a285dad10ff54d4c9e97322286acb7a, type: 3}
   foodPrefab: {fileID: -8171957852717026941, guid: 9c1eb5e2fe0d91f4d8067a380246343a, type: 3}
   deathScreen: {fileID: 369182682}
+  playerPrefab: {fileID: 2480194241732775548, guid: f17fb2c34cc6aff4b935207b18c03909, type: 3}
 --- !u!4 &207278860
 Transform:
   m_ObjectHideFlags: 0
@@ -722,10 +723,10 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 519420032}
-  - component: {fileID: 519420031}
   - component: {fileID: 519420029}
-  - component: {fileID: 519420030}
   - component: {fileID: 519420033}
+  - component: {fileID: 519420030}
+  - component: {fileID: 519420031}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera

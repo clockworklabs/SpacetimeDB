@@ -11,6 +11,8 @@ public class FoodController : MonoBehaviour
 {
     [DoNotSerialize] public uint entityId;
     public Renderer rend;
+    
+    private static readonly int MainTexProperty = Shader.PropertyToID("_MainTex");
 
     public void Spawn(uint entityId)
     {
@@ -31,7 +33,7 @@ public class FoodController : MonoBehaviour
             z = foodRadius * 2,
         };
         transform.position = position;
-        rend.material.color = GameManager.GetRandomColor(entity.Id);
+        rend.material.SetColor(MainTexProperty, GameManager.GetRandomColor(entity.Id));
     }
 
     private void OnDestroy()

@@ -10,39 +10,39 @@ namespace SpacetimeDB.Types
 	[Newtonsoft.Json.JsonObject(Newtonsoft.Json.MemberSerialization.OptIn)]
 	public partial class Player : IDatabaseTable
 	{
+		[Newtonsoft.Json.JsonProperty("identity")]
+		public SpacetimeDB.Identity Identity;
 		[Newtonsoft.Json.JsonProperty("player_id")]
-		public SpacetimeDB.Identity PlayerId;
-		[Newtonsoft.Json.JsonProperty("entity_id")]
-		public uint EntityId;
+		public uint PlayerId;
 		[Newtonsoft.Json.JsonProperty("name")]
 		public string Name;
 
-		private static Dictionary<SpacetimeDB.Identity, Player> PlayerId_Index = new Dictionary<SpacetimeDB.Identity, Player>(16);
-		private static Dictionary<uint, Player> EntityId_Index = new Dictionary<uint, Player>(16);
+		private static Dictionary<SpacetimeDB.Identity, Player> Identity_Index = new Dictionary<SpacetimeDB.Identity, Player>(16);
+		private static Dictionary<uint, Player> PlayerId_Index = new Dictionary<uint, Player>(16);
 
 		private static void InternalOnValueInserted(object insertedValue)
 		{
 			var val = (Player)insertedValue;
+			Identity_Index[val.Identity] = val;
 			PlayerId_Index[val.PlayerId] = val;
-			EntityId_Index[val.EntityId] = val;
 		}
 
 		private static void InternalOnValueDeleted(object deletedValue)
 		{
 			var val = (Player)deletedValue;
+			Identity_Index.Remove(val.Identity);
 			PlayerId_Index.Remove(val.PlayerId);
-			EntityId_Index.Remove(val.EntityId);
 		}
 
 		public static SpacetimeDB.SATS.AlgebraicType GetAlgebraicType()
 		{
 			return SpacetimeDB.SATS.AlgebraicType.CreateProductType(new SpacetimeDB.SATS.ProductTypeElement[]
 			{
-				new SpacetimeDB.SATS.ProductTypeElement("player_id", SpacetimeDB.SATS.AlgebraicType.CreateProductType(new SpacetimeDB.SATS.ProductTypeElement[]
+				new SpacetimeDB.SATS.ProductTypeElement("identity", SpacetimeDB.SATS.AlgebraicType.CreateProductType(new SpacetimeDB.SATS.ProductTypeElement[]
 			{
 				new SpacetimeDB.SATS.ProductTypeElement("__identity_bytes", SpacetimeDB.SATS.AlgebraicType.CreateArrayType(SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.U8))),
 			})),
-				new SpacetimeDB.SATS.ProductTypeElement("entity_id", SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.U32)),
+				new SpacetimeDB.SATS.ProductTypeElement("player_id", SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.U32)),
 				new SpacetimeDB.SATS.ProductTypeElement("name", SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.String)),
 			});
 		}
@@ -55,8 +55,8 @@ namespace SpacetimeDB.Types
 			var productValue = value.AsProductValue();
 			return new Player
 			{
-				PlayerId = SpacetimeDB.Identity.From(productValue.elements[0].AsProductValue().elements[0].AsBytes()),
-				EntityId = productValue.elements[1].AsU32(),
+				Identity = SpacetimeDB.Identity.From(productValue.elements[0].AsProductValue().elements[0].AsBytes()),
+				PlayerId = productValue.elements[1].AsU32(),
 				Name = productValue.elements[2].AsString(),
 			};
 		}
@@ -72,15 +72,15 @@ namespace SpacetimeDB.Types
 		{
 			return SpacetimeDBClient.clientDB.Count("Player");
 		}
-		public static Player FilterByPlayerId(SpacetimeDB.Identity value)
+		public static Player FilterByIdentity(SpacetimeDB.Identity value)
 		{
-			PlayerId_Index.TryGetValue(value, out var r);
+			Identity_Index.TryGetValue(value, out var r);
 			return r;
 		}
 
-		public static Player FilterByEntityId(uint value)
+		public static Player FilterByPlayerId(uint value)
 		{
-			EntityId_Index.TryGetValue(value, out var r);
+			PlayerId_Index.TryGetValue(value, out var r);
 			return r;
 		}
 

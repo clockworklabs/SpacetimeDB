@@ -1,16 +1,19 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 using UnityEngine;
+using UnityEngine.Serialization;
 using Random = UnityEngine.Random;
 
 public class GameManager : MonoBehaviour
 {
-    public PlayerController playerPrefab;
+    [FormerlySerializedAs("playerPrefab")] public CircleController circlePrefab;
     public FoodController foodPrefab;
     public GameObject deathScreen;
+    public PlayerController playerPrefab;
     
     public static Color[] colorPalette = new[]
     {
@@ -28,9 +31,13 @@ public class GameManager : MonoBehaviour
         (Color)new Color32(253, 121, 43, 255),
     };
     
-    
     public static GameManager instance;
     public static Camera localCamera;
+    private readonly Dictionary<uint, PlayerController> playerIdToPlayerController =
+        new Dictionary<uint, PlayerController>();
+
+    public static Identity? localIdentity;
+    
     private void Start()
     {
         instance = this;
@@ -62,7 +69,7 @@ public class GameManager : MonoBehaviour
         // Called when we receive the client identity from SpacetimeDB
         SpacetimeDBClient.instance.onIdentityReceived += (token, identity, address) => {
             AuthToken.SaveToken(token);
-            PlayerController.localIdentity = identity;
+            localIdentity = identity;
             Debug.Log("Got identity.");
         };
 
@@ -75,7 +82,7 @@ public class GameManager : MonoBehaviour
         SpacetimeDBClient.instance.onUnhandledReducerError += InstanceOnUnhandledReducerError;
 
         // Now that we’ve registered all our callbacks, lets connect to spacetimedb
-        SpacetimeDBClient.instance.Connect(AuthToken.Token, "https://testnet.spacetimedb.com", "untitled-circle-game-4");
+        SpacetimeDBClient.instance.Connect(AuthToken.Token, "http://localhost:3000", "untitled-circle-game");
         localCamera = Camera.main;
     }
 
@@ -86,7 +93,7 @@ public class GameManager : MonoBehaviour
 
     private void PlayerOnInsert(Player insertedPlayer, ReducerEvent dbEvent)
     {
-        if (insertedPlayer.PlayerId == PlayerController.localIdentity && Circle.FilterByEntityId(insertedPlayer.EntityId) == null)
+        if (insertedPlayer.Identity == localIdentity && !Circle.FilterByPlayerId(insertedPlayer.PlayerId).Any())
         {
             // We have a player, but no circle, let's respawn
             Respawn();
@@ -95,24 +102,42 @@ public class GameManager : MonoBehaviour
 
     private void EntityOnUpdate(Entity oldEntity, Entity newEntity, ReducerEvent dbEvent)
     {
-        if(PlayerController.playersByEntityId.TryGetValue(newEntity.Id, out var player))
+        var circle = Circle.FilterByEntityId(newEntity.Id);
+        if (circle == null)
         {
-            player.UpdatePosition(newEntity);
+            return;
         }
+        
+        var player = GetOrCreatePlayer(circle.PlayerId);
+        player.CircleUpdate(oldEntity, newEntity);
     }
 
     private void CircleOnDelete(Circle deletedCircle, ReducerEvent dbEvent)
     {
-        // This means we got eaten
-        if(PlayerController.playersByEntityId.TryGetValue(deletedCircle.EntityId, out var player))
+        var player = GetOrCreatePlayer(deletedCircle.PlayerId);
+        player.DespawnCircle(deletedCircle);
+    }
+    
+    private void CircleOnInsert(Circle insertedValue, ReducerEvent dbEvent)
+    {
+        var player = GetOrCreatePlayer(insertedValue.PlayerId);
+        // Spawn the new circle 
+        player.SpawnCircle(insertedValue, circlePrefab);
+    }
+
+    PlayerController GetOrCreatePlayer(uint playerId)
+    {
+        var player = Player.FilterByPlayerId(playerId);
+        // Get the PlayerController for this circle
+        if (!playerIdToPlayerController.TryGetValue(playerId, out var playerController))
         {
-            // If the local player died, show the death screen
-            if (player.IsLocalPlayer())
-            {
-                deathScreen.SetActive(true);    
-            }
-            player.Despawn(); 
+            playerController = Instantiate(playerPrefab);
+            playerController.name = "PlayerController - " + player.Name;
+            playerIdToPlayerController[playerId] = playerController;
+            playerController.Spawn(player.Identity);
         }
+
+        return playerController;
     }
     
     private void FoodOnOnInsert(Food insertedValue, ReducerEvent dbEvent)
@@ -120,13 +145,6 @@ public class GameManager : MonoBehaviour
         // Spawn the new food
         var food = Instantiate(foodPrefab);
         food.Spawn(insertedValue.EntityId);
-    }
-
-    private void CircleOnInsert(Circle insertedValue, ReducerEvent dbEvent)
-    {
-        // Spawn the new player
-        var player = Instantiate(playerPrefab);
-        player.Spawn(insertedValue);
     }
 
     public static Color GetRandomColor(uint entityId)
