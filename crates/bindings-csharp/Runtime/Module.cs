@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using SpacetimeDB.SATS;
+using System.Runtime.InteropServices;
 
 [SpacetimeDB.Type]
 public partial struct IndexDef
@@ -15,12 +16,12 @@ public partial struct IndexDef
     public Runtime.IndexType Type;
     public uint[] ColumnIds;
 
-    public IndexDef(string name, Runtime.IndexType type, bool isUnique, uint[] columnIds)
+    public IndexDef(string name, Runtime.IndexType type, bool isUnique, RawBindings.ColId[] columnIds)
     {
         IndexName = name;
         IsUnique = isUnique;
         Type = type;
-        ColumnIds = columnIds;
+        ColumnIds = columnIds.Select(id => (byte)id).ToArray();
     }
 }
 
@@ -262,11 +263,14 @@ public static class FFI
 
     public static AlgebraicTypeRef AllocTypeRef() => module.AllocTypeRef();
 
-    public static void SetTypeRef<T>(AlgebraicTypeRef typeRef, AlgebraicType type, bool anonymous = false) =>
-        module.SetTypeRef<T>(typeRef, type, anonymous);
+    public static void SetTypeRef<T>(
+        AlgebraicTypeRef typeRef,
+        AlgebraicType type,
+        bool anonymous = false
+    ) => module.SetTypeRef<T>(typeRef, type, anonymous);
 
-    // Note: this is accessed by C bindings.
-    private static byte[] DescribeModule()
+    // [UnmanagedCallersOnly(EntryPoint = "__describe_module__")]
+    public static RawBindings.Buffer __describe_module__()
     {
         // replace `module` with a temporary internal module that will register ModuleDef, AlgebraicType and other internal types
         // during the ModuleDef.GetSatsTypeInfo() instead of exposing them via user's module.
@@ -274,7 +278,14 @@ public static class FFI
         try
         {
             module = new();
-            return ModuleDef.GetSatsTypeInfo().ToBytes(userModule);
+            var moduleBytes = ModuleDef.GetSatsTypeInfo().ToBytes(userModule);
+            var res = RawBindings._buffer_alloc(moduleBytes, (uint)moduleBytes.Length);
+            return res;
+        }
+        catch (Exception e)
+        {
+            Runtime.Log($"Error while describing the module: {e}", Runtime.LogLevel.Error);
+            return RawBindings.Buffer.INVALID;
         }
         finally
         {
@@ -282,29 +293,43 @@ public static class FFI
         }
     }
 
-    // Note: this is accessed by C bindings.
-    private static string? CallReducer(
+    private static byte[] Consume(this RawBindings.Buffer buffer)
+    {
+        var len = RawBindings._buffer_len(buffer);
+        var result = new byte[len];
+        RawBindings._buffer_consume(buffer, result, len);
+        return result;
+    }
+
+    // [UnmanagedCallersOnly(EntryPoint = "__call_reducer__")]
+    public static RawBindings.Buffer __call_reducer__(
         uint id,
-        byte[] caller_identity,
-        byte[] caller_address,
+        RawBindings.Buffer caller_identity,
+        RawBindings.Buffer caller_address,
         ulong timestamp,
-        byte[] args
+        RawBindings.Buffer args
     )
     {
         try
         {
-            using var stream = new MemoryStream(args);
+            using var stream = new MemoryStream(args.Consume());
             using var reader = new BinaryReader(stream);
-            reducers[(int)id].Invoke(reader, new(caller_identity, caller_address, timestamp));
+            reducers[(int)id].Invoke(
+                reader,
+                new(caller_identity.Consume(), caller_address.Consume(), timestamp)
+            );
             if (stream.Position != stream.Length)
             {
                 throw new Exception("Unrecognised extra bytes in the reducer arguments");
             }
-            return null;
+            return /* no exception */
+            RawBindings.Buffer.INVALID;
         }
         catch (Exception e)
         {
-            return e.ToString();
+            var error_str = e.ToString();
+            var error_bytes = System.Text.Encoding.UTF8.GetBytes(error_str);
+            return RawBindings._buffer_alloc(error_bytes, (uint)error_bytes.Length);
         }
     }
 }
