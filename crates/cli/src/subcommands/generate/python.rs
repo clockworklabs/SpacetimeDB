@@ -3,97 +3,47 @@ use super::util::fmt_fn;
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::db::attr::ColumnAttribute;
 use spacetimedb_lib::{
-    sats::{AlgebraicType::Builtin, AlgebraicTypeRef, ArrayType, BuiltinType, MapType},
+    sats::{AlgebraicTypeRef, ArrayType},
     AlgebraicType, ProductType, ProductTypeElement, ReducerDef, SumType, TableDef,
 };
 use std::fmt::{self, Write};
 
-use super::{code_indenter::CodeIndenter, csharp::is_enum, GenCtx, GenItem};
+use super::{code_indenter::CodeIndenter, GenCtx, GenItem};
 
-enum MaybePrimitive<'a> {
-    Primitive(&'static str),
-    Array(&'a ArrayType),
-    Map(&'a MapType),
-}
-
-fn maybe_primitive(b: &BuiltinType) -> MaybePrimitive {
-    MaybePrimitive::Primitive(match b {
-        BuiltinType::Bool => "bool",
-        BuiltinType::I8 => "int",
-        BuiltinType::U8 => "int",
-        BuiltinType::I16 => "int",
-        BuiltinType::U16 => "int",
-        BuiltinType::I32 => "int",
-        BuiltinType::U32 => "int",
-        BuiltinType::I64 => "int",
-        BuiltinType::U64 => "int",
-        BuiltinType::I128 => "int",
-        BuiltinType::U128 => "int",
-        BuiltinType::String => "str",
-        BuiltinType::F32 => "float",
-        BuiltinType::F64 => "float",
-        BuiltinType::Array(ty) => return MaybePrimitive::Array(ty),
-        BuiltinType::Map(m) => return MaybePrimitive::Map(m),
-    })
-}
-
-fn convert_builtintype<'a>(
-    ctx: &'a GenCtx,
-    vecnest: usize,
-    b: &'a BuiltinType,
-    value: impl fmt::Display + 'a,
-    ref_prefix: &'a str,
-) -> impl fmt::Display + 'a {
-    fmt_fn(move |f| match maybe_primitive(b) {
-        MaybePrimitive::Primitive(p) => {
-            write!(f, "{p}({value})")
-        }
-        MaybePrimitive::Array(ArrayType { elem_ty }) if **elem_ty == AlgebraicType::U8 => {
-            write!(f, "bytes.fromhex({value})")
-        }
-        MaybePrimitive::Array(ArrayType { elem_ty }) => {
-            let convert_type = convert_type(ctx, vecnest + 1, elem_ty, "item", ref_prefix);
-            write!(f, "[{convert_type} for item in {value}]")
-        }
-        MaybePrimitive::Map(_) => unimplemented!(),
-    })
-}
-
-fn convert_type<'a>(
-    ctx: &'a GenCtx,
-    vecnest: usize,
-    ty: &'a AlgebraicType,
-    value: impl fmt::Display + 'a,
-    ref_prefix: &'a str,
-) -> impl fmt::Display + 'a {
+fn convert_type<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, value: impl fmt::Display + 'a) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
-        AlgebraicType::Product(product) => {
-            if product.is_identity() {
-                write!(f, "Identity.from_string({value}[0])")
-            } else {
-                unimplemented!()
-            }
-        }
+        ty if ty.is_identity() => write!(f, "Identity.from_string({value}[0])"),
         AlgebraicType::Sum(sum_type) => match sum_type.as_option() {
             Some(inner_ty) => write!(
                 f,
                 "{} if '0' in {value} else None",
-                convert_type(ctx, vecnest, inner_ty, format!("{value}['0']"), ref_prefix),
+                convert_type(ctx, inner_ty, format!("{value}['0']")),
             ),
             None => unimplemented!(),
         },
-        AlgebraicType::Builtin(b) => fmt::Display::fmt(&convert_builtintype(ctx, vecnest, b, &value, ref_prefix), f),
+        ty if ty.is_bytes() => write!(f, "bytes.fromhex({value})"),
+        AlgebraicType::Array(ArrayType { elem_ty }) => {
+            let convert_type = convert_type(ctx, elem_ty, "item");
+            write!(f, "[{convert_type} for item in {value}]")
+        }
+        AlgebraicType::Product(_) | AlgebraicType::Map(_) => unimplemented!(),
+        AlgebraicType::Bool => write!(f, "bool({value})"),
+        ty if ty.is_int() => write!(f, "int({value})"),
+        ty if ty.is_float() => write!(f, "float({value})"),
+        AlgebraicType::String => write!(f, "str({value})"),
         AlgebraicType::Ref(r) => {
             let name = python_typename(ctx, *r);
-            let algebraic_type = &ctx.typespace.types[r.idx()];
-            match algebraic_type {
+            match &ctx.typespace[*r] {
                 // for enums in json this comes over as a dictionary where the key is actually the enum index
-                AlgebraicType::Sum(sum_type) if is_enum(sum_type) => write!(f, "{name}(int(next(iter({value})))+1)"),
+                AlgebraicType::Sum(sum_type) if sum_type.is_simple_enum() => {
+                    write!(f, "{name}(int(next(iter({value})))+1)")
+                }
                 _ => {
                     write!(f, "{name}({value})")
                 }
             }
         }
+        _ => unreachable!(),
     })
 }
 
@@ -104,33 +54,26 @@ fn python_typename(ctx: &GenCtx, typeref: AlgebraicTypeRef) -> &str {
 
 fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, ref_prefix: &'a str) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
-        AlgebraicType::Sum(_sum_type) => {
-            unimplemented!()
+        // The only product type allowed here is Identity.
+        // All other types should fail.
+        AlgebraicType::Product(prod) if prod.is_identity() => write!(f, "Identity"),
+        AlgebraicType::Sum(_) | AlgebraicType::Product(_) => unimplemented!(),
+        ty if ty.is_bytes() => f.write_str("bytes"),
+        AlgebraicType::Array(ArrayType { elem_ty }) => {
+            write!(f, "List[{}]", ty_fmt(ctx, elem_ty, ref_prefix))
         }
-        AlgebraicType::Product(prod) => {
-            // The only type that is allowed here is the identity type. All other types should fail.
-            if prod.is_identity() {
-                write!(f, "Identity")
-            } else {
-                unimplemented!()
-            }
-        }
-        AlgebraicType::Builtin(b) => match maybe_primitive(b) {
-            MaybePrimitive::Primitive(p) => f.write_str(p),
-            MaybePrimitive::Array(ArrayType { elem_ty }) if **elem_ty == AlgebraicType::U8 => f.write_str("bytes"),
-            MaybePrimitive::Array(ArrayType { elem_ty }) => {
-                write!(f, "List[{}]", ty_fmt(ctx, elem_ty, ref_prefix))
-            }
-            MaybePrimitive::Map(ty) => {
-                write!(
-                    f,
-                    "Dict[{}, {}]",
-                    ty_fmt(ctx, &ty.ty, ref_prefix),
-                    ty_fmt(ctx, &ty.key_ty, ref_prefix)
-                )
-            }
-        },
+        AlgebraicType::Map(ty) => write!(
+            f,
+            "Dict[{}, {}]",
+            ty_fmt(ctx, &ty.ty, ref_prefix),
+            ty_fmt(ctx, &ty.key_ty, ref_prefix)
+        ),
+        AlgebraicType::Bool => f.write_str("bool"),
+        ty if ty.is_int() => f.write_str("int"),
+        ty if ty.is_float() => f.write_str("float"),
+        AlgebraicType::String => f.write_str("str"),
         AlgebraicType::Ref(r) => write!(f, "{}{}", ref_prefix, python_typename(ctx, *r)),
+        _ => unreachable!(),
     })
 }
 
@@ -152,7 +95,7 @@ pub fn autogen_python_table(ctx: &GenCtx, table: &TableDef) -> String {
     autogen_python_product_table_common(ctx, &table.name, tuple, Some(&table.column_attrs))
 }
 
-fn generate_imports(ctx: &GenCtx, elements: &Vec<ProductTypeElement>, imports: &mut Vec<String>) {
+fn generate_imports(ctx: &GenCtx, elements: &[ProductTypeElement], imports: &mut Vec<String>) {
     for field in elements {
         _generate_imports(ctx, &field.algebraic_type, imports);
     }
@@ -160,14 +103,11 @@ fn generate_imports(ctx: &GenCtx, elements: &Vec<ProductTypeElement>, imports: &
 
 fn _generate_imports(ctx: &GenCtx, ty: &AlgebraicType, imports: &mut Vec<String>) {
     match ty {
-        Builtin(b) => match b {
-            BuiltinType::Array(ArrayType { elem_ty }) => _generate_imports(ctx, elem_ty, imports),
-            BuiltinType::Map(map_type) => {
-                _generate_imports(ctx, &map_type.key_ty, imports);
-                _generate_imports(ctx, &map_type.ty, imports);
-            }
-            _ => {}
-        },
+        AlgebraicType::Array(ArrayType { elem_ty }) => _generate_imports(ctx, elem_ty, imports),
+        AlgebraicType::Map(map_type) => {
+            _generate_imports(ctx, &map_type.key_ty, imports);
+            _generate_imports(ctx, &map_type.ty, imports);
+        }
         AlgebraicType::Sum(sum_type) => {
             if let Some(inner_ty) = sum_type.as_option() {
                 _generate_imports(ctx, inner_ty, imports)
@@ -180,6 +120,7 @@ fn _generate_imports(ctx: &GenCtx, ty: &AlgebraicType, imports: &mut Vec<String>
             let import = format!("from .{filename} import {class_name}");
             imports.push(import);
         }
+        // Products, scalars, and strings.
         _ => {}
     }
 }
@@ -304,19 +245,7 @@ fn autogen_python_product_table_common(
                         // TODO: We don't allow filtering on enums or tuples right now, its possible we may consider it for the future.
                         continue;
                     }
-                    AlgebraicType::Builtin(b) => match maybe_primitive(b) {
-                        MaybePrimitive::Array(ArrayType { elem_ty }) => {
-                            if elem_ty.as_builtin().is_none() {
-                                // TODO: We don't allow filtering based on an array type, but we might want other functionality here in the future.
-                                continue;
-                            }
-                        }
-                        MaybePrimitive::Map(_) => {
-                            // TODO: It would be nice to be able to say, give me all entries where this vec contains this value, which we can do.
-                            continue;
-                        }
-                        _ => (),
-                    },
+                    _ => unreachable!(),
                 };
 
                 let field_name = field
@@ -362,7 +291,7 @@ fn autogen_python_product_table_common(
                 writeln!(
                     output,
                     "self.data[\"{python_field_name}\"] = {}",
-                    convert_type(ctx, 0, field_type, format_args!("data[{idx}]"), "")
+                    convert_type(ctx, field_type, format_args!("data[{idx}]"))
                 )
                 .unwrap()
             }
@@ -385,17 +314,13 @@ fn autogen_python_product_table_common(
                     AlgebraicType::Sum(sum_type) if sum_type.as_option().is_some() => {
                         reducer_args.push(format!("{{'0': [self.{}]}}", python_field_name))
                     }
-                    AlgebraicType::Sum(_) => unimplemented!(),
-                    AlgebraicType::Product(_) => {
-                        reducer_args.push(format!("self.{python_field_name}"));
-                    }
-                    Builtin(_) => {
+                    AlgebraicType::Sum(_) | AlgebraicType::Map(_) => unimplemented!(),
+                    ty if ty.is_product() || ty.is_array() || ty.is_scalar_or_string() => {
                         reducer_args.push(format!("self.{python_field_name}"));
                     }
                     AlgebraicType::Ref(type_ref) => {
-                        let ref_type = &ctx.typespace.types[type_ref.idx()];
-                        if let AlgebraicType::Sum(sum_type) = ref_type {
-                            if is_enum(sum_type) {
+                        if let AlgebraicType::Sum(sum_type) = &ctx.typespace[*type_ref] {
+                            if sum_type.is_simple_enum() {
                                 reducer_args.push(format!("{{str({}.value): []}}", python_field_name))
                             } else {
                                 unimplemented!()
@@ -404,6 +329,7 @@ fn autogen_python_product_table_common(
                             reducer_args.push(format!("self.{python_field_name}.encode()"));
                         }
                     }
+                    _ => unreachable!(),
                 }
             }
             let reducer_args_str = reducer_args.join(", ");
@@ -423,7 +349,7 @@ fn autogen_python_product_table_common(
 }
 
 pub fn autogen_python_sum(ctx: &GenCtx, name: &str, sum_type: &SumType) -> String {
-    if is_enum(sum_type) {
+    if sum_type.is_simple_enum() {
         autogen_python_enum(ctx, name, sum_type)
     } else {
         unimplemented!()
@@ -464,64 +390,35 @@ pub fn autogen_python_tuple(ctx: &GenCtx, name: &str, tuple: &ProductType) -> St
     autogen_python_product_table_common(ctx, name, tuple, None)
 }
 
-fn encode_builtintype<'a>(
-    ctx: &'a GenCtx,
-    vecnest: usize,
-    b: &'a BuiltinType,
-    value: impl fmt::Display + 'a,
-    ref_prefix: &'a str,
-) -> impl fmt::Display + 'a {
-    fmt_fn(move |f| match maybe_primitive(b) {
-        MaybePrimitive::Primitive(_) => {
-            write!(f, "{value}")
-        }
-        MaybePrimitive::Array(ArrayType { elem_ty }) if **elem_ty == AlgebraicType::U8 => {
-            write!(f, "{value}.hex()")
-        }
-        MaybePrimitive::Array(ArrayType { elem_ty }) => {
-            let convert_type = encode_type(ctx, vecnest + 1, elem_ty, "item", ref_prefix);
-            write!(f, "[{convert_type} for item in {value}]")
-        }
-        MaybePrimitive::Map(_) => unimplemented!(),
-    })
-}
-
 pub fn encode_type<'a>(
     ctx: &'a GenCtx,
-    vecnest: usize,
     ty: &'a AlgebraicType,
     value: impl fmt::Display + 'a,
-    ref_prefix: &'a str,
 ) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
-        AlgebraicType::Product(product) => {
-            if product.is_identity() {
-                write!(f, "Identity.from_string({value})")
-            } else if product.is_address() {
-                write!(f, "Address.from_string({value})")
-            } else {
-                unimplemented!()
-            }
-        }
+        ty if ty.is_address() => write!(f, "Address.from_string({value})"),
+        ty if ty.is_identity() => write!(f, "Identity.from_string({value})"),
         AlgebraicType::Sum(sum_type) => match sum_type.as_option() {
             Some(inner_ty) => write!(
                 f,
                 "{{'0': {}}} if value is not None else {{}}",
-                encode_type(ctx, vecnest, inner_ty, format!("{value}"), ref_prefix),
+                encode_type(ctx, inner_ty, format!("{value}")),
             ),
             None => unimplemented!(),
         },
-        AlgebraicType::Builtin(b) => fmt::Display::fmt(&encode_builtintype(ctx, vecnest, b, &value, ref_prefix), f),
-        AlgebraicType::Ref(r) => {
-            let algebraic_type = &ctx.typespace.types[r.idx()];
-            match algebraic_type {
-                // for enums in json this comes over as a dictionary where the key is actually the enum index
-                AlgebraicType::Sum(sum_type) if is_enum(sum_type) => write!(f, "{{str({value}.value-1): []}}"),
-                _ => {
-                    write!(f, "{value}.encode()")
-                }
-            }
+        ty if ty.is_bytes() => write!(f, "{value}.hex()"),
+        AlgebraicType::Array(ArrayType { elem_ty }) => {
+            let convert_type = encode_type(ctx, elem_ty, "item");
+            write!(f, "[{convert_type} for item in {value}]")
         }
+        AlgebraicType::Map(_) | AlgebraicType::Product(_) => unimplemented!(),
+        ty if ty.is_scalar_or_string() => write!(f, "{value}"),
+        AlgebraicType::Ref(r) => match &ctx.typespace[*r] {
+            // for enums in json this comes over as a dictionary where the key is actually the enum index
+            AlgebraicType::Sum(sum_type) if sum_type.is_simple_enum() => write!(f, "{{str({value}.value-1): []}}"),
+            _ => write!(f, "{value}.encode()"),
+        },
+        _ => unreachable!(),
     })
 }
 
@@ -550,11 +447,7 @@ pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     writeln!(output).unwrap();
 
     let mut imports = Vec::new();
-    generate_imports(
-        ctx,
-        &reducer.args.clone().into_iter().collect::<Vec<ProductTypeElement>>(),
-        &mut imports,
-    );
+    generate_imports(ctx, &reducer.args, &mut imports);
 
     for import in imports {
         writeln!(output, "{import}").unwrap();
@@ -614,7 +507,7 @@ pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
             writeln!(
                 output,
                 "{python_field_name} = {}",
-                encode_type(ctx, 0, field_type, format_args!("{python_field_name}"), "")
+                encode_type(ctx, field_type, format_args!("{python_field_name}"))
             )
             .unwrap();
         }
@@ -656,7 +549,7 @@ pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
             let field_type = &arg.algebraic_type;
             decode_strs.push(format!(
                 "{}",
-                convert_type(ctx, 0, field_type, format_args!("data[{idx}]"), "")
+                convert_type(ctx, field_type, format_args!("data[{idx}]"))
             ));
         }
 

@@ -1,6 +1,6 @@
 use crate::{
-    AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, ProductTypeElement, SumType,
-    SumTypeVariant, WithTypespace,
+    AlgebraicType, AlgebraicTypeRef, ArrayType, MapType, ProductType, ProductTypeElement, SumType, SumTypeVariant,
+    WithTypespace,
 };
 
 /// Resolver for [`AlgebraicTypeRef`]s within a structure.
@@ -68,8 +68,8 @@ impl ResolveRefs for AlgebraicType {
             Self::Ref(r) => this.with(r)._resolve_refs(state),
             Self::Sum(sum) => this.with(sum)._resolve_refs(state).map(Into::into),
             Self::Product(prod) => this.with(prod)._resolve_refs(state).map(Into::into),
-            Self::Builtin(BuiltinType::Array(ty)) => this.with(ty)._resolve_refs(state).map(Into::into),
-            Self::Builtin(BuiltinType::Map(m)) => this.with(&**m)._resolve_refs(state).map(Into::into),
+            Self::Array(ty) => this.with(ty)._resolve_refs(state).map(Into::into),
+            Self::Map(m) => this.with(&**m)._resolve_refs(state).map(Into::into),
             // These types are plain and cannot have refs in them.
             x => Some(x.clone()),
         }

@@ -264,8 +264,7 @@ impl GenItem {
                     let name = name.to_case(Case::Snake);
                     Some((name + ".py", code))
                 }
-                AlgebraicType::Builtin(_) => todo!(),
-                AlgebraicType::Ref(_) => todo!(),
+                _ => todo!(),
             },
             GenItem::Reducer(reducer) => {
                 let code = python::autogen_python_reducer(ctx, reducer);
@@ -293,8 +292,7 @@ impl GenItem {
                     let name = name.to_case(Case::Snake);
                     Some((name + ".ts", code))
                 }
-                AlgebraicType::Builtin(_) => todo!(),
-                AlgebraicType::Ref(_) => todo!(),
+                _ => todo!(),
             },
             GenItem::Reducer(reducer) => {
                 let code = typescript::autogen_typescript_reducer(ctx, reducer);
@@ -320,8 +318,7 @@ impl GenItem {
                     let code = csharp::autogen_csharp_tuple(ctx, name, prod, namespace);
                     Some((name.clone() + ".cs", code))
                 }
-                AlgebraicType::Builtin(_) => todo!(),
-                AlgebraicType::Ref(_) => todo!(),
+                _ => todo!(),
             },
             GenItem::Reducer(reducer) => {
                 let code = csharp::autogen_csharp_reducer(ctx, reducer, namespace);
