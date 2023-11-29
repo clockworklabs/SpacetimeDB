@@ -37,7 +37,7 @@ use crate::db::datastore::system_tables::{
     StIndexFields, StModuleRow, StSequenceFields, StTableFields, ST_CONSTRAINTS_ID, ST_MODULE_ID, WASM_MODULE,
 };
 use crate::db::db_metrics::{DB_METRICS, MAX_TX_CPU_TIME};
-use crate::{db::datastore::system_tables, execution_context::WorkloadType};
+use crate::execution_context::{ExecutionContext, WorkloadType};
 use crate::{
     db::datastore::traits::{TxOp, TxRecord},
     db::{
