@@ -968,7 +968,7 @@ fn autogen_csharp_access_funcs_for_struct(
     for idx in unique_it {
         let is_unique = idx.is_unique;
 
-        //Skip multi_column  indexes
+        //Skip multi-column indexes, we generate methods on single fields
         let col_i: usize = if idx.columns.len() > 1 {
             continue;
         } else {

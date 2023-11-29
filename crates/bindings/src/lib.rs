@@ -315,7 +315,7 @@ impl<T, De: BufferDeserialize<Item = T>> Iterator for RawTableIter<De> {
     }
 }
 
-/// Defines a named index with an index type over a set of columns identified by their IDs.
+/// Describe a named index with an index type over a set of columns identified by their IDs.
 #[derive(Clone, Copy)]
 pub struct IndexDesc<'a> {
     /// The name of the index.

@@ -950,7 +950,7 @@ fn autogen_typescript_access_funcs_for_struct(
     table: &TableSchema,
 ) {
     let idx = table.indexes_split();
-    //Skip multi-column indexes
+    //Skip multi-column indexes, we generate methods on single fields
     let it = idx
         .unique
         .into_iter()

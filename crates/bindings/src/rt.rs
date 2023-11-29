@@ -419,7 +419,7 @@ pub fn register_table<T: TableType>() {
             .expect("Fail to retrieve the columns from the module");
 
         let indexes: Vec<_> = T::INDEXES.iter().copied().map(Into::into).collect();
-        //WARNING: The definition  of table assumes the # of constraints == # of columns elsewhere
+        //WARNING: The definition  of table assumes the # of constraints == # of columns elsewhere `T::COLUMN_ATTRS` is queried
         let constraints: Vec<_> = T::COLUMN_ATTRS
             .iter()
             .enumerate()
