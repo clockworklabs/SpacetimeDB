@@ -724,31 +724,6 @@ impl SequencesState {
     }
 }
 
-struct Inner {
-    /// All of the byte objects inserted in the current transaction.
-    memory: Arc<Mutex<BTreeMap<DataKey, Arc<Vec<u8>>>>>,
-    /// The state of the database up to the point of the last committed transaction.
-    committed_state: Arc<RwLock<CommittedState>>,
-    /// The state of all insertions and deletions in this transaction.
-    tx_state: Arc<Mutex<Option<TxState>>>,
-    /// The state of sequence generation in this database.
-    sequence_state: Arc<Mutex<SequencesState>>,
-    /// The address of this database.
-    database_address: Address,
-}
-
-impl Inner {
-    pub fn new(database_address: Address) -> Self {
-        Self {
-            memory: Arc::new(Mutex::new(BTreeMap::new())),
-            committed_state: Arc::new(RwLock::new(CommittedState::new())),
-            tx_state: Arc::new(Mutex::new(None)),
-            sequence_state: Arc::new(Mutex::new(SequencesState::new())),
-            database_address,
-        }
-    }
-}
-
 impl MutTxId {
     fn drop_col_eq(
         &mut self,
@@ -1710,7 +1685,7 @@ impl MutTxId {
         {
             // The current transaction has modified this table, and the table is indexed.
             let tx_state = self.tx_state_lock.as_ref().unwrap();
-            Ok(IterByColRange::Index(IndexSeekIterInner {
+            Ok(IterByColRange::Index(IndexSeekIterMutTxId {
                 ctx,
                 table_id: *table_id,
                 tx_state,
@@ -1776,10 +1751,29 @@ impl MutTxId {
 
 #[derive(Clone)]
 pub struct Locking {
-    inner: Arc<Inner>,
+    /// All of the byte objects inserted in the current transaction.
+    memory: Arc<Mutex<BTreeMap<DataKey, Arc<Vec<u8>>>>>,
+    /// The state of the database up to the point of the last committed transaction.
+    committed_state: Arc<RwLock<CommittedState>>,
+    /// The state of all insertions and deletions in this transaction.
+    tx_state: Arc<Mutex<Option<TxState>>>,
+    /// The state of sequence generation in this database.
+    sequence_state: Arc<Mutex<SequencesState>>,
+    /// The address of this database.
+    database_address: Address,
 }
 
 impl Locking {
+    pub fn new(database_address: Address) -> Self {
+        Self {
+            memory: Arc::new(Mutex::new(BTreeMap::new())),
+            committed_state: Arc::new(RwLock::new(CommittedState::new())),
+            tx_state: Arc::new(Mutex::new(None)),
+            sequence_state: Arc::new(Mutex::new(SequencesState::new())),
+            database_address,
+        }
+    }
+
     /// IMPORTANT! This the most delicate function in the entire codebase.
     /// DO NOT CHANGE UNLESS YOU KNOW WHAT YOU'RE DOING!!!
     pub fn bootstrap(database_address: Address) -> Result<Self, DBError> {
@@ -1787,7 +1781,7 @@ impl Locking {
 
         // NOTE! The bootstrapping process does not take plan in a transaction.
         // This is intentional.
-        let datastore = Inner::new(database_address);
+        let datastore = Self::new(database_address);
         let mut commit_state = datastore.committed_state.write_arc();
         let database_address = datastore.database_address;
         let mut sequence_state = datastore.sequence_state.lock();
@@ -1820,9 +1814,7 @@ impl Locking {
         log::trace!("DATABASE:BOOTSTRAPPING SYSTEM TABLES DONE");
         drop(sequence_state);
         drop(commit_state);
-        Ok(Locking {
-            inner: Arc::new(datastore),
-        })
+        Ok(datastore)
     }
 
     /// The purpose of this is to rebuild the state of the datastore
@@ -1831,12 +1823,12 @@ impl Locking {
     /// is not equivalent to calling `create_table`.
     /// There may eventually be better way to do this, but this will have to do for now.
     pub fn rebuild_state_after_replay(&self) -> Result<(), DBError> {
-        let mut committed_state = self.inner.committed_state.write_arc();
-        let mut sequence_state = self.inner.sequence_state.lock();
+        let mut committed_state = self.committed_state.write_arc();
+        let mut sequence_state = self.sequence_state.lock();
         // `build_missing_tables` must be called before indexes.
         // Honestly this should maybe just be one big procedure.
         // See John Carmack's philosophy on this.
-        committed_state.build_missing_tables(self.inner.database_address)?;
+        committed_state.build_missing_tables(self.database_address)?;
         committed_state.build_indexes()?;
         committed_state.build_sequence_state(&mut sequence_state)?;
         Ok(())
@@ -1847,14 +1839,14 @@ impl Locking {
         transaction: &Transaction,
         odb: Arc<std::sync::Mutex<Box<dyn ObjectDB + Send>>>,
     ) -> Result<(), DBError> {
-        let mut committed_state = self.inner.committed_state.write_arc();
+        let mut committed_state = self.committed_state.write_arc();
         for write in &transaction.writes {
             let table_id = TableId(write.set_id);
             let schema = committed_state
-                .schema_for_table(table_id, self.inner.database_address)?
+                .schema_for_table(table_id, self.database_address)?
                 .into_owned();
             let row_type = committed_state
-                .row_type_for_table(table_id, self.inner.database_address)?
+                .row_type_for_table(table_id, self.database_address)?
                 .into_owned();
 
             match write.operation {
@@ -1864,7 +1856,7 @@ impl Locking {
                         .remove(&RowId(write.data_key));
                     DB_METRICS
                         .rdb_num_table_rows
-                        .with_label_values(&self.inner.database_address, &table_id.into())
+                        .with_label_values(&self.database_address, &table_id.into())
                         .dec();
                 }
                 Operation::Insert => {
@@ -1892,7 +1884,7 @@ impl Locking {
                         .insert(RowId(write.data_key), product_value);
                     DB_METRICS
                         .rdb_num_table_rows
-                        .with_label_values(&self.inner.database_address, &table_id.into())
+                        .with_label_values(&self.database_address, &table_id.into())
                         .inc();
                 }
             }
@@ -1928,7 +1920,7 @@ impl traits::Tx for Locking {
 pub struct Iter<'a> {
     ctx: &'a ExecutionContext<'a>,
     table_id: TableId,
-    inner: &'a MutTxId,
+    tx: &'a MutTxId,
     stage: ScanStage<'a>,
     num_committed_rows_fetched: u64,
 }
@@ -1948,11 +1940,11 @@ impl Drop for Iter<'_> {
 }
 
 impl<'a> Iter<'a> {
-    fn new(ctx: &'a ExecutionContext, table_id: TableId, inner: &'a MutTxId) -> Self {
+    fn new(ctx: &'a ExecutionContext, table_id: TableId, tx: &'a MutTxId) -> Self {
         Self {
             ctx,
             table_id,
-            inner,
+            tx,
             stage: ScanStage::Start,
             num_committed_rows_fetched: 0,
         }
@@ -1979,7 +1971,7 @@ impl<'a> Iterator for Iter<'a> {
         // Moves the current scan stage to the current tx if rows were inserted in it.
         // Returns `None` otherwise.
         let maybe_stage_current_tx_inserts = |this: &mut Self| {
-            let table = this.inner.tx_state_lock.as_ref()?;
+            let table = this.tx.tx_state_lock.as_ref()?;
             let insert_table = table.insert_tables.get(&table_id)?;
             this.stage = ScanStage::CurrentTx {
                 iter: insert_table.rows.iter(),
@@ -1997,7 +1989,7 @@ impl<'a> Iterator for Iter<'a> {
                 ScanStage::Start => {
                     let _span = tracing::debug_span!("ScanStage::Start").entered();
                     if let Some(table) = self
-                        .inner
+                        .tx
                         .committed_state_write_lock
                         .as_ref()
                         .unwrap()
@@ -2021,7 +2013,7 @@ impl<'a> Iterator for Iter<'a> {
                         // Increment metric for number of committed rows scanned.
                         self.num_committed_rows_fetched += 1;
                         // Check the committed row's state in the current tx.
-                        match self.inner.tx_state_lock.as_ref().map(|tx_state| tx_state.get_row_op(&table_id, row_id)) {
+                        match self.tx.tx_state_lock.as_ref().map(|tx_state| tx_state.get_row_op(&table_id, row_id)) {
                             Some(RowState::Committed(_)) => unreachable!("a row cannot be committed in a tx state"),
                             // Do nothing, via (3), we'll get it in the next stage (2).
                             Some(RowState::Insert(_)) |
@@ -2049,7 +2041,7 @@ impl<'a> Iterator for Iter<'a> {
     }
 }
 
-pub struct IndexSeekIterInner<'a> {
+pub struct IndexSeekIterMutTxId<'a> {
     ctx: &'a ExecutionContext<'a>,
     table_id: TableId,
     tx_state: &'a TxState,
@@ -2059,7 +2051,7 @@ pub struct IndexSeekIterInner<'a> {
     num_committed_rows_fetched: u64,
 }
 
-impl Drop for IndexSeekIterInner<'_> {
+impl Drop for IndexSeekIterMutTxId<'_> {
     fn drop(&mut self) {
         // Increment number of index seeks
         DB_METRICS
@@ -2096,7 +2088,7 @@ impl Drop for IndexSeekIterInner<'_> {
     }
 }
 
-impl<'a> Iterator for IndexSeekIterInner<'a> {
+impl<'a> Iterator for IndexSeekIterMutTxId<'a> {
     type Item = DataRef<'a>;
 
     #[tracing::instrument(skip_all)]
@@ -2210,7 +2202,7 @@ pub enum IterByColRange<'a, R: RangeBounds<AlgebraicValue>> {
 
     /// When the column has an index, and the table
     /// has been modified this transaction.
-    Index(IndexSeekIterInner<'a>),
+    Index(IndexSeekIterMutTxId<'a>),
 
     /// When the column has an index, and the table
     /// has not been modified in this transaction.
@@ -2304,11 +2296,11 @@ impl traits::MutTx for Locking {
     fn begin_mut_tx(&self) -> Self::MutTxId {
         let timer = Instant::now();
 
-        let committed_state_write_lock = Some(self.inner.committed_state.write_arc());
-        let sequence_state_lock = self.inner.sequence_state.lock_arc();
-        let memory_lock = self.inner.memory.lock_arc();
+        let committed_state_write_lock = Some(self.committed_state.write_arc());
+        let sequence_state_lock = self.sequence_state.lock_arc();
+        let memory_lock = self.memory.lock_arc();
         let lock_wait_time = timer.elapsed();
-        let mut tx_state_lock = self.inner.tx_state.lock_arc();
+        let mut tx_state_lock = self.tx_state.lock_arc();
         if tx_state_lock.is_some() {
             panic!("The previous transaction was not properly rolled back or committed.");
         }
@@ -2409,7 +2401,7 @@ impl traits::MutTx for Locking {
 
 impl MutTxDatastore for Locking {
     fn create_table_mut_tx(&self, tx: &mut Self::MutTxId, schema: TableDef) -> super::Result<TableId> {
-        tx.create_table(schema, self.inner.database_address)
+        tx.create_table(schema, self.database_address)
     }
 
     /// This function is used to get the `ProductType` of the rows in a
@@ -2430,7 +2422,7 @@ impl MutTxDatastore for Locking {
         tx: &'tx Self::MutTxId,
         table_id: TableId,
     ) -> super::Result<Cow<'tx, ProductType>> {
-        tx.row_type_for_table(table_id, self.inner.database_address)
+        tx.row_type_for_table(table_id, self.database_address)
     }
 
     /// IMPORTANT! This function is relatively expensive, and much more
@@ -2442,17 +2434,17 @@ impl MutTxDatastore for Locking {
         tx: &'tx Self::MutTxId,
         table_id: TableId,
     ) -> super::Result<Cow<'tx, TableSchema>> {
-        tx.schema_for_table(table_id, self.inner.database_address)
+        tx.schema_for_table(table_id, self.database_address)
     }
 
     /// This function is relatively expensive because it needs to be
     /// transactional, however we don't expect to be dropping tables very often.
     fn drop_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId) -> super::Result<()> {
-        tx.drop_table(table_id, self.inner.database_address)
+        tx.drop_table(table_id, self.database_address)
     }
 
     fn rename_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, new_name: &str) -> super::Result<()> {
-        tx.rename_table(table_id, new_name, self.inner.database_address)
+        tx.rename_table(table_id, new_name, self.database_address)
     }
 
     fn table_id_exists(&self, tx: &Self::MutTxId, table_id: &TableId) -> bool {
@@ -2460,7 +2452,7 @@ impl MutTxDatastore for Locking {
     }
 
     fn table_id_from_name_mut_tx(&self, tx: &Self::MutTxId, table_name: &str) -> super::Result<Option<TableId>> {
-        tx.table_id_from_name(table_name, self.inner.database_address)
+        tx.table_id_from_name(table_name, self.database_address)
     }
 
     fn table_name_from_id_mut_tx<'a>(
@@ -2473,27 +2465,27 @@ impl MutTxDatastore for Locking {
     }
 
     fn create_index_mut_tx(&self, tx: &mut Self::MutTxId, index: IndexDef) -> super::Result<IndexId> {
-        tx.create_index(index, self.inner.database_address)
+        tx.create_index(index, self.database_address)
     }
 
     fn drop_index_mut_tx(&self, tx: &mut Self::MutTxId, index_id: IndexId) -> super::Result<()> {
-        tx.drop_index(index_id, self.inner.database_address)
+        tx.drop_index(index_id, self.database_address)
     }
 
     fn index_id_from_name_mut_tx(&self, tx: &Self::MutTxId, index_name: &str) -> super::Result<Option<IndexId>> {
-        tx.index_id_from_name(index_name, self.inner.database_address)
+        tx.index_id_from_name(index_name, self.database_address)
     }
 
     fn get_next_sequence_value_mut_tx(&self, tx: &mut Self::MutTxId, seq_id: SequenceId) -> super::Result<i128> {
-        tx.get_next_sequence_value(seq_id, self.inner.database_address)
+        tx.get_next_sequence_value(seq_id, self.database_address)
     }
 
     fn create_sequence_mut_tx(&self, tx: &mut Self::MutTxId, seq: SequenceDef) -> super::Result<SequenceId> {
-        tx.create_sequence(seq, self.inner.database_address)
+        tx.create_sequence(seq, self.database_address)
     }
 
     fn drop_sequence_mut_tx(&self, tx: &mut Self::MutTxId, seq_id: SequenceId) -> super::Result<()> {
-        tx.drop_sequence(seq_id, self.inner.database_address)
+        tx.drop_sequence(seq_id, self.database_address)
     }
 
     fn sequence_id_from_name_mut_tx(
@@ -2501,7 +2493,7 @@ impl MutTxDatastore for Locking {
         tx: &Self::MutTxId,
         sequence_name: &str,
     ) -> super::Result<Option<SequenceId>> {
-        tx.sequence_id_from_name(sequence_name, self.inner.database_address)
+        tx.sequence_id_from_name(sequence_name, self.database_address)
     }
 
     fn iter_mut_tx<'a>(
@@ -2568,14 +2560,14 @@ impl MutTxDatastore for Locking {
         table_id: TableId,
         row: ProductValue,
     ) -> super::Result<ProductValue> {
-        tx.insert(table_id, row, self.inner.database_address)
+        tx.insert(table_id, row, self.database_address)
     }
 }
 
 impl traits::Programmable for Locking {
     fn program_hash(&self, tx: &MutTxId) -> Result<Option<Hash>, DBError> {
         match tx
-            .iter(&ExecutionContext::internal(self.inner.database_address), &ST_MODULE_ID)?
+            .iter(&ExecutionContext::internal(self.database_address), &ST_MODULE_ID)?
             .next()
         {
             None => Ok(None),
@@ -2591,7 +2583,7 @@ impl traits::MutProgrammable for Locking {
     type FencingToken = u128;
 
     fn set_program_hash(&self, tx: &mut MutTxId, fence: Self::FencingToken, hash: Hash) -> Result<(), DBError> {
-        let ctx = ExecutionContext::internal(self.inner.database_address);
+        let ctx = ExecutionContext::internal(self.database_address);
         let mut iter = tx.iter(&ctx, &ST_MODULE_ID)?;
         if let Some(data) = iter.next() {
             let row = StModuleRow::try_from(data.view())?;
@@ -2614,7 +2606,7 @@ impl traits::MutProgrammable for Locking {
                     kind: WASM_MODULE,
                     epoch: system_tables::Epoch(fence),
                 }),
-                self.inner.database_address,
+                self.database_address,
             )?;
             return Ok(());
         }
@@ -2632,7 +2624,7 @@ impl traits::MutProgrammable for Locking {
                 kind: WASM_MODULE,
                 epoch: system_tables::Epoch(fence),
             }),
-            self.inner.database_address,
+            self.database_address,
         )?;
         Ok(())
     }
