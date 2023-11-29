@@ -219,6 +219,17 @@ impl<'a, T: ?Sized + 'a> From<PoisonError<std::sync::MutexGuard<'a, T>>> for DBE
 #[derive(Debug, Error)]
 pub enum LogReplayError {
     #[error(
+        "Out-of-order commit detected: {} in segment {} after offset {}",
+        .commit_offset,
+        .segment_offset,
+        .last_commit_offset
+    )]
+    OutOfOrderCommit {
+        commit_offset: u64,
+        segment_offset: usize,
+        last_commit_offset: u64,
+    },
+    #[error(
         "Error reading segment {}/{} at commit {}: {}",
         .segment_offset,
         .total_segments,

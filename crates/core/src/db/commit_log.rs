@@ -111,11 +111,10 @@ impl CommitLog {
                         expected,
                     }) => {
                         log::warn!("Out-of-order commit {}, expected {}", decoded_commit_offset, expected);
-                        return Err(LogReplayError::TrailingSegments {
+                        return Err(LogReplayError::OutOfOrderCommit {
+                            commit_offset: decoded_commit_offset,
                             segment_offset,
-                            total_segments,
-                            commit_offset: last_commit_offset,
-                            source: io::Error::new(io::ErrorKind::Other, "Out-of-order commit"),
+                            last_commit_offset,
                         }
                         .into());
                     }
