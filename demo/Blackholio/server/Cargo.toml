@@ -9,7 +9,7 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-spacetimedb = { git = "https://github.com/clockworklabs/SpacetimeDB", branch = "master", features = ["getrandom"] }
-# spacetimedb = { version = "0.7.3", features = ["getrandom"]}
+# spacetimedb = { git = "https://github.com/clockworklabs/SpacetimeDB", branch = "master", features = ["getrandom"] }
+spacetimedb = { version = "0.7.3", features = ["getrandom"]}
 log = "0.4"
 rand = "0.8.5"

@@ -67,8 +67,10 @@ public class PlayerController : MonoBehaviour
         previousCameraSize = targetCameraSize = playerRadius * 2 + 50.0f;
     }
 
-    private uint TotalMass() =>
+    public uint TotalMass() =>
         (uint)circlesByEntityId.Values.Sum(a => Entity.FilterById(a.GetEntityId()).Mass);
+
+    public string GetUsername() => Player.FilterByIdentity(identity).Name;
 
     private void OnGUI()
     {
@@ -98,7 +100,7 @@ public class PlayerController : MonoBehaviour
 
         return new UnityEngine.Vector2(totalX / totalMass, totalY / totalMass);
     }
-
+    
     public void Update()
     {
         if (Input.GetKeyDown(KeyCode.Space))

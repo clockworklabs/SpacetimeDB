@@ -33,7 +33,7 @@ public class GameManager : MonoBehaviour
     
     public static GameManager instance;
     public static Camera localCamera;
-    private readonly Dictionary<uint, PlayerController> playerIdToPlayerController =
+    public static Dictionary<uint, PlayerController> playerIdToPlayerController =
         new Dictionary<uint, PlayerController>();
 
     public static Identity? localIdentity;
@@ -82,7 +82,7 @@ public class GameManager : MonoBehaviour
         SpacetimeDBClient.instance.onUnhandledReducerError += InstanceOnUnhandledReducerError;
 
         // Now that we’ve registered all our callbacks, lets connect to spacetimedb
-        SpacetimeDBClient.instance.Connect(AuthToken.Token, "http://localhost:3000", "untitled-circle-game");
+        SpacetimeDBClient.instance.Connect(AuthToken.Token, "https://testnet.spacetimedb.com", "untitled-circle-game-5");
         localCamera = Camera.main;
     }
 
