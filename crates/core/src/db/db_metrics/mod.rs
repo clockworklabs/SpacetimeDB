@@ -91,11 +91,17 @@ metrics_group!(
         #[name = spacetime_txn_elapsed_time_sec]
         #[help = "The total elapsed (wall) time of a transaction (in seconds)"]
         #[labels(txn_type: WorkloadType, db: Address, reducer: str)]
+        #[buckets(
+            1e-6, 5e-6, 1e-5, 5e-5, 1e-4, 5e-4, 1e-3, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0
+        )]
         pub rdb_txn_elapsed_time_sec: HistogramVec,
 
         #[name = spacetime_txn_cpu_time_sec]
         #[help = "The time spent executing a transaction (in seconds), excluding time spent waiting to acquire database locks"]
         #[labels(txn_type: WorkloadType, db: Address, reducer: str)]
+        #[buckets(
+            1e-6, 5e-6, 1e-5, 5e-5, 1e-4, 5e-4, 1e-3, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0
+        )]
         pub rdb_txn_cpu_time_sec: HistogramVec,
 
         #[name = spacetime_txn_cpu_time_sec_max]
@@ -106,6 +112,9 @@ metrics_group!(
         #[name = spacetime_query_cpu_time_sec]
         #[help = "The time spent executing a query (in seconds)"]
         #[labels(txn_type: WorkloadType, db: Address, query: str)]
+        #[buckets(
+            1e-6, 5e-6, 1e-5, 5e-5, 1e-4, 5e-4, 1e-3, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0
+        )]
         pub rdb_query_cpu_time_sec: HistogramVec,
 
         #[name = spacetime_query_cpu_time_sec_max]
@@ -116,6 +125,9 @@ metrics_group!(
         #[name = spacetime_query_compile_time_sec]
         #[help = "The time spent compiling a query (in seconds)"]
         #[labels(txn_type: WorkloadType, db: Address, query: str)]
+        #[buckets(
+            1e-6, 5e-6, 1e-5, 5e-5, 1e-4, 5e-4, 1e-3, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0
+        )]
         pub rdb_query_compile_time_sec: HistogramVec,
 
         #[name = spacetime_query_compile_time_sec_max]
@@ -126,6 +138,9 @@ metrics_group!(
         #[name = spacetime_wasm_abi_call_duration_sec]
         #[help = "The total duration of a spacetime wasm abi call (in seconds); includes row serialization and copying into wasm memory"]
         #[labels(db: Address, reducer: str, call: AbiCall)]
+        #[buckets(
+            1e-6, 5e-6, 1e-5, 5e-5, 1e-4, 5e-4, 1e-3, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0
+        )]
         pub wasm_abi_call_duration_sec: HistogramVec,
 
         #[name = spacetime_message_log_size_bytes]

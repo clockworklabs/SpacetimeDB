@@ -86,6 +86,9 @@ metrics_group!(
         #[name = spacetime_scheduled_reducer_delay_sec]
         #[help = "The amount of time (in seconds) a reducer has been delayed past its scheduled execution time"]
         #[labels(db: Address, reducer: str)]
+        #[buckets(
+            1e-6, 5e-6, 1e-5, 5e-5, 1e-4, 5e-4, 1e-3, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0
+        )]
         pub scheduled_reducer_delay_sec: HistogramVec,
 
         #[name = spacetime_scheduled_reducer_delay_sec_max]
