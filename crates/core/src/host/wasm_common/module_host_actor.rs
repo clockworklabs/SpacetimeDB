@@ -1,20 +1,19 @@
+use anyhow::{anyhow, Context};
+use bytes::Bytes;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::TableDef;
-use crate::execution_context::ExecutionContext;
-use crate::sql;
-use crate::util::{const_unwrap, ResultInspectExt};
-use anyhow::{anyhow, Context};
-use bytes::Bytes;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{bsatn, Address, ModuleDef};
 use spacetimedb_vm::expr::CrudExpr;
 
+use super::instrumentation::CallTimes;
+use super::*;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{LogLevel, Record, SystemLogger};
+use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_host::{
@@ -27,11 +26,12 @@ use crate::host::{
     ReducerId, ReducerOutcome, Timestamp,
 };
 use crate::identity::Identity;
-use crate::subscription::module_subscription_actor::{ModuleSubscriptionManager, SubscriptionEventSender};
+use crate::sql;
+use crate::sql::query_debug_info::QueryDebugInfo;
+use crate::subscription::module_subscription_actor::ModuleSubscriptionManager;
+use crate::util::{const_unwrap, ResultInspectExt};
 use crate::worker_metrics::WORKER_METRICS;
-
-use super::instrumentation::CallTimes;
-use super::*;
+use spacetimedb_sats::db::def::TableDef;
 
 pub trait WasmModule: Send + 'static {
     type Instance: WasmInstance;
@@ -81,7 +81,6 @@ pub(crate) struct WasmModuleHostActor<T: WasmModule> {
     module: T::InstancePre,
     initial_instance: Option<Box<WasmModuleInstance<T::Instance>>>,
     database_instance_context: Arc<DatabaseInstanceContext>,
-    event_tx: SubscriptionEventSender,
     scheduler: Scheduler,
     func_names: Arc<FuncNames>,
     info: Arc<ModuleInfo>,
@@ -139,7 +138,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 
         let owner_identity = database_instance_context.identity;
         let relational_db = database_instance_context.relational_db.clone();
-        let (subscription, event_tx) = ModuleSubscriptionManager::spawn(relational_db, owner_identity);
+        let subscription = ModuleSubscriptionManager::spawn(relational_db, owner_identity);
 
         let uninit_instance = module.instantiate_pre()?;
         let mut instance = uninit_instance.instantiate(
@@ -179,7 +178,6 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             initial_instance: None,
             func_names,
             info,
-            event_tx,
             database_instance_context,
             scheduler,
             energy_monitor,
@@ -195,7 +193,6 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         WasmModuleInstance {
             instance,
             info: self.info.clone(),
-            event_tx: self.event_tx.clone(),
             energy_monitor: self.energy_monitor.clone(),
             trapped: false,
         }
@@ -248,26 +245,29 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         &self,
         caller_identity: Identity,
         query: String,
-    ) -> Result<Vec<spacetimedb_lib::relation::MemTable>, DBError> {
+    ) -> Result<Vec<spacetimedb_sats::relation::MemTable>, DBError> {
         let db = &self.database_instance_context.relational_db;
         let auth = AuthCtx::new(self.database_instance_context.identity, caller_identity);
         // TODO(jgilles): make this a read-only TX when those get added
 
-        db.with_read_only(&ExecutionContext::sql(db.address()), |tx| {
-            log::debug!("One-off query: {query}");
+        db.with_read_only(
+            &ExecutionContext::sql(db.address(), Some(&QueryDebugInfo::from_source(&query))),
+            |tx| {
+                log::debug!("One-off query: {query}");
 
-            let compiled = sql::compiler::compile_sql(db, tx, &query)?
-                .into_iter()
-                .map(|expr| {
-                    if matches!(expr, CrudExpr::Query { .. }) {
-                        Ok(expr)
-                    } else {
-                        Err(anyhow!("One-off queries are not allowed to modify the database"))
-                    }
-                })
-                .collect::<Result<_, _>>()?;
-            sql::execute::execute_sql(db, tx, compiled, auth)
-        })
+                let compiled = sql::compiler::compile_sql(db, tx, &query)?
+                    .into_iter()
+                    .map(|expr| {
+                        if matches!(expr, CrudExpr::Query { .. }) {
+                            Ok(expr)
+                        } else {
+                            Err(anyhow!("One-off queries are not allowed to modify the database"))
+                        }
+                    })
+                    .collect::<Result<_, _>>()?;
+                sql::execute::execute_sql(db, tx, compiled, Some(&QueryDebugInfo::from_source(&query)), auth)
+            },
+        )
     }
 
     fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error> {
@@ -290,7 +290,6 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
 pub struct WasmModuleInstance<T: WasmInstance> {
     instance: T,
     info: Arc<ModuleInfo>,
-    event_tx: SubscriptionEventSender,
     energy_monitor: Arc<dyn EnergyMonitor>,
     trapped: bool,
 }
@@ -313,7 +312,7 @@ fn get_tabledefs(info: &ModuleInfo) -> impl Iterator<Item = anyhow::Result<Table
     info.catalog
         .values()
         .filter_map(EntityDef::as_table)
-        .map(|table| TableDef::from_lib_tabledef(info.typespace.with_type(table)))
+        .map(|table| spacetimedb_lib::TableDef::into_table_def(info.typespace.with_type(table)))
 }
 
 impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
@@ -516,7 +515,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let reducer_span = tracing::trace_span!(
             "run_reducer",
             timings.total_duration = tracing::field::Empty,
-            energy.budget = budget.0,
+            energy.budget = budget.get(),
             energy.used = tracing::field::Empty,
         )
         .entered();
@@ -558,6 +557,11 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 stdb.rollback_tx(&ctx, tx);
 
                 T::log_traceback("reducer", reducer_name, &err);
+
+                WORKER_METRICS
+                    .wasm_instance_errors
+                    .with_label_values(&caller_identity, &self.info.module_hash, &caller_address, reducer_name)
+                    .inc();
 
                 // discard this instance
                 self.trapped = true;
@@ -607,7 +611,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             energy_quanta_used: energy.used,
             host_execution_duration: timings.total_duration,
         };
-        self.event_tx.broadcast_event_blocking(client.as_ref(), event);
+        self.info.subscription.broadcast_event_blocking(client.as_ref(), event);
 
         ReducerCallResult {
             outcome,

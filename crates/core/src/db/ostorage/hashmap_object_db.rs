@@ -186,6 +186,10 @@ impl ObjectDB for HashMapObjectDB {
         }
         Ok(())
     }
+
+    fn size_on_disk(&self) -> Result<u64, DBError> {
+        Ok(self.total_mem_size_bytes())
+    }
 }
 
 fn hex_prefixes() -> Vec<String> {

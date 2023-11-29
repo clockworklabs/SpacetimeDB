@@ -20,8 +20,11 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
 use tokio::sync::mpsc;
 
+/// All of these commands (and likely any future ones) should all be in the same enum with the
+/// same queue so that e.g. db updates from commit events and db updates from subscription
+/// modifications don't get sent to the client out of order.
 #[derive(Debug)]
-enum ModuleSubscriptionCommand {
+enum Command {
     AddSubscriber {
         sender: ClientConnectionSender,
         subscription: Subscribe,
@@ -29,65 +32,48 @@ enum ModuleSubscriptionCommand {
     RemoveSubscriber {
         client_id: ClientActorId,
     },
-}
-
-#[derive(Debug)]
-enum Command {
-    Subscription(ModuleSubscriptionCommand),
-    BroadcastCommitEvent { event: ModuleEvent },
+    BroadcastCommitEvent {
+        event: ModuleEvent,
+    },
 }
 
 #[derive(Clone, Debug)]
 pub struct ModuleSubscriptionManager {
-    tx: mpsc::UnboundedSender<ModuleSubscriptionCommand>,
-}
-
-#[derive(Clone)]
-pub struct SubscriptionEventSender {
-    commit_event_tx: mpsc::UnboundedSender<ModuleEvent>,
+    tx: mpsc::UnboundedSender<Command>,
 }
 
 impl ModuleSubscriptionManager {
-    pub fn spawn(relational_db: Arc<RelationalDB>, owner_identity: Identity) -> (Self, SubscriptionEventSender) {
+    pub fn spawn(relational_db: Arc<RelationalDB>, owner_identity: Identity) -> Self {
         let (tx, mut rx) = mpsc::unbounded_channel();
-        let (commit_event_tx, mut commit_event_rx) = mpsc::unbounded_channel();
         tokio::spawn(async move {
             let mut actor = ModuleSubscriptionActor::new(relational_db, owner_identity);
-            loop {
-                let command = tokio::select! {
-                    event = commit_event_rx.recv() => match event {
-                        Some(event) => Command::BroadcastCommitEvent { event },
-                        // the module has exited
-                        None => break,
-                    },
-                    Some(cmd) = rx.recv() => Command::Subscription(cmd),
-                };
+            while let Some(command) = rx.recv().await {
                 if let Err(e) = actor.handle_message(command).await {
                     log::error!("error occurred in ModuleSubscriptionActor: {e}")
                 }
             }
         });
-        (Self { tx }, SubscriptionEventSender { commit_event_tx })
+        Self { tx }
     }
 
     pub fn add_subscriber(&self, sender: ClientConnectionSender, subscription: Subscribe) -> Result<(), NoSuchModule> {
         self.tx
-            .send(ModuleSubscriptionCommand::AddSubscriber { sender, subscription })
+            .send(Command::AddSubscriber { sender, subscription })
             .map_err(|_| NoSuchModule)
     }
 
     pub fn remove_subscriber(&self, client_id: ClientActorId) -> Result<(), NoSuchModule> {
         self.tx
-            .send(ModuleSubscriptionCommand::RemoveSubscriber { client_id })
+            .send(Command::RemoveSubscriber { client_id })
             .map_err(|_| NoSuchModule)
     }
-}
 
-impl SubscriptionEventSender {
     pub async fn broadcast_event(&self, client: Option<&ClientConnectionSender>, mut event: ModuleEvent) {
         match event.status {
             EventStatus::Committed(_) => {
-                self.commit_event_tx.send(event).expect("subscription actor panicked");
+                self.tx
+                    .send(Command::BroadcastCommitEvent { event })
+                    .expect("subscription actor panicked");
             }
             EventStatus::Failed(_) => {
                 if let Some(client) = client {
@@ -126,12 +112,8 @@ impl ModuleSubscriptionActor {
 
     async fn handle_message(&mut self, command: Command) -> Result<(), DBError> {
         match command {
-            Command::Subscription(ModuleSubscriptionCommand::AddSubscriber { sender, subscription }) => {
-                self.add_subscription(sender, subscription).await?
-            }
-            Command::Subscription(ModuleSubscriptionCommand::RemoveSubscriber { client_id }) => {
-                self.remove_subscriber(client_id)
-            }
+            Command::AddSubscriber { sender, subscription } => self.add_subscription(sender, subscription).await?,
+            Command::RemoveSubscriber { client_id } => self.remove_subscriber(client_id),
             Command::BroadcastCommitEvent { event } => self.broadcast_commit_event(event).await?,
         }
         Ok(())
@@ -181,10 +163,14 @@ impl ModuleSubscriptionActor {
         sender: ClientConnectionSender,
         subscription: Subscribe,
     ) -> Result<(), DBError> {
-        //Split logic to properly handle `Error` + `Tx`
+        // Split logic to properly handle `Error` + `Tx`
         let mut tx = self.relational_db.begin_tx();
+
         let result = self._add_subscription(sender, subscription, &mut tx).await;
-        let ctx = ExecutionContext::sql(self.relational_db.address());
+
+        // Note: the missing QueryDebugInfo here is only used for finishing the transaction;
+        // all of the relevant queries already executed, with debug info, in _add_subscription
+        let ctx = ExecutionContext::subscribe(self.relational_db.address(), None);
         self.relational_db.finish_tx(&ctx, tx, result)
     }
 
@@ -232,7 +218,7 @@ impl ModuleSubscriptionActor {
         //Split logic to properly handle `Error` + `Tx`
         let mut tx = self.relational_db.begin_tx();
         let result = self._broadcast_commit_event(event, &mut tx).await;
-        let ctx = ExecutionContext::sql(self.relational_db.address());
+        let ctx = ExecutionContext::incremental_update(self.relational_db.address(), None);
         self.relational_db.finish_tx(&ctx, tx, result)
     }
 }

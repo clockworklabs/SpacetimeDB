@@ -1,9 +1,7 @@
 use spacetimedb_bindings_macro::{Deserialize, Serialize};
-use spacetimedb_sats::{impl_st, AlgebraicType};
-use std::fmt;
-use std::str::FromStr;
-
-use crate::hex::HexString;
+use spacetimedb_sats::hex::HexString;
+use spacetimedb_sats::{hash, impl_st, AlgebraicType};
+use std::{fmt, str::FromStr};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AuthCtx {
@@ -67,7 +65,7 @@ impl Identity {
     }
 
     pub fn to_hex(&self) -> HexString<32> {
-        crate::hex::encode(&self.__identity_bytes)
+        spacetimedb_sats::hex::encode(&self.__identity_bytes)
     }
 
     pub fn abbreviate(&self) -> &[u8; 8] {
@@ -75,7 +73,7 @@ impl Identity {
     }
 
     pub fn to_abbreviated_hex(&self) -> HexString<8> {
-        crate::hex::encode(self.abbreviate())
+        spacetimedb_sats::hex::encode(self.abbreviate())
     }
 
     pub fn from_hex(hex: impl AsRef<[u8]>) -> Result<Self, hex::FromHexError> {
@@ -83,7 +81,7 @@ impl Identity {
     }
 
     pub fn from_hashing_bytes(bytes: impl AsRef<[u8]>) -> Self {
-        Identity::from_byte_array(crate::hash::hash_bytes(bytes).data)
+        Identity::from_byte_array(hash::hash_bytes(bytes).data)
     }
 }
 

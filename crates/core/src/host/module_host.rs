@@ -14,13 +14,12 @@ use crate::protobuf::client_api::{table_row_operation, SubscriptionUpdate, Table
 use crate::subscription::module_subscription_actor::ModuleSubscriptionManager;
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
 use crate::util::notify_once::NotifyOnce;
-use crate::worker_metrics::WORKER_METRICS;
 use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
 use futures::{Future, FutureExt};
 use indexmap::IndexMap;
-use spacetimedb_lib::relation::MemTable;
 use spacetimedb_lib::{Address, ReducerDef, TableDef};
 use spacetimedb_primitives::TableId;
+use spacetimedb_sats::relation::MemTable;
 use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
 use std::collections::HashMap;
 use std::fmt;
@@ -95,7 +94,7 @@ impl DatabaseUpdate {
                 .tables
                 .into_iter()
                 .map(|table| TableUpdate {
-                    table_id: table.table_id.0,
+                    table_id: table.table_id.into(),
                     table_name: table.table_name,
                     table_row_operations: table
                         .ops
@@ -127,7 +126,7 @@ impl DatabaseUpdate {
                 .tables
                 .into_iter()
                 .map(|table| TableUpdateJson {
-                    table_id: table.table_id.0,
+                    table_id: table.table_id.into(),
                     table_name: table.table_name,
                     table_row_operations: table
                         .ops
@@ -247,7 +246,7 @@ pub trait Module: Send + Sync + 'static {
         &self,
         caller_identity: Identity,
         query: String,
-    ) -> Result<Vec<spacetimedb_lib::relation::MemTable>, DBError>;
+    ) -> Result<Vec<spacetimedb_sats::relation::MemTable>, DBError>;
     fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error>;
 
     #[cfg(feature = "tracelogging")]
@@ -333,13 +332,13 @@ impl fmt::Debug for ModuleHost {
 
 #[async_trait::async_trait]
 trait DynModuleHost: Send + Sync + 'static {
-    async fn get_instance(&self) -> Result<(&HostThreadpool, Box<dyn ModuleInstance>), NoSuchModule>;
+    async fn get_instance(&self, db: Address) -> Result<(&HostThreadpool, Box<dyn ModuleInstance>), NoSuchModule>;
     fn inject_logs(&self, log_level: LogLevel, message: &str);
     fn one_off_query(
         &self,
         caller_identity: Identity,
         query: String,
-    ) -> Result<Vec<spacetimedb_lib::relation::MemTable>, DBError>;
+    ) -> Result<Vec<spacetimedb_sats::relation::MemTable>, DBError>;
     fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error>;
     fn start(&self);
     fn exit(&self) -> Closed<'_>;
@@ -379,16 +378,19 @@ async fn select_first<A: Future, B: Future<Output = ()>>(fut_a: A, fut_b: B) -> 
 
 #[async_trait::async_trait]
 impl<T: Module> DynModuleHost for HostControllerActor<T> {
-    async fn get_instance(&self) -> Result<(&HostThreadpool, Box<dyn ModuleInstance>), NoSuchModule> {
+    async fn get_instance(&self, db: Address) -> Result<(&HostThreadpool, Box<dyn ModuleInstance>), NoSuchModule> {
         self.start.notified().await;
         // in the future we should do something like in the else branch here -- add more instances based on load.
         // we need to do write-skew retries first - right now there's only ever once instance per module.
         let inst = if true {
-            self.instance_pool.request().await.map_err(|_| NoSuchModule)?
+            self.instance_pool
+                .request_with_context(db)
+                .await
+                .map_err(|_| NoSuchModule)?
         } else {
             const GET_INSTANCE_TIMEOUT: Duration = Duration::from_millis(500);
             select_first(
-                self.instance_pool.request(),
+                self.instance_pool.request_with_context(db),
                 tokio::time::sleep(GET_INSTANCE_TIMEOUT).map(|()| self.spinup_new_instance()),
             )
             .await
@@ -409,7 +411,7 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
         &self,
         caller_identity: Identity,
         query: String,
-    ) -> Result<Vec<spacetimedb_lib::relation::MemTable>, DBError> {
+    ) -> Result<Vec<spacetimedb_sats::relation::MemTable>, DBError> {
         self.module.one_off_query(caller_identity, query)
     }
 
@@ -476,11 +478,7 @@ pub enum InitDatabaseError {
 impl ModuleHost {
     pub fn new(threadpool: Arc<HostThreadpool>, mut module: impl Module) -> Self {
         let info = module.info();
-        let waiter_gauge =
-            WORKER_METRICS
-                .instance_queue_length
-                .with_label_values(&info.identity, &info.module_hash, &info.address);
-        let instance_pool = LendingPool::new(waiter_gauge);
+        let instance_pool = LendingPool::new();
         instance_pool.add_multiple(module.initial_instances()).unwrap();
         let inner = Arc::new(HostControllerActor {
             module: Arc::new(module),
@@ -505,12 +503,12 @@ impl ModuleHost {
         &self.info.subscription
     }
 
-    async fn call<F, R>(&self, f: F) -> Result<R, NoSuchModule>
+    async fn call<F, R>(&self, _reducer_name: &str, f: F) -> Result<R, NoSuchModule>
     where
         F: FnOnce(&mut dyn ModuleInstance) -> R + Send + 'static,
         R: Send + 'static,
     {
-        let (threadpool, mut inst) = self.inner.get_instance().await?;
+        let (threadpool, mut inst) = self.inner.get_instance(self.info.address).await?;
 
         let (tx, rx) = oneshot::channel();
         threadpool.spawn(move || {
@@ -561,7 +559,7 @@ impl ModuleHost {
         let args = args.into_tuple(self.info.typespace.with_type(schema))?;
         let caller_address = caller_address.unwrap_or(Address::__DUMMY);
 
-        self.call(move |inst| {
+        self.call(reducer_name, move |inst| {
             inst.call_reducer(CallReducerParams {
                 timestamp: Timestamp::now(),
                 caller_identity,
@@ -619,13 +617,13 @@ impl ModuleHost {
             Some(schema) => args.into_tuple(schema)?,
             _ => ArgsTuple::default(),
         };
-        self.call(move |inst| inst.init_database(fence, args))
+        self.call("<init_database>", move |inst| inst.init_database(fence, args))
             .await?
             .map_err(InitDatabaseError::Other)
     }
 
     pub async fn update_database(&self, fence: u128) -> Result<UpdateDatabaseResult, anyhow::Error> {
-        self.call(move |inst| inst.update_database(fence))
+        self.call("<update_database>", move |inst| inst.update_database(fence))
             .await?
             .map_err(Into::into)
     }

@@ -1,4 +1,4 @@
-use crate::db::datastore::traits::SequenceSchema;
+use spacetimedb_sats::db::def::SequenceSchema;
 
 pub struct Sequence {
     schema: SequenceSchema,

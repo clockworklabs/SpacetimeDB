@@ -3,10 +3,11 @@ use super::util::fmt_fn;
 use std::fmt::{self, Write};
 
 use convert_case::{Case, Casing};
+use spacetimedb_lib::sats::db::attr::ColumnAttribute;
 use spacetimedb_lib::sats::{
     AlgebraicType, AlgebraicType::Builtin, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, SumType,
 };
-use spacetimedb_lib::{ColumnIndexAttribute, ProductTypeElement, ReducerDef, TableDef};
+use spacetimedb_lib::{ProductTypeElement, ReducerDef, TableDef};
 
 use super::code_indenter::CodeIndenter;
 use super::{GenCtx, GenItem, INDENT};
@@ -564,7 +565,7 @@ fn autogen_csharp_product_table_common(
     ctx: &GenCtx,
     name: &str,
     product_type: &ProductType,
-    column_attrs: Option<&[ColumnIndexAttribute]>,
+    column_attrs: Option<&[ColumnAttribute]>,
     namespace: &str,
 ) -> String {
     let mut output = CodeIndenter::new(String::new());
@@ -652,7 +653,7 @@ fn autogen_csharp_product_table_common(
                 let indexed_fields: Vec<(&ProductTypeElement, String)> = column_attrs
                     .iter()
                     .enumerate()
-                    .filter(|a| a.1.is_unique() || a.1.is_primary())
+                    .filter(|a| a.1.has_unique() || a.1.has_primary_key())
                     .map(|a| &product_type.elements[a.0])
                     .map(|f| (f, f.name.as_ref().unwrap().replace("r#", "").to_case(Case::Pascal)))
                     .collect();
@@ -922,13 +923,13 @@ fn autogen_csharp_access_funcs_for_struct(
     struct_name_pascal_case: &str,
     product_type: &ProductType,
     table_name: &str,
-    column_attrs: &[ColumnIndexAttribute],
+    column_attrs: &[ColumnAttribute],
 ) -> bool {
     let (unique, nonunique) = column_attrs
         .iter()
         .copied()
         .enumerate()
-        .partition::<Vec<_>, _>(|(_, attr)| attr.is_unique());
+        .partition::<Vec<_>, _>(|(_, attr)| attr.has_unique());
     let unique_it = unique.into_iter().chain(nonunique);
     writeln!(
         output,
@@ -954,8 +955,8 @@ fn autogen_csharp_access_funcs_for_struct(
     let mut primary_col_idx = None;
 
     for (col_i, attr) in unique_it {
-        let is_unique = attr.is_unique();
-        let is_primary = attr.is_primary();
+        let is_unique = attr.has_unique();
+        let is_primary = attr.has_primary_key();
         if is_primary {
             if primary_col_idx.is_some() {
                 panic!("Multiple primary columns defined for table: {}", table_name);

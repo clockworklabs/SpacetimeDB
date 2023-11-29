@@ -1,11 +1,12 @@
 use super::code_indenter::CodeIndenter;
 use super::{GenCtx, GenItem};
 use convert_case::{Case, Casing};
+use spacetimedb_lib::sats::db::attr::ColumnAttribute;
 use spacetimedb_lib::sats::{
     AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, ProductTypeElement, SumType,
     SumTypeVariant,
 };
-use spacetimedb_lib::{ColumnIndexAttribute, ReducerDef, TableDef};
+use spacetimedb_lib::{ReducerDef, TableDef};
 use std::collections::HashSet;
 use std::fmt::Write;
 
@@ -407,7 +408,7 @@ fn find_primary_key_column_index(ctx: &GenCtx, table: &TableDef) -> Option<usize
         .column_attrs
         .iter()
         .enumerate()
-        .filter_map(|(i, attr)| attr.is_primary().then_some(i))
+        .filter_map(|(i, attr)| attr.has_primary_key().then_some(i))
         .collect::<Vec<_>>();
     match primaries.len() {
         2.. => {
@@ -488,7 +489,7 @@ fn print_table_filter_methods(
     out: &mut Indenter,
     table_type_name: &str,
     elements: &[ProductTypeElement],
-    attrs: &[ColumnIndexAttribute],
+    attrs: &[ColumnAttribute],
 ) {
     write!(out, "impl {} ", table_type_name).unwrap();
     out.delimited_block(
@@ -510,7 +511,7 @@ fn print_table_filter_methods(
                 //       Look at `Borrow` or Deref or AsRef?
                 write_type_ctx(ctx, out, &elt.algebraic_type);
                 write!(out, ") -> ").unwrap();
-                if attr.is_unique() {
+                if attr.has_unique() {
                     write!(out, "Option<Self>").unwrap();
                 } else {
                     write!(out, "TableIter<Self>").unwrap();
@@ -524,7 +525,7 @@ fn print_table_filter_methods(
                             // TODO: for primary keys, we should be able to do better than
                             //       `find` or `filter`. We should be able to look up
                             //       directly in the `TableCache`.
-                            if attr.is_unique() { "find" } else { "filter" },
+                            if attr.has_unique() { "find" } else { "filter" },
                             field_name,
                             field_name,
                         )

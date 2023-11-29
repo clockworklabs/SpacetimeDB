@@ -1,5 +1,6 @@
-use spacetimedb_lib::{Hash, Identity};
+use spacetimedb_lib::Identity;
 use spacetimedb_sats::de::Deserialize;
+use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::ser::Serialize;
 
 use crate::address::Address;
@@ -67,5 +68,5 @@ pub struct NodeStatus {
 #[strum(serialize_all = "lowercase")]
 #[repr(i32)]
 pub enum HostType {
-    Wasmer = 0,
+    Wasm = 0,
 }

@@ -1,9 +1,10 @@
 use super::util::fmt_fn;
 
 use convert_case::{Case, Casing};
+use spacetimedb_lib::sats::db::attr::ColumnAttribute;
 use spacetimedb_lib::{
     sats::{AlgebraicType::Builtin, AlgebraicTypeRef, ArrayType, BuiltinType, MapType},
-    AlgebraicType, ColumnIndexAttribute, ProductType, ProductTypeElement, ReducerDef, SumType, TableDef,
+    AlgebraicType, ProductType, ProductTypeElement, ReducerDef, SumType, TableDef,
 };
 use std::fmt::{self, Write};
 
@@ -187,7 +188,7 @@ fn autogen_python_product_table_common(
     ctx: &GenCtx,
     name: &str,
     product_type: &ProductType,
-    column_attrs: Option<&[ColumnIndexAttribute]>,
+    column_attrs: Option<&[ColumnAttribute]>,
 ) -> String {
     let is_table = column_attrs.is_some();
 
@@ -241,7 +242,7 @@ fn autogen_python_product_table_common(
                 .unwrap()
                 .iter()
                 .enumerate()
-                .find_map(|(idx, attr)| attr.is_primary().then_some(idx))
+                .find_map(|(idx, attr)| attr.has_primary_key().then_some(idx))
                 .map(|idx| {
                     let field_name = product_type.elements[idx]
                         .name
@@ -326,14 +327,14 @@ fn autogen_python_product_table_common(
                     .to_case(Case::Snake);
 
                 writeln!(output, "@classmethod").unwrap();
-                if attr.is_unique() {
+                if attr.has_unique() {
                     writeln!(output, "def filter_by_{field_name}(cls, {field_name}) -> {name}:").unwrap();
                 } else {
                     writeln!(output, "def filter_by_{field_name}(cls, {field_name}) -> List[{name}]:").unwrap();
                 }
                 {
                     indent_scope!(output);
-                    if attr.is_unique() {
+                    if attr.has_unique() {
                         writeln!(output, "return next(iter([column_value for column_value in SpacetimeDBClient.instance._get_table_cache(\"{name}\").values() if column_value.{field_name} == {field_name}]), None)").unwrap();
                     } else {
                         writeln!(output, "return [column_value for column_value in SpacetimeDBClient.instance._get_table_cache(\"{name}\").values() if column_value.{field_name} == {field_name}]").unwrap();

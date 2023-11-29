@@ -4,6 +4,7 @@ pub mod module_host_actor;
 
 use std::time::Instant;
 
+use super::AbiCall;
 use crate::error::{DBError, IndexError, NodesError};
 
 pub const CALL_REDUCER_DUNDER: &str = "__call_reducer__";
@@ -67,7 +68,7 @@ macro_rules! type_eq {
         }
     };
 }
-type_eq!(wasmer::Type);
+type_eq!(wasmtime::ValType);
 
 #[derive(Debug)]
 pub struct FuncSig<T: AsRef<[WasmType]>> {
@@ -81,22 +82,22 @@ impl StaticFuncSig {
         Self { params, results }
     }
 }
-impl<T: AsRef<[WasmType]>> PartialEq<FuncSig<T>> for wasmer::ExternType {
+impl<T: AsRef<[WasmType]>> PartialEq<FuncSig<T>> for wasmtime::ExternType {
     fn eq(&self, other: &FuncSig<T>) -> bool {
         self.func().map_or(false, |f| {
-            f.params() == other.params.as_ref() && f.results() == other.results.as_ref()
+            f.params().eq(other.params.as_ref()) && f.results().eq(other.results.as_ref())
         })
     }
 }
-impl FuncSigLike for wasmer::ExternType {
+impl FuncSigLike for wasmtime::ExternType {
     fn to_func_sig(&self) -> Option<BoxFuncSig> {
         self.func().map(|f| FuncSig {
-            params: f.params().iter().map(|t| (*t).into()).collect(),
-            results: f.results().iter().map(|t| (*t).into()).collect(),
+            params: f.params().map(Into::into).collect(),
+            results: f.results().map(Into::into).collect(),
         })
     }
     fn is_memory(&self) -> bool {
-        matches!(self, wasmer::ExternType::Memory(_))
+        matches!(self, wasmtime::ExternType::Memory(_))
     }
 }
 
@@ -220,7 +221,7 @@ pub trait ResourceIndex {
 
 macro_rules! decl_index {
     ($name:ident => $resource:ty) => {
-        #[derive(Copy, Clone, wasmer::ValueType)]
+        #[derive(Copy, Clone)]
         #[repr(transparent)]
         pub(super) struct $name(pub u32);
 
@@ -231,6 +232,15 @@ macro_rules! decl_index {
             }
             fn to_u32(&self) -> u32 {
                 self.0
+            }
+        }
+
+        impl $name {
+            // for WasmPointee to work in crate::host::wasmtime
+            #[allow(unused)]
+            #[doc(hidden)]
+            pub(super) fn to_le_bytes(self) -> [u8; 4] {
+                self.0.to_le_bytes()
             }
         }
     };
@@ -343,7 +353,7 @@ pub fn err_to_errno(err: &NodesError) -> Option<u16> {
             DBError::Index(IndexError::UniqueConstraintViolation {
                 constraint_name: _,
                 table_name: _,
-                col_names: _,
+                cols: _,
                 value: _,
             }) => Some(errnos::UNIQUE_ALREADY_EXISTS),
             _ => None,
@@ -355,7 +365,7 @@ pub fn err_to_errno(err: &NodesError) -> Option<u16> {
 #[derive(Debug, thiserror::Error)]
 #[error("runtime error calling {func}: {err}")]
 pub struct AbiRuntimeError {
-    pub func: &'static str,
+    pub func: AbiCall,
     #[source]
     pub err: NodesError,
 }

@@ -9,16 +9,22 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use parking_lot::Mutex;
-use prometheus::IntGauge;
+use spacetimedb_lib::Address;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
-use crate::util::prometheus_handle::IntGaugeExt;
+use crate::worker_metrics::{MAX_QUEUE_LEN, WORKER_METRICS};
 
 use super::notify_once::{NotifiedOnce, NotifyOnce};
 
 pub struct LendingPool<T> {
     sem: Arc<Semaphore>,
     inner: Arc<LendingPoolInner<T>>,
+}
+
+impl<T> Default for LendingPool<T> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<T> Clone for LendingPool<T> {
@@ -32,7 +38,6 @@ impl<T> Clone for LendingPool<T> {
 
 struct LendingPoolInner<T> {
     closed_notify: NotifyOnce,
-    waiter_gauge: IntGauge,
     vec: Mutex<PoolVec<T>>,
 }
 
@@ -45,32 +50,39 @@ struct PoolVec<T> {
 pub struct PoolClosed;
 
 impl<T> LendingPool<T> {
-    pub fn new(waiter_gauge: IntGauge) -> Self {
-        Self::from_iter(std::iter::empty(), waiter_gauge)
+    pub fn new() -> Self {
+        Self::from_iter(std::iter::empty())
     }
 
-    pub fn from_iter<I: IntoIterator<Item = T>>(iter: I, waiter_gauge: IntGauge) -> Self {
-        let deque = VecDeque::from_iter(iter);
-        Self {
-            sem: Arc::new(Semaphore::new(deque.len())),
-            inner: Arc::new(LendingPoolInner {
-                closed_notify: NotifyOnce::new(),
-                waiter_gauge,
-                vec: Mutex::new(PoolVec {
-                    total_count: deque.len(),
-                    deque: Some(deque),
-                }),
-            }),
-        }
-    }
-
-    pub fn request(&self) -> impl Future<Output = Result<LentResource<T>, PoolClosed>> {
+    pub fn request_with_context(&self, db: Address) -> impl Future<Output = Result<LentResource<T>, PoolClosed>> {
         let acq = self.sem.clone().acquire_owned();
         let pool_inner = self.inner.clone();
-        let waiter_guard = pool_inner.waiter_gauge.inc_scope();
+
+        let queue_len = WORKER_METRICS.instance_queue_length.with_label_values(&db);
+        let queue_len_max = WORKER_METRICS.instance_queue_length_max.with_label_values(&db);
+        let queue_len_histogram = WORKER_METRICS.instance_queue_length_histogram.with_label_values(&db);
+
+        queue_len.inc();
+        let new_queue_len = queue_len.get();
+        queue_len_histogram.observe(new_queue_len as f64);
+
+        let mut guard = MAX_QUEUE_LEN.lock().unwrap();
+        let max_queue_len = *guard
+            .entry(db)
+            .and_modify(|max| {
+                if new_queue_len > *max {
+                    *max = new_queue_len;
+                }
+            })
+            .or_insert_with(|| new_queue_len);
+
+        drop(guard);
+        queue_len_max.set(max_queue_len);
+
         async move {
             let permit = acq.await.map_err(|_| PoolClosed)?;
-            drop(waiter_guard);
+            queue_len.dec();
+            queue_len_histogram.observe(queue_len.get() as f64);
             let resource = pool_inner
                 .vec
                 .lock()
@@ -129,6 +141,22 @@ impl<T> LendingPool<T> {
     }
 }
 
+impl<T> FromIterator<T> for LendingPool<T> {
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        let deque = VecDeque::from_iter(iter);
+        Self {
+            sem: Arc::new(Semaphore::new(deque.len())),
+            inner: Arc::new(LendingPoolInner {
+                closed_notify: NotifyOnce::new(),
+                vec: Mutex::new(PoolVec {
+                    total_count: deque.len(),
+                    deque: Some(deque),
+                }),
+            }),
+        }
+    }
+}
+
 pin_project_lite::pin_project! {
     pub struct Closed<'a> {
         #[pin]
@@ -162,17 +190,6 @@ impl<T> DerefMut for LentResource<T> {
         &mut self.resource
     }
 }
-
-// impl<T> LentResource<T> {
-//     fn keep(this: Self) -> T {
-//         let mut this = ManuallyDrop::new(this);
-//         let resource = unsafe { ManuallyDrop::take(&mut this.resource) };
-//         let permit = unsafe { ManuallyDrop::take(&mut this.permit) };
-//         permit.forget();
-//         let prev_count = this.pool.total_count.fetch_sub(1, SeqCst);
-//         resource
-//     }
-// }
 
 impl<T> Drop for LentResource<T> {
     fn drop(&mut self) {

@@ -13,7 +13,7 @@
   <PropertyGroup>
     <Version>$(AssemblyVersion)</Version>
     <Title>SpacetimeDB Module Codegen</Title>
-    <Authors>ingvar_clockwork</Authors>
+    <Authors>RReverser</Authors>
     <Company>Clockwork Labs</Company>
     <Product>SpacetimeDB</Product>
     <Description>The SpacetimeDB Codegen implements the Roslyn incremental generators for writing SpacetimeDB modules in C#.</Description>

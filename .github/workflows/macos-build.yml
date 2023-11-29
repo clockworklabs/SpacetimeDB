@@ -6,6 +6,7 @@ on:
       - '**'
     branches:
       - master
+      - release/*
 
 jobs:
   macos-cli:
@@ -23,14 +24,14 @@ jobs:
         run: |
           cargo build --release -p spacetimedb-cli
           mkdir build
-          mv target/release/spacetime build/spacetime
+          dd if=target/release/spacetime of=build/spacetime conv=noerror,sync  
           cd build && tar -czf spacetime.darwin-amd64.tar.gz spacetime
           rm spacetime
 
       - name: Compile Aarch64
         run: |
           cargo build --release -p spacetimedb-cli --target=aarch64-apple-darwin
-          mv target/aarch64-apple-darwin/release/spacetime build/spacetime
+          dd if=target/aarch64-apple-darwin/release/spacetime of=build/spacetime conv=noerror,sync  
           cd build && tar -czf spacetime.darwin-arm64.tar.gz spacetime
           rm spacetime
 

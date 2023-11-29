@@ -1,16 +1,16 @@
 //! The [DbProgram] that execute arbitrary queries & code against the database.
+
 use crate::db::cursor::{CatalogCursor, IndexCursor, TableCursor};
 use crate::db::datastore::locking_tx_datastore::{IterByColEq, MutTxId};
-use crate::db::datastore::traits::{ColumnDef, IndexDef, TableDef};
 use crate::db::relational_db::RelationalDB;
 use crate::execution_context::ExecutionContext;
 use itertools::Itertools;
-use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::{DbTable, FieldExpr, FieldName, Relation};
-use spacetimedb_lib::relation::{Header, MemTable, RelIter, RelValue, RowCount, Table};
-use spacetimedb_lib::table::ProductTypeMeta;
 use spacetimedb_primitives::{ColId, TableId};
+use spacetimedb_sats::db::auth::{StAccess, StTableType};
+use spacetimedb_sats::db::def::{ColumnDef, IndexDef, ProductTypeMeta, TableDef};
+use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldName, RelValueRef, Relation};
+use spacetimedb_sats::relation::{Header, MemTable, RelIter, RelValue, RowCount, Table};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::env::EnvDb;
 use spacetimedb_vm::errors::ErrorVm;
@@ -38,23 +38,45 @@ pub fn build_query<'a>(
         result = match op {
             Query::IndexScan(IndexScan {
                 table,
-                col_id,
+                columns,
                 lower_bound,
                 upper_bound,
-            }) if db_table => iter_by_col_range(ctx, stdb, tx, table, col_id, (lower_bound, upper_bound))?,
+            }) if db_table => {
+                assert_eq!(columns.len(), 1, "Only support single column IndexScan");
+                let col_id = columns.head;
+                iter_by_col_range(ctx, stdb, tx, table, col_id, (lower_bound, upper_bound))?
+            }
             Query::IndexScan(index_scan) => {
                 let header = result.head().clone();
                 let cmp: ColumnOp = index_scan.into();
                 let iter = result.select(move |row| cmp.compare(row, &header));
                 Box::new(iter)
             }
+            // If this is an index join between two virtual tables, replace with an inner join.
+            // Such a plan is possible under incremental evaluation,
+            // when there are updates to both base tables,
+            // however an index lookup is invalid on a virtual table.
+            //
+            // TODO: This logic should be entirely encapsulated within the query planner.
+            // It should not be possible for the planner to produce an invalid plan.
+            Query::IndexJoin(join)
+                if !db_table
+                    && matches!(join.probe_side.source, SourceExpr::MemTable(_))
+                    && join.probe_side.source.table_name() != result.head().table_name =>
+            {
+                let join: JoinExpr = join.into();
+                let iter = join_inner(ctx, stdb, tx, result, join, true)?;
+                Box::new(iter)
+            }
             Query::IndexJoin(IndexJoin {
                 probe_side,
                 probe_field,
                 index_header,
+                index_select,
                 index_table,
                 index_col,
-            }) if db_table => {
+                return_index_rows,
+            }) => {
                 let probe_side = build_query(ctx, stdb, tx, probe_side.into())?;
                 Box::new(IndexSemiJoin {
                     ctx,
@@ -63,15 +85,12 @@ pub fn build_query<'a>(
                     probe_side,
                     probe_field,
                     index_header,
+                    index_select,
                     index_table,
                     index_col,
                     index_iter: None,
+                    return_index_rows,
                 })
-            }
-            Query::IndexJoin(join) => {
-                let join: JoinExpr = join.into();
-                let iter = join_inner(ctx, stdb, tx, result, join, true)?;
-                Box::new(iter)
             }
             Query::Select(cmp) => {
                 let header = result.head().clone();
@@ -184,12 +203,15 @@ pub struct IndexSemiJoin<'a, Rhs: RelOps> {
     // The field whose value will be used to probe the index.
     pub probe_field: FieldName,
     // The header for the index side of the join.
-    // Also the return header since we are returning values from the index side.
     pub index_header: Header,
+    // An optional predicate to evaluate over the matching rows of the index.
+    pub index_select: Option<ColumnOp>,
     // The table id on which the index is defined.
     pub index_table: TableId,
     // The column id for which the index is defined.
     pub index_col: ColId,
+    // Is this a left or right semijion?
+    pub return_index_rows: bool,
     // An iterator for the index side.
     // A new iterator will be instantiated for each row on the probe side.
     pub index_iter: Option<IterByColEq<'a>>,
@@ -201,9 +223,32 @@ pub struct IndexSemiJoin<'a, Rhs: RelOps> {
     ctx: &'a ExecutionContext<'a>,
 }
 
+impl<'a, Rhs: RelOps> IndexSemiJoin<'a, Rhs> {
+    fn filter(&self, index_row: RelValueRef) -> Result<bool, ErrorVm> {
+        if let Some(op) = &self.index_select {
+            Ok(op.compare(index_row, &self.index_header)?)
+        } else {
+            Ok(true)
+        }
+    }
+
+    fn map(&self, index_row: RelValue, probe_row: Option<RelValue>) -> RelValue {
+        if let Some(value) = probe_row {
+            if !self.return_index_rows {
+                return value;
+            }
+        }
+        index_row
+    }
+}
+
 impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
     fn head(&self) -> &Header {
-        &self.index_header
+        if self.return_index_rows {
+            &self.index_header
+        } else {
+            self.probe_side.head()
+        }
     }
 
     fn row_count(&self) -> RowCount {
@@ -213,8 +258,13 @@ impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
     #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
         // Return a value from the current index iterator, if not exhausted.
-        if let Some(value) = self.index_iter.as_mut().and_then(|iter| iter.next()) {
-            return Ok(Some(value.to_rel_value()));
+        if self.return_index_rows {
+            while let Some(value) = self.index_iter.as_mut().and_then(|iter| iter.next()) {
+                let value = value.to_rel_value();
+                if self.filter(value.as_val_ref())? {
+                    return Ok(Some(self.map(value, None)));
+                }
+            }
         }
         // Otherwise probe the index with a row from the probe side.
         while let Some(row) = self.probe_side.next()? {
@@ -224,9 +274,12 @@ impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
                     let col_id = self.index_col;
                     let value = value.clone();
                     let mut index_iter = self.db.iter_by_col_eq(self.ctx, self.tx, table_id, col_id, value)?;
-                    if let Some(value) = index_iter.next() {
-                        self.index_iter = Some(index_iter);
-                        return Ok(Some(value.to_rel_value()));
+                    while let Some(value) = index_iter.next() {
+                        let value = value.to_rel_value();
+                        if self.filter(value.as_val_ref())? {
+                            self.index_iter = Some(index_iter);
+                            return Ok(Some(self.map(value, Some(row))));
+                        }
                     }
                 }
             }
@@ -319,7 +372,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         let mut indexes = Vec::new();
         for (i, column) in columns.columns.elements.iter().enumerate() {
             let meta = columns.attr[i];
-            if meta.is_unique() {
+            if meta.has_unique() {
                 indexes.push(IndexDef::new(
                     format!("{}_{}_idx", table_name, i),
                     0.into(), // Ignored
@@ -330,7 +383,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
             cols.push(ColumnDef {
                 col_name: column.name.clone().unwrap_or(i.to_string()),
                 col_type: column.algebraic_type.clone(),
-                is_autoinc: meta.is_autoinc(),
+                is_autoinc: meta.has_autoinc(),
             })
         }
         self.db.create_table(
@@ -362,6 +415,9 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
                 if let Some(id) = self.db.sequence_id_from_name(self.tx, name)? {
                     self.db.drop_sequence(self.tx, id)?;
                 }
+            }
+            DbType::Constraint => {
+                todo!("Will be finished in PR#267")
             }
         }
 
@@ -531,15 +587,16 @@ pub(crate) mod tests {
     use crate::db::datastore::system_tables::{
         st_columns_schema, st_indexes_schema, st_sequences_schema, st_table_schema, StColumnFields, StColumnRow,
         StIndexFields, StIndexRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, ST_COLUMNS_ID,
-        ST_SEQUENCES_ID, ST_TABLES_ID,
+        ST_COLUMNS_NAME, ST_INDEXES_NAME, ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID, ST_TABLES_NAME,
     };
     use crate::db::relational_db::tests_utils::make_test_db;
-    use crate::db::relational_db::{ST_COLUMNS_NAME, ST_INDEXES_NAME, ST_SEQUENCES_NAME, ST_TABLES_NAME};
     use crate::execution_context::ExecutionContext;
     use nonempty::NonEmpty;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_lib::relation::{DbTable, FieldName};
     use spacetimedb_primitives::TableId;
+    use spacetimedb_sats::db::auth::{StAccess, StTableType};
+    use spacetimedb_sats::db::def::{ColumnDef, IndexDef, IndexType};
+    use spacetimedb_sats::relation::{DbTable, FieldName};
     use spacetimedb_sats::{product, AlgebraicType, ProductType, ProductValue};
     use spacetimedb_vm::dsl::*;
     use spacetimedb_vm::eval::run_ast;
@@ -687,7 +744,7 @@ pub(crate) mod tests {
             .with_select_cmp(
                 OpCmp::Eq,
                 FieldName::named(ST_COLUMNS_NAME, StColumnFields::TableId.name()),
-                scalar(ST_COLUMNS_ID.0),
+                scalar(ST_COLUMNS_ID),
             )
             .with_select_cmp(
                 OpCmp::Eq,
@@ -746,6 +803,7 @@ pub(crate) mod tests {
                 table_id,
                 cols: NonEmpty::new(0.into()),
                 is_unique: true,
+                index_type: IndexType::BTree,
             }
             .into(),
             q,

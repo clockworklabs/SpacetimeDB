@@ -1,16 +1,17 @@
+use crate::hash::Hash;
 use prometheus::core::{Metric, MetricVec, MetricVecBuilder};
-use spacetimedb_lib::{Address, Hash, Identity};
+use spacetimedb_lib::{Address, Identity};
 
 #[macro_export]
 macro_rules! metrics_group {
     ($(#[$attr:meta])* $type_vis:vis struct $type_name:ident {
-        $(#[name = $name:ident] #[help = $help:expr] $(#[labels($($labels:ident: $labelty:ty),*)])? $vis:vis $field:ident: $ty:ident,)*
+        $(#[name = $name:ident] #[help = $help:expr] $(#[labels($($labels:ident: $labelty:ty),*)])? $(#[buckets($($bucket:literal),*)])? $vis:vis $field:ident: $ty:ident,)*
     }) => {
         $(#[$attr])*
         $type_vis struct $type_name {
             $($vis $field: $crate::metrics_group!(@fieldtype $field $ty $(($($labels)*))?),)*
         }
-        $($crate::metrics_group!(@maketype $vis $field $ty $(($($labels: $labelty),*))?);)*
+        $($crate::metrics_group!(@maketype $vis $field $ty $(($($labels: $labelty),*))? $(($($bucket)*))?);)*
         impl $type_name {
             #[allow(clippy::new_without_default)]
             pub fn new() -> Self {
@@ -46,6 +47,11 @@ macro_rules! metrics_group {
             $crate::metrics_vec!($vis [< $field:camel $ty >]: $ty($($labels)*));
         }
     };
+    (@maketype $vis:vis $field:ident $ty:ident ($($labels:tt)*) ($($bucket:literal)*)) => {
+        $crate::util::typed_prometheus::paste! {
+            $crate::metrics_histogram_vec!($vis [< $field:camel $ty >]: $ty($($labels)*) ($($bucket)*));
+        }
+    };
     (@maketype $vis:vis $field:ident $ty:ident) => {};
 }
 pub use metrics_group;
@@ -62,6 +68,36 @@ macro_rules! make_collector {
     };
 }
 pub use make_collector;
+
+#[macro_export]
+macro_rules! metrics_histogram_vec {
+    ($vis:vis $name:ident: $vecty:ident($($labels:ident: $labelty:ty),+ $(,)?) ($($bucket:literal)*)) => {
+        #[derive(Clone)]
+        $vis struct $name($vecty);
+        impl $name {
+            pub fn with_opts(opts: prometheus::Opts) -> prometheus::Result<Self> {
+                let opts = prometheus::HistogramOpts::from(opts).buckets(vec![$(f64::from($bucket)),*]);
+                $vecty::new(opts.into(), &[$(stringify!($labels)),+]).map(Self)
+            }
+
+            pub fn with_label_values(&self, $($labels: &$labelty),+) -> <$vecty as $crate::util::typed_prometheus::ExtractMetricVecT>::M {
+                use $crate::util::typed_prometheus::AsPrometheusLabel as _;
+                self.0.with_label_values(&[ $($labels.as_prometheus_str().as_ref()),+ ])
+            }
+        }
+
+        impl prometheus::core::Collector for $name {
+            fn desc(&self) -> Vec<&prometheus::core::Desc> {
+                prometheus::core::Collector::desc(&self.0)
+            }
+
+            fn collect(&self) -> Vec<prometheus::proto::MetricFamily> {
+                prometheus::core::Collector::collect(&self.0)
+            }
+        }
+    };
+}
+pub use metrics_histogram_vec;
 
 #[macro_export]
 macro_rules! metrics_vec {
@@ -92,7 +128,7 @@ macro_rules! metrics_vec {
 }
 pub use metrics_vec;
 
-use crate::{execution_context::TransactionType, host::AbiCall};
+use crate::{execution_context::WorkloadType, host::AbiCall};
 
 pub trait AsPrometheusLabel {
     type Str<'a>: AsRef<str> + 'a
@@ -120,8 +156,9 @@ impl_prometheusvalue_string!(
     Hash,
     Identity,
     Address,
-    TransactionType,
+    WorkloadType,
     AbiCall,
+    bool,
     u8,
     u16,
     u32,

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use bytes::Bytes;
-use spacetimedb_lib::{hash::hash_bytes, Hash};
+use spacetimedb_sats::hash::{hash_bytes, Hash};
 
 use crate::db::ostorage::ObjectDB;
 
@@ -30,5 +30,15 @@ impl ObjectDB for MemoryObjectDB {
     /// Syncing an in-memory object store is a no-op.
     fn sync_all(&mut self) -> Result<(), crate::error::DBError> {
         Ok(())
+    }
+
+    fn size_on_disk(&self) -> Result<u64, crate::error::DBError> {
+        Ok(0)
+    }
+}
+
+impl From<HashMap<Hash, Bytes>> for MemoryObjectDB {
+    fn from(objects: HashMap<Hash, Bytes>) -> Self {
+        Self { objects }
     }
 }

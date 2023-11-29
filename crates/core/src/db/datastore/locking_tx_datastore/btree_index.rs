@@ -1,9 +1,10 @@
 use super::RowId;
-use crate::{db::datastore::traits::IndexSchema, error::DBError};
+use crate::db::datastore::locking_tx_datastore::table::Table;
+use crate::error::{DBError, IndexError};
 use nonempty::NonEmpty;
-use spacetimedb_lib::{data_key::ToDataKey, DataKey};
 use spacetimedb_primitives::{ColId, IndexId, TableId};
-use spacetimedb_sats::{AlgebraicValue, ProductValue};
+use spacetimedb_sats::db::def::{IndexSchema, IndexType};
+use spacetimedb_sats::{data_key::ToDataKey, AlgebraicValue, DataKey, ProductValue};
 use std::{
     collections::{btree_set, BTreeSet},
     ops::{Bound, RangeBounds},
@@ -164,7 +165,7 @@ impl BTreeIndex {
     /// Returns an iterator over the [BTreeIndex] that yields all the `RowId`s
     /// that fall within the specified `range`.
     #[tracing::instrument(skip_all)]
-    pub(crate) fn seek<'a>(&'a self, range: &impl RangeBounds<AlgebraicValue>) -> BTreeIndexRangeIter<'a> {
+    pub(crate) fn seek(&self, range: &impl RangeBounds<AlgebraicValue>) -> BTreeIndexRangeIter<'_> {
         let map = |bound, datakey| match bound {
             Bound::Included(x) => Bound::Included(IndexKey::from_row(x, datakey)),
             Bound::Excluded(x) => Bound::Excluded(IndexKey::from_row(x, datakey)),
@@ -186,6 +187,19 @@ impl BTreeIndex {
         }
         Ok(())
     }
+
+    pub(crate) fn build_error_unique(&self, table: &Table, value: AlgebraicValue) -> IndexError {
+        IndexError::UniqueConstraintViolation {
+            constraint_name: self.name.clone(),
+            table_name: table.schema.table_name.clone(),
+            cols: self
+                .cols
+                .iter()
+                .map(|&x| table.schema.columns[usize::from(x)].col_name.clone())
+                .collect(),
+            value,
+        }
+    }
 }
 
 impl From<&BTreeIndex> for IndexSchema {
@@ -196,6 +210,7 @@ impl From<&BTreeIndex> for IndexSchema {
             cols: x.cols.clone(),
             is_unique: x.is_unique,
             index_name: x.name.clone(),
+            index_type: IndexType::BTree,
         }
     }
 }

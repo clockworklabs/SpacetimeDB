@@ -1,6 +1,6 @@
 [package]
 name = "spacetimedb-core"
-version = "0.7.2"
+version = "0.7.3"
 edition = "2021"
 license-file = "LICENSE"
 description = "The core library for SpacetimeDB"
@@ -18,11 +18,11 @@ name = "odb_flavor_bench"
 harness = false
 
 [dependencies]
-spacetimedb-lib = { path = "../lib", version = "0.7.2" }
-spacetimedb-sats = { path = "../sats", version = "0.7.2" }
-spacetimedb-vm = { path = "../vm", version = "0.7.2" }
-spacetimedb-client-api-messages = { path = "../client-api-messages", version = "0.7.2" }
-spacetimedb-primitives = { path = "../primitives", version = "0.7.2" }
+spacetimedb-lib = { path = "../lib", version = "0.7.3" }
+spacetimedb-sats = { path = "../sats", version = "0.7.3" }
+spacetimedb-vm = { path = "../vm", version = "0.7.3" }
+spacetimedb-client-api-messages = { path = "../client-api-messages", version = "0.7.3" }
+spacetimedb-primitives = { path = "../primitives", version = "0.7.3" }
 
 anyhow.workspace = true
 async-trait.workspace = true
@@ -60,6 +60,7 @@ rayon-core.workspace = true
 regex.workspace = true
 rustc-demangle.workspace = true
 rustc-hash.workspace = true
+smallvec.workspace = true
 scopeguard.workspace = true
 sendgrid.workspace = true
 serde.workspace = true
@@ -71,10 +72,12 @@ slab.workspace = true
 sled.workspace = true
 sqlparser.workspace = true
 strum.workspace = true
+sys-info.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 tokio-util.workspace = true
 tokio.workspace = true
+toml.workspace = true
 tracing-appender.workspace = true
 tracing-core.workspace = true
 tracing-flame.workspace = true
@@ -85,10 +88,7 @@ tracing.workspace = true
 url.workspace = true
 urlencoding.workspace = true
 uuid.workspace = true
-wasmer-middlewares.workspace = true
-wasmer-types.workspace = true
-wasmer-vm.workspace = true
-wasmer.workspace = true
+wasmtime = { workspace = true, features = ["cache"] }
 # Rocksdb ostorage backend, linked only if "rocksdb" feature enabled.
 rocksdb = {workspace = true, optional = true}
 
@@ -100,9 +100,11 @@ default = ["odb_sled"]
 
 [dev-dependencies]
 spacetimedb-lib = { path = "../lib", features = ["proptest"] }
+spacetimedb-sats = { path = "../sats", features = ["proptest"] }
 
 rusqlite.workspace = true
 criterion.workspace = true
+# Also as dev-dependencies for use in _this_ crate's tests.
 proptest.workspace = true
 proptest-derive.workspace = true
 rand.workspace = true

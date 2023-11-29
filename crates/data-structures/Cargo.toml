@@ -1,8 +1,14 @@
 [package]
 name = "spacetimedb-data-structures"
-version = "0.7.2"
+version = "0.7.3"
 edition = "2021"
 license-file = "LICENSE"
 description = "Assorted data structures used in spacetimedb"
 
+[features]
+serde = ["dep:serde"]
+
 [dependencies]
+nonempty.workspace = true
+serde = { workspace = true, optional = true }
+thiserror.workspace = true

@@ -291,6 +291,19 @@ impl ControlDb {
         Ok(result)
     }
 
+    pub fn get_emails_for_identity(&self, identity: &Identity) -> Result<Vec<IdentityEmail>> {
+        let mut result = Vec::<IdentityEmail>::new();
+        let tree = self.db.open_tree("email")?;
+        for i in tree.iter() {
+            let (_, value) = i?;
+            let iemail: IdentityEmail = bsatn::from_slice(&value)?;
+            if &iemail.identity == identity {
+                result.push(iemail);
+            }
+        }
+        Ok(result)
+    }
+
     pub fn get_databases(&self) -> Result<Vec<Database>> {
         let tree = self.db.open_tree("database")?;
         let mut databases = Vec::new();
@@ -549,7 +562,7 @@ impl ControlDb {
                 return Err(Error::DecodingError(bsatn::DecodeError::BufferLength));
             };
             let balance = i128::from_be_bytes(arr);
-            Ok(Some(EnergyQuanta(balance)))
+            Ok(Some(EnergyQuanta::new(balance)))
         } else {
             Ok(None)
         }
@@ -560,7 +573,7 @@ impl ControlDb {
     /// `control_budget`, where a cached copy is stored along with business logic for managing it.
     pub fn set_energy_balance(&self, identity: Identity, energy_balance: EnergyQuanta) -> Result<()> {
         let tree = self.db.open_tree("energy_budget")?;
-        tree.insert(identity.as_bytes(), &energy_balance.0.to_be_bytes())?;
+        tree.insert(identity.as_bytes(), &energy_balance.get().to_be_bytes())?;
 
         Ok(())
     }

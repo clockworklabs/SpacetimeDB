@@ -1,49 +1,38 @@
-use super::commit_log::{CommitLog, CommitLogView};
-use super::datastore::locking_tx_datastore::{DataRef, Iter, IterByColEq, IterByColRange, Locking, MutTxId, RowId};
-use super::datastore::traits::{
-    DataRow, IndexDef, MutProgrammable, MutTx, MutTxDatastore, Programmable, SequenceDef, TableDef, TableSchema, TxData,
-};
-use super::message_log::MessageLog;
-use super::ostorage::memory_object_db::MemoryObjectDB;
-use super::relational_operators::Relation;
-use crate::address::Address;
-use crate::db::commit_log;
-use crate::db::db_metrics::DB_METRICS;
-use crate::db::messages::commit::Commit;
-use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
-use crate::db::ostorage::ObjectDB;
-use crate::error::{DBError, DatabaseError, IndexError, TableError};
-use crate::execution_context::ExecutionContext;
-use crate::hash::Hash;
 use fs2::FileExt;
 use nonempty::NonEmpty;
-use spacetimedb_lib::ColumnIndexAttribute;
-use spacetimedb_lib::{data_key::ToDataKey, PrimaryKey};
-use spacetimedb_primitives::{ColId, IndexId, SequenceId, TableId};
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use std::borrow::Cow;
 use std::fs::{create_dir_all, File};
 use std::ops::RangeBounds;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-pub const ST_TABLES_NAME: &str = "st_table";
-pub const ST_COLUMNS_NAME: &str = "st_columns";
-pub const ST_SEQUENCES_NAME: &str = "st_sequence";
-pub const ST_INDEXES_NAME: &str = "st_indexes";
-
-/// The static ID of the table that defines tables
-pub const ST_TABLES_ID: TableId = TableId(0);
-/// The static ID of the table that defines columns
-pub const ST_COLUMNS_ID: TableId = TableId(1);
-/// The ID that we can start use to generate user tables that will not conflict with the bootstrapped ones.
-pub const ST_TABLE_ID_START: TableId = TableId(2);
+use super::commit_log::{CommitLog, CommitLogMut};
+use super::datastore::locking_tx_datastore::Locking;
+use super::datastore::locking_tx_datastore::{DataRef, Iter, IterByColEq, IterByColRange, MutTxId, RowId};
+use super::datastore::traits::{MutProgrammable, MutTx, MutTxDatastore, Programmable, TxData};
+use super::message_log::MessageLog;
+use super::ostorage::memory_object_db::MemoryObjectDB;
+use super::relational_operators::Relation;
+use crate::address::Address;
+use crate::db::datastore::traits::DataRow;
+use crate::db::db_metrics::DB_METRICS;
+use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
+use crate::db::ostorage::ObjectDB;
+use crate::db::FsyncPolicy;
+use crate::error::{DBError, DatabaseError, IndexError, TableError};
+use crate::execution_context::ExecutionContext;
+use crate::hash::Hash;
+use spacetimedb_lib::PrimaryKey;
+use spacetimedb_primitives::{ColId, ColumnAttribute, IndexId, SequenceId, TableId};
+use spacetimedb_sats::data_key::ToDataKey;
+use spacetimedb_sats::db::def::{IndexDef, SequenceDef, TableDef, TableSchema};
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 
 #[derive(Clone)]
 pub struct RelationalDB {
     // TODO(cloutiertyler): This should not be public
     pub(crate) inner: Locking,
-    commit_log: CommitLog,
+    commit_log: Option<CommitLogMut>,
     _lock: Arc<File>,
     address: Address,
 }
@@ -87,74 +76,60 @@ impl RelationalDB {
             .map_err(|err| DatabaseError::DatabasedOpened(root.to_path_buf(), err.into()))?;
 
         let datastore = Locking::bootstrap(db_address)?;
-        log::debug!("[{}] Replaying transaction log.", address);
-        let mut segment_index = 0;
-        let mut last_logged_percentage = 0;
-        let unwritten_commit = {
-            let mut transaction_offset = 0;
-            let mut last_commit_offset = None;
-            let mut last_hash: Option<Hash> = None;
-            if let Some(message_log) = &message_log {
-                let message_log = message_log.lock().unwrap();
-                let max_offset = message_log.open_segment_max_offset;
-                for commit in commit_log::Iter::from(message_log.segments()) {
-                    let commit = commit?;
+        let mut transaction_offset = 0;
+        let commit_log = message_log
+            .map(|mlog| {
+                log::debug!("[{}] Replaying transaction log.", address);
+                let mut last_logged_percentage = 0;
 
-                    segment_index += 1;
-                    last_hash = commit.parent_commit_hash;
-                    last_commit_offset = Some(commit.commit_offset);
+                let commit_log = CommitLog::new(mlog, odb);
+                let max_commit_offset = commit_log.max_commit_offset();
+
+                let commit_log = commit_log.replay(|commit, odb| {
+                    transaction_offset += commit.transactions.len();
                     for transaction in commit.transactions {
-                        transaction_offset += 1;
-                        // NOTE: Although I am creating a blobstore transaction in a
-                        // one to one fashion for each message log transaction, this
-                        // is just to reduce memory usage while inserting. We don't
-                        // really care about inserting these transactionally as long
-                        // as all of the writes get inserted.
-                        datastore.replay_transaction(&transaction, odb.clone())?;
-
-                        let percentage = f64::floor((segment_index as f64 / max_offset as f64) * 100.0) as i32;
-                        if percentage > last_logged_percentage && percentage % 10 == 0 {
-                            last_logged_percentage = percentage;
-                            log::debug!(
-                                "[{}] Loaded {}% ({}/{})",
-                                address,
-                                percentage,
-                                transaction_offset,
-                                max_offset
-                            );
-                        }
+                        datastore.replay_transaction(&transaction, odb)?;
                     }
-                }
 
-                // The purpose of this is to rebuild the state of the datastore
-                // after having inserted all of rows from the message log.
-                // This is necessary because, for example, inserting a row into `st_table`
-                // is not equivalent to calling `create_table`.
-                // There may eventually be better way to do this, but this will have to do for now.
-                datastore.rebuild_state_after_replay()?;
-            }
+                    let percentage =
+                        f64::floor((commit.commit_offset as f64 / max_commit_offset as f64) * 100.0) as i32;
+                    if percentage > last_logged_percentage && percentage % 10 == 0 {
+                        last_logged_percentage = percentage;
+                        log::debug!(
+                            "[{}] Loaded {}% ({}/{})",
+                            address,
+                            percentage,
+                            transaction_offset,
+                            max_commit_offset
+                        );
+                    }
 
-            let commit_offset = if let Some(last_commit_offset) = last_commit_offset {
-                last_commit_offset + 1
-            } else {
-                0
-            };
+                    Ok(())
+                })?;
 
-            log::debug!(
-                "[{}] Initialized with {} commits and tx offset {}",
-                address,
-                commit_offset,
-                transaction_offset
-            );
+                let fsync = if fsync {
+                    FsyncPolicy::EveryTx
+                } else {
+                    FsyncPolicy::Never
+                };
 
-            Commit {
-                parent_commit_hash: last_hash,
-                commit_offset,
-                min_tx_offset: transaction_offset,
-                transactions: Vec::new(),
-            }
-        };
-        let commit_log = CommitLog::new(message_log, odb.clone(), unwritten_commit, fsync);
+                Ok::<_, DBError>(commit_log.with_fsync(fsync))
+            })
+            .transpose()?;
+
+        // The purpose of this is to rebuild the state of the datastore
+        // after having inserted all of rows from the message log.
+        // This is necessary because, for example, inserting a row into `st_table`
+        // is not equivalent to calling `create_table`.
+        // There may eventually be better way to do this, but this will have to do for now.
+        datastore.rebuild_state_after_replay()?;
+
+        log::debug!(
+            "[{}] Initialized with {} commits and tx offset {}",
+            address,
+            commit_log.as_ref().map(|log| log.commit_offset()).unwrap_or_default(),
+            transaction_offset
+        );
 
         // i.e. essentially bootstrap the creation of the schema
         // tables by hard coding the schema of the schema tables
@@ -175,8 +150,8 @@ impl RelationalDB {
     }
 
     /// Obtain a read-only view of this database's [`CommitLog`].
-    pub fn commit_log(&self) -> CommitLogView {
-        CommitLogView::from(&self.commit_log)
+    pub fn commit_log(&self) -> Option<CommitLog> {
+        self.commit_log.as_ref().map(CommitLog::from)
     }
 
     #[tracing::instrument(skip_all)]
@@ -272,7 +247,12 @@ impl RelationalDB {
     pub fn commit_tx(&self, ctx: &ExecutionContext, tx: MutTxId) -> Result<Option<(TxData, Option<usize>)>, DBError> {
         log::trace!("COMMIT TX");
         if let Some(tx_data) = self.inner.commit_mut_tx(ctx, tx)? {
-            let bytes_written = self.commit_log.append_tx(ctx, &tx_data, &self.inner)?;
+            let bytes_written = self
+                .commit_log
+                .as_ref()
+                .map(|commit_log| commit_log.append_tx(ctx, &tx_data, &self.inner))
+                .transpose()?
+                .flatten();
             return Ok(Some((tx_data, bytes_written)));
         }
         Ok(None)
@@ -395,7 +375,12 @@ impl RelationalDB {
             .rdb_drop_table_time
             .with_label_values(&table_id.0)
             .start_timer();
-        self.inner.drop_table_mut_tx(tx, table_id)
+        self.inner.drop_table_mut_tx(tx, table_id).map(|_| {
+            DB_METRICS
+                .rdb_num_table_rows
+                .with_label_values(&self.address, &table_id.into())
+                .set(0)
+        })
     }
 
     /// Rename a table.
@@ -429,7 +414,7 @@ impl RelationalDB {
         tx: &mut MutTxId,
         table_id: TableId,
         cols: &NonEmpty<ColId>,
-    ) -> Result<ColumnIndexAttribute, DBError> {
+    ) -> Result<ColumnAttribute, DBError> {
         let table = self.inner.schema_for_table_mut_tx(tx, table_id)?;
         let columns = table.project_not_empty(cols)?;
         // Verify we don't have more than 1 auto_inc in the list of columns
@@ -443,15 +428,15 @@ impl RelationalDB {
             )));
         };
         let unique_index = table.indexes.iter().find(|x| &x.cols == cols).map(|x| x.is_unique);
-        let mut attr = ColumnIndexAttribute::UNSET;
+        let mut attr = ColumnAttribute::UNSET;
         if is_autoinc {
-            attr |= ColumnIndexAttribute::AUTO_INC;
+            attr |= ColumnAttribute::AUTO_INC;
         }
         if let Some(is_unique) = unique_index {
             attr |= if is_unique {
-                ColumnIndexAttribute::UNIQUE
+                ColumnAttribute::UNIQUE
             } else {
-                ColumnIndexAttribute::INDEXED
+                ColumnAttribute::INDEXED
             };
         }
         Ok(attr)
@@ -584,7 +569,12 @@ impl RelationalDB {
 
     /// Add a [Sequence] into the database instance, generates a stable [SequenceId] for it that will persist on restart.
     #[tracing::instrument(skip(self, tx, seq), fields(seq=seq.sequence_name))]
-    pub fn create_sequence(&self, tx: &mut MutTxId, seq: SequenceDef) -> Result<SequenceId, DBError> {
+    pub fn create_sequence(
+        &mut self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        seq: SequenceDef,
+    ) -> Result<SequenceId, DBError> {
         self.inner.create_sequence_mut_tx(tx, seq)
     }
 
@@ -633,7 +623,9 @@ pub fn open_db(path: impl AsRef<Path>, in_memory: bool, fsync: bool) -> Result<R
     let mlog = if in_memory {
         None
     } else {
-        Some(Arc::new(Mutex::new(MessageLog::open(path.join("mlog"))?)))
+        Some(Arc::new(Mutex::new(
+            MessageLog::open(path.join("mlog")).map_err(|e| DBError::Other(e.into()))?,
+        )))
     };
     let odb = Arc::new(Mutex::new(make_default_ostorage(in_memory, path.join("odb"))?));
     let stdb = RelationalDB::open(path, mlog, odb, Address::zero(), fsync)?;
@@ -643,7 +635,9 @@ pub fn open_db(path: impl AsRef<Path>, in_memory: bool, fsync: bool) -> Result<R
 
 pub fn open_log(path: impl AsRef<Path>) -> Result<Arc<Mutex<MessageLog>>, DBError> {
     let path = path.as_ref().to_path_buf();
-    Ok(Arc::new(Mutex::new(MessageLog::open(path.join("mlog"))?)))
+    Ok(Arc::new(Mutex::new(
+        MessageLog::open(path.join("mlog")).map_err(|e| DBError::Other(e.into()))?,
+    )))
 }
 
 #[cfg(test)]
@@ -665,33 +659,22 @@ pub(crate) mod tests_utils {
 mod tests {
     #![allow(clippy::disallowed_macros)]
 
-    use nonempty::NonEmpty;
-    use spacetimedb_primitives::ColId;
-    use std::sync::{Arc, Mutex};
-
-    use crate::address::Address;
-    use crate::db::datastore::locking_tx_datastore::IterByColEq;
-    use crate::db::datastore::system_tables::StIndexRow;
-    use crate::db::datastore::system_tables::StSequenceRow;
-    use crate::db::datastore::system_tables::StTableRow;
-    use crate::db::datastore::system_tables::ST_INDEXES_ID;
-    use crate::db::datastore::system_tables::ST_SEQUENCES_ID;
-    use crate::db::datastore::traits::ColumnDef;
-    use crate::db::datastore::traits::IndexDef;
-    use crate::db::datastore::traits::TableDef;
-    use crate::db::message_log::MessageLog;
-    use crate::db::relational_db::{open_db, ST_TABLES_ID};
-    use crate::execution_context::ExecutionContext;
-
-    use super::RelationalDB;
-    use crate::db::relational_db::make_default_ostorage;
+    use super::*;
+    use crate::db::datastore::system_tables::{
+        StIndexRow, StSequenceRow, StTableRow, ST_INDEXES_ID, ST_SEQUENCES_ID, ST_TABLES_ID,
+    };
+    use crate::db::message_log::SegmentView;
+    use crate::db::ostorage::sled_object_db::SledObjectDB;
     use crate::db::relational_db::tests_utils::make_test_db;
-    use crate::error::{DBError, DatabaseError, IndexError};
-    use spacetimedb_lib::auth::StAccess;
-    use spacetimedb_lib::auth::StTableType;
+    use crate::error::LogReplayError;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_lib::{AlgebraicType, AlgebraicValue, ProductType};
+    use spacetimedb_primitives::{ColId, TableId};
+    use spacetimedb_sats::db::auth::{StAccess, StTableType};
+    use spacetimedb_sats::db::def::{ColumnDef, IndexType};
     use spacetimedb_sats::product;
+    use std::io::{self, Seek, SeekFrom, Write};
+    use std::ops::Range;
+    use tempfile::TempDir;
 
     fn column(name: &str, ty: AlgebraicType) -> ColumnDef {
         ColumnDef {
@@ -707,6 +690,7 @@ mod tests {
             cols: NonEmpty::collect(cols.iter().copied().map(Into::into)).unwrap(),
             name: name.to_string(),
             is_unique: false,
+            index_type: IndexType::BTree,
         }
     }
 
@@ -1444,4 +1428,155 @@ mod tests {
 
     //     Ok(())
     // }
+
+    #[test]
+    fn test_replay_corrupted_log() -> ResultTest<()> {
+        let tmp = TempDir::with_prefix("stdb_test")?;
+        let mlog_path = tmp.path().join("mlog");
+
+        const NUM_TRANSACTIONS: usize = 10_000;
+        // 64KiB should create like 11 segments
+        const MAX_SEGMENT_SIZE: u64 = 64 * 1024;
+
+        let mlog = MessageLog::options()
+            .max_segment_size(MAX_SEGMENT_SIZE)
+            .open(&mlog_path)
+            .map(Mutex::new)
+            .map(Arc::new)?;
+        let odb = SledObjectDB::open(tmp.path().join("odb"))
+            .map(|odb| Box::new(odb) as Box<dyn ObjectDB + Send>)
+            .map(Mutex::new)
+            .map(Arc::new)?;
+        let reopen_db = || RelationalDB::open(tmp.path(), Some(mlog.clone()), odb.clone(), Address::zero(), false);
+        let db = reopen_db()?;
+        let ctx = ExecutionContext::default();
+
+        let table_id = db.with_auto_commit(&ctx, |tx| {
+            db.create_table(
+                tx,
+                table(
+                    "Account",
+                    vec![ColumnDef {
+                        is_autoinc: true,
+                        ..column("deposit", AlgebraicType::U64)
+                    }],
+                    vec![],
+                ),
+            )
+        })?;
+
+        fn balance(ctx: &ExecutionContext, db: &RelationalDB, table_id: TableId) -> ResultTest<u64> {
+            let balance = db.with_auto_commit(ctx, |tx| -> ResultTest<u64> {
+                let last = db
+                    .iter(ctx, tx, table_id)?
+                    .last()
+                    .map(|row| row.view().field_as_u64(0, None))
+                    .transpose()?
+                    .unwrap_or_default();
+                Ok(last)
+            })?;
+
+            Ok(balance)
+        }
+
+        // Invalidate a segment by shrinking the file by one byte.
+        fn invalidate_shrink(mlog_path: &Path, segment: SegmentView) -> io::Result<()> {
+            let segment_file = File::options().write(true).open(
+                mlog_path
+                    .join(format!("{:0>20}", segment.offset()))
+                    .with_extension("log"),
+            )?;
+            let len = segment_file.metadata()?.len();
+            eprintln!("shrink segment segment={segment:?} len={len}");
+            segment_file.set_len(len - 1)?;
+            segment_file.sync_all()
+        }
+
+        // Invalidate a segment by overwriting some portion of the file.
+        fn invalidate_overwrite(mlog_path: &Path, segment: SegmentView) -> io::Result<()> {
+            let mut segment_file = File::options().write(true).open(
+                mlog_path
+                    .join(format!("{:0>20}", segment.offset()))
+                    .with_extension("log"),
+            )?;
+
+            let len = segment_file.metadata()?.len();
+            let ofs = len / 2;
+            eprintln!("overwrite segment={segment:?} len={len} ofs={ofs}");
+            segment_file.seek(SeekFrom::Start(ofs))?;
+            segment_file.write_all(&[255, 255, 255, 255])?;
+            segment_file.sync_all()
+        }
+
+        // Create transactions.
+        for _ in 0..NUM_TRANSACTIONS {
+            db.with_auto_commit(&ctx, |tx| db.insert(tx, table_id, product![AlgebraicValue::U64(0)]))?;
+        }
+        assert_eq!(NUM_TRANSACTIONS as u64, balance(&ctx, &db, table_id)?);
+
+        drop(db);
+        odb.lock().unwrap().sync_all()?;
+        mlog.lock().unwrap().sync_all()?;
+
+        // The state must be the same after reopening the db.
+        let db = reopen_db()?;
+        assert_eq!(NUM_TRANSACTIONS as u64, balance(&ctx, &db, table_id)?);
+
+        let total_segments = mlog.lock().unwrap().total_segments();
+        assert!(total_segments > 3, "expected more than 3 segments");
+
+        // Close the db and pop a byte from the end of the message log.
+        drop(db);
+        let last_segment = mlog.lock().unwrap().segments().last().unwrap();
+        invalidate_shrink(&mlog_path, last_segment.clone())?;
+
+        // Assert that the final tx is lost.
+        let db = reopen_db()?;
+        assert_eq!((NUM_TRANSACTIONS - 1) as u64, balance(&ctx, &db, table_id)?);
+        assert_eq!(
+            total_segments,
+            mlog.lock().unwrap().total_segments(),
+            "no segment should have beeen removed"
+        );
+
+        // Overwrite some portion of the last segment.
+        drop(db);
+        let segment_range = Range {
+            start: last_segment.offset(),
+            end: (NUM_TRANSACTIONS - 1) as u64,
+        };
+        invalidate_overwrite(&mlog_path, last_segment)?;
+        let db = reopen_db()?;
+        let balance = balance(&ctx, &db, table_id)?;
+        assert!(
+            segment_range.contains(&balance),
+            "balance {balance} should fall within {segment_range:?}"
+        );
+        assert_eq!(
+            total_segments,
+            mlog.lock().unwrap().total_segments(),
+            "no segment should have beeen removed"
+        );
+
+        // Now, let's poke a segment somewhere in the middle of the log.
+        drop(db);
+        let segment = mlog.lock().unwrap().segments().nth(5).unwrap();
+        invalidate_shrink(&mlog_path, segment)?;
+
+        let res = reopen_db();
+        if !matches!(res, Err(DBError::LogReplay(LogReplayError::TrailingSegments { .. }))) {
+            panic!("Expected replay error but got: {res:?}")
+        }
+
+        // The same should happen if we overwrite instead of shrink.
+        let segment = mlog.lock().unwrap().segments().nth(5).unwrap();
+        invalidate_overwrite(&mlog_path, segment)?;
+
+        let res = reopen_db();
+        if !matches!(res, Err(DBError::LogReplay(LogReplayError::TrailingSegments { .. }))) {
+            panic!("Expected replay error but got: {res:?}")
+        }
+
+        Ok(())
+    }
 }

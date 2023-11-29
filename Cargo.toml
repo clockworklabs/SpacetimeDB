@@ -157,6 +157,7 @@ sqllogictest = "0.17"
 strum = { version = "0.25.0", features = ["derive"] }
 syn = { version = "2", features = ["full", "extra-traits"] }
 syntect = { version = "5.0.0", default-features = false, features = ["default-fancy"] }
+sys-info = "0.9.1"
 tabled = "0.14.0"
 tar = "0.4"
 tempdir = "0.3.7"
@@ -180,12 +181,6 @@ urlencoding = "2.1.2"
 uuid = { version = "1.2.1", features = ["v4"] }
 walkdir = "2.2.5"
 wasmbin = "0.6"
-
-# wasmer prior to 4.1.1 had a signal handling bug on macOS.
-wasmer = "4.1.1"
-wasmer-middlewares = "4.1.1"
-wasmer-types = "4.1.1"
-wasmer-vm = "4.1.1"
 
 wasmtime = { version = "14", default-features = false, features = ["cranelift"] }
 

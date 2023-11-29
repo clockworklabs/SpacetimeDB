@@ -1,28 +1,26 @@
 use nonempty::NonEmpty;
 use parking_lot::{Mutex, MutexGuard};
-use spacetimedb_lib::{bsatn, ProductValue};
-use std::num::NonZeroU32;
+use smallvec::SmallVec;
 use std::ops::DerefMut;
 use std::sync::Arc;
 
+use super::scheduler::{ScheduleError, ScheduledReducerId, Scheduler};
+use super::timestamp::Timestamp;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::{MutTxId, RowId};
-use crate::db::datastore::traits::IndexDef;
 use crate::error::{IndexError, NodesError};
 use crate::execution_context::ExecutionContext;
 use crate::util::ResultInspectExt;
-
-use super::scheduler::{ScheduleError, ScheduledReducerId, Scheduler};
-use super::timestamp::Timestamp;
 use crate::vm::DbProgram;
 use spacetimedb_lib::filter::CmpArgs;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::operator::OpQuery;
-use spacetimedb_lib::relation::{FieldExpr, FieldName};
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::buffer::BufWriter;
-use spacetimedb_sats::{ProductType, Typespace};
+use spacetimedb_sats::db::def::{IndexDef, IndexType};
+use spacetimedb_sats::relation::{FieldExpr, FieldName};
+use spacetimedb_sats::{bsatn, ProductType, ProductValue, Typespace};
 use spacetimedb_vm::expr::{Code, ColumnOp};
 
 #[derive(Clone)]
@@ -125,7 +123,7 @@ impl InstanceEnv {
                 crate::error::DBError::Index(IndexError::UniqueConstraintViolation {
                     constraint_name: _,
                     table_name: _,
-                    col_names: _,
+                    cols: _,
                     value: _,
                 }) => {}
                 _ => {
@@ -152,7 +150,7 @@ impl InstanceEnv {
         table_id: TableId,
         col_id: ColId,
         value: &[u8],
-    ) -> Result<NonZeroU32, NodesError> {
+    ) -> Result<u32, NodesError> {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;
 
@@ -163,11 +161,12 @@ impl InstanceEnv {
         let rows_to_delete = stdb
             .iter_by_col_eq(ctx, tx, table_id, col_id, eq_value)?
             .map(|x| RowId(*x.id()))
-            .collect::<Vec<_>>();
+            // `delete_by_field` only cares about 1 element,
+            // so optimize for that.
+            .collect::<SmallVec<[_; 1]>>();
 
-        // Delete them and count how many we deleted and error if none.
-        let count = stdb.delete(tx, table_id, rows_to_delete);
-        NonZeroU32::new(count).ok_or(NodesError::ColumnValueNotFound)
+        // Delete them and count how many we deleted.
+        Ok(stdb.delete(tx, table_id, rows_to_delete))
     }
 
     /// Deletes all rows in the table identified by `table_id`
@@ -194,13 +193,13 @@ impl InstanceEnv {
     ///
     /// Errors with `TableNotFound` if the table does not exist.
     #[tracing::instrument(skip_all)]
-    pub fn get_table_id(&self, table_name: String) -> Result<TableId, NodesError> {
+    pub fn get_table_id(&self, table_name: &str) -> Result<TableId, NodesError> {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;
 
         // Query the table id from the name.
         let table_id = stdb
-            .table_id_from_name(tx, &table_name)?
+            .table_id_from_name(tx, table_name)?
             .ok_or(NodesError::TableNotFound)?;
 
         Ok(table_id)
@@ -230,25 +229,24 @@ impl InstanceEnv {
 
         // TODO(george) This check should probably move towards src/db/index, but right
         // now the API is pretty hardwired towards btrees.
-        //
-        // TODO(george) Dedup the constant here.
+        let index_type = IndexType::try_from(index_type).map_err(|_| NodesError::BadIndexType(index_type))?;
         match index_type {
-            0 => (),
-            1 => todo!("Hash indexes not yet supported"),
-            _ => return Err(NodesError::BadIndexType(index_type)),
+            IndexType::BTree => {}
+            IndexType::Hash => todo!("Hash indexes not yet supported"),
         };
 
-        let cols = NonEmpty::from_slice(&col_ids)
+        let cols = NonEmpty::from_vec(col_ids)
             .expect("Attempt to create an index with zero columns")
             .map(Into::into);
 
-        let is_unique = stdb.column_attrs(tx, table_id, &cols)?.is_unique();
+        let is_unique = stdb.column_attrs(tx, table_id, &cols)?.has_unique();
 
         let index = IndexDef {
             table_id,
             cols,
             name: index_name,
             is_unique,
+            index_type,
         };
 
         stdb.create_index(tx, index)?;

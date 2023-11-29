@@ -66,6 +66,11 @@ impl ObjectDB for RocksDBObjectDB {
     fn sync_all(&mut self) -> Result<(), DBError> {
         self.flush()
     }
+
+    fn size_on_disk(&self) -> Result<u64, DBError> {
+        // TODO: Compute the size of the rocksdb instance
+        Ok(0)
+    }
 }
 
 #[cfg(test)]

@@ -1,7 +1,7 @@
+use spacetimedb_sats::data_key::DataKey;
 use std::fmt;
 
 use crate::buffer::{BufReader, BufWriter, DecodeError};
-use crate::DataKey;
 
 // TODO(280): Remove PrimaryKey.
 // PrimaryKey is a wrapper for DataKey which identifies each row in the database.

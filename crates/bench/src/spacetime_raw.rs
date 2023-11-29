@@ -4,14 +4,12 @@ use crate::{
     ResultBench,
 };
 use spacetimedb::db::relational_db::{open_db, RelationalDB};
-use spacetimedb::{
-    db::datastore::traits::{IndexDef, TableDef},
-    execution_context::ExecutionContext,
-};
+use spacetimedb::execution_context::ExecutionContext;
+use spacetimedb_lib::sats::db::def::{IndexDef, TableDef};
 use spacetimedb_lib::sats::AlgebraicValue;
 use spacetimedb_primitives::{ColId, TableId};
 use std::hint::black_box;
-use tempfile::TempDir;
+use tempdir::TempDir;
 
 pub type DbResult = (RelationalDB, TempDir, u32);
 
@@ -30,7 +28,7 @@ impl BenchDatabase for SpacetimeRaw {
     where
         Self: Sized,
     {
-        let temp_dir = TempDir::with_prefix("stdb_test")?;
+        let temp_dir = TempDir::new("stdb_test")?;
         let db = open_db(temp_dir.path(), in_memory, fsync)?;
 
         Ok(SpacetimeRaw {

@@ -1,45 +1,39 @@
-use auth::StAccess;
-use auth::StTableType;
-use sats::impl_serialize;
-pub use spacetimedb_sats::buffer;
+use anyhow::Context;
+use spacetimedb_primitives::ColId;
+use spacetimedb_sats::db::attr::ColumnAttribute;
+use spacetimedb_sats::db::auth::{StAccess, StTableType};
+use spacetimedb_sats::db::def::{ColumnDef, IndexDef, IndexType, AUTO_TABLE_ID};
+use spacetimedb_sats::{impl_serialize, WithTypespace};
+
 pub mod address;
-pub mod data_key;
 pub mod filter;
-pub mod hex;
 pub mod identity;
-pub use spacetimedb_sats::de;
-pub mod error;
-pub mod hash;
 pub mod name;
 pub mod operator;
 pub mod primary_key;
-pub use spacetimedb_sats::ser;
 pub mod type_def {
     pub use spacetimedb_sats::{AlgebraicType, ProductType, ProductTypeElement, SumType};
 }
 pub mod type_value {
     pub use spacetimedb_sats::{AlgebraicValue, ProductValue};
 }
-pub mod auth;
+
+pub mod error;
 #[cfg(feature = "serde")]
 pub mod recovery;
-pub mod relation;
-pub mod table;
 #[cfg(feature = "cli")]
 pub mod util;
 pub mod version;
 
-pub use spacetimedb_sats::bsatn;
-
 pub use address::Address;
-pub use data_key::DataKey;
-pub use hash::Hash;
 pub use identity::Identity;
 pub use primary_key::PrimaryKey;
+pub use spacetimedb_sats::hash::{self, hash_bytes, Hash};
+pub use spacetimedb_sats::relation;
+pub use spacetimedb_sats::DataKey;
+pub use spacetimedb_sats::{self as sats, bsatn, buffer, de, ser};
 pub use type_def::*;
 pub use type_value::{AlgebraicValue, ProductValue};
-
-pub use spacetimedb_sats as sats;
 
 pub const MODULE_ABI_MAJOR_VERSION: u16 = 7;
 
@@ -93,14 +87,87 @@ extern crate self as spacetimedb_lib;
 
 //WARNING: Change this structure(or any of their members) is an ABI change.
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
+#[sats(crate = crate)]
 pub struct TableDef {
     pub name: String,
     /// data should always point to a ProductType in the typespace
     pub data: sats::AlgebraicTypeRef,
-    pub column_attrs: Vec<ColumnIndexAttribute>,
+    pub column_attrs: Vec<ColumnAttribute>,
     pub indexes: Vec<IndexDef>,
     pub table_type: StTableType,
     pub table_access: StAccess,
+}
+
+impl TableDef {
+    pub fn into_table_def(table: WithTypespace<'_, TableDef>) -> anyhow::Result<spacetimedb_sats::db::def::TableDef> {
+        let schema = table
+            .map(|t| &t.data)
+            .resolve_refs()
+            .context("recursive types not yet supported")?;
+        let schema = schema.into_product().ok().context("table not a product type?")?;
+        let table = table.ty();
+        anyhow::ensure!(
+            table.column_attrs.len() == schema.elements.len(),
+            "mismatched number of columns"
+        );
+
+        // Build single-column index definitions, determining `is_unique` from
+        // their respective column attributes.
+        let mut columns = Vec::with_capacity(schema.elements.len());
+        let mut indexes = Vec::new();
+        for (col_id, (ty, col_attr)) in std::iter::zip(&schema.elements, &table.column_attrs).enumerate() {
+            let col = ColumnDef {
+                col_name: ty.name.clone().context("column without name")?,
+                col_type: ty.algebraic_type.clone(),
+                is_autoinc: col_attr.has_autoinc(),
+            };
+
+            let index_for_column = table.indexes.iter().find(|index| {
+                // Ignore multi-column indexes
+                index.cols.tail.is_empty() && index.cols.head.idx() == col_id
+            });
+
+            // If there's an index defined for this column already, use it,
+            // making sure that it is unique if the column has a unique constraint
+            let index_info = if let Some(index) = index_for_column {
+                Some((index.name.clone(), index.index_type))
+            } else if col_attr.has_unique() {
+                // If you didn't find an index, but the column is unique then create a unique btree index
+                // anyway.
+                Some((format!("{}_{}_unique", table.name, col.col_name), IndexType::BTree))
+            } else {
+                None
+            };
+            if let Some((name, ty)) = index_info {
+                match ty {
+                    IndexType::BTree => {}
+                    // TODO
+                    IndexType::Hash => anyhow::bail!("hash indexes not yet supported"),
+                }
+                indexes.push(spacetimedb_sats::db::def::IndexDef::new(
+                    name,
+                    AUTO_TABLE_ID,
+                    ColId(col_id as u32),
+                    col_attr.has_unique(),
+                ))
+            }
+            columns.push(col);
+        }
+
+        // Multi-column indexes cannot be unique (yet), so just add them.
+        let multi_col_indexes = table.indexes.iter().filter(|index| index.cols.len() > 1).map(|index| {
+            spacetimedb_sats::db::def::IndexDef::new_cols(index.name.clone(), AUTO_TABLE_ID, false, index.cols.clone())
+        });
+        indexes.extend(multi_col_indexes);
+
+        Ok(spacetimedb_sats::db::def::TableDef {
+            table_name: table.name.clone(),
+            columns,
+            indexes,
+            table_type: table.table_type,
+            table_access: table.table_access,
+        })
+    }
 }
 
 #[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
@@ -190,73 +257,4 @@ pub enum MiscModuleExport {
 pub struct TypeAlias {
     pub name: String,
     pub ty: sats::AlgebraicTypeRef,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
-pub struct IndexDef {
-    pub name: String,
-    pub ty: IndexType,
-    pub col_ids: Vec<u8>,
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
-pub enum IndexType {
-    BTree,
-    Hash,
-}
-
-// NOTE: Duplicated in `crates/bindings-macro/src/lib.rs`
-bitflags::bitflags! {
-    #[derive(Debug, Default, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
-    pub struct ColumnIndexAttribute: u8 {
-        const UNSET = Self::empty().bits();
-        ///  Index no unique
-        const INDEXED = 0b0001;
-        /// Generate the next [Sequence]
-        const AUTO_INC = 0b0010;
-        /// Index unique
-        const UNIQUE = Self::INDEXED.bits() | 0b0100;
-        /// Unique + AutoInc
-        const IDENTITY = Self::UNIQUE.bits() | Self::AUTO_INC.bits();
-        /// Primary key column (implies Unique)
-        const PRIMARY_KEY = Self::UNIQUE.bits() | 0b1000;
-        /// PrimaryKey + AutoInc
-        const PRIMARY_KEY_AUTO = Self::PRIMARY_KEY.bits() | Self::AUTO_INC.bits();
-    }
-}
-
-impl ColumnIndexAttribute {
-    pub const fn is_unique(self) -> bool {
-        self.contains(Self::UNIQUE)
-    }
-    pub const fn is_indexed(self) -> bool {
-        self.contains(Self::INDEXED)
-    }
-    pub const fn is_autoinc(self) -> bool {
-        self.contains(Self::AUTO_INC)
-    }
-    pub const fn is_primary(self) -> bool {
-        self.contains(Self::PRIMARY_KEY)
-    }
-}
-
-impl TryFrom<u8> for ColumnIndexAttribute {
-    type Error = ();
-
-    fn try_from(v: u8) -> Result<Self, Self::Error> {
-        Self::from_bits(v).ok_or(())
-    }
-}
-
-impl<'de> de::Deserialize<'de> for ColumnIndexAttribute {
-    fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Self::from_bits(deserializer.deserialize_u8()?)
-            .ok_or_else(|| de::Error::custom("invalid bitflags for ColumnIndexAttribute"))
-    }
-}
-
-impl ser::Serialize for ColumnIndexAttribute {
-    fn serialize<S: ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_u8(self.bits())
-    }
 }

@@ -221,14 +221,14 @@ async fn receiver_loop(
             client_api_messages::Message {
                 r#type: Some(client_api_messages::message::Type::TransactionUpdate(transaction_update)),
             } => {
-                log::info!("Message TransactionUpdate");
+                log::trace!("Message TransactionUpdate");
 
                 process_transaction_update(transaction_update, &client_cache, &db_callbacks, &reducer_callbacks);
             }
             client_api_messages::Message {
                 r#type: Some(client_api_messages::message::Type::IdentityToken(ident)),
             } => {
-                log::info!("Message IdentityToken");
+                log::trace!("Message IdentityToken");
                 let state = Option::clone(&client_cache.lock().expect("ClientCache Mutex is poisoned")).unwrap();
                 let mut credentials_lock = credentials.lock().expect("Credentials Mutex is poisoned");
                 credentials_lock.handle_identity_token(ident, state);
