@@ -37,7 +37,7 @@ use crate::db::datastore::system_tables::{
     StIndexFields, StModuleRow, StSequenceFields, StTableFields, ST_CONSTRAINTS_ID, ST_MODULE_ID, WASM_MODULE,
 };
 use crate::db::db_metrics::{DB_METRICS, MAX_TX_CPU_TIME};
-use crate::execution_context::{ExecutionContext, WorkloadType};
+use crate::{db::datastore::system_tables, execution_context::WorkloadType};
 use crate::{
     db::datastore::traits::{TxOp, TxRecord},
     db::{
@@ -2889,7 +2889,7 @@ mod tests {
 
             ColRow { table: 5, pos: 0, name: "program_hash", ty: AlgebraicType::array(AlgebraicType::U8) },
             ColRow { table: 5, pos: 1, name: "kind", ty: AlgebraicType::U8 },
-            ColRow { table: 5, pos: 2, name: "epoch", ty: AlgebraicType::U128 },
+
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_indexes()?, map_array([
