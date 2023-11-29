@@ -1773,7 +1773,6 @@ impl Locking {
         let datastore = Self::new(database_address);
         let mut commit_state = datastore.committed_state.write_arc();
         let database_address = datastore.database_address;
-        let mut sequence_state = datastore.sequence_state.lock();
         // TODO(cloutiertyler): One thing to consider in the future is, should
         // we persist the bootstrap transaction in the message log? My intuition
         // is no, because then if we change the schema of the system tables we
@@ -1797,12 +1796,10 @@ impl Locking {
 
         // The database tables are now initialized with the correct data.
         // Now we have to build our in memory structures.
-        commit_state.build_sequence_state(&mut sequence_state)?;
+        commit_state.build_sequence_state(&mut datastore.sequence_state.lock())?;
         commit_state.build_indexes()?;
 
         log::trace!("DATABASE:BOOTSTRAPPING SYSTEM TABLES DONE");
-        drop(sequence_state);
-        drop(commit_state);
         Ok(datastore)
     }
 
