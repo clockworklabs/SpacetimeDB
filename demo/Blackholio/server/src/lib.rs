@@ -48,6 +48,13 @@ pub struct Player {
 }
 
 #[spacetimedb(table)]
+pub struct LoggedOutPlayer {
+    #[primarykey]
+    identity: Identity,
+    player: Player,
+}
+
+#[spacetimedb(table)]
 pub struct LoggedOutCircle {
     #[autoinc]
     #[primarykey]
@@ -110,18 +117,24 @@ pub fn disconnect(ctx: ReducerContext) -> Result<(), String> {
             entity,
         })?;
     }
+    LoggedOutPlayer::insert(LoggedOutPlayer {
+        logged_out_id: player.player_id,
+        player,
+    }).unwrap();
+    Player::delete_by_identity(&ctx.sender);
 
     Ok(())
 }
 
 #[spacetimedb(connect)]
 pub fn connect(ctx: ReducerContext) -> Result<(), String> {
-    let player = Player::filter_by_identity(&ctx.sender).ok_or("No player for identity.")?;
-    for logged_out_circle in LoggedOutCircle::filter_by_player_id(&player.player_id) {
+    let player = LoggedOutPlayer::filter_by_identity(&ctx.sender).ok_or("No player for identity.")?;
+    for logged_out_circle in LoggedOutCircle::filter_by_player_id(&player.player.player_id) {
         Circle::insert(logged_out_circle.circle)?;
         Entity::insert(logged_out_circle.entity)?;
         LoggedOutCircle::delete_by_logged_out_id(&logged_out_circle.logged_out_id);
     }
+    Player::insert(player.player).unwrap();
     Ok(())
 }
 
