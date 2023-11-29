@@ -2889,7 +2889,7 @@ mod tests {
 
             ColRow { table: 5, pos: 0, name: "program_hash", ty: AlgebraicType::array(AlgebraicType::U8) },
             ColRow { table: 5, pos: 1, name: "kind", ty: AlgebraicType::U8 },
-
+            ColRow { table: 5, pos: 2, name: "epoch", ty: AlgebraicType::U128 },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_indexes()?, map_array([
