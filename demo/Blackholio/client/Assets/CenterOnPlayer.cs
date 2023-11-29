@@ -12,12 +12,15 @@ public class CenterOnPlayer : MonoBehaviour
             return;
         }
 
-        var centerOfMass = PlayerController.Local.CalculateCenterOfMass();
-        transform.position = new Vector3
+        var centerOfMass = PlayerController.Local.CenterOfMass();
+        if (centerOfMass.HasValue)
         {
-            x = centerOfMass.x,
-            y = centerOfMass.y,
-            z = transform.position.z
-        };
+            transform.position = new Vector3
+            {
+                x = centerOfMass.Value.x,
+                y = centerOfMass.Value.y,
+                z = transform.position.z
+            };
+        }
     }
 }

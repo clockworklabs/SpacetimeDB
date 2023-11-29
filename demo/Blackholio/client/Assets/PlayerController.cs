@@ -54,9 +54,7 @@ public class PlayerController : MonoBehaviour
         if (circlesByEntityId.TryGetValue(deletedCircle.EntityId, out var circle))
         {
             circlesByEntityId.Remove(deletedCircle.EntityId);
-            circle.Despawn();
             // If the local player died, show the death screen
-
             circle.Despawn();
         }
 
@@ -79,8 +77,23 @@ public class PlayerController : MonoBehaviour
         previousCameraSize = targetCameraSize = playerRadius * 2 + 50.0f;
     }
 
-    public uint TotalMass() =>
-        (uint)circlesByEntityId.Values.Sum(a => Entity.FilterById(a.GetEntityId()).Mass);
+    public uint TotalMass()
+    {
+        uint mass = 0;
+        foreach (var circle in circlesByEntityId.Values)
+        {
+            var entity = Entity.FilterById(circle.GetEntityId());
+            // If this entity is being deleted on the same frame that we're moving, we can have a null entity here.
+            if (entity == null)
+            {
+                continue;
+            }
+
+            mass += entity.Mass;
+        }
+
+        return mass;
+    }
 
     public string GetUsername() => Player.FilterByIdentity(identity).Name;
 
@@ -96,8 +109,13 @@ public class PlayerController : MonoBehaviour
 
     public bool IsLocalPlayer() => GameManager.localIdentity.HasValue && identity == GameManager.localIdentity.Value;
 
-    public UnityEngine.Vector2 CalculateCenterOfMass()
+    public UnityEngine.Vector2? CenterOfMass()
     {
+        if (circlesByEntityId.Count == 0)
+        {
+            return null;
+        }
+        
         var circles = circlesByEntityId.Values;        
         float totalX = 0, totalY = 0;
         float totalMass = 0;
