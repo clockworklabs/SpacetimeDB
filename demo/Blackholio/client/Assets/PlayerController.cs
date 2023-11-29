@@ -133,11 +133,12 @@ public class PlayerController : MonoBehaviour
     
     public void Update()
     {
-        if (Input.GetKeyDown(KeyCode.Space))
+        if (IsLocalPlayer() && Input.GetKeyDown(KeyCode.Space))
         {
             Reducer.PlayerSplit();
+            Debug.LogWarning("Player Split!");
         }
-
+        
         if (IsLocalPlayer() && previousCameraSize.HasValue)
         {
             GameManager.localCamera.orthographicSize =

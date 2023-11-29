@@ -118,7 +118,7 @@ pub fn disconnect(ctx: ReducerContext) -> Result<(), String> {
         })?;
     }
     LoggedOutPlayer::insert(LoggedOutPlayer {
-        logged_out_id: player.player_id,
+        identity: player.identity,
         player,
     }).unwrap();
     Player::delete_by_identity(&ctx.sender);
@@ -214,6 +214,8 @@ fn mass_to_max_move_speed(mass: u32) -> f32 {
 #[spacetimedb(reducer)]
 pub fn move_all_players() -> Result<(), String> {
     schedule!(Duration::from_millis(50), move_all_players());
+
+    let span = spacetimedb::time_span::Span::start("move_all_players");
     let world_size = Config::filter_by_id(&0).ok_or("Config not found")?.world_size;
     for circle in Circle::iter() {
         let Some(mut circle_entity) = Entity::filter_by_id(&circle.entity_id) else {
@@ -255,6 +257,7 @@ pub fn move_all_players() -> Result<(), String> {
         Entity::update_by_id(&circle_entity.id.clone(), circle_entity);
     }
 
+    span.end();
     Ok(())
 }
 
