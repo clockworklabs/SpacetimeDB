@@ -122,6 +122,13 @@ impl<'a> DataRef<'a> {
 type SharedWriteGuard<T> = ArcRwLockWriteGuard<RawRwLock, T>;
 type SharedMutexGuard<T> = ArcMutexGuard<RawMutex, T>;
 
+/// Represents a Mutable transaction. Holds locks for its duration
+///
+/// The initialization of this struct is sensitive because improper
+/// handling can lead to deadlocks. Therefore, it is strongly recommended to use
+///`Locking::begin_mut_tx()` for instantiation to ensure safe acquisition of locks.
+/// `tx_state_lock` should remain `Some` throughout the transaction's lifecycle, until `commit()` or `rollback()` is called.
+
 pub struct MutTxId {
     committed_state_write_lock: SharedWriteGuard<CommittedState>,
     tx_state_lock: SharedMutexGuard<Option<TxState>>,
@@ -442,8 +449,10 @@ impl CommittedState {
         }
         Ok(())
     }
-    //TODO(shubham): Need to confirm, if indexes exist during bootstrap to be used here.
-    // This iter has only been implemented to use during bootstrap
+
+    // TODO(shubham): Need to confirm, if indexes exist during bootstrap to be used here.
+    /// Iter for`CommittedState`, Only to be used during bootstrap.
+    /// For transcation, consider using MutTxId::Iters.
     fn iter_by_col_eq<'a>(
         &'a self,
         table_id: &'a TableId,
@@ -462,6 +471,11 @@ impl CommittedState {
         })
     }
 
+    /// Retrieves the table schema for bootstrapping, using system_tables in `CommittedState`.
+    ///
+    /// This method is specific to the bootstrapping phase and `Iter` used in it does not consider
+    /// transaction data or indexes, unlike `MutTxId::schema_for_table()`.
+    /// This is required as bootstrapping is not a transaction.
     #[tracing::instrument(skip_all)]
     fn schema_for_table(&self, table_id: TableId, database_address: Address) -> super::Result<Cow<'_, TableSchema>> {
         if let Some(schema) = self.get_schema(&table_id) {
@@ -1724,8 +1738,6 @@ impl MutTxId {
 /// 4. `sequence_state`
 ///
 /// All locking mechanisms are encapsulated within the struct through local methods.
-///
-/// Mutable transaction must aquire lock using Locking::begin_mut_tx() for consistency.
 #[derive(Clone)]
 pub struct Locking {
     /// All of the byte objects inserted in the current transaction.
