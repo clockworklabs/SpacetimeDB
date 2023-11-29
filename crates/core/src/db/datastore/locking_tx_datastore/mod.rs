@@ -607,7 +607,7 @@ impl<'a> Iterator for CommittedStateIter<'a> {
     type Item = DataRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some((row_id, row)) = self.iter.next() {
+        for (row_id, row) in self.iter.by_ref() {
             let table_id = row.project_not_empty(self.table_id_col).unwrap();
             if table_id == *self.value {
                 return Some(DataRef::new(row_id, row));
@@ -2624,8 +2624,7 @@ mod tests {
     }
 
     fn query_st_tables<'a>(ctx: &'a ExecutionContext<'a>, tx: &'a MutTxId) -> SystemTableQuery<'a> {
-        let db = &*tx;
-        SystemTableQuery { db, ctx }
+        SystemTableQuery { db: tx, ctx }
     }
 
     impl SystemTableQuery<'_> {
