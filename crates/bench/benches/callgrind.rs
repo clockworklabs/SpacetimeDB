@@ -6,6 +6,8 @@
 /// Note: you CAN'T save state between these benchmarks, since each is run
 /// in a fresh process.
 ///
+/// FIXME(jgilles): many of the spacetime_module benchmarks are currently disabled due to a bad interaction with sled (issue #564).
+///
 /// There is some odd boilerplate in this file that is used to make downstream processing of these benchmarks easier.
 /// Every benchmark is a struct that implements serde::Deserialize; these structs contain some redundant information.
 /// Benchmarks are actually dispatched using iai-callgrind's `#[library_benchmark]` macro.
@@ -226,8 +228,8 @@ struct FilterBenchmark<DB: BenchDatabase, T: BenchTable + RandomTable> {
     db: String,
     table_name: String,
     index_strategy: IndexStrategy,
-    needles: u32,
-    haystack: u32,
+    count: u32,
+    preload: u32,
     // Underscore here cause it's an implementation detail.
     // The only thing downstream cares about is data_type
     _column: u32,
@@ -260,9 +262,9 @@ impl<DB: BenchDatabase, T: BenchTable + RandomTable> Benchmark for FilterBenchma
         let mut db = DB::build(false, false).unwrap();
 
         let table_id = db.create_table::<T>(self.index_strategy).unwrap();
-        let data = create_partly_identical::<T>(0xdeadbeef, self.needles as u64, self.haystack as u64);
+        let data = create_partly_identical::<T>(0xdeadbeef, self.count as u64, self.preload as u64);
 
-        // create_partly_identical guarantees that the first `needles` elements will be identical
+        // create_partly_identical guarantees that the first `count` elements will be identical
         let filter_value = data[0].clone().into_product_value().elements[self._column as usize].clone();
 
         // warm up
@@ -284,70 +286,70 @@ impl<DB: BenchDatabase, T: BenchTable + RandomTable> Benchmark for FilterBenchma
 // FIXME(jgilles): s/multi_index/btree_all; needs to touch criterion benches as well
 #[bench::string_no_index_1(
     r#"{"bench": "filter", "db": "stdb_raw", "table_name": "person", "index_strategy": "non_unique",
-        "needles": 1, "haystack": 100, "_column": 1, "data_type": "string"}"#
+        "count": 1, "preload": 100, "_column": 1, "data_type": "string"}"#
 )]
 #[bench::string_no_index_4(
     r#"{"bench": "filter", "db": "stdb_raw", "table_name": "person", "index_strategy": "non_unique",
-        "needles": 4, "haystack": 100, "_column": 1, "data_type": "string"}"#
+        "count": 4, "preload": 100, "_column": 1, "data_type": "string"}"#
 )]
 #[bench::string_no_index_16(
     r#"{"bench": "filter", "db": "stdb_raw", "table_name": "person", "index_strategy": "non_unique",
-        "needles": 16, "haystack": 100, "_column": 1, "data_type": "string"}"#
+        "count": 16, "preload": 100, "_column": 1, "data_type": "string"}"#
 )]
 #[bench::string_no_index_64(
     r#"{"bench": "filter", "db": "stdb_raw", "table_name": "person", "index_strategy": "non_unique",
-        "needles": 64, "haystack": 100, "_column": 1, "data_type": "string"}"#
+        "count": 64, "preload": 100, "_column": 1, "data_type": "string"}"#
 )]
 // string, btree index
 #[bench::string_btree_1(
     r#"{"bench": "filter", "db": "stdb_raw", "table_name": "person", "index_strategy": "multi_index",
-        "needles": 1, "haystack": 100, "_column": 1, "data_type": "string"}"#
+        "count": 1, "preload": 100, "_column": 1, "data_type": "string"}"#
 )]
 #[bench::string_btree_4(
     r#"{"bench": "filter", "db": "stdb_raw", "table_name": "person", "index_strategy": "multi_index",
-        "needles": 4, "haystack": 100, "_column": 1, "data_type": "string"}"#
+        "count": 4, "preload": 100, "_column": 1, "data_type": "string"}"#
 )]
 #[bench::string_btree_16(
     r#"{"bench": "filter", "db": "stdb_raw", "table_name": "person", "index_strategy": "multi_index",
-        "needles": 16, "haystack": 100, "_column": 1, "data_type": "string"}"#
+        "count": 16, "preload": 100, "_column": 1, "data_type": "string"}"#
 )]
 #[bench::string_btree_64(
     r#"{"bench": "filter", "db": "stdb_raw", "table_name": "person", "index_strategy": "multi_index",
-        "needles": 64, "haystack": 100, "_column": 1, "data_type": "string"}"#
+        "count": 64, "preload": 100, "_column": 1, "data_type": "string"}"#
 )]
 // u64, no index
 #[bench::u64_no_index_1(
     r#"{"bench": "filter", "db": "stdb_raw", "table_name": "person", "index_strategy": "non_unique",
-        "needles": 1, "haystack": 100, "_column": 2, "data_type": "u64"}"#
+        "count": 1, "preload": 100, "_column": 2, "data_type": "u64"}"#
 )]
 #[bench::u64_no_index_4(
     r#"{"bench": "filter", "db": "stdb_raw", "table_name": "person", "index_strategy": "non_unique",
-        "needles": 4, "haystack": 100, "_column": 2, "data_type": "u64"}"#
+        "count": 4, "preload": 100, "_column": 2, "data_type": "u64"}"#
 )]
 #[bench::u64_no_index_16(
     r#"{"bench": "filter", "db": "stdb_raw", "table_name": "person", "index_strategy": "non_unique",
-        "needles": 16, "haystack": 100, "_column": 2, "data_type": "u64"}"#
+        "count": 16, "preload": 100, "_column": 2, "data_type": "u64"}"#
 )]
 #[bench::u64_no_index_64(
     r#"{"bench": "filter", "db": "stdb_raw", "table_name": "person", "index_strategy": "non_unique",
-        "needles": 64, "haystack": 100, "_column": 2, "data_type": "u64"}"#
+        "count": 64, "preload": 100, "_column": 2, "data_type": "u64"}"#
 )]
 // u64, btree index
 #[bench::u64_btree_1(
     r#"{"bench": "filter", "db": "stdb_raw", "table_name": "person", "index_strategy": "multi_index",
-        "needles": 1, "haystack": 100, "_column": 2, "data_type": "u64"}"#
+        "count": 1, "preload": 100, "_column": 2, "data_type": "u64"}"#
 )]
 #[bench::u64_btree_4(
     r#"{"bench": "filter", "db": "stdb_raw", "table_name": "person", "index_strategy": "multi_index",
-        "needles": 4, "haystack": 100, "_column": 2, "data_type": "u64"}"#
+        "count": 4, "preload": 100, "_column": 2, "data_type": "u64"}"#
 )]
 #[bench::u64_btree_16(
     r#"{"bench": "filter", "db": "stdb_raw", "table_name": "person", "index_strategy": "multi_index",
-        "needles": 16, "haystack": 100, "_column": 2, "data_type": "u64"}"#
+        "count": 16, "preload": 100, "_column": 2, "data_type": "u64"}"#
 )]
 #[bench::u64_btree_64(
     r#"{"bench": "filter", "db": "stdb_raw", "table_name": "person", "index_strategy": "multi_index",
-        "needles": 64, "haystack": 100, "_column": 2, "data_type": "u64"}"#
+        "count": 64, "preload": 100, "_column": 2, "data_type": "u64"}"#
 )]
 fn filter_raw_person(metadata: &str) {
     let bench: FilterBenchmark<SpacetimeRaw, Person> = serde_json::from_str(metadata).unwrap();
@@ -359,56 +361,56 @@ fn filter_raw_person(metadata: &str) {
 /*
 #[bench::string_btree_1(
     r#"{"bench": "filter", "db": "stdb_module", "table_name": "person", "index_strategy": "multi_index",
-        "needles": 1, "haystack": 100, "_column": 1, "data_type": "string"}"#
+        "count": 1, "preload": 100, "_column": 1, "data_type": "string"}"#
 )]
 #[bench::string_btree_4(
     r#"{"bench": "filter", "db": "stdb_module", "table_name": "person", "index_strategy": "multi_index",
-        "needles": 4, "haystack": 100, "_column": 1, "data_type": "string"}"#
+        "count": 4, "preload": 100, "_column": 1, "data_type": "string"}"#
 )]
 #[bench::string_btree_16(
     r#"{"bench": "filter", "db": "stdb_module", "table_name": "person", "index_strategy": "multi_index",
-        "needles": 16, "haystack": 100, "_column": 1, "data_type": "string"}"#
+        "count": 16, "preload": 100, "_column": 1, "data_type": "string"}"#
 )]
 */
 #[bench::string_btree_64(
     r#"{"bench": "filter", "db": "stdb_module", "table_name": "person", "index_strategy": "multi_index",
-        "needles": 64, "haystack": 100, "_column": 1, "data_type": "string"}"#
+        "count": 64, "preload": 100, "_column": 1, "data_type": "string"}"#
 )]
 /*
 // u64, no index
 #[bench::u64_no_index_1(
     r#"{"bench": "filter", "db": "stdb_module", "table_name": "person", "index_strategy": "non_unique",
-        "needles": 1, "haystack": 100, "_column": 2, "data_type": "u64"}"#
+        "count": 1, "preload": 100, "_column": 2, "data_type": "u64"}"#
 )]
 #[bench::u64_no_index_4(
     r#"{"bench": "filter", "db": "stdb_module", "table_name": "person", "index_strategy": "non_unique",
-        "needles": 4, "haystack": 100, "_column": 2, "data_type": "u64"}"#
+        "count": 4, "preload": 100, "_column": 2, "data_type": "u64"}"#
 )]
 #[bench::u64_no_index_16(
     r#"{"bench": "filter", "db": "stdb_module", "table_name": "person", "index_strategy": "non_unique",
-        "needles": 16, "haystack": 100, "_column": 2, "data_type": "u64"}"#
+        "count": 16, "preload": 100, "_column": 2, "data_type": "u64"}"#
 )]
 #[bench::u64_no_index_64(
     r#"{"bench": "filter", "db": "stdb_module", "table_name": "person", "index_strategy": "non_unique",
-        "needles": 64, "haystack": 100, "_column": 2, "data_type": "u64"}"#
+        "count": 64, "preload": 100, "_column": 2, "data_type": "u64"}"#
 )]
 // u64, btree index
 // FIXME(jgilles): s/non_unique/btree
 #[bench::u64_btree_1(
     r#"{"bench": "filter", "db": "stdb_module", "table_name": "person", "index_strategy": "multi_index",
-        "needles": 1, "haystack": 100, "_column": 2, "data_type": "u64"}"#
+        "count": 1, "preload": 100, "_column": 2, "data_type": "u64"}"#
 )]
 #[bench::u64_btree_4(
     r#"{"bench": "filter", "db": "stdb_module", "table_name": "person", "index_strategy": "multi_index",
-        "needles": 4, "haystack": 100, "_column": 2, "data_type": "u64"}"#
+        "count": 4, "preload": 100, "_column": 2, "data_type": "u64"}"#
 )]
 #[bench::u64_btree_16(
     r#"{"bench": "filter", "db": "stdb_module", "table_name": "person", "index_strategy": "multi_index",
-        "needles": 16, "haystack": 100, "_column": 2, "data_type": "u64"}"#
+        "count": 16, "preload": 100, "_column": 2, "data_type": "u64"}"#
 )]
 #[bench::u64_btree_64(
     r#"{"bench": "filter", "db": "stdb_module", "table_name": "person", "index_strategy": "multi_index",
-        "needles": 64, "haystack": 100, "_column": 2, "data_type": "u64"}"#
+        "count": 64, "preload": 100, "_column": 2, "data_type": "u64"}"#
 )]
 */
 fn filter_module_person(metadata: &str) {
@@ -420,53 +422,53 @@ fn filter_module_person(metadata: &str) {
 // string, btree index
 #[bench::string_btree_1(
     r#"{"bench": "filter", "db": "sqlite", "table_name": "person", "index_strategy": "multi_index",
-        "needles": 1, "haystack": 100, "_column": 1, "data_type": "string"}"#
+        "count": 1, "preload": 100, "_column": 1, "data_type": "string"}"#
 )]
 #[bench::string_btree_4(
     r#"{"bench": "filter", "db": "sqlite", "table_name": "person", "index_strategy": "multi_index",
-        "needles": 4, "haystack": 100, "_column": 1, "data_type": "string"}"#
+        "count": 4, "preload": 100, "_column": 1, "data_type": "string"}"#
 )]
 #[bench::string_btree_16(
     r#"{"bench": "filter", "db": "sqlite", "table_name": "person", "index_strategy": "multi_index",
-        "needles": 16, "haystack": 100, "_column": 1, "data_type": "string"}"#
+        "count": 16, "preload": 100, "_column": 1, "data_type": "string"}"#
 )]
 #[bench::string_btree_64(
     r#"{"bench": "filter", "db": "sqlite", "table_name": "person", "index_strategy": "multi_index",
-        "needles": 64, "haystack": 100, "_column": 1, "data_type": "string"}"#
+        "count": 64, "preload": 100, "_column": 1, "data_type": "string"}"#
 )]
 // u64, no index
 #[bench::u64_no_index_1(
     r#"{"bench": "filter", "db": "sqlite", "table_name": "person", "index_strategy": "non_unique",
-        "needles": 1, "haystack": 100, "_column": 2, "data_type": "u64"}"#
+        "count": 1, "preload": 100, "_column": 2, "data_type": "u64"}"#
 )]
 #[bench::u64_no_index_4(
     r#"{"bench": "filter", "db": "sqlite", "table_name": "person", "index_strategy": "non_unique",
-        "needles": 4, "haystack": 100, "_column": 2, "data_type": "u64"}"#
+        "count": 4, "preload": 100, "_column": 2, "data_type": "u64"}"#
 )]
 #[bench::u64_no_index_16(
     r#"{"bench": "filter", "db": "sqlite", "table_name": "person", "index_strategy": "non_unique",
-        "needles": 16, "haystack": 100, "_column": 2, "data_type": "u64"}"#
+        "count": 16, "preload": 100, "_column": 2, "data_type": "u64"}"#
 )]
 #[bench::u64_no_index_64(
     r#"{"bench": "filter", "db": "sqlite", "table_name": "person", "index_strategy": "non_unique",
-        "needles": 64, "haystack": 100, "_column": 2, "data_type": "u64"}"#
+        "count": 64, "preload": 100, "_column": 2, "data_type": "u64"}"#
 )]
 // u64, btree index
 #[bench::u64_btree_1(
     r#"{"bench": "filter", "db": "sqlite", "table_name": "person", "index_strategy": "multi_index",
-        "needles": 1, "haystack": 100, "_column": 2, "data_type": "u64"}"#
+        "count": 1, "preload": 100, "_column": 2, "data_type": "u64"}"#
 )]
 #[bench::u64_btree_4(
     r#"{"bench": "filter", "db": "sqlite", "table_name": "person", "index_strategy": "multi_index",
-        "needles": 4, "haystack": 100, "_column": 2, "data_type": "u64"}"#
+        "count": 4, "preload": 100, "_column": 2, "data_type": "u64"}"#
 )]
 #[bench::u64_btree_16(
     r#"{"bench": "filter", "db": "sqlite", "table_name": "person", "index_strategy": "multi_index",
-        "needles": 16, "haystack": 100, "_column": 2, "data_type": "u64"}"#
+        "count": 16, "preload": 100, "_column": 2, "data_type": "u64"}"#
 )]
 #[bench::u64_btree_64(
     r#"{"bench": "filter", "db": "sqlite", "table_name": "person", "index_strategy": "multi_index",
-        "needles": 64, "haystack": 100, "_column": 2, "data_type": "u64"}"#
+        "count": 64, "preload": 100, "_column": 2, "data_type": "u64"}"#
 )]
 fn filter_sqlite_person(metadata: &str) {
     let bench: FilterBenchmark<SQLite, Person> = serde_json::from_str(metadata).unwrap();
@@ -486,7 +488,7 @@ struct FindBenchmark<DB: BenchDatabase, T: BenchTable + RandomTable> {
     db: String,
     table_name: String,
     index_strategy: IndexStrategy,
-    haystack: u32,
+    preload: u32,
     #[serde(skip)]
     _marker: std::marker::PhantomData<(DB, T)>,
 }
@@ -510,9 +512,9 @@ impl<DB: BenchDatabase, T: BenchTable + RandomTable> Benchmark for FindBenchmark
 
         let table_id = db.create_table::<T>(self.index_strategy).unwrap();
 
-        let data = create_sequential::<T>(0xdeadbeef, self.haystack, 100);
+        let data = create_sequential::<T>(0xdeadbeef, self.preload, 100);
 
-        let filter_value = data[(self.haystack - 1) as usize].clone().into_product_value().elements[0].clone();
+        let filter_value = data[(self.preload - 1) as usize].clone().into_product_value().elements[0].clone();
 
         // warm up
         db.insert_bulk(&table_id, data).unwrap();

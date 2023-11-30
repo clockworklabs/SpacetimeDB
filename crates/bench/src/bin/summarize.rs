@@ -203,7 +203,7 @@ mod criterion {
     }
 
     fn get_crit_dir(target_dir: &Path) -> PathBuf {
-        let crit_dir = target_dir.clone().join("criterion");
+        let crit_dir = target_dir.join("criterion");
         assert!(
             crit_dir.exists(),
             "criterion directory {} inside target directory {} does not exist, \
@@ -852,7 +852,7 @@ mod callgrind {
     }
 
     fn get_iai_callgrind_dir(target_dir: &Path) -> PathBuf {
-        let iai_callgrind_dir = target_dir.clone().join("iai");
+        let iai_callgrind_dir = target_dir.join("iai");
         assert!(
             iai_callgrind_dir.exists(),
             "iai-callgrind directory {} inside target directory {} does not exist",
@@ -1039,7 +1039,32 @@ mod callgrind {
     ) -> Result<String> {
         let mut result = String::new();
 
-        writeln!(&mut result, "# Benchmark Report")?;
+        writeln!(&mut result, "# Callgrind Benchmark Report")?;
+        writeln!(&mut result)?;
+        writeln!(
+            &mut result,
+            "These benchmarks were run using [callgrind](https://valgrind.org/docs/manual/cg-manual.html),
+an instruction-level profiler. They allow comparisons between sqlite (`sqlite`), SpacetimeDB running through a module (`stdb_module`),
+and the underlying SpacetimeDB data storage engine (`stdb_raw`).
+
+Of these, `sqlite` is the least noisy, `stdb_raw` is intermediate, and `stdb_module` is the noisiest. This is due to uncontrollable nondeterminism,
+such as thread ordering and filesystem interactions.
+
+Note: there are currently a minimal number of `stdb_module` benchmarks, pending a fix for an unfortunate interaction between callgrind and sled.
+Their benchmark numbers are correct, just expensive to collect.
+
+Legend:
+- `preload`: number of rows pre-loaded into the database.
+- `count`: number of rows touched by a transaction.
+- index types:
+    - `unique`: a single, unique index on the `id` column.
+    - `non_unique`: non-unique, no indexes.
+    - `btrees`: non-unique, separate btree index on every column. (Not a multi-column index!)
+- schemas:
+    - `person(id: u32, name: String, age: u64)` is a small row containing a string.
+    - `location(id: u32, x: u64, y: u64)` is a small row containing some ints.
+"
+        )?;
         writeln!(&mut result)?;
 
         let no_old_group = BTreeMap::default();
@@ -1122,7 +1147,14 @@ mod callgrind {
 
     fn prettify_json_value(value: &serde_json::Value) -> String {
         match value {
-            serde_json::Value::String(s) => format!("`{}`", s),
+            serde_json::Value::String(s) => {
+                if s == "multi_index" {
+                    // replace bad choice of name.
+                    "`btrees`".into()
+                } else {
+                    format!("`{}`", s)
+                }
+            }
             other => format!("{}", other),
         }
     }
