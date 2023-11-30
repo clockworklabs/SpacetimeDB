@@ -259,3 +259,23 @@ fn set_store_fuel(store: &mut impl AsContextMut, fuel: EnergyQuanta) -> Wasmtime
 fn get_store_fuel(store: &impl AsContext) -> WasmtimeFuel {
     WasmtimeFuel(store.as_context().get_fuel().unwrap())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::host::EnergyDiff;
+
+    #[test]
+    fn test_fuel() {
+        let mut store = wasmtime::Store::new(
+            &wasmtime::Engine::new(wasmtime::Config::new().consume_fuel(true)).unwrap(),
+            (),
+        );
+        let budget = EnergyQuanta::DEFAULT_BUDGET;
+        let budget = set_store_fuel(&mut store, budget);
+        store.set_fuel(store.get_fuel().unwrap() - 10).unwrap();
+        let remaining: EnergyQuanta = get_store_fuel(&store).into();
+        let used = EnergyQuanta::from(budget) - remaining;
+        assert_eq!(used, EnergyDiff(10_000));
+    }
+}
