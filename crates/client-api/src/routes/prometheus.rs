@@ -22,7 +22,9 @@ pub async fn get_sd_config<S: ControlStateReadAccess>(
     let labels = HashMap::new();
 
     for node in nodes {
-        targets.push(node.advertise_addr);
+        if let Some(addr) = node.advertise_addr {
+            targets.push(addr);
+        }
     }
 
     let sd_config = SDConfig { targets, labels };
