@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Mutex};
 use crate::hash::Hash;
 use crate::util::typed_prometheus::metrics_group;
 use once_cell::sync::Lazy;
-use prometheus::{Gauge, GaugeVec, HistogramVec, IntCounterVec, IntGauge, IntGaugeVec};
+use prometheus::{Gauge, GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
 use spacetimedb_lib::{Address, Identity};
 
 metrics_group!(
@@ -100,22 +100,6 @@ metrics_group!(
         #[help = "The number of fatal WASM instance errors, such as reducer panics."]
         #[labels(identity: Identity, module_hash: Hash, database_address: Address, reducer_symbol: str)]
         pub wasm_instance_errors: IntCounterVec,
-
-        #[name = spacetime_system_disk_space_total_bytes]
-        #[help = "A node's total disk space (in bytes)"]
-        pub system_disk_space_total: IntGauge,
-
-        #[name = spacetime_system_disk_space_free_bytes]
-        #[help = "A node's free (unused) disk space (in bytes)"]
-        pub system_disk_space_free: IntGauge,
-
-        #[name = spacetime_system_memory_total_bytes]
-        #[help = "A node's total available memory (in bytes)"]
-        pub system_memory_total: IntGauge,
-
-        #[name = spacetime_system_memory_free_bytes]
-        #[help = "A node's current available (free) memory (in bytes)"]
-        pub system_memory_free: IntGauge,
     }
 );
 
