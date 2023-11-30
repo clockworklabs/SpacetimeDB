@@ -127,8 +127,6 @@ type SharedMutexGuard<T> = ArcMutexGuard<RawMutex, T>;
 /// The initialization of this struct is sensitive because improper
 /// handling can lead to deadlocks. Therefore, it is strongly recommended to use
 /// `Locking::begin_mut_tx()` for instantiation to ensure safe acquisition of locks.
-/// `tx_state_lock` should remain `Some` throughout the transaction's lifecycle, until `commit()` or `rollback()` is called.
-
 pub struct MutTxId {
     tx_state: TxState,
     committed_state_write_lock: SharedWriteGuard<CommittedState>,
@@ -1689,8 +1687,7 @@ impl MutTxId {
 /// Lock Acquisition Order:
 /// 1. `memory`
 /// 2. `committed_state`
-/// 3. `tx_state`
-/// 4. `sequence_state`
+/// 3. `sequence_state`
 ///
 /// All locking mechanisms are encapsulated within the struct through local methods.
 #[derive(Clone)]
