@@ -1197,10 +1197,7 @@ impl MutTxId {
         index: IndexDef,
         database_address: Address,
     ) -> super::Result<()> {
-        let insert_table = if let Some(insert_table) = self
-            .tx_state
-            .get_insert_table_mut(&index.table_id)
-        {
+        let insert_table = if let Some(insert_table) = self.tx_state.get_insert_table_mut(&index.table_id) {
             insert_table
         } else {
             let row_type = self.row_type_for_table(index.table_id, database_address)?.into_owned();
@@ -1209,9 +1206,7 @@ impl MutTxId {
                 .insert_tables
                 .insert(index.table_id, Table::new(row_type, schema));
 
-            self.tx_state
-                .get_insert_table_mut(&index.table_id)
-                .unwrap()
+            self.tx_state.get_insert_table_mut(&index.table_id).unwrap()
         };
 
         let mut insert_index = BTreeIndex::new(
@@ -1273,10 +1268,7 @@ impl MutTxId {
                 table.schema.indexes.retain(|x| x.cols != col);
             }
         }
-        if let Some(insert_table) = self
-            .tx_state
-            .get_insert_table_mut(&TableId(index_id.0))
-        {
+        if let Some(insert_table) = self.tx_state.get_insert_table_mut(&TableId(index_id.0)) {
             let mut cols = vec![];
             for index in insert_table.indexes.values_mut() {
                 if index.index_id == *index_id {
@@ -1322,8 +1314,7 @@ impl MutTxId {
     }
 
     fn table_exists(&self, table_id: &TableId) -> bool {
-        self.tx_state
-            .insert_tables.contains_key(table_id)
+        self.tx_state.insert_tables.contains_key(table_id)
             || self.committed_state_write_lock.tables.contains_key(table_id)
     }
 
@@ -1544,7 +1535,8 @@ impl MutTxId {
     fn get_row_type(&self, table_id: &TableId) -> Option<&ProductType> {
         if let Some(row_type) = self
             .tx_state
-            .insert_tables.get(table_id)
+            .insert_tables
+            .get(table_id)
             .map(|table| table.get_row_type())
         {
             return Some(row_type);
@@ -1558,7 +1550,8 @@ impl MutTxId {
     fn get_schema(&self, table_id: &TableId) -> Option<&TableSchema> {
         if let Some(schema) = self
             .tx_state
-            .insert_tables.get(table_id)
+            .insert_tables
+            .get(table_id)
             .map(|table| table.get_schema())
         {
             return Some(schema);
@@ -1581,19 +1574,14 @@ impl MutTxId {
             RowState::Committed(_) => {
                 // If the row is present because of a previously committed transaction,
                 // we need to add it to the appropriate delete_table.
-                self.tx_state
-                    .get_or_create_delete_table(*table_id)
-                    .insert(*row_id);
+                self.tx_state.get_or_create_delete_table(*table_id).insert(*row_id);
                 // True because we did delete the row.
                 true
             }
             RowState::Insert(_) => {
                 // If the row is present because of a an insertion in this transaction,
                 // we need to remove it from the appropriate insert_table.
-                let insert_table = self
-                    .tx_state
-                    .get_insert_table_mut(table_id)
-                    .unwrap();
+                let insert_table = self.tx_state.get_insert_table_mut(table_id).unwrap();
                 insert_table.delete(row_id);
                 // True because we did delete a row.
                 true
@@ -1650,10 +1638,7 @@ impl MutTxId {
         // TODO(george): It's unclear that we truly support dynamically creating an index
         // yet. In particular, I don't know if creating an index in a transaction and
         // rolling it back will leave the index in place.
-        if let Some(inserted_rows) = self
-            .tx_state
-            .index_seek(table_id, &cols, &range)
-        {
+        if let Some(inserted_rows) = self.tx_state.index_seek(table_id, &cols, &range) {
             // The current transaction has modified this table, and the table is indexed.
             Ok(IterByColRange::Index(IndexSeekIterMutTxId {
                 ctx,
@@ -1668,7 +1653,7 @@ impl MutTxId {
             // Either the current transaction has not modified this table, or the table is not
             // indexed.
             match self.committed_state_write_lock.index_seek(table_id, &cols, &range) {
-                Some(committed_rows) =>  Ok(IterByColRange::CommittedIndex(CommittedIndexIter {
+                Some(committed_rows) => Ok(IterByColRange::CommittedIndex(CommittedIndexIter {
                     ctx,
                     table_id: *table_id,
                     tx_state: &self.tx_state,
