@@ -126,7 +126,7 @@ type SharedMutexGuard<T> = ArcMutexGuard<RawMutex, T>;
 ///
 /// The initialization of this struct is sensitive because improper
 /// handling can lead to deadlocks. Therefore, it is strongly recommended to use
-///`Locking::begin_mut_tx()` for instantiation to ensure safe acquisition of locks.
+/// `Locking::begin_mut_tx()` for instantiation to ensure safe acquisition of locks.
 /// `tx_state_lock` should remain `Some` throughout the transaction's lifecycle, until `commit()` or `rollback()` is called.
 
 pub struct MutTxId {
@@ -452,7 +452,7 @@ impl CommittedState {
 
     // TODO(shubham): Need to confirm, if indexes exist during bootstrap to be used here.
     /// Iter for`CommittedState`, Only to be used during bootstrap.
-    /// For transcation, consider using MutTxId::Iters.
+    /// For transaction, consider using MutTxId::Iters.
     fn iter_by_col_eq<'a>(
         &'a self,
         table_id: &'a TableId,
@@ -613,6 +613,7 @@ impl<'a> Iterator for CommittedStateIter<'a> {
                 return Some(DataRef::new(row_id, row));
             }
         }
+
         None
     }
 }
