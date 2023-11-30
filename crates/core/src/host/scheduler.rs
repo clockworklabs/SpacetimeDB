@@ -50,19 +50,14 @@ pub struct SchedulerStarter {
 impl Scheduler {
     pub fn dummy(dummy_path: &Path) -> Self {
         let (tx, _) = mpsc::unbounded_channel();
-        let config = sled::Config::default()
-            .path(dummy_path)
-            .flush_every_ms(Some(120_000))
-            .mode(sled::Mode::HighThroughput);
-
-        let db = config.open().unwrap();
+        let db = sled::open(dummy_path).unwrap();
         Self { tx, db }
     }
 
     pub fn open(scheduler_db_path: impl AsRef<Path>) -> anyhow::Result<(Self, SchedulerStarter)> {
         let db = sled::Config::default()
             .path(scheduler_db_path)
-            .flush_every_ms(Some(120_000))
+            .flush_every_ms(Some(50))
             .mode(sled::Mode::HighThroughput)
             .open()?;
 

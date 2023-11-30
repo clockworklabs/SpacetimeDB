@@ -14,7 +14,7 @@ impl SledObjectDB {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, DBError> {
         let config = sled::Config::default()
             .path(path)
-            .flush_every_ms(Some(120_000))
+            .flush_every_ms(Some(50))
             .mode(HighThroughput);
         let db = config.open()?;
         Ok(Self { db })

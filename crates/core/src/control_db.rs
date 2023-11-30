@@ -62,7 +62,7 @@ impl ControlDb {
     pub fn new() -> Result<Self> {
         let config = sled::Config::default()
             .path(stdb_path("control_node/control_db"))
-            .flush_every_ms(Some(120_000))
+            .flush_every_ms(Some(50))
             .mode(sled::Mode::HighThroughput);
         let db = config.open()?;
         Ok(Self { db })
@@ -72,7 +72,7 @@ impl ControlDb {
     pub fn at(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let config = sled::Config::default()
             .path(path.as_ref())
-            .flush_every_ms(Some(120_000))
+            .flush_every_ms(Some(50))
             .mode(sled::Mode::HighThroughput);
         let db = config.open()?;
         Ok(Self { db })
