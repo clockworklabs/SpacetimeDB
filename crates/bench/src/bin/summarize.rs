@@ -1026,7 +1026,7 @@ mod callgrind {
                     key,
                     benchmarks
                         .iter()
-                        .map(|benchmark| (canonical_key(*benchmark), *benchmark))
+                        .map(|benchmark| (canonical_key(benchmark), *benchmark))
                         .collect(),
                 )
             })

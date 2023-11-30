@@ -128,10 +128,7 @@ impl CompiledModule {
     /// This is used to speed up benchmarks running under callgrind (it allows them to reuse native-compiled wasm modules).
     pub async fn load_module(&self, config: Config, reuse_db_path: Option<&Path>) -> ModuleHandle {
         let paths = match reuse_db_path {
-            Some(path) => {
-                eprintln!("Reusing db state at {}", path.display());
-                FilesLocal::hidden(path)
-            }
+            Some(path) => FilesLocal::hidden(path),
             None => {
                 let paths = FilesLocal::temp(&self.name);
 

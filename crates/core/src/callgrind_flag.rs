@@ -57,8 +57,5 @@ pub fn invoke_allowing_callgrind<T, F: FnOnce() -> T>(f: F) -> T {
 /// the benchmarks crate.
 #[inline(never)]
 fn flag<T, F: FnOnce() -> T>(f: F) -> T {
-    eprintln!("CALLGRIND ENABLED, thread {:?}", std::thread::current().id());
-    let result = black_box(f());
-    eprintln!("CALLGRIND DISABLED, thread {:?}", std::thread::current().id());
-    result
+    black_box(f())
 }
