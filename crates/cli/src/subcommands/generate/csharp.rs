@@ -665,10 +665,11 @@ fn autogen_csharp_product_table_common(
             // If this is a table, we want to generate indexes
             if let Some(schema) = &schema {
                 let indexed_fields: Vec<(&ProductTypeElement, String)> = schema
-                    .indexes
+                    .column_constraints()
                     .iter()
                     .enumerate()
-                    .filter(|a| a.1.is_unique)
+                    //Generate only for single-column indexes
+                    .filter(|(_, a)| a.0.len() == 1 && a.1.has_unique())
                     .map(|a| &product_type.elements[a.0])
                     .map(|f| (f, f.name.as_ref().unwrap().replace("r#", "").to_case(Case::Pascal)))
                     .collect();
