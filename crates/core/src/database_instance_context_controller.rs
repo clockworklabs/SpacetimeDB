@@ -3,7 +3,6 @@ use std::{collections::HashMap, sync::Mutex};
 
 use crate::db::db_metrics::DB_METRICS;
 use crate::host::scheduler::Scheduler;
-use crate::worker_metrics::WORKER_METRICS;
 
 use super::database_instance_context::DatabaseInstanceContext;
 
@@ -38,16 +37,6 @@ impl DatabaseInstanceContextController {
 
     #[tracing::instrument(skip_all)]
     pub fn update_metrics(&self) {
-        // Update global disk usage metrics
-        if let Ok(info) = sys_info::disk_info() {
-            WORKER_METRICS.system_disk_space_free.set(info.free as i64);
-            WORKER_METRICS.system_disk_space_total.set(info.total as i64);
-        }
-        // Update memory usage metrics
-        if let Ok(info) = sys_info::mem_info() {
-            WORKER_METRICS.system_memory_free.set(info.free as i64);
-            WORKER_METRICS.system_memory_total.set(info.total as i64);
-        }
         for (db, _) in self.contexts.lock().unwrap().values() {
             // Use the previous gauge value if there is an issue getting the file size.
             if let Ok(num_bytes) = db.message_log_size_on_disk() {
