@@ -130,8 +130,8 @@ type SharedMutexGuard<T> = ArcMutexGuard<RawMutex, T>;
 /// `tx_state_lock` should remain `Some` throughout the transaction's lifecycle, until `commit()` or `rollback()` is called.
 
 pub struct MutTxId {
+    tx_state: TxState,
     committed_state_write_lock: SharedWriteGuard<CommittedState>,
-    tx_state_lock: SharedMutexGuard<Option<TxState>>,
     sequence_state_lock: SharedMutexGuard<SequencesState>,
     memory_lock: SharedMutexGuard<BTreeMap<DataKey, Arc<Vec<u8>>>>,
     lock_wait_time: Duration,
@@ -963,9 +963,7 @@ impl MutTxId {
         row_type: ProductType,
         schema: TableSchema,
     ) -> super::Result<()> {
-        self.tx_state_lock
-            .as_mut()
-            .unwrap()
+        self.tx_state
             .insert_tables
             .insert(table_id, Table::new(row_type, schema));
         Ok(())
@@ -1200,27 +1198,16 @@ impl MutTxId {
         index: IndexDef,
         database_address: Address,
     ) -> super::Result<()> {
-        let insert_table = if let Some(insert_table) = self
-            .tx_state_lock
-            .as_mut()
-            .unwrap()
-            .get_insert_table_mut(&index.table_id)
-        {
+        let insert_table = if let Some(insert_table) = self.tx_state.get_insert_table_mut(&index.table_id) {
             insert_table
         } else {
             let row_type = self.row_type_for_table(index.table_id, database_address)?.into_owned();
             let schema = self.schema_for_table(index.table_id, database_address)?.into_owned();
-            self.tx_state_lock
-                .as_mut()
-                .unwrap()
+            self.tx_state
                 .insert_tables
                 .insert(index.table_id, Table::new(row_type, schema));
 
-            self.tx_state_lock
-                .as_mut()
-                .unwrap()
-                .get_insert_table_mut(&index.table_id)
-                .unwrap()
+            self.tx_state.get_insert_table_mut(&index.table_id).unwrap()
         };
 
         let mut insert_index = BTreeIndex::new(
@@ -1282,12 +1269,7 @@ impl MutTxId {
                 table.schema.indexes.retain(|x| x.cols != col);
             }
         }
-        if let Some(insert_table) = self
-            .tx_state_lock
-            .as_mut()
-            .unwrap()
-            .get_insert_table_mut(&TableId(index_id.0))
-        {
+        if let Some(insert_table) = self.tx_state.get_insert_table_mut(&TableId(index_id.0)) {
             let mut cols = vec![];
             for index in insert_table.indexes.values_mut() {
                 if index.index_id == *index_id {
@@ -1315,7 +1297,7 @@ impl MutTxId {
     }
 
     fn contains_row(&mut self, table_id: &TableId, row_id: &RowId) -> RowState<'_> {
-        match self.tx_state_lock.as_ref().unwrap().get_row_op(table_id, row_id) {
+        match self.tx_state.get_row_op(table_id, row_id) {
             RowState::Committed(_) => unreachable!("a row cannot be committed in a tx state"),
             RowState::Insert(pv) => return RowState::Insert(pv),
             RowState::Delete => return RowState::Delete,
@@ -1333,10 +1315,7 @@ impl MutTxId {
     }
 
     fn table_exists(&self, table_id: &TableId) -> bool {
-        self.tx_state_lock
-            .as_ref()
-            .map(|tx_state| tx_state.insert_tables.contains_key(table_id))
-            .unwrap_or(false)
+        self.tx_state.insert_tables.contains_key(table_id)
             || self.committed_state_write_lock.tables.contains_key(table_id)
     }
 
@@ -1429,12 +1408,11 @@ impl MutTxId {
         row.encode(&mut bytes);
         let data_key = DataKey::from_data(&bytes);
         let row_id = RowId(data_key);
-        let tx_state = self.tx_state_lock.as_mut().unwrap();
 
         // If the table does exist in the tx state, we need to create it based on the table in the
         // committed state. If the table does not exist in the committed state, it doesn't exist
         // in the database.
-        let insert_table = if let Some(table) = tx_state.get_insert_table(&table_id) {
+        let insert_table = if let Some(table) = self.tx_state.get_insert_table(&table_id) {
             table
         } else {
             let Some(committed_table) = self.committed_state_write_lock.tables.get(&table_id) else {
@@ -1461,8 +1439,8 @@ impl MutTxId {
                     .collect(),
                 rows: Default::default(),
             };
-            tx_state.insert_tables.insert(table_id, table);
-            tx_state.get_insert_table(&table_id).unwrap()
+            self.tx_state.insert_tables.insert(table_id, table);
+            self.tx_state.get_insert_table(&table_id).unwrap()
         };
 
         // Check unique constraints
@@ -1479,7 +1457,7 @@ impl MutTxId {
                     continue;
                 };
                 for row_id in violators {
-                    if let Some(delete_table) = tx_state.delete_tables.get(&table_id) {
+                    if let Some(delete_table) = self.tx_state.delete_tables.get(&table_id) {
                         if !delete_table.contains(row_id) {
                             let value = row.project_not_empty(&index.cols).unwrap();
                             return Err(index.build_error_unique(table, value).into());
@@ -1504,7 +1482,7 @@ impl MutTxId {
             //    by this transaction, we will remove it from `delete_tables`, and the
             //    cummulative effect will be to leave the row in place in the committed state.
 
-            let delete_table = tx_state.get_or_create_delete_table(table_id);
+            let delete_table = self.tx_state.get_or_create_delete_table(table_id);
             let row_was_previously_deleted = delete_table.remove(&row_id);
 
             // If the row was just deleted in this transaction and we are re-inserting it now,
@@ -1513,7 +1491,7 @@ impl MutTxId {
                 return Ok(());
             }
 
-            let insert_table = tx_state.get_insert_table_mut(&table_id).unwrap();
+            let insert_table = self.tx_state.get_insert_table_mut(&table_id).unwrap();
 
             // TODO(cloutiertyler): should probably also check that all the columns are correct? Perf considerations.
             if insert_table.row_type.elements.len() != row.elements.len() {
@@ -1537,7 +1515,7 @@ impl MutTxId {
         if !self.table_exists(table_id) {
             return Err(TableError::IdNotFound(ST_TABLES_ID, table_id.0).into());
         }
-        match self.tx_state_lock.as_ref().unwrap().get_row_op(table_id, row_id) {
+        match self.tx_state.get_row_op(table_id, row_id) {
             RowState::Committed(_) => unreachable!("a row cannot be committed in a tx state"),
             RowState::Insert(row) => {
                 return Ok(Some(DataRef::new(row_id, row)));
@@ -1557,9 +1535,9 @@ impl MutTxId {
 
     fn get_row_type(&self, table_id: &TableId) -> Option<&ProductType> {
         if let Some(row_type) = self
-            .tx_state_lock
-            .as_ref()
-            .and_then(|tx_state| tx_state.insert_tables.get(table_id))
+            .tx_state
+            .insert_tables
+            .get(table_id)
             .map(|table| table.get_row_type())
         {
             return Some(row_type);
@@ -1572,9 +1550,9 @@ impl MutTxId {
 
     fn get_schema(&self, table_id: &TableId) -> Option<&TableSchema> {
         if let Some(schema) = self
-            .tx_state_lock
-            .as_ref()
-            .and_then(|tx_state| tx_state.insert_tables.get(table_id))
+            .tx_state
+            .insert_tables
+            .get(table_id)
             .map(|table| table.get_schema())
         {
             return Some(schema);
@@ -1597,23 +1575,14 @@ impl MutTxId {
             RowState::Committed(_) => {
                 // If the row is present because of a previously committed transaction,
                 // we need to add it to the appropriate delete_table.
-                self.tx_state_lock
-                    .as_mut()
-                    .unwrap()
-                    .get_or_create_delete_table(*table_id)
-                    .insert(*row_id);
+                self.tx_state.get_or_create_delete_table(*table_id).insert(*row_id);
                 // True because we did delete the row.
                 true
             }
             RowState::Insert(_) => {
                 // If the row is present because of a an insertion in this transaction,
                 // we need to remove it from the appropriate insert_table.
-                let insert_table = self
-                    .tx_state_lock
-                    .as_mut()
-                    .unwrap()
-                    .get_insert_table_mut(table_id)
-                    .unwrap();
+                let insert_table = self.tx_state.get_insert_table_mut(table_id).unwrap();
                 insert_table.delete(row_id);
                 // True because we did delete a row.
                 true
@@ -1670,17 +1639,12 @@ impl MutTxId {
         // TODO(george): It's unclear that we truly support dynamically creating an index
         // yet. In particular, I don't know if creating an index in a transaction and
         // rolling it back will leave the index in place.
-        if let Some(inserted_rows) = self
-            .tx_state_lock
-            .as_ref()
-            .and_then(|tx_state| tx_state.index_seek(table_id, &cols, &range))
-        {
+        if let Some(inserted_rows) = self.tx_state.index_seek(table_id, &cols, &range) {
             // The current transaction has modified this table, and the table is indexed.
-            let tx_state = self.tx_state_lock.as_ref().unwrap();
             Ok(IterByColRange::Index(IndexSeekIterMutTxId {
                 ctx,
                 table_id: *table_id,
-                tx_state,
+                tx_state: &self.tx_state,
                 inserted_rows,
                 committed_rows: self.committed_state_write_lock.index_seek(table_id, &cols, &range),
                 committed_state: &self.committed_state_write_lock,
@@ -1690,22 +1654,14 @@ impl MutTxId {
             // Either the current transaction has not modified this table, or the table is not
             // indexed.
             match self.committed_state_write_lock.index_seek(table_id, &cols, &range) {
-                //If we don't have `self.tx_state_lock` yet is likely we are running the bootstrap process
-                Some(committed_rows) => match self.tx_state_lock.as_ref() {
-                    None => Ok(IterByColRange::Scan(ScanIterByColRange {
-                        range,
-                        cols,
-                        scan_iter: self.iter(ctx, table_id)?,
-                    })),
-                    Some(tx_state) => Ok(IterByColRange::CommittedIndex(CommittedIndexIter {
-                        ctx,
-                        table_id: *table_id,
-                        tx_state,
-                        committed_state: &self.committed_state_write_lock,
-                        committed_rows,
-                        num_committed_rows_fetched: 0,
-                    })),
-                },
+                Some(committed_rows) => Ok(IterByColRange::CommittedIndex(CommittedIndexIter {
+                    ctx,
+                    table_id: *table_id,
+                    tx_state: &self.tx_state,
+                    committed_state: &self.committed_state_write_lock,
+                    committed_rows,
+                    num_committed_rows_fetched: 0,
+                })),
                 None => Ok(IterByColRange::Scan(ScanIterByColRange {
                     range,
                     cols,
@@ -1715,15 +1671,13 @@ impl MutTxId {
         }
     }
 
-    fn commit(&mut self) -> super::Result<Option<TxData>> {
-        let tx_state = self.tx_state_lock.take().unwrap();
+    fn commit(mut self) -> super::Result<Option<TxData>> {
         let memory: BTreeMap<DataKey, Arc<Vec<u8>>> = std::mem::take(&mut self.memory_lock);
-        let tx_data = self.committed_state_write_lock.merge(tx_state, memory);
+        let tx_data = self.committed_state_write_lock.merge(self.tx_state, memory);
         Ok(Some(tx_data))
     }
 
-    fn rollback(&mut self) {
-        *self.tx_state_lock = None;
+    fn rollback(self) {
         // TODO: Check that no sequences exceed their allocation after the rollback.
     }
 }
@@ -1745,8 +1699,6 @@ pub struct Locking {
     memory: Arc<Mutex<BTreeMap<DataKey, Arc<Vec<u8>>>>>,
     /// The state of the database up to the point of the last committed transaction.
     committed_state: Arc<RwLock<CommittedState>>,
-    /// The state of all insertions and deletions in this transaction.
-    tx_state: Arc<Mutex<Option<TxState>>>,
     /// The state of sequence generation in this database.
     sequence_state: Arc<Mutex<SequencesState>>,
     /// The address of this database.
@@ -1758,7 +1710,6 @@ impl Locking {
         Self {
             memory: Arc::new(Mutex::new(BTreeMap::new())),
             committed_state: Arc::new(RwLock::new(CommittedState::new())),
-            tx_state: Arc::new(Mutex::new(None)),
             sequence_state: Arc::new(Mutex::new(SequencesState::new())),
             database_address,
         }
@@ -1954,7 +1905,7 @@ impl<'a> Iterator for Iter<'a> {
         // Moves the current scan stage to the current tx if rows were inserted in it.
         // Returns `None` otherwise.
         let maybe_stage_current_tx_inserts = |this: &mut Self| {
-            let table = this.tx.tx_state_lock.as_ref()?;
+            let table = &this.tx.tx_state;
             let insert_table = table.insert_tables.get(&table_id)?;
             this.stage = ScanStage::CurrentTx {
                 iter: insert_table.rows.iter(),
@@ -1989,18 +1940,18 @@ impl<'a> Iterator for Iter<'a> {
                         // Increment metric for number of committed rows scanned.
                         self.num_committed_rows_fetched += 1;
                         // Check the committed row's state in the current tx.
-                        match self.tx.tx_state_lock.as_ref().map(|tx_state| tx_state.get_row_op(&table_id, row_id)) {
-                            Some(RowState::Committed(_)) => unreachable!("a row cannot be committed in a tx state"),
+                        match self.tx.tx_state.get_row_op(&table_id, row_id) {
+                            RowState::Committed(_) => unreachable!("a row cannot be committed in a tx state"),
                             // Do nothing, via (3), we'll get it in the next stage (2).
-                            Some(RowState::Insert(_)) |
+                            RowState::Insert(_) |
                             // Skip it, it's been deleted.
-                            Some(RowState::Delete) => {}
+                            RowState::Delete => {}
                             // There either are no state changes for the current tx (`None`),
                             // or there are, but `row_id` specifically has not been changed.
                             // Either way, the row is in the committed state
                             // and hasn't been removed in the current tx,
                             // so it exists and can be returned.
-                            Some(RowState::Absent) | None => return Some(DataRef::new(row_id, row)),
+                            RowState::Absent => return Some(DataRef::new(row_id, row)),
                         }
                     }
                     // (3) We got here, so we must've exhausted the committed changes.
@@ -2276,22 +2227,17 @@ impl traits::MutTx for Locking {
         let sequence_state_lock = self.sequence_state.lock_arc();
         let memory_lock = self.memory.lock_arc();
         let lock_wait_time = timer.elapsed();
-        let mut tx_state_lock = self.tx_state.lock_arc();
-        if tx_state_lock.is_some() {
-            panic!("The previous transaction was not properly rolled back or committed.");
-        }
-        tx_state_lock.replace(TxState::new());
         MutTxId {
             committed_state_write_lock,
             sequence_state_lock,
-            tx_state_lock,
+            tx_state: TxState::new(),
             memory_lock,
             lock_wait_time,
             timer,
         }
     }
 
-    fn rollback_mut_tx(&self, ctx: &ExecutionContext, mut tx: Self::MutTxId) {
+    fn rollback_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTxId) {
         let workload = &ctx.workload();
         let db = &ctx.database();
         let reducer = ctx.reducer_name().unwrap_or_default();
@@ -2312,7 +2258,7 @@ impl traits::MutTx for Locking {
         tx.rollback();
     }
 
-    fn commit_mut_tx(&self, ctx: &ExecutionContext, mut tx: Self::MutTxId) -> super::Result<Option<TxData>> {
+    fn commit_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTxId) -> super::Result<Option<TxData>> {
         let workload = &ctx.workload();
         let db = &ctx.database();
         let reducer = ctx.reducer_name().unwrap_or_default();
@@ -2365,12 +2311,12 @@ impl traits::MutTx for Locking {
     }
 
     #[cfg(test)]
-    fn rollback_mut_tx_for_test(&self, mut tx: Self::MutTxId) {
+    fn rollback_mut_tx_for_test(&self, tx: Self::MutTxId) {
         tx.rollback();
     }
 
     #[cfg(test)]
-    fn commit_mut_tx_for_test(&self, mut tx: Self::MutTxId) -> super::Result<Option<TxData>> {
+    fn commit_mut_tx_for_test(&self, tx: Self::MutTxId) -> super::Result<Option<TxData>> {
         tx.commit()
     }
 }
