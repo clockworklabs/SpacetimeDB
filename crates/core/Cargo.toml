@@ -88,7 +88,7 @@ tracing.workspace = true
 url.workspace = true
 urlencoding.workspace = true
 uuid.workspace = true
-wasmtime = { workspace = true, features = ["cache"] }
+wasmtime.workspace = true
 # Rocksdb ostorage backend, linked only if "rocksdb" feature enabled.
 rocksdb = {workspace = true, optional = true}
 

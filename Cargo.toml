@@ -182,7 +182,7 @@ uuid = { version = "1.2.1", features = ["v4"] }
 walkdir = "2.2.5"
 wasmbin = "0.6"
 
-wasmtime = { version = "14", default-features = false, features = ["cranelift"] }
+wasmtime = { version = "15", default-features = false, features = ["cranelift", "demangle", "addr2line", "cache"] }
 
 # We use the "ondemand" feature to allow connecting after the start,
 # and reconnecting, from the tracy client to the database.
