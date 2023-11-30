@@ -126,11 +126,6 @@ impl From<SequenceSchema> for SequenceDef {
     }
 }
 
-pub struct IndexSplit<'a> {
-    pub unique: Vec<&'a IndexSchema>,
-    pub non_unique: Vec<&'a IndexSchema>,
-}
-
 /// A struct representing the schema of a database index.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexSchema {
@@ -695,13 +690,6 @@ impl TableSchema {
                 }
             })
             .flatten()
-    }
-
-    /// Utility for split the indexes by `is_unique`
-    pub fn indexes_split(&self) -> IndexSplit {
-        let (unique, non_unique) = self.indexes.iter().partition::<Vec<_>, _>(|attr| attr.is_unique);
-
-        IndexSplit { unique, non_unique }
     }
 
     /// Verify the definitions of this schema are valid:

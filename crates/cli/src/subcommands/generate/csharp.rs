@@ -3,6 +3,7 @@ use super::util::fmt_fn;
 use std::fmt::{self, Write};
 
 use convert_case::{Case, Casing};
+use nonempty::NonEmpty;
 use spacetimedb_lib::sats::db::def::TableSchema;
 use spacetimedb_lib::sats::{
     AlgebraicType, AlgebraicType::Builtin, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, SumType,
@@ -939,10 +940,8 @@ fn autogen_csharp_access_funcs_for_struct(
     table_name: &str,
     schema: &TableSchema,
 ) -> bool {
-    let indexes = schema.indexes_split();
     let primary_col_idx = schema.pk();
 
-    let unique_it = indexes.unique.into_iter().chain(indexes.non_unique);
     writeln!(
         output,
         "public static System.Collections.Generic.IEnumerable<{struct_name_pascal_case}> Iter()"
@@ -965,15 +964,11 @@ fn autogen_csharp_access_funcs_for_struct(
         writeln!(output, "return SpacetimeDBClient.clientDB.Count(\"{table_name}\");",).unwrap();
     });
 
-    for idx in unique_it {
-        let is_unique = idx.is_unique;
+    let constraints = schema.column_constraints();
+    for col in &schema.columns {
+        let is_unique = constraints[&NonEmpty::new(col.col_pos)].has_unique();
 
-        //Skip multi-column indexes, we generate methods on single fields
-        let col_i: usize = if idx.columns.len() > 1 {
-            continue;
-        } else {
-            idx.columns.head.into()
-        };
+        let col_i: usize = col.col_pos.into();
 
         let field = &product_type.elements[col_i];
         let field_name = field.name.as_ref().expect("autogen'd tuples should have field names");

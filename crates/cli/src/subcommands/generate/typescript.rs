@@ -3,6 +3,7 @@ use super::util::fmt_fn;
 use std::fmt::{self, Write};
 
 use convert_case::{Case, Casing};
+use nonempty::NonEmpty;
 use spacetimedb_lib::sats::db::def::TableSchema;
 use spacetimedb_lib::sats::{
     AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, ProductTypeElement, SumType,
@@ -949,14 +950,6 @@ fn autogen_typescript_access_funcs_for_struct(
     table_name: &str,
     table: &TableSchema,
 ) {
-    let idx = table.indexes_split();
-    //Skip multi-column indexes, we generate methods on single fields
-    let it = idx
-        .unique
-        .into_iter()
-        .chain(idx.non_unique)
-        .filter(|x| x.columns.len() == 1);
-
     writeln!(output, "public static count(): number").unwrap();
     indented_block(output, |output| {
         writeln!(
@@ -980,9 +973,9 @@ fn autogen_typescript_access_funcs_for_struct(
     writeln!(output).unwrap();
 
     let constraints = table.column_constraints();
-    for col in it {
-        let is_unique = constraints[&col.columns].has_unique();
-        let field = &product_type.elements[usize::from(col.columns.head)];
+    for col in &table.columns {
+        let is_unique = constraints[&NonEmpty::new(col.col_pos)].has_unique();
+        let field = &product_type.elements[usize::from(col.col_pos)];
         let field_name = field.name.as_ref().expect("autogen'd tuples should have field names");
         let field_type = &field.algebraic_type;
         let typescript_field_name_pascal = field_name.replace("r#", "").to_case(Case::Pascal);
