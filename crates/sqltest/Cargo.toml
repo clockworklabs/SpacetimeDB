@@ -1,6 +1,6 @@
 [package]
 name = "sqltest"
-version = "0.7.3"
+version = "0.8.0"
 edition = "2021"
 description = "Sql integration test for SpaceTimeDb"
 
