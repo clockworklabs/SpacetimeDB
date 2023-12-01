@@ -8,7 +8,7 @@ use spacetimedb_lib::sats::db::def::TableSchema;
 use spacetimedb_lib::sats::{
     AlgebraicType, AlgebraicType::Builtin, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, SumType,
 };
-use spacetimedb_lib::{ProductTypeElement, ReducerDef, TableDesc};
+use spacetimedb_lib::{ReducerDef, TableDesc};
 
 use super::code_indenter::CodeIndenter;
 use super::{GenCtx, GenItem, INDENT};
@@ -664,18 +664,14 @@ fn autogen_csharp_product_table_common(
 
             // If this is a table, we want to generate indexes
             if let Some(schema) = &schema {
-                let indexed_fields: Vec<(&ProductTypeElement, String)> = schema
-                    .column_constraints()
-                    .iter()
-                    .enumerate()
-                    //Generate only for single-column indexes
-                    .filter(|(_, a)| a.0.len() == 1 && a.1.has_unique())
-                    .map(|a| &product_type.elements[a.0])
-                    .map(|f| (f, f.name.as_ref().unwrap().replace("r#", "").to_case(Case::Pascal)))
-                    .collect();
+                let constraints = schema.column_constraints();
                 // Declare custom index dictionaries
-                for (field, field_name) in &indexed_fields {
-                    let type_name = ty_fmt(ctx, &field.algebraic_type, namespace);
+                for col in &schema.columns {
+                    let field_name = col.col_name.replace("r#", "").to_case(Case::Pascal);
+                    if !constraints[&NonEmpty::new(col.col_pos)].has_unique() {
+                        continue;
+                    }
+                    let type_name = ty_fmt(ctx, &col.col_type, namespace);
                     let comparer = if format!("{}", type_name) == "byte[]" {
                         ", new SpacetimeDB.ByteArrayComparer()"
                     } else {
@@ -698,7 +694,11 @@ fn autogen_csharp_product_table_common(
                 {
                     indent_scope!(output);
                     writeln!(output, "var val = ({name})insertedValue;").unwrap();
-                    for (_, field_name) in &indexed_fields {
+                    for col in &schema.columns {
+                        let field_name = col.col_name.replace("r#", "").to_case(Case::Pascal);
+                        if !constraints[&NonEmpty::new(col.col_pos)].has_unique() {
+                            continue;
+                        }
                         writeln!(output, "{field_name}_Index[val.{field_name}] = val;").unwrap();
                     }
                 }
@@ -714,7 +714,11 @@ fn autogen_csharp_product_table_common(
                 {
                     indent_scope!(output);
                     writeln!(output, "var val = ({name})deletedValue;").unwrap();
-                    for (_, field_name) in &indexed_fields {
+                    for col in &schema.columns {
+                        let field_name = col.col_name.replace("r#", "").to_case(Case::Pascal);
+                        if !constraints[&NonEmpty::new(col.col_pos)].has_unique() {
+                            continue;
+                        }
                         writeln!(output, "{field_name}_Index.Remove(val.{field_name});").unwrap();
                     }
                 }
