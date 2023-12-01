@@ -1094,7 +1094,10 @@ mod tests {
             "SELECT * FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE lhs.x < 10",
         ];
         for join in joins {
-            assert!(compile_read_only_query(&db, &tx, &auth, join).is_err(), "{join}");
+            match compile_read_only_query(&db, &tx, &auth, join) {
+                Err(DBError::Subscription(SubscriptionError::Unsupported(_))) => (),
+                x => panic!("Unexpected: {x:?}"),
+            }
         }
 
         Ok(())

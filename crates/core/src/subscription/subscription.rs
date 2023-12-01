@@ -33,7 +33,7 @@ use std::time::Instant;
 
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::db_metrics::{DB_METRICS, MAX_QUERY_CPU_TIME};
-use crate::error::DBError;
+use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::{ExecutionContext, WorkloadType};
 use crate::sql::query_debug_info::QueryDebugInfo;
 use crate::subscription::query::{run_query, OP_TYPE_FIELD_NAME};
@@ -94,7 +94,7 @@ pub struct SupportedQuery {
 
 impl SupportedQuery {
     pub fn new(expr: QueryExpr, info: QueryDebugInfo) -> Result<Self, DBError> {
-        let kind = query::classify(&expr).context("Unsupported query expression")?;
+        let kind = query::classify(&expr).ok_or_else(|| SubscriptionError::Unsupported(info.clone()))?;
         Ok(Self { kind, expr, info })
     }
 
@@ -128,7 +128,7 @@ impl AsRef<QueryExpr> for SupportedQuery {
 }
 
 /// A set of [supported][`SupportedQuery`] [`QueryExpr`]s.
-#[derive(Deref, DerefMut, PartialEq, From, IntoIterator)]
+#[derive(Debug, Deref, DerefMut, PartialEq, From, IntoIterator)]
 pub struct QuerySet(BTreeSet<SupportedQuery>);
 
 impl From<SupportedQuery> for QuerySet {
