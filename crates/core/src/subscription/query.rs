@@ -21,6 +21,7 @@ use spacetimedb_sats::AlgebraicType;
 use spacetimedb_sats::DataKey;
 use spacetimedb_vm::expr;
 use spacetimedb_vm::expr::{Crud, CrudExpr, DbType, QueryExpr, SourceExpr};
+
 static WHITESPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap());
 pub const SUBSCRIBE_TO_ALL_QUERY: &str = "SELECT * FROM *";
 
