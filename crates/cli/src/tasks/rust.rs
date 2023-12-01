@@ -20,26 +20,11 @@ fn cargo_cmd(subcommand: &str, build_debug: bool, args: &[&str]) -> duct::Expres
 }
 
 pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bool) -> anyhow::Result<PathBuf> {
-    eprintln!("building rust {}", project_path.display());
-    eprintln!("CWD: {}", std::env::current_dir().unwrap().display());
-    eprintln!("env vars: {:?}", std::env::vars_os().collect::<Vec<_>>());
     // Make sure that we have the wasm target installed (ok to run if its already installed)
-    match cmd!("rustup", "target", "add", "wasm32-unknown-unknown").run() {
-        Ok(out) => {
-            eprintln!("rustup target add stdout: {}", String::from_utf8_lossy(&out.stdout));
-            eprintln!("rustup target add stderr: {}", String::from_utf8_lossy(&out.stderr));
-        }
-        Err(err) => {
-            eprintln!("rustup target add: error: {:?} {}", err, err.to_string());
-            Err(err)?;
-        }
-    }
-
-    eprintln!("ran rustup target add");
+    cmd!("rustup", "target", "add", "wasm32-unknown-unknown").run()?;
 
     // Note: Clippy has to run first so that it can build & cache deps for actual build while checking in parallel.
     if !skip_clippy {
-        eprintln!("not skipping clippy");
         let clippy_conf_dir = tempfile::tempdir()?;
         fs::write(clippy_conf_dir.path().join("clippy.toml"), CLIPPY_TOML)?;
         println!("checking crate with spacetimedb's clippy configuration");
@@ -55,16 +40,12 @@ pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bo
         .run()?;
         anyhow::ensure!(out.status.success(), "clippy found a lint error");
     }
-    eprintln!("ran clippy");
 
     let reader = cargo_cmd("build", build_debug, &["--message-format=json-render-diagnostics"])
         .dir(project_path)
         .reader()?;
 
-    eprintln!("built project");
-
     let mut artifact = None;
-    eprintln!("finding artifact");
     for message in Message::parse_stream(io::BufReader::new(reader)) {
         match message {
             Ok(Message::CompilerArtifact(art)) => artifact = Some(art),
@@ -75,9 +56,8 @@ pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bo
     let artifact = artifact.context("no artifact found?")?;
     let artifact = artifact.filenames.into_iter().next().context("no wasm?")?;
 
-    eprintln!("trying to wasm");
     check_for_wasm_bindgen(artifact.as_ref())?;
-    eprintln!("done with build rust, returning artifact");
+
     Ok(artifact.into())
 }
 
