@@ -1503,7 +1503,11 @@ mod tests {
 
         // The state must be the same after reopening the db.
         let db = reopen_db()?;
-        assert_eq!(NUM_TRANSACTIONS as u64, balance(&ctx, &db, table_id)?);
+        assert_eq!(
+            NUM_TRANSACTIONS as u64,
+            balance(&ctx, &db, table_id)?,
+            "the state should be the same as before reopening the db"
+        );
 
         let total_segments = mlog.lock().unwrap().total_segments();
         assert!(total_segments > 3, "expected more than 3 segments");
@@ -1515,7 +1519,11 @@ mod tests {
 
         // Assert that the final tx is lost.
         let db = reopen_db()?;
-        assert_eq!((NUM_TRANSACTIONS - 1) as u64, balance(&ctx, &db, table_id)?);
+        assert_eq!(
+            (NUM_TRANSACTIONS - 1) as u64,
+            balance(&ctx, &db, table_id)?,
+            "the last transaction should have been dropped"
+        );
         assert_eq!(
             total_segments,
             mlog.lock().unwrap().total_segments(),
@@ -1524,11 +1532,23 @@ mod tests {
 
         // Overwrite some portion of the last segment.
         drop(db);
+        let last_segment = mlog.lock().unwrap().segments().last().unwrap();
+        invalidate_overwrite(&mlog_path, last_segment)?;
+        let res = reopen_db();
+        if !matches!(res, Err(DBError::LogReplay(LogReplayError::OutOfOrderCommit { .. }))) {
+            panic!("Expected replay error but got: {res:?}");
+        }
+        // We can't recover from this, so drop the last segment.
+        let mut mlog_guard = mlog.lock().unwrap();
+        let drop_segment = mlog_guard.segments().last().unwrap();
+        mlog_guard.reset_to(drop_segment.offset() - 1)?;
+        let last_segment = mlog_guard.segments().last().unwrap();
+        drop(mlog_guard);
+
         let segment_range = Range {
             start: last_segment.offset(),
-            end: (NUM_TRANSACTIONS - 1) as u64,
+            end: drop_segment.offset() - 1,
         };
-        invalidate_overwrite(&mlog_path, last_segment)?;
         let db = reopen_db()?;
         let balance = balance(&ctx, &db, table_id)?;
         assert!(
@@ -1536,9 +1556,9 @@ mod tests {
             "balance {balance} should fall within {segment_range:?}"
         );
         assert_eq!(
-            total_segments,
+            total_segments - 1,
             mlog.lock().unwrap().total_segments(),
-            "no segment should have beeen removed"
+            "one segment should have beeen removed"
         );
 
         // Now, let's poke a segment somewhere in the middle of the log.
@@ -1548,7 +1568,7 @@ mod tests {
 
         let res = reopen_db();
         if !matches!(res, Err(DBError::LogReplay(LogReplayError::TrailingSegments { .. }))) {
-            panic!("Expected replay error but got: {res:?}")
+            panic!("Expected `LogReplayError::TrailingSegments` but got: {res:?}")
         }
 
         // The same should happen if we overwrite instead of shrink.
@@ -1556,8 +1576,8 @@ mod tests {
         invalidate_overwrite(&mlog_path, segment)?;
 
         let res = reopen_db();
-        if !matches!(res, Err(DBError::LogReplay(LogReplayError::TrailingSegments { .. }))) {
-            panic!("Expected replay error but got: {res:?}")
+        if !matches!(res, Err(DBError::LogReplay(LogReplayError::OutOfOrderCommit { .. }))) {
+            panic!("Expected `LogReplayError::OutOfOrderCommit` but got: {res:?}")
         }
 
         Ok(())

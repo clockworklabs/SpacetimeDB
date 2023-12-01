@@ -12,6 +12,8 @@ use crate::sql::compiler::compile_sql;
 use crate::sql::execute::execute_single_sql;
 use crate::sql::query_debug_info::QueryDebugInfo;
 use crate::subscription::subscription::{QuerySet, SupportedQuery};
+use once_cell::sync::Lazy;
+use regex::Regex;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Address;
 use spacetimedb_sats::relation::{Column, FieldName, MemTable, RelValue};
@@ -19,6 +21,7 @@ use spacetimedb_sats::AlgebraicType;
 use spacetimedb_sats::DataKey;
 use spacetimedb_vm::expr;
 use spacetimedb_vm::expr::{Crud, CrudExpr, DbType, QueryExpr, SourceExpr};
+static WHITESPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap());
 pub const SUBSCRIBE_TO_ALL_QUERY: &str = "SELECT * FROM *";
 
 pub enum QueryDef {
@@ -111,13 +114,15 @@ pub fn compile_read_only_query(
         return Err(SubscriptionError::Empty.into());
     }
 
+    // Remove redundant whitespace, and in particular newlines, for debug info.
+    let input = WHITESPACE.replace_all(input, " ");
     if input == SUBSCRIBE_TO_ALL_QUERY {
         return QuerySet::get_all(relational_db, tx, auth);
     }
 
     let start = Instant::now();
-    let compiled = compile_sql(relational_db, tx, input).map(|expr| {
-        record_query_compilation_metrics(WorkloadType::Subscribe, &relational_db.address(), input, start);
+    let compiled = compile_sql(relational_db, tx, &input).map(|expr| {
+        record_query_compilation_metrics(WorkloadType::Subscribe, &relational_db.address(), &input, start);
         expr
     })?;
     let mut queries = Vec::with_capacity(compiled.len());
@@ -1084,7 +1089,10 @@ mod tests {
             "SELECT * FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE lhs.x < 10",
         ];
         for join in joins {
-            assert!(compile_read_only_query(&db, &tx, &auth, join).is_err(), "{join}");
+            match compile_read_only_query(&db, &tx, &auth, join) {
+                Err(DBError::Subscription(SubscriptionError::Unsupported(_))) => (),
+                x => panic!("Unexpected: {x:?}"),
+            }
         }
 
         Ok(())

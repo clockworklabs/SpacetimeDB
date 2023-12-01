@@ -8,6 +8,7 @@ use thiserror::Error;
 
 use crate::client::ClientActorId;
 use crate::db::datastore::system_tables::SystemTable;
+use crate::sql::query_debug_info::QueryDebugInfo;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::{PrimaryKey, ProductValue};
 use spacetimedb_primitives::*;
@@ -93,6 +94,8 @@ pub enum SubscriptionError {
     Empty,
     #[error("Queries with side effects not allowed: {0:?}")]
     SideEffect(Crud),
+    #[error("Unsupported query on subscription: {0:?}")]
+    Unsupported(QueryDebugInfo),
 }
 
 #[derive(Error, Debug)]
@@ -219,6 +222,17 @@ impl<'a, T: ?Sized + 'a> From<PoisonError<std::sync::MutexGuard<'a, T>>> for DBE
 
 #[derive(Debug, Error)]
 pub enum LogReplayError {
+    #[error(
+        "Out-of-order commit detected: {} in segment {} after offset {}",
+        .commit_offset,
+        .segment_offset,
+        .last_commit_offset
+    )]
+    OutOfOrderCommit {
+        commit_offset: u64,
+        segment_offset: usize,
+        last_commit_offset: u64,
+    },
     #[error(
         "Error reading segment {}/{} at commit {}: {}",
         .segment_offset,
