@@ -347,15 +347,15 @@ mod tests {
         let data = create_partly_identical::<Person>(0xdeadbeef, identical, total);
         let p1 = data[0].clone();
 
-        for i in 1..(identical as usize) {
-            assert_ne!(p1.id, data[i].id, "identical part should still have distinct ids");
-            assert_eq!(p1.name, data[i].name, "names should be identical");
-            assert_eq!(p1.age, data[i].age, "ages should be identical");
+        for item in data.iter().take(identical as usize).skip(1) {
+            assert_ne!(p1.id, item.id, "identical part should still have distinct ids");
+            assert_eq!(p1.name, item.name, "names should be identical");
+            assert_eq!(p1.age, item.age, "ages should be identical");
         }
-        for i in (identical as usize)..(total as usize) {
-            assert_ne!(p1.id, data[i].id, "identical part should still have distinct ids");
-            assert_ne!(p1.name, data[i].name, "names should not be identical");
-            assert_ne!(p1.age, data[i].age, "ages should not be identical");
+        for item in data.iter().take(total as usize).skip(identical as usize) {
+            assert_ne!(p1.id, item.id, "identical part should still have distinct ids");
+            assert_ne!(p1.name, item.name, "names should not be identical");
+            assert_ne!(p1.age, item.age, "ages should not be identical");
         }
     }
 }
