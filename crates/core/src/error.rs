@@ -7,6 +7,7 @@ use hex::FromHexError;
 use thiserror::Error;
 
 use crate::client::ClientActorId;
+use crate::sql::query_debug_info::QueryDebugInfo;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::{PrimaryKey, ProductValue};
 use spacetimedb_primitives::{ColId, IndexId, TableId};
@@ -92,6 +93,8 @@ pub enum SubscriptionError {
     Empty,
     #[error("Queries with side effects not allowed: {0:?}")]
     SideEffect(Crud),
+    #[error("Unsupported query on subscription: {0:?}")]
+    Unsupported(QueryDebugInfo),
 }
 
 #[derive(Error, Debug)]
