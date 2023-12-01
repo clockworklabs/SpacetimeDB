@@ -688,6 +688,15 @@ pub struct QueryExpr {
     pub query: Vec<Query>,
 }
 
+impl From<SourceExpr> for QueryExpr {
+    fn from(value: SourceExpr) -> Self {
+        QueryExpr {
+            source: value,
+            query: vec![],
+        }
+    }
+}
+
 impl From<MemTable> for QueryExpr {
     fn from(value: MemTable) -> Self {
         QueryExpr {
@@ -1135,7 +1144,7 @@ impl QueryExpr {
             return query;
         }
 
-        let Some(table) = query.source.get_db_table().cloned() else {
+        let Some(lhs) = query.source.get_db_table().cloned() else {
             return query;
         };
 
@@ -1151,42 +1160,91 @@ impl QueryExpr {
             };
         };
 
+        // The wildcard projection must be for the left hand side.
+        if wildcard_table_id != lhs.table_id {
+            return QueryExpr {
+                source,
+                query: vec![first, second],
+            };
+        }
+
         match first {
-            Query::JoinInner(JoinExpr {
-                rhs: probe_side,
-                col_lhs: index_field,
-                col_rhs: probe_field,
-            }) => {
-                if !probe_side.query.is_empty() && wildcard_table_id == table.table_id {
-                    // An applicable join must have an index defined on the correct field.
-                    if let Some(col) = table.head.column(&index_field) {
-                        if table.head().has_constraint(&index_field, Constraints::indexed()) {
-                            let index_join = IndexJoin {
-                                probe_side,
-                                probe_field,
-                                index_header: table.head.clone(),
-                                index_select: None,
-                                index_table: table.table_id,
-                                index_col: col.col_id,
-                                return_index_rows: true,
-                            };
-                            return QueryExpr {
-                                source,
-                                query: vec![Query::IndexJoin(index_join)],
-                            };
+            // If the lhs is to be the probe side, the rhs must have an index on the join column.
+            Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs })
+                if lhs.row_count().min < 1000
+                    && rhs.source.get_db_table().is_some()
+                    && rhs.source.head().has_constraint(&col_rhs, Constraints::indexed()) =>
+            {
+                // Merge all selections from the original probe side into a single predicate.
+                // This includes an index scan if present.
+                let predicate = rhs.query.iter().cloned().fold(None, |acc, op| {
+                    <Query as Into<Option<ColumnOp>>>::into(op).map(|op| {
+                        if let Some(predicate) = acc {
+                            ColumnOp::new(OpQuery::Logic(OpLogic::And), predicate, op)
+                        } else {
+                            op
                         }
-                    }
-                }
-                let first = Query::JoinInner(JoinExpr {
-                    rhs: probe_side,
-                    col_lhs: index_field,
-                    col_rhs: probe_field,
+                    })
                 });
+                // The match guard ensures this unwrap is safe.
+                let Column { col_id: index_col, .. } = *rhs.source.head().column(&col_rhs).unwrap();
+                let index_join = IndexJoin {
+                    // The lhs is the probe side.
+                    probe_side: source.clone().into(),
+                    // The lhs column is the probe field.
+                    probe_field: col_lhs,
+                    // The rhs is the index side.
+                    index_header: rhs.source.head().clone(),
+                    // Any predicates applied to the rhs are now applied to the index lookup.
+                    index_select: predicate,
+                    // The match guard ensures this unwrap is safe.
+                    index_table: rhs.source.get_db_table().unwrap().table_id,
+                    // The rhs column is the index field.
+                    index_col,
+                    // This optimization is only applicable to left semijoins.
+                    // Therefore by definition we are returning rows from the lhs.
+                    // However the lhs is the probe side, hence this is set to false.
+                    return_index_rows: false,
+                };
                 QueryExpr {
                     source,
-                    query: vec![first, second],
+                    query: vec![Query::IndexJoin(index_join)],
                 }
             }
+            // If the rhs is to be the probe side, the lhs must have an index on the join column.
+            Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs })
+                if !rhs.query.is_empty() && lhs.head.has_constraint(&col_lhs, Constraints::indexed()) =>
+            {
+                // The match guard ensures this unwrap is safe.
+                let Column { col_id: index_col, .. } = *lhs.head.column(&col_lhs).unwrap();
+                let index_join = IndexJoin {
+                    // The rhs is the probe side.
+                    probe_side: rhs,
+                    // The rhs column is the probe field.
+                    probe_field: col_rhs,
+                    // The lhs is the index side.
+                    index_header: lhs.head,
+                    // The rhs is the probe side.
+                    // Therefore any predicates on the rhs stay on the rhs.
+                    index_select: None,
+                    // The lhs is the index side.
+                    index_table: lhs.table_id,
+                    // The lhs column is the index field.
+                    index_col,
+                    // This optimization is only applicable to left semijoins.
+                    // Therefore by definition we are returning rows from the lhs.
+                    // However the rhs is the probe side, hence this is set to true.
+                    return_index_rows: true,
+                };
+                QueryExpr {
+                    source,
+                    query: vec![Query::IndexJoin(index_join)],
+                }
+            }
+            Query::JoinInner(expr) => QueryExpr {
+                source,
+                query: vec![Query::JoinInner(expr), second],
+            },
             first => QueryExpr {
                 source,
                 query: vec![first, second],
