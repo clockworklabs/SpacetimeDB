@@ -1,0 +1,13 @@
+[package]
+name = "spacetimedb-metrics"
+version = "0.8.0"
+edition = "2021"
+license-file = "LICENSE"
+description = "Prometheus utilities for SpacetimeDB"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+itertools.workspace = true
+paste.workspace = true
+prometheus.workspace = true

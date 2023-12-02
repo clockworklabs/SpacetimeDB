@@ -24,6 +24,7 @@ proptest = ["dep:proptest", "dep:proptest-derive"]
 spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.8.0" }
 spacetimedb-sats = { path = "../sats", version = "0.8.0" }
 spacetimedb-primitives = { path = "../primitives", version = "0.8.0" }
+spacetimedb-metrics = { path = "../metrics", version = "0.8.0" }
 
 anyhow.workspace = true
 bitflags.workspace = true

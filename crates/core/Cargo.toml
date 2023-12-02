@@ -23,6 +23,7 @@ spacetimedb-sats = { path = "../sats", version = "0.8.0" }
 spacetimedb-vm = { path = "../vm", version = "0.8.0" }
 spacetimedb-client-api-messages = { path = "../client-api-messages", version = "0.8.0" }
 spacetimedb-primitives = { path = "../primitives", version = "0.8.0" }
+spacetimedb-metrics = { path = "../metrics", version = "0.8.0" }
 
 anyhow.workspace = true
 async-trait.workspace = true
