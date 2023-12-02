@@ -15,6 +15,7 @@ services:
       - ./crates/bindings-macro:/usr/src/app/crates/bindings-macro
       - ./crates/bindings-sys:/usr/src/app/crates/bindings-sys
       - ./crates/vm:/usr/src/app/crates/vm
+      - ./crates/metrics:/usr/src/app/crates/metrics
       - key_files:/etc/spacetimedb
       - /stdb
     ports:

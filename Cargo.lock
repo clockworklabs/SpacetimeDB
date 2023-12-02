@@ -4168,6 +4168,7 @@ dependencies = [
  "smallvec",
  "spacetimedb-client-api-messages",
  "spacetimedb-lib",
+ "spacetimedb-metrics",
  "spacetimedb-primitives",
  "spacetimedb-sats",
  "spacetimedb-vm",
@@ -4221,10 +4222,20 @@ dependencies = [
  "serde_json",
  "serde_with",
  "spacetimedb-bindings-macro",
+ "spacetimedb-metrics",
  "spacetimedb-primitives",
  "spacetimedb-sats",
  "thiserror",
  "tracing",
+]
+
+[[package]]
+name = "spacetimedb-metrics"
+version = "0.8.0"
+dependencies = [
+ "itertools 0.11.0",
+ "paste",
+ "prometheus",
 ]
 
 [[package]]
@@ -4262,6 +4273,7 @@ dependencies = [
  "sha3",
  "smallvec",
  "spacetimedb-bindings-macro",
+ "spacetimedb-metrics",
  "spacetimedb-primitives",
  "thiserror",
  "tracing",

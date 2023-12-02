@@ -15,6 +15,7 @@ proptest = ["dep:proptest", "dep:proptest-derive"]
 [dependencies]
 spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.8.0" }
 spacetimedb-primitives = { path = "../primitives", version = "0.8.0" }
+spacetimedb-metrics = { path = "../metrics", version = "0.8.0" }
 
 arrayvec.workspace = true
 bitflags.workspace = true
