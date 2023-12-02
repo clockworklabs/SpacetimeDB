@@ -1,10 +1,17 @@
 use std::{collections::HashMap, sync::Mutex};
 
 use crate::hash::Hash;
+use crate::util::typed_prometheus::impl_prometheusvalue_string;
 use crate::util::typed_prometheus::metrics_group;
+use crate::util::typed_prometheus::AsPrometheusLabel;
 use once_cell::sync::Lazy;
 use prometheus::{Gauge, GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
 use spacetimedb_lib::{Address, Identity};
+
+impl_prometheusvalue_string! {
+    Hash,
+    Identity
+}
 
 metrics_group!(
     pub struct WorkerMetrics {
