@@ -1,9 +1,19 @@
 use std::{collections::HashMap, sync::Mutex};
 
-use crate::{execution_context::WorkloadType, host::AbiCall, util::typed_prometheus::metrics_group};
+use crate::execution_context::WorkloadType;
+use crate::host::AbiCall;
+use crate::util::typed_prometheus::impl_prometheusvalue_string;
+use crate::util::typed_prometheus::metrics_group;
+use crate::util::typed_prometheus::AsPrometheusLabel;
 use once_cell::sync::Lazy;
 use prometheus::{GaugeVec, Histogram, HistogramVec, IntCounterVec, IntGaugeVec};
 use spacetimedb_lib::Address;
+
+impl_prometheusvalue_string! {
+    Address,
+    AbiCall,
+    WorkloadType
+}
 
 metrics_group!(
     #[non_exhaustive]
