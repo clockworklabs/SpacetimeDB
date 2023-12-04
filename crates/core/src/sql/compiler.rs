@@ -1,3 +1,4 @@
+use nonempty::NonEmpty;
 use std::collections::HashMap;
 use tracing::info;
 
@@ -5,9 +6,9 @@ use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
 use crate::sql::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
-use spacetimedb_primitives::ColId;
-use spacetimedb_sats::db::auth::{StAccess, StTableType};
-use spacetimedb_sats::db::def::{ProductTypeMeta, TableSchema};
+use spacetimedb_primitives::*;
+use spacetimedb_sats::db::auth::StAccess;
+use spacetimedb_sats::db::def::{TableDef, TableSchema};
 use spacetimedb_sats::relation::{self, DbTable, FieldExpr, FieldName, Header};
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_vm::dsl::{db_table, db_table_raw, query};
@@ -84,16 +85,16 @@ fn compile_where(mut q: QueryExpr, table: &From, filter: Selection) -> Result<Qu
 // using an index.
 pub enum IndexArgument {
     Eq {
-        col_id: ColId,
+        columns: NonEmpty<ColId>,
         value: AlgebraicValue,
     },
     LowerBound {
-        col_id: ColId,
+        columns: NonEmpty<ColId>,
         value: AlgebraicValue,
         inclusive: bool,
     },
     UpperBound {
-        col_id: ColId,
+        columns: NonEmpty<ColId>,
         value: AlgebraicValue,
         inclusive: bool,
     },
@@ -179,13 +180,11 @@ fn compile_columns(table: &TableSchema, columns: Vec<FieldName>) -> DbTable {
     for col in columns.into_iter() {
         if let Some(x) = table.get_column_by_field(&col) {
             let field = FieldName::named(&table.table_name, &x.col_name);
-            let indexed = table.get_index_by_field(&col).is_some();
-            new.push(relation::Column::new(field, x.col_type.clone(), x.col_id, indexed));
+            new.push(relation::Column::new(field, x.col_type.clone(), x.col_pos));
         }
     }
-
     DbTable::new(
-        Header::new(table.table_name.clone(), new),
+        Header::new(table.table_name.clone(), new, table.get_constraints()),
         table.table_id,
         table.table_type,
         table.table_access,
@@ -235,18 +234,8 @@ fn compile_update(
 }
 
 /// Compiles a `CREATE TABLE ...` clause
-fn compile_create_table(
-    name: String,
-    columns: ProductTypeMeta,
-    table_type: StTableType,
-    table_access: StAccess,
-) -> Result<CrudExpr, PlanError> {
-    Ok(CrudExpr::CreateTable {
-        name,
-        columns,
-        table_type,
-        table_access,
-    })
+fn compile_create_table(table: TableDef) -> Result<CrudExpr, PlanError> {
+    Ok(CrudExpr::CreateTable { table })
 }
 
 /// Compiles a `DROP ...` clause
@@ -273,12 +262,7 @@ fn compile_statement(statement: SqlAst) -> Result<CrudExpr, PlanError> {
             selection,
         } => compile_update(table, assignments, selection)?,
         SqlAst::Delete { table, selection } => compile_delete(table, selection)?,
-        SqlAst::CreateTable {
-            table,
-            columns,
-            table_type,
-            table_access: schema,
-        } => compile_create_table(table, columns, table_type, schema)?,
+        SqlAst::CreateTable { table } => compile_create_table(table)?,
         SqlAst::Drop {
             name,
             kind,
@@ -299,11 +283,11 @@ mod tests {
     use crate::subscription::query;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::operator::OpQuery;
-    use spacetimedb_primitives::TableId;
-    use spacetimedb_sats::data_key::ToDataKey;
+    use spacetimedb_primitives::{ColId, TableId};
+    use spacetimedb_sats::db::auth::StTableType;
     use spacetimedb_sats::db::def::{ColumnDef, IndexDef, TableDef};
     use spacetimedb_sats::relation::MemTable;
-    use spacetimedb_sats::{product, AlgebraicType};
+    use spacetimedb_sats::{product, AlgebraicType, ToDataKey};
     use spacetimedb_vm::expr::{IndexJoin, IndexScan, JoinExpr, Query};
 
     fn create_table(
@@ -317,27 +301,23 @@ mod tests {
         let table_type = StTableType::User;
         let table_access = StAccess::Public;
 
-        let columns = schema
+        let columns: Vec<_> = schema
             .iter()
             .map(|(col_name, col_type)| ColumnDef {
                 col_name: col_name.to_string(),
                 col_type: col_type.clone(),
-                is_autoinc: false,
             })
             .collect();
 
-        let indexes = indexes
+        let indexes: Vec<_> = indexes
             .iter()
-            .map(|(col_id, index_name)| IndexDef::new(index_name.to_string(), 0.into(), *col_id, false))
+            .map(|(col_id, index_name)| IndexDef::btree(index_name.to_string(), *col_id, false))
             .collect();
 
-        let schema = TableDef {
-            table_name,
-            columns,
-            indexes,
-            table_type,
-            table_access,
-        };
+        let schema = TableDef::new(table_name, columns)
+            .with_indexes(indexes)
+            .with_type(table_type)
+            .with_access(table_access);
 
         Ok(db.create_table(tx, schema)?)
     }
@@ -516,7 +496,6 @@ mod tests {
         };
         Ok(())
     }
-
     #[test]
     fn compile_index_range_open() -> ResultTest<()> {
         let (db, _) = make_test_db()?;

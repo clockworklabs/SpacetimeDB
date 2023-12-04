@@ -113,17 +113,7 @@ fn build_typed<P: ProgramVm>(p: &mut P, node: Expr) -> ExprOpt {
 
                     ExprOpt::Crud(Box::new(CrudExprOpt::Delete { query }))
                 }
-                CrudExpr::CreateTable {
-                    name,
-                    columns,
-                    table_type,
-                    table_access,
-                } => ExprOpt::Crud(Box::new(CrudExprOpt::CreateTable {
-                    name,
-                    columns,
-                    table_type,
-                    table_access,
-                })),
+                CrudExpr::CreateTable { table } => ExprOpt::Crud(Box::new(CrudExprOpt::CreateTable { table })),
                 CrudExpr::Drop {
                     name,
                     kind,
@@ -280,17 +270,7 @@ fn compile<P: ProgramVm>(p: &mut P, node: ExprOpt) -> Result<Code, ErrorVm> {
                     let query = compile_query(query);
                     Code::Crud(CrudCode::Delete { query })
                 }
-                CrudExprOpt::CreateTable {
-                    name,
-                    columns,
-                    table_type,
-                    table_access,
-                } => Code::Crud(CrudCode::CreateTable {
-                    name,
-                    columns,
-                    table_type,
-                    table_access,
-                }),
+                CrudExprOpt::CreateTable { table } => Code::Crud(CrudCode::CreateTable { table }),
                 CrudExprOpt::Drop {
                     name,
                     kind,

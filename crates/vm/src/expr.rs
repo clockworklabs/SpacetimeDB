@@ -1,24 +1,26 @@
-use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
-use crate::functions::{FunDef, Param};
-use crate::operator::{Op, OpCmp, OpLogic, OpQuery};
-use crate::types::Ty;
 use derive_more::From;
 use nonempty::NonEmpty;
-use spacetimedb_lib::Identity;
-use spacetimedb_primitives::{ColId, TableId};
-use spacetimedb_sats::algebraic_type::AlgebraicType;
-use spacetimedb_sats::algebraic_value::AlgebraicValue;
-use spacetimedb_sats::db::auth::{StAccess, StTableType};
-use spacetimedb_sats::db::def::{ProductTypeMeta, TableSchema};
-use spacetimedb_sats::db::error::AuthError;
-use spacetimedb_sats::relation::{
-    Column, DbTable, FieldExpr, FieldName, Header, MemTable, RelValueRef, Relation, RowCount, Table,
-};
-use spacetimedb_sats::{satn::Satn, ProductValue, Typespace, WithTypespace};
 use std::cmp::Ordering;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::ops::Bound;
+
+use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
+use crate::functions::{FunDef, Param};
+use crate::operator::{Op, OpCmp, OpLogic, OpQuery};
+use crate::types::Ty;
+use spacetimedb_lib::Identity;
+use spacetimedb_primitives::*;
+use spacetimedb_sats::algebraic_type::AlgebraicType;
+use spacetimedb_sats::algebraic_value::AlgebraicValue;
+use spacetimedb_sats::db::auth::{StAccess, StTableType};
+use spacetimedb_sats::db::def::{TableDef, TableSchema};
+use spacetimedb_sats::db::error::AuthError;
+use spacetimedb_sats::relation::{
+    Column, DbTable, FieldExpr, FieldName, Header, MemTable, RelValueRef, Relation, RowCount, Table,
+};
+use spacetimedb_sats::satn::Satn;
+use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
 
 /// A `index` into the list of [Fun]
 pub type FunctionId = usize;
@@ -325,15 +327,18 @@ impl SourceExpr {
         }
     }
 
-    /// Check if the `name` of the [FieldName] exist on this [SourceExpr]
-    ///
-    /// Warning: It ignores the `table_name`
-    pub fn get_column_by_field<'a>(&'a self, field: &'a FieldName) -> Option<&Column> {
+    pub fn head(&self) -> &Header {
         match self {
             SourceExpr::MemTable(x) => &x.head,
             SourceExpr::DbTable(x) => &x.head,
         }
-        .column(field)
+    }
+
+    /// Check if the `name` of the [FieldName] exist on this [SourceExpr]
+    ///
+    /// Warning: It ignores the `table_name`
+    pub fn get_column_by_field<'a>(&'a self, field: &'a FieldName) -> Option<&Column> {
+        self.head().column(field)
     }
 }
 
@@ -411,11 +416,12 @@ pub struct JoinExpr {
     pub col_rhs: FieldName,
 }
 
+//TODO: A posterior PR should fix the pass of multi-columns to the query optimization
 impl From<IndexJoin> for JoinExpr {
     fn from(value: IndexJoin) -> Self {
-        let pos = value.index_col.idx();
+        let pos = value.index_col;
         let rhs = value.probe_side;
-        let col_lhs = value.index_header.fields[pos].field.clone();
+        let col_lhs = value.index_header.fields[usize::from(pos)].field.clone();
         let col_rhs = value.probe_field;
         JoinExpr::new(rhs, col_lhs, col_rhs)
     }
@@ -460,10 +466,7 @@ pub enum CrudExpr {
         query: QueryExpr,
     },
     CreateTable {
-        name: String,
-        columns: ProductTypeMeta,
-        table_type: StTableType,
-        table_access: StAccess,
+        table: TableDef,
     },
     Drop {
         name: String,
@@ -639,7 +642,7 @@ fn is_sargable(table: &SourceExpr, op: &ColumnOp) -> Option<IndexArgument> {
         // lhs field must exist
         let column = table.get_column_by_field(name)?;
         // lhs field must have an index
-        if !column.is_indexed {
+        if !table.head().has_constraint(&column.field, Constraints::indexed()) {
             return None;
         }
 
@@ -1157,7 +1160,7 @@ impl QueryExpr {
                 if !probe_side.query.is_empty() && wildcard_table_id == table.table_id {
                     // An applicable join must have an index defined on the correct field.
                     if let Some(col) = table.head.column(&index_field) {
-                        if col.is_indexed {
+                        if table.head().has_constraint(&index_field, Constraints::indexed()) {
                             let index_join = IndexJoin {
                                 probe_side,
                                 probe_field,
@@ -1256,7 +1259,7 @@ impl QueryExpr {
             return false;
         };
         // Does the right hand table have an index on the join field?
-        let Some(Column { is_indexed: true, .. }) = rhs_table.head.column(probe_field) else {
+        if !rhs_table.head.has_constraint(probe_field, Constraints::indexed()) {
             return false;
         };
         // The original probe side must consist of an optional index scan,
@@ -1455,10 +1458,7 @@ pub enum CrudExprOpt {
         query: QueryExprOpt,
     },
     CreateTable {
-        name: String,
-        columns: ProductTypeMeta,
-        table_type: StTableType,
-        table_access: StAccess,
+        table: TableDef,
     },
     Drop {
         name: String,
@@ -1717,10 +1717,7 @@ pub enum CrudCode {
         query: QueryCode,
     },
     CreateTable {
-        name: String,
-        columns: ProductTypeMeta,
-        table_type: StTableType,
-        table_access: StAccess,
+        table: TableDef,
     },
     Drop {
         name: String,
@@ -1734,7 +1731,6 @@ impl AuthAccess for CrudCode {
         if owner == caller {
             return Ok(());
         }
-
         // Anyone may query, so as long as the tables involved are public.
         if let CrudCode::Query(q) = self {
             return q.check_auth(owner, caller);
@@ -1809,8 +1805,6 @@ impl From<Code> for CodeResult {
 
 #[cfg(test)]
 mod tests {
-    use spacetimedb_sats::ProductType;
-
     use super::*;
 
     const ALICE: Identity = Identity::from_byte_array([1; 32]);
@@ -1825,6 +1819,7 @@ mod tests {
                 head: Header {
                     table_name: "foo".into(),
                     fields: vec![],
+                    constraints: Default::default(),
                 },
                 data: vec![],
                 table_access: StAccess::Private,
@@ -1833,6 +1828,7 @@ mod tests {
                 head: Header {
                     table_name: "foo".into(),
                     fields: vec![],
+                    constraints: vec![(ColId(42).into(), Constraints::indexed())],
                 },
                 table_id: 42.into(),
                 table_type: StTableType::User,
@@ -1863,6 +1859,7 @@ mod tests {
                 index_header: Header {
                     table_name: "bar".into(),
                     fields: vec![],
+                    constraints: Default::default(),
                 },
                 index_select: None,
                 index_table: 42.into(),
@@ -1964,15 +1961,11 @@ mod tests {
 
     #[test]
     fn test_auth_crud_code_create_table() {
-        let crud = CrudCode::CreateTable {
-            name: "etcpasswd".into(),
-            columns: ProductTypeMeta {
-                columns: ProductType { elements: vec![] },
-                attr: vec![],
-            },
-            table_type: StTableType::System, // hah!
-            table_access: StAccess::Public,
-        };
+        let table = TableDef::new("etcpasswd".into(), vec![])
+            .with_access(StAccess::Public)
+            .with_type(StTableType::System); // hah!
+
+        let crud = CrudCode::CreateTable { table };
         assert_owner_required(crud);
     }
 

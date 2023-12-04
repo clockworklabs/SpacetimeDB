@@ -3,12 +3,14 @@ namespace SpacetimeDB.Codegen;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using static Utils;
 
 [System.Flags]
-enum ColumnAttrs : byte
+enum ConstraintFlags : byte
 {
     UnSet = 0b0000,
     Indexed = 0b0001,
@@ -47,10 +49,13 @@ public class Module : IIncrementalGenerator
                                     a.AttributeClass?.ToDisplayString()
                                     == "SpacetimeDB.ColumnAttribute"
                             )
-                            .Select(a => (ColumnAttrs)a.ConstructorArguments[0].Value!)
+                            .Select(
+                                a =>
+                                    (ConstraintFlags)a.ConstructorArguments[0].Value!
+                            )
                             .SingleOrDefault();
 
-                        if (indexKind.HasFlag(ColumnAttrs.AutoInc))
+                        if (indexKind.HasFlag(ConstraintFlags.AutoInc))
                         {
                             var isValidForAutoInc = f.Type.SpecialType switch
                             {
@@ -104,7 +109,7 @@ public class Module : IIncrementalGenerator
                 (t, ct) =>
                 {
                     var autoIncFields = t.Fields
-                        .Where(f => f.IndexKind.HasFlag(ColumnAttrs.AutoInc))
+                        .Where(f => f.IndexKind.HasFlag(ConstraintFlags.AutoInc))
                         .Select(f => f.Name);
 
                     var extensions =
@@ -142,7 +147,7 @@ public class Module : IIncrementalGenerator
                         )
                     )
                     {
-                        if (f.IndexKind.HasFlag(ColumnAttrs.Unique))
+                        if (f.IndexKind.HasFlag(ConstraintFlags.Unique))
                         {
                             extensions +=
                                 $@"
@@ -181,15 +186,19 @@ public class Module : IIncrementalGenerator
         var addTables = tables
             .Select(
                 (t, ct) =>
-                    $@"
-                FFI.RegisterTable(new SpacetimeDB.Module.TableDef(
+                {
+                    var code = $@"
+                var table_{t.Name} = new SpacetimeDB.Module.TableDesc(
                     nameof({t.FullName}),
-                    {t.FullName}.GetSatsTypeInfo().AlgebraicType.TypeRef,
-                    new SpacetimeDB.Module.ColumnAttrs[] {{ {string.Join(", ", t.Fields.Select(f => $"SpacetimeDB.Module.ColumnAttrs.{f.IndexKind}"))} }},
-                    new SpacetimeDB.Module.IndexDef[] {{ }}
-                ));
-            "
-            )
+                    new SpacetimeDB.Module.ColumnAttrs[] {{ {string.Join(", ", t.Fields.Select(f => $"new SpacetimeDB.Module.ColumnAttrs(\"{f.Name}\", {f.TypeInfo}.AlgebraicType, SpacetimeDB.Module.ConstraintFlags.{f.IndexKind})"))} }},
+                    new SpacetimeDB.Module.IndexDef[] {{ }},
+                    {t.FullName}.GetSatsTypeInfo().AlgebraicType.TypeRef
+                );
+
+                FFI.RegisterTable(table_{t.Name});
+            ";
+                    return code;
+                })
             .Collect();
 
         var reducers = context.SyntaxProvider.ForAttributeWithMetadataName(

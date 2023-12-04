@@ -7,10 +7,11 @@ use hex::FromHexError;
 use thiserror::Error;
 
 use crate::client::ClientActorId;
+use crate::db::datastore::system_tables::SystemTable;
 use crate::sql::query_debug_info::QueryDebugInfo;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::{PrimaryKey, ProductValue};
-use spacetimedb_primitives::{ColId, IndexId, TableId};
+use spacetimedb_primitives::*;
 use spacetimedb_sats::db::def::IndexDef;
 use spacetimedb_sats::db::error::{LibError, RelationError, SchemaError};
 use spacetimedb_sats::hash::Hash;
@@ -29,8 +30,8 @@ pub enum TableError {
     Exist(String),
     #[error("Table with name `{0}` not found.")]
     NotFound(String),
-    #[error("ID `{1}` not found in table ID `{0}`.")]
-    IdNotFound(TableId, u32),
+    #[error("Table with ID `{1}` not found in `{0}`.")]
+    IdNotFound(SystemTable, u32),
     #[error("Table with ID `{0}` not found in `TxState`.")]
     IdNotFoundState(TableId),
     #[error("Column `{0}.{1}` is missing a name")]

@@ -5,11 +5,10 @@ use std::time::Duration;
 
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::{bsatn, Address, ModuleDef};
+use spacetimedb_lib::{bsatn, Address, ModuleDef, TableDesc};
 use spacetimedb_vm::expr::CrudExpr;
 
 use super::instrumentation::CallTimes;
-use super::*;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{LogLevel, Record, SystemLogger};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
@@ -32,6 +31,8 @@ use crate::subscription::module_subscription_actor::ModuleSubscriptionManager;
 use crate::util::{const_unwrap, ResultInspectExt};
 use crate::worker_metrics::WORKER_METRICS;
 use spacetimedb_sats::db::def::TableDef;
+
+use super::*;
 
 pub trait WasmModule: Send + 'static {
     type Instance: WasmInstance;
@@ -155,7 +156,9 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             misc_exports: _,
         } = desc;
         let catalog = itertools::chain(
-            tables.into_iter().map(|x| (x.name.clone(), EntityDef::Table(x))),
+            tables
+                .into_iter()
+                .map(|x| (x.schema.table_name.clone(), EntityDef::Table(x))),
             reducers.iter().map(|x| (x.name.clone(), EntityDef::Reducer(x.clone()))),
         )
         .collect();
@@ -312,7 +315,7 @@ fn get_tabledefs(info: &ModuleInfo) -> impl Iterator<Item = anyhow::Result<Table
     info.catalog
         .values()
         .filter_map(EntityDef::as_table)
-        .map(|table| spacetimedb_lib::TableDef::into_table_def(info.typespace.with_type(table)))
+        .map(|table| TableDesc::into_table_def(info.typespace.with_type(table)))
 }
 
 impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
@@ -621,7 +624,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     }
 
     // Helpers - NOT API
-
     fn system_logger(&self) -> &SystemLogger {
         self.database_instance_context().logger.system_logger()
     }

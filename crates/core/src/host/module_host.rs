@@ -1,3 +1,13 @@
+use std::collections::HashMap;
+use std::fmt;
+use std::sync::{Arc, Weak};
+use std::time::Duration;
+
+use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
+use futures::{Future, FutureExt};
+use indexmap::IndexMap;
+use tokio::sync::oneshot;
+
 use super::host_controller::HostThreadpool;
 use super::{ArgsTuple, EnergyDiff, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
 use crate::client::ClientConnectionSender;
@@ -14,18 +24,10 @@ use crate::protobuf::client_api::{table_row_operation, SubscriptionUpdate, Table
 use crate::subscription::module_subscription_actor::ModuleSubscriptionManager;
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
 use crate::util::notify_once::NotifyOnce;
-use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
-use futures::{Future, FutureExt};
-use indexmap::IndexMap;
-use spacetimedb_lib::{Address, ReducerDef, TableDef};
+use spacetimedb_lib::{Address, ReducerDef, TableDesc};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::relation::MemTable;
 use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
-use std::collections::HashMap;
-use std::fmt;
-use std::sync::{Arc, Weak};
-use std::time::Duration;
-use tokio::sync::oneshot;
 
 #[derive(Debug, Default, Clone)]
 pub struct DatabaseUpdate {
@@ -248,7 +250,6 @@ pub trait Module: Send + Sync + 'static {
         query: String,
     ) -> Result<Vec<spacetimedb_sats::relation::MemTable>, DBError>;
     fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error>;
-
     #[cfg(feature = "tracelogging")]
     fn get_trace(&self) -> Option<bytes::Bytes>;
     #[cfg(feature = "tracelogging")]
@@ -678,7 +679,7 @@ impl WeakModuleHost {
 #[derive(Debug)]
 pub enum EntityDef {
     Reducer(ReducerDef),
-    Table(TableDef),
+    Table(TableDesc),
 }
 impl EntityDef {
     pub fn as_reducer(&self) -> Option<&ReducerDef> {
@@ -687,7 +688,7 @@ impl EntityDef {
             _ => None,
         }
     }
-    pub fn as_table(&self) -> Option<&TableDef> {
+    pub fn as_table(&self) -> Option<&TableDesc> {
         match self {
             Self::Table(x) => Some(x),
             _ => None,
@@ -709,7 +710,7 @@ impl Catalog {
         let schema = self.get(name)?;
         Some(schema.with(schema.ty().as_reducer()?))
     }
-    pub fn get_table(&self, name: &str) -> Option<WithTypespace<'_, TableDef>> {
+    pub fn get_table(&self, name: &str) -> Option<WithTypespace<'_, TableDesc>> {
         let schema = self.get(name)?;
         Some(schema.with(schema.ty().as_table()?))
     }

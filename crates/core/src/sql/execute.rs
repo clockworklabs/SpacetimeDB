@@ -634,6 +634,13 @@ pub(crate) mod tests {
 
             let col = t.columns.first().unwrap();
             let idx = t.indexes.first().map(|x| x.is_unique);
+            let column_auto_inc = t
+                .constraints
+                .first()
+                .map(|x| x.constraints.has_autoinc())
+                .unwrap_or(false);
+            let column_auto_inc =
+                column_auto_inc || t.sequences.first().map(|x| x.col_pos == col.col_pos).unwrap_or(false);
 
             if is_null {
                 assert_eq!(
@@ -644,7 +651,11 @@ pub(crate) mod tests {
                     col.col_name
                 )
             }
-            assert_eq!(col.is_autoinc, is_autoinc, "is_autoinc {}.{}", table_name, col.col_name);
+            assert_eq!(
+                column_auto_inc, is_autoinc,
+                "is_autoinc {}.{}",
+                table_name, col.col_name
+            );
             assert_eq!(idx, idx_uniq, "idx_uniq {}.{}", table_name, col.col_name);
 
             Ok(())

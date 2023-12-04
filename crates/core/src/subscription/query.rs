@@ -19,7 +19,8 @@ use spacetimedb_lib::Address;
 use spacetimedb_sats::relation::{Column, FieldName, MemTable, RelValue};
 use spacetimedb_sats::AlgebraicType;
 use spacetimedb_sats::DataKey;
-use spacetimedb_vm::expr::{self, Crud, CrudExpr, DbType, QueryExpr, SourceExpr};
+use spacetimedb_vm::expr;
+use spacetimedb_vm::expr::{Crud, CrudExpr, DbType, QueryExpr, SourceExpr};
 
 static WHITESPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap());
 pub const SUBSCRIBE_TO_ALL_QUERY: &str = "SELECT * FROM *";
@@ -59,7 +60,6 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
             FieldName::named(&t.head.table_name, OP_TYPE_FIELD_NAME),
             AlgebraicType::U8,
             t.head.fields.len().into(),
-            false,
         ));
         for row in &data.ops {
             let mut new = row.row.clone();
@@ -249,22 +249,18 @@ mod tests {
             .map(|(col_name, col_type)| ColumnDef {
                 col_name: col_name.to_string(),
                 col_type: col_type.clone(),
-                is_autoinc: false,
             })
             .collect_vec();
 
         let indexes = indexes
             .iter()
-            .map(|(col_id, index_name)| IndexDef::new(index_name.to_string(), 0.into(), *col_id, false))
+            .map(|(col_id, index_name)| IndexDef::btree(index_name.to_string(), *col_id, false))
             .collect_vec();
 
-        let schema = TableDef {
-            table_name,
-            columns,
-            indexes,
-            table_type,
-            table_access,
-        };
+        let schema = TableDef::new(table_name, columns)
+            .with_indexes(indexes)
+            .with_type(table_type)
+            .with_access(table_access);
 
         Ok(db.create_table(tx, schema)?)
     }

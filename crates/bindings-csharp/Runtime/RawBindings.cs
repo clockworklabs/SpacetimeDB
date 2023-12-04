@@ -54,11 +54,11 @@ public static partial class RawBindings
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    public readonly struct ColId(byte col_id)
+    public readonly struct ColId(uint col_id)
     {
-        private readonly byte col_id = col_id;
+        private readonly uint col_id = col_id;
 
-        public static explicit operator byte(ColId col_id) => col_id.col_id;
+        public static explicit operator uint(ColId col_id) => col_id.col_id;
     }
 
     [StructLayout(LayoutKind.Sequential)]
