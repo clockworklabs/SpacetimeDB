@@ -1,6 +1,6 @@
 [package]
 name = "spacetimedb-lib"
-version = "0.7.3"
+version = "0.8.0"
 edition = "2021"
 license-file = "LICENSE"
 description = "A common library for SpacetimeDB"
@@ -21,9 +21,9 @@ cli = ["clap"]
 proptest = ["dep:proptest", "dep:proptest-derive"]
 
 [dependencies]
-spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.7.3" }
-spacetimedb-sats = { path = "../sats", version = "0.7.3" }
-spacetimedb-primitives = { path = "../primitives", version = "0.7.3" }
+spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.8.0" }
+spacetimedb-sats = { path = "../sats", version = "0.8.0" }
+spacetimedb-primitives = { path = "../primitives", version = "0.8.0" }
 
 anyhow.workspace = true
 bitflags.workspace = true
