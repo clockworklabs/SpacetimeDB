@@ -16,12 +16,12 @@ public partial struct IndexDef
     public Runtime.IndexType Type;
     public uint[] ColumnIds;
 
-    public IndexDef(string name, Runtime.IndexType type, bool isUnique, uint[] columnIds)
+    public IndexDef(string name, Runtime.IndexType type, bool isUnique, RawBindings.ColId[] columnIds)
     {
         IndexName = name;
         IsUnique = isUnique;
         Type = type;
-        ColumnIds = columnIds.Select(id => (byte)id).ToArray();
+        ColumnIds = columnIds.Select(id => (uint)id).ToArray();
     }
 }
 
