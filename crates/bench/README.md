@@ -13,12 +13,12 @@ There's a handy script:
 ```bash
 # enter a prepared docker image with valgrind & a rust toolchain available.
 # mounts the host SpacetimeDB folder to `/projects/SpacetimeDB`.
-bash iai-docker.sh 
+bash callgrind-docker.sh 
 ```
 Then, in the docker image:
 ```bash
 cd /projects/SpacetimeDB/crates/bench
-cargo bench --bench iai
+cargo bench --bench callgrind
 ```
 To avoid fighting with the host system, the docker image uses a separate CARGO_TARGET_DIR.
 This will be visible on the host system as `SpacetimeDB/linux-target`.
@@ -56,12 +56,12 @@ Of course, this will take about an hour, so it might be better to let the CI do 
 
 To generate a report, first:
 ```bash
-bash iai-docker.sh 
+bash callgrind-docker.sh 
 ```
 Then, in the docker image:
 ```bash
 cd /projects/SpacetimeDB/crates/bench
-cargo bench --bench iai -- --save-summary pretty-json
+cargo bench --bench callgrind -- --save-summary pretty-json
 cargo run --bin summarize pack-callgrind current
 cargo run --bin summarize markdown-report-callgrind current
 ```
