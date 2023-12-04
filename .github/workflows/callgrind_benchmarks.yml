@@ -79,10 +79,11 @@ jobs:
           target: wasm32-unknown-unknown
           override: true
 
-      - name: Install valgrind
+      - name: Install valgrind & iai-callgrind-runner
         run: |
           sudo apt-get update
           sudo apt-get install -y valgrind
+          cargo install --git https://github.com/clockworklabs/iai-callgrind.git --branch main iai-callgrind-runner
 
       - name: Build
         working-directory: crates/bench/
