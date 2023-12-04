@@ -2,6 +2,7 @@ on:
   push:
     branches:
       - master
+      - kazimuth/callgrind
 
   workflow_dispatch:
     inputs:
