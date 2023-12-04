@@ -34,10 +34,11 @@ jobs:
       - name: Install valgrind & iai-callgrind-runner
         run: |
           apt-get update
-          apt-get install -y valgrind protobuf-compiler bash sudo curl
+          apt-get install -y valgrind protobuf-compiler bash sudo curl gh 
           cargo install --git https://github.com/clockworklabs/iai-callgrind.git --branch main iai-callgrind-runner
 
       - name: Enable CPU boost
+        shell: bash
         run: echo "1" | sudo tee /sys/devices/system/cpu/cpufreq/boost
 
       - name: Check membership
@@ -46,6 +47,7 @@ jobs:
           CONTRIB_ORG: clockworklabs
           COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
           ORG_READ_TOKEN: ${{ secrets.ORG_READ_TOKEN }}
+        shell: bash
         run: |
           curl -OL https://github.com/cli/cli/releases/download/v2.37.0/gh_2.37.0_linux_amd64.deb && sudo dpkg -i gh_2.37.0_linux_amd64.deb
           if [[ $(GH_TOKEN=$ORG_READ_TOKEN gh api --paginate /orgs/{owner}/members --jq 'any(.login == env.COMMENT_AUTHOR)') != true ]]; then
@@ -54,6 +56,7 @@ jobs:
           fi
 
       - name: Post initial comment
+        shell: bash
         run: |
           if [[ $PR_NUMBER ]]; then
             comment_parent=issues/$PR_NUMBER
@@ -68,6 +71,7 @@ jobs:
 
       - name: find PR branch
         if: ${{ env.PR_NUMBER }}
+        shell: bash
         run: echo "PR_REF=$(gh pr view $PR_NUMBER --json headRefName --jq .headRefName)" >>"$GITHUB_ENV"
 
       - name: Checkout sources
@@ -90,17 +94,19 @@ jobs:
 
       - name: Build
         working-directory: crates/bench/
+        shell: bash
         run: |
           cargo build --release
 
       - name: Install latest wasm-opt for module optimisations
+        shell: bash
         run: |
           curl https://github.com/WebAssembly/binaryen/releases/download/version_116/binaryen-version_116-x86_64-linux.tar.gz -L | sudo tar xz -C /usr/local --strip-components=1
 
-      - name: Disable CPU boost
-        run: echo "0" | sudo tee /sys/devices/system/cpu/cpufreq/boost
+      # leave CPU boost on, doesn't affect callgrind!
 
       - name: Branch; run bench
+        shell: bash
         run: |
           if [[ $PR_NUMBER ]]; then
             BASELINE_NAME=branch
@@ -139,6 +145,7 @@ jobs:
       - name: PR; compare benchmarks
         if: ${{ env.PR_NUMBER }}
         working-directory: crates/bench/
+        shell: bash
         run: |
           cargo run --bin summarize markdown-report-callgrind branch.json --report-name report
 
@@ -177,11 +184,13 @@ jobs:
 
       - name: Post failure comment
         if: ${{ failure() && env.COMMENT_UPDATE_URL }}
+        shell: bash
         run: |
           BODY="Benchmarking failed. Please check [the workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details."
           gh api "$COMMENT_UPDATE_URL" -X PATCH -f body="$BODY"
 
       - name: Clean up
         if: always()
+        shell: bash
         run: |
           rm -fr /stdb/*
