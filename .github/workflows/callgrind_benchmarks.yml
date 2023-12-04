@@ -36,6 +36,7 @@ jobs:
           apt-get update
           apt-get install -y valgrind protobuf-compiler bash sudo curl gh 
           cargo install --git https://github.com/clockworklabs/iai-callgrind.git --branch main iai-callgrind-runner
+          git config --global --add safe.directory /__w/SpacetimeDB/SpacetimeDB
 
       - name: Enable CPU boost
         shell: bash
