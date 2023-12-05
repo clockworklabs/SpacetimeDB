@@ -2,8 +2,6 @@ use nonempty::NonEmpty;
 use std::borrow::Cow;
 use std::{ops::RangeBounds, sync::Arc};
 
-use super::locking_tx_datastore::TxType;
-use super::{system_tables::StTableRow, Result};
 use crate::db::datastore::system_tables::ST_TABLES_ID;
 use crate::execution_context::ExecutionContext;
 use spacetimedb_primitives::*;
@@ -11,6 +9,8 @@ use spacetimedb_sats::db::def::*;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::DataKey;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
+
+use super::{system_tables::StTableRow, Result};
 
 /// Operations in a transaction are either Inserts or Deletes.
 /// Inserts report the byte objects they inserted, to be persisted
@@ -154,7 +154,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     }
 
     // Indexes
-    fn create_index_mut_tx(&self, tx: &mut Self::MutTxId, index: IndexDef) -> Result<IndexId>;
+    fn create_index_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, index: IndexDef) -> Result<IndexId>;
     fn drop_index_mut_tx(&self, tx: &mut Self::MutTxId, index_id: IndexId) -> Result<()>;
     fn index_id_from_name_mut_tx(&self, tx: &TxType, index_name: &str) -> super::Result<Option<IndexId>>;
 
@@ -165,13 +165,19 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
 
     // Sequences
     fn get_next_sequence_value_mut_tx(&self, tx: &mut Self::MutTxId, seq_id: SequenceId) -> Result<i128>;
-    fn create_sequence_mut_tx(&self, tx: &mut Self::MutTxId, seq: SequenceDef) -> Result<SequenceId>;
+    fn create_sequence_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, seq: SequenceDef)
+        -> Result<SequenceId>;
     fn drop_sequence_mut_tx(&self, tx: &mut Self::MutTxId, seq_id: SequenceId) -> Result<()>;
     fn sequence_id_from_name_mut_tx(
         &self,
         tx: &TxType,
         sequence_name: &str,
     ) -> super::Result<Option<SequenceId>>;
+
+    // Constraints
+    fn drop_constraint_mut_tx(&self, tx: &mut Self::MutTxId, constraint_id: ConstraintId) -> super::Result<()>;
+    fn constraint_id_from_name(&self, tx: &Self::MutTxId, constraint_name: &str)
+        -> super::Result<Option<ConstraintId>>;
 
     // Data
     fn iter_mut_tx<'a>(
@@ -253,37 +259,40 @@ pub trait MutProgrammable: MutTxDatastore {
 
 #[cfg(test)]
 mod tests {
-    use nonempty::NonEmpty;
-    use spacetimedb_primitives::ColId;
-    use spacetimedb_sats::db::attr::ColumnAttribute;
-    use spacetimedb_sats::db::auth::{StAccess, StTableType};
-    use spacetimedb_sats::db::def::{IndexType, AUTO_TABLE_ID};
+    use spacetimedb_primitives::{ColId, Constraints};
+    use spacetimedb_sats::db::def::ConstraintDef;
     use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductType, ProductTypeElement, Typespace};
 
     use super::{ColumnDef, IndexDef, TableDef};
 
     #[test]
     fn test_tabledef_from_lib_tabledef() -> anyhow::Result<()> {
-        let lib_table_def = spacetimedb_lib::TableDef {
-            name: "Person".into(),
-            data: AlgebraicTypeRef(0),
-            column_attrs: vec![ColumnAttribute::IDENTITY, ColumnAttribute::UNSET],
-            indexes: vec![
-                IndexDef::new_cols(
-                    "id_and_name".into(),
-                    AUTO_TABLE_ID,
-                    false,
-                    NonEmpty::from_slice(&[0.into(), 1.into()]).unwrap(),
-                ),
-                IndexDef::new_cols(
-                    "just_name".into(),
-                    AUTO_TABLE_ID,
-                    false,
-                    NonEmpty::from_slice(&[1.into()]).unwrap(),
-                ),
+        let mut expected_schema = TableDef::new(
+            "Person".into(),
+            vec![
+                ColumnDef {
+                    col_name: "id".into(),
+                    col_type: AlgebraicType::U32,
+                },
+                ColumnDef {
+                    col_name: "name".into(),
+                    col_type: AlgebraicType::String,
+                },
             ],
-            table_type: StTableType::User,
-            table_access: StAccess::Public,
+        )
+        .with_indexes(vec![
+            IndexDef::btree("id_and_name".into(), (0.into(), vec![1.into()]), false),
+            IndexDef::btree("just_name".into(), ColId(1), false),
+        ])
+        .with_constraints(vec![ConstraintDef::new(
+            "identity".into(),
+            Constraints::identity(),
+            ColId(0),
+        )]);
+
+        let lib_table_def = spacetimedb_lib::TableDesc {
+            schema: expected_schema.clone(),
+            data: AlgebraicTypeRef(0),
         };
         let row_type = ProductType::new(vec![
             ProductTypeElement {
@@ -296,55 +305,13 @@ mod tests {
             },
         ]);
 
-        let mut datastore_schema =
-            spacetimedb_lib::TableDef::into_table_def(Typespace::new(vec![row_type.into()]).with_type(&lib_table_def))?;
-        let mut expected_schema = TableDef {
-            table_name: "Person".into(),
-            columns: vec![
-                ColumnDef {
-                    col_name: "id".into(),
-                    col_type: AlgebraicType::U32,
-                    is_autoinc: true,
-                },
-                ColumnDef {
-                    col_name: "name".into(),
-                    col_type: AlgebraicType::String,
-                    is_autoinc: false,
-                },
-            ],
-            indexes: vec![
-                IndexDef {
-                    table_id: AUTO_TABLE_ID,
-                    cols: ColId(0).into(),
-                    name: "Person_id_unique".into(),
-                    is_unique: true,
-                    index_type: IndexType::BTree,
-                },
-                IndexDef {
-                    table_id: AUTO_TABLE_ID,
-                    cols: NonEmpty {
-                        head: ColId(0),
-                        tail: [ColId(1)].into(),
-                    },
-                    name: "id_and_name".into(),
-                    is_unique: false,
-                    index_type: IndexType::BTree,
-                },
-                IndexDef {
-                    table_id: AUTO_TABLE_ID,
-                    cols: ColId(1).into(),
-                    name: "just_name".into(),
-                    is_unique: false,
-                    index_type: IndexType::BTree,
-                },
-            ],
-            table_type: StTableType::User,
-            table_access: StAccess::Public,
-        };
+        let mut datastore_schema = spacetimedb_lib::TableDesc::into_table_def(
+            Typespace::new(vec![row_type.into()]).with_type(&lib_table_def),
+        )?;
 
         for schema in [&mut datastore_schema, &mut expected_schema] {
             schema.columns.sort_by(|a, b| a.col_name.cmp(&b.col_name));
-            schema.indexes.sort_by(|a, b| a.name.cmp(&b.name));
+            schema.indexes.sort_by(|a, b| a.index_name.cmp(&b.index_name));
         }
 
         assert_eq!(expected_schema, datastore_schema);

@@ -1,10 +1,17 @@
 use std::{collections::HashMap, sync::Mutex};
 
 use crate::hash::Hash;
+use crate::util::typed_prometheus::impl_prometheusvalue_string;
 use crate::util::typed_prometheus::metrics_group;
+use crate::util::typed_prometheus::AsPrometheusLabel;
 use once_cell::sync::Lazy;
-use prometheus::{Gauge, GaugeVec, HistogramVec, IntCounterVec, IntGauge, IntGaugeVec};
+use prometheus::{Gauge, GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
 use spacetimedb_lib::{Address, Identity};
+
+impl_prometheusvalue_string! {
+    Hash,
+    Identity
+}
 
 metrics_group!(
     pub struct WorkerMetrics {
@@ -86,6 +93,9 @@ metrics_group!(
         #[name = spacetime_scheduled_reducer_delay_sec]
         #[help = "The amount of time (in seconds) a reducer has been delayed past its scheduled execution time"]
         #[labels(db: Address, reducer: str)]
+        #[buckets(
+            1e-6, 5e-6, 1e-5, 5e-5, 1e-4, 5e-4, 1e-3, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0
+        )]
         pub scheduled_reducer_delay_sec: HistogramVec,
 
         #[name = spacetime_scheduled_reducer_delay_sec_max]
@@ -97,22 +107,6 @@ metrics_group!(
         #[help = "The number of fatal WASM instance errors, such as reducer panics."]
         #[labels(identity: Identity, module_hash: Hash, database_address: Address, reducer_symbol: str)]
         pub wasm_instance_errors: IntCounterVec,
-
-        #[name = spacetime_system_disk_space_total_bytes]
-        #[help = "A node's total disk space (in bytes)"]
-        pub system_disk_space_total: IntGauge,
-
-        #[name = spacetime_system_disk_space_free_bytes]
-        #[help = "A node's free (unused) disk space (in bytes)"]
-        pub system_disk_space_free: IntGauge,
-
-        #[name = spacetime_system_memory_total_bytes]
-        #[help = "A node's total available memory (in bytes)"]
-        pub system_memory_total: IntGauge,
-
-        #[name = spacetime_system_memory_free_bytes]
-        #[help = "A node's current available (free) memory (in bytes)"]
-        pub system_memory_free: IntGauge,
     }
 );
 

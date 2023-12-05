@@ -1,14 +1,17 @@
 //! The [DbProgram] that execute arbitrary queries & code against the database.
+use std::collections::HashMap;
+use std::ops::RangeBounds;
+
+use itertools::Itertools;
+use tracing::debug;
 
 use crate::db::cursor::{CatalogCursor, IndexCursor, TableCursor};
 use crate::db::datastore::locking_tx_datastore::{IterByColEq, MutTxId, TxType};
 use crate::db::relational_db::RelationalDB;
 use crate::execution_context::ExecutionContext;
-use itertools::Itertools;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_primitives::{ColId, TableId};
-use spacetimedb_sats::db::auth::{StAccess, StTableType};
-use spacetimedb_sats::db::def::{ColumnDef, IndexDef, ProductTypeMeta, TableDef};
+use spacetimedb_primitives::*;
+use spacetimedb_sats::db::def::TableDef;
 use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldName, RelValueRef, Relation};
 use spacetimedb_sats::relation::{Header, MemTable, RelIter, RelValue, RowCount, Table};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
@@ -18,9 +21,6 @@ use spacetimedb_vm::eval::IterRows;
 use spacetimedb_vm::expr::*;
 use spacetimedb_vm::program::{ProgramRef, ProgramVm};
 use spacetimedb_vm::rel_ops::RelOps;
-use std::collections::HashMap;
-use std::ops::RangeBounds;
-use tracing::debug;
 
 //TODO: This is partially duplicated from the `vm` crate to avoid borrow checker issues
 //and pull all that crate in core. Will be revisited after trait refactor
@@ -361,41 +361,8 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         }
     }
 
-    fn create_table(
-        &mut self,
-        table_name: &str,
-        columns: ProductTypeMeta,
-        table_type: StTableType,
-        table_access: StAccess,
-    ) -> Result<Code, ErrorVm> {
-        let mut cols = Vec::new();
-        let mut indexes = Vec::new();
-        for (i, column) in columns.columns.elements.iter().enumerate() {
-            let meta = columns.attr[i];
-            if meta.has_unique() {
-                indexes.push(IndexDef::new(
-                    format!("{}_{}_idx", table_name, i),
-                    0.into(), // Ignored
-                    i.into(),
-                    true,
-                ));
-            }
-            cols.push(ColumnDef {
-                col_name: column.name.clone().unwrap_or(i.to_string()),
-                col_type: column.algebraic_type.clone(),
-                is_autoinc: meta.has_autoinc(),
-            })
-        }
-        self.db.create_table(
-            self.tx,
-            TableDef {
-                table_name: table_name.to_string(),
-                columns: cols,
-                indexes,
-                table_type,
-                table_access,
-            },
-        )?;
+    fn create_table(&mut self, table: TableDef) -> Result<Code, ErrorVm> {
+        self.db.create_table(self.tx, table)?;
         Ok(Code::Pass)
     }
 
@@ -417,7 +384,9 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
                 }
             }
             DbType::Constraint => {
-                todo!("Will be finished in PR#267")
+                if let Some(id) = self.db.constraint_id_from_name(self.tx, name)? {
+                    self.db.drop_constraint(self.tx, id)?;
+                }
             }
         }
 
@@ -501,13 +470,8 @@ impl ProgramVm for DbProgram<'_, '_> {
                 let result = self.delete_query(query)?;
                 Ok(result)
             }
-            CrudCode::CreateTable {
-                name,
-                columns,
-                table_type,
-                table_access,
-            } => {
-                let result = self.create_table(&name, columns, table_type, table_access)?;
+            CrudCode::CreateTable { table } => {
+                let result = self.create_table(table)?;
                 Ok(result)
             }
             CrudCode::Drop {
@@ -593,7 +557,6 @@ pub(crate) mod tests {
     use crate::execution_context::ExecutionContext;
     use nonempty::NonEmpty;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_primitives::TableId;
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::db::def::{ColumnDef, IndexDef, IndexType};
     use spacetimedb_sats::relation::{DbTable, FieldName};
@@ -609,24 +572,21 @@ pub(crate) mod tests {
         schema: ProductType,
         rows: &[ProductValue],
     ) -> ResultTest<TableId> {
+        let columns: Vec<_> = schema
+            .elements
+            .into_iter()
+            .enumerate()
+            .map(|(i, e)| ColumnDef {
+                col_name: e.name.unwrap_or(i.to_string()),
+                col_type: e.algebraic_type,
+            })
+            .collect();
+
         let table_id = db.create_table(
             tx,
-            TableDef {
-                table_name: table_name.to_string(),
-                columns: schema
-                    .elements
-                    .iter()
-                    .enumerate()
-                    .map(|(i, e)| ColumnDef {
-                        col_name: e.name.clone().unwrap_or_else(|| i.to_string()),
-                        col_type: e.algebraic_type.clone(),
-                        is_autoinc: false,
-                    })
-                    .collect(),
-                indexes: vec![],
-                table_type: StTableType::User,
-                table_access: StAccess::for_name(table_name),
-            },
+            TableDef::new(table_name.into(), columns)
+                .with_type(StTableType::User)
+                .with_access(StAccess::for_name(table_name)),
         )?;
         for row in rows {
             db.insert(tx, table_id, row.clone())?;
@@ -642,8 +602,8 @@ pub(crate) mod tests {
         rows: &[ProductValue],
     ) -> ResultTest<TableId> {
         let db = &mut p.db;
-        let tx: &MutTxId = *p.tx;
-        create_table_with_rows(db, tx, table_name, schema, rows)
+        let tx = *p.tx;
+        create_table_with_rows(db, tx.into(), table_name, schema, rows)
     }
 
     #[test]
@@ -749,7 +709,7 @@ pub(crate) mod tests {
             )
             .with_select_cmp(
                 OpCmp::Eq,
-                FieldName::named(ST_COLUMNS_NAME, StColumnFields::ColId.name()),
+                FieldName::named(ST_COLUMNS_NAME, StColumnFields::ColPos.name()),
                 scalar(StColumnFields::TableId as u32),
             );
         check_catalog(
@@ -757,10 +717,9 @@ pub(crate) mod tests {
             ST_COLUMNS_NAME,
             StColumnRow {
                 table_id: ST_COLUMNS_ID,
-                col_id: StColumnFields::TableId.col_id(),
+                col_pos: StColumnFields::TableId.col_id(),
                 col_name: StColumnFields::TableId.col_name(),
                 col_type: AlgebraicType::U32,
-                is_autoinc: false,
             }
             .into(),
             q,
@@ -785,8 +744,8 @@ pub(crate) mod tests {
         db.commit_tx(&ctx, tx)?;
 
         let mut tx = db.begin_mut_tx();
-        let index = IndexDef::new("idx_1".into(), table_id, 0.into(), true);
-        let index_id = db.create_index(&mut tx, index)?;
+        let index = IndexDef::btree("idx_1".into(), ColId(0), true);
+        let index_id = db.create_index(&mut tx, table_id, index)?;
 
         let p = &mut DbProgram::new(&ctx, &db, &mut tx.into(), AuthCtx::for_testing());
 
@@ -802,7 +761,7 @@ pub(crate) mod tests {
                 index_id,
                 index_name: "idx_1".to_owned(),
                 table_id,
-                cols: NonEmpty::new(0.into()),
+                columns: NonEmpty::new(0.into()),
                 is_unique: true,
                 index_type: IndexType::BTree,
             }
@@ -827,20 +786,20 @@ pub(crate) mod tests {
         let q = query(&st_sequences_schema()).with_select_cmp(
             OpCmp::Eq,
             FieldName::named(ST_SEQUENCES_NAME, StSequenceFields::TableId.name()),
-            scalar(ST_SEQUENCES_ID.0),
+            scalar(ST_SEQUENCES_ID),
         );
         check_catalog(
             p,
             ST_SEQUENCES_NAME,
             StSequenceRow {
-                sequence_id: 1.into(),
-                sequence_name: "sequence_id_seq".to_owned(),
+                sequence_id: 3.into(),
+                sequence_name: "seq_st_sequence_sequence_id_primary_key_auto".to_string(),
                 table_id: 2.into(),
-                col_id: 0.into(),
+                col_pos: 0.into(),
                 increment: 1,
                 start: 4,
                 min_value: 1,
-                max_value: 4294967295,
+                max_value: i128::MAX,
                 allocated: 4096,
             }
             .into(),

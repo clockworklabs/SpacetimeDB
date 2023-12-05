@@ -591,3 +591,14 @@ impl_deserialize!([] spacetimedb_primitives::ColId, de => u32::deserialize(de).m
 impl_deserialize!([] spacetimedb_primitives::TableId, de => u32::deserialize(de).map(Self));
 impl_deserialize!([] spacetimedb_primitives::IndexId, de => u32::deserialize(de).map(Self));
 impl_deserialize!([] spacetimedb_primitives::SequenceId, de => u32::deserialize(de).map(Self));
+
+impl_deserialize!([T: crate::de::Deserialize<'de> + Clone] nonempty::NonEmpty<T>, de => {
+    let arr: Vec<T> = de.deserialize_array(BasicVecVisitor)?;
+    Self::from_slice(&arr).ok_or_else(|| {
+        crate::de::Error::custom(format!(
+            "invalid NonEmpty<{}>. Len is {}",
+            std::any::type_name::<T>(),
+            arr.len()
+        ))
+    })
+});

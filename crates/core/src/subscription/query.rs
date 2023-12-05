@@ -1,17 +1,28 @@
-use crate::db::datastore::locking_tx_datastore::{MutTxId, TxId, TxType};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::Hasher;
+use std::time::Instant;
+
+use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::db::db_metrics::{DB_METRICS, MAX_QUERY_COMPILE_TIME};
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, SubscriptionError};
-use crate::execution_context::ExecutionContext;
+use crate::execution_context::{ExecutionContext, WorkloadType};
 use crate::host::module_host::DatabaseTableUpdate;
 use crate::sql::compiler::compile_sql;
 use crate::sql::execute::execute_single_sql;
 use crate::sql::query_debug_info::QueryDebugInfo;
 use crate::subscription::subscription::{QuerySet, SupportedQuery};
+use once_cell::sync::Lazy;
+use regex::Regex;
 use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::Address;
 use spacetimedb_sats::relation::{Column, FieldName, MemTable, RelValue};
 use spacetimedb_sats::AlgebraicType;
 use spacetimedb_sats::DataKey;
-use spacetimedb_vm::expr::{self, Crud, CrudExpr, DbType, QueryExpr, SourceExpr};
+use spacetimedb_vm::expr;
+use spacetimedb_vm::expr::{Crud, CrudExpr, DbType, QueryExpr, SourceExpr};
+
+static WHITESPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap());
 pub const SUBSCRIBE_TO_ALL_QUERY: &str = "SELECT * FROM *";
 
 pub enum QueryDef {
@@ -49,7 +60,6 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
             FieldName::named(&t.head.table_name, OP_TYPE_FIELD_NAME),
             AlgebraicType::U8,
             t.head.fields.len().into(),
-            false,
         ));
         for row in &data.ops {
             let mut new = row.row.clone();
@@ -105,11 +115,17 @@ pub fn compile_read_only_query(
         return Err(SubscriptionError::Empty.into());
     }
 
+    // Remove redundant whitespace, and in particular newlines, for debug info.
+    let input = WHITESPACE.replace_all(input, " ");
     if input == SUBSCRIBE_TO_ALL_QUERY {
         return QuerySet::get_all(relational_db, tx, auth);
     }
 
-    let compiled = compile_sql(relational_db, tx, input)?;
+    let start = Instant::now();
+    let compiled = compile_sql(relational_db, tx, &input).map(|expr| {
+        record_query_compilation_metrics(WorkloadType::Subscribe, &relational_db.address(), &input, start);
+        expr
+    })?;
     let mut queries = Vec::with_capacity(compiled.len());
     for q in compiled {
         match q {
@@ -136,6 +152,40 @@ pub fn compile_read_only_query(
     } else {
         Err(SubscriptionError::Empty.into())
     }
+}
+
+fn record_query_compilation_metrics(workload: WorkloadType, db: &Address, query: &str, start: Instant) {
+    let compile_duration = start.elapsed().as_secs_f64();
+
+    DB_METRICS
+        .rdb_query_compile_time_sec
+        .with_label_values(&workload, db, query)
+        .observe(compile_duration);
+
+    fn hash(a: WorkloadType, b: &Address, c: &str) -> u64 {
+        use std::hash::Hash;
+        let mut hasher = DefaultHasher::new();
+        a.hash(&mut hasher);
+        b.hash(&mut hasher);
+        c.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    let max_compile_duration = *MAX_QUERY_COMPILE_TIME
+        .lock()
+        .unwrap()
+        .entry(hash(workload, db, query))
+        .and_modify(|max| {
+            if compile_duration > *max {
+                *max = compile_duration;
+            }
+        })
+        .or_insert_with(|| compile_duration);
+
+    DB_METRICS
+        .rdb_query_compile_time_sec_max
+        .with_label_values(&workload, db, query)
+        .set(max_compile_duration);
 }
 
 /// The kind of [`QueryExpr`] currently supported for incremental evaluation.
@@ -199,22 +249,18 @@ mod tests {
             .map(|(col_name, col_type)| ColumnDef {
                 col_name: col_name.to_string(),
                 col_type: col_type.clone(),
-                is_autoinc: false,
             })
             .collect_vec();
 
         let indexes = indexes
             .iter()
-            .map(|(col_id, index_name)| IndexDef::new(index_name.to_string(), 0.into(), *col_id, false))
+            .map(|(col_id, index_name)| IndexDef::btree(index_name.to_string(), *col_id, false))
             .collect_vec();
 
-        let schema = TableDef {
-            table_name,
-            columns,
-            indexes,
-            table_type,
-            table_access,
-        };
+        let schema = TableDef::new(table_name, columns)
+            .with_indexes(indexes)
+            .with_type(table_type)
+            .with_access(table_access);
 
         Ok(db.create_table(tx, schema)?)
     }
@@ -1042,7 +1088,10 @@ mod tests {
             "SELECT * FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE lhs.x < 10",
         ];
         for join in joins {
-            assert!(compile_read_only_query(&db, &tx.into(), &auth, join).is_err(), "{join}");
+            match compile_read_only_query(&db, &tx.into(), &auth, join) {
+                Err(DBError::Subscription(SubscriptionError::Unsupported(_))) => (),
+                x => panic!("Unexpected: {x:?}"),
+            }
         }
 
         Ok(())

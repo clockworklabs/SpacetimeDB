@@ -1,13 +1,11 @@
-use crate::db::datastore::locking_tx_datastore::{MutTxId, TxType};
-use crate::db::datastore::traits::MutTxDatastore;
-use crate::db::relational_db::RelationalDB;
-use crate::error::{DBError, PlanError};
-use spacetimedb_primitives::Constraints;
-use spacetimedb_sats::db::auth::{StAccess, StTableType};
-use spacetimedb_sats::db::def::TableSchema;
-use spacetimedb_sats::db::def::{FieldDef, ProductTypeMeta};
+use nonempty::NonEmpty;
+use std::borrow::Cow;
+use std::collections::HashMap;
+
+use spacetimedb_primitives::{ConstraintKind, Constraints};
+use spacetimedb_sats::db::auth::StAccess;
+use spacetimedb_sats::db::def::{ColumnDef, ConstraintDef, FieldDef, TableDef, TableSchema};
 use spacetimedb_sats::db::error::RelationError;
-use spacetimedb_sats::relation::{extract_table_field, FieldExpr, FieldName};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductTypeElement};
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::expr::{ColumnOp, DbType, Expr};
@@ -20,8 +18,12 @@ use sqlparser::ast::{
 };
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
-use std::borrow::Cow;
-use std::collections::HashMap;
+
+use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::db::datastore::traits::MutTxDatastore;
+use crate::db::relational_db::RelationalDB;
+use crate::error::{DBError, PlanError};
+use spacetimedb_sats::relation::{extract_table_field, FieldExpr, FieldName};
 
 /// Simplify to detect features of the syntax we don't support yet
 /// Because we use [PostgreSqlDialect] in the compiler step it already protect against features
@@ -176,13 +178,16 @@ impl From {
     pub fn find_field(&self, f: &str) -> Result<Vec<FieldDef>, RelationError> {
         let field = extract_table_field(f)?;
         let fields = self.iter_tables().flat_map(|t| {
-            t.columns
-                .iter()
-                .filter(|column| column.col_name == field.field)
-                .map(|column| FieldDef {
-                    column: column.clone(),
-                    table_name: field.table.unwrap_or(&t.table_name).to_string(),
-                })
+            t.columns.iter().filter_map(|column| {
+                if column.col_name == field.field {
+                    Some(FieldDef {
+                        column: column.clone(),
+                        table_name: field.table.unwrap_or(&t.table_name).to_string(),
+                    })
+                } else {
+                    None
+                }
+            })
         });
 
         Ok(fields.collect())
@@ -233,10 +238,7 @@ pub enum SqlAst {
         selection: Option<Selection>,
     },
     CreateTable {
-        table: String,
-        columns: ProductTypeMeta,
-        table_type: StTableType,
-        table_access: StAccess,
+        table: TableDef,
     },
     Drop {
         name: String,
@@ -801,10 +803,10 @@ fn compile_column_option(col: &SqlColumnDef) -> Result<(bool, Constraints), Plan
 
 /// Compiles the `CREATE TABLE ...` clause
 fn compile_create_table(table: Table, cols: Vec<SqlColumnDef>) -> Result<SqlAst, PlanError> {
-    let table = table.name;
-    let mut columns = ProductTypeMeta::with_capacity(cols.len());
+    let mut constraints = Vec::new();
 
-    for col in cols {
+    let mut columns = Vec::with_capacity(cols.len());
+    for (col_pos, col) in cols.into_iter().enumerate() {
         if column_size(&col).is_some() {
             return Err(PlanError::Unsupported {
                 feature: format!("Column with a defined size {}", col.name),
@@ -813,17 +815,26 @@ fn compile_create_table(table: Table, cols: Vec<SqlColumnDef>) -> Result<SqlAst,
 
         let name = col.name.to_string();
         let (is_null, attr) = compile_column_option(&col)?;
-        let ty = column_def_type(&name, is_null, &col.data_type)?;
 
-        columns.push(&name, ty, attr);
+        if attr.kind() != ConstraintKind::UNSET {
+            constraints.push(ConstraintDef::for_column(
+                &table.name,
+                &name,
+                attr,
+                NonEmpty::new(col_pos.into()),
+            ));
+        }
+
+        let ty = column_def_type(&name, is_null, &col.data_type)?;
+        columns.push(ColumnDef {
+            col_name: name,
+            col_type: ty,
+        });
     }
 
-    Ok(SqlAst::CreateTable {
-        table_access: StAccess::for_name(&table),
-        table,
-        columns,
-        table_type: StTableType::User,
-    })
+    let table = TableDef::new(table.name, columns).with_constraints(constraints);
+
+    Ok(SqlAst::CreateTable { table })
 }
 
 /// Compiles the `DROP ...` clause

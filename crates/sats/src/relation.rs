@@ -1,5 +1,6 @@
 use derive_more::From;
-use spacetimedb_primitives::{ColId, TableId};
+use nonempty::NonEmpty;
+use spacetimedb_primitives::{ColId, Constraints, TableId};
 use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
 use std::fmt;
@@ -150,16 +151,14 @@ pub struct Column {
     pub field: FieldName,
     pub algebraic_type: AlgebraicType,
     pub col_id: ColId,
-    pub is_indexed: bool,
 }
 
 impl Column {
-    pub fn new(field: FieldName, algebraic_type: AlgebraicType, col_id: ColId, is_indexed: bool) -> Self {
+    pub fn new(field: FieldName, algebraic_type: AlgebraicType, col_id: ColId) -> Self {
         Self {
             field,
             algebraic_type,
             col_id,
-            is_indexed,
         }
     }
 
@@ -180,22 +179,16 @@ pub struct HeaderOnlyField<'a> {
 pub struct Header {
     pub table_name: String,
     pub fields: Vec<Column>,
-}
-
-impl From<Header> for ProductType {
-    fn from(value: Header) -> Self {
-        ProductType::from_iter(
-            value
-                .fields
-                .into_iter()
-                .map(|x| ProductTypeElement::new(x.algebraic_type, x.field.into_field_name())),
-        )
-    }
+    pub constraints: Vec<(NonEmpty<ColId>, Constraints)>,
 }
 
 impl Header {
-    pub fn new(table_name: String, fields: Vec<Column>) -> Self {
-        Self { table_name, fields }
+    pub fn new(table_name: String, fields: Vec<Column>, constraints: Vec<(NonEmpty<ColId>, Constraints)>) -> Self {
+        Self {
+            table_name,
+            fields,
+            constraints,
+        }
     }
 
     pub fn from_product_type(table_name: String, fields: ProductType) -> Self {
@@ -204,16 +197,21 @@ impl Header {
             .into_iter()
             .enumerate()
             .map(|(pos, f)| {
-                let table = table_name.clone();
                 let name = match f.name {
-                    None => FieldName::Pos { table, field: pos },
-                    Some(field) => FieldName::Name { table, field },
+                    None => FieldName::Pos {
+                        table: table_name.clone(),
+                        field: pos,
+                    },
+                    Some(field) => FieldName::Name {
+                        table: table_name.clone(),
+                        field,
+                    },
                 };
-                Column::new(name, f.algebraic_type, ColId(pos as u32), false)
+                Column::new(name, f.algebraic_type, ColId(pos as u32))
             })
             .collect();
 
-        Self::new(table_name, cols)
+        Self::new(table_name, cols, Default::default())
     }
 
     pub fn for_mem_table(fields: ProductType) -> Self {
@@ -260,16 +258,45 @@ impl Header {
         self.fields.iter().find(|f| &f.field == col)
     }
 
+    /// Copy the [Constraints] that are referenced in the list of `for_columns`
+    fn retain_constraints(&self, for_columns: &[ColId]) -> Vec<(NonEmpty<ColId>, Constraints)> {
+        // Copy the constraints of the selected columns and retain the multi-column ones...
+        self.constraints
+            .iter()
+            .filter_map(|(cols, ct)| {
+                if cols.iter().any(|c: &ColId| for_columns.contains(c)) {
+                    Some((cols.clone(), *ct))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    pub fn has_constraint(&self, field: &FieldName, constraint: Constraints) -> bool {
+        self.column_pos(field)
+            .map(|x| {
+                let find = NonEmpty::new(ColId(x as u32));
+                self.constraints
+                    .iter()
+                    .any(|(col, ct)| col == &find && ct.contains(&constraint))
+            })
+            .unwrap_or(false)
+    }
+    /// Project the [FieldExpr] & the [Constraints] that referenced them
     pub fn project<T>(&self, cols: &[T]) -> Result<Self, RelationError>
     where
         T: Into<FieldExpr> + Clone,
     {
         let mut p = Vec::with_capacity(cols.len());
+        let mut to_keep = Vec::with_capacity(cols.len());
 
         for (pos, col) in cols.iter().enumerate() {
             match col.clone().into() {
                 FieldExpr::Name(col) => {
                     if let Some(pos) = self.column_pos(&col) {
+                        to_keep.push(ColId(pos as u32));
+
                         p.push(self.fields[pos].clone());
                     } else {
                         return Err(RelationError::FieldNotFound(self.clone(), col));
@@ -283,19 +310,29 @@ impl Header {
                         },
                         col.type_of(),
                         pos.into(),
-                        false,
                     ));
                 }
             }
         }
 
-        Ok(Self::new(self.table_name.clone(), p))
+        let constraints = self.retain_constraints(&to_keep);
+
+        Ok(Self::new(self.table_name.clone(), p, constraints))
     }
 
-    /// Adds the fields from `right` to this [`Header`],
+    /// Adds the fields &  [Constraints] from `right` to this [`Header`],
     /// renaming duplicated fields with a counter like `a, a => a, a0`.
     pub fn extend(&self, right: &Self) -> Self {
         let count = self.fields.len() + right.fields.len();
+
+        // Increase the positions of the columns in `right.constraints`, adding the count of fields on `left`
+        let mut constraints = self.constraints.clone();
+        let len_lhs = self.fields.len() as u32;
+        constraints.extend(right.constraints.iter().map(|(cols, c)| {
+            let cols = cols.clone().map(|x| ColId(x.0 + len_lhs));
+            (cols, *c)
+        }));
+
         let mut fields = self.fields.clone();
         fields.reserve(count - fields.len());
 
@@ -314,7 +351,18 @@ impl Header {
             fields.push(f);
         }
 
-        Self::new(self.table_name.clone(), fields)
+        Self::new(self.table_name.clone(), fields, constraints)
+    }
+}
+
+impl From<Header> for ProductType {
+    fn from(value: Header) -> Self {
+        ProductType::from_iter(
+            value
+                .fields
+                .into_iter()
+                .map(|x| ProductTypeElement::new(x.algebraic_type, x.field.into_field_name())),
+        )
     }
 }
 
@@ -643,5 +691,93 @@ impl Relation for Table {
             Table::MemTable(x) => x.row_count(),
             Table::DbTable(x) => x.row_count(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Build a [Header] using the initial `start_pos` as the column position for the [Constraints]
+    fn head(table: &str, fields: (&str, &str), start_pos: u32) -> Header {
+        let pos_lhs = start_pos;
+        let pos_rhs = start_pos + 1;
+
+        let ct = vec![
+            (ColId(pos_lhs).into(), Constraints::indexed()),
+            (ColId(pos_rhs).into(), Constraints::identity()),
+            (
+                (ColId(pos_lhs), vec![ColId(pos_rhs)]).into(),
+                Constraints::primary_key(),
+            ),
+            ((ColId(pos_rhs), vec![ColId(pos_lhs)]).into(), Constraints::unique()),
+        ];
+
+        Header::new(
+            table.into(),
+            vec![
+                Column::new(FieldName::named(table, fields.0), AlgebraicType::I8, 0.into()),
+                Column::new(FieldName::named(table, fields.1), AlgebraicType::I8, 0.into()),
+            ],
+            ct,
+        )
+    }
+
+    #[test]
+    fn test_project() {
+        let head = head("t1", ("a", "b"), 0);
+        let new = head.project::<FieldName>(&[]).unwrap();
+
+        let mut empty = head.clone();
+        empty.fields.clear();
+        empty.constraints.clear();
+
+        assert_eq!(empty, new);
+
+        let all = head.clone();
+        let new = head
+            .project::<FieldName>(&[FieldName::named("t1", "a"), FieldName::named("t1", "b")])
+            .unwrap();
+
+        assert_eq!(all, new);
+
+        let mut first = head.clone();
+        first.fields.pop();
+        first.constraints = first.retain_constraints(&[ColId(0)]);
+
+        let new = head.project::<FieldName>(&[FieldName::named("t1", "a")]).unwrap();
+
+        assert_eq!(first, new);
+
+        let mut second = head.clone();
+        second.fields.remove(0);
+        second.constraints = second.retain_constraints(&[ColId(1)]);
+
+        let new = head.project::<FieldName>(&[FieldName::named("t1", "b")]).unwrap();
+
+        assert_eq!(second, new);
+    }
+
+    #[test]
+    fn test_extend() {
+        let head_lhs = head("t1", ("a", "b"), 0);
+        let head_rhs = head("t2", ("c", "d"), 0);
+
+        let new = head_lhs.extend(&head_rhs);
+
+        let lhs = new
+            .project::<FieldName>(&[FieldName::named("t1", "a"), FieldName::named("t1", "b")])
+            .unwrap();
+
+        assert_eq!(head_lhs, lhs);
+
+        let mut head_rhs = head("t2", ("c", "d"), 2);
+        head_rhs.table_name = head_lhs.table_name.clone();
+
+        let rhs = new
+            .project::<FieldName>(&[FieldName::named("t2", "c"), FieldName::named("t2", "d")])
+            .unwrap();
+
+        assert_eq!(head_rhs, rhs);
     }
 }

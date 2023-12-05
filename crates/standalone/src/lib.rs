@@ -220,7 +220,7 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
             return Ok(Some(Node {
                 id: 0,
                 unschedulable: false,
-                advertise_addr: "node:80".into(),
+                advertise_addr: Some("node:80".to_owned()),
             }));
         }
         Ok(None)
