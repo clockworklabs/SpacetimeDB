@@ -195,6 +195,14 @@ impl std::fmt::Debug for MessageLog {
     }
 }
 
+impl Drop for MessageLog {
+    fn drop(&mut self) {
+        if let Err(e) = self.sync_all() {
+            log::warn!("Unable to fsync on drop: {e}");
+        }
+    }
+}
+
 // TODO: do we build the concept of batches into the message log?
 impl MessageLog {
     #[tracing::instrument(skip(path))]
