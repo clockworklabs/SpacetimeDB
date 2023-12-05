@@ -2,24 +2,22 @@ use super::{
     btree_index::{BTreeIndex, BTreeIndexRangeIter},
     RowId,
 };
-use crate::db::datastore::traits::TableSchema;
 use indexmap::IndexMap;
 use nonempty::NonEmpty;
 use spacetimedb_primitives::ColId;
+use spacetimedb_sats::db::def::TableSchema;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
 use std::{collections::HashMap, ops::RangeBounds};
 
 pub(crate) struct Table {
-    pub(crate) row_type: ProductType,
     pub(crate) schema: TableSchema,
     pub(crate) indexes: HashMap<NonEmpty<ColId>, BTreeIndex>,
     pub(crate) rows: IndexMap<RowId, ProductValue>,
 }
 
 impl Table {
-    pub(crate) fn new(row_type: ProductType, schema: TableSchema) -> Self {
+    pub(crate) fn new(schema: TableSchema) -> Self {
         Self {
-            row_type,
             schema,
             indexes: Default::default(),
             rows: Default::default(),
@@ -52,8 +50,8 @@ impl Table {
         self.rows.get(row_id)
     }
 
-    pub(crate) fn get_row_type(&self) -> &ProductType {
-        &self.row_type
+    pub(crate) fn get_row_type(&self) -> ProductType {
+        self.schema.get_row_type()
     }
 
     pub(crate) fn get_schema(&self) -> &TableSchema {

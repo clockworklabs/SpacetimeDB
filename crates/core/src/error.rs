@@ -1,20 +1,26 @@
-use crate::client::ClientActorId;
-use crate::db::datastore::traits::IndexDef;
+use std::io;
+use std::num::ParseIntError;
+use std::path::PathBuf;
+use std::sync::{MutexGuard, PoisonError};
+
 use hex::FromHexError;
+use thiserror::Error;
+
+use crate::client::ClientActorId;
+use crate::db::datastore::system_tables::SystemTable;
+use crate::sql::query_debug_info::QueryDebugInfo;
 use spacetimedb_lib::buffer::DecodeError;
-use spacetimedb_lib::error::{LibError, RelationError};
-use spacetimedb_lib::relation::FieldName;
 use spacetimedb_lib::{PrimaryKey, ProductValue};
-use spacetimedb_primitives::{ColId, IndexId, TableId};
+use spacetimedb_primitives::*;
+use spacetimedb_sats::db::def::IndexDef;
+use spacetimedb_sats::db::error::{LibError, RelationError, SchemaError};
+use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::product_value::InvalidFieldError;
+use spacetimedb_sats::relation::FieldName;
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_vm::errors::{ErrorKind, ErrorLang, ErrorVm};
 use spacetimedb_vm::expr::Crud;
-use std::num::ParseIntError;
-use std::path::PathBuf;
-use std::sync::{MutexGuard, PoisonError};
-use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum TableError {
@@ -24,8 +30,10 @@ pub enum TableError {
     Exist(String),
     #[error("Table with name `{0}` not found.")]
     NotFound(String),
-    #[error("Table with ID `{0}` not found.")]
-    IdNotFound(TableId),
+    #[error("Table with ID `{1}` not found in `{0}`.")]
+    IdNotFound(SystemTable, u32),
+    #[error("Table with ID `{0}` not found in `TxState`.")]
+    IdNotFoundState(TableId),
     #[error("Column `{0}.{1}` is missing a name")]
     ColumnWithoutName(String, ColId),
     #[error("schema_for_table: Table has invalid schema: {0} Err: {1}")]
@@ -86,6 +94,8 @@ pub enum SubscriptionError {
     Empty,
     #[error("Queries with side effects not allowed: {0:?}")]
     SideEffect(Crud),
+    #[error("Unsupported query on subscription: {0:?}")]
+    Unsupported(QueryDebugInfo),
 }
 
 #[derive(Error, Debug)]
@@ -135,6 +145,8 @@ pub enum DBError {
     Sequence2(#[from] crate::db::datastore::locking_tx_datastore::SequenceError),
     #[error("IndexError: {0}")]
     Index(#[from] IndexError),
+    #[error("SchemaError: {0}")]
+    Schema(#[from] SchemaError),
     #[error("IOError: {0}.")]
     IoError(#[from] std::io::Error),
     #[error("ParseIntError: {0}.")]
@@ -167,6 +179,8 @@ pub enum DBError {
     },
     #[error("SqlError: {error}, executing: `{sql}`")]
     Plan { sql: String, error: PlanError },
+    #[error("Error replaying the commit log: {0}")]
+    LogReplay(#[from] LogReplayError),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -204,6 +218,55 @@ impl<'a, T: ?Sized + 'a> From<PoisonError<std::sync::MutexGuard<'a, T>>> for DBE
     fn from(err: PoisonError<MutexGuard<'_, T>>) -> Self {
         DBError::MessageLogPoisoned(err.to_string())
     }
+}
+
+#[derive(Debug, Error)]
+pub enum LogReplayError {
+    #[error(
+        "Out-of-order commit detected: {} in segment {} after offset {}",
+        .commit_offset,
+        .segment_offset,
+        .last_commit_offset
+    )]
+    OutOfOrderCommit {
+        commit_offset: u64,
+        segment_offset: usize,
+        last_commit_offset: u64,
+    },
+    #[error(
+        "Error reading segment {}/{} at commit {}: {}",
+        .segment_offset,
+        .total_segments,
+        .commit_offset,
+        .source
+    )]
+    TrailingSegments {
+        segment_offset: usize,
+        total_segments: usize,
+        commit_offset: u64,
+        #[source]
+        source: io::Error,
+    },
+    #[error("Could not reset log to offset {}: {}", .offset, .source)]
+    Reset {
+        offset: u64,
+        #[source]
+        source: io::Error,
+    },
+    #[error("Missing object {} referenced from commit {}", .hash, .commit_offset)]
+    MissingObject { hash: Hash, commit_offset: u64 },
+    #[error(
+        "Unexpected I/O error reading commit {} from segment {}: {}",
+        .commit_offset,
+        .segment_offset,
+        .source
+    )]
+    Io {
+        segment_offset: usize,
+        commit_offset: u64,
+        #[source]
+        source: io::Error,
+    },
 }
 
 #[derive(Error, Debug)]
@@ -245,7 +308,7 @@ impl From<DBError> for NodesError {
         match e {
             DBError::Table(TableError::Exist(name)) => Self::AlreadyExists(name),
             DBError::Table(TableError::System(name)) => Self::SystemName(name),
-            DBError::Table(TableError::IdNotFound(_) | TableError::NotFound(_)) => Self::TableNotFound,
+            DBError::Table(TableError::IdNotFound(_, _) | TableError::NotFound(_)) => Self::TableNotFound,
             DBError::Table(TableError::ColumnNotFound(_)) => Self::BadColumn,
             _ => Self::Internal(Box::new(e)),
         }

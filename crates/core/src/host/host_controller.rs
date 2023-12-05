@@ -1,9 +1,8 @@
 use crate::hash::hash_bytes;
-use crate::host::wasmer;
+use crate::host;
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleHostContext;
 use anyhow::Context;
-// use parking_lot::{Condvar, Mutex};
 use parking_lot::Mutex;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -90,28 +89,21 @@ impl fmt::Display for DescribedEntityType {
 /// for a user's balance to go negative. This is allowable
 /// for reasons of eventual consistency motivated by performance.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct EnergyQuanta(pub i128);
+pub struct EnergyQuanta(i128);
 
 impl EnergyQuanta {
     pub const ZERO: Self = EnergyQuanta(0);
 
     pub const DEFAULT_BUDGET: Self = EnergyQuanta(1_000_000_000_000_000_000);
 
-    /// A conversion function to convert from the canonical unit to points used
-    /// by Wasmer to track energy usage.
-    pub fn as_points(&self) -> u64 {
-        if self.0 < 0 {
-            return 0;
-        } else if self.0 > u64::MAX as i128 {
-            return u64::MAX;
-        }
-        self.0 as u64
+    #[inline]
+    pub fn new(v: i128) -> Self {
+        Self(v)
     }
 
-    /// A conversion function to convert from point used
-    /// by Wasmer to track energy usage, to our canonical unit.
-    pub fn from_points(points: u64) -> Self {
-        Self(points as i128)
+    #[inline]
+    pub fn get(&self) -> i128 {
+        self.0
     }
 }
 
@@ -273,13 +265,13 @@ impl HostController {
         let module_hash = hash_bytes(&mhc.program_bytes);
         let (threadpool, energy_monitor) = (self.threadpool.clone(), self.energy_monitor.clone());
         let module_host = match mhc.host_type {
-            HostType::Wasmer => {
+            HostType::Wasm => {
                 // make_actor with block_in_place since it's going to take some time to compute.
                 let start = Instant::now();
                 let actor = tokio::task::block_in_place(|| {
-                    wasmer::make_actor(mhc.dbic, module_hash, &mhc.program_bytes, mhc.scheduler, energy_monitor)
+                    host::wasmtime::make_actor(mhc.dbic, module_hash, &mhc.program_bytes, mhc.scheduler, energy_monitor)
                 })?;
-                log::trace!("wasmer::make_actor blocked for {:?}", start.elapsed());
+                log::trace!("wasmtime::make_actor blocked for {:?}", start.elapsed());
                 ModuleHost::new(threadpool, actor)
             }
         };

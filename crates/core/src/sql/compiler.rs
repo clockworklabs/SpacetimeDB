@@ -1,18 +1,19 @@
+use nonempty::NonEmpty;
+use std::collections::HashMap;
+use tracing::info;
+
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::TableSchema;
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
 use crate::sql::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
-use spacetimedb_lib::auth::{StAccess, StTableType};
-use spacetimedb_lib::relation::{self, DbTable, FieldExpr, FieldName, Header};
-use spacetimedb_lib::table::ProductTypeMeta;
-use spacetimedb_primitives::ColId;
+use spacetimedb_primitives::*;
+use spacetimedb_sats::db::auth::StAccess;
+use spacetimedb_sats::db::def::{TableDef, TableSchema};
+use spacetimedb_sats::relation::{self, DbTable, FieldExpr, FieldName, Header};
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_vm::dsl::{db_table, db_table_raw, query};
 use spacetimedb_vm::expr::{ColumnOp, CrudExpr, DbType, Expr, QueryExpr, SourceExpr};
 use spacetimedb_vm::operator::OpCmp;
-use std::collections::HashMap;
-use tracing::info;
 
 /// Compile the `SQL` expression into a `ast`
 #[tracing::instrument(skip_all)]
@@ -37,7 +38,7 @@ fn expr_for_projection(table: &From, of: Expr) -> Result<FieldExpr, PlanError> {
         Expr::Ident(x) => {
             let f = table.resolve_field(&x)?;
 
-            Ok(FieldExpr::Name(f.field))
+            Ok(FieldExpr::Name(f.into()))
         }
         Expr::Value(x) => Ok(FieldExpr::Value(x)),
         x => unreachable!("Wrong expression in SQL query {:?}", x),
@@ -84,16 +85,16 @@ fn compile_where(mut q: QueryExpr, table: &From, filter: Selection) -> Result<Qu
 // using an index.
 pub enum IndexArgument {
     Eq {
-        col_id: ColId,
+        columns: NonEmpty<ColId>,
         value: AlgebraicValue,
     },
     LowerBound {
-        col_id: ColId,
+        columns: NonEmpty<ColId>,
         value: AlgebraicValue,
         inclusive: bool,
     },
     UpperBound {
-        col_id: ColId,
+        columns: NonEmpty<ColId>,
         value: AlgebraicValue,
         inclusive: bool,
     },
@@ -179,13 +180,11 @@ fn compile_columns(table: &TableSchema, columns: Vec<FieldName>) -> DbTable {
     for col in columns.into_iter() {
         if let Some(x) = table.get_column_by_field(&col) {
             let field = FieldName::named(&table.table_name, &x.col_name);
-            let indexed = table.get_index_by_field(&col).is_some();
-            new.push(relation::Column::new(field, x.col_type.clone(), x.col_id, indexed));
+            new.push(relation::Column::new(field, x.col_type.clone(), x.col_pos));
         }
     }
-
     DbTable::new(
-        Header::new(table.table_name.clone(), new),
+        Header::new(table.table_name.clone(), new, table.get_constraints()),
         table.table_id,
         table.table_type,
         table.table_access,
@@ -235,18 +234,8 @@ fn compile_update(
 }
 
 /// Compiles a `CREATE TABLE ...` clause
-fn compile_create_table(
-    name: String,
-    columns: ProductTypeMeta,
-    table_type: StTableType,
-    table_access: StAccess,
-) -> Result<CrudExpr, PlanError> {
-    Ok(CrudExpr::CreateTable {
-        name,
-        columns,
-        table_type,
-        table_access,
-    })
+fn compile_create_table(table: TableDef) -> Result<CrudExpr, PlanError> {
+    Ok(CrudExpr::CreateTable { table })
 }
 
 /// Compiles a `DROP ...` clause
@@ -273,12 +262,7 @@ fn compile_statement(statement: SqlAst) -> Result<CrudExpr, PlanError> {
             selection,
         } => compile_update(table, assignments, selection)?,
         SqlAst::Delete { table, selection } => compile_delete(table, selection)?,
-        SqlAst::CreateTable {
-            table,
-            columns,
-            table_type,
-            table_access: schema,
-        } => compile_create_table(table, columns, table_type, schema)?,
+        SqlAst::CreateTable { table } => compile_create_table(table)?,
         SqlAst::Drop {
             name,
             kind,
@@ -292,15 +276,19 @@ fn compile_statement(statement: SqlAst) -> Result<CrudExpr, PlanError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::datastore::traits::{ColumnDef, IndexDef, TableDef};
+    use std::ops::Bound;
+
     use crate::db::relational_db::tests_utils::make_test_db;
+    use crate::host::module_host::{DatabaseTableUpdate, TableOp};
+    use crate::subscription::query;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::operator::OpQuery;
-    use spacetimedb_lib::relation::DbTable;
-    use spacetimedb_primitives::TableId;
-    use spacetimedb_sats::AlgebraicType;
+    use spacetimedb_primitives::{ColId, TableId};
+    use spacetimedb_sats::db::auth::StTableType;
+    use spacetimedb_sats::db::def::{ColumnDef, IndexDef, TableDef};
+    use spacetimedb_sats::relation::MemTable;
+    use spacetimedb_sats::{product, AlgebraicType, ToDataKey};
     use spacetimedb_vm::expr::{IndexJoin, IndexScan, JoinExpr, Query};
-    use std::ops::Bound;
 
     fn create_table(
         db: &RelationalDB,
@@ -313,27 +301,23 @@ mod tests {
         let table_type = StTableType::User;
         let table_access = StAccess::Public;
 
-        let columns = schema
+        let columns: Vec<_> = schema
             .iter()
             .map(|(col_name, col_type)| ColumnDef {
                 col_name: col_name.to_string(),
                 col_type: col_type.clone(),
-                is_autoinc: false,
             })
             .collect();
 
-        let indexes = indexes
+        let indexes: Vec<_> = indexes
             .iter()
-            .map(|(col_id, index_name)| IndexDef::new(index_name.to_string(), 0.into(), *col_id, false))
+            .map(|(col_id, index_name)| IndexDef::btree(index_name.to_string(), *col_id, false))
             .collect();
 
-        let schema = TableDef {
-            table_name,
-            columns,
-            indexes,
-            table_type,
-            table_access,
-        };
+        let schema = TableDef::new(table_name, columns)
+            .with_indexes(indexes)
+            .with_type(table_type)
+            .with_access(table_access);
 
         Ok(db.create_table(tx, schema)?)
     }
@@ -346,12 +330,12 @@ mod tests {
     ) -> TableId {
         if let Query::IndexScan(IndexScan {
             table,
-            col_id,
+            columns,
             lower_bound,
             upper_bound,
         }) = op
         {
-            assert_eq!(col_id, col, "Columns don't match");
+            assert_eq!(columns, col.into(), "Columns don't match");
             assert_eq!(lower_bound, low_bound, "Lower bound don't match");
             assert_eq!(upper_bound, up_bound, "Upper bound don't match");
             table.table_id
@@ -512,7 +496,6 @@ mod tests {
         };
         Ok(())
     }
-
     #[test]
     fn compile_index_range_open() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
@@ -1023,6 +1006,98 @@ mod tests {
         let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **value else {
             panic!("unexpected right hand side {:#?}", value);
         };
+        Ok(())
+    }
+
+    #[test]
+    fn compile_incremental_index_join() -> ResultTest<()> {
+        let (db, _) = make_test_db()?;
+        let mut tx = db.begin_tx();
+
+        // Create table [lhs] with index on [b]
+        let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
+        let indexes = &[(1.into(), "b")];
+        let lhs_id = create_table(&db, &mut tx, "lhs", schema, indexes)?;
+
+        // Create table [rhs] with index on [b, c]
+        let schema = &[
+            ("b", AlgebraicType::U64),
+            ("c", AlgebraicType::U64),
+            ("d", AlgebraicType::U64),
+        ];
+        let indexes = &[(0.into(), "b"), (1.into(), "c")];
+        let rhs_id = create_table(&db, &mut tx, "rhs", schema, indexes)?;
+
+        // Should generate an index join since there is an index on `lhs.b`.
+        // Should push the sargable range condition into the index join's probe side.
+        let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
+        let exp = compile_sql(&db, &tx, sql)?.remove(0);
+
+        let CrudExpr::Query(expr) = exp else {
+            panic!("unexpected result from compilation: {:#?}", exp);
+        };
+
+        // Create an insert for an incremental update.
+        let row = product!(0u64, 0u64);
+        let insert = TableOp {
+            op_type: 1,
+            row_pk: row.to_data_key().to_bytes(),
+            row,
+        };
+        let insert = DatabaseTableUpdate {
+            table_id: lhs_id,
+            table_name: String::from("lhs"),
+            ops: vec![insert],
+        };
+
+        // Optimize the query plan for the incremental update.
+        let expr = query::to_mem_table(expr, &insert);
+        let expr = expr.optimize();
+
+        let QueryExpr {
+            source:
+                SourceExpr::MemTable(MemTable {
+                    head: Header { table_name, .. },
+                    ..
+                }),
+            query,
+            ..
+        } = expr
+        else {
+            panic!("unexpected result after optimization: {:#?}", expr);
+        };
+
+        assert_eq!(table_name, "lhs");
+        assert_eq!(query.len(), 1);
+
+        let Query::IndexJoin(IndexJoin {
+            probe_side:
+                QueryExpr {
+                    source: SourceExpr::MemTable(_),
+                    query: ref lhs,
+                },
+            probe_field:
+                FieldName::Name {
+                    table: ref probe_table,
+                    field: ref probe_field,
+                },
+            index_header: _,
+            index_select: Some(_),
+            index_table,
+            index_col,
+            return_index_rows: false,
+        }) = query[0]
+        else {
+            panic!("unexpected operator {:#?}", query[0]);
+        };
+
+        assert!(lhs.is_empty());
+
+        // Assert that original index and probe tables have been swapped.
+        assert_eq!(index_table, rhs_id);
+        assert_eq!(index_col, 0.into());
+        assert_eq!(probe_field, "b");
+        assert_eq!(probe_table, "lhs");
         Ok(())
     }
 }

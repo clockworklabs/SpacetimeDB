@@ -3,11 +3,13 @@ use super::util::fmt_fn;
 use std::fmt::{self, Write};
 
 use convert_case::{Case, Casing};
+use nonempty::NonEmpty;
+use spacetimedb_lib::sats::db::def::TableSchema;
 use spacetimedb_lib::sats::{
-    AlgebraicType, AlgebraicType::Builtin, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType,
-    ProductTypeElement, SumType, SumTypeVariant,
+    AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, ProductTypeElement, SumType,
+    SumTypeVariant,
 };
-use spacetimedb_lib::{ColumnIndexAttribute, ReducerDef, TableDef};
+use spacetimedb_lib::{ReducerDef, TableDesc};
 
 use super::code_indenter::CodeIndenter;
 use super::{GenCtx, GenItem, INDENT};
@@ -139,6 +141,7 @@ fn convert_type<'a>(
         }
         AlgebraicType::Sum(sum_type) => {
             if let Some(inner_ty) = sum_type.as_option() {
+                use AlgebraicType::Builtin;
                 match inner_ty {
                     Builtin(ty) => match ty {
                         BuiltinType::Bool
@@ -318,8 +321,8 @@ fn serialize_type<'a>(
             }
         }
         AlgebraicType::Builtin(BuiltinType::Array(ArrayType { elem_ty })) => match &**elem_ty {
-            Builtin(BuiltinType::U8) => write!(f, "Array.from({value})"),
-            Builtin(_) => write!(f, "{value}"),
+            AlgebraicType::Builtin(BuiltinType::U8) => write!(f, "Array.from({value})"),
+            AlgebraicType::Builtin(_) => write!(f, "{value}"),
             t => write!(f, "{value}.map(el => {})", serialize_type(ctx, t, "el", prefix)),
         },
         AlgebraicType::Builtin(_) => write!(f, "{value}"),
@@ -588,9 +591,14 @@ fn typescript_field_name(field_name: String) -> String {
 pub fn autogen_typescript_tuple(ctx: &GenCtx, name: &str, tuple: &ProductType) -> String {
     autogen_typescript_product_table_common(ctx, name, tuple, None)
 }
-pub fn autogen_typescript_table(ctx: &GenCtx, table: &TableDef) -> String {
+pub fn autogen_typescript_table(ctx: &GenCtx, table: &TableDesc) -> String {
     let tuple = ctx.typespace[table.data].as_product().unwrap();
-    autogen_typescript_product_table_common(ctx, &table.name, tuple, Some(&table.column_attrs))
+    autogen_typescript_product_table_common(
+        ctx,
+        &table.schema.table_name,
+        tuple,
+        Some(table.schema.clone().into_schema(0.into())),
+    )
 }
 
 fn generate_imports(ctx: &GenCtx, elements: &Vec<ProductTypeElement>, imports: &mut Vec<String>, prefix: Option<&str>) {
@@ -613,7 +621,7 @@ fn generate_imports_variants(
 
 fn _generate_imports(ctx: &GenCtx, ty: &AlgebraicType, imports: &mut Vec<String>, prefix: Option<&str>) {
     match ty {
-        Builtin(b) => match b {
+        AlgebraicType::Builtin(b) => match b {
             BuiltinType::Array(ArrayType { elem_ty }) => _generate_imports(ctx, elem_ty, imports, prefix),
             BuiltinType::Map(map_type) => {
                 _generate_imports(ctx, &map_type.key_ty, imports, prefix);
@@ -647,11 +655,9 @@ fn autogen_typescript_product_table_common(
     ctx: &GenCtx,
     name: &str,
     product_type: &ProductType,
-    column_attrs: Option<&[ColumnIndexAttribute]>,
+    schema: Option<TableSchema>,
 ) -> String {
     let mut output = CodeIndenter::new(String::new());
-
-    let is_table = column_attrs.is_some();
 
     let struct_name_pascal_case = name.replace("r#", "").to_case(Case::Pascal);
 
@@ -704,21 +710,11 @@ fn autogen_typescript_product_table_common(
 
         writeln!(output).unwrap();
 
-        if is_table {
+        if let Some(schema) = &schema {
             // if this table has a primary key add it to the codegen
-            if let Some(primary_key) = column_attrs
-                .unwrap()
-                .iter()
-                .enumerate()
-                .find_map(|(idx, attr)| attr.has_primary().then_some(idx))
-                .map(|idx| {
-                    let field_name = product_type.elements[idx]
-                        .name
-                        .as_ref()
-                        .expect("autogen'd tuples should have field names")
-                        .replace("r#", "");
-                    format!("\"{}\"", field_name.to_case(Case::Camel))
-                })
+            if let Some(primary_key) = schema
+                .pk()
+                .map(|field| format!("\"{}\"", field.col_name.to_case(Case::Camel)))
             {
                 writeln!(
                     output,
@@ -799,13 +795,13 @@ fn autogen_typescript_product_table_common(
 
         writeln!(output).unwrap();
 
-        if let Some(column_attrs) = column_attrs {
+        if let Some(schema) = &schema {
             autogen_typescript_access_funcs_for_struct(
                 &mut output,
                 &struct_name_pascal_case,
                 product_type,
                 name,
-                column_attrs,
+                schema,
             );
 
             writeln!(output).unwrap();
@@ -874,18 +870,34 @@ fn autogen_typescript_access_funcs_for_struct(
     struct_name_pascal_case: &str,
     product_type: &ProductType,
     table_name: &str,
-    column_attrs: &[ColumnIndexAttribute],
+    table: &TableSchema,
 ) {
-    let (unique, nonunique) = column_attrs
-        .iter()
-        .copied()
-        .enumerate()
-        .partition::<Vec<_>, _>(|(_, attr)| attr.has_unique());
-    let it = unique.into_iter().chain(nonunique);
+    writeln!(output, "public static count(): number").unwrap();
+    indented_block(output, |output| {
+        writeln!(
+            output,
+            "return __SPACETIMEDB__.clientDB.getTable(\"{table_name}\").count();",
+        )
+        .unwrap();
+    });
 
-    for (col_i, attr) in it {
-        let is_unique = attr.has_unique();
-        let field = &product_type.elements[col_i];
+    writeln!(output).unwrap();
+
+    writeln!(output, "public static all(): {table_name}[]").unwrap();
+    indented_block(output, |output| {
+        writeln!(
+            output,
+            "return __SPACETIMEDB__.clientDB.getTable(\"{table_name}\").getInstances() as unknown as {table_name}[];",
+        )
+        .unwrap();
+    });
+
+    writeln!(output).unwrap();
+
+    let constraints = table.column_constraints();
+    for col in &table.columns {
+        let is_unique = constraints[&NonEmpty::new(col.col_pos)].has_unique();
+        let field = &product_type.elements[usize::from(col.col_pos)];
         let field_name = field.name.as_ref().expect("autogen'd tuples should have field names");
         let field_type = &field.algebraic_type;
         let typescript_field_name_pascal = field_name.replace("r#", "").to_case(Case::Pascal);

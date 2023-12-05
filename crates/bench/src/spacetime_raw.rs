@@ -4,14 +4,12 @@ use crate::{
     ResultBench,
 };
 use spacetimedb::db::relational_db::{open_db, RelationalDB};
-use spacetimedb::{
-    db::datastore::traits::{IndexDef, TableDef},
-    execution_context::ExecutionContext,
-};
+use spacetimedb::execution_context::ExecutionContext;
 use spacetimedb_lib::sats::AlgebraicValue;
 use spacetimedb_primitives::{ColId, TableId};
+use spacetimedb_sats::db::def::{IndexDef, TableDef};
 use std::hint::black_box;
-use tempfile::TempDir;
+use tempdir::TempDir;
 
 pub type DbResult = (RelationalDB, TempDir, u32);
 
@@ -30,7 +28,7 @@ impl BenchDatabase for SpacetimeRaw {
     where
         Self: Sized,
     {
-        let temp_dir = TempDir::with_prefix("stdb_test")?;
+        let temp_dir = TempDir::new("stdb_test")?;
         let db = open_db(temp_dir.path(), in_memory, fsync)?;
 
         Ok(SpacetimeRaw {
@@ -42,20 +40,21 @@ impl BenchDatabase for SpacetimeRaw {
     fn create_table<T: BenchTable>(&mut self, index_strategy: IndexStrategy) -> ResultBench<Self::TableId> {
         let name = table_name::<T>(index_strategy);
         self.db.with_auto_commit(&ExecutionContext::default(), |tx| {
-            let table_def = TableDef::from(T::product_type());
+            let table_def = TableDef::from_product(&name, T::product_type());
             let table_id = self.db.create_table(tx, table_def)?;
             self.db.rename_table(tx, table_id, &name)?;
             match index_strategy {
                 IndexStrategy::Unique => {
                     self.db
-                        .create_index(tx, IndexDef::new("id".to_string(), table_id, 0.into(), true))?;
+                        .create_index(tx, table_id, IndexDef::btree("id".into(), ColId(0), true))?;
                 }
                 IndexStrategy::NonUnique => (),
                 IndexStrategy::MultiIndex => {
                     for (i, column) in T::product_type().elements.iter().enumerate() {
                         self.db.create_index(
                             tx,
-                            IndexDef::new(column.name.clone().unwrap(), table_id, i.into(), false),
+                            table_id,
+                            IndexDef::btree(column.name.clone().unwrap(), ColId(i as u32), false),
                         )?;
                     }
                 }

@@ -1,12 +1,13 @@
 //! Utilities for build valid constructs for the vm.
+use spacetimedb_primitives::TableId;
+use std::collections::HashMap;
+
 use crate::expr::{Expr, QueryExpr, SourceExpr};
 use crate::operator::*;
-use spacetimedb_lib::auth::{StAccess, StTableType};
-use spacetimedb_lib::relation::{DbTable, Header, MemTable};
-use spacetimedb_primitives::TableId;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
+use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::product_value::ProductValue;
-use std::collections::HashMap;
+use spacetimedb_sats::relation::{DbTable, Header, MemTable};
 
 pub fn scalar<T: Into<AlgebraicValue>>(of: T) -> AlgebraicValue {
     of.into()

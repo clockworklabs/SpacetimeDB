@@ -1,5 +1,6 @@
-use spacetimedb_lib::{Hash, Identity};
+use spacetimedb_lib::Identity;
 use spacetimedb_sats::de::Deserialize;
+use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::ser::Serialize;
 
 use crate::address::Address;
@@ -49,10 +50,12 @@ pub struct DatabaseInstanceStatus {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Node {
     pub id: u64,
+    /// If `true`, no new user databases will be scheduled on this node.
     pub unschedulable: bool,
-    /// TODO: It's unclear if this should be in here since it's arguably status
-    /// rather than part of the configuration kind of. I dunno.
-    pub advertise_addr: String,
+    /// The hostname this node is reachable at.
+    ///
+    /// If `None`, the node is not currently live.
+    pub advertise_addr: Option<String>,
 }
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct NodeStatus {
@@ -67,5 +70,5 @@ pub struct NodeStatus {
 #[strum(serialize_all = "lowercase")]
 #[repr(i32)]
 pub enum HostType {
-    Wasmer = 0,
+    Wasm = 0,
 }

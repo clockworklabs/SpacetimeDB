@@ -9,31 +9,28 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use parking_lot::Mutex;
-use prometheus::IntGauge;
+use spacetimedb_lib::Address;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
-use crate::util::prometheus_handle::IntGaugeExt;
+use crate::worker_metrics::{MAX_QUEUE_LEN, WORKER_METRICS};
 
 use super::notify_once::{NotifiedOnce, NotifyOnce};
-use super::prometheus_handle::GaugeInc;
 
-pub struct LendingPool<T, G = ()> {
+pub struct LendingPool<T> {
     sem: Arc<Semaphore>,
-    waiter_gauge: G,
     inner: Arc<LendingPoolInner<T>>,
 }
 
-impl<T, G: WaiterGauge + Default> Default for LendingPool<T, G> {
+impl<T> Default for LendingPool<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T, G: Clone> Clone for LendingPool<T, G> {
+impl<T> Clone for LendingPool<T> {
     fn clone(&self) -> Self {
         Self {
             sem: self.sem.clone(),
-            waiter_gauge: self.waiter_gauge.clone(),
             inner: self.inner.clone(),
         }
     }
@@ -52,50 +49,40 @@ struct PoolVec<T> {
 #[derive(Debug)]
 pub struct PoolClosed;
 
-impl<T, G: WaiterGauge> LendingPool<T, G> {
-    pub fn new() -> Self
-    where
-        G: Default,
-    {
-        Self::with_gauge(G::default())
+impl<T> LendingPool<T> {
+    pub fn new() -> Self {
+        Self::from_iter(std::iter::empty())
     }
 
-    pub fn with_gauge(waiter_gauge: G) -> Self {
-        Self::from_iter_with_gauge(std::iter::empty(), waiter_gauge)
-    }
-
-    pub fn from_iter_with_gauge<I: IntoIterator<Item = T>>(iter: I, waiter_gauge: G) -> Self {
-        let deque = VecDeque::from_iter(iter);
-        Self {
-            sem: Arc::new(Semaphore::new(deque.len())),
-            waiter_gauge,
-            inner: Arc::new(LendingPoolInner {
-                closed_notify: NotifyOnce::new(),
-                vec: Mutex::new(PoolVec {
-                    total_count: deque.len(),
-                    deque: Some(deque),
-                }),
-            }),
-        }
-    }
-
-    pub fn request(&self) -> impl Future<Output = Result<LentResource<T>, PoolClosed>>
-    where
-        G: for<'a> WaiterGauge<Context<'a> = ()>,
-    {
-        self.request_with_context(())
-    }
-
-    pub fn request_with_context(
-        &self,
-        context: G::Context<'_>,
-    ) -> impl Future<Output = Result<LentResource<T>, PoolClosed>> {
+    pub fn request_with_context(&self, db: Address) -> impl Future<Output = Result<LentResource<T>, PoolClosed>> {
         let acq = self.sem.clone().acquire_owned();
         let pool_inner = self.inner.clone();
-        let waiter_guard = self.waiter_gauge.inc(context);
+
+        let queue_len = WORKER_METRICS.instance_queue_length.with_label_values(&db);
+        let queue_len_max = WORKER_METRICS.instance_queue_length_max.with_label_values(&db);
+        let queue_len_histogram = WORKER_METRICS.instance_queue_length_histogram.with_label_values(&db);
+
+        queue_len.inc();
+        let new_queue_len = queue_len.get();
+        queue_len_histogram.observe(new_queue_len as f64);
+
+        let mut guard = MAX_QUEUE_LEN.lock().unwrap();
+        let max_queue_len = *guard
+            .entry(db)
+            .and_modify(|max| {
+                if new_queue_len > *max {
+                    *max = new_queue_len;
+                }
+            })
+            .or_insert_with(|| new_queue_len);
+
+        drop(guard);
+        queue_len_max.set(max_queue_len);
+
         async move {
             let permit = acq.await.map_err(|_| PoolClosed)?;
-            drop(waiter_guard);
+            queue_len.dec();
+            queue_len_histogram.observe(queue_len.get() as f64);
             let resource = pool_inner
                 .vec
                 .lock()
@@ -154,9 +141,19 @@ impl<T, G: WaiterGauge> LendingPool<T, G> {
     }
 }
 
-impl<T, G: WaiterGauge + Default> FromIterator<T> for LendingPool<T, G> {
+impl<T> FromIterator<T> for LendingPool<T> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
-        Self::from_iter_with_gauge(iter, G::default())
+        let deque = VecDeque::from_iter(iter);
+        Self {
+            sem: Arc::new(Semaphore::new(deque.len())),
+            inner: Arc::new(LendingPoolInner {
+                closed_notify: NotifyOnce::new(),
+                vec: Mutex::new(PoolVec {
+                    total_count: deque.len(),
+                    deque: Some(deque),
+                }),
+            }),
+        }
     }
 }
 
@@ -194,17 +191,6 @@ impl<T> DerefMut for LentResource<T> {
     }
 }
 
-// impl<T> LentResource<T> {
-//     fn keep(this: Self) -> T {
-//         let mut this = ManuallyDrop::new(this);
-//         let resource = unsafe { ManuallyDrop::take(&mut this.resource) };
-//         let permit = unsafe { ManuallyDrop::take(&mut this.permit) };
-//         permit.forget();
-//         let prev_count = this.pool.total_count.fetch_sub(1, SeqCst);
-//         resource
-//     }
-// }
-
 impl<T> Drop for LentResource<T> {
     fn drop(&mut self) {
         let resource = unsafe { ManuallyDrop::take(&mut self.resource) };
@@ -223,33 +209,5 @@ impl<T> Drop for LentResource<T> {
                 }
             }
         }
-    }
-}
-
-pub trait WaiterGauge {
-    type Context<'a>;
-    type IncGuard;
-    fn inc(&self, context: Self::Context<'_>) -> Self::IncGuard;
-}
-
-impl WaiterGauge for () {
-    type Context<'a> = ();
-    type IncGuard = ();
-    fn inc(&self, (): ()) -> Self::IncGuard {}
-}
-
-impl<G: WaiterGauge> WaiterGauge for Arc<G> {
-    type Context<'a> = G::Context<'a>;
-    type IncGuard = G::IncGuard;
-    fn inc(&self, context: Self::Context<'_>) -> Self::IncGuard {
-        (**self).inc(context)
-    }
-}
-
-impl WaiterGauge for IntGauge {
-    type Context<'a> = ();
-    type IncGuard = GaugeInc;
-    fn inc(&self, (): ()) -> Self::IncGuard {
-        self.inc_scope()
     }
 }

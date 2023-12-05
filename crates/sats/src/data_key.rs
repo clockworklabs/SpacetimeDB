@@ -2,7 +2,7 @@ use std::fmt::{self, Write};
 use std::ops::Deref;
 
 use crate::buffer::{BufReader, BufWriter, DecodeError};
-use crate::hash::hash_bytes;
+use crate::hash::{hash_bytes, Hash};
 
 #[cfg(any(test, feature = "proptest"))]
 use proptest::prelude::*;
@@ -13,7 +13,7 @@ use proptest_derive::Arbitrary;
 #[cfg_attr(any(test, feature = "proptest"), derive(Arbitrary))]
 pub enum DataKey {
     Data(InlineData),
-    Hash(super::Hash),
+    Hash(Hash),
 }
 
 impl DataKey {
@@ -24,7 +24,7 @@ impl DataKey {
 
     /// The maximum possible value for a DataKey, used for sorting DataKeys
     pub fn max_datakey() -> Self {
-        DataKey::Hash(super::Hash::from_slice(&[255; 32]))
+        DataKey::Hash(Hash::from_slice(&[255; 32]))
     }
 }
 
@@ -124,14 +124,18 @@ impl DataKey {
             if header != IS_HASH_BIT {
                 return Err(DecodeError::InvalidTag);
             }
-            let hash = super::hash::Hash {
+            let hash = Hash {
                 data: bytes.get_array()?,
             };
             Ok(Self::Hash(hash))
         } else {
             let len = header;
             if len as usize > MAX_INLINE {
-                return Err(DecodeError::BufferLength);
+                return Err(DecodeError::BufferLength {
+                    for_type: "DataKey".into(),
+                    expected: MAX_INLINE,
+                    given: len as usize,
+                });
             }
             let mut buf = [0; MAX_INLINE];
             let data = bytes.get_slice(len as usize)?;

@@ -10,32 +10,31 @@ pub mod rt;
 pub mod time_span;
 mod timestamp;
 
+use crate::sats::db::def::IndexType;
 use spacetimedb_lib::buffer::{BufReader, BufWriter, Cursor, DecodeError};
-pub use spacetimedb_lib::de::{Deserialize, DeserializeOwned};
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, impl_st};
-pub use spacetimedb_lib::ser::Serialize;
-use spacetimedb_lib::{bsatn, ColumnIndexAttribute, IndexType, PrimaryKey, ProductType, ProductValue};
+use spacetimedb_lib::{bsatn, PrimaryKey, ProductType, ProductValue};
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::slice::from_ref;
 use std::{fmt, panic};
+use sys::{Buffer, BufferIter};
 
-pub use spacetimedb_bindings_macro::{duration, query, spacetimedb, TableType};
-
+use crate::sats::db::attr::ColumnAttribute;
+pub use log;
 pub use sats::SpacetimeType;
+pub use spacetimedb_bindings_macro::{duration, query, spacetimedb, TableType};
+pub use spacetimedb_bindings_sys as sys;
 pub use spacetimedb_lib;
+pub use spacetimedb_lib::de::{Deserialize, DeserializeOwned};
 pub use spacetimedb_lib::sats;
+pub use spacetimedb_lib::ser::Serialize;
 pub use spacetimedb_lib::Address;
 pub use spacetimedb_lib::AlgebraicValue;
 pub use spacetimedb_lib::Identity;
 pub use spacetimedb_primitives::TableId;
-pub use timestamp::Timestamp;
-
-pub use spacetimedb_bindings_sys as sys;
 pub use sys::Errno;
-use sys::{Buffer, BufferIter};
-
-pub use log;
+pub use timestamp::Timestamp;
 
 pub type Result<T = (), E = Errno> = core::result::Result<T, E>;
 
@@ -316,9 +315,9 @@ impl<T, De: BufferDeserialize<Item = T>> Iterator for RawTableIter<De> {
     }
 }
 
-/// Defines a named index with an index type over a set of columns identified by their IDs.
+/// Describe a named index with an index type over a set of columns identified by their IDs.
 #[derive(Clone, Copy)]
-pub struct IndexDef<'a> {
+pub struct IndexDesc<'a> {
     /// The name of the index.
     pub name: &'a str,
     /// The type of index used, i.e. the strategy used for indexing.
@@ -346,8 +345,8 @@ impl<T: TableType> Iterator for TableIter<T> {
 /// Additionally, the type knows its own table name, its column attributes, and indices.
 pub trait TableType: SpacetimeType + DeserializeOwned + Serialize {
     const TABLE_NAME: &'static str;
-    const COLUMN_ATTRS: &'static [ColumnIndexAttribute];
-    const INDEXES: &'static [IndexDef<'static>];
+    const COLUMN_ATTRS: &'static [ColumnAttribute];
+    const INDEXES: &'static [IndexDesc<'static>];
     type InsertResult: sealed::InsertResult<T = Self>;
 
     /// Returns the ID of this table.

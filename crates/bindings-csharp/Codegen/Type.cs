@@ -35,7 +35,7 @@ public class Type : IIncrementalGenerator
                 if (enumType.Members.Any(m => m.EqualsValue is not null))
                 {
                     throw new InvalidOperationException(
-                        "[SpacetimeDB.Type] enums cannot have explicit values."
+                        "[SpacetimeDB.Type] enums cannot have explicit values: " + enumType.Identifier
                     );
                 }
 
@@ -226,9 +226,7 @@ public class Type : IIncrementalGenerator
                         $@"
 private static SpacetimeDB.SATS.TypeInfo<{type.GenericName}>? satsTypeInfo;
 
-public static SpacetimeDB.SATS.TypeInfo<{type.GenericName}> GetSatsTypeInfo({
-    string.Join(", ", type.TypeParams.Select(p => $"SpacetimeDB.SATS.TypeInfo<{p}> {p}TypeInfo"))
-}) {{
+public static SpacetimeDB.SATS.TypeInfo<{type.GenericName}> GetSatsTypeInfo({string.Join(", ", type.TypeParams.Select(p => $"SpacetimeDB.SATS.TypeInfo<{p}> {p}TypeInfo"))}) {{
     if (satsTypeInfo is not null) {{
         return satsTypeInfo;
     }}

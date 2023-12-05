@@ -1,6 +1,6 @@
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::MemTable;
-use spacetimedb_sats::{ProductType, ProductValue};
+use spacetimedb_lib::{ProductType, ProductValue};
+use spacetimedb_sats::relation::MemTable;
 use spacetimedb_vm::eval::run_ast;
 use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
 use tracing::info;
@@ -12,6 +12,8 @@ use crate::error::{DBError, DatabaseError};
 use crate::execution_context::ExecutionContext;
 use crate::sql::compiler::compile_sql;
 use crate::vm::DbProgram;
+
+use super::query_debug_info::QueryDebugInfo;
 
 pub struct StmtResult {
     pub schema: ProductType,
@@ -32,7 +34,8 @@ pub fn execute(
     info!(sql = sql_text);
     if let Some((database_instance_context, _)) = db_inst_ctx_controller.get(database_instance_id) {
         let db = &database_instance_context.relational_db;
-        let ctx = ExecutionContext::sql(db.address());
+        let info = QueryDebugInfo::from_source(&sql_text);
+        let ctx = ExecutionContext::sql(db.address(), Some(&info));
         db.with_auto_commit(&ctx, |tx| {
             run(&database_instance_context.relational_db, tx, &sql_text, auth)
         })
@@ -57,15 +60,15 @@ fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Result<(), DBErr
     Ok(())
 }
 
-#[tracing::instrument(skip(db, tx, auth))]
+#[tracing::instrument(skip_all)]
 pub fn execute_single_sql(
+    cx: &ExecutionContext,
     db: &RelationalDB,
     tx: &mut MutTxId,
     ast: CrudExpr,
     auth: AuthCtx,
 ) -> Result<Vec<MemTable>, DBError> {
-    let ctx = ExecutionContext::sql(db.address());
-    let p = &mut DbProgram::new(&ctx, db, tx, auth);
+    let p = &mut DbProgram::new(cx, db, tx, auth);
     let q = Expr::Crud(Box::new(ast));
 
     let mut result = Vec::with_capacity(1);
@@ -79,10 +82,11 @@ pub fn execute_sql(
     db: &RelationalDB,
     tx: &mut MutTxId,
     ast: Vec<CrudExpr>,
+    query_debug_info: Option<&QueryDebugInfo>,
     auth: AuthCtx,
 ) -> Result<Vec<MemTable>, DBError> {
     let total = ast.len();
-    let ctx = ExecutionContext::sql(db.address());
+    let ctx = ExecutionContext::sql(db.address(), query_debug_info);
     let p = &mut DbProgram::new(&ctx, db, tx, auth);
     let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
 
@@ -95,19 +99,19 @@ pub fn execute_sql(
 #[tracing::instrument(skip_all)]
 pub fn run(db: &RelationalDB, tx: &mut MutTxId, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
     let ast = compile_sql(db, tx, sql_text)?;
-    execute_sql(db, tx, ast, auth)
+    execute_sql(db, tx, ast, Some(&QueryDebugInfo::from_source(sql_text)), auth)
 }
 
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::db::datastore::system_tables::{ST_TABLES_ID, ST_TABLES_NAME};
     use crate::db::relational_db::tests_utils::make_test_db;
-    use crate::db::relational_db::{ST_TABLES_ID, ST_TABLES_NAME};
     use crate::vm::tests::create_table_with_rows;
     use itertools::Itertools;
-    use spacetimedb_lib::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_lib::relation::{Header, RelValue};
+    use spacetimedb_sats::db::auth::{StAccess, StTableType};
+    use spacetimedb_sats::relation::{Header, RelValue};
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
     use spacetimedb_vm::dsl::{mem_table, scalar};
     use spacetimedb_vm::eval::create_game_data;
@@ -630,6 +634,13 @@ pub(crate) mod tests {
 
             let col = t.columns.first().unwrap();
             let idx = t.indexes.first().map(|x| x.is_unique);
+            let column_auto_inc = t
+                .constraints
+                .first()
+                .map(|x| x.constraints.has_autoinc())
+                .unwrap_or(false);
+            let column_auto_inc =
+                column_auto_inc || t.sequences.first().map(|x| x.col_pos == col.col_pos).unwrap_or(false);
 
             if is_null {
                 assert_eq!(
@@ -640,7 +651,11 @@ pub(crate) mod tests {
                     col.col_name
                 )
             }
-            assert_eq!(col.is_autoinc, is_autoinc, "is_autoinc {}.{}", table_name, col.col_name);
+            assert_eq!(
+                column_auto_inc, is_autoinc,
+                "is_autoinc {}.{}",
+                table_name, col.col_name
+            );
             assert_eq!(idx, idx_uniq, "idx_uniq {}.{}", table_name, col.col_name);
 
             Ok(())

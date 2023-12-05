@@ -5,6 +5,7 @@
 //! An example would be `nstr!("spacetime"): NStr<9>`.
 
 use core::{fmt, ops::Deref, str};
+use std::ops::DerefMut;
 
 /// A UTF-8 string of known length `N`.
 ///
@@ -65,6 +66,15 @@ impl<const N: usize> Deref for NStr<N> {
         // SAFETY: An `NStr<N>` can only be made through `__nstr(..)`
         // and which receives an `&str` which is valid UTF-8.
         unsafe { str::from_utf8_unchecked(&self.0) }
+    }
+}
+
+impl<const N: usize> DerefMut for NStr<N> {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        // SAFETY: An `NStr<N>` can only be made through `__nstr(..)`
+        // and which receives an `&str` which is valid UTF-8.
+        unsafe { str::from_utf8_unchecked_mut(&mut self.0) }
     }
 }
 

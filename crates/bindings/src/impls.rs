@@ -1,6 +1,8 @@
-use spacetimedb_lib::{Address, DataKey, Hash, Identity};
+use spacetimedb_lib::{Address, Identity};
 
 use super::PrimaryKey;
+use crate::sats::data_key::DataKey;
+use crate::sats::hash::Hash;
 use crate::{FilterableValue, UniqueValue};
 
 macro_rules! impl_primitives {

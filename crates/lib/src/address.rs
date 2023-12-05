@@ -4,8 +4,8 @@ use sats::{impl_deserialize, impl_serialize, impl_st, AlgebraicType};
 use spacetimedb_bindings_macro::{Deserialize, Serialize};
 use std::{fmt, net::Ipv6Addr};
 
-use crate::hex::HexString;
 use crate::sats;
+use spacetimedb_sats::hex::HexString;
 
 /// This is the address for a SpacetimeDB database or client connection.
 ///
@@ -65,7 +65,7 @@ impl Address {
     }
 
     pub fn to_hex(self) -> HexString<16> {
-        crate::hex::encode(self.as_slice())
+        spacetimedb_sats::hex::encode(self.as_slice())
     }
 
     pub fn abbreviate(&self) -> [u8; 8] {
@@ -73,7 +73,7 @@ impl Address {
     }
 
     pub fn to_abbreviated_hex(self) -> HexString<8> {
-        crate::hex::encode(&self.abbreviate())
+        spacetimedb_sats::hex::encode(&self.abbreviate())
     }
 
     pub fn from_slice(slice: impl AsRef<[u8]>) -> Self {

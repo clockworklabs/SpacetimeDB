@@ -1,10 +1,10 @@
 ---
 source: crates/lib/tests/serde.rs
-expression: "de_json({\n    \"foo\": 5654,\n    \"bar\": [1, 15, 44],\n    \"baz\": [\"it's 🥶°C\"],\n    \"quux\": { \"Unit\": [] },\n    \"and_peggy\": null\n})"
+expression: "de_json({\n    \"foo\": 5654,\n    \"bar\": [1, 15, 44],\n    \"baz\": [\"it's 🥶°C\"],\n    \"quux\": { \"Unit\": [] },\n    \"and_peggy\": null,\n    \"identity\": [\"0000000000000000000000000000000000000000000000000000000000000000\"]\n})"
 ---
 (
     foo = 5654,
-    bar = [1, 15, 44],
+    bar = 0x010f2c,
     baz = [
         "it's 🥶°C",
     ],
@@ -13,5 +13,8 @@ expression: "de_json({\n    \"foo\": 5654,\n    \"bar\": [1, 15, 44],\n    \"baz
     ),
     and_peggy = (
         none = (),
+    ),
+    identity = (
+        __identity_bytes = 0x0000000000000000000000000000000000000000000000000000000000000000,
     ),
 )

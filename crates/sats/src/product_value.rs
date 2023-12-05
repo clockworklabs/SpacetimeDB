@@ -73,12 +73,12 @@ pub struct InvalidFieldError {
 }
 
 impl ProductValue {
-    /// Borrow the value at field of `self` indentified by `index`.
+    /// Borrow the value at field of `self` identified by `col_pos`.
     ///
     /// The `name` is non-functional and is only used for error-messages.
-    pub fn get_field(&self, index: usize, name: Option<&'static str>) -> Result<&AlgebraicValue, InvalidFieldError> {
-        self.elements.get(index).ok_or(InvalidFieldError {
-            col_pos: index.into(),
+    pub fn get_field(&self, col_pos: usize, name: Option<&'static str>) -> Result<&AlgebraicValue, InvalidFieldError> {
+        self.elements.get(col_pos).ok_or(InvalidFieldError {
+            col_pos: col_pos.into(),
             name,
         })
     }
@@ -129,12 +129,12 @@ impl ProductValue {
     /// and then runs it through the function `f` which possibly returns a `T` derived from `value`.
     pub fn extract_field<'a, T>(
         &'a self,
-        index: usize,
+        col_pos: usize,
         name: Option<&'static str>,
         f: impl 'a + Fn(&'a AlgebraicValue) -> Option<T>,
     ) -> Result<T, InvalidFieldError> {
-        f(self.get_field(index, name)?).ok_or(InvalidFieldError {
-            col_pos: index.into(),
+        f(self.get_field(col_pos, name)?).ok_or(InvalidFieldError {
+            col_pos: col_pos.into(),
             name,
         })
     }

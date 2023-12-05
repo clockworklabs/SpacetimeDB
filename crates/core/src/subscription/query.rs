@@ -1,16 +1,28 @@
+use std::collections::hash_map::DefaultHasher;
+use std::hash::Hasher;
+use std::time::Instant;
+
 use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::db::db_metrics::{DB_METRICS, MAX_QUERY_COMPILE_TIME};
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, SubscriptionError};
+use crate::execution_context::{ExecutionContext, WorkloadType};
 use crate::host::module_host::DatabaseTableUpdate;
 use crate::sql::compiler::compile_sql;
 use crate::sql::execute::execute_single_sql;
-use crate::subscription::subscription::QuerySet;
+use crate::sql::query_debug_info::QueryDebugInfo;
+use crate::subscription::subscription::{QuerySet, SupportedQuery};
+use once_cell::sync::Lazy;
+use regex::Regex;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::{Column, FieldName, MemTable, RelValue};
-use spacetimedb_lib::DataKey;
+use spacetimedb_lib::Address;
+use spacetimedb_sats::relation::{Column, FieldName, MemTable, RelValue};
 use spacetimedb_sats::AlgebraicType;
-use spacetimedb_vm::expr::{self, Crud, CrudExpr, DbType, QueryExpr, SourceExpr};
+use spacetimedb_sats::DataKey;
+use spacetimedb_vm::expr;
+use spacetimedb_vm::expr::{Crud, CrudExpr, DbType, QueryExpr, SourceExpr};
 
+static WHITESPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap());
 pub const SUBSCRIBE_TO_ALL_QUERY: &str = "SELECT * FROM *";
 
 pub enum QueryDef {
@@ -48,7 +60,6 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
             FieldName::named(&t.head.table_name, OP_TYPE_FIELD_NAME),
             AlgebraicType::U8,
             t.head.fields.len().into(),
-            false,
         ));
         for row in &data.ops {
             let mut new = row.row.clone();
@@ -67,12 +78,13 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
 /// Runs a query that evaluates if the changes made should be reported to the [ModuleSubscriptionManager]
 #[tracing::instrument(skip_all)]
 pub(crate) fn run_query(
+    cx: &ExecutionContext,
     db: &RelationalDB,
     tx: &mut MutTxId,
     query: &QueryExpr,
     auth: AuthCtx,
 ) -> Result<Vec<MemTable>, DBError> {
-    execute_single_sql(db, tx, CrudExpr::Query(query.clone()), auth)
+    execute_single_sql(cx, db, tx, CrudExpr::Query(query.clone()), auth)
 }
 
 // TODO: It's semantically wrong to `SUBSCRIBE_TO_ALL_QUERY`
@@ -103,11 +115,17 @@ pub fn compile_read_only_query(
         return Err(SubscriptionError::Empty.into());
     }
 
+    // Remove redundant whitespace, and in particular newlines, for debug info.
+    let input = WHITESPACE.replace_all(input, " ");
     if input == SUBSCRIBE_TO_ALL_QUERY {
         return QuerySet::get_all(relational_db, tx, auth);
     }
 
-    let compiled = compile_sql(relational_db, tx, input)?;
+    let start = Instant::now();
+    let compiled = compile_sql(relational_db, tx, &input).map(|expr| {
+        record_query_compilation_metrics(WorkloadType::Subscribe, &relational_db.address(), &input, start);
+        expr
+    })?;
     let mut queries = Vec::with_capacity(compiled.len());
     for q in compiled {
         match q {
@@ -124,11 +142,50 @@ pub fn compile_read_only_query(
         }
     }
 
+    let info = QueryDebugInfo::from_source(input);
+
     if !queries.is_empty() {
-        Ok(queries.into_iter().map(TryFrom::try_from).collect::<Result<_, _>>()?)
+        Ok(queries
+            .into_iter()
+            .map(|query| SupportedQuery::new(query, info.clone()))
+            .collect::<Result<_, _>>()?)
     } else {
         Err(SubscriptionError::Empty.into())
     }
+}
+
+fn record_query_compilation_metrics(workload: WorkloadType, db: &Address, query: &str, start: Instant) {
+    let compile_duration = start.elapsed().as_secs_f64();
+
+    DB_METRICS
+        .rdb_query_compile_time_sec
+        .with_label_values(&workload, db, query)
+        .observe(compile_duration);
+
+    fn hash(a: WorkloadType, b: &Address, c: &str) -> u64 {
+        use std::hash::Hash;
+        let mut hasher = DefaultHasher::new();
+        a.hash(&mut hasher);
+        b.hash(&mut hasher);
+        c.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    let max_compile_duration = *MAX_QUERY_COMPILE_TIME
+        .lock()
+        .unwrap()
+        .entry(hash(workload, db, query))
+        .and_modify(|max| {
+            if compile_duration > *max {
+                *max = compile_duration;
+            }
+        })
+        .or_insert_with(|| compile_duration);
+
+    DB_METRICS
+        .rdb_query_compile_time_sec_max
+        .with_label_values(&workload, db, query)
+        .set(max_compile_duration);
 }
 
 /// The kind of [`QueryExpr`] currently supported for incremental evaluation.
@@ -160,19 +217,18 @@ pub fn classify(expr: &QueryExpr) -> Option<Supported> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::datastore::traits::{ColumnDef, IndexDef, TableDef, TableSchema};
     use crate::db::relational_db::tests_utils::make_test_db;
-    use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp};
+    use crate::host::module_host::{DatabaseUpdate, TableOp};
     use crate::sql::execute::run;
-    use crate::subscription::subscription::QuerySet;
     use crate::vm::tests::create_table_with_rows;
     use itertools::Itertools;
-    use spacetimedb_lib::auth::{StAccess, StTableType};
-    use spacetimedb_lib::data_key::ToDataKey;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_lib::relation::FieldName;
     use spacetimedb_lib::Identity;
     use spacetimedb_primitives::{ColId, TableId};
+    use spacetimedb_sats::data_key::ToDataKey;
+    use spacetimedb_sats::db::auth::{StAccess, StTableType};
+    use spacetimedb_sats::db::def::*;
+    use spacetimedb_sats::relation::FieldName;
     use spacetimedb_sats::{product, ProductType, ProductValue};
     use spacetimedb_vm::dsl::{db_table, mem_table, scalar};
     use spacetimedb_vm::operator::OpCmp;
@@ -182,7 +238,7 @@ mod tests {
         tx: &mut MutTxId,
         name: &str,
         schema: &[(&str, AlgebraicType)],
-        indexes: &[(u32, &str)],
+        indexes: &[(ColId, &str)],
     ) -> ResultTest<TableId> {
         let table_name = name.to_string();
         let table_type = StTableType::User;
@@ -193,22 +249,18 @@ mod tests {
             .map(|(col_name, col_type)| ColumnDef {
                 col_name: col_name.to_string(),
                 col_type: col_type.clone(),
-                is_autoinc: false,
             })
             .collect_vec();
 
         let indexes = indexes
             .iter()
-            .map(|(col_id, index_name)| IndexDef::new(index_name.to_string(), 0.into(), ColId(*col_id), false))
+            .map(|(col_id, index_name)| IndexDef::btree(index_name.to_string(), *col_id, false))
             .collect_vec();
 
-        let schema = TableDef {
-            table_name,
-            columns,
-            indexes,
-            table_type,
-            table_access,
-        };
+        let schema = TableDef::new(table_name, columns)
+            .with_indexes(indexes)
+            .with_type(table_type)
+            .with_access(table_access);
 
         Ok(db.create_table(tx, schema)?)
     }
@@ -333,7 +385,7 @@ mod tests {
         data: &DatabaseTableUpdate,
     ) -> ResultTest<()> {
         let q = to_mem_table(q.clone(), data);
-        let result = run_query(db, tx, &q, AuthCtx::for_testing())?;
+        let result = run_query(&ExecutionContext::default(), db, tx, &q, AuthCtx::for_testing())?;
 
         assert_eq!(
             Some(table.as_without_table_name()),
@@ -441,7 +493,7 @@ mod tests {
 
         // Create table [test] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1, "b")];
+        let indexes = &[(1.into(), "b")];
         let table_id = create_table(&db, &mut tx, "test", schema, indexes)?;
 
         let sql = "select * from test where b = 3";
@@ -498,16 +550,17 @@ mod tests {
 
         // Create table [lhs] with index on [id]
         let schema = &[("id", AlgebraicType::I32), ("x", AlgebraicType::I32)];
-        let indexes = &[(0, "id")];
+        let indexes = &[(0.into(), "id")];
         let lhs_id = create_table(&db, &mut tx, "lhs", schema, indexes)?;
 
-        // Create table [rhs] with no indexes
+        // Create table [rhs] with index on [id]
         let schema = &[
             ("rid", AlgebraicType::I32),
             ("id", AlgebraicType::I32),
             ("y", AlgebraicType::I32),
         ];
-        let rhs_id = create_table(&db, &mut tx, "rhs", schema, &[])?;
+        let indexes = &[(1.into(), "id")];
+        let rhs_id = create_table(&db, &mut tx, "rhs", schema, indexes)?;
 
         // Insert into lhs
         for i in 0..5 {
@@ -801,6 +854,7 @@ mod tests {
         let q = to_mem_table(q, &data);
         //Try access the private table
         match run_query(
+            &ExecutionContext::default(),
             &db,
             &mut tx,
             &q,
@@ -890,7 +944,11 @@ mod tests {
             ("timestamp", AlgebraicType::U64),
             ("dimension", AlgebraicType::U32),
         ];
-        let indexes = &[(0, "entity_id"), (1, "location_x"), (2, "location_z")];
+        let indexes = &[
+            (0.into(), "entity_id"),
+            (1.into(), "location_x"),
+            (2.into(), "location_z"),
+        ];
         create_table(&db, &mut tx, "MobileEntityState", schema, indexes)?;
 
         // Create table [EnemyState]
@@ -901,7 +959,7 @@ mod tests {
             ("type", AlgebraicType::I32),
             ("direction", AlgebraicType::I32),
         ];
-        let indexes = &[(0, "entity_id")];
+        let indexes = &[(0.into(), "entity_id")];
         create_table(&db, &mut tx, "EnemyState", schema, indexes)?;
 
         let sql_insert = "\
@@ -922,7 +980,13 @@ mod tests {
         let qset = compile_read_only_query(&db, &tx, &AuthCtx::for_testing(), sql_query)?;
 
         for q in qset {
-            let result = run_query(&db, &mut tx, q.as_expr(), AuthCtx::for_testing())?;
+            let result = run_query(
+                &ExecutionContext::default(),
+                &db,
+                &mut tx,
+                q.as_expr(),
+                AuthCtx::for_testing(),
+            )?;
             assert_eq!(result.len(), 1, "Join query did not return any rows");
         }
 
@@ -988,12 +1052,12 @@ mod tests {
 
         // Create table [lhs] with indexes on [id] and [x]
         let schema = &[("id", AlgebraicType::U64), ("x", AlgebraicType::I32)];
-        let indexes = &[(0, "id"), (1, "x")];
+        let indexes = &[(ColId(0), "id"), (ColId(1), "x")];
         create_table(&db, &mut tx, "lhs", schema, indexes)?;
 
         // Create table [rhs] with indexes on [id] and [y]
         let schema = &[("id", AlgebraicType::U64), ("y", AlgebraicType::I32)];
-        let indexes = &[(0, "id"), (1, "y")];
+        let indexes = &[(ColId(0), "id"), (ColId(1), "y")];
         create_table(&db, &mut tx, "rhs", schema, indexes)?;
 
         let auth = AuthCtx::for_testing();
@@ -1026,7 +1090,10 @@ mod tests {
             "SELECT * FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE lhs.x < 10",
         ];
         for join in joins {
-            assert!(compile_read_only_query(&db, &tx, &auth, join).is_err(), "{join}");
+            match compile_read_only_query(&db, &tx, &auth, join) {
+                Err(DBError::Subscription(SubscriptionError::Unsupported(_))) => (),
+                x => panic!("Unexpected: {x:?}"),
+            }
         }
 
         Ok(())

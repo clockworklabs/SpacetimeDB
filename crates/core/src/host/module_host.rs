@@ -1,3 +1,13 @@
+use std::collections::HashMap;
+use std::fmt;
+use std::sync::{Arc, Weak};
+use std::time::Duration;
+
+use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
+use futures::{Future, FutureExt};
+use indexmap::IndexMap;
+use tokio::sync::oneshot;
+
 use super::host_controller::HostThreadpool;
 use super::{ArgsTuple, EnergyDiff, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
 use crate::client::ClientConnectionSender;
@@ -12,22 +22,12 @@ use crate::identity::Identity;
 use crate::json::client_api::{SubscriptionUpdateJson, TableRowOperationJson, TableUpdateJson};
 use crate::protobuf::client_api::{table_row_operation, SubscriptionUpdate, TableRowOperation, TableUpdate};
 use crate::subscription::module_subscription_actor::ModuleSubscriptionManager;
-use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed, WaiterGauge};
+use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
 use crate::util::notify_once::NotifyOnce;
-use crate::util::prometheus_handle::{GaugeInc, IntGaugeExt};
-use crate::worker_metrics::WORKER_METRICS;
-use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
-use futures::{Future, FutureExt};
-use indexmap::IndexMap;
-use spacetimedb_lib::relation::MemTable;
-use spacetimedb_lib::{Address, ReducerDef, TableDef};
+use spacetimedb_lib::{Address, ReducerDef, TableDesc};
 use spacetimedb_primitives::TableId;
+use spacetimedb_sats::relation::MemTable;
 use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
-use std::collections::HashMap;
-use std::fmt;
-use std::sync::{Arc, Weak};
-use std::time::Duration;
-use tokio::sync::oneshot;
 
 #[derive(Debug, Default, Clone)]
 pub struct DatabaseUpdate {
@@ -248,9 +248,8 @@ pub trait Module: Send + Sync + 'static {
         &self,
         caller_identity: Identity,
         query: String,
-    ) -> Result<Vec<spacetimedb_lib::relation::MemTable>, DBError>;
+    ) -> Result<Vec<spacetimedb_sats::relation::MemTable>, DBError>;
     fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error>;
-
     #[cfg(feature = "tracelogging")]
     fn get_trace(&self) -> Option<bytes::Bytes>;
     #[cfg(feature = "tracelogging")]
@@ -334,16 +333,13 @@ impl fmt::Debug for ModuleHost {
 
 #[async_trait::async_trait]
 trait DynModuleHost: Send + Sync + 'static {
-    async fn get_instance(
-        &self,
-        waiter_gauge_context: <InstancePoolGauge as WaiterGauge>::Context<'_>,
-    ) -> Result<(&HostThreadpool, Box<dyn ModuleInstance>), NoSuchModule>;
+    async fn get_instance(&self, db: Address) -> Result<(&HostThreadpool, Box<dyn ModuleInstance>), NoSuchModule>;
     fn inject_logs(&self, log_level: LogLevel, message: &str);
     fn one_off_query(
         &self,
         caller_identity: Identity,
         query: String,
-    ) -> Result<Vec<spacetimedb_lib::relation::MemTable>, DBError>;
+    ) -> Result<Vec<spacetimedb_sats::relation::MemTable>, DBError>;
     fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error>;
     fn start(&self);
     fn exit(&self) -> Closed<'_>;
@@ -353,7 +349,7 @@ trait DynModuleHost: Send + Sync + 'static {
 struct HostControllerActor<T: Module> {
     module: Arc<T>,
     threadpool: Arc<HostThreadpool>,
-    instance_pool: LendingPool<T::Instance, InstancePoolGauge>,
+    instance_pool: LendingPool<T::Instance>,
     start: NotifyOnce,
 }
 
@@ -381,38 +377,21 @@ async fn select_first<A: Future, B: Future<Output = ()>>(fut_a: A, fut_b: B) -> 
     }
 }
 
-#[derive(Clone)]
-struct InstancePoolGauge;
-
-impl WaiterGauge for InstancePoolGauge {
-    type Context<'a> = &'a (&'a Identity, &'a Hash, &'a Address, &'a str);
-    type IncGuard = GaugeInc;
-    fn inc(&self, &(identity, module_hash, database_address, reducer_symbol): Self::Context<'_>) -> Self::IncGuard {
-        WORKER_METRICS
-            .instance_queue_length
-            .with_label_values(identity, module_hash, database_address, reducer_symbol)
-            .inc_scope()
-    }
-}
-
 #[async_trait::async_trait]
 impl<T: Module> DynModuleHost for HostControllerActor<T> {
-    async fn get_instance(
-        &self,
-        waiter_gauge_context: <InstancePoolGauge as WaiterGauge>::Context<'_>,
-    ) -> Result<(&HostThreadpool, Box<dyn ModuleInstance>), NoSuchModule> {
+    async fn get_instance(&self, db: Address) -> Result<(&HostThreadpool, Box<dyn ModuleInstance>), NoSuchModule> {
         self.start.notified().await;
         // in the future we should do something like in the else branch here -- add more instances based on load.
         // we need to do write-skew retries first - right now there's only ever once instance per module.
         let inst = if true {
             self.instance_pool
-                .request_with_context(waiter_gauge_context)
+                .request_with_context(db)
                 .await
                 .map_err(|_| NoSuchModule)?
         } else {
             const GET_INSTANCE_TIMEOUT: Duration = Duration::from_millis(500);
             select_first(
-                self.instance_pool.request_with_context(waiter_gauge_context),
+                self.instance_pool.request_with_context(db),
                 tokio::time::sleep(GET_INSTANCE_TIMEOUT).map(|()| self.spinup_new_instance()),
             )
             .await
@@ -433,7 +412,7 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
         &self,
         caller_identity: Identity,
         query: String,
-    ) -> Result<Vec<spacetimedb_lib::relation::MemTable>, DBError> {
+    ) -> Result<Vec<spacetimedb_sats::relation::MemTable>, DBError> {
         self.module.one_off_query(caller_identity, query)
     }
 
@@ -500,7 +479,7 @@ pub enum InitDatabaseError {
 impl ModuleHost {
     pub fn new(threadpool: Arc<HostThreadpool>, mut module: impl Module) -> Self {
         let info = module.info();
-        let instance_pool = LendingPool::with_gauge(InstancePoolGauge);
+        let instance_pool = LendingPool::new();
         instance_pool.add_multiple(module.initial_instances()).unwrap();
         let inner = Arc::new(HostControllerActor {
             module: Arc::new(module),
@@ -525,18 +504,12 @@ impl ModuleHost {
         &self.info.subscription
     }
 
-    async fn call<F, R>(&self, reducer_name: &str, f: F) -> Result<R, NoSuchModule>
+    async fn call<F, R>(&self, _reducer_name: &str, f: F) -> Result<R, NoSuchModule>
     where
         F: FnOnce(&mut dyn ModuleInstance) -> R + Send + 'static,
         R: Send + 'static,
     {
-        let waiter_gauge_context = (
-            &self.info.identity,
-            &self.info.module_hash,
-            &self.info.address,
-            reducer_name,
-        );
-        let (threadpool, mut inst) = self.inner.get_instance(&waiter_gauge_context).await?;
+        let (threadpool, mut inst) = self.inner.get_instance(self.info.address).await?;
 
         let (tx, rx) = oneshot::channel();
         threadpool.spawn(move || {
@@ -706,7 +679,7 @@ impl WeakModuleHost {
 #[derive(Debug)]
 pub enum EntityDef {
     Reducer(ReducerDef),
-    Table(TableDef),
+    Table(TableDesc),
 }
 impl EntityDef {
     pub fn as_reducer(&self) -> Option<&ReducerDef> {
@@ -715,7 +688,7 @@ impl EntityDef {
             _ => None,
         }
     }
-    pub fn as_table(&self) -> Option<&TableDef> {
+    pub fn as_table(&self) -> Option<&TableDesc> {
         match self {
             Self::Table(x) => Some(x),
             _ => None,
@@ -737,7 +710,7 @@ impl Catalog {
         let schema = self.get(name)?;
         Some(schema.with(schema.ty().as_reducer()?))
     }
-    pub fn get_table(&self, name: &str) -> Option<WithTypespace<'_, TableDef>> {
+    pub fn get_table(&self, name: &str) -> Option<WithTypespace<'_, TableDesc>> {
         let schema = self.get(name)?;
         Some(schema.with(schema.ty().as_table()?))
     }

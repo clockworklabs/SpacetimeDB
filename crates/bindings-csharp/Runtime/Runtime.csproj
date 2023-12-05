@@ -1,17 +1,19 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>netstandard2.1;net7.0</TargetFrameworks>
+    <TargetFramework>net8.0</TargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <AssemblyName>SpacetimeDB.Runtime</AssemblyName>
-    <AssemblyVersion>0.7.2</AssemblyVersion>
+    <AssemblyVersion>0.8.0</AssemblyVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
   </PropertyGroup>
 
   <PropertyGroup>
     <Version>$(AssemblyVersion)</Version>
     <Title>SpacetimeDB Module Runtime</Title>
-    <Authors>ingvar_clockwork</Authors>
+    <Authors>RReverser</Authors>
     <Company>Clockwork Labs</Company>
     <Product>SpacetimeDB</Product>
     <Description>The SpacetimeDB Runtime implements the database runtime bindings for writing SpacetimeDB modules in C#.</Description>
