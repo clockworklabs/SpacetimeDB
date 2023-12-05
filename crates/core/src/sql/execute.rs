@@ -6,7 +6,7 @@ use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
 use tracing::info;
 
 use crate::database_instance_context_controller::DatabaseInstanceContextController;
-use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::db::datastore::locking_tx_datastore::{MutTxId, TxId, TxType};
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, DatabaseError};
 use crate::execution_context::ExecutionContext;
@@ -37,7 +37,7 @@ pub fn execute(
         let info = QueryDebugInfo::from_source(&sql_text);
         let ctx = ExecutionContext::sql(db.address(), Some(&info));
         db.with_auto_commit(&ctx, |tx| {
-            run(&database_instance_context.relational_db, tx, &sql_text, auth)
+            run(&database_instance_context.relational_db, &mut (*tx).into(), &sql_text, auth)
         })
     } else {
         Err(DatabaseError::NotFound(database_instance_id).into())
@@ -64,7 +64,7 @@ fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Result<(), DBErr
 pub fn execute_single_sql(
     cx: &ExecutionContext,
     db: &RelationalDB,
-    tx: &mut MutTxId,
+    tx: &mut TxType,
     ast: CrudExpr,
     auth: AuthCtx,
 ) -> Result<Vec<MemTable>, DBError> {
@@ -80,7 +80,7 @@ pub fn execute_single_sql(
 #[tracing::instrument(skip_all)]
 pub fn execute_sql(
     db: &RelationalDB,
-    tx: &mut MutTxId,
+    tx: &mut TxType,
     ast: Vec<CrudExpr>,
     query_debug_info: Option<&QueryDebugInfo>,
     auth: AuthCtx,
@@ -97,7 +97,7 @@ pub fn execute_sql(
 
 /// Run the `SQL` string using the `auth` credentials
 #[tracing::instrument(skip_all)]
-pub fn run(db: &RelationalDB, tx: &mut MutTxId, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
+pub fn run(db: &RelationalDB, tx: &mut TxType, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
     let ast = compile_sql(db, tx, sql_text)?;
     execute_sql(db, tx, ast, Some(&QueryDebugInfo::from_source(sql_text)), auth)
 }
@@ -119,13 +119,13 @@ pub(crate) mod tests {
 
     /// Short-cut for simplify test execution
     fn run_for_testing(db: &RelationalDB, tx: &mut MutTxId, sql_text: &str) -> Result<Vec<MemTable>, DBError> {
-        run(db, tx, sql_text, AuthCtx::for_testing())
+        run(db, &mut (*tx).into(), sql_text, AuthCtx::for_testing())
     }
 
     fn create_data(total_rows: u64) -> ResultTest<(RelationalDB, MemTable, TempDir)> {
         let (db, tmp_dir) = make_test_db()?;
 
-        let mut tx = db.begin_tx();
+        let mut tx = db.begin_mut_tx();
         let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let rows: Vec<_> = (1..=total_rows).map(|i| product!(i, format!("health{i}"))).collect();
         create_table_with_rows(&db, &mut tx, "inventory", head.clone(), &rows)?;
@@ -137,7 +137,7 @@ pub(crate) mod tests {
     #[test]
     fn test_select_star() -> ResultTest<()> {
         let (db, input, _tmp_dir) = create_data(1)?;
-        let mut tx = db.begin_tx();
+        let mut tx = db.begin_mut_tx();
         let result = run_for_testing(&db, &mut tx, "SELECT * FROM inventory")?;
 
         assert_eq!(result.len(), 1, "Not return results");
@@ -154,7 +154,7 @@ pub(crate) mod tests {
     #[test]
     fn test_select_star_table() -> ResultTest<()> {
         let (db, input, _tmp_dir) = create_data(1)?;
-        let mut tx = db.begin_tx();
+        let mut tx = db.begin_mut_tx();
         let result = run_for_testing(&db, &mut tx, "SELECT inventory.* FROM inventory")?;
         assert_eq!(result.len(), 1, "Not return results");
         let result = result.first().unwrap().clone();
@@ -189,7 +189,7 @@ pub(crate) mod tests {
     #[test]
     fn test_select_scalar() -> ResultTest<()> {
         let (db, _, _tmp_dir) = create_data(1)?;
-        let mut tx = db.begin_tx();
+        let mut tx = db.begin_mut_tx();
         let result = run_for_testing(&db, &mut tx, "SELECT 1 FROM inventory")?;
 
         assert_eq!(result.len(), 1, "Not return results");
@@ -205,7 +205,7 @@ pub(crate) mod tests {
     #[test]
     fn test_select_multiple() -> ResultTest<()> {
         let (db, input, _tmp_dir) = create_data(1)?;
-        let mut tx = db.begin_tx();
+        let mut tx = db.begin_mut_tx();
 
         let result = run_for_testing(&db, &mut tx, "SELECT * FROM inventory;\nSELECT * FROM inventory")?;
 
@@ -220,8 +220,8 @@ pub(crate) mod tests {
     #[test]
     fn test_select_catalog() -> ResultTest<()> {
         let (db, _, _tmp_dir) = create_data(1)?;
-        let mut tx = db.begin_tx();
-        let schema = db.schema_for_table(&tx, ST_TABLES_ID).unwrap().into_owned();
+        let mut tx = db.begin_mut_tx();
+        let schema = db.schema_for_table(&tx.into(), ST_TABLES_ID).unwrap().into_owned();
 
         let result = run_for_testing(
             &db,
@@ -250,7 +250,7 @@ pub(crate) mod tests {
     #[test]
     fn test_select_column() -> ResultTest<()> {
         let (db, table, _tmp_dir) = create_data(1)?;
-        let mut tx = db.begin_tx();
+        let mut tx = db.begin_mut_tx();
 
         let result = run_for_testing(&db, &mut tx, "SELECT inventory_id FROM inventory")?;
 
@@ -274,7 +274,7 @@ pub(crate) mod tests {
     #[test]
     fn test_where() -> ResultTest<()> {
         let (db, table, _tmp_dir) = create_data(1)?;
-        let mut tx = db.begin_tx();
+        let mut tx = db.begin_mut_tx();
 
         let result = run_for_testing(
             &db,
@@ -303,7 +303,7 @@ pub(crate) mod tests {
     #[test]
     fn test_or() -> ResultTest<()> {
         let (db, table, _tmp_dir) = create_data(2)?;
-        let mut tx = db.begin_tx();
+        let mut tx = db.begin_mut_tx();
 
         let result = run_for_testing(
             &db,
@@ -331,7 +331,7 @@ pub(crate) mod tests {
     #[test]
     fn test_nested() -> ResultTest<()> {
         let (db, table, _tmp_dir) = create_data(2)?;
-        let mut tx = db.begin_tx();
+        let mut tx = db.begin_mut_tx();
 
         let result = run_for_testing(
             &db,
@@ -362,7 +362,7 @@ pub(crate) mod tests {
 
         let (db, _tmp_dir) = make_test_db()?;
 
-        let mut tx = db.begin_tx();
+        let mut tx = db.begin_mut_tx();
         create_table_with_rows(
             &db,
             &mut tx,
@@ -436,7 +436,7 @@ pub(crate) mod tests {
     #[test]
     fn test_insert() -> ResultTest<()> {
         let (db, mut input, _tmp_dir) = create_data(1)?;
-        let mut tx = db.begin_tx();
+        let mut tx = db.begin_mut_tx();
         let result = run_for_testing(
             &db,
             &mut tx,
@@ -467,7 +467,7 @@ pub(crate) mod tests {
     #[test]
     fn test_delete() -> ResultTest<()> {
         let (db, _input, _tmp_dir) = create_data(1)?;
-        let mut tx = db.begin_tx();
+        let mut tx = db.begin_mut_tx();
 
         run_for_testing(
             &db,
@@ -511,7 +511,7 @@ pub(crate) mod tests {
     #[test]
     fn test_update() -> ResultTest<()> {
         let (db, input, _tmp_dir) = create_data(1)?;
-        let mut tx = db.begin_tx();
+        let mut tx = db.begin_mut_tx();
 
         run_for_testing(
             &db,
@@ -562,7 +562,7 @@ pub(crate) mod tests {
     #[test]
     fn test_create_table() -> ResultTest<()> {
         let (db, _, _tmp_dir) = create_data(1)?;
-        let mut tx = db.begin_tx();
+        let mut tx = db.begin_mut_tx();
 
         run_for_testing(
             &db,
@@ -589,7 +589,7 @@ pub(crate) mod tests {
     #[test]
     fn test_drop_table() -> ResultTest<()> {
         let (db, _, _tmp_dir) = create_data(1)?;
-        let mut tx = db.begin_tx();
+        let mut tx = db.begin_mut_tx();
 
         run_for_testing(
             &db,
@@ -598,7 +598,7 @@ pub(crate) mod tests {
         )?;
         db.commit_tx(&ExecutionContext::default(), tx)?;
 
-        let mut tx = db.begin_tx();
+        let mut tx = db.begin_mut_tx();
         run_for_testing(&db, &mut tx, "DROP TABLE inventory2")?;
         match run_for_testing(&db, &mut tx, "SELECT * FROM inventory2") {
             Ok(_) => {
@@ -619,11 +619,11 @@ pub(crate) mod tests {
     #[test]
     fn test_column_constraints() -> ResultTest<()> {
         let (db, _, _tmp_dir) = create_data(0)?;
-        let mut tx = db.begin_tx();
+        let mut tx = db.begin_mut_tx();
 
         fn check_column(
             db: &RelationalDB,
-            tx: &mut MutTxId,
+            tx: &mut TxType,
             table_name: &str,
             is_null: bool,
             is_autoinc: bool,
@@ -651,30 +651,30 @@ pub(crate) mod tests {
         }
 
         run_for_testing(&db, &mut tx, "CREATE TABLE a (inventory_id BIGINT NULL)")?;
-        check_column(&db, &mut tx, "a", true, false, None)?;
+        check_column(&db, &mut tx.into(), "a", true, false, None)?;
 
         run_for_testing(&db, &mut tx, "CREATE TABLE b (inventory_id BIGINT NOT NULL)")?;
-        check_column(&db, &mut tx, "b", false, false, None)?;
+        check_column(&db, &mut tx.into(), "b", false, false, None)?;
 
         run_for_testing(&db, &mut tx, "CREATE TABLE c (inventory_id BIGINT UNIQUE)")?;
-        check_column(&db, &mut tx, "c", false, false, Some(true))?;
+        check_column(&db, &mut tx.into(), "c", false, false, Some(true))?;
 
         run_for_testing(&db, &mut tx, "CREATE TABLE d (inventory_id BIGINT PRIMARY KEY)")?;
-        check_column(&db, &mut tx, "d", false, false, Some(true))?;
+        check_column(&db, &mut tx.into(), "d", false, false, Some(true))?;
 
         run_for_testing(
             &db,
             &mut tx,
             "CREATE TABLE e (inventory_id BIGINT GENERATED BY DEFAULT AS IDENTITY)",
         )?;
-        check_column(&db, &mut tx, "e", false, true, Some(true))?;
+        check_column(&db, &mut tx.into(), "e", false, true, Some(true))?;
 
         run_for_testing(
             &db,
             &mut tx,
             "CREATE TABLE f (inventory_id BIGINT PRIMARY KEY GENERATED BY DEFAULT AS IDENTITY)",
         )?;
-        check_column(&db, &mut tx, "f", false, true, Some(true))?;
+        check_column(&db, &mut tx.into(), "f", false, true, Some(true))?;
 
         Ok(())
     }
@@ -682,7 +682,7 @@ pub(crate) mod tests {
     #[test]
     fn test_big_sql() -> ResultTest<()> {
         let (db, _input, _tmp_dir) = create_data(1)?;
-        let mut tx = db.begin_tx();
+        let mut tx = db.begin_mut_tx();
 
         let result = run_for_testing(
             &db,

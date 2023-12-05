@@ -32,7 +32,7 @@ use crate::{
     error::{DBError, TableError},
     execution_context::ExecutionContext,
 };
-use anyhow::anyhow;
+use anyhow::{anyhow, Error};
 use nonempty::NonEmpty;
 use parking_lot::{
     lock_api::{ArcMutexGuard, ArcRwLockWriteGuard},
@@ -1836,15 +1836,61 @@ impl DataRow for Locking {
     }
 }
 
-impl traits::Tx for Locking {
-    type TxId = MutTxId;
+pub struct TxId;
 
-    fn begin_tx(&self) -> Self::TxId {
-        self.begin_mut_tx()
+impl TxType {
+
+}
+
+pub enum TxType {
+    MutTx(MutTxId),
+    ReadTx(TxId),
+}
+
+impl From<MutTxId> for TxType {
+    fn from(tx: MutTxId) -> Self {
+        TxType::MutTx(tx)
+    }
+}
+
+// impl From<&MutTxId> for TxType {
+//     fn from(tx: &MutTxId) -> Self {
+//         TxType::MutTx(tx)
+//     }
+// }
+
+impl TryFrom<TxType> for MutTxId {
+    type Error = Error;
+
+    fn try_from(value: TxType) -> Result<Self, Self::Error> {
+        match value {
+            TxType::MutTx(tx_id) => Ok(tx_id),
+            TxType::ReadTx(_) => Err(Self::Error::msg("TxType is not a mutable transaction")),
+        }
+    }
+}
+
+// impl TryFrom<mut TxType> for MutTxId {
+//     type Error = Error;
+
+//     fn try_from(value: TxType) -> Result<Self, Self::Error> {
+//         match value {
+//             TxType::MutTx(tx_id) => Ok(tx_id),
+//             TxType::ReadTx(_) => Err(Error::msg("TxType is not a mutable transaction")),
+//         }
+//     }
+// }
+
+impl traits::Tx for Locking {
+    type TxId = TxType;
+
+    fn begin_tx(&self) -> TxType {
+        TxType::ReadTx(TxId {})
     }
 
     fn release_tx(&self, ctx: &ExecutionContext, tx: Self::TxId) {
-        self.rollback_mut_tx(ctx, tx)
+        //self.rollback_mut_tx(ctx, tx)
+        unimplemented!();
     }
 }
 
@@ -2350,7 +2396,7 @@ impl MutTxDatastore for Locking {
     /// of the table.
     fn schema_for_table_mut_tx<'tx>(
         &self,
-        tx: &'tx Self::MutTxId,
+        tx: &'tx TxType,
         table_id: TableId,
     ) -> super::Result<Cow<'tx, TableSchema>> {
         tx.schema_for_table(table_id, self.database_address)
@@ -2370,7 +2416,7 @@ impl MutTxDatastore for Locking {
         tx.table_exists(table_id)
     }
 
-    fn table_id_from_name_mut_tx(&self, tx: &Self::MutTxId, table_name: &str) -> super::Result<Option<TableId>> {
+    fn table_id_from_name_mut_tx(&self, tx: &TxType, table_name: &str) -> super::Result<Option<TableId>> {
         tx.table_id_from_name(table_name, self.database_address)
     }
 
@@ -2391,7 +2437,7 @@ impl MutTxDatastore for Locking {
         tx.drop_index(index_id, self.database_address)
     }
 
-    fn index_id_from_name_mut_tx(&self, tx: &Self::MutTxId, index_name: &str) -> super::Result<Option<IndexId>> {
+    fn index_id_from_name_mut_tx(&self, tx: &TxType, index_name: &str) -> super::Result<Option<IndexId>> {
         tx.index_id_from_name(index_name, self.database_address)
     }
 
@@ -2409,7 +2455,7 @@ impl MutTxDatastore for Locking {
 
     fn sequence_id_from_name_mut_tx(
         &self,
-        tx: &Self::MutTxId,
+        tx: &TxType,
         sequence_name: &str,
     ) -> super::Result<Option<SequenceId>> {
         tx.sequence_id_from_name(sequence_name, self.database_address)
@@ -2427,7 +2473,7 @@ impl MutTxDatastore for Locking {
     fn iter_by_col_range_mut_tx<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a Self::MutTxId,
+        tx: &'a TxType,
         table_id: TableId,
         cols: impl Into<NonEmpty<ColId>>,
         range: R,
@@ -2978,7 +3024,7 @@ mod tests {
     #[test]
     fn test_schema_for_table_pre_commit() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
-        let schema = &*datastore.schema_for_table_mut_tx(&tx, table_id)?;
+        let schema = &*datastore.schema_for_table_mut_tx(&tx.into(), table_id)?;
         #[rustfmt::skip]
         assert_eq!(schema, &basic_table_schema_created(table_id));
         Ok(())
@@ -2989,7 +3035,7 @@ mod tests {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx_for_test(tx)?;
         let tx = datastore.begin_mut_tx();
-        let schema = &*datastore.schema_for_table_mut_tx(&tx, table_id)?;
+        let schema = &*datastore.schema_for_table_mut_tx(&tx.into(), table_id)?;
         #[rustfmt::skip]
         assert_eq!(schema, &basic_table_schema_created(table_id));
         Ok(())
@@ -3001,20 +3047,20 @@ mod tests {
         datastore.commit_mut_tx_for_test(tx)?;
 
         let mut tx = datastore.begin_mut_tx();
-        let schema = datastore.schema_for_table_mut_tx(&tx, table_id)?.into_owned();
+        let schema = datastore.schema_for_table_mut_tx(&tx.into(), table_id)?.into_owned();
 
         for index in &*schema.indexes {
             datastore.drop_index_mut_tx(&mut tx, index.index_id)?;
         }
         assert!(
-            datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes.is_empty(),
+            datastore.schema_for_table_mut_tx(&tx.into(), table_id)?.indexes.is_empty(),
             "no indexes should be left in the schema pre-commit"
         );
         datastore.commit_mut_tx_for_test(tx)?;
 
         let mut tx = datastore.begin_mut_tx();
         assert!(
-            datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes.is_empty(),
+            datastore.schema_for_table_mut_tx(&tx.into(), table_id)?.indexes.is_empty(),
             "no indexes should be left in the schema post-commit"
         );
 
@@ -3029,7 +3075,7 @@ mod tests {
         }]
         .map(Into::into);
         assert_eq!(
-            datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes,
+            datastore.schema_for_table_mut_tx(&tx.into(), table_id)?.indexes,
             expected_indexes,
             "created index should be present in schema pre-commit"
         );
@@ -3038,7 +3084,7 @@ mod tests {
 
         let tx = datastore.begin_mut_tx();
         assert_eq!(
-            datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes,
+            datastore.schema_for_table_mut_tx(&tx.into(), table_id)?.indexes,
             expected_indexes,
             "created index should be present in schema post-commit"
         );
@@ -3053,7 +3099,7 @@ mod tests {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.rollback_mut_tx_for_test(tx);
         let tx = datastore.begin_mut_tx();
-        let schema = datastore.schema_for_table_mut_tx(&tx, table_id);
+        let schema = datastore.schema_for_table_mut_tx(&tx.into(), table_id);
         assert!(schema.is_err());
         Ok(())
     }

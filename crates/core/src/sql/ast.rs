@@ -1,4 +1,4 @@
-use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::db::datastore::locking_tx_datastore::{MutTxId, TxType};
 use crate::db::datastore::traits::MutTxDatastore;
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
@@ -409,7 +409,7 @@ fn compile_where(table: &From, filter: Option<SqlExpr>) -> Result<Option<Selecti
 /// Retrieves the [TableSchema] for the [Table]
 ///
 /// Fails if the table `name` and/or `table_id` is not found
-fn find_table<'tx>(db: &RelationalDB, tx: &'tx MutTxId, t: Table) -> Result<Cow<'tx, TableSchema>, PlanError> {
+fn find_table<'tx>(db: &RelationalDB, tx: &'tx TxType, t: Table) -> Result<Cow<'tx, TableSchema>, PlanError> {
     let table_id = db
         .table_id_from_name(tx, &t.name)?
         .ok_or(PlanError::UnknownTable { table: t.name.clone() })?;
@@ -421,7 +421,7 @@ fn find_table<'tx>(db: &RelationalDB, tx: &'tx MutTxId, t: Table) -> Result<Cow<
 }
 
 /// Compiles the `FROM` clause
-fn compile_from(db: &RelationalDB, tx: &MutTxId, from: &[TableWithJoins]) -> Result<From, PlanError> {
+fn compile_from(db: &RelationalDB, tx: &TxType, from: &[TableWithJoins]) -> Result<From, PlanError> {
     if from.len() > 1 {
         return Err(PlanError::Unsupported {
             feature: "Multiple tables in `FROM`.".into(),
@@ -541,7 +541,7 @@ fn compile_select_item(from: &From, select_item: SelectItem) -> Result<Column, P
 }
 
 /// Compiles the `SELECT ...` clause
-fn compile_select(db: &RelationalDB, tx: &MutTxId, select: Select) -> Result<SqlAst, PlanError> {
+fn compile_select(db: &RelationalDB, tx: &TxType, select: Select) -> Result<SqlAst, PlanError> {
     let from = compile_from(db, tx, &select.from)?;
     // SELECT ...
     let mut project = Vec::new();
@@ -560,7 +560,7 @@ fn compile_select(db: &RelationalDB, tx: &MutTxId, select: Select) -> Result<Sql
 }
 
 /// Compiles any `query` clause (currently only `SELECT...`)
-fn compile_query(db: &RelationalDB, tx: &MutTxId, query: Query) -> Result<SqlAst, PlanError> {
+fn compile_query(db: &RelationalDB, tx: &TxType, query: Query) -> Result<SqlAst, PlanError> {
     unsupported!(
         "SELECT",
         query.order_by,
@@ -615,12 +615,12 @@ fn compile_query(db: &RelationalDB, tx: &MutTxId, query: Query) -> Result<SqlAst
 /// Compiles the `INSERT ...` clause
 fn compile_insert(
     db: &RelationalDB,
-    tx: &MutTxId,
+    tx: &TxType,
     table_name: ObjectName,
     columns: Vec<Ident>,
     data: &Values,
 ) -> Result<SqlAst, PlanError> {
-    let table = find_table(db, tx, Table::new(table_name))?.into_owned();
+    let table = find_table(db, tx.into(), Table::new(table_name))?.into_owned();
 
     let columns = columns
         .into_iter()
@@ -650,7 +650,7 @@ fn compile_insert(
 /// Compiles the `UPDATE ...` clause
 fn compile_update(
     db: &RelationalDB,
-    tx: &MutTxId,
+    tx: &TxType,
     table: Table,
     assignments: Vec<Assignment>,
     selection: Option<SqlExpr>,
@@ -678,7 +678,7 @@ fn compile_update(
 /// Compiles the `DELETE ...` clause
 fn compile_delete(
     db: &RelationalDB,
-    tx: &MutTxId,
+    tx: &TxType,
     table: Table,
     selection: Option<SqlExpr>,
 ) -> Result<SqlAst, PlanError> {
@@ -847,7 +847,7 @@ fn compile_drop(name: &ObjectName, kind: ObjectType) -> Result<SqlAst, PlanError
 }
 
 /// Compiles a `SQL` clause
-fn compile_statement(db: &RelationalDB, tx: &MutTxId, statement: Statement) -> Result<SqlAst, PlanError> {
+fn compile_statement(db: &RelationalDB, tx: &TxType, statement: Statement) -> Result<SqlAst, PlanError> {
     match statement {
         Statement::Query(query) => Ok(compile_query(db, tx, *query)?),
         Statement::Insert {
@@ -1022,7 +1022,7 @@ fn compile_statement(db: &RelationalDB, tx: &MutTxId, statement: Statement) -> R
 }
 
 /// Compiles a `sql` string into a `Vec<SqlAst>` using a SQL parser with [PostgreSqlDialect]
-pub(crate) fn compile_to_ast(db: &RelationalDB, tx: &MutTxId, sql_text: &str) -> Result<Vec<SqlAst>, DBError> {
+pub(crate) fn compile_to_ast(db: &RelationalDB, tx: &TxType, sql_text: &str) -> Result<Vec<SqlAst>, DBError> {
     let dialect = PostgreSqlDialect {};
     let ast = Parser::parse_sql(&dialect, sql_text).map_err(|error| DBError::SqlParser {
         sql: sql_text.to_string(),

@@ -8,13 +8,13 @@ use std::sync::{Arc, Mutex};
 
 use super::commit_log::{CommitLog, CommitLogMut};
 use super::datastore::locking_tx_datastore::Locking;
-use super::datastore::locking_tx_datastore::{DataRef, Iter, IterByColEq, IterByColRange, MutTxId, RowId};
+use super::datastore::locking_tx_datastore::{DataRef, Iter, IterByColEq, IterByColRange, MutTxId, RowId, TxType};
 use super::datastore::traits::{MutProgrammable, MutTx, MutTxDatastore, Programmable, TxData};
 use super::message_log::MessageLog;
 use super::ostorage::memory_object_db::MemoryObjectDB;
 use super::relational_operators::Relation;
 use crate::address::Address;
-use crate::db::datastore::traits::DataRow;
+use crate::db::datastore::traits::{DataRow, Tx};
 use crate::db::db_metrics::DB_METRICS;
 use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 use crate::db::ostorage::ObjectDB;
@@ -168,7 +168,7 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn schema_for_table<'tx>(&self, tx: &'tx MutTxId, table_id: TableId) -> Result<Cow<'tx, TableSchema>, DBError> {
+    pub fn schema_for_table<'tx>(&self, tx: &'tx TxType, table_id: TableId) -> Result<Cow<'tx, TableSchema>, DBError> {
         self.inner.schema_for_table_mut_tx(tx, table_id)
     }
 
@@ -232,13 +232,26 @@ impl RelationalDB {
     /// [`Self::commit_tx`], otherwise the database will be left in an invalid
     /// state. See also [`Self::with_auto_commit`].
     #[tracing::instrument(skip_all)]
-    pub fn begin_tx(&self) -> MutTxId {
-        log::trace!("BEGIN TX");
+    pub fn begin_mut_tx(&self) -> MutTxId {
+        log::trace!("BEGIN MUT TX");
         self.inner.begin_mut_tx()
+    }
+    
+    #[tracing::instrument(skip_all)]
+    pub fn begin_mut_tx_type(&self) -> TxType {
+        log::trace!("BEGIN MUT TX");
+        TxType::MutTx(self.inner.begin_mut_tx())
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn rollback_tx(&self, ctx: &ExecutionContext, tx: MutTxId) {
+    pub fn begin_tx(&self) -> TxType {
+        log::trace!("BEGIN TX");
+        self.inner.begin_tx()
+    }
+
+
+    #[tracing::instrument(skip_all)]
+    pub fn rollback_tx(&self, ctx: &ExecutionContext, tx: TxType) {
         log::trace!("ROLLBACK TX");
         self.inner.rollback_mut_tx(ctx, tx)
     }
@@ -291,7 +304,7 @@ impl RelationalDB {
         F: FnOnce(&mut MutTxId) -> Result<A, E>,
         E: From<DBError>,
     {
-        let mut tx = self.begin_tx();
+        let mut tx = self.begin_mut_tx();
         let res = f(&mut tx);
         self.finish_tx(ctx, tx, res)
     }
@@ -321,10 +334,10 @@ impl RelationalDB {
     /// at the same time)
     pub fn with_read_only<F, A, E>(&self, ctx: &ExecutionContext, f: F) -> Result<A, E>
     where
-        F: FnOnce(&mut MutTxId) -> Result<A, E>,
+        F: FnOnce(&mut TxType) -> Result<A, E>,
         E: From<DBError>,
     {
-        let mut tx = self.begin_tx();
+        let mut tx: TxType = self.begin_mut_tx().into();
         let res = f(&mut tx);
         self.rollback_tx(ctx, tx);
         res
@@ -332,16 +345,23 @@ impl RelationalDB {
 
     /// Perform the transactional logic for the `tx` according to the `res`
     #[tracing::instrument(skip_all)]
-    pub fn finish_tx<A, E>(&self, ctx: &ExecutionContext, tx: MutTxId, res: Result<A, E>) -> Result<A, E>
+    pub fn finish_tx<A, E>(&self, ctx: &ExecutionContext, tx: TxType, res: Result<A, E>) -> Result<A, E>
     where
         E: From<DBError>,
     {
-        if res.is_err() {
-            self.rollback_tx(ctx, tx);
-        } else {
-            match self.commit_tx(ctx, tx).map_err(E::from)? {
-                Some(_) => (),
-                None => panic!("TODO: retry?"),
+        match tx {
+            TxType::ReadTx(tx) => {
+                self.rollback_tx(ctx, tx);
+            },
+            TxType::MutTx(tx) => {
+                if res.is_err() {
+                    self.rollback_tx(ctx, tx);
+                } else {
+                    match self.commit_tx(ctx, tx).map_err(E::from)? {
+                        Some(_) => (),
+                        None => panic!("TODO: retry?"),
+                    }
+                }
             }
         }
         res
@@ -394,24 +414,27 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn table_id_from_name(&self, tx: &MutTxId, table_name: &str) -> Result<Option<TableId>, DBError> {
-        self.inner.table_id_from_name_mut_tx(tx, table_name)
+    pub fn table_id_from_name(&self, tx: &TxType, table_name: &str) -> Result<Option<TableId>, DBError> {
+         self.inner.table_id_from_name_mut_tx(tx, table_name)
     }
 
     #[tracing::instrument(skip_all)]
     pub fn table_name_from_id<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a MutTxId,
+        tx: &'a TxType,
         table_id: TableId,
     ) -> Result<Option<&'a str>, DBError> {
-        self.inner.table_name_from_id_mut_tx(ctx, tx, table_id)
+        match tx {
+            TxType::MutTx(tx) => self.inner.table_name_from_id_mut_tx(ctx, tx, table_id),
+            TxType::ReadTx(tx) => unimplemented!()
+        }
     }
 
     #[tracing::instrument(skip_all)]
     pub fn column_attrs(
         &self,
-        tx: &mut MutTxId,
+        tx: &mut TxType,
         table_id: TableId,
         cols: &NonEmpty<ColId>,
     ) -> Result<ColumnAttribute, DBError> {
@@ -443,12 +466,12 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn index_id_from_name(&self, tx: &MutTxId, index_name: &str) -> Result<Option<IndexId>, DBError> {
+    pub fn index_id_from_name(&self, tx: &TxType, index_name: &str) -> Result<Option<IndexId>, DBError> {
         self.inner.index_id_from_name_mut_tx(tx, index_name)
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn sequence_id_from_name(&self, tx: &MutTxId, sequence_name: &str) -> Result<Option<SequenceId>, DBError> {
+    pub fn sequence_id_from_name(&self, tx: &TxType, sequence_name: &str) -> Result<Option<SequenceId>, DBError> {
         self.inner.sequence_id_from_name_mut_tx(tx, sequence_name)
     }
 
@@ -474,7 +497,7 @@ impl RelationalDB {
     pub fn iter<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a MutTxId,
+        tx: &'a TxType,
         table_id: TableId,
     ) -> Result<Iter<'a>, DBError> {
         let _guard = DB_METRICS.rdb_iter_time.with_label_values(&table_id.0).start_timer();
@@ -490,7 +513,7 @@ impl RelationalDB {
     pub fn iter_by_col_eq<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a MutTxId,
+        tx: &'a TxType,
         table_id: impl Into<TableId>,
         cols: impl Into<NonEmpty<ColId>>,
         value: AlgebraicValue,
@@ -506,7 +529,7 @@ impl RelationalDB {
     pub fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a MutTxId,
+        tx: &'a TxType,
         table_id: impl Into<TableId>,
         cols: impl Into<NonEmpty<ColId>>,
         range: R,
@@ -708,7 +731,7 @@ mod tests {
     fn test() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_tx();
+        let mut tx = stdb.begin_mut_tx();
         let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
         schema.table_name = "MyTable".to_string();
         stdb.create_table(&mut tx, schema)?;
@@ -721,7 +744,7 @@ mod tests {
     fn test_open_twice() -> ResultTest<()> {
         let (stdb, tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_tx();
+        let mut tx = stdb.begin_mut_tx();
 
         let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
         schema.table_name = "MyTable".to_string();
@@ -755,11 +778,11 @@ mod tests {
     fn test_table_name() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_tx();
+        let mut tx = stdb.begin_mut_tx();
         let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
         schema.table_name = "MyTable".to_string();
         let table_id = stdb.create_table(&mut tx, schema)?;
-        let t_id = stdb.table_id_from_name(&tx, "MyTable")?;
+        let t_id = stdb.table_id_from_name(&tx.into(), "MyTable")?;
         assert_eq!(t_id, Some(table_id));
         Ok(())
     }
@@ -768,12 +791,12 @@ mod tests {
     fn test_column_name() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_tx();
+        let mut tx = stdb.begin_mut_tx();
         let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
         schema.table_name = "MyTable".to_string();
         stdb.create_table(&mut tx, schema)?;
-        let table_id = stdb.table_id_from_name(&tx, "MyTable")?.unwrap();
-        let schema = stdb.schema_for_table(&tx, table_id)?;
+        let table_id = stdb.table_id_from_name(&tx.into(), "MyTable")?.unwrap();
+        let schema = stdb.schema_for_table(&tx.into(), table_id)?;
         let col = schema.columns.iter().find(|x| x.col_name == "my_col").unwrap();
         assert_eq!(col.col_id, 0.into());
         Ok(())
@@ -783,7 +806,7 @@ mod tests {
     fn test_create_table_pre_commit() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_tx();
+        let mut tx = stdb.begin_mut_tx();
         let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
         schema.table_name = "MyTable".to_string();
         stdb.create_table(&mut tx, schema.clone())?;
@@ -796,7 +819,7 @@ mod tests {
     fn test_pre_commit() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_tx();
+        let mut tx = stdb.begin_mut_tx();
 
         let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
         schema.table_name = "MyTable".to_string();
@@ -820,7 +843,7 @@ mod tests {
     fn test_post_commit() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_tx();
+        let mut tx = stdb.begin_mut_tx();
 
         let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
         schema.table_name = "MyTable".to_string();
@@ -831,7 +854,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(1)])?;
         stdb.commit_tx(&ExecutionContext::default(), tx)?;
 
-        let tx = stdb.begin_tx();
+        let tx = stdb.begin_mut_tx();
         let mut rows = stdb
             .iter(&ExecutionContext::default(), &tx, table_id)?
             .map(|r| *r.view().elements[0].as_i32().unwrap())
@@ -846,7 +869,7 @@ mod tests {
     fn test_filter_range_pre_commit() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_tx();
+        let mut tx = stdb.begin_mut_tx();
 
         let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
         schema.table_name = "MyTable".to_string();
@@ -859,7 +882,7 @@ mod tests {
         let mut rows = stdb
             .iter_by_col_range(
                 &ExecutionContext::default(),
-                &tx,
+                &tx.into(),
                 table_id,
                 ColId(0),
                 AlgebraicValue::I32(0)..,
@@ -876,7 +899,7 @@ mod tests {
     fn test_filter_range_post_commit() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_tx();
+        let mut tx = stdb.begin_mut_tx();
 
         let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
         schema.table_name = "MyTable".to_string();
@@ -887,11 +910,11 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(1)])?;
         stdb.commit_tx(&ExecutionContext::default(), tx)?;
 
-        let tx = stdb.begin_tx();
+        let tx = stdb.begin_mut_tx();
         let mut rows = stdb
             .iter_by_col_range(
                 &ExecutionContext::default(),
-                &tx,
+                &tx.into(),
                 table_id,
                 ColId(0),
                 AlgebraicValue::I32(0)..,
@@ -908,14 +931,14 @@ mod tests {
     fn test_create_table_rollback() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_tx();
+        let mut tx = stdb.begin_mut_tx();
 
         let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
         schema.table_name = "MyTable".to_string();
         let table_id = stdb.create_table(&mut tx, schema)?;
-        stdb.rollback_tx(&ExecutionContext::default(), tx);
+        stdb.rollback_tx(&ExecutionContext::default(), tx.into());
 
-        let mut tx = stdb.begin_tx();
+        let mut tx = stdb.begin_mut_tx();
         let result = stdb.drop_table(&mut tx, table_id);
         result.expect_err("drop_table should fail");
         Ok(())
@@ -925,7 +948,7 @@ mod tests {
     fn test_rollback() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_tx();
+        let mut tx = stdb.begin_mut_tx();
         let ctx = ExecutionContext::default();
 
         let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
@@ -933,13 +956,13 @@ mod tests {
         let table_id = stdb.create_table(&mut tx, schema)?;
         stdb.commit_tx(&ctx, tx)?;
 
-        let mut tx = stdb.begin_tx();
+        let mut tx = stdb.begin_mut_tx();
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(-1)])?;
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(0)])?;
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(1)])?;
-        stdb.rollback_tx(&ctx, tx);
+        stdb.rollback_tx(&ctx, tx.into());
 
-        let tx = stdb.begin_tx();
+        let tx = stdb.begin_mut_tx();
         let mut rows = stdb
             .iter(&ctx, &tx, table_id)?
             .map(|r| *r.view().elements[0].as_i32().unwrap())
@@ -955,7 +978,7 @@ mod tests {
     fn test_auto_inc() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_tx();
+        let mut tx = stdb.begin_mut_tx();
         let schema = TableDef {
             table_name: "MyTable".to_string(),
             columns: vec![ColumnDef {
@@ -969,7 +992,7 @@ mod tests {
         };
         let table_id = stdb.create_table(&mut tx, schema)?;
 
-        let sequence = stdb.sequence_id_from_name(&tx, "MyTable_my_col_seq")?;
+        let sequence = stdb.sequence_id_from_name(&tx.into(), "MyTable_my_col_seq")?;
         assert!(sequence.is_some(), "Sequence not created");
 
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(0)])?;
@@ -978,7 +1001,7 @@ mod tests {
         let mut rows = stdb
             .iter_by_col_range(
                 &ExecutionContext::default(),
-                &tx,
+                &tx.into(),
                 table_id,
                 ColId(0),
                 AlgebraicValue::I64(0)..,
@@ -996,7 +1019,7 @@ mod tests {
     fn test_auto_inc_disable() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_tx();
+        let mut tx = stdb.begin_mut_tx();
         let schema = TableDef {
             table_name: "MyTable".to_string(),
             columns: vec![ColumnDef {
@@ -1010,7 +1033,7 @@ mod tests {
         };
         let table_id = stdb.create_table(&mut tx, schema)?;
 
-        let sequence = stdb.sequence_id_from_name(&tx, "MyTable_my_col_seq")?;
+        let sequence = stdb.sequence_id_from_name(&tx.into(), "MyTable_my_col_seq")?;
         assert!(sequence.is_some(), "Sequence not created");
 
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(5)])?;
@@ -1019,7 +1042,7 @@ mod tests {
         let mut rows = stdb
             .iter_by_col_range(
                 &ExecutionContext::default(),
-                &tx,
+                &tx.into(),
                 table_id,
                 ColId(0),
                 AlgebraicValue::I64(0)..,
@@ -1037,7 +1060,7 @@ mod tests {
     fn test_auto_inc_reload() -> ResultTest<()> {
         let (stdb, tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_tx();
+        let mut tx = stdb.begin_mut_tx();
         let schema = TableDef {
             table_name: "MyTable".to_string(),
             columns: vec![ColumnDef {
@@ -1051,7 +1074,7 @@ mod tests {
         };
         let table_id = stdb.create_table(&mut tx, schema)?;
 
-        let sequence = stdb.sequence_id_from_name(&tx, "MyTable_my_col_seq")?;
+        let sequence = stdb.sequence_id_from_name(&tx.into(), "MyTable_my_col_seq")?;
         assert!(sequence.is_some(), "Sequence not created");
 
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(0)])?;
@@ -1076,7 +1099,7 @@ mod tests {
         dbg!("reopen...");
         let stdb = open_db(&tmp_dir, false, true)?;
 
-        let mut tx = stdb.begin_tx();
+        let mut tx = stdb.begin_mut_tx();
 
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(0)])?;
 
@@ -1101,7 +1124,7 @@ mod tests {
     fn test_indexed() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_tx();
+        let mut tx = stdb.begin_mut_tx();
         let schema = TableDef {
             table_name: "MyTable".to_string(),
             columns: vec![ColumnDef {
@@ -1149,7 +1172,7 @@ mod tests {
     fn test_unique() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_tx();
+        let mut tx = stdb.begin_mut_tx();
         let schema = TableDef {
             table_name: "MyTable".to_string(),
             columns: vec![ColumnDef {
@@ -1196,7 +1219,7 @@ mod tests {
     fn test_identity() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_tx();
+        let mut tx = stdb.begin_mut_tx();
         let schema = TableDef {
             table_name: "MyTable".to_string(),
             columns: vec![ColumnDef {
@@ -1247,7 +1270,7 @@ mod tests {
     fn test_cascade_drop_table() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_tx();
+        let mut tx = stdb.begin_mut_tx();
         let schema = TableDef {
             table_name: "MyTable".to_string(),
             columns: vec![
@@ -1319,7 +1342,7 @@ mod tests {
     fn test_rename_table() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_tx();
+        let mut tx = stdb.begin_mut_tx();
 
         let schema = TableDef {
             table_name: "MyTable".to_string(),
@@ -1369,7 +1392,7 @@ mod tests {
         let indexes = vec![index("0", &[0, 1])];
         let schema = table("t", columns, indexes);
 
-        let mut tx = stdb.begin_tx();
+        let mut tx = stdb.begin_mut_tx();
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         stdb.insert(
@@ -1415,7 +1438,7 @@ mod tests {
     // fn test_rename_column() -> ResultTest<()> {
     //     let (mut stdb, _tmp_dir) = make_test_db()?;
 
-    //     let mut tx_ = stdb.begin_tx();
+    //     let mut tx_ = stdb.begin_mut_tx();
     //     let (tx, stdb) = tx_.get();
 
     //     let schema = &[("col1", AlgebraicType::U64, ColumnIndexAttribute::Identity)];

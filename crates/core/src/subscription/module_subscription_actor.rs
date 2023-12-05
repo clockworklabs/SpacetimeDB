@@ -4,7 +4,7 @@ use super::{
     query::compile_read_only_query,
     subscription::{QuerySet, Subscription},
 };
-use crate::host::module_host::{EventStatus, ModuleEvent};
+use crate::{host::module_host::{EventStatus, ModuleEvent}, db::datastore::locking_tx_datastore::{TxId, TxType}};
 use crate::protobuf::client_api::Subscribe;
 use crate::{
     client::{
@@ -123,7 +123,7 @@ impl ModuleSubscriptionActor {
         &mut self,
         sender: ClientConnectionSender,
         subscription: Subscribe,
-        tx: &mut MutTxId,
+        tx: &mut TxType,
     ) -> Result<(), DBError> {
         self.remove_subscriber(sender.id);
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
@@ -145,7 +145,7 @@ impl ModuleSubscriptionActor {
             }
         };
 
-        let database_update = sub.queries.eval(&self.relational_db, tx, auth)?;
+        let database_update = sub.queries.eval(&self.relational_db, tx.into(), auth)?;
 
         let sender = sub.subscribers().last().unwrap();
 
@@ -164,7 +164,7 @@ impl ModuleSubscriptionActor {
         subscription: Subscribe,
     ) -> Result<(), DBError> {
         // Split logic to properly handle `Error` + `Tx`
-        let mut tx = self.relational_db.begin_tx();
+        let mut tx = self.relational_db.begin_mut_tx().into();
 
         let result = self._add_subscription(sender, subscription, &mut tx).await;
 
@@ -181,7 +181,7 @@ impl ModuleSubscriptionActor {
         })
     }
 
-    async fn _broadcast_commit_event(&mut self, mut event: ModuleEvent, tx: &mut MutTxId) -> Result<(), DBError> {
+    async fn _broadcast_commit_event(&mut self, mut event: ModuleEvent, tx: &mut TxType) -> Result<(), DBError> {
         let futures = FuturesUnordered::new();
         let auth = AuthCtx::new(self.owner_identity, event.caller_identity);
 

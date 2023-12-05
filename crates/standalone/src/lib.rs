@@ -519,7 +519,7 @@ impl StandaloneEnv {
         let ctx = self.load_module_host_context(database.clone(), instance.id).await?;
         let stdb = &ctx.dbic.relational_db;
         let cx = ExecutionContext::internal(stdb.address());
-        let tx = stdb.begin_tx();
+        let tx = stdb.begin_mut_tx();
         match stdb.program_hash(&tx) {
             Err(e) => {
                 stdb.rollback_tx(&cx, tx);
@@ -572,7 +572,7 @@ impl StandaloneEnv {
         let ctx = self.load_module_host_context(database.clone(), instance.id).await?;
         let stdb = &ctx.dbic.relational_db;
         let cx = ExecutionContext::internal(stdb.address());
-        let tx = stdb.begin_tx();
+        let tx = stdb.begin_mut_tx();
 
         match stdb.program_hash(&tx) {
             Err(e) => {

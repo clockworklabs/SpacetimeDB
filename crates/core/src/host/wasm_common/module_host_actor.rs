@@ -12,7 +12,7 @@ use super::instrumentation::CallTimes;
 use super::*;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{LogLevel, Record, SystemLogger};
-use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::db::datastore::locking_tx_datastore::{MutTxId, TxType};
 use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
 use crate::host::instance_env::InstanceEnv;
@@ -252,7 +252,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
 
         db.with_read_only(
             &ExecutionContext::sql(db.address(), Some(&QueryDebugInfo::from_source(&query))),
-            |tx| {
+            |tx: &mut TxType| {
                 log::debug!("One-off query: {query}");
 
                 let compiled = sql::compiler::compile_sql(db, tx, &query)?
@@ -273,7 +273,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
     fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error> {
         let db = &*self.database_instance_context.relational_db;
         db.with_auto_commit(&ExecutionContext::internal(db.address()), |tx| {
-            let tables = db.get_all_tables(tx)?;
+            let tables = db.get_all_tables(&(*tx).into())?;
             // We currently have unique table names,
             // so we can assume there's only one table to clear.
             if let Some(table_id) = tables
@@ -325,7 +325,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         let timestamp = Timestamp::now();
         let stdb = &*self.database_instance_context().relational_db;
         let ctx = ExecutionContext::internal(stdb.address());
-        let tx = stdb.begin_tx();
+        let tx = stdb.begin_mut_tx();
         let (tx, ()) = stdb
             .with_auto_rollback(&ctx, tx, |tx| {
                 for schema in get_tabledefs(&self.info) {
@@ -389,7 +389,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         let proposed_tables = get_tabledefs(&self.info).collect::<anyhow::Result<Vec<_>>>()?;
 
         let stdb = &*self.database_instance_context().relational_db;
-        let tx = stdb.begin_tx();
+        let tx = stdb.begin_mut_tx();
 
         let res = crate::db::update::update_database(
             stdb,
@@ -475,7 +475,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             mut args,
         } = params;
         let caller_address_opt = (caller_address != Address::__DUMMY).then_some(caller_address);
-
+        println!("call_reducer_with_tx {:?}, {:?}", reducer_id, args);
         let dbic = self.database_instance_context();
         let stdb = &*dbic.relational_db.clone();
         let address = dbic.address;
@@ -509,7 +509,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             arg_bytes: args.get_bsatn().clone(),
         };
 
-        let tx = tx.unwrap_or_else(|| stdb.begin_tx());
+        let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx());
         let tx_slot = self.instance.instance_env().tx.clone();
 
         let reducer_span = tracing::trace_span!(
@@ -554,7 +554,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let ctx = ExecutionContext::reducer(address, reducer_name);
         let status = match call_result {
             Err(err) => {
-                stdb.rollback_tx(&ctx, tx);
+                stdb.rollback_tx(&ctx, tx.into());
 
                 T::log_traceback("reducer", reducer_name, &err);
 
@@ -573,7 +573,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 }
             }
             Ok(Err(errmsg)) => {
-                stdb.rollback_tx(&ctx, tx);
+                stdb.rollback_tx(&ctx, tx.into());
 
                 log::info!("reducer returned error: {errmsg}");
 

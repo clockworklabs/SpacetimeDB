@@ -28,7 +28,7 @@ use derive_more::{Deref, DerefMut, From, IntoIterator};
 use std::collections::{btree_set, BTreeSet, HashMap, HashSet};
 use std::ops::Deref;
 
-use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::db::datastore::locking_tx_datastore::{MutTxId, TxId, TxType};
 use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
 use crate::sql::query_debug_info::QueryDebugInfo;
@@ -186,8 +186,8 @@ impl QuerySet {
     /// Queries all the [`StTableType::User`] tables *right now*
     /// and turns them into [`QueryExpr`],
     /// the moral equivalent of `SELECT * FROM table`.
-    pub(crate) fn get_all(relational_db: &RelationalDB, tx: &MutTxId, auth: &AuthCtx) -> Result<Self, DBError> {
-        let tables = relational_db.get_all_tables(tx)?;
+    pub(crate) fn get_all(relational_db: &RelationalDB, tx: &TxType, auth: &AuthCtx) -> Result<Self, DBError> {
+        let tables = relational_db.get_all_tables(&(*tx).try_into()?)?;
         let same_owner = auth.owner == auth.caller;
         let exprs = tables
             .iter()
@@ -212,7 +212,7 @@ impl QuerySet {
     pub fn eval_incr(
         &self,
         db: &RelationalDB,
-        tx: &mut MutTxId,
+        tx: &mut TxType,
         database_update: &DatabaseUpdate,
         auth: AuthCtx,
     ) -> Result<DatabaseUpdate, DBError> {
@@ -285,7 +285,7 @@ impl QuerySet {
     ///
     /// This is a *major* difference with normal query execution, where is expected to return the full result set for each query.
     #[tracing::instrument(skip_all)]
-    pub fn eval(&self, db: &RelationalDB, tx: &mut MutTxId, auth: AuthCtx) -> Result<DatabaseUpdate, DBError> {
+    pub fn eval(&self, db: &RelationalDB, tx: &mut TxType, auth: AuthCtx) -> Result<DatabaseUpdate, DBError> {
         let mut database_update: DatabaseUpdate = DatabaseUpdate { tables: vec![] };
         let mut table_ops = HashMap::new();
         let mut seen = HashSet::new();
@@ -363,7 +363,7 @@ impl From<Op> for TableOp {
 /// removed from the `row`.
 fn eval_incremental(
     db: &RelationalDB,
-    tx: &mut MutTxId,
+    tx: &mut TxType,
     auth: &AuthCtx,
     expr: &QueryExpr,
     info: &QueryDebugInfo,
@@ -543,7 +543,7 @@ impl<'a> IncrementalJoin<'a> {
     pub fn eval(
         &self,
         db: &RelationalDB,
-        tx: &mut MutTxId,
+        tx: &mut TxType,
         auth: &AuthCtx,
     ) -> Result<impl Iterator<Item = Op>, DBError> {
         let ctx = &ExecutionContext::incremental_update(db.address(), Some(self.info));
