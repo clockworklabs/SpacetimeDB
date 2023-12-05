@@ -872,28 +872,6 @@ fn autogen_typescript_access_funcs_for_struct(
     table_name: &str,
     table: &TableSchema,
 ) {
-    writeln!(output, "public static count(): number").unwrap();
-    indented_block(output, |output| {
-        writeln!(
-            output,
-            "return __SPACETIMEDB__.clientDB.getTable(\"{table_name}\").count();",
-        )
-        .unwrap();
-    });
-
-    writeln!(output).unwrap();
-
-    writeln!(output, "public static all(): {table_name}[]").unwrap();
-    indented_block(output, |output| {
-        writeln!(
-            output,
-            "return __SPACETIMEDB__.clientDB.getTable(\"{table_name}\").getInstances() as unknown as {table_name}[];",
-        )
-        .unwrap();
-    });
-
-    writeln!(output).unwrap();
-
     let constraints = table.column_constraints();
     for col in &table.columns {
         let is_unique = constraints[&NonEmpty::new(col.col_pos)].has_unique();
