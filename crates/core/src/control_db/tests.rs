@@ -1,6 +1,9 @@
 use std::str::FromStr;
 
+use crate::messages::control_db::HostType;
 use once_cell::sync::Lazy;
+use spacetimedb_lib::error::ResultTest;
+use spacetimedb_lib::Hash;
 use tempfile::TempDir;
 
 use super::*;
@@ -79,6 +82,49 @@ fn test_domain() -> anyhow::Result<()> {
     );
     assert_eq!(reverse_lookup, vec![domain]);
     let _ = tmp.close().ok(); // force tmp to not be dropped until here
+
+    Ok(())
+}
+
+#[test]
+fn test_decode() -> ResultTest<()> {
+    let path = TempDir::with_prefix("decode")?;
+
+    let cdb = ControlDb::at(path)?;
+
+    let id = cdb.alloc_spacetime_identity()?;
+
+    let db = Database {
+        id: 0,
+        address: Default::default(),
+        identity: id,
+        host_type: HostType::Wasm,
+        num_replicas: 0,
+        program_bytes_address: Hash::ZERO,
+        publisher_address: Some(Address::zero()),
+    };
+
+    cdb.insert_database(db.clone())?;
+
+    let dbs = cdb.get_databases()?;
+
+    assert_eq!(dbs.len(), 1);
+    assert_eq!(dbs[0].identity, id);
+
+    let mut new_database_instance = DatabaseInstance {
+        id: 0,
+        database_id: 1,
+        node_id: 0,
+        leader: true,
+    };
+
+    let id = cdb.insert_database_instance(new_database_instance.clone())?;
+    new_database_instance.id = id;
+
+    let dbs = cdb.get_database_instances()?;
+
+    assert_eq!(dbs.len(), 1);
+    assert_eq!(dbs[0].id, id);
 
     Ok(())
 }

@@ -1,9 +1,9 @@
 //! Utilities for build valid constructs for the vm.
+use spacetimedb_primitives::TableId;
 use std::collections::HashMap;
 
 use crate::expr::{Expr, QueryExpr, SourceExpr};
 use crate::operator::*;
-use spacetimedb_primitives::TableId;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::product_value::ProductValue;

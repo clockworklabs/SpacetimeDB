@@ -2,53 +2,148 @@ namespace SpacetimeDB.Module;
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using SpacetimeDB.SATS;
+using System.Runtime.InteropServices;
 
 [SpacetimeDB.Type]
 public partial struct IndexDef
 {
-    string Name;
-    Runtime.IndexType Type;
-    byte[] ColumnIds;
+    public string IndexName;
+    public bool IsUnique;
+    public Runtime.IndexType Type;
+    public uint[] ColumnIds;
 
-    public IndexDef(string name, Runtime.IndexType type, byte[] columnIds)
+    public IndexDef(string name, Runtime.IndexType type, bool isUnique, RawBindings.ColId[] columnIds)
     {
-        Name = name;
+        IndexName = name;
+        IsUnique = isUnique;
         Type = type;
+        ColumnIds = columnIds.Select(id => (uint)id).ToArray();
+    }
+}
+
+
+[SpacetimeDB.Type]
+public partial struct ColumnDef
+{
+    string ColName;
+    AlgebraicType ColType;
+
+    public ColumnDef(string name, AlgebraicType type)
+    {
+        ColName = name;
+        ColType = type;
+    }
+}
+
+[SpacetimeDB.Type]
+public partial struct ConstraintDef
+{
+    public string ConstraintName;
+    // bitflags should be serialized as bytes rather than sum types
+    public byte Kind;
+    public uint[] ColumnIds;
+
+    public ConstraintDef(string name, byte kind, uint[] columnIds)
+    {
+        ConstraintName = name;
+        Kind = kind;
         ColumnIds = columnIds;
     }
 }
 
 [SpacetimeDB.Type]
+public partial struct SequenceDef
+{
+
+    string SequenceName;
+    uint ColPos;
+    Int128 increment;
+    Int128? start;
+    Int128? min_value;
+    Int128? max_value;
+    Int128 allocated;
+
+    public SequenceDef(string sequenceName, uint colPos, Int128? increment = null, Int128? start = null, Int128? min_value = null, Int128? max_value = null, Int128? allocated = null)
+    {
+        SequenceName = sequenceName;
+        ColPos = colPos;
+        this.increment = increment ?? 1;
+        this.start = start;
+        this.min_value = min_value;
+        this.max_value = max_value;
+        this.allocated = allocated ?? 4_096;
+    }
+}
+
+public partial struct ColumnAttrs
+{
+    public string ColName;
+    public AlgebraicType ColType;
+    public ConstraintFlags Kind;
+
+    public ColumnAttrs(string colName, AlgebraicType colType, ConstraintFlags kind)
+    {
+        ColName = colName;
+        ColType = colType;
+        Kind = kind;
+    }
+}
+
+
+[SpacetimeDB.Type]
 public partial struct TableDef
 {
-    string Name;
-    AlgebraicTypeRef Data;
-    // bitflags should be serialized as bytes rather than sum types
-    byte[] ColumnAttrs;
+    string TableName;
+    ColumnDef[] Columns;
     IndexDef[] Indices;
-
+    ConstraintDef[] Constraints;
+    SequenceDef[] Sequences;
     // "system" | "user"
     string TableType;
 
     // "public" | "private"
     string TableAccess;
 
-    public TableDef(
-        string name,
-        AlgebraicTypeRef type,
-        ColumnAttrs[] columnAttrs,
-        IndexDef[] indices
-    )
+    public TableDef(string tableName, ColumnAttrs[] columns, IndexDef[] indices)
     {
-        Name = name;
-        Data = type;
-        ColumnAttrs = columnAttrs.Cast<byte>().ToArray();
+
+        TableName = tableName;
+        Columns = columns.Select(x => new ColumnDef(x.ColName, x.ColType)).ToArray();
+        Constraints = columns.Select((x, pos) => new ConstraintDef($"ct_{tableName}_{x.ColName}_{x.Kind}", ((byte)x.Kind), new uint[] { (uint)pos } )).ToArray();
+        Sequences = columns.Where(x => x.Kind.HasFlag(ConstraintFlags.AutoInc)).Select((x, pos) => new SequenceDef($"seq_{tableName}_{x.ColName}", (uint)pos)).ToArray();
         Indices = indices;
         TableType = "user";
-        TableAccess = name.StartsWith('_') ? "private" : "public";
+        TableAccess = tableName.StartsWith('_') ? "private" : "public";
+    }
+
+    public void ValidateCodeGen()
+    {
+        foreach (ConstraintDef col in this.Constraints)
+        {
+            Trace.Assert(col.ColumnIds.Length > 0, "Constraint need at least one column");
+        }
+
+        foreach (IndexDef col in this.Indices)
+        {
+            Trace.Assert(col.ColumnIds.Length > 0, "Constraint need at least one column");
+        }
+    }
+}
+
+[SpacetimeDB.Type]
+public partial struct TableDesc
+{
+    public TableDef schema;
+    AlgebraicTypeRef Data;
+
+    public TableDesc(string tableName, ColumnAttrs[] columns, IndexDef[] indices, AlgebraicTypeRef data)
+    {
+        schema = new TableDef(tableName, columns, indices);
+        Data = data;
     }
 }
 
@@ -79,7 +174,7 @@ partial struct MiscModuleExport : SpacetimeDB.TaggedEnum<(TypeAlias TypeAlias, U
 public partial struct ModuleDef
 {
     List<AlgebraicType> Types = new();
-    List<TableDef> Tables = new();
+    List<TableDesc> Tables = new();
     List<ReducerDef> Reducers = new();
     List<MiscModuleExport> MiscExports = new();
 
@@ -115,7 +210,7 @@ public partial struct ModuleDef
         }
     }
 
-    public void Add(TableDef table)
+    public void Add(TableDesc table)
     {
         Tables.Add(table);
     }
@@ -127,7 +222,7 @@ public partial struct ModuleDef
 }
 
 [System.Flags]
-public enum ColumnAttrs : byte
+public enum ConstraintFlags : byte
 {
     UnSet = 0b0000,
     Indexed = 0b0001,
@@ -136,6 +231,7 @@ public enum ColumnAttrs : byte
     Identity = Unique | AutoInc,
     PrimaryKey = Unique | 0b1000,
     PrimaryKeyAuto = PrimaryKey | AutoInc,
+    PrimaryKeyIdentity = PrimaryKey | Identity,
 }
 
 public static class ReducerKind
@@ -163,15 +259,18 @@ public static class FFI
         module.Add(reducer.MakeReducerDef());
     }
 
-    public static void RegisterTable(TableDef table) => module.Add(table);
+    public static void RegisterTable(TableDesc table) => module.Add(table);
 
     public static AlgebraicTypeRef AllocTypeRef() => module.AllocTypeRef();
 
-    public static void SetTypeRef<T>(AlgebraicTypeRef typeRef, AlgebraicType type, bool anonymous = false) =>
-        module.SetTypeRef<T>(typeRef, type, anonymous);
+    public static void SetTypeRef<T>(
+        AlgebraicTypeRef typeRef,
+        AlgebraicType type,
+        bool anonymous = false
+    ) => module.SetTypeRef<T>(typeRef, type, anonymous);
 
-    // Note: this is accessed by C bindings.
-    private static byte[] DescribeModule()
+    // [UnmanagedCallersOnly(EntryPoint = "__describe_module__")]
+    public static RawBindings.Buffer __describe_module__()
     {
         // replace `module` with a temporary internal module that will register ModuleDef, AlgebraicType and other internal types
         // during the ModuleDef.GetSatsTypeInfo() instead of exposing them via user's module.
@@ -179,7 +278,14 @@ public static class FFI
         try
         {
             module = new();
-            return ModuleDef.GetSatsTypeInfo().ToBytes(userModule);
+            var moduleBytes = ModuleDef.GetSatsTypeInfo().ToBytes(userModule);
+            var res = RawBindings._buffer_alloc(moduleBytes, (uint)moduleBytes.Length);
+            return res;
+        }
+        catch (Exception e)
+        {
+            Runtime.Log($"Error while describing the module: {e}", Runtime.LogLevel.Error);
+            return RawBindings.Buffer.INVALID;
         }
         finally
         {
@@ -187,29 +293,43 @@ public static class FFI
         }
     }
 
-    // Note: this is accessed by C bindings.
-    private static string? CallReducer(
+    private static byte[] Consume(this RawBindings.Buffer buffer)
+    {
+        var len = RawBindings._buffer_len(buffer);
+        var result = new byte[len];
+        RawBindings._buffer_consume(buffer, result, len);
+        return result;
+    }
+
+    // [UnmanagedCallersOnly(EntryPoint = "__call_reducer__")]
+    public static RawBindings.Buffer __call_reducer__(
         uint id,
-        byte[] caller_identity,
-        byte[] caller_address,
+        RawBindings.Buffer caller_identity,
+        RawBindings.Buffer caller_address,
         ulong timestamp,
-        byte[] args
+        RawBindings.Buffer args
     )
     {
         try
         {
-            using var stream = new MemoryStream(args);
+            using var stream = new MemoryStream(args.Consume());
             using var reader = new BinaryReader(stream);
-            reducers[(int)id].Invoke(reader, new(caller_identity, caller_address, timestamp));
+            reducers[(int)id].Invoke(
+                reader,
+                new(caller_identity.Consume(), caller_address.Consume(), timestamp)
+            );
             if (stream.Position != stream.Length)
             {
                 throw new Exception("Unrecognised extra bytes in the reducer arguments");
             }
-            return null;
+            return /* no exception */
+            RawBindings.Buffer.INVALID;
         }
         catch (Exception e)
         {
-            return e.ToString();
+            var error_str = e.ToString();
+            var error_bytes = System.Text.Encoding.UTF8.GetBytes(error_str);
+            return RawBindings._buffer_alloc(error_bytes, (uint)error_bytes.Length);
         }
     }
 }

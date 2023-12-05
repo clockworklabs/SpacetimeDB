@@ -539,7 +539,11 @@ impl ControlDb {
                 }
             };
             let Ok(arr) = <[u8; 16]>::try_from(balance_entry.1.as_ref()) else {
-                return Err(Error::DecodingError(bsatn::DecodeError::BufferLength));
+                return Err(Error::DecodingError(bsatn::DecodeError::BufferLength {
+                    for_type: "balance_entry".into(),
+                    expected: 16,
+                    given: balance_entry.1.len(),
+                }));
             };
             let balance = i128::from_be_bytes(arr);
             let energy_balance = EnergyBalance {
@@ -559,7 +563,11 @@ impl ControlDb {
         let value = tree.get(identity.as_bytes())?;
         if let Some(value) = value {
             let Ok(arr) = <[u8; 16]>::try_from(value.as_ref()) else {
-                return Err(Error::DecodingError(bsatn::DecodeError::BufferLength));
+                return Err(Error::DecodingError(bsatn::DecodeError::BufferLength {
+                    for_type: "Identity".into(),
+                    expected: 16,
+                    given: value.as_ref().len(),
+                }));
             };
             let balance = i128::from_be_bytes(arr);
             Ok(Some(EnergyQuanta::new(balance)))

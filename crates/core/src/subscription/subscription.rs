@@ -25,12 +25,16 @@
 
 use anyhow::Context;
 use derive_more::{Deref, DerefMut, From, IntoIterator};
+use std::collections::hash_map::DefaultHasher;
 use std::collections::{btree_set, BTreeSet, HashMap, HashSet};
+use std::hash::Hasher;
 use std::ops::Deref;
+use std::time::Instant;
 
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::error::DBError;
-use crate::execution_context::ExecutionContext;
+use crate::db::db_metrics::{DB_METRICS, MAX_QUERY_CPU_TIME};
+use crate::error::{DBError, SubscriptionError};
+use crate::execution_context::{ExecutionContext, WorkloadType};
 use crate::sql::query_debug_info::QueryDebugInfo;
 use crate::subscription::query::{run_query, OP_TYPE_FIELD_NAME};
 use crate::{
@@ -39,7 +43,7 @@ use crate::{
     host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp},
 };
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::PrimaryKey;
+use spacetimedb_lib::{Address, PrimaryKey};
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::relation::{DbTable, MemTable, RelValue};
 use spacetimedb_sats::{AlgebraicValue, DataKey, ProductValue};
@@ -90,7 +94,7 @@ pub struct SupportedQuery {
 
 impl SupportedQuery {
     pub fn new(expr: QueryExpr, info: QueryDebugInfo) -> Result<Self, DBError> {
-        let kind = query::classify(&expr).context("Unsupported query expression")?;
+        let kind = query::classify(&expr).ok_or_else(|| SubscriptionError::Unsupported(info.clone()))?;
         Ok(Self { kind, expr, info })
     }
 
@@ -124,7 +128,7 @@ impl AsRef<QueryExpr> for SupportedQuery {
 }
 
 /// A set of [supported][`SupportedQuery`] [`QueryExpr`]s.
-#[derive(Deref, DerefMut, PartialEq, From, IntoIterator)]
+#[derive(Debug, Deref, DerefMut, PartialEq, From, IntoIterator)]
 pub struct QuerySet(BTreeSet<SupportedQuery>);
 
 impl From<SupportedQuery> for QuerySet {
@@ -222,6 +226,7 @@ impl QuerySet {
 
         for SupportedQuery { kind, expr, info } in self {
             use query::Supported::*;
+            let start = Instant::now();
             match kind {
                 Scan => {
                     let source = expr
@@ -245,7 +250,6 @@ impl QuerySet {
                         }
                     }
                 }
-
                 Semijoin => {
                     if let Some(plan) = IncrementalJoin::new(expr, info, database_update.tables.iter())? {
                         let table_id = plan.lhs.table.table_id;
@@ -266,6 +270,7 @@ impl QuerySet {
                     }
                 }
             }
+            record_query_duration_metrics(WorkloadType::Update, &db.address(), info.source(), start);
         }
         for (table_id, (table_name, ops)) in table_ops.into_iter().filter(|(_, (_, ops))| !ops.is_empty()) {
             output.tables.push(DatabaseTableUpdate {
@@ -292,6 +297,7 @@ impl QuerySet {
 
         for SupportedQuery { expr, info, .. } in self {
             if let Some(t) = expr.source.get_db_table() {
+                let start = Instant::now();
                 // Get the TableOps for this table
                 let (_, table_row_operations) = table_ops
                     .entry(t.table_id)
@@ -321,6 +327,7 @@ impl QuerySet {
                         });
                     }
                 }
+                record_query_duration_metrics(WorkloadType::Subscribe, &db.address(), info.source(), start);
             }
         }
         for (table_id, (table_name, ops)) in table_ops.into_iter().filter(|(_, (_, ops))| !ops.is_empty()) {
@@ -332,6 +339,40 @@ impl QuerySet {
         }
         Ok(database_update)
     }
+}
+
+fn record_query_duration_metrics(workload: WorkloadType, db: &Address, query: &str, start: Instant) {
+    let query_duration = start.elapsed().as_secs_f64();
+
+    DB_METRICS
+        .rdb_query_cpu_time_sec
+        .with_label_values(&workload, db, query)
+        .observe(query_duration);
+
+    fn hash(a: WorkloadType, b: &Address, c: &str) -> u64 {
+        use std::hash::Hash;
+        let mut hasher = DefaultHasher::new();
+        a.hash(&mut hasher);
+        b.hash(&mut hasher);
+        c.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    let max_query_duration = *MAX_QUERY_CPU_TIME
+        .lock()
+        .unwrap()
+        .entry(hash(workload, db, query))
+        .and_modify(|max| {
+            if query_duration > *max {
+                *max = query_duration;
+            }
+        })
+        .or_insert_with(|| query_duration);
+
+    DB_METRICS
+        .rdb_query_cpu_time_sec_max
+        .with_label_values(&workload, db, query)
+        .set(max_query_duration);
 }
 
 /// Helper to retain [`PrimaryKey`] before converting to [`TableOp`].

@@ -591,7 +591,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
             })
             .collect::<syn::Result<Vec<_>>>()?;
         let name = name.as_deref().unwrap_or("default_index");
-        indexes.push(quote!(spacetimedb::IndexDef {
+        indexes.push(quote!(spacetimedb::IndexDesc {
             name: #name,
             ty: spacetimedb::sats::db::def::IndexType::#ty,
             col_ids: &[#(#col_ids),*],
@@ -707,7 +707,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
             const COLUMN_ATTRS: &'static [spacetimedb::sats::db::attr::ColumnAttribute] = &[
                 #(spacetimedb::sats::db::attr::ColumnAttribute::#column_attrs),*
             ];
-            const INDEXES: &'static [spacetimedb::IndexDef<'static>] = &[#(#indexes),*];
+            const INDEXES: &'static [spacetimedb::IndexDesc<'static>] = &[#(#indexes),*];
             type InsertResult = #insert_result;
             #get_table_id_func
         }

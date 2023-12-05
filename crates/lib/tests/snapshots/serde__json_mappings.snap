@@ -1,18 +1,21 @@
 ---
 source: crates/lib/tests/serde.rs
-expression: "de_json({\n    \"foo\": 42,\n    \"bar\": \"404040FFFF0A48656C6C6F\",\n    \"baz\": [\"heyyyyyy\", \"hooo\"],\n    \"quux\": { \"Hash\": \"54a3e6d2b0959deaacf102292b1cbd6fcbb8cf237f73306e27ed82c3153878aa\" },\n    \"and_peggy\": { \"some\": 3.141592653589793238426 }\n})"
+expression: "de_json({\n    \"foo\": 42,\n    \"bar\": \"404040FFFF0A48656C6C6F\",\n    \"baz\": [\"heyyyyyy\", \"hooo\"],\n    \"quux\": { \"Hash\": \"54a3e6d2b0959deaacf102292b1cbd6fcbb8cf237f73306e27ed82c3153878aa\" },\n    \"and_peggy\": { \"some\": 3.141592653589793238426 },\n    \"identity\": [\"0000000000000000000000000000000000000000000000000000000000000000\"]\n})"
 ---
 (
     foo = 42,
-    bar = [64, 64, 64, 255, 255, 10, 72, 101, 108, 108, 111],
+    bar = 0x404040ffff0a48656c6c6f,
     baz = [
         "heyyyyyy",
         "hooo",
     ],
     quux = (
-        Hash = [84, 163, 230, 210, 176, 149, 157, 234, 172, 241, 2, 41, 43, 28, 189, 111, 203, 184, 207, 35, 127, 115, 48, 110, 39, 237, 130, 195, 21, 56, 120, 170],
+        Hash = 0x54a3e6d2b0959deaacf102292b1cbd6fcbb8cf237f73306e27ed82c3153878aa,
     ),
     and_peggy = (
         some = 3.141592653589793,
+    ),
+    identity = (
+        __identity_bytes = 0x0000000000000000000000000000000000000000000000000000000000000000,
     ),
 )

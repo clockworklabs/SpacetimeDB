@@ -17,7 +17,7 @@ jobs:
         run: docker compose up -d
       - name: Run smoketests
         run: test/run-smoke-tests.sh --parallel -x bitcraftmini-pretest
-      - name: Stop containers 
+      - name: Stop containers
         if: always()
         run: docker compose down
 
@@ -29,6 +29,10 @@ jobs:
         uses: actions/checkout@v3
 
       - uses: dsherret/rust-toolchain-file@v1
+
+      - uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '8.x'
 
       - name: Create /stdb dir
         run: |

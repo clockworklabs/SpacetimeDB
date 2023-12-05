@@ -16,11 +16,12 @@ use crate::vm::DbProgram;
 use spacetimedb_lib::filter::CmpArgs;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::operator::OpQuery;
+use spacetimedb_lib::{bsatn, ProductValue};
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::buffer::BufWriter;
 use spacetimedb_sats::db::def::{IndexDef, IndexType};
 use spacetimedb_sats::relation::{FieldExpr, FieldName};
-use spacetimedb_sats::{bsatn, ProductType, ProductValue, Typespace};
+use spacetimedb_sats::{ProductType, Typespace};
 use spacetimedb_vm::expr::{Code, ColumnOp};
 
 #[derive(Clone)]
@@ -232,24 +233,25 @@ impl InstanceEnv {
         let index_type = IndexType::try_from(index_type).map_err(|_| NodesError::BadIndexType(index_type))?;
         match index_type {
             IndexType::BTree => {}
-            IndexType::Hash => todo!("Hash indexes not yet supported"),
+            IndexType::Hash => {
+                todo!("Hash indexes not yet supported")
+            }
         };
 
-        let cols = NonEmpty::from_vec(col_ids)
+        let columns = NonEmpty::from_vec(col_ids)
             .expect("Attempt to create an index with zero columns")
             .map(Into::into);
 
-        let is_unique = stdb.column_attrs(tx, table_id, &cols)?.has_unique();
+        let is_unique = stdb.column_constraints(tx, table_id, &columns)?.has_unique();
 
         let index = IndexDef {
-            table_id,
-            cols,
-            name: index_name,
+            columns,
+            index_name,
             is_unique,
             index_type,
         };
 
-        stdb.create_index(tx, index)?;
+        stdb.create_index(tx, table_id, index)?;
 
         Ok(())
     }

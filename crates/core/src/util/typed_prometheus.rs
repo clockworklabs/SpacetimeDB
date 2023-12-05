@@ -1,6 +1,4 @@
-use crate::hash::Hash;
 use prometheus::core::{Metric, MetricVec, MetricVecBuilder};
-use spacetimedb_lib::{Address, Identity};
 
 #[macro_export]
 macro_rules! metrics_group {
@@ -128,8 +126,6 @@ macro_rules! metrics_vec {
 }
 pub use metrics_vec;
 
-use crate::{execution_context::WorkloadType, host::AbiCall};
-
 pub trait AsPrometheusLabel {
     type Str<'a>: AsRef<str> + 'a
     where
@@ -142,6 +138,7 @@ impl<T: AsRef<str> + ?Sized> AsPrometheusLabel for &T {
         self.as_ref()
     }
 }
+#[macro_export]
 macro_rules! impl_prometheusvalue_string {
     ($($x:ty),*) => {
         $(impl AsPrometheusLabel for $x {
@@ -152,22 +149,9 @@ macro_rules! impl_prometheusvalue_string {
         })*
     }
 }
-impl_prometheusvalue_string!(
-    Hash,
-    Identity,
-    Address,
-    WorkloadType,
-    AbiCall,
-    bool,
-    u8,
-    u16,
-    u32,
-    u64,
-    i8,
-    i16,
-    i32,
-    i64
-);
+pub use impl_prometheusvalue_string;
+
+impl_prometheusvalue_string!(bool, u8, u16, u32, u64, i8, i16, i32, i64);
 
 #[doc(hidden)]
 pub trait ExtractMetricVecT {

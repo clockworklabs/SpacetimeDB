@@ -315,9 +315,9 @@ impl<T, De: BufferDeserialize<Item = T>> Iterator for RawTableIter<De> {
     }
 }
 
-/// Defines a named index with an index type over a set of columns identified by their IDs.
+/// Describe a named index with an index type over a set of columns identified by their IDs.
 #[derive(Clone, Copy)]
-pub struct IndexDef<'a> {
+pub struct IndexDesc<'a> {
     /// The name of the index.
     pub name: &'a str,
     /// The type of index used, i.e. the strategy used for indexing.
@@ -346,7 +346,7 @@ impl<T: TableType> Iterator for TableIter<T> {
 pub trait TableType: SpacetimeType + DeserializeOwned + Serialize {
     const TABLE_NAME: &'static str;
     const COLUMN_ATTRS: &'static [ColumnAttribute];
-    const INDEXES: &'static [IndexDef<'static>];
+    const INDEXES: &'static [IndexDesc<'static>];
     type InsertResult: sealed::InsertResult<T = Self>;
 
     /// Returns the ID of this table.
