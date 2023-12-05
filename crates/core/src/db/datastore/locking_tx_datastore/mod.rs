@@ -838,7 +838,7 @@ impl MutTxId {
         let sequence_id = sequence_row.sequence_id;
 
         let schema: SequenceSchema = sequence_row.into();
-        let insert_table = self.get_insert_table_mut(&schema.table_id)?;
+        let insert_table = self.get_insert_table_mut(schema.table_id)?;
         insert_table.schema.update_sequence(schema.clone());
         self.sequence_state_lock
             .sequences
