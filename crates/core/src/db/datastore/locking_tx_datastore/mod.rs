@@ -48,7 +48,7 @@ use crate::{
 };
 use anyhow::anyhow;
 use parking_lot::{lock_api::ArcRwLockWriteGuard, RawRwLock, RwLock};
-use spacetimedb_lib::Address;
+use spacetimedb_lib::{metrics::METRICS, Address};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::data_key::{DataKey, ToDataKey};
 use spacetimedb_sats::db::def::*;
@@ -250,7 +250,7 @@ impl CommittedState {
         for schema in system_tables() {
             let table_id = schema.table_id;
             // Reset the row count metric for this system table
-            DB_METRICS
+            METRICS
                 .rdb_num_table_rows
                 .with_label_values(&database_address, &table_id.0)
                 .set(0);
@@ -283,7 +283,7 @@ impl CommittedState {
 
             st_columns.rows.insert(RowId(data_key), row);
             // Increment row count for st_columns
-            DB_METRICS
+            METRICS
                 .rdb_num_table_rows
                 .with_label_values(&database_address, &ST_COLUMNS_ID.into())
                 .inc();
@@ -311,7 +311,7 @@ impl CommittedState {
             let data_key = row.to_data_key();
             st_constraints.rows.insert(RowId(data_key), row);
             // Increment row count for st_constraints
-            DB_METRICS
+            METRICS
                 .rdb_num_table_rows
                 .with_label_values(&database_address, &ST_CONSTRAINTS_ID.into())
                 .inc();
@@ -340,7 +340,7 @@ impl CommittedState {
             let data_key = row.to_data_key();
             st_indexes.rows.insert(RowId(data_key), row);
             // Increment row count for st_indexes
-            DB_METRICS
+            METRICS
                 .rdb_num_table_rows
                 .with_label_values(&database_address, &ST_INDEXES_ID.into())
                 .inc();
@@ -375,7 +375,7 @@ impl CommittedState {
             let data_key = row.to_data_key();
             st_sequences.rows.insert(RowId(data_key), row);
             // Increment row count for st_sequences
-            DB_METRICS
+            METRICS
                 .rdb_num_table_rows
                 .with_label_values(&database_address, &ST_SEQUENCES_ID.into())
                 .inc();
@@ -1885,7 +1885,7 @@ impl Locking {
                     committed_state
                         .table_rows(table_id, schema)
                         .remove(&RowId(write.data_key));
-                    DB_METRICS
+                    METRICS
                         .rdb_num_table_rows
                         .with_label_values(&self.database_address, &table_id.into())
                         .dec();
@@ -1914,7 +1914,7 @@ impl Locking {
                     committed_state
                         .table_rows(table_id, schema)
                         .insert(RowId(write.data_key), product_value);
-                    DB_METRICS
+                    METRICS
                         .rdb_num_table_rows
                         .with_label_values(&self.database_address, &table_id.into())
                         .inc();

@@ -55,11 +55,6 @@ metrics_group!(
         #[labels(table_id: u32)]
         pub rdb_delete_by_rel_time: HistogramVec,
 
-        #[name = spacetime_num_table_rows]
-        #[help = "The number of rows in a table"]
-        #[labels(db: Address, table_id: u32)]
-        pub rdb_num_table_rows: IntGaugeVec,
-
         #[name = spacetime_num_rows_inserted_cumulative]
         #[help = "The cumulative number of rows inserted into a table"]
         #[labels(txn_type: WorkloadType, db: Address, reducer_or_query: str, table_id: u32)]

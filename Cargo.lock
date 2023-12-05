@@ -4215,6 +4215,8 @@ dependencies = [
  "hex",
  "insta",
  "itertools 0.11.0",
+ "once_cell",
+ "prometheus",
  "proptest",
  "proptest-derive",
  "rand 0.8.5",
