@@ -7,6 +7,7 @@ static partial class Module
     public partial struct Person
     {
         public string Name;
+        public byte Age;
     }
 
     // Verify that all types compile via codegen successfully.
@@ -35,9 +36,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer("add")]
-    public static void Add(string name)
+    public static void Add(string name, byte age)
     {
-        new Person { Name = name }.Insert();
+        new Person { Name = name, Age = age }.Insert();
     }
 
     [SpacetimeDB.Reducer("say_hello")]
@@ -48,5 +49,14 @@ static partial class Module
             Log($"Hello, {person.Name}!");
         }
         Log("Hello, World!");
+    }
+
+    [SpacetimeDB.Reducer("list_over_age")]
+    public static void ListOverAge(byte age)
+    {
+        foreach (var person in Person.Query(person => person.Age >= age))
+        {
+            Log($"{person.Name} has age {person.Age} >= {age}");
+        }
     }
 }
