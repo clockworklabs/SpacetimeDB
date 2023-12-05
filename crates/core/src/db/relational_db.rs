@@ -1,5 +1,6 @@
 use fs2::FileExt;
 use nonempty::NonEmpty;
+use spacetimedb_lib::metrics::METRICS;
 use std::borrow::Cow;
 use std::fs::{create_dir_all, File};
 use std::ops::RangeBounds;
@@ -376,7 +377,7 @@ impl RelationalDB {
             .with_label_values(&table_id.0)
             .start_timer();
         self.inner.drop_table_mut_tx(tx, table_id).map(|_| {
-            DB_METRICS
+            METRICS
                 .rdb_num_table_rows
                 .with_label_values(&self.address, &table_id.into())
                 .set(0)
