@@ -123,6 +123,19 @@ public class Module : IIncrementalGenerator
                                 {string.Join("\n", t.Fields.Select(f => $"new (nameof({f.Name}), {f.TypeInfo}.EraseType()),"))}
                             }});
 
+                            public static SpacetimeDB.Module.TableDesc MakeTableDesc() => new (
+                                new (
+                                    nameof({t.Name}),
+                                    new SpacetimeDB.Module.ColumnDefWithAttrs[] {{ {string.Join(",", t.Fields.Select(f => $@"
+                                        new (
+                                            new SpacetimeDB.Module.ColumnDef(nameof({f.Name}), {f.TypeInfo}.AlgebraicType),
+                                            SpacetimeDB.Module.ColumnAttrs.{f.IndexKind}
+                                        )
+                                    "))} }}
+                                ),
+                                {t.Name}.GetSatsTypeInfo().AlgebraicType.TypeRef
+                            );
+
                             public static IEnumerable<{t.Name}> Query(System.Linq.Expressions.Expression<Func<{t.Name}, bool>> filter) =>
                                 new SpacetimeDB.Runtime.RawTableIter(tableId.Value, SpacetimeDB.Filter.Filter.Compile<{t.Name}>(fieldTypeInfos.Value, filter))
                                 .SelectMany(GetSatsTypeInfo().ReadBytes);
@@ -182,25 +195,7 @@ public class Module : IIncrementalGenerator
             )
             .RegisterSourceOutputs(context);
 
-        var addTables = tables
-            .Select(
-                (t, ct) =>
-                {
-                    var code =
-                        $@"
-                var table_{t.Name} = new SpacetimeDB.Module.TableDesc(
-                    nameof({t.FullName}),
-                    new SpacetimeDB.Module.ColumnDefWithAttrs[] {{ {string.Join(", ", t.Fields.Select(f => $"new SpacetimeDB.Module.ColumnDefWithAttrs(\"{f.Name}\", {f.TypeInfo}.AlgebraicType, SpacetimeDB.Module.ColumnAttrs.{f.IndexKind})"))} }},
-                    new SpacetimeDB.Module.IndexDef[] {{ }},
-                    {t.FullName}.GetSatsTypeInfo().AlgebraicType.TypeRef
-                );
-
-                FFI.RegisterTable(table_{t.Name});
-            ";
-                    return code;
-                }
-            )
-            .Collect();
+        var tableNames = tables.Select((t, ct) => t.FullName).Collect();
 
         var reducers = context
             .SyntaxProvider
@@ -273,12 +268,12 @@ public class Module : IIncrementalGenerator
             .Collect();
 
         context.RegisterSourceOutput(
-            addTables.Combine(addReducers),
+            tableNames.Combine(addReducers),
             (context, tuple) =>
             {
-                var addTables = tuple.Left;
+                var tableNames = tuple.Left;
                 var addReducers = tuple.Right;
-                if (addTables.IsEmpty && addReducers.IsEmpty)
+                if (tableNames.IsEmpty && addReducers.IsEmpty)
                     return;
                 context.AddSource(
                     "FFI.cs",
@@ -303,7 +298,7 @@ public class Module : IIncrementalGenerator
                 [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(SpacetimeDB.Module.FFI))]
                 public static void Main() {{
                     {string.Join("\n", addReducers.Select(r => $"FFI.RegisterReducer(new {r.Name}());"))}
-                    {string.Join("\n", addTables)}
+                    {string.Join("\n", tableNames.Select(t => $"FFI.RegisterTable({t}.MakeTableDesc());"))}
                 }}
 #pragma warning restore CA2255
             }}
@@ -323,7 +318,7 @@ public class Module : IIncrementalGenerator
                                 using var stream = new MemoryStream();
                                 using var writer = new BinaryWriter(stream);
                                 {string.Join("\n", r.Args.Where(a => !a.IsDbEvent).Select(a => $"{GetTypeInfo(a.Type)}.Write(writer, {a.Name});"))}
-                                return new(""{r.Name}"", stream.ToArray(), time);
+                                return new(nameof({r.Name}), stream.ToArray(), time);
                             }}
                         "
                         )
