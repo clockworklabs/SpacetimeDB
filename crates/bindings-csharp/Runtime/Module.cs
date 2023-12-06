@@ -91,13 +91,13 @@ public partial struct SequenceDef
     }
 }
 
-public partial struct ColumnAttrs
+public partial struct ColumnDefWithAttrs
 {
     public string ColName;
     public AlgebraicType ColType;
-    public ConstraintFlags Kind;
+    public ColumnAttrs Kind;
 
-    public ColumnAttrs(string colName, AlgebraicType colType, ConstraintFlags kind)
+    public ColumnDefWithAttrs(string colName, AlgebraicType colType, ColumnAttrs kind)
     {
         ColName = colName;
         ColType = colType;
@@ -120,7 +120,7 @@ public partial struct TableDef
     // "public" | "private"
     string TableAccess;
 
-    public TableDef(string tableName, ColumnAttrs[] columns, IndexDef[] indices)
+    public TableDef(string tableName, ColumnDefWithAttrs[] columns, IndexDef[] indices)
     {
         TableName = tableName;
         Columns = columns.Select(x => new ColumnDef(x.ColName, x.ColType)).ToArray();
@@ -135,7 +135,7 @@ public partial struct TableDef
             )
             .ToArray();
         Sequences = columns
-            .Where(x => x.Kind.HasFlag(ConstraintFlags.AutoInc))
+            .Where(x => x.Kind.HasFlag(ColumnAttrs.AutoInc))
             .Select((x, pos) => new SequenceDef($"seq_{tableName}_{x.ColName}", (uint)pos))
             .ToArray();
         Indices = indices;
@@ -165,7 +165,7 @@ public partial struct TableDesc
 
     public TableDesc(
         string tableName,
-        ColumnAttrs[] columns,
+        ColumnDefWithAttrs[] columns,
         IndexDef[] indices,
         AlgebraicTypeRef data
     )
@@ -250,7 +250,7 @@ public partial struct ModuleDef
 }
 
 [System.Flags]
-public enum ConstraintFlags : byte
+public enum ColumnAttrs : byte
 {
     UnSet = 0b0000,
     Indexed = 0b0001,

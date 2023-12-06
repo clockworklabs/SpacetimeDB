@@ -10,7 +10,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using static Utils;
 
 [System.Flags]
-enum ConstraintFlags : byte
+enum ColumnAttrs : byte
 {
     UnSet = 0b0000,
     Indexed = 0b0001,
@@ -51,10 +51,10 @@ public class Module : IIncrementalGenerator
                                         a.AttributeClass?.ToDisplayString()
                                         == "SpacetimeDB.ColumnAttribute"
                                 )
-                                .Select(a => (ConstraintFlags)a.ConstructorArguments[0].Value!)
+                                .Select(a => (ColumnAttrs)a.ConstructorArguments[0].Value!)
                                 .SingleOrDefault();
 
-                            if (indexKind.HasFlag(ConstraintFlags.AutoInc))
+                            if (indexKind.HasFlag(ColumnAttrs.AutoInc))
                             {
                                 var isValidForAutoInc = f.Type.SpecialType switch
                                 {
@@ -108,7 +108,7 @@ public class Module : IIncrementalGenerator
                 (t, ct) =>
                 {
                     var autoIncFields = t.Fields
-                        .Where(f => f.IndexKind.HasFlag(ConstraintFlags.AutoInc))
+                        .Where(f => f.IndexKind.HasFlag(ColumnAttrs.AutoInc))
                         .Select(f => f.Name);
 
                     var extensions =
@@ -146,7 +146,7 @@ public class Module : IIncrementalGenerator
                         )
                     )
                     {
-                        if (f.IndexKind.HasFlag(ConstraintFlags.Unique))
+                        if (f.IndexKind.HasFlag(ColumnAttrs.Unique))
                         {
                             extensions +=
                                 $@"
@@ -190,7 +190,7 @@ public class Module : IIncrementalGenerator
                         $@"
                 var table_{t.Name} = new SpacetimeDB.Module.TableDesc(
                     nameof({t.FullName}),
-                    new SpacetimeDB.Module.ColumnAttrs[] {{ {string.Join(", ", t.Fields.Select(f => $"new SpacetimeDB.Module.ColumnAttrs(\"{f.Name}\", {f.TypeInfo}.AlgebraicType, SpacetimeDB.Module.ConstraintFlags.{f.IndexKind})"))} }},
+                    new SpacetimeDB.Module.ColumnDefWithAttrs[] {{ {string.Join(", ", t.Fields.Select(f => $"new SpacetimeDB.Module.ColumnDefWithAttrs(\"{f.Name}\", {f.TypeInfo}.AlgebraicType, SpacetimeDB.Module.ColumnAttrs.{f.IndexKind})"))} }},
                     new SpacetimeDB.Module.IndexDef[] {{ }},
                     {t.FullName}.GetSatsTypeInfo().AlgebraicType.TypeRef
                 );
