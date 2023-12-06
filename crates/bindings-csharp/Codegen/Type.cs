@@ -1,14 +1,14 @@
 namespace SpacetimeDB.Codegen;
 
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using static Utils;
 
 struct VariableDeclaration
@@ -35,7 +35,8 @@ public class Type : IIncrementalGenerator
                 if (enumType.Members.Any(m => m.EqualsValue is not null))
                 {
                     throw new InvalidOperationException(
-                        "[SpacetimeDB.Type] enums cannot have explicit values: " + enumType.Identifier
+                        "[SpacetimeDB.Type] enums cannot have explicit values: "
+                            + enumType.Identifier
                     );
                 }
 
@@ -62,7 +63,8 @@ public class Type : IIncrementalGenerator
         Func<SyntaxNode, bool> predicate
     )
     {
-        context.SyntaxProvider
+        context
+            .SyntaxProvider
             .ForAttributeWithMetadataName(
                 fullyQualifiedMetadataName,
                 predicate: (node, ct) => predicate(node),
@@ -71,7 +73,8 @@ public class Type : IIncrementalGenerator
                     var type = (TypeDeclarationSyntax)context.TargetNode;
 
                     // Check if type implements generic `SpacetimeDB.TaggedEnum<Variants>` and, if so, extract the `Variants` type.
-                    var taggedEnumVariants = type.BaseList?.Types
+                    var taggedEnumVariants = type.BaseList
+                        ?.Types
                         .OfType<SimpleBaseTypeSyntax>()
                         .Select(t => context.SemanticModel.GetTypeInfo(t.Type, ct).Type)
                         .OfType<INamedTypeSymbol>()
@@ -92,7 +95,8 @@ public class Type : IIncrementalGenerator
                         .Where(f => !f.Modifiers.Any(m => m.IsKind(SyntaxKind.StaticKeyword)))
                         .SelectMany(f =>
                         {
-                            var typeSymbol = context.SemanticModel
+                            var typeSymbol = context
+                                .SemanticModel
                                 .GetTypeInfo(f.Declaration.Type, ct)
                                 .Type!;
                             // Seems like a bug in Roslyn - nullability annotation is not set on the top type.
@@ -103,14 +107,16 @@ public class Type : IIncrementalGenerator
                                     NullableAnnotation.Annotated
                                 );
                             }
-                            return f.Declaration.Variables.Select(
-                                v =>
-                                    new VariableDeclaration
-                                    {
-                                        Name = v.Identifier.Text,
-                                        TypeSymbol = typeSymbol,
-                                    }
-                            );
+                            return f.Declaration
+                                .Variables
+                                .Select(
+                                    v =>
+                                        new VariableDeclaration
+                                        {
+                                            Name = v.Identifier.Text,
+                                            TypeSymbol = typeSymbol,
+                                        }
+                                );
                         });
 
                     if (taggedEnumVariants is not null)
@@ -119,7 +125,8 @@ public class Type : IIncrementalGenerator
                         {
                             throw new InvalidOperationException("Tagged enums cannot have fields.");
                         }
-                        fields = taggedEnumVariants.Value
+                        fields = taggedEnumVariants
+                            .Value
                             .Select(
                                 v => new VariableDeclaration { Name = v.Name, TypeSymbol = v.Type, }
                             )
@@ -132,7 +139,8 @@ public class Type : IIncrementalGenerator
                         FullName = SymbolToName(context.SemanticModel.GetDeclaredSymbol(type, ct)!),
                         GenericName = $"{type.Identifier}{type.TypeParameterList}",
                         IsTaggedEnum = taggedEnumVariants is not null,
-                        TypeParams = type.TypeParameterList?.Parameters
+                        TypeParams = type.TypeParameterList
+                            ?.Parameters
                             .Select(p => p.Identifier.Text)
                             .ToArray() ?? new string[] { },
                         Members = fields,

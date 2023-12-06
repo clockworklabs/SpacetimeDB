@@ -4,7 +4,8 @@ using System;
 using SpacetimeDB.Module;
 
 [AttributeUsage(AttributeTargets.Method, Inherited = false, AllowMultiple = false)]
-public sealed class ReducerAttribute : Attribute {
+public sealed class ReducerAttribute : Attribute
+{
     public ReducerAttribute(string? name = null)
     {
         Name = name;
@@ -13,10 +14,18 @@ public sealed class ReducerAttribute : Attribute {
     public string? Name { get; set; }
 }
 
-[AttributeUsage(AttributeTargets.Struct | AttributeTargets.Class, Inherited = false, AllowMultiple = false)]
+[AttributeUsage(
+    AttributeTargets.Struct | AttributeTargets.Class,
+    Inherited = false,
+    AllowMultiple = false
+)]
 public sealed class TableAttribute : Attribute { }
 
-[AttributeUsage(AttributeTargets.Struct | AttributeTargets.Class | AttributeTargets.Enum, Inherited = false, AllowMultiple = false)]
+[AttributeUsage(
+    AttributeTargets.Struct | AttributeTargets.Class | AttributeTargets.Enum,
+    Inherited = false,
+    AllowMultiple = false
+)]
 public sealed class TypeAttribute : Attribute { }
 
 public interface TaggedEnum<Variants>

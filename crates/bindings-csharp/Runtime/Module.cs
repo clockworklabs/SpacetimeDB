@@ -5,8 +5,8 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using SpacetimeDB.SATS;
 using System.Runtime.InteropServices;
+using SpacetimeDB.SATS;
 
 [SpacetimeDB.Type]
 public partial struct IndexDef
@@ -16,7 +16,12 @@ public partial struct IndexDef
     public Runtime.IndexType Type;
     public uint[] ColumnIds;
 
-    public IndexDef(string name, Runtime.IndexType type, bool isUnique, RawBindings.ColId[] columnIds)
+    public IndexDef(
+        string name,
+        Runtime.IndexType type,
+        bool isUnique,
+        RawBindings.ColId[] columnIds
+    )
     {
         IndexName = name;
         IsUnique = isUnique;
@@ -24,7 +29,6 @@ public partial struct IndexDef
         ColumnIds = columnIds.Select(id => (uint)id).ToArray();
     }
 }
-
 
 [SpacetimeDB.Type]
 public partial struct ColumnDef
@@ -43,6 +47,7 @@ public partial struct ColumnDef
 public partial struct ConstraintDef
 {
     public string ConstraintName;
+
     // bitflags should be serialized as bytes rather than sum types
     public byte Kind;
     public uint[] ColumnIds;
@@ -58,7 +63,6 @@ public partial struct ConstraintDef
 [SpacetimeDB.Type]
 public partial struct SequenceDef
 {
-
     string SequenceName;
     uint ColPos;
     Int128 increment;
@@ -67,7 +71,15 @@ public partial struct SequenceDef
     Int128? max_value;
     Int128 allocated;
 
-    public SequenceDef(string sequenceName, uint colPos, Int128? increment = null, Int128? start = null, Int128? min_value = null, Int128? max_value = null, Int128? allocated = null)
+    public SequenceDef(
+        string sequenceName,
+        uint colPos,
+        Int128? increment = null,
+        Int128? start = null,
+        Int128? min_value = null,
+        Int128? max_value = null,
+        Int128? allocated = null
+    )
     {
         SequenceName = sequenceName;
         ColPos = colPos;
@@ -93,7 +105,6 @@ public partial struct ColumnAttrs
     }
 }
 
-
 [SpacetimeDB.Type]
 public partial struct TableDef
 {
@@ -102,6 +113,7 @@ public partial struct TableDef
     IndexDef[] Indices;
     ConstraintDef[] Constraints;
     SequenceDef[] Sequences;
+
     // "system" | "user"
     string TableType;
 
@@ -110,11 +122,22 @@ public partial struct TableDef
 
     public TableDef(string tableName, ColumnAttrs[] columns, IndexDef[] indices)
     {
-
         TableName = tableName;
         Columns = columns.Select(x => new ColumnDef(x.ColName, x.ColType)).ToArray();
-        Constraints = columns.Select((x, pos) => new ConstraintDef($"ct_{tableName}_{x.ColName}_{x.Kind}", ((byte)x.Kind), new uint[] { (uint)pos } )).ToArray();
-        Sequences = columns.Where(x => x.Kind.HasFlag(ConstraintFlags.AutoInc)).Select((x, pos) => new SequenceDef($"seq_{tableName}_{x.ColName}", (uint)pos)).ToArray();
+        Constraints = columns
+            .Select(
+                (x, pos) =>
+                    new ConstraintDef(
+                        $"ct_{tableName}_{x.ColName}_{x.Kind}",
+                        ((byte)x.Kind),
+                        new uint[] { (uint)pos }
+                    )
+            )
+            .ToArray();
+        Sequences = columns
+            .Where(x => x.Kind.HasFlag(ConstraintFlags.AutoInc))
+            .Select((x, pos) => new SequenceDef($"seq_{tableName}_{x.ColName}", (uint)pos))
+            .ToArray();
         Indices = indices;
         TableType = "user";
         TableAccess = tableName.StartsWith('_') ? "private" : "public";
@@ -140,7 +163,12 @@ public partial struct TableDesc
     public TableDef schema;
     AlgebraicTypeRef Data;
 
-    public TableDesc(string tableName, ColumnAttrs[] columns, IndexDef[] indices, AlgebraicTypeRef data)
+    public TableDesc(
+        string tableName,
+        ColumnAttrs[] columns,
+        IndexDef[] indices,
+        AlgebraicTypeRef data
+    )
     {
         schema = new TableDef(tableName, columns, indices);
         Data = data;

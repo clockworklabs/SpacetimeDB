@@ -400,15 +400,17 @@ namespace SpacetimeDB.SATS
             // plain enums are never recursive, so it should be fine to alloc & set typeref at once
             var typeRef = Module.FFI.AllocTypeRef();
 
-            Module.FFI.SetTypeRef<T>(
-                typeRef,
-                new SumType
-                {
-                    Variants = Enum.GetNames(typeof(T))
-                        .Select(name => new SumTypeVariant(name, unitType))
-                        .ToList()
-                }
-            );
+            Module
+                .FFI
+                .SetTypeRef<T>(
+                    typeRef,
+                    new SumType
+                    {
+                        Variants = Enum.GetNames(typeof(T))
+                            .Select(name => new SumTypeVariant(name, unitType))
+                            .ToList()
+                    }
+                );
 
             var typeInfo = new TypeInfo<T>(
                 typeRef,
