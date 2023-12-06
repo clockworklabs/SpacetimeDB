@@ -282,11 +282,12 @@ mod tests {
     use crate::host::module_host::{DatabaseTableUpdate, TableOp};
     use crate::subscription::query;
     use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_lib::metrics::METRICS;
     use spacetimedb_lib::operator::OpQuery;
     use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::db::auth::StTableType;
     use spacetimedb_sats::db::def::{ColumnDef, IndexDef, TableDef};
-    use spacetimedb_sats::relation::MemTable;
+    use spacetimedb_sats::relation::{MemTable, Table};
     use spacetimedb_sats::{product, AlgebraicType, ToDataKey};
     use spacetimedb_vm::expr::{IndexJoin, IndexScan, JoinExpr, Query};
 
@@ -914,7 +915,7 @@ mod tests {
     }
 
     #[test]
-    fn compile_index_join() -> ResultTest<()> {
+    fn compile_index_join_lhs_index() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
         let mut tx = db.begin_tx();
 
@@ -931,6 +932,13 @@ mod tests {
         ];
         let indexes = &[(0.into(), "b"), (1.into(), "c")];
         let rhs_id = create_table(&db, &mut tx, "rhs", schema, indexes)?;
+
+        // Make table metrics such that the lhs will be the index side
+        // and the rhs the probe side.
+        METRICS
+            .rdb_num_table_rows
+            .with_label_values(&db.address(), &lhs_id.into())
+            .set(1000);
 
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
@@ -960,7 +968,9 @@ mod tests {
                     table: ref probe_table,
                     field: ref probe_field,
                 },
-            index_table,
+            index_side: Table::DbTable(DbTable {
+                table_id: index_table, ..
+            }),
             index_col,
             ..
         }) = query[0]
@@ -1010,7 +1020,7 @@ mod tests {
     }
 
     #[test]
-    fn compile_incremental_index_join() -> ResultTest<()> {
+    fn compile_index_join_lhs_probe() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
         let mut tx = db.begin_tx();
 
@@ -1027,6 +1037,81 @@ mod tests {
         ];
         let indexes = &[(0.into(), "b"), (1.into(), "c")];
         let rhs_id = create_table(&db, &mut tx, "rhs", schema, indexes)?;
+
+        // Should generate an index join since there is an index on `rhs.b`.
+        let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
+        let exp = compile_sql(&db, &tx, sql)?.remove(0);
+
+        let CrudExpr::Query(QueryExpr {
+            source: SourceExpr::DbTable(DbTable { table_id, .. }),
+            query,
+            ..
+        }) = exp
+        else {
+            panic!("unexpected result from compilation: {:?}", exp);
+        };
+
+        assert_eq!(table_id, lhs_id);
+        assert_eq!(query.len(), 1);
+
+        let Query::IndexJoin(IndexJoin {
+            probe_side:
+                QueryExpr {
+                    source: SourceExpr::DbTable(DbTable { table_id, .. }),
+                    query: ref lhs,
+                },
+            probe_field:
+                FieldName::Name {
+                    table: ref probe_table,
+                    field: ref probe_field,
+                },
+            index_side: Table::DbTable(DbTable {
+                table_id: index_table, ..
+            }),
+            index_select: Some(_),
+            index_col,
+            return_index_rows: false,
+            ..
+        }) = query[0]
+        else {
+            panic!("unexpected operator {:#?}", query[0]);
+        };
+
+        assert_eq!(table_id, lhs_id);
+        assert_eq!(index_table, rhs_id);
+        assert_eq!(index_col, 0.into());
+        assert_eq!(probe_field, "b");
+        assert_eq!(probe_table, "lhs");
+
+        assert!(lhs.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn compile_incremental_index_join_lhs_index() -> ResultTest<()> {
+        let (db, _) = make_test_db()?;
+        let mut tx = db.begin_tx();
+
+        // Create table [lhs] with index on [b]
+        let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
+        let indexes = &[(1.into(), "b")];
+        let lhs_id = create_table(&db, &mut tx, "lhs", schema, indexes)?;
+
+        // Create table [rhs] with index on [b, c]
+        let schema = &[
+            ("b", AlgebraicType::U64),
+            ("c", AlgebraicType::U64),
+            ("d", AlgebraicType::U64),
+        ];
+        let indexes = &[(0.into(), "b"), (1.into(), "c")];
+        let rhs_id = create_table(&db, &mut tx, "rhs", schema, indexes)?;
+
+        // Make table metrics such that the lhs will be the index side
+        // and the rhs the probe side for the initial plan.
+        METRICS
+            .rdb_num_table_rows
+            .with_label_values(&db.address(), &lhs_id.into())
+            .set(1000);
 
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
@@ -1081,9 +1166,10 @@ mod tests {
                     table: ref probe_table,
                     field: ref probe_field,
                 },
-            index_header: _,
+            index_side: Table::DbTable(DbTable {
+                table_id: index_table, ..
+            }),
             index_select: Some(_),
-            index_table,
             index_col,
             return_index_rows: false,
         }) = query[0]

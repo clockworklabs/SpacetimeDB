@@ -403,11 +403,124 @@ impl From<&SourceExpr> for DbTable {
 pub struct IndexJoin {
     pub probe_side: QueryExpr,
     pub probe_field: FieldName,
-    pub index_header: Header,
+    pub index_side: Table,
     pub index_select: Option<ColumnOp>,
-    pub index_table: TableId,
     pub index_col: ColId,
     pub return_index_rows: bool,
+}
+
+impl IndexJoin {
+    // In order to optimize an incremental index join plan,
+    // the index side of the join must point to a virtual table.
+    // The probe table must not be virtual.
+    // It must have an index defined on the join field.
+    // And finally the probe side must only consist of an optional index scan,
+    // followed by zero or more selections.
+    fn can_optimize_incr(&self) -> bool {
+        matches!(self.index_side, Table::MemTable(_))
+            && matches!(self.probe_side.source, SourceExpr::DbTable(_))
+            && self
+                .probe_side
+                .source
+                .head()
+                .has_constraint(&self.probe_field, Constraints::indexed())
+            && self
+                .probe_side
+                .query
+                .iter()
+                .all(|op| matches!(op, Query::Select(_)) || matches!(op, Query::IndexScan(_)))
+    }
+
+    // Optimize an incremental index join plan.
+    fn optimize(self) -> Self {
+        match self.index_side {
+            Table::MemTable(delta) if self.can_optimize_incr() && self.return_index_rows => {
+                // The compiler ensures this unwrap is safe.
+                // It already verified index_col exists on the indexed table,
+                // during construction of the index join.
+                let index_field = delta
+                    .head()
+                    .fields
+                    .iter()
+                    .find(|column| column.col_id == self.index_col)
+                    .unwrap()
+                    .field
+                    .clone();
+                // The compiler ensures this unwrap is safe.
+                // It already verified probe_field exists on the probe table,
+                // during construction of the index join.
+                let probe_column = self.probe_side.source.head().column(&self.probe_field).unwrap().col_id;
+                // Merge all selections from the original probe side into a single predicate.
+                // This includes an index scan if present.
+                let predicate = self.probe_side.query.into_iter().fold(None, |acc, op| {
+                    <Query as Into<Option<ColumnOp>>>::into(op).map(|op| {
+                        if let Some(predicate) = acc {
+                            ColumnOp::new(OpQuery::Logic(OpLogic::And), predicate, op)
+                        } else {
+                            op
+                        }
+                    })
+                });
+                IndexJoin {
+                    // The new probe side consists of the updated rows.
+                    probe_side: delta.into(),
+                    // The new probe field is the previous index field.
+                    probe_field: index_field,
+                    // The original probe table is now the table that is being probed.
+                    index_side: self.probe_side.source.into(),
+                    // Any selections from the original probe side are pulled above the index lookup.
+                    index_select: predicate,
+                    // The new index field is the previous probe field.
+                    index_col: probe_column,
+                    // Because we have swapped the original index and probe sides of the join,
+                    // the new index join needs to return rows from the probe side instead of the index side.
+                    return_index_rows: false,
+                }
+            }
+            Table::MemTable(delta) if self.can_optimize_incr() && !self.return_index_rows => {
+                // The compiler ensures this unwrap is safe.
+                // It already verified index_col exists on the indexed table,
+                // during construction of the index join.
+                let index_field = delta
+                    .head()
+                    .fields
+                    .iter()
+                    .find(|column| column.col_id == self.index_col)
+                    .unwrap()
+                    .field
+                    .clone();
+                // The compiler ensures this unwrap is safe.
+                // It already verified probe_field exists on the probe table,
+                // during construction of the index join.
+                let probe_column = self.probe_side.source.head().column(&self.probe_field).unwrap().col_id;
+                let probe_side = if let Some(predicate) = self.index_select {
+                    QueryExpr {
+                        source: delta.into(),
+                        query: vec![predicate.into()],
+                    }
+                } else {
+                    delta.into()
+                };
+                IndexJoin {
+                    // The new probe side consists of the updated rows.
+                    // Plus any selections from the original index probe.
+                    probe_side,
+                    // The new probe field is the previous index field.
+                    probe_field: index_field,
+                    // The original probe table is now the table that is being probed.
+                    index_side: self.probe_side.source.into(),
+                    // Any selections from the index probe side are pushed to the probe side.
+                    index_select: None,
+                    // The new index field is the previous probe field.
+                    index_col: probe_column,
+                    // Because we have swapped the original index and probe sides of the join,
+                    // the new index join needs to return rows from the index side instead of the probe side.
+                    return_index_rows: true,
+                }
+            }
+            _ => self,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
@@ -419,12 +532,20 @@ pub struct JoinExpr {
 
 //TODO: A posterior PR should fix the pass of multi-columns to the query optimization
 impl From<IndexJoin> for JoinExpr {
-    fn from(value: IndexJoin) -> Self {
+    fn from(mut value: IndexJoin) -> Self {
+        if let Some(predicate) = value.index_select {
+            value.probe_side.query.push(predicate.into());
+        };
         let pos = value.index_col;
-        let rhs = value.probe_side;
-        let col_lhs = value.index_header.fields[usize::from(pos)].field.clone();
-        let col_rhs = value.probe_field;
-        JoinExpr::new(rhs, col_lhs, col_rhs)
+        if value.return_index_rows {
+            let col_lhs = value.index_side.head().fields[usize::from(pos)].field.clone();
+            let col_rhs = value.probe_field;
+            JoinExpr::new(value.probe_side, col_lhs, col_rhs)
+        } else {
+            let col_rhs = value.index_side.head().fields[usize::from(pos)].field.clone();
+            let col_lhs = value.probe_field;
+            JoinExpr::new(value.index_side.into(), col_lhs, col_rhs)
+        }
     }
 }
 
@@ -709,6 +830,15 @@ impl From<MemTable> for QueryExpr {
 
 impl From<DbTable> for QueryExpr {
     fn from(value: DbTable) -> Self {
+        QueryExpr {
+            source: value.into(),
+            query: vec![],
+        }
+    }
+}
+
+impl From<Table> for QueryExpr {
+    fn from(value: Table) -> Self {
         QueryExpr {
             source: value.into(),
             query: vec![],
@@ -1200,11 +1330,9 @@ impl QueryExpr {
                     // The lhs column is the probe field.
                     probe_field: col_lhs,
                     // The rhs is the index side.
-                    index_header: rhs.source.head().clone(),
+                    index_side: rhs.source.into(),
                     // Any predicates applied to the rhs are now applied to the index lookup.
                     index_select: predicate,
-                    // The match guard ensures this unwrap is safe.
-                    index_table: rhs.source.get_db_table().unwrap().table_id,
                     // The rhs column is the index field.
                     index_col,
                     // This optimization is only applicable to left semijoins.
@@ -1229,12 +1357,10 @@ impl QueryExpr {
                     // The rhs column is the probe field.
                     probe_field: col_rhs,
                     // The lhs is the index side.
-                    index_header: lhs.head,
+                    index_side: lhs.into(),
                     // The rhs is the probe side.
                     // Therefore any predicates on the rhs stay on the rhs.
                     index_select: None,
-                    // The lhs is the index side.
-                    index_table: lhs.table_id,
                     // The lhs column is the index field.
                     index_col,
                     // This optimization is only applicable to left semijoins.
@@ -1298,98 +1424,7 @@ impl QueryExpr {
         q
     }
 
-    // Is this an incremental evaluation of an index join {L+ join R}
-    fn is_incremental_index_join(&self) -> bool {
-        if self.query.len() != 1 {
-            return false;
-        }
-        // Is this in index join?
-        let Query::IndexJoin(IndexJoin {
-            probe_side:
-                QueryExpr {
-                    source: SourceExpr::DbTable(rhs_table),
-                    query: selections,
-                },
-            probe_field,
-            index_select: None,
-            return_index_rows: true,
-            ..
-        }) = &self.query[0]
-        else {
-            return false;
-        };
-        // Is this an incremental evaluation of updates to the left hand table?
-        let SourceExpr::MemTable(_) = self.source else {
-            return false;
-        };
-        // Does the right hand table have an index on the join field?
-        if !rhs_table.head.has_constraint(probe_field, Constraints::indexed()) {
-            return false;
-        };
-        // The original probe side must consist of an optional index scan,
-        // followed by an arbitrary number of selections.
-        selections
-            .iter()
-            .all(|op| matches!(op, Query::Select(_)) || matches!(op, Query::IndexScan(_)))
-    }
-
-    // Assuming this is an incremental evaluation of an index join {L+ join R},
-    // swap the index and probe sides to avoid scanning all of R.
-    fn optimize_incremental_index_join(mut self) -> Option<IndexJoin> {
-        // This is an index join.
-        let Some(Query::IndexJoin(IndexJoin {
-            probe_side:
-                QueryExpr {
-                    source: SourceExpr::DbTable(rhs_table),
-                    query: selections,
-                },
-            probe_field,
-            index_header,
-            index_table: _,
-            index_col,
-            index_select: None,
-            return_index_rows: true,
-        })) = self.query.pop()
-        else {
-            return None;
-        };
-        // This is an incremental evaluation of updates to the left hand table.
-        let SourceExpr::MemTable(index_side_updates) = self.source else {
-            return None;
-        };
-        let index_column = index_header.fields.iter().find(|column| column.col_id == index_col)?;
-        let probe_column = rhs_table.head.column(&probe_field)?;
-        // Merge all selections from the original probe side into a single predicate.
-        // This includes an index scan if present.
-        let predicate = selections.iter().cloned().fold(None, |acc, op| {
-            <Query as Into<Option<ColumnOp>>>::into(op).map(|op| {
-                if let Some(predicate) = acc {
-                    ColumnOp::new(OpQuery::Logic(OpLogic::And), predicate, op)
-                } else {
-                    op
-                }
-            })
-        });
-        Some(IndexJoin {
-            // The new probe side consists of the updated rows.
-            probe_side: index_side_updates.into(),
-            // The new probe field is the previous index field.
-            probe_field: index_column.field.clone(),
-            // The original probe table is now the table that is being probed.
-            index_header: rhs_table.head.clone(),
-            // Any selections from the original probe side are pulled above the index lookup.
-            index_select: predicate,
-            // The original probe table is now the table that is being probed.
-            index_table: rhs_table.table_id,
-            // The new index field is the previous probe field.
-            index_col: probe_column.col_id,
-            // Because we have swapped the original index and probe sides of the join,
-            // the new index join needs to return rows from the probe side instead of the index side.
-            return_index_rows: false,
-        })
-    }
-
-    pub fn optimize(self, db: Option<Address>) -> Self {
+    pub fn optimize(mut self, db: Option<Address>) -> Self {
         let mut q = Self {
             source: self.source.clone(),
             query: Vec::with_capacity(self.query.len()),
@@ -1401,12 +1436,12 @@ impl QueryExpr {
             .flat_map(|x| x.into_iter())
             .collect();
 
-        if self.is_incremental_index_join() {
-            // The above check guarantees that the optimization will succeed,
-            // and therefore it is safe to unwrap.
-            let index_join = self.optimize_incremental_index_join().unwrap();
-            q.query.push(Query::IndexJoin(index_join));
-            return q;
+        // Optimize incremental evaluation of index joins
+        if self.query.len() == 1 && matches!(self.query[0], Query::IndexJoin(_)) {
+            if let Query::IndexJoin(join) = self.query.pop().unwrap() {
+                q.query.push(Query::IndexJoin(join.optimize()));
+                return q;
+            }
         }
 
         for query in self.query {
@@ -1920,13 +1955,17 @@ mod tests {
                     table: "foo".into(),
                     field: "bar".into(),
                 },
-                index_header: Header {
-                    table_name: "bar".into(),
-                    fields: vec![],
-                    constraints: Default::default(),
-                },
+                index_side: Table::DbTable(DbTable {
+                    head: Header {
+                        table_name: "bar".into(),
+                        fields: vec![],
+                        constraints: Default::default(),
+                    },
+                    table_id: 42.into(),
+                    table_type: StTableType::User,
+                    table_access: StAccess::Public,
+                }),
                 index_select: None,
-                index_table: 42.into(),
                 index_col: 22.into(),
                 return_index_rows: true,
             }),

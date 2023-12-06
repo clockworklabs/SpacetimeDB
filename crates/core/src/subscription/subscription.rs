@@ -520,16 +520,18 @@ impl<'a> IncrementalJoin<'a> {
             .query
             .iter()
             .find_map(|op| match op {
-                expr::Query::IndexJoin(IndexJoin { probe_side: rhs, .. }) => {
-                    rhs.source.get_db_table().map(|table| JoinSide {
-                        table,
-                        updates: DatabaseTableUpdate {
-                            table_id: table.table_id,
-                            table_name: table.head.table_name.clone(),
-                            ops: vec![],
-                        },
-                    })
-                }
+                expr::Query::IndexJoin(IndexJoin {
+                    return_index_rows: true,
+                    probe_side: rhs,
+                    ..
+                }) => rhs.source.get_db_table().map(|table| JoinSide {
+                    table,
+                    updates: DatabaseTableUpdate {
+                        table_id: table.table_id,
+                        table_name: table.head.table_name.clone(),
+                        ops: vec![],
+                    },
+                }),
                 _ => None,
             })
             .context("rhs table not found")?;
@@ -692,5 +694,147 @@ impl<'a> IncrementalJoin<'a> {
         }
 
         q
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::relational_db::tests_utils::make_test_db;
+    use crate::host::module_host::TableOp;
+    use crate::sql::compiler::compile_sql;
+    use itertools::Itertools;
+    use spacetimedb_primitives::{ColId, TableId};
+    use spacetimedb_sats::data_key::ToDataKey;
+    use spacetimedb_sats::db::auth::{StAccess, StTableType};
+    use spacetimedb_sats::db::def::*;
+    use spacetimedb_sats::relation::{FieldName, Header, Table};
+    use spacetimedb_sats::{product, AlgebraicType};
+    use spacetimedb_vm::expr::{CrudExpr, IndexJoin, Query};
+
+    fn create_table(
+        db: &RelationalDB,
+        tx: &mut MutTxId,
+        name: &str,
+        schema: &[(&str, AlgebraicType)],
+        indexes: &[(ColId, &str)],
+    ) -> Result<TableId, DBError> {
+        let table_name = name.to_string();
+        let table_type = StTableType::User;
+        let table_access = StAccess::Public;
+
+        let columns = schema
+            .iter()
+            .map(|(col_name, col_type)| ColumnDef {
+                col_name: col_name.to_string(),
+                col_type: col_type.clone(),
+            })
+            .collect_vec();
+
+        let indexes = indexes
+            .iter()
+            .map(|(col_id, index_name)| IndexDef::btree(index_name.to_string(), *col_id, false))
+            .collect_vec();
+
+        let schema = TableDef::new(table_name, columns)
+            .with_indexes(indexes)
+            .with_type(table_type)
+            .with_access(table_access);
+
+        db.create_table(tx, schema)
+    }
+
+    #[test]
+    fn compile_incremental_index_join_lhs_probe() -> Result<(), DBError> {
+        let (db, _) = make_test_db()?;
+        let mut tx = db.begin_tx();
+
+        // Create table [lhs] with index on [b]
+        let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
+        let indexes = &[(1.into(), "b")];
+        let lhs_id = create_table(&db, &mut tx, "lhs", schema, indexes)?;
+
+        // Create table [rhs] with index on [b, c]
+        let schema = &[
+            ("b", AlgebraicType::U64),
+            ("c", AlgebraicType::U64),
+            ("d", AlgebraicType::U64),
+        ];
+        let indexes = &[(0.into(), "b"), (1.into(), "c")];
+        let rhs_id = create_table(&db, &mut tx, "rhs", schema, indexes)?;
+
+        // Should generate an index join since there is an index on `rhs.b`.
+        let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
+        let exp = compile_sql(&db, &tx, sql)?.remove(0);
+
+        let CrudExpr::Query(expr) = exp else {
+            panic!("unexpected result from compilation: {:#?}", exp);
+        };
+
+        // Create an insert for an incremental update.
+        let row = product!(0u64, 0u64, 0u64);
+        let insert = TableOp {
+            op_type: 1,
+            row_pk: row.to_data_key().to_bytes(),
+            row,
+        };
+        let insert = vec![DatabaseTableUpdate {
+            table_id: rhs_id,
+            table_name: String::from("rhs"),
+            ops: vec![insert],
+        }];
+
+        // Optimize the query plan for the incremental update.
+        let info = QueryDebugInfo::from_source(sql);
+        let join = IncrementalJoin::new(&expr, &info, insert.iter())?.unwrap();
+        let expr = join.to_mem_table_rhs(join.rhs.inserts());
+        let expr = expr.optimize(Some(db.address()));
+
+        let QueryExpr {
+            source:
+                SourceExpr::MemTable(MemTable {
+                    head: Header { table_name, .. },
+                    ..
+                }),
+            query,
+            ..
+        } = expr
+        else {
+            panic!("unexpected result after optimization: {:#?}", expr);
+        };
+
+        assert_eq!(table_name, "lhs");
+        assert_eq!(query.len(), 1);
+
+        let Query::IndexJoin(IndexJoin {
+            probe_side:
+                QueryExpr {
+                    source: SourceExpr::MemTable(_),
+                    query: ref rhs,
+                },
+            probe_field:
+                FieldName::Name {
+                    table: ref probe_table,
+                    field: ref probe_field,
+                },
+            index_side: Table::DbTable(DbTable {
+                table_id: index_table, ..
+            }),
+            index_select: None,
+            index_col,
+            return_index_rows: true,
+        }) = query[0]
+        else {
+            panic!("unexpected operator {:#?}", query[0]);
+        };
+
+        assert_eq!(rhs.len(), 1);
+
+        // Assert that original index and probe tables have been swapped.
+        assert_eq!(index_table, lhs_id);
+        assert_eq!(index_col, 1.into());
+        assert_eq!(probe_field, "b");
+        assert_eq!(probe_table, "rhs");
+        Ok(())
     }
 }

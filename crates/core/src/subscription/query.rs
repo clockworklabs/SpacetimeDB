@@ -223,6 +223,7 @@ mod tests {
     use crate::vm::tests::create_table_with_rows;
     use itertools::Itertools;
     use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_lib::metrics::METRICS;
     use spacetimedb_lib::Identity;
     use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::data_key::ToDataKey;
@@ -571,6 +572,13 @@ mod tests {
         for i in 10..20 {
             db.insert(&mut tx, rhs_id, product!(i, i - 10, i - 8))?;
         }
+
+        // Make table metrics such that the lhs will be the index side
+        // and the rhs the probe side for the initial plan.
+        METRICS
+            .rdb_num_table_rows
+            .with_label_values(&db.address(), &lhs_id.into())
+            .set(1000);
 
         // Should be answered using an index semijion
         let sql = "select lhs.* from lhs join rhs on lhs.id = rhs.id where rhs.y >= 2 and rhs.y <= 4";
@@ -1077,7 +1085,10 @@ mod tests {
         }
 
         // Only index semijoins are supported
-        let joins = ["SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE rhs.y < 10"];
+        let joins = [
+            "SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id",
+            "SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE rhs.y < 10",
+        ];
         for join in joins {
             let expr = compile_read_only_query(&db, &tx, &auth, join)?.pop_first().unwrap();
             assert_eq!(expr.kind(), Supported::Semijoin, "{join}\n{expr:#?}");
@@ -1085,7 +1096,6 @@ mod tests {
 
         // All other joins are unsupported
         let joins = [
-            "SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id",
             "SELECT * FROM lhs JOIN rhs ON lhs.id = rhs.id",
             "SELECT * FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE lhs.x < 10",
         ];
