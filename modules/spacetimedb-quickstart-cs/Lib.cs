@@ -6,6 +6,8 @@ static partial class Module
     [SpacetimeDB.Table]
     public partial struct Person
     {
+        [SpacetimeDB.Column(ColumnAttrs.PrimaryKeyAuto)]
+        public uint Id;
         public string Name;
         public byte Age;
     }
