@@ -24,6 +24,15 @@ To avoid fighting with the host system, the docker image uses a separate CARGO_T
 This will be visible on the host system as `SpacetimeDB/linux-target`.
 Callgrind benchmark outputs will be placed in the folder `SpacetimeDB/linux-target/iai`. 
 
+You can also comment "benchmarks please" on a pull request in the SpacetimeDB repository to run the criterion benchmarks on that PR. The results will be posted in a comment on the PR.
+Soon, you'll also be able to comment "callgrind please" and see the callgrind benchmarks in the same way.
+
+## Caveats
+
+The criterion benchmarks take a long time to run -- there are a lot of them. See below for information on running select groups of them.
+
+The callgrind benchmarks only measure a select portion of the codebase. In particular, they do not collect instruction counts in any async code, due to callgrind limitations; they only time the synchronous code that runs a reducer / the client code that calls a reducer. This is most of the code that it takes to run a reducer, including all database modifications. The async code between client and reducer is mostly just handing off data through a couple of channels. Still, if you're interested in measuring that code, you should rely on the criterion benchmarks.
+
 ## Generating reports
 
 There are a lot of benchmarks and it can be hard to read terminal output.
