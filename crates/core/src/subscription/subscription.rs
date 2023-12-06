@@ -591,7 +591,7 @@ impl<'a> IncrementalJoin<'a> {
         let mut inserts = {
             // Replan query after replacing left table with virtual table,
             // since join order may need to be reversed.
-            let lhs_virt = query::to_mem_table(self.expr.clone(), &self.lhs.inserts()).optimize();
+            let lhs_virt = query::to_mem_table(self.expr.clone(), &self.lhs.inserts()).optimize(Some(db.address()));
             let rhs_virt = self.to_mem_table_rhs(self.rhs.inserts());
 
             // {A+ join B}
@@ -617,7 +617,7 @@ impl<'a> IncrementalJoin<'a> {
         let mut deletes = {
             // Replan query after replacing left table with virtual table,
             // since join order may need to be reversed.
-            let lhs_virt = query::to_mem_table(self.expr.clone(), &self.lhs.deletes()).optimize();
+            let lhs_virt = query::to_mem_table(self.expr.clone(), &self.lhs.deletes()).optimize(Some(db.address()));
             let rhs_virt = self.to_mem_table_rhs(self.rhs.deletes());
 
             // {A- join B}

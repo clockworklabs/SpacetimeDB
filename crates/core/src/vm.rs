@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::ops::RangeBounds;
 
 use itertools::Itertools;
+use spacetimedb_lib::Address;
 use tracing::debug;
 
 use crate::db::cursor::{CatalogCursor, IndexCursor, TableCursor};
@@ -395,6 +396,10 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
 }
 
 impl ProgramVm for DbProgram<'_, '_> {
+    fn address(&self) -> Option<Address> {
+        Some(self.db.address())
+    }
+
     fn env(&self) -> &EnvDb {
         &self.env
     }

@@ -1,5 +1,6 @@
 use derive_more::From;
 use nonempty::NonEmpty;
+use spacetimedb_lib::metrics::METRICS;
 use std::cmp::Ordering;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
@@ -9,7 +10,7 @@ use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
 use crate::functions::{FunDef, Param};
 use crate::operator::{Op, OpCmp, OpLogic, OpQuery};
 use crate::types::Ty;
-use spacetimedb_lib::Identity;
+use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_type::AlgebraicType;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
@@ -476,9 +477,9 @@ pub enum CrudExpr {
 }
 
 impl CrudExpr {
-    pub fn optimize(self) -> Self {
+    pub fn optimize(self, db: Option<Address>) -> Self {
         match self {
-            CrudExpr::Query(x) => CrudExpr::Query(x.optimize()),
+            CrudExpr::Query(x) => CrudExpr::Query(x.optimize(db)),
             _ => self,
         }
     }
@@ -1138,7 +1139,7 @@ impl QueryExpr {
     //
     // Ex. SELECT Left.* FROM Left JOIN Right ON Left.id = Right.id ...
     // where `Left` has an index defined on `id`.
-    fn try_index_join(mut query: QueryExpr) -> QueryExpr {
+    fn try_index_join(mut query: QueryExpr, db: Option<Address>) -> QueryExpr {
         // We expect 2 and only 2 operations - a join followed by a wildcard projection.
         if query.query.len() != 2 {
             return query;
@@ -1171,7 +1172,12 @@ impl QueryExpr {
         match first {
             // If the lhs is to be the probe side, the rhs must have an index on the join column.
             Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs })
-                if lhs.row_count().min < 1000
+                if db.is_some()
+                    && METRICS
+                        .rdb_num_table_rows
+                        .with_label_values(&db.unwrap(), &lhs.table_id.0)
+                        .get()
+                        < 1000
                     && rhs.source.get_db_table().is_some()
                     && rhs.source.head().has_constraint(&col_rhs, Constraints::indexed()) =>
             {
@@ -1383,7 +1389,7 @@ impl QueryExpr {
         })
     }
 
-    pub fn optimize(self) -> Self {
+    pub fn optimize(self, db: Option<Address>) -> Self {
         let mut q = Self {
             source: self.source.clone(),
             query: Vec::with_capacity(self.query.len()),
@@ -1408,11 +1414,11 @@ impl QueryExpr {
                 Query::Select(op) => {
                     q = Self::optimize_select(q, op, &tables);
                 }
-                Query::JoinInner(join) => q = q.with_join_inner(join.rhs.optimize(), join.col_lhs, join.col_rhs),
+                Query::JoinInner(join) => q = q.with_join_inner(join.rhs.optimize(db), join.col_lhs, join.col_rhs),
                 _ => q.query.push(query),
             };
         }
-        Self::try_index_join(q)
+        Self::try_index_join(q, db)
     }
 }
 

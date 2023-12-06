@@ -77,7 +77,7 @@ fn build_typed<P: ProgramVm>(p: &mut P, node: Expr) -> ExprOpt {
             }
         }
         Expr::Crud(q) => {
-            let q = q.optimize();
+            let q = q.optimize(p.address());
             match q {
                 CrudExpr::Query(q) => {
                     let source = build_query_opt(q);

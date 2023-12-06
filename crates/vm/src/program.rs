@@ -2,6 +2,7 @@
 //!
 //! It carries an [EnvDb] with the functions, idents, types.
 use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::Address;
 use spacetimedb_sats::relation::{MemTable, RelIter, Relation, Table};
 use std::collections::HashMap;
 
@@ -66,6 +67,7 @@ pub trait ProgramVm {
         env.functions.ops = ops
     }
 
+    fn address(&self) -> Option<Address>;
     fn env(&self) -> &EnvDb;
     fn env_mut(&mut self) -> &mut EnvDb;
     fn ctx(&self) -> &dyn ProgramVm;
@@ -151,6 +153,10 @@ impl Program {
 }
 
 impl ProgramVm for Program {
+    fn address(&self) -> Option<Address> {
+        None
+    }
+
     fn env(&self) -> &EnvDb {
         &self.env
     }
