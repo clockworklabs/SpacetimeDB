@@ -2,13 +2,16 @@ use spacetimedb::{println, query, spacetimedb};
 
 #[spacetimedb(table)]
 pub struct Person {
+    #[primarykey]
+    #[autoinc]
+    id: u32,
     name: String,
     age: u8,
 }
 
 #[spacetimedb(reducer)]
 pub fn add(name: String, age: u8) {
-    Person::insert(Person { name, age });
+    Person::insert(Person { id: 0, name, age });
 }
 
 #[spacetimedb(reducer)]
