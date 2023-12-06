@@ -676,6 +676,13 @@ impl Table {
             Self::DbTable(x) => x.table_access,
         }
     }
+
+    pub fn get_db_table(&self) -> Option<&DbTable> {
+        match self {
+            Self::DbTable(t) => Some(t),
+            _ => None,
+        }
+    }
 }
 
 impl Relation for Table {
