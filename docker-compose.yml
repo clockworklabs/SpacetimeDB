@@ -28,6 +28,8 @@ services:
       # Tracy
       - "8086:8086"
     entrypoint: cargo watch -i flamegraphs -i log.conf --why -C crates/standalone -x 'run start'
+    healthcheck:
+      test: curl -f http://localhost/database/ping || exit 1
     privileged: true
     environment:
       SPACETIMEDB_FLAMEGRAPH_PATH: ../../../../flamegraphs/flamegraph.folded
