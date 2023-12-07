@@ -104,6 +104,8 @@ execute_procedural_test() {
 
 	test_out_file=$(mktemp)
 	printf " **************** Running %s... " "$test_name"
+	local started
+	started="$(date --utc +'%Y-%m-%dT%H:%M:%S.%NZ')"
 	execute_test "$test_name" "$test_out_file"
 	result_code=$?
 	set -e
@@ -112,7 +114,7 @@ execute_procedural_test() {
 	else
 		printf "${RED}FAIL${CRST}\n"
 	fi
-	process_test_result "$test_name" "$result_code" "$PROJECT_PATH" "$test_out_file" "$SPACETIME_CONFIG_FILE"
+	process_test_result "$test_name" "$result_code" "$PROJECT_PATH" "$test_out_file" "$SPACETIME_CONFIG_FILE" "$started"
 }
 
 # Note: $PROJECT_PATH and $SPACETIME_CONFIG_FILE are implicit environment variable inputs to this function.
@@ -150,7 +152,7 @@ execute_test() {
 
 # Prints the result of a test. If the test failed, then the test output is printed.
 process_test_result() {
-	if [ $# != 5 ] ; then
+	if [ $# -lt 5 ] ; then
 		echo "Usage: process_test_result <test-name> <result-code> <project-path> <out-file-path> <config-file-path>"
 		exit 1
 	fi
@@ -160,6 +162,7 @@ process_test_result() {
 	PROJECT_PATH=$3
 	out_file_path=$4
 	config_file_path=$5
+	logs_since=${6+"--since $6"}
 
 	if [ "$result_code" == 0 ] ; then
 		passed_tests+=("$test_name")
@@ -167,7 +170,7 @@ process_test_result() {
 		# Cleanup the test execution only if the test passed
 		rm -rf "$PROJECT_PATH" "$out_file_path" "$config_file_path"
 	else
-		[ -z "${NO_DOCKER:-}" ] && docker logs "$CONTAINER_NAME"
+		[ -z "${NO_DOCKER:-}" ] && docker logs "$logs_since" "$CONTAINER_NAME"
 		cat "$out_file_path"
 		echo "Config file:"
 		cat "$config_file_path"
