@@ -59,7 +59,7 @@ pub trait Tx {
 pub trait MutTx {
     type MutTxId;
 
-    fn begin_mut_tx(&self) -> Self::MutTxId;
+    fn begin_write_tx(&self) -> Self::MutTxId;
     fn commit_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTxId) -> Result<Option<TxData>>;
     fn rollback_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTxId);
 

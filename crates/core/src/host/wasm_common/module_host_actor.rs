@@ -328,7 +328,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         let timestamp = Timestamp::now();
         let stdb = &*self.database_instance_context().relational_db;
         let ctx = ExecutionContext::internal(stdb.address());
-        let tx = stdb.begin_mut_tx();
+        let tx = stdb.begin_write_tx();
         let (tx, ()) = stdb
             .with_auto_rollback(&ctx, tx, |tx| {
                 for schema in get_tabledefs(&self.info) {
@@ -392,7 +392,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         let proposed_tables = get_tabledefs(&self.info).collect::<anyhow::Result<Vec<_>>>()?;
 
         let stdb = &*self.database_instance_context().relational_db;
-        let tx = stdb.begin_mut_tx();
+        let tx = stdb.begin_write_tx();
 
         let res = crate::db::update::update_database(
             stdb,
@@ -512,7 +512,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             arg_bytes: args.get_bsatn().clone(),
         };
 
-        let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx());
+        let tx = tx.unwrap_or_else(|| stdb.begin_write_tx());
         let tx_slot = self.instance.instance_env().tx.clone();
 
         let reducer_span = tracing::trace_span!(

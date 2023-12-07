@@ -408,7 +408,7 @@ mod tests {
         db: &RelationalDB,
         tx: &mut TxType,
         s: &QuerySet,
-        update: &DatabaseUpdate,
+    update: &DatabaseUpdate,
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
@@ -450,7 +450,7 @@ mod tests {
     #[test]
     fn test_eval_incr_maintains_row_ids() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_write_tx();
 
         let schema = ProductType::from([("u8", AlgebraicType::U8)]);
         let row = product!(1u8);
@@ -489,7 +489,7 @@ mod tests {
     #[test]
     fn test_eval_incr_for_index_scan() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_write_tx();
 
         // Create table [test] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -545,7 +545,7 @@ mod tests {
     #[test]
     fn test_eval_incr_for_index_join() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_write_tx();
 
         // Create table [lhs] with index on [id]
         let schema = &[("id", AlgebraicType::I32), ("x", AlgebraicType::I32)];
@@ -783,7 +783,7 @@ mod tests {
     #[test]
     fn test_subscribe() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_write_tx();
 
         let (schema, table, data, q) = make_inv(&db, &mut tx, StAccess::Public)?;
         assert_eq!(schema.table_type, StTableType::User);
@@ -802,7 +802,7 @@ mod tests {
     #[test]
     fn test_subscribe_private() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_write_tx();
 
         let (schema, table, data, q) = make_inv(&db, &mut tx, StAccess::Private)?;
         assert_eq!(schema.table_type, StTableType::User);
@@ -881,7 +881,7 @@ mod tests {
     #[test]
     fn test_subscribe_dedup() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_write_tx();
 
         let (schema, _table, _data, _q) = make_inv(&db, &mut tx, StAccess::Private)?;
 
@@ -930,7 +930,7 @@ mod tests {
     #[test]
     fn test_subscribe_sql() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_write_tx();
 
         // Create table [MobileEntityState]
         let schema = &[
@@ -968,6 +968,8 @@ mod tests {
         insert into EnemyState (entity_id, herd_id, status, type, direction) values (1, 1181485940, 1633678837, 1158301365, 132191327);
         insert into EnemyState (entity_id, herd_id, status, type, direction) values (2, 2017368418, 194072456, 34423057, 1296770410);";
         run(&db, &mut tx, sql_insert, AuthCtx::for_testing())?;
+        drop(tx);
+        let mut tx = db.begin_write_tx();
 
         let sql_query = "\
             SELECT EnemyState.* FROM EnemyState \
@@ -995,7 +997,7 @@ mod tests {
     #[test]
     fn test_subscribe_all() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_write_tx();
 
         let (schema_1, _, _, _) = make_inv(&db, &mut tx, StAccess::Public)?;
         let (schema_2, _, _, _) = make_player(&db, &mut tx)?;
@@ -1043,7 +1045,7 @@ mod tests {
     #[test]
     fn test_classify() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_write_tx();
         // Create table [plain]
         let schema = &[("id", AlgebraicType::U64)];
         create_table(&db, &mut tx, "plain", schema, &[])?;

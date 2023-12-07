@@ -164,7 +164,7 @@ impl ModuleSubscriptionActor {
         subscription: Subscribe,
     ) -> Result<(), DBError> {
         // Split logic to properly handle `Error` + `Tx`
-        let mut tx = self.relational_db.begin_mut_tx();
+        let mut tx = self.relational_db.begin_write_tx();
 
         let result = self._add_subscription(sender, subscription, &mut tx).await;
 
@@ -216,8 +216,7 @@ impl ModuleSubscriptionActor {
 
     async fn broadcast_commit_event(&mut self, event: ModuleEvent) -> Result<(), DBError> {
         //Split logic to properly handle `Error` + `Tx`
-        //TODO(shub): use read only tx here
-        let mut tx = self.relational_db.begin_mut_tx();
+        let mut tx = self.relational_db.begin_write_tx();
         let result = self._broadcast_commit_event(event, &mut tx).await;
         let ctx = ExecutionContext::incremental_update(self.relational_db.address(), None);
         self.relational_db.finish_tx(&ctx, tx, result)

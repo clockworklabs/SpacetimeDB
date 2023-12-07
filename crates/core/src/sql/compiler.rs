@@ -347,7 +347,7 @@ mod tests {
     #[test]
     fn compile_eq() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_write_tx();
 
         // Create table [test] without any indexes
         let schema = &[("a", AlgebraicType::U64)];
@@ -375,7 +375,7 @@ mod tests {
     #[test]
     fn compile_index_eq() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_write_tx();
 
         // Create table [test] with index on [a]
         let schema = &[("a", AlgebraicType::U64)];
@@ -407,7 +407,7 @@ mod tests {
     #[test]
     fn compile_eq_and_eq() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_write_tx();
 
         // Create table [test] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -437,7 +437,7 @@ mod tests {
     #[test]
     fn compile_index_eq_and_eq() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_write_tx();
 
         // Create table [test] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -470,7 +470,7 @@ mod tests {
     #[test]
     fn compile_eq_or_eq() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_write_tx();
 
         // Create table [test] with indexes on [a] and [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -498,7 +498,7 @@ mod tests {
     #[test]
     fn compile_index_range_open() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_write_tx();
 
         // Create table [test] with indexes on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -530,7 +530,7 @@ mod tests {
     #[test]
     fn compile_index_range_closed() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_write_tx();
 
         // Create table [test] with indexes on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -562,7 +562,7 @@ mod tests {
     #[test]
     fn compile_index_eq_select_range() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_write_tx();
 
         // Create table [test] with indexes on [a] and [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -599,7 +599,7 @@ mod tests {
     #[test]
     fn compile_join_lhs_push_down() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_write_tx();
 
         // Create table [lhs] with index on [a]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -670,7 +670,7 @@ mod tests {
     #[test]
     fn compile_join_lhs_push_down_no_index() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_write_tx();
 
         // Create table [lhs] with no indexes
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -751,7 +751,7 @@ mod tests {
     #[test]
     fn compile_join_rhs_push_down_no_index() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_write_tx();
 
         // Create table [lhs] with no indexes
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -831,7 +831,7 @@ mod tests {
     #[test]
     fn compile_join_lhs_and_rhs_push_down() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_write_tx();
 
         // Create table [lhs] with index on [a]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -915,7 +915,7 @@ mod tests {
     #[test]
     fn compile_index_join() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_write_tx();
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -1011,7 +1011,7 @@ mod tests {
     #[test]
     fn compile_incremental_index_join() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_write_tx();
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];

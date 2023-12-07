@@ -124,7 +124,7 @@ type SharedMutexGuard<T> = ArcMutexGuard<RawMutex, T>;
 ///
 /// The initialization of this struct is sensitive because improper
 /// handling can lead to deadlocks. Therefore, it is strongly recommended to use
-/// `Locking::begin_mut_tx()` for instantiation to ensure safe acquisition of locks.
+/// `Locking::begin_write_tx()` for instantiation to ensure safe acquisition of locks.
 pub struct MutTxId {
     tx_state: TxState,
     committed_state_write_lock: SharedWriteGuard<CommittedState>,
@@ -2361,7 +2361,7 @@ impl TxDatastore for Locking {
 impl traits::MutTx for Locking {
     type MutTxId = TxType;
 
-    fn begin_mut_tx(&self) -> Self::MutTxId {
+    fn begin_write_tx(&self) -> Self::MutTxId {
         let timer = Instant::now();
 
         let committed_state_write_lock = self.committed_state.write_arc();
@@ -3101,7 +3101,7 @@ mod tests {
 
     fn setup_table() -> ResultTest<(Locking, TxType, TableId)> {
         let datastore = get_datastore()?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         let schema = basic_table_schema();
         let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
         Ok((datastore, tx, table_id))
@@ -3118,7 +3118,7 @@ mod tests {
     #[test]
     fn test_bootstrapping_sets_up_tables() -> ResultTest<()> {
         let datastore = get_datastore()?;
-        let tx = datastore.begin_mut_tx();
+        let tx = datastore.begin_write_tx();
         
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
@@ -3220,7 +3220,7 @@ mod tests {
     fn test_create_table_post_commit() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let tx = datastore.begin_mut_tx();
+        let tx = datastore.begin_write_tx();
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
 
@@ -3240,7 +3240,7 @@ mod tests {
     fn test_create_table_post_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.rollback_mut_tx_for_test(tx);
-        let tx = datastore.begin_mut_tx();
+        let tx = datastore.begin_write_tx();
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
 
@@ -3264,7 +3264,7 @@ mod tests {
     fn test_schema_for_table_post_commit() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let tx = datastore.begin_mut_tx();
+        let tx = datastore.begin_write_tx();
         let schema = &*datastore.schema_for_table_mut_tx(&tx, table_id)?;
         #[rustfmt::skip]
         assert_eq!(schema, &basic_table_schema_created(table_id));
@@ -3276,7 +3276,7 @@ mod tests {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx_for_test(tx)?;
 
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         let schema = datastore.schema_for_table_mut_tx(&tx, table_id)?.into_owned();
 
         for index in &*schema.indexes {
@@ -3291,7 +3291,7 @@ mod tests {
         );
         datastore.commit_mut_tx_for_test(tx)?;
 
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         assert!(
             datastore
                 .schema_for_table_mut_tx(&tx, table_id)?
@@ -3322,7 +3322,7 @@ mod tests {
 
         datastore.commit_mut_tx_for_test(tx)?;
 
-        let tx = datastore.begin_mut_tx();
+        let tx = datastore.begin_write_tx();
         assert_eq!(
             datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes,
             expected_indexes,
@@ -3338,7 +3338,7 @@ mod tests {
     fn test_schema_for_table_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.rollback_mut_tx_for_test(tx);
-        let tx = datastore.begin_mut_tx();
+        let tx = datastore.begin_write_tx();
         let schema = datastore.schema_for_table_mut_tx(&tx, table_id);
         assert!(schema.is_err());
         Ok(())
@@ -3370,7 +3370,7 @@ mod tests {
         // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, u32_str_u32(0, "Foo", 18))?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let tx = datastore.begin_mut_tx();
+        let tx = datastore.begin_write_tx();
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, "Foo", 18)]);
         Ok(())
@@ -3381,10 +3381,10 @@ mod tests {
         let (datastore, tx, table_id) = setup_table()?;
         let row = u32_str_u32(15, "Foo", 18); // 15 is ignored.
         datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.rollback_mut_tx_for_test(tx);
-        let tx = datastore.begin_mut_tx();
+        let tx = datastore.begin_write_tx();
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![]);
         Ok(())
@@ -3396,7 +3396,7 @@ mod tests {
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         let created_row = u32_str_u32(1, "Foo", 18);
         let num_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, [created_row]);
         assert_eq!(num_deleted, 1);
@@ -3451,7 +3451,7 @@ mod tests {
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         let result = datastore.insert_mut_tx(&mut tx, table_id, row);
         match result {
             Err(DBError::Index(IndexError::UniqueConstraintViolation {
@@ -3471,11 +3471,11 @@ mod tests {
     fn test_unique_constraint_post_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
         datastore.rollback_mut_tx_for_test(tx);
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(2, "Foo", 18)]);
@@ -3486,11 +3486,11 @@ mod tests {
     fn test_create_index_pre_commit() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         let index_def = IndexDef::btree("age_idx".into(), ColId(2), true);
         datastore.create_index_mut_tx(&mut tx, table_id, index_def)?;
         let ctx = ExecutionContext::default();
@@ -3532,11 +3532,11 @@ mod tests {
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         let index_def = IndexDef::btree("age_idx".into(), ColId(2), true);
         datastore.create_index_mut_tx(&mut tx, table_id, index_def)?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
 
@@ -3575,11 +3575,11 @@ mod tests {
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         let index_def = IndexDef::btree("age_idx".into(), ColId(2), true);
         datastore.create_index_mut_tx(&mut tx, table_id, index_def)?;
         datastore.rollback_mut_tx_for_test(tx);
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
 
@@ -3631,7 +3631,7 @@ mod tests {
         };
 
         // Update the db with the same actual value for that row, in a new tx.
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         // Iterate over all rows with the value 1 (from the autoinc) in column 0.
         let rows = all_rows_col_0_eq_1(&tx);
         assert_eq!(rows.len(), 1);
