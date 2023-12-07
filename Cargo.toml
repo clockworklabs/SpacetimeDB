@@ -9,6 +9,7 @@ members = [
   "crates/bench",
   "crates/bindings-macro",
   "crates/cli",
+  "crates/metrics",
   "crates/sats",
   "crates/testing",
   "crates/vm",

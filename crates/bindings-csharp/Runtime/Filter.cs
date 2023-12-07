@@ -135,8 +135,14 @@ public class Filter
         expr switch
         {
             // LINQ inserts spurrious conversions in comparisons, so we need to unwrap them
-            UnaryExpression { NodeType: ExpressionType.Convert, Operand: var arg } => ExprAsTableField(arg),
-            MemberExpression { Expression: ParameterExpression, Member: { Name: var memberName }, Type: var type }
+            UnaryExpression { NodeType: ExpressionType.Convert, Operand: var arg }
+                => ExprAsTableField(arg),
+            MemberExpression
+            {
+                Expression: ParameterExpression,
+                Member: { Name: var memberName },
+                Type: var type
+            }
                 => ((byte)Array.FindIndex(fieldTypeInfos, pair => pair.Key == memberName), type),
             _
                 => throw new NotSupportedException(
@@ -144,21 +150,18 @@ public class Filter
                 )
         };
 
-    object? ExprAsConstant(Expression expr) =>
+    object? ExprAsRhs(Expression expr) =>
         expr switch
         {
             ConstantExpression { Value: var value } => value,
-            _
-                => throw new NotSupportedException(
-                    "expected constant expression in the right-hand side of a comparison"
-                )
+            _ => Expression.Lambda(expr).Compile().DynamicInvoke()
         };
 
     Cmp HandleCmp(BinaryExpression expr)
     {
         var (lhsFieldIndex, type) = ExprAsTableField(expr.Left);
 
-        var rhs = ExprAsConstant(expr.Right);
+        var rhs = ExprAsRhs(expr.Right);
         rhs = Convert.ChangeType(rhs, type);
         var rhsWrite = fieldTypeInfos[lhsFieldIndex].Value.Write;
         var erasedRhs = new ErasedValue((writer) => rhsWrite(writer, rhs));

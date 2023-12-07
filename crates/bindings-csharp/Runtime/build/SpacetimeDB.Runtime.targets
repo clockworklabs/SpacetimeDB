@@ -19,11 +19,11 @@
   <!-- Adapted from https://github.com/dotnet/dotnet-wasi-sdk/blob/2dbb00c779180873d3ed985e59e431f56404d8da/src/Wasi.Sdk/build/Wasi.Sdk.targets#L245-L262 -->
   <!-- Executes before the errors in https://github.com/dotnet/runtime/blob/57fd56a99d4c97ac2f95fe84640f2a3f653f4dd7/src/mono/wasi/build/WasiApp.Native.targets#L41-L50. -->
   <!-- TODO: remove when https://github.com/dotnet/runtime/issues/82788 is resolved. -->
-	<Target Name="ObtainWasiSdk" BeforeTargets="_SetupWasiSdk">
-		<PropertyGroup>
+  <Target Name="ObtainWasiSdk" BeforeTargets="_SetupWasiSdk">
+    <PropertyGroup>
       <WasiSdkVersion>20</WasiSdkVersion>
 
-			<WasiSdkDownloadTempFile>$([System.IO.Path]::Combine($(IntermediateOutputPath), "wasi-sdk.$(WasiSdkVersion).tar.gz"))</WasiSdkDownloadTempFile>
+      <WasiSdkDownloadTempFile>$([System.IO.Path]::Combine($(IntermediateOutputPath), "wasi-sdk.$(WasiSdkVersion).tar.gz"))</WasiSdkDownloadTempFile>
 
       <WasiSdkFilenameSuffix Condition="$([MSBuild]::IsOSPlatform('Windows'))">.m-mingw</WasiSdkFilenameSuffix>
       <WasiSdkFilenameSuffix Condition="$([MSBuild]::IsOSPlatform('Linux'))">-linux</WasiSdkFilenameSuffix>
@@ -35,7 +35,7 @@
       <WasiSysRoot>$([System.IO.Path]::Combine($(WasiSdkRoot), 'share', 'wasi-sysroot'))</WasiSysRoot>
       <WasiClang>$([System.IO.Path]::Combine($(WasiSdkRoot), 'bin', 'clang'))</WasiClang>
       <WasiClang Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(WasiClang).exe</WasiClang>
-		</PropertyGroup>
+    </PropertyGroup>
 
     <DownloadFile
             SourceUrl="$(WasiSdkUrl)"
@@ -43,10 +43,10 @@
             DestinationFileName="$([System.IO.Path]::GetFileName('$(WasiSdkDownloadTempFile)'))"
             Condition="!Exists('$(WasiSdkDownloadTempFile)')" />
 
-    <Message Importance="high" Text="Extracting $(WasiSdkDownloadTempFile) to $(WasiSdkRoot)..." />
+    <Message Importance="high" Text="Extracting $(WasiSdkDownloadTempFile) to $(WasiSdkRoot)..." Condition="!Exists('$(WasiClang)')" />
     <MakeDir Directories="$(WasiSdkRoot)" />
     <!-- Windows 10+ has tar built in, so this should work cross-platform -->
     <Exec Command="tar -xf &quot;$(WasiSdkDownloadTempFile)&quot; -C &quot;$(WasiSdkRoot)&quot; --strip-components=1" Condition="!Exists('$(WasiClang)')" />
-	</Target>
+  </Target>
 
 </Project>

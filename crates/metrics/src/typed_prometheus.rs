@@ -21,11 +21,11 @@ macro_rules! metrics_group {
 
         impl prometheus::core::Collector for $type_name {
             fn desc(&self) -> Vec<&prometheus::core::Desc> {
-                $crate::util::typed_prometheus::itertools::concat([ $(prometheus::core::Collector::desc(&self.$field)),* ])
+                $crate::typed_prometheus::itertools::concat([ $(prometheus::core::Collector::desc(&self.$field)),* ])
             }
 
             fn collect(&self) -> Vec<prometheus::proto::MetricFamily> {
-                $crate::util::typed_prometheus::itertools::concat([ $(prometheus::core::Collector::collect(&self.$field)),* ])
+                $crate::typed_prometheus::itertools::concat([ $(prometheus::core::Collector::collect(&self.$field)),* ])
             }
         }
         impl prometheus::core::Collector for &$type_name {
@@ -38,15 +38,15 @@ macro_rules! metrics_group {
             }
         }
     };
-    (@fieldtype $field:ident $ty:ident ($($labels:tt)*)) => { $crate::util::typed_prometheus::paste! { [< $field:camel $ty >] } };
+    (@fieldtype $field:ident $ty:ident ($($labels:tt)*)) => { $crate::typed_prometheus::paste! { [< $field:camel $ty >] } };
     (@fieldtype $field:ident $ty:ident) => { $ty };
     (@maketype $vis:vis $field:ident $ty:ident ($($labels:tt)*)) => {
-        $crate::util::typed_prometheus::paste! {
+        $crate::typed_prometheus::paste! {
             $crate::metrics_vec!($vis [< $field:camel $ty >]: $ty($($labels)*));
         }
     };
     (@maketype $vis:vis $field:ident $ty:ident ($($labels:tt)*) ($($bucket:literal)*)) => {
-        $crate::util::typed_prometheus::paste! {
+        $crate::typed_prometheus::paste! {
             $crate::metrics_histogram_vec!($vis [< $field:camel $ty >]: $ty($($labels)*) ($($bucket)*));
         }
     };
@@ -78,8 +78,8 @@ macro_rules! metrics_histogram_vec {
                 $vecty::new(opts.into(), &[$(stringify!($labels)),+]).map(Self)
             }
 
-            pub fn with_label_values(&self, $($labels: &$labelty),+) -> <$vecty as $crate::util::typed_prometheus::ExtractMetricVecT>::M {
-                use $crate::util::typed_prometheus::AsPrometheusLabel as _;
+            pub fn with_label_values(&self, $($labels: &$labelty),+) -> <$vecty as $crate::typed_prometheus::ExtractMetricVecT>::M {
+                use $crate::typed_prometheus::AsPrometheusLabel as _;
                 self.0.with_label_values(&[ $($labels.as_prometheus_str().as_ref()),+ ])
             }
         }
@@ -107,8 +107,8 @@ macro_rules! metrics_vec {
                 $vecty::new(opts.into(), &[$(stringify!($labels)),+]).map(Self)
             }
 
-            pub fn with_label_values(&self, $($labels: &$labelty),+) -> <$vecty as $crate::util::typed_prometheus::ExtractMetricVecT>::M {
-                use $crate::util::typed_prometheus::AsPrometheusLabel as _;
+            pub fn with_label_values(&self, $($labels: &$labelty),+) -> <$vecty as $crate::typed_prometheus::ExtractMetricVecT>::M {
+                use $crate::typed_prometheus::AsPrometheusLabel as _;
                 self.0.with_label_values(&[ $($labels.as_prometheus_str().as_ref()),+ ])
             }
         }

@@ -7,6 +7,8 @@ use spacetimedb_lib::de::serde::SeedWrapper;
 use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::{bsatn, Identity};
 use spacetimedb_lib::{ProductValue, ReducerDef};
+use spacetimedb_metrics::impl_prometheusvalue_string;
+use spacetimedb_metrics::typed_prometheus::AsPrometheusLabel;
 use spacetimedb_sats::WithTypespace;
 use std::time::Duration;
 
@@ -185,3 +187,5 @@ pub enum AbiCall {
     IterStartFiltered,
     ScheduleReducer,
 }
+
+impl_prometheusvalue_string!(AbiCall);

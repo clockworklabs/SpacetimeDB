@@ -1,5 +1,7 @@
 use derive_more::Display;
 use spacetimedb_lib::Address;
+use spacetimedb_metrics::impl_prometheusvalue_string;
+use spacetimedb_metrics::typed_prometheus::AsPrometheusLabel;
 
 use crate::sql::query_debug_info::QueryDebugInfo;
 
@@ -35,6 +37,8 @@ pub enum WorkloadType {
     Update,
     Internal,
 }
+
+impl_prometheusvalue_string!(WorkloadType);
 
 impl Default for WorkloadType {
     fn default() -> Self {

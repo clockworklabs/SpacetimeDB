@@ -18,6 +18,13 @@ pub fn cli() -> clap::Command {
     clap::Command::new("upgrade")
         .about("Checks for updates for the currently running spacetime CLI tool")
         .arg(Arg::new("version").help("The specific version to upgrade to"))
+        .arg(
+            Arg::new("force")
+                .short('f')
+                .long("force")
+                .help("If this flag is present, the upgrade will be performed even if the version is the same")
+                .action(clap::ArgAction::SetTrue),
+        )
         .after_help("Run `spacetime help upgrade` for more detailed information.\n")
 }
 
@@ -117,6 +124,7 @@ async fn download_with_progress(client: &reqwest::Client, url: &str, temp_path: 
 pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
     let version = args.get_one::<String>("version");
     let current_exe_path = env::current_exe()?;
+    let force = args.get_flag("force");
 
     let url = match version {
         None => "https://api.github.com/repos/clockworklabs/SpacetimeDB/releases/latest".to_string(),
@@ -144,7 +152,11 @@ pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
 
     if release_version == version::CLI_VERSION {
         println!("You're already running the latest version: {}", version::CLI_VERSION);
-        return Ok(());
+        if !force {
+            return Ok(());
+        } else {
+            println!("Force flag is set, continuing with upgrade.");
+        }
     }
 
     let download_name = get_download_name();

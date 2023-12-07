@@ -1,14 +1,14 @@
 [package]
 name = "spacetimedb-testing"
-version = "0.7.3"
+version = "0.8.0"
 edition = "2021"
 
 [dependencies]
-spacetimedb-cli = { path = "../cli", version = "0.7.3" }
-spacetimedb-lib = { path = "../lib", version = "0.7.3" }
-spacetimedb-core = { path = "../core", version = "0.7.3" }
-spacetimedb-standalone = { path = "../standalone", version = "0.7.3" }
-spacetimedb-client-api = { path = "../client-api", version = "0.7.3" }
+spacetimedb-cli = { path = "../cli", version = "0.8.0" }
+spacetimedb-lib = { path = "../lib", version = "0.8.0" }
+spacetimedb-core = { path = "../core", version = "0.8.0" }
+spacetimedb-standalone = { path = "../standalone", version = "0.8.0" }
+spacetimedb-client-api = { path = "../client-api", version = "0.8.0" }
 
 anyhow.workspace = true
 env_logger.workspace = true
@@ -22,6 +22,7 @@ lazy_static.workspace = true
 rand.workspace = true
 prost.workspace = true
 tempfile.workspace = true
+serde.workspace = true
 
 [dev-dependencies]
 serial_test.workspace = true
