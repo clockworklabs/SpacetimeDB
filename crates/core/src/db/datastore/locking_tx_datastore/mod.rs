@@ -499,7 +499,7 @@ impl CommittedState {
         let mut constraints = Vec::new();
         for data_ref in self.iter_by_col_eq(
             &ST_CONSTRAINTS_ID,
-            &NonEmpty::new(StIndexFields::TableId.col_id()),
+            &NonEmpty::new(StConstraintFields::TableId.col_id()),
             &table_id.into(),
         )? {
             let row = data_ref.view();
@@ -1137,7 +1137,7 @@ impl MutTxId {
 
         // Look up the constraints for the table in question.
         let mut constraints = Vec::new();
-        for data_ref in self.iter_by_col_eq(&ctx, &ST_CONSTRAINTS_ID, StIndexFields::TableId, table_id.into())? {
+        for data_ref in self.iter_by_col_eq(&ctx, &ST_CONSTRAINTS_ID, StConstraintFields::TableId, table_id.into())? {
             let row = data_ref.view();
 
             let el = StConstraintRow::try_from(row)?;
@@ -2984,11 +2984,10 @@ mod tests {
             map_array(basic_table_schema_cols()),
              map_array([
                 IdxSchema { id: 6, table: 6, col: 0, name: "id_idx", unique: true },
-                IdxSchema { id: 7, table: 6, col: 1, name: "name_idx", unique: true },
+                IdxSchema { id: 7, table: 6, col: 1, name: "name_idx", unique: false },
             ]),
-            
             map_array([
-                ConstraintRow { constraint_id: 6, table_id: 6, columns: col(0), constraints: Constraints::indexed(), constraint_name: "ct_Foo_id_idx_indexed" },
+                ConstraintRow { constraint_id: 6, table_id: 6, columns: col(0), constraints: Constraints::unique(), constraint_name: "ct_Foo_id_idx_unique" },
                 ConstraintRow { constraint_id: 7, table_id: 6, columns: col(1), constraints: Constraints::indexed(), constraint_name: "ct_Foo_name_idx_indexed" }
             ]),
              map_array([
@@ -3088,7 +3087,7 @@ mod tests {
         #[rustfmt::skip]
         assert_eq!(query.scan_st_constraints()?, map_array([
             ConstraintRow { constraint_id: 0, table_id: 0, columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_table_table_id_primary_key_auto" },
-            ConstraintRow { constraint_id: 1, table_id: 0, columns: col(1), constraints: Constraints::indexed(), constraint_name: "ct_st_table_table_name_unique_indexed" },
+            ConstraintRow { constraint_id: 1, table_id: 0, columns: col(1), constraints: Constraints::unique(), constraint_name: "ct_st_table_table_name_unique" },
             ConstraintRow { constraint_id: 2, table_id: 1, columns: cols(0, vec![1]), constraints: Constraints::unique(), constraint_name: "ct_st_columns_table_id_col_pos_unique" },
             ConstraintRow { constraint_id: 3, table_id: 2, columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_sequence_sequence_id_primary_key_auto" },
             ConstraintRow { constraint_id: 4, table_id: 3, columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_indexes_index_id_primary_key_auto" },

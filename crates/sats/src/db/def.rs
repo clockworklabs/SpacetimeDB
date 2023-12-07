@@ -445,7 +445,12 @@ impl ConstraintDef {
         columns: impl Into<NonEmpty<ColId>>,
     ) -> Self {
         let kind_name = format!("{:?}", constraints.kind()).to_lowercase();
-        Self::new(format!("ct_{table}_{column_name}_{kind_name}"), constraints, columns)
+        // No duplicate the `kind_name` that was added by an index
+        if column_name.ends_with(&kind_name) {
+            Self::new(format!("ct_{table}_{column_name}"), constraints, columns)
+        } else {
+            Self::new(format!("ct_{table}_{column_name}_{kind_name}"), constraints, columns)
+        }
     }
 }
 
@@ -683,6 +688,7 @@ impl TableSchema {
                 .constraints
                 .into_iter()
                 .chain(constraints)
+                .filter(|x| x.constraints.kind() != ConstraintKind::UNSET)
                 .sorted_by_key(|x| x.columns.clone())
                 .map(|x| ConstraintSchema::from_def(table_id, x))
                 .collect(),
@@ -1057,7 +1063,17 @@ impl TableDef {
     }
 
     pub fn generated_constraints(&self) -> impl Iterator<Item = ConstraintDef> + '_ {
-        let cols: HashSet<_> = self.constraints.iter().map(|x| &x.columns).collect();
+        let cols: HashSet<_> = self
+            .constraints
+            .iter()
+            .filter_map(|x| {
+                if x.constraints.kind() != ConstraintKind::UNSET {
+                    Some(&x.columns)
+                } else {
+                    None
+                }
+            })
+            .collect();
 
         self.indexes.iter().filter_map(move |idx| {
             if !cols.contains(&idx.columns) {
@@ -1066,7 +1082,11 @@ impl TableDef {
                 Some(ConstraintDef::for_column(
                     &self.table_name,
                     name,
-                    Constraints::indexed(),
+                    if idx.is_unique {
+                        Constraints::unique()
+                    } else {
+                        Constraints::indexed()
+                    },
                     idx.columns.clone(),
                 ))
             } else {
