@@ -11,7 +11,7 @@ use spacetimedb_vm::expr::CrudExpr;
 use super::instrumentation::CallTimes;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{LogLevel, Record, SystemLogger};
-use crate::db::datastore::locking_tx_datastore::{MutTxId, TxType};
+use crate::db::datastore::locking_tx_datastore::{TxType};
 use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
 use crate::host::instance_env::InstanceEnv;
@@ -276,7 +276,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
     fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error> {
         let db = &*self.database_instance_context.relational_db;
         db.with_auto_commit(&ExecutionContext::internal(db.address()), |tx| {
-            let tables = db.get_all_tables(&(*tx).into())?;
+            let tables = db.get_all_tables(tx)?;
             // We currently have unique table names,
             // so we can assume there's only one table to clear.
             if let Some(table_id) = tables
@@ -468,7 +468,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     /// The method also performs various measurements and records energy usage,
     /// as well as broadcasting a [`ModuleEvent`] containg information about
     /// the outcome of the call.
-    fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
+    fn call_reducer_with_tx(&mut self, tx: Option<TxType>, params: CallReducerParams) -> ReducerCallResult {
         let CallReducerParams {
             timestamp,
             caller_identity,
@@ -557,7 +557,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let ctx = ExecutionContext::reducer(address, reducer_name);
         let status = match call_result {
             Err(err) => {
-                stdb.rollback_tx(&ctx, tx.into());
+                stdb.rollback_tx(&ctx, tx);
 
                 T::log_traceback("reducer", reducer_name, &err);
 

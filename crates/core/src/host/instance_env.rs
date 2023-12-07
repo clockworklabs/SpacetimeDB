@@ -8,7 +8,7 @@ use super::scheduler::{ScheduleError, ScheduledReducerId, Scheduler};
 use super::timestamp::Timestamp;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
-use crate::db::datastore::locking_tx_datastore::{MutTxId, RowId, TxType};
+use crate::db::datastore::locking_tx_datastore::{RowId, TxType};
 use crate::error::{IndexError, NodesError};
 use crate::execution_context::ExecutionContext;
 use crate::util::ResultInspectExt;
@@ -33,7 +33,7 @@ pub struct InstanceEnv {
 
 #[derive(Clone, Default)]
 pub struct TxSlot {
-    inner: Arc<Mutex<Option<TxSlot>>>,
+    inner: Arc<Mutex<Option<TxType>>>,
 }
 
 #[derive(Default)]
@@ -105,7 +105,7 @@ impl InstanceEnv {
         self.scheduler.cancel(id)
     }
 
-    fn get_tx(&self) -> Result<impl DerefMut<Target = MutTxId> + '_, GetTxError> {
+    fn get_tx(&self) -> Result<impl DerefMut<Target = TxType> + '_, GetTxError> {
         self.tx.get()
     }
 
@@ -117,7 +117,7 @@ impl InstanceEnv {
 
     pub fn insert(&self, ctx: &ExecutionContext, table_id: TableId, buffer: &[u8]) -> Result<ProductValue, NodesError> {
         let stdb = &*self.dbic.relational_db;
-        let mut tx = *self.get_tx()?;
+        let mut tx = &mut *self.get_tx()?;
         let ret = stdb
             .insert_bytes_as_row(&mut tx, table_id, buffer)
             .inspect_err_(|e| match e {
@@ -128,7 +128,7 @@ impl InstanceEnv {
                     value: _,
                 }) => {}
                 _ => {
-                    let res = stdb.table_name_from_id(ctx, &tx.into(), table_id);
+                    let res = stdb.table_name_from_id(ctx, tx, table_id);
                     if let Ok(Some(table_name)) = res {
                         log::debug!("insert(table: {table_name}, table_id: {table_id}): {e}")
                     } else {
@@ -196,11 +196,11 @@ impl InstanceEnv {
     #[tracing::instrument(skip_all)]
     pub fn get_table_id(&self, table_name: &str) -> Result<TableId, NodesError> {
         let stdb = &*self.dbic.relational_db;
-        let tx = *self.get_tx()?;
+        let tx = &mut *self.get_tx()?;
 
         // Query the table id from the name.
         let table_id = stdb
-            .table_id_from_name(&tx.into(), table_name)?
+            .table_id_from_name(tx, table_name)?
             .ok_or(NodesError::TableNotFound)?;
 
         Ok(table_id)
@@ -242,7 +242,7 @@ impl InstanceEnv {
             .expect("Attempt to create an index with zero columns")
             .map(Into::into);
 
-        let is_unique = stdb.column_attrs(&mut (*tx).into(), table_id, &columns)?.has_unique();
+        let is_unique = stdb.column_constraints(tx, table_id, &columns)?.has_unique();
 
         let index = IndexDef {
             columns,
@@ -341,8 +341,7 @@ impl InstanceEnv {
 
         let stdb = &self.dbic.relational_db;
         let tx = &mut *self.tx.get()?;
-        let mut tx_type = TxType::from(*tx);
-        let schema = stdb.schema_for_table(&tx_type, table_id)?;
+        let schema = stdb.schema_for_table(tx, table_id)?;
         let row_type = ProductType::from(&*schema);
 
         let filter = filter::Expr::from_bytes(
@@ -356,7 +355,7 @@ impl InstanceEnv {
         .map_err(NodesError::DecodeFilter)?;
         let q = spacetimedb_vm::dsl::query(&*schema).with_select(filter_to_column_op(&schema.table_name, filter));
         //TODO: How pass the `caller` here?
-        let p = &mut DbProgram::new(ctx, stdb, &mut tx_type , AuthCtx::for_current(self.dbic.identity));
+        let p = &mut DbProgram::new(ctx, stdb, tx , AuthCtx::for_current(self.dbic.identity));
         let results = match spacetimedb_vm::eval::run_ast(p, q.into()) {
             Code::Table(table) => table,
             _ => unreachable!("query should always return a table"),
@@ -375,7 +374,7 @@ impl InstanceEnv {
 }
 
 impl TxSlot {
-    pub fn set<T>(&self, tx: MutTxId, f: impl FnOnce() -> T) -> (MutTxId, T) {
+    pub fn set<T>(&self, tx: TxType, f: impl FnOnce() -> T) -> (TxType, T) {
         let prev = self.inner.lock().replace(tx);
         assert!(prev.is_none(), "reentrant TxSlot::set");
         let remove_tx = || self.inner.lock().take();
@@ -387,7 +386,7 @@ impl TxSlot {
         (tx, res)
     }
 
-    pub fn get(&self) -> Result<impl DerefMut<Target = MutTxId> + '_, GetTxError> {
+    pub fn get(&self) -> Result<impl DerefMut<Target = TxType> + '_, GetTxError> {
         MutexGuard::try_map(self.inner.lock(), |map| map.as_mut()).map_err(|_| GetTxError)
     }
 }

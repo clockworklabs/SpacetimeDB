@@ -127,11 +127,11 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         tx: &'tx Self::MutTxId,
         table_id: TableId,
     ) -> Result<Cow<'tx, ProductType>>;
-    fn schema_for_table_mut_tx<'tx>(&self, tx: &'tx TxType, table_id: TableId) -> Result<Cow<'tx, TableSchema>>;
+    fn schema_for_table_mut_tx<'tx>(&self, tx: &'tx Self::MutTxId, table_id: TableId) -> Result<Cow<'tx, TableSchema>>;
     fn drop_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId) -> Result<()>;
     fn rename_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, new_name: &str) -> Result<()>;
     fn table_id_exists(&self, tx: &Self::MutTxId, table_id: &TableId) -> bool;
-    fn table_id_from_name_mut_tx(&self, tx: &TxType, table_name: &str) -> Result<Option<TableId>>;
+    fn table_id_from_name_mut_tx(&self, tx: &Self::MutTxId, table_name: &str) -> Result<Option<TableId>>;
     fn table_name_from_id_mut_tx<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
@@ -156,7 +156,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     // Indexes
     fn create_index_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, index: IndexDef) -> Result<IndexId>;
     fn drop_index_mut_tx(&self, tx: &mut Self::MutTxId, index_id: IndexId) -> Result<()>;
-    fn index_id_from_name_mut_tx(&self, tx: &TxType, index_name: &str) -> super::Result<Option<IndexId>>;
+    fn index_id_from_name_mut_tx(&self, tx: &Self::MutTxId, index_name: &str) -> super::Result<Option<IndexId>>;
 
     // TODO: Index data
     // - index_scan_mut_tx
@@ -170,7 +170,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     fn drop_sequence_mut_tx(&self, tx: &mut Self::MutTxId, seq_id: SequenceId) -> Result<()>;
     fn sequence_id_from_name_mut_tx(
         &self,
-        tx: &TxType,
+        tx: &Self::MutTxId,
         sequence_name: &str,
     ) -> super::Result<Option<SequenceId>>;
 
@@ -189,7 +189,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     fn iter_by_col_range_mut_tx<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a TxType,
+        tx: &'a Self::MutTxId,
         table_id: TableId,
         cols: impl Into<NonEmpty<ColId>>,
         range: R,

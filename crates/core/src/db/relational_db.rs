@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use super::commit_log::{CommitLog, CommitLogMut};
 use super::datastore::locking_tx_datastore::Locking;
-use super::datastore::locking_tx_datastore::{DataRef, Iter, IterByColEq, IterByColRange, MutTxId, RowId, TxType};
+use super::datastore::locking_tx_datastore::{DataRef, Iter, IterByColEq, IterByColRange, RowId, TxType};
 use super::datastore::traits::{MutProgrammable, MutTx, MutTxDatastore, Programmable, TxData};
 use super::message_log::MessageLog;
 use super::ostorage::memory_object_db::MemoryObjectDB;
@@ -175,13 +175,13 @@ impl RelationalDB {
     #[tracing::instrument(skip_all)]
     pub fn row_schema_for_table<'tx>(
         &self,
-        tx: &'tx MutTxId,
+        tx: &'tx TxType,
         table_id: TableId,
     ) -> Result<Cow<'tx, ProductType>, DBError> {
         self.inner.row_type_for_table_mut_tx(tx, table_id)
     }
 
-    pub fn get_all_tables<'tx>(&self, tx: &'tx MutTxId) -> Result<Vec<Cow<'tx, TableSchema>>, DBError> {
+    pub fn get_all_tables<'tx>(&self, tx: &'tx TxType) -> Result<Vec<Cow<'tx, TableSchema>>, DBError> {
         self.inner
             .get_all_tables_mut_tx(&ExecutionContext::internal(self.address), tx)
     }
@@ -189,7 +189,7 @@ impl RelationalDB {
     #[tracing::instrument(skip_all)]
     pub fn schema_for_column<'tx>(
         &self,
-        tx: &'tx MutTxId,
+        tx: &'tx TxType,
         table_id: TableId,
         col_id: ColId,
     ) -> Result<Cow<'tx, AlgebraicType>, DBError> {
@@ -217,7 +217,7 @@ impl RelationalDB {
 
     pub fn decode_column(
         &self,
-        tx: &MutTxId,
+        tx: &TxType,
         table_id: TableId,
         col_id: ColId,
         bytes: &[u8],
@@ -232,17 +232,11 @@ impl RelationalDB {
     /// [`Self::commit_tx`], otherwise the database will be left in an invalid
     /// state. See also [`Self::with_auto_commit`].
     #[tracing::instrument(skip_all)]
-    pub fn begin_mut_tx(&self) -> MutTxId {
+    pub fn begin_mut_tx(&self) -> TxType {
         log::trace!("BEGIN MUT TX");
         self.inner.begin_mut_tx()
     }
     
-    #[tracing::instrument(skip_all)]
-    pub fn begin_mut_tx_type(&self) -> TxType {
-        log::trace!("BEGIN MUT TX");
-        TxType::MutTx(self.inner.begin_mut_tx())
-    }
-
     #[tracing::instrument(skip_all)]
     pub fn begin_tx(&self) -> TxType {
         log::trace!("BEGIN TX");
@@ -257,7 +251,7 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn commit_tx(&self, ctx: &ExecutionContext, tx: MutTxId) -> Result<Option<(TxData, Option<usize>)>, DBError> {
+    pub fn commit_tx(&self, ctx: &ExecutionContext, tx: TxType) -> Result<Option<(TxData, Option<usize>)>, DBError> {
         log::trace!("COMMIT TX");
         if let Some(tx_data) = self.inner.commit_mut_tx(ctx, tx)? {
             let bytes_written = self
@@ -301,7 +295,7 @@ impl RelationalDB {
     /// ```
     pub fn with_auto_commit<F, A, E>(&self, ctx: &ExecutionContext, f: F) -> Result<A, E>
     where
-        F: FnOnce(&mut MutTxId) -> Result<A, E>,
+        F: FnOnce(&mut TxType) -> Result<A, E>,
         E: From<DBError>,
     {
         let mut tx = self.begin_mut_tx();
@@ -315,9 +309,9 @@ impl RelationalDB {
     /// Similar in purpose to [`Self::with_auto_commit`], but returns the
     /// [`MutTxId`] alongside the `Ok` result of the function `F` without
     /// committing the transaction.
-    pub fn with_auto_rollback<F, A, E>(&self, ctx: &ExecutionContext, mut tx: MutTxId, f: F) -> Result<(MutTxId, A), E>
+    pub fn with_auto_rollback<F, A, E>(&self, ctx: &ExecutionContext, mut tx: TxType, f: F) -> Result<(TxType, A), E>
     where
-        F: FnOnce(&mut MutTxId) -> Result<A, E>,
+        F: FnOnce(&mut TxType) -> Result<A, E>,
     {
         let res = f(&mut tx);
         self.rollback_on_err(ctx, tx, res)
@@ -349,21 +343,14 @@ impl RelationalDB {
     where
         E: From<DBError>,
     {
-        match tx {
-            TxType::ReadTx(tx) => {
+            if res.is_err() {
                 self.rollback_tx(ctx, tx);
-            },
-            TxType::MutTx(tx) => {
-                if res.is_err() {
-                    self.rollback_tx(ctx, tx);
-                } else {
-                    match self.commit_tx(ctx, tx).map_err(E::from)? {
-                        Some(_) => (),
-                        None => panic!("TODO: retry?"),
-                    }
+            } else {
+                match self.commit_tx(ctx, tx).map_err(E::from)? {
+                    Some(_) => (),
+                    None => panic!("TODO: retry?"),
                 }
             }
-        }
         res
     }
 
@@ -372,9 +359,9 @@ impl RelationalDB {
     pub fn rollback_on_err<A, E>(
         &self,
         ctx: &ExecutionContext,
-        tx: MutTxId,
+        tx: TxType,
         res: Result<A, E>,
-    ) -> Result<(MutTxId, A), E> {
+    ) -> Result<(TxType, A), E> {
         match res {
             Err(e) => {
                 self.rollback_tx(ctx, tx);
@@ -386,11 +373,11 @@ impl RelationalDB {
 }
 
 impl RelationalDB {
-    pub fn create_table<T: Into<TableDef>>(&self, tx: &mut MutTxId, schema: T) -> Result<TableId, DBError> {
+    pub fn create_table<T: Into<TableDef>>(&self, tx: &mut TxType, schema: T) -> Result<TableId, DBError> {
         self.inner.create_table_mut_tx(tx, schema.into())
     }
 
-    pub fn drop_table(&self, tx: &mut MutTxId, table_id: TableId) -> Result<(), DBError> {
+    pub fn drop_table(&self, tx: &mut TxType, table_id: TableId) -> Result<(), DBError> {
         let _guard = DB_METRICS
             .rdb_drop_table_time
             .with_label_values(&table_id.0)
@@ -409,7 +396,7 @@ impl RelationalDB {
     /// relatively cheap operation which only modifies the system tables.
     ///
     /// If the table is not found or is a system table, an error is returned.
-    pub fn rename_table(&self, tx: &mut MutTxId, table_id: TableId, new_name: &str) -> Result<(), DBError> {
+    pub fn rename_table(&self, tx: &mut TxType, table_id: TableId, new_name: &str) -> Result<(), DBError> {
         self.inner.rename_table_mut_tx(tx, table_id, new_name)
     }
 
@@ -425,10 +412,7 @@ impl RelationalDB {
         tx: &'a TxType,
         table_id: TableId,
     ) -> Result<Option<&'a str>, DBError> {
-        match tx {
-            TxType::MutTx(tx) => self.inner.table_name_from_id_mut_tx(ctx, tx, table_id),
-            TxType::ReadTx(tx) => unimplemented!()
-        }
+         self.inner.table_name_from_id_mut_tx(ctx, tx, table_id)
     }
 
     #[tracing::instrument(skip_all)]
@@ -466,7 +450,7 @@ impl RelationalDB {
     #[tracing::instrument(skip_all)]
     pub fn constraint_id_from_name(
         &self,
-        tx: &MutTxId,
+        tx: &TxType,
         constraint_name: &str,
     ) -> Result<Option<ConstraintId>, DBError> {
         self.inner.constraint_id_from_name(tx, constraint_name)
@@ -478,13 +462,13 @@ impl RelationalDB {
     ///
     /// NOTE: It loads the data from the table into it before returning
     #[tracing::instrument(skip(self, tx, index), fields(index=index.index_name))]
-    pub fn create_index(&self, tx: &mut MutTxId, table_id: TableId, index: IndexDef) -> Result<IndexId, DBError> {
+    pub fn create_index(&self, tx: &mut TxType, table_id: TableId, index: IndexDef) -> Result<IndexId, DBError> {
         self.inner.create_index_mut_tx(tx, table_id, index)
     }
 
     /// Removes the [index::BTreeIndex] from the database by their `index_id`
     #[tracing::instrument(skip(self, tx))]
-    pub fn drop_index(&self, tx: &mut MutTxId, index_id: IndexId) -> Result<(), DBError> {
+    pub fn drop_index(&self, tx: &mut TxType, index_id: IndexId) -> Result<(), DBError> {
         self.inner.drop_index_mut_tx(tx, index_id)
     }
 
@@ -536,7 +520,7 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip(self, tx, row))]
-    pub fn insert(&self, tx: &mut MutTxId, table_id: TableId, row: ProductValue) -> Result<ProductValue, DBError> {
+    pub fn insert(&self, tx: &mut TxType, table_id: TableId, row: ProductValue) -> Result<ProductValue, DBError> {
         let _guard = DB_METRICS
             .rdb_insert_row_time
             .with_label_values(&table_id.0)
@@ -547,7 +531,7 @@ impl RelationalDB {
     #[tracing::instrument(skip_all)]
     pub fn insert_bytes_as_row(
         &self,
-        tx: &mut MutTxId,
+        tx: &mut TxType,
         table_id: TableId,
         row_bytes: &[u8],
     ) -> Result<ProductValue, DBError> {
@@ -556,12 +540,12 @@ impl RelationalDB {
         self.insert(tx, table_id, row)
     }
 
-    pub fn delete(&self, tx: &mut MutTxId, table_id: TableId, row_ids: impl IntoIterator<Item = RowId>) -> u32 {
+    pub fn delete(&self, tx: &mut TxType, table_id: TableId, row_ids: impl IntoIterator<Item = RowId>) -> u32 {
         self.inner.delete_mut_tx(tx, table_id, row_ids)
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn delete_by_rel<R: Relation>(&self, tx: &mut MutTxId, table_id: TableId, relation: R) -> u32 {
+    pub fn delete_by_rel<R: Relation>(&self, tx: &mut TxType, table_id: TableId, relation: R) -> u32 {
         let _guard = DB_METRICS
             .rdb_delete_by_rel_time
             .with_label_values(&table_id.0)
@@ -572,7 +556,7 @@ impl RelationalDB {
 
     /// Clear all rows from a table without dropping it.
     #[tracing::instrument(skip_all)]
-    pub fn clear_table(&self, tx: &mut MutTxId, table_id: TableId) -> Result<(), DBError> {
+    pub fn clear_table(&self, tx: &mut TxType, table_id: TableId) -> Result<(), DBError> {
         let relation = self
             .iter(&ExecutionContext::internal(self.address), tx, table_id)?
             .map(|data| RowId(*data.id()))
@@ -583,7 +567,7 @@ impl RelationalDB {
 
     /// Generated the next value for the [SequenceId]
     #[tracing::instrument(skip_all)]
-    pub fn next_sequence(&self, tx: &mut MutTxId, seq_id: SequenceId) -> Result<i128, DBError> {
+    pub fn next_sequence(&self, tx: &mut TxType, seq_id: SequenceId) -> Result<i128, DBError> {
         self.inner.get_next_sequence_value_mut_tx(tx, seq_id)
     }
 
@@ -591,7 +575,7 @@ impl RelationalDB {
     #[tracing::instrument(skip(self, tx, seq), fields(seq=seq.sequence_name))]
     pub fn create_sequence(
         &mut self,
-        tx: &mut MutTxId,
+        tx: &mut TxType,
         table_id: TableId,
         seq: SequenceDef,
     ) -> Result<SequenceId, DBError> {
@@ -600,13 +584,13 @@ impl RelationalDB {
 
     ///Removes the [Sequence] from database instance
     #[tracing::instrument(skip(self, tx))]
-    pub fn drop_sequence(&self, tx: &mut MutTxId, seq_id: SequenceId) -> Result<(), DBError> {
+    pub fn drop_sequence(&self, tx: &mut TxType, seq_id: SequenceId) -> Result<(), DBError> {
         self.inner.drop_sequence_mut_tx(tx, seq_id)
     }
 
     ///Removes the [Constraints] from database instance
     #[tracing::instrument(skip(self, tx))]
-    pub fn drop_constraint(&self, tx: &mut MutTxId, constraint_id: ConstraintId) -> Result<(), DBError> {
+    pub fn drop_constraint(&self, tx: &mut TxType, constraint_id: ConstraintId) -> Result<(), DBError> {
         self.inner.drop_constraint_mut_tx(tx, constraint_id)
     }
 
@@ -615,7 +599,7 @@ impl RelationalDB {
     ///
     /// A `None` result indicates that the database is not fully initialized
     /// yet.
-    pub fn program_hash(&self, tx: &MutTxId) -> Result<Option<Hash>, DBError> {
+    pub fn program_hash(&self, tx: &TxType) -> Result<Option<Hash>, DBError> {
         self.inner.program_hash(tx)
     }
 
@@ -631,7 +615,7 @@ impl RelationalDB {
     /// The method **MUST** be called within the transaction context which
     /// ensures that any lifecycle reducers (`init`, `update`) are invoked. That
     /// is, an impl of [`crate::host::ModuleInstance`].
-    pub(crate) fn set_program_hash(&self, tx: &mut MutTxId, fence: u128, hash: Hash) -> Result<(), DBError> {
+    pub(crate) fn set_program_hash(&self, tx: &mut TxType, fence: u128, hash: Hash) -> Result<(), DBError> {
         self.inner.set_program_hash(tx, fence, hash)
     }
 }
@@ -787,8 +771,8 @@ mod tests {
         let mut tx = stdb.begin_mut_tx();
         let schema = TableDef::from_product("MyTable", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         stdb.create_table(&mut tx, schema)?;
-        let table_id = stdb.table_id_from_name(&tx.into(), "MyTable")?.unwrap();
-        let schema = stdb.schema_for_table(&tx.into(), table_id)?;
+        let table_id = stdb.table_id_from_name(&tx, "MyTable")?.unwrap();
+        let schema = stdb.schema_for_table(&tx, table_id)?;
         let col = schema.columns.iter().find(|x| x.col_name == "my_col").unwrap();
         assert_eq!(col.col_pos, 0.into());
         Ok(())
@@ -1066,7 +1050,7 @@ mod tests {
 
         let table_id = stdb.create_table(&mut tx, schema)?;
 
-        let sequence = stdb.sequence_id_from_name(&tx.into(), "seq_MyTable_my_col")?;
+        let sequence = stdb.sequence_id_from_name(&tx, "seq_MyTable_my_col")?;
         assert!(sequence.is_some(), "Sequence not created");
 
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(0)])?;

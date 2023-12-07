@@ -4,7 +4,7 @@ use super::{
     query::compile_read_only_query,
     subscription::{QuerySet, Subscription},
 };
-use crate::{host::module_host::{EventStatus, ModuleEvent}, db::datastore::locking_tx_datastore::{TxId, TxType}};
+use crate::{host::module_host::{EventStatus, ModuleEvent}, db::datastore::locking_tx_datastore::TxType};
 use crate::protobuf::client_api::Subscribe;
 use crate::{
     client::{
@@ -13,7 +13,7 @@ use crate::{
     },
     host::NoSuchModule,
 };
-use crate::{db::datastore::locking_tx_datastore::MutTxId, execution_context::ExecutionContext};
+use crate::execution_context::ExecutionContext;
 use crate::{db::relational_db::RelationalDB, error::DBError};
 use futures::{stream::FuturesUnordered, FutureExt, StreamExt};
 use spacetimedb_lib::identity::AuthCtx;
@@ -145,7 +145,7 @@ impl ModuleSubscriptionActor {
             }
         };
 
-        let database_update = sub.queries.eval(&self.relational_db, tx.into(), auth)?;
+        let database_update = sub.queries.eval(&self.relational_db, tx, auth)?;
 
         let sender = sub.subscribers().last().unwrap();
 
@@ -164,7 +164,7 @@ impl ModuleSubscriptionActor {
         subscription: Subscribe,
     ) -> Result<(), DBError> {
         // Split logic to properly handle `Error` + `Tx`
-        let mut tx = self.relational_db.begin_mut_tx().into();
+        let mut tx = self.relational_db.begin_mut_tx();
 
         let result = self._add_subscription(sender, subscription, &mut tx).await;
 
@@ -216,7 +216,8 @@ impl ModuleSubscriptionActor {
 
     async fn broadcast_commit_event(&mut self, event: ModuleEvent) -> Result<(), DBError> {
         //Split logic to properly handle `Error` + `Tx`
-        let mut tx = self.relational_db.begin_tx();
+        //TODO(shub): use read only tx here
+        let mut tx = self.relational_db.begin_mut_tx();
         let result = self._broadcast_commit_event(event, &mut tx).await;
         let ctx = ExecutionContext::incremental_update(self.relational_db.address(), None);
         self.relational_db.finish_tx(&ctx, tx, result)

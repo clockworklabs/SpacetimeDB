@@ -2,7 +2,7 @@ use nonempty::NonEmpty;
 use std::collections::HashMap;
 use tracing::info;
 
-use crate::db::datastore::locking_tx_datastore::{MutTxId, TxType};
+use crate::db::datastore::locking_tx_datastore::TxType;
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
 use crate::sql::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
@@ -292,7 +292,7 @@ mod tests {
 
     fn create_table(
         db: &RelationalDB,
-        tx: &mut MutTxId,
+        tx: &mut TxType,
         name: &str,
         schema: &[(&str, AlgebraicType)],
         indexes: &[(ColId, &str)],

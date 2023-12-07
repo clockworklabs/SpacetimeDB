@@ -3,7 +3,6 @@ use crate::types::Ty;
 use spacetimedb_sats::db::error::{AuthError, RelationError};
 use spacetimedb_sats::AlgebraicValue;
 use std::fmt;
-use std::io::Error;
 use thiserror::Error;
 
 /// Typing Errors

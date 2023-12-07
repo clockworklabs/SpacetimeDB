@@ -19,7 +19,7 @@ use sqlparser::ast::{
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
 
-use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::db::datastore::locking_tx_datastore::TxType;
 use crate::db::datastore::traits::MutTxDatastore;
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
@@ -622,7 +622,7 @@ fn compile_insert(
     columns: Vec<Ident>,
     data: &Values,
 ) -> Result<SqlAst, PlanError> {
-    let table = find_table(db, tx.into(), Table::new(table_name))?.into_owned();
+    let table = find_table(db, tx, Table::new(table_name))?.into_owned();
 
     let columns = columns
         .into_iter()

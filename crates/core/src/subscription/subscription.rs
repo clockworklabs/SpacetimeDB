@@ -31,7 +31,7 @@ use std::hash::Hasher;
 use std::ops::Deref;
 use std::time::Instant;
 
-use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::db::datastore::locking_tx_datastore::TxType;
 use crate::db::db_metrics::{DB_METRICS, MAX_QUERY_CPU_TIME};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::{ExecutionContext, WorkloadType};
@@ -191,7 +191,7 @@ impl QuerySet {
     /// and turns them into [`QueryExpr`],
     /// the moral equivalent of `SELECT * FROM table`.
     pub(crate) fn get_all(relational_db: &RelationalDB, tx: &TxType, auth: &AuthCtx) -> Result<Self, DBError> {
-        let tables = relational_db.get_all_tables(&(*tx).try_into()?)?;
+        let tables = relational_db.get_all_tables(tx)?;
         let same_owner = auth.owner == auth.caller;
         let exprs = tables
             .iter()

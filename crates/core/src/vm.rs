@@ -6,7 +6,7 @@ use itertools::Itertools;
 use tracing::debug;
 
 use crate::db::cursor::{CatalogCursor, IndexCursor, TableCursor};
-use crate::db::datastore::locking_tx_datastore::{IterByColEq, MutTxId, TxType};
+use crate::db::datastore::locking_tx_datastore::{IterByColEq, TxType};
 use crate::db::relational_db::RelationalDB;
 use crate::execution_context::ExecutionContext;
 use spacetimedb_lib::identity::AuthCtx;
@@ -295,12 +295,12 @@ pub struct DbProgram<'db, 'tx> {
     pub(crate) env: EnvDb,
     pub(crate) stats: HashMap<String, u64>,
     pub(crate) db: &'db RelationalDB,
-    pub(crate) tx: &'tx mut MutTxId,
+    pub(crate) tx: &'tx mut TxType,
     pub(crate) auth: AuthCtx,
 }
 
 impl<'db, 'tx> DbProgram<'db, 'tx> {
-    pub fn new(ctx: &'tx ExecutionContext, db: &'db RelationalDB, tx: &'tx mut MutTxId, auth: AuthCtx) -> Self {
+    pub fn new(ctx: &'tx ExecutionContext, db: &'db RelationalDB, tx: &'tx mut TxType, auth: AuthCtx) -> Self {
         let mut env = EnvDb::new();
         Self::load_ops(&mut env);
         Self {
@@ -567,7 +567,7 @@ pub(crate) mod tests {
 
     pub(crate) fn create_table_with_rows(
         db: &RelationalDB,
-        tx: &mut MutTxId,
+        tx: &mut TxType,
         table_name: &str,
         schema: ProductType,
         rows: &[ProductValue],
@@ -602,8 +602,7 @@ pub(crate) mod tests {
         rows: &[ProductValue],
     ) -> ResultTest<TableId> {
         let db = &mut p.db;
-        let tx = *p.tx;
-        create_table_with_rows(db, tx.into(), table_name, schema, rows)
+        create_table_with_rows(db, p.tx, table_name, schema, rows)
     }
 
     #[test]
@@ -618,7 +617,7 @@ pub(crate) mod tests {
 
         let mut tx = stdb.begin_mut_tx();
         let ctx = ExecutionContext::default();
-        let p = &mut DbProgram::new(&ctx, &stdb, &mut tx.into(), AuthCtx::for_testing());
+        let p = &mut DbProgram::new(&ctx, &stdb, &mut tx, AuthCtx::for_testing());
 
         let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row = product!(1u64, "health");
@@ -667,7 +666,7 @@ pub(crate) mod tests {
 
         let mut tx = stdb.begin_mut_tx();
         let ctx = ExecutionContext::default();
-        let p = &mut DbProgram::new(&ctx, &stdb, &mut tx.into(), AuthCtx::for_testing());
+        let p = &mut DbProgram::new(&ctx, &stdb, &mut tx, AuthCtx::for_testing());
 
         let q = query(&st_table_schema()).with_select_cmp(
             OpCmp::Eq,
@@ -699,7 +698,7 @@ pub(crate) mod tests {
 
         let mut tx = stdb.begin_mut_tx();
         let ctx = ExecutionContext::default();
-        let p = &mut DbProgram::new(&ctx, &stdb, &mut tx.into(), AuthCtx::for_testing());
+        let p = &mut DbProgram::new(&ctx, &stdb, &mut tx, AuthCtx::for_testing());
 
         let q = query(&st_columns_schema())
             .with_select_cmp(
@@ -740,14 +739,14 @@ pub(crate) mod tests {
 
         let mut tx = db.begin_mut_tx();
         let ctx = ExecutionContext::default();
-        let table_id = create_table_with_rows(&db, &mut tx.into(), "inventory", head, &[row])?;
+        let table_id = create_table_with_rows(&db, &mut tx, "inventory", head, &[row])?;
         db.commit_tx(&ctx, tx)?;
 
         let mut tx = db.begin_mut_tx();
         let index = IndexDef::btree("idx_1".into(), ColId(0), true);
         let index_id = db.create_index(&mut tx, table_id, index)?;
 
-        let p = &mut DbProgram::new(&ctx, &db, &mut tx.into(), AuthCtx::for_testing());
+        let p = &mut DbProgram::new(&ctx, &db, &mut tx, AuthCtx::for_testing());
 
         let q = query(&st_indexes_schema()).with_select_cmp(
             OpCmp::Eq,
@@ -781,7 +780,7 @@ pub(crate) mod tests {
 
         let mut tx = db.begin_mut_tx();
         let ctx = ExecutionContext::default();
-        let p = &mut DbProgram::new(&ctx, &db, &mut tx.into(), AuthCtx::for_testing());
+        let p = &mut DbProgram::new(&ctx, &db, &mut tx, AuthCtx::for_testing());
 
         let q = query(&st_sequences_schema()).with_select_cmp(
             OpCmp::Eq,

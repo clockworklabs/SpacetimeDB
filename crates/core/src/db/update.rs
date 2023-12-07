@@ -8,7 +8,7 @@ use crate::database_logger::SystemLogger;
 use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
 
-use super::datastore::locking_tx_datastore::MutTxId;
+use super::datastore::locking_tx_datastore::TxType;
 use super::relational_db::RelationalDB;
 use spacetimedb_primitives::{IndexId, TableId};
 use spacetimedb_sats::db::def::{IndexDef, TableDef, TableSchema};
@@ -29,12 +29,12 @@ pub enum UpdateDatabaseError {
 
 pub fn update_database(
     stdb: &RelationalDB,
-    tx: MutTxId,
+    tx: TxType,
     proposed_tables: Vec<TableDef>,
     fence: u128,
     module_hash: Hash,
     system_logger: &SystemLogger,
-) -> anyhow::Result<Result<MutTxId, UpdateDatabaseError>> {
+) -> anyhow::Result<Result<TxType, UpdateDatabaseError>> {
     let ctx = ExecutionContext::internal(stdb.address());
     let (tx, res) = stdb.with_auto_rollback::<_, _, anyhow::Error>(&ctx, tx, |tx| {
         let existing_tables = stdb.get_all_tables(tx)?;

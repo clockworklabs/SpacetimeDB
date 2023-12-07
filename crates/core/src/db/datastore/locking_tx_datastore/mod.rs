@@ -724,6 +724,10 @@ impl SequencesState {
 }
 
 impl MutTxId {
+    fn get_elapsed_and_cpu_time(&self) -> (f64, f64) {
+        let elapsed_time = self.timer.elapsed().as_secs_f64();
+        (elapsed_time, elapsed_time - self.lock_wait_time.as_secs_f64())
+    }
     fn drop_col_eq(
         &mut self,
         table_id: TableId,
@@ -1940,7 +1944,26 @@ impl DataRow for Locking {
 pub struct TxId;
 
 impl TxType {
+    fn commit(self) -> super::Result<Option<TxData>> {
+        match self {
+            TxType::MutTx(mut_tx) => mut_tx.commit(),
+            TxType::ReadTx(_) => unimplemented!(),
+        }
+    }
 
+    fn rollback(self) {
+        match self {
+            TxType::MutTx(mut_tx) => mut_tx.rollback(),
+            TxType::ReadTx(_) => unimplemented!(),
+        }
+    }
+
+    fn get_elapsed_and_cpu_time(&self) -> (f64, f64) {
+        match self {
+            TxType::MutTx(mut_tx) => mut_tx.get_elapsed_and_cpu_time(),
+            TxType::ReadTx(_) => unimplemented!(),
+        }
+    }
 }
 
 pub enum TxType {
@@ -1954,34 +1977,6 @@ impl From<MutTxId> for TxType {
     }
 }
 
-// impl From<&MutTxId> for TxType {
-//     fn from(tx: &MutTxId) -> Self {
-//         TxType::MutTx(tx)
-//     }
-// }
-
-impl TryFrom<TxType> for MutTxId {
-    type Error = Error;
-
-    fn try_from(value: TxType) -> Result<Self, Self::Error> {
-        match value {
-            TxType::MutTx(tx_id) => Ok(tx_id),
-            TxType::ReadTx(_) => Err(Self::Error::msg("TxType is not a mutable transaction")),
-        }
-    }
-}
-
-// impl TryFrom<mut TxType> for MutTxId {
-//     type Error = Error;
-
-//     fn try_from(value: TxType) -> Result<Self, Self::Error> {
-//         match value {
-//             TxType::MutTx(tx_id) => Ok(tx_id),
-//             TxType::ReadTx(_) => Err(Error::msg("TxType is not a mutable transaction")),
-//         }
-//     }
-// }
-
 impl traits::Tx for Locking {
     type TxId = TxType;
 
@@ -1990,8 +1985,7 @@ impl traits::Tx for Locking {
     }
 
     fn release_tx(&self, ctx: &ExecutionContext, tx: Self::TxId) {
-        //self.rollback_mut_tx(ctx, tx)
-        unimplemented!();
+        self.rollback_mut_tx(ctx, tx)
     }
 }
 
@@ -2362,7 +2356,7 @@ impl TxDatastore for Locking {
 }
 
 impl traits::MutTx for Locking {
-    type MutTxId = MutTxId;
+    type MutTxId = TxType;
 
     fn begin_mut_tx(&self) -> Self::MutTxId {
         let timer = Instant::now();
@@ -2371,22 +2365,22 @@ impl traits::MutTx for Locking {
         let sequence_state_lock = self.sequence_state.lock_arc();
         let memory_lock = self.memory.lock_arc();
         let lock_wait_time = timer.elapsed();
-        MutTxId {
+        TxType::MutTx(MutTxId {
             committed_state_write_lock,
             sequence_state_lock,
             tx_state: TxState::new(),
             memory_lock,
             lock_wait_time,
             timer,
-        }
+        })
     }
 
     fn rollback_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTxId) {
         let workload = &ctx.workload();
         let db = &ctx.database();
         let reducer = ctx.reducer_name().unwrap_or_default();
-        let elapsed_time = tx.timer.elapsed();
-        let cpu_time = elapsed_time - tx.lock_wait_time;
+        let (elapsed_time, cpu_time) = tx.get_elapsed_and_cpu_time();
+        
         DB_METRICS
             .rdb_num_txns
             .with_label_values(workload, db, reducer, &false)
@@ -2394,11 +2388,11 @@ impl traits::MutTx for Locking {
         DB_METRICS
             .rdb_txn_cpu_time_sec
             .with_label_values(workload, db, reducer)
-            .observe(cpu_time.as_secs_f64());
+            .observe(cpu_time);
         DB_METRICS
             .rdb_txn_elapsed_time_sec
             .with_label_values(workload, db, reducer)
-            .observe(elapsed_time.as_secs_f64());
+            .observe(elapsed_time);
         tx.rollback();
     }
 
@@ -2406,11 +2400,8 @@ impl traits::MutTx for Locking {
         let workload = &ctx.workload();
         let db = &ctx.database();
         let reducer = ctx.reducer_name().unwrap_or_default();
-        let elapsed_time = tx.timer.elapsed();
-        let cpu_time = elapsed_time - tx.lock_wait_time;
-
-        let elapsed_time = elapsed_time.as_secs_f64();
-        let cpu_time = cpu_time.as_secs_f64();
+        let (elapsed_time, cpu_time) = tx.get_elapsed_and_cpu_time();
+        
         // Note, we record empty transactions in our metrics.
         // That is, transactions that don't write any rows to the commit log.
         DB_METRICS
@@ -2467,7 +2458,10 @@ impl traits::MutTx for Locking {
 
 impl MutTxDatastore for Locking {
     fn create_table_mut_tx(&self, tx: &mut Self::MutTxId, schema: TableDef) -> super::Result<TableId> {
-        tx.create_table(schema, self.database_address)
+        match tx {
+            TxType::MutTx(mut_tx) => mut_tx.create_table(schema, self.database_address),
+            TxType::ReadTx(_) => unimplemented!(),
+        }
     }
 
     /// This function is used to get the `ProductType` of the rows in a
@@ -2488,37 +2482,51 @@ impl MutTxDatastore for Locking {
         tx: &'tx Self::MutTxId,
         table_id: TableId,
     ) -> super::Result<Cow<'tx, ProductType>> {
-        tx.row_type_for_table(table_id, self.database_address)
+        match tx {
+            TxType::MutTx(mut_tx) => mut_tx.row_type_for_table(table_id, self.database_address),
+            TxType::ReadTx(_) => unimplemented!(),
+        }
     }
 
     /// IMPORTANT! This function is relatively expensive, and much more
     /// expensive than `row_type_for_table_mut_tx`.  Prefer
     /// `row_type_for_table_mut_tx` if you only need to access the `ProductType`
     /// of the table.
-    fn schema_for_table_mut_tx<'tx>(
-        &self,
-        tx: &'tx TxType,
-        table_id: TableId,
-    ) -> super::Result<Cow<'tx, TableSchema>> {
-        tx.schema_for_table(table_id, self.database_address)
+    fn schema_for_table_mut_tx<'tx>(&self, tx: &'tx TxType, table_id: TableId) -> super::Result<Cow<'tx, TableSchema>> {
+        match tx {
+            TxType::MutTx(mut_tx) => mut_tx.schema_for_table(table_id, self.database_address),
+            TxType::ReadTx(_) => unimplemented!(),
+        }
     }
 
     /// This function is relatively expensive because it needs to be
     /// transactional, however we don't expect to be dropping tables very often.
     fn drop_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId) -> super::Result<()> {
-        tx.drop_table(table_id, self.database_address)
+        match tx {
+            TxType::MutTx(mut_tx) => mut_tx.drop_table(table_id, self.database_address),
+            TxType::ReadTx(_) => unimplemented!(),
+        }
     }
 
     fn rename_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, new_name: &str) -> super::Result<()> {
-        tx.rename_table(table_id, new_name, self.database_address)
+        match tx {
+            TxType::MutTx(mut_tx) => mut_tx.rename_table(table_id, new_name, self.database_address),
+            TxType::ReadTx(_) => unimplemented!(),
+        }
     }
 
     fn table_id_exists(&self, tx: &Self::MutTxId, table_id: &TableId) -> bool {
-        tx.table_exists(table_id)
+        match tx {
+            TxType::MutTx(mut_tx) => mut_tx.table_exists(table_id),
+            TxType::ReadTx(_) => unimplemented!(),
+        }
     }
 
     fn table_id_from_name_mut_tx(&self, tx: &TxType, table_name: &str) -> super::Result<Option<TableId>> {
-        tx.table_id_from_name(table_name, self.database_address)
+        match tx {
+            TxType::MutTx(mut_tx) => mut_tx.table_id_from_name(table_name, self.database_address),
+            TxType::ReadTx(_) => unimplemented!(),
+        }
     }
 
     fn table_name_from_id_mut_tx<'a>(
@@ -2527,28 +2535,38 @@ impl MutTxDatastore for Locking {
         tx: &'a Self::MutTxId,
         table_id: TableId,
     ) -> super::Result<Option<&'a str>> {
-        tx.table_name_from_id(ctx, table_id)
+        match tx {
+            TxType::MutTx(mut_tx) => mut_tx.table_name_from_id(ctx, table_id),
+            TxType::ReadTx(_) => unimplemented!(),
+        }
     }
 
-    fn create_index_mut_tx(
-        &self,
-        tx: &mut Self::MutTxId,
-        table_id: TableId,
-        index: IndexDef,
-    ) -> super::Result<IndexId> {
-        tx.create_index(table_id, index, self.database_address)
+    fn create_index_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, index: IndexDef) -> super::Result<IndexId> {
+        match tx {
+            TxType::MutTx(mut_tx) => mut_tx.create_index(table_id, index, self.database_address),
+            TxType::ReadTx(_) => unimplemented!(),
+        }
     }
 
     fn drop_index_mut_tx(&self, tx: &mut Self::MutTxId, index_id: IndexId) -> super::Result<()> {
-        tx.drop_index(index_id, self.database_address)
+        match tx {
+            TxType::MutTx(mut_tx) => mut_tx.drop_index(index_id, self.database_address),
+            TxType::ReadTx(_) => unimplemented!(),
+        }
     }
 
     fn index_id_from_name_mut_tx(&self, tx: &TxType, index_name: &str) -> super::Result<Option<IndexId>> {
-        tx.index_id_from_name(index_name, self.database_address)
+        match tx {
+            TxType::MutTx(mut_tx) => mut_tx.index_id_from_name(index_name, self.database_address),
+            TxType::ReadTx(_) => unimplemented!(),
+        }
     }
 
     fn get_next_sequence_value_mut_tx(&self, tx: &mut Self::MutTxId, seq_id: SequenceId) -> super::Result<i128> {
-        tx.get_next_sequence_value(seq_id, self.database_address)
+        match tx {
+            TxType::MutTx(mut_tx) => mut_tx.get_next_sequence_value(seq_id, self.database_address),
+            TxType::ReadTx(_) => unimplemented!(),
+        }
     }
 
     fn create_sequence_mut_tx(
@@ -2557,31 +2575,38 @@ impl MutTxDatastore for Locking {
         table_id: TableId,
         seq: SequenceDef,
     ) -> super::Result<SequenceId> {
-        tx.create_sequence(table_id, seq, self.database_address)
+        match tx {
+            TxType::MutTx(mut_tx) => mut_tx.create_sequence(table_id, seq, self.database_address),
+            TxType::ReadTx(_) => unimplemented!(),
+        }
     }
 
     fn drop_sequence_mut_tx(&self, tx: &mut Self::MutTxId, seq_id: SequenceId) -> super::Result<()> {
-        tx.drop_sequence(seq_id, self.database_address)
+        match tx {
+            TxType::MutTx(mut_tx) => mut_tx.drop_sequence(seq_id, self.database_address),
+            TxType::ReadTx(_) => unimplemented!(),
+        }
     }
 
-    fn sequence_id_from_name_mut_tx(
-        &self,
-        tx: &TxType,
-        sequence_name: &str,
-    ) -> super::Result<Option<SequenceId>> {
-        tx.sequence_id_from_name(sequence_name, self.database_address)
+    fn sequence_id_from_name_mut_tx(&self, tx: &TxType, sequence_name: &str) -> super::Result<Option<SequenceId>> {
+        match tx {
+            TxType::MutTx(mut_tx) => mut_tx.sequence_id_from_name(sequence_name, self.database_address),
+            TxType::ReadTx(_) => unimplemented!(),
+        }
     }
 
     fn drop_constraint_mut_tx(&self, tx: &mut Self::MutTxId, constraint_id: ConstraintId) -> super::Result<()> {
-        tx.drop_constraint(constraint_id, self.database_address)
+        match tx {
+            TxType::MutTx(mut_tx) => mut_tx.drop_constraint(constraint_id, self.database_address),
+            TxType::ReadTx(_) => unimplemented!(),
+        }
     }
 
-    fn constraint_id_from_name(
-        &self,
-        tx: &Self::MutTxId,
-        constraint_name: &str,
-    ) -> super::Result<Option<ConstraintId>> {
-        tx.constraint_id_from_name(constraint_name, self.database_address)
+    fn constraint_id_from_name(&self, tx: &Self::MutTxId, constraint_name: &str) -> super::Result<Option<ConstraintId>> {
+        match tx {
+            TxType::MutTx(mut_tx) => mut_tx.constraint_id_from_name(constraint_name, self.database_address),
+            TxType::ReadTx(_) => unimplemented!(),
+        }
     }
 
     fn iter_mut_tx<'a>(
@@ -2590,7 +2615,10 @@ impl MutTxDatastore for Locking {
         tx: &'a Self::MutTxId,
         table_id: TableId,
     ) -> super::Result<Self::Iter<'a>> {
-        tx.iter(ctx, &table_id)
+        match tx {
+            TxType::MutTx(mut_tx) => mut_tx.iter(ctx, &table_id),
+            TxType::ReadTx(_) => unimplemented!(),
+        }
     }
 
     fn iter_by_col_range_mut_tx<'a, R: RangeBounds<AlgebraicValue>>(
@@ -2601,7 +2629,10 @@ impl MutTxDatastore for Locking {
         cols: impl Into<NonEmpty<ColId>>,
         range: R,
     ) -> super::Result<Self::IterByColRange<'a, R>> {
-        tx.iter_by_col_range(ctx, &table_id, cols.into(), range)
+        match tx {
+            TxType::MutTx(mut_tx) => mut_tx.iter_by_col_range(ctx, &table_id, cols.into(), range),
+            TxType::ReadTx(_) => unimplemented!(),
+        }
     }
 
     fn iter_by_col_eq_mut_tx<'a>(
@@ -2612,7 +2643,10 @@ impl MutTxDatastore for Locking {
         cols: impl Into<NonEmpty<ColId>>,
         value: AlgebraicValue,
     ) -> super::Result<Self::IterByColEq<'a>> {
-        tx.iter_by_col_eq(ctx, &table_id, cols, value)
+        match tx {
+            TxType::MutTx(mut_tx) => mut_tx.iter_by_col_eq(ctx, &table_id, cols, value),
+            TxType::ReadTx(_) => unimplemented!(),
+        }
     }
 
     fn get_mut_tx<'a>(
@@ -2621,7 +2655,10 @@ impl MutTxDatastore for Locking {
         table_id: TableId,
         row_id: &'a Self::RowId,
     ) -> super::Result<Option<Self::DataRef<'a>>> {
-        tx.get(&table_id, row_id)
+        match tx {
+            TxType::MutTx(mut_tx) => mut_tx.get(&table_id, row_id),
+            TxType::ReadTx(_) => unimplemented!(),
+        }
     }
 
     fn delete_mut_tx<'a>(
@@ -2630,7 +2667,10 @@ impl MutTxDatastore for Locking {
         table_id: TableId,
         row_ids: impl IntoIterator<Item = Self::RowId>,
     ) -> u32 {
-        tx.delete(&table_id, row_ids)
+        match tx {
+            TxType::MutTx(mut_tx) => mut_tx.delete(&table_id, row_ids),
+            TxType::ReadTx(_) => unimplemented!(),
+        }
     }
 
     fn delete_by_rel_mut_tx(
@@ -2639,7 +2679,10 @@ impl MutTxDatastore for Locking {
         table_id: TableId,
         relation: impl IntoIterator<Item = ProductValue>,
     ) -> u32 {
-        tx.delete_by_rel(&table_id, relation)
+        match tx {
+            TxType::MutTx(mut_tx) => mut_tx.delete_by_rel(&table_id, relation),
+            TxType::ReadTx(_) => unimplemented!(),
+        }
     }
 
     fn insert_mut_tx<'a>(
@@ -2648,14 +2691,17 @@ impl MutTxDatastore for Locking {
         table_id: TableId,
         row: ProductValue,
     ) -> super::Result<ProductValue> {
-        tx.insert(table_id, row, self.database_address)
+        match tx {
+            TxType::MutTx(mut_tx) => mut_tx.insert(table_id, row, self.database_address),
+            TxType::ReadTx(_) => unimplemented!(),
+        }
     }
 }
 
 impl traits::Programmable for Locking {
-    fn program_hash(&self, tx: &MutTxId) -> Result<Option<Hash>, DBError> {
-        match tx
-            .iter(&ExecutionContext::internal(self.database_address), &ST_MODULE_ID)?
+    fn program_hash(&self, tx: &TxType) -> Result<Option<Hash>, DBError> {
+        match self
+            .iter_tx(&ExecutionContext::internal(self.database_address), tx, ST_MODULE_ID)?
             .next()
         {
             None => Ok(None),
@@ -2670,9 +2716,9 @@ impl traits::Programmable for Locking {
 impl traits::MutProgrammable for Locking {
     type FencingToken = u128;
 
-    fn set_program_hash(&self, tx: &mut MutTxId, fence: Self::FencingToken, hash: Hash) -> Result<(), DBError> {
+    fn set_program_hash(&self, tx: &mut TxType, fence: Self::FencingToken, hash: Hash) -> Result<(), DBError> {
         let ctx = ExecutionContext::internal(self.database_address);
-        let mut iter = tx.iter(&ctx, &ST_MODULE_ID)?;
+        let mut iter = self.iter_mut_tx(&ctx, tx,ST_MODULE_ID)?;
         if let Some(data) = iter.next() {
             let row = StModuleRow::try_from(data.view())?;
             if fence <= row.epoch.0 {
@@ -2686,15 +2732,15 @@ impl traits::MutProgrammable for Locking {
             // there will be another immutable borrow of self after the two mutable borrows below.
             drop(iter);
 
-            tx.delete_by_rel(&ST_MODULE_ID, Some(ProductValue::from(&row)));
-            tx.insert(
+            self.delete_by_rel_mut_tx(tx, ST_MODULE_ID, Some(ProductValue::from(&row)));
+            self.insert_mut_tx(
+                tx,
                 ST_MODULE_ID,
                 ProductValue::from(&StModuleRow {
                     program_hash: hash,
                     kind: WASM_MODULE,
                     epoch: system_tables::Epoch(fence),
                 }),
-                self.database_address,
             )?;
             return Ok(());
         }
@@ -2705,14 +2751,14 @@ impl traits::MutProgrammable for Locking {
         // there will be another immutable borrow of self after the mutable borrow of the insert.
         drop(iter);
 
-        tx.insert(
+        self.insert_mut_tx(
+            tx,
             ST_MODULE_ID,
             ProductValue::from(&StModuleRow {
                 program_hash: hash,
                 kind: WASM_MODULE,
                 epoch: system_tables::Epoch(fence),
             }),
-            self.database_address,
         )?;
         Ok(())
     }
@@ -2733,8 +2779,12 @@ mod tests {
         ctx: &'a ExecutionContext<'a>,
     }
 
-    fn query_st_tables<'a>(ctx: &'a ExecutionContext<'a>, tx: &'a MutTxId) -> SystemTableQuery<'a> {
-        SystemTableQuery { db: tx, ctx }
+    fn query_st_tables<'a>(ctx: &'a ExecutionContext<'a>, tx: &'a TxType) -> SystemTableQuery<'a> {
+        match tx {
+            TxType::MutTx(tx) => SystemTableQuery { db: tx, ctx },
+            _ => unimplemented!()
+        }
+        
     }
 
     impl SystemTableQuery<'_> {
@@ -3046,7 +3096,7 @@ mod tests {
         }
     }
 
-    fn setup_table() -> ResultTest<(Locking, MutTxId, TableId)> {
+    fn setup_table() -> ResultTest<(Locking, TxType, TableId)> {
         let datastore = get_datastore()?;
         let mut tx = datastore.begin_mut_tx();
         let schema = basic_table_schema();
@@ -3054,7 +3104,7 @@ mod tests {
         Ok((datastore, tx, table_id))
     }
 
-    fn all_rows(datastore: &Locking, tx: &MutTxId, table_id: TableId) -> Vec<ProductValue> {
+    fn all_rows(datastore: &Locking, tx: &TxType, table_id: TableId) -> Vec<ProductValue> {
         datastore
             .iter_mut_tx(&ExecutionContext::default(), tx, table_id)
             .unwrap()
@@ -3066,6 +3116,7 @@ mod tests {
     fn test_bootstrapping_sets_up_tables() -> ResultTest<()> {
         let datastore = get_datastore()?;
         let tx = datastore.begin_mut_tx();
+        
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
         #[rustfmt::skip]
@@ -3200,7 +3251,7 @@ mod tests {
     #[test]
     fn test_schema_for_table_pre_commit() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
-        let schema = &*datastore.schema_for_table_mut_tx(&tx.into(), table_id)?;
+        let schema = &*datastore.schema_for_table_mut_tx(&tx, table_id)?;
         #[rustfmt::skip]
         assert_eq!(schema, &basic_table_schema_created(table_id));
         Ok(())
@@ -3211,7 +3262,7 @@ mod tests {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx_for_test(tx)?;
         let tx = datastore.begin_mut_tx();
-        let schema = &*datastore.schema_for_table_mut_tx(&tx.into(), table_id)?;
+        let schema = &*datastore.schema_for_table_mut_tx(&tx, table_id)?;
         #[rustfmt::skip]
         assert_eq!(schema, &basic_table_schema_created(table_id));
         Ok(())
@@ -3223,20 +3274,26 @@ mod tests {
         datastore.commit_mut_tx_for_test(tx)?;
 
         let mut tx = datastore.begin_mut_tx();
-        let schema = datastore.schema_for_table_mut_tx(&tx.into(), table_id)?.into_owned();
+        let schema = datastore.schema_for_table_mut_tx(&tx, table_id)?.into_owned();
 
         for index in &*schema.indexes {
             datastore.drop_index_mut_tx(&mut tx, index.index_id)?;
         }
         assert!(
-            datastore.schema_for_table_mut_tx(&tx.into(), table_id)?.indexes.is_empty(),
+            datastore
+                .schema_for_table_mut_tx(&tx, table_id)?
+                .indexes
+                .is_empty(),
             "no indexes should be left in the schema pre-commit"
         );
         datastore.commit_mut_tx_for_test(tx)?;
 
         let mut tx = datastore.begin_mut_tx();
         assert!(
-            datastore.schema_for_table_mut_tx(&tx.into(), table_id)?.indexes.is_empty(),
+            datastore
+                .schema_for_table_mut_tx(&tx, table_id)?
+                .indexes
+                .is_empty(),
             "no indexes should be left in the schema post-commit"
         );
 
@@ -3255,7 +3312,7 @@ mod tests {
         }]
         .map(Into::into);
         assert_eq!(
-            datastore.schema_for_table_mut_tx(&tx.into(), table_id)?.indexes,
+            datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes,
             expected_indexes,
             "created index should be present in schema pre-commit"
         );
@@ -3264,7 +3321,7 @@ mod tests {
 
         let tx = datastore.begin_mut_tx();
         assert_eq!(
-            datastore.schema_for_table_mut_tx(&tx.into(), table_id)?.indexes,
+            datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes,
             expected_indexes,
             "created index should be present in schema post-commit"
         );
@@ -3279,7 +3336,7 @@ mod tests {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.rollback_mut_tx_for_test(tx);
         let tx = datastore.begin_mut_tx();
-        let schema = datastore.schema_for_table_mut_tx(&tx.into(), table_id);
+        let schema = datastore.schema_for_table_mut_tx(&tx, table_id);
         assert!(schema.is_err());
         Ok(())
     }
@@ -3434,6 +3491,7 @@ mod tests {
         let index_def = IndexDef::btree("age_idx".into(), ColId(2), true);
         datastore.create_index_mut_tx(&mut tx, table_id, index_def)?;
         let ctx = ExecutionContext::default();
+
         let query = query_st_tables(&ctx, &tx);
 
         let index_rows = query.scan_st_indexes()?;
@@ -3555,7 +3613,7 @@ mod tests {
         let row = datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx_for_test(tx)?;
 
-        let all_rows_col_0_eq_1 = |tx: &MutTxId| {
+        let all_rows_col_0_eq_1 = |tx: &TxType| {
             datastore
                 .iter_by_col_eq_mut_tx(
                     &ExecutionContext::default(),

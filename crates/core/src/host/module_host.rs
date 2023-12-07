@@ -75,7 +75,7 @@ impl DatabaseUpdate {
             let table_name = if let Some(name) = table_name_map.get(&table_id) {
                 name
             } else {
-                let table_name = stdb.table_name_from_id(&ctx, &mut tx.into(), table_id).unwrap().unwrap();
+                let table_name = stdb.table_name_from_id(&ctx, &tx, table_id).unwrap().unwrap();
                 table_name_map.insert(table_id, table_name);
                 table_name
             };
