@@ -1941,7 +1941,14 @@ impl DataRow for Locking {
     }
 }
 
+// TODO(shub): To not keep this empty and add `CommittedState` instance to it.
 pub struct TxId;
+
+/// Represents the type of a database transaction.
+pub enum TxType {
+    MutTx(MutTxId),
+    ReadTx(TxId),
+}
 
 impl TxType {
     fn commit(self) -> super::Result<Option<TxData>> {
@@ -1966,10 +1973,6 @@ impl TxType {
     }
 }
 
-pub enum TxType {
-    MutTx(MutTxId),
-    ReadTx(TxId),
-}
 
 impl From<MutTxId> for TxType {
     fn from(tx: MutTxId) -> Self {
