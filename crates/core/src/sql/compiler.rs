@@ -358,7 +358,7 @@ mod tests {
         let CrudExpr::Query(QueryExpr {
             source: _,
             query: mut ops,
-        }) = compile_sql(&db, &tx.into(), sql)?.remove(0)
+        }) = compile_sql(&db, &tx, sql)?.remove(0)
         else {
             panic!("Expected QueryExpr");
         };
@@ -387,7 +387,7 @@ mod tests {
         let CrudExpr::Query(QueryExpr {
             source: _,
             query: mut ops,
-        }) = compile_sql(&db, &tx.into(), sql)?.remove(0)
+        }) = compile_sql(&db, &tx, sql)?.remove(0)
         else {
             panic!("Expected QueryExpr");
         };
@@ -420,7 +420,7 @@ mod tests {
         let CrudExpr::Query(QueryExpr {
             source: _,
             query: mut ops,
-        }) = compile_sql(&db, &tx.into(), sql)?.remove(0)
+        }) = compile_sql(&db, &tx, sql)?.remove(0)
         else {
             panic!("Expected QueryExpr");
         };
@@ -450,7 +450,7 @@ mod tests {
         let CrudExpr::Query(QueryExpr {
             source: _,
             query: mut ops,
-        }) = compile_sql(&db, &tx.into(), sql)?.remove(0)
+        }) = compile_sql(&db, &tx, sql)?.remove(0)
         else {
             panic!("Expected QueryExpr");
         };
@@ -482,7 +482,7 @@ mod tests {
         let CrudExpr::Query(QueryExpr {
             source: _,
             query: mut ops,
-        }) = compile_sql(&db, &tx.into(), sql)?.remove(0)
+        }) = compile_sql(&db, &tx, sql)?.remove(0)
         else {
             panic!("Expected QueryExpr");
         };
@@ -510,7 +510,7 @@ mod tests {
         let CrudExpr::Query(QueryExpr {
             source: _,
             query: mut ops,
-        }) = compile_sql(&db, &tx.into(), sql)?.remove(0)
+        }) = compile_sql(&db, &tx, sql)?.remove(0)
         else {
             panic!("Expected QueryExpr");
         };
@@ -542,7 +542,7 @@ mod tests {
         let CrudExpr::Query(QueryExpr {
             source: _,
             query: mut ops,
-        }) = compile_sql(&db, &tx.into(), sql)?.remove(0)
+        }) = compile_sql(&db, &tx, sql)?.remove(0)
         else {
             panic!("Expected QueryExpr");
         };
@@ -576,7 +576,7 @@ mod tests {
         let CrudExpr::Query(QueryExpr {
             source: _,
             query: mut ops,
-        }) = compile_sql(&db, &tx.into(), sql)?.remove(0)
+        }) = compile_sql(&db, &tx, sql)?.remove(0)
         else {
             panic!("Expected QueryExpr");
         };
@@ -613,7 +613,7 @@ mod tests {
 
         // Should push sargable equality condition below join
         let sql = "select * from lhs join rhs on lhs.b = rhs.b where lhs.a = 3";
-        let exp = compile_sql(&db, &tx.into(), sql)?.remove(0);
+        let exp = compile_sql(&db, &tx, sql)?.remove(0);
 
         let CrudExpr::Query(QueryExpr {
             source: SourceExpr::DbTable(DbTable { table_id, .. }),
@@ -682,7 +682,7 @@ mod tests {
 
         // Should push equality condition below join
         let sql = "select * from lhs join rhs on lhs.b = rhs.b where lhs.a = 3";
-        let exp = compile_sql(&db, &tx.into(), sql)?.remove(0);
+        let exp = compile_sql(&db, &tx, sql)?.remove(0);
 
         let CrudExpr::Query(QueryExpr {
             source: SourceExpr::DbTable(DbTable { table_id, .. }),
@@ -763,7 +763,7 @@ mod tests {
 
         // Should push equality condition below join
         let sql = "select * from lhs join rhs on lhs.b = rhs.b where rhs.c = 3";
-        let exp = compile_sql(&db, &tx.into(), sql)?.remove(0);
+        let exp = compile_sql(&db, &tx, sql)?.remove(0);
 
         let CrudExpr::Query(QueryExpr {
             source: SourceExpr::DbTable(DbTable { table_id, .. }),
@@ -846,7 +846,7 @@ mod tests {
         // Should push the sargable equality condition into the join's left arg.
         // Should push the sargable range condition into the join's right arg.
         let sql = "select * from lhs join rhs on lhs.b = rhs.b where lhs.a = 3 and rhs.c < 4";
-        let exp = compile_sql(&db, &tx.into(), sql)?.remove(0);
+        let exp = compile_sql(&db, &tx, sql)?.remove(0);
 
         let CrudExpr::Query(QueryExpr {
             source: SourceExpr::DbTable(DbTable { table_id, .. }),
@@ -934,7 +934,7 @@ mod tests {
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
-        let exp = compile_sql(&db, &tx.into(), sql)?.remove(0);
+        let exp = compile_sql(&db, &tx, sql)?.remove(0);
 
         let CrudExpr::Query(QueryExpr {
             source: SourceExpr::DbTable(DbTable { table_id, .. }),
@@ -1030,7 +1030,7 @@ mod tests {
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
-        let exp = compile_sql(&db, &tx.into(), sql)?.remove(0);
+        let exp = compile_sql(&db, &tx, sql)?.remove(0);
 
         let CrudExpr::Query(expr) = exp else {
             panic!("unexpected result from compilation: {:#?}", exp);

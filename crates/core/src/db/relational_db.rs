@@ -759,7 +759,7 @@ mod tests {
         let mut tx = stdb.begin_mut_tx();
         let schema = TableDef::from_product("MyTable", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         let table_id = stdb.create_table(&mut tx, schema)?;
-        let t_id = stdb.table_id_from_name(&tx.into(), "MyTable")?;
+        let t_id = stdb.table_id_from_name(&tx, "MyTable")?;
         assert_eq!(t_id, Some(table_id));
         Ok(())
     }
@@ -854,7 +854,7 @@ mod tests {
         let mut rows = stdb
             .iter_by_col_range(
                 &ExecutionContext::default(),
-                &tx.into(),
+                &tx,
                 table_id,
                 ColId(0),
                 AlgebraicValue::I32(0)..,
@@ -885,7 +885,7 @@ mod tests {
         let mut rows = stdb
             .iter_by_col_range(
                 &ExecutionContext::default(),
-                &tx.into(),
+                &tx,
                 table_id,
                 ColId(0),
                 AlgebraicValue::I32(0)..,
@@ -972,7 +972,7 @@ mod tests {
         let mut rows = stdb
             .iter_by_col_range(
                 &ExecutionContext::default(),
-                &tx.into(),
+                &tx,
                 table_id,
                 ColId(0),
                 AlgebraicValue::I64(0)..,
@@ -1003,7 +1003,7 @@ mod tests {
         let mut rows = stdb
             .iter_by_col_range(
                 &ExecutionContext::default(),
-                &tx.into(),
+                &tx,
                 table_id,
                 ColId(0),
                 AlgebraicValue::I64(0)..,
