@@ -52,8 +52,8 @@ pub trait DataRow: Send + Sync {
 pub trait Tx {
     type TxId;
 
-    fn begin_tx(&self) -> Self::TxId;
-    fn release_tx(&self, ctx: &ExecutionContext, tx: Self::TxId);
+    fn begin_read_tx(&self) -> Self::TxId;
+    fn release_read_tx(&self, ctx: &ExecutionContext, tx: Self::TxId);
 }
 
 pub trait MutTx {

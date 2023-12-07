@@ -1983,11 +1983,11 @@ impl From<MutTxId> for TxType {
 impl traits::Tx for Locking {
     type TxId = TxType;
 
-    fn begin_tx(&self) -> TxType {
+    fn begin_read_tx(&self) -> TxType {
         TxType::ReadTx(TxId {})
     }
 
-    fn release_tx(&self, ctx: &ExecutionContext, tx: Self::TxId) {
+    fn release_read_tx(&self, ctx: &ExecutionContext, tx: Self::TxId) {
         self.rollback_mut_tx(ctx, tx)
     }
 }

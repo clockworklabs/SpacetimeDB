@@ -240,7 +240,7 @@ impl RelationalDB {
     #[tracing::instrument(skip_all)]
     pub fn begin_read_tx(&self) -> TxType {
         log::trace!("BEGIN TX");
-        self.inner.begin_tx()
+        self.inner.begin_read_tx()
     }
 
 
@@ -276,7 +276,7 @@ impl RelationalDB {
     /// wrong:
     ///
     /// ```ignore
-    /// let tx = db.begin_tx();
+    /// let tx = db.begin_read_tx();
     /// let _ = db.schema_for_table(tx, 42)?;
     /// // ...
     /// let _ = db.commit_tx(tx)?;

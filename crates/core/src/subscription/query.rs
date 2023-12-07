@@ -968,8 +968,6 @@ mod tests {
         insert into EnemyState (entity_id, herd_id, status, type, direction) values (1, 1181485940, 1633678837, 1158301365, 132191327);
         insert into EnemyState (entity_id, herd_id, status, type, direction) values (2, 2017368418, 194072456, 34423057, 1296770410);";
         run(&db, &mut tx, sql_insert, AuthCtx::for_testing())?;
-        drop(tx);
-        let mut tx = db.begin_write_tx();
 
         let sql_query = "\
             SELECT EnemyState.* FROM EnemyState \
