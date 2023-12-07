@@ -286,7 +286,7 @@ mod tests {
     use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::db::auth::StTableType;
     use spacetimedb_sats::db::def::{ColumnDef, IndexDef, TableDef};
-    use spacetimedb_sats::relation::MemTable;
+    use spacetimedb_sats::relation::{MemTable, Table};
     use spacetimedb_sats::{product, AlgebraicType, ToDataKey};
     use spacetimedb_vm::expr::{IndexJoin, IndexScan, JoinExpr, Query};
 
@@ -960,7 +960,9 @@ mod tests {
                     table: ref probe_table,
                     field: ref probe_field,
                 },
-            index_table,
+            index_side: Table::DbTable(DbTable {
+                table_id: index_table, ..
+            }),
             index_col,
             ..
         }) = query[0]
@@ -1081,9 +1083,10 @@ mod tests {
                     table: ref probe_table,
                     field: ref probe_field,
                 },
-            index_header: _,
+            index_side: Table::DbTable(DbTable {
+                table_id: index_table, ..
+            }),
             index_select: Some(_),
-            index_table,
             index_col,
             return_index_rows: false,
         }) = query[0]

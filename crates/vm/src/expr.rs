@@ -402,11 +402,24 @@ impl From<&SourceExpr> for DbTable {
 pub struct IndexJoin {
     pub probe_side: QueryExpr,
     pub probe_field: FieldName,
-    pub index_header: Header,
+    pub index_side: Table,
     pub index_select: Option<ColumnOp>,
-    pub index_table: TableId,
     pub index_col: ColId,
     pub return_index_rows: bool,
+}
+
+impl From<IndexJoin> for QueryExpr {
+    fn from(join: IndexJoin) -> Self {
+        let source: SourceExpr = if join.return_index_rows {
+            join.index_side.clone().into()
+        } else {
+            join.probe_side.source.clone()
+        };
+        QueryExpr {
+            source,
+            query: vec![Query::IndexJoin(join)],
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
@@ -418,12 +431,20 @@ pub struct JoinExpr {
 
 //TODO: A posterior PR should fix the pass of multi-columns to the query optimization
 impl From<IndexJoin> for JoinExpr {
-    fn from(value: IndexJoin) -> Self {
+    fn from(mut value: IndexJoin) -> Self {
+        if let Some(predicate) = value.index_select {
+            value.probe_side.query.push(predicate.into());
+        };
         let pos = value.index_col;
-        let rhs = value.probe_side;
-        let col_lhs = value.index_header.fields[usize::from(pos)].field.clone();
-        let col_rhs = value.probe_field;
-        JoinExpr::new(rhs, col_lhs, col_rhs)
+        if value.return_index_rows {
+            let col_lhs = value.index_side.head().fields[usize::from(pos)].field.clone();
+            let col_rhs = value.probe_field;
+            JoinExpr::new(value.probe_side, col_lhs, col_rhs)
+        } else {
+            let col_rhs = value.index_side.head().fields[usize::from(pos)].field.clone();
+            let col_lhs = value.probe_field;
+            JoinExpr::new(value.index_side.into(), col_lhs, col_rhs)
+        }
     }
 }
 
@@ -699,6 +720,15 @@ impl From<MemTable> for QueryExpr {
 
 impl From<DbTable> for QueryExpr {
     fn from(value: DbTable) -> Self {
+        QueryExpr {
+            source: value.into(),
+            query: vec![],
+        }
+    }
+}
+
+impl From<Table> for QueryExpr {
+    fn from(value: Table) -> Self {
         QueryExpr {
             source: value.into(),
             query: vec![],
@@ -1160,14 +1190,14 @@ impl QueryExpr {
                 if !probe_side.query.is_empty() && wildcard_table_id == table.table_id {
                     // An applicable join must have an index defined on the correct field.
                     if let Some(col) = table.head.column(&index_field) {
+                        let index_col = col.col_id;
                         if table.head().has_constraint(&index_field, Constraints::indexed()) {
                             let index_join = IndexJoin {
                                 probe_side,
                                 probe_field,
-                                index_header: table.head.clone(),
+                                index_side: table.into(),
                                 index_select: None,
-                                index_table: table.table_id,
-                                index_col: col.col_id,
+                                index_col,
                                 return_index_rows: true,
                             };
                             return QueryExpr {
@@ -1280,8 +1310,7 @@ impl QueryExpr {
                     query: selections,
                 },
             probe_field,
-            index_header,
-            index_table: _,
+            index_side,
             index_col,
             index_select: None,
             return_index_rows: true,
@@ -1293,8 +1322,13 @@ impl QueryExpr {
         let SourceExpr::MemTable(index_side_updates) = self.source else {
             return None;
         };
-        let index_column = index_header.fields.iter().find(|column| column.col_id == index_col)?;
-        let probe_column = rhs_table.head.column(&probe_field)?;
+        let index_column = index_side
+            .head()
+            .fields
+            .iter()
+            .find(|column| column.col_id == index_col)?;
+        let index_field = index_column.field.clone();
+        let probe_column = rhs_table.head.column(&probe_field)?.col_id;
         // Merge all selections from the original probe side into a single predicate.
         // This includes an index scan if present.
         let predicate = selections.iter().cloned().fold(None, |acc, op| {
@@ -1310,15 +1344,13 @@ impl QueryExpr {
             // The new probe side consists of the updated rows.
             probe_side: index_side_updates.into(),
             // The new probe field is the previous index field.
-            probe_field: index_column.field.clone(),
+            probe_field: index_field,
             // The original probe table is now the table that is being probed.
-            index_header: rhs_table.head.clone(),
+            index_side: rhs_table.into(),
             // Any selections from the original probe side are pulled above the index lookup.
             index_select: predicate,
-            // The original probe table is now the table that is being probed.
-            index_table: rhs_table.table_id,
             // The new index field is the previous probe field.
-            index_col: probe_column.col_id,
+            index_col: probe_column,
             // Because we have swapped the original index and probe sides of the join,
             // the new index join needs to return rows from the probe side instead of the index side.
             return_index_rows: false,
@@ -1856,13 +1888,17 @@ mod tests {
                     table: "foo".into(),
                     field: "bar".into(),
                 },
-                index_header: Header {
-                    table_name: "bar".into(),
-                    fields: vec![],
-                    constraints: Default::default(),
-                },
+                index_side: Table::DbTable(DbTable {
+                    head: Header {
+                        table_name: "bar".into(),
+                        fields: vec![],
+                        constraints: Default::default(),
+                    },
+                    table_id: 42.into(),
+                    table_type: StTableType::User,
+                    table_access: StAccess::Public,
+                }),
                 index_select: None,
-                index_table: 42.into(),
                 index_col: 22.into(),
                 return_index_rows: true,
             }),
