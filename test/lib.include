@@ -74,9 +74,45 @@ fsed() {
 }
 
 restart_docker() {
-	docker-compose stop node
-	docker-compose start node
-	sleep 10
+	# Behold!
+	#
+	# You thought stop/start restarts? How wrong. Restart restarts.
+	docker compose restart
+	# The suspense!
+	#
+	# Wait until compose believes the health probe succeeds.
+	#
+	# The container may decide to recompile, or grab a coffee at crates.io, or
+	# whatever. In any case, restart doesn't mean the server is up yet.
+	docker compose up --no-recreate --detach --wait-timeout 60
+	# Belts and suspenders!
+	#
+	# The health probe runs inside the container, but that doesn't mean we can
+	# reach it from outside. Ping until we get through.
+	ping
+}
+
+ping() {
+	local retries=5
+	local success=0
+	while true
+	do
+		curl -sf http://127.0.0.1:3000/database/ping && { success=1; break; } || echo "Server down"
+		retries=$((retries - 1))
+		if [ $retries -gt 0 ]
+		then
+			sleep 5
+		else
+			break
+		fi
+	done
+	if [ $success -lt 1 ]
+	then
+		echo "Server at 127.0.0.1:3000 not responding"
+		exit 127
+	else
+		echo "Server up after $((5 - retries)) retries"
+	fi
 }
 
 # vim: noexpandtab tabstop=4 shiftwidth=4

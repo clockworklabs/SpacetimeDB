@@ -16,8 +16,10 @@ jobs:
       - name: Start containers
         run: docker compose up -d
       - name: Run smoketests
-        # TODO: Fix flaky tests https://github.com/clockworklabs/SpacetimeDB/issues/630
         run: test/run-smoke-tests.sh --parallel -x bitcraftmini-pretest zz_docker-restart-module zz_docker-restart-repeating-reducer zz_docker-restart-sql
+      # These cannot run in parallel, even though the script tries to handle it
+      - name: Run restarting smoketests
+        run: test/run-smoke-tests.sh zz_docker-restart-module zz_docker-restart-repeating-reducer zz_docker-restart-sql
       - name: Stop containers
         if: always()
         run: docker compose down
