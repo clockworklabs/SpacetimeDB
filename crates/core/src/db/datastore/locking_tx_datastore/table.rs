@@ -50,7 +50,7 @@ impl Table {
         self.rows.get(row_id)
     }
 
-    pub(crate) fn get_row_type(&self) -> ProductType {
+    pub(crate) fn get_row_type(&self) -> &ProductType {
         self.schema.get_row_type()
     }
 

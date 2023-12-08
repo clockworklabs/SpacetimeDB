@@ -195,7 +195,7 @@ impl BTreeIndex {
             cols: self
                 .cols
                 .iter()
-                .map(|&x| table.schema.columns[usize::from(x)].col_name.clone())
+                .map(|&x| table.schema.columns()[usize::from(x)].col_name.clone())
                 .collect(),
             value,
         }

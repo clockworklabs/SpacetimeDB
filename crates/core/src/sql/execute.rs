@@ -632,7 +632,7 @@ pub(crate) mod tests {
             let t = db.table_id_from_name(tx, table_name)?.unwrap();
             let t = db.schema_for_table(tx, t)?;
 
-            let col = t.columns.first().unwrap();
+            let col = t.columns().first().unwrap();
             let idx = t.indexes.first().map(|x| x.is_unique);
             let column_auto_inc = t
                 .constraints

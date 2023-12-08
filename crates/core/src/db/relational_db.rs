@@ -767,7 +767,7 @@ mod tests {
         stdb.create_table(&mut tx, schema)?;
         let table_id = stdb.table_id_from_name(&tx, "MyTable")?.unwrap();
         let schema = stdb.schema_for_table(&tx, table_id)?;
-        let col = schema.columns.iter().find(|x| x.col_name == "my_col").unwrap();
+        let col = schema.columns().iter().find(|x| x.col_name == "my_col").unwrap();
         assert_eq!(col.col_pos, 0.into());
         Ok(())
     }

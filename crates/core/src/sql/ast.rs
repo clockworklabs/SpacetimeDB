@@ -178,7 +178,7 @@ impl From {
     pub fn find_field(&self, f: &str) -> Result<Vec<FieldDef>, RelationError> {
         let field = extract_table_field(f)?;
         let fields = self.iter_tables().flat_map(|t| {
-            t.columns.iter().filter_map(|column| {
+            t.columns().iter().filter_map(|column| {
                 if column.col_name == field.field {
                     Some(FieldDef {
                         column: column.clone(),

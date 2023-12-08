@@ -973,7 +973,7 @@ fn autogen_typescript_access_funcs_for_struct(
     writeln!(output).unwrap();
 
     let constraints = table.column_constraints();
-    for col in &table.columns {
+    for col in table.columns() {
         let is_unique = constraints[&NonEmpty::new(col.col_pos)].has_unique();
         let field = &product_type.elements[usize::from(col.col_pos)];
         let field_name = field.name.as_ref().expect("autogen'd tuples should have field names");

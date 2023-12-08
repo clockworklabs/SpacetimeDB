@@ -460,7 +460,7 @@ fn print_table_filter_methods(ctx: &GenCtx, out: &mut Indenter, table_type_name:
     out.delimited_block(
         "{",
         |out| {
-            for field in &table.columns {
+            for field in table.columns() {
                 let field_name = field.col_name.to_case(Case::Snake);
                 // TODO: ensure that fields are PartialEq
                 writeln!(out, "{}", ALLOW_UNUSED).unwrap();
