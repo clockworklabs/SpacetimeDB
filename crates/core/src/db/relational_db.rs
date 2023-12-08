@@ -62,7 +62,7 @@ impl RelationalDB {
     ) -> Result<Self, DBError> {
         let db_address = address;
         let address = address.to_hex();
-        log::debug!("[{}] DATABASE: OPENING", address);
+        log::info!("[{}] DATABASE: OPENING", address);
 
         // Ensure that the `root` directory the database is running in exists.
         create_dir_all(&root)?;
@@ -79,7 +79,7 @@ impl RelationalDB {
         let mut transaction_offset = 0;
         let commit_log = message_log
             .map(|mlog| {
-                log::debug!("[{}] Replaying transaction log.", address);
+                log::info!("[{}] Replaying transaction log.", address);
                 let mut last_logged_percentage = 0;
 
                 let commit_log = CommitLog::new(mlog, odb);
@@ -95,7 +95,7 @@ impl RelationalDB {
                         f64::floor((commit.commit_offset as f64 / max_commit_offset as f64) * 100.0) as i32;
                     if percentage > last_logged_percentage && percentage % 10 == 0 {
                         last_logged_percentage = percentage;
-                        log::debug!(
+                        log::info!(
                             "[{}] Loaded {}% ({}/{})",
                             address,
                             percentage,
@@ -124,7 +124,7 @@ impl RelationalDB {
         // There may eventually be better way to do this, but this will have to do for now.
         datastore.rebuild_state_after_replay()?;
 
-        log::debug!(
+        log::info!(
             "[{}] Initialized with {} commits and tx offset {}",
             address,
             commit_log.as_ref().map(|log| log.commit_offset()).unwrap_or_default(),
@@ -140,7 +140,7 @@ impl RelationalDB {
             address: db_address,
         };
 
-        log::trace!("[{}] DATABASE: OPENED", address);
+        log::info!("[{}] DATABASE: OPENED", address);
         Ok(db)
     }
 
