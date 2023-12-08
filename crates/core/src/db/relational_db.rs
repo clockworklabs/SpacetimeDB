@@ -946,7 +946,6 @@ mod tests {
             }],
         )
         .with_column_constraint(Constraints::primary_key_auto(), ColId(0))
-        .unwrap()
     }
 
     #[test]
@@ -1039,8 +1038,7 @@ mod tests {
                 col_type: AlgebraicType::I64,
             }],
         )
-        .with_column_sequence(ColId(0))
-        .unwrap();
+        .with_column_sequence(ColId(0));
 
         let table_id = stdb.create_table(&mut tx, schema)?;
 
@@ -1174,8 +1172,7 @@ mod tests {
             is_unique: true,
             index_type: IndexType::BTree,
         }])
-        .with_column_constraint(Constraints::identity(), ColId(0))
-        .unwrap();
+        .with_column_constraint(Constraints::identity(), ColId(0));
 
         let table_id = stdb.create_table(&mut tx, schema)?;
 
