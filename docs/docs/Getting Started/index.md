@@ -13,12 +13,6 @@ The server listens on port `3000` by default. You can change this by using the `
 
 SSL is not supported in standalone mode.
 
-To set up your CLI to connect to the server, you can run the `spacetime server` command.
-
-```bash
-spacetime server set "http://localhost:3000"
-```
-
 ## What's Next?
 
 You are ready to start developing SpacetimeDB modules. We have a quickstart guide for each supported server-side language:
