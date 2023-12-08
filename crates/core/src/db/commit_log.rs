@@ -18,6 +18,7 @@ use crate::{
     execution_context::ExecutionContext,
 };
 use anyhow::Context;
+use spacetimedb_lib::metrics::METRICS;
 use spacetimedb_sats::hash::{hash_bytes, Hash};
 use spacetimedb_sats::DataKey;
 use std::{
@@ -380,7 +381,7 @@ impl CommitLogMut {
                         .with_label_values(workload, db, reducer_or_query, &table_id)
                         .inc();
                     // Increment table rows gauge
-                    DB_METRICS.rdb_num_table_rows.with_label_values(db, &table_id).inc();
+                    METRICS.rdb_num_table_rows.with_label_values(db, &table_id).inc();
                     Operation::Insert
                 }
                 TxOp::Delete => {
@@ -390,7 +391,7 @@ impl CommitLogMut {
                         .with_label_values(workload, db, reducer_or_query, &table_id)
                         .inc();
                     // Decrement table rows gauge
-                    DB_METRICS.rdb_num_table_rows.with_label_values(db, &table_id).dec();
+                    METRICS.rdb_num_table_rows.with_label_values(db, &table_id).dec();
                     Operation::Delete
                 }
             };

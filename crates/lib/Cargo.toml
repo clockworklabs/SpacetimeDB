@@ -34,6 +34,8 @@ derive_more.workspace = true
 enum-as-inner.workspace = true
 hex.workspace = true
 itertools.workspace = true
+once_cell.workspace = true
+prometheus.workspace = true
 serde = { workspace = true, optional = true }
 serde_with = {workspace = true, optional = true }
 thiserror.workspace = true
