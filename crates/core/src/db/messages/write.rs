@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::Context as _;
 use std::fmt;
 
@@ -14,12 +16,14 @@ use proptest_derive::Arbitrary;
 /// ```text
 /// <flags(1)><set_id(4)><value(1-33)>
 /// ```
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(test, derive(Arbitrary))]
 pub struct Write {
     pub operation: Operation,
     pub set_id: u32, // aka table id
     pub data_key: DataKey,
+    #[cfg_attr(test, proptest(value = "None"))]
+    pub data: Option<Arc<Vec<u8>>>,
 }
 
 /// The operation of a [`Write`], either insert or delete.
@@ -94,11 +98,19 @@ impl Write {
         let operation = Operation::decode(reader).context(Context::Op)?;
         let set_id = reader.get_u32().context(Context::SetId)?;
         let data_key = DataKey::decode(reader).context(Context::DataKey)?;
+        let len = reader.get_u32()?;
+        let data = if len > 0 {
+            let bytes = reader.get_slice(len as usize)?;
+            Some(Arc::new(bytes.to_vec()))
+        } else {
+            None
+        };
 
         Ok(Self {
             operation,
             set_id,
             data_key,
+            data,
         })
     }
 
@@ -106,6 +118,7 @@ impl Write {
         let mut count = self.operation.encoded_len();
         count += 4; // set_id
         count += self.data_key.encoded_len();
+        count += 4 + self.data.as_ref().map(|bytes| bytes.len()).unwrap_or_default();
         count
     }
 
@@ -113,5 +126,12 @@ impl Write {
         self.operation.encode(writer);
         writer.put_u32(self.set_id);
         self.data_key.encode(writer);
+        match &self.data {
+            None => writer.put_u32(0),
+            Some(data) => {
+                writer.put_u32(data.len() as u32);
+                writer.put_slice(data);
+            }
+        }
     }
 }

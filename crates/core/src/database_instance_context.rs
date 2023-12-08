@@ -1,9 +1,6 @@
 use super::database_logger::DatabaseLogger;
 use crate::address::Address;
 use crate::db::message_log::MessageLog;
-use crate::db::ostorage::memory_object_db::MemoryObjectDB;
-use crate::db::ostorage::sled_object_db::SledObjectDB;
-use crate::db::ostorage::ObjectDB;
 use crate::db::relational_db::RelationalDB;
 use crate::db::{Config, FsyncPolicy, Storage};
 use crate::error::DBError;
@@ -69,15 +66,6 @@ impl DatabaseInstanceContext {
             }
         };
 
-        let odb = match config.storage {
-            Storage::Memory => Box::<MemoryObjectDB>::default(),
-            Storage::Disk => {
-                let odb_path = db_path.join("odb");
-                DatabaseInstanceContext::make_default_ostorage(odb_path)
-            }
-        };
-        let odb = Arc::new(Mutex::new(odb));
-
         Arc::new(Self {
             database_instance_id,
             database_id,
@@ -85,14 +73,10 @@ impl DatabaseInstanceContext {
             address,
             logger: Arc::new(DatabaseLogger::open(log_path)),
             relational_db: Arc::new(
-                RelationalDB::open(db_path, message_log, odb, address, config.fsync != FsyncPolicy::Never).unwrap(),
+                RelationalDB::open(db_path, message_log, address, config.fsync != FsyncPolicy::Never).unwrap(),
             ),
             publisher_address,
         })
-    }
-
-    pub(crate) fn make_default_ostorage(path: impl AsRef<Path>) -> Box<dyn ObjectDB + Send> {
-        Box::new(SledObjectDB::open(path).unwrap())
     }
 
     /// The number of bytes on disk occupied by the [MessageLog].

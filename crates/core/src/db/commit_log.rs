@@ -2,7 +2,6 @@ use super::{
     datastore::traits::{MutTxDatastore, TxData},
     message_log::{self, MessageLog},
     messages::commit::Commit,
-    ostorage::{memory_object_db::MemoryObjectDB, ObjectDB},
     FsyncPolicy,
 };
 use crate::{
@@ -20,9 +19,8 @@ use crate::{
 use anyhow::Context;
 use spacetimedb_lib::metrics::METRICS;
 use spacetimedb_sats::hash::{hash_bytes, Hash};
-use spacetimedb_sats::DataKey;
+
 use std::{
-    collections::{hash_map, HashMap},
     io,
     sync::{Arc, Mutex, MutexGuard},
 };
@@ -31,12 +29,11 @@ use std::{
 #[derive(Clone)]
 pub struct CommitLog {
     mlog: Arc<Mutex<MessageLog>>,
-    odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
 }
 
 impl CommitLog {
-    pub const fn new(mlog: Arc<Mutex<MessageLog>>, odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>) -> Self {
-        Self { mlog, odb }
+    pub const fn new(mlog: Arc<Mutex<MessageLog>>) -> Self {
+        Self { mlog }
     }
 
     pub fn max_commit_offset(&self) -> u64 {
@@ -48,9 +45,9 @@ impl CommitLog {
     /// Like [`Self::replay`], this traverses the log from the start and ensures
     /// the resulting [`CommitLogMut`] can safely be written to.
     ///
-    /// Equivalent to `self.replay(|_, _| Ok(()))`.
+    /// Equivalent to `self.replay(|_| Ok(()))`.
     pub fn to_mut(&self) -> Result<CommitLogMut, DBError> {
-        self.replay(|_, _| Ok(()))
+        self.replay(|_| Ok(()))
     }
 
     /// Traverse the log from the start, calling `F` with each [`Commit`]
@@ -73,7 +70,7 @@ impl CommitLog {
     /// and can thus safely be written to via the resulting [`CommitLogMut`].
     pub fn replay<F>(&self, mut f: F) -> Result<CommitLogMut, DBError>
     where
-        F: FnMut(Commit, &dyn ObjectDB) -> Result<(), DBError>,
+        F: FnMut(Commit) -> Result<(), DBError>,
     {
         let unwritten_commit = {
             let mut mlog = self.mlog.lock().unwrap();
@@ -84,8 +81,6 @@ impl CommitLog {
                 last_commit_offset: None,
                 last_hash: None,
 
-                odb: self.odb.clone(),
-
                 segments,
                 segment_offset: 0,
                 current_segment: None,
@@ -93,7 +88,7 @@ impl CommitLog {
 
             for commit in &mut iter {
                 match commit {
-                    Ok((commit, objects)) => f(commit, &objects)?,
+                    Ok(commit) => f(commit)?,
                     Err(ReplayError::Other { source }) => return Err(source.into()),
                     // Note that currently the commit offset is just a u64.
                     // It does not have any additional structure or semantic validation.
@@ -136,32 +131,10 @@ impl CommitLog {
                         }
                         .into());
                     }
-                    Err(ReplayError::MissingObject {
-                        segment_offset,
-                        last_commit_offset,
-                        hash,
-                        referenced_from_commit_offset,
-                    }) if segment_offset < total_segments - 1 => {
-                        log::warn!(
-                            "Missing object {} referenced from {}",
-                            hash,
-                            referenced_from_commit_offset
-                        );
-                        return Err(LogReplayError::TrailingSegments {
-                            segment_offset,
-                            total_segments,
-                            commit_offset: last_commit_offset,
-                            source: io::Error::new(io::ErrorKind::Other, "Missing object"),
-                        }
-                        .into());
-                    }
 
                     // We are near the end of the log, so trim it to the known-
                     // good prefix.
-                    Err(
-                        ReplayError::CorruptedData { last_commit_offset, .. }
-                        | ReplayError::MissingObject { last_commit_offset, .. },
-                    ) => {
+                    Err(ReplayError::CorruptedData { last_commit_offset, .. }) => {
                         mlog.reset_to(last_commit_offset)
                             .map_err(|source| LogReplayError::Reset {
                                 offset: last_commit_offset,
@@ -182,7 +155,6 @@ impl CommitLog {
 
         Ok(CommitLogMut {
             mlog: self.mlog.clone(),
-            odb: self.odb.clone(),
             unwritten_commit: Arc::new(Mutex::new(unwritten_commit)),
             fsync: FsyncPolicy::Never,
         })
@@ -196,8 +168,7 @@ impl CommitLog {
 
     /// The number of bytes on disk occupied by the [ObjectDB].
     pub fn object_db_size_on_disk(&self) -> Result<u64, DBError> {
-        let guard = self.odb.lock().unwrap();
-        guard.size_on_disk()
+        Ok(0)
     }
 
     /// Obtain an iterator over a snapshot of the raw message log segments.
@@ -235,36 +206,6 @@ impl CommitLog {
     pub fn iter_from(&self, offset: u64) -> Iter {
         self.message_log_segments_from(offset).into()
     }
-
-    /// Obtain an iterator over the large objects in [`Commit`], if any.
-    ///
-    /// Large objects are stored in the [`ObjectDB`], and are referenced from
-    /// the transactions in a [`Commit`].
-    ///
-    /// The iterator attempts to read each large object in turn, yielding an
-    /// [`io::Error`] with kind [`io::ErrorKind::NotFound`] if the object was
-    /// not found.
-    //
-    // TODO(kim): We probably want a more efficient way to stream the contents
-    // of the ODB over the network for replication purposes.
-    pub fn commit_objects<'a>(&self, commit: &'a Commit) -> impl Iterator<Item = io::Result<bytes::Bytes>> + 'a {
-        fn hashes(tx: &Arc<Transaction>) -> impl Iterator<Item = Hash> + '_ {
-            tx.writes.iter().filter_map(|write| {
-                if let DataKey::Hash(h) = write.data_key {
-                    Some(h)
-                } else {
-                    None
-                }
-            })
-        }
-
-        let odb = self.odb.clone();
-        commit.transactions.iter().flat_map(hashes).map(move |hash| {
-            let odb = odb.lock().unwrap();
-            odb.get(hash)
-                .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("Missing object: {hash}")))
-        })
-    }
 }
 
 /// A mutable handle to the commit log.
@@ -276,7 +217,6 @@ impl CommitLog {
 #[derive(Clone)]
 pub struct CommitLogMut {
     mlog: Arc<Mutex<MessageLog>>,
-    odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
     unwritten_commit: Arc<Mutex<Commit>>,
     fsync: FsyncPolicy,
 }
@@ -335,12 +275,6 @@ impl CommitLogMut {
             FsyncPolicy::Never => mlog.flush()?,
             FsyncPolicy::EveryTx => {
                 let offset = mlog.open_segment_max_offset;
-                // Sync the odb first, as the mlog depends on its data. This is
-                // not an atomicity guarantee, but the error context may help
-                // with forensics.
-                let mut odb = self.odb.lock().unwrap();
-                odb.sync_all()
-                    .with_context(|| format!("Error syncing odb to disk. Log offset: {offset}"))?;
                 mlog.sync_all()
                     .with_context(|| format!("Error syncing mlog to disk. Log offset: {offset}"))?;
                 log::trace!("DATABASE: FSYNC");
@@ -400,6 +334,10 @@ impl CommitLogMut {
                 operation,
                 set_id: table_id,
                 data_key: record.key,
+                data: match &record.op {
+                    TxOp::Insert(bytes) => Some(bytes.clone()),
+                    TxOp::Delete => None,
+                },
             })
         }
 
@@ -409,15 +347,6 @@ impl CommitLogMut {
         const COMMIT_SIZE: usize = 1;
 
         if unwritten_commit.transactions.len() >= COMMIT_SIZE {
-            {
-                let mut guard = self.odb.lock().unwrap();
-                for record in &tx_data.records {
-                    if let (DataKey::Hash(_), TxOp::Insert(bytes)) = (&record.key, &record.op) {
-                        guard.add(Vec::clone(bytes));
-                    }
-                }
-            }
-
             let mut bytes = Vec::with_capacity(unwritten_commit.encoded_len());
             unwritten_commit.encode(&mut bytes);
 
@@ -435,10 +364,7 @@ impl CommitLogMut {
 
 impl From<&CommitLogMut> for CommitLog {
     fn from(log: &CommitLogMut) -> Self {
-        Self {
-            mlog: log.mlog.clone(),
-            odb: log.odb.clone(),
-        }
+        Self { mlog: log.mlog.clone() }
     }
 }
 
@@ -528,44 +454,10 @@ struct Replay {
     last_commit_offset: Option<u64>,
     last_hash: Option<Hash>,
 
-    odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
-
     segments: message_log::Segments,
     segment_offset: usize,
 
     current_segment: Option<IterSegment>,
-}
-
-impl Replay {
-    fn collect_objects(&self, commit: &Commit) -> Result<MemoryObjectDB, ReplayError> {
-        let odb = self.odb.lock().unwrap();
-        let mut objects = HashMap::new();
-
-        let hashes = commit
-            .transactions
-            .iter()
-            .flat_map(|tx| &tx.writes)
-            .filter_map(|write| {
-                if let DataKey::Hash(hash) = write.data_key {
-                    Some(hash)
-                } else {
-                    None
-                }
-            });
-        for hash in hashes {
-            if let hash_map::Entry::Vacant(entry) = objects.entry(hash) {
-                let obj = odb.get(hash).ok_or(ReplayError::MissingObject {
-                    segment_offset: self.segment_offset,
-                    last_commit_offset: self.last_commit_offset.unwrap_or_default(),
-                    hash,
-                    referenced_from_commit_offset: commit.commit_offset,
-                })?;
-                entry.insert(obj);
-            }
-        }
-
-        Ok(objects.into())
-    }
 }
 
 enum ReplayError {
@@ -598,17 +490,6 @@ enum ReplayError {
         last_commit_offset: u64,
         source: io::Error,
     },
-    /// An object referenced from a [`Commit`] was not found in the object db.
-    ///
-    /// This error may occur in [`FsyncPolicy::Never`] mode, if the object db
-    /// happened to not be flushed to disk but the corresponding message log
-    /// write was.
-    MissingObject {
-        segment_offset: usize,
-        last_commit_offset: u64,
-        hash: Hash,
-        referenced_from_commit_offset: u64,
-    },
     /// Some other error occurred.
     ///
     /// May be a transient error. Processing should be aborted, and potentially
@@ -617,7 +498,7 @@ enum ReplayError {
 }
 
 impl Iterator for Replay {
-    type Item = Result<(Commit, MemoryObjectDB), ReplayError>;
+    type Item = Result<Commit, ReplayError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(cur) = self.current_segment.as_mut() {
@@ -646,13 +527,7 @@ impl Iterator for Replay {
                                 expected,
                             })
                         } else {
-                            self.collect_objects(&commit).map(|objects| {
-                                self.last_commit_offset = Some(commit.commit_offset);
-                                self.last_hash = commit.parent_commit_hash;
-                                self.tx_offset += commit.transactions.len() as u64;
-
-                                (commit, objects)
-                            })
+                            Ok(commit)
                         }
                     }
 
@@ -691,8 +566,7 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    use crate::db::ostorage::memory_object_db::MemoryObjectDB;
-    use spacetimedb_sats::data_key::InlineData;
+    use spacetimedb_sats::{data_key::InlineData, DataKey};
 
     #[test]
     fn test_iter_commits() {
@@ -705,11 +579,13 @@ mod tests {
                     operation: Operation::Insert,
                     set_id: 42,
                     data_key,
+                    data: None,
                 },
                 Write {
                     operation: Operation::Delete,
                     set_id: 42,
                     data_key,
+                    data: None,
                 },
             ],
         };
@@ -733,9 +609,8 @@ mod tests {
             .max_segment_size(segment_size as u64)
             .open(tmp.path())
             .unwrap();
-        let odb = MemoryObjectDB::default();
 
-        let log = CommitLog::new(Arc::new(Mutex::new(mlog)), Arc::new(Mutex::new(Box::new(odb))))
+        let log = CommitLog::new(Arc::new(Mutex::new(mlog)))
             .to_mut()
             .unwrap()
             .with_fsync(FsyncPolicy::EveryTx);

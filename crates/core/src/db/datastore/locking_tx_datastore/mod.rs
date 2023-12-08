@@ -42,11 +42,10 @@ use crate::{
     db::{
         datastore::system_tables::{st_columns_schema, st_indexes_schema, st_sequences_schema, st_table_schema},
         messages::{transaction::Transaction, write::Operation},
-        ostorage::ObjectDB,
     },
     error::{DBError, TableError},
 };
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use parking_lot::{lock_api::ArcRwLockWriteGuard, RawRwLock, RwLock};
 use spacetimedb_lib::{metrics::METRICS, Address};
 use spacetimedb_primitives::*;
@@ -1880,7 +1879,7 @@ impl Locking {
         Ok(())
     }
 
-    pub fn replay_transaction(&self, transaction: &Transaction, odb: &dyn ObjectDB) -> Result<(), DBError> {
+    pub fn replay_transaction(&self, transaction: &Transaction) -> Result<(), DBError> {
         let mut committed_state = self.committed_state.write_arc();
         for write in &transaction.writes {
             let table_id = TableId(write.set_id);
@@ -1898,24 +1897,23 @@ impl Locking {
                 }
                 Operation::Insert => {
                     let row_type = schema.get_row_type();
-                    let product_value = match write.data_key {
-                        DataKey::Data(data) => ProductValue::decode(row_type, &mut &data[..]).unwrap_or_else(|e| {
-                            panic!(
-                                "Couldn't decode product value from message log: `{}`. Expected row type: {:?}",
-                                e, row_type
-                            )
-                        }),
-                        DataKey::Hash(hash) => {
-                            let data = odb.get(hash).unwrap_or_else(|| {
-                                panic!("Object {hash} referenced from transaction not present in object DB");
-                            });
-                            ProductValue::decode(row_type, &mut &data[..]).unwrap_or_else(|e| {
-                                panic!(
-                                    "Couldn't decode product value {} from object DB: `{}`. Expected row type: {:?}",
-                                    hash, e, row_type
+                    let product_value = match (write.data_key, &write.data) {
+                        (DataKey::Data(data), _) => {
+                            ProductValue::decode(&row_type, &mut &data[..]).with_context(|| {
+                                format!(
+                                    "Couldn't decode product value from message log, expected row type: {:?}",
+                                    row_type
                                 )
-                            })
+                            })?
                         }
+                        (DataKey::Hash(hash), Some(data)) => ProductValue::decode(&row_type, &mut &data[..])
+                            .with_context(|| {
+                                format!(
+                                    "Couldn't decode product value {} from object DB, expected row type: {:?}",
+                                    hash, row_type,
+                                )
+                            })?,
+                        (DataKey::Hash(hash), None) => Err(anyhow!("Missing data for {hash}"))?,
                     };
                     committed_state
                         .table_rows(table_id, schema)
