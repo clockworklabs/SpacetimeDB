@@ -279,27 +279,20 @@ impl From<&ColumnSchema> for ProductTypeElement {
 
 /// For get the original `table_name` for where a [ColumnSchema] belongs.
 #[derive(Debug, Clone)]
-pub struct FieldDef {
-    pub column: ColumnSchema,
-    pub table_name: String,
+pub struct FieldDef<'a> {
+    pub column: &'a ColumnSchema,
+    pub table_name: &'a str,
 }
 
-impl From<FieldDef> for FieldName {
+impl From<FieldDef<'_>> for FieldName {
     fn from(value: FieldDef) -> Self {
-        FieldName::named(&value.table_name, &value.column.col_name)
+        FieldName::named(value.table_name, &value.column.col_name)
     }
 }
 
-impl From<&FieldDef> for FieldName {
-    fn from(value: &FieldDef) -> Self {
-        FieldName::named(&value.table_name, &value.column.col_name)
-    }
-}
-
-impl From<FieldDef> for ProductTypeElement {
+impl From<FieldDef<'_>> for ProductTypeElement {
     fn from(value: FieldDef) -> Self {
-        let f: FieldName = (&value).into();
-        ProductTypeElement::new(value.column.col_type, Some(f.to_string()))
+        ProductTypeElement::new(value.column.col_type.clone(), Some(value.column.col_name.clone()))
     }
 }
 
@@ -479,7 +472,7 @@ pub struct TableSchema {
     pub table_type: StTableType,
     pub table_access: StAccess,
     /// Cache for `row_type_for_table` in the data store.
-    pub row_type: ProductType,
+    row_type: ProductType,
 }
 
 impl TableSchema {

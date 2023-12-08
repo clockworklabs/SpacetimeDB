@@ -175,14 +175,14 @@ impl From {
 
     /// Returns all the fields matching `f` as a `Vec<FromField>`,
     /// including the ones inside the joins.
-    pub fn find_field(&self, f: &str) -> Result<Vec<FieldDef>, RelationError> {
+    pub fn find_field<'a>(&'a self, f: &'a str) -> Result<Vec<FieldDef>, RelationError> {
         let field = extract_table_field(f)?;
         let fields = self.iter_tables().flat_map(|t| {
             t.columns().iter().filter_map(|column| {
                 if column.col_name == field.field {
                     Some(FieldDef {
-                        column: column.clone(),
-                        table_name: field.table.unwrap_or(&t.table_name).to_string(),
+                        column,
+                        table_name: field.table.unwrap_or(&t.table_name),
                     })
                 } else {
                     None
@@ -195,7 +195,7 @@ impl From {
 
     /// Checks if the field `named` matches exactly once in all the tables
     /// including the ones inside the joins
-    pub fn resolve_field(&self, named: &str) -> Result<FieldDef, PlanError> {
+    pub fn resolve_field<'a>(&'a self, named: &'a str) -> Result<FieldDef, PlanError> {
         let fields = self.find_field(named)?;
 
         match fields.len() {

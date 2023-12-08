@@ -2968,7 +2968,7 @@ mod tests {
                 IndexDef {
                     columns: NonEmpty::new(1.into()),
                     index_name: "name_idx".into(),
-                    is_unique: true,
+                    is_unique: false,
                     index_type: IndexType::BTree,
                 },
             ])
