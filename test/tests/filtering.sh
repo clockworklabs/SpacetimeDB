@@ -170,33 +170,33 @@ run_test cargo run call "$IDENT" insert_person 64 Bob b2
 # Find a person who is there.
 run_test cargo run call "$IDENT" find_person 23
 run_test cargo run logs "$IDENT" 100
-[ ' UNIQUE FOUND: id 23: Alice' == "$(grep 'UNIQUE FOUND: id 23' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
+[ ' UNIQUE FOUND: id 23: Alice' == "$(grep 'UNIQUE FOUND: id 23' "$TEST_OUT" | tail -n 4 | cut -d: -f6-)" ]
 
 # Find persons with the same name.
 run_test cargo run call "$IDENT" find_person_by_name Bob
 run_test cargo run logs "$IDENT" 100
-[ ' UNIQUE FOUND: id 42: Bob aka bo' == "$(grep 'UNIQUE FOUND: id 42' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
-[ ' UNIQUE FOUND: id 64: Bob aka b2' == "$(grep 'UNIQUE FOUND: id 64' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
+[ ' UNIQUE FOUND: id 42: Bob aka bo' == "$(grep 'UNIQUE FOUND: id 42' "$TEST_OUT" | tail -n 4 | cut -d: -f6-)" ]
+[ ' UNIQUE FOUND: id 64: Bob aka b2' == "$(grep 'UNIQUE FOUND: id 64' "$TEST_OUT" | tail -n 4 | cut -d: -f6-)" ]
 
 # Fail to find a person who is not there.
 run_test cargo run call "$IDENT" find_person 43
 run_test cargo run logs "$IDENT" 100
-[ ' UNIQUE NOT FOUND: id 43' == "$(grep 'UNIQUE NOT FOUND: id 43' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
+[ ' UNIQUE NOT FOUND: id 43' == "$(grep 'UNIQUE NOT FOUND: id 43' "$TEST_OUT" | tail -n 4 | cut -d: -f6-)" ]
 
 # Find a person by nickname.
 run_test cargo run call "$IDENT" find_person_by_nick al
 run_test cargo run logs "$IDENT" 100
-[ ' UNIQUE FOUND: id 23: al' == "$(grep 'UNIQUE FOUND: id 23: al' "$TEST_OUT" | tail -n4 | cut -d: -f4-)" ]
+[ ' UNIQUE FOUND: id 23: al' == "$(grep 'UNIQUE FOUND: id 23: al' "$TEST_OUT" | tail -n4 | cut -d: -f6-)" ]
 
 # Remove a person, and then fail to find them.
 run_test cargo run call "$IDENT" delete_person 23
 run_test cargo run call "$IDENT" find_person 23
 run_test cargo run logs "$IDENT" 100
-[ ' UNIQUE NOT FOUND: id 23' == "$(grep 'UNIQUE NOT FOUND: id 23' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
+[ ' UNIQUE NOT FOUND: id 23' == "$(grep 'UNIQUE NOT FOUND: id 23' "$TEST_OUT" | tail -n 4 | cut -d: -f6-)" ]
 # Also fail by nickname
 run_test cargo run call "$IDENT" find_person_by_nick al
 run_test cargo run logs "$IDENT" 100
-[ ' UNIQUE NOT FOUND: nick al' == "$(grep 'UNIQUE NOT FOUND: nick al' "$TEST_OUT" | tail -n4 | cut -d: -f4-)" ]
+[ ' UNIQUE NOT FOUND: nick al' == "$(grep 'UNIQUE NOT FOUND: nick al' "$TEST_OUT" | tail -n4 | cut -d: -f6-)" ]
 
 # Add some nonunique people.
 run_test cargo run call "$IDENT" insert_nonunique_person 23 Alice true
@@ -205,29 +205,29 @@ run_test cargo run call "$IDENT" insert_nonunique_person 42 Bob true
 # Find a nonunique person who is there.
 run_test cargo run call "$IDENT" find_nonunique_person 23
 run_test cargo run logs "$IDENT" 100
-[ ' NONUNIQUE FOUND: id 23: Alice' == "$(grep 'NONUNIQUE FOUND: id 23' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
+[ ' NONUNIQUE FOUND: id 23: Alice' == "$(grep 'NONUNIQUE FOUND: id 23' "$TEST_OUT" | tail -n 4 | cut -d: -f6-)" ]
 
 # Fail to find a nonunique person who is not there.
 run_test cargo run call "$IDENT" find_nonunique_person 43
 run_test cargo run logs "$IDENT" 100
-[ '' == "$(grep 'NONUNIQUE NOT FOUND: id 43' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
+[ '' == "$(grep 'NONUNIQUE NOT FOUND: id 43' "$TEST_OUT" | tail -n 4 | cut -d: -f6-)" ]
 
 # Insert a non-human, then find humans, then find non-humans
 run_test cargo run call "$IDENT" insert_nonunique_person 64 Jibbitty false
 run_test cargo run call "$IDENT" find_nonunique_humans
 run_test cargo run logs "$IDENT" 100
-[ ' HUMAN FOUND: id 23: Alice' == "$(grep 'HUMAN FOUND: id 23' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
-[ ' HUMAN FOUND: id 42: Bob' == "$(grep 'HUMAN FOUND: id 42' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
+[ ' HUMAN FOUND: id 23: Alice' == "$(grep 'HUMAN FOUND: id 23' "$TEST_OUT" | tail -n 4 | cut -d: -f6-)" ]
+[ ' HUMAN FOUND: id 42: Bob' == "$(grep 'HUMAN FOUND: id 42' "$TEST_OUT" | tail -n 4 | cut -d: -f6-)" ]
 run_test cargo run call "$IDENT" find_nonunique_non_humans
 run_test cargo run logs "$IDENT" 100
-[ ' NON-HUMAN FOUND: id 64: Jibbitty' == "$(grep 'NON-HUMAN FOUND: id 64' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
+[ ' NON-HUMAN FOUND: id 64: Jibbitty' == "$(grep 'NON-HUMAN FOUND: id 64' "$TEST_OUT" | tail -n 4 | cut -d: -f6-)" ]
 
 # Add another person with the same id, and find them both.
 run_test cargo run call "$IDENT" insert_nonunique_person 23 Claire true
 run_test cargo run call "$IDENT" find_nonunique_person 23
 run_test cargo run logs "$IDENT" 2
-[ ' NONUNIQUE FOUND: id 23: Alice' == "$(grep 'NONUNIQUE FOUND: id 23: Alice' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
-[ ' NONUNIQUE FOUND: id 23: Claire' == "$(grep 'NONUNIQUE FOUND: id 23: Claire' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
+[ ' NONUNIQUE FOUND: id 23: Alice' == "$(grep 'NONUNIQUE FOUND: id 23: Alice' "$TEST_OUT" | tail -n 4 | cut -d: -f6-)" ]
+[ ' NONUNIQUE FOUND: id 23: Claire' == "$(grep 'NONUNIQUE FOUND: id 23: Claire' "$TEST_OUT" | tail -n 4 | cut -d: -f6-)" ]
 
 # Check for issues with things present in index but not DB
 run_test cargo run call "$IDENT" insert_person 101 Fee fee
@@ -237,7 +237,7 @@ run_test cargo run call "$IDENT" insert_person 104 Fum fum
 run_test cargo run call "$IDENT" delete_person 103
 run_test cargo run call "$IDENT" find_person 104
 run_test cargo run logs "$IDENT" 100
-[ ' UNIQUE FOUND: id 104: Fum' == "$(grep 'UNIQUE FOUND: id 104: Fum' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
+[ ' UNIQUE FOUND: id 104: Fum' == "$(grep 'UNIQUE FOUND: id 104: Fum' "$TEST_OUT" | tail -n 4 | cut -d: -f6-)" ]
 
 # As above, but for non-unique indices: check for consistency between index and DB
 run_test cargo run call "$IDENT" insert_indexed_person 7 James Bond
@@ -259,15 +259,15 @@ run_test cargo run logs "$IDENT" 100
 # run_test cargo run call "$IDENT" insert_nonunique_person 104 Fum
 # run_test cargo run call "$IDENT" find_nonunique_person 104
 # run_test cargo run logs "$IDENT" 100
-# [ ' NONUNIQUE FOUND: id 104: Fum' == "$(grep 'NONUNIQUE FOUND: id 104: Fum' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
+# [ ' NONUNIQUE FOUND: id 104: Fum' == "$(grep 'NONUNIQUE FOUND: id 104: Fum' "$TEST_OUT" | tail -n 4 | cut -d: -f6-)" ]
 
 # Filter by Identity
 run_test cargo run call "$IDENT" insert_identified_person 23 Alice
 run_test cargo run call "$IDENT" find_identified_person 23
 run_test cargo run logs "$IDENT" 100
-[ ' IDENTIFIED FOUND: Alice' == "$(grep 'IDENTIFIED FOUND: Alice' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
+[ ' IDENTIFIED FOUND: Alice' == "$(grep 'IDENTIFIED FOUND: Alice' "$TEST_OUT" | tail -n 4 | cut -d: -f6-)" ]
 
 # Insert row with unique columns twice should fail
 run_test cargo run call "$IDENT" insert_person_twice 23 Alice al
 run_test cargo run logs "$IDENT" 100
-[ ' UNIQUE CONSTRAINT VIOLATION ERROR: id 23: Alice' == "$(grep 'UNIQUE CONSTRAINT VIOLATION ERROR: id 23: Alice' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
+[ ' UNIQUE CONSTRAINT VIOLATION ERROR: id 23: Alice' == "$(grep 'UNIQUE CONSTRAINT VIOLATION ERROR: id 23: Alice' "$TEST_OUT" | tail -n 4 | cut -d: -f6-)" ]

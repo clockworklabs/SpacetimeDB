@@ -47,10 +47,10 @@ run_test cargo run call "$IDENT" add Samantha
 run_test cargo run call "$IDENT" say_hello
 run_test cargo run logs "$IDENT" 100
 
-[ ' Hello, Samantha!' == "$(tail -n 4 "$TEST_OUT" | grep 'Samantha' | cut -d: -f4-)" ]
-[ ' Hello, Julie!'    == "$(tail -n 4 "$TEST_OUT" | grep 'Julie'    | cut -d: -f4-)" ]
-[ ' Hello, Robert!'   == "$(tail -n 4 "$TEST_OUT" | grep 'Robert'   | cut -d: -f4-)" ]
-[ ' Hello, World!'    == "$(tail -n 4 "$TEST_OUT" | grep 'World'    | cut -d: -f4-)" ]
+[ ' Hello, Samantha!' == "$(tail -n 4 "$TEST_OUT" | grep 'Samantha' | cut -d: -f6-)" ]
+[ ' Hello, Julie!'    == "$(tail -n 4 "$TEST_OUT" | grep 'Julie'    | cut -d: -f6-)" ]
+[ ' Hello, Robert!'   == "$(tail -n 4 "$TEST_OUT" | grep 'Robert'   | cut -d: -f6-)" ]
+[ ' Hello, World!'    == "$(tail -n 4 "$TEST_OUT" | grep 'World'    | cut -d: -f6-)" ]
 
 restart_docker
 run_test cargo run sql "${IDENT}" "SELECT name FROM Person WHERE id = 3"

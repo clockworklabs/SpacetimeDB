@@ -40,4 +40,4 @@ set -e
 run_test cargo run call "$IDENT" second
 
 run_test cargo run logs "$IDENT"
-[ ' Test Passed' == "$(grep 'Test Passed' "$TEST_OUT" | cut -d: -f4-)" ]
+[ ' Test Passed' == "$(grep 'Test Passed' "$TEST_OUT" | cut -d: -f6-)" ]

@@ -61,4 +61,4 @@ run_test cargo run call "$IDENT" create_account 2 Wilson
 run_test cargo run call "$IDENT" add_friend 1 2
 run_test cargo run call "$IDENT" say_friends
 run_test cargo run logs "$IDENT" 100
-[ ' House is friends with Wilson' == "$(grep 'House' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
+[ ' House is friends with Wilson' == "$(grep 'House' "$TEST_OUT" | tail -n 4 | cut -d: -f6-)" ]
