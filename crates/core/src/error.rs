@@ -13,7 +13,7 @@ use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::{PrimaryKey, ProductValue};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::def::IndexDef;
-use spacetimedb_sats::db::error::{LibError, RelationError, SchemaError};
+use spacetimedb_sats::db::error::{LibError, RelationError, SchemaErrors};
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::relation::FieldName;
@@ -146,7 +146,7 @@ pub enum DBError {
     #[error("IndexError: {0}")]
     Index(#[from] IndexError),
     #[error("SchemaError: {0}")]
-    Schema(#[from] SchemaError),
+    Schema(SchemaErrors),
     #[error("IOError: {0}.")]
     IoError(#[from] std::io::Error),
     #[error("ParseIntError: {0}.")]

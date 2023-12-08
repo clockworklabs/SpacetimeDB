@@ -323,7 +323,6 @@ mod tests {
                 ],
             )
             .with_column_constraint(Constraints::identity(), ColId(0))
-            .unwrap()
             .with_indexes(vec![IndexDef::btree(
                 "Person_id_unique".into(),
                 (ColId(0), vec![ColId(1)]),
@@ -346,7 +345,6 @@ mod tests {
             ],
         )
         .with_column_constraint(Constraints::identity(), ColId(0))
-        .unwrap()
         .with_indexes(vec![IndexDef::btree(
             "Person_id_and_name".into(),
             (ColId(0), vec![ColId(1)]),
@@ -401,8 +399,7 @@ mod tests {
                 },
             ],
         )
-        .with_column_constraint(Constraints::identity(), ColId(0))
-        .unwrap()];
+        .with_column_constraint(Constraints::identity(), ColId(0))];
 
         match schema_updates(current, proposed)? {
             SchemaUpdates::Tainted(tainted) => {

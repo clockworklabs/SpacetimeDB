@@ -164,9 +164,7 @@ pub fn st_table_schema() -> TableSchema {
     )
     .with_type(StTableType::System)
     .with_column_constraint(Constraints::primary_key_auto(), StTableFields::TableId.col_id())
-    .unwrap()
     .with_column_index(StTableFields::TableName.col_id(), true)
-    .unwrap()
     .into_schema(ST_TABLES_ID)
 }
 
@@ -190,7 +188,6 @@ pub fn st_columns_schema() -> TableSchema {
         Constraints::unique(),
         (StColumnFields::TableId.col_id(), vec![StColumnFields::ColPos.col_id()]),
     )
-    .unwrap()
     .into_schema(ST_COLUMNS_ID)
 }
 
@@ -214,7 +211,6 @@ pub fn st_indexes_schema() -> TableSchema {
     .with_type(StTableType::System)
     // TODO: Unique constraint on index name?
     .with_column_constraint(Constraints::primary_key_auto(), StIndexFields::IndexId.col_id())
-    .unwrap()
     .into_schema(ST_INDEXES_ID)
 }
 
@@ -241,7 +237,6 @@ pub(crate) fn st_sequences_schema() -> TableSchema {
     .with_type(StTableType::System)
     // TODO: Unique constraint on sequence name?
     .with_column_constraint(Constraints::primary_key_auto(), StSequenceFields::SequenceId.col_id())
-    .unwrap()
     .into_schema(ST_SEQUENCES_ID)
 }
 
@@ -269,7 +264,6 @@ pub(crate) fn st_constraints_schema() -> TableSchema {
         Constraints::primary_key_auto(),
         StConstraintFields::ConstraintId.col_id(),
     )
-    .unwrap()
     .into_schema(ST_CONSTRAINTS_ID)
 }
 

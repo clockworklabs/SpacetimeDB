@@ -52,6 +52,7 @@ use spacetimedb_lib::{metrics::METRICS, Address};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::data_key::{DataKey, ToDataKey};
 use spacetimedb_sats::db::def::*;
+use spacetimedb_sats::db::error::SchemaErrors;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::relation::RelValue;
 use spacetimedb_sats::{
@@ -993,7 +994,11 @@ impl MutTxId {
             return Err(TableError::System(table_schema.table_name.clone()).into());
         }
 
-        table_schema.clone().into_schema(0.into()).validated()?;
+        table_schema
+            .clone()
+            .into_schema(0.into())
+            .validated()
+            .map_err(|err| DBError::Schema(SchemaErrors(err)))?;
 
         Ok(())
     }
@@ -2968,12 +2973,11 @@ mod tests {
                 IndexDef {
                     columns: NonEmpty::new(1.into()),
                     index_name: "name_idx".into(),
-                    is_unique: false,
+                    is_unique: true,
                     index_type: IndexType::BTree,
                 },
             ])
             .with_column_sequence(ColId(0))
-            .unwrap()
     }
 
     #[rustfmt::skip]
@@ -2984,11 +2988,11 @@ mod tests {
             map_array(basic_table_schema_cols()),
              map_array([
                 IdxSchema { id: 6, table: 6, col: 0, name: "id_idx", unique: true },
-                IdxSchema { id: 7, table: 6, col: 1, name: "name_idx", unique: false },
+                IdxSchema { id: 7, table: 6, col: 1, name: "name_idx", unique: true },
             ]),
             map_array([
                 ConstraintRow { constraint_id: 6, table_id: 6, columns: col(0), constraints: Constraints::unique(), constraint_name: "ct_Foo_id_idx_unique" },
-                ConstraintRow { constraint_id: 7, table_id: 6, columns: col(1), constraints: Constraints::indexed(), constraint_name: "ct_Foo_name_idx_indexed" }
+                ConstraintRow { constraint_id: 7, table_id: 6, columns: col(1), constraints: Constraints::unique(), constraint_name: "ct_Foo_name_idx_unique" }
             ]),
              map_array([
                 SequenceRow { id: 4, table: 6, col_pos: 0, name: "seq_Foo_id", start: 1 }
@@ -3072,7 +3076,7 @@ mod tests {
         assert_eq!(query.scan_st_indexes()?, map_array([
             IndexRow { id: 0, table: 0, col: col(0), name: "idx_st_table_table_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 1, table: 0, col: col(1), name: "idx_st_table_table_name_unique", unique: true },
-            IndexRow { id: 2, table: 1, col: cols(0, vec![1]), name: "idx_st_columns_table_id_col_pos_unique_unique", unique: true },
+            IndexRow { id: 2, table: 1, col: cols(0, vec![1]), name: "idx_st_columns_table_id_col_pos_unique", unique: true },
             IndexRow { id: 3, table: 2, col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },
@@ -3393,7 +3397,7 @@ mod tests {
         assert_eq!(index_rows, [
             IndexRow { id: 0, table: 0, col: col(0), name: "idx_st_table_table_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 1, table: 0, col: col(1), name: "idx_st_table_table_name_unique", unique: true },
-            IndexRow { id: 2, table: 1, col: cols(0, vec![1]), name: "idx_st_columns_table_id_col_pos_unique_unique", unique: true },
+            IndexRow { id: 2, table: 1, col: cols(0, vec![1]), name: "idx_st_columns_table_id_col_pos_unique", unique: true },
             IndexRow { id: 3, table: 2, col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },
@@ -3436,7 +3440,7 @@ mod tests {
         assert_eq!(index_rows, [
             IndexRow { id: 0, table: 0, col: col(0), name: "idx_st_table_table_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 1, table: 0, col: col(1), name: "idx_st_table_table_name_unique", unique: true },
-            IndexRow { id: 2, table: 1, col: cols(0, vec![1]), name: "idx_st_columns_table_id_col_pos_unique_unique", unique: true },
+            IndexRow { id: 2, table: 1, col: cols(0, vec![1]), name: "idx_st_columns_table_id_col_pos_unique", unique: true },
             IndexRow { id: 3, table: 2, col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },
@@ -3479,7 +3483,7 @@ mod tests {
         assert_eq!(index_rows, [
             IndexRow { id: 0, table: 0, col: col(0), name: "idx_st_table_table_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 1, table: 0, col: col(1), name: "idx_st_table_table_name_unique", unique: true },
-            IndexRow { id: 2, table: 1, col: cols(0, vec![1]), name: "idx_st_columns_table_id_col_pos_unique_unique", unique: true },
+            IndexRow { id: 2, table: 1, col: cols(0, vec![1]), name: "idx_st_columns_table_id_col_pos_unique", unique: true },
             IndexRow { id: 3, table: 2, col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },

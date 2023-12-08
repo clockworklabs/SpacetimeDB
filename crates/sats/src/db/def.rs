@@ -99,7 +99,10 @@ impl SequenceDef {
     /// let sequence_def = SequenceDef::for_column("my_table", "my_sequence", 1.into());
     /// assert_eq!(sequence_def.sequence_name, "seq_my_table_my_sequence");
     /// ```
-    pub fn for_column(table: &str, seq_name: &str, col_pos: ColId) -> Self {
+    pub fn for_column(table: &str, column_or_name: &str, col_pos: ColId) -> Self {
+        //removes the auto-generated suffix...
+        let seq_name = column_or_name.trim_start_matches(&format!("ct_{}_", table));
+
         SequenceDef {
             sequence_name: format!("seq_{}_{}", table, seq_name),
             col_pos,
@@ -218,14 +221,19 @@ impl IndexDef {
     /// let index_def = IndexDef::for_column("my_table", "test", NonEmpty::new(1u32.into()), true);
     /// assert_eq!(index_def.index_name, "idx_my_table_test_unique");
     /// ```
-    pub fn for_column(table: &str, index_name: &str, columns: impl Into<NonEmpty<ColId>>, is_unique: bool) -> Self {
+    pub fn for_column(table: &str, index_or_name: &str, columns: impl Into<NonEmpty<ColId>>, is_unique: bool) -> Self {
         let unique = if is_unique { "unique" } else { "non_unique" };
 
         // Removes the auto-generated suffix from the index name.
-        let name = index_name.trim_start_matches(&format!("ct_{}_", table));
+        let name = index_or_name.trim_start_matches(&format!("ct_{}_", table));
 
         // Constructs the index name using a predefined format.
-        Self::btree(format!("idx_{table}_{name}_{unique}"), columns, is_unique)
+        // No duplicate the `kind_name` that was added by an constraint
+        if name.ends_with(&unique) {
+            Self::btree(format!("idx_{table}_{name}"), columns, is_unique)
+        } else {
+            Self::btree(format!("idx_{table}_{name}_{unique}"), columns, is_unique)
+        }
     }
 }
 
@@ -433,16 +441,19 @@ impl ConstraintDef {
     /// ```
     pub fn for_column(
         table: &str,
-        column_name: &str,
+        column_or_name: &str,
         constraints: Constraints,
         columns: impl Into<NonEmpty<ColId>>,
     ) -> Self {
+        //removes the auto-generated suffix...
+        let name = column_or_name.trim_start_matches(&format!("idx_{}_", table));
+
         let kind_name = format!("{:?}", constraints.kind()).to_lowercase();
         // No duplicate the `kind_name` that was added by an index
-        if column_name.ends_with(&kind_name) {
-            Self::new(format!("ct_{table}_{column_name}"), constraints, columns)
+        if name.ends_with(&kind_name) {
+            Self::new(format!("ct_{table}_{name}"), constraints, columns)
         } else {
-            Self::new(format!("ct_{table}_{column_name}_{kind_name}"), constraints, columns)
+            Self::new(format!("ct_{table}_{name}_{kind_name}"), constraints, columns)
         }
     }
 }
@@ -582,6 +593,10 @@ impl TableSchema {
             FieldOnly::Name(x) => self.get_column_by_name(x),
             FieldOnly::Pos(x) => self.get_column(x),
         }
+    }
+
+    pub fn get_columns(&self, columns: &NonEmpty<ColId>) -> Vec<(ColId, Option<&ColumnSchema>)> {
+        columns.iter().map(|col| (*col, self.columns.get(col.idx()))).collect()
     }
 
     /// Get a reference to a column by its position (`pos`) in the table.
@@ -732,55 +747,155 @@ impl TableSchema {
 
     /// Verify the definitions of this schema are valid:
     /// - Check all names are not empty
+    /// - All columns exists
     /// - Only 1 PK
     /// - Only 1 sequence per column
     /// - Only Btree Indexes
-    pub fn validated(self) -> Result<Self, SchemaError> {
-        let total_pk = self
+    pub fn validated(self) -> Result<Self, Vec<SchemaError>> {
+        let mut errors = Vec::new();
+
+        let pks: Vec<_> = self
             .column_constraints_iter()
-            .filter(|(_, ct)| ct.has_primary_key())
-            .count();
-        if total_pk > 1 {
-            return Err(SchemaError::MultiplePrimaryKeys(self.table_name.clone()));
+            .filter_map(|(cols, ct)| {
+                if ct.has_primary_key() {
+                    Some(
+                        self.get_columns(&cols)
+                            .iter()
+                            .map(|(col, schema)| {
+                                if let Some(col) = schema {
+                                    col.col_name.clone()
+                                } else {
+                                    format!("col_{col}")
+                                }
+                            })
+                            .collect(),
+                    )
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if pks.len() > 1 {
+            errors.push(SchemaError::MultiplePrimaryKeys {
+                table: self.table_name.clone(),
+                pks,
+            });
         }
 
         if self.table_name.is_empty() {
-            return Err(SchemaError::EmptyTableName {
-                table_id: self.table_id.0,
+            errors.push(SchemaError::EmptyTableName {
+                table_id: self.table_id,
             });
         }
 
-        if let Some(empty) = self.columns.iter().find(|x| x.col_name.is_empty()) {
-            return Err(SchemaError::EmptyName {
-                table: self.table_name.clone(),
-                ty: DefType::Column,
-                id: empty.col_pos.0,
-            });
-        }
+        let columns_not_found = self
+            .sequences
+            .iter()
+            .map(|x| (DefType::Sequence, x.sequence_name.clone(), NonEmpty::new(x.col_pos)))
+            .chain(
+                self.indexes
+                    .iter()
+                    .map(|x| (DefType::Index, x.index_name.clone(), x.columns.clone())),
+            )
+            .chain(
+                self.constraints
+                    .iter()
+                    .map(|x| (DefType::Constraint, x.constraint_name.clone(), x.columns.clone())),
+            )
+            .filter_map(|(ty, name, cols)| {
+                let empty: Vec<_> = self
+                    .get_columns(&cols)
+                    .iter()
+                    .filter_map(|(col, x)| if x.is_none() { Some(*col) } else { None })
+                    .collect();
 
-        if let Some(empty) = self.indexes.iter().find(|x| x.index_name.is_empty()) {
-            return Err(SchemaError::EmptyName {
-                table: self.table_name.clone(),
-                ty: DefType::Index,
-                id: empty.index_id.0,
+                if empty.is_empty() {
+                    None
+                } else {
+                    Some(SchemaError::ColumnsNotFound {
+                        name,
+                        table: self.table_name.clone(),
+                        columns: empty,
+                        ty,
+                    })
+                }
             });
-        }
 
-        if let Some(empty) = self.constraints.iter().find(|x| x.constraint_name.is_empty()) {
-            return Err(SchemaError::EmptyName {
-                table: self.table_name.clone(),
-                ty: DefType::Constraint,
-                id: empty.constraint_id.0,
-            });
-        }
+        errors.extend(columns_not_found);
 
-        if let Some(empty) = self.sequences.iter().find(|x| x.sequence_name.is_empty()) {
-            return Err(SchemaError::EmptyName {
-                table: self.table_name.clone(),
-                ty: DefType::Sequence,
-                id: empty.sequence_id.0,
-            });
-        }
+        errors.extend(self.columns.iter().filter_map(|x| {
+            if x.col_name.is_empty() {
+                Some(SchemaError::EmptyName {
+                    table: self.table_name.clone(),
+                    ty: DefType::Column,
+                    id: x.col_pos.0,
+                })
+            } else {
+                None
+            }
+        }));
+
+        errors.extend(self.indexes.iter().filter_map(|x| {
+            if x.index_name.is_empty() || x.index_name.contains("__") {
+                Some(SchemaError::EmptyName {
+                    table: self.table_name.clone(),
+                    ty: DefType::Index,
+                    id: x.index_id.0,
+                })
+            } else {
+                None
+            }
+        }));
+
+        //Verify not exist  'Constraints::unset()` they are equivalent to 'None'
+        errors.extend(self.constraints.iter().filter_map(|x| {
+            if x.constraints.kind() == ConstraintKind::UNSET {
+                Some(SchemaError::ConstraintUnset {
+                    table: self.table_name.clone(),
+                    name: x.constraint_name.clone(),
+                    columns: x.columns.clone(),
+                })
+            } else {
+                None
+            }
+        }));
+
+        errors.extend(self.constraints.iter().filter_map(|x| {
+            if x.constraint_name.is_empty() || x.constraint_name.contains("__") {
+                Some(SchemaError::EmptyName {
+                    table: self.table_name.clone(),
+                    ty: DefType::Constraint,
+                    id: x.constraint_id.0,
+                })
+            } else {
+                None
+            }
+        }));
+
+        errors.extend(self.sequences.iter().filter_map(|x| {
+            if x.sequence_name.is_empty() || x.sequence_name.contains("__") {
+                Some(SchemaError::EmptyName {
+                    table: self.table_name.clone(),
+                    ty: DefType::Sequence,
+                    id: x.sequence_id.0,
+                })
+            } else {
+                None
+            }
+        }));
+
+        // We only support BTree indexes
+        errors.extend(self.indexes.iter().filter_map(|x| {
+            if x.index_type != IndexType::BTree {
+                Some(SchemaError::OnlyBtree {
+                    table: self.table_name.clone(),
+                    index: x.index_name.clone(),
+                    index_type: x.index_type,
+                })
+            } else {
+                None
+            }
+        }));
 
         // Verify we don't have more than 1 auto_inc for the same column
         if let Some(err) = self
@@ -800,19 +915,14 @@ impl TableSchema {
                 }
             })
         {
-            return Err(err);
+            errors.push(err);
         }
 
-        // We only support BTree indexes
-        if let Some(idx) = self.indexes.iter().find(|x| x.index_type != IndexType::BTree) {
-            return Err(SchemaError::OnlyBtree {
-                table: self.table_name.clone(),
-                index: idx.index_name.clone(),
-                index_type: idx.index_type,
-            });
+        if errors.is_empty() {
+            Ok(self)
+        } else {
+            Err(errors)
         }
-
-        Ok(self)
     }
 }
 
@@ -914,35 +1024,32 @@ impl TableDef {
         x
     }
 
-    fn generate_cols_name(&self, columns: &NonEmpty<ColId>) -> Result<String, SchemaError> {
+    /// Concatenate the column names from the `columns`
+    ///
+    /// WARNING: If the `ColId` not exist, is skipped. [TableSchema::validated] will find the error
+    fn generate_cols_name(&self, columns: &NonEmpty<ColId>) -> String {
         let mut column_name = Vec::with_capacity(columns.len());
         for col_pos in columns {
             if let Some(col) = self.get_column(col_pos.idx()) {
                 column_name.push(col.col_name.as_str())
-            } else {
-                todo!("with_column_constraint")
             }
         }
 
-        Ok(column_name.join("_"))
+        column_name.join("_")
     }
 
     /// Generate a [ConstraintDef] using the supplied `columns`.
-    pub fn with_column_constraint(
-        self,
-        kind: Constraints,
-        columns: impl Into<NonEmpty<ColId>>,
-    ) -> Result<Self, SchemaError> {
+    pub fn with_column_constraint(self, kind: Constraints, columns: impl Into<NonEmpty<ColId>>) -> Self {
         let mut x = self;
         let columns = columns.into();
 
         x.constraints.push(ConstraintDef::for_column(
             &x.table_name,
-            &x.generate_cols_name(&columns)?,
+            &x.generate_cols_name(&columns),
             kind,
             columns,
         ));
-        Ok(x)
+        x
     }
 
     /// Set the indexes for the table and return a new `TableDef` instance with the updated indexes.
@@ -953,16 +1060,16 @@ impl TableDef {
     }
 
     /// Generate a [IndexDef] using the supplied `columns`.
-    pub fn with_column_index(self, columns: impl Into<NonEmpty<ColId>>, is_unique: bool) -> Result<Self, SchemaError> {
+    pub fn with_column_index(self, columns: impl Into<NonEmpty<ColId>>, is_unique: bool) -> Self {
         let mut x = self;
         let columns = columns.into();
         x.indexes.push(IndexDef::for_column(
             &x.table_name,
-            &x.generate_cols_name(&columns)?,
+            &x.generate_cols_name(&columns),
             columns,
             is_unique,
         ));
-        Ok(x)
+        x
     }
 
     /// Set the sequences for the table and return a new `TableDef` instance with the updated sequences.
@@ -973,25 +1080,15 @@ impl TableDef {
     }
 
     /// Generate a [SequenceDef] using the supplied `columns`.
-    pub fn with_column_sequence(self, columns: impl Into<NonEmpty<ColId>>) -> Result<Self, SchemaError> {
+    pub fn with_column_sequence(self, columns: ColId) -> Self {
         let mut x = self;
-        let columns = columns.into();
-        let col_pos = match columns.split_first() {
-            (col_pos, &[]) => *col_pos,
-            _ => {
-                return Err(SchemaError::OneAutoInc {
-                    table: x.table_name,
-                    field: x.columns[columns.head.idx()].col_name.clone(),
-                })
-            }
-        };
 
         x.sequences.push(SequenceDef::for_column(
             &x.table_name,
-            &x.generate_cols_name(&columns)?,
-            col_pos,
+            &x.generate_cols_name(&NonEmpty::new(columns)),
+            columns,
         ));
-        Ok(x)
+        x
     }
 
     /// Create a `TableDef` from a product type and table name.
@@ -1012,6 +1109,8 @@ impl TableDef {
     }
 
     /// Get an iterator deriving [IndexDef] from the constraints that require them like `UNIQUE`.
+    ///
+    /// It looks into [Self::constraints] for possible duplicates and remove them from the result
     pub fn generated_indexes(&self) -> impl Iterator<Item = IndexDef> + '_ {
         self.constraints.iter().filter_map(|x| {
             if x.constraints.has_indexed() {
@@ -1032,15 +1131,14 @@ impl TableDef {
     }
 
     /// Get an iterator deriving [SequenceDef] from the constraints that require them like `IDENTITY`.
+    ///
+    /// It looks into [Self::constraints] for possible duplicates and remove them from the result
     pub fn generated_sequences(&self) -> impl Iterator<Item = SequenceDef> + '_ {
         self.constraints.iter().filter_map(|x| {
             if x.constraints.has_autoinc() {
                 let col_id = x.columns.head;
-                //removes the auto-generated suffix...
-                let name = x
-                    .constraint_name
-                    .trim_start_matches(&format!("ct_{}_", self.table_name));
-                let seq = SequenceDef::for_column(&self.table_name, name, col_id);
+
+                let seq = SequenceDef::for_column(&self.table_name, &x.constraint_name, col_id);
                 if self
                     .sequences
                     .binary_search_by(|x| x.sequence_name.cmp(&seq.sequence_name))
@@ -1055,6 +1153,9 @@ impl TableDef {
         })
     }
 
+    /// Get an iterator deriving [ConstraintDef] from the indexes that require them like `UNIQUE`.
+    ///
+    /// It looks into [Self::constraints] for possible duplicates and remove them from the result
     pub fn generated_constraints(&self) -> impl Iterator<Item = ConstraintDef> + '_ {
         let cols: HashSet<_> = self
             .constraints
@@ -1070,11 +1171,9 @@ impl TableDef {
 
         self.indexes.iter().filter_map(move |idx| {
             if !cols.contains(&idx.columns) {
-                //removes the auto-generated suffix...
-                let name = idx.index_name.trim_start_matches(&format!("idx_{}_", self.table_name));
                 Some(ConstraintDef::for_column(
                     &self.table_name,
-                    name,
+                    &idx.index_name,
                     if idx.is_unique {
                         Constraints::unique()
                     } else {
@@ -1126,5 +1225,326 @@ impl From<TableSchema> for TableDef {
             table_type: value.table_type,
             table_access: value.table_access,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn table_def() -> TableDef {
+        TableDef::new(
+            "test".into(),
+            vec![
+                ColumnDef::sys("id", AlgebraicType::U64),
+                ColumnDef::sys("name", AlgebraicType::String),
+                ColumnDef::sys("age", AlgebraicType::I16),
+                ColumnDef::sys("x", AlgebraicType::F32),
+                ColumnDef::sys("y", AlgebraicType::F64),
+            ],
+        )
+    }
+
+    // Verify we generate indexes from constraints
+    #[test]
+    fn test_idx_generated() {
+        let t = table_def()
+            .with_column_constraint(Constraints::unique(), ColId(0))
+            .with_column_constraint(Constraints::unique(), (ColId(0), vec![ColId(1)]))
+            .with_column_constraint(Constraints::indexed(), ColId(1))
+            .with_column_constraint(Constraints::primary_key(), ColId(2))
+            //This will be ignored
+            .with_column_constraint(Constraints::unset(), ColId(3));
+
+        let mut s = t.into_schema(TableId(0)).validated().unwrap();
+        s.indexes.sort_by_key(|x| x.columns.clone());
+
+        #[rustfmt::skip]
+        assert_eq!(
+            s.indexes,
+            vec![
+                IndexSchema::from_def(TableId(0), IndexDef::btree("idx_test_id_unique".into(), ColId(0), true)),
+                IndexSchema::from_def(TableId(0), IndexDef::btree("idx_test_id_name_unique".into(), (ColId(0), vec![ColId(1)]), true)),
+                IndexSchema::from_def(TableId(0), IndexDef::btree("idx_test_name_indexed_non_unique".into(), ColId(1), false)),
+                IndexSchema::from_def(TableId(0), IndexDef::btree("idx_test_age_primary_key_unique".into(), ColId(2), true)),
+            ]
+        );
+    }
+
+    // Verify we generate sequences from constraints
+    #[test]
+    fn test_seq_generated() {
+        let t = table_def()
+            .with_column_constraint(Constraints::identity(), ColId(0))
+            .with_column_constraint(Constraints::primary_key_identity(), ColId(1));
+
+        let mut s = t.into_schema(TableId(0)).validated().unwrap();
+        s.sequences.sort_by_key(|x| x.col_pos);
+
+        #[rustfmt::skip]
+        assert_eq!(
+            s.sequences,
+            vec![
+                SequenceSchema::from_def(
+                    TableId(0),
+                    SequenceDef::for_column("test", "id_identity", ColId(0))
+                ),
+                SequenceSchema::from_def(
+                    TableId(0),
+                    SequenceDef::for_column("test", "name_primary_key_auto", ColId(1))
+                ),
+            ]
+        );
+    }
+
+    // Verify we generate constraints from indexes
+    #[test]
+    fn test_ct_generated() {
+        let t = table_def()
+            .with_column_index(ColId(0), true)
+            .with_column_index(ColId(1), false)
+            .with_column_index((ColId(0), vec![ColId(1)]), true);
+
+        let mut s = t.into_schema(TableId(0)).validated().unwrap();
+        s.constraints.sort_by_key(|x| x.columns.clone());
+
+        #[rustfmt::skip]
+        assert_eq!(
+            s.constraints,
+            vec![
+                ConstraintSchema::from_def(
+                    TableId(0),
+                    ConstraintDef::new("ct_test_id_unique".into(), Constraints::unique(), ColId(0))
+                ),
+                ConstraintSchema::from_def(
+                    TableId(0),
+                    ConstraintDef::new("ct_test_id_name_unique".into(), Constraints::unique(), (ColId(0), vec![ColId(1)]))
+                ),
+                ConstraintSchema::from_def(
+                    TableId(0),
+                    ConstraintDef::new("ct_test_name_non_unique_indexed".into(), Constraints::indexed(), ColId(1))
+                ),
+            ]
+        );
+    }
+
+    // Verify that if we add a Constraint + Index for the same column, we get at the end the correct definitions
+    #[test]
+    fn test_idx_ct_clash() {
+        // The `Constraint::unset()` should be removed
+        let t = table_def().with_column_index(ColId(0), true).with_constraints(
+            table_def()
+                .columns
+                .iter()
+                .enumerate()
+                .map(|(pos, x)| ConstraintDef::for_column("test", &x.col_name, Constraints::unset(), ColId(pos as u32)))
+                .collect(),
+        );
+
+        let s = t.into_schema(TableId(0)).validated();
+        assert!(s.is_ok());
+
+        let s = s.unwrap();
+
+        assert_eq!(
+            s.indexes,
+            vec![IndexSchema::from_def(
+                TableId(0),
+                IndexDef::btree("idx_test_id_unique".into(), ColId(0), true)
+            )]
+        );
+        assert_eq!(
+            s.constraints,
+            vec![ConstraintSchema::from_def(
+                TableId(0),
+                ConstraintDef::new("ct_test_id_unique".into(), Constraints::unique(), ColId(0))
+            )]
+        );
+
+        // We got a duplication, both means 'UNIQUE'
+        let t = table_def()
+            .with_column_index(ColId(0), true)
+            .with_column_constraint(Constraints::unique(), ColId(0));
+
+        let s = t.into_schema(TableId(0)).validated();
+        assert!(s.is_ok());
+
+        let s = s.unwrap();
+
+        assert_eq!(
+            s.indexes,
+            vec![IndexSchema::from_def(
+                TableId(0),
+                IndexDef::btree("idx_test_id_unique".into(), ColId(0), true)
+            )]
+        );
+        assert_eq!(
+            s.constraints,
+            vec![ConstraintSchema::from_def(
+                TableId(0),
+                ConstraintDef::new("ct_test_id_unique".into(), Constraints::unique(), ColId(0))
+            )]
+        );
+    }
+
+    // Not empty names
+    #[test]
+    fn test_validate_empty() {
+        let t = table_def();
+
+        fn empty(table: TableDef, ty: &[DefType], id: u32) {
+            assert_eq!(
+                table.into_schema(TableId(0)).validated(),
+                Err(ty
+                    .iter()
+                    .copied()
+                    .map(|ty| SchemaError::EmptyName {
+                        table: "test".to_string(),
+                        ty,
+                        id
+                    })
+                    .collect())
+            )
+        }
+        // Empty names
+        let mut t_name = t.clone();
+        t_name.table_name.clear();
+        assert_eq!(
+            t_name.into_schema(TableId(0)).validated(),
+            Err(vec![SchemaError::EmptyTableName { table_id: TableId(0) }])
+        );
+
+        let mut t_col = t.clone();
+        t_col.columns.push(ColumnDef::sys("", AlgebraicType::U64));
+        empty(t_col, &[DefType::Column], 5);
+
+        let mut t_ct = t.clone();
+        t_ct.constraints
+            .push(ConstraintDef::new("".into(), Constraints::primary_key(), ColId(0)));
+        empty(t_ct, &[DefType::Index, DefType::Constraint], 0);
+
+        let mut t_idx = t.clone();
+        t_idx.indexes.push(IndexDef::for_column("", "", ColId(0), false));
+        empty(t_idx, &[DefType::Index, DefType::Constraint], 0);
+
+        let mut t_seq = t.clone();
+        t_seq.sequences.push(SequenceDef::for_column("", "", ColId(0)));
+        empty(t_seq, &[DefType::Sequence], 0);
+    }
+
+    // Verify only one PK
+    #[test]
+    fn test_pkey() {
+        let t = table_def()
+            .with_column_constraint(Constraints::primary_key(), ColId(0))
+            .with_column_constraint(Constraints::primary_key_auto(), ColId(1))
+            .with_column_constraint(Constraints::primary_key_identity(), ColId(2));
+
+        assert_eq!(
+            t.into_schema(TableId(0)).validated(),
+            Err(vec![SchemaError::MultiplePrimaryKeys {
+                table: "test".into(),
+                pks: vec!["id".into(), "name".into(), "age".into()],
+            }])
+        );
+    }
+
+    // All columns must exist
+    #[test]
+    fn test_column_exist() {
+        let t = table_def()
+            .with_column_sequence(ColId(1001))
+            .with_column_constraint(Constraints::unique(), ColId(1002))
+            .with_column_index(ColId(1003), false)
+            .with_column_sequence(ColId(1004));
+
+        let mut errs = t.into_schema(TableId(0)).validated().err().unwrap();
+        errs.retain(|x| matches!(x, SchemaError::ColumnsNotFound { .. }));
+
+        errs.sort_by_key(|x| {
+            if let SchemaError::ColumnsNotFound { columns, name, .. } = x {
+                (columns.clone(), name.clone())
+            } else {
+                (Vec::new(), "".into())
+            }
+        });
+
+        assert_eq!(
+            errs,
+            vec![
+                SchemaError::ColumnsNotFound {
+                    name: "seq_test_".to_string(),
+                    table: "test".into(),
+                    columns: vec![ColId(1001)],
+                    ty: DefType::Sequence,
+                },
+                SchemaError::ColumnsNotFound {
+                    name: "ct_test__unique".to_string(),
+                    table: "test".into(),
+                    columns: vec![ColId(1002)],
+                    ty: DefType::Constraint,
+                },
+                SchemaError::ColumnsNotFound {
+                    name: "idx_test__unique".to_string(),
+                    table: "test".into(),
+                    columns: vec![ColId(1002)],
+                    ty: DefType::Index,
+                },
+                SchemaError::ColumnsNotFound {
+                    name: "ct_test__non_unique_indexed".to_string(),
+                    table: "test".into(),
+                    columns: vec![ColId(1003)],
+                    ty: DefType::Constraint,
+                },
+                SchemaError::ColumnsNotFound {
+                    name: "idx_test__non_unique".to_string(),
+                    table: "test".into(),
+                    columns: vec![ColId(1003)],
+                    ty: DefType::Index,
+                },
+                SchemaError::ColumnsNotFound {
+                    name: "seq_test_".to_string(),
+                    table: "test".into(),
+                    columns: vec![ColId(1004)],
+                    ty: DefType::Sequence,
+                },
+            ]
+        );
+    }
+
+    // Only one auto_inc
+    #[test]
+    fn test_validate_auto_inc() {
+        let t = table_def()
+            .with_column_sequence(ColId(0))
+            .with_column_sequence(ColId(0));
+
+        assert_eq!(
+            t.into_schema(TableId(0)).validated(),
+            Err(vec![SchemaError::OneAutoInc {
+                table: "test".into(),
+                field: "id".into(),
+            }])
+        );
+    }
+
+    // Only BTree indexes
+    #[test]
+    fn test_validate_btree() {
+        let t = table_def().with_indexes(vec![IndexDef {
+            index_name: "bad".to_string(),
+            is_unique: false,
+            index_type: IndexType::Hash,
+            columns: NonEmpty::new(0.into()),
+        }]);
+
+        assert_eq!(
+            t.into_schema(TableId(0)).validated(),
+            Err(vec![SchemaError::OnlyBtree {
+                table: "test".into(),
+                index: "bad".to_string(),
+                index_type: IndexType::Hash,
+            }])
+        );
     }
 }
