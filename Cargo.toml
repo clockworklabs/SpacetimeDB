@@ -187,7 +187,7 @@ wasmtime = { version = "15", default-features = false, features = ["cranelift", 
 # We use the "ondemand" feature to allow connecting after the start,
 # and reconnecting, from the tracy client to the database.
 # TODO(George): Need to be able to remove "broadcast" in some build configurations.
-tracing-tracy = { version = "0.10.3", features = [
+tracing-tracy = { version = "0.10.4", features = [
   "enable",
   "system-tracing",
   "context-switch-tracing",
