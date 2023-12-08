@@ -467,15 +467,56 @@ impl From<ConstraintSchema> for ConstraintDef {
 pub struct TableSchema {
     pub table_id: TableId,
     pub table_name: String,
-    pub columns: Vec<ColumnSchema>,
+    columns: Vec<ColumnSchema>,
     pub indexes: Vec<IndexSchema>,
     pub constraints: Vec<ConstraintSchema>,
     pub sequences: Vec<SequenceSchema>,
     pub table_type: StTableType,
     pub table_access: StAccess,
+    /// Cache for `row_type_for_table` in the data store.
+    pub row_type: ProductType,
 }
 
 impl TableSchema {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        table_id: TableId,
+        table_name: String,
+        columns: Vec<ColumnSchema>,
+        indexes: Vec<IndexSchema>,
+        constraints: Vec<ConstraintSchema>,
+        sequences: Vec<SequenceSchema>,
+        table_type: StTableType,
+        table_access: StAccess,
+    ) -> Self {
+        let row_type = ProductType::new(
+            columns
+                .iter()
+                .map(|c| ProductTypeElement {
+                    name: Some(c.col_name.clone()),
+                    algebraic_type: c.col_type.clone(),
+                })
+                .collect(),
+        );
+
+        Self {
+            table_id,
+            table_name,
+            columns,
+            indexes,
+            constraints,
+            sequences,
+            table_type,
+            table_access,
+            row_type,
+        }
+    }
+
+    /// IMPORTANT: Ban changes from outside so [Self::row_type] won't get invalidated.
+    pub fn columns(&self) -> &[ColumnSchema] {
+        &self.columns
+    }
+
     /// Clear all the [Self::indexes], [Self::sequences] & [Self::constraints]
     pub fn clear_adjacent_schemas(&mut self) {
         self.indexes.clear();
@@ -593,16 +634,14 @@ impl TableSchema {
         self.project(indexes.into_iter())
     }
 
-    pub fn get_row_type(&self) -> ProductType {
-        ProductType::new(
-            self.columns
-                .iter()
-                .map(|c| ProductTypeElement {
-                    name: Some(c.col_name.clone()),
-                    algebraic_type: c.col_type.clone(),
-                })
-                .collect(),
-        )
+    /// IMPORTANT: Is required to have this cached to avoid a perf drop on datastore operations
+    pub fn get_row_type(&self) -> &ProductType {
+        &self.row_type
+    }
+
+    /// Utility to avoid cloning in `row_type_for_table`
+    pub fn into_row_type(self) -> ProductType {
+        self.row_type
     }
 
     pub fn get_constraints(&self) -> Vec<(NonEmpty<ColId>, Constraints)> {
@@ -624,39 +663,39 @@ impl TableSchema {
         let constraints = schema.generated_constraints().collect::<Vec<_>>();
         //Sort by columns so is likely to get PK first then the rest and maintain the order for
         //testing.
-        TableSchema {
+        TableSchema::new(
             table_id,
-            table_name: schema.table_name.trim().to_string(),
-            columns: schema
+            schema.table_name.trim().to_string(),
+            schema
                 .columns
                 .into_iter()
                 .enumerate()
                 .map(|(col_pos, x)| ColumnSchema::from_def(table_id, col_pos.into(), x))
                 .collect(),
-            indexes: schema
+            schema
                 .indexes
                 .into_iter()
                 .chain(indexes)
                 .sorted_by_key(|x| x.columns.clone())
                 .map(|x| IndexSchema::from_def(table_id, x))
                 .collect(),
-            constraints: schema
+            schema
                 .constraints
                 .into_iter()
                 .chain(constraints)
                 .sorted_by_key(|x| x.columns.clone())
                 .map(|x| ConstraintSchema::from_def(table_id, x))
                 .collect(),
-            sequences: schema
+            schema
                 .sequences
                 .into_iter()
                 .chain(sequences)
                 .sorted_by_key(|x| x.col_pos)
                 .map(|x| SequenceSchema::from_def(table_id, x))
                 .collect(),
-            table_type: schema.table_type,
-            table_access: schema.table_access,
-        }
+            schema.table_type,
+            schema.table_access,
+        )
     }
 
     pub fn column_constraints_iter(&self) -> impl Iterator<Item = (NonEmpty<ColId>, &Constraints)> {

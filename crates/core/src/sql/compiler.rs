@@ -115,7 +115,7 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
             },
             Column::QualifiedWildcard { table: name } => {
                 if let Some(t) = table.iter_tables().find(|x| x.table_name == name) {
-                    for c in t.columns.iter() {
+                    for c in t.columns().iter() {
                         col_ids.push(FieldName::named(&t.table_name, &c.col_name).into());
                     }
                     qualified_wildcards.push(t.table_id);
