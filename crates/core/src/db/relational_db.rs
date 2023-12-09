@@ -395,7 +395,7 @@ impl RelationalDB {
 
     #[tracing::instrument(skip_all)]
     pub fn table_id_from_name(&self, tx: &MutTxId, table_name: &str) -> Result<Option<TableId>, DBError> {
-        self.inner.table_id_from_name_mut_tx(tx, table_name)
+        self.inner.table_id_from_name(tx, table_name)
     }
 
     #[tracing::instrument(skip_all)]
@@ -593,7 +593,8 @@ impl RelationalDB {
     /// A `None` result indicates that the database is not fully initialized
     /// yet.
     pub fn program_hash(&self, tx: &MutTxId) -> Result<Option<Hash>, DBError> {
-        self.inner.program_hash(tx)
+        //self.inner.program_hash(tx)
+        unimplemented!()
     }
 
     /// Update the [`Hash`] of the program (SpacetimeDB module) currently

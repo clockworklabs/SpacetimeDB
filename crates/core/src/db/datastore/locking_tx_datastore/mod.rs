@@ -4,7 +4,10 @@ mod table;
 
 use itertools::Itertools;
 use nonempty::NonEmpty;
-use parking_lot::{lock_api::ArcMutexGuard, Mutex, RawMutex};
+use parking_lot::{
+    lock_api::{ArcMutexGuard, ArcRwLockReadGuard},
+    Mutex, RawMutex,
+};
 
 use self::{
     btree_index::{BTreeIndex, BTreeIndexRangeIter},
@@ -28,7 +31,7 @@ use super::{
         system_tables, StColumnRow, StIndexRow, StSequenceRow, StTableRow, SystemTable, ST_COLUMNS_ID, ST_INDEXES_ID,
         ST_SEQUENCES_ID, ST_TABLES_ID,
     },
-    traits::{self, DataRow, MutTx, MutTxDatastore, TxData, TxDatastore},
+    traits::{self, DataRow, MutTx, MutTxDatastore, ReadTx, TxData, TxDatastore},
 };
 use crate::db::datastore::system_tables;
 use crate::db::datastore::system_tables::{
@@ -114,24 +117,6 @@ impl<'a> DataRef<'a> {
     pub fn to_rel_value(self) -> RelValue {
         RelValue::new(self.data.clone(), Some(*self.id))
     }
-}
-
-// Type aliases for lock gaurds
-type SharedWriteGuard<T> = ArcRwLockWriteGuard<RawRwLock, T>;
-type SharedMutexGuard<T> = ArcMutexGuard<RawMutex, T>;
-
-/// Represents a Mutable transaction. Holds locks for its duration
-///
-/// The initialization of this struct is sensitive because improper
-/// handling can lead to deadlocks. Therefore, it is strongly recommended to use
-/// `Locking::begin_mut_tx()` for instantiation to ensure safe acquisition of locks.
-pub struct MutTxId {
-    tx_state: TxState,
-    committed_state_write_lock: SharedWriteGuard<CommittedState>,
-    sequence_state_lock: SharedMutexGuard<SequencesState>,
-    memory_lock: SharedMutexGuard<BTreeMap<DataKey, Arc<Vec<u8>>>>,
-    lock_wait_time: Duration,
-    timer: Instant,
 }
 
 struct CommittedState {
@@ -227,17 +212,17 @@ impl CommittedState {
         table_id: &'a TableId,
         table_id_col: &'a NonEmpty<ColId>,
         value: &'a AlgebraicValue,
-    ) -> Result<CommittedStateIter<'a>, TableError> {
+    ) -> Result<IterByColEq<'a>, DBError> {
         let table = self
             .tables
             .get(table_id)
             .ok_or(TableError::IdNotFoundState(*table_id))?;
 
-        Ok(CommittedStateIter {
+        Ok(IterByColEq::CommittedScan(CommittedStateIter {
             iter: table.rows.iter(),
             table_id_col,
             value,
-        })
+        }))
     }
 
     fn bootstrap_system_tables(&mut self, database_address: Address) -> Result<(), DBError> {
@@ -721,6 +706,65 @@ impl SequencesState {
     pub fn get_sequence_mut(&mut self, seq_id: SequenceId) -> Option<&mut Sequence> {
         self.sequences.get_mut(&seq_id)
     }
+}
+
+// Type aliases for lock gaurds
+type SharedReadGuard<T> = ArcRwLockReadGuard<RawRwLock, T>;
+type SharedWriteGuard<T> = ArcRwLockWriteGuard<RawRwLock, T>;
+type SharedMutexGuard<T> = ArcMutexGuard<RawMutex, T>;
+
+pub struct TxId {
+    committed_state_shared_lock: SharedReadGuard<CommittedState>,
+    lock_wait_time: Duration,
+    timer: Instant,
+}
+
+impl ReadTx for TxId {
+    fn release_tx(self) {}
+
+    fn table_id_from_name(&self, table_name: &str, database_address: Address) -> super::Result<Option<TableId>> {
+        self.committed_state_shared_lock
+            .iter_by_col_eq(
+                &ST_TABLES_ID,
+                &NonEmpty::new(StTableFields::TableName.col_id()),
+                &AlgebraicValue::String(table_name.to_owned()),
+            )
+            .map(|mut iter| {
+                iter.next()
+                    .map(|row| TableId(*row.view().elements[0].as_u32().unwrap()))
+            })
+    }
+}
+
+impl ReadTx for MutTxId {
+    fn release_tx(self) {}
+
+    fn table_id_from_name(&self, table_name: &str, database_address: Address) -> super::Result<Option<TableId>> {
+        self.iter_by_col_eq(
+            &ExecutionContext::internal(database_address),
+            &ST_TABLES_ID,
+            StTableFields::TableName,
+            AlgebraicValue::String(table_name.to_owned()),
+        )
+        .map(|mut iter| {
+            iter.next()
+                .map(|row| TableId(*row.view().elements[0].as_u32().unwrap()))
+        })
+    }
+}
+
+/// Represents a Mutable transaction. Holds locks for its duration
+///
+/// The initialization of this struct is sensitive because improper
+/// handling can lead to deadlocks. Therefore, it is strongly recommended to use
+/// `Locking::begin_mut_tx()` for instantiation to ensure safe acquisition of locks.
+pub struct MutTxId {
+    tx_state: TxState,
+    committed_state_write_lock: SharedWriteGuard<CommittedState>,
+    sequence_state_lock: SharedMutexGuard<SequencesState>,
+    memory_lock: SharedMutexGuard<BTreeMap<DataKey, Arc<Vec<u8>>>>,
+    lock_wait_time: Duration,
+    timer: Instant,
 }
 
 impl MutTxId {
@@ -1937,17 +1981,18 @@ impl DataRow for Locking {
     }
 }
 
-impl traits::Tx for Locking {
-    type TxId = MutTxId;
+// impl traits::Tx for Locking {
+//     type TxId = TxId;
 
-    fn begin_tx(&self) -> Self::TxId {
-        self.begin_mut_tx()
-    }
+//     fn begin_tx(&self) -> Self::TxId {
+//         //self.begin_mut_tx()
+//         unimplemented!()
+//     }
 
-    fn release_tx(&self, ctx: &ExecutionContext, tx: Self::TxId) {
-        self.rollback_mut_tx(ctx, tx)
-    }
-}
+//     fn release_tx(&self, ctx: &ExecutionContext, tx: Self::TxId) {
+//         //self.rollback_mut_tx(ctx, tx)
+//     }
+// }
 
 pub struct Iter<'a> {
     ctx: &'a ExecutionContext<'a>,
@@ -2232,6 +2277,10 @@ pub enum IterByColRange<'a, R: RangeBounds<AlgebraicValue>> {
     /// When the column has an index, and the table
     /// has not been modified in this transaction.
     CommittedIndex(CommittedIndexIter<'a>),
+
+    /// When the column does not have index, and the table
+    /// has not been modified in this transaction.
+    CommittedScan(CommittedStateIter<'a>),
 }
 
 impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for IterByColRange<'a, R> {
@@ -2243,6 +2292,7 @@ impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for IterByColRange<'a, R> {
             IterByColRange::Scan(range) => range.next(),
             IterByColRange::Index(range) => range.next(),
             IterByColRange::CommittedIndex(seek) => seek.next(),
+            IterByColRange::CommittedScan(range) => range.next(),
         }
     }
 }
@@ -2270,49 +2320,50 @@ impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for ScanIterByColRange<'a, R> 
 }
 
 impl TxDatastore for Locking {
+    type TxId = TxId;
     type Iter<'a> = Iter<'a> where Self: 'a;
     type IterByColEq<'a> = IterByColRange<'a, AlgebraicValue> where Self: 'a;
     type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterByColRange<'a, R> where Self: 'a;
 
-    fn iter_tx<'a>(
-        &'a self,
-        ctx: &'a ExecutionContext,
-        tx: &'a Self::TxId,
-        table_id: TableId,
-    ) -> super::Result<Self::Iter<'a>> {
-        self.iter_mut_tx(ctx, tx, table_id)
-    }
+    // fn iter_tx<'a>(
+    //     &'a self,
+    //     ctx: &'a ExecutionContext,
+    //     tx: &'a Self::TxId,
+    //     table_id: TableId,
+    // ) -> super::Result<Self::Iter<'a>> {
+    //     unimplemented!()
+    // }
 
-    fn iter_by_col_range_tx<'a, R: RangeBounds<AlgebraicValue>>(
-        &'a self,
-        ctx: &'a ExecutionContext,
-        tx: &'a Self::TxId,
-        table_id: TableId,
-        cols: NonEmpty<ColId>,
-        range: R,
-    ) -> super::Result<Self::IterByColRange<'a, R>> {
-        self.iter_by_col_range_mut_tx(ctx, tx, table_id, cols, range)
-    }
+    // fn iter_by_col_range_tx<'a, R: RangeBounds<AlgebraicValue>>(
+    //     &'a self,
+    //     ctx: &'a ExecutionContext,
+    //     tx: &'a Self::TxId,
+    //     table_id: TableId,
+    //     cols: NonEmpty<ColId>,
+    //     range: R,
+    // ) -> super::Result<Self::IterByColRange<'a, R>> {
+    //     self.iter_by_col_range_mut_tx(ctx, tx, table_id, cols, range)
+    // }
 
-    fn iter_by_col_eq_tx<'a>(
-        &'a self,
-        ctx: &'a ExecutionContext,
-        tx: &'a Self::TxId,
-        table_id: TableId,
-        cols: NonEmpty<ColId>,
-        value: AlgebraicValue,
-    ) -> super::Result<Self::IterByColEq<'a>> {
-        self.iter_by_col_eq_mut_tx(ctx, tx, table_id, cols, value)
-    }
+    // fn iter_by_col_eq_tx<'a>(
+    //     &'a self,
+    //     ctx: &'a ExecutionContext,
+    //     tx: &'a Self::TxId,
+    //     table_id: TableId,
+    //     cols: NonEmpty<ColId>,
+    //     value: AlgebraicValue,
+    // ) -> super::Result<Self::IterByColEq<'a>> {
+    //     self.committed_state.read_arc().iter_by_col_eq(&table_id, &cols, &value)
+    // }
 
-    fn get_tx<'a>(
-        &self,
-        tx: &'a Self::TxId,
-        table_id: TableId,
-        row_id: &'a Self::RowId,
-    ) -> super::Result<Option<Self::DataRef<'a>>> {
-        self.get_mut_tx(tx, table_id, row_id)
-    }
+    // fn get_tx<'a>(
+    //     &self,
+    //     tx: &'a Self::TxId,
+    //     table_id: TableId,
+    //     row_id: &'a Self::RowId,
+    // ) -> super::Result<Option<Self::DataRef<'a>>> {
+    //     self.get_mut_tx(tx, table_id, row_id)
+    // }
 }
 
 impl traits::MutTx for Locking {
@@ -2471,7 +2522,7 @@ impl MutTxDatastore for Locking {
         tx.table_exists(table_id)
     }
 
-    fn table_id_from_name_mut_tx(&self, tx: &Self::MutTxId, table_name: &str) -> super::Result<Option<TableId>> {
+    fn table_id_from_name<T: ReadTx>(&self, tx: &T, table_name: &str) -> super::Result<Option<TableId>> {
         tx.table_id_from_name(table_name, self.database_address)
     }
 
@@ -2607,17 +2658,18 @@ impl MutTxDatastore for Locking {
 }
 
 impl traits::Programmable for Locking {
-    fn program_hash(&self, tx: &MutTxId) -> Result<Option<Hash>, DBError> {
-        match tx
-            .iter(&ExecutionContext::internal(self.database_address), &ST_MODULE_ID)?
-            .next()
-        {
-            None => Ok(None),
-            Some(data) => {
-                let row = StModuleRow::try_from(data.view())?;
-                Ok(Some(row.program_hash))
-            }
-        }
+    fn program_hash(&self, tx: &TxId) -> Result<Option<Hash>, DBError> {
+        // match tx
+        //     .iter(&ExecutionContext::internal(self.database_address), &ST_MODULE_ID)?
+        //     .next()
+        // {
+        //     None => Ok(None),
+        //     Some(data) => {
+        //         let row = StModuleRow::try_from(data.view())?;
+        //         Ok(Some(row.program_hash))
+        //     }
+        // }
+        unimplemented!()
     }
 }
 

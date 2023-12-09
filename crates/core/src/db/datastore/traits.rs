@@ -1,4 +1,5 @@
 use nonempty::NonEmpty;
+use spacetimedb_lib::Address;
 use std::borrow::Cow;
 use std::{ops::RangeBounds, sync::Arc};
 
@@ -49,11 +50,9 @@ pub trait DataRow: Send + Sync {
     fn view_product_value<'a>(&self, data_ref: Self::DataRef<'a>) -> &'a ProductValue;
 }
 
-pub trait Tx {
-    type TxId;
-
-    fn begin_tx(&self) -> Self::TxId;
-    fn release_tx(&self, ctx: &ExecutionContext, tx: Self::TxId);
+pub(super) trait ReadTx {
+    fn release_tx(self);
+    fn table_id_from_name(&self, table_name: &str, database_address: Address) -> super::Result<Option<TableId>>;
 }
 
 pub trait MutTx {
@@ -70,7 +69,8 @@ pub trait MutTx {
     fn rollback_mut_tx_for_test(&self, tx: Self::MutTxId);
 }
 
-pub trait TxDatastore: DataRow + Tx {
+pub trait TxDatastore: DataRow {
+    type TxId;
     type Iter<'a>: Iterator<Item = Self::DataRef<'a>>
     where
         Self: 'a;
@@ -83,37 +83,37 @@ pub trait TxDatastore: DataRow + Tx {
     where
         Self: 'a;
 
-    fn iter_tx<'a>(
-        &'a self,
-        ctx: &'a ExecutionContext,
-        tx: &'a Self::TxId,
-        table_id: TableId,
-    ) -> Result<Self::Iter<'a>>;
+    // fn iter_tx<'a>(
+    //     &'a self,
+    //     ctx: &'a ExecutionContext,
+    //     tx: &'a Self::TxId,
+    //     table_id: TableId,
+    // ) -> Result<Self::Iter<'a>>;
 
-    fn iter_by_col_range_tx<'a, R: RangeBounds<AlgebraicValue>>(
-        &'a self,
-        ctx: &'a ExecutionContext,
-        tx: &'a Self::TxId,
-        table_id: TableId,
-        cols: NonEmpty<ColId>,
-        range: R,
-    ) -> Result<Self::IterByColRange<'a, R>>;
+    // fn iter_by_col_range_tx<'a, R: RangeBounds<AlgebraicValue>>(
+    //     &'a self,
+    //     ctx: &'a ExecutionContext,
+    //     tx: &'a Self::TxId,
+    //     table_id: TableId,
+    //     cols: NonEmpty<ColId>,
+    //     range: R,
+    // ) -> Result<Self::IterByColRange<'a, R>>;
 
-    fn iter_by_col_eq_tx<'a>(
-        &'a self,
-        ctx: &'a ExecutionContext,
-        tx: &'a Self::TxId,
-        table_id: TableId,
-        cols: NonEmpty<ColId>,
-        value: AlgebraicValue,
-    ) -> Result<Self::IterByColEq<'a>>;
+    // fn iter_by_col_eq_tx<'a>(
+    //     &'a self,
+    //     ctx: &'a ExecutionContext,
+    //     tx: &'a Self::TxId,
+    //     table_id: TableId,
+    //     cols: NonEmpty<ColId>,
+    //     value: AlgebraicValue,
+    // ) -> Result<Self::IterByColEq<'a>>;
 
-    fn get_tx<'a>(
-        &self,
-        tx: &'a Self::TxId,
-        table_id: TableId,
-        row_id: &'a Self::RowId,
-    ) -> Result<Option<Self::DataRef<'a>>>;
+    // fn get_tx<'a>(
+    //     &self,
+    //     tx: &'a Self::TxId,
+    //     table_id: TableId,
+    //     row_id: &'a Self::RowId,
+    // ) -> Result<Option<Self::DataRef<'a>>>;
 }
 
 pub trait MutTxDatastore: TxDatastore + MutTx {
@@ -131,7 +131,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     fn drop_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId) -> Result<()>;
     fn rename_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, new_name: &str) -> Result<()>;
     fn table_id_exists(&self, tx: &Self::MutTxId, table_id: &TableId) -> bool;
-    fn table_id_from_name_mut_tx(&self, tx: &Self::MutTxId, table_name: &str) -> Result<Option<TableId>>;
+    fn table_id_from_name<T: ReadTx>(&self, tx: &T, table_name: &str) -> Result<Option<TableId>>;
     fn table_name_from_id_mut_tx<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
