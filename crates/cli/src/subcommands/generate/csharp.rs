@@ -569,7 +569,7 @@ pub fn autogen_csharp_table(ctx: &GenCtx, table: &TableDesc, namespace: &str) ->
                 .clone()
                 .into_schema(0.into())
                 .validated()
-                .expect("Fail to generate table"),
+                .expect("Failed to generate table due to validation errors")
         ),
         namespace,
     )

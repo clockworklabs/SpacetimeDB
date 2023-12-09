@@ -333,6 +333,7 @@ fn find_product_type(ctx: &GenCtx, ty: AlgebraicTypeRef) -> &ProductType {
 /// Generate a file which defines a `struct` corresponding to the `table`'s `ProductType`,
 /// and implements `spacetimedb_sdk::table::TableType` for it.
 pub fn autogen_rust_table(ctx: &GenCtx, table: &TableDesc) -> String {
+    println!("{:?}", table);
     let mut output = CodeIndenter::new(String::new());
     let out = &mut output;
 
@@ -347,7 +348,7 @@ pub fn autogen_rust_table(ctx: &GenCtx, table: &TableDesc) -> String {
         .clone()
         .into_schema(0.into())
         .validated()
-        .expect("Fail to generate table");
+        .expect("Failed to generate table due to validation errors");
     print_impl_tabletype(ctx, out, &table);
 
     output.into_inner()

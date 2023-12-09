@@ -836,7 +836,7 @@ impl TableSchema {
         }));
 
         errors.extend(self.indexes.iter().filter_map(|x| {
-            if x.index_name.is_empty() || x.index_name.contains("__") {
+            if x.index_name.is_empty() {
                 Some(SchemaError::EmptyName {
                     table: self.table_name.clone(),
                     ty: DefType::Index,
@@ -861,7 +861,7 @@ impl TableSchema {
         }));
 
         errors.extend(self.constraints.iter().filter_map(|x| {
-            if x.constraint_name.is_empty() || x.constraint_name.contains("__") {
+            if x.constraint_name.is_empty() {
                 Some(SchemaError::EmptyName {
                     table: self.table_name.clone(),
                     ty: DefType::Constraint,
@@ -873,7 +873,7 @@ impl TableSchema {
         }));
 
         errors.extend(self.sequences.iter().filter_map(|x| {
-            if x.sequence_name.is_empty() || x.sequence_name.contains("__") {
+            if x.sequence_name.is_empty() {
                 Some(SchemaError::EmptyName {
                     table: self.table_name.clone(),
                     ty: DefType::Sequence,
@@ -1026,7 +1026,9 @@ impl TableDef {
 
     /// Concatenate the column names from the `columns`
     ///
-    /// WARNING: If the `ColId` not exist, is skipped. [TableSchema::validated] will find the error
+    /// WARNING: If the `ColId` not exist, is skipped.
+    /// TODO(Tyler): This should return an error and not allow this to be constructed
+    /// if there is an invalid `ColId`
     fn generate_cols_name(&self, columns: &NonEmpty<ColId>) -> String {
         let mut column_name = Vec::with_capacity(columns.len());
         for col_pos in columns {
@@ -1392,20 +1394,6 @@ mod tests {
     fn test_validate_empty() {
         let t = table_def();
 
-        fn empty(table: TableDef, ty: &[DefType], id: u32) {
-            assert_eq!(
-                table.into_schema(TableId(0)).validated(),
-                Err(ty
-                    .iter()
-                    .copied()
-                    .map(|ty| SchemaError::EmptyName {
-                        table: "test".to_string(),
-                        ty,
-                        id
-                    })
-                    .collect())
-            )
-        }
         // Empty names
         let mut t_name = t.clone();
         t_name.table_name.clear();
@@ -1416,20 +1404,66 @@ mod tests {
 
         let mut t_col = t.clone();
         t_col.columns.push(ColumnDef::sys("", AlgebraicType::U64));
-        empty(t_col, &[DefType::Column], 5);
+        assert_eq!(
+            t_col.into_schema(TableId(0)).validated(),
+            Err(vec![
+                SchemaError::EmptyName {
+                    table: "test".to_string(),
+                    ty: DefType::Column,
+                    id: 5
+                },
+            ])
+        );
 
         let mut t_ct = t.clone();
         t_ct.constraints
             .push(ConstraintDef::new("".into(), Constraints::primary_key(), ColId(0)));
-        empty(t_ct, &[DefType::Index, DefType::Constraint], 0);
+        assert_eq!(
+            t_ct.into_schema(TableId(0)).validated(),
+            Err(vec![
+                SchemaError::EmptyName {
+                    table: "test".to_string(),
+                    ty: DefType::Constraint,
+                    id: 0,
+                },
+            ])
+        );
 
-        let mut t_idx = t.clone();
-        t_idx.indexes.push(IndexDef::for_column("", "", ColId(0), false));
-        empty(t_idx, &[DefType::Index, DefType::Constraint], 0);
-
-        let mut t_seq = t.clone();
-        t_seq.sequences.push(SequenceDef::for_column("", "", ColId(0)));
-        empty(t_seq, &[DefType::Sequence], 0);
+        // TODO(Tyler): I am disabling this because it's actually not correct.
+        // Previously Mario was checking for __ to see if the name was missing from the
+        // column, but it's completely valid for an index to have __ in the name.
+        // This will have to be checked another way.
+        //
+        // let mut t_idx = t.clone();
+        // t_idx.indexes.push(IndexDef::for_column("", "", ColId(0), false));
+        // assert_eq!(
+        //     t_idx.into_schema(TableId(0)).validated(),
+        //     Err(vec![
+        //         SchemaError::EmptyName {
+        //             table: "test".to_string(),
+        //             ty: DefType::Index,
+        //             id: 0,
+        //         },
+        //         SchemaError::EmptyName {
+        //             table: "test".to_string(),
+        //             ty: DefType::Constraint,
+        //             id: 0,
+        //         },
+        //     ])
+        // );
+        //
+        // let mut t_seq = t.clone();
+        // t_seq.sequences.push(SequenceDef::for_column("", "", ColId(0)));
+        // assert_eq!(
+        //     t_seq.into_schema(TableId(0)).validated(),
+        //     Err(vec![
+        //         SchemaError::EmptyName {
+        //             table: "test".to_string(),
+        //             ty: DefType::Sequence,
+        //             id: 0,
+        //         },
+        //     ])
+        // );
     }
 
     // Verify only one PK
