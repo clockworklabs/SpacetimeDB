@@ -1406,13 +1406,11 @@ mod tests {
         t_col.columns.push(ColumnDef::sys("", AlgebraicType::U64));
         assert_eq!(
             t_col.into_schema(TableId(0)).validated(),
-            Err(vec![
-                SchemaError::EmptyName {
-                    table: "test".to_string(),
-                    ty: DefType::Column,
-                    id: 5
-                },
-            ])
+            Err(vec![SchemaError::EmptyName {
+                table: "test".to_string(),
+                ty: DefType::Column,
+                id: 5
+            },])
         );
 
         let mut t_ct = t.clone();
@@ -1420,13 +1418,11 @@ mod tests {
             .push(ConstraintDef::new("".into(), Constraints::primary_key(), ColId(0)));
         assert_eq!(
             t_ct.into_schema(TableId(0)).validated(),
-            Err(vec![
-                SchemaError::EmptyName {
-                    table: "test".to_string(),
-                    ty: DefType::Constraint,
-                    id: 0,
-                },
-            ])
+            Err(vec![SchemaError::EmptyName {
+                table: "test".to_string(),
+                ty: DefType::Constraint,
+                id: 0,
+            },])
         );
 
         // TODO(Tyler): I am disabling this because it's actually not correct.
