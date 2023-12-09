@@ -29,11 +29,9 @@ fn maybe_primitive(b: &BuiltinType) -> MaybePrimitive {
         | BuiltinType::U16
         | BuiltinType::I32
         | BuiltinType::U32
-        | BuiltinType::I64
-        | BuiltinType::U64
         | BuiltinType::F32
         | BuiltinType::F64 => "number",
-        BuiltinType::I128 | BuiltinType::U128 => "BigInt",
+        BuiltinType::I128 | BuiltinType::U128 | BuiltinType::I64 | BuiltinType::U64 => "BigInt",
         BuiltinType::String => "string",
         BuiltinType::Array(ty) => return MaybePrimitive::Array(ty),
         BuiltinType::Map(m) => return MaybePrimitive::Map(m),
@@ -86,8 +84,8 @@ fn typescript_as_type(b: &BuiltinType) -> &str {
         BuiltinType::U16 => "Number",
         BuiltinType::I32 => "Number",
         BuiltinType::U32 => "Number",
-        BuiltinType::I64 => "Number",
-        BuiltinType::U64 => "Number",
+        BuiltinType::I64 => "BigInt",
+        BuiltinType::U64 => "BigInt",
         BuiltinType::I128 => "BigInt",
         BuiltinType::U128 => "BigInt",
         BuiltinType::F32 => "Number",
@@ -261,10 +259,16 @@ fn convert_product_type<'a>(
         for (_, elem) in product_type.elements.iter().enumerate() {
             writeln!(
                 f,
-                "{INDENT}new ProductTypeElement({}, {}),",
+                "{INDENT}new ProductTypeElement(\"{}\", {}),",
                 elem.name
                     .to_owned()
-                    .map(|s| format!("\"{s}\""))
+                    .map(|s| {
+                        if s == "__identity_bytes" {
+                            s
+                        } else {
+                            typescript_field_name(s.to_case(Case::Camel))
+                        }
+                    })
                     .unwrap_or("null".into()),
                 convert_algebraic_type(ctx, &elem.algebraic_type, ref_prefix)
             )?;
@@ -440,9 +444,24 @@ pub fn autogen_typescript_sum(ctx: &GenCtx, name: &str, sum_type: &SumType) -> S
             };
             writeln!(
                 output,
-                "export type {variant_name} = {{ tag: \"{variant_name}\"; value: {a_type} }};"
+                "export type {variant_name} = {{ tag: \"{variant_name}\", value: {a_type} }};"
             )
             .unwrap();
+
+            // export an object or a function representing an enum value, so people
+            // can pass it as an argument
+            match variant.algebraic_type {
+                AlgebraicType::Product(_) => writeln!(
+                    output,
+                    "export const {variant_name} = {{ tag: \"{variant_name}\", value: undefined }};"
+                )
+                .unwrap(),
+                _ => writeln!(
+                    output,
+                    "export const {variant_name} = (value: {a_type}): {variant_name} => {{ return {{ tag: \"{variant_name}\", value }} }};"
+                )
+                .unwrap(),
+            };
         }
 
         writeln!(output).unwrap();
@@ -651,7 +670,7 @@ fn autogen_typescript_product_table_common(
     writeln!(output).unwrap();
 
     writeln!(output, "// @ts-ignore").unwrap();
-    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, IDatabaseTable, AlgebraicValue, ReducerEvent, Identity, Address }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
+    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, DatabaseTable, AlgebraicValue, ReducerEvent, Identity, Address, ClientDB, SpacetimeDBClient }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
 
     let mut imports = Vec::new();
     generate_imports(ctx, &product_type.elements, &mut imports, None);
@@ -663,11 +682,12 @@ fn autogen_typescript_product_table_common(
 
     writeln!(output).unwrap();
 
-    writeln!(output, "export class {struct_name_pascal_case} extends IDatabaseTable").unwrap();
+    writeln!(output, "export class {struct_name_pascal_case} extends DatabaseTable").unwrap();
     writeln!(output, "{{").unwrap();
     {
         indent_scope!(output);
 
+        writeln!(output, "public static db: ClientDB = __SPACETIMEDB__.clientDB;").unwrap();
         writeln!(output, "public static tableName = \"{struct_name_pascal_case}\";").unwrap();
 
         let mut constructor_signature = Vec::new();
@@ -785,110 +805,11 @@ fn autogen_typescript_product_table_common(
             );
 
             writeln!(output).unwrap();
-
-            writeln!(
-                output,
-                "public static onInsert(callback: (value: {struct_name_pascal_case}, reducerEvent: ReducerEvent | undefined) => void)"
-            )
-            .unwrap();
-            writeln!(output, "{{").unwrap();
-            {
-                indent_scope!(output);
-                writeln!(
-                    output,
-                    "__SPACETIMEDB__.clientDB.getTable(\"{struct_name_pascal_case}\").onInsert(callback);"
-                )
-                .unwrap();
-            }
-            writeln!(output, "}}").unwrap();
-            writeln!(output).unwrap();
-
-            writeln!(output, "public static onUpdate(callback: (oldValue: {struct_name_pascal_case}, newValue: {struct_name_pascal_case}, reducerEvent: ReducerEvent | undefined) => void)").unwrap();
-            writeln!(output, "{{").unwrap();
-            {
-                indent_scope!(output);
-                writeln!(
-                    output,
-                    "__SPACETIMEDB__.clientDB.getTable(\"{struct_name_pascal_case}\").onUpdate(callback);"
-                )
-                .unwrap();
-            }
-            writeln!(output, "}}").unwrap();
-            writeln!(output).unwrap();
-
-            writeln!(
-                output,
-                "public static onDelete(callback: (value: {struct_name_pascal_case}, reducerEvent: ReducerEvent | undefined) => void)"
-            )
-            .unwrap();
-            writeln!(output, "{{").unwrap();
-            {
-                indent_scope!(output);
-                writeln!(
-                    output,
-                    "__SPACETIMEDB__.clientDB.getTable(\"{struct_name_pascal_case}\").onDelete(callback);"
-                )
-                .unwrap();
-            }
-            writeln!(output, "}}").unwrap();
-            writeln!(output).unwrap();
-
-            writeln!(
-                output,
-                "public static removeOnInsert(callback: (value: {struct_name_pascal_case}, reducerEvent: ReducerEvent | undefined) => void)"
-            )
-            .unwrap();
-            writeln!(output, "{{").unwrap();
-            {
-                indent_scope!(output);
-                writeln!(
-                    output,
-                    "__SPACETIMEDB__.clientDB.getTable(\"{struct_name_pascal_case}\").removeOnInsert(callback);"
-                )
-                .unwrap();
-            }
-            writeln!(output, "}}").unwrap();
-            writeln!(output).unwrap();
-
-            writeln!(output, "public static removeOnUpdate(callback: (oldValue: {struct_name_pascal_case}, newValue: {struct_name_pascal_case}, reducerEvent: ReducerEvent | undefined) => void)").unwrap();
-            writeln!(output, "{{").unwrap();
-            {
-                indent_scope!(output);
-                writeln!(
-                    output,
-                    "__SPACETIMEDB__.clientDB.getTable(\"{struct_name_pascal_case}\").removeOnUpdate(callback);"
-                )
-                .unwrap();
-            }
-            writeln!(output, "}}").unwrap();
-            writeln!(output).unwrap();
-
-            writeln!(
-                output,
-                "public static removeOnDelete(callback: (value: {struct_name_pascal_case}, reducerEvent: ReducerEvent | undefined) => void)"
-            )
-            .unwrap();
-            writeln!(output, "{{").unwrap();
-            {
-                indent_scope!(output);
-                writeln!(
-                    output,
-                    "__SPACETIMEDB__.clientDB.getTable(\"{struct_name_pascal_case}\").removeOnDelete(callback);"
-                )
-                .unwrap();
-            }
-            writeln!(output, "}}").unwrap();
-            writeln!(output).unwrap();
         }
     }
     writeln!(output, "}}").unwrap();
 
     writeln!(output, "\nexport default {struct_name_pascal_case};").unwrap();
-    writeln!(
-        output,
-        "\n__SPACETIMEDB__.registerComponent(\"{struct_name_pascal_case}\", {struct_name_pascal_case});"
-    )
-    .unwrap();
 
     output.into_inner()
 }
@@ -936,6 +857,7 @@ fn autogen_typescript_product_value_to_struct(
     output.into_inner()
 }
 
+#[allow(dead_code)]
 fn indented_block<R>(output: &mut CodeIndenter<String>, f: impl FnOnce(&mut CodeIndenter<String>) -> R) -> R {
     writeln!(output, "{{").unwrap();
     let res = f(&mut output.indented(1));
@@ -950,28 +872,6 @@ fn autogen_typescript_access_funcs_for_struct(
     table_name: &str,
     table: &TableSchema,
 ) {
-    writeln!(output, "public static count(): number").unwrap();
-    indented_block(output, |output| {
-        writeln!(
-            output,
-            "return __SPACETIMEDB__.clientDB.getTable(\"{table_name}\").count();",
-        )
-        .unwrap();
-    });
-
-    writeln!(output).unwrap();
-
-    writeln!(output, "public static all(): {table_name}[]").unwrap();
-    indented_block(output, |output| {
-        writeln!(
-            output,
-            "return __SPACETIMEDB__.clientDB.getTable(\"{table_name}\").getInstances() as unknown as {table_name}[];",
-        )
-        .unwrap();
-    });
-
-    writeln!(output).unwrap();
-
     let constraints = table.column_constraints();
     for col in table.columns() {
         let is_unique = constraints[&NonEmpty::new(col.col_pos)].has_unique();
@@ -1036,7 +936,7 @@ fn autogen_typescript_access_funcs_for_struct(
             }
             writeln!(
                 output,
-                "for(let instance of __SPACETIMEDB__.clientDB.getTable(\"{table_name}\").getInstances())"
+                "for(let instance of this.db.getTable(\"{table_name}\").getInstances())"
             )
             .unwrap();
             writeln!(output, "{{").unwrap();
@@ -1140,7 +1040,7 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
     writeln!(output).unwrap();
 
     writeln!(output, "// @ts-ignore").unwrap();
-    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, IDatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, Address, ReducerEvent }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
+    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, DatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, Address, ReducerEvent, Reducer, SpacetimeDBClient }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
 
     let mut imports = Vec::new();
     generate_imports(
@@ -1168,26 +1068,35 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
         let arg_type_str = ty_fmt(ctx, &arg.algebraic_type, "");
 
         func_arguments.push(format!("{arg_name}: {arg_type_str}"));
-        arg_names.push(format!("{}", serialize_type(ctx, &arg.algebraic_type, &arg_name, "")));
+        arg_names.push(arg_name.to_string());
     }
 
-    writeln!(output, "export class {reducer_name_pascal_case}Reducer").unwrap();
+    let full_reducer_name = format!("{reducer_name_pascal_case}Reducer");
+
+    writeln!(output, "export class {full_reducer_name} extends Reducer").unwrap();
     writeln!(output, "{{").unwrap();
 
     {
         indent_scope!(output);
 
-        writeln!(output, "public static call({})", func_arguments.join(", ")).unwrap();
-        writeln!(output, "{{").unwrap();
+        writeln!(
+            output,
+            "public static reducerName: string = \"{reducer_name_pascal_case}\";"
+        )
+        .unwrap();
+        writeln!(output, "public static call({}) {{", func_arguments.join(", ")).unwrap();
         {
             indent_scope!(output);
 
-            writeln!(output, "if (__SPACETIMEDB__.spacetimeDBClient) {{").unwrap();
-            writeln!(
-                output,
-                "const serializer = __SPACETIMEDB__.spacetimeDBClient.getSerializer();"
-            )
-            .unwrap();
+            writeln!(output, "this.getReducer().call({});", arg_names.join(", ")).unwrap();
+        }
+        writeln!(output, "}}\n").unwrap();
+
+        writeln!(output, "public call({}) {{", func_arguments.join(", ")).unwrap();
+        {
+            indent_scope!(output);
+
+            writeln!(output, "const serializer = this.client.getSerializer();").unwrap();
 
             let mut arg_names = Vec::new();
             for arg in reducer.args.iter() {
@@ -1204,12 +1113,7 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
                 arg_names.push(arg_name);
             }
 
-            writeln!(
-                output,
-                "\t__SPACETIMEDB__.spacetimeDBClient.call(\"{func_name}\", serializer);"
-            )
-            .unwrap();
-            writeln!(output, "}}").unwrap();
+            writeln!(output, "this.client.call(\"{func_name}\", serializer);").unwrap();
         }
         // Closing brace for reducer
         writeln!(output, "}}").unwrap();
@@ -1256,23 +1160,36 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
         writeln!(output, "}}").unwrap();
 
         writeln!(output).unwrap();
+
+        writeln!(
+            output,
+            "public static on(callback: (reducerEvent: ReducerEvent, {}) => void) {{",
+            func_arguments.join(", ")
+        )
+        .unwrap();
+        {
+            indent_scope!(output);
+
+            writeln!(output, "this.getReducer().on(callback);").unwrap();
+        }
+        writeln!(output, "}}").unwrap();
+
         // OnCreatePlayerEvent(dbEvent.Status, Identity.From(dbEvent.CallerIdentity.ToByteArray()), args[0].ToObject<string>());
         writeln!(
             output,
-            "public static on(callback: (reducerEvent: ReducerEvent, reducerArgs: any[]) => void)"
+            "public on(callback: (reducerEvent: ReducerEvent, {}) => void)",
+            func_arguments.join(", ")
         )
         .unwrap();
         writeln!(output, "{{").unwrap();
         {
             indent_scope!(output);
 
-            writeln!(output, "if (__SPACETIMEDB__.spacetimeDBClient) {{").unwrap();
             writeln!(
                 output,
-                "\t__SPACETIMEDB__.spacetimeDBClient.on(\"reducer:{reducer_name_pascal_case}\", callback);"
+                "this.client.on(\"reducer:{reducer_name_pascal_case}\", callback);"
             )
             .unwrap();
-            writeln!(output, "}}").unwrap();
         }
 
         // Closing brace for Event parsing function
@@ -1282,22 +1199,6 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
     writeln!(output, "}}").unwrap();
 
     writeln!(output).unwrap();
-
-    writeln!(
-        output,
-        "__SPACETIMEDB__.reducers.set(\"{reducer_name_pascal_case}\", {reducer_name_pascal_case}Reducer);"
-    )
-    .unwrap();
-
-    writeln!(output, "if (__SPACETIMEDB__.spacetimeDBClient) {{").unwrap();
-
-    {
-        indent_scope!(output);
-
-        writeln!(output, "__SPACETIMEDB__.spacetimeDBClient.registerReducer(\"{reducer_name_pascal_case}\", {reducer_name_pascal_case}Reducer);").unwrap();
-    }
-
-    writeln!(output, "}}").unwrap();
 
     writeln!(output, "\nexport default {reducer_name_pascal_case}Reducer").unwrap();
 
