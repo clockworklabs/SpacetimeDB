@@ -56,8 +56,11 @@ pub enum LogLevel {
     Panic,
 }
 
+#[serde_with::serde_as]
 #[derive(serde::Deserialize)]
 struct Record<'a> {
+    #[serde_as(as = "Option<serde_with::TimestampMicroSeconds>")]
+    ts: Option<chrono::DateTime<chrono::Utc>>, // TODO: remove Option once 0.9 has been out for a while
     level: LogLevel,
     #[serde(borrow)]
     #[allow(unused)] // TODO: format this somehow
@@ -124,6 +127,10 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     while rdr.read_line(&mut line).await? != 0 {
         let record = serde_json::from_str::<Record<'_>>(&line)?;
 
+        if let Some(ts) = record.ts {
+            out.set_color(ColorSpec::new().set_dimmed(true))?;
+            write!(out, "{ts:?} ")?;
+        }
         let mut color = ColorSpec::new();
         let level = match record.level {
             LogLevel::Error => {
