@@ -139,6 +139,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let path_to_wasm = crate::tasks::build(path_to_project, skip_clippy, build_debug)?;
     let program_bytes = fs::read(path_to_wasm)?;
 
+    eprintln!("Publishing...");
+
     let mut builder = reqwest::Client::new().post(Url::parse_with_params(
         format!("{}/database/publish", config.get_host_url(server)?).as_str(),
         query_params,

@@ -11,3 +11,6 @@ crate-type = ["cdylib"]
 [dependencies]
 spacetimedb = "0.8.0"
 log = "0.4"
+
+[profile.release]
+debug = 1 # include some location information for backtraces

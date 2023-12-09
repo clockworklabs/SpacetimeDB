@@ -382,13 +382,12 @@ fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtr
         });
     }
 
-    let generated_function = quote! {
-        fn __reducer(
-            __sender: spacetimedb::sys::Buffer,
-            __caller_address: spacetimedb::sys::Buffer,
-            __timestamp: u64,
-            __args: &[u8]
-        ) -> spacetimedb::sys::Buffer {
+    let generated_invoke_function = quote! {
+        |__sender: spacetimedb::sys::Buffer,
+         __caller_address: spacetimedb::sys::Buffer,
+         __timestamp: u64,
+         __args: spacetimedb::sys::Buffer|
+         -> spacetimedb::sys::Buffer {
             #(spacetimedb::rt::assert_reducer_arg::<#arg_tys>();)*
             #(spacetimedb::rt::assert_reducer_ret::<#ret_ty>();)*
             spacetimedb::rt::invoke_reducer(
@@ -396,7 +395,7 @@ fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtr
                 __sender,
                 __caller_address,
                 __timestamp,
-                __args,
+                &spacetimedb::sys::Buffer::read(__args),
                 |_res| { #epilogue },
             )
         }
@@ -418,12 +417,10 @@ fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtr
         impl spacetimedb::rt::ReducerInfo for #func_name {
             const NAME: &'static str = #reducer_name;
             const ARG_NAMES: &'static [Option<&'static str>] = &[#(#opt_arg_names),*];
-            const INVOKE: spacetimedb::rt::ReducerFn = {
-                #generated_function
-                __reducer
-            };
+            const INVOKE: spacetimedb::rt::ReducerFn = #generated_invoke_function;
         }
         #extra_impls
+        #[inline(never)]
         #original_function
     })
 }
