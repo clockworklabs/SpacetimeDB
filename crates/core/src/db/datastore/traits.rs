@@ -4,6 +4,7 @@ use std::borrow::Cow;
 use std::{ops::RangeBounds, sync::Arc};
 
 use crate::db::datastore::system_tables::ST_TABLES_ID;
+use crate::error::TableError;
 use crate::execution_context::ExecutionContext;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::def::*;
@@ -11,6 +12,8 @@ use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::DataKey;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
 
+use super::locking_tx_datastore::Iter;
+use super::system_tables::SystemTable;
 use super::{system_tables::StTableRow, Result};
 
 /// Operations in a transaction are either Inserts or Deletes.
@@ -50,9 +53,25 @@ pub trait DataRow: Send + Sync {
     fn view_product_value<'a>(&self, data_ref: Self::DataRef<'a>) -> &'a ProductValue;
 }
 
-pub(super) trait ReadTx {
+pub(super) trait ReadTx: DataRow {
+    // Todo to use DataRef
+    // type Iter<'a>: Iterator
+    // where
+    //     Self: 'a;
+
+    // type IterByColRange<'a, R: RangeBounds<AlgebraicValue>>: Iterator<Item = Self::DataRef<'a>>
+    // where
+    //     Self: 'a;
+
+    // type IterByColEq<'a>: Iterator<Item = Self::DataRef<'a>>
+    // where
+    //     Self: 'a;
     fn release_tx(self);
     fn table_id_from_name(&self, table_name: &str, database_address: Address) -> super::Result<Option<TableId>>;
+
+    fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: &TableId) -> super::Result<Iter<'a>>;
+
+    fn table_exists(&self, table_id: &TableId) -> bool;
 }
 
 pub trait MutTx {
@@ -82,38 +101,6 @@ pub trait TxDatastore: DataRow {
     type IterByColEq<'a>: Iterator<Item = Self::DataRef<'a>>
     where
         Self: 'a;
-
-    // fn iter_tx<'a>(
-    //     &'a self,
-    //     ctx: &'a ExecutionContext,
-    //     tx: &'a Self::TxId,
-    //     table_id: TableId,
-    // ) -> Result<Self::Iter<'a>>;
-
-    // fn iter_by_col_range_tx<'a, R: RangeBounds<AlgebraicValue>>(
-    //     &'a self,
-    //     ctx: &'a ExecutionContext,
-    //     tx: &'a Self::TxId,
-    //     table_id: TableId,
-    //     cols: NonEmpty<ColId>,
-    //     range: R,
-    // ) -> Result<Self::IterByColRange<'a, R>>;
-
-    // fn iter_by_col_eq_tx<'a>(
-    //     &'a self,
-    //     ctx: &'a ExecutionContext,
-    //     tx: &'a Self::TxId,
-    //     table_id: TableId,
-    //     cols: NonEmpty<ColId>,
-    //     value: AlgebraicValue,
-    // ) -> Result<Self::IterByColEq<'a>>;
-
-    // fn get_tx<'a>(
-    //     &self,
-    //     tx: &'a Self::TxId,
-    //     table_id: TableId,
-    //     row_id: &'a Self::RowId,
-    // ) -> Result<Option<Self::DataRef<'a>>>;
 }
 
 pub trait MutTxDatastore: TxDatastore + MutTx {
@@ -138,20 +125,20 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         tx: &'a Self::MutTxId,
         table_id: TableId,
     ) -> Result<Option<&'a str>>;
-    fn get_all_tables_mut_tx<'tx>(
-        &self,
-        ctx: &ExecutionContext,
-        tx: &'tx Self::MutTxId,
-    ) -> super::Result<Vec<Cow<'tx, TableSchema>>> {
-        let mut tables = Vec::new();
-        let table_rows = self.iter_mut_tx(ctx, tx, ST_TABLES_ID)?.collect::<Vec<_>>();
-        for data_ref in table_rows {
-            let data = self.view_product_value(data_ref);
-            let row = StTableRow::try_from(data)?;
-            tables.push(self.schema_for_table_mut_tx(tx, row.table_id)?);
-        }
-        Ok(tables)
-    }
+    // fn get_all_tables_mut_tx<'tx>(
+    //     &self,
+    //     ctx: &ExecutionContext,
+    //     tx: &'tx Self::MutTxId,
+    // ) -> super::Result<Vec<Cow<'tx, TableSchema>>> {
+    //     let mut tables = Vec::new();
+    //     let table_rows = self.iter_mut_tx(ctx, tx, ST_TABLES_ID)?.collect::<Vec<_>>();
+    //     for data_ref in table_rows {
+    //         let data = self.view_product_value(data_ref);
+    //         let row = StTableRow::try_from(data)?;
+    //         tables.push(self.schema_for_table_mut_tx(tx, row.table_id)?);
+    //     }
+    //     Ok(tables)
+    // }
 
     // Indexes
     fn create_index_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, index: IndexDef) -> Result<IndexId>;
@@ -180,12 +167,13 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         -> super::Result<Option<ConstraintId>>;
 
     // Data
-    fn iter_mut_tx<'a>(
+    fn iter_mut_tx<'a, T: ReadTx>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a Self::MutTxId,
+        tx: &'a T,
         table_id: TableId,
     ) -> Result<Self::Iter<'a>>;
+
     fn iter_by_col_range_mut_tx<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         ctx: &'a ExecutionContext,

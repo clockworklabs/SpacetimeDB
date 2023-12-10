@@ -8,13 +8,12 @@ use std::sync::{Arc, Mutex};
 
 use super::commit_log::{CommitLog, CommitLogMut};
 use super::datastore::locking_tx_datastore::Locking;
-use super::datastore::locking_tx_datastore::{DataRef, Iter, IterByColEq, IterByColRange, MutTxId, RowId};
-use super::datastore::traits::{MutProgrammable, MutTx, MutTxDatastore, Programmable, TxData};
+use super::datastore::locking_tx_datastore::{Iter, IterByColEq, IterByColRange, MutTxId, RowId};
+use super::datastore::traits::{MutProgrammable, MutTx, MutTxDatastore, TxData};
 use super::message_log::MessageLog;
 use super::ostorage::memory_object_db::MemoryObjectDB;
 use super::relational_operators::Relation;
 use crate::address::Address;
-use crate::db::datastore::traits::DataRow;
 use crate::db::db_metrics::DB_METRICS;
 use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 use crate::db::ostorage::ObjectDB;
@@ -35,15 +34,6 @@ pub struct RelationalDB {
     commit_log: Option<CommitLogMut>,
     _lock: Arc<File>,
     address: Address,
-}
-
-impl DataRow for RelationalDB {
-    type RowId = RowId;
-    type DataRef<'a> = DataRef<'a>;
-
-    fn view_product_value<'a>(&self, data_ref: Self::DataRef<'a>) -> &'a ProductValue {
-        data_ref.view()
-    }
 }
 
 impl std::fmt::Debug for RelationalDB {
@@ -182,8 +172,9 @@ impl RelationalDB {
     }
 
     pub fn get_all_tables<'tx>(&self, tx: &'tx MutTxId) -> Result<Vec<Cow<'tx, TableSchema>>, DBError> {
-        self.inner
-            .get_all_tables_mut_tx(&ExecutionContext::internal(self.address), tx)
+        // self.inner
+        //     .get_all_tables_mut_tx(&ExecutionContext::internal(self.address), tx)
+        unimplemented!()
     }
 
     #[tracing::instrument(skip_all)]
