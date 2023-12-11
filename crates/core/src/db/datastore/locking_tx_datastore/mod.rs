@@ -2528,6 +2528,21 @@ impl traits::MutTx for Locking {
 }
 
 impl MutTxDatastore for Locking {
+
+    fn get_all_tables_mut_tx<'tx>(
+        &self,
+        ctx: &ExecutionContext,
+        tx: &'tx Self::MutTxId,
+    ) -> super::Result<Vec<Cow<'tx, TableSchema>>> {
+        let mut tables = Vec::new();
+        let table_rows = self.iter_mut_tx(ctx, tx, ST_TABLES_ID)?.collect::<Vec<_>>();
+        for data_ref in table_rows {
+            let data = self.view_product_value(data_ref);
+            let row = StTableRow::try_from(data)?;
+            tables.push(self.schema_for_table_mut_tx(tx, row.table_id)?);
+        }
+        Ok(tables)
+    }
     fn create_table_mut_tx(&self, tx: &mut Self::MutTxId, schema: TableDef) -> super::Result<TableId> {
         tx.create_table(schema, self.database_address)
     }
@@ -2715,18 +2730,17 @@ impl MutTxDatastore for Locking {
 }
 
 impl traits::Programmable for Locking {
-    fn program_hash(&self, tx: &TxId) -> Result<Option<Hash>, DBError> {
-        // match tx
-        //     .iter(&ExecutionContext::internal(self.database_address), &ST_MODULE_ID)?
-        //     .next()
-        // {
-        //     None => Ok(None),
-        //     Some(data) => {
-        //         let row = StModuleRow::try_from(data.view())?;
-        //         Ok(Some(row.program_hash))
-        //     }
-        // }
-        unimplemented!()
+    fn program_hash<T: ReadTx>(&self, tx: &T) -> Result<Option<Hash>, DBError> {
+        match tx
+            .iter(&ExecutionContext::internal(self.database_address), &ST_MODULE_ID)?
+            .next()
+        {
+            None => Ok(None),
+            Some(data) => {
+                let row = StModuleRow::try_from(data.view())?;
+                Ok(Some(row.program_hash))
+            }
+        }
     }
 }
 

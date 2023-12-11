@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use super::commit_log::{CommitLog, CommitLogMut};
 use super::datastore::locking_tx_datastore::Locking;
 use super::datastore::locking_tx_datastore::{Iter, IterByColEq, IterByColRange, MutTxId, RowId, TxId};
-use super::datastore::traits::{MutProgrammable, MutTx, MutTxDatastore, TxData, ReadTx};
+use super::datastore::traits::{MutProgrammable, MutTx, MutTxDatastore, TxData, ReadTx, Programmable};
 use super::message_log::MessageLog;
 use super::ostorage::memory_object_db::MemoryObjectDB;
 use super::relational_operators::Relation;
@@ -172,9 +172,8 @@ impl RelationalDB {
     }
 
     pub fn get_all_tables<'tx>(&self, tx: &'tx MutTxId) -> Result<Vec<Cow<'tx, TableSchema>>, DBError> {
-        // self.inner
-        //     .get_all_tables_mut_tx(&ExecutionContext::internal(self.address), tx)
-        unimplemented!()
+        self.inner
+            .get_all_tables_mut_tx(&ExecutionContext::internal(self.address), tx)
     }
 
     #[tracing::instrument(skip_all)]
@@ -590,8 +589,7 @@ impl RelationalDB {
     /// A `None` result indicates that the database is not fully initialized
     /// yet.
     pub fn program_hash(&self, tx: &MutTxId) -> Result<Option<Hash>, DBError> {
-        //self.inner.program_hash(tx)
-        unimplemented!()
+        self.inner.program_hash(tx)
     }
 
     /// Update the [`Hash`] of the program (SpacetimeDB module) currently

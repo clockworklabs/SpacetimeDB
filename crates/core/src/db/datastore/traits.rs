@@ -144,20 +144,11 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         tx: &'a Self::MutTxId,
         table_id: TableId,
     ) -> Result<Option<&'a str>>;
-    // fn get_all_tables_mut_tx<'tx>(
-    //     &self,
-    //     ctx: &ExecutionContext,
-    //     tx: &'tx Self::MutTxId,
-    // ) -> super::Result<Vec<Cow<'tx, TableSchema>>> {
-    //     let mut tables = Vec::new();
-    //     let table_rows = self.iter_mut_tx(ctx, tx, ST_TABLES_ID)?.collect::<Vec<_>>();
-    //     for data_ref in table_rows {
-    //         let data = self.view_product_value(data_ref);
-    //         let row = StTableRow::try_from(data)?;
-    //         tables.push(self.schema_for_table_mut_tx(tx, row.table_id)?);
-    //     }
-    //     Ok(tables)
-    // }
+    fn get_all_tables_mut_tx<'tx>(
+        &self,
+        ctx: &ExecutionContext,
+        tx: &'tx Self::MutTxId,
+    ) -> super::Result<Vec<Cow<'tx, TableSchema>>>;
 
     // Indexes
     fn create_index_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, index: IndexDef) -> Result<IndexId>;
@@ -245,7 +236,7 @@ pub trait Programmable: TxDatastore {
     ///
     /// A `None` result means that no program is currently associated, e.g.
     /// because the datastore has not been fully initialized yet.
-    fn program_hash(&self, tx: &Self::TxId) -> Result<Option<Hash>>;
+    fn program_hash<T: ReadTx>(&self, tx: &T) -> Result<Option<Hash>>;
 }
 
 /// Describes a [`Programmable`] datastore which allows to update the program
