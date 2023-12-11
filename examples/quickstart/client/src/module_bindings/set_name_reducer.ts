@@ -8,7 +8,7 @@ import {
   ProductType,
   BuiltinType,
   ProductTypeElement,
-  IDatabaseTable,
+  DatabaseTable,
   AlgebraicValue,
   ReducerArgsAdapter,
   SumTypeVariant,
@@ -16,18 +16,21 @@ import {
   Identity,
   Address,
   ReducerEvent,
+  Reducer,
+  SpacetimeDBClient,
 } from "@clockworklabs/spacetimedb-sdk";
 
-export class SetNameReducer {
+export class SetNameReducer extends Reducer {
+  public static reducerName: string = "SetName";
   public static call(_name: string) {
-    if (__SPACETIMEDB__.spacetimeDBClient) {
-      const serializer = __SPACETIMEDB__.spacetimeDBClient.getSerializer();
-      let _nameType = AlgebraicType.createPrimitiveType(
-        BuiltinType.Type.String
-      );
-      serializer.write(_nameType, _name);
-      __SPACETIMEDB__.spacetimeDBClient.call("set_name", serializer);
-    }
+    this.getReducer().call(_name);
+  }
+
+  public call(_name: string) {
+    const serializer = this.client.getSerializer();
+    let _nameType = AlgebraicType.createPrimitiveType(BuiltinType.Type.String);
+    serializer.write(_nameType, _name);
+    this.client.call("set_name", serializer);
   }
 
   public static deserializeArgs(adapter: ReducerArgsAdapter): any[] {
@@ -38,17 +41,13 @@ export class SetNameReducer {
   }
 
   public static on(
-    callback: (reducerEvent: ReducerEvent, reducerArgs: any[]) => void
+    callback: (reducerEvent: ReducerEvent, _name: string) => void
   ) {
-    if (__SPACETIMEDB__.spacetimeDBClient) {
-      __SPACETIMEDB__.spacetimeDBClient.on("reducer:SetName", callback);
-    }
+    this.getReducer().on(callback);
   }
-}
-
-__SPACETIMEDB__.reducers.set("SetName", SetNameReducer);
-if (__SPACETIMEDB__.spacetimeDBClient) {
-  __SPACETIMEDB__.spacetimeDBClient.registerReducer("SetName", SetNameReducer);
+  public on(callback: (reducerEvent: ReducerEvent, _name: string) => void) {
+    this.client.on("reducer:SetName", callback);
+  }
 }
 
 export default SetNameReducer;

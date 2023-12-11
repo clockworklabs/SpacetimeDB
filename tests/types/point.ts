@@ -10,12 +10,17 @@ import {
   ProductTypeElement,
   SumType,
   SumTypeVariant,
-  IDatabaseTable,
+  DatabaseTable,
   AlgebraicValue,
   ReducerEvent,
+  Identity,
+  Address,
+  ClientDB,
+  SpacetimeDBClient,
 } from "../../src/index";
 
-export class Point extends IDatabaseTable {
+export class Point extends DatabaseTable {
+  public static db: ClientDB = __SPACETIMEDB__.clientDB;
   public static tableName = "Point";
   public x: number;
   public y: number;
@@ -54,5 +59,3 @@ export class Point extends IDatabaseTable {
 }
 
 export default Point;
-
-__SPACETIMEDB__.registerComponent("Point", Point);

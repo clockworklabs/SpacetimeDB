@@ -1,15 +1,25 @@
-import { SpacetimeDBClient, ReducerEvent } from "../src/spacetimedb";
+import { SpacetimeDBClient, ReducerEvent, ClientDB } from "../src/spacetimedb";
 import { Identity } from "../src/identity";
 import WebsocketTestAdapter from "../src/websocket_test_adapter";
 import Player from "./types/player";
 import User from "./types/user";
 import Point from "./types/point";
 import CreatePlayerReducer from "./types/create_player_reducer";
+import { __SPACETIMEDB__ } from "../src/spacetimedb";
+
+SpacetimeDBClient.registerTables(Player, User);
+SpacetimeDBClient.registerReducers(CreatePlayerReducer);
+
+beforeEach(() => {
+  (CreatePlayerReducer as any).reducer = undefined;
+  (Player as any).db = undefined;
+  (User as any).db = undefined;
+  __SPACETIMEDB__.clientDB = new ClientDB();
+  __SPACETIMEDB__.spacetimeDBClient = undefined;
+});
 
 describe("SpacetimeDBClient", () => {
   test("auto subscribe on connect", async () => {
-    // so that TS doesn't remove the reducer import
-    const _foo = CreatePlayerReducer;
     const client = new SpacetimeDBClient(
       "ws://127.0.0.1:1234",
       "db",
@@ -119,9 +129,14 @@ describe("SpacetimeDBClient", () => {
       reducerEvent: ReducerEvent;
       reducerArgs: any[];
     }[] = [];
-    CreatePlayerReducer.on((reducerEvent: ReducerEvent, reducerArgs: any[]) => {
-      reducerCallbackLog.push({ reducerEvent, reducerArgs });
-    });
+    CreatePlayerReducer.on(
+      (reducerEvent: ReducerEvent, name: string, location: Point) => {
+        reducerCallbackLog.push({
+          reducerEvent,
+          reducerArgs: [name, location],
+        });
+      }
+    );
 
     const subscriptionMessage = {
       SubscriptionUpdate: {
@@ -453,7 +468,7 @@ describe("SpacetimeDBClient", () => {
           caller_identity: "00FF01",
           caller_address: "00FF00",
           function_call: {
-            reducer: "create_user",
+            reducer: "create_player",
             args: '["A User",[0.2, 0.3]]',
           },
           energy_quanta_used: 33841000,

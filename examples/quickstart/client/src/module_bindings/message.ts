@@ -10,20 +10,23 @@ import {
   ProductTypeElement,
   SumType,
   SumTypeVariant,
-  IDatabaseTable,
+  DatabaseTable,
   AlgebraicValue,
   ReducerEvent,
   Identity,
   Address,
+  ClientDB,
+  SpacetimeDBClient,
 } from "@clockworklabs/spacetimedb-sdk";
 
-export class Message extends IDatabaseTable {
+export class Message extends DatabaseTable {
+  public static db: ClientDB = __SPACETIMEDB__.clientDB;
   public static tableName = "Message";
   public sender: Identity;
-  public sent: number;
+  public sent: BigInt;
   public text: string;
 
-  constructor(sender: Identity, sent: number, text: string) {
+  constructor(sender: Identity, sent: BigInt, text: string) {
     super();
     this.sender = sender;
     this.sent = sent;
@@ -63,26 +66,14 @@ export class Message extends IDatabaseTable {
     let __sender = new Identity(
       productValue.elements[0].asProductValue().elements[0].asBytes()
     );
-    let __sent = productValue.elements[1].asNumber();
+    let __sent = productValue.elements[1].asBigInt();
     let __text = productValue.elements[2].asString();
     return new this(__sender, __sent, __text);
   }
 
-  public static count(): number {
-    return __SPACETIMEDB__.clientDB.getTable("Message").count();
-  }
-
-  public static all(): Message[] {
-    return __SPACETIMEDB__.clientDB
-      .getTable("Message")
-      .getInstances() as unknown as Message[];
-  }
-
   public static filterBySender(value: Identity): Message[] {
     let result: Message[] = [];
-    for (let instance of __SPACETIMEDB__.clientDB
-      .getTable("Message")
-      .getInstances()) {
+    for (let instance of this.db.getTable("Message").getInstances()) {
       if (instance.sender.isEqual(value)) {
         result.push(instance);
       }
@@ -90,11 +81,9 @@ export class Message extends IDatabaseTable {
     return result;
   }
 
-  public static filterBySent(value: number): Message[] {
+  public static filterBySent(value: BigInt): Message[] {
     let result: Message[] = [];
-    for (let instance of __SPACETIMEDB__.clientDB
-      .getTable("Message")
-      .getInstances()) {
+    for (let instance of this.db.getTable("Message").getInstances()) {
       if (instance.sent === value) {
         result.push(instance);
       }
@@ -104,61 +93,13 @@ export class Message extends IDatabaseTable {
 
   public static filterByText(value: string): Message[] {
     let result: Message[] = [];
-    for (let instance of __SPACETIMEDB__.clientDB
-      .getTable("Message")
-      .getInstances()) {
+    for (let instance of this.db.getTable("Message").getInstances()) {
       if (instance.text === value) {
         result.push(instance);
       }
     }
     return result;
   }
-
-  public static onInsert(
-    callback: (value: Message, reducerEvent: ReducerEvent | undefined) => void
-  ) {
-    __SPACETIMEDB__.clientDB.getTable("Message").onInsert(callback);
-  }
-
-  public static onUpdate(
-    callback: (
-      oldValue: Message,
-      newValue: Message,
-      reducerEvent: ReducerEvent | undefined
-    ) => void
-  ) {
-    __SPACETIMEDB__.clientDB.getTable("Message").onUpdate(callback);
-  }
-
-  public static onDelete(
-    callback: (value: Message, reducerEvent: ReducerEvent | undefined) => void
-  ) {
-    __SPACETIMEDB__.clientDB.getTable("Message").onDelete(callback);
-  }
-
-  public static removeOnInsert(
-    callback: (value: Message, reducerEvent: ReducerEvent | undefined) => void
-  ) {
-    __SPACETIMEDB__.clientDB.getTable("Message").removeOnInsert(callback);
-  }
-
-  public static removeOnUpdate(
-    callback: (
-      oldValue: Message,
-      newValue: Message,
-      reducerEvent: ReducerEvent | undefined
-    ) => void
-  ) {
-    __SPACETIMEDB__.clientDB.getTable("Message").removeOnUpdate(callback);
-  }
-
-  public static removeOnDelete(
-    callback: (value: Message, reducerEvent: ReducerEvent | undefined) => void
-  ) {
-    __SPACETIMEDB__.clientDB.getTable("Message").removeOnDelete(callback);
-  }
 }
 
 export default Message;
-
-__SPACETIMEDB__.registerComponent("Message", Message);
