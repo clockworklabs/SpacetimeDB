@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - master
+  merge_group:
 
 name: CI
 
