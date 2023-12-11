@@ -15,7 +15,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.ORG_READ_TOKEN }}
           CONTRIB_ORG: clockworklabs
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login || (github.event_name == 'merge_group' && github.event.sender) || null }}
         run: |
           if [[ $(gh api --paginate /orgs/$CONTRIB_ORG/members --jq 'any(.login == env.PR_AUTHOR)') != true ]]; then
             echo "::error::$PR_AUTHOR is not a member of the organization"
