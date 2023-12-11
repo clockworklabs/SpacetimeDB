@@ -1063,7 +1063,6 @@ mod tests {
 
         dbg!("reopen...");
         let stdb = open_db(&tmp_dir, false, true)?;
-
         let mut tx = stdb.begin_tx();
 
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(0)])?;

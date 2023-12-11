@@ -2,12 +2,11 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{ProductType, ProductValue};
 use spacetimedb_sats::relation::MemTable;
 use spacetimedb_vm::eval::run_ast;
-use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr, QueryExpr, QueryCode};
+use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
 use tracing::info;
 
 use crate::database_instance_context_controller::DatabaseInstanceContextController;
 use crate::db::datastore::locking_tx_datastore::{MutTxId, TxId};
-use crate::db::datastore::traits::ReadTx;
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, DatabaseError};
 use crate::execution_context::ExecutionContext;

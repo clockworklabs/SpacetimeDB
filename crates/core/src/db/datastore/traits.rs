@@ -2,9 +2,6 @@ use nonempty::NonEmpty;
 use spacetimedb_lib::Address;
 use std::borrow::Cow;
 use std::{ops::RangeBounds, sync::Arc};
-
-use crate::db::datastore::system_tables::ST_TABLES_ID;
-use crate::error::TableError;
 use crate::execution_context::ExecutionContext;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::def::*;
