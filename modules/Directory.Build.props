@@ -1,0 +1,4 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- Only needed when referencing local dependencies as projects. For published packages, these are imported automatically. -->
+  <Import Project="../crates/bindings-csharp/Runtime/build/SpacetimeDB.Runtime.props" />
+</Project>

@@ -21,7 +21,4 @@
     <ProjectReference Include="../../crates/bindings-csharp/Runtime/Runtime.csproj" />
   </ItemGroup>
 
-  <!-- Only needed when referencing local dependencies as projects. For published packages, these are imported automatically. -->
-  <Import Project="../../crates/bindings-csharp/Runtime/build/SpacetimeDB.Runtime.targets" />
-
 </Project>
