@@ -3,6 +3,7 @@ name: Contributor Membership Check
 on:
   pull_request:
     types: [opened, synchronize]
+  merge_group:
 permissions: read-all
 
 jobs:
