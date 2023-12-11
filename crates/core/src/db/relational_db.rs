@@ -489,8 +489,7 @@ impl RelationalDB {
         cols: impl Into<NonEmpty<ColId>>,
         value: AlgebraicValue,
     ) -> Result<IterByColEq<'a>, DBError> {
-        //self.inner.iter_by_col_eq_mut_tx(ctx, tx, table_id.into(), cols, value)
-        unimplemented!()
+        self.inner.iter_by_col_eq_mut_tx(ctx, tx, table_id.into(), cols, value)
     }
 
     /// Returns an iterator,
@@ -506,9 +505,8 @@ impl RelationalDB {
         cols: impl Into<NonEmpty<ColId>>,
         range: R,
     ) -> Result<IterByColRange<'a, R>, DBError> {
-       // self.inner
-        //    .iter_by_col_range_mut_tx(ctx, tx, table_id.into(), cols, range)
-        unimplemented!()
+       self.inner
+           .iter_by_col_range_mut_tx(ctx, tx, table_id.into(), cols, range)
     }
 
     #[tracing::instrument(skip(self, tx, row))]

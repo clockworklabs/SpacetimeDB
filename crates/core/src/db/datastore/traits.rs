@@ -12,7 +12,7 @@ use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::DataKey;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
 
-use super::locking_tx_datastore::Iter;
+use super::locking_tx_datastore::{Iter, IterByColEq, IterByColRange};
 use super::{Result};
 
 /// Operations in a transaction are either Inserts or Deletes.
@@ -71,6 +71,26 @@ pub trait ReadTx: DataRow {
     fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: &TableId) -> super::Result<Iter<'a>>;
 
     fn table_exists(&self, table_id: &TableId) -> bool;
+    /// Returns an iterator,
+    /// yielding every row in the table identified by `table_id`,
+    /// where the column data identified by `cols` equates to `value`.
+    fn iter_by_col_eq<'a>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        table_id: &TableId,
+        cols: NonEmpty<ColId>,
+        value: AlgebraicValue,
+    ) -> super::Result<IterByColEq<'_>> {
+        self.iter_by_col_range(ctx, table_id, cols.into(), value)
+    }
+
+    fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        table_id: &TableId,
+        cols: NonEmpty<ColId>,
+        range: R,
+    ) -> Result<IterByColRange<'a, R>>;
 }
 
 pub trait MutTx {
@@ -173,18 +193,18 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         table_id: TableId,
     ) -> Result<Self::Iter<'a>>;
 
-    fn iter_by_col_range_mut_tx<'a, R: RangeBounds<AlgebraicValue>>(
+    fn iter_by_col_range_mut_tx<'a, R: RangeBounds<AlgebraicValue>, T: ReadTx>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a Self::MutTxId,
+        tx: &'a T,
         table_id: TableId,
         cols: impl Into<NonEmpty<ColId>>,
         range: R,
     ) -> Result<Self::IterByColRange<'a, R>>;
-    fn iter_by_col_eq_mut_tx<'a>(
+    fn iter_by_col_eq_mut_tx<'a, T: ReadTx>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a Self::MutTxId,
+        tx: &'a T,
         table_id: TableId,
         cols: impl Into<NonEmpty<ColId>>,
         value: AlgebraicValue,

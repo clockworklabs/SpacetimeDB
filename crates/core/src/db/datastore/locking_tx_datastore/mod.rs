@@ -760,7 +760,7 @@ impl ReadTx for TxId {
                 .tables
                 .get(table_id)
                 .ok_or(TableError::IdNotFoundState(*table_id))?;
-            return Ok(Iter::new_read_iter(ctx, *table_id, self));
+            return Ok(Iter::new_read_tx_iter(ctx, *table_id, self));
         }
         Err(TableError::IdNotFound(SystemTable::st_table, table_id.0).into())
     }
@@ -768,6 +768,36 @@ impl ReadTx for TxId {
     fn table_exists(&self, table_id: &TableId) -> bool {
         self.committed_state_shared_lock.tables.contains_key(table_id)
     }
+
+    /// Returns an iterator,
+    /// yielding every row in the table identified by `table_id`,
+    /// where the values of `cols` are contained in `range`.
+    fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        table_id: &TableId,
+        cols: NonEmpty<ColId>,
+        range: R,
+    ) -> super::Result<IterByColRange<'a, R>> {
+            // Either the current transaction has not modified this table, or the table is not
+            // indexed.
+        match self.committed_state_shared_lock.index_seek(table_id, &cols, &range) {
+            Some(committed_rows) => Ok(IterByColRange::CommittedIndex(CommittedIndexIter {
+                ctx,
+                table_id: *table_id,
+                tx_state: None,
+                committed_state: &self.committed_state_shared_lock,
+                committed_rows,
+                num_committed_rows_fetched: 0,
+            })),
+            None => Ok(IterByColRange::Scan(ScanIterByColRange {
+                range,
+                cols,
+                scan_iter: self.iter(ctx, table_id)?,
+            })),
+        }
+    }
+
 }
 
 impl ReadTx for MutTxId {
@@ -796,6 +826,59 @@ impl ReadTx for MutTxId {
     fn table_exists(&self, table_id: &TableId) -> bool {
         self.tx_state.insert_tables.contains_key(table_id)
             || self.committed_state_write_lock.tables.contains_key(table_id)
+    }
+
+        /// Returns an iterator,
+    /// yielding every row in the table identified by `table_id`,
+    /// where the values of `cols` are contained in `range`.
+    fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        table_id: &TableId,
+        cols: NonEmpty<ColId>,
+        range: R,
+    ) -> super::Result<IterByColRange<R>> {
+        // We have to index_seek in both the committed state and the current tx state.
+        // First, we will check modifications in the current tx. It may be that the table
+        // has not been modified yet in the current tx, in which case we will only search
+        // the committed state. Finally, the table may not be indexed at all, in which case
+        // we fall back to iterating the entire table.
+        //
+        // We need to check the tx_state first. In particular, it may be that the index
+        // was only added in the current transaction.
+        // TODO(george): It's unclear that we truly support dynamically creating an index
+        // yet. In particular, I don't know if creating an index in a transaction and
+        // rolling it back will leave the index in place.
+        if let Some(inserted_rows) = self.tx_state.index_seek(table_id, &cols, &range) {
+            // The current transaction has modified this table, and the table is indexed.
+            Ok(IterByColRange::Index(IndexSeekIterMutTxId {
+                ctx,
+                table_id: *table_id,
+                tx_state: &self.tx_state,
+                inserted_rows,
+                committed_rows: self.committed_state_write_lock.index_seek(table_id, &cols, &range),
+                committed_state: &self.committed_state_write_lock,
+                num_committed_rows_fetched: 0,
+            }))
+        } else {
+            // Either the current transaction has not modified this table, or the table is not
+            // indexed.
+            match self.committed_state_write_lock.index_seek(table_id, &cols, &range) {
+                Some(committed_rows) => Ok(IterByColRange::CommittedIndex(CommittedIndexIter {
+                    ctx,
+                    table_id: *table_id,
+                    tx_state: Some(&self.tx_state),
+                    committed_state: &self.committed_state_write_lock,
+                    committed_rows,
+                    num_committed_rows_fetched: 0,
+                })),
+                None => Ok(IterByColRange::Scan(ScanIterByColRange {
+                    range,
+                    cols,
+                    scan_iter: self.iter(ctx, table_id)?,
+                })),
+            }
+        }
     }
 }
 
@@ -1823,59 +1906,6 @@ impl MutTxId {
         self.iter_by_col_range(ctx, table_id, cols.into(), value)
     }
 
-    /// Returns an iterator,
-    /// yielding every row in the table identified by `table_id`,
-    /// where the values of `cols` are contained in `range`.
-    fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
-        &'a self,
-        ctx: &'a ExecutionContext,
-        table_id: &TableId,
-        cols: NonEmpty<ColId>,
-        range: R,
-    ) -> super::Result<IterByColRange<R>> {
-        // We have to index_seek in both the committed state and the current tx state.
-        // First, we will check modifications in the current tx. It may be that the table
-        // has not been modified yet in the current tx, in which case we will only search
-        // the committed state. Finally, the table may not be indexed at all, in which case
-        // we fall back to iterating the entire table.
-        //
-        // We need to check the tx_state first. In particular, it may be that the index
-        // was only added in the current transaction.
-        // TODO(george): It's unclear that we truly support dynamically creating an index
-        // yet. In particular, I don't know if creating an index in a transaction and
-        // rolling it back will leave the index in place.
-        if let Some(inserted_rows) = self.tx_state.index_seek(table_id, &cols, &range) {
-            // The current transaction has modified this table, and the table is indexed.
-            Ok(IterByColRange::Index(IndexSeekIterMutTxId {
-                ctx,
-                table_id: *table_id,
-                tx_state: &self.tx_state,
-                inserted_rows,
-                committed_rows: self.committed_state_write_lock.index_seek(table_id, &cols, &range),
-                committed_state: &self.committed_state_write_lock,
-                num_committed_rows_fetched: 0,
-            }))
-        } else {
-            // Either the current transaction has not modified this table, or the table is not
-            // indexed.
-            match self.committed_state_write_lock.index_seek(table_id, &cols, &range) {
-                Some(committed_rows) => Ok(IterByColRange::CommittedIndex(CommittedIndexIter {
-                    ctx,
-                    table_id: *table_id,
-                    tx_state: &self.tx_state,
-                    committed_state: &self.committed_state_write_lock,
-                    committed_rows,
-                    num_committed_rows_fetched: 0,
-                })),
-                None => Ok(IterByColRange::Scan(ScanIterByColRange {
-                    range,
-                    cols,
-                    scan_iter: self.iter(ctx, table_id)?,
-                })),
-            }
-        }
-    }
-
     fn commit(mut self) -> super::Result<Option<TxData>> {
         let memory: BTreeMap<DataKey, Arc<Vec<u8>>> = std::mem::take(&mut self.memory_lock);
         let tx_data = self.committed_state_write_lock.merge(self.tx_state, memory);
@@ -2074,7 +2104,7 @@ impl<'a> Iter<'a> {
         }
     }
 
-    fn new_read_iter(ctx: &'a ExecutionContext, table_id: TableId, tx: &'a TxId) -> Self {
+    fn new_read_tx_iter(ctx: &'a ExecutionContext, table_id: TableId, tx: &'a TxId) -> Self {
         Self {
             ctx,
             table_id,
@@ -2253,7 +2283,7 @@ impl<'a> Iterator for IndexSeekIterMutTxId<'a> {
 pub struct CommittedIndexIter<'a> {
     ctx: &'a ExecutionContext<'a>,
     table_id: TableId,
-    tx_state: &'a TxState,
+    tx_state: Option<&'a TxState>,
     committed_state: &'a CommittedState,
     committed_rows: BTreeIndexRangeIter<'a>,
     num_committed_rows_fetched: u64,
@@ -2301,11 +2331,15 @@ impl<'a> Iterator for CommittedIndexIter<'a> {
     #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(row_id) = self.committed_rows.find(|row_id| {
-            !self
-                .tx_state
-                .delete_tables
-                .get(&self.table_id)
-                .map_or(false, |table| table.contains(row_id))
+            match self.tx_state {
+                Some(tx_state) => {
+                    !tx_state
+                    .delete_tables
+                    .get(&self.table_id)
+                    .map_or(false, |table| table.contains(row_id))
+                },
+                None => true
+            }
         }) {
             self.num_committed_rows_fetched += 1;
             return Some(get_committed_row(self.committed_state, &self.table_id, row_id));
@@ -2621,10 +2655,10 @@ impl MutTxDatastore for Locking {
         tx.iter(ctx, &table_id)
     }
 
-    fn iter_by_col_range_mut_tx<'a, R: RangeBounds<AlgebraicValue>>(
+    fn iter_by_col_range_mut_tx<'a, R: RangeBounds<AlgebraicValue>, T: ReadTx>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a Self::MutTxId,
+        tx: &'a T,
         table_id: TableId,
         cols: impl Into<NonEmpty<ColId>>,
         range: R,
@@ -2632,15 +2666,15 @@ impl MutTxDatastore for Locking {
         tx.iter_by_col_range(ctx, &table_id, cols.into(), range)
     }
 
-    fn iter_by_col_eq_mut_tx<'a>(
+    fn iter_by_col_eq_mut_tx<'a, T: ReadTx>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a Self::MutTxId,
+        tx: &'a T,
         table_id: TableId,
         cols: impl Into<NonEmpty<ColId>>,
         value: AlgebraicValue,
     ) -> super::Result<Self::IterByColEq<'a>> {
-        tx.iter_by_col_eq(ctx, &table_id, cols, value)
+        tx.iter_by_col_eq(ctx, &table_id, cols.into(), value)
     }
 
     fn get_mut_tx<'a>(
