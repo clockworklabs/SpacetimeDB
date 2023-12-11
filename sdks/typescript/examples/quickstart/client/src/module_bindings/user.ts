@@ -10,14 +10,17 @@ import {
   ProductTypeElement,
   SumType,
   SumTypeVariant,
-  IDatabaseTable,
+  DatabaseTable,
   AlgebraicValue,
   ReducerEvent,
   Identity,
   Address,
+  ClientDB,
+  SpacetimeDBClient,
 } from "@clockworklabs/spacetimedb-sdk";
 
-export class User extends IDatabaseTable {
+export class User extends DatabaseTable {
+  public static db: ClientDB = __SPACETIMEDB__.clientDB;
   public static tableName = "User";
   public identity: Identity;
   public name: string | null;
@@ -83,20 +86,8 @@ export class User extends IDatabaseTable {
     return new this(__identity, __name, __online);
   }
 
-  public static count(): number {
-    return __SPACETIMEDB__.clientDB.getTable("User").count();
-  }
-
-  public static all(): User[] {
-    return __SPACETIMEDB__.clientDB
-      .getTable("User")
-      .getInstances() as unknown as User[];
-  }
-
   public static filterByIdentity(value: Identity): User | null {
-    for (let instance of __SPACETIMEDB__.clientDB
-      .getTable("User")
-      .getInstances()) {
+    for (let instance of this.db.getTable("User").getInstances()) {
       if (instance.identity.isEqual(value)) {
         return instance;
       }
@@ -106,61 +97,13 @@ export class User extends IDatabaseTable {
 
   public static filterByOnline(value: boolean): User[] {
     let result: User[] = [];
-    for (let instance of __SPACETIMEDB__.clientDB
-      .getTable("User")
-      .getInstances()) {
+    for (let instance of this.db.getTable("User").getInstances()) {
       if (instance.online === value) {
         result.push(instance);
       }
     }
     return result;
   }
-
-  public static onInsert(
-    callback: (value: User, reducerEvent: ReducerEvent | undefined) => void
-  ) {
-    __SPACETIMEDB__.clientDB.getTable("User").onInsert(callback);
-  }
-
-  public static onUpdate(
-    callback: (
-      oldValue: User,
-      newValue: User,
-      reducerEvent: ReducerEvent | undefined
-    ) => void
-  ) {
-    __SPACETIMEDB__.clientDB.getTable("User").onUpdate(callback);
-  }
-
-  public static onDelete(
-    callback: (value: User, reducerEvent: ReducerEvent | undefined) => void
-  ) {
-    __SPACETIMEDB__.clientDB.getTable("User").onDelete(callback);
-  }
-
-  public static removeOnInsert(
-    callback: (value: User, reducerEvent: ReducerEvent | undefined) => void
-  ) {
-    __SPACETIMEDB__.clientDB.getTable("User").removeOnInsert(callback);
-  }
-
-  public static removeOnUpdate(
-    callback: (
-      oldValue: User,
-      newValue: User,
-      reducerEvent: ReducerEvent | undefined
-    ) => void
-  ) {
-    __SPACETIMEDB__.clientDB.getTable("User").removeOnUpdate(callback);
-  }
-
-  public static removeOnDelete(
-    callback: (value: User, reducerEvent: ReducerEvent | undefined) => void
-  ) {
-    __SPACETIMEDB__.clientDB.getTable("User").removeOnDelete(callback);
-  }
 }
 
 export default User;
-
-__SPACETIMEDB__.registerComponent("User", User);

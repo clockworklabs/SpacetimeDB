@@ -8,17 +8,34 @@ import {
   ProductType,
   BuiltinType,
   ProductTypeElement,
-  IDatabaseTable,
+  DatabaseTable,
   AlgebraicValue,
   ReducerArgsAdapter,
-  ReducerEvent,
+  SumTypeVariant,
+  Serializer,
   Identity,
+  Address,
+  ReducerEvent,
+  Reducer,
+  SpacetimeDBClient,
 } from "../../src/index";
 // @ts-ignore
 import { Point } from "./point";
 
-export class CreatePlayerReducer {
-  public static call(name: string, location: Point) {}
+export class CreatePlayerReducer extends Reducer {
+  public static reducerName: string = "CreatePlayer";
+  public static call(_name: string, _location: Point) {
+    this.getReducer().call(_name, _location);
+  }
+
+  public call(_name: string, _location: Point) {
+    const serializer = this.client.getSerializer();
+    let _nameType = AlgebraicType.createPrimitiveType(BuiltinType.Type.String);
+    serializer.write(_nameType, _name);
+    let _locationType = Point.getAlgebraicType();
+    serializer.write(_locationType, _location);
+    this.client.call("create_player", serializer);
+  }
 
   public static deserializeArgs(adapter: ReducerArgsAdapter): any[] {
     let nameType = AlgebraicType.createPrimitiveType(BuiltinType.Type.String);
@@ -34,20 +51,23 @@ export class CreatePlayerReducer {
   }
 
   public static on(
-    callback: (reducerEvent: ReducerEvent, reducerArgs: any[]) => void
+    callback: (
+      reducerEvent: ReducerEvent,
+      _name: string,
+      _location: Point
+    ) => void
   ) {
-    if (__SPACETIMEDB__.spacetimeDBClient) {
-      __SPACETIMEDB__.spacetimeDBClient.on("reducer:CreatePlayer", callback);
-    }
+    this.getReducer().on(callback);
   }
-}
-
-__SPACETIMEDB__.reducers.set("CreatePlayer", CreatePlayerReducer);
-if (__SPACETIMEDB__.spacetimeDBClient) {
-  __SPACETIMEDB__.spacetimeDBClient.registerReducer(
-    "CreatePlayer",
-    CreatePlayerReducer
-  );
+  public on(
+    callback: (
+      reducerEvent: ReducerEvent,
+      _name: string,
+      _location: Point
+    ) => void
+  ) {
+    this.client.on("reducer:CreatePlayer", callback);
+  }
 }
 
 export default CreatePlayerReducer;

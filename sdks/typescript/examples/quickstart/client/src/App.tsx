@@ -8,7 +8,9 @@ import Message from "./module_bindings/message";
 import User from "./module_bindings/user";
 import SendMessageReducer from "./module_bindings/send_message_reducer";
 import SetNameReducer from "./module_bindings/set_name_reducer";
-console.log(Message, User, SendMessageReducer, SetNameReducer);
+
+SpacetimeDBClient.registerTables(Message, User);
+SpacetimeDBClient.registerReducers(SendMessageReducer, SetNameReducer);
 
 export type MessageType = {
   name: string;
@@ -42,7 +44,7 @@ function App() {
     console.log("client_error");
   });
 
-  client.current.onConnect((token, identity) => {
+  client.current.onConnect((token: string, identity: Identity) => {
     console.log("Connected to SpacetimeDB");
 
     local_identity.current = identity;
