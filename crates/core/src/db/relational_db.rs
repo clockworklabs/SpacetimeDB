@@ -12,13 +12,10 @@ use super::datastore::locking_tx_datastore::Locking;
 use super::datastore::locking_tx_datastore::{DataRef, Iter, IterByColEq, IterByColRange, MutTxId, RowId};
 use super::datastore::traits::{MutProgrammable, MutTx, MutTxDatastore, Programmable, TxData};
 use super::message_log::MessageLog;
-use super::ostorage::memory_object_db::MemoryObjectDB;
 use super::relational_operators::Relation;
 use crate::address::Address;
 use crate::db::datastore::traits::DataRow;
 use crate::db::db_metrics::DB_METRICS;
-use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
-use crate::db::ostorage::ObjectDB;
 use crate::db::FsyncPolicy;
 use crate::error::{DBError, DatabaseError, TableError};
 use crate::execution_context::ExecutionContext;
@@ -57,7 +54,6 @@ impl RelationalDB {
     pub fn open(
         root: impl AsRef<Path>,
         message_log: Option<Arc<Mutex<MessageLog>>>,
-        odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
         address: Address,
         fsync: bool,
     ) -> Result<Self, DBError> {
@@ -83,13 +79,13 @@ impl RelationalDB {
                 log::info!("[{}] Replaying transaction log.", address);
                 let mut last_logged_percentage = 0;
 
-                let commit_log = CommitLog::new(mlog, odb);
+                let commit_log = CommitLog::new(mlog);
                 let max_commit_offset = commit_log.max_commit_offset();
 
-                let commit_log = commit_log.replay(|commit, odb| {
+                let commit_log = commit_log.replay(|commit| {
                     transaction_offset += commit.transactions.len();
                     for transaction in commit.transactions {
-                        datastore.replay_transaction(&transaction, odb)?;
+                        datastore.replay_transaction(&transaction)?;
                     }
 
                     let percentage =
@@ -614,14 +610,6 @@ impl RelationalDB {
     }
 }
 
-fn make_default_ostorage(in_memory: bool, path: impl AsRef<Path>) -> Result<Box<dyn ObjectDB + Send>, DBError> {
-    Ok(if in_memory {
-        Box::<MemoryObjectDB>::default()
-    } else {
-        Box::new(HashMapObjectDB::open(path)?)
-    })
-}
-
 pub fn open_db(path: impl AsRef<Path>, in_memory: bool, fsync: bool) -> Result<RelationalDB, DBError> {
     let path = path.as_ref();
     let mlog = if in_memory {
@@ -631,8 +619,7 @@ pub fn open_db(path: impl AsRef<Path>, in_memory: bool, fsync: bool) -> Result<R
             MessageLog::open(path.join("mlog")).map_err(|e| DBError::Other(e.into()))?,
         )))
     };
-    let odb = Arc::new(Mutex::new(make_default_ostorage(in_memory, path.join("odb"))?));
-    let stdb = RelationalDB::open(path, mlog, odb, Address::zero(), fsync)?;
+    let stdb = RelationalDB::open(path, mlog, Address::zero(), fsync)?;
 
     Ok(stdb)
 }
@@ -669,7 +656,6 @@ mod tests {
         ST_TABLES_ID,
     };
     use crate::db::message_log::SegmentView;
-    use crate::db::ostorage::sled_object_db::SledObjectDB;
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::error::IndexError;
     use crate::error::LogReplayError;
@@ -725,13 +711,7 @@ mod tests {
         stdb.commit_tx(&ExecutionContext::default(), tx)?;
 
         let mlog = Some(Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?)));
-        let in_memory = false;
-        let odb = Arc::new(Mutex::new(make_default_ostorage(
-            in_memory,
-            tmp_dir.path().join("odb"),
-        )?));
-
-        match RelationalDB::open(tmp_dir.path(), mlog, odb, Address::zero(), true) {
+        match RelationalDB::open(tmp_dir.path(), mlog, Address::zero(), true) {
             Ok(_) => {
                 panic!("Allowed to open database twice")
             }
@@ -1419,11 +1399,7 @@ mod tests {
             .open(&mlog_path)
             .map(Mutex::new)
             .map(Arc::new)?;
-        let odb = SledObjectDB::open(tmp.path().join("odb"))
-            .map(|odb| Box::new(odb) as Box<dyn ObjectDB + Send>)
-            .map(Mutex::new)
-            .map(Arc::new)?;
-        let reopen_db = || RelationalDB::open(tmp.path(), Some(mlog.clone()), odb.clone(), Address::zero(), false);
+        let reopen_db = || RelationalDB::open(tmp.path(), Some(mlog.clone()), Address::zero(), false);
         let db = reopen_db()?;
         let ctx = ExecutionContext::default();
 
@@ -1496,7 +1472,6 @@ mod tests {
         assert_eq!(NUM_TRANSACTIONS as u64, balance(&ctx, &db, table_id)?);
 
         drop(db);
-        odb.lock().unwrap().sync_all()?;
         mlog.lock().unwrap().sync_all()?;
 
         // The state must be the same after reopening the db.
