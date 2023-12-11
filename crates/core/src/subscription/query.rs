@@ -2,14 +2,15 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
 use std::time::Instant;
 
-use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::db::datastore::locking_tx_datastore::{MutTxId, TxId};
+use crate::db::datastore::traits::ReadTx;
 use crate::db::db_metrics::{DB_METRICS, MAX_QUERY_COMPILE_TIME};
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::{ExecutionContext, WorkloadType};
 use crate::host::module_host::DatabaseTableUpdate;
 use crate::sql::compiler::compile_sql;
-use crate::sql::execute::execute_single_sql;
+use crate::sql::execute::{execute_single_sql, execute_single_sql_read};
 use crate::sql::query_debug_info::QueryDebugInfo;
 use crate::subscription::subscription::{QuerySet, SupportedQuery};
 use once_cell::sync::Lazy;
@@ -85,6 +86,18 @@ pub(crate) fn run_query(
     auth: AuthCtx,
 ) -> Result<Vec<MemTable>, DBError> {
     execute_single_sql(cx, db, tx, CrudExpr::Query(query.clone()), auth)
+}
+
+/// Runs a query that evaluates if the changes made should be reported to the [ModuleSubscriptionManager]
+#[tracing::instrument(skip_all)]
+pub(crate) fn run_read_query(
+    cx: &ExecutionContext,
+    db: &RelationalDB,
+    tx: &mut TxId,
+    query: &QueryExpr,
+    auth: AuthCtx,
+) -> Result<Vec<MemTable>, DBError> {
+    execute_single_sql_read(cx, db, tx, CrudExpr::Query(query.clone()), auth)
 }
 
 // TODO: It's semantically wrong to `SUBSCRIBE_TO_ALL_QUERY`
@@ -380,12 +393,12 @@ mod tests {
     fn check_query(
         db: &RelationalDB,
         table: &MemTable,
-        tx: &mut MutTxId,
+        tx: &mut TxId,
         q: &QueryExpr,
         data: &DatabaseTableUpdate,
     ) -> ResultTest<()> {
         let q = to_mem_table(q.clone(), data);
-        let result = run_query(&ExecutionContext::default(), db, tx, &q, AuthCtx::for_testing())?;
+        let result = run_read_query(&ExecutionContext::default(), db, tx, &q, AuthCtx::for_testing())?;
 
         assert_eq!(
             Some(table.as_without_table_name()),
@@ -406,7 +419,7 @@ mod tests {
 
     fn check_query_incr(
         db: &RelationalDB,
-        tx: &mut MutTxId,
+        tx: &mut TxId,
         s: &QuerySet,
         update: &DatabaseUpdate,
         total_tables: usize,
@@ -477,6 +490,8 @@ mod tests {
         };
 
         let update = DatabaseUpdate { tables: vec![update] };
+        db.commit_tx(ctx, tx);
+        let mut tx = db.begin_read_tx();
 
         let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
         let id2 = &result.tables[0].ops[0].row_pk;
@@ -526,6 +541,8 @@ mod tests {
                 ops,
             }],
         };
+        drop(tx);
+        let mut tx = db.begin_read_tx();
 
         let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
 

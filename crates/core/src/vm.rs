@@ -6,7 +6,8 @@ use itertools::Itertools;
 use tracing::debug;
 
 use crate::db::cursor::{CatalogCursor, IndexCursor, TableCursor};
-use crate::db::datastore::locking_tx_datastore::{IterByColEq, MutTxId};
+use crate::db::datastore::locking_tx_datastore::{IterByColEq, MutTxId, TxId};
+use crate::db::datastore::traits::ReadTx;
 use crate::db::relational_db::RelationalDB;
 use crate::execution_context::ExecutionContext;
 use spacetimedb_lib::identity::AuthCtx;
@@ -19,16 +20,16 @@ use spacetimedb_vm::env::EnvDb;
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::eval::IterRows;
 use spacetimedb_vm::expr::*;
-use spacetimedb_vm::program::{ProgramRef, ProgramVm};
+use spacetimedb_vm::program::{ProgramRef, ProgramVm, ProgramLoadOps};
 use spacetimedb_vm::rel_ops::RelOps;
 
 //TODO: This is partially duplicated from the `vm` crate to avoid borrow checker issues
 //and pull all that crate in core. Will be revisited after trait refactor
 #[tracing::instrument(skip_all)]
-pub fn build_query<'a>(
+pub fn build_query<'a, T: ReadTx>(
     ctx: &'a ExecutionContext,
     stdb: &'a RelationalDB,
-    tx: &'a MutTxId,
+    tx: &'a T,
     query: QueryCode,
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {
     let db_table = matches!(&query.table, Table::DbTable(_));
@@ -115,10 +116,10 @@ pub fn build_query<'a>(
     Ok(result)
 }
 
-fn join_inner<'a>(
+fn join_inner<'a, T: ReadTx>(
     ctx: &'a ExecutionContext,
     db: &'a RelationalDB,
-    tx: &'a MutTxId,
+    tx: &'a T,
     lhs: impl RelOps + 'a,
     rhs: JoinExpr,
     semi: bool,
@@ -166,10 +167,10 @@ fn join_inner<'a>(
     )
 }
 
-fn get_table<'a>(
+fn get_table<'a, T: ReadTx>(
     ctx: &'a ExecutionContext,
     stdb: &'a RelationalDB,
-    tx: &'a MutTxId,
+    tx: &'a T,
     query: SourceExpr,
 ) -> Result<Box<dyn RelOps + 'a>, ErrorVm> {
     let head = query.head().clone();
@@ -183,10 +184,10 @@ fn get_table<'a>(
     })
 }
 
-fn iter_by_col_range<'a>(
+fn iter_by_col_range<'a, T: ReadTx>(
     ctx: &'a ExecutionContext,
     db: &'a RelationalDB,
-    tx: &'a MutTxId,
+    tx: &'a T,
     table: DbTable,
     col_id: ColId,
     range: impl RangeBounds<AlgebraicValue> + 'a,
@@ -196,7 +197,7 @@ fn iter_by_col_range<'a>(
 }
 
 // An index join operator that returns matching rows from the index side.
-pub struct IndexSemiJoin<'a, Rhs: RelOps> {
+pub struct IndexSemiJoin<'a, Rhs: RelOps, T: ReadTx> {
     // An iterator for the probe side.
     // The values returned will be used to probe the index.
     pub probe_side: Rhs,
@@ -218,12 +219,12 @@ pub struct IndexSemiJoin<'a, Rhs: RelOps> {
     // A reference to the database.
     pub db: &'a RelationalDB,
     // A reference to the current transaction.
-    pub tx: &'a MutTxId,
+    pub tx: &'a T,
     // The execution context for the current transaction.
     ctx: &'a ExecutionContext<'a>,
 }
 
-impl<'a, Rhs: RelOps> IndexSemiJoin<'a, Rhs> {
+impl<'a, Rhs: RelOps, T: ReadTx> IndexSemiJoin<'a, Rhs, T> {
     fn filter(&self, index_row: RelValueRef) -> Result<bool, ErrorVm> {
         if let Some(op) = &self.index_select {
             Ok(op.compare(index_row, &self.index_header)?)
@@ -242,7 +243,7 @@ impl<'a, Rhs: RelOps> IndexSemiJoin<'a, Rhs> {
     }
 }
 
-impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
+impl<'a, Rhs: RelOps, T: ReadTx> RelOps for IndexSemiJoin<'a, Rhs, T> {
     fn head(&self) -> &Header {
         if self.return_index_rows {
             &self.index_header
@@ -290,17 +291,19 @@ impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
 
 /// A [ProgramVm] implementation that carry a [RelationalDB] for it
 /// query execution
-pub struct DbProgram<'db, 'tx> {
+pub struct DbProgram<'db, 'tx, T: ReadTx> {
     ctx: &'tx ExecutionContext<'tx>,
     pub(crate) env: EnvDb,
     pub(crate) stats: HashMap<String, u64>,
     pub(crate) db: &'db RelationalDB,
-    pub(crate) tx: &'tx mut MutTxId,
+    pub(crate) tx: &'tx mut T,
     pub(crate) auth: AuthCtx,
 }
 
-impl<'db, 'tx> DbProgram<'db, 'tx> {
-    pub fn new(ctx: &'tx ExecutionContext, db: &'db RelationalDB, tx: &'tx mut MutTxId, auth: AuthCtx) -> Self {
+impl<'db, 'tx, T: ReadTx> ProgramLoadOps for DbProgram<'db, 'tx, T>{}
+
+impl<'db, 'tx, T: ReadTx> DbProgram<'db, 'tx, T> {
+    pub fn new(ctx: &'tx ExecutionContext, db: &'db RelationalDB, tx: &'tx mut T, auth: AuthCtx) -> Self {
         let mut env = EnvDb::new();
         Self::load_ops(&mut env);
         Self {
@@ -324,7 +327,9 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
 
         Ok(Code::Table(MemTable::new(head, table_access, rows)))
     }
+}
 
+impl<'db, 'tx> DbProgram<'db, 'tx, MutTxId> {
     fn _execute_insert(&mut self, table: &Table, rows: Vec<ProductValue>) -> Result<Code, ErrorVm> {
         match table {
             // TODO: How do we deal with mutating values?
@@ -394,7 +399,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
     }
 }
 
-impl ProgramVm for DbProgram<'_, '_> {
+impl ProgramVm for DbProgram<'_, '_, MutTxId> {
     fn env(&self) -> &EnvDb {
         &self.env
     }
@@ -415,7 +420,7 @@ impl ProgramVm for DbProgram<'_, '_> {
         query.check_auth(self.auth.owner, self.auth.caller)?;
 
         match query {
-            CrudCode::Query(query) => self._eval_query(query),
+            CrudCode::Query(query) =>self._eval_query(query),
             CrudCode::Insert { table, rows } => self._execute_insert(&table, rows),
             CrudCode::Update {
                 delete,
@@ -493,6 +498,43 @@ impl ProgramVm for DbProgram<'_, '_> {
         }
     }
 }
+
+impl ProgramVm for DbProgram<'_, '_, TxId> {
+    fn env(&self) -> &EnvDb {
+        &self.env
+    }
+
+    fn env_mut(&mut self) -> &mut EnvDb {
+        &mut self.env
+    }
+
+    fn ctx(&self) -> &dyn ProgramVm {
+        self as &dyn ProgramVm
+    }
+
+    fn auth(&self) -> &AuthCtx {
+        &self.auth
+    }
+
+    fn eval_query(&mut self, query: CrudCode) -> Result<Code, ErrorVm> {
+        query.check_auth(self.auth.owner, self.auth.caller)?;
+
+        match query {
+            // Fix, unimplmented()
+            CrudCode::Query(query) => self._eval_query(query),
+            _ => unimplemented!()
+        }
+    }
+
+    fn as_program_ref(&self) -> ProgramRef<'_> {
+        ProgramRef {
+            env: &self.env,
+            stats: &self.stats,
+            ctx: self.ctx(),
+        }
+    }
+}
+
 
 impl RelOps for TableCursor<'_> {
     fn head(&self) -> &Header {
@@ -596,7 +638,7 @@ pub(crate) mod tests {
     }
 
     pub(crate) fn create_table_from_program(
-        p: &mut DbProgram,
+        p: &mut DbProgram<MutTxId>,
         table_name: &str,
         schema: ProductType,
         rows: &[ProductValue],
@@ -651,7 +693,7 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    fn check_catalog(p: &mut DbProgram, name: &str, row: ProductValue, q: QueryExpr, schema: DbTable) {
+    fn check_catalog(p: &mut DbProgram<MutTxId>, name: &str, row: ProductValue, q: QueryExpr, schema: DbTable) {
         let result = run_ast(p, q.into());
 
         //The expected result

@@ -13,8 +13,7 @@ use spacetimedb_sats::DataKey;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
 
 use super::locking_tx_datastore::Iter;
-use super::system_tables::SystemTable;
-use super::{system_tables::StTableRow, Result};
+use super::{Result};
 
 /// Operations in a transaction are either Inserts or Deletes.
 /// Inserts report the byte objects they inserted, to be persisted
@@ -53,7 +52,7 @@ pub trait DataRow: Send + Sync {
     fn view_product_value<'a>(&self, data_ref: Self::DataRef<'a>) -> &'a ProductValue;
 }
 
-pub(super) trait ReadTx: DataRow {
+pub trait ReadTx: DataRow {
     // Todo to use DataRef
     // type Iter<'a>: Iterator
     // where

@@ -31,7 +31,8 @@ use std::hash::Hasher;
 use std::ops::Deref;
 use std::time::Instant;
 
-use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::db::datastore::locking_tx_datastore::{MutTxId, TxId};
+use crate::db::datastore::traits::ReadTx;
 use crate::db::db_metrics::{DB_METRICS, MAX_QUERY_CPU_TIME};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::{ExecutionContext, WorkloadType};
@@ -49,7 +50,7 @@ use spacetimedb_sats::relation::{DbTable, MemTable, RelValue};
 use spacetimedb_sats::{AlgebraicValue, DataKey, ProductValue};
 use spacetimedb_vm::expr::{self, IndexJoin, QueryExpr, SourceExpr};
 
-use super::query;
+use super::query::{self, run_read_query};
 
 /// A subscription is a [`QuerySet`], along with a set of subscribers all
 /// interested in the same set of queries.
@@ -216,7 +217,7 @@ impl QuerySet {
     pub fn eval_incr(
         &self,
         db: &RelationalDB,
-        tx: &mut MutTxId,
+        tx: &mut TxId,
         database_update: &DatabaseUpdate,
         auth: AuthCtx,
     ) -> Result<DatabaseUpdate, DBError> {
@@ -404,13 +405,13 @@ impl From<Op> for TableOp {
 /// removed from the `row`.
 fn eval_incremental(
     db: &RelationalDB,
-    tx: &mut MutTxId,
+    tx: &mut TxId,
     auth: &AuthCtx,
     expr: &QueryExpr,
     info: &QueryDebugInfo,
 ) -> Result<impl Iterator<Item = Op>, DBError> {
     let ctx = &ExecutionContext::incremental_update(db.address(), Some(info));
-    let results = run_query(ctx, db, tx, expr, *auth)?;
+    let results = run_read_query(ctx, db, tx, expr, *auth)?;
     let ops = results
         .into_iter()
         .filter(|result| !result.data.is_empty())
@@ -584,7 +585,7 @@ impl<'a> IncrementalJoin<'a> {
     pub fn eval(
         &self,
         db: &RelationalDB,
-        tx: &mut MutTxId,
+        tx: &mut TxId,
         auth: &AuthCtx,
     ) -> Result<impl Iterator<Item = Op>, DBError> {
         let ctx = &ExecutionContext::incremental_update(db.address(), Some(self.info));
@@ -597,7 +598,7 @@ impl<'a> IncrementalJoin<'a> {
             // {A+ join B}
             let a = eval_incremental(db, tx, auth, &lhs_virt, self.info)?;
             // {A join B+}
-            let b = run_query(ctx, db, tx, &rhs_virt, *auth)?
+            let b = run_read_query(ctx, db, tx, &rhs_virt, *auth)?
                 .into_iter()
                 .filter(|result| !result.data.is_empty())
                 .flat_map(|result| {
@@ -623,7 +624,7 @@ impl<'a> IncrementalJoin<'a> {
             // {A- join B}
             let a = eval_incremental(db, tx, auth, &lhs_virt, self.info)?;
             // {A join B-}
-            let b = run_query(ctx, db, tx, &rhs_virt, *auth)?
+            let b = run_read_query(ctx, db, tx, &rhs_virt, *auth)?
                 .into_iter()
                 .filter(|result| !result.data.is_empty())
                 .flat_map(|result| {

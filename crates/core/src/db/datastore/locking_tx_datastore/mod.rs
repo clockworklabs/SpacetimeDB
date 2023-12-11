@@ -1919,6 +1919,18 @@ impl Locking {
         }
     }
 
+    pub fn begin_read_tx(&self) -> TxId {
+        let timer = Instant::now();
+
+        let committed_state_shared_lock = self.committed_state.read_arc();
+        let lock_wait_time = timer.elapsed();
+        TxId {
+            committed_state_shared_lock,
+            lock_wait_time,
+            timer,
+        }
+    }
+
     /// IMPORTANT! This the most delicate function in the entire codebase.
     /// DO NOT CHANGE UNLESS YOU KNOW WHAT YOU'RE DOING!!!
     pub fn bootstrap(database_address: Address) -> Result<Self, DBError> {
@@ -2026,19 +2038,6 @@ impl DataRow for Locking {
         data_ref.data
     }
 }
-
-// impl traits::Tx for Locking {
-//     type TxId = TxId;
-
-//     fn begin_tx(&self) -> Self::TxId {
-//         //self.begin_mut_tx()
-//         unimplemented!()
-//     }
-
-//     fn release_tx(&self, ctx: &ExecutionContext, tx: Self::TxId) {
-//         //self.rollback_mut_tx(ctx, tx)
-//     }
-// }
 
 pub struct Iter<'a> {
     ctx: &'a ExecutionContext<'a>,

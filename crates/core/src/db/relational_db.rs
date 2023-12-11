@@ -8,8 +8,8 @@ use std::sync::{Arc, Mutex};
 
 use super::commit_log::{CommitLog, CommitLogMut};
 use super::datastore::locking_tx_datastore::Locking;
-use super::datastore::locking_tx_datastore::{Iter, IterByColEq, IterByColRange, MutTxId, RowId};
-use super::datastore::traits::{MutProgrammable, MutTx, MutTxDatastore, TxData};
+use super::datastore::locking_tx_datastore::{Iter, IterByColEq, IterByColRange, MutTxId, RowId, TxId};
+use super::datastore::traits::{MutProgrammable, MutTx, MutTxDatastore, TxData, ReadTx};
 use super::message_log::MessageLog;
 use super::ostorage::memory_object_db::MemoryObjectDB;
 use super::relational_operators::Relation;
@@ -229,9 +229,15 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn rollback_tx(&self, ctx: &ExecutionContext, tx: MutTxId) {
+    pub fn begin_read_tx(&self) -> TxId {
+        log::trace!("BEGIN TX");
+        self.inner.begin_read_tx()
+    }
+
+    #[tracing::instrument(skip_all)]
+    pub fn rollback_tx<T: ReadTx>(&self, ctx: &ExecutionContext, tx: T) {
         log::trace!("ROLLBACK TX");
-        self.inner.rollback_mut_tx(ctx, tx)
+        //self.inner.rollback_mut_tx(ctx, tx)
     }
 
     #[tracing::instrument(skip_all)]
@@ -459,10 +465,10 @@ impl RelationalDB {
     /// Returns an iterator,
     /// yielding every row in the table identified by `table_id`.
     #[tracing::instrument(skip(self, ctx, tx))]
-    pub fn iter<'a>(
+    pub fn iter<'a, T: ReadTx>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a MutTxId,
+        tx: &'a T,
         table_id: TableId,
     ) -> Result<Iter<'a>, DBError> {
         let _guard = DB_METRICS.rdb_iter_time.with_label_values(&table_id.0).start_timer();
@@ -475,15 +481,16 @@ impl RelationalDB {
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
     #[tracing::instrument(skip_all)]
-    pub fn iter_by_col_eq<'a>(
+    pub fn iter_by_col_eq<'a, T: ReadTx>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a MutTxId,
+        tx: &'a T,
         table_id: impl Into<TableId>,
         cols: impl Into<NonEmpty<ColId>>,
         value: AlgebraicValue,
     ) -> Result<IterByColEq<'a>, DBError> {
-        self.inner.iter_by_col_eq_mut_tx(ctx, tx, table_id.into(), cols, value)
+        //self.inner.iter_by_col_eq_mut_tx(ctx, tx, table_id.into(), cols, value)
+        unimplemented!()
     }
 
     /// Returns an iterator,
@@ -491,16 +498,17 @@ impl RelationalDB {
     /// where the column data identified by `cols` matches what is within `range`.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
-    pub fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
+    pub fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>, T: ReadTx>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a MutTxId,
+        tx: &'a T,
         table_id: impl Into<TableId>,
         cols: impl Into<NonEmpty<ColId>>,
         range: R,
     ) -> Result<IterByColRange<'a, R>, DBError> {
-        self.inner
-            .iter_by_col_range_mut_tx(ctx, tx, table_id.into(), cols, range)
+       // self.inner
+        //    .iter_by_col_range_mut_tx(ctx, tx, table_id.into(), cols, range)
+        unimplemented!()
     }
 
     #[tracing::instrument(skip(self, tx, row))]

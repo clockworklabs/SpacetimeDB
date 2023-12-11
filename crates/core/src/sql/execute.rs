@@ -2,11 +2,12 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{ProductType, ProductValue};
 use spacetimedb_sats::relation::MemTable;
 use spacetimedb_vm::eval::run_ast;
-use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
+use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr, QueryExpr, QueryCode};
 use tracing::info;
 
 use crate::database_instance_context_controller::DatabaseInstanceContextController;
-use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::db::datastore::locking_tx_datastore::{MutTxId, TxId};
+use crate::db::datastore::traits::ReadTx;
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, DatabaseError};
 use crate::execution_context::ExecutionContext;
@@ -59,6 +60,21 @@ fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Result<(), DBErr
 
     Ok(())
 }
+#[tracing::instrument(skip_all)]
+pub fn execute_single_sql_read(
+    cx: &ExecutionContext,
+    db: &RelationalDB,
+    tx: &mut TxId,
+    ast: CrudExpr,
+    auth: AuthCtx,
+) -> Result<Vec<MemTable>, DBError> {
+    let p = &mut DbProgram::new(cx, db, tx, auth);
+    let q = Expr::Crud(Box::new(ast));
+
+    let mut result = Vec::with_capacity(1);
+    collect_result(&mut result, run_ast(p, q).into())?;
+    Ok(result)
+}
 
 #[tracing::instrument(skip_all)]
 pub fn execute_single_sql(
@@ -75,6 +91,21 @@ pub fn execute_single_sql(
     collect_result(&mut result, run_ast(p, q).into())?;
     Ok(result)
 }
+
+// pub fn execute_single_sql_query<T: ReadTx>(
+//     cx: &ExecutionContext,
+//     db: &RelationalDB,
+//     tx: &mut T,
+//     ast: QueryCode,
+//     auth: AuthCtx,
+// ) -> Result<Vec<MemTable>, DBError> {
+//     let p = &mut DbProgram::new(cx, db, tx, auth);
+//     let q = Expr::Crud(Box::new(ast));
+
+//     let mut result = Vec::with_capacity(1);
+//     collect_result(&mut result, run_ast(p, q).into())?;
+//     Ok(result)
+// }
 
 /// Run the compiled `SQL` expression inside the `vm` created by [DbProgram]
 #[tracing::instrument(skip_all)]

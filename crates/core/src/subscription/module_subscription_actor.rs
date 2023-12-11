@@ -4,7 +4,7 @@ use super::{
     query::compile_read_only_query,
     subscription::{QuerySet, Subscription},
 };
-use crate::host::module_host::{EventStatus, ModuleEvent};
+use crate::{host::module_host::{EventStatus, ModuleEvent}, db::datastore::locking_tx_datastore::TxId};
 use crate::protobuf::client_api::Subscribe;
 use crate::{
     client::{
@@ -181,7 +181,7 @@ impl ModuleSubscriptionActor {
         })
     }
 
-    async fn _broadcast_commit_event(&mut self, mut event: ModuleEvent, tx: &mut MutTxId) -> Result<(), DBError> {
+    async fn _broadcast_commit_event(&mut self, mut event: ModuleEvent, tx: &mut TxId) -> Result<(), DBError> {
         let futures = FuturesUnordered::new();
         let auth = AuthCtx::new(self.owner_identity, event.caller_identity);
 
@@ -216,9 +216,10 @@ impl ModuleSubscriptionActor {
 
     async fn broadcast_commit_event(&mut self, event: ModuleEvent) -> Result<(), DBError> {
         //Split logic to properly handle `Error` + `Tx`
-        let mut tx = self.relational_db.begin_tx();
+        let mut tx = self.relational_db.begin_read_tx();
         let result = self._broadcast_commit_event(event, &mut tx).await;
         let ctx = ExecutionContext::incremental_update(self.relational_db.address(), None);
-        self.relational_db.finish_tx(&ctx, tx, result)
+        self.relational_db.rollback_tx(&ctx, tx);
+        result
     }
 }

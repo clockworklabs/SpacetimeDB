@@ -15,13 +15,7 @@ use crate::ops::logic;
 use crate::ops::math;
 use crate::rel_ops::RelOps;
 
-/// A trait to allow split the execution of `programs` to allow executing
-/// `queries` that take in account each `program` state/enviroment.
-///
-/// In concrete, it allows to run queries that run on the `SpaceTimeDb` engine.
-///
-/// It could also permite run queries backed by different engines, like in `MySql`.
-pub trait ProgramVm {
+pub trait ProgramLoadOps {
     /// Load the in-built functions that define the operators of the VM,
     /// like `+`, `and`, `==`, etc.
     fn load_ops(env: &mut EnvDb)
@@ -65,6 +59,15 @@ pub trait ProgramVm {
 
         env.functions.ops = ops
     }
+}
+
+/// A trait to allow split the execution of `programs` to allow executing
+/// `queries` that take in account each `program` state/enviroment.
+///
+/// In concrete, it allows to run queries that run on the `SpaceTimeDb` engine.
+///
+/// It could also permite run queries backed by different engines, like in `MySql`.
+pub trait ProgramVm: ProgramLoadOps {
 
     fn env(&self) -> &EnvDb;
     fn env_mut(&mut self) -> &mut EnvDb;
@@ -149,6 +152,7 @@ impl Program {
         }
     }
 }
+impl ProgramLoadOps for Program {}
 
 impl ProgramVm for Program {
     fn env(&self) -> &EnvDb {
