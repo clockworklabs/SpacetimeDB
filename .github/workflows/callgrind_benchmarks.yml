@@ -57,7 +57,9 @@ jobs:
           fi
 
       - name: Post initial comment
+        shell: bash
         run: |
+          set -exo pipefail
           if [[ $PR_NUMBER ]]; then
             comment_parent=issues/$PR_NUMBER
             comment_update=issues/comments
