@@ -79,20 +79,25 @@ pub trait ReadTx {
 
 pub trait Tx {
     type TxId: ReadTx;
+    fn rollback_tx(&self, ctx: &ExecutionContext, tx: Self::TxId);
+    fn begin_tx(&self) -> Self::TxId;
+}
+
+pub trait MutTx {
     type MutTxId: ReadTx;
-    fn begin_read_tx(&self) -> Self::TxId;
-    fn begin_write_tx(&self) -> Self::MutTxId;
-    fn commit_tx(&self, ctx: &ExecutionContext, tx: Self::MutTxId) -> Result<Option<TxData>>;
-    fn rollback_tx<T: ReadTx>(&self, ctx: &ExecutionContext, tx: T);
+    fn rollback_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTxId);
+    fn begin_mut_tx(&self) -> Self::MutTxId;
+    fn commit_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTxId) -> Result<Option<TxData>>;
 
     #[cfg(test)]
     fn commit_mut_tx_for_test(&self, tx: Self::MutTxId) -> Result<Option<TxData>>;
 
     #[cfg(test)]
     fn rollback_mut_tx_for_test(&self, tx: Self::MutTxId);
+
 }
 
-pub trait TxDatastore: Tx + DataRow {
+pub trait TxDatastore: DataRow + Tx {
     type Iter<'a>: Iterator<Item = Self::DataRef<'a>>
     where
         Self: 'a;
@@ -105,6 +110,33 @@ pub trait TxDatastore: Tx + DataRow {
     where
         Self: 'a;
 
+    // Data
+    fn iter_tx<'a, T: ReadTx>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        tx: &'a T,
+        table_id: TableId,
+    ) -> Result<Self::Iter<'a>>;
+    fn iter_by_col_range_tx<'a, R: RangeBounds<AlgebraicValue>, T: ReadTx>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        tx: &'a T,
+        table_id: TableId,
+        cols: impl Into<NonEmpty<ColId>>,
+        range: R,
+    ) -> Result<Self::IterByColRange<'a, R>>;
+    fn iter_by_col_eq_tx<'a, T: ReadTx>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        tx: &'a T,
+        table_id: TableId,
+        cols: impl Into<NonEmpty<ColId>>,
+        value: AlgebraicValue,
+    ) -> Result<Self::IterByColEq<'a>>;
+    fn table_id_from_name<T: ReadTx>(&self, tx: &T, table_name: &str) -> Result<Option<TableId>>;
+}
+
+pub trait MutTxDatastore: TxDatastore + MutTx {
     // Tables
     fn create_table_mut_tx(&self, tx: &mut Self::MutTxId, schema: TableDef) -> Result<TableId>;
     // In these methods, we use `'tx` because the return type must borrow data
@@ -119,7 +151,6 @@ pub trait TxDatastore: Tx + DataRow {
     fn drop_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId) -> Result<()>;
     fn rename_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, new_name: &str) -> Result<()>;
     fn table_id_exists(&self, tx: &Self::MutTxId, table_id: &TableId) -> bool;
-    fn table_id_from_name<T: ReadTx>(&self, tx: &T, table_name: &str) -> Result<Option<TableId>>;
     fn table_name_from_id_mut_tx<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
@@ -157,30 +188,6 @@ pub trait TxDatastore: Tx + DataRow {
     fn drop_constraint_mut_tx(&self, tx: &mut Self::MutTxId, constraint_id: ConstraintId) -> super::Result<()>;
     fn constraint_id_from_name(&self, tx: &Self::MutTxId, constraint_name: &str)
         -> super::Result<Option<ConstraintId>>;
-
-    // Data
-    fn iter_tx<'a, T: ReadTx>(
-        &'a self,
-        ctx: &'a ExecutionContext,
-        tx: &'a T,
-        table_id: TableId,
-    ) -> Result<Self::Iter<'a>>;
-    fn iter_by_col_range_tx<'a, R: RangeBounds<AlgebraicValue>, T: ReadTx>(
-        &'a self,
-        ctx: &'a ExecutionContext,
-        tx: &'a T,
-        table_id: TableId,
-        cols: impl Into<NonEmpty<ColId>>,
-        range: R,
-    ) -> Result<Self::IterByColRange<'a, R>>;
-    fn iter_by_col_eq_tx<'a, T: ReadTx>(
-        &'a self,
-        ctx: &'a ExecutionContext,
-        tx: &'a T,
-        table_id: TableId,
-        cols: impl Into<NonEmpty<ColId>>,
-        value: AlgebraicValue,
-    ) -> Result<Self::IterByColEq<'a>>;
     fn get_mut_tx<'a>(
         &self,
         tx: &'a Self::MutTxId,
@@ -222,7 +229,7 @@ pub trait Programmable: TxDatastore {
 
 /// Describes a [`Programmable`] datastore which allows to update the program
 /// associated with it.
-pub trait MutProgrammable: TxDatastore {
+pub trait MutProgrammable: MutTxDatastore {
     /// A fencing token (usually a monotonic counter) which allows to order
     /// `set_module_hash` with respect to a distributed locking service.
     type FencingToken: Eq + Ord;

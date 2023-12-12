@@ -10,12 +10,12 @@ use std::sync::{Arc, Mutex};
 use super::commit_log::{CommitLog, CommitLogMut};
 use super::datastore::locking_tx_datastore::Locking;
 use super::datastore::locking_tx_datastore::{DataRef, Iter, IterByColEq, IterByColRange, MutTxId, RowId};
-use super::datastore::traits::{MutProgrammable, Programmable, Tx, TxData, TxDatastore};
+use super::datastore::traits::{MutProgrammable, Programmable, Tx, TxData, TxDatastore, MutTxDatastore};
 use super::message_log::MessageLog;
 use super::ostorage::memory_object_db::MemoryObjectDB;
 use super::relational_operators::Relation;
 use crate::address::Address;
-use crate::db::datastore::traits::DataRow;
+use crate::db::datastore::traits::{DataRow, MutTx};
 use crate::db::db_metrics::DB_METRICS;
 use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 use crate::db::ostorage::ObjectDB;
@@ -235,19 +235,19 @@ impl RelationalDB {
     #[tracing::instrument(skip_all)]
     pub fn begin_tx(&self) -> MutTxId {
         log::trace!("BEGIN TX");
-        self.inner.begin_write_tx()
+        self.inner.begin_mut_tx()
     }
 
     #[tracing::instrument(skip_all)]
     pub fn rollback_tx(&self, ctx: &ExecutionContext, tx: MutTxId) {
         log::trace!("ROLLBACK TX");
-        self.inner.rollback_tx(ctx, tx)
+        self.inner.rollback_mut_tx(ctx, tx)
     }
 
     #[tracing::instrument(skip_all)]
     pub fn commit_tx(&self, ctx: &ExecutionContext, tx: MutTxId) -> Result<Option<(TxData, Option<usize>)>, DBError> {
         log::trace!("COMMIT TX");
-        if let Some(tx_data) = self.inner.commit_tx(ctx, tx)? {
+        if let Some(tx_data) = self.inner.commit_mut_tx(ctx, tx)? {
             let bytes_written = self
                 .commit_log
                 .as_ref()
