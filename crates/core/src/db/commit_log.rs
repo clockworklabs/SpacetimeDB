@@ -1,5 +1,5 @@
 use super::{
-    datastore::traits::{TxData, MutTxDatastore},
+    datastore::traits::{MutTxDatastore, TxData},
     message_log::{self, MessageLog},
     messages::commit::Commit,
     ostorage::{memory_object_db::MemoryObjectDB, ObjectDB},

@@ -31,7 +31,7 @@ use super::{
         system_tables, StColumnRow, StIndexRow, StSequenceRow, StTableRow, SystemTable, ST_COLUMNS_ID, ST_INDEXES_ID,
         ST_SEQUENCES_ID, ST_TABLES_ID,
     },
-    traits::{self, DataRow, ReadTx, TxData, TxDatastore, MutTxDatastore, MutTx, Tx},
+    traits::{self, DataRow, MutTx, MutTxDatastore, ReadTx, Tx, TxData, TxDatastore},
 };
 use crate::db::datastore::system_tables;
 use crate::db::datastore::system_tables::{
@@ -2409,7 +2409,6 @@ impl Tx for Locking {
     fn rollback_tx(&self, ctx: &ExecutionContext, tx: Self::TxId) {
         tx.release(ctx);
     }
-
 }
 
 impl MutTx for Locking {
@@ -2536,8 +2535,6 @@ impl TxDatastore for Locking {
     ) -> super::Result<Self::IterByColEq<'a>> {
         tx.iter_by_col_eq(ctx, &table_id, cols.into(), value)
     }
-
-
 }
 
 impl MutTxDatastore for Locking {

@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use super::commit_log::{CommitLog, CommitLogMut};
 use super::datastore::locking_tx_datastore::Locking;
 use super::datastore::locking_tx_datastore::{DataRef, Iter, IterByColEq, IterByColRange, MutTxId, RowId};
-use super::datastore::traits::{MutProgrammable, Programmable, Tx, TxData, TxDatastore, MutTxDatastore};
+use super::datastore::traits::{MutProgrammable, MutTxDatastore, Programmable, TxData, TxDatastore};
 use super::message_log::MessageLog;
 use super::ostorage::memory_object_db::MemoryObjectDB;
 use super::relational_operators::Relation;
