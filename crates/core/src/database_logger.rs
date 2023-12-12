@@ -37,8 +37,11 @@ impl From<u8> for LogLevel {
 }
 
 #[serde_with::skip_serializing_none]
+#[serde_with::serde_as]
 #[derive(serde::Serialize, Copy, Clone)]
 pub struct Record<'a> {
+    #[serde_as(as = "serde_with::TimestampMicroSeconds")]
+    pub ts: chrono::DateTime<chrono::Utc>,
     pub target: Option<&'a str>,
     pub filename: Option<&'a str>,
     pub line_number: Option<u32>,
@@ -227,6 +230,7 @@ impl SystemLogger {
 
     fn record(message: &str) -> Record {
         Record {
+            ts: chrono::Utc::now(),
             target: None,
             filename: Some("spacetimedb"),
             line_number: None,

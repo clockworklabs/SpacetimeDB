@@ -257,21 +257,21 @@ mod tests {
 
     #[test]
     fn test_updates_new_table() -> anyhow::Result<()> {
-        let current = vec![Cow::Owned(TableSchema {
-            table_id: TableId(42),
-            table_name: "Person".into(),
-            columns: vec![ColumnSchema {
+        let current = vec![Cow::Owned(TableSchema::new(
+            TableId(42),
+            "Person".into(),
+            vec![ColumnSchema {
                 table_id: TableId(42),
                 col_pos: ColId(0),
                 col_name: "name".into(),
                 col_type: AlgebraicType::String,
             }],
-            indexes: vec![],
-            constraints: vec![],
-            sequences: vec![],
-            table_type: StTableType::User,
-            table_access: StAccess::Public,
-        })];
+            vec![],
+            vec![],
+            vec![],
+            StTableType::User,
+            StAccess::Public,
+        ))];
         let proposed = vec![
             TableDef::new(
                 "Person".into(),
@@ -323,7 +323,6 @@ mod tests {
                 ],
             )
             .with_column_constraint(Constraints::identity(), ColId(0))
-            .unwrap()
             .with_indexes(vec![IndexDef::btree(
                 "Person_id_unique".into(),
                 (ColId(0), vec![ColId(1)]),
@@ -346,7 +345,6 @@ mod tests {
             ],
         )
         .with_column_constraint(Constraints::identity(), ColId(0))
-        .unwrap()
         .with_indexes(vec![IndexDef::btree(
             "Person_id_and_name".into(),
             (ColId(0), vec![ColId(1)]),
@@ -401,8 +399,7 @@ mod tests {
                 },
             ],
         )
-        .with_column_constraint(Constraints::identity(), ColId(0))
-        .unwrap()];
+        .with_column_constraint(Constraints::identity(), ColId(0))];
 
         match schema_updates(current, proposed)? {
             SchemaUpdates::Tainted(tainted) => {

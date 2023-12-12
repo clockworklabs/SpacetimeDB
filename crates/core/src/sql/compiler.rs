@@ -24,7 +24,7 @@ pub fn compile_sql(db: &RelationalDB, tx: &MutTxId, sql_text: &str) -> Result<Ve
     let mut results = Vec::with_capacity(ast.len());
 
     for sql in ast {
-        results.push(compile_statement(sql).map_err(|error| DBError::Plan {
+        results.push(compile_statement(db, sql).map_err(|error| DBError::Plan {
             sql: sql_text.to_string(),
             error,
         })?);
@@ -115,7 +115,7 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
             },
             Column::QualifiedWildcard { table: name } => {
                 if let Some(t) = table.iter_tables().find(|x| x.table_name == name) {
-                    for c in t.columns.iter() {
+                    for c in t.columns().iter() {
                         col_ids.push(FieldName::named(&t.table_name, &c.col_name).into());
                     }
                     qualified_wildcards.push(t.table_id);
@@ -248,7 +248,7 @@ fn compile_drop(name: String, kind: DbType, table_access: StAccess) -> Result<Cr
 }
 
 /// Compiles a `SQL` clause
-fn compile_statement(statement: SqlAst) -> Result<CrudExpr, PlanError> {
+fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, PlanError> {
     let q = match statement {
         SqlAst::Select {
             from,
@@ -270,7 +270,7 @@ fn compile_statement(statement: SqlAst) -> Result<CrudExpr, PlanError> {
         } => compile_drop(name, kind, table_access)?,
     };
 
-    Ok(q.optimize())
+    Ok(q.optimize(Some(db.address())))
 }
 
 #[cfg(test)]
@@ -1052,7 +1052,7 @@ mod tests {
 
         // Optimize the query plan for the incremental update.
         let expr = query::to_mem_table(expr, &insert);
-        let expr = expr.optimize();
+        let expr = expr.optimize(Some(db.address()));
 
         let QueryExpr {
             source:

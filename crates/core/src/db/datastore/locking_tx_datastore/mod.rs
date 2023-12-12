@@ -51,10 +51,11 @@ use crate::{
 };
 use anyhow::anyhow;
 use parking_lot::{lock_api::ArcRwLockWriteGuard, RawRwLock, RwLock};
-use spacetimedb_lib::Address;
+use spacetimedb_lib::{metrics::METRICS, Address};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::data_key::{DataKey, ToDataKey};
 use spacetimedb_sats::db::def::*;
+use spacetimedb_sats::db::error::SchemaErrors;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::relation::RelValue;
 use spacetimedb_sats::{
@@ -231,7 +232,7 @@ impl CommittedState {
         for schema in system_tables() {
             let table_id = schema.table_id;
             // Reset the row count metric for this system table
-            DB_METRICS
+            METRICS
                 .rdb_num_table_rows
                 .with_label_values(&database_address, &table_id.0)
                 .set(0);
@@ -252,7 +253,7 @@ impl CommittedState {
         // Insert the columns into `st_columns`
         let st_columns = self.get_or_create_table(ST_COLUMNS_ID, st_columns_schema());
 
-        for col in system_tables().into_iter().flat_map(|x| x.columns) {
+        for col in system_tables().into_iter().flat_map(|x| x.columns().to_vec()) {
             let row = StColumnRow {
                 table_id: col.table_id,
                 col_pos: col.col_pos,
@@ -264,7 +265,7 @@ impl CommittedState {
 
             st_columns.rows.insert(RowId(data_key), row);
             // Increment row count for st_columns
-            DB_METRICS
+            METRICS
                 .rdb_num_table_rows
                 .with_label_values(&database_address, &ST_COLUMNS_ID.into())
                 .inc();
@@ -292,7 +293,7 @@ impl CommittedState {
             let data_key = row.to_data_key();
             st_constraints.rows.insert(RowId(data_key), row);
             // Increment row count for st_constraints
-            DB_METRICS
+            METRICS
                 .rdb_num_table_rows
                 .with_label_values(&database_address, &ST_CONSTRAINTS_ID.into())
                 .inc();
@@ -321,7 +322,7 @@ impl CommittedState {
             let data_key = row.to_data_key();
             st_indexes.rows.insert(RowId(data_key), row);
             // Increment row count for st_indexes
-            DB_METRICS
+            METRICS
                 .rdb_num_table_rows
                 .with_label_values(&database_address, &ST_INDEXES_ID.into())
                 .inc();
@@ -356,7 +357,7 @@ impl CommittedState {
             let data_key = row.to_data_key();
             st_sequences.rows.insert(RowId(data_key), row);
             // Increment row count for st_sequences
-            DB_METRICS
+            METRICS
                 .rdb_num_table_rows
                 .with_label_values(&database_address, &ST_SEQUENCES_ID.into())
                 .inc();
@@ -550,16 +551,16 @@ impl CommittedState {
             indexes.push(index_schema);
         }
 
-        Ok(Cow::Owned(TableSchema {
+        Ok(Cow::Owned(TableSchema::new(
             table_id,
             table_name,
             columns,
             indexes,
             constraints,
             sequences,
-            table_type: el.table_type,
-            table_access: el.table_access,
-        }))
+            el.table_type,
+            el.table_access,
+        )))
     }
 
     fn get_schema(&self, table_id: &TableId) -> Option<&TableSchema> {
@@ -1207,7 +1208,11 @@ impl MutTxId {
             return Err(TableError::System(table_schema.table_name.clone()).into());
         }
 
-        table_schema.clone().into_schema(0.into()).validated()?;
+        table_schema
+            .clone()
+            .into_schema(0.into())
+            .validated()
+            .map_err(|err| DBError::Schema(SchemaErrors(err)))?;
 
         Ok(())
     }
@@ -1235,7 +1240,7 @@ impl MutTxId {
         let table_schema = table_schema.into_schema(table_id);
 
         // Insert the columns into `st_columns`
-        for col in &table_schema.columns {
+        for col in table_schema.columns() {
             let row = StColumnRow {
                 table_id,
                 col_pos: col.col_pos,
@@ -1282,7 +1287,7 @@ impl MutTxId {
         // Fetch the `ProductType` from the in memory table if it exists.
         // The `ProductType` is invalidated if the schema of the table changes.
         if let Some(row_type) = self.get_row_type(&table_id) {
-            return Ok(Cow::Owned(row_type));
+            return Ok(Cow::Borrowed(row_type));
         }
 
         // Look up the columns for the table in question.
@@ -1291,9 +1296,10 @@ impl MutTxId {
         // representation of a table. This would happen in situations where
         // we have created the table in the database, but have not yet
         // represented in memory or inserted any rows into it.
-        Ok(Cow::Owned(
-            self.schema_for_table(table_id, database_address)?.get_row_type(),
-        ))
+        Ok(match self.schema_for_table(table_id, database_address)? {
+            Cow::Borrowed(x) => Cow::Borrowed(x.get_row_type()),
+            Cow::Owned(x) => Cow::Owned(x.into_row_type()),
+        })
     }
 
     // NOTE: It is essential to keep this function in sync with the
@@ -1350,7 +1356,7 @@ impl MutTxId {
 
         // Look up the constraints for the table in question.
         let mut constraints = Vec::new();
-        for data_ref in self.iter_by_col_eq(&ctx, &ST_CONSTRAINTS_ID, StIndexFields::TableId, table_id.into())? {
+        for data_ref in self.iter_by_col_eq(&ctx, &ST_CONSTRAINTS_ID, StConstraintFields::TableId, table_id.into())? {
             let row = data_ref.view();
 
             let el = StConstraintRow::try_from(row)?;
@@ -1406,16 +1412,16 @@ impl MutTxId {
             indexes.push(index_schema);
         }
 
-        Ok(Cow::Owned(TableSchema {
+        Ok(Cow::Owned(TableSchema::new(
             table_id,
             table_name,
             columns,
             indexes,
             constraints,
             sequences,
-            table_type: el.table_type,
-            table_access: el.table_access,
-        }))
+            el.table_type,
+            el.table_access,
+        )))
     }
 
     fn drop_table(&mut self, table_id: TableId, database_address: Address) -> super::Result<()> {
@@ -1701,7 +1707,7 @@ impl MutTxId {
 
         if let Some((col_id, sequence_id)) = col_to_update {
             let col_idx = col_id.idx();
-            let col = &schema.columns[col_idx];
+            let col = &schema.columns()[col_idx];
             if !Self::algebraic_type_is_numeric(&col.col_type) {
                 return Err(SequenceError::NotInteger {
                     col: format!("{}.{}", &schema.table_name, &col.col_name),
@@ -1810,7 +1816,7 @@ impl MutTxId {
             let insert_table = self.tx_state.get_insert_table_mut(&table_id).unwrap();
 
             // TODO(cloutiertyler): should probably also check that all the columns are correct? Perf considerations.
-            if insert_table.schema.columns.len() != row.elements.len() {
+            if insert_table.schema.columns().len() != row.elements.len() {
                 return Err(TableError::RowInvalidType { table_id, row }.into());
             }
 
@@ -1849,7 +1855,7 @@ impl MutTxId {
             .map(|row| DataRef::new(row_id, row)))
     }
 
-    fn get_row_type(&self, table_id: &TableId) -> Option<ProductType> {
+    fn get_row_type(&self, table_id: &TableId) -> Option<&ProductType> {
         if let Some(row_type) = self
             .tx_state
             .insert_tables
@@ -2022,7 +2028,7 @@ impl Locking {
                     committed_state
                         .table_rows(table_id, schema)
                         .remove(&RowId(write.data_key));
-                    DB_METRICS
+                    METRICS
                         .rdb_num_table_rows
                         .with_label_values(&self.database_address, &table_id.into())
                         .dec();
@@ -2030,7 +2036,7 @@ impl Locking {
                 Operation::Insert => {
                     let row_type = schema.get_row_type();
                     let product_value = match write.data_key {
-                        DataKey::Data(data) => ProductValue::decode(&row_type, &mut &data[..]).unwrap_or_else(|e| {
+                        DataKey::Data(data) => ProductValue::decode(row_type, &mut &data[..]).unwrap_or_else(|e| {
                             panic!(
                                 "Couldn't decode product value from message log: `{}`. Expected row type: {:?}",
                                 e, row_type
@@ -2040,7 +2046,7 @@ impl Locking {
                             let data = odb.get(hash).unwrap_or_else(|| {
                                 panic!("Object {hash} referenced from transaction not present in object DB");
                             });
-                            ProductValue::decode(&row_type, &mut &data[..]).unwrap_or_else(|e| {
+                            ProductValue::decode(row_type, &mut &data[..]).unwrap_or_else(|e| {
                                 panic!(
                                     "Couldn't decode product value {} from object DB: `{}`. Expected row type: {:?}",
                                     hash, e, row_type
@@ -2051,7 +2057,7 @@ impl Locking {
                     committed_state
                         .table_rows(table_id, schema)
                         .insert(RowId(write.data_key), product_value);
-                    DB_METRICS
+                    METRICS
                         .rdb_num_table_rows
                         .with_label_values(&self.database_address, &table_id.into())
                         .inc();
@@ -3076,32 +3082,28 @@ mod tests {
                 },
             ])
             .with_column_sequence(ColId(0))
-            .unwrap()
     }
 
+    #[rustfmt::skip]
     fn basic_table_schema_created(table_id: TableId) -> TableSchema {
-        TableSchema {
+        TableSchema::new(
             table_id,
-            table_name: "Foo".into(),
-            #[rustfmt::skip]
-            columns: map_array(basic_table_schema_cols()),
-            #[rustfmt::skip]
-            indexes: map_array([
+            "Foo".into(),
+            map_array(basic_table_schema_cols()),
+             map_array([
                 IdxSchema { id: 6, table: 6, col: 0, name: "id_idx", unique: true },
                 IdxSchema { id: 7, table: 6, col: 1, name: "name_idx", unique: true },
             ]),
-            #[rustfmt::skip]
-            constraints: map_array([
-                ConstraintRow { constraint_id: 6, table_id: 6, columns: col(0), constraints: Constraints::indexed(), constraint_name: "ct_Foo_id_idx_indexed" },
-                ConstraintRow { constraint_id: 7, table_id: 6, columns: col(1), constraints: Constraints::indexed(), constraint_name: "ct_Foo_name_idx_indexed" }
+            map_array([
+                ConstraintRow { constraint_id: 6, table_id: 6, columns: col(0), constraints: Constraints::unique(), constraint_name: "ct_Foo_id_idx_unique" },
+                ConstraintRow { constraint_id: 7, table_id: 6, columns: col(1), constraints: Constraints::unique(), constraint_name: "ct_Foo_name_idx_unique" }
             ]),
-            #[rustfmt::skip]
-            sequences: map_array([
+             map_array([
                 SequenceRow { id: 4, table: 6, col_pos: 0, name: "seq_Foo_id", start: 1 }
             ]),
-            table_type: StTableType::User,
-            table_access: StAccess::Public,
-        }
+            StTableType::User,
+            StAccess::Public,
+        )
     }
 
     fn setup_table() -> ResultTest<(Locking, MutTxId, TableId)> {
@@ -3178,7 +3180,7 @@ mod tests {
         assert_eq!(query.scan_st_indexes()?, map_array([
             IndexRow { id: 0, table: 0, col: col(0), name: "idx_st_table_table_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 1, table: 0, col: col(1), name: "idx_st_table_table_name_unique", unique: true },
-            IndexRow { id: 2, table: 1, col: cols(0, vec![1]), name: "idx_st_columns_table_id_col_pos_unique_unique", unique: true },
+            IndexRow { id: 2, table: 1, col: cols(0, vec![1]), name: "idx_st_columns_table_id_col_pos_unique", unique: true },
             IndexRow { id: 3, table: 2, col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },
@@ -3193,7 +3195,7 @@ mod tests {
         #[rustfmt::skip]
         assert_eq!(query.scan_st_constraints()?, map_array([
             ConstraintRow { constraint_id: 0, table_id: 0, columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_table_table_id_primary_key_auto" },
-            ConstraintRow { constraint_id: 1, table_id: 0, columns: col(1), constraints: Constraints::indexed(), constraint_name: "ct_st_table_table_name_unique_indexed" },
+            ConstraintRow { constraint_id: 1, table_id: 0, columns: col(1), constraints: Constraints::unique(), constraint_name: "ct_st_table_table_name_unique" },
             ConstraintRow { constraint_id: 2, table_id: 1, columns: cols(0, vec![1]), constraints: Constraints::unique(), constraint_name: "ct_st_columns_table_id_col_pos_unique" },
             ConstraintRow { constraint_id: 3, table_id: 2, columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_sequence_sequence_id_primary_key_auto" },
             ConstraintRow { constraint_id: 4, table_id: 3, columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_indexes_index_id_primary_key_auto" },
@@ -3499,7 +3501,7 @@ mod tests {
         assert_eq!(index_rows, [
             IndexRow { id: 0, table: 0, col: col(0), name: "idx_st_table_table_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 1, table: 0, col: col(1), name: "idx_st_table_table_name_unique", unique: true },
-            IndexRow { id: 2, table: 1, col: cols(0, vec![1]), name: "idx_st_columns_table_id_col_pos_unique_unique", unique: true },
+            IndexRow { id: 2, table: 1, col: cols(0, vec![1]), name: "idx_st_columns_table_id_col_pos_unique", unique: true },
             IndexRow { id: 3, table: 2, col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },
@@ -3542,7 +3544,7 @@ mod tests {
         assert_eq!(index_rows, [
             IndexRow { id: 0, table: 0, col: col(0), name: "idx_st_table_table_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 1, table: 0, col: col(1), name: "idx_st_table_table_name_unique", unique: true },
-            IndexRow { id: 2, table: 1, col: cols(0, vec![1]), name: "idx_st_columns_table_id_col_pos_unique_unique", unique: true },
+            IndexRow { id: 2, table: 1, col: cols(0, vec![1]), name: "idx_st_columns_table_id_col_pos_unique", unique: true },
             IndexRow { id: 3, table: 2, col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },
@@ -3585,7 +3587,7 @@ mod tests {
         assert_eq!(index_rows, [
             IndexRow { id: 0, table: 0, col: col(0), name: "idx_st_table_table_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 1, table: 0, col: col(1), name: "idx_st_table_table_name_unique", unique: true },
-            IndexRow { id: 2, table: 1, col: cols(0, vec![1]), name: "idx_st_columns_table_id_col_pos_unique_unique", unique: true },
+            IndexRow { id: 2, table: 1, col: cols(0, vec![1]), name: "idx_st_columns_table_id_col_pos_unique", unique: true },
             IndexRow { id: 3, table: 2, col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },

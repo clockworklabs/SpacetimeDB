@@ -569,7 +569,7 @@ pub fn autogen_csharp_table(ctx: &GenCtx, table: &TableDesc, namespace: &str) ->
                 .clone()
                 .into_schema(0.into())
                 .validated()
-                .expect("Fail to generate table"),
+                .expect("Failed to generate table due to validation errors"),
         ),
         namespace,
     )
@@ -666,7 +666,7 @@ fn autogen_csharp_product_table_common(
             if let Some(schema) = &schema {
                 let constraints = schema.column_constraints();
                 // Declare custom index dictionaries
-                for col in &schema.columns {
+                for col in schema.columns() {
                     let field_name = col.col_name.replace("r#", "").to_case(Case::Pascal);
                     if !constraints[&NonEmpty::new(col.col_pos)].has_unique() {
                         continue;
@@ -694,7 +694,7 @@ fn autogen_csharp_product_table_common(
                 {
                     indent_scope!(output);
                     writeln!(output, "var val = ({name})insertedValue;").unwrap();
-                    for col in &schema.columns {
+                    for col in schema.columns() {
                         let field_name = col.col_name.replace("r#", "").to_case(Case::Pascal);
                         if !constraints[&NonEmpty::new(col.col_pos)].has_unique() {
                             continue;
@@ -714,7 +714,7 @@ fn autogen_csharp_product_table_common(
                 {
                     indent_scope!(output);
                     writeln!(output, "var val = ({name})deletedValue;").unwrap();
-                    for col in &schema.columns {
+                    for col in schema.columns() {
                         let field_name = col.col_name.replace("r#", "").to_case(Case::Pascal);
                         if !constraints[&NonEmpty::new(col.col_pos)].has_unique() {
                             continue;
@@ -970,7 +970,7 @@ fn autogen_csharp_access_funcs_for_struct(
     });
 
     let constraints = schema.column_constraints();
-    for col in &schema.columns {
+    for col in schema.columns() {
         let is_unique = constraints[&NonEmpty::new(col.col_pos)].has_unique();
 
         let col_i: usize = col.col_pos.into();

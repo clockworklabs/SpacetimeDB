@@ -344,6 +344,8 @@ impl WasmInstanceEnv {
             let line_number = (line_number != u32::MAX).then_some(line_number);
 
             let record = Record {
+                // TODO: figure out whether to use walltime now or logical reducer now (env.reducer_start)
+                ts: chrono::Utc::now(),
                 target: target.as_deref(),
                 filename: filename.as_deref(),
                 line_number,
@@ -754,6 +756,7 @@ impl WasmInstanceEnv {
         let message = format!("Timing span {:?}: {:?}", name, elapsed);
 
         let record = Record {
+            ts: chrono::Utc::now(),
             target: None,
             filename: None,
             line_number: None,

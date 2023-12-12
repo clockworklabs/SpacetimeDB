@@ -347,7 +347,7 @@ pub fn autogen_rust_table(ctx: &GenCtx, table: &TableDesc) -> String {
         .clone()
         .into_schema(0.into())
         .validated()
-        .expect("Fail to generate table");
+        .expect("Failed to generate table due to validation errors");
     print_impl_tabletype(ctx, out, &table);
 
     output.into_inner()
@@ -460,7 +460,7 @@ fn print_table_filter_methods(ctx: &GenCtx, out: &mut Indenter, table_type_name:
     out.delimited_block(
         "{",
         |out| {
-            for field in &table.columns {
+            for field in table.columns() {
                 let field_name = field.col_name.to_case(Case::Snake);
                 // TODO: ensure that fields are PartialEq
                 writeln!(out, "{}", ALLOW_UNUSED).unwrap();

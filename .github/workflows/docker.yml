@@ -9,12 +9,13 @@ on:
     tags:
       - 'v*'
 
-
 jobs:
   docker-amd64:
     runs-on: bare-metal
     name: Build DockerHub AMD64 Container
     steps:
+      - name: Install jq
+        run: sudo apt-get install jq -y
       - name: Checkout
         uses: actions/checkout@v3
       - name: Docker meta
@@ -27,6 +28,7 @@ jobs:
             type=ref,event=branch,prefix=branch-
             type=sha,prefix=commit-
             type=ref,event=tag
+            type=sha,suffix=-amd64
           flavor: |
             latest=false
       - name: Set up Docker Buildx
@@ -54,6 +56,11 @@ jobs:
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new
           platforms: linux/amd64
+
+      - name: Merge images
+        run: |
+          ./tools/merge-docker-images.sh $GITHUB_SHA
+
         # This ugly bit is necessary if you don't want your cache to grow forever
         # until it hits GitHub's limit of 5GB.
         # Temp fix
@@ -68,6 +75,8 @@ jobs:
     runs-on: arm-runner
     name: Build DockerHub ARM64 Container
     steps:
+      - name: Install jq
+        run: sudo apt-get install jq -y
       - name: Checkout
         uses: actions/checkout@v3
       - name: Docker meta
@@ -80,6 +89,7 @@ jobs:
             type=ref,event=branch,prefix=branch-
             type=sha,prefix=commit-
             type=ref,event=tag
+            type=sha,suffix=-arm64
           flavor: |
             latest=false
       - name: Set up Docker Buildx
@@ -107,6 +117,11 @@ jobs:
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new
           platforms: linux/arm64/v8
+
+      - name: Merge images
+        run: |
+          ./tools/merge-docker-images.sh $GITHUB_SHA
+
         # This ugly bit is necessary if you don't want your cache to grow forever
         # until it hits GitHub's limit of 5GB.
         # Temp fix

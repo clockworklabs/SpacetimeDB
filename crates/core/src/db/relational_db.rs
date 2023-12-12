@@ -1,5 +1,6 @@
 use fs2::FileExt;
 use nonempty::NonEmpty;
+use spacetimedb_lib::metrics::METRICS;
 use std::borrow::Cow;
 use std::fs::{create_dir_all, File};
 use std::ops::RangeBounds;
@@ -376,7 +377,7 @@ impl RelationalDB {
             .with_label_values(&table_id.0)
             .start_timer();
         self.inner.drop_table_mut_tx(tx, table_id).map(|_| {
-            DB_METRICS
+            METRICS
                 .rdb_num_table_rows
                 .with_label_values(&self.address, &table_id.into())
                 .set(0)
@@ -765,7 +766,7 @@ mod tests {
         stdb.create_table(&mut tx, schema)?;
         let table_id = stdb.table_id_from_name(&tx, "MyTable")?.unwrap();
         let schema = stdb.schema_for_table(&tx, table_id)?;
-        let col = schema.columns.iter().find(|x| x.col_name == "my_col").unwrap();
+        let col = schema.columns().iter().find(|x| x.col_name == "my_col").unwrap();
         assert_eq!(col.col_pos, 0.into());
         Ok(())
     }
@@ -944,7 +945,6 @@ mod tests {
             }],
         )
         .with_column_constraint(Constraints::primary_key_auto(), ColId(0))
-        .unwrap()
     }
 
     #[test]
@@ -1037,8 +1037,7 @@ mod tests {
                 col_type: AlgebraicType::I64,
             }],
         )
-        .with_column_sequence(ColId(0))
-        .unwrap();
+        .with_column_sequence(ColId(0));
 
         let table_id = stdb.create_table(&mut tx, schema)?;
 
@@ -1172,8 +1171,7 @@ mod tests {
             is_unique: true,
             index_type: IndexType::BTree,
         }])
-        .with_column_constraint(Constraints::identity(), ColId(0))
-        .unwrap();
+        .with_column_constraint(Constraints::identity(), ColId(0));
 
         let table_id = stdb.create_table(&mut tx, schema)?;
 

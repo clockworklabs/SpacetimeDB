@@ -231,6 +231,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         self.database_instance_context.logger.write(
             log_level,
             &Record {
+                ts: chrono::Utc::now(),
                 target: None,
                 filename: Some("external"),
                 line_number: None,
