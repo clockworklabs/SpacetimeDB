@@ -26,12 +26,7 @@ pub struct DatabaseInstanceContext {
 }
 
 impl DatabaseInstanceContext {
-    pub fn from_database(
-        config: Config,
-        database: &Database,
-        instance_id: u64,
-        root_db_path: PathBuf,
-    ) -> Result<Arc<Self>> {
+    pub fn from_database(config: Config, database: &Database, instance_id: u64, root_db_path: PathBuf) -> Result<Self> {
         let mut db_path = root_db_path;
         db_path.extend([&*database.address.to_hex(), &*instance_id.to_string()]);
         db_path.push("database");
@@ -67,7 +62,7 @@ impl DatabaseInstanceContext {
         db_path: PathBuf,
         log_path: &Path,
         publisher_address: Option<Address>,
-    ) -> Result<Arc<Self>> {
+    ) -> Result<Self> {
         let message_log = match config.storage {
             Storage::Memory => None,
             Storage::Disk => {
@@ -86,7 +81,7 @@ impl DatabaseInstanceContext {
         let odb = Arc::new(Mutex::new(odb));
         let relational_db = RelationalDB::open(db_path, message_log, odb, address, config.fsync != FsyncPolicy::Never)?;
 
-        Ok(Arc::new(Self {
+        Ok(Self {
             database_instance_id,
             database_id,
             identity,
@@ -94,7 +89,7 @@ impl DatabaseInstanceContext {
             logger: Arc::new(DatabaseLogger::open(log_path)),
             relational_db: Arc::new(relational_db),
             publisher_address,
-        }))
+        })
     }
 
     pub(crate) fn make_default_ostorage(path: impl AsRef<Path>) -> Result<Box<dyn ObjectDB + Send>> {
