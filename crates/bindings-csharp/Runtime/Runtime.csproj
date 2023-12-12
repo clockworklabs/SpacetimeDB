@@ -5,7 +5,7 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <AssemblyName>SpacetimeDB.Runtime</AssemblyName>
-    <AssemblyVersion>0.8.1</AssemblyVersion>
+    <AssemblyVersion>0.8.2</AssemblyVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
   </PropertyGroup>
@@ -40,10 +40,12 @@
     <None Include="../LICENSE" Pack="true" PackagePath="" />
     <None Include="build/" Pack="true" PackagePath="build" />
     <None Include="bindings.c" Pack="true" PackagePath="" />
+    <None Include="driver.h" Pack="true" PackagePath="" />
   </ItemGroup>
 
   <ItemGroup>
     <UpToDateCheckInput Include="bindings.c" />
+    <UpToDateCheckInput Include="driver.h" />
   </ItemGroup>
 
 </Project>
