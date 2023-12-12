@@ -665,7 +665,7 @@ impl StandaloneEnv {
                     let path = root_db_path.clone();
                     let config = self.config;
                     move || -> anyhow::Result<_> {
-                        let dbic = DatabaseInstanceContext::from_database(config, &database, instance_id, path);
+                        let dbic = DatabaseInstanceContext::from_database(config, &database, instance_id, path)?;
                         let sched = Scheduler::open(dbic.scheduler_db_path(root_db_path))?;
                         Ok((dbic, sched))
                     }
