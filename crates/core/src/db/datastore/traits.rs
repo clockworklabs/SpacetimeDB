@@ -85,16 +85,15 @@ pub trait Tx {
 
 pub trait MutTx {
     type MutTxId: ReadTx;
-    fn rollback_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTxId);
     fn begin_mut_tx(&self) -> Self::MutTxId;
     fn commit_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTxId) -> Result<Option<TxData>>;
+    fn rollback_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTxId);
 
     #[cfg(test)]
     fn commit_mut_tx_for_test(&self, tx: Self::MutTxId) -> Result<Option<TxData>>;
 
     #[cfg(test)]
     fn rollback_mut_tx_for_test(&self, tx: Self::MutTxId);
-
 }
 
 pub trait TxDatastore: DataRow + Tx {
@@ -110,7 +109,6 @@ pub trait TxDatastore: DataRow + Tx {
     where
         Self: 'a;
 
-    // Data
     fn iter_tx<'a, T: ReadTx>(
         &'a self,
         ctx: &'a ExecutionContext,

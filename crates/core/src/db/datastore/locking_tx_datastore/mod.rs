@@ -31,7 +31,7 @@ use super::{
         system_tables, StColumnRow, StIndexRow, StSequenceRow, StTableRow, SystemTable, ST_COLUMNS_ID, ST_INDEXES_ID,
         ST_SEQUENCES_ID, ST_TABLES_ID,
     },
-    traits::{self, DataRow, ReadTx, TxData, TxDatastore, MutTxDatastore},
+    traits::{self, DataRow, ReadTx, TxData, TxDatastore, MutTxDatastore, MutTx, Tx},
 };
 use crate::db::datastore::system_tables;
 use crate::db::datastore::system_tables::{
@@ -133,7 +133,6 @@ pub struct MutTxId {
     lock_wait_time: Duration,
     timer: Instant,
 }
-
 
 struct CommittedState {
     tables: HashMap<TableId, Table>,
@@ -468,7 +467,7 @@ impl CommittedState {
         // let table_id_col = NonEmpty::new(.col_id());
         let value: AlgebraicValue = table_id.into();
         let rows = self
-            .iter_by_col_eq(&ctx, ST_TABLES_ID, table_id_col, value.clone())?
+            .iter_by_col_eq(&ctx, ST_TABLES_ID, table_id_col, table_id.into())?
             .collect::<Vec<_>>();
         let row = rows
             .first()
@@ -756,8 +755,6 @@ impl ReadTx for TxId {
         cols: NonEmpty<ColId>,
         range: R,
     ) -> super::Result<IterByColRange<'a, R>> {
-        // Either the current transaction has not modified this table, or the table is not
-        // indexed.
         match self.committed_state_shared_lock.index_seek(table_id, &cols, &range) {
             Some(committed_rows) => Ok(IterByColRange::CommittedIndex(CommittedIndexIter {
                 ctx,
@@ -2395,7 +2392,7 @@ impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for ScanIterByColRange<'a, R> 
     }
 }
 
-impl traits::Tx for Locking {
+impl Tx for Locking {
     type TxId = TxId;
     fn begin_tx(&self) -> Self::TxId {
         let timer = Instant::now();
@@ -2415,7 +2412,7 @@ impl traits::Tx for Locking {
 
 }
 
-impl traits::MutTx for Locking {
+impl MutTx for Locking {
     type MutTxId = MutTxId;
 
     fn begin_mut_tx(&self) -> Self::MutTxId {
