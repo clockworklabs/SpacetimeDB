@@ -221,7 +221,6 @@ impl CommittedState {
 
     // TODO(shubham): Need to confirm, if indexes exist during bootstrap to be used here.
     /// Iter for`CommittedState`, Only to be used during bootstrap.
-    /// For transaction, consider using MutTxId::Iters.
     fn iter_by_col_eq<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
@@ -230,7 +229,7 @@ impl CommittedState {
         value: AlgebraicValue,
     ) -> Result<IterByColEq<'a>, DBError> {
         Ok(IterByColEq::Scan(ScanIterByColRange {
-            scan_iter: Iter::new(ctx, table_id, None, &self),
+            scan_iter: Iter::new(ctx, table_id, None, self),
             cols: table_id_col,
             range: value,
         }))
@@ -2060,6 +2059,25 @@ impl DataRow for Locking {
     }
 }
 
+impl Tx for Locking {
+    type TxId = TxId;
+    fn begin_tx(&self) -> Self::TxId {
+        let timer = Instant::now();
+
+        let committed_state_shared_lock = self.committed_state.read_arc();
+        let lock_wait_time = timer.elapsed();
+        TxId {
+            committed_state_shared_lock,
+            lock_wait_time,
+            timer,
+        }
+    }
+
+    fn rollback_tx(&self, ctx: &ExecutionContext, tx: Self::TxId) {
+        tx.release(ctx);
+    }
+}
+
 pub struct Iter<'a> {
     ctx: &'a ExecutionContext<'a>,
     table_id: TableId,
@@ -2392,22 +2410,44 @@ impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for ScanIterByColRange<'a, R> 
     }
 }
 
-impl Tx for Locking {
-    type TxId = TxId;
-    fn begin_tx(&self) -> Self::TxId {
-        let timer = Instant::now();
+impl TxDatastore for Locking {
+    type Iter<'a> = Iter<'a> where Self: 'a;
+    type IterByColEq<'a> = IterByColRange<'a, AlgebraicValue> where Self: 'a;
+    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterByColRange<'a, R> where Self: 'a;
 
-        let committed_state_shared_lock = self.committed_state.read_arc();
-        let lock_wait_time = timer.elapsed();
-        TxId {
-            committed_state_shared_lock,
-            lock_wait_time,
-            timer,
-        }
+    fn table_id_from_name<T: ReadTx>(&self, tx: &T, table_name: &str) -> super::Result<Option<TableId>> {
+        tx.table_id_from_name(table_name, self.database_address)
     }
 
-    fn rollback_tx(&self, ctx: &ExecutionContext, tx: Self::TxId) {
-        tx.release(ctx);
+    fn iter_tx<'a, T: ReadTx>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        tx: &'a T,
+        table_id: TableId,
+    ) -> super::Result<Self::Iter<'a>> {
+        tx.iter(ctx, &table_id)
+    }
+
+    fn iter_by_col_range_tx<'a, R: RangeBounds<AlgebraicValue>, T: ReadTx>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        tx: &'a T,
+        table_id: TableId,
+        cols: impl Into<NonEmpty<ColId>>,
+        range: R,
+    ) -> super::Result<Self::IterByColRange<'a, R>> {
+        tx.iter_by_col_range(ctx, &table_id, cols.into(), range)
+    }
+
+    fn iter_by_col_eq_tx<'a, T: ReadTx>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        tx: &'a T,
+        table_id: TableId,
+        cols: impl Into<NonEmpty<ColId>>,
+        value: AlgebraicValue,
+    ) -> super::Result<Self::IterByColEq<'a>> {
+        tx.iter_by_col_eq(ctx, &table_id, cols.into(), value)
     }
 }
 
@@ -2493,47 +2533,6 @@ impl MutTx for Locking {
     #[cfg(test)]
     fn commit_mut_tx_for_test(&self, tx: Self::MutTxId) -> super::Result<Option<TxData>> {
         tx.commit()
-    }
-}
-
-impl TxDatastore for Locking {
-    type Iter<'a> = Iter<'a> where Self: 'a;
-    type IterByColEq<'a> = IterByColRange<'a, AlgebraicValue> where Self: 'a;
-    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterByColRange<'a, R> where Self: 'a;
-
-    fn table_id_from_name<T: ReadTx>(&self, tx: &T, table_name: &str) -> super::Result<Option<TableId>> {
-        tx.table_id_from_name(table_name, self.database_address)
-    }
-
-    fn iter_tx<'a, T: ReadTx>(
-        &'a self,
-        ctx: &'a ExecutionContext,
-        tx: &'a T,
-        table_id: TableId,
-    ) -> super::Result<Self::Iter<'a>> {
-        tx.iter(ctx, &table_id)
-    }
-
-    fn iter_by_col_range_tx<'a, R: RangeBounds<AlgebraicValue>, T: ReadTx>(
-        &'a self,
-        ctx: &'a ExecutionContext,
-        tx: &'a T,
-        table_id: TableId,
-        cols: impl Into<NonEmpty<ColId>>,
-        range: R,
-    ) -> super::Result<Self::IterByColRange<'a, R>> {
-        tx.iter_by_col_range(ctx, &table_id, cols.into(), range)
-    }
-
-    fn iter_by_col_eq_tx<'a, T: ReadTx>(
-        &'a self,
-        ctx: &'a ExecutionContext,
-        tx: &'a T,
-        table_id: TableId,
-        cols: impl Into<NonEmpty<ColId>>,
-        value: AlgebraicValue,
-    ) -> super::Result<Self::IterByColEq<'a>> {
-        tx.iter_by_col_eq(ctx, &table_id, cols.into(), value)
     }
 }
 
