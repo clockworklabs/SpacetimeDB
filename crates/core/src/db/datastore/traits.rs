@@ -49,8 +49,8 @@ pub trait DataRow: Send + Sync {
 }
 /// `ReadTx` Trait
 ///
-/// Provides common methods for both read and write transaction types. 
-/// Currently, it includes methods required for subscriber transactions. 
+/// Provides common methods for both read and write transaction types.
+/// Currently, it includes methods required for subscriber transactions.
 /// As the adoption of read transactions increases, more methods are expected to be added.
 pub trait ReadTx {
     fn release(self, ctx: &ExecutionContext);
