@@ -56,6 +56,20 @@ jobs:
             exit 1
           fi
 
+      - name: find PR branch
+        if: ${{ env.PR_NUMBER }}
+        shell: bash
+        run: echo "PR_REF=$(gh pr view $PR_NUMBER --json headRefName --jq .headRefName)" >>"$GITHUB_ENV"
+
+      - name: Checkout sources
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ env.PR_REF || github.ref }}
+          # if we're on master we want to know what the sha of HEAD~1 is so
+          # that we can compare results from it to HEAD (in the "Fetch markdown
+          # summary PR" step). otherwise, we can use a fully shallow checkout
+          fetch-depth: ${{ env.PR_NUMBER && 1 || 2 }}
+
       - name: Post initial comment
         shell: bash
         run: |
@@ -70,20 +84,6 @@ jobs:
           comment_body="Callgrind benchmark in progress..."
           comment_id=$(gh api "/repos/{owner}/{repo}/$comment_parent/comments" -f body="$comment_body" --jq .id)
           echo "COMMENT_UPDATE_URL=/repos/{owner}/{repo}/$comment_update/$comment_id" >>$GITHUB_ENV
-
-      - name: find PR branch
-        if: ${{ env.PR_NUMBER }}
-        shell: bash
-        run: echo "PR_REF=$(gh pr view $PR_NUMBER --json headRefName --jq .headRefName)" >>"$GITHUB_ENV"
-
-      - name: Checkout sources
-        uses: actions/checkout@v3
-        with:
-          ref: ${{ env.PR_REF || github.ref }}
-          # if we're on master we want to know what the sha of HEAD~1 is so
-          # that we can compare results from it to HEAD (in the "Fetch markdown
-          # summary PR" step). otherwise, we can use a fully shallow checkout
-          fetch-depth: ${{ env.PR_NUMBER && 1 || 2 }}
 
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1
