@@ -9,7 +9,7 @@ Licensed Work:        SpacetimeDB 0.8.0
                       The Licensed Work is
                       (c) 2023 Clockwork Laboratories, Inc.
                       
-Additional Use Grant: You may make use the Licensed Work provided your
+Additional Use Grant: You may make use of the Licensed Work provided your
                       application or service uses the Licensed Work with no
                       more than one SpacetimeDB instance in production and
                       provided that you do not use the Licensed Work for a
