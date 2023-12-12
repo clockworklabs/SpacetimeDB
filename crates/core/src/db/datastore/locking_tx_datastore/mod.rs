@@ -694,24 +694,6 @@ impl SequencesState {
     }
 }
 
-impl DataRow for TxId {
-    type RowId = RowId;
-    type DataRef<'a> = DataRef<'a>;
-
-    fn view_product_value<'a>(&self, data_ref: Self::DataRef<'a>) -> &'a ProductValue {
-        data_ref.data
-    }
-}
-
-impl DataRow for MutTxId {
-    type RowId = RowId;
-    type DataRef<'a> = DataRef<'a>;
-
-    fn view_product_value<'a>(&self, data_ref: Self::DataRef<'a>) -> &'a ProductValue {
-        data_ref.data
-    }
-}
-
 // Type aliases for lock gaurds
 type SharedReadGuard<T> = ArcRwLockReadGuard<RawRwLock, T>;
 type SharedWriteGuard<T> = ArcRwLockWriteGuard<RawRwLock, T>;
