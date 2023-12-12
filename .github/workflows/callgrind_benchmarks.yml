@@ -159,7 +159,7 @@ jobs:
           aws_bucket: "spacetimedb-ci-benchmarks"
           source_dir: callgrind-results
           endpoint: https://nyc3.digitaloceanspaces.com
-          destination_dir: benchmarks
+          destination_dir: callgrind-benchmarks
 
       # FIXME(jgilles): need to talk to piotr about this
       #- name: Fetch markdown summary PR
