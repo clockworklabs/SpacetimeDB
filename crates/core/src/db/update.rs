@@ -36,7 +36,7 @@ pub fn update_database(
     system_logger: &SystemLogger,
 ) -> anyhow::Result<Result<MutTxId, UpdateDatabaseError>> {
     let ctx = ExecutionContext::internal(stdb.address());
-    let (tx, res) = stdb.with_auto_rollback::<_, _, anyhow::Error>(&ctx, tx, |tx| {
+    let (tx, res) = stdb.with_auto_rollback::<_, _, anyhow::Error, MutTxId>(&ctx, tx, |tx| {
         let existing_tables = stdb.get_all_tables(tx)?;
         match schema_updates(existing_tables, proposed_tables)? {
             SchemaUpdates::Updates {

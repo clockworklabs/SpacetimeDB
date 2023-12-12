@@ -298,9 +298,9 @@ impl RelationalDB {
     /// Similar in purpose to [`Self::with_auto_commit`], but returns the
     /// [`MutTxId`] alongside the `Ok` result of the function `F` without
     /// committing the transaction.
-    pub fn with_auto_rollback<F, A, E>(&self, ctx: &ExecutionContext, mut tx: MutTxId, f: F) -> Result<(MutTxId, A), E>
+    pub fn with_auto_rollback<F, A, E, T: ReadTx>(&self, ctx: &ExecutionContext, mut tx: T, f: F) -> Result<(T, A), E>
     where
-        F: FnOnce(&mut MutTxId) -> Result<A, E>,
+        F: FnOnce(&mut T) -> Result<A, E>,
     {
         let res = f(&mut tx);
         self.rollback_on_err(ctx, tx, res)
@@ -326,6 +326,18 @@ impl RelationalDB {
         res
     }
 
+    // Above variant should be terminated, `TxId` should be used for all read-only transaction
+    pub fn with_read_only_tx<F, A, E>(&self, ctx: &ExecutionContext, f: F) -> Result<A, E>
+    where
+        F: FnOnce(&mut TxId) -> Result<A, E>,
+        E: From<DBError>,
+    {
+        let mut tx = self.begin_read_tx();
+        let res = f(&mut tx);
+        self.rollback_tx(ctx, tx);
+        res
+    }
+
     /// Perform the transactional logic for the `tx` according to the `res`
     #[tracing::instrument(skip_all)]
     pub fn finish_tx<A, E>(&self, ctx: &ExecutionContext, tx: MutTxId, res: Result<A, E>) -> Result<A, E>
@@ -345,12 +357,12 @@ impl RelationalDB {
 
     /// Roll back transaction `tx` if `res` is `Err`, otherwise return it
     /// alongside the `Ok` value.
-    pub fn rollback_on_err<A, E>(
+    pub fn rollback_on_err<A, E, T: ReadTx>(
         &self,
         ctx: &ExecutionContext,
-        tx: MutTxId,
+        tx: T,
         res: Result<A, E>,
-    ) -> Result<(MutTxId, A), E> {
+    ) -> Result<(T, A), E> {
         match res {
             Err(e) => {
                 self.rollback_tx(ctx, tx);
