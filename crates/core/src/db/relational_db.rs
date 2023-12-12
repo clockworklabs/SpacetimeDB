@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use super::commit_log::{CommitLog, CommitLogMut};
 use super::datastore::locking_tx_datastore::Locking;
 use super::datastore::locking_tx_datastore::{DataRef, Iter, IterByColEq, IterByColRange, MutTxId, RowId};
-use super::datastore::traits::{MutProgrammable, MutTx, MutTxDatastore, Programmable, TxData};
+use super::datastore::traits::{MutProgrammable, Programmable, Tx, TxData, TxDatastore};
 use super::message_log::MessageLog;
 use super::ostorage::memory_object_db::MemoryObjectDB;
 use super::relational_operators::Relation;
@@ -234,19 +234,19 @@ impl RelationalDB {
     #[tracing::instrument(skip_all)]
     pub fn begin_tx(&self) -> MutTxId {
         log::trace!("BEGIN TX");
-        self.inner.begin_mut_tx()
+        self.inner.begin_write_tx()
     }
 
     #[tracing::instrument(skip_all)]
     pub fn rollback_tx(&self, ctx: &ExecutionContext, tx: MutTxId) {
         log::trace!("ROLLBACK TX");
-        self.inner.rollback_mut_tx(ctx, tx)
+        self.inner.rollback_tx(ctx, tx)
     }
 
     #[tracing::instrument(skip_all)]
     pub fn commit_tx(&self, ctx: &ExecutionContext, tx: MutTxId) -> Result<Option<(TxData, Option<usize>)>, DBError> {
         log::trace!("COMMIT TX");
-        if let Some(tx_data) = self.inner.commit_mut_tx(ctx, tx)? {
+        if let Some(tx_data) = self.inner.commit_tx(ctx, tx)? {
             let bytes_written = self
                 .commit_log
                 .as_ref()
@@ -395,7 +395,7 @@ impl RelationalDB {
 
     #[tracing::instrument(skip_all)]
     pub fn table_id_from_name(&self, tx: &MutTxId, table_name: &str) -> Result<Option<TableId>, DBError> {
-        self.inner.table_id_from_name_mut_tx(tx, table_name)
+        self.inner.table_id_from_name(tx, table_name)
     }
 
     #[tracing::instrument(skip_all)]
@@ -475,7 +475,7 @@ impl RelationalDB {
         table_id: TableId,
     ) -> Result<Iter<'a>, DBError> {
         let _guard = DB_METRICS.rdb_iter_time.with_label_values(&table_id.0).start_timer();
-        self.inner.iter_mut_tx(ctx, tx, table_id)
+        self.inner.iter_tx(ctx, tx, table_id)
     }
 
     /// Returns an iterator,
@@ -492,7 +492,7 @@ impl RelationalDB {
         cols: impl Into<NonEmpty<ColId>>,
         value: AlgebraicValue,
     ) -> Result<IterByColEq<'a>, DBError> {
-        self.inner.iter_by_col_eq_mut_tx(ctx, tx, table_id.into(), cols, value)
+        self.inner.iter_by_col_eq_tx(ctx, tx, table_id.into(), cols, value)
     }
 
     /// Returns an iterator,
@@ -508,8 +508,7 @@ impl RelationalDB {
         cols: impl Into<NonEmpty<ColId>>,
         range: R,
     ) -> Result<IterByColRange<'a, R>, DBError> {
-        self.inner
-            .iter_by_col_range_mut_tx(ctx, tx, table_id.into(), cols, range)
+        self.inner.iter_by_col_range_tx(ctx, tx, table_id.into(), cols, range)
     }
 
     #[tracing::instrument(skip(self, tx, row))]

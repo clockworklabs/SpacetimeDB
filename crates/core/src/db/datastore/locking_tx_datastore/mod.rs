@@ -4,7 +4,10 @@ mod table;
 
 use itertools::Itertools;
 use nonempty::NonEmpty;
-use parking_lot::{lock_api::ArcMutexGuard, Mutex, RawMutex};
+use parking_lot::{
+    lock_api::{ArcMutexGuard, ArcRwLockReadGuard},
+    Mutex, RawMutex,
+};
 
 use self::{
     btree_index::{BTreeIndex, BTreeIndexRangeIter},
@@ -28,7 +31,7 @@ use super::{
         system_tables, StColumnRow, StIndexRow, StSequenceRow, StTableRow, SystemTable, ST_COLUMNS_ID, ST_INDEXES_ID,
         ST_SEQUENCES_ID, ST_TABLES_ID,
     },
-    traits::{self, DataRow, MutTx, MutTxDatastore, TxData, TxDatastore},
+    traits::{self, DataRow, ReadTx, TxData, TxDatastore},
 };
 use crate::db::datastore::system_tables;
 use crate::db::datastore::system_tables::{
@@ -114,24 +117,6 @@ impl<'a> DataRef<'a> {
     pub fn to_rel_value(self) -> RelValue {
         RelValue::new(self.data.clone(), Some(*self.id))
     }
-}
-
-// Type aliases for lock gaurds
-type SharedWriteGuard<T> = ArcRwLockWriteGuard<RawRwLock, T>;
-type SharedMutexGuard<T> = ArcMutexGuard<RawMutex, T>;
-
-/// Represents a Mutable transaction. Holds locks for its duration
-///
-/// The initialization of this struct is sensitive because improper
-/// handling can lead to deadlocks. Therefore, it is strongly recommended to use
-/// `Locking::begin_mut_tx()` for instantiation to ensure safe acquisition of locks.
-pub struct MutTxId {
-    tx_state: TxState,
-    committed_state_write_lock: SharedWriteGuard<CommittedState>,
-    sequence_state_lock: SharedMutexGuard<SequencesState>,
-    memory_lock: SharedMutexGuard<BTreeMap<DataKey, Arc<Vec<u8>>>>,
-    lock_wait_time: Duration,
-    timer: Instant,
 }
 
 struct CommittedState {
@@ -224,20 +209,16 @@ impl CommittedState {
     /// For transaction, consider using MutTxId::Iters.
     fn iter_by_col_eq<'a>(
         &'a self,
-        table_id: &'a TableId,
-        table_id_col: &'a NonEmpty<ColId>,
-        value: &'a AlgebraicValue,
-    ) -> Result<CommittedStateIter<'a>, TableError> {
-        let table = self
-            .tables
-            .get(table_id)
-            .ok_or(TableError::IdNotFoundState(*table_id))?;
-
-        Ok(CommittedStateIter {
-            iter: table.rows.iter(),
-            table_id_col,
-            value,
-        })
+        ctx: &'a ExecutionContext,
+        table_id: TableId,
+        table_id_col: NonEmpty<ColId>,
+        value: AlgebraicValue,
+    ) -> Result<IterByColEq<'a>, DBError> {
+        Ok(IterByColEq::Scan(ScanIterByColRange {
+            scan_iter: Iter::new(ctx, table_id, None, &self),
+            cols: table_id_col,
+            range: value,
+        }))
     }
 
     fn bootstrap_system_tables(&mut self, database_address: Address) -> Result<(), DBError> {
@@ -460,6 +441,7 @@ impl CommittedState {
     /// query the store and add it to the internal [Self::tx_state], then return it.
     #[tracing::instrument(skip_all)]
     fn schema_for_table(&self, table_id: TableId) -> super::Result<Cow<'_, TableSchema>> {
+        let ctx = ExecutionContext::default();
         if let Some(schema) = self.get_schema(&table_id) {
             return Ok(Cow::Borrowed(schema));
         }
@@ -470,7 +452,7 @@ impl CommittedState {
         // let table_id_col = NonEmpty::new(.col_id());
         let value: AlgebraicValue = table_id.into();
         let rows = self
-            .iter_by_col_eq(&ST_TABLES_ID, &table_id_col, &value)?
+            .iter_by_col_eq(&ctx, ST_TABLES_ID, table_id_col, value.clone())?
             .collect::<Vec<_>>();
         let row = rows
             .first()
@@ -481,7 +463,12 @@ impl CommittedState {
 
         // Look up the columns for the table in question.
         let mut columns = self
-            .iter_by_col_eq(&ST_COLUMNS_ID, &NonEmpty::new(StColumnFields::TableId.col_id()), &value)?
+            .iter_by_col_eq(
+                &ctx,
+                ST_COLUMNS_ID,
+                NonEmpty::new(StColumnFields::TableId.col_id()),
+                value,
+            )?
             .map(|row| {
                 let el = StColumnRow::try_from(row.view())?;
                 Ok(ColumnSchema {
@@ -498,9 +485,10 @@ impl CommittedState {
         // Look up the constraints for the table in question.
         let mut constraints = Vec::new();
         for data_ref in self.iter_by_col_eq(
-            &ST_CONSTRAINTS_ID,
-            &NonEmpty::new(StIndexFields::TableId.col_id()),
-            &table_id.into(),
+            &ctx,
+            ST_CONSTRAINTS_ID,
+            NonEmpty::new(StIndexFields::TableId.col_id()),
+            table_id.into(),
         )? {
             let row = data_ref.view();
 
@@ -518,9 +506,10 @@ impl CommittedState {
         // Look up the sequences for the table in question.
         let mut sequences = Vec::new();
         for data_ref in self.iter_by_col_eq(
-            &ST_SEQUENCES_ID,
-            &NonEmpty::new(StSequenceFields::TableId.col_id()),
-            &AlgebraicValue::U32(table_id.into()),
+            &ctx,
+            ST_SEQUENCES_ID,
+            NonEmpty::new(StSequenceFields::TableId.col_id()),
+            AlgebraicValue::U32(table_id.into()),
         )? {
             let row = data_ref.view();
 
@@ -542,9 +531,10 @@ impl CommittedState {
         // Look up the indexes for the table in question.
         let mut indexes = Vec::new();
         for data_ref in self.iter_by_col_eq(
-            &ST_INDEXES_ID,
-            &NonEmpty::new(StIndexFields::TableId.col_id()),
-            &table_id.into(),
+            &ctx,
+            ST_INDEXES_ID,
+            NonEmpty::new(StIndexFields::TableId.col_id()),
+            table_id.into(),
         )? {
             let row = data_ref.view();
 
@@ -577,26 +567,6 @@ impl CommittedState {
     }
 }
 
-struct CommittedStateIter<'a> {
-    iter: indexmap::map::Iter<'a, RowId, ProductValue>,
-    table_id_col: &'a NonEmpty<ColId>,
-    value: &'a AlgebraicValue,
-}
-
-impl<'a> Iterator for CommittedStateIter<'a> {
-    type Item = DataRef<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        for (row_id, row) in self.iter.by_ref() {
-            let table_id = row.project_not_empty(self.table_id_col).unwrap();
-            if table_id == *self.value {
-                return Some(DataRef::new(row_id, row));
-            }
-        }
-
-        None
-    }
-}
 /// `TxState` tracks all of the modifications made during a particular transaction.
 /// Rows inserted during a transaction will be added to insert_tables, and similarly,
 /// rows deleted in the transaction will be added to delete_tables.
@@ -721,6 +691,250 @@ impl SequencesState {
     pub fn get_sequence_mut(&mut self, seq_id: SequenceId) -> Option<&mut Sequence> {
         self.sequences.get_mut(&seq_id)
     }
+}
+
+impl DataRow for TxId {
+    type RowId = RowId;
+    type DataRef<'a> = DataRef<'a>;
+
+    fn view_product_value<'a>(&self, data_ref: Self::DataRef<'a>) -> &'a ProductValue {
+        data_ref.data
+    }
+}
+
+impl DataRow for MutTxId {
+    type RowId = RowId;
+    type DataRef<'a> = DataRef<'a>;
+
+    fn view_product_value<'a>(&self, data_ref: Self::DataRef<'a>) -> &'a ProductValue {
+        data_ref.data
+    }
+}
+
+// Type aliases for lock gaurds
+type SharedReadGuard<T> = ArcRwLockReadGuard<RawRwLock, T>;
+type SharedWriteGuard<T> = ArcRwLockWriteGuard<RawRwLock, T>;
+type SharedMutexGuard<T> = ArcMutexGuard<RawMutex, T>;
+
+pub struct TxId {
+    committed_state_shared_lock: SharedReadGuard<CommittedState>,
+    lock_wait_time: Duration,
+    timer: Instant,
+}
+
+impl ReadTx for TxId {
+    fn table_id_from_name(&self, table_name: &str, database_address: Address) -> super::Result<Option<TableId>> {
+        self.committed_state_shared_lock
+            .iter_by_col_eq(
+                &ExecutionContext::internal(database_address),
+                ST_TABLES_ID,
+                NonEmpty::new(StTableFields::TableName.col_id()),
+                AlgebraicValue::String(table_name.to_owned()),
+            )
+            .map(|mut iter| {
+                iter.next()
+                    .map(|row| TableId(*row.view().elements[0].as_u32().unwrap()))
+            })
+    }
+
+    fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: &TableId) -> super::Result<Iter<'a>> {
+        if self.table_exists(table_id) {
+            return Ok(Iter::new(ctx, *table_id, None, &self.committed_state_shared_lock));
+        }
+        Err(TableError::IdNotFound(SystemTable::st_table, table_id.0).into())
+    }
+
+    fn table_exists(&self, table_id: &TableId) -> bool {
+        self.committed_state_shared_lock.tables.contains_key(table_id)
+    }
+
+    /// Returns an iterator,
+    /// yielding every row in the table identified by `table_id`,
+    /// where the values of `cols` are contained in `range`.
+    fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        table_id: &TableId,
+        cols: NonEmpty<ColId>,
+        range: R,
+    ) -> super::Result<IterByColRange<'a, R>> {
+        // Either the current transaction has not modified this table, or the table is not
+        // indexed.
+        match self.committed_state_shared_lock.index_seek(table_id, &cols, &range) {
+            Some(committed_rows) => Ok(IterByColRange::CommittedIndex(CommittedIndexIter {
+                ctx,
+                table_id: *table_id,
+                tx_state: None,
+                committed_state: &self.committed_state_shared_lock,
+                committed_rows,
+                num_committed_rows_fetched: 0,
+            })),
+            None => Ok(IterByColRange::Scan(ScanIterByColRange {
+                range,
+                cols,
+                scan_iter: self.iter(ctx, table_id)?,
+            })),
+        }
+    }
+
+    fn iter_by_col_eq<'a>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        table_id: &TableId,
+        cols: NonEmpty<ColId>,
+        value: AlgebraicValue,
+    ) -> super::Result<IterByColEq<'_>> {
+        self.iter_by_col_range(ctx, table_id, cols, value)
+    }
+
+    fn release(self, ctx: &ExecutionContext) {
+        let workload = &ctx.workload();
+        let db = &ctx.database();
+        let reducer = ctx.reducer_name().unwrap_or_default();
+        let elapsed_time = self.timer.elapsed();
+        let cpu_time = elapsed_time - self.lock_wait_time;
+        DB_METRICS
+            .rdb_num_txns
+            .with_label_values(workload, db, reducer, &false)
+            .inc();
+        DB_METRICS
+            .rdb_txn_cpu_time_sec
+            .with_label_values(workload, db, reducer)
+            .observe(cpu_time.as_secs_f64());
+        DB_METRICS
+            .rdb_txn_elapsed_time_sec
+            .with_label_values(workload, db, reducer)
+            .observe(elapsed_time.as_secs_f64());
+    }
+}
+
+impl ReadTx for MutTxId {
+    fn table_id_from_name(&self, table_name: &str, database_address: Address) -> super::Result<Option<TableId>> {
+        self.iter_by_col_eq(
+            &ExecutionContext::internal(database_address),
+            &ST_TABLES_ID,
+            StTableFields::TableName,
+            AlgebraicValue::String(table_name.to_owned()),
+        )
+        .map(|mut iter| {
+            iter.next()
+                .map(|row| TableId(*row.view().elements[0].as_u32().unwrap()))
+        })
+    }
+
+    fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: &TableId) -> super::Result<Iter<'a>> {
+        if self.table_exists(table_id) {
+            return Ok(Iter::new(
+                ctx,
+                *table_id,
+                Some(&self.tx_state),
+                &self.committed_state_write_lock,
+            ));
+        }
+        Err(TableError::IdNotFound(SystemTable::st_table, table_id.0).into())
+    }
+
+    fn table_exists(&self, table_id: &TableId) -> bool {
+        self.tx_state.insert_tables.contains_key(table_id)
+            || self.committed_state_write_lock.tables.contains_key(table_id)
+    }
+
+    /// Returns an iterator,
+    /// yielding every row in the table identified by `table_id`,
+    /// where the values of `cols` are contained in `range`.
+    fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        table_id: &TableId,
+        cols: NonEmpty<ColId>,
+        range: R,
+    ) -> super::Result<IterByColRange<'a, R>> {
+        // We have to index_seek in both the committed state and the current tx state.
+        // First, we will check modifications in the current tx. It may be that the table
+        // has not been modified yet in the current tx, in which case we will only search
+        // the committed state. Finally, the table may not be indexed at all, in which case
+        // we fall back to iterating the entire table.
+        //
+        // We need to check the tx_state first. In particular, it may be that the index
+        // was only added in the current transaction.
+        // TODO(george): It's unclear that we truly support dynamically creating an index
+        // yet. In particular, I don't know if creating an index in a transaction and
+        // rolling it back will leave the index in place.
+        if let Some(inserted_rows) = self.tx_state.index_seek(table_id, &cols, &range) {
+            // The current transaction has modified this table, and the table is indexed.
+            Ok(IterByColRange::Index(IndexSeekIterMutTxId {
+                ctx,
+                table_id: *table_id,
+                tx_state: &self.tx_state,
+                inserted_rows,
+                committed_rows: self.committed_state_write_lock.index_seek(table_id, &cols, &range),
+                committed_state: &self.committed_state_write_lock,
+                num_committed_rows_fetched: 0,
+            }))
+        } else {
+            // Either the current transaction has not modified this table, or the table is not
+            // indexed.
+            match self.committed_state_write_lock.index_seek(table_id, &cols, &range) {
+                Some(committed_rows) => Ok(IterByColRange::CommittedIndex(CommittedIndexIter {
+                    ctx,
+                    table_id: *table_id,
+                    tx_state: Some(&self.tx_state),
+                    committed_state: &self.committed_state_write_lock,
+                    committed_rows,
+                    num_committed_rows_fetched: 0,
+                })),
+                None => Ok(IterByColRange::Scan(ScanIterByColRange {
+                    range,
+                    cols,
+                    scan_iter: self.iter(ctx, table_id)?,
+                })),
+            }
+        }
+    }
+
+    fn iter_by_col_eq<'a>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        table_id: &TableId,
+        cols: NonEmpty<ColId>,
+        value: AlgebraicValue,
+    ) -> super::Result<IterByColEq<'_>> {
+        self.iter_by_col_range(ctx, table_id, cols, value)
+    }
+
+    fn release(self, ctx: &ExecutionContext) {
+        let workload = &ctx.workload();
+        let db = &ctx.database();
+        let reducer = ctx.reducer_name().unwrap_or_default();
+        let elapsed_time = self.timer.elapsed();
+        let cpu_time = elapsed_time - self.lock_wait_time;
+        DB_METRICS
+            .rdb_num_txns
+            .with_label_values(workload, db, reducer, &false)
+            .inc();
+        DB_METRICS
+            .rdb_txn_cpu_time_sec
+            .with_label_values(workload, db, reducer)
+            .observe(cpu_time.as_secs_f64());
+        DB_METRICS
+            .rdb_txn_elapsed_time_sec
+            .with_label_values(workload, db, reducer)
+            .observe(elapsed_time.as_secs_f64());
+    }
+}
+
+/// Represents a Mutable transaction. Holds locks for its duration
+///
+/// The initialization of this struct is sensitive because improper
+/// handling can lead to deadlocks. Therefore, it is strongly recommended to use
+/// `Locking::begin_write_tx()` for instantiation to ensure safe acquisition of locks.
+pub struct MutTxId {
+    tx_state: TxState,
+    committed_state_write_lock: SharedWriteGuard<CommittedState>,
+    sequence_state_lock: SharedMutexGuard<SequencesState>,
+    memory_lock: SharedMutexGuard<BTreeMap<DataKey, Arc<Vec<u8>>>>,
+    lock_wait_time: Duration,
+    timer: Instant,
 }
 
 impl MutTxId {
@@ -1259,19 +1473,6 @@ impl MutTxId {
         Ok(())
     }
 
-    fn table_id_from_name(&self, table_name: &str, database_address: Address) -> super::Result<Option<TableId>> {
-        self.iter_by_col_eq(
-            &ExecutionContext::internal(database_address),
-            &ST_TABLES_ID,
-            StTableFields::TableName,
-            AlgebraicValue::String(table_name.to_owned()),
-        )
-        .map(|mut iter| {
-            iter.next()
-                .map(|row| TableId(*row.view().elements[0].as_u32().unwrap()))
-        })
-    }
-
     fn table_name_from_id<'a>(&'a self, ctx: &'a ExecutionContext, table_id: TableId) -> super::Result<Option<&str>> {
         self.iter_by_col_eq(ctx, &ST_TABLES_ID, StTableFields::TableId, table_id.into())
             .map(|mut iter| {
@@ -1713,13 +1914,6 @@ impl MutTxId {
         self.delete(table_id, relation.into_iter().map(|pv| RowId(pv.to_data_key())))
     }
 
-    fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: &TableId) -> super::Result<Iter> {
-        if self.table_exists(table_id) {
-            return Ok(Iter::new(ctx, *table_id, self));
-        }
-        Err(TableError::IdNotFound(SystemTable::st_table, table_id.0).into())
-    }
-
     /// Returns an iterator,
     /// yielding every row in the table identified by `table_id`,
     /// where the column data identified by `cols` equates to `value`.
@@ -1733,67 +1927,10 @@ impl MutTxId {
         self.iter_by_col_range(ctx, table_id, cols.into(), value)
     }
 
-    /// Returns an iterator,
-    /// yielding every row in the table identified by `table_id`,
-    /// where the values of `cols` are contained in `range`.
-    fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
-        &'a self,
-        ctx: &'a ExecutionContext,
-        table_id: &TableId,
-        cols: NonEmpty<ColId>,
-        range: R,
-    ) -> super::Result<IterByColRange<R>> {
-        // We have to index_seek in both the committed state and the current tx state.
-        // First, we will check modifications in the current tx. It may be that the table
-        // has not been modified yet in the current tx, in which case we will only search
-        // the committed state. Finally, the table may not be indexed at all, in which case
-        // we fall back to iterating the entire table.
-        //
-        // We need to check the tx_state first. In particular, it may be that the index
-        // was only added in the current transaction.
-        // TODO(george): It's unclear that we truly support dynamically creating an index
-        // yet. In particular, I don't know if creating an index in a transaction and
-        // rolling it back will leave the index in place.
-        if let Some(inserted_rows) = self.tx_state.index_seek(table_id, &cols, &range) {
-            // The current transaction has modified this table, and the table is indexed.
-            Ok(IterByColRange::Index(IndexSeekIterMutTxId {
-                ctx,
-                table_id: *table_id,
-                tx_state: &self.tx_state,
-                inserted_rows,
-                committed_rows: self.committed_state_write_lock.index_seek(table_id, &cols, &range),
-                committed_state: &self.committed_state_write_lock,
-                num_committed_rows_fetched: 0,
-            }))
-        } else {
-            // Either the current transaction has not modified this table, or the table is not
-            // indexed.
-            match self.committed_state_write_lock.index_seek(table_id, &cols, &range) {
-                Some(committed_rows) => Ok(IterByColRange::CommittedIndex(CommittedIndexIter {
-                    ctx,
-                    table_id: *table_id,
-                    tx_state: &self.tx_state,
-                    committed_state: &self.committed_state_write_lock,
-                    committed_rows,
-                    num_committed_rows_fetched: 0,
-                })),
-                None => Ok(IterByColRange::Scan(ScanIterByColRange {
-                    range,
-                    cols,
-                    scan_iter: self.iter(ctx, table_id)?,
-                })),
-            }
-        }
-    }
-
     fn commit(mut self) -> super::Result<Option<TxData>> {
         let memory: BTreeMap<DataKey, Arc<Vec<u8>>> = std::mem::take(&mut self.memory_lock);
         let tx_data = self.committed_state_write_lock.merge(self.tx_state, memory);
         Ok(Some(tx_data))
-    }
-
-    fn rollback(self) {
-        // TODO: Check that no sequences exceed their allocation after the rollback.
     }
 }
 
@@ -1937,22 +2074,11 @@ impl DataRow for Locking {
     }
 }
 
-impl traits::Tx for Locking {
-    type TxId = MutTxId;
-
-    fn begin_tx(&self) -> Self::TxId {
-        self.begin_mut_tx()
-    }
-
-    fn release_tx(&self, ctx: &ExecutionContext, tx: Self::TxId) {
-        self.rollback_mut_tx(ctx, tx)
-    }
-}
-
 pub struct Iter<'a> {
     ctx: &'a ExecutionContext<'a>,
     table_id: TableId,
-    tx: &'a MutTxId,
+    tx_state: Option<&'a TxState>,
+    committed_state: &'a CommittedState,
     stage: ScanStage<'a>,
     num_committed_rows_fetched: u64,
 }
@@ -1972,11 +2098,17 @@ impl Drop for Iter<'_> {
 }
 
 impl<'a> Iter<'a> {
-    fn new(ctx: &'a ExecutionContext, table_id: TableId, tx: &'a MutTxId) -> Self {
+    fn new(
+        ctx: &'a ExecutionContext,
+        table_id: TableId,
+        tx_state: Option<&'a TxState>,
+        committed_state: &'a CommittedState,
+    ) -> Self {
         Self {
             ctx,
             table_id,
-            tx,
+            tx_state,
+            committed_state,
             stage: ScanStage::Start,
             num_committed_rows_fetched: 0,
         }
@@ -2003,7 +2135,7 @@ impl<'a> Iterator for Iter<'a> {
         // Moves the current scan stage to the current tx if rows were inserted in it.
         // Returns `None` otherwise.
         let maybe_stage_current_tx_inserts = |this: &mut Self| {
-            let table = &this.tx.tx_state;
+            let table = &this.tx_state?;
             let insert_table = table.insert_tables.get(&table_id)?;
             this.stage = ScanStage::CurrentTx {
                 iter: insert_table.rows.iter(),
@@ -2020,7 +2152,7 @@ impl<'a> Iterator for Iter<'a> {
             match &mut self.stage {
                 ScanStage::Start => {
                     let _span = tracing::debug_span!("ScanStage::Start").entered();
-                    if let Some(table) = self.tx.committed_state_write_lock.tables.get(&table_id) {
+                    if let Some(table) = self.committed_state.tables.get(&table_id) {
                         // The committed state has changes for this table.
                         // Go through them in (1).
                         self.stage = ScanStage::Committed {
@@ -2033,28 +2165,33 @@ impl<'a> Iterator for Iter<'a> {
                 }
                 ScanStage::Committed { iter } => {
                     // (1) Go through the committed state for this table.
-                    let _span = tracing::debug_span!("ScanStage::Committed").entered();
+                    // let _span = tracing::debug_span!("ScanStage::Committed").entered();
                     for (row_id, row) in iter {
                         // Increment metric for number of committed rows scanned.
                         self.num_committed_rows_fetched += 1;
-                        // Check the committed row's state in the current tx.
-                        match self.tx.tx_state.get_row_op(&table_id, row_id) {
-                            RowState::Committed(_) => unreachable!("a row cannot be committed in a tx state"),
-                            // Do nothing, via (3), we'll get it in the next stage (2).
-                            RowState::Insert(_) |
-                            // Skip it, it's been deleted.
-                            RowState::Delete => {}
-                            // There either are no state changes for the current tx (`None`),
-                            // or there are, but `row_id` specifically has not been changed.
-                            // Either way, the row is in the committed state
-                            // and hasn't been removed in the current tx,
-                            // so it exists and can be returned.
-                            RowState::Absent => return Some(DataRef::new(row_id, row)),
+                        match self.tx_state {
+                            Some(tx_state) => {
+                                // Check the committed row's state in the current tx.
+                                match tx_state.get_row_op(&table_id, row_id) {
+                                    RowState::Committed(_) => unreachable!("a row cannot be committed in a tx state"),
+                                    // Do nothing, via (3), we'll get it in the next stage (2).
+                                    RowState::Insert(_) |
+                                    // Skip it, it's been deleted.
+                                    RowState::Delete => {}
+                                    // There either are no state changes for the current tx (`None`),
+                                    // or there are, but `row_id` specifically has not been changed.
+                                    // Either way, the row is in the committed state
+                                    // and hasn't been removed in the current tx,
+                                    // so it exists and can be returned.
+                                    RowState::Absent => return Some(DataRef::new(row_id, row)),
+                                }
+                            }
+                            None => return Some(DataRef::new(row_id, row)),
                         }
                     }
                     // (3) We got here, so we must've exhausted the committed changes.
                     // Start looking in the current tx for inserts, if any, in (2).
-                    maybe_stage_current_tx_inserts(self)?;
+                    maybe_stage_current_tx_inserts(self)?
                 }
                 ScanStage::CurrentTx { iter } => {
                     // (2) look for inserts in the current tx.
@@ -2145,7 +2282,7 @@ impl<'a> Iterator for IndexSeekIterMutTxId<'a> {
 pub struct CommittedIndexIter<'a> {
     ctx: &'a ExecutionContext<'a>,
     table_id: TableId,
-    tx_state: &'a TxState,
+    tx_state: Option<&'a TxState>,
     committed_state: &'a CommittedState,
     committed_rows: BTreeIndexRangeIter<'a>,
     num_committed_rows_fetched: u64,
@@ -2192,12 +2329,12 @@ impl<'a> Iterator for CommittedIndexIter<'a> {
 
     #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(row_id) = self.committed_rows.find(|row_id| {
-            !self
-                .tx_state
+        if let Some(row_id) = self.committed_rows.find(|row_id| match self.tx_state {
+            Some(tx_state) => !tx_state
                 .delete_tables
                 .get(&self.table_id)
-                .map_or(false, |table| table.contains(row_id))
+                .map_or(false, |table| table.contains(row_id)),
+            None => true,
         }) {
             self.num_committed_rows_fetched += 1;
             return Some(get_committed_row(self.committed_state, &self.table_id, row_id));
@@ -2269,56 +2406,11 @@ impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for ScanIterByColRange<'a, R> 
     }
 }
 
-impl TxDatastore for Locking {
-    type Iter<'a> = Iter<'a> where Self: 'a;
-    type IterByColEq<'a> = IterByColRange<'a, AlgebraicValue> where Self: 'a;
-    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterByColRange<'a, R> where Self: 'a;
-
-    fn iter_tx<'a>(
-        &'a self,
-        ctx: &'a ExecutionContext,
-        tx: &'a Self::TxId,
-        table_id: TableId,
-    ) -> super::Result<Self::Iter<'a>> {
-        self.iter_mut_tx(ctx, tx, table_id)
-    }
-
-    fn iter_by_col_range_tx<'a, R: RangeBounds<AlgebraicValue>>(
-        &'a self,
-        ctx: &'a ExecutionContext,
-        tx: &'a Self::TxId,
-        table_id: TableId,
-        cols: NonEmpty<ColId>,
-        range: R,
-    ) -> super::Result<Self::IterByColRange<'a, R>> {
-        self.iter_by_col_range_mut_tx(ctx, tx, table_id, cols, range)
-    }
-
-    fn iter_by_col_eq_tx<'a>(
-        &'a self,
-        ctx: &'a ExecutionContext,
-        tx: &'a Self::TxId,
-        table_id: TableId,
-        cols: NonEmpty<ColId>,
-        value: AlgebraicValue,
-    ) -> super::Result<Self::IterByColEq<'a>> {
-        self.iter_by_col_eq_mut_tx(ctx, tx, table_id, cols, value)
-    }
-
-    fn get_tx<'a>(
-        &self,
-        tx: &'a Self::TxId,
-        table_id: TableId,
-        row_id: &'a Self::RowId,
-    ) -> super::Result<Option<Self::DataRef<'a>>> {
-        self.get_mut_tx(tx, table_id, row_id)
-    }
-}
-
-impl traits::MutTx for Locking {
+impl traits::Tx for Locking {
+    type TxId = TxId;
     type MutTxId = MutTxId;
 
-    fn begin_mut_tx(&self) -> Self::MutTxId {
+    fn begin_write_tx(&self) -> Self::MutTxId {
         let timer = Instant::now();
 
         let committed_state_write_lock = self.committed_state.write_arc();
@@ -2335,28 +2427,23 @@ impl traits::MutTx for Locking {
         }
     }
 
-    fn rollback_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTxId) {
-        let workload = &ctx.workload();
-        let db = &ctx.database();
-        let reducer = ctx.reducer_name().unwrap_or_default();
-        let elapsed_time = tx.timer.elapsed();
-        let cpu_time = elapsed_time - tx.lock_wait_time;
-        DB_METRICS
-            .rdb_num_txns
-            .with_label_values(workload, db, reducer, &false)
-            .inc();
-        DB_METRICS
-            .rdb_txn_cpu_time_sec
-            .with_label_values(workload, db, reducer)
-            .observe(cpu_time.as_secs_f64());
-        DB_METRICS
-            .rdb_txn_elapsed_time_sec
-            .with_label_values(workload, db, reducer)
-            .observe(elapsed_time.as_secs_f64());
-        tx.rollback();
+    fn begin_read_tx(&self) -> Self::TxId {
+        let timer = Instant::now();
+
+        let committed_state_shared_lock = self.committed_state.read_arc();
+        let lock_wait_time = timer.elapsed();
+        TxId {
+            committed_state_shared_lock,
+            lock_wait_time,
+            timer,
+        }
     }
 
-    fn commit_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTxId) -> super::Result<Option<TxData>> {
+    fn rollback_tx<T: ReadTx>(&self, ctx: &ExecutionContext, tx: T) {
+        tx.release(ctx);
+    }
+
+    fn commit_tx(&self, ctx: &ExecutionContext, tx: Self::MutTxId) -> super::Result<Option<TxData>> {
         let workload = &ctx.workload();
         let db = &ctx.database();
         let reducer = ctx.reducer_name().unwrap_or_default();
@@ -2409,9 +2496,7 @@ impl traits::MutTx for Locking {
     }
 
     #[cfg(test)]
-    fn rollback_mut_tx_for_test(&self, tx: Self::MutTxId) {
-        tx.rollback();
-    }
+    fn rollback_mut_tx_for_test(&self, _tx: Self::MutTxId) {}
 
     #[cfg(test)]
     fn commit_mut_tx_for_test(&self, tx: Self::MutTxId) -> super::Result<Option<TxData>> {
@@ -2419,7 +2504,25 @@ impl traits::MutTx for Locking {
     }
 }
 
-impl MutTxDatastore for Locking {
+impl TxDatastore for Locking {
+    type Iter<'a> = Iter<'a> where Self: 'a;
+    type IterByColEq<'a> = IterByColRange<'a, AlgebraicValue> where Self: 'a;
+    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterByColRange<'a, R> where Self: 'a;
+
+    fn get_all_tables_mut_tx<'tx>(
+        &self,
+        ctx: &ExecutionContext,
+        tx: &'tx Self::MutTxId,
+    ) -> super::Result<Vec<Cow<'tx, TableSchema>>> {
+        let mut tables = Vec::new();
+        let table_rows = self.iter_tx(ctx, tx, ST_TABLES_ID)?.collect::<Vec<_>>();
+        for data_ref in table_rows {
+            let data = self.view_product_value(data_ref);
+            let row = StTableRow::try_from(data)?;
+            tables.push(self.schema_for_table_mut_tx(tx, row.table_id)?);
+        }
+        Ok(tables)
+    }
     fn create_table_mut_tx(&self, tx: &mut Self::MutTxId, schema: TableDef) -> super::Result<TableId> {
         tx.create_table(schema, self.database_address)
     }
@@ -2471,7 +2574,7 @@ impl MutTxDatastore for Locking {
         tx.table_exists(table_id)
     }
 
-    fn table_id_from_name_mut_tx(&self, tx: &Self::MutTxId, table_name: &str) -> super::Result<Option<TableId>> {
+    fn table_id_from_name<T: ReadTx>(&self, tx: &T, table_name: &str) -> super::Result<Option<TableId>> {
         tx.table_id_from_name(table_name, self.database_address)
     }
 
@@ -2538,19 +2641,19 @@ impl MutTxDatastore for Locking {
         tx.constraint_id_from_name(constraint_name, self.database_address)
     }
 
-    fn iter_mut_tx<'a>(
+    fn iter_tx<'a, T: ReadTx>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a Self::MutTxId,
+        tx: &'a T,
         table_id: TableId,
     ) -> super::Result<Self::Iter<'a>> {
         tx.iter(ctx, &table_id)
     }
 
-    fn iter_by_col_range_mut_tx<'a, R: RangeBounds<AlgebraicValue>>(
+    fn iter_by_col_range_tx<'a, R: RangeBounds<AlgebraicValue>, T: ReadTx>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a Self::MutTxId,
+        tx: &'a T,
         table_id: TableId,
         cols: impl Into<NonEmpty<ColId>>,
         range: R,
@@ -2558,15 +2661,15 @@ impl MutTxDatastore for Locking {
         tx.iter_by_col_range(ctx, &table_id, cols.into(), range)
     }
 
-    fn iter_by_col_eq_mut_tx<'a>(
+    fn iter_by_col_eq_tx<'a, T: ReadTx>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a Self::MutTxId,
+        tx: &'a T,
         table_id: TableId,
         cols: impl Into<NonEmpty<ColId>>,
         value: AlgebraicValue,
     ) -> super::Result<Self::IterByColEq<'a>> {
-        tx.iter_by_col_eq(ctx, &table_id, cols, value)
+        tx.iter_by_col_eq(ctx, &table_id, cols.into(), value)
     }
 
     fn get_mut_tx<'a>(
@@ -2607,7 +2710,7 @@ impl MutTxDatastore for Locking {
 }
 
 impl traits::Programmable for Locking {
-    fn program_hash(&self, tx: &MutTxId) -> Result<Option<Hash>, DBError> {
+    fn program_hash<T: ReadTx>(&self, tx: &T) -> Result<Option<Hash>, DBError> {
         match tx
             .iter(&ExecutionContext::internal(self.database_address), &ST_MODULE_ID)?
             .next()
@@ -2674,6 +2777,7 @@ impl traits::MutProgrammable for Locking {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::datastore::traits::Tx;
     use crate::db::datastore::Result;
     use crate::error::IndexError;
     use itertools::Itertools;
@@ -3002,7 +3106,7 @@ mod tests {
 
     fn setup_table() -> ResultTest<(Locking, MutTxId, TableId)> {
         let datastore = get_datastore()?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         let schema = basic_table_schema();
         let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
         Ok((datastore, tx, table_id))
@@ -3010,7 +3114,7 @@ mod tests {
 
     fn all_rows(datastore: &Locking, tx: &MutTxId, table_id: TableId) -> Vec<ProductValue> {
         datastore
-            .iter_mut_tx(&ExecutionContext::default(), tx, table_id)
+            .iter_tx(&ExecutionContext::default(), tx, table_id)
             .unwrap()
             .map(|r| r.view().clone())
             .collect()
@@ -3019,7 +3123,7 @@ mod tests {
     #[test]
     fn test_bootstrapping_sets_up_tables() -> ResultTest<()> {
         let datastore = get_datastore()?;
-        let tx = datastore.begin_mut_tx();
+        let tx = datastore.begin_write_tx();
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
         #[rustfmt::skip]
@@ -3120,7 +3224,7 @@ mod tests {
     fn test_create_table_post_commit() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let tx = datastore.begin_mut_tx();
+        let tx = datastore.begin_write_tx();
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
 
@@ -3140,7 +3244,7 @@ mod tests {
     fn test_create_table_post_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.rollback_mut_tx_for_test(tx);
-        let tx = datastore.begin_mut_tx();
+        let tx = datastore.begin_write_tx();
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
 
@@ -3164,7 +3268,7 @@ mod tests {
     fn test_schema_for_table_post_commit() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let tx = datastore.begin_mut_tx();
+        let tx = datastore.begin_write_tx();
         let schema = &*datastore.schema_for_table_mut_tx(&tx, table_id)?;
         #[rustfmt::skip]
         assert_eq!(schema, &basic_table_schema_created(table_id));
@@ -3176,7 +3280,7 @@ mod tests {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx_for_test(tx)?;
 
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         let schema = datastore.schema_for_table_mut_tx(&tx, table_id)?.into_owned();
 
         for index in &*schema.indexes {
@@ -3188,7 +3292,7 @@ mod tests {
         );
         datastore.commit_mut_tx_for_test(tx)?;
 
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         assert!(
             datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes.is_empty(),
             "no indexes should be left in the schema post-commit"
@@ -3216,7 +3320,7 @@ mod tests {
 
         datastore.commit_mut_tx_for_test(tx)?;
 
-        let tx = datastore.begin_mut_tx();
+        let tx = datastore.begin_write_tx();
         assert_eq!(
             datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes,
             expected_indexes,
@@ -3232,7 +3336,7 @@ mod tests {
     fn test_schema_for_table_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.rollback_mut_tx_for_test(tx);
-        let tx = datastore.begin_mut_tx();
+        let tx = datastore.begin_write_tx();
         let schema = datastore.schema_for_table_mut_tx(&tx, table_id);
         assert!(schema.is_err());
         Ok(())
@@ -3264,7 +3368,7 @@ mod tests {
         // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, u32_str_u32(0, "Foo", 18))?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let tx = datastore.begin_mut_tx();
+        let tx = datastore.begin_write_tx();
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, "Foo", 18)]);
         Ok(())
@@ -3275,10 +3379,10 @@ mod tests {
         let (datastore, tx, table_id) = setup_table()?;
         let row = u32_str_u32(15, "Foo", 18); // 15 is ignored.
         datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.rollback_mut_tx_for_test(tx);
-        let tx = datastore.begin_mut_tx();
+        let tx = datastore.begin_write_tx();
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![]);
         Ok(())
@@ -3290,7 +3394,7 @@ mod tests {
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         let created_row = u32_str_u32(1, "Foo", 18);
         let num_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, [created_row]);
         assert_eq!(num_deleted, 1);
@@ -3345,7 +3449,7 @@ mod tests {
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         let result = datastore.insert_mut_tx(&mut tx, table_id, row);
         match result {
             Err(DBError::Index(IndexError::UniqueConstraintViolation {
@@ -3365,11 +3469,11 @@ mod tests {
     fn test_unique_constraint_post_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
         datastore.rollback_mut_tx_for_test(tx);
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(2, "Foo", 18)]);
@@ -3380,11 +3484,11 @@ mod tests {
     fn test_create_index_pre_commit() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         let index_def = IndexDef::btree("age_idx".into(), ColId(2), true);
         datastore.create_index_mut_tx(&mut tx, table_id, index_def)?;
         let ctx = ExecutionContext::default();
@@ -3425,11 +3529,11 @@ mod tests {
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         let index_def = IndexDef::btree("age_idx".into(), ColId(2), true);
         datastore.create_index_mut_tx(&mut tx, table_id, index_def)?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
 
@@ -3468,11 +3572,11 @@ mod tests {
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         let index_def = IndexDef::btree("age_idx".into(), ColId(2), true);
         datastore.create_index_mut_tx(&mut tx, table_id, index_def)?;
         datastore.rollback_mut_tx_for_test(tx);
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
 
@@ -3511,7 +3615,7 @@ mod tests {
 
         let all_rows_col_0_eq_1 = |tx: &MutTxId| {
             datastore
-                .iter_by_col_eq_mut_tx(
+                .iter_by_col_eq_tx(
                     &ExecutionContext::default(),
                     tx,
                     table_id,
@@ -3524,7 +3628,7 @@ mod tests {
         };
 
         // Update the db with the same actual value for that row, in a new tx.
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_write_tx();
         // Iterate over all rows with the value 1 (from the autoinc) in column 0.
         let rows = all_rows_col_0_eq_1(&tx);
         assert_eq!(rows.len(), 1);

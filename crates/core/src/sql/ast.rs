@@ -20,7 +20,7 @@ use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
 
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::MutTxDatastore;
+use crate::db::datastore::traits::TxDatastore;
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
 use spacetimedb_sats::relation::{extract_table_field, FieldExpr, FieldName};

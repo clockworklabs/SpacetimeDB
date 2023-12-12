@@ -1,5 +1,5 @@
 use super::{
-    datastore::traits::{MutTxDatastore, TxData},
+    datastore::traits::{TxData, TxDatastore},
     message_log::{self, MessageLog},
     messages::commit::Commit,
     ostorage::{memory_object_db::MemoryObjectDB, ObjectDB},
@@ -312,7 +312,7 @@ impl CommitLogMut {
         datastore: &D,
     ) -> Result<Option<usize>, DBError>
     where
-        D: MutTxDatastore<RowId = RowId>,
+        D: TxDatastore<RowId = RowId>,
     {
         // IMPORTANT: writes to the log must be sequential, so as to maintain
         // the commit order. `generate_commit` establishes an order between
@@ -349,7 +349,7 @@ impl CommitLogMut {
         Ok(commit.len())
     }
 
-    fn generate_commit<D: MutTxDatastore<RowId = RowId>>(
+    fn generate_commit<D: TxDatastore<RowId = RowId>>(
         &self,
         ctx: &ExecutionContext,
         tx_data: &TxData,

@@ -1,16 +1,15 @@
-use nonempty::NonEmpty;
-use std::borrow::Cow;
-use std::{ops::RangeBounds, sync::Arc};
-
-use crate::db::datastore::system_tables::ST_TABLES_ID;
+use super::locking_tx_datastore::{Iter, IterByColEq, IterByColRange};
+use super::Result;
 use crate::execution_context::ExecutionContext;
+use nonempty::NonEmpty;
+use spacetimedb_lib::Address;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::def::*;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::DataKey;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
-
-use super::{system_tables::StTableRow, Result};
+use std::borrow::Cow;
+use std::{ops::RangeBounds, sync::Arc};
 
 /// Operations in a transaction are either Inserts or Deletes.
 /// Inserts report the byte objects they inserted, to be persisted
@@ -48,20 +47,43 @@ pub trait DataRow: Send + Sync {
 
     fn view_product_value<'a>(&self, data_ref: Self::DataRef<'a>) -> &'a ProductValue;
 }
+/// `ReadTx` Trait
+///
+/// Provides common methods for both read and write transaction types. 
+/// Currently, it includes methods required for subscriber transactions. 
+/// As the adoption of read transactions increases, more methods are expected to be added.
+pub trait ReadTx {
+    fn release(self, ctx: &ExecutionContext);
+    fn table_id_from_name(&self, table_name: &str, database_address: Address) -> super::Result<Option<TableId>>;
+    fn table_exists(&self, table_id: &TableId) -> bool;
+    fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: &TableId) -> super::Result<Iter<'a>>;
+    /// Returns an iterator,
+    /// yielding every row in the table identified by `table_id`,
+    /// where the column data identified by `cols` equates to `value`.
+    fn iter_by_col_eq<'a>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        table_id: &TableId,
+        cols: NonEmpty<ColId>,
+        value: AlgebraicValue,
+    ) -> super::Result<IterByColEq<'_>>;
 
-pub trait Tx {
-    type TxId;
-
-    fn begin_tx(&self) -> Self::TxId;
-    fn release_tx(&self, ctx: &ExecutionContext, tx: Self::TxId);
+    fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        table_id: &TableId,
+        cols: NonEmpty<ColId>,
+        range: R,
+    ) -> super::Result<IterByColRange<'a, R>>;
 }
 
-pub trait MutTx {
-    type MutTxId;
-
-    fn begin_mut_tx(&self) -> Self::MutTxId;
-    fn commit_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTxId) -> Result<Option<TxData>>;
-    fn rollback_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTxId);
+pub trait Tx {
+    type TxId: ReadTx;
+    type MutTxId: ReadTx;
+    fn begin_read_tx(&self) -> Self::TxId;
+    fn begin_write_tx(&self) -> Self::MutTxId;
+    fn commit_tx(&self, ctx: &ExecutionContext, tx: Self::MutTxId) -> Result<Option<TxData>>;
+    fn rollback_tx<T: ReadTx>(&self, ctx: &ExecutionContext, tx: T);
 
     #[cfg(test)]
     fn commit_mut_tx_for_test(&self, tx: Self::MutTxId) -> Result<Option<TxData>>;
@@ -70,7 +92,7 @@ pub trait MutTx {
     fn rollback_mut_tx_for_test(&self, tx: Self::MutTxId);
 }
 
-pub trait TxDatastore: DataRow + Tx {
+pub trait TxDatastore: Tx + DataRow {
     type Iter<'a>: Iterator<Item = Self::DataRef<'a>>
     where
         Self: 'a;
@@ -83,40 +105,6 @@ pub trait TxDatastore: DataRow + Tx {
     where
         Self: 'a;
 
-    fn iter_tx<'a>(
-        &'a self,
-        ctx: &'a ExecutionContext,
-        tx: &'a Self::TxId,
-        table_id: TableId,
-    ) -> Result<Self::Iter<'a>>;
-
-    fn iter_by_col_range_tx<'a, R: RangeBounds<AlgebraicValue>>(
-        &'a self,
-        ctx: &'a ExecutionContext,
-        tx: &'a Self::TxId,
-        table_id: TableId,
-        cols: NonEmpty<ColId>,
-        range: R,
-    ) -> Result<Self::IterByColRange<'a, R>>;
-
-    fn iter_by_col_eq_tx<'a>(
-        &'a self,
-        ctx: &'a ExecutionContext,
-        tx: &'a Self::TxId,
-        table_id: TableId,
-        cols: NonEmpty<ColId>,
-        value: AlgebraicValue,
-    ) -> Result<Self::IterByColEq<'a>>;
-
-    fn get_tx<'a>(
-        &self,
-        tx: &'a Self::TxId,
-        table_id: TableId,
-        row_id: &'a Self::RowId,
-    ) -> Result<Option<Self::DataRef<'a>>>;
-}
-
-pub trait MutTxDatastore: TxDatastore + MutTx {
     // Tables
     fn create_table_mut_tx(&self, tx: &mut Self::MutTxId, schema: TableDef) -> Result<TableId>;
     // In these methods, we use `'tx` because the return type must borrow data
@@ -131,7 +119,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     fn drop_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId) -> Result<()>;
     fn rename_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, new_name: &str) -> Result<()>;
     fn table_id_exists(&self, tx: &Self::MutTxId, table_id: &TableId) -> bool;
-    fn table_id_from_name_mut_tx(&self, tx: &Self::MutTxId, table_name: &str) -> Result<Option<TableId>>;
+    fn table_id_from_name<T: ReadTx>(&self, tx: &T, table_name: &str) -> Result<Option<TableId>>;
     fn table_name_from_id_mut_tx<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
@@ -142,16 +130,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         &self,
         ctx: &ExecutionContext,
         tx: &'tx Self::MutTxId,
-    ) -> super::Result<Vec<Cow<'tx, TableSchema>>> {
-        let mut tables = Vec::new();
-        let table_rows = self.iter_mut_tx(ctx, tx, ST_TABLES_ID)?.collect::<Vec<_>>();
-        for data_ref in table_rows {
-            let data = self.view_product_value(data_ref);
-            let row = StTableRow::try_from(data)?;
-            tables.push(self.schema_for_table_mut_tx(tx, row.table_id)?);
-        }
-        Ok(tables)
-    }
+    ) -> super::Result<Vec<Cow<'tx, TableSchema>>>;
 
     // Indexes
     fn create_index_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, index: IndexDef) -> Result<IndexId>;
@@ -180,24 +159,24 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         -> super::Result<Option<ConstraintId>>;
 
     // Data
-    fn iter_mut_tx<'a>(
+    fn iter_tx<'a, T: ReadTx>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a Self::MutTxId,
+        tx: &'a T,
         table_id: TableId,
     ) -> Result<Self::Iter<'a>>;
-    fn iter_by_col_range_mut_tx<'a, R: RangeBounds<AlgebraicValue>>(
+    fn iter_by_col_range_tx<'a, R: RangeBounds<AlgebraicValue>, T: ReadTx>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a Self::MutTxId,
+        tx: &'a T,
         table_id: TableId,
         cols: impl Into<NonEmpty<ColId>>,
         range: R,
     ) -> Result<Self::IterByColRange<'a, R>>;
-    fn iter_by_col_eq_mut_tx<'a>(
+    fn iter_by_col_eq_tx<'a, T: ReadTx>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a Self::MutTxId,
+        tx: &'a T,
         table_id: TableId,
         cols: impl Into<NonEmpty<ColId>>,
         value: AlgebraicValue,
@@ -238,12 +217,12 @@ pub trait Programmable: TxDatastore {
     ///
     /// A `None` result means that no program is currently associated, e.g.
     /// because the datastore has not been fully initialized yet.
-    fn program_hash(&self, tx: &Self::TxId) -> Result<Option<Hash>>;
+    fn program_hash<T: ReadTx>(&self, tx: &T) -> Result<Option<Hash>>;
 }
 
 /// Describes a [`Programmable`] datastore which allows to update the program
 /// associated with it.
-pub trait MutProgrammable: MutTxDatastore {
+pub trait MutProgrammable: TxDatastore {
     /// A fencing token (usually a monotonic counter) which allows to order
     /// `set_module_hash` with respect to a distributed locking service.
     type FencingToken: Eq + Ord;
