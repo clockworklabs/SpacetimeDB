@@ -150,11 +150,12 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         let desc = instance.extract_descriptions()?;
         let desc = bsatn::from_slice(&desc).map_err(DescribeError::Decode)?;
         let ModuleDef {
-            typespace,
+            mut typespace,
             tables,
             reducers,
             misc_exports: _,
         } = desc;
+        typespace.inline_typerefs().map_err(ValidationError::TypeRef)?;
         let catalog = itertools::chain(
             tables
                 .into_iter()
