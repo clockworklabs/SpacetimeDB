@@ -10,7 +10,7 @@ set -euox pipefail
 source "./test/lib.include"
 
 run_test cargo run identity new --no-email
-run_test cargo run publish -S -d --project-path "$PROJECT_PATH" --clear-database
+run_test cargo run publish --skip_clippy --project-path "$PROJECT_PATH" --clear-database
 sleep 2
 DATABASE="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 
