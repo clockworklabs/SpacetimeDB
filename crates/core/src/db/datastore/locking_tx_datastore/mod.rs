@@ -1944,13 +1944,13 @@ impl DataRow for Locking {
 }
 
 impl traits::Tx for Locking {
-    type TxId = MutTxId;
+    type Tx = MutTxId;
 
-    fn begin_tx(&self) -> Self::TxId {
+    fn begin_tx(&self) -> Self::Tx {
         self.begin_mut_tx()
     }
 
-    fn release_tx(&self, ctx: &ExecutionContext, tx: Self::TxId) {
+    fn release_tx(&self, ctx: &ExecutionContext, tx: Self::Tx) {
         self.rollback_mut_tx(ctx, tx)
     }
 }
@@ -2283,7 +2283,7 @@ impl TxDatastore for Locking {
     fn iter_tx<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a Self::TxId,
+        tx: &'a Self::Tx,
         table_id: TableId,
     ) -> super::Result<Self::Iter<'a>> {
         self.iter_mut_tx(ctx, tx, table_id)
@@ -2292,7 +2292,7 @@ impl TxDatastore for Locking {
     fn iter_by_col_range_tx<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a Self::TxId,
+        tx: &'a Self::Tx,
         table_id: TableId,
         cols: NonEmpty<ColId>,
         range: R,
@@ -2303,7 +2303,7 @@ impl TxDatastore for Locking {
     fn iter_by_col_eq_tx<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a Self::TxId,
+        tx: &'a Self::Tx,
         table_id: TableId,
         cols: NonEmpty<ColId>,
         value: AlgebraicValue,
@@ -2313,7 +2313,7 @@ impl TxDatastore for Locking {
 
     fn get_tx<'a>(
         &self,
-        tx: &'a Self::TxId,
+        tx: &'a Self::Tx,
         table_id: TableId,
         row_id: &'a Self::RowId,
     ) -> super::Result<Option<Self::DataRef<'a>>> {
@@ -2322,9 +2322,9 @@ impl TxDatastore for Locking {
 }
 
 impl traits::MutTx for Locking {
-    type MutTxId = MutTxId;
+    type MutTx = MutTxId;
 
-    fn begin_mut_tx(&self) -> Self::MutTxId {
+    fn begin_mut_tx(&self) -> Self::MutTx {
         let timer = Instant::now();
 
         let committed_state_write_lock = self.committed_state.write_arc();
@@ -2341,7 +2341,7 @@ impl traits::MutTx for Locking {
         }
     }
 
-    fn rollback_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTxId) {
+    fn rollback_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) {
         let workload = &ctx.workload();
         let db = &ctx.database();
         let reducer = ctx.reducer_name().unwrap_or_default();
@@ -2362,7 +2362,7 @@ impl traits::MutTx for Locking {
         tx.rollback();
     }
 
-    fn commit_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTxId) -> super::Result<Option<TxData>> {
+    fn commit_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) -> super::Result<Option<TxData>> {
         let workload = &ctx.workload();
         let db = &ctx.database();
         let reducer = ctx.reducer_name().unwrap_or_default();
@@ -2415,18 +2415,18 @@ impl traits::MutTx for Locking {
     }
 
     #[cfg(test)]
-    fn rollback_mut_tx_for_test(&self, tx: Self::MutTxId) {
+    fn rollback_mut_tx_for_test(&self, tx: Self::MutTx) {
         tx.rollback();
     }
 
     #[cfg(test)]
-    fn commit_mut_tx_for_test(&self, tx: Self::MutTxId) -> super::Result<Option<TxData>> {
+    fn commit_mut_tx_for_test(&self, tx: Self::MutTx) -> super::Result<Option<TxData>> {
         tx.commit()
     }
 }
 
 impl MutTxDatastore for Locking {
-    fn create_table_mut_tx(&self, tx: &mut Self::MutTxId, schema: TableDef) -> super::Result<TableId> {
+    fn create_table_mut_tx(&self, tx: &mut Self::MutTx, schema: TableDef) -> super::Result<TableId> {
         tx.create_table(schema, self.database_address)
     }
 
@@ -2445,7 +2445,7 @@ impl MutTxDatastore for Locking {
     /// This function is known to be called quite frequently.
     fn row_type_for_table_mut_tx<'tx>(
         &self,
-        tx: &'tx Self::MutTxId,
+        tx: &'tx Self::MutTx,
         table_id: TableId,
     ) -> super::Result<Cow<'tx, ProductType>> {
         tx.row_type_for_table(table_id, self.database_address)
@@ -2457,7 +2457,7 @@ impl MutTxDatastore for Locking {
     /// of the table.
     fn schema_for_table_mut_tx<'tx>(
         &self,
-        tx: &'tx Self::MutTxId,
+        tx: &'tx Self::MutTx,
         table_id: TableId,
     ) -> super::Result<Cow<'tx, TableSchema>> {
         tx.schema_for_table(table_id, self.database_address)
@@ -2465,26 +2465,26 @@ impl MutTxDatastore for Locking {
 
     /// This function is relatively expensive because it needs to be
     /// transactional, however we don't expect to be dropping tables very often.
-    fn drop_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId) -> super::Result<()> {
+    fn drop_table_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId) -> super::Result<()> {
         tx.drop_table(table_id, self.database_address)
     }
 
-    fn rename_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, new_name: &str) -> super::Result<()> {
+    fn rename_table_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, new_name: &str) -> super::Result<()> {
         tx.rename_table(table_id, new_name, self.database_address)
     }
 
-    fn table_id_exists(&self, tx: &Self::MutTxId, table_id: &TableId) -> bool {
+    fn table_id_exists(&self, tx: &Self::MutTx, table_id: &TableId) -> bool {
         tx.table_exists(table_id)
     }
 
-    fn table_id_from_name_mut_tx(&self, tx: &Self::MutTxId, table_name: &str) -> super::Result<Option<TableId>> {
+    fn table_id_from_name_mut_tx(&self, tx: &Self::MutTx, table_name: &str) -> super::Result<Option<TableId>> {
         tx.table_id_from_name(table_name, self.database_address)
     }
 
     fn table_name_from_id_mut_tx<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a Self::MutTxId,
+        tx: &'a Self::MutTx,
         table_id: TableId,
     ) -> super::Result<Option<&'a str>> {
         tx.table_name_from_id(ctx, table_id)
@@ -2492,53 +2492,53 @@ impl MutTxDatastore for Locking {
 
     fn create_index_mut_tx(
         &self,
-        tx: &mut Self::MutTxId,
+        tx: &mut Self::MutTx,
         table_id: TableId,
         index: IndexDef,
     ) -> super::Result<IndexId> {
         tx.create_index(table_id, index, self.database_address)
     }
 
-    fn drop_index_mut_tx(&self, tx: &mut Self::MutTxId, index_id: IndexId) -> super::Result<()> {
+    fn drop_index_mut_tx(&self, tx: &mut Self::MutTx, index_id: IndexId) -> super::Result<()> {
         tx.drop_index(index_id, self.database_address)
     }
 
-    fn index_id_from_name_mut_tx(&self, tx: &Self::MutTxId, index_name: &str) -> super::Result<Option<IndexId>> {
+    fn index_id_from_name_mut_tx(&self, tx: &Self::MutTx, index_name: &str) -> super::Result<Option<IndexId>> {
         tx.index_id_from_name(index_name, self.database_address)
     }
 
-    fn get_next_sequence_value_mut_tx(&self, tx: &mut Self::MutTxId, seq_id: SequenceId) -> super::Result<i128> {
+    fn get_next_sequence_value_mut_tx(&self, tx: &mut Self::MutTx, seq_id: SequenceId) -> super::Result<i128> {
         tx.get_next_sequence_value(seq_id, self.database_address)
     }
 
     fn create_sequence_mut_tx(
         &self,
-        tx: &mut Self::MutTxId,
+        tx: &mut Self::MutTx,
         table_id: TableId,
         seq: SequenceDef,
     ) -> super::Result<SequenceId> {
         tx.create_sequence(table_id, seq, self.database_address)
     }
 
-    fn drop_sequence_mut_tx(&self, tx: &mut Self::MutTxId, seq_id: SequenceId) -> super::Result<()> {
+    fn drop_sequence_mut_tx(&self, tx: &mut Self::MutTx, seq_id: SequenceId) -> super::Result<()> {
         tx.drop_sequence(seq_id, self.database_address)
     }
 
     fn sequence_id_from_name_mut_tx(
         &self,
-        tx: &Self::MutTxId,
+        tx: &Self::MutTx,
         sequence_name: &str,
     ) -> super::Result<Option<SequenceId>> {
         tx.sequence_id_from_name(sequence_name, self.database_address)
     }
 
-    fn drop_constraint_mut_tx(&self, tx: &mut Self::MutTxId, constraint_id: ConstraintId) -> super::Result<()> {
+    fn drop_constraint_mut_tx(&self, tx: &mut Self::MutTx, constraint_id: ConstraintId) -> super::Result<()> {
         tx.drop_constraint(constraint_id, self.database_address)
     }
 
     fn constraint_id_from_name(
         &self,
-        tx: &Self::MutTxId,
+        tx: &Self::MutTx,
         constraint_name: &str,
     ) -> super::Result<Option<ConstraintId>> {
         tx.constraint_id_from_name(constraint_name, self.database_address)
@@ -2547,7 +2547,7 @@ impl MutTxDatastore for Locking {
     fn iter_mut_tx<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a Self::MutTxId,
+        tx: &'a Self::MutTx,
         table_id: TableId,
     ) -> super::Result<Self::Iter<'a>> {
         tx.iter(ctx, &table_id)
@@ -2556,7 +2556,7 @@ impl MutTxDatastore for Locking {
     fn iter_by_col_range_mut_tx<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a Self::MutTxId,
+        tx: &'a Self::MutTx,
         table_id: TableId,
         cols: impl Into<NonEmpty<ColId>>,
         range: R,
@@ -2567,7 +2567,7 @@ impl MutTxDatastore for Locking {
     fn iter_by_col_eq_mut_tx<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a Self::MutTxId,
+        tx: &'a Self::MutTx,
         table_id: TableId,
         cols: impl Into<NonEmpty<ColId>>,
         value: AlgebraicValue,
@@ -2577,7 +2577,7 @@ impl MutTxDatastore for Locking {
 
     fn get_mut_tx<'a>(
         &self,
-        tx: &'a Self::MutTxId,
+        tx: &'a Self::MutTx,
         table_id: TableId,
         row_id: &'a Self::RowId,
     ) -> super::Result<Option<Self::DataRef<'a>>> {
@@ -2586,7 +2586,7 @@ impl MutTxDatastore for Locking {
 
     fn delete_mut_tx<'a>(
         &'a self,
-        tx: &'a mut Self::MutTxId,
+        tx: &'a mut Self::MutTx,
         table_id: TableId,
         row_ids: impl IntoIterator<Item = Self::RowId>,
     ) -> u32 {
@@ -2595,7 +2595,7 @@ impl MutTxDatastore for Locking {
 
     fn delete_by_rel_mut_tx(
         &self,
-        tx: &mut Self::MutTxId,
+        tx: &mut Self::MutTx,
         table_id: TableId,
         relation: impl IntoIterator<Item = ProductValue>,
     ) -> u32 {
@@ -2604,7 +2604,7 @@ impl MutTxDatastore for Locking {
 
     fn insert_mut_tx<'a>(
         &'a self,
-        tx: &'a mut Self::MutTxId,
+        tx: &'a mut Self::MutTx,
         table_id: TableId,
         row: ProductValue,
     ) -> super::Result<ProductValue> {
