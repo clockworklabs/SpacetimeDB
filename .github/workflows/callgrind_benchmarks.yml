@@ -147,7 +147,6 @@ jobs:
           endpoint: https://nyc3.digitaloceanspaces.com
           destination_dir: callgrind-benchmarks
 
-       FIXME(jgilles): need to talk to piotr about this
       - name: Fetch markdown summary PR
         run: |
           if [[ $PR_NUMBER ]]; then
