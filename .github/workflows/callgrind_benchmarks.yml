@@ -162,27 +162,27 @@ jobs:
           endpoint: https://nyc3.digitaloceanspaces.com
           destination_dir: callgrind-benchmarks
 
-      # FIXME(jgilles): need to talk to piotr about this
-      #- name: Fetch markdown summary PR
-      #  run: |
-      #    if [[ $PR_NUMBER ]]; then
-      #      OLD=master
-      #      NEW=pr-$PR_NUMBER
-      #    else
-      #      OLD=$(git rev-parse HEAD~1)
-      #      NEW=$GITHUB_SHA
-      #    fi
-      #    curl -sS https://benchmarks.spacetimedb.com/compare/$OLD/$NEW > report.md
+       FIXME(jgilles): need to talk to piotr about this
+      - name: Fetch markdown summary PR
+        run: |
+          if [[ $PR_NUMBER ]]; then
+            OLD=master
+            NEW=pr-$PR_NUMBER
+          else
+            OLD=$(git rev-parse HEAD~1)
+            NEW=$GITHUB_SHA
+          fi
+          curl -sS https://benchmarks.spacetimedb.com/compare_callgrind/$OLD/$NEW > report.md
 
-      #- name: Post comment
-      #  run: |
-      #    BODY="<details><summary>Benchmark results</summary>
+      - name: Post comment
+        run: |
+          BODY="<details><summary>Benchmark results</summary>
 
-      #    $(cat report.md)
+          $(cat report.md)
 
-      #    </details>"
+          </details>"
 
-      #    gh api "$COMMENT_UPDATE_URL" -X PATCH -f body="$BODY"
+          gh api "$COMMENT_UPDATE_URL" -X PATCH -f body="$BODY"
 
       - name: Post failure comment
         if: ${{ failure() && env.COMMENT_UPDATE_URL }}
