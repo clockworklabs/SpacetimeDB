@@ -778,3 +778,145 @@ fn with_delta_table(mut join: IndexJoin, index_side: bool, delta: DatabaseTableU
     }
     join
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::relational_db::tests_utils::make_test_db;
+    use crate::host::module_host::TableOp;
+    use crate::sql::compiler::compile_sql;
+    use itertools::Itertools;
+    use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_primitives::{ColId, TableId};
+    use spacetimedb_sats::data_key::ToDataKey;
+    use spacetimedb_sats::db::auth::{StAccess, StTableType};
+    use spacetimedb_sats::db::def::*;
+    use spacetimedb_sats::relation::{FieldName, Table};
+    use spacetimedb_sats::{product, AlgebraicType};
+    use spacetimedb_vm::expr::{CrudExpr, IndexJoin, Query, SourceExpr};
+
+    fn create_table(
+        db: &RelationalDB,
+        tx: &mut MutTxId,
+        name: &str,
+        schema: &[(&str, AlgebraicType)],
+        indexes: &[(ColId, &str)],
+    ) -> Result<TableId, DBError> {
+        let table_name = name.to_string();
+        let table_type = StTableType::User;
+        let table_access = StAccess::Public;
+
+        let columns = schema
+            .iter()
+            .map(|(col_name, col_type)| ColumnDef {
+                col_name: col_name.to_string(),
+                col_type: col_type.clone(),
+            })
+            .collect_vec();
+
+        let indexes = indexes
+            .iter()
+            .map(|(col_id, index_name)| IndexDef::btree(index_name.to_string(), *col_id, false))
+            .collect_vec();
+
+        let schema = TableDef::new(table_name, columns)
+            .with_indexes(indexes)
+            .with_type(table_type)
+            .with_access(table_access);
+
+        db.create_table(tx, schema)
+    }
+
+    #[test]
+    fn compile_incremental_index_join() -> ResultTest<()> {
+        let (db, _) = make_test_db()?;
+        let mut tx = db.begin_tx();
+
+        // Create table [lhs] with index on [b]
+        let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
+        let indexes = &[(1.into(), "b")];
+        let lhs_id = create_table(&db, &mut tx, "lhs", schema, indexes)?;
+
+        // Create table [rhs] with index on [b, c]
+        let schema = &[
+            ("b", AlgebraicType::U64),
+            ("c", AlgebraicType::U64),
+            ("d", AlgebraicType::U64),
+        ];
+        let indexes = &[(0.into(), "b"), (1.into(), "c")];
+        let rhs_id = create_table(&db, &mut tx, "rhs", schema, indexes)?;
+
+        // Should generate an index join since there is an index on `lhs.b`.
+        // Should push the sargable range condition into the index join's probe side.
+        let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
+        let exp = compile_sql(&db, &tx, sql)?.remove(0);
+
+        let CrudExpr::Query(mut expr) = exp else {
+            panic!("unexpected result from compilation: {:#?}", exp);
+        };
+
+        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(expr.query.len(), 1);
+
+        let join = expr.query.pop().unwrap();
+        let Query::IndexJoin(join) = join else {
+            panic!("expected an index join, but got {:#?}", join);
+        };
+
+        // Create an insert for an incremental update.
+        let row = product!(0u64, 0u64);
+        let insert = TableOp {
+            op_type: 1,
+            row_pk: row.to_data_key().to_bytes(),
+            row,
+        };
+        let delta = DatabaseTableUpdate {
+            table_id: lhs_id,
+            table_name: String::from("lhs"),
+            ops: vec![insert],
+        };
+
+        // Optimize the query plan for the incremental update.
+        let expr: QueryExpr = with_delta_table(join, true, delta).into();
+        let mut expr = expr.optimize(Some(db.address()));
+
+        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(expr.query.len(), 1);
+
+        let join = expr.query.pop().unwrap();
+        let Query::IndexJoin(join) = join else {
+            panic!("expected an index join, but got {:#?}", join);
+        };
+
+        let IndexJoin {
+            probe_side:
+                QueryExpr {
+                    source: SourceExpr::MemTable(_),
+                    query: ref lhs,
+                },
+            probe_field:
+                FieldName::Name {
+                    table: ref probe_table,
+                    field: ref probe_field,
+                },
+            index_side: Table::DbTable(DbTable {
+                table_id: index_table, ..
+            }),
+            index_select: Some(_),
+            index_col,
+            return_index_rows: false,
+        } = join
+        else {
+            panic!("unexpected index join {:#?}", join);
+        };
+
+        assert!(lhs.is_empty());
+
+        // Assert that original index and probe tables have been swapped.
+        assert_eq!(index_table, rhs_id);
+        assert_eq!(index_col, 0.into());
+        assert_eq!(probe_field, "b");
+        assert_eq!(probe_table, "lhs");
+        Ok(())
+    }
+}
