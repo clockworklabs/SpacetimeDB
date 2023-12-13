@@ -649,7 +649,7 @@ impl Relation for DbTable {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, From)]
+#[derive(Debug, Clone, Eq, PartialEq, From, PartialOrd, Ord)]
 pub enum Table {
     MemTable(MemTable),
     DbTable(DbTable),
@@ -674,6 +674,13 @@ impl Table {
         match self {
             Self::MemTable(x) => x.table_access,
             Self::DbTable(x) => x.table_access,
+        }
+    }
+
+    pub fn get_db_table(&self) -> Option<&DbTable> {
+        match self {
+            Self::DbTable(t) => Some(t),
+            _ => None,
         }
     }
 }
