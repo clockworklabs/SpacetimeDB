@@ -129,21 +129,6 @@ jobs:
           [[ ! $PR_NUMBER ]] && cp target/iai/$BASELINE_NAME.json callgrind-results/
           cp target/iai/$BASELINE_NAME.json callgrind-results/$RESULTS_NAME.json
 
-      # TODO: can we optionally download if it only might fail?
-      #- name: PR; download bench results for compare
-      #  if: env.PR_NUMBER
-      #  uses: actions/github-script@v6  
-      #  with:
-      #    github-token: ${{secrets.GITHUB_TOKEN}}
-      #    script: |
-      #      try {
-      #        let artifact = github.rest.actions.getArtifact({
-      #          owner: "clockwork",
-      #          repo: "SpacetimeDB",
-      #          
-      #        })
-      #      }
-
       - name: PR; compare benchmarks
         if: ${{ env.PR_NUMBER }}
         working-directory: crates/bench/
@@ -177,11 +162,8 @@ jobs:
       - name: Post comment
         run: |
           BODY="<details><summary>Benchmark results</summary>
-
           $(cat report.md)
-
           </details>"
-
           gh api "$COMMENT_UPDATE_URL" -X PATCH -f body="$BODY"
 
       - name: Post failure comment
