@@ -104,7 +104,7 @@ impl Typespace {
     }
 
     /// Inlines all type references in `ty` recursively using the current typeset.
-    fn inline_typerefs_in_type(&mut self, ty: &mut AlgebraicType) -> Result<(), TypeRefError> {
+    pub fn inline_typerefs_in_type(&mut self, ty: &mut AlgebraicType) -> Result<(), TypeRefError> {
         match ty {
             AlgebraicType::Sum(sum_ty) => {
                 for variant in &mut sum_ty.variants {
@@ -138,32 +138,31 @@ impl Typespace {
     ///
     /// Returns the fully-resolved type or an error if the type reference is invalid or self-referential.
     fn inline_typerefs_in_ref(&mut self, r: AlgebraicTypeRef) -> Result<&AlgebraicType, TypeRefError> {
-        match self.get_mut(r) {
-            None => Err(TypeRefError::InvalidTypeRef(r)),
-            Some(ty) if matches!(ty, AlgebraicType::Ref(_)) => Err(TypeRefError::RecursiveTypeRef(r)),
-            Some(resolved_ty) => {
-                // First, swap the type with a reference.
-                // This allows us to:
-                // 1. Recurse into each type mutably while holding a mutable
-                //    reference to the typespace as well, without cloning.
-                // 2. Easily detect self-references at arbitrary depth without
-                //    having to keep a separate `seen: HashSet<_>` or something.
-                let mut resolved_ty = std::mem::replace(resolved_ty, AlgebraicType::Ref(r));
-                // Next, recurse into the type and inline any nested type references.
-                self.inline_typerefs_in_type(&mut resolved_ty)?;
-                // Resolve the place again, since we couldn't hold the mutable reference across the call above.
-                let place = &mut self[r];
-                // Now we can put the fully-resolved type back and return that place.
-                *place = resolved_ty;
-                Ok(place)
-            }
-        }
+        let resolved_ty = match self.get_mut(r) {
+            None => return Err(TypeRefError::InvalidTypeRef(r)),
+            Some(ty) if matches!(ty, AlgebraicType::Ref(_)) => return Err(TypeRefError::RecursiveTypeRef(r)),
+            Some(resolved_ty) => resolved_ty,
+        };
+        // First, swap the type with a reference.
+        // This allows us to:
+        // 1. Recurse into each type mutably while holding a mutable
+        //    reference to the typespace as well, without cloning.
+        // 2. Easily detect self-references at arbitrary depth without
+        //    having to keep a separate `seen: HashSet<_>` or something.
+        let mut resolved_ty = std::mem::replace(resolved_ty, AlgebraicType::Ref(r));
+        // Next, recurse into the type and inline any nested type references.
+        self.inline_typerefs_in_type(&mut resolved_ty)?;
+        // Resolve the place again, since we couldn't hold the mutable reference across the call above.
+        let place = &mut self[r];
+        // Now we can put the fully-resolved type back and return that place.
+        *place = resolved_ty;
+        Ok(place)
     }
 
     /// Inlines all type references in the typespace recursively.
     ///
     /// Errors out if any type reference is invalid or self-referential.
-    pub fn inline_typerefs(&mut self) -> Result<(), TypeRefError> {
+    pub fn inline_all_typerefs(&mut self) -> Result<(), TypeRefError> {
         // We need to use indices here to allow mutable reference on each iteration.
         for r in 0..self.types.len() as u32 {
             self.inline_typerefs_in_ref(AlgebraicTypeRef(r))?;
