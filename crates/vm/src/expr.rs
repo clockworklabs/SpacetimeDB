@@ -422,6 +422,90 @@ impl From<IndexJoin> for QueryExpr {
     }
 }
 
+impl IndexJoin {
+    // Reorder the index and probe sides of an index join.
+    // This is necessary if the indexed table has been replaced by a delta table.
+    // A delta table is a virtual table consisting of changes or updates to a physical table.
+    pub fn reorder(self) -> Self {
+        // The probe table must be a physical table.
+        if matches!(self.probe_side.source, SourceExpr::MemTable(_)) {
+            return self;
+        }
+        // It must have an index defined on the join field.
+        if !self
+            .probe_side
+            .source
+            .head()
+            .has_constraint(&self.probe_field, Constraints::indexed())
+        {
+            return self;
+        }
+        // It must be a linear pipeline of selections.
+        if !self
+            .probe_side
+            .query
+            .iter()
+            .all(|op| matches!(op, Query::Select(_)) || matches!(op, Query::IndexScan(_)))
+        {
+            return self;
+        }
+        // The compiler ensures the following unwrap is safe.
+        // The existence of this column has already been verified,
+        // during construction of the index join.
+        let probe_column = self.probe_side.source.head().column(&self.probe_field).unwrap().col_id;
+        match self.index_side {
+            Table::DbTable(_) => self,
+            table => {
+                // For the same reason the compiler also ensures this unwrap is safe.
+                let index_field = table
+                    .head()
+                    .fields
+                    .iter()
+                    .find(|col| col.col_id == self.index_col)
+                    .unwrap()
+                    .field
+                    .clone();
+                // Merge all selections from the original probe side into a single predicate.
+                // This includes an index scan if present.
+                let predicate = self.probe_side.query.into_iter().fold(None, |acc, op| {
+                    <Query as Into<Option<ColumnOp>>>::into(op).map(|op| {
+                        if let Some(predicate) = acc {
+                            ColumnOp::new(OpQuery::Logic(OpLogic::And), predicate, op)
+                        } else {
+                            op
+                        }
+                    })
+                });
+                // Push any selections on the index side to the probe side.
+                let probe_side = if let Some(predicate) = self.index_select {
+                    QueryExpr {
+                        source: table.into(),
+                        query: vec![predicate.into()],
+                    }
+                } else {
+                    table.into()
+                };
+                IndexJoin {
+                    // The new probe side consists of the updated rows.
+                    // Plus any selections from the original index probe.
+                    probe_side,
+                    // The new probe field is the previous index field.
+                    probe_field: index_field,
+                    // The original probe table is now the table that is being probed.
+                    index_side: self.probe_side.source.into(),
+                    // Any selections from the original probe side are pulled above the index lookup.
+                    index_select: predicate,
+                    // The new index field is the previous probe field.
+                    index_col: probe_column,
+                    // Because we have swapped the original index and probe sides of the join,
+                    // the new index join needs to return rows from the opposite side.
+                    return_index_rows: !self.return_index_rows,
+                }
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct JoinExpr {
     pub rhs: QueryExpr,
@@ -1264,100 +1348,7 @@ impl QueryExpr {
         q
     }
 
-    // Is this an incremental evaluation of an index join {L+ join R}
-    fn is_incremental_index_join(&self) -> bool {
-        if self.query.len() != 1 {
-            return false;
-        }
-        // Is this in index join?
-        let Query::IndexJoin(IndexJoin {
-            probe_side:
-                QueryExpr {
-                    source: SourceExpr::DbTable(rhs_table),
-                    query: selections,
-                },
-            probe_field,
-            index_select: None,
-            return_index_rows: true,
-            ..
-        }) = &self.query[0]
-        else {
-            return false;
-        };
-        // Is this an incremental evaluation of updates to the left hand table?
-        let SourceExpr::MemTable(_) = self.source else {
-            return false;
-        };
-        // Does the right hand table have an index on the join field?
-        if !rhs_table.head.has_constraint(probe_field, Constraints::indexed()) {
-            return false;
-        };
-        // The original probe side must consist of an optional index scan,
-        // followed by an arbitrary number of selections.
-        selections
-            .iter()
-            .all(|op| matches!(op, Query::Select(_)) || matches!(op, Query::IndexScan(_)))
-    }
-
-    // Assuming this is an incremental evaluation of an index join {L+ join R},
-    // swap the index and probe sides to avoid scanning all of R.
-    fn optimize_incremental_index_join(mut self) -> Option<IndexJoin> {
-        // This is an index join.
-        let Some(Query::IndexJoin(IndexJoin {
-            probe_side:
-                QueryExpr {
-                    source: SourceExpr::DbTable(rhs_table),
-                    query: selections,
-                },
-            probe_field,
-            index_side,
-            index_col,
-            index_select: None,
-            return_index_rows: true,
-        })) = self.query.pop()
-        else {
-            return None;
-        };
-        // This is an incremental evaluation of updates to the left hand table.
-        let SourceExpr::MemTable(index_side_updates) = self.source else {
-            return None;
-        };
-        let index_column = index_side
-            .head()
-            .fields
-            .iter()
-            .find(|column| column.col_id == index_col)?;
-        let index_field = index_column.field.clone();
-        let probe_column = rhs_table.head.column(&probe_field)?.col_id;
-        // Merge all selections from the original probe side into a single predicate.
-        // This includes an index scan if present.
-        let predicate = selections.iter().cloned().fold(None, |acc, op| {
-            <Query as Into<Option<ColumnOp>>>::into(op).map(|op| {
-                if let Some(predicate) = acc {
-                    ColumnOp::new(OpQuery::Logic(OpLogic::And), predicate, op)
-                } else {
-                    op
-                }
-            })
-        });
-        Some(IndexJoin {
-            // The new probe side consists of the updated rows.
-            probe_side: index_side_updates.into(),
-            // The new probe field is the previous index field.
-            probe_field: index_field,
-            // The original probe table is now the table that is being probed.
-            index_side: rhs_table.into(),
-            // Any selections from the original probe side are pulled above the index lookup.
-            index_select: predicate,
-            // The new index field is the previous probe field.
-            index_col: probe_column,
-            // Because we have swapped the original index and probe sides of the join,
-            // the new index join needs to return rows from the probe side instead of the index side.
-            return_index_rows: false,
-        })
-    }
-
-    pub fn optimize(self, db: Option<Address>) -> Self {
+    pub fn optimize(mut self, db: Option<Address>) -> Self {
         let mut q = Self {
             source: self.source.clone(),
             query: Vec::with_capacity(self.query.len()),
@@ -1369,12 +1360,11 @@ impl QueryExpr {
             .flat_map(|x| x.into_iter())
             .collect();
 
-        if self.is_incremental_index_join() {
-            // The above check guarantees that the optimization will succeed,
-            // and therefore it is safe to unwrap.
-            let index_join = self.optimize_incremental_index_join().unwrap();
-            q.query.push(Query::IndexJoin(index_join));
-            return q;
+        if self.query.len() == 1 && matches!(self.query[0], Query::IndexJoin(_)) {
+            if let Some(Query::IndexJoin(join)) = self.query.pop() {
+                q.query.push(Query::IndexJoin(join.reorder()));
+                return q;
+            }
         }
 
         for query in self.query {
