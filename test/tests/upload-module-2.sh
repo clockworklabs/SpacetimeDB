@@ -23,7 +23,7 @@ pub fn my_repeating_reducer(prev: Timestamp) {
 }
 EOF
 
-run_test cargo run publish -S -d --project-path "$PROJECT_PATH" --clear-database
+run_test cargo run publish --skip_clippy --project-path "$PROJECT_PATH" --clear-database
 [ "1" == "$(grep -c "reated new database" "$TEST_OUT")" ]
 ADDRESS="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 sleep 2
