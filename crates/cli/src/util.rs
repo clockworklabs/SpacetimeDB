@@ -304,7 +304,6 @@ impl clap::ValueEnum for ModuleLanguage {
 }
 
 pub fn detect_module_language(path_to_project: &Path) -> ModuleLanguage {
-    eprintln!("detecting module language...");
     // TODO: Possible add a config file durlng spacetime init with the language
     // check for Cargo.toml
     if path_to_project.join("Cargo.toml").exists() {
