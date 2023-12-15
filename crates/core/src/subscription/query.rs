@@ -16,11 +16,12 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Address;
-use spacetimedb_sats::relation::{Column, FieldName, MemTable, RelValue};
+use spacetimedb_sats::db::auth::StAccess;
+use spacetimedb_sats::relation::{Column, FieldName, Header, MemTable, RelValue};
 use spacetimedb_sats::AlgebraicType;
 use spacetimedb_sats::DataKey;
 use spacetimedb_vm::expr;
-use spacetimedb_vm::expr::{Crud, CrudExpr, DbType, QueryExpr, SourceExpr};
+use spacetimedb_vm::expr::{Crud, CrudExpr, DbType, QueryExpr};
 
 static WHITESPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap());
 pub const SUBSCRIBE_TO_ALL_QUERY: &str = "SELECT * FROM *";
@@ -32,21 +33,11 @@ pub enum QueryDef {
 
 pub const OP_TYPE_FIELD_NAME: &str = "__op_type";
 
-/// Replace the primary (ie. `source`) table of the given [`QueryExpr`] with
-/// a virtual [`MemTable`] consisting of the rows in [`DatabaseTableUpdate`].
-///
-/// To be able to reify the `op_type` of the individual operations in the update,
-/// each virtual row is extended with a column [`OP_TYPE_FIELD_NAME`].
+/// Create a virtual table from a sequence of table updates.
+/// Add a special column __op_type to distinguish inserts and deletes.
 #[tracing::instrument(skip_all)]
-pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
-    let mut q = of;
-    let table_access = q.source.table_access();
-
-    let head = match &q.source {
-        SourceExpr::MemTable(x) => &x.head,
-        SourceExpr::DbTable(table) => &table.head,
-    };
-    let mut t = MemTable::new(head.clone(), table_access, vec![]);
+pub fn to_mem_table_with_op_type(head: Header, table_access: StAccess, data: &DatabaseTableUpdate) -> MemTable {
+    let mut t = MemTable::new(head, table_access, vec![]);
 
     if let Some(pos) = t.head.find_pos_by_name(OP_TYPE_FIELD_NAME) {
         t.data.extend(data.ops.iter().map(|row| {
@@ -69,10 +60,17 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
                 .push(RelValue::new(new, Some(DataKey::decode(&mut bytes).unwrap())));
         }
     }
+    t
+}
 
-    q.source = SourceExpr::MemTable(t);
-
-    q
+/// Replace the primary (ie. `source`) table of the given [`QueryExpr`] with
+/// a virtual [`MemTable`] consisting of the rows in [`DatabaseTableUpdate`].
+///
+/// To be able to reify the `op_type` of the individual operations in the update,
+/// each virtual row is extended with a column [`OP_TYPE_FIELD_NAME`].
+pub fn to_mem_table(mut of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
+    of.source = to_mem_table_with_op_type(of.source.head().clone(), of.source.table_access(), data).into();
+    of
 }
 
 /// Runs a query that evaluates if the changes made should be reported to the [ModuleSubscriptionManager]

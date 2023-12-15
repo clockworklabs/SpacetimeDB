@@ -11,7 +11,7 @@ source "./test/lib.include"
 
 RAND=$(random_string)
 run_test cargo run dns register-tld "$RAND"
-run_test cargo run publish -S -d "$RAND" --project-path "$PROJECT_PATH" --clear-database
+run_test cargo run publish --skip_clippy "$RAND" --project-path "$PROJECT_PATH" --clear-database
 ADDRESS="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 if [ "$ADDRESS" == "" ] ; then
 	exit 1

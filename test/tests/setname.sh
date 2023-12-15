@@ -10,7 +10,7 @@ set -euox pipefail
 source "./test/lib.include"
 
 run_test cargo run identity init-default
-run_test cargo run publish -S -d --project-path "$PROJECT_PATH" --clear-database
+run_test cargo run publish --skip_clippy --project-path "$PROJECT_PATH" --clear-database
 ADDRESS="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 
 RAND_NAME="$(random_string)"

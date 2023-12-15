@@ -53,18 +53,19 @@ pub fn build_query<'a>(
                 let iter = result.select(move |row| cmp.compare(row, &header));
                 Box::new(iter)
             }
-            // If this is an index join between two virtual tables, replace with an inner join.
-            // Such a plan is possible under incremental evaluation,
-            // when there are updates to both base tables,
-            // however an index lookup is invalid on a virtual table.
+            // This type of index join is invalid and needs to be converted to an inner join.
+            // A virtual table cannot be probed as if it were a physical table with an index.
+            // Note that incremental evaluation can produce such a plan.
+            // Specifically when a transaction produces updates to both base tables.
             //
             // TODO: This logic should be entirely encapsulated within the query planner.
             // It should not be possible for the planner to produce an invalid plan.
-            Query::IndexJoin(join)
-                if !db_table
-                    && matches!(join.probe_side.source, SourceExpr::MemTable(_))
-                    && join.probe_side.source.table_name() != result.head().table_name =>
-            {
+            Query::IndexJoin(
+                join @ IndexJoin {
+                    index_side: Table::MemTable(_),
+                    ..
+                },
+            ) => {
                 let join: JoinExpr = join.into();
                 let iter = join_inner(ctx, stdb, tx, result, join, true)?;
                 Box::new(iter)
@@ -72,9 +73,13 @@ pub fn build_query<'a>(
             Query::IndexJoin(IndexJoin {
                 probe_side,
                 probe_field,
-                index_header,
+                index_side:
+                    Table::DbTable(DbTable {
+                        head: index_header,
+                        table_id: index_table,
+                        ..
+                    }),
                 index_select,
-                index_table,
                 index_col,
                 return_index_rows,
             }) => {

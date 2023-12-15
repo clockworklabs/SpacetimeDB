@@ -40,7 +40,7 @@ EOF
 
   fsed "s/REPLACE_VALUE/$1/g" "${PROJECT_PATH}/src/lib.rs"
 
-  run_test cargo run publish --project-path "$PROJECT_PATH" --clear-database -d -S
+  run_test cargo run publish --project-path "$PROJECT_PATH" --clear-database --skip_clippy
   [ "1" == "$(grep -c "reated new database" "$TEST_OUT")" ]
   IDENT="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 
