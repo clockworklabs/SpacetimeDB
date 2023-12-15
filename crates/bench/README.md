@@ -8,11 +8,12 @@ cargo bench --bench generic --bench special
 ```
 
 To run the callgrind benchmarks, you need valgrind installed.
-The easiest way to get it is to use the docker image in this folder.
-There's a handy script:
+The easiest way to get it is to use the docker image in this folder. 
+There's a handy bash script:
 ```bash
 # enter a prepared docker image with valgrind & a rust toolchain available.
 # mounts the host SpacetimeDB folder to `/projects/SpacetimeDB`.
+# this works on at least Linux and MinGW, but if you're on windows you're probably better off running it from WSL, because windows-docker filesystem sharing is slow.
 bash callgrind-docker.sh 
 ```
 Then, in the docker image:
@@ -63,7 +64,7 @@ Of course, this will take about an hour, so it might be better to let the CI do 
 
 ### Callgrind
 
-To generate a report, first:
+To generate a report, first enter docker:
 ```bash
 bash callgrind-docker.sh 
 ```

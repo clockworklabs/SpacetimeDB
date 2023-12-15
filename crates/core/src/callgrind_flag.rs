@@ -33,9 +33,9 @@ static CALLGRIND_ENABLED: AtomicU32 = AtomicU32::new(0);
 /// Invoke a function, enabling callgrind on all threads.
 /// If not running under valgrind, this simply invokes the function.
 pub fn enable_callgrind_globally<T, F: FnOnce() -> T>(f: F) -> T {
-    CALLGRIND_ENABLED.fetch_add(1, Ordering::Relaxed);
+    CALLGRIND_ENABLED.fetch_add(1, Ordering::Release);
     let result = black_box(flag(black_box(f)));
-    CALLGRIND_ENABLED.fetch_sub(1, Ordering::Relaxed);
+    CALLGRIND_ENABLED.fetch_sub(1, Ordering::Release);
     result
 }
 
@@ -44,7 +44,7 @@ pub fn enable_callgrind_globally<T, F: FnOnce() -> T>(f: F) -> T {
 /// the executable must be running under callgrind.
 /// If not running under callgrind, this just invokes the passed function.
 pub fn invoke_allowing_callgrind<T, F: FnOnce() -> T>(f: F) -> T {
-    if CALLGRIND_ENABLED.load(Ordering::Relaxed) > 0 {
+    if CALLGRIND_ENABLED.load(Ordering::Acquire) > 0 {
         black_box(flag(f))
     } else {
         black_box(f())
