@@ -83,12 +83,7 @@ pub trait TxDatastore: DataRow + Tx {
     where
         Self: 'a;
 
-    fn iter_tx<'a>(
-        &'a self,
-        ctx: &'a ExecutionContext,
-        tx: &'a Self::Tx,
-        table_id: TableId,
-    ) -> Result<Self::Iter<'a>>;
+    fn iter_tx<'a>(&'a self, ctx: &'a ExecutionContext, tx: &'a Self::Tx, table_id: TableId) -> Result<Self::Iter<'a>>;
 
     fn iter_by_col_range_tx<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
@@ -122,11 +117,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     // In these methods, we use `'tx` because the return type must borrow data
     // from `Inner` in the `Locking` implementation,
     // and `Inner` lives in `tx: &MutTxId`.
-    fn row_type_for_table_mut_tx<'tx>(
-        &self,
-        tx: &'tx Self::MutTx,
-        table_id: TableId,
-    ) -> Result<Cow<'tx, ProductType>>;
+    fn row_type_for_table_mut_tx<'tx>(&self, tx: &'tx Self::MutTx, table_id: TableId) -> Result<Cow<'tx, ProductType>>;
     fn schema_for_table_mut_tx<'tx>(&self, tx: &'tx Self::MutTx, table_id: TableId) -> Result<Cow<'tx, TableSchema>>;
     fn drop_table_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId) -> Result<()>;
     fn rename_table_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, new_name: &str) -> Result<()>;
@@ -165,19 +156,13 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
 
     // Sequences
     fn get_next_sequence_value_mut_tx(&self, tx: &mut Self::MutTx, seq_id: SequenceId) -> Result<i128>;
-    fn create_sequence_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, seq: SequenceDef)
-        -> Result<SequenceId>;
+    fn create_sequence_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, seq: SequenceDef) -> Result<SequenceId>;
     fn drop_sequence_mut_tx(&self, tx: &mut Self::MutTx, seq_id: SequenceId) -> Result<()>;
-    fn sequence_id_from_name_mut_tx(
-        &self,
-        tx: &Self::MutTx,
-        sequence_name: &str,
-    ) -> super::Result<Option<SequenceId>>;
+    fn sequence_id_from_name_mut_tx(&self, tx: &Self::MutTx, sequence_name: &str) -> super::Result<Option<SequenceId>>;
 
     // Constraints
     fn drop_constraint_mut_tx(&self, tx: &mut Self::MutTx, constraint_id: ConstraintId) -> super::Result<()>;
-    fn constraint_id_from_name(&self, tx: &Self::MutTx, constraint_name: &str)
-        -> super::Result<Option<ConstraintId>>;
+    fn constraint_id_from_name(&self, tx: &Self::MutTx, constraint_name: &str) -> super::Result<Option<ConstraintId>>;
 
     // Data
     fn iter_mut_tx<'a>(

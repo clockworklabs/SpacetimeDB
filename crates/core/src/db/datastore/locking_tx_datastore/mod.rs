@@ -2490,12 +2490,7 @@ impl MutTxDatastore for Locking {
         tx.table_name_from_id(ctx, table_id)
     }
 
-    fn create_index_mut_tx(
-        &self,
-        tx: &mut Self::MutTx,
-        table_id: TableId,
-        index: IndexDef,
-    ) -> super::Result<IndexId> {
+    fn create_index_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, index: IndexDef) -> super::Result<IndexId> {
         tx.create_index(table_id, index, self.database_address)
     }
 
@@ -2524,11 +2519,7 @@ impl MutTxDatastore for Locking {
         tx.drop_sequence(seq_id, self.database_address)
     }
 
-    fn sequence_id_from_name_mut_tx(
-        &self,
-        tx: &Self::MutTx,
-        sequence_name: &str,
-    ) -> super::Result<Option<SequenceId>> {
+    fn sequence_id_from_name_mut_tx(&self, tx: &Self::MutTx, sequence_name: &str) -> super::Result<Option<SequenceId>> {
         tx.sequence_id_from_name(sequence_name, self.database_address)
     }
 
@@ -2536,11 +2527,7 @@ impl MutTxDatastore for Locking {
         tx.drop_constraint(constraint_id, self.database_address)
     }
 
-    fn constraint_id_from_name(
-        &self,
-        tx: &Self::MutTx,
-        constraint_name: &str,
-    ) -> super::Result<Option<ConstraintId>> {
+    fn constraint_id_from_name(&self, tx: &Self::MutTx, constraint_name: &str) -> super::Result<Option<ConstraintId>> {
         tx.constraint_id_from_name(constraint_name, self.database_address)
     }
 
