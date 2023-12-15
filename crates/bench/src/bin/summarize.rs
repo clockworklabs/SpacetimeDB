@@ -1,5 +1,7 @@
-//! Script to summarize benchmark results in a pretty markdown table / json file / push to prometheus.
-
+//! Script to pack benchmark results into JSON files.
+//! These are read by the benchmarks-viewer application: https://github.com/clockworklabs/benchmarks-viewer,
+//! which is used to generate reports on the benchmarks.
+//! See also: the github actions scripts that invoke this command, `SpacetimeDB/.github/workflows/benchmarks.yml` and `SpacetimeDB/.github/workflows/callgrind_benchmarks.yml`.
 use clap::{Parser, Subcommand};
 
 /// Helper script to pack / summarize Criterion benchmark results.
@@ -23,25 +25,6 @@ enum Command {
         #[arg(default_value = "base")]
         baseline: String,
     },
-    /// Use packed json files to generate a markdown report
-    /// suitable for posting in a github PR.
-    MarkdownReport {
-        /// The name of the new baseline to compare.
-        /// End with ".json" to load from a packed JSON file in `{target_dir}/criterion`.
-        /// Otherwise, read from the loose criterion files in the filesystem.
-        baseline_new: String,
-
-        /// The name of the old baseline to compare against.
-        /// End with ".json" to load from a packed JSON file in `{target_dir}/criterion`.
-        /// Otherwise, read from the loose criterion files in the filesystem.
-        baseline_old: Option<String>,
-
-        /// Report will be written to `{target_dir}/criterion/{report_name}.md`.
-        /// If unset, print to stdout.
-        #[arg(long = "report-name", required = false)]
-        report_name: Option<String>,
-    },
-
     /// Pack the most recent iai-callgrind data to a single json file.
     /// (iai-callgrind has no concept of a "baseline").
     /// This is used to store data in CI.
@@ -49,21 +32,6 @@ enum Command {
         /// The name of the output data file.
         /// Placed in `{target_dir}/iai/{name}.json`.
         name: String,
-    },
-    /// Use packed json files to generate a markdown report
-    /// suitable for posting in a github PR.
-    MarkdownReportCallgrind {
-        /// The name of the new data json to compare.
-        /// Will be loaded from `{target_dir}/iai/{new}.json`.
-        new: String,
-
-        /// The name of the old data json to compare.
-        /// Will be loaded from `{target_dir}/iai/{old}.json`, if set.
-        old: Option<String>,
-
-        /// Report will be written to `{target_dir}/iai/{report_name}.md`.
-        #[arg(long = "report-name", required = false)]
-        report_name: Option<String>,
     },
 }
 
@@ -92,67 +60,14 @@ fn main() {
         } => {
             criterion::pack(baseline_name, &target_dir);
         }
-        Command::MarkdownReport {
-            baseline_old: baseline_old_name,
-            baseline_new: baseline_new_name,
-            report_name,
-        } => criterion::generate_markdown_report(&target_dir, baseline_old_name, baseline_new_name, report_name),
         Command::PackCallgrind { name } => callgrind::pack(name, &target_dir),
-        Command::MarkdownReportCallgrind { new, old, report_name } => {
-            callgrind::generate_markdown_report(&target_dir, old, new, report_name)
-        }
     }
-}
-
-fn format_markdown_table(headers: Vec<String>, rows: Vec<Vec<String>>) -> String {
-    for row in &rows {
-        assert_eq!(row.len(), headers.len(), "internal error: mismatched row lengths");
-    }
-
-    let mut result = "\n".to_string();
-
-    let mut max_widths = headers.iter().map(|s| s.len()).collect::<Vec<_>>();
-    for row in &rows {
-        for (i, cell) in row.iter().enumerate() {
-            max_widths[i] = max_widths[i].max(cell.len());
-        }
-    }
-
-    result.push_str("| ");
-    for (i, header) in headers.iter().enumerate() {
-        result.push_str(&format!("{:width$} | ", header, width = max_widths[i]));
-    }
-    result.push('\n');
-
-    result.push('|');
-    for max_width in &max_widths {
-        result.push_str(&format!("-{:-<width$}-|", "", width = *max_width));
-    }
-    result.push('\n');
-
-    for row in &rows {
-        result.push_str("| ");
-        for (i, cell) in row.iter().enumerate() {
-            result.push_str(&format!("{:width$} | ", cell, width = max_widths[i]));
-        }
-        result.push('\n');
-    }
-
-    result
 }
 
 mod criterion {
-    use std::{
-        collections::HashSet,
-        fmt::Write as FmtWrite,
-        io::Write,
-        path::{Path, PathBuf},
-    };
+    use std::path::{Path, PathBuf};
 
-    use anyhow::Result;
-    use regex::{Captures, Regex};
-
-    use crate::format_markdown_table;
+    use regex::Regex;
 
     pub fn pack(baseline_name: String, target_dir: &Path) {
         assert!(
@@ -168,38 +83,6 @@ mod criterion {
         let mut file = std::fs::File::create(&path).expect("failed to create file");
         serde_json::to_writer_pretty(&mut file, baseline).expect("failed to write json");
         println!("Wrote {}", path.display());
-    }
-
-    pub fn generate_markdown_report(
-        target_dir: &Path,
-        baseline_old_name: Option<String>,
-        baseline_new_name: String,
-        report_name: Option<String>,
-    ) {
-        let crit_dir = get_crit_dir(target_dir);
-        let benchmarks = data::Benchmarks::gather(&crit_dir).expect("failed to read benchmarks");
-
-        let old = baseline_old_name
-            .map(|name| load_baseline(&benchmarks, &crit_dir, &name))
-            .transpose()
-            .expect("failed to load old baseline")
-            .unwrap_or_else(|| data::BaseBenchmarks {
-                name: "n/a".to_string(),
-                benchmarks: Default::default(),
-            });
-
-        let new = load_baseline(&benchmarks, &crit_dir, &baseline_new_name).expect("failed to load new baseline");
-
-        let report = format_markdown_report(old, new).expect("failed to generate markdown report");
-
-        if let Some(report_name) = report_name {
-            let path = crit_dir.join(format!("{}.md", report_name));
-            let mut file = std::fs::File::create(&path).expect("failed to create file");
-            file.write_all(report.as_bytes()).expect("failed to write report");
-            println!("Wrote {}", path.display());
-        } else {
-            println!("{}", report);
-        }
     }
 
     fn get_crit_dir(target_dir: &Path) -> PathBuf {
@@ -219,304 +102,8 @@ mod criterion {
         crit_dir.join(format!("{}.json", name))
     }
 
-    /// If name ends with ".json", load from a packed json file. Otherwise, load from the benchmarks read from the filesystem.
-    fn load_baseline(benchmarks: &data::Benchmarks, crit_dir: &Path, name: &str) -> Result<data::BaseBenchmarks> {
-        if name.ends_with(".json") {
-            load_packed_baseline(crit_dir, name)
-        } else {
-            benchmarks
-                .by_baseline
-                .get(name)
-                .cloned()
-                .ok_or_else(|| anyhow::anyhow!("baseline {} not found", name))
-        }
-    }
-
-    fn load_packed_baseline(crit_dir: &Path, name: &str) -> Result<data::BaseBenchmarks> {
-        assert!(name.ends_with(".json"));
-        let name = name.trim_end_matches(".json");
-        let path = packed_baseline_json_path(crit_dir, name);
-        let file = std::fs::File::open(path)?;
-        let baseline = serde_json::from_reader(file)?;
-        Ok(baseline)
-    }
-
-    fn format_markdown_report(old: data::BaseBenchmarks, new: data::BaseBenchmarks) -> Result<String> {
-        let mut result = String::new();
-
-        writeln!(&mut result, "# Benchmark Report")?;
-        writeln!(&mut result)?;
-
-        writeln!(
-            &mut result,
-            "Legend:
-
-- `load`: number of rows pre-loaded into the database
-- `count`: number of rows touched by the transaction
-- index types:
-    - `unique`: a single index on the `id` column
-    - `non_unique`: no indexes
-    - `multi_index`: non-unique index on every column
-- schemas:
-    - `person(id: u32, name: String, age: u64)`
-    - `location(id: u32, x: u64, y: u64)`
-
-All throughputs are single-threaded.
-
-    "
-        )?;
-
-        let remaining = old
-            .benchmarks
-            .keys()
-            .chain(new.benchmarks.keys())
-            .collect::<HashSet<_>>();
-        let mut remaining = remaining.into_iter().collect::<Vec<_>>();
-        remaining.sort();
-
-        writeln!(&mut result, "## Empty transaction")?;
-        let table = extract_benchmarks_to_table(
-            r"(?x) (?P<db>[^/]+) / (?P<on_disk>[^/]+) / empty",
-            &old,
-            &new,
-            &mut remaining,
-        )?;
-        writeln!(&mut result, "{table}")?;
-
-        writeln!(&mut result, "## Single-row insertions")?;
-        let table = extract_benchmarks_to_table(
-            r"(?x) (?P<db>[^/]+) / (?P<on_disk>[^/]+) / insert_1 /
-                (?P<schema>[^/]+) / (?P<index_type>[^/]+) /
-                load = (?P<load>[^/]+)",
-            &old,
-            &new,
-            &mut remaining,
-        )?;
-        writeln!(&mut result, "{table}")?;
-
-        writeln!(&mut result, "## Multi-row insertions")?;
-        let table = extract_benchmarks_to_table(
-            r"(?x) (?P<db>[^/]+) / (?P<on_disk>[^/]+) / insert_bulk /
-                        (?P<schema>[^/]+) / (?P<index_type>[^/]+) /
-                        load = (?P<load>[^/]+) / count = (?P<count>[^/]+)",
-            &old,
-            &new,
-            &mut remaining,
-        )?;
-        writeln!(&mut result, "{table}")?;
-
-        writeln!(&mut result, "## Full table iterate")?;
-        let table = extract_benchmarks_to_table(
-            r"(?x) (?P<db>[^/]+) / (?P<on_disk>[^/]+) / iterate / 
-                        (?P<schema>[^/]+) / (?P<index_type>[^/]+) ",
-            &old,
-            &new,
-            &mut remaining,
-        )?;
-        writeln!(&mut result, "{table}")?;
-
-        writeln!(&mut result, "## Find unique key")?;
-        let table = extract_benchmarks_to_table(
-            r"(?x) (?P<db>[^/]+) / (?P<on_disk>[^/]+) / find_unique /
-                (?P<key_type>[^/]+) /
-                load = (?P<load>[^/]+) ",
-            &old,
-            &new,
-            &mut remaining,
-        )?;
-        writeln!(&mut result, "{table}")?;
-
-        writeln!(&mut result, "## Filter")?;
-        let table = extract_benchmarks_to_table(
-            r"(?x) (?P<db>[^/]+) / (?P<on_disk>[^/]+) / filter /
-                (?P<key_type>[^/]+) / (?P<index_strategy>[^/]+) / 
-                load = (?P<load>[^/]+) / count = (?P<count>[^/]+)",
-            &old,
-            &new,
-            &mut remaining,
-        )?;
-        writeln!(&mut result, "{table}")?;
-
-        writeln!(&mut result, "## Serialize")?;
-        let table = extract_benchmarks_to_table(
-            r"(?x) serialize / (?P<schema>[^/]+) / (?P<format>[^/]+) /
-                count = (?P<count>[^/]+)",
-            &old,
-            &new,
-            &mut remaining,
-        )?;
-        writeln!(&mut result, "{table}")?;
-
-        writeln!(&mut result, "## Module: invoke with large arguments")?;
-        let table = extract_benchmarks_to_table(
-            r"(?x) stdb_module / large_arguments / (?P<arg_size>[^/]+)",
-            &old,
-            &new,
-            &mut remaining,
-        )?;
-        writeln!(&mut result, "{table}")?;
-
-        writeln!(&mut result, "## Module: print bulk")?;
-        let table = extract_benchmarks_to_table(
-            r"(?x) stdb_module / print_bulk / lines = (?P<line_count>[^/]+)",
-            &old,
-            &new,
-            &mut remaining,
-        )?;
-        writeln!(&mut result, "{table}")?;
-
-        // catch-all for remaining benchmarks
-        writeln!(&mut result, "## Remaining benchmarks")?;
-        let table = extract_benchmarks_to_table(r"(?x) (?P<name>.+)", &old, &new, &mut remaining)?;
-        writeln!(&mut result, "{table}")?;
-
-        assert_eq!(remaining.len(), 0);
-
-        Ok(result)
-    }
-
-    /// A given benchmark group fits a pattern such as
-    /// `[db]/[disk]/insert_1/[schema]/[index_type]/load=[load]`
-    ///
-    /// Pass a regex using named capture groups to extract all such benchmarks to a table.
-    /// We use insignificant whitespace to make these easier to read.
-    /// For example:
-    ///
-    /// `r"(?x) (?P<db>[^/]+) / (?P<on_disk>[^/]+) / insert_1 / (?P<schema>[^/]+) / (?P<index_type>[^/]+) / load = (?P<load>[^/]+)"`
-    ///
-    /// Some strings are treated specially:
-    /// - `disk -> 💿`, `mem -> 🧠`
-    fn extract_benchmarks_to_table(
-        pattern: &str,
-        old: &data::BaseBenchmarks,
-        new: &data::BaseBenchmarks,
-        remaining: &mut Vec<&String>,
-    ) -> Result<String> {
-        let regex = regex::Regex::new(pattern)?;
-
-        let mut capture_names: Vec<_> = regex.capture_names().map(|name| name.unwrap_or("")).collect();
-        capture_names.remove(0); // thi
-
-        let mut headers = capture_names
-            .clone()
-            .iter()
-            .map(|s| s.replace('_', " "))
-            .collect::<Vec<_>>();
-        headers.push("new latency".to_string());
-        headers.push("old latency".to_string());
-        headers.push("new throughput".to_string());
-        headers.push("old throughput".to_string());
-
-        let mut rows = Vec::new();
-
-        let mut extracted = HashSet::new();
-
-        for (i, bench_name) in remaining.iter().enumerate() {
-            let captures = if let Some(captures) = regex.captures(bench_name) {
-                extracted.insert(i);
-                captures
-            } else {
-                continue;
-            };
-
-            let mut row = Vec::new();
-            for capture in &capture_names {
-                let cell = captures.name(capture).unwrap().as_str();
-
-                row.push(emojify(cell));
-            }
-
-            if let Some(new) = new.benchmarks.get(&**bench_name) {
-                row.push(time(new.nanoseconds(), new.stddev()))
-            } else {
-                row.push("-".to_string());
-            }
-
-            if let Some(old) = old.benchmarks.get(&**bench_name) {
-                row.push(time(old.nanoseconds(), old.stddev()))
-            } else {
-                row.push("-".to_string());
-            }
-
-            if let Some(new) = new.benchmarks.get(&**bench_name) {
-                if let Some(data::Throughput::Elements(throughput)) = new.throughput() {
-                    row.push(throughput_per(throughput, "tx"))
-                } else {
-                    row.push("-".to_string());
-                }
-            } else {
-                row.push("-".to_string());
-            }
-
-            if let Some(old) = old.benchmarks.get(&**bench_name) {
-                if let Some(data::Throughput::Elements(throughput)) = old.throughput() {
-                    row.push(throughput_per(throughput, "tx"))
-                } else {
-                    row.push("-".to_string());
-                }
-            } else {
-                row.push("-".to_string());
-            }
-
-            rows.push(row)
-        }
-
-        rows.sort();
-
-        *remaining = remaining
-            .iter()
-            .enumerate()
-            .filter_map(|(i, s)| if extracted.contains(&i) { None } else { Some(*s) })
-            .collect();
-
-        Ok(format_markdown_table(headers, rows))
-    }
-
-    fn time(nanos: f64, stddev: f64) -> String {
-        const MIN_MICRO: f64 = 2_000.0;
-        const MIN_MILLI: f64 = 2_000_000.0;
-        const MIN_SEC: f64 = 2_000_000_000.0;
-
-        let (div, label) = if nanos < MIN_MICRO {
-            (1.0, "ns")
-        } else if nanos < MIN_MILLI {
-            (1_000.0, "µs")
-        } else if nanos < MIN_SEC {
-            (1_000_000.0, "ms")
-        } else {
-            (1_000_000_000.0, "s")
-        };
-        format!("{:.1}±{:.2}{}", nanos / div, stddev / div, label)
-    }
-
-    fn throughput_per(per: f64, unit: &str) -> String {
-        const MIN_K: f64 = (2 * (1 << 10) as u64) as f64;
-        const MIN_M: f64 = (2 * (1 << 20) as u64) as f64;
-        const MIN_G: f64 = (2 * (1 << 30) as u64) as f64;
-
-        if per < MIN_K {
-            format!("{} {}/sec", per as u64, unit)
-        } else if per < MIN_M {
-            format!("{:.1} K{}/sec", (per / (1 << 10) as f64), unit)
-        } else if per < MIN_G {
-            format!("{:.1} M{}/sec", (per / (1 << 20) as f64), unit)
-        } else {
-            format!("{:.1} G{}/sec", (per / (1 << 30) as f64), unit)
-        }
-    }
-
     lazy_static::lazy_static! {
         static ref EMOJI: Regex = Regex::new(r"(on_disk|mem)").unwrap();
-    }
-
-    fn emojify(text: &str) -> String {
-        EMOJI
-            .replace_all(text, |cap: &Captures| match &cap[0] {
-                "disk" => "💿",
-                "mem" => "🧠",
-                _ => unimplemented!(),
-            })
-            .to_string()
     }
 
     /// Data types for deserializing stored Criterion benchmark results.
@@ -788,17 +375,10 @@ All throughputs are single-threaded.
 }
 
 mod callgrind {
-    use std::{
-        collections::BTreeMap,
-        fmt::Write,
-        io::Write as _,
-        path::{Path, PathBuf},
-    };
+    use std::path::{Path, PathBuf};
 
     use anyhow::Result;
     use serde::{Deserialize, Serialize};
-
-    use crate::format_markdown_table;
 
     pub fn pack(name: String, target_dir: &Path) {
         let iai_callgrind_dir = get_iai_callgrind_dir(target_dir);
@@ -809,42 +389,6 @@ mod callgrind {
         let mut file = std::fs::File::create(&path).expect("failed to create file");
         serde_json::to_writer_pretty(&mut file, &benchmarks).expect("failed to write json");
         println!("Wrote {}", path.display());
-    }
-
-    pub fn generate_markdown_report(
-        target_dir: &Path,
-        baseline_old_name: Option<String>,
-        baseline_new_name: String,
-        report_name: Option<String>,
-    ) {
-        let iai_callgrind_dir = get_iai_callgrind_dir(target_dir);
-        let old_path = baseline_old_name.map(|name| packed_json_path(&iai_callgrind_dir, &name));
-        let new_path = packed_json_path(&iai_callgrind_dir, &baseline_new_name);
-        eprintln!("loading new benchmarks from {}", new_path.display());
-
-        let old = old_path.map(|path| {
-            serde_json::from_str::<Vec<Benchmark>>(std::fs::read_to_string(path).unwrap().as_str()).unwrap()
-        });
-
-        let new = serde_json::from_str::<Vec<Benchmark>>(std::fs::read_to_string(new_path).unwrap().as_str())
-            .expect("failed to load new benchmarks");
-
-        let old = old
-            .as_ref()
-            .map(|old| group_benchmarks_by_metadata_keys(old))
-            .unwrap_or_default();
-        let new = group_benchmarks_by_metadata_keys(&new);
-
-        let report = format_markdown_report(new, old).expect("failed to format report");
-
-        if let Some(report_name) = report_name {
-            let path = target_dir.join(format!("{}.md", report_name));
-            let mut file = std::fs::File::create(&path).expect("failed to create file");
-            file.write_all(report.as_bytes()).expect("failed to write report");
-            println!("Wrote {}", path.display());
-        } else {
-            println!("{}", report);
-        }
     }
 
     fn packed_json_path(iai_callgrind_dir: &Path, name: &str) -> PathBuf {
@@ -973,189 +517,5 @@ mod callgrind {
     struct Benchmark {
         metadata: serde_json::Map<String, serde_json::Value>,
         measurements: serde_json::Map<String, serde_json::Value>,
-    }
-
-    /// Modify metadata keys so that they are sorted in a nice order.
-    /// The keys coming out of this are never shown to users, only used while sorting keys.
-    fn modify_metadata_ordering(metadata_label: &str) -> String {
-        match metadata_label {
-            "db" => "1db",
-            "data_type" => "2data_type",
-            "index_strategy" => "3index_strategy",
-            "haystack" => "4haystack",
-            "needles" => "5needles",
-            other => other,
-        }
-        .to_string()
-    }
-
-    fn canonical_key(benchmark: &Benchmark) -> String {
-        let mut keys = benchmark.metadata.keys().cloned().collect::<Vec<_>>();
-        keys.sort_by_key(|k| modify_metadata_ordering(k));
-
-        let result = keys
-            .iter()
-            .map(|key| match &benchmark.metadata[key] {
-                serde_json::Value::String(s) => format!("{}={:>016}", key, s),
-                serde_json::Value::Number(n) => format!("{}={:>010}", key, n.as_u64().unwrap()),
-                _ => unimplemented!(),
-            })
-            .collect::<Vec<_>>()
-            .join(",");
-        result
-    }
-
-    /// Outputs benchmarks grouped into tables by their metadata keys.
-    /// Each table is sorted, with canonical keys for all its entries.
-    fn group_benchmarks_by_metadata_keys(benchmarks: &[Benchmark]) -> BTreeMap<String, BTreeMap<String, &Benchmark>> {
-        let mut groups = BTreeMap::new();
-
-        for benchmark in benchmarks {
-            let mut keys = benchmark.metadata.keys().cloned().collect::<Vec<_>>();
-            keys.sort();
-
-            let key = keys.join(", ");
-
-            groups.entry(key).or_insert_with(Vec::new).push(benchmark);
-        }
-
-        groups
-            .into_iter()
-            .map(|(key, benchmarks)| {
-                (
-                    key,
-                    benchmarks
-                        .iter()
-                        .map(|benchmark| (canonical_key(benchmark), *benchmark))
-                        .collect(),
-                )
-            })
-            .collect()
-    }
-
-    fn format_markdown_report(
-        new: BTreeMap<String, BTreeMap<String, &Benchmark>>,
-        old: BTreeMap<String, BTreeMap<String, &Benchmark>>,
-    ) -> Result<String> {
-        let mut result = String::new();
-
-        writeln!(&mut result, "# Callgrind Benchmark Report")?;
-        writeln!(&mut result)?;
-        writeln!(
-            &mut result,
-            "These benchmarks were run using [callgrind](https://valgrind.org/docs/manual/cg-manual.html),
-an instruction-level profiler. They allow comparisons between sqlite (`sqlite`), SpacetimeDB running through a module (`stdb_module`),
-and the underlying SpacetimeDB data storage engine (`stdb_raw`).
-
-Of these, `sqlite` is the least noisy, `stdb_raw` is intermediate, and `stdb_module` is the noisiest. This is due to uncontrollable nondeterminism,
-such as thread ordering and filesystem interactions.
-
-Note: there are currently a minimal number of `stdb_module` benchmarks, pending a fix for an unfortunate interaction between callgrind and sled.
-Their benchmark numbers are correct, just expensive to collect.
-
-Legend:
-- `preload`: number of rows pre-loaded into the database.
-- `count`: number of rows touched by a transaction.
-- index types:
-    - `unique`: a single, unique index on the `id` column.
-    - `non_unique`: non-unique, no indexes.
-    - `btrees`: non-unique, separate btree index on every column. (Not a multi-column index!)
-- schemas:
-    - `person(id: u32, name: String, age: u64)` is a small row containing a string.
-    - `location(id: u32, x: u64, y: u64)` is a small row containing some ints.
-"
-        )?;
-        writeln!(&mut result)?;
-
-        let no_old_group = BTreeMap::default();
-
-        for (group_key, group) in new {
-            let old_group = old.get(&group_key).unwrap_or(&no_old_group);
-
-            let mut metadata = group
-                .iter()
-                .next()
-                .unwrap()
-                .1
-                .metadata
-                .keys()
-                .filter(|k| &**k != "bench" && !k.starts_with('_')) // skip data that shouldn't be presented, such as column id
-                .cloned()
-                .collect::<Vec<_>>();
-            metadata.sort_by_key(|k| modify_metadata_ordering(k));
-
-            let measurements = vec!["instructions"];
-
-            let mut headers = metadata.clone();
-            for measurement in &measurements {
-                headers.push(format!("new {}", measurement));
-                headers.push(format!("old {}", measurement));
-                headers.push(format!("delta {}", measurement));
-            }
-
-            let mut rows = Vec::new();
-
-            for (key, benchmark) in group.iter() {
-                let mut row = Vec::new();
-
-                for key in &metadata {
-                    row.push(prettify_json_value(&benchmark.metadata[key]));
-                }
-                for measurement in &measurements {
-                    let new = benchmark.measurements[*measurement].as_u64().unwrap();
-
-                    row.push(format!("{}", new));
-
-                    let old = old_group
-                        .get(key)
-                        .map(|b| b.measurements[*measurement].as_u64().unwrap());
-
-                    if let Some(old) = old {
-                        let delta_percent = ((new as f64 / old as f64) - 1.0) * 100.0;
-
-                        row.push(format!("{}", old));
-                        row.push(format!("{:+.2}%", delta_percent));
-                    } else {
-                        row.push("-".to_string());
-                        row.push("-".to_string());
-                    }
-                }
-
-                rows.push(row);
-            }
-
-            writeln!(
-                &mut result,
-                "## {}",
-                group
-                    .iter()
-                    .next()
-                    .unwrap()
-                    .1
-                    .metadata
-                    .get("bench")
-                    .expect("missing bench field of metadata")
-                    .as_str()
-                    .expect("bench field of metadata is not a string")
-            )?;
-            let table = format_markdown_table(headers, rows);
-            writeln!(&mut result, "{}", table)?;
-        }
-
-        Ok(result)
-    }
-
-    fn prettify_json_value(value: &serde_json::Value) -> String {
-        match value {
-            serde_json::Value::String(s) => {
-                if s == "multi_index" {
-                    // replace bad choice of name.
-                    "`btrees`".into()
-                } else {
-                    format!("`{}`", s)
-                }
-            }
-            other => format!("{}", other),
-        }
     }
 }

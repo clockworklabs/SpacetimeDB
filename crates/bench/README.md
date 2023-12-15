@@ -25,63 +25,19 @@ To avoid fighting with the host system, the docker image uses a separate CARGO_T
 This will be visible on the host system as `SpacetimeDB/linux-target`.
 Callgrind benchmark outputs will be placed in the folder `SpacetimeDB/linux-target/iai`. 
 
-You can also comment "benchmarks please" on a pull request in the SpacetimeDB repository to run the criterion benchmarks on that PR. The results will be posted in a comment on the PR.
-Soon, you'll also be able to comment "callgrind please" and see the callgrind benchmarks in the same way.
+You can also comment "benchmarks please" or "callgrind please" on a pull request in the SpacetimeDB repository to run the criterion/callgrind benchmarks on that PR. The results will be posted in a comment on the most recent *commit* in that PR. Note: not a PR comment, a *commit* comment! You'll see a comment symbol next to the commit, click on that to see the benchmark report.
+
+This is coordinated using the benchmarks Github Actions: see [`../../.github/workflows/benchmarks.yml`](../../.github/workflows/benchmarks.yml), and
+[`../../.github/workflows/callgrind_benchmarks.yml`](../../.github/workflows/callgrind_benchmarks.yml). 
+These also rely on the benchmarks-viewer application (https://github.com/clockworklabs/benchmarks-viewer).
+
 
 ## Caveats
 
 The criterion benchmarks take a long time to run -- there are a lot of them. See below for information on running select groups of them.
 
-The callgrind benchmarks only measure a select portion of the codebase. In particular, they do not collect instruction counts in any async code, due to callgrind limitations; they only time the synchronous code that runs a reducer / the client code that calls a reducer. This is most of the code that it takes to run a reducer, including all database modifications. The async code between client and reducer is mostly just handing off data through a couple of channels. Still, if you're interested in measuring that code, you should rely on the criterion benchmarks.
+The callgrind benchmarks only measure a select portion of the codebase. In particular, they do not collect instruction counts in any async code, due to callgrind limitations; they only time the synchronous code that runs a reducer / the client code that calls a reducer. This is most of the code that it takes to run a reducer, including all database modifications. The async code between client and reducer is mostly just handing off data through a couple of channels. Still, if you're interested in measuring that code, you should rely on the criterion benchmarks & `perf`.
 
-## Generating reports
-
-There are a lot of benchmarks and it can be hard to read terminal output.
-
-To generate a nicely formatted markdown report, you can use the "summarize" binary.
-This is used on CI (see [`../../.github/workflows/benchmarks.yml`](../../.github/workflows/benchmarks.yml), and
-[`../../.github/workflows/callgrind_benchmarks.yml`](../../.github/workflows/callgrind_benchmarks.yml)).
-
-### Criterion
-
-To generate a report without comparisons, use:
-```bash
-cargo bench --bench generic --bench special -- --save-baseline current
-cargo run --bin summarize markdown-report current
-```
-
-To compare to another branch, do:
-```bash
-git checkout master
-cargo bench --bench generic --bench special -- --save-baseline base
-git checkout high-octane-feature-branch
-cargo bench --bench generic --bench special -- --save-baseline current
-cargo run --bin summarize markdown-report current base
-```
-
-Of course, this will take about an hour, so it might be better to let the CI do it for you.
-
-
-### Callgrind
-
-To generate a report, first enter docker:
-```bash
-bash callgrind-docker.sh 
-```
-Then, in the docker image:
-```bash
-cd /projects/SpacetimeDB/crates/bench
-cargo bench --bench callgrind -- --save-summary pretty-json
-cargo run --bin summarize pack-callgrind current
-cargo run --bin summarize markdown-report-callgrind current
-```
-
-If you have multiple branches, generate separate packed json files for them,
-then use 
-
-```bash
-cargo run --bin summarize markdown-report-callgrind current base
-```
 
 
 ## Criterion benchmarks
@@ -139,7 +95,7 @@ cargo bench -- 'mem/.*/unique'
 ```
 Will run benchmarks involving unique primary keys against all databases, without writing to disc.
 
-## Adding more
+### Adding more
 
 There are two ways to write benchmarks:
 
@@ -148,10 +104,10 @@ There are two ways to write benchmarks:
 
 See the following sections for how to write these.
 
-### Targeted benchmarks
+#### Targeted benchmarks
 These are regular [Criterion.rs](https://github.com/bheisler/criterion.rs) benchmarks. Nothing fancy, do whatever you like with these. Put them in `benches/special.rs`.
 
-### Generic benchmarks
+#### Generic benchmarks
 Generic benchmarks live in `benches/generic.rs`. These benchmarks involve two traits:
 
 - [`BenchDatabase`](src/database.rs), which is implemented by different database backends.
@@ -164,6 +120,11 @@ To add a new generic benchmark, you'll need to:
     - [`SpacetimeRaw`](src/spacetime_raw.rs) will require you to execute the query against the Spacetime database backend directly.
     - [`SpacetimeModule`](src/spacetime_module.rs) will require you to add a reducer to the [`benchmarks`](../../modules/benchmarks/src/lib.rs) crate, and then add logic to invoke your reducer with the correct arguments.
 - Add a benchmark harness that actually invokes your method in `benches/generic.rs`.
+
+
+## Callgrind benchmarks
+These live in `benches/callgrind.rs` and can only be run on linux, although a docker image is provided above.
+See that f
 
 
 ## Install tools
