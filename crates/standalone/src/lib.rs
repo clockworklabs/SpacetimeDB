@@ -519,17 +519,17 @@ impl StandaloneEnv {
         let ctx = self.load_module_host_context(database.clone(), instance.id).await?;
         let stdb = &ctx.dbic.relational_db;
         let cx = ExecutionContext::internal(stdb.address());
-        let tx = stdb.begin_tx();
+        let tx = stdb.begin_read_tx();
         match stdb.program_hash(&tx) {
             Err(e) => {
-                stdb.rollback_tx(&cx, tx);
+                stdb.rollback_read_tx(&cx, tx);
                 Err(e.into())
             }
 
             Ok(maybe_hash) => {
                 // Release tx due to locking semantics and acquire a control db
                 // lock instead.
-                stdb.commit_tx(&cx, tx)?;
+                stdb.rollback_read_tx(&cx, tx);
                 let lock = self.lock_database_instance_for_update(instance.id)?;
 
                 if let Some(hash) = maybe_hash {
@@ -572,18 +572,19 @@ impl StandaloneEnv {
         let ctx = self.load_module_host_context(database.clone(), instance.id).await?;
         let stdb = &ctx.dbic.relational_db;
         let cx = ExecutionContext::internal(stdb.address());
-        let tx = stdb.begin_tx();
+        let tx = stdb.begin_read_tx();
 
         match stdb.program_hash(&tx) {
             Err(e) => {
-                stdb.rollback_tx(&cx, tx);
+                stdb.rollback_read_tx(&cx, tx);
                 Err(e.into())
             }
 
             Ok(maybe_hash) => {
                 // Release tx due to locking semantics and acquire a control db
                 // lock instead.
-                stdb.commit_tx(&cx, tx)?;
+                // Verify this
+                stdb.rollback_read_tx(&cx, tx);
                 let lock = self.lock_database_instance_for_update(instance.id)?;
 
                 match maybe_hash {

@@ -10,7 +10,9 @@ use std::sync::{Arc, Mutex};
 use super::commit_log::{CommitLog, CommitLogMut};
 use super::datastore::locking_tx_datastore::Locking;
 use super::datastore::locking_tx_datastore::{DataRef, Iter, IterByColEq, IterByColRange, RowId};
-use super::datastore::traits::{MutProgrammable, MutTx as _, MutTxDatastore, Programmable, TxData};
+use super::datastore::traits::{
+    MutProgrammable, MutTx as _, MutTxDatastore, Programmable, Tx as _, TxData, TxDatastore,
+};
 use super::message_log::MessageLog;
 use super::ostorage::memory_object_db::MemoryObjectDB;
 use super::relational_operators::Relation;
@@ -172,8 +174,17 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn schema_for_table<'tx>(&self, tx: &'tx MutTx, table_id: TableId) -> Result<Cow<'tx, TableSchema>, DBError> {
+    pub fn schema_for_table_mut<'tx>(
+        &self,
+        tx: &'tx MutTx,
+        table_id: TableId,
+    ) -> Result<Cow<'tx, TableSchema>, DBError> {
         self.inner.schema_for_table_mut_tx(tx, table_id)
+    }
+
+    #[tracing::instrument(skip_all)]
+    pub fn schema_for_table<'tx>(&self, tx: &'tx Tx, table_id: TableId) -> Result<Cow<'tx, TableSchema>, DBError> {
+        self.inner.schema_for_table_tx(tx, table_id)
     }
 
     #[tracing::instrument(skip_all)]
@@ -185,9 +196,14 @@ impl RelationalDB {
         self.inner.row_type_for_table_mut_tx(tx, table_id)
     }
 
-    pub fn get_all_tables<'tx>(&self, tx: &'tx MutTx) -> Result<Vec<Cow<'tx, TableSchema>>, DBError> {
+    pub fn get_all_tables_mut<'tx>(&self, tx: &'tx MutTx) -> Result<Vec<Cow<'tx, TableSchema>>, DBError> {
         self.inner
             .get_all_tables_mut_tx(&ExecutionContext::internal(self.address), tx)
+    }
+
+    pub fn get_all_tables<'tx>(&self, tx: &'tx Tx) -> Result<Vec<Cow<'tx, TableSchema>>, DBError> {
+        self.inner
+            .get_all_tables_tx(&ExecutionContext::internal(self.address), tx)
     }
 
     #[tracing::instrument(skip_all)]
@@ -237,14 +253,26 @@ impl RelationalDB {
     /// state. See also [`Self::with_auto_commit`].
     #[tracing::instrument(skip_all)]
     pub fn begin_tx(&self) -> MutTx {
-        log::trace!("BEGIN TX");
+        log::trace!("BEGIN Mut TX");
         self.inner.begin_mut_tx()
     }
 
     #[tracing::instrument(skip_all)]
+    pub fn begin_read_tx(&self) -> Tx {
+        log::trace!("BEGIN TX");
+        self.inner.begin_tx()
+    }
+
+    #[tracing::instrument(skip_all)]
     pub fn rollback_tx(&self, ctx: &ExecutionContext, tx: MutTx) {
-        log::trace!("ROLLBACK TX");
+        log::trace!("ROLLBACK Mut TX");
         self.inner.rollback_mut_tx(ctx, tx)
+    }
+
+    #[tracing::instrument(skip_all)]
+    pub fn rollback_read_tx(&self, ctx: &ExecutionContext, tx: Tx) {
+        log::trace!("ROLLBACK TX");
+        self.inner.release_tx(ctx, tx)
     }
 
     #[tracing::instrument(skip_all)]
@@ -325,12 +353,12 @@ impl RelationalDB {
     /// at the same time)
     pub fn with_read_only<F, A, E>(&self, ctx: &ExecutionContext, f: F) -> Result<A, E>
     where
-        F: FnOnce(&mut MutTx) -> Result<A, E>,
+        F: FnOnce(&mut Tx) -> Result<A, E>,
         E: From<DBError>,
     {
-        let mut tx = self.begin_tx();
+        let mut tx = self.inner.begin_tx();
         let res = f(&mut tx);
-        self.rollback_tx(ctx, tx);
+        self.inner.release_tx(ctx, tx);
         res
     }
 
@@ -393,8 +421,18 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn table_id_from_name(&self, tx: &MutTx, table_name: &str) -> Result<Option<TableId>, DBError> {
+    pub fn table_id_from_name_mut(&self, tx: &MutTx, table_name: &str) -> Result<Option<TableId>, DBError> {
         self.inner.table_id_from_name_mut_tx(tx, table_name)
+    }
+
+    #[tracing::instrument(skip_all)]
+    pub fn table_id_from_name(&self, tx: &Tx, table_name: &str) -> Result<Option<TableId>, DBError> {
+        self.inner.table_id_from_name_tx(tx, table_name)
+    }
+
+    #[tracing::instrument(skip_all)]
+    pub fn table_id_exists(&self, tx: &Tx, table_id: &TableId) -> bool {
+        self.inner.table_id_exists_tx(tx, table_id)
     }
 
     #[tracing::instrument(skip_all)]
@@ -463,7 +501,7 @@ impl RelationalDB {
     /// Returns an iterator,
     /// yielding every row in the table identified by `table_id`.
     #[tracing::instrument(skip(self, ctx, tx))]
-    pub fn iter<'a>(
+    pub fn iter_mut<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
         tx: &'a MutTx,
@@ -473,13 +511,19 @@ impl RelationalDB {
         self.inner.iter_mut_tx(ctx, tx, table_id)
     }
 
+    #[tracing::instrument(skip(self, ctx, tx))]
+    pub fn iter<'a>(&'a self, ctx: &'a ExecutionContext, tx: &'a Tx, table_id: TableId) -> Result<Iter<'a>, DBError> {
+        let _guard = DB_METRICS.rdb_iter_time.with_label_values(&table_id.0).start_timer();
+        self.inner.iter_tx(ctx, tx, table_id)
+    }
+
     /// Returns an iterator,
     /// yielding every row in the table identified by `table_id`,
     /// where the column data identified by `cols` matches `value`.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
     #[tracing::instrument(skip_all)]
-    pub fn iter_by_col_eq<'a>(
+    pub fn iter_by_col_eq_mut<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
         tx: &'a MutTx,
@@ -490,12 +534,24 @@ impl RelationalDB {
         self.inner.iter_by_col_eq_mut_tx(ctx, tx, table_id.into(), cols, value)
     }
 
+    #[tracing::instrument(skip_all)]
+    pub fn iter_by_col_eq<'a>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        tx: &'a Tx,
+        table_id: impl Into<TableId>,
+        cols: impl Into<NonEmpty<ColId>>,
+        value: AlgebraicValue,
+    ) -> Result<IterByColEq<'a>, DBError> {
+        self.inner.iter_by_col_eq_tx(ctx, tx, table_id.into(), cols, value)
+    }
+
     /// Returns an iterator,
     /// yielding every row in the table identified by `table_id`,
     /// where the column data identified by `cols` matches what is within `range`.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
-    pub fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
+    pub fn iter_by_col_range_mut<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         ctx: &'a ExecutionContext,
         tx: &'a MutTx,
@@ -505,6 +561,22 @@ impl RelationalDB {
     ) -> Result<IterByColRange<'a, R>, DBError> {
         self.inner
             .iter_by_col_range_mut_tx(ctx, tx, table_id.into(), cols, range)
+    }
+
+    /// Returns an iterator,
+    /// yielding every row in the table identified by `table_id`,
+    /// where the column data identified by `cols` matches what is within `range`.
+    ///
+    /// Matching is defined by `Ord for AlgebraicValue`.
+    pub fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        tx: &'a Tx,
+        table_id: impl Into<TableId>,
+        cols: impl Into<NonEmpty<ColId>>,
+        range: R,
+    ) -> Result<IterByColRange<'a, R>, DBError> {
+        self.inner.iter_by_col_range_tx(ctx, tx, table_id.into(), cols, range)
     }
 
     #[tracing::instrument(skip(self, tx, row))]
@@ -546,7 +618,7 @@ impl RelationalDB {
     #[tracing::instrument(skip_all)]
     pub fn clear_table(&self, tx: &mut MutTx, table_id: TableId) -> Result<(), DBError> {
         let relation = self
-            .iter(&ExecutionContext::internal(self.address), tx, table_id)?
+            .iter_mut(&ExecutionContext::internal(self.address), tx, table_id)?
             .map(|data| RowId(*data.id()))
             .collect::<Vec<_>>();
         self.delete(tx, table_id, relation);
@@ -587,7 +659,7 @@ impl RelationalDB {
     ///
     /// A `None` result indicates that the database is not fully initialized
     /// yet.
-    pub fn program_hash(&self, tx: &MutTx) -> Result<Option<Hash>, DBError> {
+    pub fn program_hash(&self, tx: &Tx) -> Result<Option<Hash>, DBError> {
         self.inner.program_hash(tx)
     }
 
@@ -760,7 +832,7 @@ mod tests {
         let schema = TableDef::from_product("MyTable", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         stdb.create_table(&mut tx, schema)?;
         let table_id = stdb.table_id_from_name(&tx, "MyTable")?.unwrap();
-        let schema = stdb.schema_for_table(&tx, table_id)?;
+        let schema = stdb.schema_for_table_mut(&tx, table_id)?;
         let col = schema.columns().iter().find(|x| x.col_name == "my_col").unwrap();
         assert_eq!(col.col_pos, 0.into());
         Ok(())

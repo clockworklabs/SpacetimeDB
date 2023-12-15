@@ -31,8 +31,8 @@ use std::hash::Hasher;
 use std::ops::Deref;
 use std::time::Instant;
 
-use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::db_metrics::{DB_METRICS, MAX_QUERY_CPU_TIME};
+use crate::db::relational_db::Tx;
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::{ExecutionContext, WorkloadType};
 use crate::sql::query_debug_info::QueryDebugInfo;
@@ -190,7 +190,7 @@ fn evaluator_for_secondary_updates(
     db: &RelationalDB,
     auth: AuthCtx,
     inserts: bool,
-) -> impl Fn(&mut MutTxId, &QueryExpr, &QueryDebugInfo) -> Result<HashMap<PrimaryKey, Op>, DBError> + '_ {
+) -> impl Fn(&mut Tx, &QueryExpr, &QueryDebugInfo) -> Result<HashMap<PrimaryKey, Op>, DBError> + '_ {
     move |tx, query, info| {
         let mut out = HashMap::new();
         // If we are evaluating inserts, the op type should be 1.
@@ -220,7 +220,7 @@ fn evaluator_for_secondary_updates(
 fn evaluator_for_primary_updates(
     db: &RelationalDB,
     auth: AuthCtx,
-) -> impl Fn(&mut MutTxId, &QueryExpr, &QueryDebugInfo) -> Result<HashMap<PrimaryKey, Op>, DBError> + '_ {
+) -> impl Fn(&mut Tx, &QueryExpr, &QueryDebugInfo) -> Result<HashMap<PrimaryKey, Op>, DBError> + '_ {
     move |tx, query, info| {
         let mut out = HashMap::new();
         for MemTable { data, head, .. } in run_query(
@@ -262,7 +262,7 @@ impl QuerySet {
     /// Queries all the [`StTableType::User`] tables *right now*
     /// and turns them into [`QueryExpr`],
     /// the moral equivalent of `SELECT * FROM table`.
-    pub(crate) fn get_all(relational_db: &RelationalDB, tx: &MutTxId, auth: &AuthCtx) -> Result<Self, DBError> {
+    pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> Result<Self, DBError> {
         let tables = relational_db.get_all_tables(tx)?;
         let same_owner = auth.owner == auth.caller;
         let exprs = tables
@@ -288,7 +288,7 @@ impl QuerySet {
     pub fn eval_incr(
         &self,
         db: &RelationalDB,
-        tx: &mut MutTxId,
+        tx: &mut Tx,
         database_update: &DatabaseUpdate,
         auth: AuthCtx,
     ) -> Result<DatabaseUpdate, DBError> {
@@ -365,7 +365,7 @@ impl QuerySet {
     ///
     /// This is a *major* difference with normal query execution, where is expected to return the full result set for each query.
     #[tracing::instrument(skip_all)]
-    pub fn eval(&self, db: &RelationalDB, tx: &mut MutTxId, auth: AuthCtx) -> Result<DatabaseUpdate, DBError> {
+    pub fn eval(&self, db: &RelationalDB, tx: &mut Tx, auth: AuthCtx) -> Result<DatabaseUpdate, DBError> {
         let mut database_update: DatabaseUpdate = DatabaseUpdate { tables: vec![] };
         let mut table_ops = HashMap::new();
         let mut seen = HashSet::new();
@@ -638,12 +638,7 @@ impl<'a> IncrementalJoin<'a> {
     /// * `||`: Concatenation.
     ///
     /// For a more in-depth discussion, see the [module-level documentation](./index.html).
-    pub fn eval(
-        &self,
-        db: &RelationalDB,
-        tx: &mut MutTxId,
-        auth: &AuthCtx,
-    ) -> Result<impl Iterator<Item = Op>, DBError> {
+    pub fn eval(&self, db: &RelationalDB, tx: &mut Tx, auth: &AuthCtx) -> Result<impl Iterator<Item = Op>, DBError> {
         let mut inserts = {
             // A query evaluator for inserts
             let mut eval = |query, is_primary| {

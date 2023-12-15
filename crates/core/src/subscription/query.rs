@@ -2,9 +2,8 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
 use std::time::Instant;
 
-use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::db_metrics::{DB_METRICS, MAX_QUERY_COMPILE_TIME};
-use crate::db::relational_db::RelationalDB;
+use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::{ExecutionContext, WorkloadType};
 use crate::host::module_host::DatabaseTableUpdate;
@@ -78,7 +77,7 @@ pub fn to_mem_table(mut of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr 
 pub(crate) fn run_query(
     cx: &ExecutionContext,
     db: &RelationalDB,
-    tx: &mut MutTxId,
+    tx: &mut Tx,
     query: &QueryExpr,
     auth: AuthCtx,
 ) -> Result<Vec<MemTable>, DBError> {
@@ -104,7 +103,7 @@ pub(crate) fn run_query(
 #[tracing::instrument(skip(relational_db, auth, tx))]
 pub fn compile_read_only_query(
     relational_db: &RelationalDB,
-    tx: &MutTxId,
+    tx: &Tx,
     auth: &AuthCtx,
     input: &str,
 ) -> Result<QuerySet, DBError> {

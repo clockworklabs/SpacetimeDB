@@ -6,11 +6,11 @@ use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
 use tracing::info;
 
 use crate::database_instance_context_controller::DatabaseInstanceContextController;
-use crate::db::relational_db::{MutTx, RelationalDB};
+use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, DatabaseError};
 use crate::execution_context::ExecutionContext;
 use crate::sql::compiler::compile_sql;
-use crate::vm::DbProgram;
+use crate::vm::{DbProgram, TxMode};
 
 use super::query_debug_info::QueryDebugInfo;
 
@@ -32,12 +32,7 @@ pub fn execute(
 ) -> Result<Vec<MemTable>, DBError> {
     info!(sql = sql_text);
     if let Some((database_instance_context, _)) = db_inst_ctx_controller.get(database_instance_id) {
-        let db = &database_instance_context.relational_db;
-        let info = QueryDebugInfo::from_source(&sql_text);
-        let ctx = ExecutionContext::sql(db.address(), Some(&info));
-        db.with_auto_commit(&ctx, |tx| {
-            run(&database_instance_context.relational_db, tx, &sql_text, auth)
-        })
+        run(&database_instance_context.relational_db, &sql_text, auth)
     } else {
         Err(DatabaseError::NotFound(database_instance_id).into())
     }
@@ -63,11 +58,12 @@ fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Result<(), DBErr
 pub fn execute_single_sql(
     cx: &ExecutionContext,
     db: &RelationalDB,
-    tx: &mut MutTx,
+    tx: &mut Tx,
     ast: CrudExpr,
     auth: AuthCtx,
 ) -> Result<Vec<MemTable>, DBError> {
-    let p: &mut DbProgram<MutTx> = &mut DbProgram::new(cx, db, tx, auth);
+    let mut tx: TxMode = tx.into();
+    let p = &mut DbProgram::new(cx, db, &mut tx, auth);
     let q = Expr::Crud(Box::new(ast));
 
     let mut result = Vec::with_capacity(1);
@@ -79,26 +75,38 @@ pub fn execute_single_sql(
 #[tracing::instrument(skip_all)]
 pub fn execute_sql(
     db: &RelationalDB,
-    tx: &mut MutTx,
     ast: Vec<CrudExpr>,
     query_debug_info: Option<&QueryDebugInfo>,
     auth: AuthCtx,
 ) -> Result<Vec<MemTable>, DBError> {
     let total = ast.len();
     let ctx = ExecutionContext::sql(db.address(), query_debug_info);
-    let p = &mut DbProgram::new(&ctx, db, tx, auth);
-    let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
-
     let mut result = Vec::with_capacity(total);
-    collect_result(&mut result, run_ast(p, q).into())?;
+    match ast.iter().all(|expr| matches!(expr, CrudExpr::Query(_))) {
+        true => db.with_auto_commit(&ctx, |mut_tx| {
+            let mut tx: TxMode = mut_tx.into();
+            let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
+            let p = &mut DbProgram::new(&ctx, db, &mut tx, auth);
+            collect_result(&mut result, run_ast(p, q).into())
+        }),
+        false => db.with_read_only(&ctx, |tx| {
+            let mut tx: TxMode = tx.into();
+            let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
+            let p = &mut DbProgram::new(&ctx, db, &mut tx, auth);
+            collect_result(&mut result, run_ast(p, q).into())
+        }),
+    }?;
+
     Ok(result)
 }
 
 /// Run the `SQL` string using the `auth` credentials
 #[tracing::instrument(skip_all)]
-pub fn run(db: &RelationalDB, tx: &mut MutTx, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
-    let ast = compile_sql(db, tx, sql_text)?;
-    execute_sql(db, tx, ast, Some(&QueryDebugInfo::from_source(sql_text)), auth)
+pub fn run(db: &RelationalDB, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
+    let query_info = &QueryDebugInfo::from_source(&sql_text);
+    let ctx = &ExecutionContext::sql(db.address(), Some(query_info));
+    let ast = db.with_read_only(&ctx, |tx| compile_sql(db, tx, sql_text))?;
+    execute_sql(db, ast, Some(&QueryDebugInfo::from_source(sql_text)), auth)
 }
 
 #[cfg(test)]
@@ -117,8 +125,8 @@ pub(crate) mod tests {
     use tempfile::TempDir;
 
     /// Short-cut for simplify test execution
-    fn run_for_testing(db: &RelationalDB, tx: &mut MutTx, sql_text: &str) -> Result<Vec<MemTable>, DBError> {
-        run(db, tx, sql_text, AuthCtx::for_testing())
+    fn run_for_testing(db: &RelationalDB, sql_text: &str) -> Result<Vec<MemTable>, DBError> {
+        run(db, sql_text, AuthCtx::for_testing())
     }
 
     fn create_data(total_rows: u64) -> ResultTest<(RelationalDB, MemTable, TempDir)> {
@@ -628,7 +636,7 @@ pub(crate) mod tests {
             is_autoinc: bool,
             idx_uniq: Option<bool>,
         ) -> ResultTest<()> {
-            let t = db.table_id_from_name(tx, table_name)?.unwrap();
+            let t = db.table_id_from_name_mut(tx, table_name)?.unwrap();
             let t = db.schema_for_table(tx, t)?;
 
             let col = t.columns().first().unwrap();

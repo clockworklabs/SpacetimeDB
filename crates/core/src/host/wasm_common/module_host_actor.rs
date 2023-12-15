@@ -253,31 +253,29 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         let db = &self.database_instance_context.relational_db;
         let auth = AuthCtx::new(self.database_instance_context.identity, caller_identity);
         // TODO(jgilles): make this a read-only TX when those get added
+        log::debug!("One-off query: {query}");
+        let query_info = &QueryDebugInfo::from_source(&query);
+        let ctx = &ExecutionContext::sql(db.address(), Some(query_info));
+        let compiled = db.with_read_only(&ctx, |tx| {
+            sql::compiler::compile_sql(db, tx, &query)?
+                .into_iter()
+                .map(|expr| {
+                    if matches!(expr, CrudExpr::Query { .. }) {
+                        Ok(expr)
+                    } else {
+                        Err(anyhow!("One-off queries are not allowed to modify the database"))
+                    }
+                })
+                .collect::<Result<_, _>>()
+        })?;
 
-        db.with_read_only(
-            &ExecutionContext::sql(db.address(), Some(&QueryDebugInfo::from_source(&query))),
-            |tx| {
-                log::debug!("One-off query: {query}");
-
-                let compiled = sql::compiler::compile_sql(db, tx, &query)?
-                    .into_iter()
-                    .map(|expr| {
-                        if matches!(expr, CrudExpr::Query { .. }) {
-                            Ok(expr)
-                        } else {
-                            Err(anyhow!("One-off queries are not allowed to modify the database"))
-                        }
-                    })
-                    .collect::<Result<_, _>>()?;
-                sql::execute::execute_sql(db, tx, compiled, Some(&QueryDebugInfo::from_source(&query)), auth)
-            },
-        )
+        sql::execute::execute_sql(db, compiled, Some(&QueryDebugInfo::from_source(&query)), auth)
     }
 
     fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error> {
         let db = &*self.database_instance_context.relational_db;
         db.with_auto_commit(&ExecutionContext::internal(db.address()), |tx| {
-            let tables = db.get_all_tables(tx)?;
+            let tables = db.get_all_tables_mut(tx)?;
             // We currently have unique table names,
             // so we can assume there's only one table to clear.
             if let Some(table_id) = tables
