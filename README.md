@@ -93,7 +93,7 @@ You can install and run the `spacetime` CLI tool via Cargo, Homebrew, Docker, or
 
 #### Install on macOS
 
-You can install SpacetimeDB on macOS using Homebrew. This will install the `spacetime` CLI tool and the SpacetimeDB standalone server as a single executable. You can also install on macOS using the Linux instructions below.
+You can install SpacetimeDB on macOS using Homebrew by running the following command in your terminal. This will install the `spacetime` CLI tool and the SpacetimeDB standalone server as a single executable. You can also install on macOS using the Linux instructions below.
 
 ```bash
 brew install clockworklabs/tap/spacetime
@@ -137,7 +137,7 @@ cd SpacetimeDB
 cargo install --path ./crates/cli --locked
 ```
 
-Windows may require some extra dependencies be installed, including openssl and a specific version of perl. A guide for this will be available soon.
+**Note for Windows:** Windows may require some extra dependencies be installed, including openssl and a specific version of perl. A guide for this will be available soon.
 
 #### Running with Docker
 
@@ -188,6 +188,6 @@ You can write SpacetimeDB modules in a bunch of popular languages, with many mor
 
 ## License
 
-SpacetimeDB is licensed under the BSL 1.1 license. This is not an open source or free software license, however, it converts to the AGPL v3.0 license with a linking exception after a few years.
+SpacetimeDB is licensed under the BSL 1.1 license. This is not an open source or free software license, However, it converts to the AGPL v3.0 license with a linking exception after a few years.
 
 Note that the AGPL v3.0 does not typically include a linking exception. We have added a custom linking exception to the AGPL license for SpacetimeDB. Our motivation for choosing a free software license is to ensure that contributions made to SpacetimeDB are propagated back to the community. We are expressly not interested in forcing users of SpacetimeDB to open source their own code if they link with SpacetimeDB, so we needed to include a linking exception.
