@@ -23,6 +23,7 @@ jobs:
   benchmark:
     name: run benchmarks
     runs-on: benchmarks-runner
+    timeout-minutes: 20 # on a successful run, runs in 8 minutes
     container:
       image: rust:1.72
       options: --privileged
