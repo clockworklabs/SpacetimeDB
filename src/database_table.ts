@@ -19,9 +19,10 @@ export class DatabaseTable {
   public static tableName: string;
 
   public static with<T extends DatabaseTable>(
+    this: T,
     client: SpacetimeDBClient
-  ): ThisType<T> {
-    return _tableProxy<T>(this, client) as unknown as ThisType<T>;
+  ): T {
+    return _tableProxy<T>(this, client) as unknown as T;
   }
 
   public static getDB(): ClientDB {
