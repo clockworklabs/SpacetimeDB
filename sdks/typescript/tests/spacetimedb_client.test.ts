@@ -508,4 +508,23 @@ describe("SpacetimeDBClient", () => {
     expect(updates[1]["oldUser"].username).toBe("jaime");
     expect(updates[1]["newUser"].username).toBe("kingslayer");
   });
+
+  test("Filtering works", async () => {
+    const client = new SpacetimeDBClient(
+      "ws://127.0.0.1:1234",
+      "db",
+      undefined,
+      "json"
+    );
+    const db = client.db;
+    const user1 = new User(new Identity("bobs-idenitty"), "bob");
+    const user2 = new User(new Identity("sallys-identity"), "sally");
+    const users = db.getTable("User").instances;
+    users.set("abc123", user1);
+    users.set("def456", user2);
+
+    const filteredUsers = User.with(client).filterByUsername("sally");
+    expect(filteredUsers).toHaveLength(1);
+    expect(filteredUsers[0].username).toBe("sally");
+  });
 });
