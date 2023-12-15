@@ -7,8 +7,8 @@ use spacetimedb_lib::Address;
 use tracing::debug;
 
 use crate::db::cursor::{CatalogCursor, IndexCursor, TableCursor};
-use crate::db::datastore::locking_tx_datastore::{IterByColEq, MutTxId};
-use crate::db::relational_db::RelationalDB;
+use crate::db::datastore::locking_tx_datastore::IterByColEq;
+use crate::db::relational_db::{MutTx, RelationalDB};
 use crate::execution_context::ExecutionContext;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_primitives::*;
@@ -29,7 +29,7 @@ use spacetimedb_vm::rel_ops::RelOps;
 pub fn build_query<'a>(
     ctx: &'a ExecutionContext,
     stdb: &'a RelationalDB,
-    tx: &'a MutTxId,
+    tx: &'a MutTx,
     query: QueryCode,
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {
     let db_table = matches!(&query.table, Table::DbTable(_));
@@ -124,7 +124,7 @@ pub fn build_query<'a>(
 fn join_inner<'a>(
     ctx: &'a ExecutionContext,
     db: &'a RelationalDB,
-    tx: &'a MutTxId,
+    tx: &'a MutTx,
     lhs: impl RelOps + 'a,
     rhs: JoinExpr,
     semi: bool,
@@ -175,7 +175,7 @@ fn join_inner<'a>(
 fn get_table<'a>(
     ctx: &'a ExecutionContext,
     stdb: &'a RelationalDB,
-    tx: &'a MutTxId,
+    tx: &'a MutTx,
     query: SourceExpr,
 ) -> Result<Box<dyn RelOps + 'a>, ErrorVm> {
     let head = query.head().clone();
@@ -192,7 +192,7 @@ fn get_table<'a>(
 fn iter_by_col_range<'a>(
     ctx: &'a ExecutionContext,
     db: &'a RelationalDB,
-    tx: &'a MutTxId,
+    tx: &'a MutTx,
     table: DbTable,
     col_id: ColId,
     range: impl RangeBounds<AlgebraicValue> + 'a,
@@ -224,7 +224,7 @@ pub struct IndexSemiJoin<'a, Rhs: RelOps> {
     // A reference to the database.
     pub db: &'a RelationalDB,
     // A reference to the current transaction.
-    pub tx: &'a MutTxId,
+    pub tx: &'a MutTx,
     // The execution context for the current transaction.
     ctx: &'a ExecutionContext<'a>,
 }
@@ -296,17 +296,17 @@ impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
 
 /// A [ProgramVm] implementation that carry a [RelationalDB] for it
 /// query execution
-pub struct DbProgram<'db, 'tx> {
+pub struct DbProgram<'db, 'tx, T> {
     ctx: &'tx ExecutionContext<'tx>,
     pub(crate) env: EnvDb,
     pub(crate) stats: HashMap<String, u64>,
     pub(crate) db: &'db RelationalDB,
-    pub(crate) tx: &'tx mut MutTxId,
+    pub(crate) tx: &'tx mut T,
     pub(crate) auth: AuthCtx,
 }
 
-impl<'db, 'tx> DbProgram<'db, 'tx> {
-    pub fn new(ctx: &'tx ExecutionContext, db: &'db RelationalDB, tx: &'tx mut MutTxId, auth: AuthCtx) -> Self {
+impl<'db, 'tx> DbProgram<'db, 'tx, MutTx> {
+    pub fn new(ctx: &'tx ExecutionContext, db: &'db RelationalDB, tx: &'tx mut MutTx, auth: AuthCtx) -> Self {
         let mut env = EnvDb::new();
         Self::load_ops(&mut env);
         Self {
@@ -400,7 +400,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
     }
 }
 
-impl ProgramVm for DbProgram<'_, '_> {
+impl ProgramVm for DbProgram<'_, '_, MutTx> {
     fn address(&self) -> Option<Address> {
         Some(self.db.address())
     }
@@ -577,7 +577,7 @@ pub(crate) mod tests {
 
     pub(crate) fn create_table_with_rows(
         db: &RelationalDB,
-        tx: &mut MutTxId,
+        tx: &mut MutTx,
         table_name: &str,
         schema: ProductType,
         rows: &[ProductValue],
@@ -606,7 +606,7 @@ pub(crate) mod tests {
     }
 
     pub(crate) fn create_table_from_program(
-        p: &mut DbProgram,
+        p: &mut DbProgram<MutTx>,
         table_name: &str,
         schema: ProductType,
         rows: &[ProductValue],
@@ -661,7 +661,7 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    fn check_catalog(p: &mut DbProgram, name: &str, row: ProductValue, q: QueryExpr, schema: DbTable) {
+    fn check_catalog(p: &mut DbProgram<MutTx>, name: &str, row: ProductValue, q: QueryExpr, schema: DbTable) {
         let result = run_ast(p, q.into());
 
         //The expected result

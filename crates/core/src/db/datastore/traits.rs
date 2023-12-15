@@ -50,24 +50,24 @@ pub trait DataRow: Send + Sync {
 }
 
 pub trait Tx {
-    type TxId;
+    type Tx;
 
-    fn begin_tx(&self) -> Self::TxId;
-    fn release_tx(&self, ctx: &ExecutionContext, tx: Self::TxId);
+    fn begin_tx(&self) -> Self::Tx;
+    fn release_tx(&self, ctx: &ExecutionContext, tx: Self::Tx);
 }
 
 pub trait MutTx {
-    type MutTxId;
+    type MutTx;
 
-    fn begin_mut_tx(&self) -> Self::MutTxId;
-    fn commit_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTxId) -> Result<Option<TxData>>;
-    fn rollback_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTxId);
-
-    #[cfg(test)]
-    fn commit_mut_tx_for_test(&self, tx: Self::MutTxId) -> Result<Option<TxData>>;
+    fn begin_mut_tx(&self) -> Self::MutTx;
+    fn commit_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) -> Result<Option<TxData>>;
+    fn rollback_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx);
 
     #[cfg(test)]
-    fn rollback_mut_tx_for_test(&self, tx: Self::MutTxId);
+    fn commit_mut_tx_for_test(&self, tx: Self::MutTx) -> Result<Option<TxData>>;
+
+    #[cfg(test)]
+    fn rollback_mut_tx_for_test(&self, tx: Self::MutTx);
 }
 
 pub trait TxDatastore: DataRow + Tx {
@@ -83,65 +83,57 @@ pub trait TxDatastore: DataRow + Tx {
     where
         Self: 'a;
 
-    fn iter_tx<'a>(
-        &'a self,
-        ctx: &'a ExecutionContext,
-        tx: &'a Self::TxId,
-        table_id: TableId,
-    ) -> Result<Self::Iter<'a>>;
+    fn iter_tx<'a>(&'a self, ctx: &'a ExecutionContext, tx: &'a Self::Tx, table_id: TableId) -> Result<Self::Iter<'a>>;
 
     fn iter_by_col_range_tx<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a Self::TxId,
+        tx: &'a Self::Tx,
         table_id: TableId,
-        cols: NonEmpty<ColId>,
+        cols: impl Into<NonEmpty<ColId>>,
         range: R,
     ) -> Result<Self::IterByColRange<'a, R>>;
 
     fn iter_by_col_eq_tx<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a Self::TxId,
+        tx: &'a Self::Tx,
         table_id: TableId,
-        cols: NonEmpty<ColId>,
+        cols: impl Into<NonEmpty<ColId>>,
         value: AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a>>;
 
-    fn get_tx<'a>(
+    fn table_id_exists_tx(&self, tx: &Self::Tx, table_id: &TableId) -> bool;
+    fn table_id_from_name_tx(&self, tx: &Self::Tx, table_name: &str) -> Result<Option<TableId>>;
+    fn schema_for_table_tx<'tx>(&self, tx: &'tx Self::Tx, table_id: TableId) -> super::Result<Cow<'tx, TableSchema>>;
+    fn get_all_tables_tx<'tx>(
         &self,
-        tx: &'a Self::TxId,
-        table_id: TableId,
-        row_id: &'a Self::RowId,
-    ) -> Result<Option<Self::DataRef<'a>>>;
+        ctx: &ExecutionContext,
+        tx: &'tx Self::Tx,
+    ) -> super::Result<Vec<Cow<'tx, TableSchema>>>;
 }
 
 pub trait MutTxDatastore: TxDatastore + MutTx {
     // Tables
-    fn create_table_mut_tx(&self, tx: &mut Self::MutTxId, schema: TableDef) -> Result<TableId>;
+    fn create_table_mut_tx(&self, tx: &mut Self::MutTx, schema: TableDef) -> Result<TableId>;
     // In these methods, we use `'tx` because the return type must borrow data
     // from `Inner` in the `Locking` implementation,
     // and `Inner` lives in `tx: &MutTxId`.
-    fn row_type_for_table_mut_tx<'tx>(
-        &self,
-        tx: &'tx Self::MutTxId,
-        table_id: TableId,
-    ) -> Result<Cow<'tx, ProductType>>;
-    fn schema_for_table_mut_tx<'tx>(&self, tx: &'tx Self::MutTxId, table_id: TableId) -> Result<Cow<'tx, TableSchema>>;
-    fn drop_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId) -> Result<()>;
-    fn rename_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, new_name: &str) -> Result<()>;
-    fn table_id_exists(&self, tx: &Self::MutTxId, table_id: &TableId) -> bool;
-    fn table_id_from_name_mut_tx(&self, tx: &Self::MutTxId, table_name: &str) -> Result<Option<TableId>>;
+    fn row_type_for_table_mut_tx<'tx>(&self, tx: &'tx Self::MutTx, table_id: TableId) -> Result<Cow<'tx, ProductType>>;
+    fn schema_for_table_mut_tx<'tx>(&self, tx: &'tx Self::MutTx, table_id: TableId) -> Result<Cow<'tx, TableSchema>>;
+    fn drop_table_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId) -> Result<()>;
+    fn rename_table_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, new_name: &str) -> Result<()>;
+    fn table_id_from_name_mut_tx(&self, tx: &Self::MutTx, table_name: &str) -> Result<Option<TableId>>;
     fn table_name_from_id_mut_tx<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a Self::MutTxId,
+        tx: &'a Self::MutTx,
         table_id: TableId,
     ) -> Result<Option<&'a str>>;
     fn get_all_tables_mut_tx<'tx>(
         &self,
         ctx: &ExecutionContext,
-        tx: &'tx Self::MutTxId,
+        tx: &'tx Self::MutTx,
     ) -> super::Result<Vec<Cow<'tx, TableSchema>>> {
         let mut tables = Vec::new();
         let table_rows = self.iter_mut_tx(ctx, tx, ST_TABLES_ID)?.collect::<Vec<_>>();
@@ -154,9 +146,9 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     }
 
     // Indexes
-    fn create_index_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, index: IndexDef) -> Result<IndexId>;
-    fn drop_index_mut_tx(&self, tx: &mut Self::MutTxId, index_id: IndexId) -> Result<()>;
-    fn index_id_from_name_mut_tx(&self, tx: &Self::MutTxId, index_name: &str) -> super::Result<Option<IndexId>>;
+    fn create_index_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, index: IndexDef) -> Result<IndexId>;
+    fn drop_index_mut_tx(&self, tx: &mut Self::MutTx, index_id: IndexId) -> Result<()>;
+    fn index_id_from_name_mut_tx(&self, tx: &Self::MutTx, index_name: &str) -> super::Result<Option<IndexId>>;
 
     // TODO: Index data
     // - index_scan_mut_tx
@@ -164,32 +156,26 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     // - index_seek_mut_tx
 
     // Sequences
-    fn get_next_sequence_value_mut_tx(&self, tx: &mut Self::MutTxId, seq_id: SequenceId) -> Result<i128>;
-    fn create_sequence_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, seq: SequenceDef)
-        -> Result<SequenceId>;
-    fn drop_sequence_mut_tx(&self, tx: &mut Self::MutTxId, seq_id: SequenceId) -> Result<()>;
-    fn sequence_id_from_name_mut_tx(
-        &self,
-        tx: &Self::MutTxId,
-        sequence_name: &str,
-    ) -> super::Result<Option<SequenceId>>;
+    fn get_next_sequence_value_mut_tx(&self, tx: &mut Self::MutTx, seq_id: SequenceId) -> Result<i128>;
+    fn create_sequence_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, seq: SequenceDef) -> Result<SequenceId>;
+    fn drop_sequence_mut_tx(&self, tx: &mut Self::MutTx, seq_id: SequenceId) -> Result<()>;
+    fn sequence_id_from_name_mut_tx(&self, tx: &Self::MutTx, sequence_name: &str) -> super::Result<Option<SequenceId>>;
 
     // Constraints
-    fn drop_constraint_mut_tx(&self, tx: &mut Self::MutTxId, constraint_id: ConstraintId) -> super::Result<()>;
-    fn constraint_id_from_name(&self, tx: &Self::MutTxId, constraint_name: &str)
-        -> super::Result<Option<ConstraintId>>;
+    fn drop_constraint_mut_tx(&self, tx: &mut Self::MutTx, constraint_id: ConstraintId) -> super::Result<()>;
+    fn constraint_id_from_name(&self, tx: &Self::MutTx, constraint_name: &str) -> super::Result<Option<ConstraintId>>;
 
     // Data
     fn iter_mut_tx<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a Self::MutTxId,
+        tx: &'a Self::MutTx,
         table_id: TableId,
     ) -> Result<Self::Iter<'a>>;
     fn iter_by_col_range_mut_tx<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a Self::MutTxId,
+        tx: &'a Self::MutTx,
         table_id: TableId,
         cols: impl Into<NonEmpty<ColId>>,
         range: R,
@@ -197,32 +183,32 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     fn iter_by_col_eq_mut_tx<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
-        tx: &'a Self::MutTxId,
+        tx: &'a Self::MutTx,
         table_id: TableId,
         cols: impl Into<NonEmpty<ColId>>,
         value: AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a>>;
     fn get_mut_tx<'a>(
         &self,
-        tx: &'a Self::MutTxId,
+        tx: &'a Self::MutTx,
         table_id: TableId,
         row_id: &'a Self::RowId,
     ) -> Result<Option<Self::DataRef<'a>>>;
     fn delete_mut_tx<'a>(
         &'a self,
-        tx: &'a mut Self::MutTxId,
+        tx: &'a mut Self::MutTx,
         table_id: TableId,
         row_ids: impl IntoIterator<Item = Self::RowId>,
     ) -> u32;
     fn delete_by_rel_mut_tx(
         &self,
-        tx: &mut Self::MutTxId,
+        tx: &mut Self::MutTx,
         table_id: TableId,
         relation: impl IntoIterator<Item = ProductValue>,
     ) -> u32;
     fn insert_mut_tx<'a>(
         &'a self,
-        tx: &'a mut Self::MutTxId,
+        tx: &'a mut Self::MutTx,
         table_id: TableId,
         row: ProductValue,
     ) -> Result<ProductValue>;
@@ -238,7 +224,7 @@ pub trait Programmable: TxDatastore {
     ///
     /// A `None` result means that no program is currently associated, e.g.
     /// because the datastore has not been fully initialized yet.
-    fn program_hash(&self, tx: &Self::TxId) -> Result<Option<Hash>>;
+    fn program_hash(&self, tx: &Self::Tx) -> Result<Option<Hash>>;
 }
 
 /// Describes a [`Programmable`] datastore which allows to update the program
@@ -254,7 +240,7 @@ pub trait MutProgrammable: MutTxDatastore {
     /// The operation runs within the transactional context `tx`. The fencing
     /// token `fence` must be verified to be greater than in any previous
     /// invocations of this method.
-    fn set_program_hash(&self, tx: &mut Self::MutTxId, fence: Self::FencingToken, hash: Hash) -> Result<()>;
+    fn set_program_hash(&self, tx: &mut Self::MutTx, fence: Self::FencingToken, hash: Hash) -> Result<()>;
 }
 
 #[cfg(test)]
