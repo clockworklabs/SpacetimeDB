@@ -14,9 +14,9 @@ A reducer is a function which traverses and updates the database. Each reducer c
 
 If you haven't already, start by [installing SpacetimeDB](/install). This will install the `spacetime` command line interface (CLI), which contains all the functionality for interacting with SpacetimeDB.
 
-## Install .NET
+## Install .NET 8
 
-Next we need to [install .NET](https://dotnet.microsoft.com/en-us/download/dotnet) so that we can build and publish our module.
+Next we need to [install .NET 8 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/8.0) so that we can build and publish our module. .NET 8.0 is the earliest to have the `wasi-experimental` workload that we rely on.
 
 ## Project structure
 
