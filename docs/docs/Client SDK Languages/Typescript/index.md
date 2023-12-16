@@ -152,7 +152,7 @@ In your `quickstart-chat` directory, run:
 
 ```bash
 mkdir -p client/src/module_bindings
-spacetime generate --lang typescript --out-dir client/src/module_bindings --project_path server
+spacetime generate --lang typescript --out-dir client/src/module_bindings --project-path server
 ```
 
 Take a look inside `client/src/module_bindings`. The CLI should have generated four files:
