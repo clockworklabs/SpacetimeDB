@@ -467,7 +467,7 @@ fn print_table_filter_methods(ctx: &GenCtx, out: &mut Indenter, table_type_name:
                 write!(out, "pub fn filter_by_{}({}: ", field_name, field_name).unwrap();
                 // TODO: the filter methods should take the target value by
                 //       reference. String fields should take &str, and array/vector
-                //       fields should take &[T]. Determine if integer typeso should be by
+                //       fields should take &[T]. Determine if integer types should be by
                 //       value. Is there a trait for this?
                 //       Look at `Borrow` or Deref or AsRef?
                 write_type_ctx(ctx, out, &field.col_type);
@@ -643,7 +643,7 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
 
     out.newline();
 
-    // Function definition for conveinent once_on callback function.
+    // Function definition for convenient once_on callback function.
     writeln!(out, "{}", ALLOW_UNUSED).unwrap();
     write!(
         out,

@@ -115,7 +115,7 @@ fn get_subcommands() -> Vec<Command> {
             )
             .arg(
                 Arg::new("no-save")
-                    .help("Don't save save to local config, just create a new identity")
+                    .help("Don't save to local config, just create a new identity")
                     .long("no-save")
                     .action(ArgAction::SetTrue),
             )

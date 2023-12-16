@@ -28,7 +28,7 @@ use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
 //
 // For now, the basic auth header must be in this form:
 // Basic base64(token:$token_str)
-// where $token_str is the JWT that is aquired from SpacetimeDB when creating a new identity.
+// where $token_str is the JWT that is acquired from SpacetimeDB when creating a new identity.
 pub struct SpacetimeCreds(authorization::Basic);
 
 const TOKEN_USERNAME: &str = "token";

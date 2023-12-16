@@ -17,8 +17,8 @@ use std::{collections::HashSet, marker::PhantomData};
 // From<IntoIterator>.
 // See: https://github.com/frankmcsherry/blog/blob/master/posts/2018-05-19.md
 pub trait Relation: IntoIterator<Item = ProductValue> {
-    // TODO: Technically need to dedup again after removing potentially
-    // distringuishing columns
+    // TODO: Technically need to dedupe again after removing potentially
+    // distinguishing columns
     fn project(self, mut cols: Vec<u32>) -> Project<Self::IntoIter>
     where
         Self: Sized,
