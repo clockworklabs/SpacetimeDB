@@ -10,7 +10,7 @@ Currently only the `testnet` is available for SpacetimeDB cloud which is subject
 1. Configure your CLI to use the SpacetimeDB Cloud. To do this, run the `spacetime server` command:
 
 ```bash
-spacetime server set "https://testnet.spacetimedb.com"
+spacetime server add --default "https://testnet.spacetimedb.com" testnet
 ```
 
 ## Connecting your Identity to the Web Dashboard
