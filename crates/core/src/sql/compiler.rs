@@ -1,11 +1,7 @@
-use nonempty::NonEmpty;
-use std::collections::HashMap;
-use tracing::info;
-
-use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::relational_db::RelationalDB;
+use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, PlanError};
 use crate::sql::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
+use nonempty::NonEmpty;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::db::def::{TableDef, TableSchema};
@@ -14,10 +10,12 @@ use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_vm::dsl::{db_table, db_table_raw, query};
 use spacetimedb_vm::expr::{ColumnOp, CrudExpr, DbType, Expr, QueryExpr, SourceExpr};
 use spacetimedb_vm::operator::OpCmp;
+use std::collections::HashMap;
+use tracing::info;
 
 /// Compile the `SQL` expression into a `ast`
 #[tracing::instrument(skip_all)]
-pub fn compile_sql(db: &RelationalDB, tx: &MutTxId, sql_text: &str) -> Result<Vec<CrudExpr>, DBError> {
+pub fn compile_sql(db: &RelationalDB, tx: &Tx, sql_text: &str) -> Result<Vec<CrudExpr>, DBError> {
     info!(sql = sql_text);
     let ast = compile_to_ast(db, tx, sql_text)?;
 
@@ -278,7 +276,7 @@ mod tests {
     use super::*;
     use std::ops::Bound;
 
-    use crate::db::relational_db::tests_utils::make_test_db;
+    use crate::db::relational_db::{tests_utils::make_test_db, MutTx};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::operator::OpQuery;
     use spacetimedb_primitives::{ColId, TableId};
@@ -290,7 +288,7 @@ mod tests {
 
     fn create_table(
         db: &RelationalDB,
-        tx: &mut MutTxId,
+        tx: &mut MutTx,
         name: &str,
         schema: &[(&str, AlgebraicType)],
         indexes: &[(ColId, &str)],
