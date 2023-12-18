@@ -1,10 +1,10 @@
-You can think of SpacetimeDB as a database that is also a server.
+You can think of SpacetimeDB as a database that's also a server.
 
-It is a relational database system that lets you upload your application logic directly into the database by way of very fancy stored procedures called "modules".
+It's a relational database system that lets you upload your application logic directly into the database with stored procedures called "modules".
 
 Instead of deploying a web or game server that sits in between your clients and your database, your clients connect directly to the database and execute your application logic inside the database itself. You can write all of your permission and authorization logic right inside your module just as you would in a normal server.
 
-This means that you can write your entire application in any language that compiles to WebAssembly, like Rust for example, and deploy it as a single binary. This cuts out all of wrestling with containers, docker, Kubernetes, VMs, DevOps, microservices, and complex cloud provider interfaces.
+This means that you can write your entire application in any language that compiles to WebAssembly, like Rust for example, and deploy it as a single binary. This cuts out all of the wrestling with containers, docker, Kubernetes, VMs, DevOps, microservices, and complex cloud provider interfaces.
 
 <figure>
     <img src="/images/basic-architecture-diagram.png" alt="SpacetimeDB Architecture" style="width:100%">
@@ -14,9 +14,9 @@ This means that you can write your entire application in any language that compi
     </figcaption>
 </figure>
 
-It's sort of like a smart-contract for your database, except incredibly fast and performant.
+In a sense, it's a bit like adding smart-contracts to your in-memory database, a database optimized for high throughput, low latency transactions.
 
-So fast, in fact, that the entire backend our MMORPG [BitCraft Online](https://bitcraftonline.com) is just a SpacetimeDB module. We don't have any other servers or services running, which means that everything in the game, all of the chat messages, items, resources, terrain, and even the locations of the players are stored and processed by the database before being synchronized out to all of the clients in real-time.
+It's so fast, in fact, that the entire backend our MMORPG [BitCraft Online](https://bitcraftonline.com) is just a SpacetimeDB module. We don't have any other servers or services running, which means that everything in the game, all of the chat messages, items, resources, terrain, and even the locations of the players are stored and processed by the database before being synchronized out to all of the clients in real-time.
 
 SpacetimeDB is optimized for maximum speed and minimum latency rather than batch processing or OLAP workloads. It is designed to be used for real-time applications like games, chat, and collaboration tools.
 
