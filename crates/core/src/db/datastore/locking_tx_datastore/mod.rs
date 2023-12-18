@@ -190,7 +190,7 @@ impl TxId {
         self.iter_by_col_range(ctx, table_id, cols, value)
     }
 
-    fn schema_for_table<'tx>(&'tx self, table_id: TableId) -> super::Result<Cow<'tx, TableSchema>> {
+    fn schema_for_table(&self, table_id: TableId) -> super::Result<Cow<'_, TableSchema>> {
         let ctx = ExecutionContext::default();
         if let Some(schema) = self.committed_state_shared_lock.get_schema(&table_id) {
             return Ok(Cow::Borrowed(schema));
@@ -434,7 +434,7 @@ impl CommittedState {
 
     fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: &TableId) -> super::Result<Iter<'a>> {
         if self.table_exists(table_id) {
-            return Ok(Iter::new(ctx, *table_id, None, &self));
+            return Ok(Iter::new(ctx, *table_id, None, self));
         }
         Err(TableError::IdNotFound(SystemTable::st_table, table_id.0).into())
     }
