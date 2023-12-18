@@ -165,9 +165,7 @@ module_bindings
 └── user.ts
 ```
 
-We need to import these types into our `client/src/App.tsx`. While we are at it, we will also import the SpacetimeDBClient class from our SDK.
-
-> There is a known issue where if you do not use every type in your file, it will not pull them into the published build. To fix this, we are using `console.log` to force them to get pulled in.
+We need to import these types into our `client/src/App.tsx`. While we are at it, we will also import the SpacetimeDBClient class from our SDK. In order to let the SDK know what tables and reducers we will be using we need to also register them.
 
 ```typescript
 import { SpacetimeDBClient, Identity, Address } from "@clockworklabs/spacetimedb-sdk";
@@ -176,7 +174,9 @@ import Message from "./module_bindings/message";
 import User from "./module_bindings/user";
 import SendMessageReducer from "./module_bindings/send_message_reducer";
 import SetNameReducer from "./module_bindings/set_name_reducer";
-console.log(Message, User, SendMessageReducer, SetNameReducer);
+
+SpacetimeDBClient.registerReducers(SendMessageReducer, SetNameReducer);
+SpacetimeDBClient.registerTables(Message, User);
 ```
 
 ## Create your SpacetimeDB client
@@ -385,7 +385,7 @@ User.onUpdate((oldUser, user, reducerEvent) => {
 
 We can also register callbacks to run each time a reducer is invoked. We register these callbacks using the `OnReducer` method which is automatically implemented for each reducer by `spacetime generate`.
 
-Each reducer callback takes two arguments:
+Each reducer callback takes a number of parameters:
 
 1. `ReducerEvent` that contains information about the reducer that triggered this event. It contains several fields. The ones we care about are:
 
@@ -393,7 +393,7 @@ Each reducer callback takes two arguments:
    - `status`: The `Status` of the reducer run, one of `"Committed"`, `"Failed"` or `"OutOfEnergy"`.
    - `message`: The error message, if any, that the reducer returned.
 
-2. `ReducerArgs` which is an array containing the arguments with which the reducer was invoked.
+2. The rest of the parameters are arguments passed to the reducer.
 
 These callbacks will be invoked in one of two cases:
 
@@ -411,7 +411,7 @@ If the reducer status comes back as `committed`, we'll update the name in our ap
 To the body of `App`, add:
 
 ```typescript
-SetNameReducer.on((reducerEvent, reducerArgs) => {
+SetNameReducer.on((reducerEvent, newName) => {
   if (
     local_identity.current &&
     reducerEvent.callerIdentity.isEqual(local_identity.current)
@@ -419,7 +419,7 @@ SetNameReducer.on((reducerEvent, reducerArgs) => {
     if (reducerEvent.status === "failed") {
       appendToSystemMessage(`Error setting name: ${reducerEvent.message} `);
     } else if (reducerEvent.status === "committed") {
-      setName(reducerArgs[0]);
+      setName(newName);
     }
   }
 });
@@ -432,7 +432,7 @@ We handle warnings on rejected messages the same way as rejected names, though t
 To the body of `App`, add:
 
 ```typescript
-SendMessageReducer.on((reducerEvent, reducerArgs) => {
+SendMessageReducer.on((reducerEvent, newMessage) => {
   if (
     local_identity.current &&
     reducerEvent.callerIdentity.isEqual(local_identity.current)

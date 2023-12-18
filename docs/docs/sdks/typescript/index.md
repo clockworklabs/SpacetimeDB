@@ -155,6 +155,58 @@ var spacetimeDBClient = new SpacetimeDBClient(
 );
 ```
 
+## Class methods
+
+### `SpacetimeDBClient.registerReducers`
+
+Registers reducer classes for use with a SpacetimeDBClient
+
+```ts
+registerReducers(...reducerClasses: ReducerClass[])
+```
+
+#### Parameters
+
+| Name               | Type           | Description                                                                                                                                 |
+| :----------------- | :-------       | :------------------------------------------------------------------------------------------------------------------------------------------ |
+| `reducerClasses`   | `ReducerClass` | A list of classes to register                                                                                                               |
+
+#### Example
+
+```ts
+import SayHelloReducer from './types/say_hello_reducer';
+import AddReducer from './types/add_reducer';
+
+SpacetimeDBClient.registerReducers(SayHelloReducer, AddReducer);
+```
+
+---
+
+### `SpacetimeDBClient.registerTables`
+
+Registers table classes for use with a SpacetimeDBClient
+
+```ts
+registerTables(...reducerClasses: TableClass[])
+```
+
+#### Parameters
+
+| Name               | Type           | Description                                                                                                                                 |
+| :----------------- | :-------       | :------------------------------------------------------------------------------------------------------------------------------------------ |
+| `tableClasses`     | `TableClass`   | A list of classes to register                                                                                                               |
+
+#### Example
+
+```ts
+import User from './types/user';
+import Player from './types/player';
+
+SpacetimeDBClient.registerTables(User, Player);
+```
+
+---
+
 ## Properties
 
 ### `SpacetimeDBClient` identity
@@ -867,7 +919,7 @@ SayHelloReducer.call();
 Register a callback to run each time the reducer is invoked.
 
 ```ts
-{Reducer}.on(callback: (reducerEvent: ReducerEvent, reducerArgs: any[]) => void): void
+{Reducer}.on(callback: (reducerEvent: ReducerEvent, ...reducerArgs: any[]) => void): void
 ```
 
 Clients will only be notified of reducer runs if either of two criteria is met:
@@ -879,12 +931,12 @@ Clients will only be notified of reducer runs if either of two criteria is met:
 
 | Name       | Type                                                        |
 | :--------- | :---------------------------------------------------------- |
-| `callback` | `(reducerEvent: ReducerEvent, reducerArgs: any[]) => void)` |
+| `callback` | `(reducerEvent: ReducerEvent, ...reducerArgs: any[]) => void)` |
 
 #### Example
 
 ```ts
-SayHelloReducer.on((reducerEvent, reducerArgs) => {
+SayHelloReducer.on((reducerEvent, ...reducerArgs) => {
   console.log("SayHelloReducer called", reducerEvent, reducerArgs);
 });
 ```
