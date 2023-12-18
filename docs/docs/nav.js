@@ -9,7 +9,8 @@ function section(title) {
 const nav = {
     items: [
         section("Intro"),
-        page("Overview", "index", "index.md"),
+        page("What is SpacetimeDB?", "index", "index.md"),
+        page("Installation", "install", "install.md"),
         page("Getting Started", "getting-started", "getting-started.md"),
         section("Deploying"),
         page("Testnet", "deploying/testnet", "deploying/testnet.md"),
