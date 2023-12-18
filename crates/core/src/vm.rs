@@ -65,11 +65,7 @@ pub fn build_query<'a>(
                     index_side: Table::MemTable(_),
                     ..
                 },
-            ) => {
-                let join: JoinExpr = join.into();
-                let iter = join_inner(ctx, stdb, tx, result, join, true)?;
-                Box::new(iter)
-            }
+            ) => build_query(ctx, stdb, tx, join.to_inner_join().into())?,
             Query::IndexJoin(IndexJoin {
                 probe_side,
                 probe_field,

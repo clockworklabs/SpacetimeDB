@@ -39,6 +39,7 @@ pub struct RelationalDB {
     commit_log: Option<CommitLogMut>,
     _lock: Arc<File>,
     address: Address,
+    row_count_fn: Arc<dyn Fn(TableId) -> i64 + Send + Sync>,
 }
 
 impl DataRow for RelationalDB {
@@ -142,10 +143,28 @@ impl RelationalDB {
             commit_log,
             _lock: Arc::new(lock),
             address: db_address,
+            row_count_fn: Arc::new(move |table| {
+                METRICS
+                    .rdb_num_table_rows
+                    .with_label_values(&db_address, &table.into())
+                    .get()
+            }),
         };
 
         log::info!("[{}] DATABASE: OPENED", address);
         Ok(db)
+    }
+
+    /// Returns an approximate row count for a particular table.
+    /// TODO: Unify this with `Relation::row_count` when more statistics are added.
+    pub fn row_count(&self, table: TableId) -> i64 {
+        (self.row_count_fn)(table)
+    }
+
+    /// Update this `RelationalDB` with an approximate row count function.
+    pub fn with_row_count(mut self, row_count: Arc<dyn Fn(TableId) -> i64 + Send + Sync>) -> Self {
+        self.row_count_fn = row_count;
+        self
     }
 
     /// Returns the address for this database
@@ -648,7 +667,7 @@ pub(crate) mod tests_utils {
         let tmp_dir = TempDir::with_prefix("stdb_test")?;
         let in_memory = false;
         let fsync = false;
-        let stdb = open_db(&tmp_dir, in_memory, fsync)?;
+        let stdb = open_db(&tmp_dir, in_memory, fsync)?.with_row_count(Arc::new(|_| i64::MAX));
         Ok((stdb, tmp_dir))
     }
 }

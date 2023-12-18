@@ -9,7 +9,7 @@ use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
 use crate::functions::{FunDef, Param};
 use crate::operator::{Op, OpCmp, OpLogic, OpQuery};
 use crate::types::Ty;
-use spacetimedb_lib::{Address, Identity};
+use spacetimedb_lib::Identity;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_type::AlgebraicType;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
@@ -426,7 +426,7 @@ impl IndexJoin {
     // Reorder the index and probe sides of an index join.
     // This is necessary if the indexed table has been replaced by a delta table.
     // A delta table is a virtual table consisting of changes or updates to a physical table.
-    pub fn reorder(self) -> Self {
+    pub fn reorder(self, row_count: impl Fn(TableId) -> i64) -> Self {
         // The probe table must be a physical table.
         if matches!(self.probe_side.source, SourceExpr::MemTable(_)) {
             return self;
@@ -454,7 +454,10 @@ impl IndexJoin {
         // during construction of the index join.
         let probe_column = self.probe_side.source.head().column(&self.probe_field).unwrap().col_id;
         match self.index_side {
-            Table::DbTable(_) => self,
+            // If the size of the indexed table is sufficiently large, do not reorder.
+            Table::DbTable(DbTable { table_id, .. }) if row_count(table_id) > 1000 => self,
+            // If this is a delta table, we must reorder.
+            // If this is a sufficiently small physical table, we should reorder.
             table => {
                 // For the same reason the compiler also ensures this unwrap is safe.
                 let index_field = table
@@ -504,6 +507,63 @@ impl IndexJoin {
             }
         }
     }
+
+    // Convert this index join to an inner join, followed by a projection.
+    // This is needed for incremental evaluation of index joins.
+    // In particular when there are updates to both the left and right tables.
+    // In other words, when an index join has two delta tables.
+    pub fn to_inner_join(self) -> QueryExpr {
+        if self.return_index_rows {
+            let col_lhs = self.index_side.head().fields[usize::from(self.index_col)].field.clone();
+            let col_rhs = self.probe_field;
+            let rhs = self.probe_side;
+
+            let fields = self
+                .index_side
+                .head()
+                .fields
+                .iter()
+                .cloned()
+                .map(|Column { field, .. }| field.into())
+                .collect();
+
+            let table = self.index_side.get_db_table().map(|t| t.table_id);
+            let source = self.index_side.into();
+            let inner_join = Query::JoinInner(JoinExpr::new(rhs, col_lhs, col_rhs));
+            let project = Query::Project(fields, table);
+            let query = if let Some(predicate) = self.index_select {
+                vec![predicate.into(), inner_join, project]
+            } else {
+                vec![inner_join, project]
+            };
+            QueryExpr { source, query }
+        } else {
+            let col_rhs = self.index_side.head().fields[usize::from(self.index_col)].field.clone();
+            let col_lhs = self.probe_field;
+            let mut rhs: QueryExpr = self.index_side.into();
+
+            if let Some(predicate) = self.index_select {
+                rhs.query.push(predicate.into());
+            }
+
+            let fields = self
+                .probe_side
+                .source
+                .head()
+                .fields
+                .iter()
+                .cloned()
+                .map(|Column { field, .. }| field.into())
+                .collect();
+
+            let table = self.probe_side.source.get_db_table().map(|t| t.table_id);
+            let source = self.probe_side.source;
+            let inner_join = Query::JoinInner(JoinExpr::new(rhs, col_lhs, col_rhs));
+            let project = Query::Project(fields, table);
+            let query = vec![inner_join, project];
+            QueryExpr { source, query }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
@@ -511,25 +571,6 @@ pub struct JoinExpr {
     pub rhs: QueryExpr,
     pub col_lhs: FieldName,
     pub col_rhs: FieldName,
-}
-
-//TODO: A posterior PR should fix the pass of multi-columns to the query optimization
-impl From<IndexJoin> for JoinExpr {
-    fn from(mut value: IndexJoin) -> Self {
-        if let Some(predicate) = value.index_select {
-            value.probe_side.query.push(predicate.into());
-        };
-        let pos = value.index_col;
-        if value.return_index_rows {
-            let col_lhs = value.index_side.head().fields[usize::from(pos)].field.clone();
-            let col_rhs = value.probe_field;
-            JoinExpr::new(value.probe_side, col_lhs, col_rhs)
-        } else {
-            let col_rhs = value.index_side.head().fields[usize::from(pos)].field.clone();
-            let col_lhs = value.probe_field;
-            JoinExpr::new(value.index_side.into(), col_lhs, col_rhs)
-        }
-    }
 }
 
 impl JoinExpr {
@@ -581,9 +622,9 @@ pub enum CrudExpr {
 }
 
 impl CrudExpr {
-    pub fn optimize(self, db: Option<Address>) -> Self {
+    pub fn optimize(self, row_count: &impl Fn(TableId) -> i64) -> Self {
         match self {
-            CrudExpr::Query(x) => CrudExpr::Query(x.optimize(db)),
+            CrudExpr::Query(x) => CrudExpr::Query(x.optimize(row_count)),
             _ => self,
         }
     }
@@ -1243,7 +1284,8 @@ impl QueryExpr {
     //
     // Ex. SELECT Left.* FROM Left JOIN Right ON Left.id = Right.id ...
     // where `Left` has an index defined on `id`.
-    fn try_index_join(mut query: QueryExpr, _db: Option<Address>) -> QueryExpr {
+    fn try_index_join(self) -> QueryExpr {
+        let mut query = self;
         // We expect 2 and only 2 operations - a join followed by a wildcard projection.
         if query.query.len() != 2 {
             return query;
@@ -1348,7 +1390,7 @@ impl QueryExpr {
         q
     }
 
-    pub fn optimize(mut self, db: Option<Address>) -> Self {
+    pub fn optimize(mut self, row_count: &impl Fn(TableId) -> i64) -> Self {
         let mut q = Self {
             source: self.source.clone(),
             query: Vec::with_capacity(self.query.len()),
@@ -1362,7 +1404,7 @@ impl QueryExpr {
 
         if self.query.len() == 1 && matches!(self.query[0], Query::IndexJoin(_)) {
             if let Some(Query::IndexJoin(join)) = self.query.pop() {
-                q.query.push(Query::IndexJoin(join.reorder()));
+                q.query.push(Query::IndexJoin(join.reorder(row_count)));
                 return q;
             }
         }
@@ -1372,11 +1414,18 @@ impl QueryExpr {
                 Query::Select(op) => {
                     q = Self::optimize_select(q, op, &tables);
                 }
-                Query::JoinInner(join) => q = q.with_join_inner(join.rhs.optimize(db), join.col_lhs, join.col_rhs),
+                Query::JoinInner(join) => {
+                    q = q.with_join_inner(join.rhs.optimize(row_count), join.col_lhs, join.col_rhs)
+                }
                 _ => q.query.push(query),
             };
         }
-        Self::try_index_join(q, db)
+
+        let q = q.try_index_join();
+        if q.query.len() == 1 && matches!(q.query[0], Query::IndexJoin(_)) {
+            return q.optimize(row_count);
+        }
+        q
     }
 }
 
@@ -1929,6 +1978,88 @@ mod tests {
     fn assert_owner_required<T: AuthAccess>(auth: T) {
         assert!(auth.check_auth(ALICE, ALICE).is_ok());
         assert!(matches!(auth.check_auth(ALICE, BOB), Err(AuthError::OwnerRequired)));
+    }
+
+    fn mem_table(name: &str, fields: &[(&str, AlgebraicType, bool)]) -> MemTable {
+        let table_access = StAccess::Public;
+        let data = Vec::new();
+        let head = Header::new(
+            name.into(),
+            fields
+                .iter()
+                .enumerate()
+                .map(|(i, (field, ty, _))| Column::new(FieldName::named(name, field), ty.clone(), i.into()))
+                .collect(),
+            fields
+                .iter()
+                .enumerate()
+                .filter(|(_, (_, _, indexed))| *indexed)
+                .map(|(i, _)| (ColId(i as u32).into(), Constraints::indexed()))
+                .collect(),
+        );
+        MemTable {
+            head,
+            data,
+            table_access,
+        }
+    }
+
+    #[test]
+    fn test_index_to_inner_join() {
+        let index_side = mem_table(
+            "index",
+            &[("a", AlgebraicType::U8, false), ("b", AlgebraicType::U8, true)],
+        );
+        let probe_side = mem_table(
+            "probe",
+            &[("c", AlgebraicType::U8, false), ("b", AlgebraicType::U8, true)],
+        );
+
+        let probe_field = probe_side.head.fields[1].field.clone();
+        let select_field = FieldName::Name {
+            table: "index".into(),
+            field: "a".into(),
+        };
+        let index_select = ColumnOp::cmp(select_field, OpCmp::Eq, 0.into());
+        let join = IndexJoin {
+            probe_side: probe_side.clone().into(),
+            probe_field,
+            index_side: index_side.clone().into(),
+            index_select: Some(index_select.clone()),
+            index_col: 1.into(),
+            return_index_rows: false,
+        };
+
+        let expr = join.to_inner_join();
+
+        assert_eq!(expr.source, SourceExpr::MemTable(probe_side));
+        assert_eq!(expr.query.len(), 2);
+
+        let Query::JoinInner(ref join) = expr.query[0] else {
+            panic!("expected an inner join, but got {:#?}", expr.query[0]);
+        };
+
+        assert_eq!(join.col_lhs, FieldName::named("probe", "b"));
+        assert_eq!(join.col_rhs, FieldName::named("index", "b"));
+        assert_eq!(
+            join.rhs,
+            QueryExpr {
+                source: SourceExpr::MemTable(index_side),
+                query: vec![index_select.into()]
+            }
+        );
+
+        let Query::Project(ref fields, None) = expr.query[1] else {
+            panic!("expected a projection, but got {:#?}", expr.query[1]);
+        };
+
+        assert_eq!(
+            fields,
+            &vec![
+                FieldName::named("probe", "c").into(),
+                FieldName::named("probe", "b").into()
+            ]
+        );
     }
 
     #[test]

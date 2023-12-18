@@ -268,7 +268,7 @@ fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, P
         } => compile_drop(name, kind, table_access)?,
     };
 
-    Ok(q.optimize(Some(db.address())))
+    Ok(q.optimize(&|table| db.row_count(table)))
 }
 
 #[cfg(test)]
@@ -277,8 +277,6 @@ mod tests {
     use std::ops::Bound;
 
     use crate::db::relational_db::{tests_utils::make_test_db, MutTx};
-    use crate::host::module_host::{DatabaseTableUpdate, TableOp};
-    use crate::subscription::query;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::operator::OpQuery;
     use spacetimedb_primitives::{ColId, TableId};
