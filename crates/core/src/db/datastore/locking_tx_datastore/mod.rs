@@ -6,10 +6,11 @@ use itertools::Itertools;
 use nonempty::NonEmpty;
 use parking_lot::{lock_api::ArcMutexGuard, Mutex, RawMutex};
 
+pub use self::table::Table;
+
 use self::{
     btree_index::{BTreeIndex, BTreeIndexRangeIter},
     sequence::Sequence,
-    table::Table,
 };
 use anyhow::anyhow;
 use std::collections::hash_map::DefaultHasher;
@@ -1749,7 +1750,7 @@ impl Locking {
 }
 
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
-pub struct RowId(pub(crate) DataKey);
+pub struct RowId(pub DataKey);
 
 impl DataRow for Locking {
     type RowId = RowId;
