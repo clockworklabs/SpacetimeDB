@@ -1,5 +1,3 @@
-# Rust Module Quickstart
-
 In this tutorial, we'll implement a simple chat server as a SpacetimeDB module.
 
 A SpacetimeDB module is code that gets compiled to WebAssembly and is uploaded to SpacetimeDB. This code becomes server-side logic that interfaces directly with the Spacetime relational database.

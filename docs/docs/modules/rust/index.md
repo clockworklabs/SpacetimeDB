@@ -1,5 +1,3 @@
-# SpacetimeDB Rust Modules
-
 Rust clients of SpacetimeDB use the [Rust SpacetimeDB module library][module library] to write modules which interact with the SpacetimeDB database.
 
 First, the `spacetimedb` library provides a number of macros for creating tables and Rust `struct`s corresponding to rows in those tables.

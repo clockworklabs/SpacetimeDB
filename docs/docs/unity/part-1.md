@@ -1,5 +1,3 @@
-# Part 1 - Basic Multiplayer
-
 ![UnityTutorial-HeroImage](/images/unity-tutorial/UnityTutorial-HeroImage.JPG)
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!

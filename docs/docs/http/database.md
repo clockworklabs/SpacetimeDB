@@ -1,5 +1,3 @@
-# `/database` HTTP API
-
 The HTTP endpoints in `/database` allow clients to interact with Spacetime databases in a variety of ways, including retrieving information, creating and deleting databases, invoking reducers and evaluating SQL queries.
 
 ## At a glance

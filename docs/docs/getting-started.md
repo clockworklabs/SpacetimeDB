@@ -1,5 +1,3 @@
-# Getting Started
-
 To develop SpacetimeDB applications locally, you will need to run the Standalone version of the server.
 
 1. [Install](/install) the SpacetimeDB CLI (Command Line Interface).

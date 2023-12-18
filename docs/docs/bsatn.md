@@ -1,5 +1,3 @@
-# SATN Binary Format (BSATN)
-
 The Spacetime Algebraic Type Notation binary (BSATN) format defines
 how Spacetime `AlgebraicValue`s and friends are encoded as byte strings.
 

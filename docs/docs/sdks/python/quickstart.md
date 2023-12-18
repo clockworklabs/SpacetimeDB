@@ -1,5 +1,3 @@
-# Python Client SDK Quick Start
-
 In this guide, we'll show you how to get up and running with a simple SpacetimDB app with a client written in Python.
 
 We'll implement a command-line client for the module created in our [Rust Module Quickstart](/docs/modules/rust/quickstart) or [C# Module Quickstart](/docs/modules/c-charp/quickstart) guides. Make sure you follow one of these guides before you start on this one.

@@ -1,5 +1,3 @@
-# `/identity` HTTP API
-
 The HTTP endpoints in `/identity` allow clients to generate and manage Spacetime public identities and private tokens.
 
 ## At a glance

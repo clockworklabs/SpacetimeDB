@@ -26,6 +26,7 @@ const nav: Nav = {
   items: [
     section("Intro"),
     page("Overview",        "index",            "index.md"),
+    page("Installation",    "install",          "install.md"),
     page("Getting Started", "getting-started",  "getting-started.md"),
 
     section("Deploying"),

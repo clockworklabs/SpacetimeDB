@@ -1,5 +1,3 @@
-# The SpacetimeDB Python client SDK
-
 The SpacetimeDB client SDK for Python contains all the tools you need to build native clients for SpacetimeDB modules using Python.
 
 ## Install the SDK

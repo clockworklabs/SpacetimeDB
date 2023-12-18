@@ -1,5 +1,3 @@
-# Part 3 - BitCraft Mini
-
 **Oct 14th, 2023: This tutorial has not yet been updated for the recent 0.7.0 release, it will be updated asap!**
 
 BitCraft Mini is a game that we developed which extends the code you've already developed in this tutorial. It is inspired by our game [BitCraft](https://bitcraftonline.com) and illustrates how you could build a more complex game from just the components we've discussed. Right now you can walk around, mine ore, and manage your inventory.
