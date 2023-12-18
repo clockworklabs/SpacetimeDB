@@ -136,15 +136,15 @@ pub struct TxId {
 impl TxId {
     fn table_id_from_name(&self, table_name: &str, database_address: Address) -> super::Result<Option<TableId>> {
         self.iter_by_col_eq(
-                &ExecutionContext::internal(database_address),
-                &ST_TABLES_ID,
-                NonEmpty::new(StTableFields::TableName.col_id()),
-                AlgebraicValue::String(table_name.to_owned()),
-            )
-            .map(|mut iter| {
-                iter.next()
-                    .map(|row| TableId(*row.view().elements[0].as_u32().unwrap()))
-            })
+            &ExecutionContext::internal(database_address),
+            &ST_TABLES_ID,
+            NonEmpty::new(StTableFields::TableName.col_id()),
+            AlgebraicValue::String(table_name.to_owned()),
+        )
+        .map(|mut iter| {
+            iter.next()
+                .map(|row| TableId(*row.view().elements[0].as_u32().unwrap()))
+        })
     }
 
     fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: &TableId) -> super::Result<Iter<'a>> {
@@ -190,7 +190,7 @@ impl TxId {
         self.iter_by_col_range(ctx, table_id, cols, value)
     }
 
-    fn schema_for_table<'tx>(&'tx self, table_id: TableId) -> super::Result<Cow<'tx, TableSchema>> {
+    fn schema_for_table(&self, table_id: TableId) -> super::Result<Cow<'_, TableSchema>> {
         let ctx = ExecutionContext::default();
         if let Some(schema) = self.committed_state_shared_lock.get_schema(&table_id) {
             return Ok(Cow::Borrowed(schema));
@@ -283,7 +283,7 @@ impl TxId {
         for data_ref in self.iter_by_col_eq(
             &ctx,
             &ST_INDEXES_ID,
-            NonEmpty::new(StIndexFields::TableId.col_id()),
+            NonEmpty::new(StConstraintFields::TableId.col_id()),
             table_id.into(),
         )? {
             let row = data_ref.view();
@@ -434,7 +434,7 @@ impl CommittedState {
 
     fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: &TableId) -> super::Result<Iter<'a>> {
         if self.table_exists(table_id) {
-            return Ok(Iter::new(ctx, *table_id, None, &self));
+            return Ok(Iter::new(ctx, *table_id, None, self));
         }
         Err(TableError::IdNotFound(SystemTable::st_table, table_id.0).into())
     }
@@ -736,7 +736,7 @@ impl CommittedState {
         for data_ref in self.iter_by_col_eq(
             &ctx,
             &ST_CONSTRAINTS_ID,
-            NonEmpty::new(StIndexFields::TableId.col_id()),
+            NonEmpty::new(StConstraintFields::TableId.col_id()),
             table_id.into(),
         )? {
             let row = data_ref.view();
@@ -3816,6 +3816,8 @@ mod tests {
     }
 
     #[test]
+    /// Test that two read-only TXes can operate concurrently without deadlock or blocking,
+    /// and that both observe correct results for a simple table scan.
     fn test_read_only_tx_shared_lock() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row1 = u32_str_u32(1, "Foo", 18);
@@ -3827,9 +3829,9 @@ mod tests {
         // create multiple read only tx, and use them together.
         let read_tx_1 = begin_tx(&datastore);
         let read_tx_2 = begin_tx(&datastore);
-        let rows = vec![row1, row2];
-        assert_eq!(all_rows_tx(&read_tx_2, table_id), rows.clone());
-        assert_eq!(all_rows_tx(&read_tx_1, table_id), rows);
+        let rows = &[row1, row2];
+        assert_eq!(&all_rows_tx(&read_tx_2, table_id), rows);
+        assert_eq!(&all_rows_tx(&read_tx_1, table_id), rows);
         read_tx_2.release(&ExecutionContext::default());
         read_tx_1.release(&ExecutionContext::default());
         Ok(())

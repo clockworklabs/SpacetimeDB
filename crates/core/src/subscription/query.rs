@@ -213,6 +213,8 @@ pub fn classify(expr: &QueryExpr) -> Option<Supported> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::host::module_host::{DatabaseUpdate, TableOp};
@@ -543,6 +545,14 @@ mod tests {
     #[test]
     fn test_eval_incr_for_index_join() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
+        run_eval_incr_for_index_join(db)?;
+
+        let (db, _) = make_test_db()?;
+        run_eval_incr_for_index_join(db.with_row_count(Arc::new(|_| 5)))?;
+        Ok(())
+    }
+
+    fn run_eval_incr_for_index_join(db: RelationalDB) -> ResultTest<()> {
         let mut tx = db.begin_tx();
 
         // Create table [lhs] with index on [id]

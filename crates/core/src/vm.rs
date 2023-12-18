@@ -82,11 +82,7 @@ pub fn build_query<'a>(
                     index_side: Table::MemTable(_),
                     ..
                 },
-            ) => {
-                let join: JoinExpr = join.into();
-                let iter = join_inner(ctx, stdb, tx, result, join, true)?;
-                Box::new(iter)
-            }
+            ) => build_query(ctx, stdb, tx, join.to_inner_join().into())?,
             Query::IndexJoin(IndexJoin {
                 probe_side,
                 probe_field,
@@ -647,7 +643,7 @@ pub(crate) mod tests {
     }
 
     pub(crate) fn create_table_from_program(
-        p: &mut DbProgram<MutTx>,
+        p: &mut DbProgram,
         table_name: &str,
         schema: ProductType,
         rows: &[ProductValue],
@@ -702,7 +698,7 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    fn check_catalog(p: &mut DbProgram<MutTx>, name: &str, row: ProductValue, q: QueryExpr, schema: DbTable) {
+    fn check_catalog(p: &mut DbProgram, name: &str, row: ProductValue, q: QueryExpr, schema: DbTable) {
         let result = run_ast(p, q.into());
 
         //The expected result

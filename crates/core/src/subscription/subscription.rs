@@ -652,7 +652,7 @@ impl<'a> IncrementalJoin<'a> {
             // Replan query after replacing the indexed table with a virtual table,
             // since join order may need to be reversed.
             let join_a = with_delta_table(self.join.clone(), true, self.index_side.inserts());
-            let join_a = QueryExpr::from(join_a).optimize(Some(db.address()));
+            let join_a = QueryExpr::from(join_a).optimize(&|table| db.row_count(table));
 
             // No need to replan after replacing the probe side with a virtual table,
             // since no new constraints have been added.
@@ -680,7 +680,7 @@ impl<'a> IncrementalJoin<'a> {
             // Replan query after replacing the indexed table with a virtual table,
             // since join order may need to be reversed.
             let join_a = with_delta_table(self.join.clone(), true, self.index_side.deletes());
-            let join_a = QueryExpr::from(join_a).optimize(Some(db.address()));
+            let join_a = QueryExpr::from(join_a).optimize(&|table| db.row_count(table));
 
             // No need to replan after replacing the probe side with a virtual table,
             // since no new constraints have been added.
@@ -823,7 +823,9 @@ mod tests {
     }
 
     #[test]
-    fn compile_incremental_index_join() -> ResultTest<()> {
+    // Compile an index join after replacing the index side with a virtual table.
+    // The original index and probe sides should be swapped after introducing the delta table.
+    fn compile_incremental_index_join_index_side() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
         let mut tx = db.begin_tx();
 
@@ -873,7 +875,7 @@ mod tests {
 
         // Optimize the query plan for the incremental update.
         let expr: QueryExpr = with_delta_table(join, true, delta).into();
-        let mut expr = expr.optimize(Some(db.address()));
+        let mut expr = expr.optimize(&|_| i64::MAX);
 
         assert_eq!(expr.source.table_name(), "lhs");
         assert_eq!(expr.query.len(), 1);
@@ -912,6 +914,101 @@ mod tests {
         assert_eq!(index_col, 0.into());
         assert_eq!(probe_field, "b");
         assert_eq!(probe_table, "lhs");
+        Ok(())
+    }
+
+    #[test]
+    // Compile an index join after replacing the probe side with a virtual table.
+    // The original index and probe sides should remain after introducing the virtual table.
+    fn compile_incremental_index_join_probe_side() -> ResultTest<()> {
+        let (db, _) = make_test_db()?;
+        let mut tx = db.begin_tx();
+
+        // Create table [lhs] with index on [b]
+        let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
+        let indexes = &[(1.into(), "b")];
+        let lhs_id = create_table(&db, &mut tx, "lhs", schema, indexes)?;
+
+        // Create table [rhs] with index on [b, c]
+        let schema = &[
+            ("b", AlgebraicType::U64),
+            ("c", AlgebraicType::U64),
+            ("d", AlgebraicType::U64),
+        ];
+        let indexes = &[(0.into(), "b"), (1.into(), "c")];
+        let rhs_id = create_table(&db, &mut tx, "rhs", schema, indexes)?;
+
+        // Should generate an index join since there is an index on `lhs.b`.
+        // Should push the sargable range condition into the index join's probe side.
+        let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
+        let exp = compile_sql(&db, &tx, sql)?.remove(0);
+
+        let CrudExpr::Query(mut expr) = exp else {
+            panic!("unexpected result from compilation: {:#?}", exp);
+        };
+
+        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(expr.query.len(), 1);
+
+        let join = expr.query.pop().unwrap();
+        let Query::IndexJoin(join) = join else {
+            panic!("expected an index join, but got {:#?}", join);
+        };
+
+        // Create an insert for an incremental update.
+        let row = product!(0u64, 0u64, 0u64);
+        let insert = TableOp {
+            op_type: 1,
+            row_pk: row.to_data_key().to_bytes(),
+            row,
+        };
+        let delta = DatabaseTableUpdate {
+            table_id: rhs_id,
+            table_name: String::from("rhs"),
+            ops: vec![insert],
+        };
+
+        // Optimize the query plan for the incremental update.
+        let expr: QueryExpr = with_delta_table(join, false, delta).into();
+        let mut expr = expr.optimize(&|_| i64::MAX);
+
+        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(expr.query.len(), 1);
+
+        let join = expr.query.pop().unwrap();
+        let Query::IndexJoin(join) = join else {
+            panic!("expected an index join, but got {:#?}", join);
+        };
+
+        let IndexJoin {
+            probe_side:
+                QueryExpr {
+                    source: SourceExpr::MemTable(_),
+                    query: ref rhs,
+                },
+            probe_field:
+                FieldName::Name {
+                    table: ref probe_table,
+                    field: ref probe_field,
+                },
+            index_side: Table::DbTable(DbTable {
+                table_id: index_table, ..
+            }),
+            index_select: None,
+            index_col,
+            return_index_rows: true,
+        } = join
+        else {
+            panic!("unexpected index join {:#?}", join);
+        };
+
+        assert!(!rhs.is_empty());
+
+        // Assert that original index and probe tables have not been swapped.
+        assert_eq!(index_table, lhs_id);
+        assert_eq!(index_col, 1.into());
+        assert_eq!(probe_field, "b");
+        assert_eq!(probe_table, "rhs");
         Ok(())
     }
 }
