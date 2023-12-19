@@ -125,14 +125,12 @@ type SharedWriteGuard<T> = ArcRwLockWriteGuard<RawRwLock, T>;
 type SharedMutexGuard<T> = ArcMutexGuard<RawMutex, T>;
 type SharedReadGuard<T> = ArcRwLockReadGuard<RawRwLock, T>;
 
-#[allow(dead_code)]
 pub struct TxId {
     committed_state_shared_lock: SharedReadGuard<CommittedState>,
     lock_wait_time: Duration,
     timer: Instant,
 }
 
-#[allow(dead_code)]
 impl TxId {
     fn table_id_from_name(&self, table_name: &str, database_address: Address) -> super::Result<Option<TableId>> {
         self.iter_by_col_eq(

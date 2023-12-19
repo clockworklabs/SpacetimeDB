@@ -252,7 +252,6 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
     ) -> Result<Vec<spacetimedb_sats::relation::MemTable>, DBError> {
         let db = &self.database_instance_context.relational_db;
         let auth = AuthCtx::new(self.database_instance_context.identity, caller_identity);
-        // TODO(jgilles): make this a read-only TX when those get added
         log::debug!("One-off query: {query}");
         let query_info = &QueryDebugInfo::from_source(&query);
         let ctx = &ExecutionContext::sql(db.address(), Some(query_info));
