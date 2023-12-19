@@ -24,7 +24,7 @@ impl Table {
         }
     }
 
-    pub(crate) fn insert_index(&mut self, mut index: BTreeIndex) {
+    pub fn insert_index(&mut self, mut index: BTreeIndex) {
         index.build_from_rows(self.scan_rows()).unwrap();
         self.indexes.insert(index.cols.clone(), index);
     }

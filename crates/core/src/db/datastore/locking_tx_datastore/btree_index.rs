@@ -87,7 +87,7 @@ impl BTreeIndexRangeIter<'_> {
     }
 }
 
-pub(crate) struct BTreeIndex {
+pub struct BTreeIndex {
     pub(crate) index_id: IndexId,
     pub(crate) table_id: TableId,
     pub(crate) cols: NonEmpty<ColId>,
@@ -97,13 +97,7 @@ pub(crate) struct BTreeIndex {
 }
 
 impl BTreeIndex {
-    pub(crate) fn new(
-        index_id: IndexId,
-        table_id: TableId,
-        cols: NonEmpty<ColId>,
-        name: String,
-        is_unique: bool,
-    ) -> Self {
+    pub fn new(index_id: IndexId, table_id: TableId, cols: NonEmpty<ColId>, name: String, is_unique: bool) -> Self {
         Self {
             index_id,
             table_id,

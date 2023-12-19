@@ -6,12 +6,10 @@ use itertools::Itertools;
 use nonempty::NonEmpty;
 use parking_lot::{lock_api::ArcMutexGuard, Mutex, RawMutex};
 
+pub use self::btree_index::{BTreeIndex, BTreeIndexRangeIter};
 pub use self::table::Table;
 
-use self::{
-    btree_index::{BTreeIndex, BTreeIndexRangeIter},
-    sequence::Sequence,
-};
+use self::sequence::Sequence;
 use anyhow::anyhow;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
