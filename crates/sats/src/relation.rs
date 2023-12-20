@@ -1,8 +1,10 @@
 use derive_more::From;
+use itertools::Itertools;
 use nonempty::NonEmpty;
 use spacetimedb_primitives::{ColId, Constraints, TableId};
 use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashSet;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
@@ -170,6 +172,43 @@ impl Column {
     }
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum OpCmpIdx {
+    Eq,
+    NotEq,
+    Lt,
+    LtEq,
+    Gt,
+    GtEq,
+}
+
+#[derive(Debug)]
+pub struct FieldValue<'a> {
+    cmp: OpCmpIdx,
+    field: &'a Column,
+    value: &'a AlgebraicValue,
+}
+
+impl<'a> FieldValue<'a> {
+    pub fn new(cmp: OpCmpIdx, field: &'a Column, value: &'a AlgebraicValue) -> Self {
+        Self { cmp, field, value }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ScanIndex<'a> {
+    Index {
+        cmp: OpCmpIdx,
+        columns: NonEmpty<&'a Column>,
+        value: AlgebraicValue,
+    },
+    Scan {
+        cmp: OpCmpIdx,
+        column: &'a Column,
+        value: AlgebraicValue,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct HeaderOnlyField<'a> {
     pub fields: Vec<ColumnOnlyField<'a>>,
@@ -283,6 +322,54 @@ impl Header {
             })
             .unwrap_or(false)
     }
+
+    pub fn select_best_index<'a>(&'a self, fields: &[FieldValue<'a>]) -> Vec<ScanIndex> {
+        let total = std::cmp::min(4, fields.len());
+        let mut found = Vec::with_capacity(total);
+        let mut done = HashSet::with_capacity(total);
+
+        let index = Constraints::indexed();
+        for fields in (1..=total).rev().flat_map(|len| fields.iter().permutations(len)) {
+            if fields.iter().any(|x| done.contains(&x.field)) {
+                continue;
+            }
+
+            let find = NonEmpty::collect(fields.iter().map(|x| x.field)).unwrap();
+            let find_cols = NonEmpty::collect(fields.iter().map(|x| x.field.col_id)).unwrap();
+            if self
+                .constraints
+                .iter()
+                .any(|(col, ct)| col == &find_cols && ct.contains(&index))
+            {
+                done.extend(find.iter());
+
+                if fields.len() == 1 {
+                    found.push(ScanIndex::Index {
+                        cmp: fields[0].cmp,
+                        columns: find,
+                        value: fields[0].value.clone(),
+                    });
+                } else {
+                    found.push(ScanIndex::Index {
+                        cmp: fields[0].cmp,
+                        columns: find,
+                        value: ProductValue::from_iter(fields.into_iter().map(|x| x.value.clone())).into(),
+                    });
+                }
+            } else if fields.len() == 1 && !done.contains(&find.head) {
+                done.insert(find.head);
+
+                found.push(ScanIndex::Scan {
+                    cmp: fields[0].cmp,
+                    column: find.head,
+                    value: fields[0].value.clone(),
+                });
+            }
+        }
+
+        found
+    }
+
     /// Project the [FieldExpr] & the [Constraints] that referenced them
     pub fn project<T>(&self, cols: &[T]) -> Result<Self, RelationError>
     where
@@ -704,6 +791,7 @@ impl Relation for Table {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::product;
 
     /// Build a [Header] using the initial `start_pos` as the column position for the [Constraints]
     fn head(table: &str, fields: (&str, &str), start_pos: u32) -> Header {
@@ -787,4 +875,153 @@ mod tests {
 
         assert_eq!(head_rhs, rhs);
     }
+
+    // #[test]
+    // fn best_index() {
+    //     let fields = ["a", "b", "c", "d", "e"]
+    //         .iter()
+    //         .enumerate()
+    //         .map(|(pos, x)| Column::new(FieldName::named("t1", x), AlgebraicType::I8, pos.into()));
+    //     let a = ColId(0);
+    //     let b = ColId(1);
+    //     let c = ColId(2);
+    //     let d = ColId(3);
+    //     let e = ColId(4);
+    //
+    //     let head1 = Header::new(
+    //         "t1".into(),
+    //         fields.collect(),
+    //         vec![
+    //             //Index a
+    //             (a.into(), Constraints::primary_key()),
+    //             //Index b
+    //             (b.into(), Constraints::indexed()),
+    //             //Index b + c
+    //             ((b, vec![c]).into(), Constraints::unique()),
+    //             //Index a+ b + c + d
+    //             ((a, vec![b, c, d]).into(), Constraints::indexed()),
+    //         ],
+    //     );
+    //
+    //     let value = AlgebraicValue::U64(1);
+    //     let value2 = AlgebraicValue::U64(2);
+    //     let value3 = AlgebraicValue::U64(3);
+    //     let value4 = AlgebraicValue::U64(4);
+    //     let value5 = AlgebraicValue::U64(5);
+    //
+    //     // Check for simple scan
+    //     assert_eq!(
+    //         head1.select_best_index(&[FieldValue::new(d, &value5)]),
+    //         vec![ScanIndex::Scan {
+    //             columns: d.into(),
+    //             value: value5.clone()
+    //         }]
+    //     );
+    //
+    //     assert_eq!(
+    //         head1.select_best_index(&[FieldValue::new(a, &value)]),
+    //         vec![ScanIndex::Index {
+    //             columns: a.into(),
+    //             value: value.clone()
+    //         }]
+    //     );
+    //
+    //     assert_eq!(
+    //         head1.select_best_index(&[FieldValue::new(b, &value2)]),
+    //         vec![ScanIndex::Index {
+    //             columns: b.into(),
+    //             value: value2.clone()
+    //         }]
+    //     );
+    //
+    //     // Check for permutation
+    //     assert_eq!(
+    //         head1.select_best_index(&[FieldValue::new(b, &value2), FieldValue::new(c, &value3)]),
+    //         vec![ScanIndex::Index {
+    //             columns: (b, vec![c]).into(),
+    //             value: product![value2.clone(), value3.clone()].into()
+    //         }]
+    //     );
+    //
+    //     assert_eq!(
+    //         head1.select_best_index(&[FieldValue::new(c, &value3), FieldValue::new(b, &value2)]),
+    //         vec![ScanIndex::Index {
+    //             columns: (b, vec![c]).into(),
+    //             value: product![value2.clone(), value3.clone()].into()
+    //         }]
+    //     );
+    //
+    //     // Check for permutation
+    //     assert_eq!(
+    //         head1.select_best_index(&[
+    //             FieldValue::new(a, &value),
+    //             FieldValue::new(b, &value2),
+    //             FieldValue::new(c, &value3),
+    //             FieldValue::new(d, &value4)
+    //         ]),
+    //         vec![ScanIndex::Index {
+    //             columns: (a, vec![b, c, d]).into(),
+    //             value: product![value.clone(), value2.clone(), value3.clone(), value4.clone()].into(),
+    //         }]
+    //     );
+    //
+    //     assert_eq!(
+    //         head1.select_best_index(&[
+    //             FieldValue::new(b, &value2),
+    //             FieldValue::new(a, &value),
+    //             FieldValue::new(d, &value4),
+    //             FieldValue::new(c, &value3)
+    //         ]),
+    //         vec![ScanIndex::Index {
+    //             columns: (a, vec![b, c, d]).into(),
+    //             value: product![value.clone(), value2.clone(), value3.clone(), value4.clone()].into(),
+    //         }]
+    //     );
+    //
+    //     // Check mix scan + index
+    //     assert_eq!(
+    //         head1.select_best_index(&[
+    //             FieldValue::new(b, &value2),
+    //             FieldValue::new(a, &value),
+    //             FieldValue::new(e, &value5),
+    //             FieldValue::new(d, &value4)
+    //         ]),
+    //         vec![
+    //             ScanIndex::Index {
+    //                 columns: b.into(),
+    //                 value: value2.clone(),
+    //             },
+    //             ScanIndex::Index {
+    //                 columns: a.into(),
+    //                 value: value.clone(),
+    //             },
+    //             ScanIndex::Scan {
+    //                 columns: e.into(),
+    //                 value: value5.clone(),
+    //             },
+    //             ScanIndex::Scan {
+    //                 columns: d.into(),
+    //                 value: value4.clone(),
+    //             }
+    //         ]
+    //     );
+    //
+    //     assert_eq!(
+    //         head1.select_best_index(&[
+    //             FieldValue::new(b, &value2),
+    //             FieldValue::new(c, &value3),
+    //             FieldValue::new(d, &value4)
+    //         ]),
+    //         vec![
+    //             ScanIndex::Index {
+    //                 columns: (b, vec![c]).into(),
+    //                 value: product![value2.clone(), value3.clone()].into()
+    //             },
+    //             ScanIndex::Scan {
+    //                 columns: d.into(),
+    //                 value: value4.clone(),
+    //             }
+    //         ]
+    //     );
+    // }
 }

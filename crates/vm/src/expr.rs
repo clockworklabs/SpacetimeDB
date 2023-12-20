@@ -17,7 +17,8 @@ use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{TableDef, TableSchema};
 use spacetimedb_sats::db::error::AuthError;
 use spacetimedb_sats::relation::{
-    Column, DbTable, FieldExpr, FieldName, Header, MemTable, RelValueRef, Relation, RowCount, Table,
+    Column, DbTable, FieldExpr, FieldName, FieldValue, Header, MemTable, OpCmpIdx, RelValueRef, Relation, RowCount,
+    ScanIndex, Table,
 };
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
@@ -93,11 +94,11 @@ impl ColumnOp {
     }
 
     pub fn cmp(field: FieldName, op: OpCmp, value: AlgebraicValue) -> Self {
-        Self::Cmp {
-            op: OpQuery::Cmp(op),
-            lhs: Box::new(ColumnOp::Field(FieldExpr::Name(field))),
-            rhs: Box::new(ColumnOp::Field(FieldExpr::Value(value))),
-        }
+        Self::new(
+            OpQuery::Cmp(op),
+            ColumnOp::Field(FieldExpr::Name(field)),
+            ColumnOp::Field(FieldExpr::Value(value)),
+        )
     }
 
     fn reduce(&self, row: RelValueRef, value: &ColumnOp, header: &Header) -> Result<AlgebraicValue, ErrorLang> {
@@ -180,6 +181,122 @@ impl ColumnOp {
             }
             op => vec![op],
         }
+    }
+
+    pub fn to_vec2(&self) -> Vec<&ColumnOp> {
+        fn is_col_v(op: &ColumnOp) -> bool {
+            match op {
+                ColumnOp::Cmp {
+                    op: OpQuery::Cmp(_),
+                    lhs,
+                    rhs,
+                } => {
+                    // lhs must be a field
+                    let ColumnOp::Field(FieldExpr::Name(_)) = **lhs else {
+                        return false;
+                    };
+                    // rhs must be a value
+                    let ColumnOp::Field(FieldExpr::Value(_)) = **rhs else {
+                        return false;
+                    };
+                    true
+                }
+                _ => true,
+            }
+        }
+
+        match self {
+            ColumnOp::Cmp {
+                op: OpQuery::Logic(OpLogic::And),
+                lhs,
+                rhs,
+            } => {
+                // let mut lhs = lhs.to_vec2();
+                // let mut rhs = rhs.to_vec2();
+                // lhs.append(&mut rhs);
+                // // dbg!(&lhs);
+                // // lhs.sort_by_key(|x| Reverse(x.clone()));
+                // // dbg!(&lhs);
+                // lhs
+                let mut ops = if is_col_v(&lhs) && is_col_v(&rhs) {
+                    vec![&**lhs, &**rhs]
+                } else {
+                    let mut lhs = lhs.to_vec2();
+                    let mut rhs = rhs.to_vec2();
+                    lhs.append(&mut rhs);
+                    lhs
+                };
+                // dbg!(&ops);
+                // ops.sort_by_key(|x| Reverse(x.clone()));
+                // dbg!(&ops);
+                ops
+            }
+            op => vec![op],
+        }
+    }
+
+    pub fn to_fields<'a>(&'a self, table: &'a SourceExpr) -> Vec<FieldValue> {
+        let mut result = Vec::new();
+
+        for op in to_vec2(self) {
+            let r = is_column_value(table, op);
+            if let Some((cmp, Some(field), value)) = r {
+                result.push(FieldValue::new(to_op(&cmp), field, value));
+            }
+        }
+        result
+    }
+}
+
+pub fn to_vec2(of: &ColumnOp) -> Vec<&ColumnOp> {
+    fn is_col_v(op: &ColumnOp) -> bool {
+        match op {
+            ColumnOp::Cmp {
+                op: OpQuery::Cmp(_),
+                lhs,
+                rhs,
+            } => {
+                // lhs must be a field
+                let ColumnOp::Field(FieldExpr::Name(_)) = **lhs else {
+                    return false;
+                };
+                // rhs must be a value
+                let ColumnOp::Field(FieldExpr::Value(_)) = **rhs else {
+                    return false;
+                };
+                true
+            }
+            _ => true,
+        }
+    }
+
+    match of {
+        ColumnOp::Cmp {
+            op: OpQuery::Logic(OpLogic::And),
+            lhs,
+            rhs,
+        } => {
+            let mut lhs = to_vec2(lhs);
+            let mut rhs = to_vec2(rhs);
+            lhs.append(&mut rhs);
+            // dbg!(&lhs);
+            // lhs.sort_by_key(|x| Reverse(x.clone()));
+            // dbg!(&lhs);
+            lhs
+            // let mut ops = if is_col_v(&lhs) && is_col_v(&rhs) {
+            //     vec![*lhs, *rhs]
+            // } else {
+            //     let mut lhs = lhs.to_vec2();
+            //     let mut rhs = rhs.to_vec2();
+            //     lhs.append(&mut rhs);
+            //     lhs
+            // };
+            // // dbg!(&ops);
+            // // ops.sort_by_key(|x| Reverse(x.clone()));
+            // // dbg!(&ops);
+            // ops
+        }
+        op => vec![op],
     }
 }
 
@@ -272,11 +389,7 @@ impl From<IndexScan> for ColumnOp {
                     lower_bound: Bound::Unbounded,
                     upper_bound,
                 };
-                ColumnOp::Cmp {
-                    op: OpQuery::Logic(OpLogic::And),
-                    lhs: lhs.into(),
-                    rhs: rhs.into(),
-                }
+                ColumnOp::new(OpQuery::Logic(OpLogic::And), lhs.into(), rhs.into())
             }
         }
     }
@@ -307,10 +420,7 @@ impl SourceExpr {
     }
 
     pub fn table_name(&self) -> &str {
-        match self {
-            SourceExpr::MemTable(x) => &x.head.table_name,
-            SourceExpr::DbTable(x) => &x.head.table_name,
-        }
+        &self.head().table_name
     }
 
     pub fn table_type(&self) -> StTableType {
@@ -727,7 +837,7 @@ pub enum Query {
     Select(ColumnOp),
     // Projects a set of columns.
     // The second argument is the table id for a qualified wildcard project.
-    // If present, further optimzations are possible.
+    // If present, further optimizations are possible.
     Project(Vec<FieldExpr>, Option<TableId>),
     // A join of two relations (base or intermediate) based on equality.
     // Equivalent to a Nested Loop Join.
@@ -753,79 +863,213 @@ impl Query {
 // using an index.
 pub enum IndexArgument {
     Eq {
-        col_id: ColId,
+        columns: NonEmpty<ColId>,
         value: AlgebraicValue,
     },
     LowerBound {
-        col_id: ColId,
+        columns: NonEmpty<ColId>,
         value: AlgebraicValue,
         inclusive: bool,
     },
     UpperBound {
-        col_id: ColId,
+        columns: NonEmpty<ColId>,
         value: AlgebraicValue,
         inclusive: bool,
     },
 }
 
+pub enum IndexColumnOp {
+    Index(IndexArgument),
+    Scan(ColumnOp),
+}
+
+// fn is_column_value2(table: &SourceExpr, op: ColumnOp) -> Option<(OpCmp, Option<&Column>, &AlgebraicValue)> {
+//     match op {
+//         ColumnOp::Cmp {
+//             op: OpQuery::Cmp(op),
+//             lhs,
+//             rhs,
+//         } => {
+//             // lhs must be a field
+//             if let ColumnOp::Field(FieldExpr::Name(ref name)) = *lhs {
+//                 // rhs must be a value
+//                 if let ColumnOp::Field(FieldExpr::Value(ref value)) = *rhs {
+//                     // lhs field must exist
+//                     let column = table.get_column_by_field(name);
+//                     return Some((op, column, value));
+//                 }
+//             }
+//             None
+//         }
+//         _ => None,
+//     }
+// }
+fn is_column_value<'a>(
+    table: &'a SourceExpr,
+    op: &'a ColumnOp,
+) -> Option<(&'a OpCmp, Option<&'a Column>, &'a AlgebraicValue)> {
+    match op {
+        ColumnOp::Cmp {
+            op: OpQuery::Cmp(op),
+            lhs,
+            rhs,
+        } => {
+            // lhs must be a field
+            if let ColumnOp::Field(FieldExpr::Name(ref name)) = **lhs {
+                // rhs must be a value
+                if let ColumnOp::Field(FieldExpr::Value(ref value)) = **rhs {
+                    // lhs field must exist
+                    let column = table.get_column_by_field(name);
+                    return Some((op, column, value));
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+fn make_index(op: &ColumnOp, idxs: Vec<ScanIndex>) -> Vec<IndexColumnOp> {
+    let mut result = Vec::with_capacity(idxs.len());
+
+    for idx in idxs {
+        let r = match idx {
+            ScanIndex::Index { cmp, columns, value } => {
+                let columns = columns.map(|x| x.col_id);
+                match cmp {
+                    OpCmpIdx::Eq => IndexColumnOp::Index(IndexArgument::Eq { columns, value }),
+                    // a < 5 => exclusive upper bound
+                    OpCmpIdx::Lt => IndexColumnOp::Index(IndexArgument::UpperBound {
+                        columns,
+                        value,
+                        inclusive: false,
+                    }),
+                    // a > 5 => exclusive lower bound
+                    OpCmpIdx::Gt => IndexColumnOp::Index(IndexArgument::LowerBound {
+                        columns,
+                        value,
+                        inclusive: false,
+                    }),
+                    // a <= 5 => inclusive upper bound
+                    OpCmpIdx::LtEq => IndexColumnOp::Index(IndexArgument::UpperBound {
+                        columns,
+                        value,
+                        inclusive: true,
+                    }),
+                    // a >= 5 => inclusive lower bound
+                    OpCmpIdx::GtEq => IndexColumnOp::Index(IndexArgument::LowerBound {
+                        columns,
+                        value,
+                        inclusive: true,
+                    }),
+                    _ => IndexColumnOp::Scan(op.clone()),
+                }
+            }
+            ScanIndex::Scan { cmp, column, value } => IndexColumnOp::Scan(ColumnOp::Cmp {
+                op: OpQuery::Cmp(from_op(cmp)),
+                lhs: Box::new(ColumnOp::Field(FieldExpr::Name(column.field.clone()))),
+                rhs: Box::new(ColumnOp::Field(FieldExpr::Value(value))),
+            }),
+        };
+
+        result.push(r);
+    }
+
+    result
+}
+
+fn to_op(value: &OpCmp) -> OpCmpIdx {
+    match value {
+        OpCmp::Eq => OpCmpIdx::Eq,
+        OpCmp::NotEq => OpCmpIdx::NotEq,
+        OpCmp::Lt => OpCmpIdx::Lt,
+        OpCmp::LtEq => OpCmpIdx::LtEq,
+        OpCmp::Gt => OpCmpIdx::Gt,
+        OpCmp::GtEq => OpCmpIdx::GtEq,
+    }
+}
+
+fn from_op(value: OpCmpIdx) -> OpCmp {
+    match value {
+        OpCmpIdx::Eq => OpCmp::Eq,
+        OpCmpIdx::NotEq => OpCmp::NotEq,
+        OpCmpIdx::Lt => OpCmp::Lt,
+        OpCmpIdx::LtEq => OpCmp::LtEq,
+        OpCmpIdx::Gt => OpCmp::Gt,
+        OpCmpIdx::GtEq => OpCmp::GtEq,
+    }
+}
+
 // Sargable stands for Search ARGument ABLE.
 // A sargable predicate is one that can be answered using an index.
-fn is_sargable(table: &SourceExpr, op: &ColumnOp) -> Option<IndexArgument> {
-    if let ColumnOp::Cmp {
-        op: OpQuery::Cmp(op),
-        lhs,
-        rhs,
-    } = op
-    {
-        // lhs must be a field
-        let ColumnOp::Field(FieldExpr::Name(ref name)) = **lhs else {
-            return None;
-        };
-        // rhs must be a value
-        let ColumnOp::Field(FieldExpr::Value(ref value)) = **rhs else {
-            return None;
-        };
-        // lhs field must exist
-        let column = table.get_column_by_field(name)?;
-        // lhs field must have an index
-        if !table.head().has_constraint(&column.field, Constraints::indexed()) {
-            return None;
-        }
+fn is_sargable<'a>(
+    table: &'a SourceExpr,
+    op: &ColumnOp,
+    indexes: &[ScanIndex],
+) -> (&'a SourceExpr, Vec<IndexColumnOp>) {
+    let mut result = Vec::new();
 
+    for op in op.clone().to_vec2() {
         match op {
-            OpCmp::Eq => Some(IndexArgument::Eq {
-                col_id: column.col_id,
-                value: value.clone(),
-            }),
-            // a < 5 => exclusive upper bound
-            OpCmp::Lt => Some(IndexArgument::UpperBound {
-                col_id: column.col_id,
-                value: value.clone(),
-                inclusive: false,
-            }),
-            // a > 5 => exclusive lower bound
-            OpCmp::Gt => Some(IndexArgument::LowerBound {
-                col_id: column.col_id,
-                value: value.clone(),
-                inclusive: false,
-            }),
-            // a <= 5 => inclusive upper bound
-            OpCmp::LtEq => Some(IndexArgument::UpperBound {
-                col_id: column.col_id,
-                value: value.clone(),
-                inclusive: true,
-            }),
-            // a >= 5 => inclusive lower bound
-            OpCmp::GtEq => Some(IndexArgument::LowerBound {
-                col_id: column.col_id,
-                value: value.clone(),
-                inclusive: true,
-            }),
-            OpCmp::NotEq => None,
+            ColumnOp::Cmp {
+                op: OpQuery::Cmp(_),
+                lhs: _,
+                rhs: _,
+            } => {
+                let Some((cmp_op, column, value)) = is_column_value(table, &op) else {
+                    result.push(IndexColumnOp::Scan(op.clone()));
+                    continue;
+                };
+                // lhs field must have an index and the field must exist
+                if let Some(column) = column {
+                    let idx = table
+                        .head()
+                        .select_best_index(&[FieldValue::new(to_op(cmp_op), column, value)]);
+
+                    result.extend(make_index(&op, idx));
+                } else {
+                    continue;
+                }
+            }
+            ColumnOp::Cmp {
+                op: OpQuery::Logic(OpLogic::And),
+                ref lhs,
+                ref rhs,
+            } => {
+                dbg!(&lhs, &rhs);
+                let Some((op_lhs, column_lhs, value_lhs)) = is_column_value(table, &lhs) else {
+                    result.push(IndexColumnOp::Scan(op.clone()));
+                    continue;
+                };
+                let Some((op_rhs, column_rhs, value_rhs)) = is_column_value(table, &rhs) else {
+                    result.push(IndexColumnOp::Scan(op.clone()));
+                    continue;
+                };
+                // the columns must exist
+                let (Some(column_lhs), Some(column_rhs)) = (column_lhs, column_rhs) else {
+                    result.push(IndexColumnOp::Scan(op.clone()));
+                    continue;
+                };
+                // Check if it matches a multi-column index
+                // Both `ops` must agree, ie: `col1 = 1 AND col2 = 2`,
+                // or denote a range, ie: `col1 > 1 AND col2 < 2`,
+                if op_lhs == op_rhs || op_lhs == &op_rhs.reverse() {
+                    result.extend(make_index(
+                        &op,
+                        table.head().select_best_index(&[
+                            FieldValue::new(to_op(op_lhs), column_lhs, value_lhs),
+                            FieldValue::new(to_op(op_rhs), column_rhs, value_rhs),
+                        ]),
+                    ));
+                    continue;
+                }
+                result.push(IndexColumnOp::Scan(op.clone()));
+            }
+            _ => result.push(IndexColumnOp::Scan(op.clone())),
         }
-    } else {
-        None
     }
+
+    (table, result)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -941,17 +1185,17 @@ impl QueryExpr {
             }
             // merge with a preceding select
             Query::Select(filter) => {
-                self.query.push(Query::Select(ColumnOp::Cmp {
-                    op: OpQuery::Logic(OpLogic::And),
-                    lhs: filter.into(),
-                    rhs: IndexScan {
+                self.query.push(Query::Select(ColumnOp::new(
+                    OpQuery::Logic(OpLogic::And),
+                    filter,
+                    IndexScan {
                         table,
                         columns,
                         lower_bound: Bound::Included(value.clone()),
                         upper_bound: Bound::Included(value),
                     }
                     .into(),
-                }));
+                )));
                 self
             }
             // else generate a new select
@@ -1049,17 +1293,17 @@ impl QueryExpr {
             }
             // merge with a preceding select
             Query::Select(filter) => {
-                self.query.push(Query::Select(ColumnOp::Cmp {
-                    op: OpQuery::Logic(OpLogic::And),
-                    lhs: filter.into(),
-                    rhs: IndexScan {
+                self.query.push(Query::Select(ColumnOp::new(
+                    OpQuery::Logic(OpLogic::And),
+                    filter,
+                    IndexScan {
                         table,
                         columns,
                         lower_bound: Self::bound(value, inclusive),
                         upper_bound: Bound::Unbounded,
                     }
                     .into(),
-                }));
+                )));
                 self
             }
             // else generate a new select
@@ -1157,17 +1401,17 @@ impl QueryExpr {
             }
             // merge with a preceding select
             Query::Select(filter) => {
-                self.query.push(Query::Select(ColumnOp::Cmp {
-                    op: OpQuery::Logic(OpLogic::And),
-                    lhs: filter.into(),
-                    rhs: IndexScan {
+                self.query.push(Query::Select(ColumnOp::new(
+                    OpQuery::Logic(OpLogic::And),
+                    filter,
+                    IndexScan {
                         table,
                         columns,
                         lower_bound: Bound::Unbounded,
                         upper_bound: Self::bound(value, inclusive),
                     }
                     .into(),
-                }));
+                )));
                 self
             }
             // else generate a new select
@@ -1352,39 +1596,70 @@ impl QueryExpr {
 
     /// Look for filters that could use indexes
     fn optimize_select(mut q: QueryExpr, op: ColumnOp, tables: &[SourceExpr]) -> QueryExpr {
-        'outer: for ref op in op.to_vec() {
-            // Go through each table schema referenced in the query.
-            // Find the first sargable condition and short-circuit.
-            for schema in tables {
-                match is_sargable(schema, op) {
+        // Go through each table schema referenced in the query.
+        // Find the first sargable condition and short-circuit.
+        let mut indexes = Vec::new();
+        for table in tables.iter() {
+            let fields = op.to_fields(table);
+            indexes.extend(table.head().select_best_index(&fields));
+        }
+
+        for (schema, ops) in tables.iter().map(|x| is_sargable(x, &op, &indexes)) {
+            for op in ops {
+                match op {
                     // found sargable equality condition for one of the table schemas
-                    Some(IndexArgument::Eq { col_id, value }) => {
-                        q = q.with_index_eq(schema.into(), col_id.into(), value);
-                        continue 'outer;
+                    IndexColumnOp::Index(idx) => match idx {
+                        IndexArgument::Eq { columns, value } => {
+                            q = q.with_index_eq(schema.into(), columns, value);
+                        }
+                        IndexArgument::LowerBound {
+                            columns,
+                            value,
+                            inclusive,
+                        } => {
+                            q = q.with_index_lower_bound(schema.into(), columns, value, inclusive);
+                        }
+                        IndexArgument::UpperBound {
+                            columns,
+                            value,
+                            inclusive,
+                        } => {
+                            q = q.with_index_upper_bound(schema.into(), columns, value, inclusive);
+                        }
+                    },
+                    IndexColumnOp::Scan(scan) => {
+                        // filter condition cannot be answered using an index
+                        q = q.with_select(scan);
                     }
-                    // found sargable range condition for one of the table schemas
-                    Some(IndexArgument::LowerBound {
-                        col_id,
-                        value,
-                        inclusive,
-                    }) => {
-                        q = q.with_index_lower_bound(schema.into(), col_id.into(), value, inclusive);
-                        continue 'outer;
-                    }
-                    // found sargable range condition for one of the table schemas
-                    Some(IndexArgument::UpperBound {
-                        col_id,
-                        value,
-                        inclusive,
-                    }) => {
-                        q = q.with_index_upper_bound(schema.into(), col_id.into(), value, inclusive);
-                        continue 'outer;
-                    }
-                    None => {}
                 }
             }
-            // filter condition cannot be answered using an index
-            q = q.with_select(op.clone());
+
+            // match is_sargable(schema, &op) {
+            //     // found sargable equality condition for one of the table schemas
+            //     Some(IndexArgument::Eq { columns, value }) => {
+            //         q = q.with_index_eq(schema.into(), columns, value);
+            //     }
+            //     // found sargable range condition for one of the table schemas
+            //     Some(IndexArgument::LowerBound {
+            //         columns,
+            //         value,
+            //         inclusive,
+            //     }) => {
+            //         q = q.with_index_lower_bound(schema.into(), columns, value, inclusive);
+            //     }
+            //     // found sargable range condition for one of the table schemas
+            //     Some(IndexArgument::UpperBound {
+            //         columns,
+            //         value,
+            //         inclusive,
+            //     }) => {
+            //         q = q.with_index_upper_bound(schema.into(), columns, value, inclusive);
+            //     }
+            //     None => {
+            //         // filter condition cannot be answered using an index
+            //         q = q.with_select(op.clone());
+            //     }
+            // }
         }
 
         q
@@ -1473,12 +1748,6 @@ impl AuthAccess for Query {
         Ok(())
     }
 }
-//
-// impl AuthAccess for QueryExpr {
-//     fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
-//         self.source.table_access() == StAccess::Public && self.query.iter().any(|x| x.check_auth(owner, caller))
-//     }
-// }
 
 #[derive(Debug, Clone, Eq, PartialEq, From)]
 pub enum Expr {
