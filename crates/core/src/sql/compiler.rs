@@ -640,7 +640,7 @@ mod tests {
         // Note, order matters - the equality condition occurs first which
         // means an index scan will be generated it rather than the range
         // condition.
-        let sql = "select * from test where a = 3 and b > 2 and b < 5";
+        let sql = "select * from test where b > 2 and b < 5 and a = 3 ";
         let CrudExpr::Query(QueryExpr {
             source: _,
             query: mut ops,

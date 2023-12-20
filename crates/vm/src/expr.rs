@@ -218,8 +218,8 @@ impl ColumnOp {
                 // // lhs.sort_by_key(|x| Reverse(x.clone()));
                 // // dbg!(&lhs);
                 // lhs
-                let mut ops = if is_col_v(&lhs) && is_col_v(&rhs) {
-                    vec![&**lhs, &**rhs]
+                let ops = if is_col_v(&lhs) && is_col_v(&rhs) {
+                    vec![self]
                 } else {
                     let mut lhs = lhs.to_vec2();
                     let mut rhs = rhs.to_vec2();
@@ -238,65 +238,43 @@ impl ColumnOp {
     pub fn to_fields<'a>(&'a self, table: &'a SourceExpr) -> Vec<FieldValue> {
         let mut result = Vec::new();
 
-        for op in to_vec2(self) {
-            let r = is_column_value(table, op);
-            if let Some((cmp, Some(field), value)) = r {
-                result.push(FieldValue::new(to_op(&cmp), field, value));
+        for op in self.to_vec2() {
+            match op {
+                ColumnOp::Cmp {
+                    op: OpQuery::Cmp(cmp),
+                    lhs,
+                    rhs,
+                } => {
+                    // lhs must be a field
+                    if let ColumnOp::Field(FieldExpr::Name(ref name)) = **lhs {
+                        // rhs must be a value
+                        if let ColumnOp::Field(FieldExpr::Value(ref value)) = **rhs {
+                            // lhs field must exist
+                            if let Some(field) = table.get_column_by_field(name) {
+                                result.push(FieldValue::new(to_op(&cmp), field, value));
+                            }
+                        }
+                    }
+                }
+                ColumnOp::Cmp {
+                    op: OpQuery::Logic(OpLogic::And),
+                    ref lhs,
+                    ref rhs,
+                } => {
+                    // the columns must exist
+                    let Some((op_lhs, Some(column_lhs), value_lhs)) = is_column_value(table, &lhs) else {
+                        continue;
+                    };
+                    let Some((op_rhs, Some(column_rhs), value_rhs)) = is_column_value(table, &rhs) else {
+                        continue;
+                    };
+                    result.push(FieldValue::new(to_op(&op_lhs), column_lhs, value_lhs));
+                    result.push(FieldValue::new(to_op(&op_rhs), column_rhs, value_rhs));
+                }
+                _ => {}
             }
         }
         result
-    }
-}
-
-pub fn to_vec2(of: &ColumnOp) -> Vec<&ColumnOp> {
-    fn is_col_v(op: &ColumnOp) -> bool {
-        match op {
-            ColumnOp::Cmp {
-                op: OpQuery::Cmp(_),
-                lhs,
-                rhs,
-            } => {
-                // lhs must be a field
-                let ColumnOp::Field(FieldExpr::Name(_)) = **lhs else {
-                    return false;
-                };
-                // rhs must be a value
-                let ColumnOp::Field(FieldExpr::Value(_)) = **rhs else {
-                    return false;
-                };
-                true
-            }
-            _ => true,
-        }
-    }
-
-    match of {
-        ColumnOp::Cmp {
-            op: OpQuery::Logic(OpLogic::And),
-            lhs,
-            rhs,
-        } => {
-            let mut lhs = to_vec2(lhs);
-            let mut rhs = to_vec2(rhs);
-            lhs.append(&mut rhs);
-            // dbg!(&lhs);
-            // lhs.sort_by_key(|x| Reverse(x.clone()));
-            // dbg!(&lhs);
-            lhs
-            // let mut ops = if is_col_v(&lhs) && is_col_v(&rhs) {
-            //     vec![*lhs, *rhs]
-            // } else {
-            //     let mut lhs = lhs.to_vec2();
-            //     let mut rhs = rhs.to_vec2();
-            //     lhs.append(&mut rhs);
-            //     lhs
-            // };
-            // // dbg!(&ops);
-            // // ops.sort_by_key(|x| Reverse(x.clone()));
-            // // dbg!(&ops);
-            // ops
-        }
-        op => vec![op],
     }
 }
 
@@ -1002,11 +980,7 @@ fn from_op(value: OpCmpIdx) -> OpCmp {
 
 // Sargable stands for Search ARGument ABLE.
 // A sargable predicate is one that can be answered using an index.
-fn is_sargable<'a>(
-    table: &'a SourceExpr,
-    op: &ColumnOp,
-    indexes: &[ScanIndex],
-) -> (&'a SourceExpr, Vec<IndexColumnOp>) {
+fn is_sargable<'a>(table: &'a SourceExpr, op: &ColumnOp) -> (&'a SourceExpr, Vec<IndexColumnOp>) {
     let mut result = Vec::new();
 
     for op in op.clone().to_vec2() {
@@ -1016,19 +990,19 @@ fn is_sargable<'a>(
                 lhs: _,
                 rhs: _,
             } => {
-                let Some((cmp_op, column, value)) = is_column_value(table, &op) else {
+                let Some((cmp, Some(column), value)) = is_column_value(table, &op) else {
                     result.push(IndexColumnOp::Scan(op.clone()));
                     continue;
                 };
                 // lhs field must have an index and the field must exist
-                if let Some(column) = column {
-                    let idx = table
-                        .head()
-                        .select_best_index(&[FieldValue::new(to_op(cmp_op), column, value)]);
+                let idx = table
+                    .head()
+                    .select_best_index(&[FieldValue::new(to_op(cmp), column, value)]);
 
+                if !idx.is_empty() {
                     result.extend(make_index(&op, idx));
                 } else {
-                    continue;
+                    result.push(IndexColumnOp::Scan(op.clone()));
                 }
             }
             ColumnOp::Cmp {
@@ -1036,7 +1010,9 @@ fn is_sargable<'a>(
                 ref lhs,
                 ref rhs,
             } => {
-                dbg!(&lhs, &rhs);
+                // dbg!(lhs.to_fields(table));
+                // dbg!(rhs.to_fields(table));
+
                 let Some((op_lhs, column_lhs, value_lhs)) = is_column_value(table, &lhs) else {
                     result.push(IndexColumnOp::Scan(op.clone()));
                     continue;
@@ -1054,14 +1030,15 @@ fn is_sargable<'a>(
                 // Both `ops` must agree, ie: `col1 = 1 AND col2 = 2`,
                 // or denote a range, ie: `col1 > 1 AND col2 < 2`,
                 if op_lhs == op_rhs || op_lhs == &op_rhs.reverse() {
-                    result.extend(make_index(
-                        &op,
-                        table.head().select_best_index(&[
-                            FieldValue::new(to_op(op_lhs), column_lhs, value_lhs),
-                            FieldValue::new(to_op(op_rhs), column_rhs, value_rhs),
-                        ]),
-                    ));
-                    continue;
+                    let idx = table.head().select_best_index(&[
+                        FieldValue::new(to_op(op_lhs), column_lhs, value_lhs),
+                        FieldValue::new(to_op(op_rhs), column_rhs, value_rhs),
+                    ]);
+
+                    if !idx.is_empty() {
+                        result.extend(make_index(&op, idx));
+                        continue;
+                    }
                 }
                 result.push(IndexColumnOp::Scan(op.clone()));
             }
@@ -1450,24 +1427,24 @@ impl QueryExpr {
                 },
             ) => match (*field, *value) {
                 (ColumnOp::Field(FieldExpr::Name(field)), ColumnOp::Field(FieldExpr::Value(value)))
-                    // Field is from lhs, so push onto join's left arg
-                    if self.source.head().column(&field).is_some() =>
-                {
-                    self = self.with_select(ColumnOp::cmp(field, cmp, value));
-                    self.query.push(Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs }));
-                    self
-                }
+                // Field is from lhs, so push onto join's left arg
+                if self.source.head().column(&field).is_some() =>
+                    {
+                        self = self.with_select(ColumnOp::cmp(field, cmp, value));
+                        self.query.push(Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs }));
+                        self
+                    }
                 (ColumnOp::Field(FieldExpr::Name(field)), ColumnOp::Field(FieldExpr::Value(value)))
-                    // Field is from rhs, so push onto join's right arg
-                    if rhs.source.head().column(&field).is_some() =>
-                {
-                    self.query.push(Query::JoinInner(JoinExpr {
-                        rhs: rhs.with_select(ColumnOp::cmp(field, cmp, value)),
-                        col_lhs,
-                        col_rhs,
-                    }));
-                    self
-                }
+                // Field is from rhs, so push onto join's right arg
+                if rhs.source.head().column(&field).is_some() =>
+                    {
+                        self.query.push(Query::JoinInner(JoinExpr {
+                            rhs: rhs.with_select(ColumnOp::cmp(field, cmp, value)),
+                            col_lhs,
+                            col_rhs,
+                        }));
+                        self
+                    }
                 (field, value) => {
                     self.query.push(Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs }));
                     self.query.push(Query::Select(ColumnOp::new(OpQuery::Cmp(cmp), field, value)));
@@ -1598,13 +1575,13 @@ impl QueryExpr {
     fn optimize_select(mut q: QueryExpr, op: ColumnOp, tables: &[SourceExpr]) -> QueryExpr {
         // Go through each table schema referenced in the query.
         // Find the first sargable condition and short-circuit.
-        let mut indexes = Vec::new();
-        for table in tables.iter() {
-            let fields = op.to_fields(table);
-            indexes.extend(table.head().select_best_index(&fields));
-        }
+        // let mut indexes = Vec::new();
+        // for table in tables.iter() {
+        //     let fields = op.to_fields(table);
+        //     indexes.extend(table.head().select_best_index(&fields));
+        // }
 
-        for (schema, ops) in tables.iter().map(|x| is_sargable(x, &op, &indexes)) {
+        for (schema, ops) in tables.iter().map(|x| is_sargable(x, &op)) {
             for op in ops {
                 match op {
                     // found sargable equality condition for one of the table schemas
