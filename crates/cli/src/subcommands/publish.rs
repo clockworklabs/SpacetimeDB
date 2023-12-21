@@ -107,6 +107,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let anon_identity = args.get_flag("anon_identity");
     let skip_clippy = args.get_flag("skip_clippy");
     let build_debug = args.get_flag("debug");
+    let database_host = config.get_host_url(server)?;
 
     let mut query_params = Vec::<(&str, &str)>::new();
     query_params.push(("host_type", host_type.as_str()));
@@ -138,9 +139,14 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let path_to_wasm = crate::tasks::build(path_to_project, skip_clippy, build_debug)?;
     let program_bytes = fs::read(path_to_wasm)?;
+    println!(
+        "Uploading to host {} => {}",
+        server.unwrap_or(config.default_server_name().unwrap_or("<default>")),
+        database_host
+    );
 
     let mut builder = reqwest::Client::new().post(Url::parse_with_params(
-        format!("{}/database/publish", config.get_host_url(server)?).as_str(),
+        format!("{}/database/publish", database_host).as_str(),
         query_params,
     )?);
 
