@@ -188,6 +188,8 @@ target/
 /target
 #Cargo.lock
 
+__pycache__/
+
 ## JetBrains
 .idea/
 
