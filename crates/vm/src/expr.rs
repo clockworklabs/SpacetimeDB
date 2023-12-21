@@ -73,6 +73,71 @@ impl FunctionOpt {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ColumnOpFlat {
+    Field(FieldExpr),
+    Cmp(Vec<ColumnOp>),
+}
+
+impl ColumnOpFlat {
+    pub fn extract_fields<'a>(&'a self, table: &'a SourceExpr) -> (Vec<FieldValue>, Vec<ColumnOp>) {
+        let mut fields = Vec::new();
+        let mut expr = Vec::new();
+
+        match self {
+            ColumnOpFlat::Cmp(args) => {
+                for op in args {
+                    match op {
+                        ColumnOp::Cmp {
+                            op: OpQuery::Cmp(cmp),
+                            lhs,
+                            rhs,
+                        } => {
+                            // lhs must be a field
+                            if let ColumnOp::Field(FieldExpr::Name(ref name)) = **lhs {
+                                // rhs must be a value
+                                if let ColumnOp::Field(FieldExpr::Value(ref value)) = **rhs {
+                                    // lhs field must exist
+                                    if let Some(field) = table.get_column_by_field(name) {
+                                        fields.push(FieldValue::new(to_op(&cmp), field, value));
+                                        continue;
+                                    }
+                                }
+                            }
+                            expr.push(op.clone());
+                        }
+                        ColumnOp::Cmp {
+                            op: OpQuery::Logic(OpLogic::And),
+                            ref lhs,
+                            ref rhs,
+                        } => {
+                            // the columns must exist
+                            let Some((op_lhs, Some(column_lhs), value_lhs)) = is_column_value(table, &lhs) else {
+                                expr.push(op.clone());
+                                continue;
+                            };
+                            let Some((op_rhs, Some(column_rhs), value_rhs)) = is_column_value(table, &rhs) else {
+                                expr.push(op.clone());
+                                continue;
+                            };
+                            fields.push(FieldValue::new(to_op(&op_lhs), column_lhs, value_lhs));
+                            fields.push(FieldValue::new(to_op(&op_rhs), column_rhs, value_rhs));
+                        }
+                        _ => {
+                            expr.push(op.clone());
+                        }
+                    };
+                }
+            }
+            ColumnOpFlat::Field(x) => {
+                expr.push(ColumnOp::Field(x.clone()));
+            }
+        }
+
+        (fields, expr)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From)]
 pub enum ColumnOp {
     #[from]
@@ -183,98 +248,30 @@ impl ColumnOp {
         }
     }
 
-    pub fn to_vec2(&self) -> Vec<&ColumnOp> {
-        fn is_col_v(op: &ColumnOp) -> bool {
-            match op {
-                ColumnOp::Cmp {
-                    op: OpQuery::Cmp(_),
-                    lhs,
-                    rhs,
-                } => {
-                    // lhs must be a field
-                    let ColumnOp::Field(FieldExpr::Name(_)) = **lhs else {
-                        return false;
-                    };
-                    // rhs must be a value
-                    let ColumnOp::Field(FieldExpr::Value(_)) = **rhs else {
-                        return false;
-                    };
-                    true
-                }
-                _ => true,
-            }
-        }
-
+    pub fn to_vec2(self) -> Vec<ColumnOpFlat> {
         match self {
-            ColumnOp::Cmp {
-                op: OpQuery::Logic(OpLogic::And),
-                lhs,
-                rhs,
-            } => {
-                // let mut lhs = lhs.to_vec2();
-                // let mut rhs = rhs.to_vec2();
-                // lhs.append(&mut rhs);
-                // // dbg!(&lhs);
-                // // lhs.sort_by_key(|x| Reverse(x.clone()));
-                // // dbg!(&lhs);
-                // lhs
-                let ops = if is_col_v(&lhs) && is_col_v(&rhs) {
-                    vec![self]
-                } else {
-                    let mut lhs = lhs.to_vec2();
-                    let mut rhs = rhs.to_vec2();
-                    lhs.append(&mut rhs);
-                    lhs
-                };
-                // dbg!(&ops);
-                // ops.sort_by_key(|x| Reverse(x.clone()));
-                // dbg!(&ops);
-                ops
-            }
-            op => vec![op],
-        }
-    }
+            ColumnOp::Field(x) => vec![ColumnOpFlat::Field(x)],
+            ColumnOp::Cmp { op, lhs, rhs } => match op {
+                OpQuery::Logic(OpLogic::And) => {
+                    let mut alone = Vec::new();
+                    let mut expr: Vec<ColumnOp> = Vec::with_capacity(2);
 
-    pub fn to_fields<'a>(&'a self, table: &'a SourceExpr) -> Vec<FieldValue> {
-        let mut result = Vec::new();
-
-        for op in self.to_vec2() {
-            match op {
-                ColumnOp::Cmp {
-                    op: OpQuery::Cmp(cmp),
-                    lhs,
-                    rhs,
-                } => {
-                    // lhs must be a field
-                    if let ColumnOp::Field(FieldExpr::Name(ref name)) = **lhs {
-                        // rhs must be a value
-                        if let ColumnOp::Field(FieldExpr::Value(ref value)) = **rhs {
-                            // lhs field must exist
-                            if let Some(field) = table.get_column_by_field(name) {
-                                result.push(FieldValue::new(to_op(&cmp), field, value));
-                            }
+                    for x in [lhs.to_vec2(), rhs.to_vec2()].into_iter().flatten() {
+                        match x {
+                            ColumnOpFlat::Cmp(x) => expr.extend(x),
+                            ColumnOpFlat::Field(x) => alone.push(x),
                         }
                     }
+                    let mut result = Vec::with_capacity(alone.len() + expr.len());
+                    result.extend(alone.into_iter().map(ColumnOpFlat::Field));
+                    result.push(ColumnOpFlat::Cmp(expr));
+                    result
                 }
-                ColumnOp::Cmp {
-                    op: OpQuery::Logic(OpLogic::And),
-                    ref lhs,
-                    ref rhs,
-                } => {
-                    // the columns must exist
-                    let Some((op_lhs, Some(column_lhs), value_lhs)) = is_column_value(table, &lhs) else {
-                        continue;
-                    };
-                    let Some((op_rhs, Some(column_rhs), value_rhs)) = is_column_value(table, &rhs) else {
-                        continue;
-                    };
-                    result.push(FieldValue::new(to_op(&op_lhs), column_lhs, value_lhs));
-                    result.push(FieldValue::new(to_op(&op_rhs), column_rhs, value_rhs));
+                _ => {
+                    vec![ColumnOpFlat::Cmp(vec![ColumnOp::Cmp { op, lhs, rhs }])]
                 }
-                _ => {}
-            }
+            },
         }
-        result
     }
 }
 
@@ -325,7 +322,6 @@ impl From<IndexScan> for ColumnOp {
     fn from(value: IndexScan) -> Self {
         let table = value.table;
         let columns = value.columns;
-        assert_eq!(columns.len(), 1, "multi-column predicates are not yet supported");
 
         let field = table.head.fields[usize::from(columns.head)].field.clone();
         match (value.lower_bound, value.upper_bound) {
@@ -907,7 +903,7 @@ fn is_column_value<'a>(
     }
 }
 
-fn make_index(op: &ColumnOp, idxs: Vec<ScanIndex>) -> Vec<IndexColumnOp> {
+fn make_index(idxs: Vec<ScanIndex>) -> Vec<IndexColumnOp> {
     let mut result = Vec::with_capacity(idxs.len());
 
     for idx in idxs {
@@ -940,7 +936,14 @@ fn make_index(op: &ColumnOp, idxs: Vec<ScanIndex>) -> Vec<IndexColumnOp> {
                         value,
                         inclusive: true,
                     }),
-                    _ => IndexColumnOp::Scan(op.clone()),
+                    OpCmpIdx::NotEq => {
+                        // IndexColumnOp::Scan(ColumnOp::Cmp {
+                        //     op:OpQuery::Cmp(OpCmp::NotEq),
+                        //     lhs: Box::new(Col),
+                        //     rhs: Box::new(()),
+                        // })
+                        todo!()
+                    }
                 }
             }
             ScanIndex::Scan { cmp, column, value } => IndexColumnOp::Scan(ColumnOp::Cmp {
@@ -985,64 +988,14 @@ fn is_sargable<'a>(table: &'a SourceExpr, op: &ColumnOp) -> (&'a SourceExpr, Vec
 
     for op in op.clone().to_vec2() {
         match op {
-            ColumnOp::Cmp {
-                op: OpQuery::Cmp(_),
-                lhs: _,
-                rhs: _,
-            } => {
-                let Some((cmp, Some(column), value)) = is_column_value(table, &op) else {
-                    result.push(IndexColumnOp::Scan(op.clone()));
-                    continue;
-                };
-                // lhs field must have an index and the field must exist
-                let idx = table
-                    .head()
-                    .select_best_index(&[FieldValue::new(to_op(cmp), column, value)]);
-
-                if !idx.is_empty() {
-                    result.extend(make_index(&op, idx));
-                } else {
-                    result.push(IndexColumnOp::Scan(op.clone()));
-                }
+            ColumnOpFlat::Field(x) => result.push(IndexColumnOp::Scan(ColumnOp::Field(x))),
+            ColumnOpFlat::Cmp(_) => {
+                let (fields, expr) = op.extract_fields(table);
+                let idxs = table.head().select_best_index(&fields);
+                dbg!(&idxs, &expr);
+                result.extend(make_index(idxs));
+                result.extend(expr.into_iter().map(|x| IndexColumnOp::Scan(x)))
             }
-            ColumnOp::Cmp {
-                op: OpQuery::Logic(OpLogic::And),
-                ref lhs,
-                ref rhs,
-            } => {
-                // dbg!(lhs.to_fields(table));
-                // dbg!(rhs.to_fields(table));
-
-                let Some((op_lhs, column_lhs, value_lhs)) = is_column_value(table, &lhs) else {
-                    result.push(IndexColumnOp::Scan(op.clone()));
-                    continue;
-                };
-                let Some((op_rhs, column_rhs, value_rhs)) = is_column_value(table, &rhs) else {
-                    result.push(IndexColumnOp::Scan(op.clone()));
-                    continue;
-                };
-                // the columns must exist
-                let (Some(column_lhs), Some(column_rhs)) = (column_lhs, column_rhs) else {
-                    result.push(IndexColumnOp::Scan(op.clone()));
-                    continue;
-                };
-                // Check if it matches a multi-column index
-                // Both `ops` must agree, ie: `col1 = 1 AND col2 = 2`,
-                // or denote a range, ie: `col1 > 1 AND col2 < 2`,
-                if op_lhs == op_rhs || op_lhs == &op_rhs.reverse() {
-                    let idx = table.head().select_best_index(&[
-                        FieldValue::new(to_op(op_lhs), column_lhs, value_lhs),
-                        FieldValue::new(to_op(op_rhs), column_rhs, value_rhs),
-                    ]);
-
-                    if !idx.is_empty() {
-                        result.extend(make_index(&op, idx));
-                        continue;
-                    }
-                }
-                result.push(IndexColumnOp::Scan(op.clone()));
-            }
-            _ => result.push(IndexColumnOp::Scan(op.clone())),
         }
     }
 
