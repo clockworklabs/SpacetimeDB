@@ -5,6 +5,7 @@ name: Publish NuGet Package on Release
     # types: [published]
 
 on:
+  pull_request:
   push:
     branches:
       - '*'
