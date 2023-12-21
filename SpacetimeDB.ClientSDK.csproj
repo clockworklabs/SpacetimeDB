@@ -7,7 +7,7 @@
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
     <PackageId>SpacetimeDB.ClientSDK</PackageId>
     <Title>SpacetimeDB SDK</Title>
-    <Authors>derek_clockwork</Authors>
+    <Authors>jdetter</Authors>
     <Company>Clockwork Labs</Company>
     <Product>SpacetimeDB</Product>
     <Description>The SpacetimeDB SDK is a software development kit (SDK) designed to simplify the interaction with SpacetimeDB server modules.</Description>
@@ -16,8 +16,8 @@
     <PackageIcon>logo.png</PackageIcon>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/clockworklabs/spacetimedb-csharp-sdk</RepositoryUrl>
-    <AssemblyVersion>0.7.0</AssemblyVersion>
-    <Version>0.7.0</Version>
+    <AssemblyVersion>0.7.2</AssemblyVersion>
+    <Version>0.7.2</Version>
   </PropertyGroup>
 
   <ItemGroup>

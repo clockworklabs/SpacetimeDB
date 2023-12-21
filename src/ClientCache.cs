@@ -1,13 +1,10 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.ComponentModel.Design;
-using System.Linq;
-using System.Net.Http.Headers;
 using System.Reflection;
-using Google.Protobuf;
-using ClientApi;
 using SpacetimeDB.SATS;
+using System.Numerics;
+using System.Runtime.CompilerServices;
 
 namespace SpacetimeDB
 {
@@ -19,19 +16,42 @@ namespace SpacetimeDB
             {
                 public bool Equals(byte[] left, byte[] right)
                 {
-                    if (left == null || right == null)
+                    if (ReferenceEquals(left, right))
                     {
-                        return left == right;
+                        return true;
                     }
 
-                    return left.SequenceEqual(right);
+                    if (left == null || right == null || left.Length != right.Length)
+                    {
+                        return false;
+                    }
+
+                    return EqualsUnvectorized(left, right);
+
                 }
 
-                public int GetHashCode(byte[] key)
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                private bool EqualsUnvectorized(byte[] left, byte[] right)
                 {
-                    if (key == null)
-                        throw new ArgumentNullException(nameof(key));
-                    return key.Sum(b => b);
+                    for (int i = 0; i < left.Length; i++)
+                    {
+                        if (left[i] != right[i])
+                        {
+                            return false;
+                        }
+                    }
+
+                    return true;
+                }
+
+                public int GetHashCode(byte[] obj)
+                {
+                    int hash = 17;
+                    foreach (byte b in obj)
+                    {
+                        hash = hash * 31 + b;
+                    }
+                    return hash;
                 }
             }
 
@@ -44,9 +64,6 @@ namespace SpacetimeDB
 
             // Maps from primary key to type value
             public readonly Dictionary<byte[], (AlgebraicValue, object)> entries;
-
-            // Maps from primary key to decoded value
-            public readonly ConcurrentDictionary<byte[], (AlgebraicValue, object)> decodedValues;
 
             public Type ClientTableType
             {
@@ -97,47 +114,10 @@ namespace SpacetimeDB
                 GetPrimaryKeyTypeFunc = (Func<AlgebraicType, AlgebraicType>)clientTableType.GetMethod("GetPrimaryKeyType", BindingFlags.Static | BindingFlags.Public)
                     ?.CreateDelegate(typeof(Func<AlgebraicType, AlgebraicType>));
                 entries = new Dictionary<byte[], (AlgebraicValue, object)>(new ByteArrayComparer());
-                decodedValues = new ConcurrentDictionary<byte[], (AlgebraicValue, object)>(new ByteArrayComparer());
-            }
-
-            public bool GetDecodedValue(byte[] pk, out AlgebraicValue value, out object obj)
-            {
-                if (decodedValues.TryGetValue(pk, out var decoded))
-                {
-                    value = decoded.Item1;
-                    obj = decoded.Item2;
-                    return true;
-                }
-
-                value = null;
-                obj = null;
-                return false;
             }
 
             /// <summary>
             /// Decodes the given AlgebraicValue into the out parameter `obj`.
-            /// </summary>
-            /// <param name="pk">The primary key of the row associated with `value`.</param>
-            /// <param name="value">The AlgebraicValue to decode.</param>
-            /// <param name="obj">The domain object for `value`</param>
-            public void SetDecodedValue(byte[] pk, AlgebraicValue value, out object obj)
-            {
-                if (decodedValues.TryGetValue(pk, out var existingObj))
-                {
-                    obj = existingObj.Item2;
-                }
-                else
-                {
-                    var decoded = (value, decoderFunc(value));
-                    decodedValues[pk] = decoded;
-                    obj = decoded.Item2;
-                }
-            }
-
-            /// <summary>
-            /// Decodes the given AlgebraicValue into the out parameter `obj`.
-            /// Does NOT cache the resulting value! This should only be used with rows
-            /// that don't participate in the usual client cache lifecycle, i.e. OneOffQuery.
             /// </summary>
             /// <param name="value">The AlgebraicValue to decode.</param>
             /// <param name="obj">The domain object for `value`</param>
@@ -149,38 +129,17 @@ namespace SpacetimeDB
             /// <summary>
             /// Inserts the value into the table. There can be no existing value with the provided pk.
             /// </summary>
-            /// <returns></returns>
-            public object InsertEntry(byte[] rowPk)
+            /// <returns>True if the row was inserted, false if the row wasn't inserted because it was a duplicate.</returns>
+            public bool InsertEntry(byte[] rowPk, AlgebraicValue value)
             {
-                if (entries.TryGetValue(rowPk, out var existingValue))
+                if (entries.ContainsKey(rowPk))
                 {
-                    // Debug.LogWarning($"We tried to insert a database row that already exists. table={Name} RowPK={Convert.ToBase64String(rowPk)}");
-                    return existingValue.Item2;
+                    return false;
                 }
-
-                if (GetDecodedValue(rowPk, out var value, out var obj))
-                {
-                    entries[rowPk] = (value, obj);
-                    return obj;
-                }
-
-                // Read failure
-                SpacetimeDBClient.instance.Logger.LogError(
-                    $"Read error when converting row value for table: {clientTableType.Name} rowPk={Convert.ToBase64String(rowPk)} (version issue?)");
-                return null;
-            }
-
-            /// <summary>
-            /// Updates an entry. Returns whether or not the update was successful. Updates only succeed if
-            /// a previous value was overwritten.
-            /// </summary>
-            /// <param name="pk">The primary key that uniquely identifies this row</param>
-            /// <param name="newValueByteString">The new for the table entry</param>
-            /// <returns>True when the old value was removed and the new value was inserted.</returns>
-            public bool UpdateEntry(ByteString pk, ByteString newValueByteString)
-            {
-                // We have to figure out if pk is going to change or not
-                throw new InvalidOperationException();
+               
+                // Insert the row into our table
+                entries[rowPk] = (value, decoderFunc(value));
+                return true;
             }
 
             /// <summary>
@@ -188,24 +147,16 @@ namespace SpacetimeDB
             /// </summary>
             /// <param name="rowPk">The primary key that uniquely identifies this row</param>
             /// <returns></returns>
-            public object DeleteEntry(byte[] rowPk)
+            public bool DeleteEntry(byte[] rowPk)
             {
                 if (entries.TryGetValue(rowPk, out var value))
                 {
                     entries.Remove(rowPk);
-                    return value.Item2;
-                }
-
-                // SpacetimeDB is asking us to delete something we don't have, this makes no sense. We can
-                // fabricate the deletion by trying to look it up in our local decode table.
-                if (decodedValues.TryGetValue(rowPk, out var decodedValue))
-                {
-                    SpacetimeDBClient.instance.Logger.LogWarning("Deleting value that we don't have (using cached value)");
-                    return decodedValue.Item2;
+                    return true;
                 }
 
                 SpacetimeDBClient.instance.Logger.LogWarning("Deleting value that we don't have (no cached value available)");
-                return null;
+                return false;
             }
 
             /// <summary>
@@ -235,23 +186,9 @@ namespace SpacetimeDB
                 return GetPrimaryKeyValueFunc != null ? GetPrimaryKeyValueFunc.Invoke(row) : null;
             }
 
-            public AlgebraicType GetPrimaryKeyType(AlgebraicType row)
+            public AlgebraicType GetPrimaryKeyType()
             {
-                return GetPrimaryKeyTypeFunc != null ? GetPrimaryKeyTypeFunc.Invoke(row) : null;
-            }
-
-            public bool ComparePrimaryKey(byte[] rowPk1, byte[] rowPk2)
-            {
-                if (!decodedValues.TryGetValue(rowPk1, out var v1))
-                {
-                    return false;
-                }
-                if (!decodedValues.TryGetValue(rowPk2, out var v2))
-                {
-                    return false;
-                }
-
-                return (bool)ComparePrimaryKeyFunc.Invoke(rowSchema, v1.Item1, v2.Item1);
+                return GetPrimaryKeyTypeFunc != null ? GetPrimaryKeyTypeFunc.Invoke(rowSchema) : null;
             }
         }
 
@@ -320,5 +257,7 @@ namespace SpacetimeDB
         }
 
         public IEnumerable<string> GetTableNames() => tables.Keys;
+        
+        public IEnumerable<TableCache> GetTables() => tables.Values;
     }
 }

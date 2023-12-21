@@ -52,9 +52,9 @@ namespace SpacetimeDB
     {
         private WebSocketConnectErrorEventHandler receiver;
         private WebSocketError? error;
-        private string errorMsg;
+        private string? errorMsg;
 
-        public OnConnectErrorMessage(WebSocketConnectErrorEventHandler receiver, WebSocketError? error, string errorMsg)
+        public OnConnectErrorMessage(WebSocketConnectErrorEventHandler receiver, WebSocketError? error, string? errorMsg)
         {
             this.receiver = receiver;
             this.error = error;
@@ -107,7 +107,7 @@ class OnSendErrorMessage : MainThreadDispatch
 
     public delegate void WebSocketCloseEventHandler(WebSocketCloseStatus? code, WebSocketError? error);
 
-    public delegate void WebSocketConnectErrorEventHandler(WebSocketError? error, string message);
+    public delegate void WebSocketConnectErrorEventHandler(WebSocketError? error, string? message);
     public delegate void WebSocketSendErrorEventHandler(Exception e);
 
     public struct ConnectOptions
@@ -175,6 +175,7 @@ class OnSendErrorMessage : MainThreadDispatch
                     // not a websocket happens when there is no module published under the address specified
                     message = $"{message} Did you forget to publish your module?";
                 }
+                _logger.LogException(ex);
                 dispatchQueue.Enqueue(new OnConnectErrorMessage(OnConnectError, ex.WebSocketErrorCode, message));
                 return;
             }

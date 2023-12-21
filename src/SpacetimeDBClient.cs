@@ -12,6 +12,8 @@ using System.Threading.Tasks;
 using ClientApi;
 using Newtonsoft.Json;
 using SpacetimeDB.SATS;
+using Channel = System.Threading.Channels.Channel;
+using Thread = System.Threading.Thread;
 
 namespace SpacetimeDB
 {
@@ -21,7 +23,8 @@ namespace SpacetimeDB
         {
             Insert,
             Delete,
-            Update
+            Update,
+            NoChange,
         }
 
         public class ReducerCallRequest
@@ -43,10 +46,12 @@ namespace SpacetimeDB
             public object oldValue;
             public byte[] deletedPk;
             public byte[] insertedPk;
+            public AlgebraicValue rowValue;
             public AlgebraicValue primaryKeyValue;
         }
 
-        public delegate void RowUpdate(string tableName, TableOp op, object oldValue, object newValue, SpacetimeDB.ReducerEventBase dbEvent);
+        public delegate void RowUpdate(string tableName, TableOp op, object oldValue, object newValue,
+            SpacetimeDB.ReducerEventBase dbEvent);
 
         /// <summary>
         /// Called when a connection is established to a spacetimedb instance.
@@ -98,13 +103,19 @@ namespace SpacetimeDB
         private SpacetimeDB.WebSocket webSocket;
         private bool connectionClosed;
         public static ClientCache clientDB;
-        public static Dictionary<string, Func<ClientApi.Event, bool>> reducerEventCache = new Dictionary<string, Func<ClientApi.Event, bool>>();
-        public static Dictionary<string, Action<ClientApi.Event>> deserializeEventCache = new Dictionary<string, Action<ClientApi.Event>>();
 
-        private static Dictionary<Guid, Channel<OneOffQueryResponse>> waitingOneOffQueries = new Dictionary<Guid, Channel<OneOffQueryResponse>>();
+        public static Dictionary<string, Func<ClientApi.Event, bool>> reducerEventCache =
+            new Dictionary<string, Func<ClientApi.Event, bool>>();
+
+        public static Dictionary<string, Action<ClientApi.Event>> deserializeEventCache =
+            new Dictionary<string, Action<ClientApi.Event>>();
+
+        private static Dictionary<Guid, Channel<OneOffQueryResponse>> waitingOneOffQueries =
+            new Dictionary<Guid, Channel<OneOffQueryResponse>>();
 
         private bool isClosing;
-        private Thread messageProcessThread;
+        private Thread networkMessageProcessThread;
+        private Thread stateDiffProcessThread;
 
         public static SpacetimeDBClient instance;
 
@@ -179,7 +190,7 @@ namespace SpacetimeDB
 
             var type = typeof(IDatabaseTable);
             var types = AppDomain.CurrentDomain.GetAssemblies().SelectMany(s => s.GetTypes())
-                                 .Where(p => type.IsAssignableFrom(p));
+                .Where(p => type.IsAssignableFrom(p));
             foreach (var @class in types)
             {
                 if (!@class.IsClass)
@@ -190,12 +201,12 @@ namespace SpacetimeDB
                 var algebraicTypeFunc = @class.GetMethod("GetAlgebraicType", BindingFlags.Static | BindingFlags.Public);
                 var algebraicValue = algebraicTypeFunc!.Invoke(null, null) as AlgebraicType;
                 var conversionFunc = @class.GetMethods()
-                                           .FirstOrDefault(a => a.Name == "op_Explicit" &&
-                                                                a.GetParameters().Length > 0 &&
-                                                                a.GetParameters()[0].ParameterType ==
-                                                                typeof(AlgebraicValue));
+                    .FirstOrDefault(a => a.Name == "op_Explicit" &&
+                                         a.GetParameters().Length > 0 &&
+                                         a.GetParameters()[0].ParameterType ==
+                                         typeof(AlgebraicValue));
                 clientDB.AddTable(@class, algebraicValue,
-                                  a => { return conversionFunc!.Invoke(null, new object[] { a }); });
+                    a => { return conversionFunc!.Invoke(null, new object[] { a }); });
             }
 
             var reducerType = FindReducerType();
@@ -207,13 +218,16 @@ namespace SpacetimeDB
                     if (methodInfo.GetCustomAttribute<ReducerCallbackAttribute>() is
                         { } reducerEvent)
                     {
-                        reducerEventCache.Add(reducerEvent.FunctionName, (Func<ClientApi.Event, bool>)methodInfo.CreateDelegate(typeof(Func<ClientApi.Event, bool>)));
+                        reducerEventCache.Add(reducerEvent.FunctionName,
+                            (Func<ClientApi.Event, bool>)methodInfo.CreateDelegate(
+                                typeof(Func<ClientApi.Event, bool>)));
                     }
 
                     if (methodInfo.GetCustomAttribute<DeserializeEventAttribute>() is
                         { } deserializeEvent)
                     {
-                        deserializeEventCache.Add(deserializeEvent.FunctionName, (Action<ClientApi.Event>)methodInfo.CreateDelegate(typeof(Action<ClientApi.Event>)));
+                        deserializeEventCache.Add(deserializeEvent.FunctionName,
+                            (Action<ClientApi.Event>)methodInfo.CreateDelegate(typeof(Action<ClientApi.Event>)));
                     }
                 }
             }
@@ -222,38 +236,40 @@ namespace SpacetimeDB
                 loggerToUse.LogError($"Could not find reducer type. Have you run spacetime generate?");
             }
 
-            _cancellationToken = _cancellationTokenSource.Token;
-            messageProcessThread = new Thread(ProcessMessages);
-            messageProcessThread.Start();
+            _preProcessCancellationToken = _preProcessCancellationTokenSource.Token;
+            networkMessageProcessThread = new Thread(PreProcessMessages);
+            networkMessageProcessThread.Start();
+
+            _stateDiffCancellationToken = _stateDiffCancellationTokenSource.Token;
+            stateDiffProcessThread = new Thread(ExecuteStateDiff);
+            stateDiffProcessThread.Start();
         }
 
-        struct ProcessedMessage
+        struct PreProcessedMessage
         {
             public Message message;
-            public IList<DbOp> dbOps;
+            public List<DbOp> dbOps;
+            public Dictionary<string, HashSet<byte[]>> inserts;
         }
 
-        private readonly BlockingCollection<byte[]> _messageQueue = new BlockingCollection<byte[]>(new ConcurrentQueue<byte[]>());
-        private readonly BlockingCollection<ProcessedMessage> _nextMessageQueue = new BlockingCollection<ProcessedMessage>(new ConcurrentQueue<ProcessedMessage>());
+        private readonly BlockingCollection<byte[]> _messageQueue =
+            new BlockingCollection<byte[]>(new ConcurrentQueue<byte[]>());
 
-        CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
-        CancellationToken _cancellationToken;
+        private readonly BlockingCollection<PreProcessedMessage> _preProcessedNetworkMessages =
+            new BlockingCollection<PreProcessedMessage>(new ConcurrentQueue<PreProcessedMessage>());
 
-        void ProcessMessages()
+        private CancellationTokenSource _preProcessCancellationTokenSource = new CancellationTokenSource();
+        private CancellationToken _preProcessCancellationToken;
+
+        void PreProcessMessages()
         {
             while (!isClosing)
             {
                 try
                 {
-                    var bytes = _messageQueue.Take(_cancellationToken);
-
-                    var (m, events) = PreProcessMessage(bytes);
-                    var processedMessage = new ProcessedMessage
-                    {
-                        message = m,
-                        dbOps = events,
-                    };
-                    _nextMessageQueue.Add(processedMessage);
+                    var bytes = _messageQueue.Take(_preProcessCancellationToken);
+                    var preprocessedMessage = PreProcessMessage(bytes);
+                    _preProcessedNetworkMessages.Add(preprocessedMessage, _preProcessCancellationToken);
                 }
                 catch (OperationCanceledException)
                 {
@@ -262,32 +278,107 @@ namespace SpacetimeDB
                 }
             }
 
-            (Message, List<DbOp>) PreProcessMessage(byte[] bytes)
+            PreProcessedMessage PreProcessMessage(byte[] bytes)
             {
                 var dbOps = new List<DbOp>();
-
-                // Used when convering matching Insert/Delete ops into Update
-                var insertOps = new List<DbOp>();
-
-                var message = ClientApi.Message.Parser.ParseFrom(bytes);
+                var message = Message.Parser.ParseFrom(bytes);
                 using var stream = new MemoryStream();
                 using var reader = new BinaryReader(stream);
+
+                // This is all of the inserts
+                Dictionary<string, HashSet<byte[]>> subscriptionInserts = null;
+                // All row updates that have a primary key, this contains inserts, deletes and updates
+                var primaryKeyChanges = new Dictionary<string, Dictionary<AlgebraicValue, DbOp>>();
+
+                Dictionary<AlgebraicValue, DbOp> GetPrimaryKeyLookup(string tableName, AlgebraicType schema)
+                {
+                    if (!primaryKeyChanges.TryGetValue(tableName, out var value))
+                    {
+                        value = new Dictionary<AlgebraicValue, DbOp>(new AlgebraicValue.AlgebraicValueComparer(schema));
+                        primaryKeyChanges[tableName] = value;
+                    }
+
+                    return value;
+                }
+
+                HashSet<byte[]> GetInsertHashSet(string tableName, int tableSize)
+                {
+                    if (!subscriptionInserts.TryGetValue(tableName, out var hashSet))
+                    {
+                        hashSet = new HashSet<byte[]>(capacity:tableSize, comparer: new ClientCache.TableCache.ByteArrayComparer());
+                        subscriptionInserts[tableName] = hashSet;
+                    }
+
+                    return hashSet;
+                }
 
                 SubscriptionUpdate subscriptionUpdate = null;
                 switch (message.TypeCase)
                 {
                     case ClientApi.Message.TypeOneofCase.SubscriptionUpdate:
                         subscriptionUpdate = message.SubscriptionUpdate;
+                        subscriptionInserts = new Dictionary<string, HashSet<byte[]>>(
+                            capacity: subscriptionUpdate.TableUpdates.Sum(a => a.TableRowOperations.Count));
+                        // First apply all of the state
+                        foreach (var update in subscriptionUpdate.TableUpdates)
+                        {
+                            var tableName = update.TableName;
+                            var hashSet = GetInsertHashSet(tableName, subscriptionUpdate.TableUpdates.Count);
+                            var table = clientDB.GetTable(tableName);
+                            if (table == null)
+                            {
+                                logger.LogError($"Unknown table name: {tableName}");
+                                continue;
+                            }
+
+                            foreach (var row in update.TableRowOperations)
+                            {
+                                var rowPk = row.RowPk.ToByteArray();
+                                var rowValue = row.Row.ToByteArray();
+                                stream.Position = 0;
+                                stream.Write(rowValue, 0, rowValue.Length);
+                                stream.Position = 0;
+                                stream.SetLength(rowValue.Length);
+                                var deserializedRow = AlgebraicValue.Deserialize(table.RowSchema, reader);
+                                if (deserializedRow == null)
+                                {
+                                    throw new Exception("Failed to deserialize row");
+                                }
+
+                                if (row.Op != TableRowOperation.Types.OperationType.Insert)
+                                {
+                                    logger.LogWarning("Non-insert during a subscription update!");
+                                    continue;
+                                }
+
+                                table.SetAndForgetDecodedValue(deserializedRow, out var obj);
+                                var op = new DbOp
+                                {
+                                    table = table,
+                                    deletedPk = null,
+                                    insertedPk = rowPk,
+                                    op = TableOp.Insert,
+                                    newValue = obj,
+                                    oldValue = null,
+                                    primaryKeyValue = null,
+                                    rowValue = deserializedRow,
+                                };
+
+                                if (!hashSet.Add(rowPk))
+                                {
+                                    logger.LogError($"Multiple of the same insert in the same subscription update: table={table.Name} rowPk={rowPk}");
+                                }
+                                else
+                                {
+                                    dbOps.Add(op);
+                                }
+                            }
+                        }
+
                         break;
+
                     case ClientApi.Message.TypeOneofCase.TransactionUpdate:
                         subscriptionUpdate = message.TransactionUpdate.SubscriptionUpdate;
-                        break;
-                }
-
-                switch (message.TypeCase)
-                {
-                    case ClientApi.Message.TypeOneofCase.SubscriptionUpdate:
-                    case ClientApi.Message.TypeOneofCase.TransactionUpdate:
                         // First apply all of the state
                         foreach (var update in subscriptionUpdate.TableUpdates)
                         {
@@ -299,9 +390,6 @@ namespace SpacetimeDB
                                 continue;
                             }
 
-                            var primaryKeyType = table.GetPrimaryKeyType(table.RowSchema);
-                            var deleteOps = new Dictionary<AlgebraicValue, DbOp>(new AlgebraicValue.AlgebraicValueComparer(primaryKeyType));
-                            insertOps.Clear();
                             foreach (var row in update.TableRowOperations)
                             {
                                 var rowPk = row.RowPk.ToByteArray();
@@ -310,95 +398,90 @@ namespace SpacetimeDB
                                 stream.Write(rowValue, 0, rowValue.Length);
                                 stream.Position = 0;
                                 stream.SetLength(rowValue.Length);
-                                var decodedRow = AlgebraicValue.Deserialize(table.RowSchema, reader);
-                                if (decodedRow == null)
+                                var deserializedRow = AlgebraicValue.Deserialize(table.RowSchema, reader);
+                                if (deserializedRow == null)
                                 {
                                     throw new Exception("Failed to deserialize row");
                                 }
 
-                                DbOp dbOp;
-                                AlgebraicValue primaryKeyValue = table.GetPrimaryKeyValue(decodedRow);
-                                if (row.Op == TableRowOperation.Types.OperationType.Delete)
-                                {
-                                    dbOp = new DbOp
-                                    {
-                                        table = table,
-                                        deletedPk = rowPk,
-                                        op = TableOp.Delete,
-                                        newValue = null,
-                                        // We cannot grab the old value here because there might be other
-                                        // pending operations that will execute before us. We should only
-                                        // set this value on the main thread where we know there are no other
-                                        // operations which could remove this value.
-                                        oldValue = null,
-                                        primaryKeyValue = primaryKeyValue
-                                    };
-                                }
-                                else
-                                {
-                                    // Skip this insert if we already have it
-                                    if (table.entries.ContainsKey(rowPk))
-                                    {
-                                        continue;
-                                    }
+                                var primaryKeyValue = table.GetPrimaryKeyValue(deserializedRow);
+                                var primaryKeyType = table.GetPrimaryKeyType();
+                                table.SetAndForgetDecodedValue(deserializedRow, out var obj);
 
-                                    table.SetDecodedValue(rowPk, decodedRow, out var obj);
-                                    dbOp = new DbOp
-                                    {
-                                        table = table,
-                                        insertedPk = rowPk,
-                                        op = TableOp.Insert,
-                                        newValue = obj,
-                                        oldValue = null,
-                                        primaryKeyValue = primaryKeyValue
-                                    };
-                                }
+                                var op = new DbOp
+                                {
+                                    table = table,
+                                    deletedPk =
+                                        row.Op == TableRowOperation.Types.OperationType.Delete ? rowPk : null,
+                                    insertedPk =
+                                        row.Op == TableRowOperation.Types.OperationType.Delete ? null : rowPk,
+                                    op = row.Op == TableRowOperation.Types.OperationType.Delete
+                                        ? TableOp.Delete
+                                        : TableOp.Insert,
+                                    newValue = row.Op == TableRowOperation.Types.OperationType.Delete ? null : obj,
+                                    oldValue = row.Op == TableRowOperation.Types.OperationType.Delete ? obj : null,
+                                    primaryKeyValue = primaryKeyValue,
+                                    rowValue = deserializedRow,
+                                };
 
                                 if (primaryKeyType != null)
                                 {
-                                    if (row.Op == TableRowOperation.Types.OperationType.Delete)
+                                    var primaryKeyLookup = GetPrimaryKeyLookup(tableName, primaryKeyType);
+                                    if (primaryKeyLookup.TryGetValue(primaryKeyValue, out var value))
                                     {
-                                        deleteOps[primaryKeyValue] = dbOp;
+                                        if (value.op == op.op || value.op == TableOp.Update)
+                                        {
+                                            logger.LogWarning($"Update with the same primary key was " +
+                                                              $"applied multiple times! tableName={tableName}");
+                                            // TODO(jdetter): Is this a correctable error? This would be a major error on the
+                                            // SpacetimeDB side.
+                                            continue;
+                                        }
+
+                                        var insertOp = op;
+                                        var deleteOp = value;
+                                        if (op.op == TableOp.Delete)
+                                        {
+                                            insertOp = value;
+                                            deleteOp = op;
+                                        }
+
+                                        primaryKeyLookup[primaryKeyValue] = new DbOp
+                                        {
+                                            table = insertOp.table,
+                                            op = TableOp.Update,
+                                            newValue = insertOp.newValue,
+                                            oldValue = deleteOp.oldValue,
+                                            deletedPk = deleteOp.deletedPk,
+                                            insertedPk = insertOp.insertedPk,
+                                            primaryKeyValue = insertOp.primaryKeyValue,
+                                            rowValue = insertOp.rowValue,
+                                        };
                                     }
                                     else
                                     {
-                                        insertOps.Add(dbOp);
+                                        primaryKeyLookup[primaryKeyValue] = op;
                                     }
                                 }
                                 else
                                 {
-                                    dbOps.Add(dbOp);
+                                    dbOps.Add(op);
                                 }
-                            }
-
-                            if (primaryKeyType != null)
-                            {
-                                // Replace Delete/Insert pairs with identical primary keys with an Update.
-                                //
-                                // !!TODO!!: Currently this code interprets Insert/Delete or Delete/Insert pairs as Updates.
-                                // Note that if a user inserts and then deletes a row with the same primary key in a
-                                // spacetimedb module, this is interpreted as an Update, while effectively it is a NoOp.
-                                for (var i = 0; i < insertOps.Count; i++)
-                                {
-                                    var insertOp = insertOps[i];
-                                    if (deleteOps.TryGetValue(insertOp.primaryKeyValue, out var deleteOp))
-                                    {
-                                        // We found an insert with a matching delete.
-                                        // Replace it with an update operation.
-                                        insertOps[i] = new DbOp
-                                        {
-                                            insertedPk = insertOp.insertedPk,
-                                            deletedPk = deleteOp.deletedPk,
-                                            table = insertOp.table,
-                                            op = TableOp.Update
-                                        };
-                                        deleteOps.Remove(insertOp.primaryKeyValue);
-                                    }
-                                }
-                                dbOps.AddRange(insertOps);
-                                dbOps.AddRange(deleteOps.Values);
                             }
                         }
+
+                        // Combine primary key updates and non-primary key updates
+                        dbOps.AddRange(primaryKeyChanges.Values.SelectMany(a => a.Values));
+
+                        // Convert the generic event arguments in to a domain specific event object, this gets fed back into
+                        // the message.TransactionUpdate.Event.FunctionCall.CallInfo field.
+                        if (message.TypeCase == Message.TypeOneofCase.TransactionUpdate &&
+                            deserializeEventCache.TryGetValue(message.TransactionUpdate.Event.FunctionCall.Reducer,
+                                out var deserializer))
+                        {
+                            deserializer.Invoke(message.TransactionUpdate.Event);
+                        }
+
                         break;
                     case ClientApi.Message.TypeOneofCase.IdentityToken:
                         break;
@@ -416,46 +499,97 @@ namespace SpacetimeDB
                             logger.LogError("Response to unknown one-off-query: " + messageId);
                             break;
                         }
+
                         waitingOneOffQueries[messageId].Writer.TryWrite(resp);
                         waitingOneOffQueries.Remove(messageId);
                         break;
                 }
 
-                if (message.TypeCase == Message.TypeOneofCase.SubscriptionUpdate)
-                {
-                    // NOTE: We are going to calculate a local state diff here. This is kind of expensive to do,
-                    // but keep in mind that we're still on the network thread so spending some extra time here
-                    // is acceptable.
-                    if (subscriptionUpdate!.TableUpdates.Any(
-                            a => a.TableRowOperations.Any(b => b.Op == TableRowOperation.Types.OperationType.Delete)))
-                    {
-                        logger.LogWarning(
-                            "We see delete events in our subscription update, this is unexpected. Likely you should update your SpacetimeDBUnitySDK.");
-                    }
 
-                    foreach (var tableUpdate in subscriptionUpdate.TableUpdates)
+                // logger.LogWarning($"Total Updates preprocessed: {totalUpdateCount}");
+                return new PreProcessedMessage { message = message, dbOps = dbOps, inserts = subscriptionInserts };
+            }
+        }
+
+        struct ProcessedMessage
+        {
+            public Message message;
+            public List<DbOp> dbOps;
+            public HashSet<byte[]> inserts;
+        }
+
+        // The lock that must be acquired in order to manipulate _stateDiffMessage
+        private object _stateDiffLock = new object();
+
+        // The message that has been preprocessed and has had its state diff calculated
+        private ProcessedMessage? _stateDiffMessage = null;
+
+        private CancellationTokenSource _stateDiffCancellationTokenSource = new CancellationTokenSource();
+        private CancellationToken _stateDiffCancellationToken;
+
+        void ExecuteStateDiff()
+        {
+            while (!isClosing)
+            {
+                try
+                {
+                    lock (_stateDiffLock)
                     {
-                        var clientTable = clientDB.GetTable(tableUpdate.TableName);
-                        var newPks = tableUpdate.TableRowOperations
-                                                .Where(a => a.Op == TableRowOperation.Types.OperationType.Insert)
-                                                .Select(b => b.RowPk.ToByteArray());
-                        var existingPks = clientTable.entries.Select(a => a.Key);
-                        dbOps.AddRange(existingPks.Except(newPks, new ClientCache.TableCache.ByteArrayComparer())
-                        .Select(a => new DbOp
+                        while (_stateDiffMessage != null)
                         {
-                            deletedPk = a,
-                            newValue = null,
-                            oldValue = clientTable.entries[a].Item2,
-                            op = TableOp.Delete,
-                            table = clientTable,
-                        }));
+                            Monitor.Wait(_stateDiffLock);
+                        }
+                    }
+                    
+                    var message = _preProcessedNetworkMessages.Take(_stateDiffCancellationToken);
+                    var (m, events) = CalculateStateDiff(message);
+                    
+                    lock (_stateDiffLock)
+                    {
+                        _stateDiffMessage = new ProcessedMessage { dbOps = events, message = m, };
                     }
                 }
-
-                if (message.TypeCase == Message.TypeOneofCase.TransactionUpdate &&
-                    deserializeEventCache.TryGetValue(message.TransactionUpdate.Event.FunctionCall.Reducer, out var deserializer))
+                catch (OperationCanceledException)
                 {
-                    deserializer.Invoke(message.TransactionUpdate.Event);
+                    // Normal shutdown
+                    return;
+                }
+            }
+
+            (Message, List<DbOp>) CalculateStateDiff(PreProcessedMessage preProcessedMessage)
+            {
+                var message = preProcessedMessage.message;
+                var dbOps = preProcessedMessage.dbOps;
+                // Perform the state diff, this has to be done on the main thread because we have to touch
+                // the client cache.
+                if (message.TypeCase == Message.TypeOneofCase.SubscriptionUpdate)
+                {
+                    foreach (var table in clientDB.GetTables())
+                    {
+                        foreach (var rowPk in table.entries.Keys)
+                        {
+                            if (!preProcessedMessage.inserts.TryGetValue(table.Name, out var hashSet))
+                            {
+                                continue;
+                            }
+                            
+                            if (!hashSet.Contains(rowPk))
+                            {
+                                // This is a row that we had before, but we do not have it now.
+                                // This must have been a delete.
+                                dbOps.Add(new DbOp
+                                {
+                                    table = table,
+                                    op = TableOp.Delete,
+                                    newValue = null,
+                                    oldValue = table.entries[rowPk].Item2,
+                                    deletedPk = rowPk,
+                                    insertedPk = null,
+                                    primaryKeyValue = null
+                                });
+                            }
+                        }
+                    }
                 }
 
                 return (message, dbOps);
@@ -467,7 +601,13 @@ namespace SpacetimeDB
             isClosing = true;
             connectionClosed = true;
             webSocket.Close();
-            _cancellationTokenSource.Cancel();
+            _preProcessCancellationTokenSource.Cancel();
+            _stateDiffCancellationTokenSource.Cancel();
+            lock (_stateDiffLock)
+            {
+                Monitor.Pulse(_stateDiffLock);
+            }
+
             webSocket = null;
         }
 
@@ -507,27 +647,50 @@ namespace SpacetimeDB
             });
         }
 
-        private void OnMessageProcessComplete(Message message, IList<DbOp> dbOps)
+        private void OnMessageProcessComplete(Message message, List<DbOp> dbOps)
         {
             switch (message.TypeCase)
             {
                 case Message.TypeOneofCase.SubscriptionUpdate:
                 case Message.TypeOneofCase.TransactionUpdate:
                     // First trigger OnBeforeDelete
-                    for (var i = 0; i < dbOps.Count; i++)
+                    foreach (var update in dbOps)
                     {
-                        // TODO: Reimplement updates when we add support for primary keys
-                        var update = dbOps[i];
-                        if (update.op == TableOp.Delete && update.table.TryGetValue(update.deletedPk, out var oldVal))
+                        if (update.op == TableOp.Delete)
                         {
                             try
                             {
-                                update.table.BeforeDeleteCallback?.Invoke(oldVal, message.TransactionUpdate?.Event);
+                                update.table.BeforeDeleteCallback?.Invoke(update.oldValue,
+                                    message.TransactionUpdate?.Event);
                             }
                             catch (Exception e)
                             {
                                 logger.LogException(e);
                             }
+                        }
+                    }
+
+                    void InternalDeleteCallback(DbOp op)
+                    {
+                        if (op.oldValue != null)
+                        {
+                            op.table.InternalValueDeletedCallback(op.oldValue);
+                        }
+                        else
+                        {
+                            logger.LogError("Delete issued, but no value was present!");
+                        }
+                    }
+
+                    void InternalInsertCallback(DbOp op)
+                    {
+                        if (op.newValue != null)
+                        {
+                            op.table.InternalValueInsertedCallback(op.newValue);
+                        }
+                        else
+                        {
+                            logger.LogError("Insert issued, but no value was present!");
                         }
                     }
 
@@ -539,27 +702,51 @@ namespace SpacetimeDB
                         switch (update.op)
                         {
                             case TableOp.Delete:
-                                update.oldValue = dbOps[i].table.DeleteEntry(update.deletedPk);
-                                if (update.oldValue != null)
+                                if (dbOps[i].table.DeleteEntry(update.deletedPk))
                                 {
-                                    update.table.InternalValueDeletedCallback(update.oldValue);
+                                    InternalDeleteCallback(update);
                                 }
-                                dbOps[i] = update;
+                                else
+                                {
+                                    var op = dbOps[i];
+                                    op.op = TableOp.NoChange;
+                                    dbOps[i] = op;
+                                }
                                 break;
                             case TableOp.Insert:
-                                update.newValue = dbOps[i].table.InsertEntry(update.insertedPk);
-                                update.table.InternalValueInsertedCallback(update.newValue);
-                                dbOps[i] = update;
+                                if (dbOps[i].table.InsertEntry(update.insertedPk, update.rowValue))
+                                {
+                                    InternalInsertCallback(update);
+                                }
+                                else
+                                {
+                                    var op = dbOps[i];
+                                    op.op = TableOp.NoChange;
+                                    dbOps[i] = op;
+                                }
                                 break;
                             case TableOp.Update:
-                                update.oldValue = dbOps[i].table.DeleteEntry(update.deletedPk);
-                                update.newValue = dbOps[i].table.InsertEntry(update.insertedPk);
-                                if (update.oldValue != null)
+                                if (dbOps[i].table.DeleteEntry(update.deletedPk))
                                 {
-                                    update.table.InternalValueDeletedCallback(update.oldValue);
+                                    InternalDeleteCallback(update);
                                 }
-                                update.table.InternalValueInsertedCallback(update.newValue);
-                                dbOps[i] = update;
+                                else
+                                {
+                                    var op = dbOps[i];
+                                    op.op = TableOp.NoChange;
+                                    dbOps[i] = op;
+                                }
+                                
+                                if (dbOps[i].table.InsertEntry(update.insertedPk, update.rowValue))
+                                {
+                                    InternalInsertCallback(update);
+                                }
+                                else
+                                {
+                                    var op = dbOps[i];
+                                    op.op = TableOp.NoChange;
+                                    dbOps[i] = op;
+                                }
                                 break;
                             default:
                                 throw new ArgumentOutOfRangeException();
@@ -584,7 +771,8 @@ namespace SpacetimeDB
                                     {
                                         if (dbOps[i].table.InsertCallback != null)
                                         {
-                                            dbOps[i].table.InsertCallback.Invoke(newValue, message.TransactionUpdate?.Event);
+                                            dbOps[i].table.InsertCallback.Invoke(newValue,
+                                                message.TransactionUpdate?.Event);
                                         }
                                     }
                                     catch (Exception e)
@@ -604,7 +792,6 @@ namespace SpacetimeDB
                                     {
                                         logger.LogException(e);
                                     }
-
                                 }
                                 else
                                 {
@@ -620,7 +807,8 @@ namespace SpacetimeDB
                                         {
                                             try
                                             {
-                                                dbOps[i].table.DeleteCallback.Invoke(oldValue, message.TransactionUpdate?.Event);
+                                                dbOps[i].table.DeleteCallback.Invoke(oldValue,
+                                                    message.TransactionUpdate?.Event);
                                             }
                                             catch (Exception e)
                                             {
@@ -656,7 +844,8 @@ namespace SpacetimeDB
                                         {
                                             if (dbOps[i].table.UpdateCallback != null)
                                             {
-                                                dbOps[i].table.UpdateCallback.Invoke(oldValue, newValue, message.TransactionUpdate?.Event);
+                                                dbOps[i].table.UpdateCallback.Invoke(oldValue, newValue,
+                                                    message.TransactionUpdate?.Event);
                                             }
                                         }
                                         catch (Exception e)
@@ -669,7 +858,7 @@ namespace SpacetimeDB
                                             if (dbOps[i].table.RowUpdatedCallback != null)
                                             {
                                                 dbOps[i].table.RowUpdatedCallback
-                                                        .Invoke(tableOp, oldValue, null, message.TransactionUpdate?.Event);
+                                                    .Invoke(tableOp, oldValue, newValue, message.TransactionUpdate?.Event);
                                             }
                                         }
                                         catch (Exception e)
@@ -684,30 +873,69 @@ namespace SpacetimeDB
 
                                     break;
                                 }
+                            case TableOp.NoChange:
+                                // noop
+                                break;
                             default:
                                 throw new ArgumentOutOfRangeException();
                         }
 
-                        onRowUpdate?.Invoke(tableName, tableOp, oldValue, newValue, message.Event?.FunctionCall.CallInfo);
+                        if (tableOp != TableOp.NoChange)
+                        {
+                            onRowUpdate?.Invoke(tableName, tableOp, oldValue, newValue,
+                                message.Event?.FunctionCall.CallInfo);
+                        }
                     }
 
                     switch (message.TypeCase)
                     {
                         case Message.TypeOneofCase.SubscriptionUpdate:
-                            onSubscriptionApplied?.Invoke();
+                            try
+                            {
+                                onSubscriptionApplied?.Invoke();
+                            }
+                            catch (Exception e)
+                            {
+                                logger.LogException(e);
+                            }
+
                             break;
                         case Message.TypeOneofCase.TransactionUpdate:
-                            onEvent?.Invoke(message.TransactionUpdate.Event);
+                            try
+                            {
+                                onEvent?.Invoke(message.TransactionUpdate.Event);
+                            }
+                            catch (Exception e)
+                            {
+                                logger.LogException(e);
+                            }
 
                             bool reducerFound = false;
                             var functionName = message.TransactionUpdate.Event.FunctionCall.Reducer;
                             if (reducerEventCache.TryGetValue(functionName, out var value))
                             {
-                                reducerFound = value.Invoke(message.TransactionUpdate.Event);
+                                try
+                                {
+                                    reducerFound = value.Invoke(message.TransactionUpdate.Event);
+                                }
+                                catch (Exception e)
+                                {
+                                    logger.LogException(e);
+                                }
                             }
-                            if (!reducerFound && message.TransactionUpdate.Event.Status == ClientApi.Event.Types.Status.Failed)
+
+                            if (!reducerFound && message.TransactionUpdate.Event.Status ==
+                                ClientApi.Event.Types.Status.Failed)
                             {
-                                onUnhandledReducerError?.Invoke(message.TransactionUpdate.Event.FunctionCall.CallInfo);
+                                try
+                                {
+                                    onUnhandledReducerError?.Invoke(message.TransactionUpdate.Event.FunctionCall
+                                        .CallInfo);
+                                }
+                                catch (Exception e)
+                                {
+                                    logger.LogException(e);
+                                }
                             }
 
                             break;
@@ -725,10 +953,28 @@ namespace SpacetimeDB
 
                     break;
                 case Message.TypeOneofCase.IdentityToken:
-                  onIdentityReceived?.Invoke(message.IdentityToken.Token, Identity.From(message.IdentityToken.Identity.ToByteArray()), (Address)Address.From(message.IdentityToken.Address.ToByteArray()));
+                    try
+                    {
+                        onIdentityReceived?.Invoke(message.IdentityToken.Token,
+                            Identity.From(message.IdentityToken.Identity.ToByteArray()),
+                            (Address)Address.From(message.IdentityToken.Address.ToByteArray()));
+                    }
+                    catch (Exception e)
+                    {
+                        logger.LogException(e);
+                    }
+
                     break;
                 case Message.TypeOneofCase.Event:
-                    onEvent?.Invoke(message.Event);
+                    try
+                    {
+                        onEvent?.Invoke(message.Event);
+                    }
+                    catch (Exception e)
+                    {
+                        logger.LogException(e);
+                    }
+
                     break;
             }
         }
@@ -742,6 +988,7 @@ namespace SpacetimeDB
                 logger.LogError("Cannot call reducer, not connected to server!");
                 return;
             }
+
             webSocket.Send(Encoding.ASCII.GetBytes("{ \"call\": " + json + " }"));
         }
 
@@ -752,6 +999,7 @@ namespace SpacetimeDB
                 logger.LogError("Cannot subscribe, not connected to server!");
                 return;
             }
+
             var json = JsonConvert.SerializeObject(queries);
             // should we use UTF8 here? ASCII is fragile.
             webSocket.Send(Encoding.ASCII.GetBytes("{ \"subscribe\": { \"query_strings\": " + json + " }}"));
@@ -770,8 +1018,9 @@ namespace SpacetimeDB
             string queryString = "SELECT * FROM " + type.Name + " " + query;
 
             // see: SpacetimeDB\crates\core\src\client\message_handlers.rs, enum Message<'a>
-            var serializedQuery = "{ \"one_off_query\": { \"message_id\": \"" + System.Convert.ToBase64String(messageId.ToByteArray()) +
-            "\", \"query_string\": " + JsonConvert.SerializeObject(queryString) + " } }";
+            var serializedQuery = "{ \"one_off_query\": { \"message_id\": \"" +
+                                  System.Convert.ToBase64String(messageId.ToByteArray()) +
+                                  "\", \"query_string\": " + JsonConvert.SerializeObject(queryString) + " } }";
             webSocket.Send(Encoding.UTF8.GetBytes(serializedQuery));
 
             // Suspend for an arbitrary amount of time
@@ -828,9 +1077,14 @@ namespace SpacetimeDB
         {
             webSocket.Update();
 
-            while (_nextMessageQueue.TryTake(out var nextMessage))
+            lock (_stateDiffLock)
             {
-                OnMessageProcessComplete(nextMessage.message, nextMessage.dbOps);
+                if (_stateDiffMessage != null)
+                {
+                    OnMessageProcessComplete(_stateDiffMessage.Value.message, _stateDiffMessage.Value.dbOps);
+                    _stateDiffMessage = null;
+                    Monitor.Pulse(_stateDiffLock);
+                }
             }
         }
     }
