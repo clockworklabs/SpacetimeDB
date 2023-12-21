@@ -39,7 +39,7 @@ impl Table {
         let row = self.rows.remove(row_id)?;
         for (cols, index) in self.indexes.iter_mut() {
             let col_value = row.project_not_empty(cols).unwrap();
-            index.delete(&col_value, row_id)
+            index.delete(&col_value, row_id);
         }
         Some(row)
     }
