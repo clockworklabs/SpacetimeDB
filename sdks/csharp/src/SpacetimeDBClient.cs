@@ -1072,18 +1072,25 @@ namespace SpacetimeDB
         }
 
         public bool IsConnected() => webSocket != null && webSocket.IsConnected;
-
+        
         public void Update()
         {
             webSocket.Update();
-
-            lock (_stateDiffLock)
+        
+            if (Monitor.TryEnter(_stateDiffLock))
             {
-                if (_stateDiffMessage != null)
+                try
                 {
-                    OnMessageProcessComplete(_stateDiffMessage.Value.message, _stateDiffMessage.Value.dbOps);
-                    _stateDiffMessage = null;
+                    if (_stateDiffMessage != null)
+                    {
+                        OnMessageProcessComplete(_stateDiffMessage.Value.message, _stateDiffMessage.Value.dbOps);
+                        _stateDiffMessage = null;
+                    }
+                }
+                finally
+                {
                     Monitor.Pulse(_stateDiffLock);
+                    Monitor.Exit(_stateDiffLock);
                 }
             }
         }
