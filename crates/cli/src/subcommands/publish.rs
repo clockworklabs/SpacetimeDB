@@ -140,7 +140,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let path_to_wasm = crate::tasks::build(path_to_project, skip_clippy, build_debug)?;
     let program_bytes = fs::read(path_to_wasm)?;
     println!(
-        "Uploading to host {} => {}",
+        "Uploading to {} => {}",
         server.unwrap_or(config.default_server_name().unwrap_or("<default>")),
         database_host
     );
