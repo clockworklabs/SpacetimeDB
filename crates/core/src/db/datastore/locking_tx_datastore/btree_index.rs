@@ -1,12 +1,12 @@
 use super::RowId;
 use crate::error::DBError;
+use core::ops::RangeBounds;
+use core::slice;
+use smallvec::SmallVec;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::data_key::ToDataKey;
-use spacetimedb_sats::{AlgebraicValue, DataKey, ProductValue};
-use std::{
-    collections::{btree_set, BTreeSet},
-    ops::{Bound, RangeBounds},
-};
+use spacetimedb_sats::{AlgebraicValue, ProductValue};
+use std::collections::btree_map::{BTreeMap, Range};
 
 /// ## Index Key Composition
 ///
@@ -28,39 +28,14 @@ use std::{
 /// [AlgebraicValue::I32(0)] = Row(ProductValue(...))
 /// [AlgebraicValue::Product(AlgebraicValue::I32(0), AlgebraicValue::I32(1))] = Row(ProductValue(...))
 /// ```
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
-struct IndexKey {
-    value: AlgebraicValue,
-    row_id: RowId,
-}
-
-impl IndexKey {
-    #[tracing::instrument(skip_all)]
-    pub(crate) fn from_row(value: &AlgebraicValue, row_id: DataKey) -> Self {
-        Self {
-            value: value.clone(),
-            row_id: RowId(row_id),
-        }
-    }
-}
-
-pub struct BTreeIndexIter<'a> {
-    iter: btree_set::Iter<'a, IndexKey>,
-}
-
-impl Iterator for BTreeIndexIter<'_> {
-    type Item = RowId;
-
-    #[tracing::instrument(skip_all)]
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|key| key.row_id)
-    }
-}
+type IndexKey = AlgebraicValue;
+type RowIds = SmallVec<[RowId; 1]>;
 
 /// An iterator for the rows that match a value [AlgebraicValue] on the
 /// [BTreeIndex]
 pub struct BTreeIndexRangeIter<'a> {
-    range_iter: btree_set::Range<'a, IndexKey>,
+    outer: Range<'a, AlgebraicValue, RowIds>,
+    inner: Option<slice::Iter<'a, RowId>>,
     num_keys_scanned: u64,
 }
 
@@ -69,11 +44,17 @@ impl<'a> Iterator for BTreeIndexRangeIter<'a> {
 
     #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(key) = self.range_iter.next() {
-            self.num_keys_scanned += 1;
-            Some(&key.row_id)
-        } else {
-            None
+        loop {
+            if let Some(inner) = self.inner.as_mut() {
+                if let Some(ptr) = inner.next() {
+                    self.num_keys_scanned += 1;
+                    return Some(ptr);
+                }
+            }
+
+            self.inner = None;
+            let (_, next) = self.outer.next()?;
+            self.inner = Some(next.iter());
         }
     }
 }
@@ -91,7 +72,7 @@ pub(crate) struct BTreeIndex {
     pub(crate) cols: ColList,
     pub(crate) name: String,
     pub(crate) is_unique: bool,
-    idx: BTreeSet<IndexKey>,
+    idx: BTreeMap<IndexKey, RowIds>,
 }
 
 impl BTreeIndex {
@@ -102,7 +83,7 @@ impl BTreeIndex {
             cols,
             name,
             is_unique,
-            idx: BTreeSet::new(),
+            idx: BTreeMap::new(),
         }
     }
 
@@ -114,15 +95,19 @@ impl BTreeIndex {
     #[tracing::instrument(skip_all)]
     pub(crate) fn insert(&mut self, row: &ProductValue) -> Result<(), DBError> {
         let col_value = self.get_fields(row)?;
-        let key = IndexKey::from_row(&col_value, row.to_data_key());
-        self.idx.insert(key);
+        self.idx.entry(col_value).or_default().push(RowId(row.to_data_key()));
         Ok(())
     }
 
     #[tracing::instrument(skip_all)]
     pub(crate) fn delete(&mut self, col_value: &AlgebraicValue, row_id: &RowId) {
-        let key = IndexKey::from_row(col_value, row_id.0);
-        self.idx.remove(&key);
+        let Some(entry) = self.idx.get_mut(col_value) else {
+            return;
+        };
+        let Some(pos) = entry.iter().position(|x| x == row_id) else {
+            return;
+        };
+        entry.swap_remove(pos);
     }
 
     #[tracing::instrument(skip_all)]
@@ -148,25 +133,13 @@ impl BTreeIndex {
         self.seek(value).next().is_some()
     }
 
-    /// Returns an iterator over the `RowId`s in the [BTreeIndex]
-    #[tracing::instrument(skip_all)]
-    pub(crate) fn scan(&self) -> BTreeIndexIter<'_> {
-        BTreeIndexIter { iter: self.idx.iter() }
-    }
-
     /// Returns an iterator over the [BTreeIndex] that yields all the `RowId`s
     /// that fall within the specified `range`.
     #[tracing::instrument(skip_all)]
     pub(crate) fn seek(&self, range: &impl RangeBounds<AlgebraicValue>) -> BTreeIndexRangeIter<'_> {
-        let map = |bound, datakey| match bound {
-            Bound::Included(x) => Bound::Included(IndexKey::from_row(x, datakey)),
-            Bound::Excluded(x) => Bound::Excluded(IndexKey::from_row(x, datakey)),
-            Bound::Unbounded => Bound::Unbounded,
-        };
-        let start = map(range.start_bound(), DataKey::min_datakey());
-        let end = map(range.end_bound(), DataKey::max_datakey());
         BTreeIndexRangeIter {
-            range_iter: self.idx.range((start, end)),
+            outer: self.idx.range((range.start_bound(), range.end_bound())),
+            inner: None,
             num_keys_scanned: 0,
         }
     }
