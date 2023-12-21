@@ -38,7 +38,7 @@ pub struct TxData {
 }
 
 pub trait Data: Into<ProductValue> {
-    fn view(&self) -> &ProductValue;
+    fn view(&self) -> Cow<'_, ProductValue>;
 }
 
 pub trait DataRow: Send + Sync {
@@ -46,7 +46,14 @@ pub trait DataRow: Send + Sync {
 
     type DataRef<'a>;
 
-    fn view_product_value<'a>(&self, data_ref: Self::DataRef<'a>) -> &'a ProductValue;
+    /// Return a `Cow`, which currently will always be `Borrowed`,
+    /// to avoid leaking the fact that the datastore stores `ProductValue`s
+    /// rather than some other format.
+    ///
+    /// This will not always be the case;
+    /// eventually, our datastore will store a more optimized representation,
+    /// and so will be unable to return a reference to a `ProductValue`.
+    fn view_product_value<'a>(&self, data_ref: Self::DataRef<'a>) -> Cow<'a, ProductValue>;
 }
 
 pub trait Tx {
@@ -138,7 +145,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         let table_rows = self.iter_mut_tx(ctx, tx, ST_TABLES_ID)?.collect::<Vec<_>>();
         for data_ref in table_rows {
             let data = self.view_product_value(data_ref);
-            let row = StTableRow::try_from(data)?;
+            let row = StTableRow::try_from(data.as_ref())?;
             tables.push(self.schema_for_table_mut_tx(tx, row.table_id)?);
         }
         Ok(tables)
