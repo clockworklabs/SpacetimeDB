@@ -1,0 +1,5 @@
+    Finished dev [unoptimized + debuginfo] target(s) in 0.41s
+     Running `target/debug/spacetime identity find '282cd61d067c2fc51763@clockworklabs.io'`
+Identity
+ IDENTITY  f83a387c4794771c5c285d6f7a958ea6951a7198f55ba6c8834d5df6a2d9d024
+ EMAIL     282cd61d067c2fc51763@clockworklabs.io

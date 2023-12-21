@@ -149,6 +149,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         database_host
     );
 
+    eprintln!("Publishing module...");
+
     let mut builder = reqwest::Client::new().post(Url::parse_with_params(
         format!("{}/database/publish", database_host).as_str(),
         query_params,
