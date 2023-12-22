@@ -72,6 +72,13 @@ pub fn cli() -> clap::Command {
                 .help("Skips running clippy on the module before generating (intended to speed up local iteration, not recommended for CI)"),
         )
         .arg(
+            Arg::new("clear")
+                .long("clear")
+                .short('c')
+                .action(SetTrue)
+                .help("Clears the output directory before generating"),
+        )
+        .arg(
             Arg::new("debug")
                 .long("debug")
                 .short('d')
@@ -89,6 +96,7 @@ pub fn exec(args: &clap::ArgMatches) -> anyhow::Result<()> {
     let namespace = args.get_one::<String>("namespace").unwrap();
     let skip_clippy = args.get_flag("skip_clippy");
     let build_debug = args.get_flag("debug");
+    let clear = args.get_flag("clear");
 
     let wasm_file = match wasm_file {
         Some(x) => x,
@@ -101,7 +109,7 @@ pub fn exec(args: &clap::ArgMatches) -> anyhow::Result<()> {
 Failed to compile module {:?}. See cargo errors above for more details.",
                     e,
                     project_path,
-                ))
+                ));
             }
         },
     };
@@ -111,6 +119,16 @@ Failed to compile module {:?}. See cargo errors above for more details.",
             "Output directory '{}' does not exist. Please create the directory and rerun this command.",
             out_dir.to_str().unwrap()
         ));
+    }
+
+    if clear {
+        for entry in fs::read_dir(&out_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_file() {
+                fs::remove_file(path)?;
+            }
+        }
     }
 
     let mut paths = vec![];
@@ -133,6 +151,7 @@ pub enum Language {
     Python,
     Rust,
 }
+
 impl clap::ValueEnum for Language {
     fn value_variants<'a>() -> &'a [Self] {
         &[Self::Csharp, Self::TypeScript, Self::Python, Self::Rust]
@@ -407,6 +426,7 @@ struct WasmCtx {
     mem: Option<Memory>,
     buffers: slab::Slab<Vec<u8>>,
 }
+
 impl WasmCtx {
     fn mem(&self) -> Memory {
         self.mem.unwrap()
@@ -426,6 +446,7 @@ impl WasmCtx {
 struct Memory {
     mem: wasmtime::Memory,
 }
+
 impl Memory {
     fn deref_slice<'a>(&self, store: &'a impl AsContext, offset: u32, len: u32) -> Option<&'a [u8]> {
         self.mem
