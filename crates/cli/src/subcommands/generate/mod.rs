@@ -91,6 +91,7 @@ pub fn cli() -> clap::Command {
                 .long("debug")
                 .short('d')
                 .action(SetTrue)
+                .help("Builds the module using debug instead of release (intended to speed up local iteration, not recommended for CI)"),
         )
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
