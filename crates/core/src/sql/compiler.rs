@@ -692,6 +692,7 @@ mod tests {
             panic!("unexpected expression: {:#?}", exp);
         };
 
+        dbg!(&query);
         assert_eq!(table_id, lhs_id);
         assert_eq!(query.len(), 2);
 
@@ -760,6 +761,7 @@ mod tests {
         else {
             panic!("unexpected expression: {:#?}", exp);
         };
+        dbg!(&query);
 
         assert_eq!(table_id, lhs_id);
         assert_eq!(query.len(), 2);
