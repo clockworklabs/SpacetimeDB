@@ -513,8 +513,6 @@ mod tests {
         let indexes = &[(0.into(), "a"), (1.into(), "b")];
         create_table_multi_index(&db, &mut tx, "test", schema, indexes)?;
 
-        // Note, order matters - the sargable predicate occurs first which
-        // means an index scan will be generated.
         let sql = "select * from test where b = 2 and a = 1";
         let CrudExpr::Query(QueryExpr {
             source: _,
@@ -648,7 +646,6 @@ mod tests {
         else {
             panic!("Expected QueryExpr");
         };
-        dbg!(&ops);
         assert_eq!(2, ops.len());
 
         assert_index_scan(
@@ -692,7 +689,6 @@ mod tests {
             panic!("unexpected expression: {:#?}", exp);
         };
 
-        dbg!(&query);
         assert_eq!(table_id, lhs_id);
         assert_eq!(query.len(), 2);
 
@@ -761,8 +757,6 @@ mod tests {
         else {
             panic!("unexpected expression: {:#?}", exp);
         };
-        dbg!(&query);
-
         assert_eq!(table_id, lhs_id);
         assert_eq!(query.len(), 2);
 
@@ -927,7 +921,6 @@ mod tests {
             panic!("unexpected result from compilation: {:?}", exp);
         };
 
-        dbg!(&query);
         assert_eq!(table_id, lhs_id);
         assert_eq!(query.len(), 2);
 
