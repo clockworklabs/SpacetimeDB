@@ -84,7 +84,7 @@ pub fn cli() -> clap::Command {
                 .long("force")
                 .action(SetTrue)
                 .requires("delete_files")
-                .help("If delete-files is set, this flag will not prompt before deleting files"),
+                .help("delete-files without prompting first. Useful for scripts."),
         )
         .arg(
             Arg::new("debug")
