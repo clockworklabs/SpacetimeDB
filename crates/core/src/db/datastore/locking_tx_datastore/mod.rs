@@ -2922,8 +2922,8 @@ impl traits::MutProgrammable for Locking {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::datastore::Result;
     use crate::db::datastore::traits::MutTx as _;
+    use crate::db::datastore::Result;
     use crate::error::IndexError;
     use itertools::Itertools;
     use spacetimedb_lib::error::ResultTest;

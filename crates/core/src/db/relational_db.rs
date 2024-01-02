@@ -276,7 +276,7 @@ impl RelationalDB {
         self.inner.begin_mut_tx()
     }
 
-    // TODO(shub): name this as per decided convention (mut_tx/ tx).     
+    // TODO(shub): name this as per decided convention (mut_tx/ tx).
     #[tracing::instrument(skip_all)]
     pub fn begin_read_tx(&self) -> Tx {
         log::trace!("BEGIN TX");

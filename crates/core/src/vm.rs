@@ -651,7 +651,7 @@ pub(crate) mod tests {
         let db = &mut p.db;
         match p.tx {
             TxMode::MutTx(tx) => create_table_with_rows(db, tx, table_name, schema, rows),
-            TxMode::Tx(tx) => panic!("tx type should be mutable")
+            TxMode::Tx(tx) => panic!("tx type should be mutable"),
         }
     }
 
@@ -667,7 +667,7 @@ pub(crate) mod tests {
 
         let mut tx = stdb.begin_tx();
         let ctx = ExecutionContext::default();
-                let tx_mode = &mut TxMode::MutTx(&mut tx);
+        let tx_mode = &mut TxMode::MutTx(&mut tx);
         let p = &mut DbProgram::new(&ctx, &stdb, tx_mode, AuthCtx::for_testing());
 
         let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
@@ -717,7 +717,7 @@ pub(crate) mod tests {
 
         let mut tx = stdb.begin_tx();
         let ctx = ExecutionContext::default();
-                let tx_mode = &mut TxMode::MutTx(&mut tx);
+        let tx_mode = &mut TxMode::MutTx(&mut tx);
         let p = &mut DbProgram::new(&ctx, &stdb, tx_mode, AuthCtx::for_testing());
 
         let q = query(&st_table_schema()).with_select_cmp(
