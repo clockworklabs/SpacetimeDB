@@ -29,6 +29,11 @@ use std::collections::btree_map::{BTreeMap, Range};
 /// [AlgebraicValue::Product(AlgebraicValue::I32(0), AlgebraicValue::I32(1))] = Row(ProductValue(...))
 /// ```
 type IndexKey = AlgebraicValue;
+
+/// A sorted collection of row ids.
+///
+/// This is `Vec<_>` but we allow a single element to be stored inline
+/// to improve performance for the common case of one element.
 type RowIds = SmallVec<[RowId; 1]>;
 
 /// An iterator for the rows that match a value [AlgebraicValue] on the
@@ -93,21 +98,31 @@ impl BTreeIndex {
     }
 
     #[tracing::instrument(skip_all)]
-    pub(crate) fn insert(&mut self, row: &ProductValue) -> Result<(), DBError> {
+    pub(crate) fn insert(&mut self, row: &ProductValue) -> Result<bool, DBError> {
+        let row_id = RowId(row.to_data_key());
+
         let col_value = self.get_fields(row)?;
-        self.idx.entry(col_value).or_default().push(RowId(row.to_data_key()));
-        Ok(())
+        let entry = self.idx.entry(col_value).or_default();
+        // Use binary search to maintain the sort order.
+        // This is used to determine in `O(log(entry.len()))` whether `row_id` was already present.
+        let Err(idx) = entry.binary_search(&row_id) else {
+            return Ok(false);
+        };
+        entry.insert(idx, row_id);
+        Ok(true)
     }
 
     #[tracing::instrument(skip_all)]
-    pub(crate) fn delete(&mut self, col_value: &AlgebraicValue, row_id: &RowId) {
-        let Some(entry) = self.idx.get_mut(col_value) else {
-            return;
-        };
-        let Some(pos) = entry.iter().position(|x| x == row_id) else {
-            return;
-        };
-        entry.swap_remove(pos);
+    pub(crate) fn delete(&mut self, col_value: &AlgebraicValue, row_id: &RowId) -> bool {
+        if let Some(entry) = self.idx.get_mut(col_value) {
+            // The `entry` is sorted so we can binary search.
+            if let Ok(pos) = entry.binary_search(&row_id) {
+                // Maintain the sorted order. Don't use `swap_remove`!
+                entry.remove(pos);
+                return true;
+            }
+        }
+        false
     }
 
     #[tracing::instrument(skip_all)]
@@ -146,10 +161,14 @@ impl BTreeIndex {
 
     /// Construct the [BTreeIndex] from the rows.
     #[tracing::instrument(skip_all)]
-    pub(crate) fn build_from_rows<'a>(&mut self, rows: impl Iterator<Item = &'a ProductValue>) -> Result<(), DBError> {
+    pub(crate) fn build_from_rows<'a>(
+        &mut self,
+        rows: impl Iterator<Item = &'a ProductValue>,
+    ) -> Result<bool, DBError> {
+        let mut all_inserted = true;
         for row in rows {
-            self.insert(row)?;
+            all_inserted &= self.insert(row)?;
         }
-        Ok(())
+        Ok(all_inserted)
     }
 }
