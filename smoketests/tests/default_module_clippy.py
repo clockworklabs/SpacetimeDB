@@ -9,4 +9,4 @@ class ClippyDefaultModule(Smoketest):
     def test_default_module_clippy_check(self):
         """Ensure that the default rust module has no clippy errors or warnings"""
 
-        subprocess.check_call(["cargo", "clippy", "--", "-Dwarnings"], cwd=self.project_dir)
+        subprocess.check_call(["cargo", "clippy", "--", "-Dwarnings"], cwd=self.project_path)
