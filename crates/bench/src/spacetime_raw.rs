@@ -117,7 +117,7 @@ impl BenchDatabase for SpacetimeRaw {
         let col: ColId = column_index.into();
         let ctx = ExecutionContext::default();
         self.db.with_auto_commit(&ctx, |tx| {
-            for row in self.db.iter_by_col_eq(&ctx, tx, *table_id, col, value)? {
+            for row in self.db.iter_by_col_eq_mut(&ctx, tx, *table_id, col, value)? {
                 black_box(row);
             }
             Ok(())

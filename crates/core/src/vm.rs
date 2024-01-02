@@ -649,7 +649,10 @@ pub(crate) mod tests {
         rows: &[ProductValue],
     ) -> ResultTest<TableId> {
         let db = &mut p.db;
-        create_table_with_rows(db, p.tx, table_name, schema, rows)
+        match p.tx {
+            TxMode::MutTx(tx) => create_table_with_rows(db, tx, table_name, schema, rows),
+            TxMode::Tx(tx) => panic!("tx type should be mutable")
+        }
     }
 
     #[test]
@@ -664,7 +667,8 @@ pub(crate) mod tests {
 
         let mut tx = stdb.begin_tx();
         let ctx = ExecutionContext::default();
-        let p = &mut DbProgram::new(&ctx, &stdb, &mut tx, AuthCtx::for_testing());
+                let tx_mode = &mut TxMode::MutTx(&mut tx);
+        let p = &mut DbProgram::new(&ctx, &stdb, tx_mode, AuthCtx::for_testing());
 
         let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row = product!(1u64, "health");
@@ -713,7 +717,8 @@ pub(crate) mod tests {
 
         let mut tx = stdb.begin_tx();
         let ctx = ExecutionContext::default();
-        let p = &mut DbProgram::new(&ctx, &stdb, &mut tx, AuthCtx::for_testing());
+                let tx_mode = &mut TxMode::MutTx(&mut tx);
+        let p = &mut DbProgram::new(&ctx, &stdb, tx_mode, AuthCtx::for_testing());
 
         let q = query(&st_table_schema()).with_select_cmp(
             OpCmp::Eq,
@@ -745,7 +750,8 @@ pub(crate) mod tests {
 
         let mut tx = stdb.begin_tx();
         let ctx = ExecutionContext::default();
-        let p = &mut DbProgram::new(&ctx, &stdb, &mut tx, AuthCtx::for_testing());
+        let tx_mode = &mut TxMode::MutTx(&mut tx);
+        let p = &mut DbProgram::new(&ctx, &stdb, tx_mode, AuthCtx::for_testing());
 
         let q = query(&st_columns_schema())
             .with_select_cmp(
@@ -792,8 +798,8 @@ pub(crate) mod tests {
         let mut tx = db.begin_tx();
         let index = IndexDef::btree("idx_1".into(), ColId(0), true);
         let index_id = db.create_index(&mut tx, table_id, index)?;
-
-        let p = &mut DbProgram::new(&ctx, &db, &mut tx, AuthCtx::for_testing());
+        let tx_mode = &mut TxMode::MutTx(&mut tx);
+        let p = &mut DbProgram::new(&ctx, &db, tx_mode, AuthCtx::for_testing());
 
         let q = query(&st_indexes_schema()).with_select_cmp(
             OpCmp::Eq,
@@ -827,7 +833,8 @@ pub(crate) mod tests {
 
         let mut tx = db.begin_tx();
         let ctx = ExecutionContext::default();
-        let p = &mut DbProgram::new(&ctx, &db, &mut tx, AuthCtx::for_testing());
+        let tx_mode = &mut TxMode::MutTx(&mut tx);
+        let p = &mut DbProgram::new(&ctx, &db, tx_mode, AuthCtx::for_testing());
 
         let q = query(&st_sequences_schema()).with_select_cmp(
             OpCmp::Eq,

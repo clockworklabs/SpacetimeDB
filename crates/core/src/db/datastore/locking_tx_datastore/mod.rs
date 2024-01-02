@@ -2923,6 +2923,7 @@ impl traits::MutProgrammable for Locking {
 mod tests {
     use super::*;
     use crate::db::datastore::Result;
+    use crate::db::datastore::traits::MutTx as _;
     use crate::error::IndexError;
     use itertools::Itertools;
     use spacetimedb_lib::error::ResultTest;

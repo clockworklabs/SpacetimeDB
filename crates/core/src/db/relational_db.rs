@@ -839,7 +839,7 @@ mod tests {
         let mut tx = stdb.begin_tx();
         let schema = TableDef::from_product("MyTable", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         let table_id = stdb.create_table(&mut tx, schema)?;
-        let t_id = stdb.table_id_from_name(&tx, "MyTable")?;
+        let t_id = stdb.table_id_from_name_mut(&tx, "MyTable")?;
         assert_eq!(t_id, Some(table_id));
         Ok(())
     }
@@ -851,7 +851,7 @@ mod tests {
         let mut tx = stdb.begin_tx();
         let schema = TableDef::from_product("MyTable", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         stdb.create_table(&mut tx, schema)?;
-        let table_id = stdb.table_id_from_name(&tx, "MyTable")?.unwrap();
+        let table_id = stdb.table_id_from_name_mut(&tx, "MyTable")?.unwrap();
         let schema = stdb.schema_for_table_mut(&tx, table_id)?;
         let col = schema.columns().iter().find(|x| x.col_name == "my_col").unwrap();
         assert_eq!(col.col_pos, 0.into());
@@ -884,7 +884,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(1)])?;
 
         let mut rows = stdb
-            .iter(&ExecutionContext::default(), &tx, table_id)?
+            .iter_mut(&ExecutionContext::default(), &tx, table_id)?
             .map(|r| *r.view().elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
         rows.sort();
@@ -909,7 +909,7 @@ mod tests {
 
         let tx = stdb.begin_tx();
         let mut rows = stdb
-            .iter(&ExecutionContext::default(), &tx, table_id)?
+            .iter_mut(&ExecutionContext::default(), &tx, table_id)?
             .map(|r| *r.view().elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
         rows.sort();
@@ -932,7 +932,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(1)])?;
 
         let mut rows = stdb
-            .iter_by_col_range(
+            .iter_by_col_range_mut(
                 &ExecutionContext::default(),
                 &tx,
                 table_id,
@@ -963,7 +963,7 @@ mod tests {
 
         let tx = stdb.begin_tx();
         let mut rows = stdb
-            .iter_by_col_range(
+            .iter_by_col_range_mut(
                 &ExecutionContext::default(),
                 &tx,
                 table_id,
@@ -1013,7 +1013,7 @@ mod tests {
 
         let tx = stdb.begin_tx();
         let mut rows = stdb
-            .iter(&ctx, &tx, table_id)?
+            .iter_mut(&ctx, &tx, table_id)?
             .map(|r| *r.view().elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
         rows.sort();
@@ -1049,7 +1049,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(0)])?;
 
         let mut rows = stdb
-            .iter_by_col_range(
+            .iter_by_col_range_mut(
                 &ExecutionContext::default(),
                 &tx,
                 table_id,
@@ -1080,7 +1080,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(6)])?;
 
         let mut rows = stdb
-            .iter_by_col_range(
+            .iter_by_col_range_mut(
                 &ExecutionContext::default(),
                 &tx,
                 table_id,
@@ -1134,7 +1134,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(0)])?;
 
         let mut rows = stdb
-            .iter_by_col_range(
+            .iter_by_col_range_mut(
                 &ExecutionContext::default(),
                 &tx,
                 table_id,
@@ -1158,7 +1158,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(0)])?;
 
         let mut rows = stdb
-            .iter_by_col_range(
+            .iter_by_col_range_mut(
                 &ExecutionContext::default(),
                 &tx,
                 table_id,
@@ -1191,7 +1191,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(1)])?;
 
         let mut rows = stdb
-            .iter_by_col_range(
+            .iter_by_col_range_mut(
                 &ExecutionContext::default(),
                 &tx,
                 table_id,
@@ -1274,7 +1274,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(0)])?;
 
         let mut rows = stdb
-            .iter_by_col_range(
+            .iter_by_col_range_mut(
                 &ExecutionContext::default(),
                 &tx,
                 table_id,
@@ -1333,21 +1333,21 @@ mod tests {
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         let indexes = stdb
-            .iter(&ctx, &tx, ST_INDEXES_ID)?
+            .iter_mut(&ctx, &tx, ST_INDEXES_ID)?
             .map(|x| StIndexRow::try_from(x.view()).unwrap().to_owned())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(indexes.len(), 4, "Wrong number of indexes");
 
         let sequences = stdb
-            .iter(&ctx, &tx, ST_SEQUENCES_ID)?
+            .iter_mut(&ctx, &tx, ST_SEQUENCES_ID)?
             .map(|x| StSequenceRow::try_from(x.view()).unwrap().to_owned())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(sequences.len(), 1, "Wrong number of sequences");
 
         let constraints = stdb
-            .iter(&ctx, &tx, ST_CONSTRAINTS_ID)?
+            .iter_mut(&ctx, &tx, ST_CONSTRAINTS_ID)?
             .map(|x| StConstraintRow::try_from(x.view()).unwrap().to_owned())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
@@ -1356,21 +1356,21 @@ mod tests {
         stdb.drop_table(&mut tx, table_id)?;
 
         let indexes = stdb
-            .iter(&ctx, &tx, ST_INDEXES_ID)?
+            .iter_mut(&ctx, &tx, ST_INDEXES_ID)?
             .map(|x| StIndexRow::try_from(x.view()).unwrap().to_owned())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(indexes.len(), 0, "Wrong number of indexes DROP");
 
         let sequences = stdb
-            .iter(&ctx, &tx, ST_SEQUENCES_ID)?
+            .iter_mut(&ctx, &tx, ST_SEQUENCES_ID)?
             .map(|x| StSequenceRow::try_from(x.view()).unwrap().to_owned())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(sequences.len(), 0, "Wrong number of sequences DROP");
 
         let constraints = stdb
-            .iter(&ctx, &tx, ST_CONSTRAINTS_ID)?
+            .iter_mut(&ctx, &tx, ST_CONSTRAINTS_ID)?
             .map(|x| StConstraintRow::try_from(x.view()).unwrap().to_owned())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
@@ -1407,7 +1407,7 @@ mod tests {
         assert_eq!(Some("YourTable"), table_name);
         // Also make sure we've removed the old ST_TABLES_ID row
         let mut n = 0;
-        for row in stdb.iter(&ctx, &tx, ST_TABLES_ID)? {
+        for row in stdb.iter_mut(&ctx, &tx, ST_TABLES_ID)? {
             let table = StTableRow::try_from(row.view())?;
             if table.table_id == table_id {
                 n += 1;
@@ -1455,7 +1455,7 @@ mod tests {
 
         let ctx = ExecutionContext::default();
 
-        let IterByColEq::Index(mut iter) = stdb.iter_by_col_eq(&ctx, &tx, table_id, cols, value)? else {
+        let IterByColEq::Index(mut iter) = stdb.iter_by_col_eq_mut(&ctx, &tx, table_id, cols, value)? else {
             panic!("expected index iterator");
         };
 
@@ -1535,7 +1535,7 @@ mod tests {
         fn balance(ctx: &ExecutionContext, db: &RelationalDB, table_id: TableId) -> ResultTest<u64> {
             let balance = db.with_auto_commit(ctx, |tx| -> ResultTest<u64> {
                 let last = db
-                    .iter(ctx, tx, table_id)?
+                    .iter_mut(ctx, tx, table_id)?
                     .last()
                     .map(|row| row.view().field_as_u64(0, None))
                     .transpose()?
