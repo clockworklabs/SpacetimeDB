@@ -237,7 +237,7 @@ impl TxId {
         for data_ref in self.iter_by_col_eq(
             &ctx,
             &ST_CONSTRAINTS_ID,
-            NonEmpty::new(StIndexFields::TableId.col_id()),
+            NonEmpty::new(StConstraintFields::TableId.col_id()),
             table_id.into(),
         )? {
             let row = data_ref.view();
@@ -283,7 +283,7 @@ impl TxId {
         for data_ref in self.iter_by_col_eq(
             &ctx,
             &ST_INDEXES_ID,
-            NonEmpty::new(StConstraintFields::TableId.col_id()),
+            NonEmpty::new(StIndexFields::TableId.col_id()),
             table_id.into(),
         )? {
             let row = data_ref.view();
