@@ -83,13 +83,13 @@ pub fn execute_sql(
     let ctx = ExecutionContext::sql(db.address(), query_debug_info);
     let mut result = Vec::with_capacity(total);
     match ast.iter().all(|expr| matches!(expr, CrudExpr::Query(_))) {
-        true => db.with_auto_commit(&ctx, |mut_tx| {
+        false => db.with_auto_commit(&ctx, |mut_tx| {
             let mut tx: TxMode = mut_tx.into();
             let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
             let p = &mut DbProgram::new(&ctx, db, &mut tx, auth);
             collect_result(&mut result, run_ast(p, q).into())
         }),
-        false => db.with_read_only(&ctx, |tx| {
+        true => db.with_read_only(&ctx, |tx| {
             let mut tx: TxMode = tx.into();
             let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
             let p = &mut DbProgram::new(&ctx, db, &mut tx, auth);

@@ -583,7 +583,6 @@ impl StandaloneEnv {
             Ok(maybe_hash) => {
                 // Release tx due to locking semantics and acquire a control db
                 // lock instead.
-                // Verify this
                 stdb.rollback_read_tx(&cx, tx);
                 let lock = self.lock_database_instance_for_update(instance.id)?;
 

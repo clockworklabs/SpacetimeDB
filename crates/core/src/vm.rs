@@ -365,7 +365,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
                     Ok(Code::Pass)
                 }
             },
-            TxMode::Tx(_) => Err(ErrorVm::Unsupported("Read tx".to_owned())),
+            TxMode::Tx(_) => unreachable!("mutable operation is invalid with read tx"),
         }
     }
 
@@ -379,7 +379,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
                     Ok(Code::Value(count.into()))
                 }
             },
-            TxMode::Tx(_) => Err(ErrorVm::Unsupported("Read tx".to_owned())),
+            TxMode::Tx(_) => unreachable!("mutable operation is invalid with read tx"),
         }
     }
 
@@ -401,7 +401,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
                 self.db.create_table(tx, table)?;
                 Ok(Code::Pass)
             }
-            TxMode::Tx(_) => Err(ErrorVm::Unsupported("Read tx".to_owned())),
+            TxMode::Tx(_) => unreachable!("mutable operation is invalid with read tx"),
         }
     }
 
@@ -432,7 +432,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
                 }
                 Ok(Code::Pass)
             }
-            TxMode::Tx(_) => Err(ErrorVm::Unsupported("Read tx".to_owned())),
+            TxMode::Tx(_) => unreachable!("mutable operation is invalid with read tx"),
         }
     }
 }

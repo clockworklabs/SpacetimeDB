@@ -272,7 +272,7 @@ impl RelationalDB {
     /// state. See also [`Self::with_auto_commit`].
     #[tracing::instrument(skip_all)]
     pub fn begin_tx(&self) -> MutTx {
-        log::trace!("BEGIN Mut TX");
+        log::trace!("BEGIN MUT TX");
         self.inner.begin_mut_tx()
     }
 
@@ -285,7 +285,7 @@ impl RelationalDB {
 
     #[tracing::instrument(skip_all)]
     pub fn rollback_tx(&self, ctx: &ExecutionContext, tx: MutTx) {
-        log::trace!("ROLLBACK Mut TX");
+        log::trace!("ROLLBACK MUT TX");
         self.inner.rollback_mut_tx(ctx, tx)
     }
 
@@ -297,7 +297,7 @@ impl RelationalDB {
 
     #[tracing::instrument(skip_all)]
     pub fn commit_tx(&self, ctx: &ExecutionContext, tx: MutTx) -> Result<Option<(TxData, Option<usize>)>, DBError> {
-        log::trace!("COMMIT TX");
+        log::trace!("COMMIT MUT TX");
         if let Some(tx_data) = self.inner.commit_mut_tx(ctx, tx)? {
             let bytes_written = self
                 .commit_log
