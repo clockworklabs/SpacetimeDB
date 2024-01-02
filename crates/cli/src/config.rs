@@ -144,13 +144,22 @@ impl RawConfig {
         RawConfig {
             default_server: Some(DEFAULT_HOST_NICKNAME.to_string()),
             identity_configs: Vec::new(),
-            server_configs: vec![ServerConfig {
-                default_identity: None,
-                host: DEFAULT_HOST.to_string(),
-                protocol: DEFAULT_PROTOCOL.to_string(),
-                nickname: Some(DEFAULT_HOST_NICKNAME.to_string()),
-                ecdsa_public_key: None,
-            }],
+            server_configs: vec![
+                ServerConfig {
+                    default_identity: None,
+                    host: DEFAULT_HOST.to_string(),
+                    protocol: DEFAULT_PROTOCOL.to_string(),
+                    nickname: Some(DEFAULT_HOST_NICKNAME.to_string()),
+                    ecdsa_public_key: None,
+                },
+                ServerConfig {
+                    default_identity: None,
+                    host: "testnet.spacetimedb.com".to_string(),
+                    protocol: "https".to_string(),
+                    nickname: Some("testnet".to_string()),
+                    ecdsa_public_key: None,
+                },
+            ],
         }
     }
 
