@@ -651,7 +651,7 @@ pub(crate) mod tests {
         let db = &mut p.db;
         match p.tx {
             TxMode::MutTx(tx) => create_table_with_rows(db, tx, table_name, schema, rows),
-            TxMode::Tx(tx) => panic!("tx type should be mutable"),
+            TxMode::Tx(_) => panic!("tx type should be mutable"),
         }
     }
 

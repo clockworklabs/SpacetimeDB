@@ -604,8 +604,8 @@ mod tests {
             ins_row: ProductValue,
         ) -> ResultTest<()> {
             let mut tx = db.begin_tx();
-            delete_row(&db, &mut tx, rhs_id, del_row);
-            insert_row(&db, &mut tx, rhs_id, ins_row)?;
+            delete_row(db, &mut tx, rhs_id, del_row);
+            insert_row(db, &mut tx, rhs_id, ins_row)?;
             db.commit_tx(&ExecutionContext::default(), tx)?;
             Ok(())
         }

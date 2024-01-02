@@ -103,9 +103,9 @@ pub fn execute_sql(
 /// Run the `SQL` string using the `auth` credentials
 #[tracing::instrument(skip_all)]
 pub fn run(db: &RelationalDB, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
-    let query_info = &QueryDebugInfo::from_source(&sql_text);
+    let query_info = &QueryDebugInfo::from_source(sql_text);
     let ctx = &ExecutionContext::sql(db.address(), Some(query_info));
-    let ast = db.with_read_only(&ctx, |tx| compile_sql(db, tx, sql_text))?;
+    let ast = db.with_read_only(ctx, |tx| compile_sql(db, tx, sql_text))?;
     execute_sql(db, ast, Some(&QueryDebugInfo::from_source(sql_text)), auth)
 }
 
@@ -225,7 +225,7 @@ pub(crate) mod tests {
     #[test]
     fn test_select_catalog() -> ResultTest<()> {
         let (db, _, _tmp_dir) = create_data(1)?;
-        let mut tx = db.begin_read_tx();
+        let tx = db.begin_read_tx();
         let schema = db.schema_for_table(&tx, ST_TABLES_ID).unwrap().into_owned();
         db.rollback_read_tx(&ExecutionContext::internal(db.address()), tx);
         let result = run_for_testing(

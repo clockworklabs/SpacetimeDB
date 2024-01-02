@@ -255,7 +255,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         log::debug!("One-off query: {query}");
         let query_info = &QueryDebugInfo::from_source(&query);
         let ctx = &ExecutionContext::sql(db.address(), Some(query_info));
-        let compiled = db.with_read_only(&ctx, |tx| {
+        let compiled = db.with_read_only(ctx, |tx| {
             sql::compiler::compile_sql(db, tx, &query)?
                 .into_iter()
                 .map(|expr| {
