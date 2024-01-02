@@ -140,7 +140,7 @@ impl Typespace {
     fn inline_typerefs_in_ref(&mut self, r: AlgebraicTypeRef) -> Result<&AlgebraicType, TypeRefError> {
         let resolved_ty = match self.get_mut(r) {
             None => return Err(TypeRefError::InvalidTypeRef(r)),
-            Some(ty) if matches!(ty, AlgebraicType::Ref(_)) => return Err(TypeRefError::RecursiveTypeRef(r)),
+            Some(AlgebraicType::Ref(_)) => return Err(TypeRefError::RecursiveTypeRef(r)),
             Some(resolved_ty) => resolved_ty,
         };
         // First, swap the type with a reference.
