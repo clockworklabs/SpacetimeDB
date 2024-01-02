@@ -2580,7 +2580,7 @@ impl TxDatastore for Locking {
         let table_rows = self.iter_tx(ctx, tx, ST_TABLES_ID)?.collect::<Vec<_>>();
         for data_ref in table_rows {
             let data = self.view_product_value(data_ref);
-            let row = StTableRow::try_from(data)?;
+            let row = StTableRow::try_from(data.as_ref())?;
             tables.push(self.schema_for_table_tx(tx, row.table_id)?);
         }
         Ok(tables)
