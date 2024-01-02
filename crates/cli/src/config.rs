@@ -6,7 +6,6 @@ use spacetimedb::auth::identity::decode_token;
 use spacetimedb_lib::Identity;
 use std::{
     fs,
-    io::{Read, Write},
     path::{Path, PathBuf},
 };
 
@@ -789,34 +788,27 @@ impl Config {
         &self.home.server_configs
     }
 
-    fn find_config_filename(config_dir: &PathBuf) -> Option<&'static str> {
-        let read_dir = fs::read_dir(config_dir).unwrap();
-        let filenames = [DOT_SPACETIME_FILENAME, SPACETIME_FILENAME, CONFIG_FILENAME];
-        let mut config_filename = None;
-        'outer: for path in read_dir {
-            for name in filenames {
-                if name == path.as_ref().unwrap().file_name().to_str().unwrap() {
-                    config_filename = Some(name);
-                    break 'outer;
-                }
-            }
-        }
-        config_filename
+    fn find_config_path(config_dir: &Path) -> Option<PathBuf> {
+        [DOT_SPACETIME_FILENAME, SPACETIME_FILENAME, CONFIG_FILENAME]
+            .iter()
+            .map(|filename| config_dir.join(filename))
+            .find(|path| path.exists())
     }
 
     fn load_raw(config_dir: PathBuf, is_project: bool) -> RawConfig {
         // If a config file overload has been specified, use that instead
         if !is_project {
             if let Some(config_path) = std::env::var_os("SPACETIME_CONFIG_FILE") {
-                return Self::load_from_file(config_path.as_ref());
+                return Self::load_from_file(config_path.as_ref())
+                    .inspect_err(|e| eprintln!("SPACETIME_CONFIG_FILE does not point to a valid config file: {e:#}"))
+                    .unwrap_or_default();
             }
         }
         if !config_dir.exists() {
             fs::create_dir_all(&config_dir).unwrap();
         }
 
-        let config_filename = Self::find_config_filename(&config_dir);
-        let Some(config_filename) = config_filename else {
+        let Some(config_path) = Self::find_config_path(&config_dir) else {
             return if is_project {
                 // Return an empty config without creating a file.
                 RawConfig::default()
@@ -828,21 +820,14 @@ impl Config {
             };
         };
 
-        let config_path = config_dir.join(config_filename);
         Self::load_from_file(&config_path)
+            .inspect_err(|e| eprintln!("config file is invalid: {e:#}"))
+            .unwrap_or_default()
     }
 
-    fn load_from_file(config_path: &Path) -> RawConfig {
-        let mut file = fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .read(true)
-            .open(config_path)
-            .unwrap();
-
-        let mut text = String::new();
-        file.read_to_string(&mut text).unwrap();
-        toml::from_str(&text).unwrap()
+    fn load_from_file(config_path: &Path) -> anyhow::Result<RawConfig> {
+        let text = fs::read_to_string(config_path)?;
+        Ok(toml::from_str(&text)?)
     }
 
     pub fn load() -> Self {
@@ -870,8 +855,10 @@ impl Config {
     }
 
     pub fn save(&self) {
-        let config_path = if let Some(config_path) = std::env::var_os("SPACETIME_CONFIG_FILE") {
-            PathBuf::from(&config_path)
+        let config_var = std::env::var_os("SPACETIME_CONFIG_FILE");
+        let config_var_exists = config_var.is_some();
+        let config_path = if let Some(config_path) = config_var {
+            PathBuf::from(config_path)
         } else {
             let home_dir = dirs::home_dir().unwrap();
             let config_dir = home_dir.join(HOME_CONFIG_DIR);
@@ -879,21 +866,16 @@ impl Config {
                 fs::create_dir_all(&config_dir).unwrap();
             }
 
-            let config_filename = Self::find_config_filename(&config_dir).unwrap_or(CONFIG_FILENAME);
-            config_dir.join(config_filename)
+            Self::find_config_path(&config_dir).unwrap_or_else(|| config_dir.join(CONFIG_FILENAME))
         };
 
-        let mut file = fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .open(config_path)
-            .unwrap();
+        let config = toml::to_string_pretty(&self.home).unwrap();
 
-        let str = toml::to_string_pretty(&self.home).unwrap();
-
-        file.set_len(0).unwrap();
-        file.write_all(str.as_bytes()).unwrap();
-        file.sync_all().unwrap();
+        if let Err(e) = std::fs::write(&config_path, &config) {
+            if !config_var_exists {
+                eprintln!("could not save config file: {e}")
+            }
+        }
     }
 
     pub fn get_default_identity_config(&self, server: Option<&str>) -> anyhow::Result<&IdentityConfig> {

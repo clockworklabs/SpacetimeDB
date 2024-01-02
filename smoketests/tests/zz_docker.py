@@ -1,5 +1,6 @@
-from .. import Smoketest, run_cmd
+from .. import Smoketest, run_cmd, requires_docker
 from urllib.request import urlopen, URLError
+
 
 def restart_docker():
     # Behold!
@@ -33,6 +34,8 @@ def ping():
         raise Exception(f"Server at {host} not responding")
     print(f"Server up after {tries} try")
 
+
+@requires_docker
 class DockerRestartModule(Smoketest):
     # Note: creating indexes on `Person`
     # exercises more possible failure cases when replaying after restart
@@ -78,6 +81,8 @@ pub fn say_hello() {
         self.assertIn("Hello, Robert!", logs)
         self.assertIn("Hello, World!", logs)
 
+
+@requires_docker
 class DockerRestartSql(Smoketest):
     # Note: creating indexes on `Person`
     # exercises more possible failure cases when replaying after restart

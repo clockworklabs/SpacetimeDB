@@ -11,12 +11,13 @@ unittest-parallel command-line script main module
 import argparse
 from contextlib import contextmanager
 from io import StringIO
-import multiprocessing
 import os
 import sys
 import tempfile
 import time
 import unittest
+import concurrent.futures
+import threading
 
 import coverage
 
@@ -77,7 +78,7 @@ def main(**kwargs):
 
     process_count = max(0, args.jobs)
     if process_count == 0:
-        process_count = multiprocessing.cpu_count()
+        process_count = os.cpu_count()
 
     # Create the temporary directory (for coverage files)
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -103,7 +104,7 @@ def main(**kwargs):
 
         # Report test suites and processes
         print(
-            f'Running {len(test_suites)} test suites ({discover_suite.countTestCases()} total tests) across {process_count} processes',
+            f'Running {len(test_suites)} test suites ({discover_suite.countTestCases()} total tests) across {process_count} threads',
             file=sys.stderr
         )
         if args.verbose > 1:
@@ -111,30 +112,38 @@ def main(**kwargs):
 
         # Run the tests in parallel
         start_time = time.perf_counter()
-        multiprocessing_context = multiprocessing.get_context(method='spawn')
-        maxtasksperchild = 1 if args.disable_process_pooling else None
-        with multiprocessing_context.Pool(process_count, maxtasksperchild=maxtasksperchild) as pool, \
-             multiprocessing.Manager() as manager:
-            test_manager = ParallelTestManager(manager, args, temp_dir)
-            results = pool.map(test_manager.run_tests, test_suites)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=process_count) as executor:
+            test_manager = ParallelTestManager(args, temp_dir)
+
+            futures = [executor.submit(test_manager.run_tests, suite) for suite in discover_suite]
+
+            # Aggregate parallel test run results
+            tests_run = 0
+            errors = []
+            failures = []
+            skipped = 0
+            expected_failures = 0
+            unexpected_successes = 0
+            
+            for fut in concurrent.futures.as_completed(futures):
+                try:
+                    result, stream = fut.result()
+                except concurrent.futures.CancelledError:
+                    continue
+                tests_run += result.testsRun
+                errors.extend(ParallelTestManager._format_error(result, error) for error in result.errors)
+                failures.extend(ParallelTestManager._format_error(result, failure) for failure in result.failures)
+                skipped += len(result.skipped)
+                expected_failures += len(result.expectedFailures)
+                unexpected_successes += len(result.unexpectedSuccesses)
+                if result.shouldStop:
+                    for fut in futures:
+                        fut.cancel()
+
+        is_success = not(errors or failures or unexpected_successes)
+
         stop_time = time.perf_counter()
         test_duration = stop_time - start_time
-
-        # Aggregate parallel test run results
-        tests_run = 0
-        errors = []
-        failures = []
-        skipped = 0
-        expected_failures = 0
-        unexpected_successes = 0
-        for result in results:
-            tests_run += result[0]
-            errors.extend(result[1])
-            failures.extend(result[2])
-            skipped += result[3]
-            expected_failures += result[4]
-            unexpected_successes += result[5]
-        is_success = not(errors or failures or unexpected_successes)
 
         # Compute test info
         infos = []
@@ -267,20 +276,16 @@ def _iter_test_cases(test_suite):
 
 class ParallelTestManager:
 
-    def __init__(self, manager, args, temp_dir):
+    def __init__(self, args, temp_dir):
         self.args = args
         self.temp_dir = temp_dir
-        self.failfast = manager.Event()
 
     def run_tests(self, test_suite):
-        # Fail fast?
-        if self.failfast.is_set():
-            return [0, [], [], 0, 0, 0]
-
         # Run unit tests
         with _coverage(self.args, self.temp_dir):
+            stream = StringIO()
             runner = unittest.TextTestRunner(
-                stream=StringIO(),
+                stream=stream,
                 resultclass=ParallelTextTestResult,
                 verbosity=self.args.verbose,
                 failfast=self.args.failfast,
@@ -288,19 +293,8 @@ class ParallelTestManager:
             )
             result = runner.run(test_suite)
 
-            # Set failfast, if necessary
-            if result.shouldStop:
-                self.failfast.set()
-
             # Return (test_count, errors, failures, skipped_count, expected_failure_count, unexpected_success_count)
-            return (
-                result.testsRun,
-                [self._format_error(result, error) for error in result.errors],
-                [self._format_error(result, failure) for failure in result.failures],
-                len(result.skipped),
-                len(result.expectedFailures),
-                len(result.unexpectedSuccesses)
-            )
+            return result, stream
 
     @staticmethod
     def _format_error(result, error):

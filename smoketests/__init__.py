@@ -9,10 +9,12 @@ import string
 import subprocess
 import json
 import sys
+import shutil
 
 TEST_DIR = Path(__file__).parent
 STDB_DIR = TEST_DIR.parent
 SPACETIME_BIN = STDB_DIR / "target/debug/spacetime"
+TEMPLATE_TARGET_DIR = STDB_DIR / "target/_stdbsmoketests"
 STDB_CONFIG = TEST_DIR / "config.toml"
 
 TEMPLATE_LIB_RS = open(STDB_DIR / "crates/cli/src/subcommands/project/rust/lib._rs").read()
@@ -21,6 +23,25 @@ bindings_path = (STDB_DIR / "crates/bindings").absolute()
 TEMPLATE_CARGO_TOML = (re.compile(r"^spacetimedb\s*=.*$", re.M) \
     .sub(f'spacetimedb = {{ path = "{bindings_path}" }}', TEMPLATE_CARGO_TOML))
 
+HAVE_DOCKER = False
+
+
+def build_template_target():
+    if not TEMPLATE_TARGET_DIR.exists():
+        print("Building base compilation artifacts")
+        class BuildModule(Smoketest):
+            AUTOPUBLISH = False
+
+        BuildModule.setUpClass()
+        env = { **os.environ, "CARGO_TARGET_DIR": TEMPLATE_TARGET_DIR }
+        spacetime("build", "-Sd", BuildModule.project_path, env=env, capture_stderr=False)
+        BuildModule.tearDownClass()
+
+
+def requires_docker(item):
+    if HAVE_DOCKER:
+        return item
+    return unittest.skip("docker not available")(item)
 
 def random_string(k=20):
     return ''.join(random.choices(string.ascii_letters, k=k))
@@ -72,7 +93,10 @@ class Smoketest(unittest.TestCase):
 
     # helpers
 
-    spacetime = staticmethod(spacetime)
+    @classmethod
+    def spacetime(cls, *args, **kwargs):
+        kwargs.setdefault("env", os.environ.copy())["SPACETIME_CONFIG_FILE"] = str(cls.config_path)
+        return spacetime(*args, **kwargs)
 
     def _check_published(self):
         if not hasattr(self, "address"):
@@ -98,11 +122,12 @@ class Smoketest(unittest.TestCase):
             *(["-c"] if clear else []),
             capture_stderr=capture_stderr,
         )
-        self.address = domain if domain is not None else re.search(r"address: ([0-9a-fA-F]+)", publish_output)[1]
+        self.resolved_address = re.search(r"address: ([0-9a-fA-F]+)", publish_output)[1]
+        self.address = domain if domain is not None else self.resolved_address
     
     @classmethod
     def reset_config(cls):
-        open(cls.project_path / "config.toml", "w").write(open(STDB_CONFIG).read())
+        shutil.copy(STDB_CONFIG, cls.config_path)
 
     def fingerprint(self):
         # Fetch the server's fingerprint; required for `identity list`.
@@ -134,11 +159,13 @@ class Smoketest(unittest.TestCase):
     def setUpClass(cls):
         cls._project_dir = tempfile.TemporaryDirectory()
         cls.project_path = Path(cls._project_dir.name)
+        cls.config_path = cls.project_path / "config.toml"
         cls.reset_config()
-        os.environ["SPACETIME_CONFIG_FILE"] = str(cls.project_path / "config.toml")
         open(cls.project_path / "Cargo.toml", "w").write(cls.cargo_manifest(TEMPLATE_CARGO_TOML))
         os.mkdir(cls.project_path / "src")
         cls.write_module_code(cls.MODULE_CODE)
+        if TEMPLATE_TARGET_DIR.exists():
+            shutil.copytree(TEMPLATE_TARGET_DIR, cls.project_path / "target")
 
         if cls.AUTOPUBLISH:
             print(f"Compiling module for {cls.__qualname__}...", file=sys.__stderr__)
@@ -155,16 +182,13 @@ class Smoketest(unittest.TestCase):
     
     @classmethod
     def tearDownClass(cls):
-        try:
-            if hasattr(cls, "address"):
-                try:
-                    # TODO: save the credentials in publish_module()
-                    cls.spacetime("delete", cls.address, capture_stderr=False)
-                except Exception:
-                    pass
-                cls._project_dir.cleanup()
-        finally:
-            os.environ["SPACETIME_CONFIG_FILE"] = ""
+        if hasattr(cls, "address"):
+            try:
+                # TODO: save the credentials in publish_module()
+                cls.spacetime("delete", cls.address, capture_stderr=False)
+            except Exception:
+                pass
+        cls._project_dir.cleanup()
 
     # def setUp(self):
     #     if self.AUTOPUBLISH:
