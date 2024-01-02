@@ -45,7 +45,7 @@ impl DatabaseUpdate {
     pub fn from_writes(stdb: &RelationalDB, tx_data: &TxData) -> Self {
         let mut map: HashMap<TableId, Vec<TableOp>> = HashMap::new();
         //TODO: This should be wrapped with .auto_commit
-        let tx = stdb.begin_tx();
+        let tx = stdb.begin_mut_tx();
         for record in tx_data.records.iter() {
             let op = match record.op {
                 TxOp::Delete => 0,

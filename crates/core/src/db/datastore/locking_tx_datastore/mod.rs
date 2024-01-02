@@ -3262,7 +3262,7 @@ mod tests {
     }
 
     //TODO(shub), begin_tx is not yet implemented for Tx, creating this utility for tests.
-    fn begin_tx(db: &Locking) -> TxId {
+    fn begin_mut_tx(db: &Locking) -> TxId {
         let timer = Instant::now();
 
         let committed_state_shared_lock = db.committed_state.read_arc();
@@ -3826,8 +3826,8 @@ mod tests {
         datastore.commit_mut_tx_for_test(tx)?;
 
         // create multiple read only tx, and use them together.
-        let read_tx_1 = begin_tx(&datastore);
-        let read_tx_2 = begin_tx(&datastore);
+        let read_tx_1 = begin_mut_tx(&datastore);
+        let read_tx_2 = begin_mut_tx(&datastore);
         let rows = &[row1, row2];
         assert_eq!(&all_rows_tx(&read_tx_2, table_id), rows);
         assert_eq!(&all_rows_tx(&read_tx_1, table_id), rows);

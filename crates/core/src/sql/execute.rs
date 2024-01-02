@@ -132,7 +132,7 @@ pub(crate) mod tests {
     fn create_data(total_rows: u64) -> ResultTest<(RelationalDB, MemTable, TempDir)> {
         let (db, tmp_dir) = make_test_db()?;
 
-        let mut tx = db.begin_tx();
+        let mut tx = db.begin_mut_tx();
         let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let rows: Vec<_> = (1..=total_rows).map(|i| product!(i, format!("health{i}"))).collect();
         create_table_with_rows(&db, &mut tx, "inventory", head.clone(), &rows)?;
@@ -225,7 +225,7 @@ pub(crate) mod tests {
     #[test]
     fn test_select_catalog() -> ResultTest<()> {
         let (db, _, _tmp_dir) = create_data(1)?;
-        let tx = db.begin_read_tx();
+        let tx = db.begin_tx();
         let schema = db.schema_for_table(&tx, ST_TABLES_ID).unwrap().into_owned();
         db.rollback_read_tx(&ExecutionContext::internal(db.address()), tx);
         let result = run_for_testing(
@@ -356,7 +356,7 @@ pub(crate) mod tests {
 
         let (db, _tmp_dir) = make_test_db()?;
 
-        let mut tx = db.begin_tx();
+        let mut tx = db.begin_mut_tx();
         create_table_with_rows(
             &db,
             &mut tx,
@@ -582,7 +582,7 @@ pub(crate) mod tests {
             is_autoinc: bool,
             idx_uniq: Option<bool>,
         ) -> ResultTest<()> {
-            let tx = db.begin_read_tx();
+            let tx = db.begin_tx();
             let t = db.table_id_from_name(&tx, table_name)?.unwrap();
             let t = db.schema_for_table(&tx, t)?;
 
