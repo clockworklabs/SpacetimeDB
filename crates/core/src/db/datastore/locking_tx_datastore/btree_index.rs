@@ -116,7 +116,7 @@ impl BTreeIndex {
     pub(crate) fn delete(&mut self, col_value: &AlgebraicValue, row_id: &RowId) -> bool {
         if let Some(entry) = self.idx.get_mut(col_value) {
             // The `entry` is sorted so we can binary search.
-            if let Ok(pos) = entry.binary_search(&row_id) {
+            if let Ok(pos) = entry.binary_search(row_id) {
                 // Maintain the sorted order. Don't use `swap_remove`!
                 entry.remove(pos);
                 return true;
