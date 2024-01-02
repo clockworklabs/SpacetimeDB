@@ -36,6 +36,7 @@ def build_template_target():
         env = { **os.environ, "CARGO_TARGET_DIR": TEMPLATE_TARGET_DIR }
         spacetime("build", "-Sd", BuildModule.project_path, env=env, capture_stderr=False)
         BuildModule.tearDownClass()
+        BuildModule.doClassCleanups()
 
 
 def requires_docker(item):
@@ -157,8 +158,7 @@ class Smoketest(unittest.TestCase):
     
     @classmethod
     def setUpClass(cls):
-        cls._project_dir = tempfile.TemporaryDirectory()
-        cls.project_path = Path(cls._project_dir.name)
+        cls.project_path = Path(cls.enterClassContext(tempfile.TemporaryDirectory()))
         cls.config_path = cls.project_path / "config.toml"
         cls.reset_config()
         open(cls.project_path / "Cargo.toml", "w").write(cls.cargo_manifest(TEMPLATE_CARGO_TOML))
@@ -179,7 +179,7 @@ class Smoketest(unittest.TestCase):
                 self.spacetime("delete", self.address, capture_stderr=False)
             except Exception:
                 pass
-    
+
     @classmethod
     def tearDownClass(cls):
         if hasattr(cls, "address"):
@@ -188,7 +188,6 @@ class Smoketest(unittest.TestCase):
                 cls.spacetime("delete", cls.address, capture_stderr=False)
             except Exception:
                 pass
-        cls._project_dir.cleanup()
 
     # def setUp(self):
     #     if self.AUTOPUBLISH:

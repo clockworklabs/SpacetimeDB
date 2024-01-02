@@ -19,12 +19,10 @@ def check_docker():
     docker_ps = (json.loads(line) for line in docker_ps.splitlines())
     for docker_container in docker_ps:
         if "node" in docker_container["Image"]:
-            break
+            return docker_container["Names"]
     else:
         print("Docker container not found, is SpacetimeDB running?")
         exit(1)
-
-    check_call(["docker", "logs", docker_container["Names"]])
 
 class ExclusionaryTestLoader(unittest.TestLoader):
     def __init__(self, excludelist=()):
@@ -69,7 +67,9 @@ def main():
     os.environ["SPACETIME_SKIP_CLIPPY"] = "1"
 
     if args.docker:
-        check_docker()
+        docker_container = check_docker()
+        # have docker logs print concurrently with the test output
+        subprocess.Popen(["docker", "logs", "-f", docker_container])
         smoketests.HAVE_DOCKER = True
 
     add_prefix = lambda testlist: [TESTPREFIX + test for test in testlist]
@@ -89,7 +89,7 @@ def main():
         from . import unittest_parallel
         unittest_parallel.main(buffer=buffer, verbose=verbosity, level="class", discovered_tests=tests, jobs=args.jobs)
     else:
-        unittest.TextTestRunner(buffer=buffer, verbosity=verbosity).run(tests)
+        result = unittest.TextTestRunner(buffer=buffer, verbosity=verbosity).run(tests)
 
 
 if __name__ == '__main__':
