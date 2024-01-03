@@ -61,7 +61,7 @@ impl From<sled::Error> for Error {
 impl ControlDb {
     pub fn new() -> Result<Self> {
         let config = sled::Config::default()
-            .path(stdb_path("control_node/control_db"))
+            .path(stdb_path("data/control_node/control_db"))
             .flush_every_ms(Some(50))
             .mode(sled::Mode::HighThroughput);
         let db = config.open()?;
