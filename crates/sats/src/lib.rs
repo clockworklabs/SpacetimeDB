@@ -176,11 +176,11 @@ impl<'a, T: ?Sized> WithTypespace<'a, T> {
     /// Returns the `AlgebraicType` that `r` resolves to in the context of our `Typespace`.
     ///
     /// Panics if `r` is not known by our `Typespace`.
-    pub fn resolve(&self, r: AlgebraicTypeRef) -> WithTypespace<'a, AlgebraicType> {
-        WithTypespace {
+    pub fn resolve(&self, r: AlgebraicTypeRef) -> Option<WithTypespace<'a, AlgebraicType>> {
+        Some(WithTypespace {
             typespace: self.typespace,
-            ty: &self.typespace[r],
-        }
+            ty: self.typespace.get(r)?,
+        })
     }
 
     /// Maps the object we've wrapped from `&T -> &U` in our context.

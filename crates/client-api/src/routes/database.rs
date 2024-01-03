@@ -223,7 +223,7 @@ async fn extract_db_call_info(
 fn entity_description_json(description: WithTypespace<EntityDef>, expand: bool) -> Option<Value> {
     let typ = DescribedEntityType::from_entitydef(description.ty()).as_str();
     let len = match description.ty() {
-        EntityDef::Table(t) => description.resolve(t.data).ty().as_product()?.elements.len(),
+        EntityDef::Table(t) => description.resolve(t.data)?.ty().as_product()?.elements.len(),
         EntityDef::Reducer(r) => r.args.len(),
     };
     if expand {

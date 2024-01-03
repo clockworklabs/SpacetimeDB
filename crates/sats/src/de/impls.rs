@@ -299,7 +299,7 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, AlgebraicType> {
 
     fn deserialize<D: Deserializer<'de>>(self, de: D) -> Result<Self::Output, D::Error> {
         match self.ty() {
-            AlgebraicType::Ref(r) => self.resolve(*r).deserialize(de),
+            AlgebraicType::Ref(r) => self.resolve(*r).ok_or_else(|| D::Error::custom(format_args!("could not resolve reference {r:?}")))?.deserialize(de),
             AlgebraicType::Sum(sum) => self.with(sum).deserialize(de).map(Into::into),
             AlgebraicType::Product(prod) => self.with(prod).deserialize(de).map(Into::into),
             AlgebraicType::Builtin(crate::BuiltinType::Array(ty)) => self.with(ty).deserialize(de).map(Into::into),
@@ -426,7 +426,7 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
             break match ty {
                 AlgebraicType::Ref(r) => {
                     // The only arm that will loop.
-                    ty = self.resolve(*r).ty();
+                    ty = self.resolve(*r).ok_or_else(|| D::Error::custom(format_args!("could not resolve reference {r:?}")))?.ty();
                     continue;
                 }
                 AlgebraicType::Sum(ty) => deserializer
