@@ -22,20 +22,20 @@ pub enum TxOp {
 /// A record of a single operation within a transaction.
 pub struct TxRecord {
     /// Whether the operation was an insert or a delete.
-    pub(crate) op: TxOp,
+    pub op: TxOp,
     /// The value of the modified row.
-    pub(crate) product_value: ProductValue,
+    pub product_value: ProductValue,
     /// The key of the modified row.
-    pub(crate) key: DataKey,
+    pub key: DataKey,
     /// The table that was modified.
-    pub(crate) table_id: TableId,
+    pub table_id: TableId,
     /// The table that was modified.
-    pub(crate) table_name: String,
+    pub table_name: String,
 }
 
 /// A record of all the operations within a transaction.
 pub struct TxData {
-    pub(crate) records: Vec<TxRecord>,
+    pub records: Vec<TxRecord>,
 }
 
 pub trait Data: Into<ProductValue> {

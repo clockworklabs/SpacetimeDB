@@ -1,5 +1,5 @@
 mod btree_index;
-mod sequence;
+pub mod sequence;
 mod table;
 
 use itertools::Itertools;
@@ -818,7 +818,7 @@ impl TxState {
 
 #[derive(Default)]
 pub struct SequencesState {
-    sequences: HashMap<SequenceId, Sequence>,
+    pub sequences: HashMap<SequenceId, Sequence>,
 }
 
 impl SequencesState {

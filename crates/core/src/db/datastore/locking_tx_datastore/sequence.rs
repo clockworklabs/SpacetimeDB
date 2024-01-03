@@ -2,7 +2,7 @@ use spacetimedb_sats::db::def::SequenceSchema;
 
 pub struct Sequence {
     schema: SequenceSchema,
-    pub(crate) value: i128,
+    pub value: i128,
 }
 
 impl Sequence {

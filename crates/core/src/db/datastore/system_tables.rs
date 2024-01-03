@@ -11,25 +11,25 @@ use spacetimedb_sats::{
 use strum::Display;
 
 /// The static ID of the table that defines tables
-pub(crate) const ST_TABLES_ID: TableId = TableId(0);
+pub const ST_TABLES_ID: TableId = TableId(0);
 /// The static ID of the table that defines columns
-pub(crate) const ST_COLUMNS_ID: TableId = TableId(1);
+pub const ST_COLUMNS_ID: TableId = TableId(1);
 /// The static ID of the table that defines sequences
-pub(crate) const ST_SEQUENCES_ID: TableId = TableId(2);
+pub const ST_SEQUENCES_ID: TableId = TableId(2);
 /// The static ID of the table that defines indexes
-pub(crate) const ST_INDEXES_ID: TableId = TableId(3);
+pub const ST_INDEXES_ID: TableId = TableId(3);
 /// The static ID of the table that defines constraints
-pub(crate) const ST_CONSTRAINTS_ID: TableId = TableId(4);
+pub const ST_CONSTRAINTS_ID: TableId = TableId(4);
 /// The static ID of the table that defines the stdb module associated with
 /// the database
-pub(crate) const ST_MODULE_ID: TableId = TableId(5);
+pub const ST_MODULE_ID: TableId = TableId(5);
 
-pub(crate) const ST_TABLES_NAME: &str = "st_table";
-pub(crate) const ST_COLUMNS_NAME: &str = "st_columns";
-pub(crate) const ST_SEQUENCES_NAME: &str = "st_sequence";
-pub(crate) const ST_INDEXES_NAME: &str = "st_indexes";
-pub(crate) const ST_CONSTRAINTS_NAME: &str = "st_constraints";
-pub(crate) const ST_MODULE_NAME: &str = "st_module";
+pub const ST_TABLES_NAME: &str = "st_table";
+pub const ST_COLUMNS_NAME: &str = "st_columns";
+pub const ST_SEQUENCES_NAME: &str = "st_sequence";
+pub const ST_INDEXES_NAME: &str = "st_indexes";
+pub const ST_CONSTRAINTS_NAME: &str = "st_constraints";
+pub const ST_MODULE_NAME: &str = "st_module";
 
 // This help to keep the correct order when bootstrapping
 #[allow(non_camel_case_types)]
@@ -41,7 +41,7 @@ pub enum SystemTable {
     st_indexes,
     st_constraints,
 }
-pub(crate) fn system_tables() -> [TableSchema; 6] {
+pub fn system_tables() -> [TableSchema; 6] {
     [
         st_table_schema(),
         st_columns_schema(),
@@ -219,7 +219,7 @@ pub fn st_indexes_schema() -> TableSchema {
 /// | sequence_id | sequence_name     | increment | start | min_value | max_value | table_id | col_pos| allocated |
 /// |-------------|-------------------|-----------|-------|-----------|-----------|----------|--------|-----------|
 /// | 1           | "seq_customer_id" | 1         | 100   | 10        | 1200      | 1        | 1      | 200       |
-pub(crate) fn st_sequences_schema() -> TableSchema {
+pub fn st_sequences_schema() -> TableSchema {
     TableDef::new(
         ST_SEQUENCES_NAME.into(),
         vec![
@@ -245,7 +245,7 @@ pub(crate) fn st_sequences_schema() -> TableSchema {
 /// | constraint_id | constraint_name      | constraints | table_id | columns |
 /// |---------------|-------------------- -|-------------|-------|------------|
 /// | 1             | "unique_customer_id" | 1           | 100   | [1, 4]     |
-pub(crate) fn st_constraints_schema() -> TableSchema {
+pub fn st_constraints_schema() -> TableSchema {
     TableDef::new(
         ST_CONSTRAINTS_NAME.into(),
         vec![
@@ -279,7 +279,7 @@ pub(crate) fn st_constraints_schema() -> TableSchema {
 /// | program_hash        | kind     | epoch |
 /// |---------------------|----------|-------|
 /// | [250, 207, 5, ...]  | 0        | 42    |
-pub(crate) fn st_module_schema() -> TableSchema {
+pub fn st_module_schema() -> TableSchema {
     TableDef::new(
         ST_MODULE_NAME.into(),
         vec![
@@ -295,16 +295,16 @@ pub(crate) fn st_module_schema() -> TableSchema {
     .into_schema(ST_MODULE_ID)
 }
 
-pub(crate) fn table_name_is_system(table_name: &str) -> bool {
+pub fn table_name_is_system(table_name: &str) -> bool {
     table_name.starts_with("st_")
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct StTableRow<Name: AsRef<str>> {
-    pub(crate) table_id: TableId,
-    pub(crate) table_name: Name,
-    pub(crate) table_type: StTableType,
-    pub(crate) table_access: StAccess,
+    pub table_id: TableId,
+    pub table_name: Name,
+    pub table_type: StTableType,
+    pub table_access: StAccess,
 }
 
 impl<'a> TryFrom<&'a ProductValue> for StTableRow<&'a str> {
@@ -366,10 +366,10 @@ impl From<StTableRow<String>> for ProductValue {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct StColumnRow<Name: AsRef<str>> {
-    pub(crate) table_id: TableId,
-    pub(crate) col_pos: ColId,
-    pub(crate) col_name: Name,
-    pub(crate) col_type: AlgebraicType,
+    pub table_id: TableId,
+    pub col_pos: ColId,
+    pub col_name: Name,
+    pub col_type: AlgebraicType,
 }
 
 impl StColumnRow<&str> {
@@ -412,12 +412,12 @@ impl From<StColumnRow<String>> for ProductValue {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct StIndexRow<Name: AsRef<str>> {
-    pub(crate) index_id: IndexId,
-    pub(crate) table_id: TableId,
-    pub(crate) index_name: Name,
-    pub(crate) columns: ColList,
-    pub(crate) is_unique: bool,
-    pub(crate) index_type: IndexType,
+    pub index_id: IndexId,
+    pub table_id: TableId,
+    pub index_name: Name,
+    pub columns: ColList,
+    pub is_unique: bool,
+    pub index_type: IndexType,
 }
 
 impl StIndexRow<&str> {
@@ -488,15 +488,15 @@ impl From<StIndexRow<String>> for ProductValue {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct StSequenceRow<Name: AsRef<str>> {
-    pub(crate) sequence_id: SequenceId,
-    pub(crate) sequence_name: Name,
-    pub(crate) table_id: TableId,
-    pub(crate) col_pos: ColId,
-    pub(crate) increment: i128,
-    pub(crate) start: i128,
-    pub(crate) min_value: i128,
-    pub(crate) max_value: i128,
-    pub(crate) allocated: i128,
+    pub sequence_id: SequenceId,
+    pub sequence_name: Name,
+    pub table_id: TableId,
+    pub col_pos: ColId,
+    pub increment: i128,
+    pub start: i128,
+    pub min_value: i128,
+    pub max_value: i128,
+    pub allocated: i128,
 }
 
 impl<Name: AsRef<str>> StSequenceRow<Name> {
@@ -575,11 +575,11 @@ impl From<StSequenceRow<String>> for SequenceSchema {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct StConstraintRow<Name: AsRef<str>> {
-    pub(crate) constraint_id: ConstraintId,
-    pub(crate) constraint_name: Name,
-    pub(crate) constraints: Constraints,
-    pub(crate) table_id: TableId,
-    pub(crate) columns: ColList,
+    pub constraint_id: ConstraintId,
+    pub constraint_name: Name,
+    pub constraints: Constraints,
+    pub table_id: TableId,
+    pub columns: ColList,
 }
 
 impl StConstraintRow<&str> {
@@ -650,7 +650,7 @@ impl_deserialize!([] ModuleKind, de => u8::deserialize(de).map(Self));
 
 /// A monotonically increasing "epoch" value.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct Epoch(pub(crate) u128);
+pub struct Epoch(pub u128);
 
 impl_serialize!([] Epoch, (self, ser) => self.0.serialize(ser));
 impl_deserialize!([] Epoch, de => u128::deserialize(de).map(Self));
@@ -663,9 +663,9 @@ impl fmt::Display for Epoch {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StModuleRow {
-    pub(crate) program_hash: Hash,
-    pub(crate) kind: ModuleKind,
-    pub(crate) epoch: Epoch,
+    pub program_hash: Hash,
+    pub kind: ModuleKind,
+    pub epoch: Epoch,
 }
 
 impl StModuleRow {
