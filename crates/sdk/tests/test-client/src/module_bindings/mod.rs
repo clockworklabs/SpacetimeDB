@@ -461,144 +461,144 @@ pub use vec_unit_struct::*;
 #[allow(unused)]
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ReducerEvent {
-    DeletePkAddress(delete_pk_address_reducer::DeletePkAddressArgs),
-    DeletePkBool(delete_pk_bool_reducer::DeletePkBoolArgs),
-    DeletePkI128(delete_pk_i_128_reducer::DeletePkI128Args),
-    DeletePkI16(delete_pk_i_16_reducer::DeletePkI16Args),
-    DeletePkI32(delete_pk_i_32_reducer::DeletePkI32Args),
-    DeletePkI64(delete_pk_i_64_reducer::DeletePkI64Args),
-    DeletePkI8(delete_pk_i_8_reducer::DeletePkI8Args),
-    DeletePkIdentity(delete_pk_identity_reducer::DeletePkIdentityArgs),
-    DeletePkString(delete_pk_string_reducer::DeletePkStringArgs),
-    DeletePkU128(delete_pk_u_128_reducer::DeletePkU128Args),
-    DeletePkU16(delete_pk_u_16_reducer::DeletePkU16Args),
-    DeletePkU32(delete_pk_u_32_reducer::DeletePkU32Args),
-    DeletePkU64(delete_pk_u_64_reducer::DeletePkU64Args),
-    DeletePkU8(delete_pk_u_8_reducer::DeletePkU8Args),
-    DeleteUniqueAddress(delete_unique_address_reducer::DeleteUniqueAddressArgs),
-    DeleteUniqueBool(delete_unique_bool_reducer::DeleteUniqueBoolArgs),
-    DeleteUniqueI128(delete_unique_i_128_reducer::DeleteUniqueI128Args),
-    DeleteUniqueI16(delete_unique_i_16_reducer::DeleteUniqueI16Args),
-    DeleteUniqueI32(delete_unique_i_32_reducer::DeleteUniqueI32Args),
-    DeleteUniqueI64(delete_unique_i_64_reducer::DeleteUniqueI64Args),
-    DeleteUniqueI8(delete_unique_i_8_reducer::DeleteUniqueI8Args),
-    DeleteUniqueIdentity(delete_unique_identity_reducer::DeleteUniqueIdentityArgs),
-    DeleteUniqueString(delete_unique_string_reducer::DeleteUniqueStringArgs),
-    DeleteUniqueU128(delete_unique_u_128_reducer::DeleteUniqueU128Args),
-    DeleteUniqueU16(delete_unique_u_16_reducer::DeleteUniqueU16Args),
-    DeleteUniqueU32(delete_unique_u_32_reducer::DeleteUniqueU32Args),
-    DeleteUniqueU64(delete_unique_u_64_reducer::DeleteUniqueU64Args),
-    DeleteUniqueU8(delete_unique_u_8_reducer::DeleteUniqueU8Args),
-    InsertCallerOneAddress(insert_caller_one_address_reducer::InsertCallerOneAddressArgs),
-    InsertCallerOneIdentity(insert_caller_one_identity_reducer::InsertCallerOneIdentityArgs),
-    InsertCallerPkAddress(insert_caller_pk_address_reducer::InsertCallerPkAddressArgs),
-    InsertCallerPkIdentity(insert_caller_pk_identity_reducer::InsertCallerPkIdentityArgs),
-    InsertCallerUniqueAddress(insert_caller_unique_address_reducer::InsertCallerUniqueAddressArgs),
-    InsertCallerUniqueIdentity(insert_caller_unique_identity_reducer::InsertCallerUniqueIdentityArgs),
-    InsertCallerVecAddress(insert_caller_vec_address_reducer::InsertCallerVecAddressArgs),
-    InsertCallerVecIdentity(insert_caller_vec_identity_reducer::InsertCallerVecIdentityArgs),
-    InsertLargeTable(insert_large_table_reducer::InsertLargeTableArgs),
-    InsertOneAddress(insert_one_address_reducer::InsertOneAddressArgs),
-    InsertOneBool(insert_one_bool_reducer::InsertOneBoolArgs),
-    InsertOneByteStruct(insert_one_byte_struct_reducer::InsertOneByteStructArgs),
-    InsertOneEnumWithPayload(insert_one_enum_with_payload_reducer::InsertOneEnumWithPayloadArgs),
-    InsertOneEveryPrimitiveStruct(insert_one_every_primitive_struct_reducer::InsertOneEveryPrimitiveStructArgs),
-    InsertOneEveryVecStruct(insert_one_every_vec_struct_reducer::InsertOneEveryVecStructArgs),
-    InsertOneF32(insert_one_f_32_reducer::InsertOneF32Args),
-    InsertOneF64(insert_one_f_64_reducer::InsertOneF64Args),
-    InsertOneI128(insert_one_i_128_reducer::InsertOneI128Args),
-    InsertOneI16(insert_one_i_16_reducer::InsertOneI16Args),
-    InsertOneI32(insert_one_i_32_reducer::InsertOneI32Args),
-    InsertOneI64(insert_one_i_64_reducer::InsertOneI64Args),
-    InsertOneI8(insert_one_i_8_reducer::InsertOneI8Args),
-    InsertOneIdentity(insert_one_identity_reducer::InsertOneIdentityArgs),
-    InsertOneSimpleEnum(insert_one_simple_enum_reducer::InsertOneSimpleEnumArgs),
-    InsertOneString(insert_one_string_reducer::InsertOneStringArgs),
-    InsertOneU128(insert_one_u_128_reducer::InsertOneU128Args),
+    InsertOneU8(insert_one_u_8_reducer::InsertOneU8Args),
     InsertOneU16(insert_one_u_16_reducer::InsertOneU16Args),
     InsertOneU32(insert_one_u_32_reducer::InsertOneU32Args),
     InsertOneU64(insert_one_u_64_reducer::InsertOneU64Args),
-    InsertOneU8(insert_one_u_8_reducer::InsertOneU8Args),
+    InsertOneU128(insert_one_u_128_reducer::InsertOneU128Args),
+    InsertOneI8(insert_one_i_8_reducer::InsertOneI8Args),
+    InsertOneI16(insert_one_i_16_reducer::InsertOneI16Args),
+    InsertOneI32(insert_one_i_32_reducer::InsertOneI32Args),
+    InsertOneI64(insert_one_i_64_reducer::InsertOneI64Args),
+    InsertOneI128(insert_one_i_128_reducer::InsertOneI128Args),
+    InsertOneBool(insert_one_bool_reducer::InsertOneBoolArgs),
+    InsertOneF32(insert_one_f_32_reducer::InsertOneF32Args),
+    InsertOneF64(insert_one_f_64_reducer::InsertOneF64Args),
+    InsertOneString(insert_one_string_reducer::InsertOneStringArgs),
+    InsertOneIdentity(insert_one_identity_reducer::InsertOneIdentityArgs),
+    InsertOneAddress(insert_one_address_reducer::InsertOneAddressArgs),
+    InsertOneSimpleEnum(insert_one_simple_enum_reducer::InsertOneSimpleEnumArgs),
+    InsertOneEnumWithPayload(insert_one_enum_with_payload_reducer::InsertOneEnumWithPayloadArgs),
     InsertOneUnitStruct(insert_one_unit_struct_reducer::InsertOneUnitStructArgs),
-    InsertPkAddress(insert_pk_address_reducer::InsertPkAddressArgs),
-    InsertPkBool(insert_pk_bool_reducer::InsertPkBoolArgs),
-    InsertPkI128(insert_pk_i_128_reducer::InsertPkI128Args),
-    InsertPkI16(insert_pk_i_16_reducer::InsertPkI16Args),
-    InsertPkI32(insert_pk_i_32_reducer::InsertPkI32Args),
-    InsertPkI64(insert_pk_i_64_reducer::InsertPkI64Args),
-    InsertPkI8(insert_pk_i_8_reducer::InsertPkI8Args),
-    InsertPkIdentity(insert_pk_identity_reducer::InsertPkIdentityArgs),
-    InsertPkString(insert_pk_string_reducer::InsertPkStringArgs),
-    InsertPkU128(insert_pk_u_128_reducer::InsertPkU128Args),
-    InsertPkU16(insert_pk_u_16_reducer::InsertPkU16Args),
-    InsertPkU32(insert_pk_u_32_reducer::InsertPkU32Args),
-    InsertPkU64(insert_pk_u_64_reducer::InsertPkU64Args),
-    InsertPkU8(insert_pk_u_8_reducer::InsertPkU8Args),
-    InsertTableHoldsTable(insert_table_holds_table_reducer::InsertTableHoldsTableArgs),
-    InsertUniqueAddress(insert_unique_address_reducer::InsertUniqueAddressArgs),
-    InsertUniqueBool(insert_unique_bool_reducer::InsertUniqueBoolArgs),
-    InsertUniqueI128(insert_unique_i_128_reducer::InsertUniqueI128Args),
-    InsertUniqueI16(insert_unique_i_16_reducer::InsertUniqueI16Args),
-    InsertUniqueI32(insert_unique_i_32_reducer::InsertUniqueI32Args),
-    InsertUniqueI64(insert_unique_i_64_reducer::InsertUniqueI64Args),
-    InsertUniqueI8(insert_unique_i_8_reducer::InsertUniqueI8Args),
-    InsertUniqueIdentity(insert_unique_identity_reducer::InsertUniqueIdentityArgs),
-    InsertUniqueString(insert_unique_string_reducer::InsertUniqueStringArgs),
-    InsertUniqueU128(insert_unique_u_128_reducer::InsertUniqueU128Args),
-    InsertUniqueU16(insert_unique_u_16_reducer::InsertUniqueU16Args),
-    InsertUniqueU32(insert_unique_u_32_reducer::InsertUniqueU32Args),
-    InsertUniqueU64(insert_unique_u_64_reducer::InsertUniqueU64Args),
-    InsertUniqueU8(insert_unique_u_8_reducer::InsertUniqueU8Args),
-    InsertVecAddress(insert_vec_address_reducer::InsertVecAddressArgs),
-    InsertVecBool(insert_vec_bool_reducer::InsertVecBoolArgs),
-    InsertVecByteStruct(insert_vec_byte_struct_reducer::InsertVecByteStructArgs),
-    InsertVecEnumWithPayload(insert_vec_enum_with_payload_reducer::InsertVecEnumWithPayloadArgs),
-    InsertVecEveryPrimitiveStruct(insert_vec_every_primitive_struct_reducer::InsertVecEveryPrimitiveStructArgs),
-    InsertVecEveryVecStruct(insert_vec_every_vec_struct_reducer::InsertVecEveryVecStructArgs),
-    InsertVecF32(insert_vec_f_32_reducer::InsertVecF32Args),
-    InsertVecF64(insert_vec_f_64_reducer::InsertVecF64Args),
-    InsertVecI128(insert_vec_i_128_reducer::InsertVecI128Args),
-    InsertVecI16(insert_vec_i_16_reducer::InsertVecI16Args),
-    InsertVecI32(insert_vec_i_32_reducer::InsertVecI32Args),
-    InsertVecI64(insert_vec_i_64_reducer::InsertVecI64Args),
-    InsertVecI8(insert_vec_i_8_reducer::InsertVecI8Args),
-    InsertVecIdentity(insert_vec_identity_reducer::InsertVecIdentityArgs),
-    InsertVecSimpleEnum(insert_vec_simple_enum_reducer::InsertVecSimpleEnumArgs),
-    InsertVecString(insert_vec_string_reducer::InsertVecStringArgs),
-    InsertVecU128(insert_vec_u_128_reducer::InsertVecU128Args),
+    InsertOneByteStruct(insert_one_byte_struct_reducer::InsertOneByteStructArgs),
+    InsertOneEveryPrimitiveStruct(insert_one_every_primitive_struct_reducer::InsertOneEveryPrimitiveStructArgs),
+    InsertOneEveryVecStruct(insert_one_every_vec_struct_reducer::InsertOneEveryVecStructArgs),
+    InsertVecU8(insert_vec_u_8_reducer::InsertVecU8Args),
     InsertVecU16(insert_vec_u_16_reducer::InsertVecU16Args),
     InsertVecU32(insert_vec_u_32_reducer::InsertVecU32Args),
     InsertVecU64(insert_vec_u_64_reducer::InsertVecU64Args),
-    InsertVecU8(insert_vec_u_8_reducer::InsertVecU8Args),
+    InsertVecU128(insert_vec_u_128_reducer::InsertVecU128Args),
+    InsertVecI8(insert_vec_i_8_reducer::InsertVecI8Args),
+    InsertVecI16(insert_vec_i_16_reducer::InsertVecI16Args),
+    InsertVecI32(insert_vec_i_32_reducer::InsertVecI32Args),
+    InsertVecI64(insert_vec_i_64_reducer::InsertVecI64Args),
+    InsertVecI128(insert_vec_i_128_reducer::InsertVecI128Args),
+    InsertVecBool(insert_vec_bool_reducer::InsertVecBoolArgs),
+    InsertVecF32(insert_vec_f_32_reducer::InsertVecF32Args),
+    InsertVecF64(insert_vec_f_64_reducer::InsertVecF64Args),
+    InsertVecString(insert_vec_string_reducer::InsertVecStringArgs),
+    InsertVecIdentity(insert_vec_identity_reducer::InsertVecIdentityArgs),
+    InsertVecAddress(insert_vec_address_reducer::InsertVecAddressArgs),
+    InsertVecSimpleEnum(insert_vec_simple_enum_reducer::InsertVecSimpleEnumArgs),
+    InsertVecEnumWithPayload(insert_vec_enum_with_payload_reducer::InsertVecEnumWithPayloadArgs),
     InsertVecUnitStruct(insert_vec_unit_struct_reducer::InsertVecUnitStructArgs),
-    UpdatePkAddress(update_pk_address_reducer::UpdatePkAddressArgs),
-    UpdatePkBool(update_pk_bool_reducer::UpdatePkBoolArgs),
-    UpdatePkI128(update_pk_i_128_reducer::UpdatePkI128Args),
-    UpdatePkI16(update_pk_i_16_reducer::UpdatePkI16Args),
-    UpdatePkI32(update_pk_i_32_reducer::UpdatePkI32Args),
-    UpdatePkI64(update_pk_i_64_reducer::UpdatePkI64Args),
-    UpdatePkI8(update_pk_i_8_reducer::UpdatePkI8Args),
-    UpdatePkIdentity(update_pk_identity_reducer::UpdatePkIdentityArgs),
-    UpdatePkString(update_pk_string_reducer::UpdatePkStringArgs),
-    UpdatePkU128(update_pk_u_128_reducer::UpdatePkU128Args),
-    UpdatePkU16(update_pk_u_16_reducer::UpdatePkU16Args),
-    UpdatePkU32(update_pk_u_32_reducer::UpdatePkU32Args),
-    UpdatePkU64(update_pk_u_64_reducer::UpdatePkU64Args),
-    UpdatePkU8(update_pk_u_8_reducer::UpdatePkU8Args),
-    UpdateUniqueAddress(update_unique_address_reducer::UpdateUniqueAddressArgs),
-    UpdateUniqueBool(update_unique_bool_reducer::UpdateUniqueBoolArgs),
-    UpdateUniqueI128(update_unique_i_128_reducer::UpdateUniqueI128Args),
-    UpdateUniqueI16(update_unique_i_16_reducer::UpdateUniqueI16Args),
-    UpdateUniqueI32(update_unique_i_32_reducer::UpdateUniqueI32Args),
-    UpdateUniqueI64(update_unique_i_64_reducer::UpdateUniqueI64Args),
-    UpdateUniqueI8(update_unique_i_8_reducer::UpdateUniqueI8Args),
-    UpdateUniqueIdentity(update_unique_identity_reducer::UpdateUniqueIdentityArgs),
-    UpdateUniqueString(update_unique_string_reducer::UpdateUniqueStringArgs),
-    UpdateUniqueU128(update_unique_u_128_reducer::UpdateUniqueU128Args),
-    UpdateUniqueU16(update_unique_u_16_reducer::UpdateUniqueU16Args),
-    UpdateUniqueU32(update_unique_u_32_reducer::UpdateUniqueU32Args),
-    UpdateUniqueU64(update_unique_u_64_reducer::UpdateUniqueU64Args),
+    InsertVecByteStruct(insert_vec_byte_struct_reducer::InsertVecByteStructArgs),
+    InsertVecEveryPrimitiveStruct(insert_vec_every_primitive_struct_reducer::InsertVecEveryPrimitiveStructArgs),
+    InsertVecEveryVecStruct(insert_vec_every_vec_struct_reducer::InsertVecEveryVecStructArgs),
+    InsertUniqueU8(insert_unique_u_8_reducer::InsertUniqueU8Args),
     UpdateUniqueU8(update_unique_u_8_reducer::UpdateUniqueU8Args),
+    DeleteUniqueU8(delete_unique_u_8_reducer::DeleteUniqueU8Args),
+    InsertUniqueU16(insert_unique_u_16_reducer::InsertUniqueU16Args),
+    UpdateUniqueU16(update_unique_u_16_reducer::UpdateUniqueU16Args),
+    DeleteUniqueU16(delete_unique_u_16_reducer::DeleteUniqueU16Args),
+    InsertUniqueU32(insert_unique_u_32_reducer::InsertUniqueU32Args),
+    UpdateUniqueU32(update_unique_u_32_reducer::UpdateUniqueU32Args),
+    DeleteUniqueU32(delete_unique_u_32_reducer::DeleteUniqueU32Args),
+    InsertUniqueU64(insert_unique_u_64_reducer::InsertUniqueU64Args),
+    UpdateUniqueU64(update_unique_u_64_reducer::UpdateUniqueU64Args),
+    DeleteUniqueU64(delete_unique_u_64_reducer::DeleteUniqueU64Args),
+    InsertUniqueU128(insert_unique_u_128_reducer::InsertUniqueU128Args),
+    UpdateUniqueU128(update_unique_u_128_reducer::UpdateUniqueU128Args),
+    DeleteUniqueU128(delete_unique_u_128_reducer::DeleteUniqueU128Args),
+    InsertUniqueI8(insert_unique_i_8_reducer::InsertUniqueI8Args),
+    UpdateUniqueI8(update_unique_i_8_reducer::UpdateUniqueI8Args),
+    DeleteUniqueI8(delete_unique_i_8_reducer::DeleteUniqueI8Args),
+    InsertUniqueI16(insert_unique_i_16_reducer::InsertUniqueI16Args),
+    UpdateUniqueI16(update_unique_i_16_reducer::UpdateUniqueI16Args),
+    DeleteUniqueI16(delete_unique_i_16_reducer::DeleteUniqueI16Args),
+    InsertUniqueI32(insert_unique_i_32_reducer::InsertUniqueI32Args),
+    UpdateUniqueI32(update_unique_i_32_reducer::UpdateUniqueI32Args),
+    DeleteUniqueI32(delete_unique_i_32_reducer::DeleteUniqueI32Args),
+    InsertUniqueI64(insert_unique_i_64_reducer::InsertUniqueI64Args),
+    UpdateUniqueI64(update_unique_i_64_reducer::UpdateUniqueI64Args),
+    DeleteUniqueI64(delete_unique_i_64_reducer::DeleteUniqueI64Args),
+    InsertUniqueI128(insert_unique_i_128_reducer::InsertUniqueI128Args),
+    UpdateUniqueI128(update_unique_i_128_reducer::UpdateUniqueI128Args),
+    DeleteUniqueI128(delete_unique_i_128_reducer::DeleteUniqueI128Args),
+    InsertUniqueBool(insert_unique_bool_reducer::InsertUniqueBoolArgs),
+    UpdateUniqueBool(update_unique_bool_reducer::UpdateUniqueBoolArgs),
+    DeleteUniqueBool(delete_unique_bool_reducer::DeleteUniqueBoolArgs),
+    InsertUniqueString(insert_unique_string_reducer::InsertUniqueStringArgs),
+    UpdateUniqueString(update_unique_string_reducer::UpdateUniqueStringArgs),
+    DeleteUniqueString(delete_unique_string_reducer::DeleteUniqueStringArgs),
+    InsertUniqueIdentity(insert_unique_identity_reducer::InsertUniqueIdentityArgs),
+    UpdateUniqueIdentity(update_unique_identity_reducer::UpdateUniqueIdentityArgs),
+    DeleteUniqueIdentity(delete_unique_identity_reducer::DeleteUniqueIdentityArgs),
+    InsertUniqueAddress(insert_unique_address_reducer::InsertUniqueAddressArgs),
+    UpdateUniqueAddress(update_unique_address_reducer::UpdateUniqueAddressArgs),
+    DeleteUniqueAddress(delete_unique_address_reducer::DeleteUniqueAddressArgs),
+    InsertPkU8(insert_pk_u_8_reducer::InsertPkU8Args),
+    UpdatePkU8(update_pk_u_8_reducer::UpdatePkU8Args),
+    DeletePkU8(delete_pk_u_8_reducer::DeletePkU8Args),
+    InsertPkU16(insert_pk_u_16_reducer::InsertPkU16Args),
+    UpdatePkU16(update_pk_u_16_reducer::UpdatePkU16Args),
+    DeletePkU16(delete_pk_u_16_reducer::DeletePkU16Args),
+    InsertPkU32(insert_pk_u_32_reducer::InsertPkU32Args),
+    UpdatePkU32(update_pk_u_32_reducer::UpdatePkU32Args),
+    DeletePkU32(delete_pk_u_32_reducer::DeletePkU32Args),
+    InsertPkU64(insert_pk_u_64_reducer::InsertPkU64Args),
+    UpdatePkU64(update_pk_u_64_reducer::UpdatePkU64Args),
+    DeletePkU64(delete_pk_u_64_reducer::DeletePkU64Args),
+    InsertPkU128(insert_pk_u_128_reducer::InsertPkU128Args),
+    UpdatePkU128(update_pk_u_128_reducer::UpdatePkU128Args),
+    DeletePkU128(delete_pk_u_128_reducer::DeletePkU128Args),
+    InsertPkI8(insert_pk_i_8_reducer::InsertPkI8Args),
+    UpdatePkI8(update_pk_i_8_reducer::UpdatePkI8Args),
+    DeletePkI8(delete_pk_i_8_reducer::DeletePkI8Args),
+    InsertPkI16(insert_pk_i_16_reducer::InsertPkI16Args),
+    UpdatePkI16(update_pk_i_16_reducer::UpdatePkI16Args),
+    DeletePkI16(delete_pk_i_16_reducer::DeletePkI16Args),
+    InsertPkI32(insert_pk_i_32_reducer::InsertPkI32Args),
+    UpdatePkI32(update_pk_i_32_reducer::UpdatePkI32Args),
+    DeletePkI32(delete_pk_i_32_reducer::DeletePkI32Args),
+    InsertPkI64(insert_pk_i_64_reducer::InsertPkI64Args),
+    UpdatePkI64(update_pk_i_64_reducer::UpdatePkI64Args),
+    DeletePkI64(delete_pk_i_64_reducer::DeletePkI64Args),
+    InsertPkI128(insert_pk_i_128_reducer::InsertPkI128Args),
+    UpdatePkI128(update_pk_i_128_reducer::UpdatePkI128Args),
+    DeletePkI128(delete_pk_i_128_reducer::DeletePkI128Args),
+    InsertPkBool(insert_pk_bool_reducer::InsertPkBoolArgs),
+    UpdatePkBool(update_pk_bool_reducer::UpdatePkBoolArgs),
+    DeletePkBool(delete_pk_bool_reducer::DeletePkBoolArgs),
+    InsertPkString(insert_pk_string_reducer::InsertPkStringArgs),
+    UpdatePkString(update_pk_string_reducer::UpdatePkStringArgs),
+    DeletePkString(delete_pk_string_reducer::DeletePkStringArgs),
+    InsertPkIdentity(insert_pk_identity_reducer::InsertPkIdentityArgs),
+    UpdatePkIdentity(update_pk_identity_reducer::UpdatePkIdentityArgs),
+    DeletePkIdentity(delete_pk_identity_reducer::DeletePkIdentityArgs),
+    InsertPkAddress(insert_pk_address_reducer::InsertPkAddressArgs),
+    UpdatePkAddress(update_pk_address_reducer::UpdatePkAddressArgs),
+    DeletePkAddress(delete_pk_address_reducer::DeletePkAddressArgs),
+    InsertCallerOneIdentity(insert_caller_one_identity_reducer::InsertCallerOneIdentityArgs),
+    InsertCallerVecIdentity(insert_caller_vec_identity_reducer::InsertCallerVecIdentityArgs),
+    InsertCallerUniqueIdentity(insert_caller_unique_identity_reducer::InsertCallerUniqueIdentityArgs),
+    InsertCallerPkIdentity(insert_caller_pk_identity_reducer::InsertCallerPkIdentityArgs),
+    InsertCallerOneAddress(insert_caller_one_address_reducer::InsertCallerOneAddressArgs),
+    InsertCallerVecAddress(insert_caller_vec_address_reducer::InsertCallerVecAddressArgs),
+    InsertCallerUniqueAddress(insert_caller_unique_address_reducer::InsertCallerUniqueAddressArgs),
+    InsertCallerPkAddress(insert_caller_pk_address_reducer::InsertCallerPkAddressArgs),
+    InsertLargeTable(insert_large_table_reducer::InsertLargeTableArgs),
+    InsertTableHoldsTable(insert_table_holds_table_reducer::InsertTableHoldsTableArgs),
 }
 
 #[allow(unused)]
@@ -612,20 +612,39 @@ impl SpacetimeModule for Module {
     ) {
         let table_name = &table_update.table_name[..];
         match table_name {
-            "LargeTable" => {
-                client_cache.handle_table_update_no_primary_key::<large_table::LargeTable>(callbacks, table_update)
+            "OneU8" => client_cache.handle_table_update_no_primary_key::<one_u_8::OneU8>(callbacks, table_update),
+            "OneU16" => client_cache.handle_table_update_no_primary_key::<one_u_16::OneU16>(callbacks, table_update),
+            "OneU32" => client_cache.handle_table_update_no_primary_key::<one_u_32::OneU32>(callbacks, table_update),
+            "OneU64" => client_cache.handle_table_update_no_primary_key::<one_u_64::OneU64>(callbacks, table_update),
+            "OneU128" => client_cache.handle_table_update_no_primary_key::<one_u_128::OneU128>(callbacks, table_update),
+            "OneI8" => client_cache.handle_table_update_no_primary_key::<one_i_8::OneI8>(callbacks, table_update),
+            "OneI16" => client_cache.handle_table_update_no_primary_key::<one_i_16::OneI16>(callbacks, table_update),
+            "OneI32" => client_cache.handle_table_update_no_primary_key::<one_i_32::OneI32>(callbacks, table_update),
+            "OneI64" => client_cache.handle_table_update_no_primary_key::<one_i_64::OneI64>(callbacks, table_update),
+            "OneI128" => client_cache.handle_table_update_no_primary_key::<one_i_128::OneI128>(callbacks, table_update),
+            "OneBool" => client_cache.handle_table_update_no_primary_key::<one_bool::OneBool>(callbacks, table_update),
+            "OneF32" => client_cache.handle_table_update_no_primary_key::<one_f_32::OneF32>(callbacks, table_update),
+            "OneF64" => client_cache.handle_table_update_no_primary_key::<one_f_64::OneF64>(callbacks, table_update),
+            "OneString" => {
+                client_cache.handle_table_update_no_primary_key::<one_string::OneString>(callbacks, table_update)
+            }
+            "OneIdentity" => {
+                client_cache.handle_table_update_no_primary_key::<one_identity::OneIdentity>(callbacks, table_update)
             }
             "OneAddress" => {
                 client_cache.handle_table_update_no_primary_key::<one_address::OneAddress>(callbacks, table_update)
             }
-            "OneBool" => client_cache.handle_table_update_no_primary_key::<one_bool::OneBool>(callbacks, table_update),
-            "OneByteStruct" => client_cache
-                .handle_table_update_no_primary_key::<one_byte_struct::OneByteStruct>(callbacks, table_update),
+            "OneSimpleEnum" => client_cache
+                .handle_table_update_no_primary_key::<one_simple_enum::OneSimpleEnum>(callbacks, table_update),
             "OneEnumWithPayload" => client_cache
                 .handle_table_update_no_primary_key::<one_enum_with_payload::OneEnumWithPayload>(
                     callbacks,
                     table_update,
                 ),
+            "OneUnitStruct" => client_cache
+                .handle_table_update_no_primary_key::<one_unit_struct::OneUnitStruct>(callbacks, table_update),
+            "OneByteStruct" => client_cache
+                .handle_table_update_no_primary_key::<one_byte_struct::OneByteStruct>(callbacks, table_update),
             "OneEveryPrimitiveStruct" => client_cache
                 .handle_table_update_no_primary_key::<one_every_primitive_struct::OneEveryPrimitiveStruct>(
                     callbacks,
@@ -633,77 +652,48 @@ impl SpacetimeModule for Module {
                 ),
             "OneEveryVecStruct" => client_cache
                 .handle_table_update_no_primary_key::<one_every_vec_struct::OneEveryVecStruct>(callbacks, table_update),
-            "OneF32" => client_cache.handle_table_update_no_primary_key::<one_f_32::OneF32>(callbacks, table_update),
-            "OneF64" => client_cache.handle_table_update_no_primary_key::<one_f_64::OneF64>(callbacks, table_update),
-            "OneI128" => client_cache.handle_table_update_no_primary_key::<one_i_128::OneI128>(callbacks, table_update),
-            "OneI16" => client_cache.handle_table_update_no_primary_key::<one_i_16::OneI16>(callbacks, table_update),
-            "OneI32" => client_cache.handle_table_update_no_primary_key::<one_i_32::OneI32>(callbacks, table_update),
-            "OneI64" => client_cache.handle_table_update_no_primary_key::<one_i_64::OneI64>(callbacks, table_update),
-            "OneI8" => client_cache.handle_table_update_no_primary_key::<one_i_8::OneI8>(callbacks, table_update),
-            "OneIdentity" => {
-                client_cache.handle_table_update_no_primary_key::<one_identity::OneIdentity>(callbacks, table_update)
+            "VecU8" => client_cache.handle_table_update_no_primary_key::<vec_u_8::VecU8>(callbacks, table_update),
+            "VecU16" => client_cache.handle_table_update_no_primary_key::<vec_u_16::VecU16>(callbacks, table_update),
+            "VecU32" => client_cache.handle_table_update_no_primary_key::<vec_u_32::VecU32>(callbacks, table_update),
+            "VecU64" => client_cache.handle_table_update_no_primary_key::<vec_u_64::VecU64>(callbacks, table_update),
+            "VecU128" => client_cache.handle_table_update_no_primary_key::<vec_u_128::VecU128>(callbacks, table_update),
+            "VecI8" => client_cache.handle_table_update_no_primary_key::<vec_i_8::VecI8>(callbacks, table_update),
+            "VecI16" => client_cache.handle_table_update_no_primary_key::<vec_i_16::VecI16>(callbacks, table_update),
+            "VecI32" => client_cache.handle_table_update_no_primary_key::<vec_i_32::VecI32>(callbacks, table_update),
+            "VecI64" => client_cache.handle_table_update_no_primary_key::<vec_i_64::VecI64>(callbacks, table_update),
+            "VecI128" => client_cache.handle_table_update_no_primary_key::<vec_i_128::VecI128>(callbacks, table_update),
+            "VecBool" => client_cache.handle_table_update_no_primary_key::<vec_bool::VecBool>(callbacks, table_update),
+            "VecF32" => client_cache.handle_table_update_no_primary_key::<vec_f_32::VecF32>(callbacks, table_update),
+            "VecF64" => client_cache.handle_table_update_no_primary_key::<vec_f_64::VecF64>(callbacks, table_update),
+            "VecString" => {
+                client_cache.handle_table_update_no_primary_key::<vec_string::VecString>(callbacks, table_update)
             }
-            "OneSimpleEnum" => client_cache
-                .handle_table_update_no_primary_key::<one_simple_enum::OneSimpleEnum>(callbacks, table_update),
-            "OneString" => {
-                client_cache.handle_table_update_no_primary_key::<one_string::OneString>(callbacks, table_update)
+            "VecIdentity" => {
+                client_cache.handle_table_update_no_primary_key::<vec_identity::VecIdentity>(callbacks, table_update)
             }
-            "OneU128" => client_cache.handle_table_update_no_primary_key::<one_u_128::OneU128>(callbacks, table_update),
-            "OneU16" => client_cache.handle_table_update_no_primary_key::<one_u_16::OneU16>(callbacks, table_update),
-            "OneU32" => client_cache.handle_table_update_no_primary_key::<one_u_32::OneU32>(callbacks, table_update),
-            "OneU64" => client_cache.handle_table_update_no_primary_key::<one_u_64::OneU64>(callbacks, table_update),
-            "OneU8" => client_cache.handle_table_update_no_primary_key::<one_u_8::OneU8>(callbacks, table_update),
-            "OneUnitStruct" => client_cache
-                .handle_table_update_no_primary_key::<one_unit_struct::OneUnitStruct>(callbacks, table_update),
-            "PkAddress" => {
-                client_cache.handle_table_update_with_primary_key::<pk_address::PkAddress>(callbacks, table_update)
+            "VecAddress" => {
+                client_cache.handle_table_update_no_primary_key::<vec_address::VecAddress>(callbacks, table_update)
             }
-            "PkBool" => client_cache.handle_table_update_with_primary_key::<pk_bool::PkBool>(callbacks, table_update),
-            "PkI128" => client_cache.handle_table_update_with_primary_key::<pk_i_128::PkI128>(callbacks, table_update),
-            "PkI16" => client_cache.handle_table_update_with_primary_key::<pk_i_16::PkI16>(callbacks, table_update),
-            "PkI32" => client_cache.handle_table_update_with_primary_key::<pk_i_32::PkI32>(callbacks, table_update),
-            "PkI64" => client_cache.handle_table_update_with_primary_key::<pk_i_64::PkI64>(callbacks, table_update),
-            "PkI8" => client_cache.handle_table_update_with_primary_key::<pk_i_8::PkI8>(callbacks, table_update),
-            "PkIdentity" => {
-                client_cache.handle_table_update_with_primary_key::<pk_identity::PkIdentity>(callbacks, table_update)
-            }
-            "PkString" => {
-                client_cache.handle_table_update_with_primary_key::<pk_string::PkString>(callbacks, table_update)
-            }
-            "PkU128" => client_cache.handle_table_update_with_primary_key::<pk_u_128::PkU128>(callbacks, table_update),
-            "PkU16" => client_cache.handle_table_update_with_primary_key::<pk_u_16::PkU16>(callbacks, table_update),
-            "PkU32" => client_cache.handle_table_update_with_primary_key::<pk_u_32::PkU32>(callbacks, table_update),
-            "PkU64" => client_cache.handle_table_update_with_primary_key::<pk_u_64::PkU64>(callbacks, table_update),
-            "PkU8" => client_cache.handle_table_update_with_primary_key::<pk_u_8::PkU8>(callbacks, table_update),
-            "TableHoldsTable" => client_cache
-                .handle_table_update_no_primary_key::<table_holds_table::TableHoldsTable>(callbacks, table_update),
-            "UniqueAddress" => client_cache
-                .handle_table_update_no_primary_key::<unique_address::UniqueAddress>(callbacks, table_update),
-            "UniqueBool" => {
-                client_cache.handle_table_update_no_primary_key::<unique_bool::UniqueBool>(callbacks, table_update)
-            }
-            "UniqueI128" => {
-                client_cache.handle_table_update_no_primary_key::<unique_i_128::UniqueI128>(callbacks, table_update)
-            }
-            "UniqueI16" => {
-                client_cache.handle_table_update_no_primary_key::<unique_i_16::UniqueI16>(callbacks, table_update)
-            }
-            "UniqueI32" => {
-                client_cache.handle_table_update_no_primary_key::<unique_i_32::UniqueI32>(callbacks, table_update)
-            }
-            "UniqueI64" => {
-                client_cache.handle_table_update_no_primary_key::<unique_i_64::UniqueI64>(callbacks, table_update)
-            }
-            "UniqueI8" => {
-                client_cache.handle_table_update_no_primary_key::<unique_i_8::UniqueI8>(callbacks, table_update)
-            }
-            "UniqueIdentity" => client_cache
-                .handle_table_update_no_primary_key::<unique_identity::UniqueIdentity>(callbacks, table_update),
-            "UniqueString" => {
-                client_cache.handle_table_update_no_primary_key::<unique_string::UniqueString>(callbacks, table_update)
-            }
-            "UniqueU128" => {
-                client_cache.handle_table_update_no_primary_key::<unique_u_128::UniqueU128>(callbacks, table_update)
+            "VecSimpleEnum" => client_cache
+                .handle_table_update_no_primary_key::<vec_simple_enum::VecSimpleEnum>(callbacks, table_update),
+            "VecEnumWithPayload" => client_cache
+                .handle_table_update_no_primary_key::<vec_enum_with_payload::VecEnumWithPayload>(
+                    callbacks,
+                    table_update,
+                ),
+            "VecUnitStruct" => client_cache
+                .handle_table_update_no_primary_key::<vec_unit_struct::VecUnitStruct>(callbacks, table_update),
+            "VecByteStruct" => client_cache
+                .handle_table_update_no_primary_key::<vec_byte_struct::VecByteStruct>(callbacks, table_update),
+            "VecEveryPrimitiveStruct" => client_cache
+                .handle_table_update_no_primary_key::<vec_every_primitive_struct::VecEveryPrimitiveStruct>(
+                    callbacks,
+                    table_update,
+                ),
+            "VecEveryVecStruct" => client_cache
+                .handle_table_update_no_primary_key::<vec_every_vec_struct::VecEveryVecStruct>(callbacks, table_update),
+            "UniqueU8" => {
+                client_cache.handle_table_update_no_primary_key::<unique_u_8::UniqueU8>(callbacks, table_update)
             }
             "UniqueU16" => {
                 client_cache.handle_table_update_no_primary_key::<unique_u_16::UniqueU16>(callbacks, table_update)
@@ -714,49 +704,59 @@ impl SpacetimeModule for Module {
             "UniqueU64" => {
                 client_cache.handle_table_update_no_primary_key::<unique_u_64::UniqueU64>(callbacks, table_update)
             }
-            "UniqueU8" => {
-                client_cache.handle_table_update_no_primary_key::<unique_u_8::UniqueU8>(callbacks, table_update)
+            "UniqueU128" => {
+                client_cache.handle_table_update_no_primary_key::<unique_u_128::UniqueU128>(callbacks, table_update)
             }
-            "VecAddress" => {
-                client_cache.handle_table_update_no_primary_key::<vec_address::VecAddress>(callbacks, table_update)
+            "UniqueI8" => {
+                client_cache.handle_table_update_no_primary_key::<unique_i_8::UniqueI8>(callbacks, table_update)
             }
-            "VecBool" => client_cache.handle_table_update_no_primary_key::<vec_bool::VecBool>(callbacks, table_update),
-            "VecByteStruct" => client_cache
-                .handle_table_update_no_primary_key::<vec_byte_struct::VecByteStruct>(callbacks, table_update),
-            "VecEnumWithPayload" => client_cache
-                .handle_table_update_no_primary_key::<vec_enum_with_payload::VecEnumWithPayload>(
-                    callbacks,
-                    table_update,
-                ),
-            "VecEveryPrimitiveStruct" => client_cache
-                .handle_table_update_no_primary_key::<vec_every_primitive_struct::VecEveryPrimitiveStruct>(
-                    callbacks,
-                    table_update,
-                ),
-            "VecEveryVecStruct" => client_cache
-                .handle_table_update_no_primary_key::<vec_every_vec_struct::VecEveryVecStruct>(callbacks, table_update),
-            "VecF32" => client_cache.handle_table_update_no_primary_key::<vec_f_32::VecF32>(callbacks, table_update),
-            "VecF64" => client_cache.handle_table_update_no_primary_key::<vec_f_64::VecF64>(callbacks, table_update),
-            "VecI128" => client_cache.handle_table_update_no_primary_key::<vec_i_128::VecI128>(callbacks, table_update),
-            "VecI16" => client_cache.handle_table_update_no_primary_key::<vec_i_16::VecI16>(callbacks, table_update),
-            "VecI32" => client_cache.handle_table_update_no_primary_key::<vec_i_32::VecI32>(callbacks, table_update),
-            "VecI64" => client_cache.handle_table_update_no_primary_key::<vec_i_64::VecI64>(callbacks, table_update),
-            "VecI8" => client_cache.handle_table_update_no_primary_key::<vec_i_8::VecI8>(callbacks, table_update),
-            "VecIdentity" => {
-                client_cache.handle_table_update_no_primary_key::<vec_identity::VecIdentity>(callbacks, table_update)
+            "UniqueI16" => {
+                client_cache.handle_table_update_no_primary_key::<unique_i_16::UniqueI16>(callbacks, table_update)
             }
-            "VecSimpleEnum" => client_cache
-                .handle_table_update_no_primary_key::<vec_simple_enum::VecSimpleEnum>(callbacks, table_update),
-            "VecString" => {
-                client_cache.handle_table_update_no_primary_key::<vec_string::VecString>(callbacks, table_update)
+            "UniqueI32" => {
+                client_cache.handle_table_update_no_primary_key::<unique_i_32::UniqueI32>(callbacks, table_update)
             }
-            "VecU128" => client_cache.handle_table_update_no_primary_key::<vec_u_128::VecU128>(callbacks, table_update),
-            "VecU16" => client_cache.handle_table_update_no_primary_key::<vec_u_16::VecU16>(callbacks, table_update),
-            "VecU32" => client_cache.handle_table_update_no_primary_key::<vec_u_32::VecU32>(callbacks, table_update),
-            "VecU64" => client_cache.handle_table_update_no_primary_key::<vec_u_64::VecU64>(callbacks, table_update),
-            "VecU8" => client_cache.handle_table_update_no_primary_key::<vec_u_8::VecU8>(callbacks, table_update),
-            "VecUnitStruct" => client_cache
-                .handle_table_update_no_primary_key::<vec_unit_struct::VecUnitStruct>(callbacks, table_update),
+            "UniqueI64" => {
+                client_cache.handle_table_update_no_primary_key::<unique_i_64::UniqueI64>(callbacks, table_update)
+            }
+            "UniqueI128" => {
+                client_cache.handle_table_update_no_primary_key::<unique_i_128::UniqueI128>(callbacks, table_update)
+            }
+            "UniqueBool" => {
+                client_cache.handle_table_update_no_primary_key::<unique_bool::UniqueBool>(callbacks, table_update)
+            }
+            "UniqueString" => {
+                client_cache.handle_table_update_no_primary_key::<unique_string::UniqueString>(callbacks, table_update)
+            }
+            "UniqueIdentity" => client_cache
+                .handle_table_update_no_primary_key::<unique_identity::UniqueIdentity>(callbacks, table_update),
+            "UniqueAddress" => client_cache
+                .handle_table_update_no_primary_key::<unique_address::UniqueAddress>(callbacks, table_update),
+            "PkU8" => client_cache.handle_table_update_with_primary_key::<pk_u_8::PkU8>(callbacks, table_update),
+            "PkU16" => client_cache.handle_table_update_with_primary_key::<pk_u_16::PkU16>(callbacks, table_update),
+            "PkU32" => client_cache.handle_table_update_with_primary_key::<pk_u_32::PkU32>(callbacks, table_update),
+            "PkU64" => client_cache.handle_table_update_with_primary_key::<pk_u_64::PkU64>(callbacks, table_update),
+            "PkU128" => client_cache.handle_table_update_with_primary_key::<pk_u_128::PkU128>(callbacks, table_update),
+            "PkI8" => client_cache.handle_table_update_with_primary_key::<pk_i_8::PkI8>(callbacks, table_update),
+            "PkI16" => client_cache.handle_table_update_with_primary_key::<pk_i_16::PkI16>(callbacks, table_update),
+            "PkI32" => client_cache.handle_table_update_with_primary_key::<pk_i_32::PkI32>(callbacks, table_update),
+            "PkI64" => client_cache.handle_table_update_with_primary_key::<pk_i_64::PkI64>(callbacks, table_update),
+            "PkI128" => client_cache.handle_table_update_with_primary_key::<pk_i_128::PkI128>(callbacks, table_update),
+            "PkBool" => client_cache.handle_table_update_with_primary_key::<pk_bool::PkBool>(callbacks, table_update),
+            "PkString" => {
+                client_cache.handle_table_update_with_primary_key::<pk_string::PkString>(callbacks, table_update)
+            }
+            "PkIdentity" => {
+                client_cache.handle_table_update_with_primary_key::<pk_identity::PkIdentity>(callbacks, table_update)
+            }
+            "PkAddress" => {
+                client_cache.handle_table_update_with_primary_key::<pk_address::PkAddress>(callbacks, table_update)
+            }
+            "LargeTable" => {
+                client_cache.handle_table_update_no_primary_key::<large_table::LargeTable>(callbacks, table_update)
+            }
+            "TableHoldsTable" => client_cache
+                .handle_table_update_no_primary_key::<table_holds_table::TableHoldsTable>(callbacks, table_update),
             _ => spacetimedb_sdk::log::error!("TableRowOperation on unknown table {:?}", table_name),
         }
     }
@@ -767,88 +767,88 @@ impl SpacetimeModule for Module {
         reducer_event: Option<Arc<AnyReducerEvent>>,
         state: &Arc<ClientCache>,
     ) {
-        reminders.invoke_callbacks::<large_table::LargeTable>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<one_address::OneAddress>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<one_u_8::OneU8>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<one_u_16::OneU16>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<one_u_32::OneU32>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<one_u_64::OneU64>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<one_u_128::OneU128>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<one_i_8::OneI8>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<one_i_16::OneI16>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<one_i_32::OneI32>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<one_i_64::OneI64>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<one_i_128::OneI128>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<one_bool::OneBool>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<one_byte_struct::OneByteStruct>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<one_f_32::OneF32>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<one_f_64::OneF64>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<one_string::OneString>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<one_identity::OneIdentity>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<one_address::OneAddress>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<one_simple_enum::OneSimpleEnum>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<one_enum_with_payload::OneEnumWithPayload>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<one_unit_struct::OneUnitStruct>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<one_byte_struct::OneByteStruct>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<one_every_primitive_struct::OneEveryPrimitiveStruct>(
             worker,
             &reducer_event,
             state,
         );
         reminders.invoke_callbacks::<one_every_vec_struct::OneEveryVecStruct>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<one_f_32::OneF32>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<one_f_64::OneF64>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<one_i_128::OneI128>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<one_i_16::OneI16>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<one_i_32::OneI32>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<one_i_64::OneI64>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<one_i_8::OneI8>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<one_identity::OneIdentity>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<one_simple_enum::OneSimpleEnum>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<one_string::OneString>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<one_u_128::OneU128>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<one_u_16::OneU16>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<one_u_32::OneU32>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<one_u_64::OneU64>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<one_u_8::OneU8>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<one_unit_struct::OneUnitStruct>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<pk_address::PkAddress>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<pk_bool::PkBool>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<pk_i_128::PkI128>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<pk_i_16::PkI16>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<pk_i_32::PkI32>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<pk_i_64::PkI64>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<pk_i_8::PkI8>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<pk_identity::PkIdentity>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<pk_string::PkString>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<pk_u_128::PkU128>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<pk_u_16::PkU16>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<pk_u_32::PkU32>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<pk_u_64::PkU64>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<pk_u_8::PkU8>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<table_holds_table::TableHoldsTable>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<unique_address::UniqueAddress>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<unique_bool::UniqueBool>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<unique_i_128::UniqueI128>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<unique_i_16::UniqueI16>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<unique_i_32::UniqueI32>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<unique_i_64::UniqueI64>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<unique_i_8::UniqueI8>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<unique_identity::UniqueIdentity>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<unique_string::UniqueString>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<unique_u_128::UniqueU128>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<unique_u_16::UniqueU16>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<unique_u_32::UniqueU32>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<unique_u_64::UniqueU64>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<unique_u_8::UniqueU8>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<vec_address::VecAddress>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<vec_u_8::VecU8>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<vec_u_16::VecU16>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<vec_u_32::VecU32>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<vec_u_64::VecU64>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<vec_u_128::VecU128>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<vec_i_8::VecI8>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<vec_i_16::VecI16>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<vec_i_32::VecI32>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<vec_i_64::VecI64>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<vec_i_128::VecI128>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<vec_bool::VecBool>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<vec_byte_struct::VecByteStruct>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<vec_f_32::VecF32>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<vec_f_64::VecF64>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<vec_string::VecString>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<vec_identity::VecIdentity>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<vec_address::VecAddress>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<vec_simple_enum::VecSimpleEnum>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<vec_enum_with_payload::VecEnumWithPayload>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<vec_unit_struct::VecUnitStruct>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<vec_byte_struct::VecByteStruct>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<vec_every_primitive_struct::VecEveryPrimitiveStruct>(
             worker,
             &reducer_event,
             state,
         );
         reminders.invoke_callbacks::<vec_every_vec_struct::VecEveryVecStruct>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<vec_f_32::VecF32>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<vec_f_64::VecF64>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<vec_i_128::VecI128>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<vec_i_16::VecI16>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<vec_i_32::VecI32>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<vec_i_64::VecI64>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<vec_i_8::VecI8>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<vec_identity::VecIdentity>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<vec_simple_enum::VecSimpleEnum>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<vec_string::VecString>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<vec_u_128::VecU128>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<vec_u_16::VecU16>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<vec_u_32::VecU32>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<vec_u_64::VecU64>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<vec_u_8::VecU8>(worker, &reducer_event, state);
-        reminders.invoke_callbacks::<vec_unit_struct::VecUnitStruct>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<unique_u_8::UniqueU8>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<unique_u_16::UniqueU16>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<unique_u_32::UniqueU32>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<unique_u_64::UniqueU64>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<unique_u_128::UniqueU128>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<unique_i_8::UniqueI8>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<unique_i_16::UniqueI16>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<unique_i_32::UniqueI32>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<unique_i_64::UniqueI64>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<unique_i_128::UniqueI128>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<unique_bool::UniqueBool>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<unique_string::UniqueString>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<unique_identity::UniqueIdentity>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<unique_address::UniqueAddress>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<pk_u_8::PkU8>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<pk_u_16::PkU16>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<pk_u_32::PkU32>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<pk_u_64::PkU64>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<pk_u_128::PkU128>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<pk_i_8::PkI8>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<pk_i_16::PkI16>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<pk_i_32::PkI32>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<pk_i_64::PkI64>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<pk_i_128::PkI128>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<pk_bool::PkBool>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<pk_string::PkString>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<pk_identity::PkIdentity>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<pk_address::PkAddress>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<large_table::LargeTable>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<table_holds_table::TableHoldsTable>(worker, &reducer_event, state);
     }
     fn handle_event(
         &self,
@@ -862,144 +862,144 @@ impl SpacetimeModule for Module {
         };
         #[allow(clippy::match_single_binding)]
 match &function_call.reducer[..] {
-						"delete_pk_address" => _reducer_callbacks.handle_event_of_type::<delete_pk_address_reducer::DeletePkAddressArgs, ReducerEvent>(event, _state, ReducerEvent::DeletePkAddress),
-			"delete_pk_bool" => _reducer_callbacks.handle_event_of_type::<delete_pk_bool_reducer::DeletePkBoolArgs, ReducerEvent>(event, _state, ReducerEvent::DeletePkBool),
-			"delete_pk_i128" => _reducer_callbacks.handle_event_of_type::<delete_pk_i_128_reducer::DeletePkI128Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkI128),
-			"delete_pk_i16" => _reducer_callbacks.handle_event_of_type::<delete_pk_i_16_reducer::DeletePkI16Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkI16),
-			"delete_pk_i32" => _reducer_callbacks.handle_event_of_type::<delete_pk_i_32_reducer::DeletePkI32Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkI32),
-			"delete_pk_i64" => _reducer_callbacks.handle_event_of_type::<delete_pk_i_64_reducer::DeletePkI64Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkI64),
-			"delete_pk_i8" => _reducer_callbacks.handle_event_of_type::<delete_pk_i_8_reducer::DeletePkI8Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkI8),
-			"delete_pk_identity" => _reducer_callbacks.handle_event_of_type::<delete_pk_identity_reducer::DeletePkIdentityArgs, ReducerEvent>(event, _state, ReducerEvent::DeletePkIdentity),
-			"delete_pk_string" => _reducer_callbacks.handle_event_of_type::<delete_pk_string_reducer::DeletePkStringArgs, ReducerEvent>(event, _state, ReducerEvent::DeletePkString),
-			"delete_pk_u128" => _reducer_callbacks.handle_event_of_type::<delete_pk_u_128_reducer::DeletePkU128Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkU128),
-			"delete_pk_u16" => _reducer_callbacks.handle_event_of_type::<delete_pk_u_16_reducer::DeletePkU16Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkU16),
-			"delete_pk_u32" => _reducer_callbacks.handle_event_of_type::<delete_pk_u_32_reducer::DeletePkU32Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkU32),
-			"delete_pk_u64" => _reducer_callbacks.handle_event_of_type::<delete_pk_u_64_reducer::DeletePkU64Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkU64),
-			"delete_pk_u8" => _reducer_callbacks.handle_event_of_type::<delete_pk_u_8_reducer::DeletePkU8Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkU8),
-			"delete_unique_address" => _reducer_callbacks.handle_event_of_type::<delete_unique_address_reducer::DeleteUniqueAddressArgs, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueAddress),
-			"delete_unique_bool" => _reducer_callbacks.handle_event_of_type::<delete_unique_bool_reducer::DeleteUniqueBoolArgs, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueBool),
-			"delete_unique_i128" => _reducer_callbacks.handle_event_of_type::<delete_unique_i_128_reducer::DeleteUniqueI128Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueI128),
-			"delete_unique_i16" => _reducer_callbacks.handle_event_of_type::<delete_unique_i_16_reducer::DeleteUniqueI16Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueI16),
-			"delete_unique_i32" => _reducer_callbacks.handle_event_of_type::<delete_unique_i_32_reducer::DeleteUniqueI32Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueI32),
-			"delete_unique_i64" => _reducer_callbacks.handle_event_of_type::<delete_unique_i_64_reducer::DeleteUniqueI64Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueI64),
-			"delete_unique_i8" => _reducer_callbacks.handle_event_of_type::<delete_unique_i_8_reducer::DeleteUniqueI8Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueI8),
-			"delete_unique_identity" => _reducer_callbacks.handle_event_of_type::<delete_unique_identity_reducer::DeleteUniqueIdentityArgs, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueIdentity),
-			"delete_unique_string" => _reducer_callbacks.handle_event_of_type::<delete_unique_string_reducer::DeleteUniqueStringArgs, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueString),
-			"delete_unique_u128" => _reducer_callbacks.handle_event_of_type::<delete_unique_u_128_reducer::DeleteUniqueU128Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueU128),
-			"delete_unique_u16" => _reducer_callbacks.handle_event_of_type::<delete_unique_u_16_reducer::DeleteUniqueU16Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueU16),
-			"delete_unique_u32" => _reducer_callbacks.handle_event_of_type::<delete_unique_u_32_reducer::DeleteUniqueU32Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueU32),
-			"delete_unique_u64" => _reducer_callbacks.handle_event_of_type::<delete_unique_u_64_reducer::DeleteUniqueU64Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueU64),
-			"delete_unique_u8" => _reducer_callbacks.handle_event_of_type::<delete_unique_u_8_reducer::DeleteUniqueU8Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueU8),
-			"insert_caller_one_address" => _reducer_callbacks.handle_event_of_type::<insert_caller_one_address_reducer::InsertCallerOneAddressArgs, ReducerEvent>(event, _state, ReducerEvent::InsertCallerOneAddress),
-			"insert_caller_one_identity" => _reducer_callbacks.handle_event_of_type::<insert_caller_one_identity_reducer::InsertCallerOneIdentityArgs, ReducerEvent>(event, _state, ReducerEvent::InsertCallerOneIdentity),
-			"insert_caller_pk_address" => _reducer_callbacks.handle_event_of_type::<insert_caller_pk_address_reducer::InsertCallerPkAddressArgs, ReducerEvent>(event, _state, ReducerEvent::InsertCallerPkAddress),
-			"insert_caller_pk_identity" => _reducer_callbacks.handle_event_of_type::<insert_caller_pk_identity_reducer::InsertCallerPkIdentityArgs, ReducerEvent>(event, _state, ReducerEvent::InsertCallerPkIdentity),
-			"insert_caller_unique_address" => _reducer_callbacks.handle_event_of_type::<insert_caller_unique_address_reducer::InsertCallerUniqueAddressArgs, ReducerEvent>(event, _state, ReducerEvent::InsertCallerUniqueAddress),
-			"insert_caller_unique_identity" => _reducer_callbacks.handle_event_of_type::<insert_caller_unique_identity_reducer::InsertCallerUniqueIdentityArgs, ReducerEvent>(event, _state, ReducerEvent::InsertCallerUniqueIdentity),
-			"insert_caller_vec_address" => _reducer_callbacks.handle_event_of_type::<insert_caller_vec_address_reducer::InsertCallerVecAddressArgs, ReducerEvent>(event, _state, ReducerEvent::InsertCallerVecAddress),
-			"insert_caller_vec_identity" => _reducer_callbacks.handle_event_of_type::<insert_caller_vec_identity_reducer::InsertCallerVecIdentityArgs, ReducerEvent>(event, _state, ReducerEvent::InsertCallerVecIdentity),
-			"insert_large_table" => _reducer_callbacks.handle_event_of_type::<insert_large_table_reducer::InsertLargeTableArgs, ReducerEvent>(event, _state, ReducerEvent::InsertLargeTable),
-			"insert_one_address" => _reducer_callbacks.handle_event_of_type::<insert_one_address_reducer::InsertOneAddressArgs, ReducerEvent>(event, _state, ReducerEvent::InsertOneAddress),
-			"insert_one_bool" => _reducer_callbacks.handle_event_of_type::<insert_one_bool_reducer::InsertOneBoolArgs, ReducerEvent>(event, _state, ReducerEvent::InsertOneBool),
-			"insert_one_byte_struct" => _reducer_callbacks.handle_event_of_type::<insert_one_byte_struct_reducer::InsertOneByteStructArgs, ReducerEvent>(event, _state, ReducerEvent::InsertOneByteStruct),
-			"insert_one_enum_with_payload" => _reducer_callbacks.handle_event_of_type::<insert_one_enum_with_payload_reducer::InsertOneEnumWithPayloadArgs, ReducerEvent>(event, _state, ReducerEvent::InsertOneEnumWithPayload),
-			"insert_one_every_primitive_struct" => _reducer_callbacks.handle_event_of_type::<insert_one_every_primitive_struct_reducer::InsertOneEveryPrimitiveStructArgs, ReducerEvent>(event, _state, ReducerEvent::InsertOneEveryPrimitiveStruct),
-			"insert_one_every_vec_struct" => _reducer_callbacks.handle_event_of_type::<insert_one_every_vec_struct_reducer::InsertOneEveryVecStructArgs, ReducerEvent>(event, _state, ReducerEvent::InsertOneEveryVecStruct),
-			"insert_one_f32" => _reducer_callbacks.handle_event_of_type::<insert_one_f_32_reducer::InsertOneF32Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneF32),
-			"insert_one_f64" => _reducer_callbacks.handle_event_of_type::<insert_one_f_64_reducer::InsertOneF64Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneF64),
-			"insert_one_i128" => _reducer_callbacks.handle_event_of_type::<insert_one_i_128_reducer::InsertOneI128Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneI128),
-			"insert_one_i16" => _reducer_callbacks.handle_event_of_type::<insert_one_i_16_reducer::InsertOneI16Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneI16),
-			"insert_one_i32" => _reducer_callbacks.handle_event_of_type::<insert_one_i_32_reducer::InsertOneI32Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneI32),
-			"insert_one_i64" => _reducer_callbacks.handle_event_of_type::<insert_one_i_64_reducer::InsertOneI64Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneI64),
-			"insert_one_i8" => _reducer_callbacks.handle_event_of_type::<insert_one_i_8_reducer::InsertOneI8Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneI8),
-			"insert_one_identity" => _reducer_callbacks.handle_event_of_type::<insert_one_identity_reducer::InsertOneIdentityArgs, ReducerEvent>(event, _state, ReducerEvent::InsertOneIdentity),
-			"insert_one_simple_enum" => _reducer_callbacks.handle_event_of_type::<insert_one_simple_enum_reducer::InsertOneSimpleEnumArgs, ReducerEvent>(event, _state, ReducerEvent::InsertOneSimpleEnum),
-			"insert_one_string" => _reducer_callbacks.handle_event_of_type::<insert_one_string_reducer::InsertOneStringArgs, ReducerEvent>(event, _state, ReducerEvent::InsertOneString),
-			"insert_one_u128" => _reducer_callbacks.handle_event_of_type::<insert_one_u_128_reducer::InsertOneU128Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneU128),
+						"insert_one_u8" => _reducer_callbacks.handle_event_of_type::<insert_one_u_8_reducer::InsertOneU8Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneU8),
 			"insert_one_u16" => _reducer_callbacks.handle_event_of_type::<insert_one_u_16_reducer::InsertOneU16Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneU16),
 			"insert_one_u32" => _reducer_callbacks.handle_event_of_type::<insert_one_u_32_reducer::InsertOneU32Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneU32),
 			"insert_one_u64" => _reducer_callbacks.handle_event_of_type::<insert_one_u_64_reducer::InsertOneU64Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneU64),
-			"insert_one_u8" => _reducer_callbacks.handle_event_of_type::<insert_one_u_8_reducer::InsertOneU8Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneU8),
+			"insert_one_u128" => _reducer_callbacks.handle_event_of_type::<insert_one_u_128_reducer::InsertOneU128Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneU128),
+			"insert_one_i8" => _reducer_callbacks.handle_event_of_type::<insert_one_i_8_reducer::InsertOneI8Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneI8),
+			"insert_one_i16" => _reducer_callbacks.handle_event_of_type::<insert_one_i_16_reducer::InsertOneI16Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneI16),
+			"insert_one_i32" => _reducer_callbacks.handle_event_of_type::<insert_one_i_32_reducer::InsertOneI32Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneI32),
+			"insert_one_i64" => _reducer_callbacks.handle_event_of_type::<insert_one_i_64_reducer::InsertOneI64Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneI64),
+			"insert_one_i128" => _reducer_callbacks.handle_event_of_type::<insert_one_i_128_reducer::InsertOneI128Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneI128),
+			"insert_one_bool" => _reducer_callbacks.handle_event_of_type::<insert_one_bool_reducer::InsertOneBoolArgs, ReducerEvent>(event, _state, ReducerEvent::InsertOneBool),
+			"insert_one_f32" => _reducer_callbacks.handle_event_of_type::<insert_one_f_32_reducer::InsertOneF32Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneF32),
+			"insert_one_f64" => _reducer_callbacks.handle_event_of_type::<insert_one_f_64_reducer::InsertOneF64Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneF64),
+			"insert_one_string" => _reducer_callbacks.handle_event_of_type::<insert_one_string_reducer::InsertOneStringArgs, ReducerEvent>(event, _state, ReducerEvent::InsertOneString),
+			"insert_one_identity" => _reducer_callbacks.handle_event_of_type::<insert_one_identity_reducer::InsertOneIdentityArgs, ReducerEvent>(event, _state, ReducerEvent::InsertOneIdentity),
+			"insert_one_address" => _reducer_callbacks.handle_event_of_type::<insert_one_address_reducer::InsertOneAddressArgs, ReducerEvent>(event, _state, ReducerEvent::InsertOneAddress),
+			"insert_one_simple_enum" => _reducer_callbacks.handle_event_of_type::<insert_one_simple_enum_reducer::InsertOneSimpleEnumArgs, ReducerEvent>(event, _state, ReducerEvent::InsertOneSimpleEnum),
+			"insert_one_enum_with_payload" => _reducer_callbacks.handle_event_of_type::<insert_one_enum_with_payload_reducer::InsertOneEnumWithPayloadArgs, ReducerEvent>(event, _state, ReducerEvent::InsertOneEnumWithPayload),
 			"insert_one_unit_struct" => _reducer_callbacks.handle_event_of_type::<insert_one_unit_struct_reducer::InsertOneUnitStructArgs, ReducerEvent>(event, _state, ReducerEvent::InsertOneUnitStruct),
-			"insert_pk_address" => _reducer_callbacks.handle_event_of_type::<insert_pk_address_reducer::InsertPkAddressArgs, ReducerEvent>(event, _state, ReducerEvent::InsertPkAddress),
-			"insert_pk_bool" => _reducer_callbacks.handle_event_of_type::<insert_pk_bool_reducer::InsertPkBoolArgs, ReducerEvent>(event, _state, ReducerEvent::InsertPkBool),
-			"insert_pk_i128" => _reducer_callbacks.handle_event_of_type::<insert_pk_i_128_reducer::InsertPkI128Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkI128),
-			"insert_pk_i16" => _reducer_callbacks.handle_event_of_type::<insert_pk_i_16_reducer::InsertPkI16Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkI16),
-			"insert_pk_i32" => _reducer_callbacks.handle_event_of_type::<insert_pk_i_32_reducer::InsertPkI32Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkI32),
-			"insert_pk_i64" => _reducer_callbacks.handle_event_of_type::<insert_pk_i_64_reducer::InsertPkI64Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkI64),
-			"insert_pk_i8" => _reducer_callbacks.handle_event_of_type::<insert_pk_i_8_reducer::InsertPkI8Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkI8),
-			"insert_pk_identity" => _reducer_callbacks.handle_event_of_type::<insert_pk_identity_reducer::InsertPkIdentityArgs, ReducerEvent>(event, _state, ReducerEvent::InsertPkIdentity),
-			"insert_pk_string" => _reducer_callbacks.handle_event_of_type::<insert_pk_string_reducer::InsertPkStringArgs, ReducerEvent>(event, _state, ReducerEvent::InsertPkString),
-			"insert_pk_u128" => _reducer_callbacks.handle_event_of_type::<insert_pk_u_128_reducer::InsertPkU128Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkU128),
-			"insert_pk_u16" => _reducer_callbacks.handle_event_of_type::<insert_pk_u_16_reducer::InsertPkU16Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkU16),
-			"insert_pk_u32" => _reducer_callbacks.handle_event_of_type::<insert_pk_u_32_reducer::InsertPkU32Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkU32),
-			"insert_pk_u64" => _reducer_callbacks.handle_event_of_type::<insert_pk_u_64_reducer::InsertPkU64Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkU64),
-			"insert_pk_u8" => _reducer_callbacks.handle_event_of_type::<insert_pk_u_8_reducer::InsertPkU8Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkU8),
-			"insert_table_holds_table" => _reducer_callbacks.handle_event_of_type::<insert_table_holds_table_reducer::InsertTableHoldsTableArgs, ReducerEvent>(event, _state, ReducerEvent::InsertTableHoldsTable),
-			"insert_unique_address" => _reducer_callbacks.handle_event_of_type::<insert_unique_address_reducer::InsertUniqueAddressArgs, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueAddress),
-			"insert_unique_bool" => _reducer_callbacks.handle_event_of_type::<insert_unique_bool_reducer::InsertUniqueBoolArgs, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueBool),
-			"insert_unique_i128" => _reducer_callbacks.handle_event_of_type::<insert_unique_i_128_reducer::InsertUniqueI128Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueI128),
-			"insert_unique_i16" => _reducer_callbacks.handle_event_of_type::<insert_unique_i_16_reducer::InsertUniqueI16Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueI16),
-			"insert_unique_i32" => _reducer_callbacks.handle_event_of_type::<insert_unique_i_32_reducer::InsertUniqueI32Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueI32),
-			"insert_unique_i64" => _reducer_callbacks.handle_event_of_type::<insert_unique_i_64_reducer::InsertUniqueI64Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueI64),
-			"insert_unique_i8" => _reducer_callbacks.handle_event_of_type::<insert_unique_i_8_reducer::InsertUniqueI8Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueI8),
-			"insert_unique_identity" => _reducer_callbacks.handle_event_of_type::<insert_unique_identity_reducer::InsertUniqueIdentityArgs, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueIdentity),
-			"insert_unique_string" => _reducer_callbacks.handle_event_of_type::<insert_unique_string_reducer::InsertUniqueStringArgs, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueString),
-			"insert_unique_u128" => _reducer_callbacks.handle_event_of_type::<insert_unique_u_128_reducer::InsertUniqueU128Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueU128),
-			"insert_unique_u16" => _reducer_callbacks.handle_event_of_type::<insert_unique_u_16_reducer::InsertUniqueU16Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueU16),
-			"insert_unique_u32" => _reducer_callbacks.handle_event_of_type::<insert_unique_u_32_reducer::InsertUniqueU32Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueU32),
-			"insert_unique_u64" => _reducer_callbacks.handle_event_of_type::<insert_unique_u_64_reducer::InsertUniqueU64Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueU64),
-			"insert_unique_u8" => _reducer_callbacks.handle_event_of_type::<insert_unique_u_8_reducer::InsertUniqueU8Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueU8),
-			"insert_vec_address" => _reducer_callbacks.handle_event_of_type::<insert_vec_address_reducer::InsertVecAddressArgs, ReducerEvent>(event, _state, ReducerEvent::InsertVecAddress),
-			"insert_vec_bool" => _reducer_callbacks.handle_event_of_type::<insert_vec_bool_reducer::InsertVecBoolArgs, ReducerEvent>(event, _state, ReducerEvent::InsertVecBool),
-			"insert_vec_byte_struct" => _reducer_callbacks.handle_event_of_type::<insert_vec_byte_struct_reducer::InsertVecByteStructArgs, ReducerEvent>(event, _state, ReducerEvent::InsertVecByteStruct),
-			"insert_vec_enum_with_payload" => _reducer_callbacks.handle_event_of_type::<insert_vec_enum_with_payload_reducer::InsertVecEnumWithPayloadArgs, ReducerEvent>(event, _state, ReducerEvent::InsertVecEnumWithPayload),
-			"insert_vec_every_primitive_struct" => _reducer_callbacks.handle_event_of_type::<insert_vec_every_primitive_struct_reducer::InsertVecEveryPrimitiveStructArgs, ReducerEvent>(event, _state, ReducerEvent::InsertVecEveryPrimitiveStruct),
-			"insert_vec_every_vec_struct" => _reducer_callbacks.handle_event_of_type::<insert_vec_every_vec_struct_reducer::InsertVecEveryVecStructArgs, ReducerEvent>(event, _state, ReducerEvent::InsertVecEveryVecStruct),
-			"insert_vec_f32" => _reducer_callbacks.handle_event_of_type::<insert_vec_f_32_reducer::InsertVecF32Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecF32),
-			"insert_vec_f64" => _reducer_callbacks.handle_event_of_type::<insert_vec_f_64_reducer::InsertVecF64Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecF64),
-			"insert_vec_i128" => _reducer_callbacks.handle_event_of_type::<insert_vec_i_128_reducer::InsertVecI128Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecI128),
-			"insert_vec_i16" => _reducer_callbacks.handle_event_of_type::<insert_vec_i_16_reducer::InsertVecI16Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecI16),
-			"insert_vec_i32" => _reducer_callbacks.handle_event_of_type::<insert_vec_i_32_reducer::InsertVecI32Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecI32),
-			"insert_vec_i64" => _reducer_callbacks.handle_event_of_type::<insert_vec_i_64_reducer::InsertVecI64Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecI64),
-			"insert_vec_i8" => _reducer_callbacks.handle_event_of_type::<insert_vec_i_8_reducer::InsertVecI8Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecI8),
-			"insert_vec_identity" => _reducer_callbacks.handle_event_of_type::<insert_vec_identity_reducer::InsertVecIdentityArgs, ReducerEvent>(event, _state, ReducerEvent::InsertVecIdentity),
-			"insert_vec_simple_enum" => _reducer_callbacks.handle_event_of_type::<insert_vec_simple_enum_reducer::InsertVecSimpleEnumArgs, ReducerEvent>(event, _state, ReducerEvent::InsertVecSimpleEnum),
-			"insert_vec_string" => _reducer_callbacks.handle_event_of_type::<insert_vec_string_reducer::InsertVecStringArgs, ReducerEvent>(event, _state, ReducerEvent::InsertVecString),
-			"insert_vec_u128" => _reducer_callbacks.handle_event_of_type::<insert_vec_u_128_reducer::InsertVecU128Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecU128),
+			"insert_one_byte_struct" => _reducer_callbacks.handle_event_of_type::<insert_one_byte_struct_reducer::InsertOneByteStructArgs, ReducerEvent>(event, _state, ReducerEvent::InsertOneByteStruct),
+			"insert_one_every_primitive_struct" => _reducer_callbacks.handle_event_of_type::<insert_one_every_primitive_struct_reducer::InsertOneEveryPrimitiveStructArgs, ReducerEvent>(event, _state, ReducerEvent::InsertOneEveryPrimitiveStruct),
+			"insert_one_every_vec_struct" => _reducer_callbacks.handle_event_of_type::<insert_one_every_vec_struct_reducer::InsertOneEveryVecStructArgs, ReducerEvent>(event, _state, ReducerEvent::InsertOneEveryVecStruct),
+			"insert_vec_u8" => _reducer_callbacks.handle_event_of_type::<insert_vec_u_8_reducer::InsertVecU8Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecU8),
 			"insert_vec_u16" => _reducer_callbacks.handle_event_of_type::<insert_vec_u_16_reducer::InsertVecU16Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecU16),
 			"insert_vec_u32" => _reducer_callbacks.handle_event_of_type::<insert_vec_u_32_reducer::InsertVecU32Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecU32),
 			"insert_vec_u64" => _reducer_callbacks.handle_event_of_type::<insert_vec_u_64_reducer::InsertVecU64Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecU64),
-			"insert_vec_u8" => _reducer_callbacks.handle_event_of_type::<insert_vec_u_8_reducer::InsertVecU8Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecU8),
+			"insert_vec_u128" => _reducer_callbacks.handle_event_of_type::<insert_vec_u_128_reducer::InsertVecU128Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecU128),
+			"insert_vec_i8" => _reducer_callbacks.handle_event_of_type::<insert_vec_i_8_reducer::InsertVecI8Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecI8),
+			"insert_vec_i16" => _reducer_callbacks.handle_event_of_type::<insert_vec_i_16_reducer::InsertVecI16Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecI16),
+			"insert_vec_i32" => _reducer_callbacks.handle_event_of_type::<insert_vec_i_32_reducer::InsertVecI32Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecI32),
+			"insert_vec_i64" => _reducer_callbacks.handle_event_of_type::<insert_vec_i_64_reducer::InsertVecI64Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecI64),
+			"insert_vec_i128" => _reducer_callbacks.handle_event_of_type::<insert_vec_i_128_reducer::InsertVecI128Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecI128),
+			"insert_vec_bool" => _reducer_callbacks.handle_event_of_type::<insert_vec_bool_reducer::InsertVecBoolArgs, ReducerEvent>(event, _state, ReducerEvent::InsertVecBool),
+			"insert_vec_f32" => _reducer_callbacks.handle_event_of_type::<insert_vec_f_32_reducer::InsertVecF32Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecF32),
+			"insert_vec_f64" => _reducer_callbacks.handle_event_of_type::<insert_vec_f_64_reducer::InsertVecF64Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecF64),
+			"insert_vec_string" => _reducer_callbacks.handle_event_of_type::<insert_vec_string_reducer::InsertVecStringArgs, ReducerEvent>(event, _state, ReducerEvent::InsertVecString),
+			"insert_vec_identity" => _reducer_callbacks.handle_event_of_type::<insert_vec_identity_reducer::InsertVecIdentityArgs, ReducerEvent>(event, _state, ReducerEvent::InsertVecIdentity),
+			"insert_vec_address" => _reducer_callbacks.handle_event_of_type::<insert_vec_address_reducer::InsertVecAddressArgs, ReducerEvent>(event, _state, ReducerEvent::InsertVecAddress),
+			"insert_vec_simple_enum" => _reducer_callbacks.handle_event_of_type::<insert_vec_simple_enum_reducer::InsertVecSimpleEnumArgs, ReducerEvent>(event, _state, ReducerEvent::InsertVecSimpleEnum),
+			"insert_vec_enum_with_payload" => _reducer_callbacks.handle_event_of_type::<insert_vec_enum_with_payload_reducer::InsertVecEnumWithPayloadArgs, ReducerEvent>(event, _state, ReducerEvent::InsertVecEnumWithPayload),
 			"insert_vec_unit_struct" => _reducer_callbacks.handle_event_of_type::<insert_vec_unit_struct_reducer::InsertVecUnitStructArgs, ReducerEvent>(event, _state, ReducerEvent::InsertVecUnitStruct),
-			"update_pk_address" => _reducer_callbacks.handle_event_of_type::<update_pk_address_reducer::UpdatePkAddressArgs, ReducerEvent>(event, _state, ReducerEvent::UpdatePkAddress),
-			"update_pk_bool" => _reducer_callbacks.handle_event_of_type::<update_pk_bool_reducer::UpdatePkBoolArgs, ReducerEvent>(event, _state, ReducerEvent::UpdatePkBool),
-			"update_pk_i128" => _reducer_callbacks.handle_event_of_type::<update_pk_i_128_reducer::UpdatePkI128Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkI128),
-			"update_pk_i16" => _reducer_callbacks.handle_event_of_type::<update_pk_i_16_reducer::UpdatePkI16Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkI16),
-			"update_pk_i32" => _reducer_callbacks.handle_event_of_type::<update_pk_i_32_reducer::UpdatePkI32Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkI32),
-			"update_pk_i64" => _reducer_callbacks.handle_event_of_type::<update_pk_i_64_reducer::UpdatePkI64Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkI64),
-			"update_pk_i8" => _reducer_callbacks.handle_event_of_type::<update_pk_i_8_reducer::UpdatePkI8Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkI8),
-			"update_pk_identity" => _reducer_callbacks.handle_event_of_type::<update_pk_identity_reducer::UpdatePkIdentityArgs, ReducerEvent>(event, _state, ReducerEvent::UpdatePkIdentity),
-			"update_pk_string" => _reducer_callbacks.handle_event_of_type::<update_pk_string_reducer::UpdatePkStringArgs, ReducerEvent>(event, _state, ReducerEvent::UpdatePkString),
-			"update_pk_u128" => _reducer_callbacks.handle_event_of_type::<update_pk_u_128_reducer::UpdatePkU128Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkU128),
-			"update_pk_u16" => _reducer_callbacks.handle_event_of_type::<update_pk_u_16_reducer::UpdatePkU16Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkU16),
-			"update_pk_u32" => _reducer_callbacks.handle_event_of_type::<update_pk_u_32_reducer::UpdatePkU32Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkU32),
-			"update_pk_u64" => _reducer_callbacks.handle_event_of_type::<update_pk_u_64_reducer::UpdatePkU64Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkU64),
-			"update_pk_u8" => _reducer_callbacks.handle_event_of_type::<update_pk_u_8_reducer::UpdatePkU8Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkU8),
-			"update_unique_address" => _reducer_callbacks.handle_event_of_type::<update_unique_address_reducer::UpdateUniqueAddressArgs, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueAddress),
-			"update_unique_bool" => _reducer_callbacks.handle_event_of_type::<update_unique_bool_reducer::UpdateUniqueBoolArgs, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueBool),
-			"update_unique_i128" => _reducer_callbacks.handle_event_of_type::<update_unique_i_128_reducer::UpdateUniqueI128Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueI128),
-			"update_unique_i16" => _reducer_callbacks.handle_event_of_type::<update_unique_i_16_reducer::UpdateUniqueI16Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueI16),
-			"update_unique_i32" => _reducer_callbacks.handle_event_of_type::<update_unique_i_32_reducer::UpdateUniqueI32Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueI32),
-			"update_unique_i64" => _reducer_callbacks.handle_event_of_type::<update_unique_i_64_reducer::UpdateUniqueI64Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueI64),
-			"update_unique_i8" => _reducer_callbacks.handle_event_of_type::<update_unique_i_8_reducer::UpdateUniqueI8Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueI8),
-			"update_unique_identity" => _reducer_callbacks.handle_event_of_type::<update_unique_identity_reducer::UpdateUniqueIdentityArgs, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueIdentity),
-			"update_unique_string" => _reducer_callbacks.handle_event_of_type::<update_unique_string_reducer::UpdateUniqueStringArgs, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueString),
-			"update_unique_u128" => _reducer_callbacks.handle_event_of_type::<update_unique_u_128_reducer::UpdateUniqueU128Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueU128),
-			"update_unique_u16" => _reducer_callbacks.handle_event_of_type::<update_unique_u_16_reducer::UpdateUniqueU16Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueU16),
-			"update_unique_u32" => _reducer_callbacks.handle_event_of_type::<update_unique_u_32_reducer::UpdateUniqueU32Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueU32),
-			"update_unique_u64" => _reducer_callbacks.handle_event_of_type::<update_unique_u_64_reducer::UpdateUniqueU64Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueU64),
+			"insert_vec_byte_struct" => _reducer_callbacks.handle_event_of_type::<insert_vec_byte_struct_reducer::InsertVecByteStructArgs, ReducerEvent>(event, _state, ReducerEvent::InsertVecByteStruct),
+			"insert_vec_every_primitive_struct" => _reducer_callbacks.handle_event_of_type::<insert_vec_every_primitive_struct_reducer::InsertVecEveryPrimitiveStructArgs, ReducerEvent>(event, _state, ReducerEvent::InsertVecEveryPrimitiveStruct),
+			"insert_vec_every_vec_struct" => _reducer_callbacks.handle_event_of_type::<insert_vec_every_vec_struct_reducer::InsertVecEveryVecStructArgs, ReducerEvent>(event, _state, ReducerEvent::InsertVecEveryVecStruct),
+			"insert_unique_u8" => _reducer_callbacks.handle_event_of_type::<insert_unique_u_8_reducer::InsertUniqueU8Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueU8),
 			"update_unique_u8" => _reducer_callbacks.handle_event_of_type::<update_unique_u_8_reducer::UpdateUniqueU8Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueU8),
+			"delete_unique_u8" => _reducer_callbacks.handle_event_of_type::<delete_unique_u_8_reducer::DeleteUniqueU8Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueU8),
+			"insert_unique_u16" => _reducer_callbacks.handle_event_of_type::<insert_unique_u_16_reducer::InsertUniqueU16Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueU16),
+			"update_unique_u16" => _reducer_callbacks.handle_event_of_type::<update_unique_u_16_reducer::UpdateUniqueU16Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueU16),
+			"delete_unique_u16" => _reducer_callbacks.handle_event_of_type::<delete_unique_u_16_reducer::DeleteUniqueU16Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueU16),
+			"insert_unique_u32" => _reducer_callbacks.handle_event_of_type::<insert_unique_u_32_reducer::InsertUniqueU32Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueU32),
+			"update_unique_u32" => _reducer_callbacks.handle_event_of_type::<update_unique_u_32_reducer::UpdateUniqueU32Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueU32),
+			"delete_unique_u32" => _reducer_callbacks.handle_event_of_type::<delete_unique_u_32_reducer::DeleteUniqueU32Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueU32),
+			"insert_unique_u64" => _reducer_callbacks.handle_event_of_type::<insert_unique_u_64_reducer::InsertUniqueU64Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueU64),
+			"update_unique_u64" => _reducer_callbacks.handle_event_of_type::<update_unique_u_64_reducer::UpdateUniqueU64Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueU64),
+			"delete_unique_u64" => _reducer_callbacks.handle_event_of_type::<delete_unique_u_64_reducer::DeleteUniqueU64Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueU64),
+			"insert_unique_u128" => _reducer_callbacks.handle_event_of_type::<insert_unique_u_128_reducer::InsertUniqueU128Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueU128),
+			"update_unique_u128" => _reducer_callbacks.handle_event_of_type::<update_unique_u_128_reducer::UpdateUniqueU128Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueU128),
+			"delete_unique_u128" => _reducer_callbacks.handle_event_of_type::<delete_unique_u_128_reducer::DeleteUniqueU128Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueU128),
+			"insert_unique_i8" => _reducer_callbacks.handle_event_of_type::<insert_unique_i_8_reducer::InsertUniqueI8Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueI8),
+			"update_unique_i8" => _reducer_callbacks.handle_event_of_type::<update_unique_i_8_reducer::UpdateUniqueI8Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueI8),
+			"delete_unique_i8" => _reducer_callbacks.handle_event_of_type::<delete_unique_i_8_reducer::DeleteUniqueI8Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueI8),
+			"insert_unique_i16" => _reducer_callbacks.handle_event_of_type::<insert_unique_i_16_reducer::InsertUniqueI16Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueI16),
+			"update_unique_i16" => _reducer_callbacks.handle_event_of_type::<update_unique_i_16_reducer::UpdateUniqueI16Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueI16),
+			"delete_unique_i16" => _reducer_callbacks.handle_event_of_type::<delete_unique_i_16_reducer::DeleteUniqueI16Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueI16),
+			"insert_unique_i32" => _reducer_callbacks.handle_event_of_type::<insert_unique_i_32_reducer::InsertUniqueI32Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueI32),
+			"update_unique_i32" => _reducer_callbacks.handle_event_of_type::<update_unique_i_32_reducer::UpdateUniqueI32Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueI32),
+			"delete_unique_i32" => _reducer_callbacks.handle_event_of_type::<delete_unique_i_32_reducer::DeleteUniqueI32Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueI32),
+			"insert_unique_i64" => _reducer_callbacks.handle_event_of_type::<insert_unique_i_64_reducer::InsertUniqueI64Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueI64),
+			"update_unique_i64" => _reducer_callbacks.handle_event_of_type::<update_unique_i_64_reducer::UpdateUniqueI64Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueI64),
+			"delete_unique_i64" => _reducer_callbacks.handle_event_of_type::<delete_unique_i_64_reducer::DeleteUniqueI64Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueI64),
+			"insert_unique_i128" => _reducer_callbacks.handle_event_of_type::<insert_unique_i_128_reducer::InsertUniqueI128Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueI128),
+			"update_unique_i128" => _reducer_callbacks.handle_event_of_type::<update_unique_i_128_reducer::UpdateUniqueI128Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueI128),
+			"delete_unique_i128" => _reducer_callbacks.handle_event_of_type::<delete_unique_i_128_reducer::DeleteUniqueI128Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueI128),
+			"insert_unique_bool" => _reducer_callbacks.handle_event_of_type::<insert_unique_bool_reducer::InsertUniqueBoolArgs, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueBool),
+			"update_unique_bool" => _reducer_callbacks.handle_event_of_type::<update_unique_bool_reducer::UpdateUniqueBoolArgs, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueBool),
+			"delete_unique_bool" => _reducer_callbacks.handle_event_of_type::<delete_unique_bool_reducer::DeleteUniqueBoolArgs, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueBool),
+			"insert_unique_string" => _reducer_callbacks.handle_event_of_type::<insert_unique_string_reducer::InsertUniqueStringArgs, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueString),
+			"update_unique_string" => _reducer_callbacks.handle_event_of_type::<update_unique_string_reducer::UpdateUniqueStringArgs, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueString),
+			"delete_unique_string" => _reducer_callbacks.handle_event_of_type::<delete_unique_string_reducer::DeleteUniqueStringArgs, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueString),
+			"insert_unique_identity" => _reducer_callbacks.handle_event_of_type::<insert_unique_identity_reducer::InsertUniqueIdentityArgs, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueIdentity),
+			"update_unique_identity" => _reducer_callbacks.handle_event_of_type::<update_unique_identity_reducer::UpdateUniqueIdentityArgs, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueIdentity),
+			"delete_unique_identity" => _reducer_callbacks.handle_event_of_type::<delete_unique_identity_reducer::DeleteUniqueIdentityArgs, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueIdentity),
+			"insert_unique_address" => _reducer_callbacks.handle_event_of_type::<insert_unique_address_reducer::InsertUniqueAddressArgs, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueAddress),
+			"update_unique_address" => _reducer_callbacks.handle_event_of_type::<update_unique_address_reducer::UpdateUniqueAddressArgs, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueAddress),
+			"delete_unique_address" => _reducer_callbacks.handle_event_of_type::<delete_unique_address_reducer::DeleteUniqueAddressArgs, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueAddress),
+			"insert_pk_u8" => _reducer_callbacks.handle_event_of_type::<insert_pk_u_8_reducer::InsertPkU8Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkU8),
+			"update_pk_u8" => _reducer_callbacks.handle_event_of_type::<update_pk_u_8_reducer::UpdatePkU8Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkU8),
+			"delete_pk_u8" => _reducer_callbacks.handle_event_of_type::<delete_pk_u_8_reducer::DeletePkU8Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkU8),
+			"insert_pk_u16" => _reducer_callbacks.handle_event_of_type::<insert_pk_u_16_reducer::InsertPkU16Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkU16),
+			"update_pk_u16" => _reducer_callbacks.handle_event_of_type::<update_pk_u_16_reducer::UpdatePkU16Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkU16),
+			"delete_pk_u16" => _reducer_callbacks.handle_event_of_type::<delete_pk_u_16_reducer::DeletePkU16Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkU16),
+			"insert_pk_u32" => _reducer_callbacks.handle_event_of_type::<insert_pk_u_32_reducer::InsertPkU32Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkU32),
+			"update_pk_u32" => _reducer_callbacks.handle_event_of_type::<update_pk_u_32_reducer::UpdatePkU32Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkU32),
+			"delete_pk_u32" => _reducer_callbacks.handle_event_of_type::<delete_pk_u_32_reducer::DeletePkU32Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkU32),
+			"insert_pk_u64" => _reducer_callbacks.handle_event_of_type::<insert_pk_u_64_reducer::InsertPkU64Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkU64),
+			"update_pk_u64" => _reducer_callbacks.handle_event_of_type::<update_pk_u_64_reducer::UpdatePkU64Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkU64),
+			"delete_pk_u64" => _reducer_callbacks.handle_event_of_type::<delete_pk_u_64_reducer::DeletePkU64Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkU64),
+			"insert_pk_u128" => _reducer_callbacks.handle_event_of_type::<insert_pk_u_128_reducer::InsertPkU128Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkU128),
+			"update_pk_u128" => _reducer_callbacks.handle_event_of_type::<update_pk_u_128_reducer::UpdatePkU128Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkU128),
+			"delete_pk_u128" => _reducer_callbacks.handle_event_of_type::<delete_pk_u_128_reducer::DeletePkU128Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkU128),
+			"insert_pk_i8" => _reducer_callbacks.handle_event_of_type::<insert_pk_i_8_reducer::InsertPkI8Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkI8),
+			"update_pk_i8" => _reducer_callbacks.handle_event_of_type::<update_pk_i_8_reducer::UpdatePkI8Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkI8),
+			"delete_pk_i8" => _reducer_callbacks.handle_event_of_type::<delete_pk_i_8_reducer::DeletePkI8Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkI8),
+			"insert_pk_i16" => _reducer_callbacks.handle_event_of_type::<insert_pk_i_16_reducer::InsertPkI16Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkI16),
+			"update_pk_i16" => _reducer_callbacks.handle_event_of_type::<update_pk_i_16_reducer::UpdatePkI16Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkI16),
+			"delete_pk_i16" => _reducer_callbacks.handle_event_of_type::<delete_pk_i_16_reducer::DeletePkI16Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkI16),
+			"insert_pk_i32" => _reducer_callbacks.handle_event_of_type::<insert_pk_i_32_reducer::InsertPkI32Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkI32),
+			"update_pk_i32" => _reducer_callbacks.handle_event_of_type::<update_pk_i_32_reducer::UpdatePkI32Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkI32),
+			"delete_pk_i32" => _reducer_callbacks.handle_event_of_type::<delete_pk_i_32_reducer::DeletePkI32Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkI32),
+			"insert_pk_i64" => _reducer_callbacks.handle_event_of_type::<insert_pk_i_64_reducer::InsertPkI64Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkI64),
+			"update_pk_i64" => _reducer_callbacks.handle_event_of_type::<update_pk_i_64_reducer::UpdatePkI64Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkI64),
+			"delete_pk_i64" => _reducer_callbacks.handle_event_of_type::<delete_pk_i_64_reducer::DeletePkI64Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkI64),
+			"insert_pk_i128" => _reducer_callbacks.handle_event_of_type::<insert_pk_i_128_reducer::InsertPkI128Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkI128),
+			"update_pk_i128" => _reducer_callbacks.handle_event_of_type::<update_pk_i_128_reducer::UpdatePkI128Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkI128),
+			"delete_pk_i128" => _reducer_callbacks.handle_event_of_type::<delete_pk_i_128_reducer::DeletePkI128Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkI128),
+			"insert_pk_bool" => _reducer_callbacks.handle_event_of_type::<insert_pk_bool_reducer::InsertPkBoolArgs, ReducerEvent>(event, _state, ReducerEvent::InsertPkBool),
+			"update_pk_bool" => _reducer_callbacks.handle_event_of_type::<update_pk_bool_reducer::UpdatePkBoolArgs, ReducerEvent>(event, _state, ReducerEvent::UpdatePkBool),
+			"delete_pk_bool" => _reducer_callbacks.handle_event_of_type::<delete_pk_bool_reducer::DeletePkBoolArgs, ReducerEvent>(event, _state, ReducerEvent::DeletePkBool),
+			"insert_pk_string" => _reducer_callbacks.handle_event_of_type::<insert_pk_string_reducer::InsertPkStringArgs, ReducerEvent>(event, _state, ReducerEvent::InsertPkString),
+			"update_pk_string" => _reducer_callbacks.handle_event_of_type::<update_pk_string_reducer::UpdatePkStringArgs, ReducerEvent>(event, _state, ReducerEvent::UpdatePkString),
+			"delete_pk_string" => _reducer_callbacks.handle_event_of_type::<delete_pk_string_reducer::DeletePkStringArgs, ReducerEvent>(event, _state, ReducerEvent::DeletePkString),
+			"insert_pk_identity" => _reducer_callbacks.handle_event_of_type::<insert_pk_identity_reducer::InsertPkIdentityArgs, ReducerEvent>(event, _state, ReducerEvent::InsertPkIdentity),
+			"update_pk_identity" => _reducer_callbacks.handle_event_of_type::<update_pk_identity_reducer::UpdatePkIdentityArgs, ReducerEvent>(event, _state, ReducerEvent::UpdatePkIdentity),
+			"delete_pk_identity" => _reducer_callbacks.handle_event_of_type::<delete_pk_identity_reducer::DeletePkIdentityArgs, ReducerEvent>(event, _state, ReducerEvent::DeletePkIdentity),
+			"insert_pk_address" => _reducer_callbacks.handle_event_of_type::<insert_pk_address_reducer::InsertPkAddressArgs, ReducerEvent>(event, _state, ReducerEvent::InsertPkAddress),
+			"update_pk_address" => _reducer_callbacks.handle_event_of_type::<update_pk_address_reducer::UpdatePkAddressArgs, ReducerEvent>(event, _state, ReducerEvent::UpdatePkAddress),
+			"delete_pk_address" => _reducer_callbacks.handle_event_of_type::<delete_pk_address_reducer::DeletePkAddressArgs, ReducerEvent>(event, _state, ReducerEvent::DeletePkAddress),
+			"insert_caller_one_identity" => _reducer_callbacks.handle_event_of_type::<insert_caller_one_identity_reducer::InsertCallerOneIdentityArgs, ReducerEvent>(event, _state, ReducerEvent::InsertCallerOneIdentity),
+			"insert_caller_vec_identity" => _reducer_callbacks.handle_event_of_type::<insert_caller_vec_identity_reducer::InsertCallerVecIdentityArgs, ReducerEvent>(event, _state, ReducerEvent::InsertCallerVecIdentity),
+			"insert_caller_unique_identity" => _reducer_callbacks.handle_event_of_type::<insert_caller_unique_identity_reducer::InsertCallerUniqueIdentityArgs, ReducerEvent>(event, _state, ReducerEvent::InsertCallerUniqueIdentity),
+			"insert_caller_pk_identity" => _reducer_callbacks.handle_event_of_type::<insert_caller_pk_identity_reducer::InsertCallerPkIdentityArgs, ReducerEvent>(event, _state, ReducerEvent::InsertCallerPkIdentity),
+			"insert_caller_one_address" => _reducer_callbacks.handle_event_of_type::<insert_caller_one_address_reducer::InsertCallerOneAddressArgs, ReducerEvent>(event, _state, ReducerEvent::InsertCallerOneAddress),
+			"insert_caller_vec_address" => _reducer_callbacks.handle_event_of_type::<insert_caller_vec_address_reducer::InsertCallerVecAddressArgs, ReducerEvent>(event, _state, ReducerEvent::InsertCallerVecAddress),
+			"insert_caller_unique_address" => _reducer_callbacks.handle_event_of_type::<insert_caller_unique_address_reducer::InsertCallerUniqueAddressArgs, ReducerEvent>(event, _state, ReducerEvent::InsertCallerUniqueAddress),
+			"insert_caller_pk_address" => _reducer_callbacks.handle_event_of_type::<insert_caller_pk_address_reducer::InsertCallerPkAddressArgs, ReducerEvent>(event, _state, ReducerEvent::InsertCallerPkAddress),
+			"insert_large_table" => _reducer_callbacks.handle_event_of_type::<insert_large_table_reducer::InsertLargeTableArgs, ReducerEvent>(event, _state, ReducerEvent::InsertLargeTable),
+			"insert_table_holds_table" => _reducer_callbacks.handle_event_of_type::<insert_table_holds_table_reducer::InsertTableHoldsTableArgs, ReducerEvent>(event, _state, ReducerEvent::InsertTableHoldsTable),
 			unknown => { spacetimedb_sdk::log::error!("Event on an unknown reducer: {:?}", unknown); None }
 }
     }
@@ -1011,14 +1011,33 @@ match &function_call.reducer[..] {
     ) {
         let table_name = &new_subs.table_name[..];
         match table_name {
-            "LargeTable" => client_cache.handle_resubscribe_for_type::<large_table::LargeTable>(callbacks, new_subs),
-            "OneAddress" => client_cache.handle_resubscribe_for_type::<one_address::OneAddress>(callbacks, new_subs),
+            "OneU8" => client_cache.handle_resubscribe_for_type::<one_u_8::OneU8>(callbacks, new_subs),
+            "OneU16" => client_cache.handle_resubscribe_for_type::<one_u_16::OneU16>(callbacks, new_subs),
+            "OneU32" => client_cache.handle_resubscribe_for_type::<one_u_32::OneU32>(callbacks, new_subs),
+            "OneU64" => client_cache.handle_resubscribe_for_type::<one_u_64::OneU64>(callbacks, new_subs),
+            "OneU128" => client_cache.handle_resubscribe_for_type::<one_u_128::OneU128>(callbacks, new_subs),
+            "OneI8" => client_cache.handle_resubscribe_for_type::<one_i_8::OneI8>(callbacks, new_subs),
+            "OneI16" => client_cache.handle_resubscribe_for_type::<one_i_16::OneI16>(callbacks, new_subs),
+            "OneI32" => client_cache.handle_resubscribe_for_type::<one_i_32::OneI32>(callbacks, new_subs),
+            "OneI64" => client_cache.handle_resubscribe_for_type::<one_i_64::OneI64>(callbacks, new_subs),
+            "OneI128" => client_cache.handle_resubscribe_for_type::<one_i_128::OneI128>(callbacks, new_subs),
             "OneBool" => client_cache.handle_resubscribe_for_type::<one_bool::OneBool>(callbacks, new_subs),
-            "OneByteStruct" => {
-                client_cache.handle_resubscribe_for_type::<one_byte_struct::OneByteStruct>(callbacks, new_subs)
+            "OneF32" => client_cache.handle_resubscribe_for_type::<one_f_32::OneF32>(callbacks, new_subs),
+            "OneF64" => client_cache.handle_resubscribe_for_type::<one_f_64::OneF64>(callbacks, new_subs),
+            "OneString" => client_cache.handle_resubscribe_for_type::<one_string::OneString>(callbacks, new_subs),
+            "OneIdentity" => client_cache.handle_resubscribe_for_type::<one_identity::OneIdentity>(callbacks, new_subs),
+            "OneAddress" => client_cache.handle_resubscribe_for_type::<one_address::OneAddress>(callbacks, new_subs),
+            "OneSimpleEnum" => {
+                client_cache.handle_resubscribe_for_type::<one_simple_enum::OneSimpleEnum>(callbacks, new_subs)
             }
             "OneEnumWithPayload" => client_cache
                 .handle_resubscribe_for_type::<one_enum_with_payload::OneEnumWithPayload>(callbacks, new_subs),
+            "OneUnitStruct" => {
+                client_cache.handle_resubscribe_for_type::<one_unit_struct::OneUnitStruct>(callbacks, new_subs)
+            }
+            "OneByteStruct" => {
+                client_cache.handle_resubscribe_for_type::<one_byte_struct::OneByteStruct>(callbacks, new_subs)
+            }
             "OneEveryPrimitiveStruct" => client_cache
                 .handle_resubscribe_for_type::<one_every_primitive_struct::OneEveryPrimitiveStruct>(
                     callbacks, new_subs,
@@ -1026,70 +1045,33 @@ match &function_call.reducer[..] {
             "OneEveryVecStruct" => {
                 client_cache.handle_resubscribe_for_type::<one_every_vec_struct::OneEveryVecStruct>(callbacks, new_subs)
             }
-            "OneF32" => client_cache.handle_resubscribe_for_type::<one_f_32::OneF32>(callbacks, new_subs),
-            "OneF64" => client_cache.handle_resubscribe_for_type::<one_f_64::OneF64>(callbacks, new_subs),
-            "OneI128" => client_cache.handle_resubscribe_for_type::<one_i_128::OneI128>(callbacks, new_subs),
-            "OneI16" => client_cache.handle_resubscribe_for_type::<one_i_16::OneI16>(callbacks, new_subs),
-            "OneI32" => client_cache.handle_resubscribe_for_type::<one_i_32::OneI32>(callbacks, new_subs),
-            "OneI64" => client_cache.handle_resubscribe_for_type::<one_i_64::OneI64>(callbacks, new_subs),
-            "OneI8" => client_cache.handle_resubscribe_for_type::<one_i_8::OneI8>(callbacks, new_subs),
-            "OneIdentity" => client_cache.handle_resubscribe_for_type::<one_identity::OneIdentity>(callbacks, new_subs),
-            "OneSimpleEnum" => {
-                client_cache.handle_resubscribe_for_type::<one_simple_enum::OneSimpleEnum>(callbacks, new_subs)
-            }
-            "OneString" => client_cache.handle_resubscribe_for_type::<one_string::OneString>(callbacks, new_subs),
-            "OneU128" => client_cache.handle_resubscribe_for_type::<one_u_128::OneU128>(callbacks, new_subs),
-            "OneU16" => client_cache.handle_resubscribe_for_type::<one_u_16::OneU16>(callbacks, new_subs),
-            "OneU32" => client_cache.handle_resubscribe_for_type::<one_u_32::OneU32>(callbacks, new_subs),
-            "OneU64" => client_cache.handle_resubscribe_for_type::<one_u_64::OneU64>(callbacks, new_subs),
-            "OneU8" => client_cache.handle_resubscribe_for_type::<one_u_8::OneU8>(callbacks, new_subs),
-            "OneUnitStruct" => {
-                client_cache.handle_resubscribe_for_type::<one_unit_struct::OneUnitStruct>(callbacks, new_subs)
-            }
-            "PkAddress" => client_cache.handle_resubscribe_for_type::<pk_address::PkAddress>(callbacks, new_subs),
-            "PkBool" => client_cache.handle_resubscribe_for_type::<pk_bool::PkBool>(callbacks, new_subs),
-            "PkI128" => client_cache.handle_resubscribe_for_type::<pk_i_128::PkI128>(callbacks, new_subs),
-            "PkI16" => client_cache.handle_resubscribe_for_type::<pk_i_16::PkI16>(callbacks, new_subs),
-            "PkI32" => client_cache.handle_resubscribe_for_type::<pk_i_32::PkI32>(callbacks, new_subs),
-            "PkI64" => client_cache.handle_resubscribe_for_type::<pk_i_64::PkI64>(callbacks, new_subs),
-            "PkI8" => client_cache.handle_resubscribe_for_type::<pk_i_8::PkI8>(callbacks, new_subs),
-            "PkIdentity" => client_cache.handle_resubscribe_for_type::<pk_identity::PkIdentity>(callbacks, new_subs),
-            "PkString" => client_cache.handle_resubscribe_for_type::<pk_string::PkString>(callbacks, new_subs),
-            "PkU128" => client_cache.handle_resubscribe_for_type::<pk_u_128::PkU128>(callbacks, new_subs),
-            "PkU16" => client_cache.handle_resubscribe_for_type::<pk_u_16::PkU16>(callbacks, new_subs),
-            "PkU32" => client_cache.handle_resubscribe_for_type::<pk_u_32::PkU32>(callbacks, new_subs),
-            "PkU64" => client_cache.handle_resubscribe_for_type::<pk_u_64::PkU64>(callbacks, new_subs),
-            "PkU8" => client_cache.handle_resubscribe_for_type::<pk_u_8::PkU8>(callbacks, new_subs),
-            "TableHoldsTable" => {
-                client_cache.handle_resubscribe_for_type::<table_holds_table::TableHoldsTable>(callbacks, new_subs)
-            }
-            "UniqueAddress" => {
-                client_cache.handle_resubscribe_for_type::<unique_address::UniqueAddress>(callbacks, new_subs)
-            }
-            "UniqueBool" => client_cache.handle_resubscribe_for_type::<unique_bool::UniqueBool>(callbacks, new_subs),
-            "UniqueI128" => client_cache.handle_resubscribe_for_type::<unique_i_128::UniqueI128>(callbacks, new_subs),
-            "UniqueI16" => client_cache.handle_resubscribe_for_type::<unique_i_16::UniqueI16>(callbacks, new_subs),
-            "UniqueI32" => client_cache.handle_resubscribe_for_type::<unique_i_32::UniqueI32>(callbacks, new_subs),
-            "UniqueI64" => client_cache.handle_resubscribe_for_type::<unique_i_64::UniqueI64>(callbacks, new_subs),
-            "UniqueI8" => client_cache.handle_resubscribe_for_type::<unique_i_8::UniqueI8>(callbacks, new_subs),
-            "UniqueIdentity" => {
-                client_cache.handle_resubscribe_for_type::<unique_identity::UniqueIdentity>(callbacks, new_subs)
-            }
-            "UniqueString" => {
-                client_cache.handle_resubscribe_for_type::<unique_string::UniqueString>(callbacks, new_subs)
-            }
-            "UniqueU128" => client_cache.handle_resubscribe_for_type::<unique_u_128::UniqueU128>(callbacks, new_subs),
-            "UniqueU16" => client_cache.handle_resubscribe_for_type::<unique_u_16::UniqueU16>(callbacks, new_subs),
-            "UniqueU32" => client_cache.handle_resubscribe_for_type::<unique_u_32::UniqueU32>(callbacks, new_subs),
-            "UniqueU64" => client_cache.handle_resubscribe_for_type::<unique_u_64::UniqueU64>(callbacks, new_subs),
-            "UniqueU8" => client_cache.handle_resubscribe_for_type::<unique_u_8::UniqueU8>(callbacks, new_subs),
-            "VecAddress" => client_cache.handle_resubscribe_for_type::<vec_address::VecAddress>(callbacks, new_subs),
+            "VecU8" => client_cache.handle_resubscribe_for_type::<vec_u_8::VecU8>(callbacks, new_subs),
+            "VecU16" => client_cache.handle_resubscribe_for_type::<vec_u_16::VecU16>(callbacks, new_subs),
+            "VecU32" => client_cache.handle_resubscribe_for_type::<vec_u_32::VecU32>(callbacks, new_subs),
+            "VecU64" => client_cache.handle_resubscribe_for_type::<vec_u_64::VecU64>(callbacks, new_subs),
+            "VecU128" => client_cache.handle_resubscribe_for_type::<vec_u_128::VecU128>(callbacks, new_subs),
+            "VecI8" => client_cache.handle_resubscribe_for_type::<vec_i_8::VecI8>(callbacks, new_subs),
+            "VecI16" => client_cache.handle_resubscribe_for_type::<vec_i_16::VecI16>(callbacks, new_subs),
+            "VecI32" => client_cache.handle_resubscribe_for_type::<vec_i_32::VecI32>(callbacks, new_subs),
+            "VecI64" => client_cache.handle_resubscribe_for_type::<vec_i_64::VecI64>(callbacks, new_subs),
+            "VecI128" => client_cache.handle_resubscribe_for_type::<vec_i_128::VecI128>(callbacks, new_subs),
             "VecBool" => client_cache.handle_resubscribe_for_type::<vec_bool::VecBool>(callbacks, new_subs),
-            "VecByteStruct" => {
-                client_cache.handle_resubscribe_for_type::<vec_byte_struct::VecByteStruct>(callbacks, new_subs)
+            "VecF32" => client_cache.handle_resubscribe_for_type::<vec_f_32::VecF32>(callbacks, new_subs),
+            "VecF64" => client_cache.handle_resubscribe_for_type::<vec_f_64::VecF64>(callbacks, new_subs),
+            "VecString" => client_cache.handle_resubscribe_for_type::<vec_string::VecString>(callbacks, new_subs),
+            "VecIdentity" => client_cache.handle_resubscribe_for_type::<vec_identity::VecIdentity>(callbacks, new_subs),
+            "VecAddress" => client_cache.handle_resubscribe_for_type::<vec_address::VecAddress>(callbacks, new_subs),
+            "VecSimpleEnum" => {
+                client_cache.handle_resubscribe_for_type::<vec_simple_enum::VecSimpleEnum>(callbacks, new_subs)
             }
             "VecEnumWithPayload" => client_cache
                 .handle_resubscribe_for_type::<vec_enum_with_payload::VecEnumWithPayload>(callbacks, new_subs),
+            "VecUnitStruct" => {
+                client_cache.handle_resubscribe_for_type::<vec_unit_struct::VecUnitStruct>(callbacks, new_subs)
+            }
+            "VecByteStruct" => {
+                client_cache.handle_resubscribe_for_type::<vec_byte_struct::VecByteStruct>(callbacks, new_subs)
+            }
             "VecEveryPrimitiveStruct" => client_cache
                 .handle_resubscribe_for_type::<vec_every_primitive_struct::VecEveryPrimitiveStruct>(
                     callbacks, new_subs,
@@ -1097,25 +1079,43 @@ match &function_call.reducer[..] {
             "VecEveryVecStruct" => {
                 client_cache.handle_resubscribe_for_type::<vec_every_vec_struct::VecEveryVecStruct>(callbacks, new_subs)
             }
-            "VecF32" => client_cache.handle_resubscribe_for_type::<vec_f_32::VecF32>(callbacks, new_subs),
-            "VecF64" => client_cache.handle_resubscribe_for_type::<vec_f_64::VecF64>(callbacks, new_subs),
-            "VecI128" => client_cache.handle_resubscribe_for_type::<vec_i_128::VecI128>(callbacks, new_subs),
-            "VecI16" => client_cache.handle_resubscribe_for_type::<vec_i_16::VecI16>(callbacks, new_subs),
-            "VecI32" => client_cache.handle_resubscribe_for_type::<vec_i_32::VecI32>(callbacks, new_subs),
-            "VecI64" => client_cache.handle_resubscribe_for_type::<vec_i_64::VecI64>(callbacks, new_subs),
-            "VecI8" => client_cache.handle_resubscribe_for_type::<vec_i_8::VecI8>(callbacks, new_subs),
-            "VecIdentity" => client_cache.handle_resubscribe_for_type::<vec_identity::VecIdentity>(callbacks, new_subs),
-            "VecSimpleEnum" => {
-                client_cache.handle_resubscribe_for_type::<vec_simple_enum::VecSimpleEnum>(callbacks, new_subs)
+            "UniqueU8" => client_cache.handle_resubscribe_for_type::<unique_u_8::UniqueU8>(callbacks, new_subs),
+            "UniqueU16" => client_cache.handle_resubscribe_for_type::<unique_u_16::UniqueU16>(callbacks, new_subs),
+            "UniqueU32" => client_cache.handle_resubscribe_for_type::<unique_u_32::UniqueU32>(callbacks, new_subs),
+            "UniqueU64" => client_cache.handle_resubscribe_for_type::<unique_u_64::UniqueU64>(callbacks, new_subs),
+            "UniqueU128" => client_cache.handle_resubscribe_for_type::<unique_u_128::UniqueU128>(callbacks, new_subs),
+            "UniqueI8" => client_cache.handle_resubscribe_for_type::<unique_i_8::UniqueI8>(callbacks, new_subs),
+            "UniqueI16" => client_cache.handle_resubscribe_for_type::<unique_i_16::UniqueI16>(callbacks, new_subs),
+            "UniqueI32" => client_cache.handle_resubscribe_for_type::<unique_i_32::UniqueI32>(callbacks, new_subs),
+            "UniqueI64" => client_cache.handle_resubscribe_for_type::<unique_i_64::UniqueI64>(callbacks, new_subs),
+            "UniqueI128" => client_cache.handle_resubscribe_for_type::<unique_i_128::UniqueI128>(callbacks, new_subs),
+            "UniqueBool" => client_cache.handle_resubscribe_for_type::<unique_bool::UniqueBool>(callbacks, new_subs),
+            "UniqueString" => {
+                client_cache.handle_resubscribe_for_type::<unique_string::UniqueString>(callbacks, new_subs)
             }
-            "VecString" => client_cache.handle_resubscribe_for_type::<vec_string::VecString>(callbacks, new_subs),
-            "VecU128" => client_cache.handle_resubscribe_for_type::<vec_u_128::VecU128>(callbacks, new_subs),
-            "VecU16" => client_cache.handle_resubscribe_for_type::<vec_u_16::VecU16>(callbacks, new_subs),
-            "VecU32" => client_cache.handle_resubscribe_for_type::<vec_u_32::VecU32>(callbacks, new_subs),
-            "VecU64" => client_cache.handle_resubscribe_for_type::<vec_u_64::VecU64>(callbacks, new_subs),
-            "VecU8" => client_cache.handle_resubscribe_for_type::<vec_u_8::VecU8>(callbacks, new_subs),
-            "VecUnitStruct" => {
-                client_cache.handle_resubscribe_for_type::<vec_unit_struct::VecUnitStruct>(callbacks, new_subs)
+            "UniqueIdentity" => {
+                client_cache.handle_resubscribe_for_type::<unique_identity::UniqueIdentity>(callbacks, new_subs)
+            }
+            "UniqueAddress" => {
+                client_cache.handle_resubscribe_for_type::<unique_address::UniqueAddress>(callbacks, new_subs)
+            }
+            "PkU8" => client_cache.handle_resubscribe_for_type::<pk_u_8::PkU8>(callbacks, new_subs),
+            "PkU16" => client_cache.handle_resubscribe_for_type::<pk_u_16::PkU16>(callbacks, new_subs),
+            "PkU32" => client_cache.handle_resubscribe_for_type::<pk_u_32::PkU32>(callbacks, new_subs),
+            "PkU64" => client_cache.handle_resubscribe_for_type::<pk_u_64::PkU64>(callbacks, new_subs),
+            "PkU128" => client_cache.handle_resubscribe_for_type::<pk_u_128::PkU128>(callbacks, new_subs),
+            "PkI8" => client_cache.handle_resubscribe_for_type::<pk_i_8::PkI8>(callbacks, new_subs),
+            "PkI16" => client_cache.handle_resubscribe_for_type::<pk_i_16::PkI16>(callbacks, new_subs),
+            "PkI32" => client_cache.handle_resubscribe_for_type::<pk_i_32::PkI32>(callbacks, new_subs),
+            "PkI64" => client_cache.handle_resubscribe_for_type::<pk_i_64::PkI64>(callbacks, new_subs),
+            "PkI128" => client_cache.handle_resubscribe_for_type::<pk_i_128::PkI128>(callbacks, new_subs),
+            "PkBool" => client_cache.handle_resubscribe_for_type::<pk_bool::PkBool>(callbacks, new_subs),
+            "PkString" => client_cache.handle_resubscribe_for_type::<pk_string::PkString>(callbacks, new_subs),
+            "PkIdentity" => client_cache.handle_resubscribe_for_type::<pk_identity::PkIdentity>(callbacks, new_subs),
+            "PkAddress" => client_cache.handle_resubscribe_for_type::<pk_address::PkAddress>(callbacks, new_subs),
+            "LargeTable" => client_cache.handle_resubscribe_for_type::<large_table::LargeTable>(callbacks, new_subs),
+            "TableHoldsTable" => {
+                client_cache.handle_resubscribe_for_type::<table_holds_table::TableHoldsTable>(callbacks, new_subs)
             }
             _ => spacetimedb_sdk::log::error!("TableRowOperation on unknown table {:?}", table_name),
         }

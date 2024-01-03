@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- needs to be exe for initializers to be embedded correctly -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <WasmDebugLevel>1</WasmDebugLevel>
+    <WasmBuildNative>true</WasmBuildNative>
+    <WasmNativeDebugSymbols>true</WasmNativeDebugSymbols>
+    <WasmNativeStrip>false</WasmNativeStrip>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+  </PropertyGroup>
+
+  <!--
+    Use local package sources instead of published ones.
+    This makes integration test somewhat differ from production configuration, but
+    at least it simplifies workflow for editing and testing C# code itself.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="../../crates/bindings-csharp/Codegen/Codegen.csproj" OutputItemType="Analyzer" />
+    <ProjectReference Include="../../crates/bindings-csharp/Runtime/Runtime.csproj" />
+  </ItemGroup>
+
+</Project>

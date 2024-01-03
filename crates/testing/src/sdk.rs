@@ -5,8 +5,7 @@ use std::thread::JoinHandle;
 use std::{collections::HashSet, fs::create_dir_all, sync::Mutex};
 
 use crate::invoke_cli;
-use crate::modules::{module_path, CompilationMode, CompiledModule};
-use std::path::Path;
+use crate::modules::module_path;
 use tempfile::TempDir;
 
 pub fn ensure_standalone_process() {
@@ -32,39 +31,6 @@ pub fn ensure_standalone_process() {
     {
         join_handle.take().unwrap().join().expect("Standalone process failed");
     }
-}
-
-lazy_static! {
-    /// An exclusive lock which ensures we only run `spacetime generate` once for each target directory.
-    ///
-    /// Without this lock, if multiple `Test`s ran concurrently in the same process
-    /// with the same `client_project` and `generate_subdir`,
-    /// the test harness would run `spacetime generate` multiple times concurrently,
-    /// each of which would remove and re-populate the bindings directory,
-    /// potentially sweeping them out from under a compile or run process.
-    ///
-    /// This lock ensures that only one `spacetime generate` process runs at a time,
-    /// and the `HashSet` ensures that we run `spacetime generate` only once for each output directory.
-    ///
-    /// Circumstances where this will still break:
-    /// - If multiple tests want to use the same client_project/generate_subdir pair,
-    ///   but for different modules' bindings, only one module's bindings will ever be generated.
-    ///   If you need bindings for multiple different modules, put them in different subdirs.
-    /// - If multiple distinct test harness processes run concurrently,
-    ///   they will encounter the race condition described above,
-    ///   because the `BINDINGS_GENERATED` lock is not shared between harness processes.
-    ///   Running multiple test harness processes concurrently will break anyways
-    ///   because each will try to run `spacetime start` as a subprocess and will therefore
-    ///   contend over port 3000.
-    ///   Prefer constructing multiple `Test`s and `Test::run`ing them
-    ///   from within the same harness process.
-    //
-    // I (pgoldman 2023-09-11) considered, as an alternative to this lock,
-    // having `Test::run` copy the `client_project` into a fresh temporary directory.
-    // That would be more complicated, as we'd need to re-write dependencies
-    // on the client language's SpacetimeDB SDK to use a local absolute path.
-    // Doing so portably across all our SDK languages seemed infeasible.
-    static ref BINDINGS_GENERATED: Mutex<HashSet<String>> = Mutex::new(HashSet::new());
 }
 
 pub struct Test {
@@ -110,20 +76,18 @@ impl Test {
     pub fn run(&self) {
         ensure_standalone_process();
 
-        let compiled = CompiledModule::compile(&self.module_name, CompilationMode::Debug);
-
         generate_bindings(
             &self.generate_language,
-            compiled.path(),
+            &self.module_name,
             &self.client_project,
             &self.generate_subdir,
         );
 
-        compile_client(&self.compile_command, &self.client_project, &self.name);
+        compile_client(&self.compile_command, &self.client_project);
 
         let db_name = publish_module(&self.module_name);
 
-        run_client(&self.run_command, &self.client_project, &db_name, &self.name);
+        run_client(&self.run_command, &self.client_project, &db_name);
     }
 }
 
@@ -144,39 +108,78 @@ fn random_module_name() -> String {
 }
 
 fn publish_module(module: &str) -> String {
+    static PUBLISHED_MODULES: Mutex<()> = Mutex::new(());
+
+    let _lock = PUBLISHED_MODULES.lock().expect("PUBLISHED_MODULES Mutex is poisoned");
+
     let name = random_module_name();
     invoke_cli(&[
         "publish",
+        "--debug",
         "--project-path",
         module_path(module).to_str().unwrap(),
         "--skip_clippy",
         &name,
     ]);
-
     name
 }
 
-fn generate_bindings(language: &str, path: &Path, client_project: &str, generate_subdir: &str) {
-    let generate_dir = format!("{}/{}", client_project, generate_subdir);
+fn generate_bindings(language: &str, module_name: &str, client_project: &str, generate_subdir: &str) {
+    /// An exclusive lock which ensures we only run `spacetime generate` once for each target directory.
+    ///
+    /// Without this lock, if multiple `Test`s ran concurrently in the same process
+    /// with the same `client_project` and `generate_subdir`,
+    /// the test harness would run `spacetime generate` multiple times concurrently,
+    /// each of which would remove and re-populate the bindings directory,
+    /// potentially sweeping them out from under a compile or run process.
+    ///
+    /// This lock ensures that only one `spacetime generate` process runs at a time,
+    /// and the `HashSet` ensures that we run `spacetime generate` only once for each output directory.
+    ///
+    /// Circumstances where this will still break:
+    /// - If multiple tests want to use the same client_project/generate_subdir pair,
+    ///   but for different modules' bindings, only one module's bindings will ever be generated.
+    ///   If you need bindings for multiple different modules, put them in different subdirs.
+    /// - If multiple distinct test harness processes run concurrently,
+    ///   they will encounter the race condition described above,
+    ///   because the `BINDINGS_GENERATED` lock is not shared between harness processes.
+    ///   Running multiple test harness processes concurrently will break anyways
+    ///   because each will try to run `spacetime start` as a subprocess and will therefore
+    ///   contend over port 3000.
+    ///   Prefer constructing multiple `Test`s and `Test::run`ing them
+    ///   from within the same harness process.
+    //
+    // I (pgoldman 2023-09-11) considered, as an alternative to this lock,
+    // having `Test::run` copy the `client_project` into a fresh temporary directory.
+    // That would be more complicated, as we'd need to re-write dependencies
+    // on the client language's SpacetimeDB SDK to use a local absolute path.
+    // Doing so portably across all our SDK languages seemed infeasible.
+    static BINDINGS_GENERATED: Mutex<Option<HashSet<String>>> = Mutex::new(None);
 
     let mut bindings_lock = BINDINGS_GENERATED.lock().expect("BINDINGS_GENERATED Mutex is poisoned");
+
+    let generate_dir = format!("{}/{}", client_project, generate_subdir);
 
     // If we've already generated bindings in this directory,
     // return early.
     // Otherwise, we'll hold the lock for the duration of the subprocess,
     // so other tests will wait before overwriting our output.
-    if !bindings_lock.insert(generate_dir.clone()) {
+    if !bindings_lock
+        .get_or_insert_with(HashSet::new)
+        .insert(generate_dir.clone())
+    {
         return;
     }
 
     create_dir_all(&generate_dir).expect("Error creating generate subdir");
     invoke_cli(&[
         "generate",
+        "--debug",
         "--skip_clippy",
         "--lang",
         language,
-        "--wasm-file",
-        path.to_str().unwrap(),
+        "--project-path",
+        module_path(module_name).to_str().unwrap(),
         "--out-dir",
         &generate_dir,
     ]);
@@ -189,7 +192,7 @@ fn split_command_string(command: &str) -> (&str, Vec<&str>) {
     (exe, args)
 }
 
-fn compile_client(compile_command: &str, client_project: &str, test_name: &str) {
+fn compile_client(compile_command: &str, client_project: &str) {
     let (exe, args) = split_command_string(compile_command);
 
     let output = cmd(exe, args)
@@ -201,24 +204,27 @@ fn compile_client(compile_command: &str, client_project: &str, test_name: &str) 
         .run()
         .expect("Error running compile command");
 
-    status_ok_or_panic(output, compile_command, test_name);
+    status_ok_or_panic(output, compile_command, "(compiling)");
 }
 
-fn run_client(run_command: &str, client_project: &str, db_name: &str, test_name: &str) {
+fn run_client(run_command: &str, client_project: &str, db_name: &str) {
     let (exe, args) = split_command_string(run_command);
 
     let output = cmd(exe, args)
         .dir(client_project)
         .env(TEST_CLIENT_PROJECT_ENV_VAR, client_project)
         .env(TEST_DB_NAME_ENV_VAR, db_name)
-        .env("RUST_LOG", "trace")
+        .env(
+            "RUST_LOG",
+            "spacetimedb=debug,spacetimedb_client_api=debug,spacetimedb_lib=debug,spacetimedb_standalone=debug",
+        )
         .stderr_to_stdout()
         .stdout_capture()
         .unchecked()
         .run()
         .expect("Error running run command");
 
-    status_ok_or_panic(output, run_command, test_name);
+    status_ok_or_panic(output, run_command, "(running)");
 }
 
 #[derive(Clone, Default)]
