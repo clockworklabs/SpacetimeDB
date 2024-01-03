@@ -57,7 +57,7 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
     })?;
 
     // run dotnet publish using cmd macro
-    cmd!("dotnet", "publish", "-c", config_name).dir(project_path).run()?;
+    cmd!("dotnet", "publish", "-c", config_name, "-v", "quiet").dir(project_path).run()?;
 
     // check if file exists
     let mut output_path = project_path.join(format!("bin/{config_name}/net8.0/wasi-wasm/AppBundle/StdbModule.wasm"));
