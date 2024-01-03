@@ -4,7 +4,6 @@ use std::ops::RangeBounds;
 
 use itertools::Itertools;
 use spacetimedb_lib::Address;
-use tracing::debug;
 
 use crate::db::cursor::{CatalogCursor, IndexCursor, TableCursor};
 use crate::db::datastore::locking_tx_datastore::IterByColEq;
@@ -318,7 +317,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx, MutTx> {
     #[tracing::instrument(skip_all)]
     fn _eval_query(&mut self, query: QueryCode) -> Result<Code, ErrorVm> {
         let table_access = query.table.table_access();
-        debug!(table = query.table.table_name());
+        tracing::trace!(table = query.table.table_name());
 
         let result = build_query(self.ctx, self.db, self.tx, query)?;
         let head = result.head().clone();
