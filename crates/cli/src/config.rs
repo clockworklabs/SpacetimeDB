@@ -871,7 +871,7 @@ impl Config {
 
         let config = toml::to_string_pretty(&self.home).unwrap();
 
-        if let Err(e) = std::fs::write(&config_path, &config) {
+        if let Err(e) = std::fs::write(config_path, config) {
             if !config_var_exists {
                 eprintln!("could not save config file: {e}")
             }

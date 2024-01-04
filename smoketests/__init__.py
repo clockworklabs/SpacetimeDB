@@ -1,15 +1,16 @@
 from pathlib import Path
-import unittest
-import tempfile
+import contextlib
+import json
 import os
-import re
-import string
 import random
+import re
+import shutil
+import string
 import string
 import subprocess
-import json
 import sys
-import shutil
+import tempfile
+import unittest
 
 TEST_DIR = Path(__file__).parent
 STDB_DIR = TEST_DIR.parent
@@ -48,6 +49,13 @@ def random_string(k=20):
     return ''.join(random.choices(string.ascii_letters, k=k))
 
 def extract_fields(cmd_output, field_name):
+    """
+    parses output from the spacetime cli that's formatted in the "empty" style
+    from tabled:
+        FIELDNAME1    VALUE1
+        THEFIELDNAME2 VALUE2
+    field_name should be which field name you want to filter for
+    """
     out = []
     for line in cmd_output.splitlines():
         fields = line.split()
@@ -193,3 +201,10 @@ class Smoketest(unittest.TestCase):
     #     if self.AUTOPUBLISH:
     #         self.spacetime("publish", "-S", "--project-path", self.project_path)
     
+    if sys.version_info < (3, 11):
+        # polyfill; python 3.11 defines this classmethod on TestCase
+        @classmethod
+        def enterClassContext(cls, cm):
+            result = cm.__enter__()
+            cls.addClassCleanup(cm.__exit__, None, None, None)
+            return result
