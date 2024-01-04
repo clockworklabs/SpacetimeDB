@@ -35,7 +35,7 @@ def build_template_target():
 
         BuildModule.setUpClass()
         env = { **os.environ, "CARGO_TARGET_DIR": TEMPLATE_TARGET_DIR }
-        spacetime("build", "-Sd", BuildModule.project_path, env=env, capture_stderr=False)
+        spacetime("build", BuildModule.project_path, env=env, capture_stderr=False)
         BuildModule.tearDownClass()
         BuildModule.doClassCleanups()
 
@@ -125,7 +125,7 @@ class Smoketest(unittest.TestCase):
 
     def publish_module(self, domain=None, *, clear=True, capture_stderr=True):
         publish_output = self.spacetime(
-            "publish", "-S",
+            "publish",
             *[domain] if domain is not None else [],
             "--project-path", self.project_path,
             *(["-c"] if clear else []),
