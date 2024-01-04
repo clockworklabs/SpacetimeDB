@@ -33,7 +33,7 @@ static ENGINE: Lazy<Engine> = Lazy::new(|| {
         // see <https://docs.wasmtime.dev/cli-cache.html> for options here
         [cache]
         enabled = true
-        directory = (toml::Value::try_from(stdb_path("worker_node/wasmtime_cache")).unwrap())
+        directory = (toml::Value::try_from(stdb_path("data/worker_node/wasmtime_cache")).unwrap())
     };
     // ignore errors for this - if we're not able to set up caching, that's fine, it's just an optimization
     let _ = set_cache_config(&mut config, cache_config);

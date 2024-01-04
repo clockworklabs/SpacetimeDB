@@ -653,7 +653,7 @@ impl StandaloneEnv {
             .context("failed to load module program")?
             .ok_or_else(|| anyhow!("missing object: {}", database.program_bytes_address.to_hex()))?;
 
-        let root_db_path = stdb_path("worker_node/database_instances");
+        let root_db_path = stdb_path("data/worker_node/database_instances");
 
         let (dbic, (scheduler, scheduler_starter)) = {
             let (dbic, scheduler) = tokio::task::block_in_place(|| {
