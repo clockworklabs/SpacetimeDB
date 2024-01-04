@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Weak};
@@ -69,15 +70,15 @@ impl DatabaseUpdate {
         }
 
         let ctx = ExecutionContext::internal(stdb.address());
-        let mut table_name_map: HashMap<TableId, _> = HashMap::new();
+        let mut table_name_map: HashMap<TableId, Cow<'_, str>> = HashMap::new();
         let mut table_updates = Vec::new();
         for (table_id, table_row_operations) in map.drain() {
-            let table_name = if let Some(name) = table_name_map.get(&table_id) {
-                name
+            let table_name: &str = if let Some(name) = table_name_map.get(&table_id) {
+                name.as_ref()
             } else {
                 let table_name = stdb.table_name_from_id(&ctx, &tx, table_id).unwrap().unwrap();
                 table_name_map.insert(table_id, table_name);
-                table_name
+                table_name_map.get(&table_id).unwrap().as_ref()
             };
             table_updates.push(DatabaseTableUpdate {
                 table_id,
