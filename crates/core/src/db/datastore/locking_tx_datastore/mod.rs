@@ -2499,8 +2499,8 @@ impl MutTxDatastore for Locking {
         ctx: &'a ExecutionContext,
         tx: &'a Self::MutTx,
         table_id: TableId,
-    ) -> super::Result<Option<&'a str>> {
-        tx.table_name_from_id(ctx, table_id)
+    ) -> super::Result<Option<Cow<'a, str>>> {
+        tx.table_name_from_id(ctx, table_id).map(|opt| opt.map(Cow::Borrowed))
     }
 
     fn create_index_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, index: IndexDef) -> super::Result<IndexId> {
