@@ -68,7 +68,7 @@ class Permissions(Smoketest):
         self.reset_config()
 
         with self.assertRaises(Exception): 
-            self.spacetime("publish", "-S", self.address, "--project-path", self.project_path, "--clear-database")
+            self.spacetime("publish", self.address, "--project-path", self.project_path, "--clear-database")
 
     
 class PrivateTablePermissions(Smoketest):
