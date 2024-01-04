@@ -709,7 +709,7 @@ impl TxState {
 }
 
 pub struct SequencesState {
-    sequences: HashMap<SequenceId, Sequence>,
+    pub sequences: HashMap<SequenceId, Sequence>,
 }
 
 impl SequencesState {
