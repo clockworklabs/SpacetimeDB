@@ -39,7 +39,7 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
 
 async fn exec_clear(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let force = args.get_flag("force");
-    if let None = std::env::var_os("STDB_PATH").map(PathBuf::from) {
+    if std::env::var_os("STDB_PATH").map(PathBuf::from).is_none() {
         let mut path = dirs::home_dir().unwrap_or_default();
         path.push(".spacetime");
         std::env::set_var("STDB_PATH", path.to_str().unwrap());
