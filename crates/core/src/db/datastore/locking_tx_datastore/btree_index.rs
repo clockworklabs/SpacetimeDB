@@ -1,6 +1,5 @@
 use super::RowId;
-use crate::db::datastore::locking_tx_datastore::table::Table;
-use crate::error::{DBError, IndexError};
+use crate::error::DBError;
 use nonempty::NonEmpty;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::data_key::ToDataKey;
@@ -186,18 +185,5 @@ impl BTreeIndex {
             self.insert(row)?;
         }
         Ok(())
-    }
-
-    pub(crate) fn build_error_unique(&self, table: &Table, value: AlgebraicValue) -> IndexError {
-        IndexError::UniqueConstraintViolation {
-            constraint_name: self.name.clone(),
-            table_name: table.schema.table_name.clone(),
-            cols: self
-                .cols
-                .iter()
-                .map(|&x| table.schema.columns()[usize::from(x)].col_name.clone())
-                .collect(),
-            value,
-        }
     }
 }

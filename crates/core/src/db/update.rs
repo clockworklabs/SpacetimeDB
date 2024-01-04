@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 
 use anyhow::Context;
+use spacetimedb_primitives::Constraints;
 
 use crate::database_logger::SystemLogger;
 use crate::error::DBError;
@@ -10,8 +11,7 @@ use crate::execution_context::ExecutionContext;
 
 use super::datastore::locking_tx_datastore::MutTxId;
 use super::relational_db::RelationalDB;
-use spacetimedb_primitives::{IndexId, TableId};
-use spacetimedb_sats::db::def::{IndexDef, TableDef, TableSchema};
+use spacetimedb_sats::db::def::{TableDef, TableSchema};
 use spacetimedb_sats::hash::Hash;
 
 #[derive(thiserror::Error, Debug)]
@@ -21,11 +21,6 @@ pub enum UpdateDatabaseError {
     #[error(transparent)]
     Database(#[from] DBError),
 }
-
-// TODO: Post #267, it will no longer be possible to modify indexes on existing
-// tables. Below must thus be simplified to reject _any_ change to existing
-// tables, and only accept updates which introduce new tables (beware of
-// ordering when comparing definition types!).
 
 pub fn update_database(
     stdb: &RelationalDB,
@@ -39,28 +34,11 @@ pub fn update_database(
     let (tx, res) = stdb.with_auto_rollback::<_, _, anyhow::Error>(&ctx, tx, |tx| {
         let existing_tables = stdb.get_all_tables(tx)?;
         match schema_updates(existing_tables, proposed_tables)? {
-            SchemaUpdates::Updates {
-                new_tables,
-                indexes_to_drop,
-                indexes_to_create,
-            } => {
+            SchemaUpdates::Updates { new_tables } => {
                 for (name, schema) in new_tables {
                     system_logger.info(&format!("Creating table `{}`", name));
                     stdb.create_table(tx, schema)
                         .with_context(|| format!("failed to create table {}", name))?;
-                }
-
-                for index_id in indexes_to_drop {
-                    system_logger.info(&format!("Dropping index with id {}", index_id.0));
-                    stdb.drop_index(tx, index_id)?;
-                }
-
-                for (table_id, index_def) in indexes_to_create {
-                    system_logger.info(&format!(
-                        "Creating index `{}` for table_id `{table_id}`",
-                        index_def.index_name
-                    ));
-                    stdb.create_index(tx, table_id, index_def)?;
                 }
             }
 
@@ -117,15 +95,6 @@ pub enum SchemaUpdates {
     Updates {
         /// Tables to create.
         new_tables: HashMap<String, TableDef>,
-        /// Indexes to drop.
-        ///
-        /// Should be processed _before_ `indexes_to_create`, as we might be
-        /// updating (i.e. drop then create with different parameters).
-        indexes_to_drop: Vec<IndexId>,
-        /// Indexes to create.
-        ///
-        /// Should be processed _after_ `indexes_to_drop`.
-        indexes_to_create: Vec<(TableId, IndexDef)>,
     },
 }
 
@@ -148,8 +117,6 @@ pub fn schema_updates(
 ) -> anyhow::Result<SchemaUpdates> {
     let mut new_tables = HashMap::new();
     let mut tainted_tables = Vec::new();
-    let mut indexes_to_create = Vec::new();
-    let mut indexes_to_drop = Vec::new();
 
     let mut known_tables: BTreeMap<String, Cow<TableSchema>> = existing_tables
         .into_iter()
@@ -159,40 +126,12 @@ pub fn schema_updates(
     for proposed_schema_def in proposed_tables {
         let proposed_table_name = &proposed_schema_def.table_name;
         if let Some(known_schema) = known_tables.remove(proposed_table_name) {
-            let table_id = known_schema.table_id;
             let known_schema_def = TableDef::from(known_schema.as_ref().clone());
-            // If the schemas differ the update should be rejected.
             if !equiv(&known_schema_def, &proposed_schema_def) {
                 tainted_tables.push(Tainted {
                     table_name: proposed_table_name.to_owned(),
                     reason: TaintReason::IncompatibleSchema,
                 });
-            } else {
-                // The schema is unchanged, but maybe the indexes are.
-                let mut known_indexes = known_schema
-                    .indexes
-                    .iter()
-                    .map(|idx| (idx.index_name.clone(), idx))
-                    .collect::<BTreeMap<_, _>>();
-
-                for index_def in proposed_schema_def.indexes {
-                    match known_indexes.remove(&index_def.index_name) {
-                        None => indexes_to_create.push((table_id, index_def)),
-                        Some(known_index) => {
-                            let known_id = known_index.index_id;
-                            let known_index_def = IndexDef::from(known_index.clone());
-                            if known_index_def != index_def {
-                                indexes_to_drop.push(known_id);
-                                indexes_to_create.push((table_id, index_def));
-                            }
-                        }
-                    }
-                }
-
-                // Indexes not in the proposed schema shall be dropped.
-                for index in known_indexes.into_values() {
-                    indexes_to_drop.push(index.index_id);
-                }
             }
         } else {
             new_tables.insert(proposed_table_name.to_owned(), proposed_schema_def);
@@ -210,11 +149,7 @@ pub fn schema_updates(
     }
 
     let res = if tainted_tables.is_empty() {
-        SchemaUpdates::Updates {
-            new_tables,
-            indexes_to_drop,
-            indexes_to_create,
-        }
+        SchemaUpdates::Updates { new_tables }
     } else {
         SchemaUpdates::Tainted(tainted_tables)
     };
@@ -222,18 +157,27 @@ pub fn schema_updates(
     Ok(res)
 }
 
-/// Two [`datastore::traits::TableDef`]s are equivalent if, and only if, all
-/// their fields _except_ for `indexes` are equal.
+/// Compares two [`TableDef`] values for equivalence.
 ///
-/// This allows to reject schema changes in [`schema_updates`] but allow
-/// changes to only the indexes. We don't have support for full schema
-/// migrations yet, but creating and dropping indexes is trivial.
+/// One side of the comparison is assumed to come from a module, the other from
+/// the existing database.
+///
+/// Two [`TableDef`] values are considered equivalent if their fields are equal,
+/// except:
+///
+/// - `indexes` are never equal, because they only exist in the database
+/// - `sequences` are never equal, because they only exist in the database
+/// - only `constraints` which have set column attributes can be equal (the
+///   module may emit unset attributes)
+///
+/// Thus, `indexes` and `sequences` are ignored, while `constraints` are
+/// compared sans any unset attributes.
 fn equiv(a: &TableDef, b: &TableDef) -> bool {
     let TableDef {
         table_name,
         columns,
         indexes: _,
-        constraints: _,
+        constraints,
         sequences: _,
         table_type,
         table_access,
@@ -242,6 +186,10 @@ fn equiv(a: &TableDef, b: &TableDef) -> bool {
         && table_type == &b.table_type
         && table_access == &b.table_access
         && columns == &b.columns
+        && constraints
+            .iter()
+            .filter(|c| c.constraints != Constraints::unset())
+            .eq(b.constraints.iter().filter(|c| c.constraints != Constraints::unset()))
 }
 
 #[cfg(test)]
@@ -291,83 +239,9 @@ mod tests {
 
         match schema_updates(current, proposed.clone())? {
             SchemaUpdates::Tainted(tainted) => bail!("unexpectedly tainted: {tainted:#?}"),
-            SchemaUpdates::Updates {
-                new_tables,
-                indexes_to_drop,
-                indexes_to_create,
-            } => {
-                assert!(indexes_to_drop.is_empty());
-                assert!(indexes_to_create.is_empty());
+            SchemaUpdates::Updates { new_tables } => {
                 assert_eq!(new_tables.len(), 1);
                 assert_eq!(new_tables.get("Pet"), proposed.last());
-
-                Ok(())
-            }
-        }
-    }
-
-    #[test]
-    fn test_updates_alter_indexes() -> anyhow::Result<()> {
-        let current = vec![Cow::Owned(
-            TableDef::new(
-                "Person".into(),
-                vec![
-                    ColumnDef {
-                        col_name: "id".into(),
-                        col_type: AlgebraicType::U32,
-                    },
-                    ColumnDef {
-                        col_name: "name".into(),
-                        col_type: AlgebraicType::String,
-                    },
-                ],
-            )
-            .with_column_constraint(Constraints::identity(), ColId(0))
-            .with_indexes(vec![IndexDef::btree(
-                "Person_id_unique".into(),
-                (ColId(0), vec![ColId(1)]),
-                true,
-            )])
-            .into_schema(TableId(42)),
-        )];
-
-        let mut proposed = vec![TableDef::new(
-            "Person".into(),
-            vec![
-                ColumnDef {
-                    col_name: "id".into(),
-                    col_type: AlgebraicType::U32,
-                },
-                ColumnDef {
-                    col_name: "name".into(),
-                    col_type: AlgebraicType::String,
-                },
-            ],
-        )
-        .with_column_constraint(Constraints::identity(), ColId(0))
-        .with_indexes(vec![IndexDef::btree(
-            "Person_id_and_name".into(),
-            (ColId(0), vec![ColId(1)]),
-            false,
-        )])];
-
-        match schema_updates(current, proposed.clone())? {
-            SchemaUpdates::Tainted(tainted) => bail!("unexpectedly tainted: {tainted:#?}"),
-            SchemaUpdates::Updates {
-                new_tables,
-                indexes_to_drop,
-                indexes_to_create,
-            } => {
-                assert!(new_tables.is_empty());
-                //TODO: This expect before 1 index, but `IDENTITY` constraint assumes is `UNIQUE`
-                assert_eq!(indexes_to_drop.len(), 2);
-                assert_eq!(indexes_to_create.len(), 1);
-
-                assert_eq!(indexes_to_drop[0].0, 0);
-                assert_eq!(
-                    indexes_to_create.last(),
-                    proposed[0].indexes.pop().map(|idx| { (TableId(42), idx) }).as_ref()
-                );
 
                 Ok(())
             }

@@ -655,26 +655,23 @@ impl StandaloneEnv {
 
         let root_db_path = stdb_path("worker_node/database_instances");
 
-        let (dbic, (scheduler, scheduler_starter)) =
-            if let Some((dbic, scheduler)) = self.db_inst_ctx_controller.get(instance_id) {
-                (dbic, scheduler.new_with_same_db())
-            } else {
-                // `spawn_blocking` because we're accessing the filesystem
-                let (dbic, (scheduler, scheduler_starter)) = tokio::task::spawn_blocking({
-                    let database = database.clone();
-                    let path = root_db_path.clone();
-                    let config = self.config;
-                    move || -> anyhow::Result<_> {
-                        let dbic = DatabaseInstanceContext::from_database(config, &database, instance_id, path)?;
-                        let sched = Scheduler::open(dbic.scheduler_db_path(root_db_path))?;
-                        Ok((dbic, sched))
-                    }
-                })
-                .await??;
+        let (dbic, (scheduler, scheduler_starter)) = {
+            let (dbic, scheduler) = tokio::task::block_in_place(|| {
+                self.db_inst_ctx_controller.get_or_try_init(instance_id, || {
+                    let dbic = DatabaseInstanceContext::from_database(
+                        self.config,
+                        &database,
+                        instance_id,
+                        root_db_path.clone(),
+                    )?;
+                    let (sched, _) = Scheduler::open(dbic.scheduler_db_path(root_db_path))?;
 
-                self.db_inst_ctx_controller.insert(dbic.clone(), scheduler.clone());
-                (dbic, (scheduler, scheduler_starter))
-            };
+                    anyhow::Ok((dbic, sched))
+                })
+            })?;
+
+            (dbic, scheduler.new_with_same_db())
+        };
 
         let mhc = ModuleHostContext {
             dbic,
