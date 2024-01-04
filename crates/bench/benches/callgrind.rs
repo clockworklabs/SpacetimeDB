@@ -94,9 +94,9 @@ fn insert_bulk_raw_person(metadata: &str) {
     bench.run_benchmark();
 }
 
-#[library_benchmark]
+// #[library_benchmark]
 //#[bench::b1(r#"{"bench": "insert bulk", "db": "stdb_module", "table_name": "person", "index_strategy": "unique", "preload": 50, "count": 1}"#)]
-#[bench::b2(r#"{"bench": "insert bulk", "db": "stdb_module", "table_name": "person", "index_strategy": "unique", "preload": 50, "count": 25}"#)]
+//#[bench::b2(r#"{"bench": "insert bulk", "db": "stdb_module", "table_name": "person", "index_strategy": "unique", "preload": 50, "count": 25}"#)]
 //#[bench::b3(r#"{"bench": "insert bulk", "db": "stdb_module", "table_name": "person", "index_strategy": "unique", "preload": 50, "count": 50}"#)]
 //#[bench::b4(
 //    r#"{"bench": "insert bulk", "db": "stdb_module", "table_name": "person", "index_strategy": "unique", "preload": 50, "count": 100}"#
@@ -182,16 +182,14 @@ fn iterate_raw_person(metadata: &str) {
     bench.run_benchmark();
 }
 
-#[library_benchmark]
 /*
+#[library_benchmark]
 #[bench::b1(
     r#"{"bench": "iterate", "db": "stdb_module", "table_name": "person", "index_strategy": "unique", "count": 1}"#
 )]
-*/
 #[bench::b2(
     r#"{"bench": "iterate", "db": "stdb_module", "table_name": "person", "index_strategy": "unique", "count": 25}"#
 )]
-/*
 #[bench::b3(
     r#"{"bench": "iterate", "db": "stdb_module", "table_name": "person", "index_strategy": "unique", "count": 50}"#
 )]
@@ -356,9 +354,9 @@ fn filter_raw_person(metadata: &str) {
     bench.run_benchmark();
 }
 
+/*
 #[library_benchmark]
 // string, btree index
-/*
 #[bench::string_btree_1(
     r#"{"bench": "filter", "db": "stdb_module", "table_name": "person", "index_strategy": "multi_index",
         "count": 1, "preload": 100, "_column": 1, "data_type": "string"}"#
@@ -371,12 +369,10 @@ fn filter_raw_person(metadata: &str) {
     r#"{"bench": "filter", "db": "stdb_module", "table_name": "person", "index_strategy": "multi_index",
         "count": 16, "preload": 100, "_column": 1, "data_type": "string"}"#
 )]
-*/
 #[bench::string_btree_64(
     r#"{"bench": "filter", "db": "stdb_module", "table_name": "person", "index_strategy": "multi_index",
         "count": 64, "preload": 100, "_column": 1, "data_type": "string"}"#
 )]
-/*
 // u64, no index
 #[bench::u64_no_index_1(
     r#"{"bench": "filter", "db": "stdb_module", "table_name": "person", "index_strategy": "non_unique",
