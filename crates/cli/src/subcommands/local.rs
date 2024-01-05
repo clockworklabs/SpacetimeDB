@@ -65,14 +65,7 @@ async fn exec_clear(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Er
             std::io::stdout().flush()?;
             let mut input = String::new();
             std::io::stdin().read_line(&mut input)?;
-            if input.trim().to_lowercase() == "y" || input.trim().to_lowercase() == "yes" {
-                if control_node_dir.exists() {
-                    std::fs::remove_dir_all(&control_node_dir)?;
-                }
-                if worker_node_dir.exists() {
-                    std::fs::remove_dir_all(&worker_node_dir)?;
-                }
-            } else {
+            if input.trim().to_lowercase() != "y" && input.trim().to_lowercase() != "yes" {
                 println!("Aborting");
                 return Ok(());
             }
