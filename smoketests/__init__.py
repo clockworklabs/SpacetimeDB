@@ -170,6 +170,7 @@ class Smoketest(unittest.TestCase):
         cls.config_path = cls.project_path / "config.toml"
         cls.reset_config()
         open(cls.project_path / "Cargo.toml", "w").write(cls.cargo_manifest(TEMPLATE_CARGO_TOML))
+        shutil.copy2(STDB_DIR / "rust-toolchain.toml", cls.project_path)
         os.mkdir(cls.project_path / "src")
         cls.write_module_code(cls.MODULE_CODE)
         if TEMPLATE_TARGET_DIR.exists():
