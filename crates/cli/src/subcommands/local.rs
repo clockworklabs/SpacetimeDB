@@ -89,16 +89,7 @@ async fn exec_clear(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Er
             println!("Deleted worker node database: {}", worker_node_dir.to_str().unwrap());
         }
     } else {
-        if control_node_dir.exists() {
-            println!("Control node database: {}", control_node_dir.to_str().unwrap());
-        } else {
-            println!("Control node database: <not found>");
-        }
-        if worker_node_dir.exists() {
-            println!("Worker node database: {}", worker_node_dir.to_str().unwrap());
-        } else {
-            println!("Worker node database: <not found>");
-        }
+        println!("Local database not found. Nothing has been deleted.");
     }
     Ok(())
 }
