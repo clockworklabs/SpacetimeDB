@@ -629,7 +629,7 @@ impl CrudExpr {
         }
     }
 
-    pub fn is_reads(exprs: &Vec<CrudExpr>) -> bool {
+    pub fn is_reads(exprs: &[CrudExpr]) -> bool {
         exprs.iter().all(|expr| matches!(expr, CrudExpr::Query(_)))
     }
 }
