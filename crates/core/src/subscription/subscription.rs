@@ -778,6 +778,7 @@ fn with_delta_table(mut join: IndexJoin, index_side: bool, delta: DatabaseTableU
 mod tests {
     use super::*;
     use crate::db::relational_db::tests_utils::make_test_db;
+    use crate::db::relational_db::MutTx;
     use crate::host::module_host::TableOp;
     use crate::sql::compiler::compile_sql;
     use itertools::Itertools;
@@ -792,7 +793,7 @@ mod tests {
 
     fn create_table(
         db: &RelationalDB,
-        tx: &mut MutTxId,
+        tx: &mut MutTx,
         name: &str,
         schema: &[(&str, AlgebraicType)],
         indexes: &[(ColId, &str)],
@@ -826,8 +827,8 @@ mod tests {
     // Compile an index join after replacing the index side with a virtual table.
     // The original index and probe sides should be swapped after introducing the delta table.
     fn compile_incremental_index_join_index_side() -> ResultTest<()> {
-        let (db, _) = make_test_db()?;
-        let mut tx = db.begin_tx();
+        let (db, _tmp) = make_test_db()?;
+        let mut tx = db.begin_mut_tx();
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -842,7 +843,9 @@ mod tests {
         ];
         let indexes = &[(0.into(), "b"), (1.into(), "c")];
         let rhs_id = create_table(&db, &mut tx, "rhs", schema, indexes)?;
+        db.commit_tx(&ExecutionContext::default(), tx)?;
 
+        let tx = db.begin_tx();
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
@@ -921,8 +924,8 @@ mod tests {
     // Compile an index join after replacing the probe side with a virtual table.
     // The original index and probe sides should remain after introducing the virtual table.
     fn compile_incremental_index_join_probe_side() -> ResultTest<()> {
-        let (db, _) = make_test_db()?;
-        let mut tx = db.begin_tx();
+        let (db, _tmp) = make_test_db()?;
+        let mut tx = db.begin_mut_tx();
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -937,7 +940,9 @@ mod tests {
         ];
         let indexes = &[(0.into(), "b"), (1.into(), "c")];
         let rhs_id = create_table(&db, &mut tx, "rhs", schema, indexes)?;
+        db.commit_tx(&ExecutionContext::default(), tx)?;
 
+        let tx = db.begin_tx();
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
