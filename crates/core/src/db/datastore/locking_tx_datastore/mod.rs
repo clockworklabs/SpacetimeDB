@@ -31,7 +31,7 @@ use super::{
         system_tables, StColumnRow, StIndexRow, StSequenceRow, StTableRow, SystemTable, ST_COLUMNS_ID, ST_INDEXES_ID,
         ST_SEQUENCES_ID, ST_TABLES_ID,
     },
-    traits::{self, DataRow, MutTx, MutTxDatastore, TxData, TxDatastore},
+    traits::{self, DataRow, MutTxDatastore, TxData, TxDatastore},
 };
 use crate::db::datastore::system_tables::{
     st_constraints_schema, st_module_schema, table_name_is_system, StColumnFields, StConstraintFields, StConstraintRow,
@@ -125,14 +125,12 @@ type SharedWriteGuard<T> = ArcRwLockWriteGuard<RawRwLock, T>;
 type SharedMutexGuard<T> = ArcMutexGuard<RawMutex, T>;
 type SharedReadGuard<T> = ArcRwLockReadGuard<RawRwLock, T>;
 
-#[allow(dead_code)]
 pub struct TxId {
     committed_state_shared_lock: SharedReadGuard<CommittedState>,
     lock_wait_time: Duration,
     timer: Instant,
 }
 
-#[allow(dead_code)]
 impl TxId {
     fn table_id_from_name(&self, table_name: &str, database_address: Address) -> super::Result<Option<TableId>> {
         self.iter_by_col_eq(
@@ -2180,14 +2178,22 @@ impl DataRow for Locking {
 }
 
 impl traits::Tx for Locking {
-    type Tx = MutTxId;
+    type Tx = TxId;
 
     fn begin_tx(&self) -> Self::Tx {
-        self.begin_mut_tx()
+        let timer = Instant::now();
+
+        let committed_state_shared_lock = self.committed_state.read_arc();
+        let lock_wait_time = timer.elapsed();
+        Self::Tx {
+            committed_state_shared_lock,
+            lock_wait_time,
+            timer,
+        }
     }
 
     fn release_tx(&self, ctx: &ExecutionContext, tx: Self::Tx) {
-        self.rollback_mut_tx(ctx, tx)
+        tx.release(ctx);
     }
 }
 
@@ -2568,7 +2574,7 @@ impl TxDatastore for Locking {
     }
 
     fn schema_for_table_tx<'tx>(&self, tx: &'tx Self::Tx, table_id: TableId) -> super::Result<Cow<'tx, TableSchema>> {
-        tx.schema_for_table(table_id, self.database_address)
+        tx.schema_for_table(table_id)
     }
 
     fn get_all_tables_tx<'tx>(
@@ -2862,7 +2868,7 @@ impl MutTxDatastore for Locking {
 }
 
 impl traits::Programmable for Locking {
-    fn program_hash(&self, tx: &MutTxId) -> Result<Option<Hash>, DBError> {
+    fn program_hash(&self, tx: &TxId) -> Result<Option<Hash>, DBError> {
         match tx
             .iter(&ExecutionContext::internal(self.database_address), &ST_MODULE_ID)?
             .next()
