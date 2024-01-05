@@ -4467,6 +4467,7 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "derive_more",
+ "itertools 0.11.0",
  "nonempty",
  "spacetimedb-lib",
  "spacetimedb-primitives",

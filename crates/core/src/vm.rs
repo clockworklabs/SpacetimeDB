@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::ops::RangeBounds;
 
 use itertools::Itertools;
+use nonempty::NonEmpty;
 use spacetimedb_lib::Address;
 use tracing::debug;
 
@@ -42,11 +43,7 @@ pub fn build_query<'a>(
                 columns,
                 lower_bound,
                 upper_bound,
-            }) if db_table => {
-                assert_eq!(columns.len(), 1, "Only support single column IndexScan");
-                let col_id = columns.head;
-                iter_by_col_range(ctx, stdb, tx, table, col_id, (lower_bound, upper_bound))?
-            }
+            }) if db_table => iter_by_col_range(ctx, stdb, tx, table, columns, (lower_bound, upper_bound))?,
             Query::IndexScan(index_scan) => {
                 let header = result.head().clone();
                 let cmp: ColumnOp = index_scan.into();
@@ -190,10 +187,10 @@ fn iter_by_col_range<'a>(
     db: &'a RelationalDB,
     tx: &'a MutTx,
     table: DbTable,
-    col_id: ColId,
+    columns: NonEmpty<ColId>,
     range: impl RangeBounds<AlgebraicValue> + 'a,
 ) -> Result<Box<dyn RelOps + 'a>, ErrorVm> {
-    let iter = db.iter_by_col_range(ctx, tx, table.table_id, col_id, range)?;
+    let iter = db.iter_by_col_range(ctx, tx, table.table_id, columns, range)?;
     Ok(Box::new(IndexCursor::new(table, iter)?) as Box<IterRows<'_>>)
 }
 

@@ -15,6 +15,7 @@ derive_more.workspace = true
 nonempty.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+itertools.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
