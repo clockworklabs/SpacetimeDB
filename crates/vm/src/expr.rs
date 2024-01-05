@@ -628,6 +628,10 @@ impl CrudExpr {
             _ => self,
         }
     }
+
+    pub fn is_reads(exprs: &Vec<CrudExpr>) -> bool {
+        exprs.iter().all(|expr| matches!(expr, CrudExpr::Query(_)))
+    }
 }
 
 // impl AuthAccess for CrudExpr {

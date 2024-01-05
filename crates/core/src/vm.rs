@@ -383,7 +383,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         }
     }
 
-    fn delete_query(&mut self, query: QueryCode) -> Result<Code, ErrorVm> {
+    fn _delete_query(&mut self, query: QueryCode) -> Result<Code, ErrorVm> {
         let table = query.table.clone();
         let result = self._eval_query(query)?;
 
@@ -395,7 +395,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         }
     }
 
-    fn create_table(&mut self, table: TableDef) -> Result<Code, ErrorVm> {
+    fn _create_table(&mut self, table: TableDef) -> Result<Code, ErrorVm> {
         match self.tx {
             TxMode::MutTx(tx) => {
                 self.db.create_table(tx, table)?;
@@ -405,7 +405,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         }
     }
 
-    fn drop(&mut self, name: &str, kind: DbType) -> Result<Code, ErrorVm> {
+    fn _drop(&mut self, name: &str, kind: DbType) -> Result<Code, ErrorVm> {
         match self.tx {
             TxMode::MutTx(tx) => {
                 match kind {
@@ -458,6 +458,7 @@ impl ProgramVm for DbProgram<'_, '_> {
         &self.auth
     }
 
+    // Safety: For DbProgram with tx = TxMode::Tx variant, all queries must match to CrudCode::Query and no other branch.
     fn eval_query(&mut self, query: CrudCode) -> Result<Code, ErrorVm> {
         query.check_auth(self.auth.owner, self.auth.caller)?;
 
@@ -514,11 +515,11 @@ impl ProgramVm for DbProgram<'_, '_> {
                 self._execute_insert(&table, insert_rows)
             }
             CrudCode::Delete { query } => {
-                let result = self.delete_query(query)?;
+                let result = self._delete_query(query)?;
                 Ok(result)
             }
             CrudCode::CreateTable { table } => {
-                let result = self.create_table(table)?;
+                let result = self._create_table(table)?;
                 Ok(result)
             }
             CrudCode::Drop {
@@ -526,7 +527,7 @@ impl ProgramVm for DbProgram<'_, '_> {
                 kind,
                 table_access: _,
             } => {
-                let result = self.drop(&name, kind)?;
+                let result = self._drop(&name, kind)?;
                 Ok(result)
             }
         }

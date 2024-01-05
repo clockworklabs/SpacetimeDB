@@ -82,7 +82,7 @@ pub fn execute_sql(
     let total = ast.len();
     let ctx = ExecutionContext::sql(db.address(), query_debug_info);
     let mut result = Vec::with_capacity(total);
-    match ast.iter().all(|expr| matches!(expr, CrudExpr::Query(_))) {
+    match CrudExpr::is_reads(&ast) {
         false => db.with_auto_commit(&ctx, |mut_tx| {
             let mut tx: TxMode = mut_tx.into();
             let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
