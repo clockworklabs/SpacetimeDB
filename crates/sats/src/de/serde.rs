@@ -107,10 +107,11 @@ impl<'de, D: serde::Deserializer<'de>> Deserializer<'de> for SerdeDeserializer<D
 
     fn deserialize_bytes<V: super::SliceVisitor<'de, [u8]>>(self, visitor: V) -> Result<V::Output, Self::Error> {
         if self.de.is_human_readable() {
-            self.de.deserialize_any(BytesVisitor { visitor }).map_err(SerdeError)
+            self.de.deserialize_any(BytesVisitor::<_, true> { visitor })
         } else {
-            self.de.deserialize_bytes(BytesVisitor { visitor }).map_err(SerdeError)
+            self.de.deserialize_bytes(BytesVisitor::<_, false> { visitor })
         }
+        .map_err(SerdeError)
     }
 
     fn deserialize_array_seed<V: super::ArrayVisitor<'de, T::Output>, T: super::DeserializeSeed<'de> + Clone>(
@@ -466,16 +467,22 @@ impl<'de, V: super::SliceVisitor<'de, str>> serde::Visitor<'de> for StrVisitor<V
 
 /// Translates a `SliceVisitor<'de, str>` to `serde::Visitor<'de>`
 /// for implementing `deserialize_bytes`.
-struct BytesVisitor<V> {
+struct BytesVisitor<V, const HUMAN_READABLE: bool> {
     /// The `SliceVisitor<'de, [u8]>`.
     visitor: V,
 }
 
-impl<'de, V: super::SliceVisitor<'de, [u8]>> serde::Visitor<'de> for BytesVisitor<V> {
+impl<'de, V: super::SliceVisitor<'de, [u8]>, const HUMAN_READABLE: bool> serde::Visitor<'de>
+    for BytesVisitor<V, HUMAN_READABLE>
+{
     type Value = V::Output;
 
     fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("a byte array")
+        f.write_str(if HUMAN_READABLE {
+            "a byte array or hex string"
+        } else {
+            "a byte array"
+        })
     }
 
     fn visit_bytes<E: serde::Error>(self, v: &[u8]) -> Result<Self::Value, E> {
