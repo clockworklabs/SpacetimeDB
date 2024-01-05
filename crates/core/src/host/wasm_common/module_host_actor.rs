@@ -555,7 +555,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let ctx = ExecutionContext::reducer(address, reducer_name);
         let status = match call_result {
             Err(err) => {
-                stdb.rollback_tx(&ctx, tx);
+                stdb.rollback_mut_tx(&ctx, tx);
 
                 T::log_traceback("reducer", reducer_name, &err);
 
@@ -574,7 +574,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 }
             }
             Ok(Err(errmsg)) => {
-                stdb.rollback_tx(&ctx, tx);
+                stdb.rollback_mut_tx(&ctx, tx);
 
                 log::info!("reducer returned error: {errmsg}");
 

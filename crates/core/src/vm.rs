@@ -697,7 +697,7 @@ pub(crate) mod tests {
 
         assert_eq!(result.data, input.data, "Inventory");
 
-        stdb.rollback_tx(&ctx, tx);
+        stdb.rollback_mut_tx(&ctx, tx);
 
         Ok(())
     }
@@ -739,7 +739,7 @@ pub(crate) mod tests {
             DbTable::from(&st_table_schema()),
         );
 
-        stdb.rollback_tx(&ctx, tx);
+        stdb.rollback_mut_tx(&ctx, tx);
 
         Ok(())
     }
@@ -778,7 +778,7 @@ pub(crate) mod tests {
             (&st_columns_schema()).into(),
         );
 
-        stdb.rollback_tx(&ctx, tx);
+        stdb.rollback_mut_tx(&ctx, tx);
 
         Ok(())
     }
@@ -822,7 +822,7 @@ pub(crate) mod tests {
             (&st_indexes_schema()).into(),
         );
 
-        db.rollback_tx(&ctx, tx);
+        db.rollback_mut_tx(&ctx, tx);
 
         Ok(())
     }
@@ -860,7 +860,7 @@ pub(crate) mod tests {
             (&st_sequences_schema()).into(),
         );
 
-        db.rollback_tx(&ctx, tx);
+        db.rollback_mut_tx(&ctx, tx);
 
         Ok(())
     }

@@ -477,7 +477,7 @@ mod tests {
         };
 
         let update = DatabaseUpdate { tables: vec![update] };
-        db.rollback_tx(&ExecutionContext::default(), tx);
+        db.rollback_mut_tx(&ExecutionContext::default(), tx);
         let mut tx = db.begin_tx();
         let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
         let id2 = &result.tables[0].ops[0].row_pk;
@@ -595,7 +595,7 @@ mod tests {
         };
 
         let query = QuerySet::try_from(query)?;
-        db.rollback_read_tx(&ExecutionContext::default(), tx);
+        db.rollback_tx(&ExecutionContext::default(), tx);
 
         fn case_env(
             db: &RelationalDB,
@@ -623,7 +623,7 @@ mod tests {
             let mut tx = db.begin_tx();
             let update = DatabaseUpdate { tables: updates };
             let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
-            db.rollback_read_tx(&ExecutionContext::default(), tx);
+            db.rollback_tx(&ExecutionContext::default(), tx);
 
             // No updates to report
             assert_eq!(result.tables.len(), 0);
@@ -647,7 +647,7 @@ mod tests {
             let update = DatabaseUpdate { tables: updates };
             let mut tx = db.begin_tx();
             let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
-            db.rollback_read_tx(&ExecutionContext::default(), tx);
+            db.rollback_tx(&ExecutionContext::default(), tx);
 
             // No updates to report
             assert_eq!(result.tables.len(), 0);
@@ -671,7 +671,7 @@ mod tests {
             let update = DatabaseUpdate { tables: updates };
             let mut tx = db.begin_tx();
             let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
-            db.rollback_read_tx(&ExecutionContext::default(), tx);
+            db.rollback_tx(&ExecutionContext::default(), tx);
 
             // A single delete from lhs
             assert_eq!(result.tables.len(), 1);
@@ -696,7 +696,7 @@ mod tests {
             let update = DatabaseUpdate { tables: updates };
             let mut tx = db.begin_tx();
             let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
-            db.rollback_read_tx(&ExecutionContext::default(), tx);
+            db.rollback_tx(&ExecutionContext::default(), tx);
 
             // A single insert into lhs
             assert_eq!(result.tables.len(), 1);
@@ -723,7 +723,7 @@ mod tests {
             let update = DatabaseUpdate { tables: updates };
             let mut tx = db.begin_tx();
             let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
-            db.rollback_read_tx(&ExecutionContext::default(), tx);
+            db.rollback_tx(&ExecutionContext::default(), tx);
 
             // A single insert into lhs
             assert_eq!(result.tables.len(), 1);
@@ -753,7 +753,7 @@ mod tests {
             let update = DatabaseUpdate { tables: updates };
             let mut tx = db.begin_tx();
             let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
-            db.rollback_read_tx(&ExecutionContext::default(), tx);
+            db.rollback_tx(&ExecutionContext::default(), tx);
 
             // No updates to report
             assert_eq!(result.tables.len(), 0);
@@ -782,7 +782,7 @@ mod tests {
             let update = DatabaseUpdate { tables: updates };
             let mut tx = db.begin_tx();
             let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
-            db.rollback_read_tx(&ExecutionContext::default(), tx);
+            db.rollback_tx(&ExecutionContext::default(), tx);
 
             // A single delete from lhs
             assert_eq!(result.tables.len(), 1);
@@ -812,7 +812,7 @@ mod tests {
             let update = DatabaseUpdate { tables: updates };
             let mut tx = db.begin_tx();
             let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
-            db.rollback_read_tx(&ExecutionContext::default(), tx);
+            db.rollback_tx(&ExecutionContext::default(), tx);
 
             // No updates to report
             assert_eq!(result.tables.len(), 0);

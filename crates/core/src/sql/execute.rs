@@ -227,7 +227,7 @@ pub(crate) mod tests {
         let (db, _, _tmp_dir) = create_data(1)?;
         let tx = db.begin_tx();
         let schema = db.schema_for_table(&tx, ST_TABLES_ID).unwrap().into_owned();
-        db.rollback_read_tx(&ExecutionContext::internal(db.address()), tx);
+        db.rollback_tx(&ExecutionContext::internal(db.address()), tx);
         let result = run_for_testing(
             &db,
             &format!("SELECT * FROM {} WHERE table_id = {}", ST_TABLES_NAME, ST_TABLES_ID),

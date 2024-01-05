@@ -174,7 +174,7 @@ impl ModuleSubscriptionActor {
         // Note: the missing QueryDebugInfo here is only used for finishing the transaction;
         // all of the relevant queries already executed, with debug info, in _add_subscription
         let ctx = ExecutionContext::subscribe(self.relational_db.address(), None);
-        self.relational_db.rollback_read_tx(&ctx, tx);
+        self.relational_db.rollback_tx(&ctx, tx);
         result
     }
 
@@ -223,7 +223,7 @@ impl ModuleSubscriptionActor {
         let mut tx = self.relational_db.begin_tx();
         let result = self._broadcast_commit_event(event, &mut tx).await;
         let ctx = ExecutionContext::incremental_update(self.relational_db.address(), None);
-        self.relational_db.rollback_read_tx(&ctx, tx);
+        self.relational_db.rollback_tx(&ctx, tx);
         result
     }
 }

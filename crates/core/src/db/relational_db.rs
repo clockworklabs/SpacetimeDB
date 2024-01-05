@@ -267,7 +267,7 @@ impl RelationalDB {
 
     /// Begin a transaction.
     ///
-    /// **Note**: this call **must** be paired with [`Self::rollback_tx`] or
+    /// **Note**: this call **must** be paired with [`Self::rollback_mut_tx`] or
     /// [`Self::commit_tx`], otherwise the database will be left in an invalid
     /// state. See also [`Self::with_auto_commit`].
     #[tracing::instrument(skip_all)]
@@ -283,13 +283,13 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn rollback_tx(&self, ctx: &ExecutionContext, tx: MutTx) {
+    pub fn rollback_mut_tx(&self, ctx: &ExecutionContext, tx: MutTx) {
         log::trace!("ROLLBACK MUT TX");
         self.inner.rollback_mut_tx(ctx, tx)
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn rollback_read_tx(&self, ctx: &ExecutionContext, tx: Tx) {
+    pub fn rollback_tx(&self, ctx: &ExecutionContext, tx: Tx) {
         log::trace!("ROLLBACK TX");
         self.inner.release_tx(ctx, tx)
     }
@@ -388,7 +388,7 @@ impl RelationalDB {
         E: From<DBError>,
     {
         if res.is_err() {
-            self.rollback_tx(ctx, tx);
+            self.rollback_mut_tx(ctx, tx);
         } else {
             match self.commit_tx(ctx, tx).map_err(E::from)? {
                 Some(_) => (),
@@ -403,7 +403,7 @@ impl RelationalDB {
     pub fn rollback_on_err<A, E>(&self, ctx: &ExecutionContext, tx: MutTx, res: Result<A, E>) -> Result<(MutTx, A), E> {
         match res {
             Err(e) => {
-                self.rollback_tx(ctx, tx);
+                self.rollback_mut_tx(ctx, tx);
                 Err(e)
             }
             Ok(a) => Ok((tx, a)),
@@ -985,7 +985,7 @@ mod tests {
 
         let schema = TableDef::from_product("MyTable", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         let table_id = stdb.create_table(&mut tx, schema)?;
-        stdb.rollback_tx(&ExecutionContext::default(), tx);
+        stdb.rollback_mut_tx(&ExecutionContext::default(), tx);
 
         let mut tx = stdb.begin_mut_tx();
         let result = stdb.drop_table(&mut tx, table_id);
@@ -1008,7 +1008,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(-1)])?;
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(0)])?;
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(1)])?;
-        stdb.rollback_tx(&ctx, tx);
+        stdb.rollback_mut_tx(&ctx, tx);
 
         let tx = stdb.begin_mut_tx();
         let mut rows = stdb
