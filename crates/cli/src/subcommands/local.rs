@@ -21,7 +21,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 
 fn get_subcommands() -> Vec<Command> {
     vec![Command::new("clear")
-        .about("Deletes all data from the local database")
+        .about("Deletes all data from all local databases")
         .arg(
             Arg::new("force")
                 .long("force")
