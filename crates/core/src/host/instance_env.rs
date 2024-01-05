@@ -12,7 +12,7 @@ use crate::db::datastore::locking_tx_datastore::{MutTxId, RowId};
 use crate::error::{IndexError, NodesError};
 use crate::execution_context::ExecutionContext;
 use crate::util::ResultInspectExt;
-use crate::vm::DbProgram;
+use crate::vm::{DbProgram, TxMode};
 use spacetimedb_lib::filter::CmpArgs;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::operator::OpQuery;
@@ -160,7 +160,7 @@ impl InstanceEnv {
 
         // Find all rows in the table where the column data equates to `value`.
         let rows_to_delete = stdb
-            .iter_by_col_eq(ctx, tx, table_id, col_id, eq_value)?
+            .iter_by_col_eq_mut(ctx, tx, table_id, col_id, eq_value)?
             .map(|x| RowId(*x.id()))
             // `delete_by_field` only cares about 1 element,
             // so optimize for that.
@@ -200,7 +200,7 @@ impl InstanceEnv {
 
         // Query the table id from the name.
         let table_id = stdb
-            .table_id_from_name(tx, table_name)?
+            .table_id_from_name_mut(tx, table_name)?
             .ok_or(NodesError::TableNotFound)?;
 
         Ok(table_id)
@@ -279,7 +279,7 @@ impl InstanceEnv {
 
         // Find all rows in the table where the column data matches `value`.
         // Concatenate and return these rows using bsatn encoding.
-        let results = stdb.iter_by_col_eq(ctx, tx, table_id, col_id, value)?;
+        let results = stdb.iter_by_col_eq_mut(ctx, tx, table_id, col_id, value)?;
         let mut bytes = Vec::new();
         for result in results {
             bsatn::to_writer(&mut bytes, result.view()).unwrap();
@@ -294,7 +294,7 @@ impl InstanceEnv {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.tx.get()?;
 
-        for row in stdb.iter(ctx, tx, table_id)? {
+        for row in stdb.iter_mut(ctx, tx, table_id)? {
             row.view().encode(&mut chunked_writer);
             // Flush at row boundaries.
             chunked_writer.flush();
@@ -342,7 +342,7 @@ impl InstanceEnv {
         let stdb = &self.dbic.relational_db;
         let tx = &mut *self.tx.get()?;
 
-        let schema = stdb.schema_for_table(tx, table_id)?;
+        let schema = stdb.schema_for_table_mut(tx, table_id)?;
         let row_type = ProductType::from(&*schema);
 
         let filter = filter::Expr::from_bytes(
@@ -356,7 +356,8 @@ impl InstanceEnv {
         .map_err(NodesError::DecodeFilter)?;
         let q = spacetimedb_vm::dsl::query(&*schema).with_select(filter_to_column_op(&schema.table_name, filter));
         //TODO: How pass the `caller` here?
-        let p = &mut DbProgram::new(ctx, stdb, tx, AuthCtx::for_current(self.dbic.identity));
+        let mut tx: TxMode = tx.into();
+        let p = &mut DbProgram::new(ctx, stdb, &mut tx, AuthCtx::for_current(self.dbic.identity));
         let results = match spacetimedb_vm::eval::run_ast(p, q.into()) {
             Code::Table(table) => table,
             _ => unreachable!("query should always return a table"),
