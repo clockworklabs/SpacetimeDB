@@ -61,7 +61,7 @@
 
 ## What is [SpacetimeDB](https://spacetimedb.com)?
 
-You can think of SpacetimeDB as both a database and server combined into one.
+You can think of SpacetimeDB as both a database and application server combined into one.
 
 It is a relational database system that lets you upload your application logic directly into the database by way of fancy stored procedures called "modules."
 
