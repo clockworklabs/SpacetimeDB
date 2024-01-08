@@ -136,7 +136,7 @@ fn compile_module(module: &str) -> String {
     let module = module.to_owned();
 
     memoized!(|module: String| -> String {
-        let module = CompiledModule::compile(&module, CompilationMode::Debug);
+        let module = CompiledModule::compile(module, CompilationMode::Debug);
         module.path().to_str().unwrap().to_owned()
     })
 }
@@ -189,7 +189,7 @@ fn generate_bindings(language: &str, wasm_file: &str, client_project: &str, gene
     let generate_dir = format!("{client_project}/{generate_subdir}");
 
     memoized!(|generate_dir: String| -> () {
-        create_dir_all(&generate_dir).expect("Error creating generate subdir");
+        create_dir_all(generate_dir).expect("Error creating generate subdir");
         invoke_cli(&[
             "generate",
             "--debug",
@@ -216,10 +216,10 @@ fn compile_client(compile_command: &str, client_project: &str) {
     let client_project = client_project.to_owned();
 
     memoized!(|client_project: String| -> () {
-        let (exe, args) = split_command_string(&compile_command);
+        let (exe, args) = split_command_string(compile_command);
 
         let output = cmd(exe, args)
-            .dir(&client_project)
+            .dir(client_project)
             .env(TEST_CLIENT_PROJECT_ENV_VAR, client_project)
             .stderr_to_stdout()
             .stdout_capture()
@@ -227,7 +227,7 @@ fn compile_client(compile_command: &str, client_project: &str) {
             .run()
             .expect("Error running compile command");
 
-        status_ok_or_panic(output, &compile_command, "(compiling)");
+        status_ok_or_panic(output, compile_command, "(compiling)");
     })
 }
 
