@@ -123,7 +123,7 @@ Failed to compile module {:?}. See cargo errors above for more details.",
         },
     };
 
-    fs::create_dir_all(&out_dir)?;
+    fs::create_dir_all(out_dir)?;
 
     let mut paths = vec![];
     for (fname, code) in generate(&wasm_file, lang, namespace.as_str())?.into_iter() {
