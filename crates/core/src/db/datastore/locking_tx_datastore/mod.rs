@@ -33,13 +33,13 @@ use super::{
     },
     traits::{self, DataRow, MutTxDatastore, TxData, TxDatastore},
 };
-use crate::db::datastore::system_tables;
 use crate::db::datastore::system_tables::{
     st_constraints_schema, st_module_schema, table_name_is_system, StColumnFields, StConstraintFields, StConstraintRow,
     StIndexFields, StModuleRow, StSequenceFields, StTableFields, ST_CONSTRAINTS_ID, ST_MODULE_ID, WASM_MODULE,
 };
 use crate::db::db_metrics::{DB_METRICS, MAX_TX_CPU_TIME};
 use crate::execution_context::{ExecutionContext, WorkloadType};
+use crate::{db::datastore::system_tables, error::IndexError};
 use crate::{
     db::datastore::traits::{TxOp, TxRecord},
     db::{
@@ -235,7 +235,7 @@ impl TxId {
         for data_ref in self.iter_by_col_eq(
             &ctx,
             &ST_CONSTRAINTS_ID,
-            NonEmpty::new(StIndexFields::TableId.col_id()),
+            NonEmpty::new(StConstraintFields::TableId.col_id()),
             table_id.into(),
         )? {
             let row = data_ref.view();
@@ -281,7 +281,7 @@ impl TxId {
         for data_ref in self.iter_by_col_eq(
             &ctx,
             &ST_INDEXES_ID,
-            NonEmpty::new(StConstraintFields::TableId.col_id()),
+            NonEmpty::new(StIndexFields::TableId.col_id()),
             table_id.into(),
         )? {
             let row = data_ref.view();
@@ -1784,7 +1784,7 @@ impl MutTxId {
         for index in insert_table.indexes.values() {
             if index.violates_unique_constraint(&row) {
                 let value = row.project_not_empty(&index.cols).unwrap();
-                return Err(index.build_error_unique(insert_table, value).into());
+                return Err(Self::build_error_unique(index, insert_table, value).into());
             }
         }
         if let Some(table) = self.committed_state_write_lock.tables.get_mut(&table_id) {
@@ -1797,11 +1797,11 @@ impl MutTxId {
                     if let Some(delete_table) = self.tx_state.delete_tables.get(&table_id) {
                         if !delete_table.contains(row_id) {
                             let value = row.project_not_empty(&index.cols).unwrap();
-                            return Err(index.build_error_unique(table, value).into());
+                            return Err(Self::build_error_unique(index, table, value).into());
                         }
                     } else {
                         let value = row.project_not_empty(&index.cols)?;
-                        return Err(index.build_error_unique(table, value).into());
+                        return Err(Self::build_error_unique(index, table, value).into());
                     }
                 }
             }
@@ -1846,6 +1846,19 @@ impl MutTxId {
         }
 
         Ok(())
+    }
+
+    fn build_error_unique(index: &BTreeIndex, table: &Table, value: AlgebraicValue) -> IndexError {
+        IndexError::UniqueConstraintViolation {
+            constraint_name: index.name.clone(),
+            table_name: table.schema.table_name.clone(),
+            cols: index
+                .cols
+                .iter()
+                .map(|&x| table.schema.columns()[usize::from(x)].col_name.clone())
+                .collect(),
+            value,
+        }
     }
 
     fn get<'a>(&'a self, table_id: &TableId, row_id: &'a RowId) -> super::Result<Option<DataRef<'a>>> {
@@ -2159,8 +2172,8 @@ impl DataRow for Locking {
     type RowId = RowId;
     type DataRef<'a> = DataRef<'a>;
 
-    fn view_product_value<'a>(&self, data_ref: Self::DataRef<'a>) -> &'a ProductValue {
-        data_ref.data
+    fn view_product_value<'a>(&self, data_ref: Self::DataRef<'a>) -> Cow<'a, ProductValue> {
+        Cow::Borrowed(data_ref.data)
     }
 }
 
@@ -2573,7 +2586,7 @@ impl TxDatastore for Locking {
         let table_rows = self.iter_tx(ctx, tx, ST_TABLES_ID)?.collect::<Vec<_>>();
         for data_ref in table_rows {
             let data = self.view_product_value(data_ref);
-            let row = StTableRow::try_from(data)?;
+            let row = StTableRow::try_from(data.as_ref())?;
             tables.push(self.schema_for_table_tx(tx, row.table_id)?);
         }
         Ok(tables)
