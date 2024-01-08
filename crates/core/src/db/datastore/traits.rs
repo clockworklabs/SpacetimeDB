@@ -97,7 +97,7 @@ pub trait TxDatastore: DataRow + Tx {
         ctx: &'a ExecutionContext,
         tx: &'a Self::Tx,
         table_id: TableId,
-        cols: NonEmpty<ColId>,
+        cols: impl Into<NonEmpty<ColId>>,
         range: R,
     ) -> Result<Self::IterByColRange<'a, R>>;
 
@@ -106,16 +106,18 @@ pub trait TxDatastore: DataRow + Tx {
         ctx: &'a ExecutionContext,
         tx: &'a Self::Tx,
         table_id: TableId,
-        cols: NonEmpty<ColId>,
+        cols: impl Into<NonEmpty<ColId>>,
         value: AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a>>;
 
-    fn get_tx<'a>(
+    fn table_id_exists_tx(&self, tx: &Self::Tx, table_id: &TableId) -> bool;
+    fn table_id_from_name_tx(&self, tx: &Self::Tx, table_name: &str) -> Result<Option<TableId>>;
+    fn schema_for_table_tx<'tx>(&self, tx: &'tx Self::Tx, table_id: TableId) -> super::Result<Cow<'tx, TableSchema>>;
+    fn get_all_tables_tx<'tx>(
         &self,
-        tx: &'a Self::Tx,
-        table_id: TableId,
-        row_id: &'a Self::RowId,
-    ) -> Result<Option<Self::DataRef<'a>>>;
+        ctx: &ExecutionContext,
+        tx: &'tx Self::Tx,
+    ) -> super::Result<Vec<Cow<'tx, TableSchema>>>;
 }
 
 pub trait MutTxDatastore: TxDatastore + MutTx {
@@ -128,7 +130,6 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     fn schema_for_table_mut_tx<'tx>(&self, tx: &'tx Self::MutTx, table_id: TableId) -> Result<Cow<'tx, TableSchema>>;
     fn drop_table_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId) -> Result<()>;
     fn rename_table_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, new_name: &str) -> Result<()>;
-    fn table_id_exists(&self, tx: &Self::MutTx, table_id: &TableId) -> bool;
     fn table_id_from_name_mut_tx(&self, tx: &Self::MutTx, table_name: &str) -> Result<Option<TableId>>;
     fn table_name_from_id_mut_tx<'a>(
         &'a self,
