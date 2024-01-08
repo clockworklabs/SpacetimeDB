@@ -48,8 +48,8 @@ impl DataRow for RelationalDB {
     type RowId = RowId;
     type DataRef<'a> = DataRef<'a>;
 
-    fn view_product_value<'a>(&self, data_ref: Self::DataRef<'a>) -> &'a ProductValue {
-        data_ref.view()
+    fn view_product_value<'a>(&self, data_ref: Self::DataRef<'a>) -> Cow<'a, ProductValue> {
+        Cow::Borrowed(data_ref.view())
     }
 }
 
