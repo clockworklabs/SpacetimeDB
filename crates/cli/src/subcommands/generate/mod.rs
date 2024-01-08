@@ -123,12 +123,7 @@ Failed to compile module {:?}. See cargo errors above for more details.",
         },
     };
 
-    if !out_dir.exists() {
-        return Err(anyhow::anyhow!(
-            "Output directory '{}' does not exist. Please create the directory and rerun this command.",
-            out_dir.to_str().unwrap()
-        ));
-    }
+    fs::create_dir_all(&out_dir)?;
 
     let mut paths = vec![];
     for (fname, code) in generate(&wasm_file, lang, namespace.as_str())?.into_iter() {
