@@ -140,7 +140,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let path_to_wasm = if path_to_project.extension().map_or(false, |ext| ext == "wasm") {
         path_to_project.clone()
     } else {
-        crate::tasks::build(&path_to_project, skip_clippy, build_debug)?
+        crate::tasks::build(path_to_project, skip_clippy, build_debug)?
     };
     let program_bytes = fs::read(path_to_wasm)?;
     println!(
