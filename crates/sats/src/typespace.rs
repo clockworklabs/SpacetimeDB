@@ -3,8 +3,19 @@ use std::ops::{Index, IndexMut};
 
 use crate::algebraic_type::AlgebraicType;
 use crate::algebraic_type_ref::AlgebraicTypeRef;
-use crate::WithTypespace;
 use crate::{de::Deserialize, ser::Serialize};
+use crate::{BuiltinType, WithTypespace};
+
+#[derive(thiserror::Error, Debug)]
+pub enum TypeRefError {
+    // TODO: ideally this should give some useful type name or path.
+    // Figure out if we can provide that even though it's not encoded in SATS.
+    #[error("Found recursive type reference {0}")]
+    RecursiveTypeRef(AlgebraicTypeRef),
+
+    #[error("Type reference {0} out of bounds")]
+    InvalidTypeRef(AlgebraicTypeRef),
+}
 
 /// A `Typespace` represents the typing context in SATS.
 ///
@@ -39,12 +50,12 @@ impl Index<AlgebraicTypeRef> for Typespace {
     type Output = AlgebraicType;
 
     fn index(&self, index: AlgebraicTypeRef) -> &Self::Output {
-        &self.types[index.0 as usize]
+        &self.types[index.idx()]
     }
 }
 impl IndexMut<AlgebraicTypeRef> for Typespace {
     fn index_mut(&mut self, index: AlgebraicTypeRef) -> &mut Self::Output {
-        &mut self.types[index.0 as usize]
+        &mut self.types[index.idx()]
     }
 }
 
@@ -59,6 +70,11 @@ impl Typespace {
     /// Returns the [`AlgebraicType`] referred to by `r` within this context.
     pub fn get(&self, r: AlgebraicTypeRef) -> Option<&AlgebraicType> {
         self.types.get(r.idx())
+    }
+
+    /// Returns a mutable reference to the [`AlgebraicType`] referred to by `r` within this context.
+    pub fn get_mut(&mut self, r: AlgebraicTypeRef) -> Option<&mut AlgebraicType> {
+        self.types.get_mut(r.idx())
     }
 
     /// Inserts an `AlgebraicType` into the typespace
@@ -85,6 +101,80 @@ impl Typespace {
     /// Returns `ty` combined with the context `self`.
     pub const fn with_type<'a, T: ?Sized>(&'a self, ty: &'a T) -> WithTypespace<'a, T> {
         WithTypespace::new(self, ty)
+    }
+
+    /// Inlines all type references in `ty` recursively using the current typeset.
+    pub fn inline_typerefs_in_type(&mut self, ty: &mut AlgebraicType) -> Result<(), TypeRefError> {
+        match ty {
+            AlgebraicType::Sum(sum_ty) => {
+                for variant in &mut sum_ty.variants {
+                    self.inline_typerefs_in_type(&mut variant.algebraic_type)?;
+                }
+            }
+            AlgebraicType::Product(product_ty) => {
+                for element in &mut product_ty.elements {
+                    self.inline_typerefs_in_type(&mut element.algebraic_type)?;
+                }
+            }
+            AlgebraicType::Builtin(BuiltinType::Array(array_ty)) => {
+                self.inline_typerefs_in_type(&mut array_ty.elem_ty)?;
+            }
+            AlgebraicType::Builtin(BuiltinType::Map(map_type)) => {
+                self.inline_typerefs_in_type(&mut map_type.key_ty)?;
+                self.inline_typerefs_in_type(&mut map_type.ty)?;
+            }
+            AlgebraicType::Ref(r) => {
+                // Lazily resolve any nested references first.
+                let resolved_ty = self.inline_typerefs_in_ref(*r)?;
+                // Now we can clone the fully-resolved type.
+                *ty = resolved_ty.clone();
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// Inlines all nested references behind the current [`AlgebraicTypeRef`] recursively using the current typeset.
+    ///
+    /// Returns the fully-resolved type or an error if the type reference is invalid or self-referential.
+    fn inline_typerefs_in_ref(&mut self, r: AlgebraicTypeRef) -> Result<&AlgebraicType, TypeRefError> {
+        let resolved_ty = match self.get_mut(r) {
+            None => return Err(TypeRefError::InvalidTypeRef(r)),
+            // If we encountered a type reference, that means one of the parent calls
+            // to `inline_typerefs_in_ref(r)` swapped its definition out,
+            // i.e. the type referred to by `r` is recursive.
+            // Note that it doesn't necessarily need to be the current call,
+            // e.g. A -> B -> A dependency also forms a recursive cycle.
+            // Our database can't handle recursive types, so return an error.
+            // TODO: support recursive types in the future.
+            Some(AlgebraicType::Ref(_)) => return Err(TypeRefError::RecursiveTypeRef(r)),
+            Some(resolved_ty) => resolved_ty,
+        };
+        // First, swap the type with a reference.
+        // This allows us to:
+        // 1. Recurse into each type mutably while holding a mutable
+        //    reference to the typespace as well, without cloning.
+        // 2. Easily detect self-references at arbitrary depth without
+        //    having to keep a separate `seen: HashSet<_>` or something.
+        let mut resolved_ty = std::mem::replace(resolved_ty, AlgebraicType::Ref(r));
+        // Next, recurse into the type and inline any nested type references.
+        self.inline_typerefs_in_type(&mut resolved_ty)?;
+        // Resolve the place again, since we couldn't hold the mutable reference across the call above.
+        let place = &mut self[r];
+        // Now we can put the fully-resolved type back and return that place.
+        *place = resolved_ty;
+        Ok(place)
+    }
+
+    /// Inlines all type references in the typespace recursively.
+    ///
+    /// Errors out if any type reference is invalid or self-referential.
+    pub fn inline_all_typerefs(&mut self) -> Result<(), TypeRefError> {
+        // We need to use indices here to allow mutable reference on each iteration.
+        for r in 0..self.types.len() as u32 {
+            self.inline_typerefs_in_ref(AlgebraicTypeRef(r))?;
+        }
+        Ok(())
     }
 }
 
