@@ -235,7 +235,7 @@ impl TxId {
         for data_ref in self.iter_by_col_eq(
             &ctx,
             &ST_CONSTRAINTS_ID,
-            NonEmpty::new(StIndexFields::TableId.col_id()),
+            NonEmpty::new(StConstraintFields::TableId.col_id()),
             table_id.into(),
         )? {
             let row = data_ref.view();
@@ -281,7 +281,7 @@ impl TxId {
         for data_ref in self.iter_by_col_eq(
             &ctx,
             &ST_INDEXES_ID,
-            NonEmpty::new(StConstraintFields::TableId.col_id()),
+            NonEmpty::new(StIndexFields::TableId.col_id()),
             table_id.into(),
         )? {
             let row = data_ref.view();
@@ -2586,7 +2586,7 @@ impl TxDatastore for Locking {
         let table_rows = self.iter_tx(ctx, tx, ST_TABLES_ID)?.collect::<Vec<_>>();
         for data_ref in table_rows {
             let data = self.view_product_value(data_ref);
-            let row = StTableRow::try_from(data)?;
+            let row = StTableRow::try_from(data.as_ref())?;
             tables.push(self.schema_for_table_tx(tx, row.table_id)?);
         }
         Ok(tables)
