@@ -120,7 +120,10 @@ macro_rules! declare_tests_with_suffix {
                 Test::builder()
                     .with_name(concat!("connect_disconnect_callback_", stringify!($lang)))
                     .with_module(concat!("sdk-test-connect-disconnect", $suffix))
-                    .with_client(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/connect_disconnect_client"))
+                    .with_client(concat!(
+                        env!("CARGO_MANIFEST_DIR"),
+                        "/tests/connect_disconnect_client"
+                    ))
                     .with_language("rust")
                     .with_bindings_dir("src/module_bindings")
                     .with_compile_command("cargo build")
@@ -129,7 +132,7 @@ macro_rules! declare_tests_with_suffix {
                     .run();
             }
         }
-    }
+    };
 }
 
 declare_tests_with_suffix!(rust, "");
