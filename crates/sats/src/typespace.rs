@@ -140,6 +140,13 @@ impl Typespace {
     fn inline_typerefs_in_ref(&mut self, r: AlgebraicTypeRef) -> Result<&AlgebraicType, TypeRefError> {
         let resolved_ty = match self.get_mut(r) {
             None => return Err(TypeRefError::InvalidTypeRef(r)),
+            // If we encountered a type reference, that means one of the parent calls
+            // to `inline_typerefs_in_ref(r)` swapped its definition out,
+            // i.e. the type referred to by `r` is recursive.
+            // Note that it doesn't necessarily need to be the current call,
+            // e.g. A -> B -> A dependency also forms a recursive cycle.
+            // Our database can't handle recursive types, so return an error.
+            // TODO: support recursive types in the future.
             Some(AlgebraicType::Ref(_)) => return Err(TypeRefError::RecursiveTypeRef(r)),
             Some(resolved_ty) => resolved_ty,
         };
