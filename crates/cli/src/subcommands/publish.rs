@@ -137,7 +137,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         query_params.push(("trace_log", "true"));
     }
 
-    let path_to_wasm = if path_to_project.extension().map_or(false, |ext| ext == "wasm") {
+    let path_to_wasm = if !path_to_project.is_dir() && path_to_project.extension().map_or(false, |ext| ext == "wasm") {
         path_to_project.clone()
     } else {
         crate::tasks::build(path_to_project, skip_clippy, build_debug)?
