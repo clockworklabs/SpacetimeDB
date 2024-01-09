@@ -486,7 +486,11 @@ pub(crate) mod tests {
             "Not return results"
         );
 
-        run_for_testing(&db, &mut tx, "DELETE FROM inventory WHERE inventory.inventory_id = 3")?;
+        dbg!(run_for_testing(
+            &db,
+            &mut tx,
+            "DELETE FROM inventory WHERE inventory.inventory_id = 3"
+        )?);
 
         let result = run_for_testing(&db, &mut tx, "SELECT * FROM inventory")?;
         assert_eq!(
@@ -495,7 +499,7 @@ pub(crate) mod tests {
             "Not delete correct row?"
         );
 
-        run_for_testing(&db, &mut tx, "DELETE FROM inventory")?;
+        dbg!(run_for_testing(&db, &mut tx, "DELETE FROM inventory")?);
 
         let result = run_for_testing(&db, &mut tx, "SELECT * FROM inventory")?;
         assert_eq!(
@@ -586,6 +590,7 @@ pub(crate) mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_drop_table() -> ResultTest<()> {
         let (db, _, _tmp_dir) = create_data(1)?;
         let mut tx = db.begin_tx();

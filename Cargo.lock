@@ -155,6 +155,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2e1373abdaa212b704512ec2bd8b26bd0b7d5c3f70117411a5d9a451383c859"
 
 [[package]]
+name = "arrayref"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b4930d2cb77ce62f89ee5d5289b4ac049559b1c45539271f5ed4fdc7db34545"
+
+[[package]]
 name = "arrayvec"
 version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -365,6 +371,19 @@ dependencies = [
  "radium",
  "tap",
  "wyz",
+]
+
+[[package]]
+name = "blake3"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0231f06152bf547e9c2b5194f247cd97aacf6dcd8b15d8e5ec0663f64580da87"
+dependencies = [
+ "arrayref",
+ "arrayvec",
+ "cc",
+ "cfg-if",
+ "constant_time_eq",
 ]
 
 [[package]]
@@ -712,6 +731,12 @@ dependencies = [
  "unicode-width",
  "windows-sys 0.45.0",
 ]
+
+[[package]]
+name = "constant_time_eq"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f7144d30dcf0fafbce74250a3963025d8d52177934239851c917d29f1df280c2"
 
 [[package]]
 name = "convert_case"
@@ -2462,6 +2487,12 @@ dependencies = [
  "cfg-if",
  "libc",
 ]
+
+[[package]]
+name = "nohash-hasher"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2bf50223579dc7cdcfb3bfcacf7069ff68243f8c363f62ffa99cf000a6b9c451"
 
 [[package]]
 name = "nom"
@@ -4217,10 +4248,13 @@ dependencies = [
 name = "spacetimedb-core"
 version = "0.8.0"
 dependencies = [
+ "ahash 0.8.3",
  "anyhow",
  "async-trait",
  "backtrace",
  "base64 0.21.4",
+ "bit-vec",
+ "blake3",
  "bytes",
  "bytestring",
  "chrono",
@@ -4229,7 +4263,9 @@ dependencies = [
  "crossbeam-channel",
  "derive_more",
  "dirs",
+ "either",
  "email_address",
+ "enum-as-inner",
  "enum-map",
  "flate2",
  "fs2",
@@ -4243,6 +4279,7 @@ dependencies = [
  "jsonwebtoken",
  "lazy_static",
  "log",
+ "nohash-hasher",
  "nonempty",
  "once_cell",
  "openssl",
@@ -4268,6 +4305,7 @@ dependencies = [
  "serde_path_to_error",
  "serde_with",
  "sha1",
+ "sha3",
  "slab",
  "sled",
  "smallvec",

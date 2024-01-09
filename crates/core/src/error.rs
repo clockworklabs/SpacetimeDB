@@ -7,6 +7,7 @@ use hex::FromHexError;
 use thiserror::Error;
 
 use crate::client::ClientActorId;
+use crate::db::datastore::mem_arch_datastore::table::InsertError;
 use crate::db::datastore::system_tables::SystemTable;
 use crate::sql::query_debug_info::QueryDebugInfo;
 use spacetimedb_lib::buffer::DecodeError;
@@ -142,7 +143,7 @@ pub enum DBError {
     #[error("TableError: {0}")]
     Table(#[from] TableError),
     #[error("SequenceError: {0}")]
-    Sequence2(#[from] crate::db::datastore::locking_tx_datastore::SequenceError),
+    Sequence2(#[from] crate::db::datastore::mem_arch_datastore::sequence::SequenceError),
     #[error("IndexError: {0}")]
     Index(#[from] IndexError),
     #[error("SchemaError: {0}")]
@@ -181,6 +182,8 @@ pub enum DBError {
     Plan { sql: String, error: PlanError },
     #[error("Error replaying the commit log: {0}")]
     LogReplay(#[from] LogReplayError),
+    #[error("Error inserting into table: {0}")]
+    InsertError(#[from] InsertError),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }

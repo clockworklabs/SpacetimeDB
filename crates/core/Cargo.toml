@@ -25,10 +25,13 @@ spacetimedb-client-api-messages = { path = "../client-api-messages", version = "
 spacetimedb-primitives = { path = "../primitives", version = "0.8.0" }
 spacetimedb-metrics = { path = "../metrics", version = "0.8.0" }
 
+ahash.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
 backtrace.workspace = true
 base64.workspace = true
+bit-vec.workspace = true
+blake3.workspace = true
 bytes.workspace = true
 bytestring.workspace = true
 chrono.workspace = true
@@ -36,7 +39,9 @@ clap.workspace = true
 crossbeam-channel.workspace = true
 derive_more.workspace = true
 dirs.workspace = true
+either.workspace = true
 email_address.workspace = true
+enum-as-inner.workspace = true
 enum-map.workspace = true
 flate2.workspace = true
 fs2.workspace = true
@@ -50,6 +55,7 @@ itertools.workspace = true
 jsonwebtoken.workspace = true
 lazy_static.workspace = true
 log.workspace = true
+nohash-hasher.workspace = true
 nonempty.workspace = true
 once_cell.workspace = true
 openssl.workspace = true
@@ -58,6 +64,7 @@ paste.workspace = true
 pin-project-lite.workspace = true
 prometheus.workspace = true
 prost.workspace = true
+rand.workspace = true
 rayon-core.workspace = true
 regex.workspace = true
 rustc-demangle.workspace = true
@@ -70,6 +77,7 @@ serde_json.workspace = true
 serde_path_to_error.workspace = true
 serde_with = { workspace = true, features = ["chrono_0_4"] }
 sha1.workspace = true
+sha3.workspace = true
 slab.workspace = true
 sled.workspace = true
 sqlparser.workspace = true
@@ -108,7 +116,6 @@ criterion.workspace = true
 # Also as dev-dependencies for use in _this_ crate's tests.
 proptest.workspace = true
 proptest-derive.workspace = true
-rand.workspace = true
 
 [build-dependencies]
 prost-build.workspace = true

@@ -11,7 +11,7 @@ use spacetimedb_vm::expr::CrudExpr;
 use super::instrumentation::CallTimes;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{LogLevel, Record, SystemLogger};
-use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::db::datastore::mem_arch_datastore::mut_tx::MutTxId;
 use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
 use crate::host::instance_env::InstanceEnv;

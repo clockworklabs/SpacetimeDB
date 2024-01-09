@@ -2,7 +2,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
 use std::time::Instant;
 
-use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::db::datastore::mem_arch_datastore::mut_tx::MutTxId;
 use crate::db::db_metrics::{DB_METRICS, MAX_QUERY_COMPILE_TIME};
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, SubscriptionError};

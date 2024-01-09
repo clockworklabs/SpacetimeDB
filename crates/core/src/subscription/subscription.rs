@@ -31,7 +31,7 @@ use std::hash::Hasher;
 use std::ops::Deref;
 use std::time::Instant;
 
-use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::db::datastore::mem_arch_datastore::mut_tx::MutTxId;
 use crate::db::db_metrics::{DB_METRICS, MAX_QUERY_CPU_TIME};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::{ExecutionContext, WorkloadType};

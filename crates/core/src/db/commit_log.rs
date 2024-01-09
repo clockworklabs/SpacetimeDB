@@ -1,5 +1,8 @@
 use super::{
-    datastore::traits::{MutTxDatastore, TxData},
+    datastore::{
+        mem_arch_datastore::indexes::RowPointer,
+        traits::{MutTxDatastore, TxData},
+    },
     message_log::{self, MessageLog},
     messages::commit::Commit,
     ostorage::{memory_object_db::MemoryObjectDB, ObjectDB},
@@ -7,7 +10,7 @@ use super::{
 };
 use crate::{
     db::{
-        datastore::{locking_tx_datastore::RowId, traits::TxOp},
+        datastore::traits::TxOp,
         db_metrics::DB_METRICS,
         messages::{
             transaction::Transaction,
@@ -313,7 +316,7 @@ impl CommitLogMut {
         datastore: &D,
     ) -> Result<Option<usize>, DBError>
     where
-        D: MutTxDatastore<RowId = RowId>,
+        D: MutTxDatastore<RowId = RowPointer>,
     {
         // IMPORTANT: writes to the log must be sequential, so as to maintain
         // the commit order. `generate_commit` establishes an order between
@@ -350,7 +353,7 @@ impl CommitLogMut {
         Ok(commit.len())
     }
 
-    fn generate_commit<D: MutTxDatastore<RowId = RowId>>(
+    fn generate_commit<D: MutTxDatastore<RowId = RowPointer>>(
         &self,
         ctx: &ExecutionContext,
         tx_data: &TxData,

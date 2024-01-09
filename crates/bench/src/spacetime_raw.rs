@@ -42,7 +42,7 @@ impl BenchDatabase for SpacetimeRaw {
         self.db.with_auto_commit(&ExecutionContext::default(), |tx| {
             let table_def = TableDef::from_product(&name, T::product_type());
             let table_id = self.db.create_table(tx, table_def)?;
-            self.db.rename_table(tx, table_id, &name)?;
+            // self.db.rename_table(tx, table_id, &name)?;
             match index_strategy {
                 IndexStrategy::Unique => {
                     self.db

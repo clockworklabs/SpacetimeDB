@@ -13,7 +13,7 @@ use crate::{
     },
     host::NoSuchModule,
 };
-use crate::{db::datastore::locking_tx_datastore::MutTxId, execution_context::ExecutionContext};
+use crate::{db::datastore::mem_arch_datastore::mut_tx::MutTxId, execution_context::ExecutionContext};
 use crate::{db::relational_db::RelationalDB, error::DBError};
 use futures::{stream::FuturesUnordered, FutureExt, StreamExt};
 use spacetimedb_lib::identity::AuthCtx;

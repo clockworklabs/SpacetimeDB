@@ -7,7 +7,7 @@ use spacetimedb_lib::Address;
 use tracing::debug;
 
 use crate::db::cursor::{CatalogCursor, IndexCursor, TableCursor};
-use crate::db::datastore::locking_tx_datastore::IterByColEq;
+use crate::db::datastore::mem_arch_datastore::mut_tx::IterByColEq;
 use crate::db::relational_db::{MutTx, RelationalDB};
 use crate::execution_context::ExecutionContext;
 use spacetimedb_lib::identity::AuthCtx;
@@ -262,7 +262,7 @@ impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
         // Return a value from the current index iterator, if not exhausted.
         if self.return_index_rows {
             while let Some(value) = self.index_iter.as_mut().and_then(|iter| iter.next()) {
-                let value = value.to_rel_value();
+                let value = RelValue::new(value.read_row(), None);
                 if self.filter(value.as_val_ref())? {
                     return Ok(Some(self.map(value, None)));
                 }
@@ -277,7 +277,7 @@ impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
                     let value = value.clone();
                     let mut index_iter = self.db.iter_by_col_eq(self.ctx, self.tx, table_id, col_id, value)?;
                     while let Some(value) = index_iter.next() {
-                        let value = value.to_rel_value();
+                        let value = RelValue::new(value.read_row(), None);
                         if self.filter(value.as_val_ref())? {
                             self.index_iter = Some(index_iter);
                             return Ok(Some(self.map(value, Some(row))));
@@ -353,7 +353,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx, MutTx> {
 
     fn delete_query(&mut self, query: QueryCode) -> Result<Code, ErrorVm> {
         let table = query.table.clone();
-        let result = self._eval_query(query)?;
+        let result = dbg!(self._eval_query(query)?);
 
         match result {
             Code::Table(result) => {
@@ -511,7 +511,7 @@ impl RelOps for TableCursor<'_> {
 
     #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
-        Ok(self.iter.next().map(|row| row.to_rel_value()))
+        Ok(self.iter.next().map(|row_ref| RelValue::new(row_ref.read_row(), None)))
     }
 }
 
@@ -526,7 +526,7 @@ impl<R: RangeBounds<AlgebraicValue>> RelOps for IndexCursor<'_, R> {
 
     #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
-        Ok(self.iter.next().map(|row| row.to_rel_value()))
+        Ok(self.iter.next().map(|row_ref| RelValue::new(row_ref.read_row(), None)))
     }
 }
 
