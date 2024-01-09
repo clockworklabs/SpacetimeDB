@@ -1,5 +1,3 @@
-use std::collections::hash_map::DefaultHasher;
-use std::hash::Hasher;
 use std::time::Instant;
 
 use crate::db::datastore::locking_tx_datastore::MutTxId;
@@ -160,19 +158,10 @@ fn record_query_compilation_metrics(workload: WorkloadType, db: &Address, query:
         .with_label_values(&workload, db, query)
         .observe(compile_duration);
 
-    fn hash(a: WorkloadType, b: &Address, c: &str) -> u64 {
-        use std::hash::Hash;
-        let mut hasher = DefaultHasher::new();
-        a.hash(&mut hasher);
-        b.hash(&mut hasher);
-        c.hash(&mut hasher);
-        hasher.finish()
-    }
-
     let max_compile_duration = *MAX_QUERY_COMPILE_TIME
         .lock()
         .unwrap()
-        .entry(hash(workload, db, query))
+        .entry((*db, workload, query.to_owned()))
         .and_modify(|max| {
             if compile_duration > *max {
                 *max = compile_duration;
