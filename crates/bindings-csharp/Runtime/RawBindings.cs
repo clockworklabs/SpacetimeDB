@@ -12,7 +12,13 @@ public static partial class RawBindings
     // For now this must match the name of the `.c` file (`bindings.c`).
     // In the future C# will allow to specify Wasm import namespace in
     // `LibraryImport` directly.
-    const string StdbNamespace = "bindings";
+    const string StdbNamespace =
+#if EXPERIMENTAL_WASM_AOT
+    "spacetime_7.0"
+#else
+    "bindings"
+#endif
+    ;
 
     // This custom marshaller takes care of checking the status code
     // returned from the host and throwing an exception if it's not 0.
