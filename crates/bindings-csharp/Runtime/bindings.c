@@ -1,3 +1,4 @@
+#ifndef EXPERIMENTAL_WASM_AOT
 #include <assert.h>
 // #include <mono/metadata/appdomain.h>
 // #include <mono/metadata/object.h>
@@ -111,6 +112,7 @@ EXPORT(Buffer, __call_reducer__,
        (uint32_t id, Buffer caller_identity, Buffer caller_address,
         uint64_t timestamp, Buffer args),
        &id, &caller_identity, &caller_address, &timestamp, &args);
+#endif
 
 // Shims to avoid dependency on WASI in the generated Wasm file.
 
@@ -208,9 +210,10 @@ int32_t WASI_NAME(fd_write)(__wasi_fd_t fd, const __wasi_ciovec_t* iovs,
     // Note: this will produce ugly broken output, but there's not much we can
     // do about it until we have proper line-buffered WASI writer in the core.
     // It's better than nothing though.
-    _console_log_imp((LogLevel){fd == STDERR_FILENO ? /*WARN*/ 1 : /*INFO*/ 2},
-                     CSTR("wasi"), CSTR(__FILE__), __LINE__, iovs[i].buf,
-                     iovs[i].buf_len);
+    // _console_log_imp((LogLevel){fd == STDERR_FILENO ? /*WARN*/ 1 : /*INFO*/
+    // 2},
+    //                  CSTR("wasi"), CSTR(__FILE__), __LINE__, iovs[i].buf,
+    //                  iovs[i].buf_len);
     *retptr0 += iovs[i].buf_len;
   }
   return 0;

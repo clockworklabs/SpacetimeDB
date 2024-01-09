@@ -1,6 +1,33 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
+    <NativeLibrary Include="$(MSBuildThisFileDirectory)..\bindings.c" />
+    <UnmanagedEntryPointsAssembly Include="SpacetimeDB.Runtime" />
+    <WasmImport Include="$(SpacetimeNamespace)!_console_log" />
+    <WasmImport Include="$(SpacetimeNamespace)!_get_table_id" />
+    <WasmImport Include="$(SpacetimeNamespace)!_create_index" />
+    <WasmImport Include="$(SpacetimeNamespace)!_iter_by_col_eq" />
+    <WasmImport Include="$(SpacetimeNamespace)!_insert" />
+    <WasmImport Include="$(SpacetimeNamespace)!_delete_by_col_eq" />
+    <WasmImport Include="$(SpacetimeNamespace)!_delete_by_rel" />
+    <WasmImport Include="$(SpacetimeNamespace)!_iter_start" />
+    <WasmImport Include="$(SpacetimeNamespace)!_iter_start_filtered" />
+    <WasmImport Include="$(SpacetimeNamespace)!_iter_next" />
+    <WasmImport Include="$(SpacetimeNamespace)!_iter_drop" />
+    <WasmImport Include="$(SpacetimeNamespace)!_schedule_reducer" />
+    <WasmImport Include="$(SpacetimeNamespace)!_cancel_reducer" />
+    <WasmImport Include="$(SpacetimeNamespace)!_buffer_len" />
+    <WasmImport Include="$(SpacetimeNamespace)!_buffer_consume" />
+    <WasmImport Include="$(SpacetimeNamespace)!_buffer_alloc" />
+
+    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
+    <PackageReference Include="runtime.win-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
+    <PackageReference Include="Microsoft.NET.ILLink.Tasks" Version="8.0.0-*" Condition="'$(ILLinkTargetsPath)' == ''" />
+
+    <CustomLinkerArg Include="-DEXPERIMENTAL_WASM_AOT" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' != '1'">
     <NativeFileReference Include="$(MSBuildThisFileDirectory)..\bindings.c" />
     <_WasmNativeFileForLinking Include="@(NativeFileReference)" />
   </ItemGroup>
@@ -9,7 +36,7 @@
   <!-- Adapted from https://github.com/dotnet/dotnet-wasi-sdk/blob/2dbb00c779180873d3ed985e59e431f56404d8da/src/Wasi.Sdk/build/Wasi.Sdk.targets#L245-L262 -->
   <!-- Executes before the errors in https://github.com/dotnet/runtime/blob/57fd56a99d4c97ac2f95fe84640f2a3f653f4dd7/src/mono/wasi/build/WasiApp.Native.targets#L41-L50. -->
   <!-- TODO: remove when https://github.com/dotnet/runtime/issues/82788 is resolved. -->
-  <Target Name="ObtainWasiSdk" BeforeTargets="_SetupWasiSdk">
+  <Target Name="ObtainWasiSdk" BeforeTargets="_SetupWasiSdk;CheckWasmSdks">
     <PropertyGroup>
       <WasiSdkVersion>20</WasiSdkVersion>
 
@@ -22,6 +49,7 @@
       <WasiSdkUrl>https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-$(WasiSdkVersion)/wasi-sdk-$(WasiSdkVersion).0$(WasiSdkFilenameSuffix).tar.gz</WasiSdkUrl>
 
       <WasiSdkRoot>$([System.IO.Path]::Combine($([System.Environment]::GetFolderPath(SpecialFolder.UserProfile)), '.wasi-sdk', "wasi-sdk-$(WasiSdkVersion)"))</WasiSdkRoot>
+      <WASI_SDK_PATH>$(WasiSdkRoot)</WASI_SDK_PATH>
       <WasiSysRoot>$([System.IO.Path]::Combine($(WasiSdkRoot), 'share', 'wasi-sysroot'))</WasiSysRoot>
       <WasiClang>$([System.IO.Path]::Combine($(WasiSdkRoot), 'bin', 'clang'))</WasiClang>
       <WasiClang Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(WasiClang).exe</WasiClang>
