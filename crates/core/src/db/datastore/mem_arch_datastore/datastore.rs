@@ -11,7 +11,7 @@ use crate::db::messages::transaction::Transaction;
 use crate::db::messages::write::Operation;
 use crate::db::ostorage::ObjectDB;
 use crate::error::DBError;
-use crate::execution_context::{ExecutionContext, WorkloadType};
+use crate::execution_context::ExecutionContext;
 use crate::{
     address::Address,
     db::datastore::traits::{DataRow, MutTx, MutTxDatastore, Tx, TxData, TxDatastore},
@@ -24,7 +24,6 @@ use spacetimedb_primitives::{ColId, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::db::def::{IndexDef, SequenceDef, TableDef, TableSchema};
 use spacetimedb_sats::{AlgebraicValue, DataKey, ProductType, ProductValue};
 use std::borrow::Cow;
-use std::collections::hash_map::DefaultHasher;
 use std::ops::RangeBounds;
 use std::sync::Arc;
 use std::time::Instant;
@@ -467,18 +466,9 @@ impl MutTx for MemArchPrototype {
             .with_label_values(workload, db, reducer)
             .observe(elapsed_time);
 
-        fn hash(a: &WorkloadType, b: &Address, c: &str) -> u64 {
-            use std::hash::{Hash, Hasher};
-            let mut hasher = DefaultHasher::new();
-            a.hash(&mut hasher);
-            b.hash(&mut hasher);
-            c.hash(&mut hasher);
-            hasher.finish()
-        }
-
         let mut guard = MAX_TX_CPU_TIME.lock().unwrap();
         let max_cpu_time = *guard
-            .entry(hash(workload, db, reducer))
+            .entry((*db, *workload, reducer.to_owned()))
             .and_modify(|max| {
                 if cpu_time > *max {
                     *max = cpu_time;
