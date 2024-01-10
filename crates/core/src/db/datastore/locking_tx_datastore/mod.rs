@@ -174,7 +174,7 @@ trait StateView {
         // let table_id_col = NonEmpty::new(.col_id());
         let value: AlgebraicValue = table_id.into();
         let rows = self
-            .iter_by_col_eq(&ctx, &ST_TABLES_ID, table_id_col, table_id.into())?
+            .iter_by_col_eq(ctx, &ST_TABLES_ID, table_id_col, table_id.into())?
             .collect::<Vec<_>>();
         let row = rows
             .first()
@@ -186,7 +186,7 @@ trait StateView {
         // Look up the columns for the table in question.
         let mut columns = self
             .iter_by_col_eq(
-                &ctx,
+                ctx,
                 &ST_COLUMNS_ID,
                 NonEmpty::new(StColumnFields::TableId.col_id()),
                 value,
@@ -207,7 +207,7 @@ trait StateView {
         // Look up the constraints for the table in question.
         let mut constraints = Vec::new();
         for data_ref in self.iter_by_col_eq(
-            &ctx,
+            ctx,
             &ST_CONSTRAINTS_ID,
             NonEmpty::new(StConstraintFields::TableId.col_id()),
             table_id.into(),
@@ -228,7 +228,7 @@ trait StateView {
         // Look up the sequences for the table in question.
         let mut sequences = Vec::new();
         for data_ref in self.iter_by_col_eq(
-            &ctx,
+            ctx,
             &ST_SEQUENCES_ID,
             NonEmpty::new(StSequenceFields::TableId.col_id()),
             AlgebraicValue::U32(table_id.into()),
@@ -253,7 +253,7 @@ trait StateView {
         // Look up the indexes for the table in question.
         let mut indexes = Vec::new();
         for data_ref in self.iter_by_col_eq(
-            &ctx,
+            ctx,
             &ST_INDEXES_ID,
             NonEmpty::new(StIndexFields::TableId.col_id()),
             table_id.into(),
