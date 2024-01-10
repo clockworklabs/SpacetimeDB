@@ -255,7 +255,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         log::debug!("One-off query: {query}");
         let query_info = &QueryDebugInfo::from_source(&query);
         let ctx = &ExecutionContext::sql(db.address(), Some(query_info));
-        let compiled = db.with_read_only(&ctx, |tx| {
+        let compiled = db.with_read_only(ctx, |tx| {
             sql::compiler::compile_sql(db, tx, &query)?
                 .into_iter()
                 .map(|expr| {
@@ -326,7 +326,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         let timestamp = Timestamp::now();
         let stdb = &*self.database_instance_context().relational_db;
         let ctx = ExecutionContext::internal(stdb.address());
-        let tx = stdb.begin_tx();
+        let tx = stdb.begin_mut_tx();
         let (tx, ()) = stdb
             .with_auto_rollback(&ctx, tx, |tx| {
                 for schema in get_tabledefs(&self.info) {
@@ -390,7 +390,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         let proposed_tables = get_tabledefs(&self.info).collect::<anyhow::Result<Vec<_>>>()?;
 
         let stdb = &*self.database_instance_context().relational_db;
-        let tx = stdb.begin_tx();
+        let tx = stdb.begin_mut_tx();
 
         let res = crate::db::update::update_database(
             stdb,
@@ -510,7 +510,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             arg_bytes: args.get_bsatn().clone(),
         };
 
-        let tx = tx.unwrap_or_else(|| stdb.begin_tx());
+        let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx());
         let tx_slot = self.instance.instance_env().tx.clone();
 
         let reducer_span = tracing::trace_span!(
@@ -555,7 +555,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let ctx = ExecutionContext::reducer(address, reducer_name);
         let status = match call_result {
             Err(err) => {
-                stdb.rollback_tx(&ctx, tx);
+                stdb.rollback_mut_tx(&ctx, tx);
 
                 T::log_traceback("reducer", reducer_name, &err);
 
@@ -574,7 +574,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 }
             }
             Ok(Err(errmsg)) => {
-                stdb.rollback_tx(&ctx, tx);
+                stdb.rollback_mut_tx(&ctx, tx);
 
                 log::info!("reducer returned error: {errmsg}");
 
