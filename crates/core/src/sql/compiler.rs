@@ -11,12 +11,11 @@ use spacetimedb_vm::dsl::{db_table, db_table_raw, query};
 use spacetimedb_vm::expr::{ColumnOp, CrudExpr, DbType, Expr, QueryExpr, SourceExpr};
 use spacetimedb_vm::operator::OpCmp;
 use std::collections::HashMap;
-use tracing::info;
 
 /// Compile the `SQL` expression into a `ast`
 #[tracing::instrument(skip_all)]
 pub fn compile_sql(db: &RelationalDB, tx: &Tx, sql_text: &str) -> Result<Vec<CrudExpr>, DBError> {
-    info!(sql = sql_text);
+    tracing::trace!(sql = sql_text);
     let ast = compile_to_ast(db, tx, sql_text)?;
 
     let mut results = Vec::with_capacity(ast.len());

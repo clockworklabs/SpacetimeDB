@@ -4,12 +4,11 @@ pub mod websocket;
 use core::fmt;
 use std::net::IpAddr;
 
-use axum::body::{Bytes, HttpBody};
-use axum::extract::FromRequest;
-use axum::headers;
+use axum::body::Bytes;
+use axum::extract::{FromRequest, Request};
 use axum::response::IntoResponse;
 use bytestring::ByteString;
-use http::{HeaderName, HeaderValue, Request, StatusCode};
+use http::{HeaderName, HeaderValue, StatusCode};
 
 use spacetimedb::address::Address;
 use spacetimedb_lib::address::AddressForUrl;
@@ -21,16 +20,10 @@ use crate::{log_and_500, ControlStateReadAccess};
 pub struct ByteStringBody(pub ByteString);
 
 #[async_trait::async_trait]
-impl<S, B> FromRequest<S, B> for ByteStringBody
-where
-    B: HttpBody + Send + 'static,
-    B::Data: Send,
-    B::Error: Into<axum::BoxError>,
-    S: Send + Sync,
-{
+impl<S: Send + Sync> FromRequest<S> for ByteStringBody {
     type Rejection = axum::response::Response;
 
-    async fn from_request(req: Request<B>, state: &S) -> Result<Self, Self::Rejection> {
+    async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
         let bytes = Bytes::from_request(req, state)
             .await
             .map_err(IntoResponse::into_response)?;

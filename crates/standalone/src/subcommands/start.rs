@@ -6,7 +6,7 @@ use clap::{Arg, ArgMatches};
 use spacetimedb::config::{FilesGlobal, FilesLocal, SpacetimeDbFiles};
 use spacetimedb::db::{Config, FsyncPolicy, Storage};
 use spacetimedb::startup;
-use std::net::TcpListener;
+use tokio::net::TcpListener;
 
 #[cfg(feature = "string")]
 impl From<std::string::String> for OsStr {
@@ -226,11 +226,11 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
 
     let ctx = spacetimedb_client_api::ArcEnv(StandaloneEnv::init(config).await?);
 
-    let service = router().with_state(ctx).into_make_service();
+    let service = router().with_state(ctx);
 
-    let tcp = TcpListener::bind(listen_addr).unwrap();
+    let tcp = TcpListener::bind(listen_addr).await?;
     log::debug!("Starting SpacetimeDB listening on {}", tcp.local_addr().unwrap());
-    axum::Server::from_tcp(tcp)?.serve(service).await?;
+    axum::serve(tcp, service).await?;
     Ok(())
 }
 

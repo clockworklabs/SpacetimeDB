@@ -21,9 +21,12 @@ tempfile.workspace = true
 async-trait = "0.1.60"
 chrono = { version = "0.4.23", features = ["serde"]}
 rand = "0.8.5"
-axum = { version = "0.6.16", features = ["headers", "tracing"] }
-hyper = "0.14"
-http = "0.2"
+axum.workspace = true
+axum-extra.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+http.workspace = true
+headers.workspace = true
 mime = "0.3.17"
 tokio-stream = { version = "0.1.12", features = ["sync"] }
 futures = "0.3"

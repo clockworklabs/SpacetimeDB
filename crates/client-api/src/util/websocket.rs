@@ -1,19 +1,19 @@
 //! A more flexible version of axum::extract::ws. This could probably get pulled out into its own crate at some point.
 
 use axum::extract::FromRequestParts;
-use axum::headers::{
-    self, Connection, HeaderMapExt, SecWebsocketAccept, SecWebsocketKey, SecWebsocketVersion, Upgrade,
-};
 use axum::response::{IntoResponse, Response};
-use axum::TypedHeader;
+use axum_extra::TypedHeader;
+use headers::{Connection, HeaderMapExt, SecWebsocketAccept, SecWebsocketKey, SecWebsocketVersion, Upgrade};
 use http::{HeaderName, HeaderValue, Method, StatusCode};
 use hyper::upgrade::{OnUpgrade, Upgraded};
+use hyper_util::rt::TokioIo;
 
 use super::flat_csv::FlatCsv;
 
 pub use tokio_tungstenite::tungstenite;
 pub use tungstenite::protocol::{frame::coding::CloseCode, CloseFrame, Message, WebSocketConfig};
-pub type WebSocketStream = tokio_tungstenite::WebSocketStream<Upgraded>;
+
+pub type WebSocketStream = tokio_tungstenite::WebSocketStream<TokioIo<Upgraded>>;
 
 pub struct RequestSecWebsocketProtocol(FlatCsv);
 
@@ -182,7 +182,7 @@ pub struct PendingWebSocket(OnUpgrade);
 impl PendingWebSocket {
     #[inline]
     pub async fn upgrade(self, config: WebSocketConfig) -> hyper::Result<WebSocketStream> {
-        let stream = self.0.await?;
+        let stream = TokioIo::new(self.0.await?);
         Ok(WebSocketStream::from_raw_socket(stream, tungstenite::protocol::Role::Server, Some(config)).await)
     }
 

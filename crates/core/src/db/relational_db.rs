@@ -460,7 +460,7 @@ impl RelationalDB {
         ctx: &'a ExecutionContext,
         tx: &'a MutTx,
         table_id: TableId,
-    ) -> Result<Option<&'a str>, DBError> {
+    ) -> Result<Option<Cow<'a, str>>, DBError> {
         self.inner.table_name_from_id_mut_tx(ctx, tx, table_id)
     }
 
@@ -1401,7 +1401,7 @@ mod tests {
         stdb.rename_table(&mut tx, table_id, "YourTable")?;
         let table_name = stdb.table_name_from_id(&ctx, &tx, table_id)?;
 
-        assert_eq!(Some("YourTable"), table_name);
+        assert_eq!(Some("YourTable"), table_name.as_ref().map(Cow::as_ref));
         // Also make sure we've removed the old ST_TABLES_ID row
         let mut n = 0;
         for row in stdb.iter_mut(&ctx, &tx, ST_TABLES_ID)? {

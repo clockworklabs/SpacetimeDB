@@ -14,8 +14,6 @@ use self::{
     sequence::Sequence,
     table::Table,
 };
-use std::collections::hash_map::DefaultHasher;
-use std::hash::Hasher;
 use std::ops::Deref;
 use std::time::{Duration, Instant};
 use std::{
@@ -38,7 +36,7 @@ use crate::db::datastore::system_tables::{
     StIndexFields, StModuleRow, StSequenceFields, StTableFields, ST_CONSTRAINTS_ID, ST_MODULE_ID, WASM_MODULE,
 };
 use crate::db::db_metrics::{DB_METRICS, MAX_TX_CPU_TIME};
-use crate::execution_context::{ExecutionContext, WorkloadType};
+use crate::execution_context::ExecutionContext;
 use crate::{db::datastore::system_tables, error::IndexError};
 use crate::{
     db::datastore::traits::{TxOp, TxRecord},
@@ -2423,18 +2421,9 @@ impl traits::MutTx for Locking {
             .with_label_values(workload, db, reducer)
             .observe(elapsed_time);
 
-        fn hash(a: &WorkloadType, b: &Address, c: &str) -> u64 {
-            use std::hash::Hash;
-            let mut hasher = DefaultHasher::new();
-            a.hash(&mut hasher);
-            b.hash(&mut hasher);
-            c.hash(&mut hasher);
-            hasher.finish()
-        }
-
         let mut guard = MAX_TX_CPU_TIME.lock().unwrap();
         let max_cpu_time = *guard
-            .entry(hash(workload, db, reducer))
+            .entry((*db, *workload, reducer.to_owned()))
             .and_modify(|max| {
                 if cpu_time > *max {
                     *max = cpu_time;
@@ -2519,8 +2508,8 @@ impl MutTxDatastore for Locking {
         ctx: &'a ExecutionContext,
         tx: &'a Self::MutTx,
         table_id: TableId,
-    ) -> super::Result<Option<&'a str>> {
-        tx.table_name_from_id(ctx, table_id)
+    ) -> super::Result<Option<Cow<'a, str>>> {
+        tx.table_name_from_id(ctx, table_id).map(|opt| opt.map(Cow::Borrowed))
     }
 
     fn create_index_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, index: IndexDef) -> super::Result<IndexId> {

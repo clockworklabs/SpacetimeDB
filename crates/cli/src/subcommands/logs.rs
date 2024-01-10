@@ -116,7 +116,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     } else {
         termcolor::ColorChoice::Never
     };
-    let out = termcolor::StandardStream::stderr(term_color);
+    let out = termcolor::StandardStream::stdout(term_color);
     let mut out = out.lock();
 
     let mut rdr = res
