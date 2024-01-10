@@ -25,9 +25,7 @@
 
 use anyhow::Context;
 use derive_more::{Deref, DerefMut, From, IntoIterator};
-use std::collections::hash_map::DefaultHasher;
 use std::collections::{btree_set, BTreeSet, HashMap, HashSet};
-use std::hash::Hasher;
 use std::ops::Deref;
 use std::time::Instant;
 
@@ -424,19 +422,10 @@ fn record_query_duration_metrics(workload: WorkloadType, db: &Address, query: &s
         .with_label_values(&workload, db, query)
         .observe(query_duration);
 
-    fn hash(a: WorkloadType, b: &Address, c: &str) -> u64 {
-        use std::hash::Hash;
-        let mut hasher = DefaultHasher::new();
-        a.hash(&mut hasher);
-        b.hash(&mut hasher);
-        c.hash(&mut hasher);
-        hasher.finish()
-    }
-
     let max_query_duration = *MAX_QUERY_CPU_TIME
         .lock()
         .unwrap()
-        .entry(hash(workload, db, query))
+        .entry((*db, workload, query.to_owned()))
         .and_modify(|max| {
             if query_duration > *max {
                 *max = query_duration;

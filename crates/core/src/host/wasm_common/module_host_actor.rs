@@ -106,6 +106,12 @@ pub enum InitializationError {
     Describe(#[from] DescribeError),
 }
 
+impl From<TypeRefError> for InitializationError {
+    fn from(err: TypeRefError) -> Self {
+        ValidationError::from(err).into()
+    }
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum DescribeError {
     #[error("bad signature for descriptor function")]
@@ -150,11 +156,20 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         let desc = instance.extract_descriptions()?;
         let desc = bsatn::from_slice(&desc).map_err(DescribeError::Decode)?;
         let ModuleDef {
-            typespace,
-            tables,
+            mut typespace,
+            mut tables,
             reducers,
             misc_exports: _,
         } = desc;
+        // Tables can't handle typerefs, let alone recursive types, so we need
+        // to walk over the columns and inline all typerefs as the resolved
+        // types to prevent runtime panics when trying to e.g. insert rows.
+        // TODO: support type references properly in the future.
+        for table in &mut tables {
+            for col in &mut table.schema.columns {
+                typespace.inline_typerefs_in_type(&mut col.col_type)?;
+            }
+        }
         let catalog = itertools::chain(
             tables
                 .into_iter()
@@ -448,7 +463,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
     }
 
     fn call_reducer(&mut self, params: CallReducerParams) -> ReducerCallResult {
-        self.call_reducer_with_tx(None, params)
+        crate::callgrind_flag::invoke_allowing_callgrind(|| self.call_reducer_with_tx(None, params))
     }
 }
 

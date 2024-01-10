@@ -157,13 +157,21 @@ metrics_group!(
     }
 );
 
-pub static MAX_TX_CPU_TIME: Lazy<Mutex<HashMap<u64, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
-pub static MAX_QUERY_CPU_TIME: Lazy<Mutex<HashMap<u64, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
-pub static MAX_QUERY_COMPILE_TIME: Lazy<Mutex<HashMap<u64, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+type Triple = (Address, WorkloadType, String);
+
+pub static MAX_TX_CPU_TIME: Lazy<Mutex<HashMap<Triple, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+pub static MAX_QUERY_CPU_TIME: Lazy<Mutex<HashMap<Triple, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+pub static MAX_QUERY_COMPILE_TIME: Lazy<Mutex<HashMap<Triple, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 pub static DB_METRICS: Lazy<DbMetrics> = Lazy::new(DbMetrics::new);
 
 pub fn reset_counters() {
+    // Reset max reducer durations
+    DB_METRICS.rdb_txn_cpu_time_sec_max.0.reset();
     MAX_TX_CPU_TIME.lock().unwrap().clear();
+    // Reset max query durations
+    DB_METRICS.rdb_query_cpu_time_sec_max.0.reset();
     MAX_QUERY_CPU_TIME.lock().unwrap().clear();
+    // Reset max query compile durations
+    DB_METRICS.rdb_query_compile_time_sec_max.0.reset();
     MAX_QUERY_COMPILE_TIME.lock().unwrap().clear();
 }

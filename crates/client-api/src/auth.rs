@@ -1,13 +1,11 @@
 use std::fmt::Write;
 use std::time::Duration;
 
-use axum::extract::rejection::{TypedHeaderRejection, TypedHeaderRejectionReason};
 use axum::extract::Query;
-use axum::headers::authorization::Credentials;
-use axum::headers::{self, authorization};
 use axum::response::IntoResponse;
-use axum::TypedHeader;
+use axum_extra::typed_header::{TypedHeader, TypedHeaderRejection, TypedHeaderRejectionReason};
 use bytes::BytesMut;
+use headers::authorization::{self, Credentials};
 use http::{request, HeaderValue, StatusCode};
 use serde::Deserialize;
 use spacetimedb::auth::identity::{
@@ -79,10 +77,10 @@ impl<S: NodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for Space
     type Rejection = AuthorizationRejection;
     async fn from_request_parts(parts: &mut request::Parts, state: &S) -> Result<Self, Self::Rejection> {
         match (
-            axum::TypedHeader::from_request_parts(parts, state).await,
+            TypedHeader::from_request_parts(parts, state).await,
             Query::<TokenQueryParam>::from_request_parts(parts, state).await,
         ) {
-            (Ok(axum::TypedHeader(headers::Authorization(creds @ SpacetimeCreds { .. }))), _) => {
+            (Ok(TypedHeader(headers::Authorization(creds @ SpacetimeCreds { .. }))), _) => {
                 let claims = creds
                     .decode_token(state.public_key())
                     .map_err(|e| AuthorizationRejection {

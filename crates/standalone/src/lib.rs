@@ -33,6 +33,7 @@ use spacetimedb::object_db::ObjectDb;
 use spacetimedb::sendgrid_controller::SendGridController;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb::{stdb_path, worker_metrics};
+use spacetimedb_lib::metrics::METRICS;
 use spacetimedb_lib::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
 use spacetimedb_lib::recovery::RecoveryCode;
 use std::fs::File;
@@ -68,6 +69,7 @@ impl StandaloneEnv {
         let metrics_registry = prometheus::Registry::new();
         metrics_registry.register(Box::new(&*WORKER_METRICS)).unwrap();
         metrics_registry.register(Box::new(&*DB_METRICS)).unwrap();
+        metrics_registry.register(Box::new(&*METRICS)).unwrap();
 
         let this = Arc::new(Self {
             control_db,

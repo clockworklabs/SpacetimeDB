@@ -136,7 +136,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         ctx: &'a ExecutionContext,
         tx: &'a Self::MutTx,
         table_id: TableId,
-    ) -> Result<Option<&'a str>>;
+    ) -> Result<Option<Cow<'a, str>>>;
     fn get_all_tables_mut_tx<'tx>(
         &self,
         ctx: &ExecutionContext,

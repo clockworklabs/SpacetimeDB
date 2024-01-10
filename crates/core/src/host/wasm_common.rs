@@ -6,6 +6,7 @@ use std::time::Instant;
 
 use super::AbiCall;
 use crate::error::{DBError, IndexError, NodesError};
+use spacetimedb_sats::typespace::TypeRefError;
 
 pub const CALL_REDUCER_DUNDER: &str = "__call_reducer__";
 
@@ -141,6 +142,8 @@ pub enum ValidationError {
     NoMemory,
     #[error("there should be a function called {name:?} but it does not exist")]
     NoFunction { name: &'static str },
+    #[error(transparent)]
+    TypeRef(#[from] TypeRefError),
 }
 
 #[derive(Default)]
