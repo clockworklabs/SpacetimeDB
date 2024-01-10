@@ -679,7 +679,6 @@ mod tests {
     #![allow(clippy::disallowed_macros)]
 
     use super::*;
-    use crate::db::datastore::mem_arch_datastore::table::InsertError;
     use crate::db::datastore::system_tables::{
         StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINTS_ID, ST_INDEXES_ID, ST_SEQUENCES_ID,
         ST_TABLES_ID,
@@ -1170,7 +1169,7 @@ mod tests {
             Ok(_) => {
                 panic!("Allow to insert duplicate row")
             }
-            Err(DBError::InsertError(InsertError::IndexError(IndexError::UniqueConstraintViolation { .. }))) => (),
+            Err(DBError::Index(IndexError::UniqueConstraintViolation { .. })) => (),
             err => {
                 panic!("Expected error `UniqueConstraintViolation`, got {err:?}")
             }

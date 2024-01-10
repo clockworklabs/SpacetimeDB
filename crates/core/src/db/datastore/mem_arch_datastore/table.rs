@@ -111,6 +111,31 @@ impl Table {
         }
     }
 
+    /// Check if the `row` conflicts with any unique index on `self`,
+    /// and if there is a conflict, return `Err`.
+    ///
+    /// `is_deleted` is a predicate which, for a given row pointer,
+    /// returns true if and only if that row should be ignored.
+    /// While checking unique constraints against the committed state,
+    /// `MutTxId::insert` will ignore rows which are listed in the delete table.
+    pub fn check_unique_constraints(
+        &self,
+        row: &ProductValue,
+        mut is_deleted: impl FnMut(RowPointer) -> bool,
+    ) -> Result<(), IndexError> {
+        for index in self.indexes.values() {
+            if index.is_unique {
+                let value = row.project_not_empty(&index.cols).unwrap();
+                if let Some(mut conflicts) = index.get_rows_that_violate_unique_constraint(&value) {
+                    if conflicts.any(|ptr| !is_deleted(ptr)) {
+                        return Err(self.build_error_unique(index, value));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Insert a `row` into this table, storing its large var-len members in the `blob_store`.
     ///
     /// On success, returns the hash of the newly-inserted row,
@@ -128,13 +153,13 @@ impl Table {
         blob_store: &mut dyn BlobStore,
         row: ProductValue,
     ) -> Result<(RowHash, RowPointer), InsertError> {
-        // Check unique constraints
-        for index in self.indexes.values() {
-            if index.violates_unique_constraint(&row) {
-                let value = row.project_not_empty(&index.cols).unwrap();
-                return Err(self.build_error_unique(index, value).into());
-            }
-        }
+        // Check unique constraints. This error should take precedence over any other potential failures.
+        self.check_unique_constraints(
+            &row,
+            // No need to worry about the committed vs tx state dichotomy here;
+            // just treat all rows in the table as live.
+            |_| false,
+        )?;
 
         // Optimistically insert the `row` before checking for set-semantic collisions,
         // under the assumption that set-semantic collisions are rare.

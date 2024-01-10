@@ -866,6 +866,16 @@ impl MutTxId {
     pub fn insert_row_internal(&mut self, table_id: TableId, row: ProductValue) -> Result<()> {
         let commit_table = self.committed_state_write_lock.get_table(table_id);
 
+        // Check for constraint violations as early as possible,
+        // to ensure that `UniqueConstraintViolation` errors have precedence over other errors.
+        // `tx_table.insert` will later perform the same check on the tx table,
+        // so this method needs only to check the committed state.
+        if let Some(commit_table) = commit_table {
+            commit_table.check_unique_constraints(&row, |maybe_conflict| {
+                self.tx_state.is_deleted(table_id, maybe_conflict)
+            })?;
+        }
+
         // Remember to check for set-semantic collisions with the committed state!
         let (tx_table, tx_blob_store) = self
             .tx_state
@@ -895,6 +905,9 @@ impl MutTxId {
             }
             // `row` previously present in insert tables; do nothing.
             Err(InsertError::Duplicate(_)) => Ok(()),
+            // Unwrap `IndexError`s, so that we return `DBError::Index(e)`
+            // instead of `DBError::InsertError(InsertError::IndexError(e))`.
+            Err(InsertError::IndexError(index_err)) => Err(index_err.into()),
             // Misc. insertion error; fail.
             Err(e) => Err(e.into()),
         }
