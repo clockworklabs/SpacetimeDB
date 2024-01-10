@@ -62,7 +62,7 @@ jobs:
         run: echo "PR_REF=$(gh pr view $PR_NUMBER --json headRefName --jq .headRefName)" >>"$GITHUB_ENV"
 
       - name: Checkout sources
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.PR_REF || github.ref }}
           # if we're on master we want to know what the sha of HEAD~1 is so
