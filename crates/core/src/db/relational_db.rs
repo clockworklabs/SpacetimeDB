@@ -289,7 +289,7 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn rollback_tx(&self, ctx: &ExecutionContext, tx: Tx) {
+    pub fn release_tx(&self, ctx: &ExecutionContext, tx: Tx) {
         log::trace!("ROLLBACK TX");
         self.inner.release_tx(ctx, tx)
     }
@@ -526,13 +526,11 @@ impl RelationalDB {
         tx: &'a MutTx,
         table_id: TableId,
     ) -> Result<Iter<'a>, DBError> {
-        let _guard = DB_METRICS.rdb_iter_time.with_label_values(&table_id.0).start_timer();
         self.inner.iter_mut_tx(ctx, tx, table_id)
     }
 
     #[tracing::instrument(skip(self, ctx, tx))]
     pub fn iter<'a>(&'a self, ctx: &'a ExecutionContext, tx: &'a Tx, table_id: TableId) -> Result<Iter<'a>, DBError> {
-        let _guard = DB_METRICS.rdb_iter_time.with_label_values(&table_id.0).start_timer();
         self.inner.iter_tx(ctx, tx, table_id)
     }
 

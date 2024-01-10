@@ -522,14 +522,14 @@ impl StandaloneEnv {
         let tx = stdb.begin_tx();
         match stdb.program_hash(&tx) {
             Err(e) => {
-                stdb.rollback_tx(&cx, tx);
+                stdb.release_tx(&cx, tx);
                 Err(e.into())
             }
 
             Ok(maybe_hash) => {
                 // Release tx due to locking semantics and acquire a control db
                 // lock instead.
-                stdb.rollback_tx(&cx, tx);
+                stdb.release_tx(&cx, tx);
                 let lock = self.lock_database_instance_for_update(instance.id)?;
 
                 if let Some(hash) = maybe_hash {
@@ -576,14 +576,14 @@ impl StandaloneEnv {
 
         match stdb.program_hash(&tx) {
             Err(e) => {
-                stdb.rollback_tx(&cx, tx);
+                stdb.release_tx(&cx, tx);
                 Err(e.into())
             }
 
             Ok(maybe_hash) => {
                 // Release tx due to locking semantics and acquire a control db
                 // lock instead.
-                stdb.rollback_tx(&cx, tx);
+                stdb.release_tx(&cx, tx);
                 let lock = self.lock_database_instance_for_update(instance.id)?;
 
                 match maybe_hash {
