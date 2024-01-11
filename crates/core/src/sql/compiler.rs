@@ -1,4 +1,4 @@
-use crate::db::relational_db::{RelationalDB, Tx};
+use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
 use crate::sql::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
 use nonempty::NonEmpty;
@@ -12,9 +12,11 @@ use spacetimedb_vm::expr::{ColumnOp, CrudExpr, DbType, Expr, QueryExpr, SourceEx
 use spacetimedb_vm::operator::OpCmp;
 use std::collections::HashMap;
 
+use super::ast::TableSchemaView;
+
 /// Compile the `SQL` expression into a `ast`
 #[tracing::instrument(skip_all)]
-pub fn compile_sql(db: &RelationalDB, tx: &Tx, sql_text: &str) -> Result<Vec<CrudExpr>, DBError> {
+pub fn compile_sql<T: TableSchemaView>(db: &RelationalDB, tx: &T, sql_text: &str) -> Result<Vec<CrudExpr>, DBError> {
     tracing::trace!(sql = sql_text);
     let ast = compile_to_ast(db, tx, sql_text)?;
 

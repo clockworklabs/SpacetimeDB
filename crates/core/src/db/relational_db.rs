@@ -461,6 +461,11 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
+    pub fn table_id_exists_mut(&self, tx: &MutTx, table_id: &TableId) -> bool {
+        self.inner.table_id_exists_mut_tx(tx, table_id)
+    }
+
+    #[tracing::instrument(skip_all)]
     pub fn table_name_from_id<'a>(
         &'a self,
         ctx: &'a ExecutionContext,

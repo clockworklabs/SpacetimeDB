@@ -2362,6 +2362,7 @@ impl TxDatastore for Locking {
     fn table_id_exists_tx(&self, tx: &Self::Tx, table_id: &TableId) -> bool {
         tx.table_exists(table_id).is_some()
     }
+
     fn table_id_from_name_tx(&self, tx: &Self::Tx, table_name: &str) -> super::Result<Option<TableId>> {
         tx.table_id_from_name(table_name, self.database_address)
     }
@@ -2649,6 +2650,10 @@ impl MutTxDatastore for Locking {
     ) -> super::Result<ProductValue> {
         tx.insert(table_id, row, self.database_address)
     }
+
+    fn table_id_exists_mut_tx(&self, tx: &Self::MutTx, table_id: &TableId) -> bool {
+        tx.table_exists(table_id).is_some()
+    }
 }
 
 impl traits::Programmable for Locking {
@@ -2719,7 +2724,7 @@ impl traits::MutProgrammable for Locking {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::datastore::traits::{MutTx, Tx};
+    use crate::db::datastore::traits::MutTx;
     use crate::db::datastore::Result;
     use crate::error::IndexError;
     use itertools::Itertools;
