@@ -372,26 +372,33 @@ impl CommitLogMut {
 
         for record in &tx_data.records {
             let table_id: u32 = record.table_id.into();
+            let table_name = record.table_name.as_str();
 
             let operation = match record.op {
                 TxOp::Insert(_) => {
                     // Increment rows inserted metric
                     DB_METRICS
                         .rdb_num_rows_inserted
-                        .with_label_values(workload, db, reducer_or_query, &table_id)
+                        .with_label_values(workload, db, reducer_or_query, &table_id, table_name)
                         .inc();
                     // Increment table rows gauge
-                    METRICS.rdb_num_table_rows.with_label_values(db, &table_id).inc();
+                    METRICS
+                        .rdb_num_table_rows
+                        .with_label_values(db, &table_id, table_name)
+                        .inc();
                     Operation::Insert
                 }
                 TxOp::Delete => {
                     // Increment rows deleted metric
                     DB_METRICS
                         .rdb_num_rows_deleted
-                        .with_label_values(workload, db, reducer_or_query, &table_id)
+                        .with_label_values(workload, db, reducer_or_query, &table_id, table_name)
                         .inc();
                     // Decrement table rows gauge
-                    METRICS.rdb_num_table_rows.with_label_values(db, &table_id).dec();
+                    METRICS
+                        .rdb_num_table_rows
+                        .with_label_values(db, &table_id, table_name)
+                        .dec();
                     Operation::Delete
                 }
             };

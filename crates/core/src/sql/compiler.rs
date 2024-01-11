@@ -267,7 +267,7 @@ fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, P
         } => compile_drop(name, kind, table_access)?,
     };
 
-    Ok(q.optimize(&|table| db.row_count(table)))
+    Ok(q.optimize(&|table_id, table_name| db.row_count(table_id, table_name)))
 }
 
 #[cfg(test)]
