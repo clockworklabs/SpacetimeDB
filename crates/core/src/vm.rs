@@ -410,7 +410,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
                 match kind {
                     DbType::Table => {
                         if let Some(id) = self.db.table_id_from_name_mut(tx, name)? {
-                            self.db.drop_table(tx, id)?;
+                            self.db.drop_table(self.ctx, tx, id)?;
                         }
                     }
                     DbType::Index => {

@@ -34,6 +34,8 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue}
 pub type MutTx = <Locking as super::datastore::traits::MutTx>::MutTx;
 pub type Tx = <Locking as super::datastore::traits::Tx>::Tx;
 
+type RowCountFn = Arc<dyn Fn(TableId, &str) -> i64 + Send + Sync>;
+
 #[derive(Clone)]
 pub struct RelationalDB {
     // TODO(cloutiertyler): This should not be public
@@ -41,7 +43,7 @@ pub struct RelationalDB {
     commit_log: Option<CommitLogMut>,
     _lock: Arc<File>,
     address: Address,
-    row_count_fn: Arc<dyn Fn(TableId) -> i64 + Send + Sync>,
+    row_count_fn: RowCountFn,
 }
 
 impl DataRow for RelationalDB {
@@ -145,10 +147,10 @@ impl RelationalDB {
             commit_log,
             _lock: Arc::new(lock),
             address: db_address,
-            row_count_fn: Arc::new(move |table| {
+            row_count_fn: Arc::new(move |table_id, table_name| {
                 METRICS
                     .rdb_num_table_rows
-                    .with_label_values(&db_address, &table.into())
+                    .with_label_values(&db_address, &table_id.into(), table_name)
                     .get()
             }),
         };
@@ -159,12 +161,12 @@ impl RelationalDB {
 
     /// Returns an approximate row count for a particular table.
     /// TODO: Unify this with `Relation::row_count` when more statistics are added.
-    pub fn row_count(&self, table: TableId) -> i64 {
-        (self.row_count_fn)(table)
+    pub fn row_count(&self, table_id: TableId, table_name: &str) -> i64 {
+        (self.row_count_fn)(table_id, table_name)
     }
 
     /// Update this `RelationalDB` with an approximate row count function.
-    pub fn with_row_count(mut self, row_count: Arc<dyn Fn(TableId) -> i64 + Send + Sync>) -> Self {
+    pub fn with_row_count(mut self, row_count: RowCountFn) -> Self {
         self.row_count_fn = row_count;
         self
     }
@@ -416,15 +418,19 @@ impl RelationalDB {
         self.inner.create_table_mut_tx(tx, schema.into())
     }
 
-    pub fn drop_table(&self, tx: &mut MutTx, table_id: TableId) -> Result<(), DBError> {
+    pub fn drop_table(&self, ctx: &ExecutionContext, tx: &mut MutTx, table_id: TableId) -> Result<(), DBError> {
         let _guard = DB_METRICS
             .rdb_drop_table_time
             .with_label_values(&table_id.0)
             .start_timer();
+        let table_name = self
+            .table_name_from_id(ctx, tx, table_id)?
+            .map(|name| name.to_string())
+            .unwrap_or_default();
         self.inner.drop_table_mut_tx(tx, table_id).map(|_| {
             METRICS
                 .rdb_num_table_rows
-                .with_label_values(&self.address, &table_id.into())
+                .with_label_values(&self.address, &table_id.into(), &table_name)
                 .set(0)
         })
     }
@@ -737,7 +743,7 @@ pub(crate) mod tests_utils {
         let tmp_dir = TempDir::with_prefix("stdb_test")?;
         let in_memory = false;
         let fsync = false;
-        let stdb = open_db(&tmp_dir, in_memory, fsync)?.with_row_count(Arc::new(|_| i64::MAX));
+        let stdb = open_db(&tmp_dir, in_memory, fsync)?.with_row_count(Arc::new(|_, _| i64::MAX));
         Ok((stdb, tmp_dir))
     }
 }
@@ -986,7 +992,7 @@ mod tests {
         stdb.rollback_mut_tx(&ExecutionContext::default(), tx);
 
         let mut tx = stdb.begin_mut_tx();
-        let result = stdb.drop_table(&mut tx, table_id);
+        let result = stdb.drop_table(&ExecutionContext::default(), &mut tx, table_id);
         result.expect_err("drop_table should fail");
         Ok(())
     }
@@ -1350,7 +1356,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(constraints.len(), 4, "Wrong number of constraints");
 
-        stdb.drop_table(&mut tx, table_id)?;
+        stdb.drop_table(&ctx, &mut tx, table_id)?;
 
         let indexes = stdb
             .iter_mut(&ctx, &tx, ST_INDEXES_ID)?

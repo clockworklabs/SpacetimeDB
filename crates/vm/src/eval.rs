@@ -77,7 +77,7 @@ fn build_typed<P: ProgramVm>(p: &mut P, node: Expr) -> ExprOpt {
             }
         }
         Expr::Crud(q) => {
-            let q = q.optimize(&|_| i64::MAX);
+            let q = q.optimize(&|_, _| i64::MAX);
             match q {
                 CrudExpr::Query(q) => {
                     let source = build_query_opt(q);

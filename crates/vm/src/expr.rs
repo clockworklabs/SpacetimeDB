@@ -426,7 +426,7 @@ impl IndexJoin {
     // Reorder the index and probe sides of an index join.
     // This is necessary if the indexed table has been replaced by a delta table.
     // A delta table is a virtual table consisting of changes or updates to a physical table.
-    pub fn reorder(self, row_count: impl Fn(TableId) -> i64) -> Self {
+    pub fn reorder(self, row_count: impl Fn(TableId, &str) -> i64) -> Self {
         // The probe table must be a physical table.
         if matches!(self.probe_side.source, SourceExpr::MemTable(_)) {
             return self;
@@ -455,7 +455,7 @@ impl IndexJoin {
         let probe_column = self.probe_side.source.head().column(&self.probe_field).unwrap().col_id;
         match self.index_side {
             // If the size of the indexed table is sufficiently large, do not reorder.
-            Table::DbTable(DbTable { table_id, .. }) if row_count(table_id) > 1000 => self,
+            Table::DbTable(DbTable { table_id, ref head, .. }) if row_count(table_id, &head.table_name) > 1000 => self,
             // If this is a delta table, we must reorder.
             // If this is a sufficiently small physical table, we should reorder.
             table => {
@@ -622,7 +622,7 @@ pub enum CrudExpr {
 }
 
 impl CrudExpr {
-    pub fn optimize(self, row_count: &impl Fn(TableId) -> i64) -> Self {
+    pub fn optimize(self, row_count: &impl Fn(TableId, &str) -> i64) -> Self {
         match self {
             CrudExpr::Query(x) => CrudExpr::Query(x.optimize(row_count)),
             _ => self,
@@ -1394,7 +1394,7 @@ impl QueryExpr {
         q
     }
 
-    pub fn optimize(mut self, row_count: &impl Fn(TableId) -> i64) -> Self {
+    pub fn optimize(mut self, row_count: &impl Fn(TableId, &str) -> i64) -> Self {
         let mut q = Self {
             source: self.source.clone(),
             query: Vec::with_capacity(self.query.len()),

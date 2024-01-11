@@ -542,7 +542,7 @@ mod tests {
         run_eval_incr_for_index_join(db)?;
 
         let (db, _tmp) = make_test_db()?;
-        run_eval_incr_for_index_join(db.with_row_count(Arc::new(|_| 5)))?;
+        run_eval_incr_for_index_join(db.with_row_count(Arc::new(|_, _| 5)))?;
         Ok(())
     }
 

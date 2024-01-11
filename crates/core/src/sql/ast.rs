@@ -2,6 +2,7 @@ use nonempty::NonEmpty;
 use std::borrow::Cow;
 use std::collections::HashMap;
 
+use crate::db::datastore::traits::TxDatastore;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, PlanError};
 use spacetimedb_primitives::{ConstraintKind, Constraints};

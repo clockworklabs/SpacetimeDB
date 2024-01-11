@@ -641,7 +641,7 @@ impl<'a> IncrementalJoin<'a> {
             // Replan query after replacing the indexed table with a virtual table,
             // since join order may need to be reversed.
             let join_a = with_delta_table(self.join.clone(), true, self.index_side.inserts());
-            let join_a = QueryExpr::from(join_a).optimize(&|table| db.row_count(table));
+            let join_a = QueryExpr::from(join_a).optimize(&|table_id, table_name| db.row_count(table_id, table_name));
 
             // No need to replan after replacing the probe side with a virtual table,
             // since no new constraints have been added.
@@ -669,7 +669,7 @@ impl<'a> IncrementalJoin<'a> {
             // Replan query after replacing the indexed table with a virtual table,
             // since join order may need to be reversed.
             let join_a = with_delta_table(self.join.clone(), true, self.index_side.deletes());
-            let join_a = QueryExpr::from(join_a).optimize(&|table| db.row_count(table));
+            let join_a = QueryExpr::from(join_a).optimize(&|table_id, table_name| db.row_count(table_id, table_name));
 
             // No need to replan after replacing the probe side with a virtual table,
             // since no new constraints have been added.
@@ -867,8 +867,7 @@ mod tests {
 
         // Optimize the query plan for the incremental update.
         let expr: QueryExpr = with_delta_table(join, true, delta).into();
-        let mut expr = expr.optimize(&|_| i64::MAX);
-
+        let mut expr = expr.optimize(&|_, _| i64::MAX);
         assert_eq!(expr.source.table_name(), "lhs");
         assert_eq!(expr.query.len(), 1);
 
@@ -964,7 +963,7 @@ mod tests {
 
         // Optimize the query plan for the incremental update.
         let expr: QueryExpr = with_delta_table(join, false, delta).into();
-        let mut expr = expr.optimize(&|_| i64::MAX);
+        let mut expr = expr.optimize(&|_, _| i64::MAX);
 
         assert_eq!(expr.source.table_name(), "lhs");
         assert_eq!(expr.query.len(), 1);
