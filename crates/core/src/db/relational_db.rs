@@ -679,6 +679,7 @@ mod tests {
     #![allow(clippy::disallowed_macros)]
 
     use super::*;
+    use crate::db::datastore::mem_arch_datastore::mut_tx::MutTxId;
     use crate::db::datastore::system_tables::{
         StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINTS_ID, ST_INDEXES_ID, ST_SEQUENCES_ID,
         ST_TABLES_ID,
@@ -1606,5 +1607,165 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    fn schema_unique_i32_to_i32() -> TableDef {
+        TableDef::new(
+            "I32ToI32".into(),
+            vec![
+                ColumnDef {
+                    col_name: "key".to_string(),
+                    col_type: AlgebraicType::I32,
+                },
+                ColumnDef {
+                    col_name: "value".to_string(),
+                    col_type: AlgebraicType::I32,
+                },
+            ],
+        )
+        .with_indexes(vec![IndexDef {
+            columns: NonEmpty::new(0.into()),
+            index_name: "I32ToI32_id_unique".to_string(),
+            is_unique: true,
+            index_type: IndexType::BTree,
+        }])
+    }
+
+    fn unique_i32_to_i32_find_row_ref<'a>(
+        stdb: &'a RelationalDB,
+        tx: &'a MutTxId,
+        ctx: &'a ExecutionContext,
+        table_id: TableId,
+        msg: &str,
+    ) -> RowRef<'a> {
+        let rows = stdb
+            .iter_by_col_eq(ctx, tx, table_id, ColId(0), AlgebraicValue::I32(0))
+            .expect("iter_by_col_eq unique_i32_to_i32 failed")
+            .collect::<Vec<_>>();
+        assert_eq!(
+            rows.len(),
+            1,
+            "expected exactly one unique_i32_to_i32 row during {}",
+            msg
+        );
+        rows[0]
+    }
+
+    fn unique_i32_to_i32_insert_in_tx(stdb: &RelationalDB, tx: &mut MutTxId, table_id: TableId, data: i32) {
+        stdb.insert(
+            tx,
+            table_id,
+            product![AlgebraicValue::I32(0), AlgebraicValue::I32(data)],
+        )
+        .expect("insert unique_i32_to_i32 failed");
+    }
+
+    fn unique_i32_to_i32_insert(stdb: &RelationalDB, ctx: &ExecutionContext, table_id: TableId, data: i32) {
+        let mut tx = stdb.begin_tx();
+        unique_i32_to_i32_insert_in_tx(stdb, &mut tx, table_id, data);
+        stdb.commit_tx(ctx, tx)
+            .expect("commit_tx insert unique_i32_to_i32 failed");
+    }
+
+    fn unique_i32_to_i32_delete_in_tx(
+        stdb: &RelationalDB,
+        tx: &mut MutTxId,
+        ctx: &ExecutionContext,
+        table_id: TableId,
+        msg: &str,
+    ) {
+        let ptr = unique_i32_to_i32_find_row_ref(stdb, tx, ctx, table_id, &format!("{} delete", msg)).pointer();
+
+        let num_deleted = stdb.delete(tx, table_id, Some(ptr));
+
+        assert_eq!(num_deleted, 1, "expected to delete one row during {}", msg);
+    }
+
+    fn unique_i32_to_i32_update(stdb: &RelationalDB, ctx: &ExecutionContext, table_id: TableId, new_value: i32) {
+        let mut tx = stdb.begin_tx();
+        unique_i32_to_i32_delete_in_tx(stdb, &mut tx, ctx, table_id, "update");
+        unique_i32_to_i32_insert_in_tx(stdb, &mut tx, table_id, new_value);
+        stdb.commit_tx(ctx, tx).expect("commit_tx on update transaction failed");
+    }
+
+    fn unique_i32_to_i32_assert_value(
+        stdb: &RelationalDB,
+        ctx: &ExecutionContext,
+        table_id: TableId,
+        expected_value: i32,
+    ) {
+        let tx = stdb.begin_tx();
+        let row_ref = unique_i32_to_i32_find_row_ref(stdb, &tx, ctx, table_id, "assert value");
+        let row = row_ref.read_row();
+        assert_eq!(row.elements[0], AlgebraicValue::I32(0), "Row key is not zero");
+        assert_eq!(
+            row.elements[1],
+            AlgebraicValue::I32(expected_value),
+            "Row value is not as expected"
+        );
+        stdb.rollback_tx(ctx, tx);
+    }
+
+    fn unique_i32_to_i32_setup_db() -> (RelationalDB, TempDir, TableId) {
+        let (stdb, tmp_dir) = make_test_db().expect("make_test_db failed");
+
+        let ctx = ExecutionContext::default();
+
+        let mut setup_tx = stdb.begin_tx();
+        let schema = schema_unique_i32_to_i32();
+        let table_id = stdb.create_table(&mut setup_tx, schema).expect("create_table failed");
+
+        stdb.commit_tx(&ctx, setup_tx).expect("commit_tx setup_tx failed");
+
+        (stdb, tmp_dir, table_id)
+    }
+
+    #[test]
+    fn test_update_same_value() {
+        let (stdb, _tmp_dir, table_id) = unique_i32_to_i32_setup_db();
+
+        let ctx = ExecutionContext::default();
+
+        unique_i32_to_i32_insert(&stdb, &ctx, table_id, 0);
+
+        unique_i32_to_i32_assert_value(&stdb, &ctx, table_id, 0);
+
+        unique_i32_to_i32_update(&stdb, &ctx, table_id, 0);
+
+        unique_i32_to_i32_assert_value(&stdb, &ctx, table_id, 0);
+    }
+
+    #[test]
+    fn test_update_different_value() {
+        let (stdb, _tmp_dir, table_id) = unique_i32_to_i32_setup_db();
+
+        let ctx = ExecutionContext::default();
+
+        unique_i32_to_i32_insert(&stdb, &ctx, table_id, 0);
+
+        unique_i32_to_i32_assert_value(&stdb, &ctx, table_id, 0);
+
+        unique_i32_to_i32_update(&stdb, &ctx, table_id, 1);
+
+        unique_i32_to_i32_assert_value(&stdb, &ctx, table_id, 1);
+    }
+
+    #[test]
+    fn test_update_rollback() {
+        let (stdb, _tmp_dir, table_id) = unique_i32_to_i32_setup_db();
+
+        let ctx = ExecutionContext::default();
+
+        unique_i32_to_i32_insert(&stdb, &ctx, table_id, 0);
+
+        unique_i32_to_i32_assert_value(&stdb, &ctx, table_id, 0);
+
+        let mut update_rollback_tx = stdb.begin_tx();
+        unique_i32_to_i32_delete_in_tx(&stdb, &mut update_rollback_tx, &ctx, table_id, "update to rollback");
+        unique_i32_to_i32_insert_in_tx(&stdb, &mut update_rollback_tx, table_id, 1);
+
+        stdb.rollback_tx(&ctx, update_rollback_tx);
+
+        unique_i32_to_i32_assert_value(&stdb, &ctx, table_id, 0);
     }
 }
