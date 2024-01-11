@@ -2,7 +2,7 @@ use nonempty::NonEmpty;
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use crate::db::datastore::traits::MutTxDatastore;
+use crate::db::datastore::traits::TxDatastore;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, PlanError};
 use spacetimedb_primitives::{ConstraintKind, Constraints};
@@ -413,7 +413,7 @@ fn find_table<'tx>(db: &RelationalDB, tx: &'tx Tx, t: Table) -> Result<Cow<'tx, 
     let table_id = db
         .table_id_from_name(tx, &t.name)?
         .ok_or(PlanError::UnknownTable { table: t.name.clone() })?;
-    if !db.inner.table_id_exists(tx, &table_id) {
+    if !db.inner.table_id_exists_tx(tx, &table_id) {
         return Err(PlanError::UnknownTable { table: t.name });
     }
     db.schema_for_table(tx, table_id)
