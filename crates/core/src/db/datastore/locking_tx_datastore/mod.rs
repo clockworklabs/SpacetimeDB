@@ -26,8 +26,8 @@ use std::{
 
 use super::{
     system_tables::{
-        system_tables, StColumnRow, StIndexRow, StSequenceRow, StTableRow, SystemTable, ST_COLUMNS_ID, ST_INDEXES_ID,
-        ST_SEQUENCES_ID, ST_TABLES_ID,
+        system_tables, StColumnRow, StIndexRow, StSequenceRow, StTableRow, SystemTable, ST_COLUMNS_ID, ST_COLUMNS_NAME,
+        ST_CONSTRAINTS_NAME, ST_INDEXES_ID, ST_INDEXES_NAME, ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID,
     },
     traits::{self, DataRow, MutTx, MutTxDatastore, TxData, TxDatastore},
 };
@@ -138,7 +138,7 @@ trait StateView {
 
     fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: &TableId) -> super::Result<Iter<'a>>;
 
-    fn table_exists(&self, table_id: &TableId) -> bool;
+    fn table_exists(&self, table_id: &TableId) -> Option<&str>;
 
     /// Returns an iterator,
     /// yielding every row in the table identified by `table_id`,
@@ -304,7 +304,7 @@ impl StateView for TxId {
         self.committed_state_shared_lock.iter(ctx, table_id)
     }
 
-    fn table_exists(&self, table_id: &TableId) -> bool {
+    fn table_exists(&self, table_id: &TableId) -> Option<&str> {
         self.committed_state_shared_lock.table_exists(table_id)
     }
 
@@ -381,14 +381,18 @@ impl StateView for CommittedState {
     }
 
     fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: &TableId) -> super::Result<Iter<'a>> {
-        if self.table_exists(table_id) {
-            return Ok(Iter::new(ctx, *table_id, None, self));
+        if let Some(table_name) = self.table_exists(table_id) {
+            return Ok(Iter::new(ctx, *table_id, table_name, None, self));
         }
         Err(TableError::IdNotFound(SystemTable::st_table, table_id.0).into())
     }
 
-    fn table_exists(&self, table_id: &TableId) -> bool {
-        self.tables.contains_key(table_id)
+    fn table_exists(&self, table_id: &TableId) -> Option<&str> {
+        if let Some(table) = self.tables.get(table_id) {
+            Some(&table.schema.table_name)
+        } else {
+            None
+        }
     }
 
     /// Returns an iterator,
@@ -439,6 +443,7 @@ impl CommittedState {
                 TxRecord {
                     op: TxOp::Insert(bytes),
                     table_id,
+                    table_name: commit_table.schema.table_name.clone(),
                     key: row_id.0,
                     product_value: pv,
                 }
@@ -467,6 +472,7 @@ impl CommittedState {
                         tx_data.records.push(TxRecord {
                             op: TxOp::Delete,
                             table_id,
+                            table_name: table.schema.table_name.clone(),
                             key: row_id.0,
                             product_value: pv,
                         })
@@ -502,7 +508,7 @@ impl CommittedState {
             // Reset the row count metric for this system table
             METRICS
                 .rdb_num_table_rows
-                .with_label_values(&database_address, &table_id.0)
+                .with_label_values(&database_address, &table_id.0, &schema.table_name)
                 .set(0);
 
             let row = StTableRow {
@@ -535,7 +541,7 @@ impl CommittedState {
             // Increment row count for st_columns
             METRICS
                 .rdb_num_table_rows
-                .with_label_values(&database_address, &ST_COLUMNS_ID.into())
+                .with_label_values(&database_address, &ST_COLUMNS_ID.into(), ST_COLUMNS_NAME)
                 .inc();
         }
 
@@ -563,7 +569,7 @@ impl CommittedState {
             // Increment row count for st_constraints
             METRICS
                 .rdb_num_table_rows
-                .with_label_values(&database_address, &ST_CONSTRAINTS_ID.into())
+                .with_label_values(&database_address, &ST_CONSTRAINTS_ID.into(), ST_CONSTRAINTS_NAME)
                 .inc();
 
             *sequences_start.entry(ST_CONSTRAINTS_ID).or_default() += 1;
@@ -592,7 +598,7 @@ impl CommittedState {
             // Increment row count for st_indexes
             METRICS
                 .rdb_num_table_rows
-                .with_label_values(&database_address, &ST_INDEXES_ID.into())
+                .with_label_values(&database_address, &ST_INDEXES_ID.into(), ST_INDEXES_NAME)
                 .inc();
 
             *sequences_start.entry(ST_INDEXES_ID).or_default() += 1;
@@ -627,7 +633,7 @@ impl CommittedState {
             // Increment row count for st_sequences
             METRICS
                 .rdb_num_table_rows
-                .with_label_values(&database_address, &ST_SEQUENCES_ID.into())
+                .with_label_values(&database_address, &ST_SEQUENCES_ID.into(), ST_SEQUENCES_NAME)
                 .inc();
         }
 
@@ -844,10 +850,11 @@ impl StateView for MutTxId {
     }
 
     fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: &TableId) -> super::Result<Iter> {
-        if self.table_exists(table_id) {
+        if let Some(table_name) = self.table_exists(table_id) {
             return Ok(Iter::new(
                 ctx,
                 *table_id,
+                table_name,
                 Some(&self.tx_state),
                 &self.committed_state_write_lock,
             ));
@@ -855,9 +862,14 @@ impl StateView for MutTxId {
         Err(TableError::IdNotFound(SystemTable::st_table, table_id.0).into())
     }
 
-    fn table_exists(&self, table_id: &TableId) -> bool {
-        self.tx_state.insert_tables.contains_key(table_id)
-            || self.committed_state_write_lock.tables.contains_key(table_id)
+    fn table_exists(&self, table_id: &TableId) -> Option<&str> {
+        if let Some(table) = self.tx_state.insert_tables.get(table_id) {
+            Some(&table.schema.table_name)
+        } else if let Some(table) = self.committed_state_write_lock.tables.get(table_id) {
+            Some(&table.schema.table_name)
+        } else {
+            None
+        }
     }
 
     /// Returns an iterator,
@@ -1362,7 +1374,7 @@ impl MutTxId {
             table_id,
             index.columns
         );
-        if !self.table_exists(&table_id) {
+        if self.table_exists(&table_id).is_none() {
             return Err(TableError::IdNotFoundState(table_id).into());
         }
 
@@ -1506,11 +1518,6 @@ impl MutTxId {
             Some(pv) => RowState::Committed(pv),
             None => RowState::Absent,
         }
-    }
-
-    fn table_exists(&self, table_id: &TableId) -> bool {
-        self.tx_state.insert_tables.contains_key(table_id)
-            || self.committed_state_write_lock.tables.contains_key(table_id)
     }
 
     fn algebraic_type_is_numeric(ty: &AlgebraicType) -> bool {
@@ -1717,7 +1724,7 @@ impl MutTxId {
     }
 
     fn get<'a>(&'a self, table_id: &TableId, row_id: &'a RowId) -> super::Result<Option<DataRef<'a>>> {
-        if !self.table_exists(table_id) {
+        if self.table_exists(table_id).is_none() {
             return Err(TableError::IdNotFound(SystemTable::st_table, table_id.0).into());
         }
         match self.tx_state.get_row_op(table_id, row_id) {
@@ -1883,6 +1890,7 @@ impl Locking {
             let schema = committed_state
                 .schema_for_table(&ExecutionContext::default(), table_id)?
                 .into_owned();
+            let table_name = schema.table_name.clone();
 
             match write.operation {
                 Operation::Delete => {
@@ -1891,7 +1899,7 @@ impl Locking {
                         .remove(&RowId(write.data_key));
                     METRICS
                         .rdb_num_table_rows
-                        .with_label_values(&self.database_address, &table_id.into())
+                        .with_label_values(&self.database_address, &table_id.into(), &table_name)
                         .dec();
                 }
                 Operation::Insert => {
@@ -1920,7 +1928,7 @@ impl Locking {
                         .insert(RowId(write.data_key), product_value);
                     METRICS
                         .rdb_num_table_rows
-                        .with_label_values(&self.database_address, &table_id.into())
+                        .with_label_values(&self.database_address, &table_id.into(), &table_name)
                         .inc();
                 }
             }
@@ -1958,6 +1966,7 @@ pub struct Iter<'a> {
     table_id: TableId,
     tx_state: Option<&'a TxState>,
     committed_state: &'a CommittedState,
+    table_name: &'a str,
     stage: ScanStage<'a>,
     num_committed_rows_fetched: u64,
 }
@@ -1971,6 +1980,7 @@ impl Drop for Iter<'_> {
                 &self.ctx.database(),
                 self.ctx.reducer_or_query(),
                 &self.table_id.into(),
+                self.table_name,
             )
             .inc_by(self.num_committed_rows_fetched);
     }
@@ -1980,12 +1990,14 @@ impl<'a> Iter<'a> {
     fn new(
         ctx: &'a ExecutionContext,
         table_id: TableId,
+        table_name: &'a str,
         tx_state: Option<&'a TxState>,
         committed_state: &'a CommittedState,
     ) -> Self {
         Self {
             ctx,
             table_id,
+            table_name,
             tx_state,
             committed_state,
             stage: ScanStage::Start,
@@ -2094,6 +2106,12 @@ pub struct IndexSeekIterMutTxId<'a> {
 
 impl Drop for IndexSeekIterMutTxId<'_> {
     fn drop(&mut self) {
+        let table_name = self
+            .committed_state
+            .get_schema(&self.table_id)
+            .map(|table| table.table_name.as_str())
+            .unwrap_or_default();
+
         // Increment number of index seeks
         DB_METRICS
             .rdb_num_index_seeks
@@ -2102,6 +2120,7 @@ impl Drop for IndexSeekIterMutTxId<'_> {
                 &self.ctx.database(),
                 self.ctx.reducer_or_query(),
                 &self.table_id.0,
+                table_name,
             )
             .inc();
 
@@ -2113,6 +2132,7 @@ impl Drop for IndexSeekIterMutTxId<'_> {
                 &self.ctx.database(),
                 self.ctx.reducer_or_query(),
                 &self.table_id.0,
+                table_name,
             )
             .inc_by(self.committed_rows.as_ref().map_or(0, |iter| iter.keys_scanned()));
 
@@ -2124,6 +2144,7 @@ impl Drop for IndexSeekIterMutTxId<'_> {
                 &self.ctx.database(),
                 self.ctx.reducer_or_query(),
                 &self.table_id.0,
+                table_name,
             )
             .inc_by(self.num_committed_rows_fetched);
     }
@@ -2169,6 +2190,12 @@ pub struct CommittedIndexIter<'a> {
 
 impl Drop for CommittedIndexIter<'_> {
     fn drop(&mut self) {
+        let table_name = self
+            .committed_state
+            .get_schema(&self.table_id)
+            .map(|table| table.table_name.as_str())
+            .unwrap_or_default();
+
         DB_METRICS
             .rdb_num_index_seeks
             .with_label_values(
@@ -2176,6 +2203,7 @@ impl Drop for CommittedIndexIter<'_> {
                 &self.ctx.database(),
                 self.ctx.reducer_or_query(),
                 &self.table_id.0,
+                table_name,
             )
             .inc();
 
@@ -2187,6 +2215,7 @@ impl Drop for CommittedIndexIter<'_> {
                 &self.ctx.database(),
                 self.ctx.reducer_or_query(),
                 &self.table_id.0,
+                table_name,
             )
             .inc_by(self.committed_rows.keys_scanned());
 
@@ -2198,6 +2227,7 @@ impl Drop for CommittedIndexIter<'_> {
                 &self.ctx.database(),
                 self.ctx.reducer_or_query(),
                 &self.table_id.0,
+                table_name,
             )
             .inc_by(self.num_committed_rows_fetched);
     }
@@ -2322,9 +2352,8 @@ impl TxDatastore for Locking {
     }
 
     fn table_id_exists_tx(&self, tx: &Self::Tx, table_id: &TableId) -> bool {
-        tx.table_exists(table_id)
+        tx.table_exists(table_id).is_some()
     }
-
     fn table_id_from_name_tx(&self, tx: &Self::Tx, table_name: &str) -> super::Result<Option<TableId>> {
         tx.table_id_from_name(table_name, self.database_address)
     }

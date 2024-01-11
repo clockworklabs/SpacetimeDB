@@ -8,7 +8,7 @@ metrics_group!(
     pub struct Metrics {
         #[name = spacetime_num_table_rows]
         #[help = "The number of rows in a table"]
-        #[labels(db: Address, table_id: u32)]
+        #[labels(db: Address, table_id: u32, table_name: str)]
         pub rdb_num_table_rows: IntGaugeVec,
     }
 );
