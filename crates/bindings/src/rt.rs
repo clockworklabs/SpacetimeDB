@@ -5,7 +5,7 @@ use std::any::TypeId;
 use std::collections::{btree_map, BTreeMap};
 use std::fmt;
 use std::marker::PhantomData;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use sys::Buffer;
 
@@ -43,7 +43,7 @@ pub fn invoke_reducer<'a, A: Args<'a>, T>(
 
     // Run the reducer with the timestamp set.
     let res = with_timestamp_set(ctx.timestamp, || {
-        let res: Result<(), Box<str>> = reducer.invoke(ctx, args);
+        let res: Result<(), Box<str>> = __rust_begin_short_backtrace(|| reducer.invoke(ctx, args));
         // Then run the epilogue.
         epilogue(res.as_ref().map(|()| ()).map_err(|e| &**e));
         res
@@ -298,6 +298,7 @@ macro_rules! impl_reducer {
             Func: Fn(ReducerContext, $($T),*) -> Ret,
             Ret: ReducerResult
         {
+            #[inline(always)]
             fn invoke(&self, ctx: ReducerContext, args: ($($T,)*)) -> Result<(), Box<str>> {
                 #[allow(non_snake_case)]
                 let ($($T,)*) = args;
@@ -311,6 +312,7 @@ macro_rules! impl_reducer {
             Func: Fn($($T),*) -> Ret,
             Ret: ReducerResult
         {
+            #[inline(always)]
             fn invoke(&self, _ctx: ReducerContext, args: ($($T,)*)) -> Result<(), Box<str>> {
                 #[allow(non_snake_case)]
                 let ($($T,)*) = args;
@@ -535,8 +537,8 @@ impl TypespaceBuilder for ModuleBuilder {
 static DESCRIBERS: Mutex<Vec<fn(&mut ModuleBuilder)>> = Mutex::new(Vec::new());
 
 /// A reducer function takes in `(Sender, Timestamp, Args)` and writes to a new `Buffer`.
-pub type ReducerFn = fn(Buffer, Buffer, u64, &[u8]) -> Buffer;
-static REDUCERS: OnceCell<Vec<ReducerFn>> = OnceCell::new();
+pub type ReducerFn = fn(Buffer, Buffer, u64, Buffer) -> Buffer;
+static REDUCERS: OnceLock<Vec<ReducerFn>> = OnceLock::new();
 
 /// Describes the module into a serialized form that is returned and writes the set of `REDUCERS`.
 #[no_mangle]
@@ -568,7 +570,34 @@ extern "C" fn __call_reducer__(
     timestamp: u64,
     args: Buffer,
 ) -> Buffer {
-    let reducers = REDUCERS.get().unwrap();
-    let args = args.read();
-    reducers[id](sender, caller_address, timestamp, &args)
+    let reducer = REDUCERS.get().unwrap()[id];
+    reducer(sender, caller_address, timestamp, args)
+}
+
+// Used to tidy up the backtrace in cli/subcommands/logs.rs
+#[inline(never)]
+pub(crate) fn __rust_begin_short_backtrace<F, T>(f: F) -> T
+where
+    F: FnOnce() -> T,
+{
+    let result = f();
+
+    // prevent this frame from being tail-call optimised away
+    std::hint::black_box(());
+
+    result
+}
+
+// Used to tidy up the backtrace in cli/subcommands/logs.rs
+#[inline(never)]
+pub(crate) fn __rust_end_short_backtrace<F, T>(f: F) -> T
+where
+    F: FnOnce() -> T,
+{
+    let result = f();
+
+    // prevent this frame from being tail-call optimised away
+    std::hint::black_box(());
+
+    result
 }

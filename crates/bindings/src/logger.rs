@@ -23,13 +23,15 @@ fn panic_hook(info: &panic::PanicInfo) {
 
     // Log the panic message to the console.
     let location = info.location();
-    sys::console_log(
-        sys::LogLevel::Panic,
-        None,
-        location.map(|l| l.file()),
-        location.map(|l| l.line()),
-        msg,
-    )
+    crate::rt::__rust_begin_short_backtrace(|| {
+        sys::console_log(
+            sys::LogLevel::Panic,
+            None,
+            location.map(|l| l.file()),
+            location.map(|l| l.line()),
+            msg,
+        )
+    })
 }
 
 struct Logger {

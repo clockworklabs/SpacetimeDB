@@ -7,21 +7,7 @@ use crate::host::EnergyQuanta;
 use crate::util::ResultInspectExt;
 use anyhow::anyhow;
 use bytes::Bytes;
-use wasmtime::{AsContext, AsContextMut, ExternType, Instance, InstancePre, Linker, Store, TypedFunc, WasmBacktrace};
-
-fn log_traceback(func_type: &str, func: &str, e: &wasmtime::Error) {
-    log::info!("{} \"{}\" runtime error: {}", func_type, func, e);
-    if let Some(bt) = e.downcast_ref::<WasmBacktrace>() {
-        let frames_len = bt.frames().len();
-        for (i, frame) in bt.frames().iter().enumerate() {
-            log::info!(
-                "  Frame #{}: {}",
-                frames_len - i,
-                rustc_demangle::demangle(frame.func_name().unwrap_or("<unknown>"))
-            );
-        }
-    }
-}
+use wasmtime::{AsContext, AsContextMut, ExternType, Instance, InstancePre, Linker, Store, TypedFunc};
 
 #[derive(Clone)]
 pub struct WasmtimeModule {
@@ -173,7 +159,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let duration = start.elapsed();
         log::trace!("Describer \"{}\" ran: {} us", describer_func_name, duration.as_micros(),);
         let buf = result
-            .inspect_err_(|err| log_traceback("describer", describer_func_name, err))
+            .inspect_err_(|err| log::info!("module describer raised a runtime error: {err:#}"))
             .map_err(DescribeError::RuntimeError)?;
         let bytes = store.data_mut().take_buffer(buf).ok_or(DescribeError::BadBuffer)?;
 
@@ -243,10 +229,6 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             timings,
             call_result,
         }
-    }
-
-    fn log_traceback(func_type: &str, func: &str, trap: &Self::Trap) {
-        log_traceback(func_type, func, trap)
     }
 }
 
