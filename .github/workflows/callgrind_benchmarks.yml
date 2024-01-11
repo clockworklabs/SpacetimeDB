@@ -149,6 +149,7 @@ jobs:
           destination_dir: callgrind-benchmarks
 
       - name: Fetch markdown summary PR
+        shell: bash
         run: |
           if [[ $PR_NUMBER ]]; then
             OLD=master
@@ -160,6 +161,7 @@ jobs:
           curl -sS https://benchmarks.spacetimedb.com/compare_callgrind/$OLD/$NEW > report.md
 
       - name: Post comment
+        shell: bash
         run: |
           BODY="<details><summary>Benchmark results</summary>
           $(cat report.md)
