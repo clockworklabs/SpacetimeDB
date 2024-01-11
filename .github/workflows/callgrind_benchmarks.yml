@@ -137,13 +137,6 @@ jobs:
           [[ ! $PR_NUMBER ]] && cp target/iai/$BASELINE_NAME.json callgrind-results/
           cp target/iai/$BASELINE_NAME.json callgrind-results/$RESULTS_NAME.json
 
-      - name: PR; compare benchmarks
-        if: ${{ env.PR_NUMBER }}
-        working-directory: crates/bench/
-        shell: bash
-        run: |
-          cargo run --bin summarize markdown-report-callgrind branch.json --report-name report
-
       # this will work for both PR and master
       - name: Upload callgrind results to DO spaces
         uses: shallwefootball/s3-upload-action@master
