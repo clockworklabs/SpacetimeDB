@@ -494,7 +494,6 @@ impl RelationalDB {
         tx: &'a MutTx,
         table_id: TableId,
     ) -> Result<Iter<'a>, DBError> {
-        let _guard = DB_METRICS.rdb_iter_time.with_label_values(&table_id.0).start_timer();
         self.inner.iter_mut_tx(ctx, tx, table_id)
     }
 
