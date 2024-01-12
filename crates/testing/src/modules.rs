@@ -106,7 +106,7 @@ impl CompiledModule {
     {
         with_runtime(move |runtime| {
             runtime.block_on(async {
-                let module = self.load_module(config).await;
+                let module = self.load_module(config, None).await;
 
                 routine(module).await;
             });
@@ -118,17 +118,28 @@ impl CompiledModule {
         F: FnOnce(&Runtime, &ModuleHandle),
     {
         with_runtime(move |runtime| {
-            let module = runtime.block_on(async { self.load_module(config).await });
+            let module = runtime.block_on(async { self.load_module(config, None).await });
 
             func(runtime, &module);
         });
     }
 
-    pub async fn load_module(&self, config: Config) -> ModuleHandle {
-        let paths = FilesLocal::temp(&self.name);
-        // The database created in the `temp` folder can't be randomized,
-        // so it persists after running the test.
-        std::fs::remove_dir(paths.db_path()).ok();
+    /// Load a module with the given config.
+    /// If "reuse_db_path" is set, the module will be loaded in the given path,
+    /// without resetting the database.
+    /// This is used to speed up benchmarks running under callgrind (it allows them to reuse native-compiled wasm modules).
+    pub async fn load_module(&self, config: Config, reuse_db_path: Option<&Path>) -> ModuleHandle {
+        let paths = match reuse_db_path {
+            Some(path) => FilesLocal::hidden(path),
+            None => {
+                let paths = FilesLocal::temp(&self.name);
+
+                // The database created in the `temp` folder can't be randomized,
+                // so it persists after running the test.
+                std::fs::remove_dir(paths.db_path()).ok();
+                paths
+            }
+        };
 
         crate::set_key_env_vars(&paths);
         let env = spacetimedb_standalone::StandaloneEnv::init(config).await.unwrap();
