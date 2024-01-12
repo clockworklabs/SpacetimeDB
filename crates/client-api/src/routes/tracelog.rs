@@ -10,8 +10,8 @@ use spacetimedb::database_instance_context::DatabaseInstanceContext;
 use spacetimedb::db::Storage;
 use spacetimedb::hash::hash_bytes;
 use spacetimedb::host::instance_env::InstanceEnv;
-use spacetimedb::host::scheduler::Scheduler;
 use spacetimedb::host::tracelog::replay::replay_report;
+use spacetimedb::host::Scheduler;
 use spacetimedb_lib::Identity;
 
 use crate::{log_and_500, ControlStateReadAccess, NodeDelegate};

@@ -4,7 +4,7 @@ use http::StatusCode;
 use serde::Deserialize;
 use serde_json::json;
 
-use spacetimedb::host::EnergyQuanta;
+use spacetimedb::energy::EnergyQuanta;
 use spacetimedb_lib::Identity;
 
 use crate::auth::SpacetimeAuthHeader;

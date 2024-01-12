@@ -74,7 +74,7 @@ impl ServerMessage for TransactionUpdateMessage<'_> {
                 reducer: event.function_call.reducer.to_owned(),
                 args: event.function_call.args.get_json().clone(),
             },
-            energy_quanta_used: event.energy_quanta_used.0,
+            energy_quanta_used: event.energy_quanta_used.get(),
             message: errmsg,
             caller_address: event.caller_address.unwrap_or(Address::__DUMMY),
         };
@@ -103,7 +103,7 @@ impl ServerMessage for TransactionUpdateMessage<'_> {
                 arg_bytes: event.function_call.args.get_bsatn().clone().into(),
             }),
             message: errmsg,
-            energy_quanta_used: event.energy_quanta_used.0 as i64,
+            energy_quanta_used: event.energy_quanta_used.get() as i64,
             host_execution_duration_micros: event.host_execution_duration.as_micros() as u64,
             caller_address: event.caller_address.unwrap_or(Address::zero()).as_slice().to_vec(),
         };

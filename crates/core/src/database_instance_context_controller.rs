@@ -4,7 +4,7 @@ use std::{collections::HashMap, sync::Mutex};
 use once_cell::sync::OnceCell;
 
 use crate::db::db_metrics::DB_METRICS;
-use crate::host::scheduler::Scheduler;
+use crate::host::Scheduler;
 
 use super::database_instance_context::DatabaseInstanceContext;
 

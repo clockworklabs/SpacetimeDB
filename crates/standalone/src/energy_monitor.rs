@@ -1,5 +1,5 @@
 use crate::StandaloneEnv;
-use spacetimedb::host::{EnergyDiff, EnergyMonitor, EnergyMonitorFingerprint, EnergyQuanta};
+use spacetimedb::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
 use spacetimedb_client_api::ControlStateWriteAccess;
 use std::{
     sync::{Arc, Mutex, Weak},
@@ -25,18 +25,19 @@ impl StandaloneEnergyMonitor {
 }
 
 impl EnergyMonitor for StandaloneEnergyMonitor {
-    fn reducer_budget(&self, _fingerprint: &EnergyMonitorFingerprint<'_>) -> EnergyQuanta {
+    fn reducer_budget(&self, _fingerprint: &ReducerFingerprint<'_>) -> ReducerBudget {
         // Infinitely large reducer budget in Standalone
-        EnergyQuanta::new(i128::max_value())
+        ReducerBudget::new(u64::MAX)
     }
 
-    fn record(
+    fn record_reducer(
         &self,
-        fingerprint: &EnergyMonitorFingerprint<'_>,
-        energy_used: EnergyDiff,
+        fingerprint: &ReducerFingerprint<'_>,
+        energy_used: EnergyQuanta,
         _execution_duration: Duration,
     ) {
-        if energy_used.0 == 0 {
+        assert!(!energy_used.get().is_negative());
+        if energy_used.get() == 0 {
             return;
         }
         let module_identity = fingerprint.module_identity;
@@ -50,7 +51,7 @@ impl EnergyMonitor for StandaloneEnergyMonitor {
         };
         tokio::spawn(async move {
             standalone_env
-                .withdraw_energy(&module_identity, energy_used.as_quanta())
+                .withdraw_energy(&module_identity, energy_used)
                 .await
                 .unwrap();
         });
@@ -67,7 +68,7 @@ impl Inner {
     }
 
     /// To be used if we ever want to enable reducer budgets in Standalone
-    fn _reducer_budget(&self, fingerprint: &EnergyMonitorFingerprint<'_>) -> EnergyQuanta {
+    fn _reducer_budget(&self, fingerprint: &ReducerFingerprint<'_>) -> EnergyQuanta {
         let standalone_env = self.standalone_env.upgrade().expect("Standalone env was dropped.");
         let balance = standalone_env
             .control_db

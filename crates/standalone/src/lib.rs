@@ -21,11 +21,9 @@ use spacetimedb::database_instance_context::DatabaseInstanceContext;
 use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
 use spacetimedb::db::db_metrics;
 use spacetimedb::db::{db_metrics::DB_METRICS, Config};
+use spacetimedb::energy::EnergyQuanta;
 use spacetimedb::execution_context::ExecutionContext;
-use spacetimedb::host::EnergyQuanta;
-use spacetimedb::host::UpdateDatabaseResult;
-use spacetimedb::host::UpdateOutcome;
-use spacetimedb::host::{scheduler::Scheduler, HostController};
+use spacetimedb::host::{HostController, Scheduler, UpdateDatabaseResult, UpdateOutcome};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType, IdentityEmail, Node};
 use spacetimedb::module_host_context::ModuleHostContext;
@@ -398,12 +396,13 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             .set_energy_balance(*identity, EnergyQuanta::new(balance))
     }
     async fn withdraw_energy(&self, identity: &Identity, amount: EnergyQuanta) -> spacetimedb::control_db::Result<()> {
+        assert!(!amount.get().is_negative());
         let energy_balance = self.control_db.get_energy_balance(identity)?;
         let energy_balance = energy_balance.unwrap_or(EnergyQuanta::new(0));
         log::trace!("Withdrawing {} energy from {}", amount.get(), identity);
         log::trace!("Old balance: {}", energy_balance.get());
         let new_balance = energy_balance - amount;
-        self.control_db.set_energy_balance(*identity, new_balance.as_quanta())
+        self.control_db.set_energy_balance(*identity, new_balance)
     }
 
     async fn register_tld(&self, identity: &Identity, tld: Tld) -> spacetimedb::control_db::Result<RegisterTldResult> {

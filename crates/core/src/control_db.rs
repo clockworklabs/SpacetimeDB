@@ -4,8 +4,8 @@ use anyhow::{anyhow, Context};
 
 use crate::address::Address;
 
+use crate::energy::EnergyQuanta;
 use crate::hash::hash_bytes;
-use crate::host::EnergyQuanta;
 use crate::identity::Identity;
 use crate::messages::control_db::{Database, DatabaseInstance, EnergyBalance, IdentityEmail, Node};
 use crate::stdb_path;
