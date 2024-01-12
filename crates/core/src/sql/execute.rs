@@ -79,11 +79,12 @@ pub fn execute_sql_mut_tx(
     ast: Vec<CrudExpr>,
     auth: AuthCtx,
 ) -> Result<Vec<MemTable>, DBError> {
+    let total = ast.len();
     let mut tx: TxMode = tx.into();
     let p = &mut DbProgram::new(cx, db, &mut tx, auth);
     let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
 
-    let mut result = Vec::with_capacity(1);
+    let mut result = Vec::with_capacity(total);
     collect_result(&mut result, run_ast(p, q).into())?;
     Ok(result)
 }
