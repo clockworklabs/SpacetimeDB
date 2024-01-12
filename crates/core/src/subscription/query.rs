@@ -8,7 +8,6 @@ use crate::execution_context::{ExecutionContext, WorkloadType};
 use crate::host::module_host::DatabaseTableUpdate;
 use crate::sql::compiler::compile_sql;
 use crate::sql::execute::execute_single_sql;
-use crate::sql::query_debug_info::QueryDebugInfo;
 use crate::subscription::subscription::{QuerySet, SupportedQuery};
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -134,12 +133,10 @@ pub fn compile_read_only_query(
         }
     }
 
-    let info = QueryDebugInfo::from_source(input);
-
     if !queries.is_empty() {
         Ok(queries
             .into_iter()
-            .map(|query| SupportedQuery::new(query, info.clone()))
+            .map(|query| SupportedQuery::new(query, input.to_string()))
             .collect::<Result<_, _>>()?)
     } else {
         Err(SubscriptionError::Empty.into())
@@ -153,13 +150,13 @@ fn record_query_compilation_metrics(workload: WorkloadType, db: &Address, query:
 
     DB_METRICS
         .rdb_query_compile_time_sec
-        .with_label_values(&workload, db, query)
+        .with_label_values(&workload, db)
         .observe(compile_duration);
 
     let max_compile_duration = *MAX_QUERY_COMPILE_TIME
         .lock()
         .unwrap()
-        .entry((*db, workload, query.to_owned()))
+        .entry((*db, workload))
         .and_modify(|max| {
             if compile_duration > *max {
                 *max = compile_duration;
@@ -169,7 +166,7 @@ fn record_query_compilation_metrics(workload: WorkloadType, db: &Address, query:
 
     DB_METRICS
         .rdb_query_compile_time_sec_max
-        .with_label_values(&workload, db, query)
+        .with_label_values(&workload, db)
         .set(max_compile_duration);
 }
 

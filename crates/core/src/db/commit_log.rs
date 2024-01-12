@@ -367,7 +367,7 @@ impl CommitLogMut {
 
         let workload = &ctx.workload();
         let db = &ctx.database();
-        let reducer_or_query = &ctx.reducer_or_query();
+        let reducer = &ctx.reducer_name();
 
         for record in &tx_data.records {
             let table_id: u32 = record.table_id.into();
@@ -378,7 +378,7 @@ impl CommitLogMut {
                     // Increment rows inserted metric
                     DB_METRICS
                         .rdb_num_rows_inserted
-                        .with_label_values(workload, db, reducer_or_query, &table_id, table_name)
+                        .with_label_values(workload, db, reducer, &table_id, table_name)
                         .inc();
                     // Increment table rows gauge
                     DB_METRICS
@@ -391,7 +391,7 @@ impl CommitLogMut {
                     // Increment rows deleted metric
                     DB_METRICS
                         .rdb_num_rows_deleted
-                        .with_label_values(workload, db, reducer_or_query, &table_id, table_name)
+                        .with_label_values(workload, db, reducer, &table_id, table_name)
                         .inc();
                     // Decrement table rows gauge
                     DB_METRICS
