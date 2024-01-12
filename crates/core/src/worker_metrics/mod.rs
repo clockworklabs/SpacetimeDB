@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Mutex};
 
 use crate::hash::Hash;
 use once_cell::sync::Lazy;
-use prometheus::{Gauge, GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
+use prometheus::{GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_metrics::metrics_group;
 
@@ -33,10 +33,6 @@ metrics_group!(
         #[labels(identity: Identity)]
         pub websocket_sent_msg_size: HistogramVec,
 
-        #[name = spacetime_worker_process_cpu_usage]
-        #[help = "CPU usage of the worker process."]
-        pub process_cpu_usage: Gauge,
-
         #[name = spacetime_worker_transactions]
         #[help = "Number of reducer calls."]
         #[labels(database_address: Address, reducer_symbol: str)]
@@ -51,21 +47,6 @@ metrics_group!(
         #[help = "The size of committed bytes in the message log after reducer execution."]
         #[labels(database_address: Address, reducer_symbol: str)]
         pub reducer_write_size: HistogramVec,
-
-        #[name = spacetime_worker_identity_energy_budget]
-        #[help = "Node-level energy budget, per identity"]
-        #[labels(identity: Identity, node: u64)]
-        pub node_identity_energy_budget_gauge: GaugeVec,
-
-        #[name = spacetime_instance_env_insert]
-        #[help = "Time spent by reducers inserting rows (InstanceEnv::insert)"]
-        #[labels(database_address: Address, table_id: u32)]
-        pub instance_env_insert: HistogramVec,
-
-        #[name = spacetime_instance_env_delete_eq]
-        #[help = "Time spent by reducers deleting rows by eq (InstanceEnv::delete_eq)"]
-        #[labels(database_address: Address, table_id: u32)]
-        pub instance_env_delete_eq: HistogramVec,
 
         #[name = spacetime_worker_instance_operation_queue_length]
         #[help = "Length of the wait queue for access to a module instance."]
