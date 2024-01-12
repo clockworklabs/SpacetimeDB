@@ -877,7 +877,7 @@ impl MutTxId {
         }
 
         // Remember to check for set-semantic collisions with the committed state!
-        let (tx_table, tx_blob_store) = self
+        let (tx_table, tx_blob_store, delete_table) = self
             .tx_state
             .get_table_and_blob_store_or_maybe_create_from(table_id, commit_table)
             .ok_or(TableError::IdNotFoundState(table_id))?;
@@ -893,18 +893,28 @@ impl MutTxId {
                     // - `commit_table` and `tx_table` use the same schema
                     //   because `tx_table` is derived from `commit_table`.
                     // - `ptr` and `hash` are correct because we just got them from `tx_table.insert`.
-                    if unsafe { Table::contains_same_row(commit_table, tx_table, ptr, hash) }.is_some() {
-                        // `row` was already present in the committed state,
+                    if let Some(committed_ptr) = unsafe { Table::contains_same_row(commit_table, tx_table, ptr, hash) }
+                    {
+                        // If `row` was already present in the committed state,
+                        // either this is a set-semantic duplicate,
+                        // or the row is marked as deleted, so we will undelete it
+                        // and leave it in the committed state.
+                        // Either way, it should not appear in the insert tables,
                         // so roll back the insertion.
                         tx_table
                             .delete(tx_blob_store, ptr)
                             .expect("Failed to delete a row we just inserted");
+
+                        // It's possible that `row` appears in the committed state,
+                        // but is marked as deleted.
+                        // In this case, undelete it, so it remains in the committed state.
+                        delete_table.remove(&committed_ptr);
                     }
                 }
                 Ok(())
             }
             // `row` previously present in insert tables; do nothing.
-            Err(InsertError::Duplicate(_)) => Ok(()),
+            Err(InsertError::Duplicate(_ptr)) => Ok(()),
             // Unwrap `IndexError`s, so that we return `DBError::Index(e)`
             // instead of `DBError::InsertError(InsertError::IndexError(e))`.
             Err(InsertError::IndexError(index_err)) => Err(index_err.into()),
@@ -954,7 +964,7 @@ impl MutTxId {
         // If the tx table exists, get it.
         // If it doesn't exist, but the commit table does,
         // create the tx table using the commit table as a template.
-        let Some((tx_table, tx_blob_store)) = self
+        let Some((tx_table, tx_blob_store, delete_table)) = self
             .tx_state
             .get_table_and_blob_store_or_maybe_create_from(table_id, commit_table.as_ref().map(|r| &**r))
         else {
@@ -978,9 +988,10 @@ impl MutTxId {
                 // Do this before actually deleting to drop the borrows on the tables.
                 tx_table.delete(tx_blob_store, ptr);
 
-                to_delete
-                    .map(|to_delete| self.delete(table_id, to_delete))
-                    .unwrap_or(Ok(false))
+                // Mark the committed row to be deleted by adding it to the delete table.
+                Ok(to_delete
+                    .map(|to_delete| delete_table.insert(to_delete))
+                    .unwrap_or(false))
             }
 
             Err(InsertError::Duplicate(existing)) => {

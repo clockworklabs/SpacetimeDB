@@ -162,15 +162,20 @@ impl TxState {
         &'this mut self,
         table_id: TableId,
         template: Option<&Table>,
-    ) -> Option<(&'this mut Table, &'this mut dyn BlobStore)> {
+    ) -> Option<(&'this mut Table, &'this mut dyn BlobStore, &'this mut DeleteTable)> {
         let insert_tables = &mut self.insert_tables;
+        let delete_tables = &mut self.delete_tables;
         let blob_store = &mut self.blob_store;
         if !insert_tables.contains_key(&table_id) {
             let template = template?;
             let new_table = Table::from_template(template, SquashedOffset::TX_STATE);
             insert_tables.insert(table_id, new_table);
         }
-        Some((insert_tables.get_mut(&table_id).unwrap(), blob_store))
+        Some((
+            insert_tables.get_mut(&table_id).unwrap(),
+            blob_store,
+            delete_tables.entry(table_id).or_default(),
+        ))
     }
 
     pub fn with_table_and_blob_store_or_create_from<Res>(

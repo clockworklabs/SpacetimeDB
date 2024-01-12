@@ -497,22 +497,27 @@ impl CommittedState {
 
     fn merge_apply_deletes(&mut self, tx_data: &mut TxData, delete_tables: BTreeMap<TableId, BTreeSet<RowPointer>>) {
         for (table_id, row_ptrs) in delete_tables {
-            self.with_table_and_blob_store(table_id, |table, blob_store| {
-                for row_ptr in row_ptrs {
-                    debug_assert!(row_ptr.squashed_offset().is_committed_state());
+            if self
+                .with_table_and_blob_store(table_id, |table, blob_store| {
+                    for row_ptr in row_ptrs.iter().copied() {
+                        debug_assert!(row_ptr.squashed_offset().is_committed_state());
 
-                    // TODO: re-write `TxRecord` to remove `product_value`, or at least `key`.
-                    let pv = table.delete(blob_store, row_ptr).expect("Delete for non-existent row!");
-                    let data_key = pv.to_data_key();
-                    tx_data.records.push(TxRecord {
-                        op: TxOp::Delete,
-                        table_id,
-                        key: data_key,
-                        product_value: pv,
-                    });
-                }
-            })
-            .expect("Deletion for non-existent table... huh?");
+                        // TODO: re-write `TxRecord` to remove `product_value`, or at least `key`.
+                        let pv = table.delete(blob_store, row_ptr).expect("Delete for non-existent row!");
+                        let data_key = pv.to_data_key();
+                        tx_data.records.push(TxRecord {
+                            op: TxOp::Delete,
+                            table_id,
+                            key: data_key,
+                            product_value: pv,
+                        });
+                    }
+                })
+                .is_none()
+                && !row_ptrs.is_empty()
+            {
+                panic!("Deletion for non-existent table {:?}... huh?", table_id);
+            }
         }
     }
 
