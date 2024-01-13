@@ -146,7 +146,4 @@ pub fn reset_counters() {
     // Reset max query durations
     DB_METRICS.rdb_query_cpu_time_sec_max.0.reset();
     MAX_QUERY_CPU_TIME.lock().unwrap().clear();
-    // Reset max query compile durations
-    DB_METRICS.rdb_query_compile_time_sec_max.0.reset();
-    MAX_QUERY_COMPILE_TIME.lock().unwrap().clear();
 }
