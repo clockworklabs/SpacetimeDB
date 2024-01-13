@@ -3,8 +3,6 @@ use spacetimedb_lib::Address;
 use spacetimedb_metrics::impl_prometheusvalue_string;
 use spacetimedb_metrics::typed_prometheus::AsPrometheusLabel;
 
-use crate::sql::query_debug_info::QueryDebugInfo;
-
 /// Represents the context under which a database runtime method is executed.
 /// In particular it provides details about the currently executing txn to runtime operations.
 /// More generally it acts as a container for information that database operations may require to function correctly.
@@ -13,15 +11,8 @@ pub struct ExecutionContext<'a> {
     /// The database on which a transaction is being executed.
     database: Address,
     /// The reducer from which the current transaction originated.
-    /// Note: this will never be set at the same time as `query`.
     reducer: Option<&'a str>,
-    /// The SQL query being executed, if any.
-    /// Note: this will never be set at the same time as `reducer`.
-    /// It is also NOT guaranteed to be set, even if workload == Sql.
-    /// This is because some transactions tagged "SQL" don't exactly correspond
-    /// to any particular query.
-    query_debug_info: Option<&'a QueryDebugInfo>,
-    // The type of workload that is being executed.
+    /// The type of workload that is being executed.
     workload: WorkloadType,
 }
 
@@ -52,37 +43,33 @@ impl<'a> ExecutionContext<'a> {
         Self {
             database,
             reducer: Some(name),
-            query_debug_info: None,
             workload: WorkloadType::Reducer,
         }
     }
 
     /// Returns an [ExecutionContext] for a one-off sql query.
-    pub fn sql(database: Address, query_debug_info: Option<&'a QueryDebugInfo>) -> Self {
+    pub fn sql(database: Address) -> Self {
         Self {
             database,
             reducer: None,
-            query_debug_info,
             workload: WorkloadType::Sql,
         }
     }
 
     /// Returns an [ExecutionContext] for an initial subscribe call.
-    pub fn subscribe(database: Address, query_debug_info: Option<&'a QueryDebugInfo>) -> Self {
+    pub fn subscribe(database: Address) -> Self {
         Self {
             database,
             reducer: None,
-            query_debug_info,
             workload: WorkloadType::Subscribe,
         }
     }
 
     /// Returns an [ExecutionContext] for a subscription update.
-    pub fn incremental_update(database: Address, query_debug_info: Option<&'a QueryDebugInfo>) -> Self {
+    pub fn incremental_update(database: Address) -> Self {
         Self {
             database,
             reducer: None,
-            query_debug_info,
             workload: WorkloadType::Update,
         }
     }
@@ -92,7 +79,6 @@ impl<'a> ExecutionContext<'a> {
         Self {
             database,
             reducer: None,
-            query_debug_info: None,
             workload: WorkloadType::Internal,
         }
     }
@@ -103,26 +89,10 @@ impl<'a> ExecutionContext<'a> {
         self.database
     }
 
-    /// Returns the name of the reducer that is being executed.
-    /// Returns [None] if this is not a reducer context.
-    #[inline]
-    pub fn reducer_name(&self) -> Option<&str> {
-        self.reducer
-    }
-
-    /// Returns the debug info for the query being executed.
-    /// Returns [None] if this is not a sql context.
-    #[inline]
-    pub fn query_debug_info(&self) -> Option<&QueryDebugInfo> {
-        self.query_debug_info
-    }
-
     /// If this is a reducer context, returns the name of the reducer.
-    /// If this is a query context, returns the query string.
     #[inline]
-    pub fn reducer_or_query(&self) -> &str {
-        self.reducer
-            .unwrap_or_else(|| self.query_debug_info.map(|info| info.source()).unwrap_or_default())
+    pub fn reducer_name(&self) -> &str {
+        self.reducer.unwrap_or_default()
     }
 
     /// Returns the type of workload that is being executed.

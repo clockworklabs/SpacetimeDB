@@ -339,7 +339,7 @@ impl TxId {
     fn release(self, ctx: &ExecutionContext) {
         let workload = &ctx.workload();
         let db = &ctx.database();
-        let reducer = ctx.reducer_name().unwrap_or_default();
+        let reducer = ctx.reducer_name();
         let elapsed_time = self.timer.elapsed();
         let cpu_time = elapsed_time - self.lock_wait_time;
         DB_METRICS
@@ -1978,7 +1978,7 @@ impl Drop for Iter<'_> {
             .with_label_values(
                 &self.ctx.workload(),
                 &self.ctx.database(),
-                self.ctx.reducer_or_query(),
+                self.ctx.reducer_name(),
                 &self.table_id.into(),
                 self.table_name,
             )
@@ -2118,7 +2118,7 @@ impl Drop for IndexSeekIterMutTxId<'_> {
             .with_label_values(
                 &self.ctx.workload(),
                 &self.ctx.database(),
-                self.ctx.reducer_or_query(),
+                self.ctx.reducer_name(),
                 &self.table_id.0,
                 table_name,
             )
@@ -2130,7 +2130,7 @@ impl Drop for IndexSeekIterMutTxId<'_> {
             .with_label_values(
                 &self.ctx.workload(),
                 &self.ctx.database(),
-                self.ctx.reducer_or_query(),
+                self.ctx.reducer_name(),
                 &self.table_id.0,
                 table_name,
             )
@@ -2142,7 +2142,7 @@ impl Drop for IndexSeekIterMutTxId<'_> {
             .with_label_values(
                 &self.ctx.workload(),
                 &self.ctx.database(),
-                self.ctx.reducer_or_query(),
+                self.ctx.reducer_name(),
                 &self.table_id.0,
                 table_name,
             )
@@ -2201,7 +2201,7 @@ impl Drop for CommittedIndexIter<'_> {
             .with_label_values(
                 &self.ctx.workload(),
                 &self.ctx.database(),
-                self.ctx.reducer_or_query(),
+                self.ctx.reducer_name(),
                 &self.table_id.0,
                 table_name,
             )
@@ -2213,7 +2213,7 @@ impl Drop for CommittedIndexIter<'_> {
             .with_label_values(
                 &self.ctx.workload(),
                 &self.ctx.database(),
-                self.ctx.reducer_or_query(),
+                self.ctx.reducer_name(),
                 &self.table_id.0,
                 table_name,
             )
@@ -2225,7 +2225,7 @@ impl Drop for CommittedIndexIter<'_> {
             .with_label_values(
                 &self.ctx.workload(),
                 &self.ctx.database(),
-                self.ctx.reducer_or_query(),
+                self.ctx.reducer_name(),
                 &self.table_id.0,
                 table_name,
             )
@@ -2401,7 +2401,7 @@ impl traits::MutTx for Locking {
     fn rollback_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) {
         let workload = &ctx.workload();
         let db = &ctx.database();
-        let reducer = ctx.reducer_name().unwrap_or_default();
+        let reducer = ctx.reducer_name();
         let elapsed_time = tx.timer.elapsed();
         let cpu_time = elapsed_time - tx.lock_wait_time;
         DB_METRICS
@@ -2422,7 +2422,7 @@ impl traits::MutTx for Locking {
     fn commit_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) -> super::Result<Option<TxData>> {
         let workload = &ctx.workload();
         let db = &ctx.database();
-        let reducer = ctx.reducer_name().unwrap_or_default();
+        let reducer = ctx.reducer_name();
         let elapsed_time = tx.timer.elapsed();
         let cpu_time = elapsed_time - tx.lock_wait_time;
 

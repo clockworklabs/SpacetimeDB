@@ -83,7 +83,7 @@ metrics_group!(
 
         #[name = spacetime_query_cpu_time_sec]
         #[help = "The time spent executing a query (in seconds)"]
-        #[labels(txn_type: WorkloadType, db: Address, query: str)]
+        #[labels(txn_type: WorkloadType, db: Address)]
         #[buckets(
             1e-6, 5e-6, 1e-5, 5e-5, 1e-4, 5e-4, 1e-3, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0
         )]
@@ -91,12 +91,12 @@ metrics_group!(
 
         #[name = spacetime_query_cpu_time_sec_max]
         #[help = "The cpu time of the longest running query (in seconds)"]
-        #[labels(txn_type: WorkloadType, db: Address, query: str)]
+        #[labels(txn_type: WorkloadType, db: Address)]
         pub rdb_query_cpu_time_sec_max: GaugeVec,
 
         #[name = spacetime_query_compile_time_sec]
         #[help = "The time spent compiling a query (in seconds)"]
-        #[labels(txn_type: WorkloadType, db: Address, query: str)]
+        #[labels(txn_type: WorkloadType, db: Address)]
         #[buckets(
             1e-6, 5e-6, 1e-5, 5e-5, 1e-4, 5e-4, 1e-3, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0
         )]
@@ -104,7 +104,7 @@ metrics_group!(
 
         #[name = spacetime_query_compile_time_sec_max]
         #[help = "The maximum query compilation time (in seconds)"]
-        #[labels(txn_type: WorkloadType, db: Address, query: str)]
+        #[labels(txn_type: WorkloadType, db: Address)]
         pub rdb_query_compile_time_sec_max: GaugeVec,
 
         #[name = spacetime_wasm_abi_call_duration_sec]
@@ -132,11 +132,12 @@ metrics_group!(
     }
 );
 
-type Triple = (Address, WorkloadType, String);
+type ReducerLabel = (Address, WorkloadType, String);
+type AddressLabel = (Address, WorkloadType);
 
-pub static MAX_TX_CPU_TIME: Lazy<Mutex<HashMap<Triple, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
-pub static MAX_QUERY_CPU_TIME: Lazy<Mutex<HashMap<Triple, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
-pub static MAX_QUERY_COMPILE_TIME: Lazy<Mutex<HashMap<Triple, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+pub static MAX_TX_CPU_TIME: Lazy<Mutex<HashMap<ReducerLabel, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+pub static MAX_QUERY_CPU_TIME: Lazy<Mutex<HashMap<AddressLabel, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+pub static MAX_QUERY_COMPILE_TIME: Lazy<Mutex<HashMap<AddressLabel, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 pub static DB_METRICS: Lazy<DbMetrics> = Lazy::new(DbMetrics::new);
 
 pub fn reset_counters() {
