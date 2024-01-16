@@ -4,6 +4,8 @@ use std::time::Duration;
 
 use spacetimedb_lib::{Hash, Identity};
 
+use crate::messages::control_db::Database;
+
 /// [EnergyQuanta] represents an amount of energy in a canonical unit.
 /// It represents the smallest unit of energy that can be used to pay for
 /// a reducer invocation. We will likely refer to this unit as an "eV".
@@ -25,6 +27,12 @@ impl EnergyQuanta {
     #[inline]
     pub fn get(&self) -> i128 {
         self.0
+    }
+
+    pub fn from_disk_usage(bytes_stored: u64, storage_period: Duration) -> Self {
+        // TODO: this line is lossy if bytes_stored is >1.6 PiB. do we ever care about that case?
+        let energy = bytes_stored as f64 * storage_period.as_secs_f64();
+        Self(energy as i128)
     }
 }
 
@@ -90,6 +98,7 @@ pub trait EnergyMonitor: Send + Sync + 'static {
         energy_used: EnergyQuanta,
         execution_duration: Duration,
     );
+    fn record_disk_usage(&self, database: &Database, instance_id: u64, disk_usage: u64, period: Duration);
 }
 
 // what would the module do with this information?
@@ -113,4 +122,6 @@ impl EnergyMonitor for NullEnergyMonitor {
         _execution_duration: Duration,
     ) {
     }
+
+    fn record_disk_usage(&self, _database: &Database, _instance_id: u64, _disk_usage: u64, _period: Duration) {}
 }

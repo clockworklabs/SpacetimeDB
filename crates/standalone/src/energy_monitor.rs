@@ -1,6 +1,8 @@
 use crate::StandaloneEnv;
 use spacetimedb::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
+use spacetimedb::messages::control_db::Database;
 use spacetimedb_client_api::ControlStateWriteAccess;
+use spacetimedb_lib::Identity;
 use std::{
     sync::{Arc, Mutex, Weak},
     time::Duration,
@@ -22,6 +24,22 @@ impl StandaloneEnergyMonitor {
     pub fn set_standalone_env(&self, standalone_env: Arc<StandaloneEnv>) {
         self.inner.lock().unwrap().set_standalone_env(standalone_env);
     }
+
+    fn withdraw_energy(&self, identity: Identity, amount: EnergyQuanta) {
+        assert!(!amount.get().is_negative());
+        if amount.get() == 0 {
+            return;
+        }
+        let standalone_env = {
+            self.inner
+                .lock()
+                .unwrap()
+                .standalone_env
+                .upgrade()
+                .expect("Worker env was dropped.")
+        };
+        tokio::spawn(async move { standalone_env.withdraw_energy(&identity, amount).await.unwrap() });
+    }
 }
 
 impl EnergyMonitor for StandaloneEnergyMonitor {
@@ -36,27 +54,16 @@ impl EnergyMonitor for StandaloneEnergyMonitor {
         energy_used: EnergyQuanta,
         _execution_duration: Duration,
     ) {
-        assert!(!energy_used.get().is_negative());
-        if energy_used.get() == 0 {
-            return;
-        }
-        let module_identity = fingerprint.module_identity;
-        let standalone_env = {
-            self.inner
-                .lock()
-                .unwrap()
-                .standalone_env
-                .upgrade()
-                .expect("Worker env was dropped.")
-        };
-        tokio::spawn(async move {
-            standalone_env
-                .withdraw_energy(&module_identity, energy_used)
-                .await
-                .unwrap();
-        });
+        self.withdraw_energy(fingerprint.module_identity, energy_used)
+    }
+
+    fn record_disk_usage(&self, database: &Database, _instance_id: u64, disk_usage: u64, period: Duration) {
+        let amount = EnergyQuanta::from_disk_usage(disk_usage, period);
+        self.withdraw_energy(database.identity, amount)
     }
 }
+
+impl StandaloneEnergyMonitor {}
 
 struct Inner {
     standalone_env: Weak<StandaloneEnv>,

@@ -55,10 +55,10 @@ pub struct StandaloneEnv {
 
 impl StandaloneEnv {
     pub async fn init(config: Config) -> anyhow::Result<Arc<Self>> {
-        let object_db = ObjectDb::init()?;
-        let db_inst_ctx_controller = DatabaseInstanceContextController::new();
-        let control_db = ControlDb::new()?;
         let energy_monitor = Arc::new(StandaloneEnergyMonitor::new());
+        let object_db = ObjectDb::init()?;
+        let db_inst_ctx_controller = DatabaseInstanceContextController::new(energy_monitor.clone());
+        let control_db = ControlDb::new()?;
         let host_controller = Arc::new(HostController::new(energy_monitor.clone()));
         let client_actor_index = ClientActorIndex::new();
         let (public_key, private_key, public_key_bytes) = get_or_create_keys()?;
@@ -646,6 +646,7 @@ impl StandaloneEnv {
         database: Database,
         instance_id: u64,
     ) -> anyhow::Result<ModuleHostContext> {
+        let host_type = database.host_type;
         let program_bytes = self
             .object_db
             .get_object(&database.program_bytes_address)
@@ -659,7 +660,7 @@ impl StandaloneEnv {
                 self.db_inst_ctx_controller.get_or_try_init(instance_id, || {
                     let dbic = DatabaseInstanceContext::from_database(
                         self.config,
-                        &database,
+                        database,
                         instance_id,
                         root_db_path.clone(),
                     )?;
@@ -674,7 +675,7 @@ impl StandaloneEnv {
 
         let mhc = ModuleHostContext {
             dbic,
-            host_type: database.host_type,
+            host_type,
             program_bytes: program_bytes.into(),
             scheduler,
             scheduler_starter,

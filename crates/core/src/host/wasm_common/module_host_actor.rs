@@ -22,6 +22,7 @@ use crate::host::module_host::{
 };
 use crate::host::{ArgsTuple, EntityDef, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler, Timestamp};
 use crate::identity::Identity;
+use crate::messages::control_db::Database;
 use crate::sql;
 use crate::subscription::module_subscription_actor::ModuleSubscriptionManager;
 use crate::util::{const_unwrap, ResultInspectExt};
@@ -332,7 +333,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         self.trapped
     }
 
-    #[tracing::instrument(skip(self, args), fields(db_id = self.instance.instance_env().dbic.database_id))]
+    #[tracing::instrument(skip(self, args), fields(db_id = self.instance.instance_env().dbic.id))]
     fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<ReducerCallResult> {
         let timestamp = Timestamp::now();
         let stdb = &*self.database_instance_context().relational_db;
@@ -369,11 +370,11 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                 // If a caller address was passed to the `/database/publish` HTTP endpoint,
                 // the init/update reducer will receive it as the caller address.
                 // This is useful for bootstrapping the control DB in SpacetimeDB-cloud.
-                let &DatabaseInstanceContext {
+                let Database {
                     identity: caller_identity,
                     publisher_address: caller_address,
                     ..
-                } = self.database_instance_context();
+                } = self.database_instance_context().database;
                 let client = None;
                 self.call_reducer_with_tx(
                     Some(tx),
@@ -427,11 +428,11 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                 // If a caller address was passed to the `/database/publish` HTTP endpoint,
                 // the init/update reducer will receive it as the caller address.
                 // This is useful for bootstrapping the control DB in SpacetimeDB-cloud.
-                let &DatabaseInstanceContext {
+                let Database {
                     identity: caller_identity,
                     publisher_address: caller_address,
                     ..
-                } = self.database_instance_context();
+                } = self.database_instance_context().database;
                 let res = self.call_reducer_with_tx(
                     Some(tx),
                     CallReducerParams {
