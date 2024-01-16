@@ -11,3 +11,5 @@ RUN apt-get update && \
 ENV CARGO_TARGET_DIR=/projects/SpacetimeDB/linux-target
 ENV CARGO_HOME=/projects/SpacetimeDB/linux-cache
 ENV RUSTUP_HOME=/projects/SpacetimeDB/linux-rustup
+
+RUN cargo install --git https://github.com/clockworklabs/iai-callgrind.git --branch main iai-callgrind-runner
