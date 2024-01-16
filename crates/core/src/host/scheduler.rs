@@ -1,12 +1,10 @@
-use std::collections::hash_map::DefaultHasher;
-use std::hash::Hasher;
 use std::path::Path;
 
 use futures::StreamExt;
 use rustc_hash::FxHashMap;
 use sled::transaction::{ConflictableTransactionError::Abort as TxAbort, TransactionError};
+use spacetimedb_lib::bsatn;
 use spacetimedb_lib::bsatn::ser::BsatnError;
-use spacetimedb_lib::{bsatn, Address};
 use tokio::sync::mpsc;
 use tokio_util::time::delay_queue::Expired;
 use tokio_util::time::{delay_queue, DelayQueue};
@@ -273,18 +271,11 @@ impl SchedulerActor {
         };
         let scheduled: ScheduledReducer = bsatn::from_slice(&scheduled).unwrap();
 
-        fn hash(a: &Address, b: &str) -> u64 {
-            use std::hash::Hash;
-            let mut hasher = DefaultHasher::new();
-            a.hash(&mut hasher);
-            b.hash(&mut hasher);
-            hasher.finish()
-        }
-
         let db = module_host.info().address;
+        let reducer = scheduled.reducer.clone();
         let mut guard = MAX_REDUCER_DELAY.lock().unwrap();
         let max_reducer_delay = *guard
-            .entry(hash(&db, &scheduled.reducer))
+            .entry((db, reducer))
             .and_modify(|max| {
                 if delay > *max {
                     *max = delay;
