@@ -84,11 +84,17 @@ metrics_group!(
     }
 );
 
+type ReducerLabel = (Address, String);
+
 pub static MAX_QUEUE_LEN: Lazy<Mutex<HashMap<Address, i64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
-pub static MAX_REDUCER_DELAY: Lazy<Mutex<HashMap<u64, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+pub static MAX_REDUCER_DELAY: Lazy<Mutex<HashMap<ReducerLabel, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 pub static WORKER_METRICS: Lazy<WorkerMetrics> = Lazy::new(WorkerMetrics::new);
 
 pub fn reset_counters() {
+    // Reset max queue length
+    WORKER_METRICS.instance_queue_length_max.0.reset();
     MAX_QUEUE_LEN.lock().unwrap().clear();
+    // Reset max reducer wait time
+    WORKER_METRICS.scheduled_reducer_delay_sec_max.0.reset();
     MAX_REDUCER_DELAY.lock().unwrap().clear();
 }
