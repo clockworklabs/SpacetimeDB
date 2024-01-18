@@ -22,7 +22,11 @@ env:
 jobs:
   benchmark:
     name: run benchmarks
-    runs-on: benchmarks-runner
+    # DON'T run on benchmarks-runner, using docker on a self-hosted runner has
+    # been broken for 4 years: https://github.com/actions/runner/issues/434 .
+    # Fortunately, we can run on standard Github Actions infra because we don't care
+    # about other stuff running on the machine!
+    # runs-on: benchmarks-runner
     timeout-minutes: 20 # on a successful run, runs in 8 minutes
     container:
       image: rust:1.72
