@@ -30,9 +30,14 @@ impl EnergyQuanta {
     }
 
     pub fn from_disk_usage(bytes_stored: u64, storage_period: Duration) -> Self {
-        // TODO: this line is lossy if bytes_stored is >1.6 PiB. do we ever care about that case?
-        let energy = bytes_stored as f64 * storage_period.as_secs_f64();
-        Self(energy as i128)
+        let bytes_stored = i128::from(bytes_stored);
+        let sec = i128::from(storage_period.as_secs());
+        let nsec = i128::from(storage_period.subsec_nanos());
+        // bytes_stored * storage_period, but make it complicated. floats might be lossy for large
+        // enough values, so instead we expand the multiplication to (b * trunc(dur) + b * frac(dur)),
+        // in a way that preserves integer precision despite a division
+        let energy = bytes_stored * sec + (bytes_stored * nsec) / 1_000_000_000;
+        Self(energy)
     }
 }
 

@@ -91,12 +91,12 @@ impl DatabaseInstanceContext {
     ///
     /// Some sources of size-on-disk may error, in which case the corresponding array element will be None.
     pub fn total_disk_usage(&self) -> TotalDiskUsage {
-        TotalDiskUsage([
-            Some(self.message_log_size_on_disk()),
+        TotalDiskUsage {
+            message_log: self.message_log_size_on_disk(),
             // the errors get logged by the functions, we're not discarding them here without logging
-            self.object_db_size_on_disk().ok(),
-            self.log_file_size().ok(),
-        ])
+            object_db: self.object_db_size_on_disk().ok(),
+            logs: self.log_file_size().ok(),
+        }
     }
 }
 
@@ -109,16 +109,23 @@ impl Deref for DatabaseInstanceContext {
 }
 
 #[derive(Copy, Clone, Default)]
-pub struct TotalDiskUsage(pub [Option<u64>; 3]);
+pub struct TotalDiskUsage {
+    message_log: u64,
+    object_db: Option<u64>,
+    logs: Option<u64>,
+}
 
 impl TotalDiskUsage {
     /// Returns self, but if any of the sources are None then we take it from fallback
-    pub fn or(mut self, fallback: TotalDiskUsage) -> Self {
-        std::iter::zip(&mut self.0, fallback.0).for_each(|(x, fb)| *x = x.or(fb));
-        self
+    pub fn or(self, fallback: TotalDiskUsage) -> Self {
+        Self {
+            message_log: self.message_log,
+            object_db: self.object_db.or(fallback.object_db),
+            logs: self.logs.or(fallback.logs),
+        }
     }
 
     pub fn sum(&self) -> u64 {
-        self.0.iter().map(|x| x.unwrap_or(0)).sum()
+        self.message_log + self.object_db.unwrap_or(0) + self.logs.unwrap_or(0)
     }
 }
