@@ -6,7 +6,7 @@ use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
 use tracing::info;
 
 use crate::database_instance_context_controller::DatabaseInstanceContextController;
-use crate::db::relational_db::{RelationalDB, Tx};
+use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::{DBError, DatabaseError};
 use crate::execution_context::ExecutionContext;
 use crate::sql::compiler::compile_sql;
@@ -67,6 +67,24 @@ pub fn execute_single_sql(
     let q = Expr::Crud(Box::new(ast));
 
     let mut result = Vec::with_capacity(1);
+    collect_result(&mut result, run_ast(p, q).into())?;
+    Ok(result)
+}
+
+#[tracing::instrument(skip_all)]
+pub fn execute_sql_mut_tx(
+    cx: &ExecutionContext,
+    db: &RelationalDB,
+    tx: &mut MutTx,
+    ast: Vec<CrudExpr>,
+    auth: AuthCtx,
+) -> Result<Vec<MemTable>, DBError> {
+    let total = ast.len();
+    let mut tx: TxMode = tx.into();
+    let p = &mut DbProgram::new(cx, db, &mut tx, auth);
+    let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
+
+    let mut result = Vec::with_capacity(total);
     collect_result(&mut result, run_ast(p, q).into())?;
     Ok(result)
 }

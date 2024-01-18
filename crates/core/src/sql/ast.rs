@@ -2,8 +2,7 @@ use nonempty::NonEmpty;
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use crate::db::datastore::traits::TxDatastore;
-use crate::db::relational_db::{RelationalDB, Tx};
+use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::{DBError, PlanError};
 use spacetimedb_primitives::{ConstraintKind, Constraints};
 use spacetimedb_sats::db::auth::StAccess;
@@ -406,22 +405,38 @@ fn compile_where(table: &From, filter: Option<SqlExpr>) -> Result<Option<Selecti
     }
 }
 
-/// Retrieves the [TableSchema] for the [Table]
-///
-/// Fails if the table `name` and/or `table_id` is not found
-fn find_table<'tx>(db: &RelationalDB, tx: &'tx Tx, t: Table) -> Result<Cow<'tx, TableSchema>, PlanError> {
-    let table_id = db
-        .table_id_from_name(tx, &t.name)?
-        .ok_or(PlanError::UnknownTable { table: t.name.clone() })?;
-    if !db.table_id_exists(tx, &table_id) {
-        return Err(PlanError::UnknownTable { table: t.name });
+pub(crate) trait TableSchemaView {
+    fn find_table(&self, db: &RelationalDB, t: Table) -> Result<Cow<'_, TableSchema>, PlanError>;
+}
+
+impl TableSchemaView for Tx {
+    fn find_table(&self, db: &RelationalDB, t: Table) -> Result<Cow<'_, TableSchema>, PlanError> {
+        let table_id = db
+            .table_id_from_name(self, &t.name)?
+            .ok_or(PlanError::UnknownTable { table: t.name.clone() })?;
+        if !db.table_id_exists(self, &table_id) {
+            return Err(PlanError::UnknownTable { table: t.name });
+        }
+        db.schema_for_table(self, table_id)
+            .map_err(move |e| PlanError::DatabaseInternal(Box::new(e)))
     }
-    db.schema_for_table(tx, table_id)
-        .map_err(|e| PlanError::DatabaseInternal(Box::new(e)))
+}
+
+impl TableSchemaView for MutTx {
+    fn find_table(&self, db: &RelationalDB, t: Table) -> Result<Cow<'_, TableSchema>, PlanError> {
+        let table_id = db
+            .table_id_from_name_mut(self, &t.name)?
+            .ok_or(PlanError::UnknownTable { table: t.name.clone() })?;
+        if !db.table_id_exists_mut(self, &table_id) {
+            return Err(PlanError::UnknownTable { table: t.name });
+        }
+        db.schema_for_table_mut(self, table_id)
+            .map_err(|e| PlanError::DatabaseInternal(Box::new(e)))
+    }
 }
 
 /// Compiles the `FROM` clause
-fn compile_from(db: &RelationalDB, tx: &Tx, from: &[TableWithJoins]) -> Result<From, PlanError> {
+fn compile_from<T: TableSchemaView>(db: &RelationalDB, tx: &T, from: &[TableWithJoins]) -> Result<From, PlanError> {
     if from.len() > 1 {
         return Err(PlanError::Unsupported {
             feature: "Multiple tables in `FROM`.".into(),
@@ -436,14 +451,14 @@ fn compile_from(db: &RelationalDB, tx: &Tx, from: &[TableWithJoins]) -> Result<F
     };
 
     let t = compile_table_factor(root_table.relation.clone())?;
-    let base = find_table(db, tx, t)?.into_owned();
+    let base = tx.find_table(db, t)?.into_owned();
     let mut base = From::new(base);
 
     for join in &root_table.joins {
         match &join.join_operator {
             JoinOperator::Inner(constraint) => {
                 let t = compile_table_factor(join.relation.clone())?;
-                let join = find_table(db, tx, t)?.into_owned();
+                let join = tx.find_table(db, t)?.into_owned();
 
                 match constraint {
                     JoinConstraint::On(x) => {
@@ -541,7 +556,7 @@ fn compile_select_item(from: &From, select_item: SelectItem) -> Result<Column, P
 }
 
 /// Compiles the `SELECT ...` clause
-fn compile_select(db: &RelationalDB, tx: &Tx, select: Select) -> Result<SqlAst, PlanError> {
+fn compile_select<T: TableSchemaView>(db: &RelationalDB, tx: &T, select: Select) -> Result<SqlAst, PlanError> {
     let from = compile_from(db, tx, &select.from)?;
     // SELECT ...
     let mut project = Vec::new();
@@ -560,7 +575,7 @@ fn compile_select(db: &RelationalDB, tx: &Tx, select: Select) -> Result<SqlAst, 
 }
 
 /// Compiles any `query` clause (currently only `SELECT...`)
-fn compile_query(db: &RelationalDB, tx: &Tx, query: Query) -> Result<SqlAst, PlanError> {
+fn compile_query<T: TableSchemaView>(db: &RelationalDB, tx: &T, query: Query) -> Result<SqlAst, PlanError> {
     unsupported!(
         "SELECT",
         query.order_by,
@@ -613,14 +628,14 @@ fn compile_query(db: &RelationalDB, tx: &Tx, query: Query) -> Result<SqlAst, Pla
 }
 
 /// Compiles the `INSERT ...` clause
-fn compile_insert(
+fn compile_insert<T: TableSchemaView>(
     db: &RelationalDB,
-    tx: &Tx,
+    tx: &T,
     table_name: ObjectName,
     columns: Vec<Ident>,
     data: &Values,
 ) -> Result<SqlAst, PlanError> {
-    let table = find_table(db, tx, Table::new(table_name))?.into_owned();
+    let table = tx.find_table(db, Table::new(table_name))?.into_owned();
 
     let columns = columns
         .into_iter()
@@ -648,14 +663,14 @@ fn compile_insert(
 }
 
 /// Compiles the `UPDATE ...` clause
-fn compile_update(
+fn compile_update<T: TableSchemaView>(
     db: &RelationalDB,
-    tx: &Tx,
+    tx: &T,
     table: Table,
     assignments: Vec<Assignment>,
     selection: Option<SqlExpr>,
 ) -> Result<SqlAst, PlanError> {
-    let table = From::new(find_table(db, tx, table)?.into_owned());
+    let table = From::new(tx.find_table(db, table)?.into_owned());
     let selection = compile_where(&table, selection)?;
 
     let mut x = HashMap::with_capacity(assignments.len());
@@ -676,8 +691,13 @@ fn compile_update(
 }
 
 /// Compiles the `DELETE ...` clause
-fn compile_delete(db: &RelationalDB, tx: &Tx, table: Table, selection: Option<SqlExpr>) -> Result<SqlAst, PlanError> {
-    let table = From::new(find_table(db, tx, table)?.into_owned());
+fn compile_delete<T: TableSchemaView>(
+    db: &RelationalDB,
+    tx: &T,
+    table: Table,
+    selection: Option<SqlExpr>,
+) -> Result<SqlAst, PlanError> {
+    let table = From::new(tx.find_table(db, table)?.into_owned());
     let selection = compile_where(&table, selection)?;
 
     Ok(SqlAst::Delete {
@@ -851,7 +871,7 @@ fn compile_drop(name: &ObjectName, kind: ObjectType) -> Result<SqlAst, PlanError
 }
 
 /// Compiles a `SQL` clause
-fn compile_statement(db: &RelationalDB, tx: &Tx, statement: Statement) -> Result<SqlAst, PlanError> {
+fn compile_statement<T: TableSchemaView>(db: &RelationalDB, tx: &T, statement: Statement) -> Result<SqlAst, PlanError> {
     match statement {
         Statement::Query(query) => Ok(compile_query(db, tx, *query)?),
         Statement::Insert {
@@ -1026,7 +1046,11 @@ fn compile_statement(db: &RelationalDB, tx: &Tx, statement: Statement) -> Result
 }
 
 /// Compiles a `sql` string into a `Vec<SqlAst>` using a SQL parser with [PostgreSqlDialect]
-pub(crate) fn compile_to_ast(db: &RelationalDB, tx: &Tx, sql_text: &str) -> Result<Vec<SqlAst>, DBError> {
+pub(crate) fn compile_to_ast<T: TableSchemaView>(
+    db: &RelationalDB,
+    tx: &T,
+    sql_text: &str,
+) -> Result<Vec<SqlAst>, DBError> {
     let dialect = PostgreSqlDialect {};
     let ast = Parser::parse_sql(&dialect, sql_text).map_err(|error| DBError::SqlParser {
         sql: sql_text.to_string(),
