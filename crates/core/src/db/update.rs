@@ -1,6 +1,6 @@
 use core::fmt;
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use anyhow::Context;
 use spacetimedb_primitives::Constraints;
@@ -11,7 +11,7 @@ use crate::execution_context::ExecutionContext;
 
 use super::datastore::locking_tx_datastore::MutTxId;
 use super::relational_db::RelationalDB;
-use spacetimedb_sats::db::def::{TableDef, TableSchema};
+use spacetimedb_sats::db::def::{ConstraintDef, TableDef, TableSchema};
 use spacetimedb_sats::hash::Hash;
 
 #[derive(thiserror::Error, Debug)]
@@ -182,14 +182,21 @@ fn equiv(a: &TableDef, b: &TableDef) -> bool {
         table_type,
         table_access,
     } = a;
+
+    // Constraints may not be in the same order, depending on whether the
+    // `TableDef` was loaded from the db catalog or the module.
+    fn as_set(constraints: &[ConstraintDef]) -> BTreeSet<&ConstraintDef> {
+        constraints
+            .iter()
+            .filter(|c| c.constraints != Constraints::unset())
+            .collect()
+    }
+
     table_name == &b.table_name
         && table_type == &b.table_type
         && table_access == &b.table_access
         && columns == &b.columns
-        && constraints
-            .iter()
-            .filter(|c| c.constraints != Constraints::unset())
-            .eq(b.constraints.iter().filter(|c| c.constraints != Constraints::unset()))
+        && as_set(constraints) == as_set(&b.constraints)
 }
 
 #[cfg(test)]

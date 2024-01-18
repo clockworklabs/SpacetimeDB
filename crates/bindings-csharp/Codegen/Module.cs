@@ -271,8 +271,13 @@ public class Module : IIncrementalGenerator
             tableNames.Combine(addReducers),
             (context, tuple) =>
             {
-                var tableNames = tuple.Left;
-                var addReducers = tuple.Right;
+                // Sort tables and reducers by name to match Rust behaviour.
+                // Not really important outside of testing, but for testing
+                // it matters because we commit module-bindings
+                // so they need to match 1:1 between different langs.
+                var tableNames = tuple.Left.Sort();
+                var addReducers = tuple.Right.Sort((a, b) => a.Name.CompareTo(b.Name));
+                // Don't generate the FFI boilerplate if there are no tables or reducers.
                 if (tableNames.IsEmpty && addReducers.IsEmpty)
                     return;
                 context.AddSource(

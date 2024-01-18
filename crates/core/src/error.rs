@@ -8,7 +8,6 @@ use thiserror::Error;
 
 use crate::client::ClientActorId;
 use crate::db::datastore::system_tables::SystemTable;
-use crate::sql::query_debug_info::QueryDebugInfo;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::{PrimaryKey, ProductValue};
 use spacetimedb_primitives::*;
@@ -95,7 +94,7 @@ pub enum SubscriptionError {
     #[error("Queries with side effects not allowed: {0:?}")]
     SideEffect(Crud),
     #[error("Unsupported query on subscription: {0:?}")]
-    Unsupported(QueryDebugInfo),
+    Unsupported(String),
 }
 
 #[derive(Error, Debug)]

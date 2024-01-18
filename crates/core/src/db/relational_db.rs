@@ -1,6 +1,5 @@
 use fs2::FileExt;
 use nonempty::NonEmpty;
-use spacetimedb_lib::metrics::METRICS;
 use std::borrow::Cow;
 use std::fs::{create_dir_all, File};
 use std::ops::RangeBounds;
@@ -148,7 +147,7 @@ impl RelationalDB {
             _lock: Arc::new(lock),
             address: db_address,
             row_count_fn: Arc::new(move |table_id, table_name| {
-                METRICS
+                DB_METRICS
                     .rdb_num_table_rows
                     .with_label_values(&db_address, &table_id.into(), table_name)
                     .get()
@@ -428,7 +427,7 @@ impl RelationalDB {
             .map(|name| name.to_string())
             .unwrap_or_default();
         self.inner.drop_table_mut_tx(tx, table_id).map(|_| {
-            METRICS
+            DB_METRICS
                 .rdb_num_table_rows
                 .with_label_values(&self.address, &table_id.into(), &table_name)
                 .set(0)

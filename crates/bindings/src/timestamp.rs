@@ -69,6 +69,16 @@ impl Timestamp {
         let micros_since_epoch = self.micros_since_epoch.checked_sub(micros)?;
         Some(Self { micros_since_epoch })
     }
+
+    /// Converts the timestamp into the number of microseconds since the UNIX epoch.
+    pub fn into_micros_since_epoch(self) -> u64 {
+        self.micros_since_epoch
+    }
+
+    /// Creates a new timestamp from the given number of microseconds since the UNIX epoch.
+    pub fn from_micros_since_epoch(micros_since_epoch: u64) -> Self {
+        Self { micros_since_epoch }
+    }
 }
 
 impl Add<Duration> for Timestamp {
@@ -90,5 +100,5 @@ impl Sub<Duration> for Timestamp {
 }
 
 impl_st!([] Timestamp, _ts => spacetimedb_lib::AlgebraicType::U64);
-impl_deserialize!([] Timestamp, de => u64::deserialize(de).map(|m| Self { micros_since_epoch: m }));
-impl_serialize!([] Timestamp, (self, ser) => self.micros_since_epoch.serialize(ser));
+impl_deserialize!([] Timestamp, de => u64::deserialize(de).map(Self::from_micros_since_epoch));
+impl_serialize!([] Timestamp, (self, ser) => self.into_micros_since_epoch().serialize(ser));

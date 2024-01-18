@@ -26,7 +26,6 @@ use crate::host::{
 };
 use crate::identity::Identity;
 use crate::sql;
-use crate::sql::query_debug_info::QueryDebugInfo;
 use crate::subscription::module_subscription_actor::ModuleSubscriptionManager;
 use crate::util::{const_unwrap, ResultInspectExt};
 use crate::worker_metrics::WORKER_METRICS;
@@ -268,8 +267,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         let db = &self.database_instance_context.relational_db;
         let auth = AuthCtx::new(self.database_instance_context.identity, caller_identity);
         log::debug!("One-off query: {query}");
-        let query_info = &QueryDebugInfo::from_source(&query);
-        let ctx = &ExecutionContext::sql(db.address(), Some(query_info));
+        let ctx = &ExecutionContext::sql(db.address());
         let compiled = db.with_read_only(ctx, |tx| {
             sql::compiler::compile_sql(db, tx, &query)?
                 .into_iter()
@@ -283,7 +281,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
                 .collect::<Result<_, _>>()
         })?;
 
-        sql::execute::execute_sql(db, compiled, Some(&QueryDebugInfo::from_source(&query)), auth)
+        sql::execute::execute_sql(db, compiled, auth)
     }
 
     fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error> {
