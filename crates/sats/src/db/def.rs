@@ -1,6 +1,5 @@
 use derive_more::Display;
 use itertools::Itertools;
-use nonempty::NonEmpty;
 use std::collections::{HashMap, HashSet};
 
 use crate::db::auth::{StAccess, StTableType};
@@ -137,7 +136,7 @@ pub struct IndexSchema {
     pub index_type: IndexType,
     pub index_name: String,
     pub is_unique: bool,
-    pub columns: NonEmpty<ColId>,
+    pub columns: ColList,
 }
 
 impl IndexSchema {
@@ -186,7 +185,7 @@ pub struct IndexDef {
     pub is_unique: bool,
     pub index_type: IndexType,
     /// List of column positions that compose the index.
-    pub columns: NonEmpty<ColId>,
+    pub columns: ColList,
 }
 
 impl IndexDef {
@@ -199,7 +198,7 @@ impl IndexDef {
     /// * `index_name`: The name of the index.
     /// * `columns`: List of column positions that compose the index.
     /// * `is_unique`: Indicates whether the index enforces uniqueness.
-    pub fn btree(index_name: String, columns: impl Into<NonEmpty<ColId>>, is_unique: bool) -> Self {
+    pub fn btree(index_name: String, columns: impl Into<ColList>, is_unique: bool) -> Self {
         Self {
             columns: columns.into(),
             index_name,
@@ -215,13 +214,13 @@ impl IndexDef {
     /// # Example
     ///
     /// ```
-    /// use nonempty::NonEmpty;
+    /// use spacetimedb_primitives::ColList;
     /// use spacetimedb_sats::db::def::*;
     ///
-    /// let index_def = IndexDef::for_column("my_table", "test", NonEmpty::new(1u32.into()), true);
+    /// let index_def = IndexDef::for_column("my_table", "test", ColList::new(1u32.into()), true);
     /// assert_eq!(index_def.index_name, "idx_my_table_test_unique");
     /// ```
-    pub fn for_column(table: &str, index_or_name: &str, columns: impl Into<NonEmpty<ColId>>, is_unique: bool) -> Self {
+    pub fn for_column(table: &str, index_or_name: &str, columns: impl Into<ColList>, is_unique: bool) -> Self {
         let unique = if is_unique { "unique" } else { "non_unique" };
 
         // Removes the auto-generated suffix from the index name.
@@ -371,7 +370,7 @@ pub struct ConstraintSchema {
     pub constraint_name: String,
     pub constraints: Constraints,
     pub table_id: TableId,
-    pub columns: NonEmpty<ColId>,
+    pub columns: ColList,
 }
 
 impl ConstraintSchema {
@@ -399,7 +398,7 @@ pub struct ConstraintDef {
     pub constraint_name: String,
     pub constraints: Constraints,
     /// List of column positions associated with the constraint.
-    pub columns: NonEmpty<ColId>,
+    pub columns: ColList,
 }
 
 impl ConstraintDef {
@@ -410,7 +409,7 @@ impl ConstraintDef {
     /// * `constraint_name`: The name of the constraint.
     /// * `constraints`: The constraints.
     /// * `columns`: List of column positions associated with the constraint.
-    pub fn new(constraint_name: String, constraints: Constraints, columns: impl Into<NonEmpty<ColId>>) -> Self {
+    pub fn new(constraint_name: String, constraints: Constraints, columns: impl Into<ColList>) -> Self {
         Self {
             constraint_name,
             constraints,
@@ -432,18 +431,17 @@ impl ConstraintDef {
     /// # Example
     ///
     /// ```
-    /// use nonempty::NonEmpty;
-    /// use spacetimedb_primitives::Constraints;
+    /// use spacetimedb_primitives::{Constraints, ColList};
     /// use spacetimedb_sats::db::def::*;
     ///
-    /// let constraint_def = ConstraintDef::for_column("my_table", "test", Constraints::identity(), NonEmpty::new(1u32.into()));
+    /// let constraint_def = ConstraintDef::for_column("my_table", "test", Constraints::identity(), ColList::new(1u32.into()));
     /// assert_eq!(constraint_def.constraint_name, "ct_my_table_test_identity");
     /// ```
     pub fn for_column(
         table: &str,
         column_or_name: &str,
         constraints: Constraints,
-        columns: impl Into<NonEmpty<ColId>>,
+        columns: impl Into<ColList>,
     ) -> Self {
         //removes the auto-generated suffix...
         let name = column_or_name.trim_start_matches(&format!("idx_{}_", table));
@@ -595,8 +593,8 @@ impl TableSchema {
         }
     }
 
-    pub fn get_columns(&self, columns: &NonEmpty<ColId>) -> Vec<(ColId, Option<&ColumnSchema>)> {
-        columns.iter().map(|col| (*col, self.columns.get(col.idx()))).collect()
+    pub fn get_columns(&self, columns: &ColList) -> Vec<(ColId, Option<&ColumnSchema>)> {
+        columns.iter().map(|col| (col, self.columns.get(col.idx()))).collect()
     }
 
     /// Get a reference to a column by its position (`pos`) in the table.
@@ -616,12 +614,10 @@ impl TableSchema {
     /// Warning: It ignores the `table_name`
     pub fn get_index_by_field(&self, field: &FieldName) -> Option<&IndexSchema> {
         let ColumnSchema { col_pos, .. } = self.get_column_by_field(field)?;
-        self.indexes.iter().find(
-            |IndexSchema {
-                 columns: NonEmpty { head: index_col, tail },
-                 ..
-             }| tail.is_empty() && index_col == col_pos,
-        )
+        self.indexes.iter().find(|IndexSchema { columns, .. }| {
+            let mut cols = columns.iter();
+            cols.next() == Some(*col_pos) && cols.next().is_none()
+        })
     }
 
     /// Turn a [TableField] that could be an unqualified field `id` into `table.id`
@@ -641,10 +637,10 @@ impl TableSchema {
             .collect()
     }
 
-    /// Utility for project the fields from the supplied `indexes` that is a [NonEmpty<ColId>],
+    /// Utility for project the fields from the supplied `indexes` that is a [ColList],
     /// used for when the list of field indexes have at least one value.
-    pub fn project_not_empty(&self, indexes: NonEmpty<ColId>) -> Result<Vec<&ColumnSchema>, InvalidFieldError> {
-        self.project(indexes.into_iter())
+    pub fn project_not_empty(&self, indexes: ColList) -> Result<Vec<&ColumnSchema>, InvalidFieldError> {
+        self.project(indexes.iter())
     }
 
     /// IMPORTANT: Is required to have this cached to avoid a perf drop on datastore operations
@@ -657,7 +653,7 @@ impl TableSchema {
         self.row_type
     }
 
-    pub fn get_constraints(&self) -> Vec<(NonEmpty<ColId>, Constraints)> {
+    pub fn get_constraints(&self) -> Vec<(ColList, Constraints)> {
         self.constraints
             .iter()
             .map(|x| (x.columns.clone(), x.constraints))
@@ -712,20 +708,20 @@ impl TableSchema {
         )
     }
 
-    pub fn column_constraints_iter(&self) -> impl Iterator<Item = (NonEmpty<ColId>, &Constraints)> {
+    pub fn column_constraints_iter(&self) -> impl Iterator<Item = (ColList, &Constraints)> {
         self.constraints.iter().map(|x| (x.columns.clone(), &x.constraints))
     }
 
     /// Resolves the constraints per each column. If the column don't have one, auto-generate [Constraints::unset()].
     ///
     /// This guarantee all columns can be queried for it constraints.
-    pub fn column_constraints(&self) -> HashMap<NonEmpty<ColId>, Constraints> {
-        let mut constraints: HashMap<NonEmpty<ColId>, Constraints> =
+    pub fn column_constraints(&self) -> HashMap<ColList, Constraints> {
+        let mut constraints: HashMap<ColList, Constraints> =
             self.column_constraints_iter().map(|(col, ct)| (col, *ct)).collect();
 
         for col in &self.columns {
             constraints
-                .entry(NonEmpty::new(col.col_pos))
+                .entry(ColList::new(col.col_pos))
                 .or_insert(Constraints::unset());
         }
 
@@ -737,7 +733,7 @@ impl TableSchema {
         self.column_constraints_iter()
             .find_map(|(col, x)| {
                 if x.has_primary_key() {
-                    Some(self.columns.iter().find(|x| NonEmpty::new(x.col_pos) == col))
+                    Some(self.columns.iter().find(|x| ColList::new(x.col_pos) == col))
                 } else {
                     None
                 }
@@ -791,7 +787,7 @@ impl TableSchema {
         let columns_not_found = self
             .sequences
             .iter()
-            .map(|x| (DefType::Sequence, x.sequence_name.clone(), NonEmpty::new(x.col_pos)))
+            .map(|x| (DefType::Sequence, x.sequence_name.clone(), ColList::new(x.col_pos)))
             .chain(
                 self.indexes
                     .iter()
@@ -1029,9 +1025,9 @@ impl TableDef {
     /// WARNING: If the `ColId` not exist, is skipped.
     /// TODO(Tyler): This should return an error and not allow this to be constructed
     /// if there is an invalid `ColId`
-    fn generate_cols_name(&self, columns: &NonEmpty<ColId>) -> String {
-        let mut column_name = Vec::with_capacity(columns.len());
-        for col_pos in columns {
+    fn generate_cols_name(&self, columns: &ColList) -> String {
+        let mut column_name = Vec::with_capacity(columns.len() as usize);
+        for col_pos in columns.iter() {
             if let Some(col) = self.get_column(col_pos.idx()) {
                 column_name.push(col.col_name.as_str())
             }
@@ -1041,7 +1037,7 @@ impl TableDef {
     }
 
     /// Generate a [ConstraintDef] using the supplied `columns`.
-    pub fn with_column_constraint(self, kind: Constraints, columns: impl Into<NonEmpty<ColId>>) -> Self {
+    pub fn with_column_constraint(self, kind: Constraints, columns: impl Into<ColList>) -> Self {
         let mut x = self;
         let columns = columns.into();
 
@@ -1062,7 +1058,7 @@ impl TableDef {
     }
 
     /// Generate a [IndexDef] using the supplied `columns`.
-    pub fn with_column_index(self, columns: impl Into<NonEmpty<ColId>>, is_unique: bool) -> Self {
+    pub fn with_column_index(self, columns: impl Into<ColList>, is_unique: bool) -> Self {
         let mut x = self;
         let columns = columns.into();
         x.indexes.push(IndexDef::for_column(
@@ -1087,7 +1083,7 @@ impl TableDef {
 
         x.sequences.push(SequenceDef::for_column(
             &x.table_name,
-            &x.generate_cols_name(&NonEmpty::new(columns)),
+            &x.generate_cols_name(&ColList::new(columns)),
             columns,
         ));
         x
@@ -1138,7 +1134,7 @@ impl TableDef {
     pub fn generated_sequences(&self) -> impl Iterator<Item = SequenceDef> + '_ {
         self.constraints.iter().filter_map(|x| {
             if x.constraints.has_autoinc() {
-                let col_id = x.columns.head;
+                let col_id = x.columns.head();
 
                 let seq = SequenceDef::for_column(&self.table_name, &x.constraint_name, col_id);
                 if self
@@ -1233,6 +1229,7 @@ impl From<TableSchema> for TableDef {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use spacetimedb_primitives::col_list;
 
     fn table_def() -> TableDef {
         TableDef::new(
@@ -1252,7 +1249,7 @@ mod tests {
     fn test_idx_generated() {
         let t = table_def()
             .with_column_constraint(Constraints::unique(), ColId(0))
-            .with_column_constraint(Constraints::unique(), (ColId(0), vec![ColId(1)]))
+            .with_column_constraint(Constraints::unique(), col_list![0, 1])
             .with_column_constraint(Constraints::indexed(), ColId(1))
             .with_column_constraint(Constraints::primary_key(), ColId(2))
             //This will be ignored
@@ -1266,7 +1263,7 @@ mod tests {
             s.indexes,
             vec![
                 IndexSchema::from_def(TableId(0), IndexDef::btree("idx_test_id_unique".into(), ColId(0), true)),
-                IndexSchema::from_def(TableId(0), IndexDef::btree("idx_test_id_name_unique".into(), (ColId(0), vec![ColId(1)]), true)),
+                IndexSchema::from_def(TableId(0), IndexDef::btree("idx_test_id_name_unique".into(), col_list![0, 1], true)),
                 IndexSchema::from_def(TableId(0), IndexDef::btree("idx_test_name_indexed_non_unique".into(), ColId(1), false)),
                 IndexSchema::from_def(TableId(0), IndexDef::btree("idx_test_age_primary_key_unique".into(), ColId(2), true)),
             ]
@@ -1305,7 +1302,7 @@ mod tests {
         let t = table_def()
             .with_column_index(ColId(0), true)
             .with_column_index(ColId(1), false)
-            .with_column_index((ColId(0), vec![ColId(1)]), true);
+            .with_column_index(col_list![0, 1], true);
 
         let mut s = t.into_schema(TableId(0)).validated().unwrap();
         s.constraints.sort_by_key(|x| x.columns.clone());
@@ -1320,7 +1317,7 @@ mod tests {
                 ),
                 ConstraintSchema::from_def(
                     TableId(0),
-                    ConstraintDef::new("ct_test_id_name_unique".into(), Constraints::unique(), (ColId(0), vec![ColId(1)]))
+                    ConstraintDef::new("ct_test_id_name_unique".into(), Constraints::unique(), col_list![0, 1])
                 ),
                 ConstraintSchema::from_def(
                     TableId(0),
@@ -1565,7 +1562,7 @@ mod tests {
             index_name: "bad".to_string(),
             is_unique: false,
             index_type: IndexType::Hash,
-            columns: NonEmpty::new(0.into()),
+            columns: ColList::new(0.into()),
         }]);
 
         assert_eq!(

@@ -3,13 +3,13 @@ use super::util::fmt_fn;
 use std::fmt::{self, Write};
 
 use convert_case::{Case, Casing};
-use nonempty::NonEmpty;
 use spacetimedb_lib::sats::db::def::TableSchema;
 use spacetimedb_lib::sats::{
     AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, ProductTypeElement, SumType,
     SumTypeVariant,
 };
 use spacetimedb_lib::{ReducerDef, TableDesc};
+use spacetimedb_primitives::ColList;
 
 use super::code_indenter::CodeIndenter;
 use super::{GenCtx, GenItem, INDENT};
@@ -874,7 +874,7 @@ fn autogen_typescript_access_funcs_for_struct(
 ) {
     let constraints = table.column_constraints();
     for col in table.columns() {
-        let is_unique = constraints[&NonEmpty::new(col.col_pos)].has_unique();
+        let is_unique = constraints[&ColList::new(col.col_pos)].has_unique();
         let field = &product_type.elements[usize::from(col.col_pos)];
         let field_name = field.name.as_ref().expect("autogen'd tuples should have field names");
         let field_type = &field.algebraic_type;

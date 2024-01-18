@@ -1,13 +1,13 @@
 use super::code_indenter::CodeIndenter;
 use super::{GenCtx, GenItem};
 use convert_case::{Case, Casing};
-use nonempty::NonEmpty;
 use spacetimedb_lib::sats::db::def::TableSchema;
 use spacetimedb_lib::sats::{
     AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, ProductTypeElement, SumType,
     SumTypeVariant,
 };
 use spacetimedb_lib::{ReducerDef, TableDesc};
+use spacetimedb_primitives::ColList;
 use std::collections::HashSet;
 use std::fmt::Write;
 
@@ -472,7 +472,7 @@ fn print_table_filter_methods(ctx: &GenCtx, out: &mut Indenter, table_type_name:
                 //       Look at `Borrow` or Deref or AsRef?
                 write_type_ctx(ctx, out, &field.col_type);
                 write!(out, ") -> ").unwrap();
-                let ct = constraints[&NonEmpty::new(field.col_pos)];
+                let ct = constraints[&ColList::new(field.col_pos)];
 
                 if ct.has_unique() {
                     write!(out, "Option<Self>").unwrap();

@@ -1,6 +1,5 @@
 //! Provides identifiers such as `TableId`.
 use core::fmt;
-use nonempty::NonEmpty;
 
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
 #[repr(transparent)]
@@ -58,11 +57,6 @@ macro_rules! system_id {
         impl From<u8> for $name {
             fn from(value: u8) -> Self {
                 Self(value as u32)
-            }
-        }
-        impl From<$name> for NonEmpty<$name> {
-            fn from(value: $name) -> Self {
-                NonEmpty::new(value)
             }
         }
         impl fmt::Display for $name {

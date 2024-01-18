@@ -3,12 +3,12 @@ use super::util::fmt_fn;
 use std::fmt::{self, Write};
 
 use convert_case::{Case, Casing};
-use nonempty::NonEmpty;
 use spacetimedb_lib::sats::db::def::TableSchema;
 use spacetimedb_lib::sats::{
     AlgebraicType, AlgebraicType::Builtin, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, SumType,
 };
 use spacetimedb_lib::{ReducerDef, TableDesc};
+use spacetimedb_primitives::ColList;
 
 use super::code_indenter::CodeIndenter;
 use super::{GenCtx, GenItem, INDENT};
@@ -668,7 +668,7 @@ fn autogen_csharp_product_table_common(
                 // Declare custom index dictionaries
                 for col in schema.columns() {
                     let field_name = col.col_name.replace("r#", "").to_case(Case::Pascal);
-                    if !constraints[&NonEmpty::new(col.col_pos)].has_unique() {
+                    if !constraints[&ColList::new(col.col_pos)].has_unique() {
                         continue;
                     }
                     let type_name = ty_fmt(ctx, &col.col_type, namespace);
@@ -696,7 +696,7 @@ fn autogen_csharp_product_table_common(
                     writeln!(output, "var val = ({name})insertedValue;").unwrap();
                     for col in schema.columns() {
                         let field_name = col.col_name.replace("r#", "").to_case(Case::Pascal);
-                        if !constraints[&NonEmpty::new(col.col_pos)].has_unique() {
+                        if !constraints[&ColList::new(col.col_pos)].has_unique() {
                             continue;
                         }
                         writeln!(output, "{field_name}_Index[val.{field_name}] = val;").unwrap();
@@ -716,7 +716,7 @@ fn autogen_csharp_product_table_common(
                     writeln!(output, "var val = ({name})deletedValue;").unwrap();
                     for col in schema.columns() {
                         let field_name = col.col_name.replace("r#", "").to_case(Case::Pascal);
-                        if !constraints[&NonEmpty::new(col.col_pos)].has_unique() {
+                        if !constraints[&ColList::new(col.col_pos)].has_unique() {
                             continue;
                         }
                         writeln!(output, "{field_name}_Index.Remove(val.{field_name});").unwrap();
@@ -971,7 +971,7 @@ fn autogen_csharp_access_funcs_for_struct(
 
     let constraints = schema.column_constraints();
     for col in schema.columns() {
-        let is_unique = constraints[&NonEmpty::new(col.col_pos)].has_unique();
+        let is_unique = constraints[&ColList::new(col.col_pos)].has_unique();
 
         let col_i: usize = col.col_pos.into();
 

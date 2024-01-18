@@ -3,15 +3,14 @@ use super::{
     RowId,
 };
 use indexmap::IndexMap;
-use nonempty::NonEmpty;
-use spacetimedb_primitives::ColId;
+use spacetimedb_primitives::ColList;
 use spacetimedb_sats::db::def::TableSchema;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
 use std::{collections::HashMap, ops::RangeBounds};
 
 pub(crate) struct Table {
     pub(crate) schema: TableSchema,
-    pub(crate) indexes: HashMap<NonEmpty<ColId>, BTreeIndex>,
+    pub(crate) indexes: HashMap<ColList, BTreeIndex>,
     pub(crate) rows: IndexMap<RowId, ProductValue>,
 }
 
@@ -69,7 +68,7 @@ impl Table {
     /// Matching is defined by `Ord for AlgebraicValue`.
     pub(crate) fn index_seek(
         &self,
-        cols: &NonEmpty<ColId>,
+        cols: &ColList,
         range: &impl RangeBounds<AlgebraicValue>,
     ) -> Option<BTreeIndexRangeIter<'_>> {
         self.indexes.get(cols).map(|index| index.seek(range))

@@ -43,7 +43,7 @@ pub fn build_query<'a>(
                 upper_bound,
             }) if db_table => {
                 assert_eq!(columns.len(), 1, "Only support single column IndexScan");
-                let col_id = columns.head;
+                let col_id = columns.head();
                 iter_by_col_range(ctx, stdb, tx, table, col_id, (lower_bound, upper_bound))?
             }
             Query::IndexScan(index_scan) => {
@@ -560,7 +560,6 @@ pub(crate) mod tests {
     };
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::execution_context::ExecutionContext;
-    use nonempty::NonEmpty;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::db::def::{ColumnDef, IndexDef, IndexType};
@@ -765,7 +764,7 @@ pub(crate) mod tests {
                 index_id,
                 index_name: "idx_1".to_owned(),
                 table_id,
-                columns: NonEmpty::new(0.into()),
+                columns: ColList::new(0.into()),
                 is_unique: true,
                 index_type: IndexType::BTree,
             }

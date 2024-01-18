@@ -3,7 +3,6 @@ mod sequence;
 mod table;
 
 use itertools::Itertools;
-use nonempty::NonEmpty;
 use parking_lot::{
     lock_api::{ArcMutexGuard, ArcRwLockReadGuard},
     Mutex, RawMutex,
@@ -83,7 +82,7 @@ pub enum SequenceError {
     #[error("Sequence ID `{0}` still had no values left after allocation.")]
     UnableToAllocate(SequenceId),
     #[error("Autoinc constraint on table {0:?} spans more than one column: {1:?}")]
-    MultiColumnAutoInc(TableId, NonEmpty<ColId>),
+    MultiColumnAutoInc(TableId, ColList),
 }
 
 const SEQUENCE_PREALLOCATION_AMOUNT: i128 = 4_096;
@@ -127,7 +126,7 @@ trait StateView {
         self.iter_by_col_eq(
             &ExecutionContext::internal(database_address),
             &ST_TABLES_ID,
-            NonEmpty::new(StTableFields::TableName.col_id()),
+            ColList::new(StTableFields::TableName.col_id()),
             AlgebraicValue::String(table_name.to_owned()),
         )
         .map(|mut iter| {
@@ -147,7 +146,7 @@ trait StateView {
         &'a self,
         ctx: &'a ExecutionContext,
         table_id: &TableId,
-        cols: NonEmpty<ColId>,
+        cols: ColList,
         range: R,
     ) -> super::Result<IterByColRange<'a, R>>;
 
@@ -155,7 +154,7 @@ trait StateView {
         &'a self,
         ctx: &'a ExecutionContext,
         table_id: &TableId,
-        cols: NonEmpty<ColId>,
+        cols: ColList,
         value: AlgebraicValue,
     ) -> super::Result<IterByColEq<'_>> {
         self.iter_by_col_range(ctx, table_id, cols, value)
@@ -167,9 +166,9 @@ trait StateView {
         }
 
         // Look up the table_name for the table in question.
-        let table_id_col = NonEmpty::new(StTableFields::TableId.col_id());
+        let table_id_col = ColList::new(StTableFields::TableId.col_id());
 
-        // let table_id_col = NonEmpty::new(.col_id());
+        // let table_id_col = ColList::new(.col_id());
         let value: AlgebraicValue = table_id.into();
         let rows = self
             .iter_by_col_eq(ctx, &ST_TABLES_ID, table_id_col, table_id.into())?
@@ -186,7 +185,7 @@ trait StateView {
             .iter_by_col_eq(
                 ctx,
                 &ST_COLUMNS_ID,
-                NonEmpty::new(StColumnFields::TableId.col_id()),
+                ColList::new(StColumnFields::TableId.col_id()),
                 value,
             )?
             .map(|row| {
@@ -207,7 +206,7 @@ trait StateView {
         for data_ref in self.iter_by_col_eq(
             ctx,
             &ST_CONSTRAINTS_ID,
-            NonEmpty::new(StConstraintFields::TableId.col_id()),
+            ColList::new(StConstraintFields::TableId.col_id()),
             table_id.into(),
         )? {
             let row = data_ref.view();
@@ -228,7 +227,7 @@ trait StateView {
         for data_ref in self.iter_by_col_eq(
             ctx,
             &ST_SEQUENCES_ID,
-            NonEmpty::new(StSequenceFields::TableId.col_id()),
+            ColList::new(StSequenceFields::TableId.col_id()),
             AlgebraicValue::U32(table_id.into()),
         )? {
             let row = data_ref.view();
@@ -253,7 +252,7 @@ trait StateView {
         for data_ref in self.iter_by_col_eq(
             ctx,
             &ST_INDEXES_ID,
-            NonEmpty::new(StIndexFields::TableId.col_id()),
+            ColList::new(StIndexFields::TableId.col_id()),
             table_id.into(),
         )? {
             let row = data_ref.view();
@@ -315,7 +314,7 @@ impl StateView for TxId {
         &'a self,
         ctx: &'a ExecutionContext,
         table_id: &TableId,
-        cols: NonEmpty<ColId>,
+        cols: ColList,
         range: R,
     ) -> super::Result<IterByColRange<'a, R>> {
         match self.committed_state_shared_lock.index_seek(table_id, &cols, &range) {
@@ -402,7 +401,7 @@ impl StateView for CommittedState {
         &'a self,
         ctx: &'a ExecutionContext,
         table_id: &TableId,
-        cols: NonEmpty<ColId>,
+        cols: ColList,
         range: R,
     ) -> super::Result<IterByColRange<'a, R>> {
         Ok(IterByColRange::Scan(ScanIterByColRange {
@@ -486,7 +485,7 @@ impl CommittedState {
     pub fn index_seek<'a>(
         &'a self,
         table_id: &TableId,
-        cols: &NonEmpty<ColId>,
+        cols: &ColList,
         range: &impl RangeBounds<AlgebraicValue>,
     ) -> Option<BTreeIndexRangeIter<'a>> {
         if let Some(table) = self.tables.get(table_id) {
@@ -810,7 +809,7 @@ impl TxState {
     pub fn index_seek<'a>(
         &'a self,
         table_id: &TableId,
-        cols: &NonEmpty<ColId>,
+        cols: &ColList,
         range: &impl RangeBounds<AlgebraicValue>,
     ) -> Option<BTreeIndexRangeIter<'a>> {
         self.insert_tables.get(table_id)?.index_seek(cols, range)
@@ -879,7 +878,7 @@ impl StateView for MutTxId {
         &'a self,
         ctx: &'a ExecutionContext,
         table_id: &TableId,
-        cols: NonEmpty<ColId>,
+        cols: ColList,
         range: R,
     ) -> super::Result<IterByColRange<R>> {
         // We have to index_seek in both the committed state and the current tx state.
@@ -1717,7 +1716,7 @@ impl MutTxId {
             cols: index
                 .cols
                 .iter()
-                .map(|&x| table.schema.columns()[usize::from(x)].col_name.clone())
+                .map(|x| table.schema.columns()[usize::from(x)].col_name.clone())
                 .collect(),
             value,
         }
@@ -2295,7 +2294,7 @@ impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for IterByColRange<'a, R> {
 
 pub struct ScanIterByColRange<'a, R: RangeBounds<AlgebraicValue>> {
     scan_iter: Iter<'a>,
-    cols: NonEmpty<ColId>,
+    cols: ColList,
     range: R,
 }
 
@@ -2334,7 +2333,7 @@ impl TxDatastore for Locking {
         ctx: &'a ExecutionContext,
         tx: &'a Self::Tx,
         table_id: TableId,
-        cols: impl Into<NonEmpty<ColId>>,
+        cols: impl Into<ColList>,
         range: R,
     ) -> super::Result<Self::IterByColRange<'a, R>> {
         tx.iter_by_col_range(ctx, &table_id, cols.into(), range)
@@ -2345,7 +2344,7 @@ impl TxDatastore for Locking {
         ctx: &'a ExecutionContext,
         tx: &'a Self::Tx,
         table_id: TableId,
-        cols: impl Into<NonEmpty<ColId>>,
+        cols: impl Into<ColList>,
         value: AlgebraicValue,
     ) -> super::Result<Self::IterByColEq<'a>> {
         tx.iter_by_col_eq(ctx, &table_id, cols.into(), value)
@@ -2589,7 +2588,7 @@ impl MutTxDatastore for Locking {
         ctx: &'a ExecutionContext,
         tx: &'a Self::MutTx,
         table_id: TableId,
-        cols: impl Into<NonEmpty<ColId>>,
+        cols: impl Into<ColList>,
         range: R,
     ) -> super::Result<Self::IterByColRange<'a, R>> {
         tx.iter_by_col_range(ctx, &table_id, cols.into(), range)
@@ -2600,7 +2599,7 @@ impl MutTxDatastore for Locking {
         ctx: &'a ExecutionContext,
         tx: &'a Self::MutTx,
         table_id: TableId,
-        cols: impl Into<NonEmpty<ColId>>,
+        cols: impl Into<ColList>,
         value: AlgebraicValue,
     ) -> super::Result<Self::IterByColEq<'a>> {
         tx.iter_by_col_eq(ctx, &table_id, cols.into(), value)
@@ -2740,7 +2739,7 @@ mod tests {
 
         pub fn scan_st_tables_by_col(
             &self,
-            cols: impl Into<NonEmpty<ColId>>,
+            cols: impl Into<ColList>,
             value: AlgebraicValue,
         ) -> Result<Vec<StTableRow<String>>> {
             Ok(self
@@ -2762,7 +2761,7 @@ mod tests {
 
         pub fn scan_st_columns_by_col(
             &self,
-            cols: impl Into<NonEmpty<ColId>>,
+            cols: impl Into<ColList>,
             value: AlgebraicValue,
         ) -> Result<Vec<StColumnRow<String>>> {
             Ok(self
@@ -2809,12 +2808,8 @@ mod tests {
         Locking::bootstrap(Address::zero())
     }
 
-    fn col(col: u32) -> NonEmpty<u32> {
-        NonEmpty::new(col)
-    }
-
-    fn cols(head: u32, tail: Vec<u32>) -> NonEmpty<u32> {
-        NonEmpty::from((head, tail))
+    fn col(col: u32) -> ColList {
+        col.into()
     }
 
     fn map_array<A, B: From<A>, const N: usize>(a: [A; N]) -> Vec<B> {
@@ -2824,7 +2819,7 @@ mod tests {
     struct IndexRow<'a> {
         id: u32,
         table: u32,
-        col: NonEmpty<u32>,
+        col: ColList,
         name: &'a str,
         unique: bool,
     }
@@ -2833,7 +2828,7 @@ mod tests {
             Self {
                 index_id: value.id.into(),
                 table_id: value.table.into(),
-                columns: value.col.map(ColId),
+                columns: value.col,
                 index_name: value.name.into(),
                 is_unique: value.unique,
                 index_type: IndexType::BTree,
@@ -2957,7 +2952,7 @@ mod tests {
         constraint_name: &'a str,
         constraints: Constraints,
         table_id: u32,
-        columns: NonEmpty<u32>,
+        columns: ColList,
     }
     impl From<ConstraintRow<'_>> for StConstraintRow<String> {
         fn from(value: ConstraintRow<'_>) -> Self {
@@ -2966,7 +2961,7 @@ mod tests {
                 constraint_name: value.constraint_name.into(),
                 constraints: value.constraints,
                 table_id: value.table_id.into(),
-                columns: value.columns.map(ColId),
+                columns: value.columns,
             }
         }
     }
@@ -2978,7 +2973,7 @@ mod tests {
                 constraint_name: value.constraint_name.into(),
                 constraints: value.constraints,
                 table_id: value.table_id.into(),
-                columns: value.columns.map(ColId),
+                columns: value.columns,
             }
         }
     }
@@ -2996,13 +2991,13 @@ mod tests {
         TableDef::new("Foo".into(), map_array(basic_table_schema_cols()))
             .with_indexes(vec![
                 IndexDef {
-                    columns: NonEmpty::new(0.into()),
+                    columns: ColList::new(0.into()),
                     index_name: "id_idx".into(),
                     is_unique: true,
                     index_type: IndexType::BTree,
                 },
                 IndexDef {
-                    columns: NonEmpty::new(1.into()),
+                    columns: ColList::new(1.into()),
                     index_name: "name_idx".into(),
                     is_unique: true,
                     index_type: IndexType::BTree,
@@ -3127,7 +3122,7 @@ mod tests {
         assert_eq!(query.scan_st_indexes()?, map_array([
             IndexRow { id: 0, table: 0, col: col(0), name: "idx_st_table_table_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 1, table: 0, col: col(1), name: "idx_st_table_table_name_unique", unique: true },
-            IndexRow { id: 2, table: 1, col: cols(0, vec![1]), name: "idx_st_columns_table_id_col_pos_unique", unique: true },
+            IndexRow { id: 2, table: 1, col: col_list![0, 1], name: "idx_st_columns_table_id_col_pos_unique", unique: true },
             IndexRow { id: 3, table: 2, col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },
@@ -3143,7 +3138,7 @@ mod tests {
         assert_eq!(query.scan_st_constraints()?, map_array([
             ConstraintRow { constraint_id: 0, table_id: 0, columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_table_table_id_primary_key_auto" },
             ConstraintRow { constraint_id: 1, table_id: 0, columns: col(1), constraints: Constraints::unique(), constraint_name: "ct_st_table_table_name_unique" },
-            ConstraintRow { constraint_id: 2, table_id: 1, columns: cols(0, vec![1]), constraints: Constraints::unique(), constraint_name: "ct_st_columns_table_id_col_pos_unique" },
+            ConstraintRow { constraint_id: 2, table_id: 1, columns: col_list![0, 1], constraints: Constraints::unique(), constraint_name: "ct_st_columns_table_id_col_pos_unique" },
             ConstraintRow { constraint_id: 3, table_id: 2, columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_sequence_sequence_id_primary_key_auto" },
             ConstraintRow { constraint_id: 4, table_id: 3, columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_indexes_index_id_primary_key_auto" },
             ConstraintRow { constraint_id: 5, table_id: 4, columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_constraints_constraint_id_primary_key_auto" },
@@ -3448,7 +3443,7 @@ mod tests {
         assert_eq!(index_rows, [
             IndexRow { id: 0, table: 0, col: col(0), name: "idx_st_table_table_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 1, table: 0, col: col(1), name: "idx_st_table_table_name_unique", unique: true },
-            IndexRow { id: 2, table: 1, col: cols(0, vec![1]), name: "idx_st_columns_table_id_col_pos_unique", unique: true },
+            IndexRow { id: 2, table: 1, col: col_list![0, 1], name: "idx_st_columns_table_id_col_pos_unique", unique: true },
             IndexRow { id: 3, table: 2, col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },
@@ -3491,7 +3486,7 @@ mod tests {
         assert_eq!(index_rows, [
             IndexRow { id: 0, table: 0, col: col(0), name: "idx_st_table_table_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 1, table: 0, col: col(1), name: "idx_st_table_table_name_unique", unique: true },
-            IndexRow { id: 2, table: 1, col: cols(0, vec![1]), name: "idx_st_columns_table_id_col_pos_unique", unique: true },
+            IndexRow { id: 2, table: 1, col: col_list![0, 1], name: "idx_st_columns_table_id_col_pos_unique", unique: true },
             IndexRow { id: 3, table: 2, col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },
@@ -3534,7 +3529,7 @@ mod tests {
         assert_eq!(index_rows, [
             IndexRow { id: 0, table: 0, col: col(0), name: "idx_st_table_table_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 1, table: 0, col: col(1), name: "idx_st_table_table_name_unique", unique: true },
-            IndexRow { id: 2, table: 1, col: cols(0, vec![1]), name: "idx_st_columns_table_id_col_pos_unique", unique: true },
+            IndexRow { id: 2, table: 1, col: col_list![0, 1], name: "idx_st_columns_table_id_col_pos_unique", unique: true },
             IndexRow { id: 3, table: 2, col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },

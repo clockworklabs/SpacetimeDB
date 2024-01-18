@@ -1,6 +1,5 @@
 use crate::error::{DBError, TableError};
 use core::fmt;
-use nonempty::NonEmpty;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::*;
@@ -87,9 +86,9 @@ macro_rules! st_fields_enum {
             }
         }
 
-        impl From<$ty_name> for NonEmpty<ColId> {
+        impl From<$ty_name> for ColList {
             fn from(value: $ty_name) -> Self {
-                NonEmpty::new(value.col_id())
+                ColList::new(value.col_id())
             }
         }
     }
@@ -184,10 +183,11 @@ pub fn st_columns_schema() -> TableSchema {
         ],
     )
     .with_type(StTableType::System)
-    .with_column_constraint(
-        Constraints::unique(),
-        (StColumnFields::TableId.col_id(), vec![StColumnFields::ColPos.col_id()]),
-    )
+    .with_column_constraint(Constraints::unique(), {
+        let mut cols = ColList::new(StColumnFields::TableId.col_id());
+        cols.push(StColumnFields::ColPos.col_id());
+        cols
+    })
     .into_schema(ST_COLUMNS_ID)
 }
 
@@ -415,7 +415,7 @@ pub struct StIndexRow<Name: AsRef<str>> {
     pub(crate) index_id: IndexId,
     pub(crate) table_id: TableId,
     pub(crate) index_name: Name,
-    pub(crate) columns: NonEmpty<ColId>,
+    pub(crate) columns: ColList,
     pub(crate) is_unique: bool,
     pub(crate) index_type: IndexType,
 }
@@ -433,13 +433,16 @@ impl StIndexRow<&str> {
     }
 }
 
-fn to_cols(row: &ProductValue, col_pos: ColId, col_name: &'static str) -> Result<NonEmpty<ColId>, DBError> {
+fn to_cols(row: &ProductValue, col_pos: ColId, col_name: &'static str) -> Result<ColList, DBError> {
     let index = col_pos.idx();
     let name = Some(col_name);
     let cols = row.field_as_array(index, name)?;
     if let ArrayValue::U32(x) = &cols {
-        let x: Vec<_> = x.iter().map(|x| ColId::from(*x)).collect();
-        Ok(NonEmpty::from_slice(&x).unwrap())
+        Ok(x.iter()
+            .map(|x| ColId::from(*x))
+            .collect::<ColListBuilder>()
+            .build()
+            .expect("empty ColList"))
     } else {
         Err(InvalidFieldError { name, col_pos }.into())
     }
@@ -472,12 +475,11 @@ impl<'a> TryFrom<&'a ProductValue> for StIndexRow<&'a str> {
 
 impl From<StIndexRow<String>> for ProductValue {
     fn from(x: StIndexRow<String>) -> Self {
-        let cols: Vec<_> = x.columns.iter().map(|x| u32::from(*x)).collect();
         product![
             x.index_id,
             x.table_id,
             x.index_name,
-            ArrayValue::from(cols),
+            ArrayValue::from(x.columns.to_u32_vec()),
             x.is_unique,
             u8::from(x.index_type),
         ]
@@ -577,7 +579,7 @@ pub struct StConstraintRow<Name: AsRef<str>> {
     pub(crate) constraint_name: Name,
     pub(crate) constraints: Constraints,
     pub(crate) table_id: TableId,
-    pub(crate) columns: NonEmpty<ColId>,
+    pub(crate) columns: ColList,
 }
 
 impl StConstraintRow<&str> {
@@ -620,14 +622,12 @@ impl<'a> TryFrom<&'a ProductValue> for StConstraintRow<&'a str> {
 
 impl From<StConstraintRow<String>> for ProductValue {
     fn from(x: StConstraintRow<String>) -> Self {
-        let cols: Vec<_> = x.columns.iter().map(|x| u32::from(*x)).collect();
-
         product![
             x.constraint_id,
             x.constraint_name,
             x.constraints.bits(),
             x.table_id,
-            ArrayValue::from(cols)
+            ArrayValue::from(x.columns.to_u32_vec())
         ]
     }
 }

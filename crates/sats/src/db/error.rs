@@ -3,8 +3,7 @@ use crate::product_value::InvalidFieldError;
 use crate::relation::{FieldName, Header};
 use crate::{buffer, AlgebraicType, AlgebraicValue};
 use derive_more::Display;
-use nonempty::NonEmpty;
-use spacetimedb_primitives::{ColId, TableId};
+use spacetimedb_primitives::{ColId, ColList, TableId};
 use std::fmt;
 use std::string::FromUtf8Error;
 use thiserror::Error;
@@ -139,7 +138,7 @@ pub enum SchemaError {
     ConstraintUnset {
         table: String,
         name: String,
-        columns: NonEmpty<ColId>,
+        columns: ColList,
     },
     #[error("Attempt to define a column with more than 1 auto_inc sequence: Table: `{table}`, Field: `{field}`")]
     OneAutoInc { table: String, field: String },

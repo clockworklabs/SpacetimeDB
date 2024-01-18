@@ -1,4 +1,3 @@
-use nonempty::NonEmpty;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
 use std::ops::DerefMut;
@@ -17,7 +16,7 @@ use spacetimedb_lib::filter::CmpArgs;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::operator::OpQuery;
 use spacetimedb_lib::{bsatn, ProductValue};
-use spacetimedb_primitives::{ColId, TableId};
+use spacetimedb_primitives::{ColId, ColListBuilder, TableId};
 use spacetimedb_sats::buffer::BufWriter;
 use spacetimedb_sats::db::def::{IndexDef, IndexType};
 use spacetimedb_sats::relation::{FieldExpr, FieldName};
@@ -238,9 +237,12 @@ impl InstanceEnv {
             }
         };
 
-        let columns = NonEmpty::from_vec(col_ids)
-            .expect("Attempt to create an index with zero columns")
-            .map(Into::into);
+        let columns = col_ids
+            .into_iter()
+            .map(Into::into)
+            .collect::<ColListBuilder>()
+            .build()
+            .expect("Attempt to create an index with zero columns");
 
         let is_unique = stdb.column_constraints(tx, table_id, &columns)?.has_unique();
 
