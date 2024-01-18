@@ -55,10 +55,10 @@ pub struct StandaloneEnv {
 
 impl StandaloneEnv {
     pub async fn init(config: Config) -> anyhow::Result<Arc<Self>> {
-        let energy_monitor = Arc::new(StandaloneEnergyMonitor::new());
+        let control_db = ControlDb::new()?;
+        let energy_monitor = Arc::new(StandaloneEnergyMonitor::new(control_db.clone()));
         let object_db = ObjectDb::init()?;
         let db_inst_ctx_controller = DatabaseInstanceContextController::new(energy_monitor.clone());
-        let control_db = ControlDb::new()?;
         let host_controller = Arc::new(HostController::new(energy_monitor.clone()));
         let client_actor_index = ClientActorIndex::new();
         let (public_key, private_key, public_key_bytes) = get_or_create_keys()?;
@@ -67,7 +67,7 @@ impl StandaloneEnv {
         metrics_registry.register(Box::new(&*WORKER_METRICS)).unwrap();
         metrics_registry.register(Box::new(&*DB_METRICS)).unwrap();
 
-        let this = Arc::new(Self {
+        Ok(Arc::new(Self {
             control_db,
             db_inst_ctx_controller,
             object_db,
@@ -78,9 +78,7 @@ impl StandaloneEnv {
             public_key_bytes,
             metrics_registry,
             config,
-        });
-        energy_monitor.set_standalone_env(this.clone());
-        Ok(this)
+        }))
     }
 }
 
@@ -396,13 +394,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             .set_energy_balance(*identity, EnergyQuanta::new(balance))
     }
     async fn withdraw_energy(&self, identity: &Identity, amount: EnergyQuanta) -> spacetimedb::control_db::Result<()> {
-        assert!(!amount.get().is_negative());
-        let energy_balance = self.control_db.get_energy_balance(identity)?;
-        let energy_balance = energy_balance.unwrap_or(EnergyQuanta::new(0));
-        log::trace!("Withdrawing {} energy from {}", amount.get(), identity);
-        log::trace!("Old balance: {}", energy_balance.get());
-        let new_balance = energy_balance - amount;
-        self.control_db.set_energy_balance(*identity, new_balance)
+        withdraw_energy(&self.control_db, identity, amount)
     }
 
     async fn register_tld(&self, identity: &Identity, tld: Tld) -> spacetimedb::control_db::Result<RegisterTldResult> {
@@ -683,6 +675,20 @@ impl StandaloneEnv {
 
         Ok(mhc)
     }
+}
+
+fn withdraw_energy(
+    control_db: &ControlDb,
+    identity: &Identity,
+    amount: EnergyQuanta,
+) -> spacetimedb::control_db::Result<()> {
+    assert!(!amount.get().is_negative());
+    let energy_balance = control_db.get_energy_balance(identity)?;
+    let energy_balance = energy_balance.unwrap_or(EnergyQuanta::new(0));
+    log::trace!("Withdrawing {} energy from {}", amount.get(), identity);
+    log::trace!("Old balance: {}", energy_balance.get());
+    let new_balance = energy_balance - amount;
+    control_db.set_energy_balance(*identity, new_balance)
 }
 
 pub async fn exec_subcommand(cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {

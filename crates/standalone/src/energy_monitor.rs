@@ -1,28 +1,16 @@
-use crate::StandaloneEnv;
+use spacetimedb::control_db::ControlDb;
 use spacetimedb::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
 use spacetimedb::messages::control_db::Database;
-use spacetimedb_client_api::ControlStateWriteAccess;
 use spacetimedb_lib::Identity;
-use std::{
-    sync::{Arc, Mutex, Weak},
-    time::Duration,
-};
+use std::time::Duration;
 
 pub(crate) struct StandaloneEnergyMonitor {
-    inner: Arc<Mutex<Inner>>,
+    control_db: ControlDb,
 }
 
 impl StandaloneEnergyMonitor {
-    pub fn new() -> Self {
-        Self {
-            inner: Arc::new(Mutex::new(Inner {
-                standalone_env: Weak::new(),
-            })),
-        }
-    }
-
-    pub fn set_standalone_env(&self, standalone_env: Arc<StandaloneEnv>) {
-        self.inner.lock().unwrap().set_standalone_env(standalone_env);
+    pub fn new(control_db: ControlDb) -> Self {
+        Self { control_db }
     }
 
     fn withdraw_energy(&self, identity: Identity, amount: EnergyQuanta) {
@@ -30,15 +18,7 @@ impl StandaloneEnergyMonitor {
         if amount.get() == 0 {
             return;
         }
-        let standalone_env = {
-            self.inner
-                .lock()
-                .unwrap()
-                .standalone_env
-                .upgrade()
-                .expect("Worker env was dropped.")
-        };
-        tokio::spawn(async move { standalone_env.withdraw_energy(&identity, amount).await.unwrap() });
+        crate::withdraw_energy(&self.control_db, &identity, amount).unwrap();
     }
 }
 
@@ -63,25 +43,14 @@ impl EnergyMonitor for StandaloneEnergyMonitor {
     }
 }
 
-impl StandaloneEnergyMonitor {}
-
-struct Inner {
-    standalone_env: Weak<StandaloneEnv>,
-}
-
-impl Inner {
-    pub fn set_standalone_env(&mut self, worker_env: Arc<StandaloneEnv>) {
-        self.standalone_env = Arc::downgrade(&worker_env);
-    }
-
+impl StandaloneEnergyMonitor {
     /// To be used if we ever want to enable reducer budgets in Standalone
-    fn _reducer_budget(&self, fingerprint: &ReducerFingerprint<'_>) -> EnergyQuanta {
-        let standalone_env = self.standalone_env.upgrade().expect("Standalone env was dropped.");
-        let balance = standalone_env
+    fn _reducer_budget(&self, fingerprint: &ReducerFingerprint<'_>) -> ReducerBudget {
+        let balance = self
             .control_db
             .get_energy_balance(&fingerprint.module_identity)
             .unwrap()
             .unwrap_or(EnergyQuanta::ZERO);
-        std::cmp::max(balance, EnergyQuanta::ZERO)
+        ReducerBudget::new(balance.get().clamp(0, u64::MAX.into()) as u64)
     }
 }

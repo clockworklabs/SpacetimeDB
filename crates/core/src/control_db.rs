@@ -17,6 +17,7 @@ use spacetimedb_sats::bsatn;
 #[cfg(test)]
 mod tests;
 
+#[derive(Clone)]
 pub struct ControlDb {
     db: sled::Db,
 }
