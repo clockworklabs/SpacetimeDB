@@ -7,7 +7,6 @@ use crate::execution_context::{ExecutionContext, WorkloadType};
 use crate::host::module_host::DatabaseTableUpdate;
 use crate::sql::compiler::compile_sql;
 use crate::sql::execute::execute_single_sql;
-use crate::sql::query_debug_info::QueryDebugInfo;
 use crate::subscription::subscription::{QuerySet, SupportedQuery};
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -116,11 +115,7 @@ pub fn compile_read_only_query(
         return QuerySet::get_all(relational_db, tx, auth);
     }
 
-    let start = Instant::now();
-    let compiled = compile_sql(relational_db, tx, &input).map(|expr| {
-        record_query_compilation_metrics(WorkloadType::Subscribe, &relational_db.address(), &input, start);
-        expr
-    })?;
+    let compiled = compile_sql(relational_db, tx, &input)?;
     let mut queries = Vec::with_capacity(compiled.len());
     for q in compiled {
         match q {
@@ -137,30 +132,30 @@ pub fn compile_read_only_query(
         }
     }
 
-    let info = QueryDebugInfo::from_source(input);
-
     if !queries.is_empty() {
         Ok(queries
             .into_iter()
-            .map(|query| SupportedQuery::new(query, info.clone()))
+            .map(|query| SupportedQuery::new(query, input.to_string()))
             .collect::<Result<_, _>>()?)
     } else {
         Err(SubscriptionError::Empty.into())
     }
 }
 
+// TODO: Enable query compilation metrics once cardinality has been addressed.
+#[allow(unused)]
 fn record_query_compilation_metrics(workload: WorkloadType, db: &Address, query: &str, start: Instant) {
     let compile_duration = start.elapsed().as_secs_f64();
 
     DB_METRICS
         .rdb_query_compile_time_sec
-        .with_label_values(&workload, db, query)
+        .with_label_values(&workload, db)
         .observe(compile_duration);
 
     let max_compile_duration = *MAX_QUERY_COMPILE_TIME
         .lock()
         .unwrap()
-        .entry((*db, workload, query.to_owned()))
+        .entry((*db, workload))
         .and_modify(|max| {
             if compile_duration > *max {
                 *max = compile_duration;
@@ -170,7 +165,7 @@ fn record_query_compilation_metrics(workload: WorkloadType, db: &Address, query:
 
     DB_METRICS
         .rdb_query_compile_time_sec_max
-        .with_label_values(&workload, db, query)
+        .with_label_values(&workload, db)
         .set(max_compile_duration);
 }
 

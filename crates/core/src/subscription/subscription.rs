@@ -33,7 +33,6 @@ use crate::db::db_metrics::{DB_METRICS, MAX_QUERY_CPU_TIME};
 use crate::db::relational_db::Tx;
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::{ExecutionContext, WorkloadType};
-use crate::sql::query_debug_info::QueryDebugInfo;
 use crate::subscription::query::{run_query, to_mem_table_with_op_type, OP_TYPE_FIELD_NAME};
 use crate::{
     client::{ClientActorId, ClientConnectionSender},
@@ -87,13 +86,12 @@ impl Subscription {
 pub struct SupportedQuery {
     kind: query::Supported,
     expr: QueryExpr,
-    info: QueryDebugInfo,
 }
 
 impl SupportedQuery {
-    pub fn new(expr: QueryExpr, info: QueryDebugInfo) -> Result<Self, DBError> {
-        let kind = query::classify(&expr).ok_or_else(|| SubscriptionError::Unsupported(info.clone()))?;
-        Ok(Self { kind, expr, info })
+    pub fn new(expr: QueryExpr, text: String) -> Result<Self, DBError> {
+        let kind = query::classify(&expr).ok_or(SubscriptionError::Unsupported(text))?;
+        Ok(Self { kind, expr })
     }
 
     pub fn kind(&self) -> query::Supported {
@@ -111,11 +109,7 @@ impl TryFrom<QueryExpr> for SupportedQuery {
 
     fn try_from(expr: QueryExpr) -> Result<Self, Self::Error> {
         let kind = query::classify(&expr).context("Unsupported query expression")?;
-        Ok(Self {
-            kind,
-            expr,
-            info: QueryDebugInfo::from_source(""),
-        })
+        Ok(Self { kind, expr })
     }
 }
 
@@ -188,19 +182,15 @@ fn evaluator_for_secondary_updates(
     db: &RelationalDB,
     auth: AuthCtx,
     inserts: bool,
-) -> impl Fn(&mut Tx, &QueryExpr, &QueryDebugInfo) -> Result<HashMap<PrimaryKey, Op>, DBError> + '_ {
-    move |tx, query, info| {
+) -> impl Fn(&mut Tx, &QueryExpr) -> Result<HashMap<PrimaryKey, Op>, DBError> + '_ {
+    move |tx, query| {
         let mut out = HashMap::new();
         // If we are evaluating inserts, the op type should be 1.
         // Otherwise we are evaluating deletes, and the op type should be 0.
         let op_type = if inserts { 1 } else { 0 };
-        for MemTable { data, .. } in run_query(
-            &ExecutionContext::incremental_update(db.address(), Some(info)),
-            db,
-            tx,
-            query,
-            auth,
-        )? {
+        for MemTable { data, .. } in
+            run_query(&ExecutionContext::incremental_update(db.address()), db, tx, query, auth)?
+        {
             for row in data {
                 let row_pk = pk_for_row(&row);
                 let row = row.data;
@@ -218,16 +208,12 @@ fn evaluator_for_secondary_updates(
 fn evaluator_for_primary_updates(
     db: &RelationalDB,
     auth: AuthCtx,
-) -> impl Fn(&mut Tx, &QueryExpr, &QueryDebugInfo) -> Result<HashMap<PrimaryKey, Op>, DBError> + '_ {
-    move |tx, query, info| {
+) -> impl Fn(&mut Tx, &QueryExpr) -> Result<HashMap<PrimaryKey, Op>, DBError> + '_ {
+    move |tx, query| {
         let mut out = HashMap::new();
-        for MemTable { data, head, .. } in run_query(
-            &ExecutionContext::incremental_update(db.address(), Some(info)),
-            db,
-            tx,
-            query,
-            auth,
-        )? {
+        for MemTable { data, head, .. } in
+            run_query(&ExecutionContext::incremental_update(db.address()), db, tx, query, auth)?
+        {
             // Remove the special __op_type field before computing each row's primary key.
             let pos_op_type = head.find_pos_by_name(OP_TYPE_FIELD_NAME).unwrap_or_else(|| {
                 panic!(
@@ -270,7 +256,6 @@ impl QuerySet {
             .map(|src| SupportedQuery {
                 kind: query::Supported::Scan,
                 expr: QueryExpr::new(src),
-                info: QueryDebugInfo::from_source(format!("SELECT * FROM {}", src.table_name)),
             })
             .collect();
 
@@ -295,7 +280,7 @@ impl QuerySet {
         let mut seen = HashSet::new();
 
         let eval = evaluator_for_primary_updates(db, auth);
-        for SupportedQuery { kind, expr, info } in self {
+        for SupportedQuery { kind, expr, .. } in self {
             use query::Supported::*;
             let start = Instant::now();
             match kind {
@@ -314,7 +299,7 @@ impl QuerySet {
                         let plan = query::to_mem_table(expr.clone(), table);
 
                         // Evaluate the new plan and capture the new row operations
-                        for op in eval(tx, &plan, info)?
+                        for op in eval(tx, &plan)?
                             .into_iter()
                             .filter_map(|(row_pk, op)| seen.insert((table.table_id, row_pk)).then(|| op.into()))
                         {
@@ -323,7 +308,7 @@ impl QuerySet {
                     }
                 }
                 Semijoin => {
-                    if let Some(plan) = IncrementalJoin::new(expr, info, database_update.tables.iter())? {
+                    if let Some(plan) = IncrementalJoin::new(expr, database_update.tables.iter())? {
                         let table = plan.left_table();
                         let table_id = table.table_id;
                         let header = &table.head;
@@ -343,7 +328,7 @@ impl QuerySet {
                     }
                 }
             }
-            record_query_duration_metrics(WorkloadType::Update, &db.address(), info.source(), start);
+            record_query_duration_metrics(WorkloadType::Update, &db.address(), start);
         }
         for (table_id, (table_name, ops)) in table_ops.into_iter().filter(|(_, (_, ops))| !ops.is_empty()) {
             output.tables.push(DatabaseTableUpdate {
@@ -368,20 +353,14 @@ impl QuerySet {
         let mut table_ops = HashMap::new();
         let mut seen = HashSet::new();
 
-        for SupportedQuery { expr, info, .. } in self {
+        for SupportedQuery { expr, .. } in self {
             if let Some(t) = expr.source.get_db_table() {
                 let start = Instant::now();
                 // Get the TableOps for this table
                 let (_, table_row_operations) = table_ops
                     .entry(t.table_id)
                     .or_insert_with(|| (t.head.table_name.clone(), vec![]));
-                for table in run_query(
-                    &ExecutionContext::subscribe(db.address(), Some(info)),
-                    db,
-                    tx,
-                    expr,
-                    auth,
-                )? {
+                for table in run_query(&ExecutionContext::subscribe(db.address()), db, tx, expr, auth)? {
                     for row in table.data {
                         let row_pk = pk_for_row(&row);
 
@@ -400,7 +379,7 @@ impl QuerySet {
                         });
                     }
                 }
-                record_query_duration_metrics(WorkloadType::Subscribe, &db.address(), info.source(), start);
+                record_query_duration_metrics(WorkloadType::Subscribe, &db.address(), start);
             }
         }
         for (table_id, (table_name, ops)) in table_ops.into_iter().filter(|(_, (_, ops))| !ops.is_empty()) {
@@ -414,18 +393,18 @@ impl QuerySet {
     }
 }
 
-fn record_query_duration_metrics(workload: WorkloadType, db: &Address, query: &str, start: Instant) {
+fn record_query_duration_metrics(workload: WorkloadType, db: &Address, start: Instant) {
     let query_duration = start.elapsed().as_secs_f64();
 
     DB_METRICS
         .rdb_query_cpu_time_sec
-        .with_label_values(&workload, db, query)
+        .with_label_values(&workload, db)
         .observe(query_duration);
 
     let max_query_duration = *MAX_QUERY_CPU_TIME
         .lock()
         .unwrap()
-        .entry((*db, workload, query.to_owned()))
+        .entry((*db, workload))
         .and_modify(|max| {
             if query_duration > *max {
                 *max = query_duration;
@@ -435,7 +414,7 @@ fn record_query_duration_metrics(workload: WorkloadType, db: &Address, query: &s
 
     DB_METRICS
         .rdb_query_cpu_time_sec_max
-        .with_label_values(&workload, db, query)
+        .with_label_values(&workload, db)
         .set(max_query_duration);
 }
 
@@ -462,7 +441,6 @@ impl From<Op> for TableOp {
 /// Helper for evaluating a [`query::Supported::Semijoin`].
 struct IncrementalJoin<'a> {
     join: &'a IndexJoin,
-    info: &'a QueryDebugInfo,
     index_side: JoinSide<'a>,
     probe_side: JoinSide<'a>,
 }
@@ -513,7 +491,6 @@ impl<'a> IncrementalJoin<'a> {
     /// An error is returned if the expression is not well-formed.
     pub fn new(
         join: &'a QueryExpr,
-        info: &'a QueryDebugInfo,
         updates: impl Iterator<Item = &'a DatabaseTableUpdate>,
     ) -> anyhow::Result<Option<Self>> {
         if join.query.len() != 1 {
@@ -579,7 +556,6 @@ impl<'a> IncrementalJoin<'a> {
 
         Ok(Some(Self {
             join,
-            info,
             index_side,
             probe_side,
         }))
@@ -632,9 +608,9 @@ impl<'a> IncrementalJoin<'a> {
             // A query evaluator for inserts
             let mut eval = |query, is_primary| {
                 if is_primary {
-                    evaluator_for_primary_updates(db, *auth)(tx, query, self.info)
+                    evaluator_for_primary_updates(db, *auth)(tx, query)
                 } else {
-                    evaluator_for_secondary_updates(db, *auth, true)(tx, query, self.info)
+                    evaluator_for_secondary_updates(db, *auth, true)(tx, query)
                 }
             };
 
@@ -660,9 +636,9 @@ impl<'a> IncrementalJoin<'a> {
             // A query evaluator for deletes
             let mut eval = |query, is_primary| {
                 if is_primary {
-                    evaluator_for_primary_updates(db, *auth)(tx, query, self.info)
+                    evaluator_for_primary_updates(db, *auth)(tx, query)
                 } else {
-                    evaluator_for_secondary_updates(db, *auth, false)(tx, query, self.info)
+                    evaluator_for_secondary_updates(db, *auth, false)(tx, query)
                 }
             };
 

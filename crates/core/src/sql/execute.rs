@@ -12,8 +12,6 @@ use crate::execution_context::ExecutionContext;
 use crate::sql::compiler::compile_sql;
 use crate::vm::{DbProgram, TxMode};
 
-use super::query_debug_info::QueryDebugInfo;
-
 pub struct StmtResult {
     pub schema: ProductType,
     pub rows: Vec<ProductValue>,
@@ -73,7 +71,6 @@ pub fn execute_single_sql(
 
 #[tracing::instrument(skip_all)]
 pub fn execute_sql_mut_tx(
-    cx: &ExecutionContext,
     db: &RelationalDB,
     tx: &mut MutTx,
     ast: Vec<CrudExpr>,
@@ -81,7 +78,8 @@ pub fn execute_sql_mut_tx(
 ) -> Result<Vec<MemTable>, DBError> {
     let total = ast.len();
     let mut tx: TxMode = tx.into();
-    let p = &mut DbProgram::new(cx, db, &mut tx, auth);
+    let ctx = ExecutionContext::sql(db.address());
+    let p = &mut DbProgram::new(&ctx, db, &mut tx, auth);
     let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
 
     let mut result = Vec::with_capacity(total);
@@ -93,14 +91,9 @@ pub fn execute_sql_mut_tx(
 ///
 /// Evaluates `ast` and accordingly triggers mutable or read tx to execute
 #[tracing::instrument(skip_all)]
-pub fn execute_sql(
-    db: &RelationalDB,
-    ast: Vec<CrudExpr>,
-    query_debug_info: Option<&QueryDebugInfo>,
-    auth: AuthCtx,
-) -> Result<Vec<MemTable>, DBError> {
+pub fn execute_sql(db: &RelationalDB, ast: Vec<CrudExpr>, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
     let total = ast.len();
-    let ctx = ExecutionContext::sql(db.address(), query_debug_info);
+    let ctx = ExecutionContext::sql(db.address());
     let mut result = Vec::with_capacity(total);
     match CrudExpr::is_reads(&ast) {
         false => db.with_auto_commit(&ctx, |mut_tx| {
@@ -123,10 +116,9 @@ pub fn execute_sql(
 /// Run the `SQL` string using the `auth` credentials
 #[tracing::instrument(skip_all)]
 pub fn run(db: &RelationalDB, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
-    let query_info = &QueryDebugInfo::from_source(sql_text);
-    let ctx = &ExecutionContext::sql(db.address(), Some(query_info));
+    let ctx = &ExecutionContext::sql(db.address());
     let ast = db.with_read_only(ctx, |tx| compile_sql(db, tx, sql_text))?;
-    execute_sql(db, ast, Some(&QueryDebugInfo::from_source(sql_text)), auth)
+    execute_sql(db, ast, auth)
 }
 
 #[cfg(test)]

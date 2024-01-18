@@ -56,7 +56,7 @@ impl TestCounter {
         let lock = self.inner.lock().expect("TestCounterInner Mutex is poisoned");
         let (lock, timeout_result) = self
             .wait_until_done
-            .wait_timeout_while(lock, Duration::from_secs(5), |inner| {
+            .wait_timeout_while(lock, Duration::from_secs(30), |inner| {
                 inner.outcomes.len() != inner.registered.len()
             })
             .expect("TestCounterInner Mutex is poisoned");

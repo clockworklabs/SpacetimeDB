@@ -5,7 +5,6 @@ use spacetimedb_sats::{impl_serialize, WithTypespace};
 pub mod address;
 pub mod filter;
 pub mod identity;
-pub mod metrics;
 pub mod name;
 pub mod operator;
 pub mod primary_key;

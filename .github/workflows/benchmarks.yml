@@ -127,12 +127,6 @@ jobs:
       #        })
       #      }
 
-      - name: PR; compare benchmarks
-        if: ${{ env.PR_NUMBER }}
-        working-directory: crates/bench/
-        run: |
-          cargo run --bin summarize markdown-report branch.json --report-name report
-
       # this will work for both PR and master
       - name: Upload criterion results to DO spaces
         uses: shallwefootball/s3-upload-action@master

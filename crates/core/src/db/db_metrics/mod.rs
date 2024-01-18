@@ -3,47 +3,17 @@ use std::{collections::HashMap, sync::Mutex};
 use crate::execution_context::WorkloadType;
 use crate::host::AbiCall;
 use once_cell::sync::Lazy;
-use prometheus::{GaugeVec, Histogram, HistogramVec, IntCounterVec, IntGaugeVec};
+use prometheus::{GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
 use spacetimedb_lib::Address;
 use spacetimedb_metrics::metrics_group;
 
 metrics_group!(
     #[non_exhaustive]
     pub struct DbMetrics {
-        #[name = spacetime_tdb_insert_time]
-        #[help = "Time time it takes for the transactional store to perform an insert"]
-        pub tdb_insert_time: Histogram,
-
-        #[name = spacetime_tdb_delete_time]
-        #[help = "Time time it takes for the transactional store to perform a delete"]
-        pub tdb_delete_time: Histogram,
-
-        #[name = spacetime_tdb_seek_time]
-        #[help = "Time time it takes for the transactional store to perform a seek"]
-        pub tdb_seek_time: Histogram,
-
-        #[name = spacetime_tdb_scan_time]
-        #[help = "Time time it takes for the transactional store to perform a scan"]
-        pub tdb_scan_time: Histogram,
-
-        #[name = spacetime_tdb_commit_time]
-        #[help = "Time time it takes for the transactional store to perform a Tx commit"]
-        pub tdb_commit_time: Histogram,
-
-        #[name = spacetime_rdb_create_table_time]
-        #[help = "The time it takes to create a table"]
-        #[labels(table_name: str)]
-        pub rdb_create_table_time: HistogramVec,
-
         #[name = spacetime_rdb_drop_table_time]
         #[help = "The time spent dropping a table"]
         #[labels(table_id: u32)]
         pub rdb_drop_table_time: HistogramVec,
-
-        #[name = spacetime_rdb_iter_time]
-        #[help = "The time spent iterating a table"]
-        #[labels(table_id: u32)]
-        pub rdb_iter_time: HistogramVec,
 
         #[name = spacetime_rdb_insert_row_time]
         #[help = "The time spent inserting into a table"]
@@ -54,6 +24,11 @@ metrics_group!(
         #[help = "The time spent deleting values in a set from a table"]
         #[labels(table_id: u32)]
         pub rdb_delete_by_rel_time: HistogramVec,
+
+        #[name = spacetime_num_table_rows]
+        #[help = "The number of rows in a table"]
+        #[labels(db: Address, table_id: u32, table_name: str)]
+        pub rdb_num_table_rows: IntGaugeVec,
 
         #[name = spacetime_num_rows_inserted_cumulative]
         #[help = "The cumulative number of rows inserted into a table"]
@@ -108,7 +83,7 @@ metrics_group!(
 
         #[name = spacetime_query_cpu_time_sec]
         #[help = "The time spent executing a query (in seconds)"]
-        #[labels(txn_type: WorkloadType, db: Address, query: str)]
+        #[labels(txn_type: WorkloadType, db: Address)]
         #[buckets(
             1e-6, 5e-6, 1e-5, 5e-5, 1e-4, 5e-4, 1e-3, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0
         )]
@@ -116,12 +91,12 @@ metrics_group!(
 
         #[name = spacetime_query_cpu_time_sec_max]
         #[help = "The cpu time of the longest running query (in seconds)"]
-        #[labels(txn_type: WorkloadType, db: Address, query: str)]
+        #[labels(txn_type: WorkloadType, db: Address)]
         pub rdb_query_cpu_time_sec_max: GaugeVec,
 
         #[name = spacetime_query_compile_time_sec]
         #[help = "The time spent compiling a query (in seconds)"]
-        #[labels(txn_type: WorkloadType, db: Address, query: str)]
+        #[labels(txn_type: WorkloadType, db: Address)]
         #[buckets(
             1e-6, 5e-6, 1e-5, 5e-5, 1e-4, 5e-4, 1e-3, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0
         )]
@@ -129,7 +104,7 @@ metrics_group!(
 
         #[name = spacetime_query_compile_time_sec_max]
         #[help = "The maximum query compilation time (in seconds)"]
-        #[labels(txn_type: WorkloadType, db: Address, query: str)]
+        #[labels(txn_type: WorkloadType, db: Address)]
         pub rdb_query_compile_time_sec_max: GaugeVec,
 
         #[name = spacetime_wasm_abi_call_duration_sec]
@@ -157,11 +132,12 @@ metrics_group!(
     }
 );
 
-type Triple = (Address, WorkloadType, String);
+type ReducerLabel = (Address, WorkloadType, String);
+type AddressLabel = (Address, WorkloadType);
 
-pub static MAX_TX_CPU_TIME: Lazy<Mutex<HashMap<Triple, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
-pub static MAX_QUERY_CPU_TIME: Lazy<Mutex<HashMap<Triple, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
-pub static MAX_QUERY_COMPILE_TIME: Lazy<Mutex<HashMap<Triple, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+pub static MAX_TX_CPU_TIME: Lazy<Mutex<HashMap<ReducerLabel, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+pub static MAX_QUERY_CPU_TIME: Lazy<Mutex<HashMap<AddressLabel, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+pub static MAX_QUERY_COMPILE_TIME: Lazy<Mutex<HashMap<AddressLabel, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 pub static DB_METRICS: Lazy<DbMetrics> = Lazy::new(DbMetrics::new);
 
 pub fn reset_counters() {
@@ -171,7 +147,4 @@ pub fn reset_counters() {
     // Reset max query durations
     DB_METRICS.rdb_query_cpu_time_sec_max.0.reset();
     MAX_QUERY_CPU_TIME.lock().unwrap().clear();
-    // Reset max query compile durations
-    DB_METRICS.rdb_query_compile_time_sec_max.0.reset();
-    MAX_QUERY_COMPILE_TIME.lock().unwrap().clear();
 }
