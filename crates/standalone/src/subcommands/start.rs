@@ -226,7 +226,7 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
 
     let ctx = spacetimedb_client_api::ArcEnv(StandaloneEnv::init(config).await?);
 
-    let service = router().with_state(ctx);
+    let service = router(ctx);
 
     let tcp = TcpListener::bind(listen_addr).await?;
     log::debug!("Starting SpacetimeDB listening on {}", tcp.local_addr().unwrap());
