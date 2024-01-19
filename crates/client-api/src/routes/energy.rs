@@ -7,7 +7,7 @@ use serde_json::json;
 use spacetimedb::energy::EnergyQuanta;
 use spacetimedb_lib::Identity;
 
-use crate::auth::SpacetimeAuthHeader;
+use crate::auth::{auth_middleware, SpacetimeAuthRequired};
 use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
 
 use super::identity::IdentityForUrl;
@@ -32,11 +32,8 @@ pub struct AddEnergyQueryParams {
 pub async fn add_energy<S: ControlStateDelegate>(
     State(ctx): State<S>,
     Query(AddEnergyQueryParams { amount }): Query<AddEnergyQueryParams>,
-    auth: SpacetimeAuthHeader,
+    SpacetimeAuthRequired(auth): SpacetimeAuthRequired,
 ) -> axum::response::Result<impl IntoResponse> {
-    let Some(auth) = auth.auth else {
-        return Err(StatusCode::UNAUTHORIZED.into());
-    };
     // Nb.: Negative amount withdraws
     let amount = amount.map(|s| s.parse::<u128>()).transpose().map_err(|e| {
         log::error!("Failed to parse amount: {e:?}");
@@ -85,14 +82,11 @@ pub async fn set_energy_balance<S: ControlStateDelegate>(
     State(ctx): State<S>,
     Path(IdentityParams { identity }): Path<IdentityParams>,
     Query(SetEnergyBalanceQueryParams { balance }): Query<SetEnergyBalanceQueryParams>,
-    auth: SpacetimeAuthHeader,
+    SpacetimeAuthRequired(auth): SpacetimeAuthRequired,
 ) -> axum::response::Result<impl IntoResponse> {
     // TODO(cloutiertyler): For the Testnet no one shall be authorized to set the energy balance
     // of an identity. Each identity will begin with a default balance and they cannot be refilled.
     // This will be a natural rate limiter until we can begin to sell energy.
-    let Some(auth) = auth.auth else {
-        return Err(StatusCode::UNAUTHORIZED.into());
-    };
 
     // No one is able to be the dummy identity so this always returns unauthorized.
     if auth.identity != Identity::__dummy() {
@@ -130,13 +124,17 @@ pub async fn set_energy_balance<S: ControlStateDelegate>(
     Ok(axum::Json(response_json))
 }
 
-pub fn router<S>() -> axum::Router<S>
+pub fn router<S>(ctx: S) -> axum::Router<S>
 where
     S: NodeDelegate + ControlStateDelegate + Clone + 'static,
 {
     use axum::routing::{get, post, put};
+    let auth_middleware = axum::middleware::from_fn_with_state(ctx, auth_middleware::<S>);
     axum::Router::new()
         .route("/:identity", get(get_energy_balance::<S>))
-        .route("/:identity", post(set_energy_balance::<S>))
-        .route("/:identity", put(add_energy::<S>))
+        .route(
+            "/:identity",
+            post(set_energy_balance::<S>).route_layer(auth_middleware.clone()),
+        )
+        .route("/:identity", put(add_energy::<S>).route_layer(auth_middleware))
 }

@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
+use axum::Extension;
 use axum_extra::TypedHeader;
 use futures::{SinkExt, StreamExt};
 use http::{HeaderValue, StatusCode};
@@ -15,7 +16,7 @@ use spacetimedb_lib::address::AddressForUrl;
 use spacetimedb_lib::Address;
 use tokio::sync::mpsc;
 
-use crate::auth::{SpacetimeAuthHeader, SpacetimeIdentity, SpacetimeIdentityToken};
+use crate::auth::SpacetimeAuth;
 use crate::util::websocket::{
     CloseCode, CloseFrame, Message as WsMessage, WebSocketConfig, WebSocketStream, WebSocketUpgrade,
 };
@@ -50,14 +51,12 @@ pub async fn handle_websocket<S>(
     Path(SubscribeParams { name_or_address }): Path<SubscribeParams>,
     Query(SubscribeQueryParams { client_address }): Query<SubscribeQueryParams>,
     forwarded_for: Option<TypedHeader<XForwardedFor>>,
-    auth: SpacetimeAuthHeader,
+    Extension(auth): Extension<SpacetimeAuth>,
     ws: WebSocketUpgrade,
 ) -> axum::response::Result<impl IntoResponse>
 where
     S: NodeDelegate + ControlStateDelegate,
 {
-    let auth = auth.get_or_create(&ctx).await?;
-
     let client_address = client_address
         .map(Address::from)
         .unwrap_or_else(generate_random_address);
@@ -157,11 +156,7 @@ where
         }
     });
 
-    Ok((
-        TypedHeader(SpacetimeIdentity(auth.identity)),
-        TypedHeader(SpacetimeIdentityToken(auth.creds)),
-        res,
-    ))
+    Ok(res)
 }
 
 const LIVELINESS_TIMEOUT: Duration = Duration::from_secs(60);

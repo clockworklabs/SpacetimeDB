@@ -7,14 +7,17 @@ use spacetimedb_client_api::{
 };
 
 #[allow(clippy::let_and_return)]
-pub fn router<S>() -> axum::Router<S>
+pub fn router<S>(ctx: S) -> axum::Router<()>
 where
     S: NodeDelegate + ControlStateDelegate + Clone + 'static,
 {
     let router = axum::Router::new()
-        .nest("/database", database::control_routes().merge(database::worker_routes()))
-        .nest("/identity", identity::router())
-        .nest("/energy", energy::router())
+        .nest(
+            "/database",
+            database::control_routes(ctx.clone()).merge(database::worker_routes(ctx.clone())),
+        )
+        .nest("/identity", identity::router(ctx.clone()))
+        .nest("/energy", energy::router(ctx.clone()))
         .nest("/prometheus", prometheus::router())
         .nest("/metrics", metrics::router());
 
@@ -23,5 +26,5 @@ where
         .allow_methods(Any)
         .allow_origin(Any);
 
-    router.layer(cors)
+    router.layer(cors).with_state(ctx)
 }
