@@ -1,5 +1,7 @@
 use axum::extract::{Path, Query, State};
-use axum::response::{IntoResponse, Response};
+use axum::response::IntoResponse;
+use axum::Extension;
+use http::header::CONTENT_TYPE;
 use http::StatusCode;
 use serde::{Deserialize, Serialize};
 
@@ -8,7 +10,7 @@ use spacetimedb::messages::control_db::IdentityEmail;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::{Address, Identity};
 
-use crate::auth::{SpacetimeAuth, SpacetimeAuthHeader};
+use crate::auth::{auth_middleware, SpacetimeAuth, SpacetimeAuthRequired};
 use crate::{log_and_500, ControlStateDelegate, ControlStateReadAccess, ControlStateWriteAccess, NodeDelegate};
 
 #[derive(Deserialize)]
@@ -111,10 +113,9 @@ pub async fn set_email<S: ControlStateWriteAccess>(
     State(ctx): State<S>,
     Path(SetEmailParams { identity }): Path<SetEmailParams>,
     Query(SetEmailQueryParams { email }): Query<SetEmailQueryParams>,
-    auth: SpacetimeAuthHeader,
+    Extension(auth): Extension<SpacetimeAuth>,
 ) -> axum::response::Result<impl IntoResponse> {
     let identity = identity.into();
-    let auth = auth.get().ok_or(StatusCode::BAD_REQUEST)?;
 
     if auth.identity != identity {
         return Err(StatusCode::UNAUTHORIZED.into());
@@ -127,10 +128,9 @@ pub async fn set_email<S: ControlStateWriteAccess>(
 pub async fn check_email<S: ControlStateReadAccess>(
     State(ctx): State<S>,
     Path(SetEmailParams { identity }): Path<SetEmailParams>,
-    auth: SpacetimeAuthHeader,
+    Extension(auth): Extension<SpacetimeAuth>,
 ) -> axum::response::Result<impl IntoResponse> {
     let identity = identity.into();
-    let auth = auth.get().ok_or(StatusCode::BAD_REQUEST)?;
 
     if auth.identity != identity {
         return Err(StatusCode::UNAUTHORIZED.into());
@@ -181,15 +181,10 @@ pub struct WebsocketTokenResponse {
 
 pub async fn create_websocket_token<S: NodeDelegate>(
     State(ctx): State<S>,
-    auth: SpacetimeAuthHeader,
+    SpacetimeAuthRequired(auth): SpacetimeAuthRequired,
 ) -> axum::response::Result<impl IntoResponse> {
-    match auth.auth {
-        Some(auth) => {
-            let token = encode_token_with_expiry(ctx.private_key(), auth.identity, Some(60)).map_err(log_and_500)?;
-            Ok(axum::Json(WebsocketTokenResponse { token }))
-        }
-        None => Err(StatusCode::UNAUTHORIZED)?,
-    }
+    let token = encode_token_with_expiry(ctx.private_key(), auth.identity, Some(60)).map_err(log_and_500)?;
+    Ok(axum::Json(WebsocketTokenResponse { token }))
 }
 
 #[derive(Deserialize)]
@@ -199,39 +194,39 @@ pub struct ValidateTokenParams {
 
 pub async fn validate_token(
     Path(ValidateTokenParams { identity }): Path<ValidateTokenParams>,
-    auth: SpacetimeAuthHeader,
+    SpacetimeAuthRequired(auth): SpacetimeAuthRequired,
 ) -> axum::response::Result<impl IntoResponse> {
     let identity = Identity::from(identity);
-    if let Some(auth) = auth.auth {
-        if auth.identity == identity {
-            Ok(StatusCode::NO_CONTENT)
-        } else {
-            Err(StatusCode::BAD_REQUEST.into())
-        }
-    } else {
-        Err(StatusCode::UNAUTHORIZED.into())
+
+    if auth.identity != identity {
+        return Err(StatusCode::BAD_REQUEST.into());
     }
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn get_public_key<S: NodeDelegate>(State(ctx): State<S>) -> axum::response::Result<impl IntoResponse> {
-    let res = Response::builder()
-        .header("Content-Type", "application/pem-certificate-chain")
-        .body(())
-        .map_err(log_and_500)?;
-    Ok((res, ctx.public_key_bytes().to_owned()))
+    Ok((
+        [(CONTENT_TYPE, "application/pem-certificate-chain")],
+        ctx.public_key_bytes().to_owned(),
+    ))
 }
 
-pub fn router<S>() -> axum::Router<S>
+pub fn router<S>(ctx: S) -> axum::Router<S>
 where
     S: NodeDelegate + ControlStateDelegate + Clone + 'static,
 {
     use axum::routing::{get, post};
+    let auth_middleware = axum::middleware::from_fn_with_state(ctx, auth_middleware::<S>);
     axum::Router::new()
         .route("/", get(get_identity::<S>).post(create_identity::<S>))
         .route("/public-key", get(get_public_key::<S>))
         .route("/websocket_token", post(create_websocket_token::<S>))
         .route("/:identity/verify", get(validate_token))
-        .route("/:identity/set-email", post(set_email::<S>))
-        .route("/:identity/emails", get(check_email::<S>))
+        .route(
+            "/:identity/set-email",
+            post(set_email::<S>).route_layer(auth_middleware.clone()),
+        )
+        .route("/:identity/emails", get(check_email::<S>).route_layer(auth_middleware))
         .route("/:identity/databases", get(get_databases::<S>))
 }

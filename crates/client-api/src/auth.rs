@@ -1,6 +1,7 @@
 use std::time::Duration;
 
-use axum::extract::Query;
+use axum::extract::{Query, Request, State};
+use axum::middleware::Next;
 use axum::response::IntoResponse;
 use axum_extra::typed_header::TypedHeader;
 use headers::{authorization, HeaderMapExt};
@@ -98,7 +99,7 @@ impl SpacetimeAuth {
 }
 
 pub struct SpacetimeAuthHeader {
-    pub auth: Option<SpacetimeAuth>,
+    auth: Option<SpacetimeAuth>,
 }
 
 #[async_trait::async_trait]
@@ -162,6 +163,18 @@ impl SpacetimeAuthHeader {
             Some(auth) => Ok(auth),
             None => SpacetimeAuth::alloc(ctx).await,
         }
+    }
+}
+
+pub struct SpacetimeAuthRequired(pub SpacetimeAuth);
+
+#[async_trait::async_trait]
+impl<S: NodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for SpacetimeAuthRequired {
+    type Rejection = AuthorizationRejection;
+    async fn from_request_parts(parts: &mut request::Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let auth = SpacetimeAuthHeader::from_request_parts(parts, state).await?;
+        let auth = auth.get().ok_or(AuthorizationRejection::Required)?;
+        Ok(SpacetimeAuthRequired(auth))
     }
 }
 
@@ -229,4 +242,16 @@ impl headers::Header for SpacetimeExecutionDurationMicros {
     fn encode<E: Extend<HeaderValue>>(&self, values: &mut E) {
         values.extend([(self.0.as_micros() as u64).into()])
     }
+}
+
+pub async fn auth_middleware<S: ControlStateDelegate + NodeDelegate>(
+    State(worker_ctx): State<S>,
+    auth: SpacetimeAuthHeader,
+    mut req: Request,
+    next: Next,
+) -> axum::response::Result<impl IntoResponse> {
+    let auth = auth.get_or_create(&worker_ctx).await?;
+    req.extensions_mut().insert(auth.clone());
+    let resp = next.run(req).await;
+    Ok((auth.into_headers(), resp))
 }
