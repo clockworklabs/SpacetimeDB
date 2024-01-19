@@ -4,11 +4,10 @@ use anyhow::{anyhow, Context};
 
 use crate::address::Address;
 
-use crate::energy::EnergyQuanta;
 use crate::hash::hash_bytes;
 use crate::identity::Identity;
 use crate::messages::control_db::{Database, DatabaseInstance, EnergyBalance, IdentityEmail, Node};
-use crate::stdb_path;
+use crate::{energy, stdb_path};
 
 use spacetimedb_lib::name::{DomainName, DomainParsingError, InsertDomainResult, RegisterTldResult, Tld, TldRef};
 use spacetimedb_lib::recovery::RecoveryCode;
@@ -559,7 +558,7 @@ impl ControlDb {
     /// Return the current budget for a given identity as stored in the db.
     /// Note: this function is for the stored budget only and should *only* be called by functions in
     /// `control_budget`, where a cached copy is stored along with business logic for managing it.
-    pub fn get_energy_balance(&self, identity: &Identity) -> Result<Option<EnergyQuanta>> {
+    pub fn get_energy_balance(&self, identity: &Identity) -> Result<Option<energy::EnergyBalance>> {
         let tree = self.db.open_tree("energy_budget")?;
         let value = tree.get(identity.as_bytes())?;
         if let Some(value) = value {
@@ -571,7 +570,7 @@ impl ControlDb {
                 }));
             };
             let balance = i128::from_be_bytes(arr);
-            Ok(Some(EnergyQuanta::new(balance)))
+            Ok(Some(energy::EnergyBalance::new(balance)))
         } else {
             Ok(None)
         }
@@ -580,7 +579,7 @@ impl ControlDb {
     /// Update the stored current budget for a identity.
     /// Note: this function is for the stored budget only and should *only* be called by functions in
     /// `control_budget`, where a cached copy is stored along with business logic for managing it.
-    pub fn set_energy_balance(&self, identity: Identity, energy_balance: EnergyQuanta) -> Result<()> {
+    pub fn set_energy_balance(&self, identity: Identity, energy_balance: energy::EnergyBalance) -> Result<()> {
         let tree = self.db.open_tree("energy_budget")?;
         tree.insert(identity.as_bytes(), &energy_balance.get().to_be_bytes())?;
 

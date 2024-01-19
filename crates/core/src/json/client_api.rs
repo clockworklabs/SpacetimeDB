@@ -85,7 +85,7 @@ pub struct EventJson {
     pub status: String, // committed, failed
     pub caller_identity: Identity,
     pub function_call: FunctionCallJson,
-    pub energy_quanta_used: i128,
+    pub energy_quanta_used: u128,
     pub message: String,
     pub caller_address: Address,
 }

@@ -1,5 +1,5 @@
 use spacetimedb::control_db::ControlDb;
-use spacetimedb::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
+use spacetimedb::energy::{EnergyBalance, EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
 use spacetimedb::messages::control_db::Database;
 use spacetimedb_lib::Identity;
 use std::time::Duration;
@@ -14,7 +14,6 @@ impl StandaloneEnergyMonitor {
     }
 
     fn withdraw_energy(&self, identity: Identity, amount: EnergyQuanta) {
-        assert!(!amount.get().is_negative());
         if amount.get() == 0 {
             return;
         }
@@ -50,7 +49,9 @@ impl StandaloneEnergyMonitor {
             .control_db
             .get_energy_balance(&fingerprint.module_identity)
             .unwrap()
-            .unwrap_or(EnergyQuanta::ZERO);
-        ReducerBudget::new(balance.get().clamp(0, u64::MAX.into()) as u64)
+            .unwrap_or(EnergyBalance::ZERO);
+        // clamp it
+        let balance = balance.to_energy_quanta().unwrap_or(EnergyQuanta::ZERO);
+        ReducerBudget::from_energy(balance).unwrap_or(ReducerBudget::MAX)
     }
 }

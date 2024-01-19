@@ -96,6 +96,10 @@ impl WasmtimeFuel {
 
 impl From<ReducerBudget> for WasmtimeFuel {
     fn from(v: ReducerBudget) -> Self {
+        // ReducerBudget being u64 is load-bearing here - if it was u128 and v was ReducerBudget::MAX,
+        // truncating this result would mean that with set_store_fuel(budget.into()), get_store_fuel()
+        // would be wildly different than the original `budget`, and the energy usage for the reducer
+        // would be u64::MAX even if it did nothing. ask how I know.
         WasmtimeFuel(v.get() / Self::QUANTA_MULTIPLIER)
     }
 }
@@ -108,7 +112,7 @@ impl From<WasmtimeFuel> for ReducerBudget {
 
 impl From<WasmtimeFuel> for EnergyQuanta {
     fn from(fuel: WasmtimeFuel) -> Self {
-        EnergyQuanta::new(i128::from(fuel.0) * i128::from(WasmtimeFuel::QUANTA_MULTIPLIER))
+        EnergyQuanta::new(u128::from(fuel.0) * u128::from(WasmtimeFuel::QUANTA_MULTIPLIER))
     }
 }
 

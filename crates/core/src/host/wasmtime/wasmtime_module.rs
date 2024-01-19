@@ -195,7 +195,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         budget: ReducerBudget,
     ) -> module_host_actor::ExecuteResult<Self::Trap> {
         let store = &mut self.store;
-        // note that this conversion is load-bearing - although we convert budget right back into
+        // note that ReducerBudget being a u64 is load-bearing here - although we convert budget right back into
         // EnergyQuanta at the end of this function, from_energy_quanta clamps it to a u64 range.
         // otherwise, we'd return something like `used: i128::MAX - u64::MAX`, which is inaccurate.
         set_store_fuel(store, budget.into());

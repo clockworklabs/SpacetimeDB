@@ -224,7 +224,7 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
 
     startup::configure_tracing();
 
-    let ctx = spacetimedb_client_api::ArcEnv(StandaloneEnv::init(config).await?);
+    let ctx = StandaloneEnv::init(config).await?;
 
     let service = router().with_state(ctx);
 

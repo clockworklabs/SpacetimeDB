@@ -21,7 +21,7 @@ use spacetimedb::database_instance_context::DatabaseInstanceContext;
 use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
 use spacetimedb::db::db_metrics;
 use spacetimedb::db::{db_metrics::DB_METRICS, Config};
-use spacetimedb::energy::EnergyQuanta;
+use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
 use spacetimedb::execution_context::ExecutionContext;
 use spacetimedb::host::{HostController, Scheduler, UpdateDatabaseResult, UpdateOutcome};
 use spacetimedb::identity::Identity;
@@ -266,7 +266,7 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
     }
 
     // Energy
-    fn get_energy_balance(&self, identity: &Identity) -> spacetimedb::control_db::Result<Option<EnergyQuanta>> {
+    fn get_energy_balance(&self, identity: &Identity) -> spacetimedb::control_db::Result<Option<EnergyBalance>> {
         self.control_db.get_energy_balance(identity)
     }
 
@@ -386,12 +386,14 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
     }
 
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> spacetimedb::control_db::Result<()> {
-        let mut balance = <Self as spacetimedb_client_api::ControlStateReadAccess>::get_energy_balance(self, identity)?
-            .map_or(0, |quanta| quanta.get());
-        balance = balance.saturating_add(amount.get());
+        let balance = self
+            .control_db
+            .get_energy_balance(identity)?
+            .unwrap_or(EnergyBalance::ZERO);
 
-        self.control_db
-            .set_energy_balance(*identity, EnergyQuanta::new(balance))
+        let balance = balance.saturating_add_energy(amount);
+
+        self.control_db.set_energy_balance(*identity, balance)
     }
     async fn withdraw_energy(&self, identity: &Identity, amount: EnergyQuanta) -> spacetimedb::control_db::Result<()> {
         withdraw_energy(&self.control_db, identity, amount)
@@ -682,12 +684,11 @@ fn withdraw_energy(
     identity: &Identity,
     amount: EnergyQuanta,
 ) -> spacetimedb::control_db::Result<()> {
-    assert!(!amount.get().is_negative());
     let energy_balance = control_db.get_energy_balance(identity)?;
-    let energy_balance = energy_balance.unwrap_or(EnergyQuanta::new(0));
-    log::trace!("Withdrawing {} energy from {}", amount.get(), identity);
-    log::trace!("Old balance: {}", energy_balance.get());
-    let new_balance = energy_balance - amount;
+    let energy_balance = energy_balance.unwrap_or(EnergyBalance::ZERO);
+    log::trace!("Withdrawing {} from {}", amount, identity);
+    log::trace!("Old balance: {}", energy_balance);
+    let new_balance = energy_balance.saturating_sub_energy(amount);
     control_db.set_energy_balance(*identity, new_balance)
 }
 
