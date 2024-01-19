@@ -7,7 +7,7 @@ use spacetimedb_lib::Address;
 
 use crate::db::cursor::{CatalogCursor, IndexCursor, TableCursor};
 use crate::db::datastore::locking_tx_datastore::IterByColEq;
-use crate::db::relational_db::{MutTx, RelationalDB};
+use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::execution_context::ExecutionContext;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_primitives::*;
@@ -22,13 +22,30 @@ use spacetimedb_vm::expr::*;
 use spacetimedb_vm::program::{ProgramRef, ProgramVm};
 use spacetimedb_vm::rel_ops::RelOps;
 
+pub enum TxMode<'a> {
+    MutTx(&'a mut MutTx),
+    Tx(&'a mut Tx),
+}
+
+impl<'a> From<&'a mut MutTx> for TxMode<'a> {
+    fn from(tx: &'a mut MutTx) -> Self {
+        TxMode::MutTx(tx)
+    }
+}
+
+impl<'a> From<&'a mut Tx> for TxMode<'a> {
+    fn from(tx: &'a mut Tx) -> Self {
+        TxMode::Tx(tx)
+    }
+}
+
 //TODO: This is partially duplicated from the `vm` crate to avoid borrow checker issues
 //and pull all that crate in core. Will be revisited after trait refactor
 #[tracing::instrument(skip_all)]
 pub fn build_query<'a>(
     ctx: &'a ExecutionContext,
     stdb: &'a RelationalDB,
-    tx: &'a MutTx,
+    tx: &'a TxMode,
     query: QueryCode,
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {
     let db_table = matches!(&query.table, Table::DbTable(_));
@@ -119,7 +136,7 @@ pub fn build_query<'a>(
 fn join_inner<'a>(
     ctx: &'a ExecutionContext,
     db: &'a RelationalDB,
-    tx: &'a MutTx,
+    tx: &'a TxMode,
     lhs: impl RelOps + 'a,
     rhs: JoinExpr,
     semi: bool,
@@ -170,7 +187,7 @@ fn join_inner<'a>(
 fn get_table<'a>(
     ctx: &'a ExecutionContext,
     stdb: &'a RelationalDB,
-    tx: &'a MutTx,
+    tx: &'a TxMode,
     query: SourceExpr,
 ) -> Result<Box<dyn RelOps + 'a>, ErrorVm> {
     let head = query.head().clone();
@@ -178,7 +195,10 @@ fn get_table<'a>(
     Ok(match query {
         SourceExpr::MemTable(x) => Box::new(RelIter::new(head, row_count, x)) as Box<IterRows<'_>>,
         SourceExpr::DbTable(x) => {
-            let iter = stdb.iter(ctx, tx, x.table_id)?;
+            let iter = match tx {
+                TxMode::MutTx(tx) => stdb.iter_mut(ctx, tx, x.table_id)?,
+                TxMode::Tx(tx) => stdb.iter(ctx, tx, x.table_id)?,
+            };
             Box::new(TableCursor::new(x, iter)?) as Box<IterRows<'_>>
         }
     })
@@ -187,12 +207,15 @@ fn get_table<'a>(
 fn iter_by_col_range<'a>(
     ctx: &'a ExecutionContext,
     db: &'a RelationalDB,
-    tx: &'a MutTx,
+    tx: &'a TxMode,
     table: DbTable,
     col_id: ColId,
     range: impl RangeBounds<AlgebraicValue> + 'a,
 ) -> Result<Box<dyn RelOps + 'a>, ErrorVm> {
-    let iter = db.iter_by_col_range(ctx, tx, table.table_id, col_id, range)?;
+    let iter = match tx {
+        TxMode::MutTx(tx) => db.iter_by_col_range_mut(ctx, tx, table.table_id, col_id, range)?,
+        TxMode::Tx(tx) => db.iter_by_col_range(ctx, tx, table.table_id, col_id, range)?,
+    };
     Ok(Box::new(IndexCursor::new(table, iter)?) as Box<IterRows<'_>>)
 }
 
@@ -219,7 +242,7 @@ pub struct IndexSemiJoin<'a, Rhs: RelOps> {
     // A reference to the database.
     pub db: &'a RelationalDB,
     // A reference to the current transaction.
-    pub tx: &'a MutTx,
+    pub tx: &'a TxMode<'a>,
     // The execution context for the current transaction.
     ctx: &'a ExecutionContext<'a>,
 }
@@ -274,7 +297,10 @@ impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
                     let table_id = self.index_table;
                     let col_id = self.index_col;
                     let value = value.clone();
-                    let mut index_iter = self.db.iter_by_col_eq(self.ctx, self.tx, table_id, col_id, value)?;
+                    let mut index_iter = match self.tx {
+                        TxMode::MutTx(tx) => self.db.iter_by_col_eq_mut(self.ctx, tx, table_id, col_id, value)?,
+                        TxMode::Tx(tx) => self.db.iter_by_col_eq(self.ctx, tx, table_id, col_id, value)?,
+                    };
                     while let Some(value) = index_iter.next() {
                         let value = value.to_rel_value();
                         if self.filter(value.as_val_ref())? {
@@ -291,17 +317,17 @@ impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
 
 /// A [ProgramVm] implementation that carry a [RelationalDB] for it
 /// query execution
-pub struct DbProgram<'db, 'tx, T> {
+pub struct DbProgram<'db, 'tx> {
     ctx: &'tx ExecutionContext<'tx>,
     pub(crate) env: EnvDb,
     pub(crate) stats: HashMap<String, u64>,
     pub(crate) db: &'db RelationalDB,
-    pub(crate) tx: &'tx mut T,
+    pub(crate) tx: &'tx mut TxMode<'tx>,
     pub(crate) auth: AuthCtx,
 }
 
-impl<'db, 'tx> DbProgram<'db, 'tx, MutTx> {
-    pub fn new(ctx: &'tx ExecutionContext, db: &'db RelationalDB, tx: &'tx mut MutTx, auth: AuthCtx) -> Self {
+impl<'db, 'tx> DbProgram<'db, 'tx> {
+    pub fn new(ctx: &'tx ExecutionContext, db: &'db RelationalDB, tx: &'tx mut TxMode<'tx>, auth: AuthCtx) -> Self {
         let mut env = EnvDb::new();
         Self::load_ops(&mut env);
         Self {
@@ -327,30 +353,36 @@ impl<'db, 'tx> DbProgram<'db, 'tx, MutTx> {
     }
 
     fn _execute_insert(&mut self, table: &Table, rows: Vec<ProductValue>) -> Result<Code, ErrorVm> {
-        match table {
-            // TODO: How do we deal with mutating values?
-            Table::MemTable(_) => Err(ErrorVm::Other(anyhow::anyhow!("How deal with mutating values?"))),
-            Table::DbTable(x) => {
-                for row in rows {
-                    self.db.insert(self.tx, x.table_id, row)?;
+        match self.tx {
+            TxMode::MutTx(tx) => match table {
+                // TODO: How do we deal with mutating values?
+                Table::MemTable(_) => Err(ErrorVm::Other(anyhow::anyhow!("How deal with mutating values?"))),
+                Table::DbTable(x) => {
+                    for row in rows {
+                        self.db.insert(tx, x.table_id, row)?;
+                    }
+                    Ok(Code::Pass)
                 }
-                Ok(Code::Pass)
-            }
+            },
+            TxMode::Tx(_) => unreachable!("mutable operation is invalid with read tx"),
         }
     }
 
     fn _execute_delete(&mut self, table: &Table, rows: Vec<ProductValue>) -> Result<Code, ErrorVm> {
-        match table {
-            // TODO: How do we deal with mutating values?
-            Table::MemTable(_) => Err(ErrorVm::Other(anyhow::anyhow!("How deal with mutating values?"))),
-            Table::DbTable(t) => {
-                let count = self.db.delete_by_rel(self.tx, t.table_id, rows);
-                Ok(Code::Value(count.into()))
-            }
+        match self.tx {
+            TxMode::MutTx(tx) => match table {
+                // TODO: How do we deal with mutating values?
+                Table::MemTable(_) => Err(ErrorVm::Other(anyhow::anyhow!("How deal with mutating values?"))),
+                Table::DbTable(t) => {
+                    let count = self.db.delete_by_rel(tx, t.table_id, rows);
+                    Ok(Code::Value(count.into()))
+                }
+            },
+            TxMode::Tx(_) => unreachable!("mutable operation is invalid with read tx"),
         }
     }
 
-    fn delete_query(&mut self, query: QueryCode) -> Result<Code, ErrorVm> {
+    fn _delete_query(&mut self, query: QueryCode) -> Result<Code, ErrorVm> {
         let table = query.table.clone();
         let result = self._eval_query(query)?;
 
@@ -362,40 +394,49 @@ impl<'db, 'tx> DbProgram<'db, 'tx, MutTx> {
         }
     }
 
-    fn create_table(&mut self, table: TableDef) -> Result<Code, ErrorVm> {
-        self.db.create_table(self.tx, table)?;
-        Ok(Code::Pass)
+    fn _create_table(&mut self, table: TableDef) -> Result<Code, ErrorVm> {
+        match self.tx {
+            TxMode::MutTx(tx) => {
+                self.db.create_table(tx, table)?;
+                Ok(Code::Pass)
+            }
+            TxMode::Tx(_) => unreachable!("mutable operation is invalid with read tx"),
+        }
     }
 
-    fn drop(&mut self, name: &str, kind: DbType) -> Result<Code, ErrorVm> {
-        match kind {
-            DbType::Table => {
-                if let Some(id) = self.db.table_id_from_name(self.tx, name)? {
-                    self.db.drop_table(self.ctx, self.tx, id)?;
+    fn _drop(&mut self, name: &str, kind: DbType) -> Result<Code, ErrorVm> {
+        match self.tx {
+            TxMode::MutTx(tx) => {
+                match kind {
+                    DbType::Table => {
+                        if let Some(id) = self.db.table_id_from_name_mut(tx, name)? {
+                            self.db.drop_table(self.ctx, tx, id)?;
+                        }
+                    }
+                    DbType::Index => {
+                        if let Some(id) = self.db.index_id_from_name(tx, name)? {
+                            self.db.drop_index(tx, id)?;
+                        }
+                    }
+                    DbType::Sequence => {
+                        if let Some(id) = self.db.sequence_id_from_name(tx, name)? {
+                            self.db.drop_sequence(tx, id)?;
+                        }
+                    }
+                    DbType::Constraint => {
+                        if let Some(id) = self.db.constraint_id_from_name(tx, name)? {
+                            self.db.drop_constraint(tx, id)?;
+                        }
+                    }
                 }
+                Ok(Code::Pass)
             }
-            DbType::Index => {
-                if let Some(id) = self.db.index_id_from_name(self.tx, name)? {
-                    self.db.drop_index(self.tx, id)?;
-                }
-            }
-            DbType::Sequence => {
-                if let Some(id) = self.db.sequence_id_from_name(self.tx, name)? {
-                    self.db.drop_sequence(self.tx, id)?;
-                }
-            }
-            DbType::Constraint => {
-                if let Some(id) = self.db.constraint_id_from_name(self.tx, name)? {
-                    self.db.drop_constraint(self.tx, id)?;
-                }
-            }
+            TxMode::Tx(_) => unreachable!("mutable operation is invalid with read tx"),
         }
-
-        Ok(Code::Pass)
     }
 }
 
-impl ProgramVm for DbProgram<'_, '_, MutTx> {
+impl ProgramVm for DbProgram<'_, '_> {
     fn address(&self) -> Option<Address> {
         Some(self.db.address())
     }
@@ -416,6 +457,7 @@ impl ProgramVm for DbProgram<'_, '_, MutTx> {
         &self.auth
     }
 
+    // Safety: For DbProgram with tx = TxMode::Tx variant, all queries must match to CrudCode::Query and no other branch.
     fn eval_query(&mut self, query: CrudCode) -> Result<Code, ErrorVm> {
         query.check_auth(self.auth.owner, self.auth.caller)?;
 
@@ -472,11 +514,11 @@ impl ProgramVm for DbProgram<'_, '_, MutTx> {
                 self._execute_insert(&table, insert_rows)
             }
             CrudCode::Delete { query } => {
-                let result = self.delete_query(query)?;
+                let result = self._delete_query(query)?;
                 Ok(result)
             }
             CrudCode::CreateTable { table } => {
-                let result = self.create_table(table)?;
+                let result = self._create_table(table)?;
                 Ok(result)
             }
             CrudCode::Drop {
@@ -484,7 +526,7 @@ impl ProgramVm for DbProgram<'_, '_, MutTx> {
                 kind,
                 table_access: _,
             } => {
-                let result = self.drop(&name, kind)?;
+                let result = self._drop(&name, kind)?;
                 Ok(result)
             }
         }
@@ -601,13 +643,16 @@ pub(crate) mod tests {
     }
 
     pub(crate) fn create_table_from_program(
-        p: &mut DbProgram<MutTx>,
+        p: &mut DbProgram,
         table_name: &str,
         schema: ProductType,
         rows: &[ProductValue],
     ) -> ResultTest<TableId> {
         let db = &mut p.db;
-        create_table_with_rows(db, p.tx, table_name, schema, rows)
+        match p.tx {
+            TxMode::MutTx(tx) => create_table_with_rows(db, tx, table_name, schema, rows),
+            TxMode::Tx(_) => panic!("tx type should be mutable"),
+        }
     }
 
     #[test]
@@ -620,9 +665,10 @@ pub(crate) mod tests {
     fn test_db_query() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_tx();
+        let mut tx = stdb.begin_mut_tx();
         let ctx = ExecutionContext::default();
-        let p = &mut DbProgram::new(&ctx, &stdb, &mut tx, AuthCtx::for_testing());
+        let tx_mode = &mut TxMode::MutTx(&mut tx);
+        let p = &mut DbProgram::new(&ctx, &stdb, tx_mode, AuthCtx::for_testing());
 
         let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row = product!(1u64, "health");
@@ -651,12 +697,12 @@ pub(crate) mod tests {
 
         assert_eq!(result.data, input.data, "Inventory");
 
-        stdb.rollback_tx(&ctx, tx);
+        stdb.rollback_mut_tx(&ctx, tx);
 
         Ok(())
     }
 
-    fn check_catalog(p: &mut DbProgram<MutTx>, name: &str, row: ProductValue, q: QueryExpr, schema: DbTable) {
+    fn check_catalog(p: &mut DbProgram, name: &str, row: ProductValue, q: QueryExpr, schema: DbTable) {
         let result = run_ast(p, q.into());
 
         //The expected result
@@ -669,9 +715,10 @@ pub(crate) mod tests {
     fn test_query_catalog_tables() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_tx();
+        let mut tx = stdb.begin_mut_tx();
         let ctx = ExecutionContext::default();
-        let p = &mut DbProgram::new(&ctx, &stdb, &mut tx, AuthCtx::for_testing());
+        let tx_mode = &mut TxMode::MutTx(&mut tx);
+        let p = &mut DbProgram::new(&ctx, &stdb, tx_mode, AuthCtx::for_testing());
 
         let q = query(&st_table_schema()).with_select_cmp(
             OpCmp::Eq,
@@ -692,7 +739,7 @@ pub(crate) mod tests {
             DbTable::from(&st_table_schema()),
         );
 
-        stdb.rollback_tx(&ctx, tx);
+        stdb.rollback_mut_tx(&ctx, tx);
 
         Ok(())
     }
@@ -701,9 +748,10 @@ pub(crate) mod tests {
     fn test_query_catalog_columns() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_tx();
+        let mut tx = stdb.begin_mut_tx();
         let ctx = ExecutionContext::default();
-        let p = &mut DbProgram::new(&ctx, &stdb, &mut tx, AuthCtx::for_testing());
+        let tx_mode = &mut TxMode::MutTx(&mut tx);
+        let p = &mut DbProgram::new(&ctx, &stdb, tx_mode, AuthCtx::for_testing());
 
         let q = query(&st_columns_schema())
             .with_select_cmp(
@@ -730,7 +778,7 @@ pub(crate) mod tests {
             (&st_columns_schema()).into(),
         );
 
-        stdb.rollback_tx(&ctx, tx);
+        stdb.rollback_mut_tx(&ctx, tx);
 
         Ok(())
     }
@@ -742,16 +790,16 @@ pub(crate) mod tests {
         let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row = product!(1u64, "health");
 
-        let mut tx = db.begin_tx();
+        let mut tx = db.begin_mut_tx();
         let ctx = ExecutionContext::default();
         let table_id = create_table_with_rows(&db, &mut tx, "inventory", head, &[row])?;
         db.commit_tx(&ctx, tx)?;
 
-        let mut tx = db.begin_tx();
+        let mut tx = db.begin_mut_tx();
         let index = IndexDef::btree("idx_1".into(), ColId(0), true);
         let index_id = db.create_index(&mut tx, table_id, index)?;
-
-        let p = &mut DbProgram::new(&ctx, &db, &mut tx, AuthCtx::for_testing());
+        let tx_mode = &mut TxMode::MutTx(&mut tx);
+        let p = &mut DbProgram::new(&ctx, &db, tx_mode, AuthCtx::for_testing());
 
         let q = query(&st_indexes_schema()).with_select_cmp(
             OpCmp::Eq,
@@ -774,7 +822,7 @@ pub(crate) mod tests {
             (&st_indexes_schema()).into(),
         );
 
-        db.rollback_tx(&ctx, tx);
+        db.rollback_mut_tx(&ctx, tx);
 
         Ok(())
     }
@@ -783,9 +831,10 @@ pub(crate) mod tests {
     fn test_query_catalog_sequences() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
 
-        let mut tx = db.begin_tx();
+        let mut tx = db.begin_mut_tx();
         let ctx = ExecutionContext::default();
-        let p = &mut DbProgram::new(&ctx, &db, &mut tx, AuthCtx::for_testing());
+        let tx_mode = &mut TxMode::MutTx(&mut tx);
+        let p = &mut DbProgram::new(&ctx, &db, tx_mode, AuthCtx::for_testing());
 
         let q = query(&st_sequences_schema()).with_select_cmp(
             OpCmp::Eq,
@@ -811,7 +860,7 @@ pub(crate) mod tests {
             (&st_sequences_schema()).into(),
         );
 
-        db.rollback_tx(&ctx, tx);
+        db.rollback_mut_tx(&ctx, tx);
 
         Ok(())
     }
