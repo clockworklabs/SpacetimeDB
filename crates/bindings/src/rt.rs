@@ -1,6 +1,5 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
-use nonempty::NonEmpty;
 use std::any::TypeId;
 use std::collections::{btree_map, BTreeMap};
 use std::fmt;
@@ -430,7 +429,7 @@ pub fn register_table<T: TableType>() {
                     Err(_) => Constraints::unset(),
                 };
 
-                ConstraintDef::for_column(T::TABLE_NAME, &col.col_name, kind, NonEmpty::new(col_pos.into()))
+                ConstraintDef::for_column(T::TABLE_NAME, &col.col_name, kind, ColList::new(col_pos.into()))
             })
             .collect();
 
@@ -462,11 +461,14 @@ pub fn register_table<T: TableType>() {
 
 impl From<crate::IndexDesc<'_>> for IndexDef {
     fn from(index: crate::IndexDesc<'_>) -> IndexDef {
-        let cols: Vec<ColId> = index.col_ids.iter().map(|x| (*x).into()).collect();
-        let columns = if let Some(cols) = NonEmpty::from_slice(&cols) {
-            cols
-        } else {
-            panic!("Need at least one column in IndexDesc for index `{}`", index.name)
+        let Ok(columns) = index
+            .col_ids
+            .iter()
+            .map(|x| (*x).into())
+            .collect::<ColListBuilder>()
+            .build()
+        else {
+            panic!("Need at least one column in IndexDesc for index `{}`", index.name);
         };
 
         IndexDef {

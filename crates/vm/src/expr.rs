@@ -1,5 +1,4 @@
 use derive_more::From;
-use nonempty::NonEmpty;
 use std::cmp::Ordering;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
@@ -232,7 +231,7 @@ impl From<IndexScan> for ColumnOp {
         let columns = value.columns;
         assert_eq!(columns.len(), 1, "multi-column predicates are not yet supported");
 
-        let field = table.head.fields[usize::from(columns.head)].field.clone();
+        let field = table.head.fields[usize::from(columns.head())].field.clone();
         match (value.lower_bound, value.upper_bound) {
             // Inclusive lower bound => field >= value
             (Bound::Included(value), Bound::Unbounded) => ColumnOp::Cmp {
@@ -651,7 +650,7 @@ impl CrudExpr {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct IndexScan {
     pub table: DbTable,
-    pub columns: NonEmpty<ColId>,
+    pub columns: ColList,
     pub lower_bound: Bound<AlgebraicValue>,
     pub upper_bound: Bound<AlgebraicValue>,
 }
@@ -902,7 +901,7 @@ impl QueryExpr {
     // Generate an index scan for an equality predicate if this is the first operator.
     // Otherwise generate a select.
     // TODO: Replace these methods with a proper query optimization pass.
-    pub fn with_index_eq(mut self, table: DbTable, columns: NonEmpty<ColId>, value: AlgebraicValue) -> Self {
+    pub fn with_index_eq(mut self, table: DbTable, columns: ColList, value: AlgebraicValue) -> Self {
         // if this is the first operator in the list, generate index scan
         let Some(query) = self.query.pop() else {
             self.query.push(Query::IndexScan(IndexScan {
@@ -977,7 +976,7 @@ impl QueryExpr {
     pub fn with_index_lower_bound(
         mut self,
         table: DbTable,
-        columns: NonEmpty<ColId>,
+        columns: ColList,
         value: AlgebraicValue,
         inclusive: bool,
     ) -> Self {
@@ -1085,7 +1084,7 @@ impl QueryExpr {
     pub fn with_index_upper_bound(
         mut self,
         table: DbTable,
-        columns: NonEmpty<ColId>,
+        columns: ColList,
         value: AlgebraicValue,
         inclusive: bool,
     ) -> Self {
@@ -1917,7 +1916,7 @@ mod tests {
         [
             Query::IndexScan(IndexScan {
                 table: db_table,
-                columns: NonEmpty::new(42.into()),
+                columns: ColList::new(42.into()),
                 lower_bound: Bound::Included(22.into()),
                 upper_bound: Bound::Unbounded,
             }),

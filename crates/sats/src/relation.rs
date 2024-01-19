@@ -1,6 +1,5 @@
 use derive_more::From;
-use nonempty::NonEmpty;
-use spacetimedb_primitives::{ColId, Constraints, TableId};
+use spacetimedb_primitives::{ColId, ColList, ColListBuilder, Constraints, TableId};
 use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
 use std::fmt;
@@ -179,11 +178,11 @@ pub struct HeaderOnlyField<'a> {
 pub struct Header {
     pub table_name: String,
     pub fields: Vec<Column>,
-    pub constraints: Vec<(NonEmpty<ColId>, Constraints)>,
+    pub constraints: Vec<(ColList, Constraints)>,
 }
 
 impl Header {
-    pub fn new(table_name: String, fields: Vec<Column>, constraints: Vec<(NonEmpty<ColId>, Constraints)>) -> Self {
+    pub fn new(table_name: String, fields: Vec<Column>, constraints: Vec<(ColList, Constraints)>) -> Self {
         Self {
             table_name,
             fields,
@@ -259,12 +258,12 @@ impl Header {
     }
 
     /// Copy the [Constraints] that are referenced in the list of `for_columns`
-    fn retain_constraints(&self, for_columns: &[ColId]) -> Vec<(NonEmpty<ColId>, Constraints)> {
+    fn retain_constraints(&self, for_columns: &[ColId]) -> Vec<(ColList, Constraints)> {
         // Copy the constraints of the selected columns and retain the multi-column ones...
         self.constraints
             .iter()
             .filter_map(|(cols, ct)| {
-                if cols.iter().any(|c: &ColId| for_columns.contains(c)) {
+                if cols.iter().any(|c: ColId| for_columns.contains(&c)) {
                     Some((cols.clone(), *ct))
                 } else {
                     None
@@ -276,7 +275,7 @@ impl Header {
     pub fn has_constraint(&self, field: &FieldName, constraint: Constraints) -> bool {
         self.column_pos(field)
             .map(|x| {
-                let find = NonEmpty::new(ColId(x as u32));
+                let find = ColList::new(ColId(x as u32));
                 self.constraints
                     .iter()
                     .any(|(col, ct)| col == &find && ct.contains(&constraint))
@@ -329,7 +328,12 @@ impl Header {
         let mut constraints = self.constraints.clone();
         let len_lhs = self.fields.len() as u32;
         constraints.extend(right.constraints.iter().map(|(cols, c)| {
-            let cols = cols.clone().map(|x| ColId(x.0 + len_lhs));
+            let cols = cols
+                .iter()
+                .map(|col| ColId(col.0 + len_lhs))
+                .collect::<ColListBuilder>()
+                .build()
+                .unwrap();
             (cols, *c)
         }));
 
@@ -703,6 +707,8 @@ impl Relation for Table {
 
 #[cfg(test)]
 mod tests {
+    use spacetimedb_primitives::col_list;
+
     use super::*;
 
     /// Build a [Header] using the initial `start_pos` as the column position for the [Constraints]
@@ -713,11 +719,8 @@ mod tests {
         let ct = vec![
             (ColId(pos_lhs).into(), Constraints::indexed()),
             (ColId(pos_rhs).into(), Constraints::identity()),
-            (
-                (ColId(pos_lhs), vec![ColId(pos_rhs)]).into(),
-                Constraints::primary_key(),
-            ),
-            ((ColId(pos_rhs), vec![ColId(pos_lhs)]).into(), Constraints::unique()),
+            (col_list![pos_lhs, pos_rhs], Constraints::primary_key()),
+            (col_list![pos_rhs, pos_lhs], Constraints::unique()),
         ];
 
         Header::new(

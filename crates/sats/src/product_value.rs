@@ -1,8 +1,7 @@
 use crate::algebraic_value::AlgebraicValue;
 use crate::product_type::ProductType;
 use crate::{ArrayValue, SumValue, ValueWithType};
-use nonempty::NonEmpty;
-use spacetimedb_primitives::ColId;
+use spacetimedb_primitives::{ColId, ColList};
 
 /// A product value is made of a a list of
 /// "elements" / "fields" / "factors" of other `AlgebraicValue`s.
@@ -118,11 +117,19 @@ impl ProductValue {
     /// fields, otherwise it will consist of a single [AlgebraicValue].
     ///
     /// **Parameters:**
-    /// - `indexes`: A [NonEmpty<ColId>] containing the indexes of fields to be projected.
+    /// - `cols`: A [ColList] containing the indexes of fields to be projected.
     ///
-    pub fn project_not_empty(&self, indexes: &NonEmpty<ColId>) -> Result<AlgebraicValue, InvalidFieldError> {
-        let indexes: Vec<_> = indexes.iter().map(|x| (*x, None)).collect();
-        self.project(indexes.as_slice())
+    pub fn project_not_empty(&self, cols: &ColList) -> Result<AlgebraicValue, InvalidFieldError> {
+        let proj_len = cols.len();
+        if proj_len == 1 {
+            self.get_field(cols.head().idx(), None).cloned()
+        } else {
+            let mut fields = Vec::with_capacity(proj_len as usize);
+            for col in cols.iter() {
+                fields.push(self.get_field(col.idx(), None)?.clone());
+            }
+            Ok(AlgebraicValue::product(fields))
+        }
     }
 
     /// Extracts the `value` at field of `self` identified by `index`

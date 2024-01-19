@@ -42,7 +42,6 @@ futures.workspace = true
 lazy_static.workspace = true
 log.workspace = true
 mimalloc.workspace = true
-nonempty.workspace = true
 rand.workspace = true
 regex.workspace = true
 rusqlite.workspace = true

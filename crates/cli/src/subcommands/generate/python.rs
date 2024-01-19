@@ -1,12 +1,12 @@
 use super::util::fmt_fn;
 
 use convert_case::{Case, Casing};
-use nonempty::NonEmpty;
 use spacetimedb_lib::sats::db::def::TableSchema;
 use spacetimedb_lib::{
     sats::{AlgebraicTypeRef, ArrayType, BuiltinType, MapType},
     AlgebraicType, ProductType, ProductTypeElement, ReducerDef, SumType, TableDesc,
 };
+use spacetimedb_primitives::ColList;
 use std::fmt::{self, Write};
 
 use super::{code_indenter::CodeIndenter, csharp::is_enum, GenCtx, GenItem};
@@ -285,7 +285,7 @@ fn autogen_python_product_table_common(
 
             let constraints = schema.column_constraints();
             for (idx, field) in product_type.elements.iter().enumerate() {
-                let attr = constraints[&NonEmpty::new(idx.into())];
+                let attr = constraints[&ColList::new(idx.into())];
 
                 let field_type = &field.algebraic_type;
 

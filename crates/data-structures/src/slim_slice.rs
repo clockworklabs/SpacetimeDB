@@ -24,8 +24,6 @@
 //! - [`SlimSliceBox<T>`], a slimmer version of `Box<[T]>`
 //! - [`SlimSmallSliceBox<T, N>`], a slimmer version of `SmallVec<[T; N]>`
 //!   but without the growing functionality.
-//! - [`SlimNonEmptyBox<T>`], a slimmer version of `NonEmpty<T>`
-//!   but without the growing functionality.
 //! - [`SlimStrBox`], a slimmer version of `Box<str>`
 //! - [`SlimSlice<'a, T>`], a slimmer verion of `&'a [T]`
 //! - [`SlimSliceMut<'a, T>`], a slimmer version of `&'a mut [T]`
@@ -72,7 +70,6 @@ use core::{
     slice,
     str::{from_utf8_unchecked, from_utf8_unchecked_mut},
 };
-use nonempty::NonEmpty;
 use thiserror::Error;
 
 // =============================================================================
@@ -159,18 +156,6 @@ impl<const N: usize> AssertU32<N> {
 /// That is, validity requirements are not enough.
 /// The safety requirements must also be the same.
 pub unsafe trait SafelyExchangeable<T> {}
-
-#[inline]
-fn transmute_safely_exchangeable<T, U: SafelyExchangeable<T>>(x: T) -> U {
-    let x = ManuallyDrop::new(x);
-    // SAFETY: Caller has proven that `x` is valid for `U`.
-    // so `&x` is also valid for `size_of::<U>`.
-    // The type `T` and `U` are known to have the same size.
-    //
-    // Also, taking a copy is not a problem, even when `!(T: Copy)`,
-    // as due to `ManuallyDrop` above, this is really a move of `x: T` to `U`.
-    unsafe { mem::transmute_copy(&x) }
-}
 
 /// Implementation detail of the other types.
 /// Provides some convenience but users of the type are responsible
@@ -641,140 +626,6 @@ impl<T, const N: usize> DerefMut for SlimSmallSliceBox<T, N> {
             SlimSmallSliceBoxData::Inline(i) => i,
             SlimSmallSliceBoxData::Heap(h) => h,
         }
-    }
-}
-
-// =============================================================================
-// Non-empty owned boxed slice
-// =============================================================================
-
-// TODO(Centril): This type was introduced because `NonEmpty<T>`
-// was used to store `cols: NonEmpty<ColId>`.
-// However, it is not efficient to store `cols` this way because
-// we need to convert <=> `ArrayValue` and <=> view `cols` as `&[ColId]`.
-// As `SlimNonEmptyBox<T>` and `NonEmpty<T>` store `head` in a separate allocation,
-// this makes a direct conversion to `&[ColId]` impossible and <=> `ArrayValue` slow.
-// Instead of dealing with non-emptiness at the representation layer,
-// we can use `SlimSmallSliceBox<T>`, and if needs be,
-// add non-emptiness purely as a logical layer.
-
-/// A non-empty slim owned slice.
-#[derive(Clone, Eq, PartialEq, Hash, Debug)]
-pub struct SlimNonEmptyBox<T> {
-    /// The head of the list, ensuring there's at least one element.
-    pub head: T,
-    /// The tail of the list. Invariant `tail.len() < u32::MAX`.
-    tail: SlimSliceBox<T>,
-}
-
-impl<T> SlimNonEmptyBox<T> {
-    /// Returns the non-empty vector `[head]`.
-    #[inline]
-    pub fn new(head: T) -> Self {
-        Self { head, tail: [].into() }
-    }
-
-    /// Returns the length of the vector.
-    #[allow(clippy::len_without_is_empty)]
-    #[inline]
-    pub fn len(&self) -> usize {
-        1 + self.tail.len()
-    }
-
-    /// Map every element `x: T` to `U` by transmuting.
-    ///
-    /// This will not reallocate.
-    #[inline]
-    pub fn map_safely_exchangeable<U: SafelyExchangeable<T>>(self) -> SlimNonEmptyBox<U> {
-        SlimNonEmptyBox {
-            head: transmute_safely_exchangeable(self.head),
-            tail: self.tail.map_safely_exchangeable(),
-        }
-    }
-
-    /// Returns an iterator over borrowed elements of the vector.
-    #[inline]
-    pub fn iter(&self) -> Iter<'_, T> {
-        let elems = Some((&self.head, &*self.tail));
-        Iter { elems }
-    }
-}
-
-impl<T> From<T> for SlimNonEmptyBox<T> {
-    #[inline]
-    fn from(value: T) -> Self {
-        Self::new(value)
-    }
-}
-
-pub struct Iter<'a, T> {
-    elems: Option<(&'a T, &'a [T])>,
-}
-
-impl<'a, T> Iterator for Iter<'a, T> {
-    type Item = &'a T;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        let (next, tail) = self.elems.take().unzip();
-        self.elems = tail.unwrap_or_default().split_first();
-        next
-    }
-}
-
-impl<T> ExactSizeIterator for Iter<'_, T> {
-    #[inline]
-    fn len(&self) -> usize {
-        self.elems.map_or(0, |(_, tail)| 1 + tail.len())
-    }
-}
-
-impl<T> core::iter::FusedIterator for Iter<'_, T> {}
-
-impl<T> TryFrom<NonEmpty<T>> for SlimNonEmptyBox<T> {
-    type Error = LenTooLong<NonEmpty<T>>;
-
-    #[inline]
-    fn try_from(value: NonEmpty<T>) -> Result<Self, Self::Error> {
-        ensure_len_fits!(value);
-
-        // SAFETY: Ensured ^-- that `([head] ++ tail).len() <= u32::MAX`.
-        // This implies `[head].len() + tail.len() <= u32::MAX`
-        // so `1 + tail.len() <= u32::MAX`
-        // so `tail.len() <= u32::MAX` also holds.
-        let tail = unsafe { SlimSliceBox::from_boxed_unchecked(value.tail.into()) };
-
-        Ok(Self { head: value.head, tail })
-    }
-}
-
-impl<T> From<SlimNonEmptyBox<T>> for SlimSliceBox<T> {
-    #[inline]
-    fn from(value: SlimNonEmptyBox<T>) -> Self {
-        // Construct `[head] ++ tail`.
-        let mut vec = Vec::with_capacity(1 + value.tail.len());
-        vec.push(value.head);
-        vec.append(&mut value.tail.into());
-
-        // SAFETY: By (invariant) `tail.len() < u32::MAX`
-        // we also know that `1 + tail.len() <= u32::MAX`
-        // thus `vec.len() <= u32::MAX` which is our safety requirement.
-        unsafe { Self::from_boxed_unchecked(vec.into()) }
-    }
-}
-
-impl<T: Clone> TryFrom<&SlimSliceBox<T>> for SlimNonEmptyBox<T> {
-    type Error = ();
-
-    #[inline]
-    fn try_from(value: &SlimSliceBox<T>) -> Result<Self, Self::Error> {
-        let [head, tail @ ..] = &**value else {
-            return Err(());
-        };
-        let head = head.clone();
-        // SAFETY: We know that `tail.len() < u32::MAX`.
-        let tail = unsafe { SlimSliceBox::from_boxed_unchecked(tail.to_owned().into()) };
-        Ok(Self { head, tail })
     }
 }
 

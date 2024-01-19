@@ -23,7 +23,6 @@ spacetimedb-primitives = { path = "../primitives", version = "0.8.1" }
 
 derive_more.workspace = true
 log.workspace = true
-nonempty.workspace = true
 once_cell.workspace = true
 scoped-tls.workspace = true
 

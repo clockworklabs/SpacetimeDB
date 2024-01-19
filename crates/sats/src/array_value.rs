@@ -1,5 +1,4 @@
 use crate::{AlgebraicType, AlgebraicValue, ArrayType, MapValue, ProductValue, SumValue, F32, F64};
-use nonempty::NonEmpty;
 use std::fmt;
 
 /// An array value in "monomorphized form".
@@ -188,15 +187,6 @@ impl_from_array!(F64, F64);
 impl_from_array!(String, String);
 impl_from_array!(ArrayValue, Array);
 impl_from_array!(MapValue, Map);
-
-impl<T> From<NonEmpty<T>> for ArrayValue
-where
-    ArrayValue: From<Vec<T>>,
-{
-    fn from(value: NonEmpty<T>) -> Self {
-        Vec::from(value).into()
-    }
-}
 
 impl ArrayValue {
     /// Returns `self` as `&dyn Debug`.

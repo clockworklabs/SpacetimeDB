@@ -1,11 +1,10 @@
-use nonempty::NonEmpty;
 use std::borrow::Cow;
 use std::collections::HashMap;
 
 use crate::db::datastore::traits::TxDatastore;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, PlanError};
-use spacetimedb_primitives::{ConstraintKind, Constraints};
+use spacetimedb_primitives::{ColList, ConstraintKind, Constraints};
 use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::db::def::{ColumnDef, ConstraintDef, FieldDef, TableDef, TableSchema};
 use spacetimedb_sats::db::error::RelationError;
@@ -814,7 +813,7 @@ fn compile_create_table(table: Table, cols: Vec<SqlColumnDef>) -> Result<SqlAst,
                 &table.name,
                 &name,
                 attr,
-                NonEmpty::new(col_pos.into()),
+                ColList::new(col_pos.into()),
             ));
         }
 

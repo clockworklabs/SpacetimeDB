@@ -1,4 +1,3 @@
-use nonempty::NonEmpty;
 use std::borrow::Cow;
 use std::{ops::RangeBounds, sync::Arc};
 
@@ -99,7 +98,7 @@ pub trait TxDatastore: DataRow + Tx {
         ctx: &'a ExecutionContext,
         tx: &'a Self::Tx,
         table_id: TableId,
-        cols: impl Into<NonEmpty<ColId>>,
+        cols: impl Into<ColList>,
         range: R,
     ) -> Result<Self::IterByColRange<'a, R>>;
 
@@ -108,7 +107,7 @@ pub trait TxDatastore: DataRow + Tx {
         ctx: &'a ExecutionContext,
         tx: &'a Self::Tx,
         table_id: TableId,
-        cols: impl Into<NonEmpty<ColId>>,
+        cols: impl Into<ColList>,
         value: AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a>>;
 
@@ -186,7 +185,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         ctx: &'a ExecutionContext,
         tx: &'a Self::MutTx,
         table_id: TableId,
-        cols: impl Into<NonEmpty<ColId>>,
+        cols: impl Into<ColList>,
         range: R,
     ) -> Result<Self::IterByColRange<'a, R>>;
     fn iter_by_col_eq_mut_tx<'a>(
@@ -194,7 +193,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         ctx: &'a ExecutionContext,
         tx: &'a Self::MutTx,
         table_id: TableId,
-        cols: impl Into<NonEmpty<ColId>>,
+        cols: impl Into<ColList>,
         value: AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a>>;
     fn get_mut_tx<'a>(
@@ -254,7 +253,7 @@ pub trait MutProgrammable: MutTxDatastore {
 
 #[cfg(test)]
 mod tests {
-    use spacetimedb_primitives::{ColId, Constraints};
+    use spacetimedb_primitives::{col_list, ColId, Constraints};
     use spacetimedb_sats::db::def::ConstraintDef;
     use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductType, ProductTypeElement, Typespace};
 
@@ -276,7 +275,7 @@ mod tests {
             ],
         )
         .with_indexes(vec![
-            IndexDef::btree("id_and_name".into(), (0.into(), vec![1.into()]), false),
+            IndexDef::btree("id_and_name".into(), col_list![0, 1], false),
             IndexDef::btree("just_name".into(), ColId(1), false),
         ])
         .with_constraints(vec![ConstraintDef::new(

@@ -1,5 +1,4 @@
 use fs2::FileExt;
-use nonempty::NonEmpty;
 use std::borrow::Cow;
 use std::fs::{create_dir_all, File};
 use std::ops::RangeBounds;
@@ -436,7 +435,7 @@ impl RelationalDB {
         &self,
         tx: &mut MutTx,
         table_id: TableId,
-        cols: &NonEmpty<ColId>,
+        cols: &ColList,
     ) -> Result<Constraints, DBError> {
         let table = self.inner.schema_for_table_mut_tx(tx, table_id)?;
 
@@ -507,7 +506,7 @@ impl RelationalDB {
         ctx: &'a ExecutionContext,
         tx: &'a MutTx,
         table_id: impl Into<TableId>,
-        cols: impl Into<NonEmpty<ColId>>,
+        cols: impl Into<ColList>,
         value: AlgebraicValue,
     ) -> Result<IterByColEq<'a>, DBError> {
         self.inner.iter_by_col_eq_mut_tx(ctx, tx, table_id.into(), cols, value)
@@ -523,7 +522,7 @@ impl RelationalDB {
         ctx: &'a ExecutionContext,
         tx: &'a MutTx,
         table_id: impl Into<TableId>,
-        cols: impl Into<NonEmpty<ColId>>,
+        cols: impl Into<ColList>,
         range: R,
     ) -> Result<IterByColRange<'a, R>, DBError> {
         self.inner
@@ -707,7 +706,12 @@ mod tests {
     fn index(name: &str, cols: &[u32]) -> IndexDef {
         IndexDef::btree(
             name.into(),
-            NonEmpty::collect(cols.iter().copied().map(ColId)).unwrap(),
+            cols.iter()
+                .copied()
+                .map(ColId)
+                .collect::<ColListBuilder>()
+                .build()
+                .unwrap(),
             false,
         )
     }
@@ -1036,7 +1040,7 @@ mod tests {
             }],
         )
         .with_indexes(vec![IndexDef {
-            columns: NonEmpty::new(0.into()),
+            columns: ColList::new(0.into()),
             index_name: "MyTable_my_col_idx".to_string(),
             is_unique,
             index_type: IndexType::BTree,
@@ -1184,7 +1188,7 @@ mod tests {
             }],
         )
         .with_indexes(vec![IndexDef {
-            columns: NonEmpty::new(0.into()),
+            columns: ColList::new(0.into()),
             index_name: "MyTable_my_col_idx".to_string(),
             is_unique: true,
             index_type: IndexType::BTree,
@@ -1257,7 +1261,7 @@ mod tests {
             "MyTable",
             "col2",
             Constraints::indexed(),
-            NonEmpty::new(1.into()),
+            ColList::new(1.into()),
         )]);
 
         let ctx = ExecutionContext::default();
@@ -1325,7 +1329,7 @@ mod tests {
             }],
         )
         .with_indexes(vec![IndexDef {
-            columns: NonEmpty::new(0.into()),
+            columns: ColList::new(0.into()),
             index_name: "MyTable_my_col_idx".to_string(),
             is_unique: true,
             index_type: IndexType::BTree,
@@ -1381,7 +1385,7 @@ mod tests {
             product![AlgebraicValue::U64(1), AlgebraicValue::U64(2), AlgebraicValue::U64(2)],
         )?;
 
-        let cols: NonEmpty<ColId> = NonEmpty::collect(vec![0.into(), 1.into()]).unwrap();
+        let cols = col_list![0, 1];
         let value: AlgebraicValue = product![AlgebraicValue::U64(0), AlgebraicValue::U64(1)].into();
 
         let ctx = ExecutionContext::default();
@@ -1457,7 +1461,7 @@ mod tests {
                         "Account",
                         "deposit",
                         Constraints::identity(),
-                        NonEmpty::new(0.into()),
+                        ColList::new(0.into()),
                     )],
                 ),
             )
