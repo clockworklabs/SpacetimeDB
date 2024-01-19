@@ -174,12 +174,6 @@ pub trait EnergyMonitor: Send + Sync + 'static {
     fn record_disk_usage(&self, database: &Database, instance_id: u64, disk_usage: u64, period: Duration);
 }
 
-// what would the module do with this information?
-// pub enum EnergyRecordResult {
-//     Continue,
-//     Exhausted { quanta_over_budget: u64 },
-// }
-
 #[derive(Default)]
 pub struct NullEnergyMonitor;
 
