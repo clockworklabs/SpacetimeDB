@@ -19,9 +19,10 @@ use crate::{
     host::module_host::{EventStatus, ModuleEvent},
 };
 use futures::{stream::FuturesUnordered, FutureExt, StreamExt};
+use parking_lot::RwLock;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
-use tokio::sync::mpsc;
+use tokio::{sync::mpsc, task::JoinHandle};
 
 /// All of these commands (and likely any future ones) should all be in the same enum with the
 /// same queue so that e.g. db updates from commit events and db updates from subscription
@@ -98,9 +99,11 @@ impl ModuleSubscriptionManager {
     }
 }
 
+type SubscriptionRw = Arc<RwLock<Subscription>>;
+
 struct ModuleSubscriptionActor {
     relational_db: Arc<RelationalDB>,
-    subscriptions: Vec<Subscription>,
+    subscriptions: Vec<SubscriptionRw>,
     owner_identity: Identity,
 }
 
@@ -130,27 +133,28 @@ impl ModuleSubscriptionActor {
     ) -> Result<(), DBError> {
         self.remove_subscriber(sender.id);
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
-
         let mut queries = QuerySet::new();
         for sql in subscription.query_strings {
             let qset = compile_read_only_query(&self.relational_db, tx, &auth, &sql)?;
             queries.extend(qset);
         }
 
-        let sub = match self.subscriptions.iter_mut().find(|s| s.queries == queries) {
+        let sub = match self.subscriptions.iter_mut().find(|s| s.read().queries == queries) {
             Some(sub) => {
-                sub.add_subscriber(sender);
+                sub.write().add_subscriber(sender);
                 sub
             }
             None => {
-                self.subscriptions.push(Subscription::new(queries, sender));
+                self.subscriptions
+                    .push(Arc::new(Subscription::new(queries, sender).into()));
                 self.subscriptions.last_mut().unwrap()
             }
         };
 
-        let database_update = sub.queries.eval(&self.relational_db, tx, auth)?;
+        let subscription = sub.read_arc();
+        let database_update = subscription.queries.eval(&self.relational_db, tx, auth)?;
 
-        let sender = sub.subscribers().last().unwrap();
+        let sender = subscription.subscribers().last().unwrap();
 
         // NOTE: It is important to send the state in this thread because if you spawn a new
         // thread it's possible for messages to get sent to the client out of order. If you do
@@ -180,23 +184,31 @@ impl ModuleSubscriptionActor {
 
     fn remove_subscriber(&mut self, client_id: ClientActorId) {
         self.subscriptions.retain_mut(|sub| {
-            sub.remove_subscriber(client_id);
-            !sub.subscribers().is_empty()
+            let mut subscription = sub.write();
+            subscription.remove_subscriber(client_id);
+            !subscription.subscribers().is_empty()
         })
     }
 
-    async fn _broadcast_commit_event(&mut self, mut event: ModuleEvent, tx: &mut Tx) -> Result<(), DBError> {
-        let futures = FuturesUnordered::new();
-        let auth = AuthCtx::new(self.owner_identity, event.caller_identity);
-
-        for subscription in &mut self.subscriptions {
+    async fn broadcast_commit_event(&mut self, event: ModuleEvent) -> Result<(), DBError> {
+        async fn _broadcast_commit_event(
+            auth: AuthCtx,
+            mut event: ModuleEvent,
+            subscription: SubscriptionRw,
+            relational_db: Arc<RelationalDB>,
+        ) -> Result<(), DBError> {
+            let ctx = ExecutionContext::incremental_update(relational_db.address());
+            let mut tx = relational_db.begin_tx();
             let database_update = event.status.database_update().unwrap();
+            let subscription = subscription.read_arc();
+            let futures = FuturesUnordered::new();
+
             let incr = subscription
                 .queries
-                .eval_incr(&self.relational_db, tx, database_update, auth)?;
+                .eval_incr(&relational_db, &mut tx, database_update, auth)?;
 
             if incr.tables.is_empty() {
-                continue;
+                return Ok(());
             }
 
             let message = TransactionUpdateMessage {
@@ -211,19 +223,30 @@ impl ModuleSubscriptionActor {
                 let message = message.serialize(subscriber.protocol);
                 futures.push(subscriber.send(message).map(drop))
             }
+            futures.collect::<()>().await;
+
+            relational_db.release_tx(&ctx, tx);
+            Ok(())
         }
 
-        futures.collect::<()>().await;
+        let auth = AuthCtx::new(self.owner_identity, event.caller_identity);
+        let relational_db = self.relational_db.clone();
+        let futures: FuturesUnordered<tokio::task::JoinHandle<Result<(), DBError>>> = FuturesUnordered::new();
+
+        for subscription in &self.subscriptions {
+            let future: JoinHandle<Result<(), _>> = tokio::spawn(_broadcast_commit_event(
+                auth,
+                event.clone(),
+                subscription.clone(),
+                relational_db.clone(),
+            ));
+
+            futures.push(future);
+        }
+
+        // waiting for for all subscription query sets to process
+        futures.collect::<Vec<_>>().await;
 
         Ok(())
-    }
-
-    async fn broadcast_commit_event(&mut self, event: ModuleEvent) -> Result<(), DBError> {
-        //Split logic to properly handle `Error` + `Tx`
-        let mut tx = self.relational_db.begin_tx();
-        let result = self._broadcast_commit_event(event, &mut tx).await;
-        let ctx = ExecutionContext::incremental_update(self.relational_db.address());
-        self.relational_db.release_tx(&ctx, tx);
-        result
     }
 }
