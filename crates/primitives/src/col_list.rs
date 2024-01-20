@@ -49,9 +49,14 @@ impl Default for ColListBuilder {
 impl ColListBuilder {
     /// Returns an empty builder.
     pub fn new() -> Self {
-        Self {
-            list: ColList::from_inline(0),
-        }
+        let list = ColList::from_inline(0);
+        Self { list }
+    }
+
+    /// Returns an empty builder with a capacity for a list of `cap` elements.
+    pub fn with_capacity(cap: u32) -> Self {
+        let list = ColList::with_capacity(cap);
+        Self { list }
     }
 
     /// Push a [`ColId`] to the list.
@@ -71,7 +76,9 @@ impl ColListBuilder {
 
 impl FromIterator<ColId> for ColListBuilder {
     fn from_iter<T: IntoIterator<Item = ColId>>(iter: T) -> Self {
-        let mut builder = Self::new();
+        let iter = iter.into_iter();
+        let (lower_bound, _) = iter.size_hint();
+        let mut builder = Self::with_capacity(lower_bound as u32);
         for col in iter {
             builder.push(col);
         }
@@ -121,10 +128,20 @@ impl ColList {
         list
     }
 
+    /// Returns an empty list with a capacity to hold `cap` elements.
+    fn with_capacity(cap: u32) -> Self {
+        // We speculate that all elements < `Self::FIRST_HEAP_COL`.
+        if cap < Self::FIRST_HEAP_COL as u32 {
+            Self::from_inline(0)
+        } else {
+            Self::from_heap(ColListVec::with_capacity(cap))
+        }
+    }
+
     /// Constructs a list from a `u64` bitset
     /// where the highest bit is unset.
     ///
-    /// Panics if the highest bit is set.
+    /// Panics in debug mode if the highest bit is set.
     fn from_inline(list: u64) -> Self {
         debug_assert_eq!(list & (1 << Self::FIRST_HEAP_COL), 0);
         // (1) Move the whole inline bitset by one bit to the left.
@@ -136,12 +153,28 @@ impl ColList {
         ret
     }
 
+    /// Constructs a list in heap form from `vec`.
+    fn from_heap(vec: ColListVec) -> Self {
+        let heap = ManuallyDrop::new(vec);
+        Self { heap }
+    }
+
     /// Returns the head of the list.
     pub fn head(&self) -> ColId {
         // SAFETY: There's always at least one element in the list when this is called.
         // Notably, `from_inline(0)` is followed by at least one `.push(col)` before
         // a safe `ColList` is exposed outside this module.
         unsafe { self.iter().next().unwrap_unchecked() }
+    }
+
+    /// Returns whether `needle` is contained in the list.
+    ///
+    /// This an be faster than using `list.iter().any(|c| c == needle)`.
+    pub fn contains(&self, needle: ColId) -> bool {
+        match self.as_inline() {
+            Ok(inline) => inline.contains(needle),
+            Err(heap) => heap.contains(&needle),
+        }
     }
 
     /// Returns an iterator over all the columns in this list.
@@ -177,25 +210,15 @@ impl ColList {
         let val = u32::from(col) as u64;
         match (val < Self::FIRST_HEAP_COL, self.as_inline_mut()) {
             (true, Ok(inline)) => inline.0 |= 1 << (val + 1),
-            (false, Ok(_)) => self.convert_to_heap(col),
-            (_, Err(heap)) => heap.push_cold(col),
+            // Converts the list to its non-inline heap form.
+            // This is unlikely to happen.
+            (false, Ok(inline)) => *self = Self::from_heap(inline.heapify_and_push(col)),
+            (_, Err(heap)) => heap.push(col),
         }
     }
 
     /// The first `ColId` that would make the list heap allocated.
     const FIRST_HEAP_COL: u64 = size_of::<u64>() as u64 * 8 - 1;
-
-    /// Converts the list to its non-inline heap form.
-    ///
-    /// This is unlikely to be called.
-    fn convert_to_heap(&mut self, col: ColId) {
-        let mut vec = ColListVec::with_capacity(2 * (self.len() + 1));
-        for col in self.iter() {
-            vec.push(col)
-        }
-        vec.push(col);
-        self.heap = ManuallyDrop::new(vec);
-    }
 
     /// Returns the list either as inline or heap based.
     #[inline]
@@ -292,6 +315,13 @@ impl fmt::Debug for ColList {
 struct ColListInline(u64);
 
 impl ColListInline {
+    /// Returns whether `needle` is part of this list.
+    fn contains(&self, needle: ColId) -> bool {
+        let col = needle.0;
+        let inline = self.undo_mark();
+        col < ColList::FIRST_HEAP_COL as u32 && inline & (1u64 << col) != 0
+    }
+
     /// Returns an iterator over the [`ColId`]s stored by this list.
     fn iter(&self) -> impl '_ + Iterator<Item = ColId> {
         let mut value = self.undo_mark();
@@ -318,6 +348,17 @@ impl ColListInline {
     #[inline]
     fn undo_mark(&self) -> u64 {
         self.0 >> 1
+    }
+
+    /// Returns an equivalent list in heap form instead of inline, and adds `col` to it.
+    /// The capacity of the vec will be `2 * (self.len() + 1)`
+    fn heapify_and_push(&self, col: ColId) -> ColListVec {
+        let mut vec = ColListVec::with_capacity(2 * (self.len() + 1));
+        for col in self.iter() {
+            vec.push(col)
+        }
+        vec.push(col);
+        vec
     }
 }
 
@@ -384,10 +425,6 @@ impl ColListVec {
         unsafe {
             *cap_ptr = cap;
         }
-    }
-
-    fn push_cold(&mut self, val: ColId) {
-        self.push(val);
     }
 
     /// Push an element to the list.

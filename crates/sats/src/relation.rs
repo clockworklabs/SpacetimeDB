@@ -236,7 +236,7 @@ impl Header {
         self.fields.iter().find(|x| x.field.field_name() == Some(field_name))
     }
 
-    pub fn column_pos<'a>(&'a self, col: &'a FieldName) -> Option<usize> {
+    pub fn column_pos<'a>(&'a self, col: &'a FieldName) -> Option<ColId> {
         match col {
             FieldName::Name { .. } => self.fields.iter().position(|f| &f.field == col),
             FieldName::Pos { field, .. } => self
@@ -245,12 +245,17 @@ impl Header {
                 .enumerate()
                 .position(|(pos, f)| &f.field == col || *field == pos),
         }
+        .map(Into::into)
+    }
+
+    pub fn column_pos_or_err<'a>(&'a self, col: &'a FieldName) -> Result<ColId, RelationError> {
+        self.column_pos(col)
+            .ok_or_else(|| RelationError::FieldNotFound(self.clone(), col.clone()))
     }
 
     /// Finds the position of a field with `name`.
-    pub fn find_pos_by_name(&self, name: &str) -> Option<usize> {
-        let field = FieldName::named(&self.table_name, name);
-        self.column_pos(&field)
+    pub fn find_pos_by_name(&self, name: &str) -> Option<ColId> {
+        self.column_pos(&FieldName::named(&self.table_name, name))
     }
 
     pub fn column<'a>(&'a self, col: &'a FieldName) -> Option<&Column> {
@@ -258,48 +263,37 @@ impl Header {
     }
 
     /// Copy the [Constraints] that are referenced in the list of `for_columns`
-    fn retain_constraints(&self, for_columns: &[ColId]) -> Vec<(ColList, Constraints)> {
+    fn retain_constraints(&self, for_columns: &ColList) -> Vec<(ColList, Constraints)> {
         // Copy the constraints of the selected columns and retain the multi-column ones...
         self.constraints
             .iter()
-            .filter_map(|(cols, ct)| {
-                if cols.iter().any(|c: ColId| for_columns.contains(&c)) {
-                    Some((cols.clone(), *ct))
-                } else {
-                    None
-                }
-            })
+            // Keep constraints with a col list where at least one col is in `for_columns`.
+            .filter(|(cols, _)| cols.iter().any(|c| for_columns.contains(c)))
+            .cloned()
             .collect()
     }
 
     pub fn has_constraint(&self, field: &FieldName, constraint: Constraints) -> bool {
         self.column_pos(field)
-            .map(|x| {
-                let find = ColList::new(ColId(x as u32));
+            .map(|find| {
                 self.constraints
                     .iter()
-                    .any(|(col, ct)| col == &find && ct.contains(&constraint))
+                    .any(|(col, ct)| col.contains(find) && ct.contains(&constraint))
             })
             .unwrap_or(false)
     }
+
     /// Project the [FieldExpr] & the [Constraints] that referenced them
-    pub fn project<T>(&self, cols: &[T]) -> Result<Self, RelationError>
-    where
-        T: Into<FieldExpr> + Clone,
-    {
+    pub fn project(&self, cols: &[impl Into<FieldExpr> + Clone]) -> Result<Self, RelationError> {
         let mut p = Vec::with_capacity(cols.len());
-        let mut to_keep = Vec::with_capacity(cols.len());
+        let mut to_keep = ColListBuilder::new();
 
         for (pos, col) in cols.iter().enumerate() {
             match col.clone().into() {
                 FieldExpr::Name(col) => {
-                    if let Some(pos) = self.column_pos(&col) {
-                        to_keep.push(ColId(pos as u32));
-
-                        p.push(self.fields[pos].clone());
-                    } else {
-                        return Err(RelationError::FieldNotFound(self.clone(), col));
-                    }
+                    let pos = self.column_pos_or_err(&col)?;
+                    to_keep.push(pos);
+                    p.push(self.fields[pos.idx()].clone());
                 }
                 FieldExpr::Value(col) => {
                     p.push(Column::new(
@@ -314,7 +308,7 @@ impl Header {
             }
         }
 
-        let constraints = self.retain_constraints(&to_keep);
+        let constraints = self.retain_constraints(&to_keep.build().unwrap());
 
         Ok(Self::new(self.table_name.clone(), p, constraints))
     }
@@ -470,9 +464,7 @@ impl<'a> RelValueRef<'a> {
     pub fn get(&self, col: &'a FieldExpr, header: &'a Header) -> Result<&'a AlgebraicValue, RelationError> {
         let val = match col {
             FieldExpr::Name(col) => {
-                let pos = header
-                    .column_pos(col)
-                    .ok_or_else(|| RelationError::FieldNotFound(header.clone(), col.clone()))?;
+                let pos = header.column_pos_or_err(col)?.idx();
                 self.data
                     .elements
                     .get(pos)
@@ -490,11 +482,8 @@ impl<'a> RelValueRef<'a> {
         for col in cols {
             match col {
                 FieldExpr::Name(col) => {
-                    if let Some(pos) = header.column_pos(col) {
-                        elements.push(self.data.elements[pos].clone());
-                    } else {
-                        return Err(RelationError::FieldNotFound(header.clone(), col.clone()));
-                    }
+                    let pos = header.column_pos_or_err(col)?.idx();
+                    elements.push(self.data.elements[pos].clone());
                 }
                 FieldExpr::Value(col) => {
                     elements.push(col.clone());
@@ -736,7 +725,7 @@ mod tests {
     #[test]
     fn test_project() {
         let head = head("t1", ("a", "b"), 0);
-        let new = head.project::<FieldName>(&[]).unwrap();
+        let new = head.project(&[] as &[FieldName]).unwrap();
 
         let mut empty = head.clone();
         empty.fields.clear();
@@ -746,24 +735,24 @@ mod tests {
 
         let all = head.clone();
         let new = head
-            .project::<FieldName>(&[FieldName::named("t1", "a"), FieldName::named("t1", "b")])
+            .project(&[FieldName::named("t1", "a"), FieldName::named("t1", "b")])
             .unwrap();
 
         assert_eq!(all, new);
 
         let mut first = head.clone();
         first.fields.pop();
-        first.constraints = first.retain_constraints(&[ColId(0)]);
+        first.constraints = first.retain_constraints(&0.into());
 
-        let new = head.project::<FieldName>(&[FieldName::named("t1", "a")]).unwrap();
+        let new = head.project(&[FieldName::named("t1", "a")]).unwrap();
 
         assert_eq!(first, new);
 
         let mut second = head.clone();
         second.fields.remove(0);
-        second.constraints = second.retain_constraints(&[ColId(1)]);
+        second.constraints = second.retain_constraints(&1.into());
 
-        let new = head.project::<FieldName>(&[FieldName::named("t1", "b")]).unwrap();
+        let new = head.project(&[FieldName::named("t1", "b")]).unwrap();
 
         assert_eq!(second, new);
     }
@@ -776,7 +765,7 @@ mod tests {
         let new = head_lhs.extend(&head_rhs);
 
         let lhs = new
-            .project::<FieldName>(&[FieldName::named("t1", "a"), FieldName::named("t1", "b")])
+            .project(&[FieldName::named("t1", "a"), FieldName::named("t1", "b")])
             .unwrap();
 
         assert_eq!(head_lhs, lhs);
@@ -785,7 +774,7 @@ mod tests {
         head_rhs.table_name = head_lhs.table_name.clone();
 
         let rhs = new
-            .project::<FieldName>(&[FieldName::named("t2", "c"), FieldName::named("t2", "d")])
+            .project(&[FieldName::named("t2", "c"), FieldName::named("t2", "d")])
             .unwrap();
 
         assert_eq!(head_rhs, rhs);
