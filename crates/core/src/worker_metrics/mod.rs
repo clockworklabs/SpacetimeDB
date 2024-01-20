@@ -58,6 +58,11 @@ metrics_group!(
         #[labels(database_address: Address)]
         pub instance_queue_length_max: IntGaugeVec,
 
+        #[name = spacetime_worker_instance_operation_queue_available_tickets]
+        #[help = "The amount of tickets available in the reducer queue."]
+        #[labels(database_address: Address)]
+        pub instance_queue_available_tickets: IntGaugeVec,
+
         #[name = spacetime_worker_instance_operation_queue_length_histogram]
         #[help = "Length of the wait queue for access to a module instance."]
         #[labels(database_address: Address)]

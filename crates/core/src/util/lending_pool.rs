@@ -61,6 +61,8 @@ impl<T> LendingPool<T> {
         let queue_len = WORKER_METRICS.instance_queue_length.with_label_values(&db);
         let queue_len_max = WORKER_METRICS.instance_queue_length_max.with_label_values(&db);
         let queue_len_histogram = WORKER_METRICS.instance_queue_length_histogram.with_label_values(&db);
+        let available_tickets = WORKER_METRICS.instance_queue_available_tickets.with_label_values(&db);
+        available_tickets.set(self.sem.available_permits() as i64);
 
         queue_len.inc();
         let new_queue_len = queue_len.get();
