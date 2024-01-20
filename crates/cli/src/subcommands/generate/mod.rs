@@ -164,6 +164,7 @@ Failed to compile module {:?}. See cargo errors above for more details.",
 
             if !force {
                 print!("Are you sure you want to delete these files? [y/N] ");
+                input = "".to_string();
                 std::io::stdout().flush()?;
                 std::io::stdin().read_line(&mut input)?;
             } else {
