@@ -80,9 +80,10 @@ impl<T> LendingPool<T> {
         queue_len_max.set(max_queue_len);
 
         async move {
-            let permit = acq.await.map_err(|_| PoolClosed)?;
+            let permit_result = acq.await.map_err(|_| PoolClosed);
             queue_len.dec();
             queue_len_histogram.observe(queue_len.get() as f64);
+            let permit = permit_result?;
             let resource = pool_inner
                 .vec
                 .lock()
