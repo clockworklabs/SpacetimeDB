@@ -1,6 +1,5 @@
 use super::RowId;
 use crate::error::DBError;
-use nonempty::NonEmpty;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::data_key::ToDataKey;
 use spacetimedb_sats::{AlgebraicValue, DataKey, ProductValue};
@@ -89,20 +88,14 @@ impl BTreeIndexRangeIter<'_> {
 pub(crate) struct BTreeIndex {
     pub(crate) index_id: IndexId,
     pub(crate) table_id: TableId,
-    pub(crate) cols: NonEmpty<ColId>,
+    pub(crate) cols: ColList,
     pub(crate) name: String,
     pub(crate) is_unique: bool,
     idx: BTreeSet<IndexKey>,
 }
 
 impl BTreeIndex {
-    pub(crate) fn new(
-        index_id: IndexId,
-        table_id: TableId,
-        cols: NonEmpty<ColId>,
-        name: String,
-        is_unique: bool,
-    ) -> Self {
+    pub(crate) fn new(index_id: IndexId, table_id: TableId, cols: ColList, name: String, is_unique: bool) -> Self {
         Self {
             index_id,
             table_id,

@@ -5,7 +5,10 @@ use std::marker::PhantomData;
 // use crate::type_value::{ElementValue, EnumValue};
 // use crate::{ProductTypeElement, SumType, PrimitiveType, ReducerDef, ProductType, ProductValue, AlgebraicType, AlgebraicValue};
 
+use spacetimedb_primitives::{ColId, ColListBuilder};
+
 use crate::{
+    de::{array_visit, ArrayAccess, ArrayVisitor, GrowingVec},
     AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, MapType, MapValue, ProductType, ProductTypeElement,
     ProductValue, SumType, SumValue, WithTypespace, F32, F64,
 };
@@ -592,13 +595,24 @@ impl_deserialize!([] spacetimedb_primitives::TableId, de => u32::deserialize(de)
 impl_deserialize!([] spacetimedb_primitives::IndexId, de => u32::deserialize(de).map(Self));
 impl_deserialize!([] spacetimedb_primitives::SequenceId, de => u32::deserialize(de).map(Self));
 
-impl_deserialize!([T: crate::de::Deserialize<'de> + Clone] nonempty::NonEmpty<T>, de => {
-    let arr: Vec<T> = de.deserialize_array(BasicVecVisitor)?;
-    Self::from_slice(&arr).ok_or_else(|| {
-        crate::de::Error::custom(format!(
-            "invalid NonEmpty<{}>. Len is {}",
-            std::any::type_name::<T>(),
-            arr.len()
-        ))
-    })
+impl_deserialize!([] spacetimedb_primitives::ColList, de => {
+    impl GrowingVec<ColId> for ColListBuilder {
+        fn with_capacity(_: usize) -> Self {
+            Self::new()
+        }
+        fn push(&mut self, elem: ColId) {
+            self.push(elem);
+        }
+    }
+
+    struct ColListVisitor;
+    impl<'de> ArrayVisitor<'de, ColId> for ColListVisitor {
+        type Output = ColListBuilder;
+
+        fn visit<A: ArrayAccess<'de, Element = ColId>>(self, vec: A) -> Result<Self::Output, A::Error> {
+            array_visit(vec)
+        }
+    }
+    let col_list = de.deserialize_array(ColListVisitor)?;
+    col_list.build().map_err(|_| crate::de::Error::custom("invalid empty ColList".to_string()))
 });

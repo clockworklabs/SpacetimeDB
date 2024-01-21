@@ -1,4 +1,4 @@
-use nonempty::NonEmpty;
+use spacetimedb_primitives::ColList;
 use std::collections::BTreeMap;
 
 use crate::{
@@ -231,10 +231,10 @@ impl_serialize!([] spacetimedb_primitives::TableId, (self, ser) => ser.serialize
 impl_serialize!([] spacetimedb_primitives::IndexId, (self, ser) => ser.serialize_u32(self.0));
 impl_serialize!([] spacetimedb_primitives::SequenceId, (self, ser) => ser.serialize_u32(self.0));
 
-impl_serialize!([T: crate::ser::Serialize + Clone] NonEmpty<T>, (self, ser) => {
-     let mut arr = ser.serialize_array(self.len())?;
-        for x in self {
-            arr.serialize_element(x)?;
-        }
-        arr.end()
+impl_serialize!([] ColList, (self, ser) => {
+    let mut arr = ser.serialize_array(self.len() as usize)?;
+       for x in self.iter() {
+           arr.serialize_element(&x)?;
+       }
+       arr.end()
 });

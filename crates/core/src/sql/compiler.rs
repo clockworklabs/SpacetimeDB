@@ -1,7 +1,6 @@
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
 use crate::sql::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
-use nonempty::NonEmpty;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::db::def::{TableDef, TableSchema};
@@ -84,16 +83,16 @@ fn compile_where(mut q: QueryExpr, table: &From, filter: Selection) -> Result<Qu
 // using an index.
 pub enum IndexArgument {
     Eq {
-        columns: NonEmpty<ColId>,
+        columns: ColList,
         value: AlgebraicValue,
     },
     LowerBound {
-        columns: NonEmpty<ColId>,
+        columns: ColList,
         value: AlgebraicValue,
         inclusive: bool,
     },
     UpperBound {
-        columns: NonEmpty<ColId>,
+        columns: ColList,
         value: AlgebraicValue,
         inclusive: bool,
     },

@@ -2606,12 +2606,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nonempty"
-version = "0.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aeaf4ad7403de93e699c191202f017118df734d3850b01e13a3a8b2e6953d3c9"
-
-[[package]]
 name = "nu-ansi-term"
 version = "0.46.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4238,7 +4232,6 @@ dependencies = [
  "bytes",
  "derive_more",
  "log",
- "nonempty",
  "once_cell",
  "rand 0.8.5",
  "scoped-tls",
@@ -4266,7 +4259,6 @@ dependencies = [
  "lazy_static",
  "log",
  "mimalloc",
- "nonempty",
  "rand 0.8.5",
  "regex",
  "rusqlite",
@@ -4327,7 +4319,6 @@ dependencies = [
  "itertools 0.11.0",
  "jsonwebtoken",
  "mimalloc",
- "nonempty",
  "regex",
  "reqwest",
  "rustyline",
@@ -4337,6 +4328,7 @@ dependencies = [
  "slab",
  "spacetimedb-core",
  "spacetimedb-lib",
+ "spacetimedb-primitives",
  "spacetimedb-standalone",
  "syntect",
  "tabled",
@@ -4423,7 +4415,6 @@ dependencies = [
  "jsonwebtoken",
  "lazy_static",
  "log",
- "nonempty",
  "once_cell",
  "openssl",
  "parking_lot 0.12.1",
@@ -4481,7 +4472,6 @@ dependencies = [
 name = "spacetimedb-data-structures"
 version = "0.8.1"
 dependencies = [
- "nonempty",
  "serde",
  "thiserror",
 ]
@@ -4530,7 +4520,8 @@ name = "spacetimedb-primitives"
 version = "0.8.1"
 dependencies = [
  "bitflags 2.4.1",
- "nonempty",
+ "either",
+ "proptest",
 ]
 
 [[package]]
@@ -4552,7 +4543,6 @@ dependencies = [
  "enum-as-inner",
  "hex",
  "itertools 0.11.0",
- "nonempty",
  "proptest",
  "proptest-derive",
  "rand 0.8.5",
@@ -4647,7 +4637,6 @@ version = "0.8.1"
 dependencies = [
  "anyhow",
  "derive_more",
- "nonempty",
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-sats",
