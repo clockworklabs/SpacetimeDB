@@ -566,7 +566,7 @@ impl RelationalDB {
         ctx: &'a ExecutionContext,
         tx: &'a Tx,
         table_id: impl Into<TableId>,
-        cols: impl Into<NonEmpty<ColId>>,
+        cols: impl Into<ColList>,
         value: AlgebraicValue,
     ) -> Result<IterByColEq<'a>, DBError> {
         self.inner.iter_by_col_eq_tx(ctx, tx, table_id.into(), cols, value)
@@ -599,7 +599,7 @@ impl RelationalDB {
         ctx: &'a ExecutionContext,
         tx: &'a Tx,
         table_id: impl Into<TableId>,
-        cols: impl Into<NonEmpty<ColId>>,
+        cols: impl Into<ColList>,
         range: R,
     ) -> Result<IterByColRange<'a, R>, DBError> {
         self.inner.iter_by_col_range_tx(ctx, tx, table_id.into(), cols, range)
