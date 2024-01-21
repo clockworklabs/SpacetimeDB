@@ -266,12 +266,10 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
     ) -> Result<Vec<spacetimedb_sats::relation::MemTable>, DBError> {
         let db = &self.database_instance_context.relational_db;
         let auth = AuthCtx::new(self.database_instance_context.identity, caller_identity);
-        // TODO(jgilles): make this a read-only TX when those get added
-
-        db.with_read_only(&ExecutionContext::sql(db.address()), |tx| {
-            log::debug!("One-off query: {query}");
-
-            let compiled = sql::compiler::compile_sql(db, tx, &query)?
+        log::debug!("One-off query: {query}");
+        let ctx = &ExecutionContext::sql(db.address());
+        let compiled = db.with_read_only(ctx, |tx| {
+            sql::compiler::compile_sql(db, tx, &query)?
                 .into_iter()
                 .map(|expr| {
                     if matches!(expr, CrudExpr::Query { .. }) {
@@ -280,15 +278,16 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
                         Err(anyhow!("One-off queries are not allowed to modify the database"))
                     }
                 })
-                .collect::<Result<_, _>>()?;
-            sql::execute::execute_sql(db, tx, compiled, auth)
-        })
+                .collect::<Result<_, _>>()
+        })?;
+
+        sql::execute::execute_sql(db, compiled, auth)
     }
 
     fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error> {
         let db = &*self.database_instance_context.relational_db;
         db.with_auto_commit(&ExecutionContext::internal(db.address()), |tx| {
-            let tables = db.get_all_tables(tx)?;
+            let tables = db.get_all_tables_mut(tx)?;
             // We currently have unique table names,
             // so we can assume there's only one table to clear.
             if let Some(table_id) = tables
@@ -340,7 +339,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         let timestamp = Timestamp::now();
         let stdb = &*self.database_instance_context().relational_db;
         let ctx = ExecutionContext::internal(stdb.address());
-        let tx = stdb.begin_tx();
+        let tx = stdb.begin_mut_tx();
         let (tx, ()) = stdb
             .with_auto_rollback(&ctx, tx, |tx| {
                 for schema in get_tabledefs(&self.info) {
@@ -404,7 +403,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         let proposed_tables = get_tabledefs(&self.info).collect::<anyhow::Result<Vec<_>>>()?;
 
         let stdb = &*self.database_instance_context().relational_db;
-        let tx = stdb.begin_tx();
+        let tx = stdb.begin_mut_tx();
 
         let res = crate::db::update::update_database(
             stdb,
@@ -524,7 +523,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             arg_bytes: args.get_bsatn().clone(),
         };
 
-        let tx = tx.unwrap_or_else(|| stdb.begin_tx());
+        let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx());
         let tx_slot = self.instance.instance_env().tx.clone();
 
         let reducer_span = tracing::trace_span!(
@@ -569,7 +568,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let ctx = ExecutionContext::reducer(address, reducer_name);
         let status = match call_result {
             Err(err) => {
-                stdb.rollback_tx(&ctx, tx);
+                stdb.rollback_mut_tx(&ctx, tx);
 
                 T::log_traceback("reducer", reducer_name, &err);
 
@@ -588,7 +587,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 }
             }
             Ok(Err(errmsg)) => {
-                stdb.rollback_tx(&ctx, tx);
+                stdb.rollback_mut_tx(&ctx, tx);
 
                 log::info!("reducer returned error: {errmsg}");
 

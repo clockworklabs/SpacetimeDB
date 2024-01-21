@@ -28,7 +28,7 @@ use super::{
         system_tables, StColumnRow, StIndexRow, StSequenceRow, StTableRow, SystemTable, ST_COLUMNS_ID, ST_COLUMNS_NAME,
         ST_CONSTRAINTS_NAME, ST_INDEXES_ID, ST_INDEXES_NAME, ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID,
     },
-    traits::{self, DataRow, MutTx, MutTxDatastore, TxData, TxDatastore},
+    traits::{self, DataRow, MutTxDatastore, TxData, TxDatastore},
 };
 use crate::db::datastore::system_tables::{
     st_constraints_schema, st_module_schema, table_name_is_system, StColumnFields, StConstraintFields, StConstraintRow,
@@ -1949,14 +1949,22 @@ impl DataRow for Locking {
 }
 
 impl traits::Tx for Locking {
-    type Tx = MutTxId;
+    type Tx = TxId;
 
     fn begin_tx(&self) -> Self::Tx {
-        self.begin_mut_tx()
+        let timer = Instant::now();
+
+        let committed_state_shared_lock = self.committed_state.read_arc();
+        let lock_wait_time = timer.elapsed();
+        Self::Tx {
+            committed_state_shared_lock,
+            lock_wait_time,
+            timer,
+        }
     }
 
     fn release_tx(&self, ctx: &ExecutionContext, tx: Self::Tx) {
-        self.rollback_mut_tx(ctx, tx)
+        tx.release(ctx);
     }
 }
 
@@ -2353,6 +2361,7 @@ impl TxDatastore for Locking {
     fn table_id_exists_tx(&self, tx: &Self::Tx, table_id: &TableId) -> bool {
         tx.table_exists(table_id).is_some()
     }
+
     fn table_id_from_name_tx(&self, tx: &Self::Tx, table_name: &str) -> super::Result<Option<TableId>> {
         tx.table_id_from_name(table_name, self.database_address)
     }
@@ -2640,10 +2649,14 @@ impl MutTxDatastore for Locking {
     ) -> super::Result<ProductValue> {
         tx.insert(table_id, row, self.database_address)
     }
+
+    fn table_id_exists_mut_tx(&self, tx: &Self::MutTx, table_id: &TableId) -> bool {
+        tx.table_exists(table_id).is_some()
+    }
 }
 
 impl traits::Programmable for Locking {
-    fn program_hash(&self, tx: &MutTxId) -> Result<Option<Hash>, DBError> {
+    fn program_hash(&self, tx: &TxId) -> Result<Option<Hash>, DBError> {
         match tx
             .iter(&ExecutionContext::internal(self.database_address), &ST_MODULE_ID)?
             .next()
@@ -2710,6 +2723,7 @@ impl traits::MutProgrammable for Locking {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::datastore::traits::MutTx;
     use crate::db::datastore::Result;
     use crate::error::IndexError;
     use itertools::Itertools;

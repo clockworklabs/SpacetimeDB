@@ -4,7 +4,7 @@ use super::{
     query::compile_read_only_query,
     subscription::{QuerySet, Subscription},
 };
-use crate::host::module_host::{EventStatus, ModuleEvent};
+use crate::execution_context::ExecutionContext;
 use crate::protobuf::client_api::Subscribe;
 use crate::{
     client::{
@@ -13,8 +13,11 @@ use crate::{
     },
     host::NoSuchModule,
 };
-use crate::{db::datastore::locking_tx_datastore::MutTxId, execution_context::ExecutionContext};
 use crate::{db::relational_db::RelationalDB, error::DBError};
+use crate::{
+    db::relational_db::Tx,
+    host::module_host::{EventStatus, ModuleEvent},
+};
 use futures::{stream::FuturesUnordered, FutureExt, StreamExt};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
@@ -123,7 +126,7 @@ impl ModuleSubscriptionActor {
         &mut self,
         sender: ClientConnectionSender,
         subscription: Subscribe,
-        tx: &mut MutTxId,
+        tx: &mut Tx,
     ) -> Result<(), DBError> {
         self.remove_subscriber(sender.id);
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
@@ -171,7 +174,8 @@ impl ModuleSubscriptionActor {
         // Note: the missing QueryDebugInfo here is only used for finishing the transaction;
         // all of the relevant queries already executed, with debug info, in _add_subscription
         let ctx = ExecutionContext::subscribe(self.relational_db.address());
-        self.relational_db.finish_tx(&ctx, tx, result)
+        self.relational_db.release_tx(&ctx, tx);
+        result
     }
 
     fn remove_subscriber(&mut self, client_id: ClientActorId) {
@@ -181,7 +185,7 @@ impl ModuleSubscriptionActor {
         })
     }
 
-    async fn _broadcast_commit_event(&mut self, mut event: ModuleEvent, tx: &mut MutTxId) -> Result<(), DBError> {
+    async fn _broadcast_commit_event(&mut self, mut event: ModuleEvent, tx: &mut Tx) -> Result<(), DBError> {
         let futures = FuturesUnordered::new();
         let auth = AuthCtx::new(self.owner_identity, event.caller_identity);
 
@@ -219,6 +223,7 @@ impl ModuleSubscriptionActor {
         let mut tx = self.relational_db.begin_tx();
         let result = self._broadcast_commit_event(event, &mut tx).await;
         let ctx = ExecutionContext::incremental_update(self.relational_db.address());
-        self.relational_db.finish_tx(&ctx, tx, result)
+        self.relational_db.release_tx(&ctx, tx);
+        result
     }
 }
