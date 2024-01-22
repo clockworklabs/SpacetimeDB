@@ -222,6 +222,7 @@ fn evaluator_for_primary_updates(
                     head.fields.iter().map(|x| &x.field).collect::<Vec<_>>()
                 )
             });
+            let pos_op_type = pos_op_type.idx();
 
             for mut row in data {
                 let op_type = if let AlgebraicValue::U8(op) = row.data.elements.remove(pos_op_type) {

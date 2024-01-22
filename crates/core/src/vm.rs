@@ -293,7 +293,7 @@ impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
         // Otherwise probe the index with a row from the probe side.
         while let Some(row) = self.probe_side.next()? {
             if let Some(pos) = self.probe_side.head().column_pos(&self.probe_field) {
-                if let Some(value) = row.data.elements.get(pos) {
+                if let Some(value) = row.data.elements.get(pos.idx()) {
                     let table_id = self.index_table;
                     let col_id = self.index_col;
                     let value = value.clone();

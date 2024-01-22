@@ -38,7 +38,7 @@ pub fn to_mem_table_with_op_type(head: Header, table_access: StAccess, data: &Da
     if let Some(pos) = t.head.find_pos_by_name(OP_TYPE_FIELD_NAME) {
         t.data.extend(data.ops.iter().map(|row| {
             let mut new = row.row.clone();
-            new.elements[pos] = row.op_type.into();
+            new.elements[pos.idx()] = row.op_type.into();
             let mut bytes: &[u8] = row.row_pk.as_ref();
             RelValue::new(new, Some(DataKey::decode(&mut bytes).unwrap()))
         }));
