@@ -12,7 +12,7 @@ This Proposal in particular is focused on the **Unity tutorial experience**. Wit
 
 This proposal is **not** concerned with meaningfully expanding the **“Spacetime coverage”** of the Unity tutorial**.**
 
-Instead, it is focused on leveraging existing content easier to consume and maintain. Items in this proposal should:
+Instead, it is focused on leveraging existing content to be easier to consume and maintain. Items in this proposal should:
 
 - have meaningful, present impact (e.g. active bug, user-reported clarity issue)
 - take at most a day
