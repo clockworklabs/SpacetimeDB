@@ -101,6 +101,7 @@ impl ModuleSubscriptionManager {
 
 type SubscriptionVecRw = Arc<RwLock<Vec<Subscription>>>;
 
+// Hold subscription lock always after initiating tx.
 struct ModuleSubscriptionActor {
     relational_db: Arc<RelationalDB>,
     subscriptions: SubscriptionVecRw,
@@ -194,9 +195,9 @@ impl ModuleSubscriptionActor {
         let relational_db = self.relational_db.clone();
         let subscriptions = self.subscriptions.clone();
         tokio::spawn(async move {
+            let mut tx = relational_db.begin_tx();
             let subscriptions = subscriptions.read_arc();
             let futures = FuturesUnordered::new();
-            let mut tx = relational_db.begin_tx();
             for subscription in subscriptions.iter() {
                 let database_update = event.status.database_update().unwrap();
                 match subscription
