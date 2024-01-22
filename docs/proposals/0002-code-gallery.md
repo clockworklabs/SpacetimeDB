@@ -63,7 +63,7 @@ Imagined impacts:
     - Update our downloadable packages for starter & completed projects
     - Update any tutorial docs for altered code
 - Replace the meshes and textures with simpler “greybox” ones
-- Simplify confusing sections, using some code from ‣:
+- Simplify confusing sections, using some code from [zeke-demo-project](https://github.com/clockworklabs/spacetime-docs/pull/27/files?short_path=fc133e8#diff-fc133e8a9aa771a22d18a12927bddc468193008d5340b0a4063d411c54941ac1)
     - Decouple the tutorial project’s mining logic from animator components
     - Logic controlling camera movement from user input
 
@@ -102,7 +102,7 @@ I propose to approach things in this order:
 
 1. Update project to latest SpacetimeDB (since this might affect the set of errata)
 2. Address tutorial docs quick fixes / errata (pretty well-contained scope, high visibility/impact)
-3. Simplify code using https://github.com/clockworklabs/zeke-demo-project
+3. Simplify code using: https://github.com/clockworklabs/zeke-demo-project
 4. Greybox out the meshes (I believe this depends on some animator code being simplified)
 5. Copy (parts of) tutorial code into their own self-contained branches
 6. Create Markdown pages for each one, create the new docs section
@@ -129,6 +129,5 @@ None, yet.
 # Future work
 
 - Further work from the larger proposal: [[WIP] Proposals for docs rework](https://www.notion.so/WIP-Proposals-for-docs-rework-68a907c8f4ab4330acb74c7da6b1d1b8?pvs=21)
-- Expanding the Code demo gallery to include common or requested design patterns / systems
-    
-    [Untitled Database](Proposal%20Unity%20tutorial%20refactor%20ae1968411f784018a7481d6d89ea3b5e/Untitled%20Database%20bc0aa1426d6646999ac9a35636332e1d.csv)
+- Expanding the Code demo gallery to include common or requested design patterns / systems:
+    - [Code gallery wishlist](https://www.notion.so/clockworklabs/bc0aa1426d6646999ac9a35636332e1d?v=511e0050a20542e18323b036162715bc&pvs=4)
