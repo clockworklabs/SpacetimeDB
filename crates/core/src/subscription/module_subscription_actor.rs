@@ -99,9 +99,11 @@ impl ModuleSubscriptionManager {
     }
 }
 
+type SubscriptionVecRw = Arc<RwLock<Vec<Subscription>>>;
+
 struct ModuleSubscriptionActor {
     relational_db: Arc<RelationalDB>,
-    subscriptions: Arc<RwLock<Vec<Subscription>>>,
+    subscriptions: SubscriptionVecRw,
     owner_identity: Identity,
 }
 
