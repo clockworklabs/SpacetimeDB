@@ -1,3 +1,4 @@
+use crate::energy::{EnergyMonitor, EnergyQuanta, NullEnergyMonitor};
 use crate::hash::hash_bytes;
 use crate::host;
 use crate::messages::control_db::HostType;
@@ -7,13 +8,12 @@ use parking_lot::Mutex;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt;
-use std::ops::Sub;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use super::module_host::{Catalog, EntityDef, EventStatus, ModuleHost, NoSuchModule, UpdateDatabaseResult};
 use super::scheduler::SchedulerStarter;
-use super::{EnergyMonitor, NullEnergyMonitor, ReducerArgs};
+use super::ReducerArgs;
 
 pub struct HostController {
     modules: Mutex<HashMap<u64, ModuleHost>>,
@@ -81,62 +81,10 @@ impl fmt::Display for DescribedEntityType {
     }
 }
 
-/// [EnergyQuanta] represents an amount of energy in a canonical unit.
-/// It represents the smallest unit of energy that can be used to pay for
-/// a reducer invocation. We will likely refer to this unit as an "eV".
-///
-/// NOTE: This is represented by a signed integer, because it is possible
-/// for a user's balance to go negative. This is allowable
-/// for reasons of eventual consistency motivated by performance.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct EnergyQuanta(i128);
-
-impl EnergyQuanta {
-    pub const ZERO: Self = EnergyQuanta(0);
-
-    pub const DEFAULT_BUDGET: Self = EnergyQuanta(1_000_000_000_000_000_000);
-
-    #[inline]
-    pub fn new(v: i128) -> Self {
-        Self(v)
-    }
-
-    #[inline]
-    pub fn get(&self) -> i128 {
-        self.0
-    }
-}
-
-#[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub struct EnergyDiff(pub i128);
-
-impl EnergyDiff {
-    pub const ZERO: Self = EnergyDiff(0);
-
-    pub fn as_quanta(self) -> EnergyQuanta {
-        EnergyQuanta(self.0)
-    }
-}
-
-impl Sub for EnergyQuanta {
-    type Output = EnergyDiff;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        EnergyDiff(self.0 - rhs.0)
-    }
-}
-
-impl fmt::Debug for EnergyDiff {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)?;
-        f.write_str("eV")
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct ReducerCallResult {
     pub outcome: ReducerOutcome,
-    pub energy_used: EnergyDiff,
+    pub energy_used: EnergyQuanta,
     pub execution_duration: Duration,
 }
 

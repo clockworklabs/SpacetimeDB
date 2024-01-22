@@ -4,7 +4,7 @@ use http::StatusCode;
 use serde::Deserialize;
 use serde_json::json;
 
-use spacetimedb::host::EnergyQuanta;
+use spacetimedb::energy::EnergyQuanta;
 use spacetimedb_lib::Identity;
 
 use crate::auth::SpacetimeAuthHeader;
@@ -38,22 +38,22 @@ pub async fn add_energy<S: ControlStateDelegate>(
         return Err(StatusCode::UNAUTHORIZED.into());
     };
     // Nb.: Negative amount withdraws
-    let amount = amount.map(|s| s.parse::<i128>()).transpose().map_err(|e| {
+    let amount = amount.map(|s| s.parse::<u128>()).transpose().map_err(|e| {
         log::error!("Failed to parse amount: {e:?}");
         StatusCode::BAD_REQUEST
     })?;
-
-    let mut balance = ctx
-        .get_energy_balance(&auth.identity)
-        .map_err(log_and_500)?
-        .map_or(0, |quanta| quanta.get());
 
     if let Some(satoshi) = amount {
         ctx.add_energy(&auth.identity, EnergyQuanta::new(satoshi))
             .await
             .map_err(log_and_500)?;
-        balance += satoshi;
     }
+
+    // TODO: is this guaranteed to pull the updated balance?
+    let balance = ctx
+        .get_energy_balance(&auth.identity)
+        .map_err(log_and_500)?
+        .map_or(0, |quanta| quanta.get());
 
     let response_json = json!({
         // Note: balance must be returned as a string to avoid truncation.
@@ -114,23 +114,17 @@ pub async fn set_energy_balance<S: ControlStateDelegate>(
         .map_err(log_and_500)?
         .map_or(0, |quanta| quanta.get());
 
-    let balance: i128 = if desired_balance > current_balance {
-        let delta = desired_balance - current_balance;
-        ctx.add_energy(&identity, EnergyQuanta::new(delta))
-            .await
-            .map_err(log_and_500)?;
-        delta
+    // TODO: this is a race condition waiting to happen. have a set_balance method on ControlStateDelegate
+    let delta = EnergyQuanta::new(desired_balance.abs_diff(current_balance));
+    if desired_balance > current_balance {
+        ctx.add_energy(&identity, delta).await.map_err(log_and_500)?;
     } else {
-        let delta = current_balance - desired_balance;
-        ctx.withdraw_energy(&identity, EnergyQuanta::new(delta))
-            .await
-            .map_err(log_and_500)?;
-        delta
-    };
+        ctx.withdraw_energy(&identity, delta).await.map_err(log_and_500)?;
+    }
 
     let response_json = json!({
         // Note: balance must be returned as a string to avoid truncation.
-        "balance": balance.to_string(),
+        "balance": desired_balance.to_string(),
     });
 
     Ok(axum::Json(response_json))

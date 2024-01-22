@@ -8,8 +8,8 @@ use spacetimedb::address::Address;
 use spacetimedb::auth::identity::{DecodingKey, EncodingKey};
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
-use spacetimedb::host::UpdateDatabaseResult;
-use spacetimedb::host::{EnergyQuanta, HostController};
+use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
+use spacetimedb::host::{HostController, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, DatabaseInstance, IdentityEmail, Node};
 use spacetimedb::module_host_context::ModuleHostContext;
@@ -115,7 +115,7 @@ pub trait ControlStateReadAccess {
     fn get_recovery_codes(&self, email: &str) -> spacetimedb::control_db::Result<Vec<RecoveryCode>>;
 
     // Energy
-    fn get_energy_balance(&self, identity: &Identity) -> spacetimedb::control_db::Result<Option<EnergyQuanta>>;
+    fn get_energy_balance(&self, identity: &Identity) -> spacetimedb::control_db::Result<Option<EnergyBalance>>;
 
     // DNS
     fn lookup_address(&self, domain: &DomainName) -> spacetimedb::control_db::Result<Option<Address>>;
@@ -222,7 +222,7 @@ impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for ArcEnv<T> {
     }
 
     // Energy
-    fn get_energy_balance(&self, identity: &Identity) -> spacetimedb::control_db::Result<Option<EnergyQuanta>> {
+    fn get_energy_balance(&self, identity: &Identity) -> spacetimedb::control_db::Result<Option<EnergyBalance>> {
         self.0.get_energy_balance(identity)
     }
 
@@ -378,7 +378,7 @@ impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
     }
 
     // Energy
-    fn get_energy_balance(&self, identity: &Identity) -> spacetimedb::control_db::Result<Option<EnergyQuanta>> {
+    fn get_energy_balance(&self, identity: &Identity) -> spacetimedb::control_db::Result<Option<EnergyBalance>> {
         (**self).get_energy_balance(identity)
     }
 

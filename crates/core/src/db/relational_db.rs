@@ -179,6 +179,18 @@ impl RelationalDB {
         self.commit_log.as_ref().map(CommitLog::from)
     }
 
+    /// The number of bytes on disk occupied by the [MessageLog].
+    pub fn message_log_size_on_disk(&self) -> u64 {
+        self.commit_log()
+            .map_or(0, |commit_log| commit_log.message_log_size_on_disk())
+    }
+
+    /// The number of bytes on disk occupied by the [ObjectDB].
+    pub fn object_db_size_on_disk(&self) -> std::result::Result<u64, DBError> {
+        self.commit_log()
+            .map_or(Ok(0), |commit_log| commit_log.object_db_size_on_disk())
+    }
+
     #[tracing::instrument(skip_all)]
     pub fn pk_for_row(row: &ProductValue) -> PrimaryKey {
         PrimaryKey {
