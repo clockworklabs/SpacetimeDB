@@ -10,7 +10,7 @@ This Proposal in particular is focused on the **Unity tutorial experience**. Wit
 
 ## Scope
 
-This proposal is **not** concerned with meaningfully expanding the **“Spacetime coverage”** of the Unity tutorial**.**
+This proposal is **not** concerned with meaningfully expanding the “Spacetime coverage” of the Unity tutorial.
 
 Instead, it is focused on leveraging existing content to be easier to consume and maintain. Items in this proposal should:
 
