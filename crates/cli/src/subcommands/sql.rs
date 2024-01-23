@@ -112,7 +112,8 @@ pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str, with_stats: bool
         .map(|stmt_result| {
             let mut table = stmt_result_to_table(stmt_result)?;
             if with_stats {
-                let row_count = print_row_count(table.count_rows());
+                // The `tabled::count_rows` add the header as a row, so subtract it.
+                let row_count = print_row_count(table.count_rows().wrapping_sub(1));
                 table.with(tabled::settings::panel::Footer::new(row_count));
             }
             anyhow::Ok(table)
