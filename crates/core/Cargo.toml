@@ -97,6 +97,8 @@ rocksdb = {workspace = true, optional = true}
 odb_rocksdb = ["dep:rocksdb"]
 odb_sled = []
 default = ["odb_sled"]
+# Perfmaps for profiling modules
+perfmap = []
 
 [dev-dependencies]
 spacetimedb-lib = { path = "../lib", features = ["proptest"] }
