@@ -27,7 +27,8 @@ static ENGINE: Lazy<Engine> = Lazy::new(|| {
     config
         .cranelift_opt_level(wasmtime::OptLevel::Speed)
         .consume_fuel(true)
-        .wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Enable);
+        .wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Enable)
+        .profiler(wasmtime::ProfilingStrategy::PerfMap);
 
     let cache_config = toml::toml! {
         // see <https://docs.wasmtime.dev/cli-cache.html> for options here
