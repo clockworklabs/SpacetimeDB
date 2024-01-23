@@ -17,8 +17,8 @@ use syntect::highlighting::{Theme, ThemeSet};
 use syntect::parsing::{SyntaxDefinition, SyntaxSet, SyntaxSetBuilder};
 use syntect::util::LinesWithEndings;
 
-static SQL_SYNTAX: &str = include_str!("../../tools/sublime/SpaceTimeDbSQL.sublime-syntax");
-static SYNTAX_NAME: &str = "SQL (SpaceTimeDb)";
+static SQL_SYNTAX: &str = include_str!("../../tools/sublime/SpacetimeDBSQL.sublime-syntax");
+static SYNTAX_NAME: &str = "SQL (SpacetimeDB)";
 
 static AUTO_COMPLETE: &str = "\
 true
