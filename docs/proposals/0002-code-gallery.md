@@ -20,8 +20,8 @@ Instead, it is focused on leveraging existing content to be easier to consume an
 
 ## Pain points to address
 
-- Different gamedevs have explicitly conflicting use cases, so it’s difficult to make one comprehensive tutorial
 - Our Unity tutorial is doing too many jobs: introduce SpacetimeDB concepts, address setup/one-time errors, explain the Unity SDK, teach design principles..
+- Different gamedevs have explicitly conflicting use cases, so it’s difficult to make one comprehensive tutorial
 - Unclear which parts are self-contained / can be tested and run without continuing
 - Unclear which portions can/can’t be easily “copypasted” to other projects
 - No clear “before+after” of the code for each section
