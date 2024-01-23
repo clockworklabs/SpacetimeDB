@@ -130,7 +130,7 @@ def cmp_bench(stat: Stat):
     for (k, v) in stat.sqlite.items():
         rows.append([k, v, stat.spacetime[k], round(stat.spacetime[k] - v, 2)])
 
-    bar = dict(SpaceTimeDb=stat.spacetime["mean"], Sqlite=stat.sqlite["mean"])
+    bar = dict(SpacetimeDB=stat.spacetime["mean"], Sqlite=stat.sqlite["mean"])
     return Report("Comparing Sqlite VS Spacetime Winner: **%s**" % winner, header, bar, rows)
 
 

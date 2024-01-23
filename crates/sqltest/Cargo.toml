@@ -2,7 +2,7 @@
 name = "sqltest"
 version = "0.8.1"
 edition = "2021"
-description = "Sql integration test for SpaceTimeDb"
+description = "Sql integration test for SpacetimeDB"
 
 [dependencies]
 spacetimedb-lib = { path = "../lib" }

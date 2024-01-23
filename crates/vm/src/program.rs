@@ -19,9 +19,9 @@ use crate::rel_ops::RelOps;
 /// A trait to allow split the execution of `programs` to allow executing
 /// `queries` that take in account each `program` state/enviroment.
 ///
-/// In concrete, it allows to run queries that run on the `SpaceTimeDb` engine.
+/// To be specific, it allows you to run queries that run on the `SpacetimeDB` engine.
 ///
-/// It could also permite run queries backed by different engines, like in `MySql`.
+/// It could also permit run queries backed by different engines, like in `MySql`.
 pub trait ProgramVm {
     /// Load the in-built functions that define the operators of the VM,
     /// like `+`, `and`, `==`, etc.
