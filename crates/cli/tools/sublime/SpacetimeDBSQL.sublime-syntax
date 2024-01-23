@@ -1,6 +1,6 @@
 %YAML 1.2
 ---
-name: SQL (SpaceTimeDb)
+name: SQL (SpacetimeDB)
 file_extensions:
   - sql
   - stsql

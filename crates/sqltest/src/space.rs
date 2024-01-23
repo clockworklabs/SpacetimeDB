@@ -148,6 +148,6 @@ impl AsyncDB for SpaceDb {
     }
 
     fn engine_name(&self) -> &str {
-        "SpaceTimeDb"
+        "SpacetimeDB"
     }
 }

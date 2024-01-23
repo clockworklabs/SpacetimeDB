@@ -1,4 +1,4 @@
-This crate check the conformance of SpaceTimeDB to SQL:2016
+This crate check the conformance of SpacetimeDB to SQL:2016
 
 # Setup PG
 

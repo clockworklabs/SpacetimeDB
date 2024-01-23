@@ -30,7 +30,7 @@ use sqllogictest::{
 #[clap(rename_all = "PascalCase")]
 enum DbType {
     #[default]
-    SpaceTimeDb,
+    SpacetimeDB,
     Sqlite,
     Postgres,
 }
@@ -53,7 +53,7 @@ struct Args {
     files: Vec<String>,
 
     /// The database engine name.
-    #[clap(short, long, value_enum, default_value = "SpaceTimeDb")]
+    #[clap(short, long, value_enum, default_value = "SpacetimeDB")]
     engine: DbType,
 
     /// Whether to enable colors in the output.
@@ -125,7 +125,7 @@ async fn main() -> anyhow::Result<()> {
 
 async fn open_db(engine: DbType) -> Result<DBRunner, DBError> {
     Ok(match engine {
-        DbType::SpaceTimeDb => SpaceDb::new()?.into_db(),
+        DbType::SpacetimeDB => SpaceDb::new()?.into_db(),
         DbType::Sqlite => Sqlite::new().map_err(DBError::Other)?.into_db(),
         DbType::Postgres => Pg::new().await.map_err(DBError::Other)?.into_db(),
     })
