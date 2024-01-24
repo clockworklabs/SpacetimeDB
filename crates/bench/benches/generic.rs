@@ -70,6 +70,11 @@ fn table_suite<DB: BenchDatabase, T: BenchTable + RandomTable>(g: &mut Group, db
     for (_, table_id, table_params) in &tables {
         insert_bulk::<DB, T>(g, table_params, db, table_id, 0, 100)?;
         insert_bulk::<DB, T>(g, table_params, db, table_id, 1000, 100)?;
+        insert_bulk::<DB, T>(g, table_params, db, table_id, 0, 1_000_000)?;
+
+        update_bulk::<DB, T>(g, table_params, db, table_id, 100)?;
+        update_bulk::<DB, T>(g, table_params, db, table_id, 1000)?;
+        update_bulk::<DB, T>(g, table_params, db, table_id, 1_000_000)?;
     }
     for (index_strategy, table_id, table_params) in &tables {
         if *index_strategy == IndexStrategy::Unique {
@@ -191,6 +196,8 @@ fn insert_bulk<DB: BenchDatabase, T: BenchTable + RandomTable>(
 
     // Each iteration performs one transaction, though it inserts many rows.
     g.throughput(criterion::Throughput::Elements(1));
+    // FIXME: only for 1_000_000 inserts
+    g.sample_size(10);
 
     g.bench_function(&id, |b| {
         bench_harness(
@@ -207,6 +214,41 @@ fn insert_bulk<DB: BenchDatabase, T: BenchTable + RandomTable>(
             },
             |db, to_insert| {
                 db.insert_bulk(table_id, to_insert)?;
+                Ok(())
+            },
+        )
+    });
+    db.clear_table(table_id)?;
+    Ok(())
+}
+
+fn update_bulk<DB: BenchDatabase, T: BenchTable + RandomTable>(
+    g: &mut Group,
+    table_params: &str,
+    db: &mut DB,
+    table_id: &DB::TableId,
+    count: u32,
+) -> ResultBench<()> {
+    let id = format!("update_bulk/{table_params}/count={count}");
+    let data = create_sequential::<T>(0xdeadbeef, count, 1000);
+    // these will have the same keys, so inserting will act as an update.
+    let updates = create_sequential::<T>(0xfeedbaba, count, 1000);
+
+    // Each iteration performs one transaction, though it inserts many rows.
+    g.throughput(criterion::Throughput::Elements(1));
+
+    g.bench_function(&id, |b| {
+        bench_harness(
+            b,
+            db,
+            |db| {
+                db.clear_table(table_id)?;
+                db.insert_bulk(table_id, data.clone())?;
+                Ok(updates.clone())
+            },
+            |db, to_update| {
+                // FIXME: this doesn't work, need to do it properly
+                db.insert_bulk(table_id, to_update)?;
                 Ok(())
             },
         )
