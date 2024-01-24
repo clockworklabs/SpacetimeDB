@@ -1,8 +1,10 @@
-use std::fmt;
-
+use super::Serialize as _;
+use crate::{
+    algebraic_value::ser::ValueSerializer,
+    ser::{self, Serializer},
+};
 use ::serde::ser as serde;
-
-use crate::ser::{self, Serializer};
+use std::fmt;
 
 /// Converts any [`serde::Serializer`] to a SATS [`Serializer`]
 /// so that Serde's data formats can be reused.
@@ -119,6 +121,53 @@ impl<S: serde::Serializer> Serializer for SerdeSerializer<S> {
             map.serialize_entry(&tag, value).map_err(SerdeError)?;
         }
         map.end().map_err(SerdeError)
+    }
+
+    unsafe fn serialize_bsatn(self, ty: &crate::AlgebraicType, bsatn: &[u8]) -> Result<Self::Ok, Self::Error> {
+        // TODO(Centril): Consider instead deserializing the `bsatn` through a
+        // deserializer that serializes into `self` directly.
+
+        // First convert the BSATN to an `AlgebraicValue`.
+        // SAFETY: Forward caller requirements of this method to that we are calling.
+        let res = unsafe { ValueSerializer.serialize_bsatn(ty, bsatn) };
+        let value = res.unwrap_or_else(|x| match x {});
+
+        // Then serialize that.
+        value.serialize(self)
+    }
+
+    unsafe fn serialize_bsatn_in_chunks<'a, I: Clone + Iterator<Item = &'a [u8]>>(
+        self,
+        ty: &crate::AlgebraicType,
+        total_bsatn_len: usize,
+        bsatn: I,
+    ) -> Result<Self::Ok, Self::Error> {
+        // TODO(Centril): Unlike above, in this case we must at minimum concatenate `bsatn`
+        // before we can do the piping mentioned above, but that's better than
+        // serializing to `AlgebraicValue` first, so consider that.
+
+        // First convert the BSATN to an `AlgebraicValue`.
+        // SAFETY: Forward caller requirements of this method to that we are calling.
+        let res = unsafe { ValueSerializer.serialize_bsatn_in_chunks(ty, total_bsatn_len, bsatn) };
+        let value = res.unwrap_or_else(|x| match x {});
+
+        // Then serialize that.
+        value.serialize(self)
+    }
+
+    unsafe fn serialize_str_in_chunks<'a, I: Clone + Iterator<Item = &'a [u8]>>(
+        self,
+        total_len: usize,
+        string: I,
+    ) -> Result<Self::Ok, Self::Error> {
+        // First convert the `string` to an `AlgebraicValue`.
+        // SAFETY: Forward caller requirements of this method to that we are calling.
+        let res = unsafe { ValueSerializer.serialize_str_in_chunks(total_len, string) };
+        let value = res.unwrap_or_else(|x| match x {});
+
+        // Then serialize that.
+        // This incurs a very minor cost of branching on `AlgebraicValue::String`.
+        value.serialize(self)
     }
 }
 

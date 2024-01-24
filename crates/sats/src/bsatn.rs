@@ -1,4 +1,4 @@
-use crate::buffer::{BufReader, BufWriter};
+use crate::buffer::{BufReader, BufWriter, CountWriter};
 use crate::de::{BasicSmallVecVisitor, Deserialize, DeserializeSeed, Deserializer as _};
 use crate::ser::Serialize;
 use crate::Typespace;
@@ -23,6 +23,13 @@ pub fn to_vec<T: Serialize + ?Sized>(value: &T) -> Result<Vec<u8>, ser::BsatnErr
     let mut v = Vec::new();
     to_writer(&mut v, value)?;
     Ok(v)
+}
+
+/// Computes the size of `val` when BSATN encoding without actually encoding.
+pub fn to_len<T: Serialize + ?Sized>(value: &T) -> Result<usize, ser::BsatnError> {
+    let mut writer = CountWriter::default();
+    to_writer(&mut writer, value)?;
+    Ok(writer.finish())
 }
 
 /// Deserialize a `T` from the BSATN format in the buffered `reader`.
