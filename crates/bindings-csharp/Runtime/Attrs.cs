@@ -21,16 +21,6 @@ public sealed class ReducerAttribute : Attribute
 )]
 public sealed class TableAttribute : Attribute { }
 
-[AttributeUsage(
-    AttributeTargets.Struct | AttributeTargets.Class | AttributeTargets.Enum,
-    Inherited = false,
-    AllowMultiple = false
-)]
-public sealed class TypeAttribute : Attribute { }
-
-public interface TaggedEnum<Variants>
-    where Variants : struct { }
-
 [AttributeUsage(AttributeTargets.Field, Inherited = false, AllowMultiple = false)]
 public sealed class ColumnAttribute : Attribute
 {
