@@ -29,6 +29,8 @@ git push -u origin a-branch-name-that-describes-my-change
 
 6. Go to our GitHub and open a PR that references your branch in your fork on your GitHub
 
+> NOTE! If you make a change to `nav.ts` you will have to run `npm run build` to generate a new `docs/nav.js` file.
+
 ## License
 
 This documentation repository is licensed under Apache 2.0. See LICENSE.txt for more details.
