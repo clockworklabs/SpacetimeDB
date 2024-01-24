@@ -380,6 +380,7 @@ impl QuerySet {
                         });
                     }
                 }
+                #[cfg(feature = "metrics")]
                 record_query_duration_metrics(WorkloadType::Subscribe, &db.address(), start);
             }
         }
@@ -394,6 +395,7 @@ impl QuerySet {
     }
 }
 
+#[cfg(feature = "metrics")]
 fn record_query_duration_metrics(workload: WorkloadType, db: &Address, start: Instant) {
     let query_duration = start.elapsed().as_secs_f64();
 

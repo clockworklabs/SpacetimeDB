@@ -377,6 +377,7 @@ impl CommitLogMut {
             let operation = match record.op {
                 TxOp::Insert(_) => {
                     // Increment rows inserted metric
+                    #[cfg(feature = "metrics")]
                     DB_METRICS
                         .rdb_num_rows_inserted
                         .with_label_values(workload, db, reducer, &table_id, table_name)
@@ -390,6 +391,7 @@ impl CommitLogMut {
                 }
                 TxOp::Delete => {
                     // Increment rows deleted metric
+                    #[cfg(feature = "metrics")]
                     DB_METRICS
                         .rdb_num_rows_deleted
                         .with_label_values(workload, db, reducer, &table_id, table_name)

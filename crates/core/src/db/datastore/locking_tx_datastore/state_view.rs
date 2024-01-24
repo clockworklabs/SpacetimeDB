@@ -200,6 +200,7 @@ pub struct Iter<'a> {
     num_committed_rows_fetched: u64,
 }
 
+#[cfg(feature = "metrics")]
 impl Drop for Iter<'_> {
     fn drop(&mut self) {
         DB_METRICS
@@ -333,6 +334,7 @@ pub struct IndexSeekIterMutTxId<'a> {
     pub(crate) num_committed_rows_fetched: u64,
 }
 
+#[cfg(feature = "metrics")]
 impl Drop for IndexSeekIterMutTxId<'_> {
     fn drop(&mut self) {
         let table_name = self
