@@ -224,6 +224,26 @@ impl BufWriter for &mut [u8] {
     }
 }
 
+/// A [`BufWriter`] that only counts the bytes.
+#[derive(Default)]
+pub struct CountWriter {
+    /// The number of bytes counted thus far.
+    num_bytes: usize,
+}
+
+impl CountWriter {
+    /// Consumes the counter and returns the final count.
+    pub fn finish(self) -> usize {
+        self.num_bytes
+    }
+}
+
+impl BufWriter for CountWriter {
+    fn put_slice(&mut self, slice: &[u8]) {
+        self.num_bytes += slice.len();
+    }
+}
+
 impl<'de> BufReader<'de> for &'de [u8] {
     fn get_slice(&mut self, size: usize) -> Result<&'de [u8], DecodeError> {
         if self.len() < size {

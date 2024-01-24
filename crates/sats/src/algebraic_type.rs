@@ -2,7 +2,7 @@ pub mod fmt;
 pub mod map_notation;
 
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
-use crate::algebraic_value::ser::ValueSerializer;
+use crate::algebraic_value::ser::value_serialize;
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize, MapType};
 use crate::{AlgebraicTypeRef, AlgebraicValue, ArrayType, BuiltinType, ProductType, SumType, SumTypeVariant};
@@ -234,7 +234,7 @@ impl AlgebraicType {
     }
 
     pub fn as_value(&self) -> AlgebraicValue {
-        self.serialize(ValueSerializer).unwrap_or_else(|x| match x {})
+        value_serialize(self)
     }
 
     pub fn from_value(value: &AlgebraicValue) -> Result<Self, ValueDeserializeError> {

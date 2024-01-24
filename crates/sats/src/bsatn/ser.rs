@@ -144,6 +144,37 @@ impl<W: BufWriter> ser::Serializer for Serializer<'_, W> {
         self.writer.put_u8(tag);
         value.serialize(self)
     }
+
+    unsafe fn serialize_bsatn(self, _: &crate::AlgebraicType, bsatn: &[u8]) -> Result<Self::Ok, Self::Error> {
+        self.writer.put_slice(bsatn);
+        Ok(())
+    }
+
+    unsafe fn serialize_bsatn_in_chunks<'a, I: Iterator<Item = &'a [u8]>>(
+        self,
+        _: &crate::AlgebraicType,
+        _: usize,
+        bsatn: I,
+    ) -> Result<Self::Ok, Self::Error> {
+        for chunk in bsatn {
+            self.writer.put_slice(chunk);
+        }
+        Ok(())
+    }
+
+    unsafe fn serialize_str_in_chunks<'a, I: Iterator<Item = &'a [u8]>>(
+        self,
+        total_len: usize,
+        string: I,
+    ) -> Result<Self::Ok, Self::Error> {
+        // We need to len-prefix to make this BSATN.
+        put_len(self.writer, total_len)?;
+
+        for chunk in string {
+            self.writer.put_slice(chunk);
+        }
+        Ok(())
+    }
 }
 
 impl<W: BufWriter> SerializeArray for Serializer<'_, W> {

@@ -1,7 +1,13 @@
-use std::convert::Infallible;
+use crate::ser::{self, ForwardNamedToSeqProduct, Serialize};
+use crate::{AlgebraicType, AlgebraicValue, ArrayValue, MapValue, F32, F64};
+use core::convert::Infallible;
+use core::ptr;
+use std::alloc::{self, Layout};
 
-use crate::ser::{self, ForwardNamedToSeqProduct};
-use crate::{AlgebraicValue, ArrayValue, MapValue, F32, F64};
+/// Serialize `x` as an [`AlgebraicValue`].
+pub fn value_serialize(x: &(impl Serialize + ?Sized)) -> AlgebraicValue {
+    x.serialize(ValueSerializer).unwrap_or_else(|e| match e {})
+}
 
 /// An implementation of [`Serializer`](ser::Serializer)
 /// where the output of serialization is an `AlgebraicValue`.
@@ -76,6 +82,82 @@ impl ser::Serializer for ValueSerializer {
     ) -> Result<Self::Ok, Self::Error> {
         value.serialize(self).map(|v| AlgebraicValue::sum(tag, v))
     }
+
+    unsafe fn serialize_bsatn(self, ty: &AlgebraicType, mut bsatn: &[u8]) -> Result<Self::Ok, Self::Error> {
+        let res = AlgebraicValue::decode(ty, &mut bsatn);
+        // SAFETY: Caller promised that `res.is_ok()`.
+        Ok(unsafe { res.unwrap_unchecked() })
+    }
+
+    unsafe fn serialize_bsatn_in_chunks<'a, I: Iterator<Item = &'a [u8]>>(
+        self,
+        ty: &crate::AlgebraicType,
+        total_bsatn_len: usize,
+        chunks: I,
+    ) -> Result<Self::Ok, Self::Error> {
+        // SAFETY: Caller promised `total_bsatn_len == chunks.map(|c| c.len()).sum() <= isize::MAX`.
+        let bsatn = unsafe { concat_byte_chunks(total_bsatn_len, chunks) };
+
+        // SAFETY: Caller promised `AlgebraicValue::decode(ty, &mut bytes).is_ok()`.
+        unsafe { self.serialize_bsatn(ty, &bsatn) }
+    }
+
+    unsafe fn serialize_str_in_chunks<'a, I: Iterator<Item = &'a [u8]>>(
+        self,
+        total_len: usize,
+        string: I,
+    ) -> Result<Self::Ok, Self::Error> {
+        // SAFETY: Caller promised `total_len == string.map(|c| c.len()).sum() <= isize::MAx`.
+        let bytes = unsafe { concat_byte_chunks(total_len, string) };
+
+        // SAFETY: Caller promised `bytes` is UTF-8.
+        let string = unsafe { String::from_utf8_unchecked(bytes) };
+        Ok(string.into())
+    }
+}
+
+/// Returns the concatenation of `chunks` that must be of `total_len` as a `Vec<u8>`.
+///
+/// # Safety
+///
+/// - `total_len == chunks.map(|c| c.len()).sum() <= isize::MAX`
+unsafe fn concat_byte_chunks<'a>(total_len: usize, chunks: impl Iterator<Item = &'a [u8]>) -> Vec<u8> {
+    // Allocate space for `[u8; total_len]` on the heap.
+    let layout = Layout::array::<u8>(total_len);
+    // SAFETY: Caller promised that `total_len <= isize`.
+    let layout = unsafe { layout.unwrap_unchecked() };
+    let ptr = alloc::alloc(layout);
+    if ptr.is_null() {
+        alloc::handle_alloc_error(layout);
+    }
+
+    // Copy over each `chunk`, moving `dst` by `chunk.len()` time.
+    let mut dst = ptr;
+    for chunk in chunks {
+        let len = chunk.len();
+        // SAFETY:
+        // - `chunk` is valid for reads for `len` bytes.
+        // - `dst` is valid for writes as we own it
+        //    and as (1) caller promised that all `chunk`s will fit in `total_len`,
+        //    this entails that `dst..dst + len` is always in bounds of the allocation.
+        // - `chunk` and `dst` are trivially properly aligned (`align_of::<u8>() == 1`).
+        // - The allocation `ptr` points to is new so derived pointers cannot overlap with `chunk`.
+        unsafe {
+            ptr::copy_nonoverlapping(chunk.as_ptr(), dst, len);
+        }
+        // SAFETY: Same as (1).
+        dst = unsafe { dst.add(len) };
+    }
+
+    // Convert allocation to a `Vec<u8>`.
+    // SAFETY:
+    // - `ptr` was allocated using global allocator.
+    // - `u8` and `ptr`'s allocation both have alignment of 1.
+    // - `ptr`'s allocation is `total_len <= isize::MAX`.
+    // - `total_len <= total_len` holds.
+    // - `total_len` values were initialized at type `u8`
+    //    as we know `total_len == chunks.map(|c| c.len()).sum()`.
+    Vec::from_raw_parts(ptr, total_len, total_len)
 }
 
 /// Continuation for serializing an array.
@@ -93,7 +175,7 @@ impl ser::SerializeArray for SerializeArrayValue {
 
     fn serialize_element<T: ser::Serialize + ?Sized>(&mut self, elem: &T) -> Result<(), Self::Error> {
         self.array
-            .push(elem.serialize(ValueSerializer)?, self.len.take())
+            .push(value_serialize(elem), self.len.take())
             .expect("heterogeneous array");
         Ok(())
     }
@@ -317,8 +399,7 @@ impl ser::SerializeMap for SerializeMapValue {
         key: &K,
         value: &V,
     ) -> Result<(), Self::Error> {
-        self.entries
-            .push((key.serialize(ValueSerializer)?, value.serialize(ValueSerializer)?));
+        self.entries.push((value_serialize(key), value_serialize(value)));
         Ok(())
     }
 
@@ -338,7 +419,7 @@ impl ser::SerializeSeqProduct for SerializeProductValue {
     type Error = <ValueSerializer as ser::Serializer>::Error;
 
     fn serialize_element<T: ser::Serialize + ?Sized>(&mut self, elem: &T) -> Result<(), Self::Error> {
-        self.elements.push(elem.serialize(ValueSerializer)?);
+        self.elements.push(value_serialize(elem));
         Ok(())
     }
     fn end(self) -> Result<Self::Ok, Self::Error> {

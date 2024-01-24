@@ -2,8 +2,7 @@ use spacetimedb_lib::de::serde::SerdeDeserializer;
 use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::{AlgebraicType, Identity, ProductType, ProductTypeElement, ProductValue, SumType};
 use spacetimedb_sats::algebraic_value::de::ValueDeserializer;
-use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
-use spacetimedb_sats::ser::Serialize;
+use spacetimedb_sats::algebraic_value::ser::value_serialize;
 use spacetimedb_sats::{satn::Satn, SumTypeVariant, Typespace, WithTypespace};
 
 macro_rules! de_json_snapshot {
@@ -36,7 +35,7 @@ fn test_roundtrip() {
         identity: Identity::__dummy(),
     };
 
-    let s = original.serialize(ValueSerializer).unwrap();
+    let s = value_serialize(&original);
     let result: Sample = spacetimedb_sats::de::Deserialize::deserialize(ValueDeserializer::new(s)).unwrap();
     assert_eq!(&original, &result);
 
