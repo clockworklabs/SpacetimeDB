@@ -26,7 +26,7 @@ public static class Runtime
     private class BufferIter : IEnumerator<byte[]>, IDisposable
     {
         private RawBindings.BufferIter handle;
-        public byte[] Current { get; private set; } = new byte[0];
+        public byte[] Current { get; private set; } = [];
 
         object IEnumerator.Current => Current;
 

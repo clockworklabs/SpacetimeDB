@@ -2,10 +2,8 @@ namespace SpacetimeDB.Module;
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
 using SpacetimeDB.SATS;
 
 [SpacetimeDB.Type]
@@ -127,14 +125,11 @@ public partial struct TableDef
             // Important: the position must be stored here, before filtering.
             .Select((col, pos) => (col, pos))
             .Where(pair => pair.col.Attrs != ColumnAttrs.UnSet)
-            .Select(
-                pair =>
-                    new ConstraintDef(
-                        $"ct_{tableName}_{pair.col.ColumnDef.ColName}_{pair.col.Attrs}",
-                        pair.col.Attrs,
-                        new[] { (uint)pair.pos }
-                    )
-            )
+            .Select(pair => new ConstraintDef(
+                $"ct_{tableName}_{pair.col.ColumnDef.ColName}_{pair.col.Attrs}",
+                pair.col.Attrs,
+                [(uint)pair.pos]
+            ))
             .ToArray();
         TableType = "user";
         TableAccess = tableName.StartsWith('_') ? "private" : "public";
