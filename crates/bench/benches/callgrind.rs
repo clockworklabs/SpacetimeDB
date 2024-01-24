@@ -1,4 +1,4 @@
-#[cfg(linux)]
+#[cfg(target_os = "linux")]
 mod callgrind_benches {
 
     /// Benchmarks that run under our iai-callgrind fork (https://github.com/clockworklabs/iai-callgrind)
@@ -17,7 +17,7 @@ mod callgrind_benches {
     /// We pass benchmark configurations as JSON strings to these benchmarks.
     /// This JSON ends up in iai-callgrind's output file; we parse all relevant information out of it.
     /// (In the `crate/src/bin/summarize.rs` binary.)
-    use iai_callgrind::{library_benchmark, library_benchmark_group, main, LibraryBenchmarkConfig};
+    use iai_callgrind::{library_benchmark, library_benchmark_group, LibraryBenchmarkConfig};
     use serde::Deserialize;
 
     use spacetimedb_bench::{
@@ -873,21 +873,27 @@ mod callgrind_benches {
     );
 
     // ========================= HARNESS =========================
+    iai_callgrind::main!(
+        config = LibraryBenchmarkConfig::default()
+                    .pass_through_envs(["HOME", "PATH", "RUST_LOG", "RUST_BACKTRACE"])
+                    // THE NEXT LINE IS CRITICAL.
+                    // Without this line, this entire file breaks!
+                    .with_custom_entry_point("spacetimedb::callgrind_flag::flag");
+        library_benchmark_groups = insert_bulk_group, filter_group,
+                                iterate_group, empty_transaction_group,
+                                serialize_group
+    );
+
+    // have to re-export `main`, it's not marked as `pub` in the macro
+    pub fn run_benches() {
+        main();
+    }
 }
 
-#[cfg(linux)]
-main!(
-    config = LibraryBenchmarkConfig::default()
-                .pass_through_envs(["HOME", "PATH", "RUST_LOG", "RUST_BACKTRACE"])
-                // THE NEXT LINE IS CRITICAL.
-                // Without this line, this entire file breaks!
-                .with_custom_entry_point("spacetimedb::callgrind_flag::flag");
-    library_benchmark_groups = callgrind_benches::insert_bulk_group, callgrind_benches::filter_group,
-                               callgrind_benches::iterate_group, callgrind_benches::empty_transaction_group,
-                               callgrind_benches::serialize_group
-);
-
-#[cfg(not(linux))]
 fn main() {
+    #[cfg(target_os = "linux")]
+    callgrind_benches::run_benches();
+
+    #[cfg(not(target_os = "linux"))]
     println!("Callgrind does not exist for your operating system.");
 }

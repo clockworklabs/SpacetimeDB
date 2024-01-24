@@ -53,7 +53,7 @@ tracing-subscriber.workspace = true
 walkdir.workspace = true
 itertools.workspace = true
 
-[target.'cfg(linux)'.dependencies]
+[target.'cfg(target_os = "linux")'.dependencies]
 # only try to build these on linux
 
 # also:
