@@ -153,13 +153,15 @@ pub trait Serializer: Sized {
     /// This method is a concession to performance,
     /// allowing some implementations to write the buffer directly.
     ///
+    /// The parameter `I` is required to be `Clone` only for `debug_assert!` purposes.
+    ///
     /// # Safety
     ///
     /// - `total_bsatn_len == bsatn.map(|c| c.len()).sum() <= isize::MAX`
     /// - Let `buf` be defined as above, i.e., the bytes of `bsatn` concatenated.
     ///   Then `AlgebraicValue::decode(ty, &mut buf).is_ok()`.
     ///   That is, `buf` encodes a valid element of `ty`.
-    unsafe fn serialize_bsatn_in_chunks<'a, I: Iterator<Item = &'a [u8]>>(
+    unsafe fn serialize_bsatn_in_chunks<'a, I: Clone + Iterator<Item = &'a [u8]>>(
         self,
         ty: &AlgebraicType,
         total_bsatn_len: usize,
@@ -184,6 +186,8 @@ pub trait Serializer: Sized {
     /// This method is a concession to performance,
     /// allowing some implementations to write the buffer directly.
     ///
+    /// The parameter `I` is required to be `Clone` only for `debug_assert!` purposes.
+    ///
     /// # Safety
     ///
     /// - `total_len == string.map(|c| c.len()).sum() <= isize::MAX`
@@ -192,7 +196,7 @@ pub trait Serializer: Sized {
     ///   That is, `buf` is valid UTF-8.
     ///   Note however that individual chunks need not be valid UTF-8,
     ///   as multi-byte characters may be split across chunk boundaries.
-    unsafe fn serialize_str_in_chunks<'a, I: Iterator<Item = &'a [u8]>>(
+    unsafe fn serialize_str_in_chunks<'a, I: Clone + Iterator<Item = &'a [u8]>>(
         self,
         total_len: usize,
         string: I,

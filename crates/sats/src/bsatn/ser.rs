@@ -3,6 +3,7 @@ use std::fmt;
 use crate::buffer::BufWriter;
 
 use crate::ser::{self, Error, ForwardNamedToSeqProduct, Serialize, SerializeArray, SerializeMap, SerializeSeqProduct};
+use crate::AlgebraicValue;
 
 /// Defines the BSATN serialization data format.
 pub struct Serializer<'a, W> {
@@ -145,28 +146,35 @@ impl<W: BufWriter> ser::Serializer for Serializer<'_, W> {
         value.serialize(self)
     }
 
-    unsafe fn serialize_bsatn(self, _: &crate::AlgebraicType, bsatn: &[u8]) -> Result<Self::Ok, Self::Error> {
+    unsafe fn serialize_bsatn(self, ty: &crate::AlgebraicType, mut bsatn: &[u8]) -> Result<Self::Ok, Self::Error> {
+        debug_assert!(AlgebraicValue::decode(ty, &mut bsatn).is_ok());
         self.writer.put_slice(bsatn);
         Ok(())
     }
 
-    unsafe fn serialize_bsatn_in_chunks<'a, I: Iterator<Item = &'a [u8]>>(
+    unsafe fn serialize_bsatn_in_chunks<'a, I: Clone + Iterator<Item = &'a [u8]>>(
         self,
-        _: &crate::AlgebraicType,
-        _: usize,
+        ty: &crate::AlgebraicType,
+        total_bsatn_len: usize,
         bsatn: I,
     ) -> Result<Self::Ok, Self::Error> {
+        debug_assert!(total_bsatn_len <= isize::MAX as usize);
+        debug_assert!(AlgebraicValue::decode(ty, &mut &*concat_bytes_slow(total_bsatn_len, bsatn.clone())).is_ok());
+
         for chunk in bsatn {
             self.writer.put_slice(chunk);
         }
         Ok(())
     }
 
-    unsafe fn serialize_str_in_chunks<'a, I: Iterator<Item = &'a [u8]>>(
+    unsafe fn serialize_str_in_chunks<'a, I: Clone + Iterator<Item = &'a [u8]>>(
         self,
         total_len: usize,
         string: I,
     ) -> Result<Self::Ok, Self::Error> {
+        debug_assert!(total_len <= isize::MAX as usize);
+        debug_assert!(String::from_utf8(concat_bytes_slow(total_len, string.clone())).is_ok());
+
         // We need to len-prefix to make this BSATN.
         put_len(self.writer, total_len)?;
 
@@ -175,6 +183,16 @@ impl<W: BufWriter> ser::Serializer for Serializer<'_, W> {
         }
         Ok(())
     }
+}
+
+/// Concatenates `chunks` into a `Vec<u8>`.
+fn concat_bytes_slow<'a>(cap: usize, chunks: impl Iterator<Item = &'a [u8]>) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(cap);
+    for chunk in chunks {
+        bytes.extend(chunk);
+    }
+    assert_eq!(bytes.len(), cap);
+    bytes
 }
 
 impl<W: BufWriter> SerializeArray for Serializer<'_, W> {

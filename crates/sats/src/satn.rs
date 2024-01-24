@@ -357,7 +357,7 @@ impl<'a, 'b> ser::Serializer for SatnFormatter<'a, 'b> {
         value.serialize(self)
     }
 
-    unsafe fn serialize_bsatn_in_chunks<'c, I: Iterator<Item = &'c [u8]>>(
+    unsafe fn serialize_bsatn_in_chunks<'c, I: Clone + Iterator<Item = &'c [u8]>>(
         self,
         ty: &crate::AlgebraicType,
         total_bsatn_len: usize,
@@ -376,7 +376,7 @@ impl<'a, 'b> ser::Serializer for SatnFormatter<'a, 'b> {
         value.serialize(self)
     }
 
-    unsafe fn serialize_str_in_chunks<'c, I: Iterator<Item = &'c [u8]>>(
+    unsafe fn serialize_str_in_chunks<'c, I: Clone + Iterator<Item = &'c [u8]>>(
         self,
         total_len: usize,
         string: I,
@@ -591,7 +591,7 @@ impl<'a, 'b> ser::Serializer for PsqlFormatter<'a, 'b> {
         unsafe { self.0.serialize_bsatn(ty, bsatn) }
     }
 
-    unsafe fn serialize_bsatn_in_chunks<'c, I: Iterator<Item = &'c [u8]>>(
+    unsafe fn serialize_bsatn_in_chunks<'c, I: Clone + Iterator<Item = &'c [u8]>>(
         self,
         ty: &crate::AlgebraicType,
         total_bsatn_len: usize,
@@ -601,7 +601,7 @@ impl<'a, 'b> ser::Serializer for PsqlFormatter<'a, 'b> {
         unsafe { self.0.serialize_bsatn_in_chunks(ty, total_bsatn_len, bsatn) }
     }
 
-    unsafe fn serialize_str_in_chunks<'c, I: Iterator<Item = &'c [u8]>>(
+    unsafe fn serialize_str_in_chunks<'c, I: Clone + Iterator<Item = &'c [u8]>>(
         self,
         total_len: usize,
         string: I,

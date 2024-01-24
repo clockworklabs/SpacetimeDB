@@ -136,7 +136,7 @@ impl<S: serde::Serializer> Serializer for SerdeSerializer<S> {
         value.serialize(self)
     }
 
-    unsafe fn serialize_bsatn_in_chunks<'a, I: Iterator<Item = &'a [u8]>>(
+    unsafe fn serialize_bsatn_in_chunks<'a, I: Clone + Iterator<Item = &'a [u8]>>(
         self,
         ty: &crate::AlgebraicType,
         total_bsatn_len: usize,
@@ -155,7 +155,7 @@ impl<S: serde::Serializer> Serializer for SerdeSerializer<S> {
         value.serialize(self)
     }
 
-    unsafe fn serialize_str_in_chunks<'a, I: Iterator<Item = &'a [u8]>>(
+    unsafe fn serialize_str_in_chunks<'a, I: Clone + Iterator<Item = &'a [u8]>>(
         self,
         total_len: usize,
         string: I,
