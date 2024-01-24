@@ -132,7 +132,8 @@ pub trait Serializer: Sized {
     ///
     /// # Safety
     ///
-    /// - `AlgebraicValue::decode(ty, &mut bytes).is_ok()`
+    /// - `AlgebraicValue::decode(ty, &mut bsatn).is_ok()`.
+    ///   That is, `bsatn` encodes a valid element of `ty`.
     unsafe fn serialize_bsatn(self, ty: &AlgebraicType, bsatn: &[u8]) -> Result<Self::Ok, Self::Error>;
 
     /// Serialize the given `bsatn` encoded data of type `ty`.
@@ -156,7 +157,8 @@ pub trait Serializer: Sized {
     ///
     /// - `total_bsatn_len == bsatn.map(|c| c.len()).sum() <= isize::MAX`
     /// - Let `buf` be defined as above, i.e., the bytes of `bsatn` concatenated.
-    ///   Then `AlgebraicValue::decode(ty, &mut bytes).is_ok()`
+    ///   Then `AlgebraicValue::decode(ty, &mut buf).is_ok()`.
+    ///   That is, `buf` encodes a valid element of `ty`.
     unsafe fn serialize_bsatn_in_chunks<'a, I: Iterator<Item = &'a [u8]>>(
         self,
         ty: &AlgebraicType,
@@ -167,7 +169,7 @@ pub trait Serializer: Sized {
     /// Serialize the given `string`.
     ///
     /// The string is provided as an iterator of chunks, at arbitrary boundaries,
-    /// with a total concatenated length of `total_len` which callers can assume.
+    /// with a total concatenated length of `total_len` which callers can trust.
     ///
     /// An implementation of this method is semantically the same as:
     /// ```rust,ignore
@@ -188,7 +190,8 @@ pub trait Serializer: Sized {
     /// - Let `buf` be the bytes of `string` concatenated.
     ///   Then `core::str::from_utf8(&buf).is_ok()`.
     ///   That is, `buf` is valid UTF-8.
-    ///   Note however that individual chunks need not be valid UTF-8.
+    ///   Note however that individual chunks need not be valid UTF-8,
+    ///   as multi-byte characters may be split across chunk boundaries.
     unsafe fn serialize_str_in_chunks<'a, I: Iterator<Item = &'a [u8]>>(
         self,
         total_len: usize,
