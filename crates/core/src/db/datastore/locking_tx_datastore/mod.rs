@@ -2,16 +2,15 @@ mod btree_index;
 mod sequence;
 mod table;
 
+use self::{
+    btree_index::{BTreeIndex, BTreeIndexRangeIter},
+    sequence::{Sequence, SequencesState},
+    table::Table,
+};
 use itertools::Itertools;
 use parking_lot::{
     lock_api::{ArcMutexGuard, ArcRwLockReadGuard},
     Mutex, RawMutex,
-};
-
-use self::{
-    btree_index::{BTreeIndex, BTreeIndexRangeIter},
-    sequence::Sequence,
-    table::Table,
 };
 use std::ops::Deref;
 use std::time::{Duration, Instant};
@@ -658,7 +657,7 @@ impl CommittedState {
                 seq.value = sequence.allocated + 1;
             }
 
-            sequence_state.sequences.insert(sequence.sequence_id, seq);
+            sequence_state.insert(sequence.sequence_id, seq);
         }
         Ok(())
     }
@@ -813,17 +812,6 @@ impl TxState {
         range: &impl RangeBounds<AlgebraicValue>,
     ) -> Option<BTreeIndexRangeIter<'a>> {
         self.insert_tables.get(table_id)?.index_seek(cols, range)
-    }
-}
-
-#[derive(Default)]
-pub struct SequencesState {
-    sequences: HashMap<SequenceId, Sequence>,
-}
-
-impl SequencesState {
-    pub fn get_sequence_mut(&mut self, seq_id: SequenceId) -> Option<&mut Sequence> {
-        self.sequences.get_mut(&seq_id)
     }
 }
 
@@ -1043,7 +1031,6 @@ impl MutTxId {
         let insert_table = self.get_insert_table_mut(schema.table_id)?;
         insert_table.schema.update_sequence(schema.clone());
         self.sequence_state_lock
-            .sequences
             .insert(schema.sequence_id, Sequence::new(schema));
 
         log::trace!("SEQUENCE CREATED: id = {}", sequence_id);
@@ -1078,7 +1065,7 @@ impl MutTxId {
             database_address,
         )?;
 
-        self.sequence_state_lock.sequences.remove(&sequence_id);
+        self.sequence_state_lock.remove(sequence_id);
         if let Some(insert_table) = self.tx_state.get_insert_table_mut(&table_id) {
             insert_table.schema.remove_sequence(sequence_id);
         }
