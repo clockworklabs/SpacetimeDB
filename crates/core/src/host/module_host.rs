@@ -10,13 +10,12 @@ use indexmap::IndexMap;
 use tokio::sync::oneshot;
 
 use super::host_controller::HostThreadpool;
-use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
+use super::{ArgsTuple, EnergyDiff, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
 use crate::client::ClientConnectionSender;
 use crate::database_logger::LogLevel;
 use crate::db::datastore::traits::{TxData, TxOp};
 use crate::db::relational_db::RelationalDB;
 use crate::db::update::UpdateDatabaseError;
-use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
@@ -194,7 +193,7 @@ pub struct ModuleEvent {
     pub caller_address: Option<Address>,
     pub function_call: ModuleFunctionCall,
     pub status: EventStatus,
-    pub energy_quanta_used: EnergyQuanta,
+    pub energy_quanta_used: EnergyDiff,
     pub host_execution_duration: Duration,
 }
 

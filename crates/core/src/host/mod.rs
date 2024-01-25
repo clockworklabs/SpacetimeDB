@@ -3,13 +3,14 @@ use bytes::Bytes;
 use bytestring::ByteString;
 use derive_more::Display;
 use enum_map::Enum;
-use spacetimedb_lib::bsatn;
 use spacetimedb_lib::de::serde::SeedWrapper;
 use spacetimedb_lib::de::DeserializeSeed;
+use spacetimedb_lib::{bsatn, Identity};
 use spacetimedb_lib::{ProductValue, ReducerDef};
 use spacetimedb_metrics::impl_prometheusvalue_string;
 use spacetimedb_metrics::typed_prometheus::AsPrometheusLabel;
 use spacetimedb_sats::WithTypespace;
+use std::time::Duration;
 
 mod host_controller;
 pub(crate) mod module_host;
@@ -20,11 +21,11 @@ pub mod instance_env;
 mod timestamp;
 mod wasm_common;
 
-pub use host_controller::{DescribedEntityType, HostController, ReducerCallResult, ReducerOutcome, UpdateOutcome};
-pub use module_host::{
-    EntityDef, ModuleHost, NoSuchModule, ReducerCallError, UpdateDatabaseResult, UpdateDatabaseSuccess,
+pub use host_controller::{
+    DescribedEntityType, EnergyDiff, EnergyQuanta, HostController, ReducerCallResult, ReducerOutcome, UpdateOutcome,
 };
-pub use scheduler::Scheduler;
+pub use module_host::{ModuleHost, NoSuchModule};
+pub use module_host::{UpdateDatabaseResult, UpdateDatabaseSuccess};
 pub use timestamp::Timestamp;
 
 #[derive(Debug)]
@@ -121,6 +122,9 @@ pub struct InvalidReducerArguments {
     reducer: String,
 }
 
+pub use module_host::{EntityDef, ReducerCallError};
+use spacetimedb_sats::hash::Hash;
+
 fn from_json_seed<'de, T: serde::de::DeserializeSeed<'de>>(s: &'de str, seed: T) -> anyhow::Result<T::Value> {
     let mut de = serde_json::Deserializer::from_str(s);
     let mut track = serde_path_to_error::Track::new();
@@ -129,6 +133,41 @@ fn from_json_seed<'de, T: serde::de::DeserializeSeed<'de>>(s: &'de str, seed: T)
         .context(track.path())?;
     de.end()?;
     Ok(out)
+}
+
+pub struct EnergyMonitorFingerprint<'a> {
+    pub module_hash: Hash,
+    pub module_identity: Identity,
+    pub caller_identity: Identity,
+    pub reducer_name: &'a str,
+}
+
+pub trait EnergyMonitor: Send + Sync + 'static {
+    fn reducer_budget(&self, fingerprint: &EnergyMonitorFingerprint<'_>) -> EnergyQuanta;
+    fn record(&self, fingerprint: &EnergyMonitorFingerprint<'_>, energy_used: EnergyDiff, execution_duration: Duration);
+}
+
+// what would the module do with this information?
+// pub enum EnergyRecordResult {
+//     Continue,
+//     Exhausted { quanta_over_budget: u64 },
+// }
+
+#[derive(Default)]
+pub struct NullEnergyMonitor;
+
+impl EnergyMonitor for NullEnergyMonitor {
+    fn reducer_budget(&self, _fingerprint: &EnergyMonitorFingerprint<'_>) -> EnergyQuanta {
+        EnergyQuanta::DEFAULT_BUDGET
+    }
+
+    fn record(
+        &self,
+        _fingerprint: &EnergyMonitorFingerprint<'_>,
+        _energy_used: EnergyDiff,
+        _execution_duration: Duration,
+    ) {
+    }
 }
 
 /// Tags for each call that a `WasmInstanceEnv` can make.

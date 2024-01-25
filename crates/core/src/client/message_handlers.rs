@@ -1,8 +1,7 @@
 use std::time::Duration;
 
-use crate::energy::EnergyQuanta;
 use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall};
-use crate::host::{ReducerArgs, Timestamp};
+use crate::host::{EnergyDiff, ReducerArgs, Timestamp};
 use crate::identity::Identity;
 use crate::protobuf::client_api::{message, FunctionCall, Message, Subscribe};
 use crate::worker_metrics::WORKER_METRICS;
@@ -179,7 +178,7 @@ impl MessageExecutionError {
                 args: Default::default(),
             },
             status: EventStatus::Failed(format!("{:#}", self.err)),
-            energy_quanta_used: EnergyQuanta::ZERO,
+            energy_quanta_used: EnergyDiff::ZERO,
             host_execution_duration: Duration::ZERO,
         }
     }

@@ -12,7 +12,6 @@ use super::instrumentation::CallTimes;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{LogLevel, Record, SystemLogger};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
 use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
 use crate::host::instance_env::InstanceEnv;
@@ -20,9 +19,12 @@ use crate::host::module_host::{
     CallReducerParams, DatabaseUpdate, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo,
     ModuleInstance, ReducersMap, UpdateDatabaseResult, UpdateDatabaseSuccess,
 };
-use crate::host::{ArgsTuple, EntityDef, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler, Timestamp};
+use crate::host::scheduler::Scheduler;
+use crate::host::{
+    ArgsTuple, EnergyDiff, EnergyMonitor, EnergyMonitorFingerprint, EnergyQuanta, EntityDef, ReducerCallResult,
+    ReducerId, ReducerOutcome, Timestamp,
+};
 use crate::identity::Identity;
-use crate::messages::control_db::Database;
 use crate::sql;
 use crate::subscription::module_subscription_actor::ModuleSubscriptionManager;
 use crate::util::{const_unwrap, ResultInspectExt};
@@ -54,14 +56,14 @@ pub trait WasmInstance: Send + Sync + 'static {
 
     type Trap;
 
-    fn call_reducer(&mut self, op: ReducerOp<'_>, budget: ReducerBudget) -> ExecuteResult<Self::Trap>;
+    fn call_reducer(&mut self, op: ReducerOp<'_>, budget: EnergyQuanta) -> ExecuteResult<Self::Trap>;
 
     fn log_traceback(func_type: &str, func: &str, trap: &Self::Trap);
 }
 
 pub struct EnergyStats {
-    pub used: EnergyQuanta,
-    pub remaining: ReducerBudget,
+    pub used: EnergyDiff,
+    pub remaining: EnergyQuanta,
 }
 
 pub struct ExecutionTimings {
@@ -332,7 +334,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         self.trapped
     }
 
-    #[tracing::instrument(skip(self, args), fields(db_id = self.instance.instance_env().dbic.id))]
+    #[tracing::instrument(skip(self, args), fields(db_id = self.instance.instance_env().dbic.database_id))]
     fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<ReducerCallResult> {
         let timestamp = Timestamp::now();
         let stdb = &*self.database_instance_context().relational_db;
@@ -359,7 +361,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                 stdb.commit_tx(&ctx, tx)?;
                 ReducerCallResult {
                     outcome: ReducerOutcome::Committed,
-                    energy_used: EnergyQuanta::ZERO,
+                    energy_used: EnergyDiff::ZERO,
                     execution_duration: Duration::ZERO,
                 }
             }
@@ -369,11 +371,11 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                 // If a caller address was passed to the `/database/publish` HTTP endpoint,
                 // the init/update reducer will receive it as the caller address.
                 // This is useful for bootstrapping the control DB in SpacetimeDB-cloud.
-                let Database {
+                let &DatabaseInstanceContext {
                     identity: caller_identity,
                     publisher_address: caller_address,
                     ..
-                } = self.database_instance_context().database;
+                } = self.database_instance_context();
                 let client = None;
                 self.call_reducer_with_tx(
                     Some(tx),
@@ -427,11 +429,11 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                 // If a caller address was passed to the `/database/publish` HTTP endpoint,
                 // the init/update reducer will receive it as the caller address.
                 // This is useful for bootstrapping the control DB in SpacetimeDB-cloud.
-                let Database {
+                let &DatabaseInstanceContext {
                     identity: caller_identity,
                     publisher_address: caller_address,
                     ..
-                } = self.database_instance_context().database;
+                } = self.database_instance_context();
                 let res = self.call_reducer_with_tx(
                     Some(tx),
                     CallReducerParams {
@@ -504,7 +506,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         )
         .entered();
 
-        let energy_fingerprint = ReducerFingerprint {
+        let energy_fingerprint = EnergyMonitorFingerprint {
             module_hash: self.info.module_hash,
             module_identity: self.info.identity,
             caller_identity,
@@ -541,7 +543,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         } = result;
 
         self.energy_monitor
-            .record_reducer(&energy_fingerprint, energy.used, timings.total_duration);
+            .record(&energy_fingerprint, energy.used, timings.total_duration);
 
         reducer_span
             .record("timings.total_duration", tracing::field::debug(timings.total_duration))
@@ -578,7 +580,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 // discard this instance
                 self.trapped = true;
 
-                if energy.remaining.get() == 0 {
+                if energy.remaining == EnergyQuanta::ZERO {
                     EventStatus::OutOfEnergy
                 } else {
                     EventStatus::Failed("The Wasm instance encountered a fatal error.".into())

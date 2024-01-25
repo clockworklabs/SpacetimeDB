@@ -188,13 +188,12 @@ impl CommitLog {
     }
 
     /// The number of bytes on disk occupied by the [MessageLog].
-    pub fn message_log_size_on_disk(&self) -> u64 {
+    pub fn message_log_size_on_disk(&self) -> Result<u64, DBError> {
         let guard = self.mlog.lock().unwrap();
-        guard.size()
+        Ok(guard.size())
     }
 
     /// The number of bytes on disk occupied by the [ObjectDB].
-    #[tracing::instrument(skip(self), err)]
     pub fn object_db_size_on_disk(&self) -> Result<u64, DBError> {
         let guard = self.odb.lock().unwrap();
         guard.size_on_disk()
