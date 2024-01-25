@@ -28,7 +28,7 @@ use spacetimedb_primitives::*;
 use spacetimedb_sats::data_key::{DataKey, ToDataKey};
 use spacetimedb_sats::db::def::*;
 use spacetimedb_sats::db::error::SchemaErrors;
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
+use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -985,34 +985,6 @@ impl MutTxId {
         }
     }
 
-    fn algebraic_type_is_numeric(ty: &AlgebraicType) -> bool {
-        matches!(*ty, |AlgebraicType::I8| AlgebraicType::U8
-            | AlgebraicType::I16
-            | AlgebraicType::U16
-            | AlgebraicType::I32
-            | AlgebraicType::U32
-            | AlgebraicType::I64
-            | AlgebraicType::U64
-            | AlgebraicType::I128
-            | AlgebraicType::U128)
-    }
-
-    fn sequence_value_to_algebraic_value(ty: &AlgebraicType, sequence_value: i128) -> AlgebraicValue {
-        match *ty {
-            AlgebraicType::I8 => (sequence_value as i8).into(),
-            AlgebraicType::U8 => (sequence_value as u8).into(),
-            AlgebraicType::I16 => (sequence_value as i16).into(),
-            AlgebraicType::U16 => (sequence_value as u16).into(),
-            AlgebraicType::I32 => (sequence_value as i32).into(),
-            AlgebraicType::U32 => (sequence_value as u32).into(),
-            AlgebraicType::I64 => (sequence_value as i64).into(),
-            AlgebraicType::U64 => (sequence_value as u64).into(),
-            AlgebraicType::I128 => sequence_value.into(),
-            AlgebraicType::U128 => (sequence_value as u128).into(),
-            _ => unreachable!("should have been prevented in `fn insert`"),
-        }
-    }
-
     #[tracing::instrument(skip_all)]
     pub(crate) fn insert(
         &mut self,
@@ -1050,7 +1022,7 @@ impl MutTxId {
         if let Some((col_id, sequence_id)) = col_to_update {
             let col_idx = col_id.idx();
             let col = &schema.columns()[col_idx];
-            if !Self::algebraic_type_is_numeric(&col.col_type) {
+            if !col.col_type.is_integer() {
                 return Err(SequenceError::NotInteger {
                     col: format!("{}.{}", &schema.table_name, &col.col_name),
                     found: col.col_type.clone(),
@@ -1060,7 +1032,7 @@ impl MutTxId {
             // At this point, we know this will be essentially a cheap copy.
             let col_ty = col.col_type.clone();
             let seq_val = self.get_next_sequence_value(sequence_id, database_address)?;
-            row.elements[col_idx] = Self::sequence_value_to_algebraic_value(&col_ty, seq_val);
+            row.elements[col_idx] = AlgebraicValue::from_sequence_value(&col_ty, seq_val);
         }
 
         self.insert_row_internal(table_id, row.clone())?;
