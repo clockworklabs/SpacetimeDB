@@ -39,30 +39,6 @@ use thiserror::Error;
 
 use super::system_tables::ST_TABLES_ID;
 
-#[derive(Error, Debug, PartialEq, Eq)]
-pub enum SequenceError {
-    #[error("Sequence with name `{0}` already exists.")]
-    Exist(String),
-    #[error("Sequence `{0}`: The increment is 0, and this means the sequence can't advance.")]
-    IncrementIsZero(String),
-    #[error("Sequence `{0}`: The min_value {1} must < max_value {2}.")]
-    MinMax(String, i128, i128),
-    #[error("Sequence `{0}`: The start value {1} must be >= min_value {2}.")]
-    MinStart(String, i128, i128),
-    #[error("Sequence `{0}`: The start value {1} must be <= min_value {2}.")]
-    MaxStart(String, i128, i128),
-    #[error("Sequence `{0}` failed to decode value from Sled (not a u128).")]
-    SequenceValue(String),
-    #[error("Sequence ID `{0}` not found.")]
-    NotFound(SequenceId),
-    #[error("Sequence applied to a non-integer field. Column `{col}` is of type {{found.to_sats()}}.")]
-    NotInteger { col: String, found: AlgebraicType },
-    #[error("Sequence ID `{0}` still had no values left after allocation.")]
-    UnableToAllocate(SequenceId),
-    #[error("Autoinc constraint on table {0:?} spans more than one column: {1:?}")]
-    MultiColumnAutoInc(TableId, ColList),
-}
-
 /// A `DataRef` represents a row stored in a table.
 ///
 /// A table row always has a [`DataKey`] associated with it.

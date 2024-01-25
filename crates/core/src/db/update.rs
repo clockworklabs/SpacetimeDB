@@ -9,7 +9,7 @@ use crate::database_logger::SystemLogger;
 use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
 
-use super::datastore::locking_tx_datastore::MutTxId;
+use super::datastore::mem_arch_datastore::mut_tx::MutTxId;
 use super::relational_db::RelationalDB;
 use spacetimedb_sats::db::def::{ConstraintDef, TableDef, TableSchema};
 use spacetimedb_sats::hash::Hash;

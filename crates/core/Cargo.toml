@@ -62,7 +62,6 @@ rayon-core.workspace = true
 regex.workspace = true
 rustc-demangle.workspace = true
 rustc-hash.workspace = true
-smallvec.workspace = true
 scopeguard.workspace = true
 sendgrid.workspace = true
 serde.workspace = true
@@ -72,6 +71,7 @@ serde_with = { workspace = true, features = ["chrono_0_4"] }
 sha1.workspace = true
 slab.workspace = true
 sled.workspace = true
+smallvec.workspace = true
 sqlparser.workspace = true
 strum.workspace = true
 tempfile.workspace = true

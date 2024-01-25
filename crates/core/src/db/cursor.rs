@@ -4,7 +4,7 @@ use crate::error::DBError;
 use spacetimedb_sats::relation::{DbTable, RowCount};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 
-use super::datastore::locking_tx_datastore::{Iter, IterByColRange};
+use super::datastore::mem_arch_datastore::state_view::{Iter, IterByColRange};
 
 #[derive(Debug, Clone, Copy)]
 pub enum CatalogKind {
