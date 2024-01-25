@@ -29,6 +29,13 @@ static ENGINE: Lazy<Engine> = Lazy::new(|| {
         .consume_fuel(true)
         .wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Enable);
 
+    // Offer a compile-time flag for enabling perfmap generation,
+    // so `perf` can display JITted symbol names.
+    // Ideally we would be able to configure this at runtime via a flag to `spacetime start`,
+    // but this is good enough for now.
+    #[cfg(feature = "perfmap")]
+    config.profiler(wasmtime::ProfilingStrategy::PerfMap);
+
     let cache_config = toml::toml! {
         // see <https://docs.wasmtime.dev/cli-cache.html> for options here
         [cache]

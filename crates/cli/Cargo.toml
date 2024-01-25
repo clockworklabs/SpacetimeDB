@@ -62,3 +62,7 @@ insta.workspace = true
 [features]
 standalone = ["spacetimedb-standalone"]
 default = ["standalone"]
+# Perfmaps for profiling modules
+perfmap = ["spacetimedb-core/perfmap", "spacetimedb-standalone/perfmap"]
+
+
