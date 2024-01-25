@@ -175,6 +175,18 @@ impl BenchDatabase for SpacetimeModule {
         })
     }
 
+    fn update_bulk<T: BenchTable>(&mut self, table_id: &Self::TableId, row_count: u32) -> ResultBench<()> {
+        let args = product![row_count];
+        let SpacetimeModule { runtime, module } = self;
+        let module = module.as_mut().unwrap();
+        let reducer_name = format!("update_bulk_{}", table_id.snake_case);
+
+        runtime.block_on(async move {
+            module.call_reducer_binary(&reducer_name, args).await?;
+            Ok(())
+        })
+    }
+
     fn iterate(&mut self, table_id: &Self::TableId) -> ResultBench<()> {
         let SpacetimeModule { runtime, module } = self;
         let module = module.as_mut().unwrap();

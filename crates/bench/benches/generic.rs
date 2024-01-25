@@ -84,9 +84,13 @@ fn table_suite<DB: BenchDatabase, T: BenchTable + RandomTable>(g: &mut Group, db
                 // perform "find" benchmarks
                 find::<DB, T>(g, db, table_id, index_strategy, BENCH_PKEY_INDEX, 1000, 100)?;
             }
+
+            update_bulk::<DB, T>(g, table_params, db, table_id, 1000, 10)?;
+            update_bulk::<DB, T>(g, table_params, db, table_id, 1000, 100)?;
+            update_bulk::<DB, T>(g, table_params, db, table_id, 1_000_000, 1_000_000)?;
         } else {
             // perform "filter" benchmarks
-            filter::<DB, T>(g, db, table_id, index_strategy, 1, 1000, 100)?;
+            filter::<DB, T>(g, db, table_id, index_strategy, 2, 1000, 100)?;
         }
     }
 
@@ -249,6 +253,44 @@ fn update_bulk<DB: BenchDatabase, T: BenchTable + RandomTable>(
             |db, to_update| {
                 // FIXME: this doesn't work, need to do it properly
                 db.insert_bulk(table_id, to_update)?;
+                Ok(())
+            },
+        )
+    });
+    db.clear_table(table_id)?;
+    Ok(())
+}
+
+#[inline(never)]
+fn update_bulk<DB: BenchDatabase, T: BenchTable + RandomTable>(
+    g: &mut Group,
+    table_params: &str,
+    db: &mut DB,
+    table_id: &DB::TableId,
+    load: u32,
+    count: u32,
+) -> ResultBench<()> {
+    let id = format!("update_bulk/{table_params}/load={load}/count={count}");
+    let data = create_sequential::<T>(0xdeadbeef, load, 1000);
+
+    // Each iteration performs one transaction, though it inserts many rows.
+    g.throughput(criterion::Throughput::Elements(1));
+
+    // running a big guy
+    g.sample_size(10);
+
+    g.bench_function(&id, |b| {
+        bench_harness(
+            b,
+            db,
+            |db| {
+                let data = data.clone();
+                db.clear_table(table_id)?;
+                db.insert_bulk(table_id, data)?;
+                Ok(())
+            },
+            |db, _| {
+                db.update_bulk::<T>(table_id, count)?;
                 Ok(())
             },
         )
