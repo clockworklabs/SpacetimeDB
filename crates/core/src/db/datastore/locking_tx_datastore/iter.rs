@@ -8,8 +8,9 @@ use crate::{db::db_metrics::DB_METRICS, execution_context::ExecutionContext};
 use super::{
     btree_index::BTreeIndexRangeIter,
     committed_state::{get_committed_row, CommittedIndexIter, CommittedState},
+    mut_tx::StateView as _,
     tx_state::{RowState, TxState},
-    DataRef, RowId, StateView as _,
+    DataRef, RowId,
 };
 
 pub struct Iter<'a> {

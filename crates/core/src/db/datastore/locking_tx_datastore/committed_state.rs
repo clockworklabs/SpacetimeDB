@@ -1,3 +1,11 @@
+use super::{
+    btree_index::{BTreeIndex, BTreeIndexRangeIter},
+    mut_tx::StateView,
+    sequence::{Sequence, SequencesState},
+    table::Table,
+    tx_state::TxState,
+    DataRef, Iter, IterByColRange, RowId, ScanIterByColRange,
+};
 use crate::{
     db::{
         datastore::{
@@ -14,10 +22,6 @@ use crate::{
     },
     error::TableError,
     execution_context::ExecutionContext,
-};
-
-use super::{
-    btree_index::{BTreeIndex, BTreeIndexRangeIter}, sequence::{Sequence, SequencesState}, table::Table, tx_state::TxState, DataRef, Iter, IterByColRange, RowId, ScanIterByColRange, StateView
 };
 use itertools::Itertools as _;
 use spacetimedb_lib::Address;
