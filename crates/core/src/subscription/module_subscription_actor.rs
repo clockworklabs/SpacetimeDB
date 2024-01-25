@@ -6,6 +6,7 @@ use super::{
 };
 use crate::execution_context::ExecutionContext;
 use crate::protobuf::client_api::Subscribe;
+use crate::worker_metrics::WORKER_METRICS;
 use crate::{
     client::{
         messages::{CachedMessage, SubscriptionUpdateMessage, TransactionUpdateMessage},
@@ -145,8 +146,13 @@ impl ModuleSubscriptionActor {
                 sub
             }
             None => {
+                let n = queries.len();
                 self.subscriptions
                     .push(Arc::new(Subscription::new(queries, sender).into()));
+                WORKER_METRICS
+                    .subscription_queries
+                    .with_label_values(&self.relational_db.address())
+                    .add(n as i64);
                 self.subscriptions.last_mut().unwrap()
             }
         };
@@ -186,6 +192,12 @@ impl ModuleSubscriptionActor {
         self.subscriptions.retain_mut(|sub| {
             let mut subscription = sub.write();
             subscription.remove_subscriber(client_id);
+            if subscription.subscribers().is_empty() {
+                WORKER_METRICS
+                    .subscription_queries
+                    .with_label_values(&self.relational_db.address())
+                    .sub(subscription.queries.len() as i64);
+            }
             !subscription.subscribers().is_empty()
         })
     }

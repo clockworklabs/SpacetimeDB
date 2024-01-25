@@ -81,6 +81,11 @@ metrics_group!(
         #[help = "The number of fatal WASM instance errors, such as reducer panics."]
         #[labels(identity: Identity, module_hash: Hash, database_address: Address, reducer_symbol: str)]
         pub wasm_instance_errors: IntCounterVec,
+
+        #[name = spacetime_active_queries]
+        #[help = "The number of active subscription queries"]
+        #[labels(database_address: Address)]
+        pub subscription_queries: IntGaugeVec,
     }
 );
 
