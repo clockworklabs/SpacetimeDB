@@ -203,6 +203,19 @@ impl AlgebraicType {
         )
     }
 
+    /// Returns whether this type is one of the integer types, e.g., `U64` and `I32`.
+    pub fn is_integer(&self) -> bool {
+        matches!(*self, |AlgebraicType::I8| AlgebraicType::U8
+            | AlgebraicType::I16
+            | AlgebraicType::U16
+            | AlgebraicType::I32
+            | AlgebraicType::U32
+            | AlgebraicType::I64
+            | AlgebraicType::U64
+            | AlgebraicType::I128
+            | AlgebraicType::U128)
+    }
+
     /// Returns a sum type with the given `sum`.
     pub fn sum<S: Into<SumType>>(sum: S) -> Self {
         AlgebraicType::Sum(sum.into())

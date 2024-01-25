@@ -1,4 +1,6 @@
+use spacetimedb_primitives::SequenceId;
 use spacetimedb_sats::db::def::SequenceSchema;
+use std::collections::HashMap;
 
 pub struct Sequence {
     schema: SequenceSchema,
@@ -85,5 +87,25 @@ impl Sequence {
 
     pub fn set_allocation(&mut self, allocated: i128) {
         self.schema.allocated = allocated;
+    }
+}
+
+/// A map of [`SequenceId`] -> [`Sequence`].
+#[derive(Default)]
+pub struct SequencesState {
+    sequences: HashMap<SequenceId, Sequence>,
+}
+
+impl SequencesState {
+    pub fn get_sequence_mut(&mut self, seq_id: SequenceId) -> Option<&mut Sequence> {
+        self.sequences.get_mut(&seq_id)
+    }
+
+    pub fn insert(&mut self, seq_id: SequenceId, seq: Sequence) {
+        self.sequences.insert(seq_id, seq);
+    }
+
+    pub fn remove(&mut self, seq_id: SequenceId) {
+        self.sequences.remove(&seq_id);
     }
 }
