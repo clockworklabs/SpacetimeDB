@@ -1,18 +1,18 @@
 mod btree_index;
 mod committed_state;
-mod iter;
 mod mut_tx;
 mod sequence;
+mod state_view;
 mod table;
 mod tx_state;
 
 pub use self::mut_tx::MutTxId;
-pub use iter::{Iter, IterByColEq, IterByColRange};
+pub use state_view::{Iter, IterByColEq, IterByColRange, StateView as _};
 
 use self::committed_state::CommittedState;
-use self::iter::ScanIterByColRange;
-use self::mut_tx::{StateView as _, TxId};
+use self::mut_tx::TxId;
 use self::sequence::SequencesState;
+use self::state_view::ScanIterByColRange;
 use self::tx_state::TxState;
 use crate::db::datastore::system_tables::{Epoch, StModuleRow, StTableRow, ST_MODULE_ID, WASM_MODULE};
 use crate::db::datastore::traits::{self, DataRow, MutTxDatastore, TxData, TxDatastore};

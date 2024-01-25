@@ -1,7 +1,7 @@
 use super::{
     btree_index::{BTreeIndex, BTreeIndexRangeIter},
-    mut_tx::StateView,
     sequence::{Sequence, SequencesState},
+    state_view::StateView,
     table::Table,
     tx_state::TxState,
     DataRef, Iter, IterByColRange, RowId, ScanIterByColRange,
