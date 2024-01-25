@@ -146,8 +146,8 @@ impl<W: BufWriter> ser::Serializer for Serializer<'_, W> {
         value.serialize(self)
     }
 
-    unsafe fn serialize_bsatn(self, ty: &crate::AlgebraicType, mut bsatn: &[u8]) -> Result<Self::Ok, Self::Error> {
-        debug_assert!(AlgebraicValue::decode(ty, &mut bsatn).is_ok());
+    unsafe fn serialize_bsatn(self, ty: &crate::AlgebraicType, bsatn: &[u8]) -> Result<Self::Ok, Self::Error> {
+        debug_assert!(AlgebraicValue::decode(ty, &mut { bsatn }).is_ok());
         self.writer.put_slice(bsatn);
         Ok(())
     }

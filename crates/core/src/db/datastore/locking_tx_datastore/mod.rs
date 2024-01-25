@@ -816,17 +816,12 @@ impl TxState {
     }
 }
 
-struct SequencesState {
+#[derive(Default)]
+pub struct SequencesState {
     sequences: HashMap<SequenceId, Sequence>,
 }
 
 impl SequencesState {
-    pub fn new() -> Self {
-        Self {
-            sequences: HashMap::new(),
-        }
-    }
-
     pub fn get_sequence_mut(&mut self, seq_id: SequenceId) -> Option<&mut Sequence> {
         self.sequences.get_mut(&seq_id)
     }
@@ -1832,7 +1827,7 @@ impl Locking {
         Self {
             memory: Arc::new(Mutex::new(BTreeMap::new())),
             committed_state: Arc::new(RwLock::new(CommittedState::new())),
-            sequence_state: Arc::new(Mutex::new(SequencesState::new())),
+            sequence_state: Arc::new(Mutex::new(SequencesState::default())),
             database_address,
         }
     }
