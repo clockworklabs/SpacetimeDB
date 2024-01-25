@@ -53,6 +53,10 @@ tracing-subscriber.workspace = true
 walkdir.workspace = true
 itertools.workspace = true
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# only try to build these on linux
+
+# also:
 # we've forked iai-callgrind to add custom entrypoint support.
 # FIXME(jgilles): revert to depending on the crates version if we ever get that upstreamed.
 
@@ -60,4 +64,3 @@ itertools.workspace = true
 iai-callgrind = { git = "https://github.com/clockworklabs/iai-callgrind.git", branch = "main" }
 iai-callgrind-runner = { git = "https://github.com/clockworklabs/iai-callgrind.git", branch = "main" }
 iai-callgrind-macros = { git = "https://github.com/clockworklabs/iai-callgrind.git", branch = "main" }
-

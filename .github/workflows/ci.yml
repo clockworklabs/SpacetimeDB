@@ -63,6 +63,9 @@ jobs:
       - name: Run cargo clippy
         run: cargo clippy --all --tests --features odb_rocksdb,odb_sled -- -D warnings
 
+      - name: Check benchmarks
+        run: cd crates/bench && cargo check --benches
+
   wasm_bindings:
     name: Build and test wasm bindings
     runs-on: spacetimedb-runner
