@@ -122,11 +122,16 @@ impl ser::Serializer for ValueSerializer {
 ///
 /// - `total_len == chunks.map(|c| c.len()).sum() <= isize::MAX`
 unsafe fn concat_byte_chunks<'a>(total_len: usize, chunks: impl Iterator<Item = &'a [u8]>) -> Vec<u8> {
+    if total_len == 0 {
+        return Vec::new();
+    }
+
     // Allocate space for `[u8; total_len]` on the heap.
     let layout = Layout::array::<u8>(total_len);
     // SAFETY: Caller promised that `total_len <= isize`.
     let layout = unsafe { layout.unwrap_unchecked() };
-    let ptr = alloc::alloc(layout);
+    // SAFETY: We checked above that `layout.size() != 0`.
+    let ptr = unsafe { alloc::alloc(layout) };
     if ptr.is_null() {
         alloc::handle_alloc_error(layout);
     }
@@ -157,7 +162,7 @@ unsafe fn concat_byte_chunks<'a>(total_len: usize, chunks: impl Iterator<Item = 
     // - `total_len <= total_len` holds.
     // - `total_len` values were initialized at type `u8`
     //    as we know `total_len == chunks.map(|c| c.len()).sum()`.
-    Vec::from_raw_parts(ptr, total_len, total_len)
+    unsafe { Vec::from_raw_parts(ptr, total_len, total_len) }
 }
 
 /// Continuation for serializing an array.
