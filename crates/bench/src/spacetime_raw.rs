@@ -98,6 +98,48 @@ impl BenchDatabase for SpacetimeRaw {
         })
     }
 
+    fn update_bulk<T: BenchTable>(&mut self, table_id: &Self::TableId, row_count: u32) -> ResultBench<()> {
+        let ctx = ExecutionContext::default();
+        self.db.with_auto_commit(&ctx, |tx| {
+            let rows = self
+                .db
+                .iter_mut(&ctx, tx, *table_id)?
+                .take(row_count as usize)
+                .map(|row| row.view().clone())
+                .collect::<Vec<_>>();
+
+            assert_eq!(rows.len(), row_count as usize, "not enough rows found for update_bulk!");
+            for mut row in rows {
+                // It would likely be faster to collect a vector of IDs and delete + insert them all at once,
+                // but this implementation is closer to how `update` works in modules.
+                // (update_by_{field} -> spacetimedb::query::update_by_field -> (delete_by_col_eq; insert))
+                let id = self
+                    .db
+                    .iter_by_col_eq_mut(&ctx, tx, *table_id, ColId(0), row.elements[0].clone())?
+                    .next()
+                    .expect("failed to find row during update!")
+                    .id()
+                    .clone();
+
+                assert_eq!(
+                    self.db.delete(tx, *table_id, [id.into()]),
+                    1,
+                    "failed to delete row during update!"
+                );
+
+                // relies on column 1 being a u64, which is guaranteed by BenchTable
+                if let AlgebraicValue::U64(i) = row.elements[1] {
+                    row.elements[1] = AlgebraicValue::U64(i + 1);
+                } else {
+                    panic!("column 1 is not a u64!");
+                }
+
+                self.db.insert(tx, *table_id, row)?;
+            }
+            Ok(())
+        })
+    }
+
     fn iterate(&mut self, table_id: &Self::TableId) -> ResultBench<()> {
         let ctx = ExecutionContext::default();
         self.db.with_auto_commit(&ctx, |tx| {

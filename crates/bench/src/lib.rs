@@ -76,6 +76,15 @@ mod tests {
             "bulk inserted rows should be bulk inserted"
         );
 
+        if index_strategy == IndexStrategy::Unique {
+            db.update_bulk::<T>(&table_id, count)?;
+            assert_eq!(
+                db.count_table(&table_id)?,
+                count,
+                "bulk updated rows should be bulk updated"
+            );
+        }
+
         db.clear_table(&table_id)?;
         assert_eq!(
             db.count_table(&table_id)?,

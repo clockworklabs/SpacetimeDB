@@ -203,6 +203,12 @@ impl Locking {
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct RowId(pub(crate) DataKey);
 
+impl From<DataKey> for RowId {
+    fn from(data_key: DataKey) -> Self {
+        Self(data_key)
+    }
+}
+
 impl DataRow for Locking {
     type RowId = RowId;
     type DataRef<'a> = DataRef<'a>;
