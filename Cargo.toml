@@ -67,10 +67,10 @@ debug = true
 ahash = "0.8"
 anyhow = { version = "1.0.68", features = ["backtrace"] }
 anymap = "0.12"
+arrayvec = "0.7.2"
 async-trait = "0.1.68"
 axum = { version = "0.7", features = ["tracing"] }
 axum-extra = { version = "0.9", features = ["typed-header"] }
-arrayvec = "0.7.2"
 backtrace = "0.3.66"
 base64 = "0.21.2"
 bitflags = "2.3.3"
@@ -99,16 +99,16 @@ enum-as-inner = "0.6"
 enum-map = "2.6.3"
 env_logger = "0.10"
 flate2 = "1.0.24"
-fs2 = "0.4.3"
 fs-err = "2.9.0"
+fs2 = "0.4.3"
 futures = "0.3"
 futures-channel = "0.3"
 getrandom = { version = "0.2.7", features = ["custom"] }
 glob = "0.3.1"
 headers = "0.4"
 hex = "0.4.3"
-hostname = "^0.3"
 home = "0.5"
+hostname = "^0.3"
 http = "1.0"
 humantime = "2.1.0"
 hyper = "1.0"
@@ -119,7 +119,7 @@ indexmap = "2.0.0"
 indicatif = "0.16"
 insta = { version = "1.21.0", features = ["toml"] }
 is-terminal = "0.4"
-itertools = "0.12.0"
+itertools = "0.12"
 jsonwebtoken = { version = "8.1.0" }
 lazy_static = "1.4.0"
 log = "0.4.17"
@@ -144,9 +144,9 @@ rayon-core = "1.11.0"
 regex = "1"
 reqwest = { version = "0.11.10", features = ["stream", "json"] }
 rusqlite = { version = "0.29.0", features = ["bundled", "column_decltype"] }
+rust_decimal = { version = "1.29.1", features = ["db-tokio-postgres"] }
 rustc-demangle = "0.1.21"
 rustc-hash = "1.1.0"
-rust_decimal = { version = "1.29.1", features = ["db-tokio-postgres"] }
 rustyline = { version = "12.0.0", features = [] }
 scoped-tls = "1.0.1"
 scopeguard = "1.1.0"
@@ -161,9 +161,9 @@ sha3 = "0.10.0"
 slab = "0.4.7"
 sled = "0.34.7"
 smallvec = { version = "1.11", features = ["union", "const_generics"] }
-sqlparser = "0.38.0"
-sqllogictest-engines = "0.17"
 sqllogictest = "0.17"
+sqllogictest-engines = "0.17"
+sqlparser = "0.38.0"
 strum = { version = "0.25.0", features = ["derive"] }
 syn = { version = "2", features = ["full", "extra-traits"] }
 syntect = { version = "5.0.0", default-features = false, features = ["default-fancy"] }
@@ -174,9 +174,9 @@ tempfile = "3.8"
 termcolor = "1.2.0"
 thiserror = "1.0.37"
 tokio = { version = "1.25.1", features = ["full"] }
-tokio-util = { version = "0.7.4", features = ["time"] }
 tokio-postgres = { version = "0.7.8", features = ["with-chrono-0_4"] }
 tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
+tokio-util = { version = "0.7.4", features = ["time"] }
 toml = "0.8"
 tower-http = { version = "0.5", features = ["cors"] }
 tracing = { version = "0.1.37", features = ["release_max_level_off"] }
@@ -190,6 +190,7 @@ urlencoding = "2.1.2"
 uuid = { version = "1.2.1", features = ["v4"] }
 walkdir = "2.2.5"
 wasmbin = "0.6"
+
 
 wasmtime = { version = "15", default-features = false, features = ["cranelift", "demangle", "addr2line", "cache"] }
 

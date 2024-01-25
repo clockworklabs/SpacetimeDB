@@ -141,7 +141,7 @@ pub enum DBError {
     #[error("TableError: {0}")]
     Table(#[from] TableError),
     #[error("SequenceError: {0}")]
-    Sequence2(#[from] crate::db::datastore::locking_tx_datastore::SequenceError),
+    Sequence2(#[from] crate::db::datastore::mem_arch_datastore::sequence::SequenceError),
     #[error("IndexError: {0}")]
     Index(#[from] IndexError),
     #[error("SchemaError: {0}")]

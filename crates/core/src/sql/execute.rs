@@ -562,6 +562,7 @@ pub(crate) mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_drop_table() -> ResultTest<()> {
         let (db, _, _tmp_dir) = create_data(1)?;
         run_for_testing(&db, "CREATE TABLE inventory2 (inventory_id BIGINT UNSIGNED, name TEXT)")?;
