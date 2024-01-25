@@ -1,7 +1,10 @@
 use super::{btree_index::BTreeIndexRangeIter, table::Table, RowId};
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
-use std::{collections::{BTreeMap, BTreeSet}, ops::RangeBounds};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    ops::RangeBounds,
+};
 
 /// `TxState` tracks all of the modifications made during a particular transaction.
 /// Rows inserted during a transaction will be added to insert_tables, and similarly,
