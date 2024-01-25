@@ -657,12 +657,17 @@ impl traits::MutProgrammable for Locking {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::datastore::system_tables::{
+        StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, ST_COLUMNS_ID, ST_CONSTRAINTS_ID, ST_INDEXES_ID,
+        ST_SEQUENCES_ID,
+    };
     use crate::db::datastore::traits::MutTx;
     use crate::db::datastore::Result;
     use crate::error::IndexError;
     use itertools::Itertools;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_primitives::Constraints;
+    use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::product;
 
     /// Utility to query the system tables and return their concrete table row
