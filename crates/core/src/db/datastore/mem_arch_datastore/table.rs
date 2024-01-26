@@ -15,6 +15,7 @@ use super::{
 use crate::error::IndexError;
 use crate::static_assert_size;
 use ahash::AHashMap;
+use spacetimedb_table::table::UniqueConstraintViolation;
 use core::fmt;
 use core::hash::{BuildHasher, Hasher};
 use core::ops::RangeBounds;
@@ -592,7 +593,7 @@ impl Table {
     /// and the `value` that would have been duplicated.
     fn build_error_unique(&self, index: &BTreeIndex, cols: &ColList, value: AlgebraicValue) -> IndexError {
         let schema = self.get_schema();
-        IndexError::UniqueConstraintViolation {
+        IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
             constraint_name: index.name.clone().into_string(),
             table_name: schema.table_name.clone(),
             cols: cols
@@ -600,7 +601,7 @@ impl Table {
                 .map(|x| schema.columns()[x.idx()].col_name.clone())
                 .collect(),
             value,
-        }
+        })
     }
 
     /// Returns a new empty table with the given `schema`

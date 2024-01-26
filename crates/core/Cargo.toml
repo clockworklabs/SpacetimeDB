@@ -19,11 +19,12 @@ harness = false
 
 [dependencies]
 spacetimedb-lib = { path = "../lib", version = "0.8.1" }
-spacetimedb-sats = { path = "../sats", version = "0.8.1" }
-spacetimedb-vm = { path = "../vm", version = "0.8.1" }
 spacetimedb-client-api-messages = { path = "../client-api-messages", version = "0.8.1" }
-spacetimedb-primitives = { path = "../primitives", version = "0.8.1" }
 spacetimedb-metrics = { path = "../metrics", version = "0.8.1" }
+spacetimedb-primitives = { path = "../primitives", version = "0.8.1" }
+spacetimedb-sats = { path = "../sats", version = "0.8.1" }
+spacetimedb-table = { path = "../table", version = "0.8.1" }
+spacetimedb-vm = { path = "../vm", version = "0.8.1" }
 
 ahash.workspace = true
 anyhow.workspace = true

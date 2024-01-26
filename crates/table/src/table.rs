@@ -17,11 +17,11 @@ use ahash::AHashMap;
 use core::fmt;
 use core::hash::{BuildHasher, Hasher};
 use core::ops::RangeBounds;
-use spacetimedb::error::IndexError;
 use spacetimedb_primitives::ColList;
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer,
     db::def::TableSchema,
+    satn::Satn,
     ser::{Serialize, Serializer},
     AlgebraicValue, ProductType, ProductValue,
 };
@@ -67,7 +67,7 @@ pub enum InsertError {
 
     /// Some index related error occurred.
     #[error(transparent)]
-    IndexError(#[from] IndexError),
+    IndexError(#[from] UniqueConstraintViolation),
 }
 
 // Public API:
@@ -88,7 +88,7 @@ impl Table {
         &self,
         row: &ProductValue,
         mut is_deleted: impl FnMut(RowPointer) -> bool,
-    ) -> Result<(), IndexError> {
+    ) -> Result<(), UniqueConstraintViolation> {
         for (cols, index) in self.indexes.iter().filter(|(_, index)| index.is_unique) {
             let value = row.project_not_empty(cols).unwrap();
             if let Some(mut conflicts) = index.get_rows_that_violate_unique_constraint(&value) {
@@ -610,14 +610,23 @@ impl<'a> Iterator for IndexScanIter<'a> {
     }
 }
 
+#[derive(Error, Debug, PartialEq, Eq)]
+#[error("Unique constraint violation '{}' in table '{}': column(s): '{:?}' value: {}", constraint_name, table_name, cols, value.to_satn())]
+pub struct UniqueConstraintViolation {
+    pub constraint_name: String,
+    pub table_name: String,
+    pub cols: Vec<String>,
+    pub value: AlgebraicValue,
+}
+
 // Private API:
 impl Table {
     /// Returns a unique constraint violation error for the given `index`
     /// and the `value` that would have been duplicated.
-    fn build_error_unique(&self, index: &BTreeIndex, value: AlgebraicValue) -> IndexError {
+    fn build_error_unique(&self, index: &BTreeIndex, value: AlgebraicValue) -> UniqueConstraintViolation {
         let schema = self.get_schema();
         let index = &schema.indexes[index.index_id.idx()];
-        IndexError::UniqueConstraintViolation {
+        UniqueConstraintViolation {
             constraint_name: index.index_name.clone(),
             table_name: schema.table_name.clone(),
             cols: index

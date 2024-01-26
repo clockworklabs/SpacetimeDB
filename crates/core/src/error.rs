@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::{MutexGuard, PoisonError};
 
 use hex::FromHexError;
+use spacetimedb_table::table::UniqueConstraintViolation;
 use thiserror::Error;
 
 use crate::client::ClientActorId;
@@ -17,7 +18,6 @@ use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::relation::FieldName;
 use spacetimedb_sats::satn::Satn;
-use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_vm::errors::{ErrorKind, ErrorLang, ErrorVm};
 use spacetimedb_vm::expr::Crud;
 
@@ -68,13 +68,8 @@ pub enum IndexError {
     IndexAlreadyExists(IndexDef, String),
     #[error("Column not found: {0:?}")]
     ColumnNotFound(IndexDef),
-    #[error("Unique constraint violation '{}' in table '{}': column(s): '{:?}' value: {}", constraint_name, table_name, cols, value.to_satn())]
-    UniqueConstraintViolation {
-        constraint_name: String,
-        table_name: String,
-        cols: Vec<String>,
-        value: AlgebraicValue,
-    },
+    #[error(transparent)]
+    UniqueConstraintViolation(UniqueConstraintViolation),
     #[error("Attempt to define a index with more than 1 auto_inc column: Table: {0:?}, Columns: {1:?}")]
     OneAutoInc(TableId, Vec<String>),
 }

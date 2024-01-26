@@ -1,5 +1,6 @@
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
+use spacetimedb_table::table::UniqueConstraintViolation;
 use std::ops::DerefMut;
 use std::sync::Arc;
 
@@ -120,12 +121,12 @@ impl InstanceEnv {
         let ret = stdb
             .insert_bytes_as_row(tx, table_id, buffer)
             .inspect_err_(|e| match e {
-                crate::error::DBError::Index(IndexError::UniqueConstraintViolation {
+                crate::error::DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
                     constraint_name: _,
                     table_name: _,
                     cols: _,
                     value: _,
-                }) => {}
+                })) => {}
                 _ => {
                     let res = stdb.table_name_from_id(ctx, tx, table_id);
                     if let Ok(Some(table_name)) = res {
