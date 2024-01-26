@@ -28,7 +28,7 @@ use super::{
         VarLenRef,
     },
 };
-use crate::static_assert_size;
+use crate::{static_assert_size, MemoryUsage};
 use core::{
     mem::{self, MaybeUninit},
     ops::ControlFlow,
@@ -147,6 +147,12 @@ struct FixedHeader {
     fixed_row_size: Size,
 }
 
+impl MemoryUsage for FixedHeader {
+    fn memory_usage(&self) -> usize {
+        self.present_rows.capacity() / 8
+    }
+}
+
 #[cfg(debug_assertions)]
 static_assert_size!(FixedHeader, 48);
 
@@ -240,6 +246,8 @@ struct VarHeader {
     first: PageOffset,
 }
 
+impl MemoryUsage for VarHeader {}
+
 static_assert_size!(VarHeader, 6);
 
 impl Default for VarHeader {
@@ -274,6 +282,12 @@ struct PageHeader {
     fixed: FixedHeader,
     /// The header data relating to the var-len component of a row.
     var: VarHeader,
+}
+
+impl MemoryUsage for PageHeader {
+    fn memory_usage(&self) -> usize {
+        self.fixed.memory_usage() + self.var.memory_usage()
+    }
 }
 
 static_assert_size!(PageHeader, PAGE_HEADER_SIZE);
@@ -350,6 +364,12 @@ pub struct Page {
     /// The actual bytes stored in the page.
     /// This contains row data, fixed and variable, and freelists.
     row_data: [Byte; PageOffset::PAGE_END.idx()],
+}
+
+impl MemoryUsage for Page {
+    fn memory_usage(&self) -> usize {
+        self.header.memory_usage()
+    }
 }
 
 static_assert_size!(Page, PAGE_SIZE);

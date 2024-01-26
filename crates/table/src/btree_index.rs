@@ -26,7 +26,7 @@ use super::table::RowRef;
 use crate::{
     layout::{AlgebraicTypeLayout, RowTypeLayout},
     read_column::ReadColumn,
-    static_assert_size,
+    static_assert_size, MemoryUsage,
 };
 use core::ops::RangeBounds;
 use multimap::{MultiMap, MultiMapRangeIter};
@@ -119,6 +119,26 @@ enum TypedIndex {
     I128(MultiMap<i128, RowPointer>),
     String(MultiMap<String, RowPointer>),
     AlgebraicValue(MultiMap<AlgebraicValue, RowPointer>),
+}
+
+impl MemoryUsage for TypedIndex {
+    fn memory_usage(&self) -> usize {
+        match self {
+            TypedIndex::Bool(this) => this.memory_usage(),
+            TypedIndex::U8(this) => this.memory_usage(),
+            TypedIndex::I8(this) => this.memory_usage(),
+            TypedIndex::U16(this) => this.memory_usage(),
+            TypedIndex::I16(this) => this.memory_usage(),
+            TypedIndex::U32(this) => this.memory_usage(),
+            TypedIndex::I32(this) => this.memory_usage(),
+            TypedIndex::U64(this) => this.memory_usage(),
+            TypedIndex::I64(this) => this.memory_usage(),
+            TypedIndex::U128(this) => this.memory_usage(),
+            TypedIndex::I128(this) => this.memory_usage(),
+            TypedIndex::String(this) => this.memory_usage(),
+            TypedIndex::AlgebraicValue(this) => this.memory_usage(),
+        }
+    }
 }
 
 impl TypedIndex {
@@ -326,6 +346,12 @@ pub struct BTreeIndex {
     idx: TypedIndex,
     /// The index name, used for reporting unique constraint violations.
     pub(crate) name: Box<str>,
+}
+
+impl MemoryUsage for BTreeIndex {
+    fn memory_usage(&self) -> usize {
+        self.idx.memory_usage() + self.name.memory_usage()
+    }
 }
 
 static_assert_size!(BTreeIndex, 56);

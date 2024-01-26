@@ -26,7 +26,7 @@ impl EnergyQuanta {
         self.0
     }
 
-    pub fn from_disk_usage(bytes_stored: u64, storage_period: Duration) -> Self {
+    pub fn from_data_storage(bytes_stored: u64, storage_period: Duration) -> Self {
         let bytes_stored = u128::from(bytes_stored);
         let sec = u128::from(storage_period.as_secs());
         let nsec = u128::from(storage_period.subsec_nanos());
@@ -172,6 +172,7 @@ pub trait EnergyMonitor: Send + Sync + 'static {
         execution_duration: Duration,
     );
     fn record_disk_usage(&self, database: &Database, instance_id: u64, disk_usage: u64, period: Duration);
+    fn record_memory_usage(&self, database: &Database, instance_id: u64, mem_usage: u64, period: Duration);
 }
 
 #[derive(Default)]
@@ -191,4 +192,6 @@ impl EnergyMonitor for NullEnergyMonitor {
     }
 
     fn record_disk_usage(&self, _database: &Database, _instance_id: u64, _disk_usage: u64, _period: Duration) {}
+
+    fn record_memory_usage(&self, _database: &Database, _instance_id: u64, _mem_usage: u64, _period: Duration) {}
 }

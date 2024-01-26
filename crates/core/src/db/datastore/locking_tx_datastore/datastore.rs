@@ -25,7 +25,7 @@ use parking_lot::{Mutex, RwLock};
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::db::def::{IndexDef, SequenceDef, TableDef, TableSchema};
 use spacetimedb_sats::{hash::Hash, AlgebraicValue, DataKey, ProductType, ProductValue};
-use spacetimedb_table::{indexes::RowPointer, table::RowRef};
+use spacetimedb_table::{indexes::RowPointer, table::RowRef, MemoryUsage};
 use std::ops::RangeBounds;
 use std::sync::Arc;
 use std::time::Instant;
@@ -51,6 +51,12 @@ pub struct Locking {
     sequence_state: Arc<Mutex<SequencesState>>,
     /// The address of this database.
     database_address: Address,
+}
+
+impl MemoryUsage for Locking {
+    fn memory_usage(&self) -> usize {
+        self.committed_state.read().memory_usage() + self.sequence_state.lock().memory_usage()
+    }
 }
 
 impl Locking {
@@ -211,6 +217,10 @@ impl Locking {
         }
         committed_state.next_tx_offset += 1;
         Ok(())
+    }
+
+    pub fn address(&self) -> Address {
+        self.database_address
     }
 }
 

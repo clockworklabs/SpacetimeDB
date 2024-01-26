@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::Weak;
 use std::time::Duration;
 
 use once_cell::sync::OnceCell;
@@ -30,18 +31,19 @@ use super::database_instance_context::DatabaseInstanceContext;
 /// internal map.
 type Context = Arc<OnceCell<(Arc<DatabaseInstanceContext>, Scheduler)>>;
 
-#[derive(Clone)]
 pub struct DatabaseInstanceContextController {
-    contexts: Arc<Mutex<HashMap<u64, (Context, TotalDiskUsage)>>>,
+    contexts: Mutex<HashMap<u64, (Context, TotalDiskUsage)>>,
     energy_monitor: Arc<dyn EnergyMonitor>,
 }
 
 impl DatabaseInstanceContextController {
-    pub fn new(energy_monitor: Arc<dyn EnergyMonitor>) -> Self {
-        Self {
-            contexts: Arc::default(),
+    pub fn new(energy_monitor: Arc<dyn EnergyMonitor>) -> Arc<Self> {
+        let me = Arc::new(Self {
+            contexts: Mutex::default(),
             energy_monitor,
-        }
+        });
+        me.start_usage_monitors();
+        me
     }
 
     /// Get the database instance state if it is already initialized.
@@ -144,13 +146,14 @@ impl DatabaseInstanceContextController {
         }
     }
 
-    pub fn start_disk_monitor(&self) {
-        tokio::spawn(self.clone().disk_monitor());
+    fn start_usage_monitors(self: &Arc<Self>) {
+        tokio::spawn(Self::disk_monitor(Arc::downgrade(self)));
+        tokio::spawn(Self::memory_monitor(Arc::downgrade(self)));
     }
 
     const DISK_METERING_INTERVAL: Duration = Duration::from_secs(5);
 
-    async fn disk_monitor(self) {
+    async fn disk_monitor(this: Weak<Self>) {
         let mut interval = tokio::time::interval(Self::DISK_METERING_INTERVAL);
         // we don't care about happening precisely every 5 seconds - it just matters that the time between
         // ticks is accurate
@@ -160,14 +163,43 @@ impl DatabaseInstanceContextController {
         loop {
             let tick = interval.tick().await;
             let dt = tick - prev_tick;
-            for (cell, prev_disk_usage) in self.contexts.lock().unwrap().values_mut() {
+
+            let Some(this) = this.upgrade() else { break };
+
+            for (cell, prev_disk_usage) in this.contexts.lock().unwrap().values_mut() {
                 if let Some((db, _)) = cell.get() {
                     let disk_usage = db.total_disk_usage().or(*prev_disk_usage);
-                    self.energy_monitor
+                    this.energy_monitor
                         .record_disk_usage(&db.database, db.database_instance_id, disk_usage.sum(), dt);
                     *prev_disk_usage = disk_usage;
                 }
             }
+
+            prev_tick = tick;
+        }
+    }
+
+    const MEM_METERING_INTERVAL: Duration = Duration::from_secs(100);
+
+    async fn memory_monitor(this: Weak<Self>) {
+        let mut interval = tokio::time::interval(Self::MEM_METERING_INTERVAL);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+        let mut prev_tick = interval.tick().await;
+        loop {
+            let tick = interval.tick().await;
+            let dt = tick - prev_tick;
+
+            let Some(this) = this.upgrade() else { break };
+
+            for (cell, _) in this.contexts.lock().unwrap().values_mut() {
+                if let Some((db, _)) = cell.get() {
+                    let mem_usage = db.mem_usage() as u64;
+                    this.energy_monitor
+                        .record_memory_usage(&db.database, db.database_instance_id, mem_usage, dt);
+                }
+            }
+
             prev_tick = tick;
         }
     }

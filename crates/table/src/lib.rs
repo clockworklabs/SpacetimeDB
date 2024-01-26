@@ -22,6 +22,9 @@ pub mod row_type_visitor;
 pub mod table;
 pub mod var_len;
 
+mod memory_usage;
+pub use memory_usage::MemoryUsage;
+
 #[cfg(test)]
 mod proptest_sats;
 

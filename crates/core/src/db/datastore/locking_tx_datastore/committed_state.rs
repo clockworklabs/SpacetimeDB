@@ -37,6 +37,7 @@ use spacetimedb_table::{
     btree_index::BTreeIndex,
     indexes::{RowPointer, SquashedOffset},
     table::{IndexScanIter, InsertError, RowRef, Table, TableScanIter},
+    MemoryUsage,
 };
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
@@ -49,6 +50,12 @@ pub(crate) struct CommittedState {
     pub(crate) next_tx_offset: u64,
     pub(crate) tables: HashMap<TableId, Table>,
     pub(crate) blob_store: HashMapBlobStore,
+}
+
+impl MemoryUsage for CommittedState {
+    fn memory_usage(&self) -> usize {
+        self.tables.memory_usage() + self.blob_store.memory_usage()
+    }
 }
 
 impl StateView for CommittedState {

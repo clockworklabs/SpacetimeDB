@@ -2,7 +2,7 @@
 //! bytes, row hashes, (page) sizes, offsets, and indices.
 
 use super::util::range_move;
-use crate::static_assert_size;
+use crate::{static_assert_size, MemoryUsage};
 use ahash::RandomState;
 use core::fmt;
 use core::mem::MaybeUninit;
@@ -48,6 +48,8 @@ pub const PAGE_DATA_SIZE: usize = PAGE_SIZE - PAGE_HEADER_SIZE;
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[cfg_attr(any(test, feature = "proptest"), derive(proptest_derive::Arbitrary))]
 pub struct RowHash(pub u64);
+
+impl MemoryUsage for RowHash {}
 
 static_assert_size!(RowHash, 8);
 
@@ -188,6 +190,8 @@ impl fmt::LowerHex for PageOffset {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct PageIndex(#[cfg_attr(any(test, feature = "proptest"), proptest(strategy = "0..MASK_PI"))] pub u64);
 
+impl MemoryUsage for PageIndex {}
+
 static_assert_size!(PageIndex, 8);
 
 impl PageIndex {
@@ -244,6 +248,8 @@ impl SquashedOffset {
 /// and the offset within the page.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RowPointer(pub u64);
+
+impl MemoryUsage for RowPointer {}
 
 static_assert_size!(RowPointer, 8);
 

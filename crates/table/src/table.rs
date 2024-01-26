@@ -14,7 +14,7 @@ use super::{
 };
 use crate::{
     read_column::{ReadColumn, TypeError},
-    static_assert_size,
+    static_assert_size, MemoryUsage,
 };
 use ahash::AHashMap;
 use core::fmt;
@@ -111,6 +111,18 @@ impl TableInner {
 }
 
 static_assert_size!(Table, 248);
+
+impl MemoryUsage for Table {
+    fn memory_usage(&self) -> usize {
+        self.inner.memory_usage() + self.pointer_map.memory_usage() + (*self.indexes).memory_usage()
+    }
+}
+
+impl MemoryUsage for TableInner {
+    fn memory_usage(&self) -> usize {
+        self.row_layout.memory_usage() + self.pages.memory_usage()
+    }
+}
 
 /// Various error that can happen on table insertion.
 #[derive(Error, Debug)]
