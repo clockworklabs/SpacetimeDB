@@ -780,7 +780,6 @@ mod tests {
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::error::IndexError;
     use crate::error::LogReplayError;
-    use anyhow::Context;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_sats::db::def::{ColumnDef, ConstraintDef, IndexType};
     use spacetimedb_sats::product;
