@@ -743,13 +743,60 @@ mod test {
     use proptest::prelude::*;
     use proptest::test_runner::TestCaseResult;
     use spacetimedb_sats::bsatn::to_vec;
-    use spacetimedb_sats::db::def::TableDef;
+    use spacetimedb_sats::db::def::{ColumnDef, IndexDef, IndexType, TableDef};
     use spacetimedb_sats::{product, AlgebraicType, ArrayValue};
 
     fn table(ty: ProductType) -> Table {
         let def = TableDef::from_product("", ty);
         let schema = TableSchema::from_def(0.into(), def);
         Table::new(schema, SquashedOffset::COMMITTED_STATE)
+    }
+
+    #[test]
+    fn unique_violation_error() {
+        // Build a table for (I32, I32) with a unique index on the 0th column.
+        let table_def = TableDef::new(
+            "UniqueIndexed".into(),
+            ["unique_col", "other_col"]
+                .map(|c| ColumnDef {
+                    col_name: c.into(),
+                    col_type: AlgebraicType::I32,
+                })
+                .into(),
+        )
+        .with_indexes(vec![IndexDef {
+            columns: 0.into(),
+            index_name: "my_unique_constraint".into(),
+            is_unique: true,
+            index_type: IndexType::BTree,
+        }]);
+        let schema = TableSchema::from_def(0.into(), table_def);
+        let index_schema = &schema.indexes[0];
+        let index = BTreeIndex::new(index_schema.index_id, true, "test_index");
+        let mut table = Table::new(schema, SquashedOffset::COMMITTED_STATE);
+        table.insert_index(&mut NullBlobStore, ColList::new(0.into()), index);
+
+        // Insert the row (0, 0).
+        table
+            .insert(&mut NullBlobStore, &product![0i32, 0i32])
+            .expect("Initial insert failed");
+
+        // Try to insert the row (0, 1), and assert that we get the expected error.
+        match table.insert(&mut NullBlobStore, &product![0i32, 1i32]) {
+            Ok(_) => panic!("Second insert with same unique value succeeded"),
+            Err(InsertError::IndexError(UniqueConstraintViolation {
+                constraint_name,
+                table_name,
+                cols,
+                value,
+            })) => {
+                assert_eq!(constraint_name, "my_unique_constraint");
+                assert_eq!(table_name, "UniqueIndexed");
+                assert_eq!(cols, &["unique_col"]);
+                assert_eq!(value, AlgebraicValue::I32(0));
+            }
+            Err(e) => panic!("Expected UniqueConstraintViolation but found {:?}", e),
+        }
     }
 
     fn insert_retrieve_body(ty: impl Into<ProductType>, val: impl Into<ProductValue>) -> TestCaseResult {
