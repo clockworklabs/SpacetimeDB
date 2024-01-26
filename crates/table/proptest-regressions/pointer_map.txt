@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 14fb129e6672970b5e734edccc7ded859b78f3d46f5867ee998df9333cc69cef # shrinks to (hash, ptr) = (RowHash(0), RowPointer(0))
