@@ -3,9 +3,8 @@ use super::table::RowRef;
 use crate::static_assert_size;
 use core::ops::RangeBounds;
 use multimap::{MultiMap, MultiMapRangeIter};
-use spacetimedb::error::DBError;
 use spacetimedb_primitives::{ColList, IndexId};
-use spacetimedb_sats::{AlgebraicValue, ProductValue};
+use spacetimedb_sats::{product_value::InvalidFieldError, AlgebraicValue, ProductValue};
 
 mod multimap;
 
@@ -70,30 +69,33 @@ pub struct BTreeIndex {
     pub(crate) is_unique: bool,
     /// The actual index.
     idx: MultiMap<IndexKey, RowPointer>,
+    /// The index name, used for reporting unique constraint violations.
+    pub(crate) name: Box<str>,
 }
 
-static_assert_size!(BTreeIndex, 32);
+static_assert_size!(BTreeIndex, 48);
 
 impl BTreeIndex {
     /// Returns a new possibly unique index, with `index_id` for a set of columns.
-    pub fn new(index_id: IndexId, is_unique: bool) -> Self {
+    pub fn new(index_id: IndexId, is_unique: bool, name: impl Into<Box<str>>) -> Self {
         Self {
             index_id,
             is_unique,
             idx: MultiMap::new(),
+            name: name.into(),
         }
     }
 
     /// Extracts from `row` the relevant column values according to what columns are indexed.
-    pub fn get_fields(&self, cols: &ColList, row: &ProductValue) -> Result<AlgebraicValue, DBError> {
-        row.project_not_empty(cols).map_err(Into::into)
+    pub fn get_fields(&self, cols: &ColList, row: &ProductValue) -> Result<AlgebraicValue, InvalidFieldError> {
+        row.project_not_empty(cols)
     }
 
     /// Inserts `ptr` with the value `row` to this index.
     /// This index will extract the necessary values from `row` based on `self.cols`.
     ///
     /// Return false if `ptr` was already indexed prior to this call.
-    pub fn insert(&mut self, cols: &ColList, row: &ProductValue, ptr: RowPointer) -> Result<bool, DBError> {
+    pub fn insert(&mut self, cols: &ColList, row: &ProductValue, ptr: RowPointer) -> Result<bool, InvalidFieldError> {
         let col_value = self.get_fields(cols, row)?;
         Ok(self.idx.insert(col_value, ptr))
     }
@@ -144,7 +146,7 @@ impl BTreeIndex {
         &mut self,
         cols: &ColList,
         rows: impl IntoIterator<Item = RowRef<'table>>,
-    ) -> Result<bool, DBError> {
+    ) -> Result<bool, InvalidFieldError> {
         let mut all_inserted = true;
         for row_ref in rows {
             let row = row_ref.to_product_value();
@@ -190,7 +192,7 @@ mod test {
     }
 
     fn new_index(is_unique: bool) -> BTreeIndex {
-        BTreeIndex::new(0.into(), is_unique)
+        BTreeIndex::new(0.into(), is_unique, "test_index")
     }
 
     proptest! {

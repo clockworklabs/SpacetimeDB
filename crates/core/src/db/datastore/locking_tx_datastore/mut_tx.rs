@@ -29,6 +29,7 @@ use spacetimedb_sats::data_key::{DataKey, ToDataKey};
 use spacetimedb_sats::db::def::*;
 use spacetimedb_sats::db::error::SchemaErrors;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
+use spacetimedb_table::table::UniqueConstraintViolation;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -983,7 +984,7 @@ impl MutTxId {
     }
 
     fn build_error_unique(index: &BTreeIndex, table: &Table, value: AlgebraicValue) -> IndexError {
-        IndexError::UniqueConstraintViolation {
+        IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
             constraint_name: index.name.clone(),
             table_name: table.schema.table_name.clone(),
             cols: index
@@ -992,7 +993,7 @@ impl MutTxId {
                 .map(|x| table.schema.columns()[usize::from(x)].col_name.clone())
                 .collect(),
             value,
-        }
+        })
     }
 
     pub(crate) fn get<'a>(&'a self, table_id: &TableId, row_id: &'a RowId) -> Result<Option<DataRef<'a>>> {
