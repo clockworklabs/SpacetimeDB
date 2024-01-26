@@ -39,7 +39,7 @@ use super::{
     layout::MIN_ROW_SIZE,
     var_len::{is_granule_offset_aligned, VarLenGranule, VarLenGranuleHeader, VarLenMembers, VarLenRef},
 };
-use crate::{fixed_bit_set::IterSet, static_assert_size, table::BlobNumBytes};
+use crate::{fixed_bit_set::IterSet, static_assert_size, table::BlobNumBytes, MemoryUsage};
 use core::{mem, ops::ControlFlow, ptr};
 use spacetimedb_lib::{de::Deserialize, ser::Serialize};
 use thiserror::Error;
@@ -61,6 +61,13 @@ struct FreeCellRef {
     ///
     /// The `PageOffset::PAGE_END` is used as a sentinel to signal "`None`".
     next: PageOffset,
+}
+
+impl MemoryUsage for FreeCellRef {
+    fn memory_usage(&self) -> usize {
+        let Self { next } = self;
+        next.memory_usage()
+    }
 }
 
 impl FreeCellRef {
@@ -157,6 +164,21 @@ struct FixedHeader {
     fixed_row_size: Size,
 }
 
+impl MemoryUsage for FixedHeader {
+    fn memory_usage(&self) -> usize {
+        let Self {
+            next_free,
+            last,
+            num_rows,
+            present_rows,
+            // MEMUSE: it's just a u16, ok to ignore
+            #[cfg(debug_assertions)]
+                fixed_row_size: _,
+        } = self;
+        next_free.memory_usage() + last.memory_usage() + num_rows.memory_usage() + present_rows.memory_usage()
+    }
+}
+
 #[cfg(debug_assertions)]
 static_assert_size!(FixedHeader, 18);
 
@@ -250,6 +272,17 @@ struct VarHeader {
     first: PageOffset,
 }
 
+impl MemoryUsage for VarHeader {
+    fn memory_usage(&self) -> usize {
+        let Self {
+            next_free,
+            freelist_len,
+            first,
+        } = self;
+        next_free.memory_usage() + freelist_len.memory_usage() + first.memory_usage()
+    }
+}
+
 static_assert_size!(VarHeader, 6);
 
 impl Default for VarHeader {
@@ -291,6 +324,18 @@ struct PageHeader {
     ///
     /// This means that modifications to the page always sets this field to `None`.
     unmodified_hash: Option<blake3::Hash>,
+}
+
+impl MemoryUsage for PageHeader {
+    fn memory_usage(&self) -> usize {
+        let Self {
+            fixed,
+            var,
+            // MEMUSE: no allocation, ok to ignore
+            unmodified_hash: _,
+        } = self;
+        fixed.memory_usage() + var.memory_usage()
+    }
 }
 
 static_assert_size!(PageHeader, PAGE_HEADER_SIZE);
@@ -370,6 +415,12 @@ pub struct Page {
     /// The actual bytes stored in the page.
     /// This contains row data, fixed and variable, and freelists.
     row_data: [Byte; PageOffset::PAGE_END.idx()],
+}
+
+impl MemoryUsage for Page {
+    fn memory_usage(&self) -> usize {
+        self.header.memory_usage()
+    }
 }
 
 static_assert_size!(Page, PAGE_SIZE);

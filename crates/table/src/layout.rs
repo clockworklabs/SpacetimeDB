@@ -6,6 +6,8 @@
 //! These, and others, determine what the layout of objects typed at those types are.
 //! They also implement [`HasLayout`] which generalizes over layout annotated types.
 
+use crate::MemoryUsage;
+
 use super::{
     indexes::Size,
     var_len::{VarLenGranule, VarLenRef},
@@ -54,6 +56,8 @@ pub struct Layout {
     /// The alignment of the object / expected object in bytes.
     pub align: u16,
 }
+
+impl MemoryUsage for Layout {}
 
 /// A type which knows what its layout is.
 ///
@@ -105,6 +109,17 @@ pub enum AlgebraicTypeLayout {
     Primitive(PrimitiveType),
     /// A variable length type, annotated with its layout.
     VarLen(VarLenType),
+}
+
+impl MemoryUsage for AlgebraicTypeLayout {
+    fn memory_usage(&self) -> usize {
+        match self {
+            AlgebraicTypeLayout::Sum(x) => x.memory_usage(),
+            AlgebraicTypeLayout::Product(x) => x.memory_usage(),
+            AlgebraicTypeLayout::Primitive(x) => x.memory_usage(),
+            AlgebraicTypeLayout::VarLen(x) => x.memory_usage(),
+        }
+    }
 }
 
 impl HasLayout for AlgebraicTypeLayout {
@@ -170,6 +185,13 @@ pub const fn row_size_for_type<T>() -> Size {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct RowTypeLayout(ProductTypeLayout);
 
+impl MemoryUsage for RowTypeLayout {
+    fn memory_usage(&self) -> usize {
+        let Self(layout) = self;
+        layout.memory_usage()
+    }
+}
+
 impl RowTypeLayout {
     /// Returns a view of this row type as a product type.
     pub fn product(&self) -> &ProductTypeLayout {
@@ -217,6 +239,13 @@ pub struct ProductTypeLayout {
     pub elements: Collection<ProductTypeElementLayout>,
 }
 
+impl MemoryUsage for ProductTypeLayout {
+    fn memory_usage(&self) -> usize {
+        let Self { layout, elements } = self;
+        layout.memory_usage() + elements.memory_usage()
+    }
+}
+
 impl HasLayout for ProductTypeLayout {
     fn layout(&self) -> &Layout {
         &self.layout
@@ -239,6 +268,13 @@ pub struct ProductTypeElementLayout {
     pub name: Option<Box<str>>,
 }
 
+impl MemoryUsage for ProductTypeElementLayout {
+    fn memory_usage(&self) -> usize {
+        let Self { offset, ty, name } = self;
+        offset.memory_usage() + ty.memory_usage() + name.memory_usage()
+    }
+}
+
 /// A mirrior of [`SumType`] annotated with a [`Layout`].
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SumTypeLayout {
@@ -249,6 +285,17 @@ pub struct SumTypeLayout {
     /// The relative offset of a sum value's payload for sums of this type.
     /// Sum value tags are always at offset 0.
     pub payload_offset: u16,
+}
+
+impl MemoryUsage for SumTypeLayout {
+    fn memory_usage(&self) -> usize {
+        let Self {
+            layout,
+            variants,
+            payload_offset,
+        } = self;
+        layout.memory_usage() + variants.memory_usage() + payload_offset.memory_usage()
+    }
 }
 
 impl HasLayout for SumTypeLayout {
@@ -269,6 +316,15 @@ pub struct SumTypeVariantLayout {
     /// which we do when reporting type errors.
     pub name: Option<Box<str>>,
 }
+
+impl MemoryUsage for SumTypeVariantLayout {
+    fn memory_usage(&self) -> usize {
+        let Self { ty, name } = self;
+        ty.memory_usage() + name.memory_usage()
+    }
+}
+
+impl MemoryUsage for PrimitiveType {}
 
 impl HasLayout for PrimitiveType {
     fn layout(&self) -> &'static Layout {
@@ -299,6 +355,16 @@ pub enum VarLenType {
     /// Storing the whole `AlgebraicType` here allows us to directly call BSATN ser/de,
     /// and to report type errors.
     Map(Box<AlgebraicType>),
+}
+
+impl MemoryUsage for VarLenType {
+    fn memory_usage(&self) -> usize {
+        match self {
+            VarLenType::String => 0,
+            VarLenType::Array(x) => x.memory_usage(),
+            VarLenType::Map(x) => x.memory_usage(),
+        }
+    }
 }
 
 /// The layout of var-len objects. Aligned at a `u16` which it has 2 of.

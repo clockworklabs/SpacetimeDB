@@ -23,7 +23,7 @@
 
 use super::indexes::RowPointer;
 use super::table::RowRef;
-use crate::{read_column::ReadColumn, static_assert_size};
+use crate::{read_column::ReadColumn, static_assert_size, MemoryUsage};
 use core::ops::RangeBounds;
 use spacetimedb_primitives::{ColList, IndexId};
 use spacetimedb_sats::{
@@ -125,6 +125,28 @@ enum TypedIndex {
     I256(Index<i256>),
     String(Index<Box<str>>),
     AlgebraicValue(Index<AlgebraicValue>),
+}
+
+impl MemoryUsage for TypedIndex {
+    fn memory_usage(&self) -> usize {
+        match self {
+            TypedIndex::Bool(this) => this.memory_usage(),
+            TypedIndex::U8(this) => this.memory_usage(),
+            TypedIndex::I8(this) => this.memory_usage(),
+            TypedIndex::U16(this) => this.memory_usage(),
+            TypedIndex::I16(this) => this.memory_usage(),
+            TypedIndex::U32(this) => this.memory_usage(),
+            TypedIndex::I32(this) => this.memory_usage(),
+            TypedIndex::U64(this) => this.memory_usage(),
+            TypedIndex::I64(this) => this.memory_usage(),
+            TypedIndex::U128(this) => this.memory_usage(),
+            TypedIndex::I128(this) => this.memory_usage(),
+            TypedIndex::U256(this) => this.memory_usage(),
+            TypedIndex::I256(this) => this.memory_usage(),
+            TypedIndex::String(this) => this.memory_usage(),
+            TypedIndex::AlgebraicValue(this) => this.memory_usage(),
+        }
+    }
 }
 
 impl TypedIndex {
@@ -327,6 +349,18 @@ pub struct BTreeIndex {
     /// The key type of this index.
     /// This is the projection of the row type to the types of the columns indexed.
     pub key_type: AlgebraicType,
+}
+
+impl MemoryUsage for BTreeIndex {
+    fn memory_usage(&self) -> usize {
+        let Self {
+            index_id,
+            is_unique,
+            idx,
+            key_type,
+        } = self;
+        index_id.memory_usage() + is_unique.memory_usage() + idx.memory_usage() + key_type.memory_usage()
+    }
 }
 
 static_assert_size!(BTreeIndex, 64);

@@ -1,5 +1,7 @@
 //! Provides [`Pages`], a page manager dealing with [`Page`]s as a collection.
 
+use crate::MemoryUsage;
+
 use super::blob_store::BlobStore;
 use super::indexes::{Bytes, PageIndex, PageOffset, RowPointer, Size};
 use super::page::Page;
@@ -38,6 +40,13 @@ pub struct Pages {
     pages: Vec<Box<Page>>,
     /// The set of pages that aren't yet full.
     non_full_pages: Vec<PageIndex>,
+}
+
+impl MemoryUsage for Pages {
+    fn memory_usage(&self) -> usize {
+        let Self { pages, non_full_pages } = self;
+        pages.memory_usage() + non_full_pages.memory_usage()
+    }
 }
 
 impl Pages {
