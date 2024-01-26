@@ -88,7 +88,7 @@ impl Table {
             let value = row.project_not_empty(cols).unwrap();
             if let Some(mut conflicts) = index.get_rows_that_violate_unique_constraint(&value) {
                 if conflicts.any(|ptr| !is_deleted(ptr)) {
-                    return Err(self.build_error_unique(index, value));
+                    return Err(self.build_error_unique(index, cols, value));
                 }
             }
         }
@@ -422,7 +422,7 @@ impl Table {
             new.insert_index(
                 &NullBlobStore,
                 cols.clone(),
-                BTreeIndex::new(index.index_id, index.is_unique),
+                BTreeIndex::new(index.index_id, index.is_unique, index.name.clone()),
             );
         }
         new
@@ -590,22 +590,12 @@ impl<'a> Iterator for IndexScanIter<'a> {
 impl Table {
     /// Returns a unique constraint violation error for the given `index`
     /// and the `value` that would have been duplicated.
-    fn build_error_unique(&self, index: &BTreeIndex, value: AlgebraicValue) -> IndexError {
+    fn build_error_unique(&self, index: &BTreeIndex, cols: &ColList, value: AlgebraicValue) -> IndexError {
         let schema = self.get_schema();
-
-        // Linear scan here is inefficient, but fine for two reasons:
-        // 1. This is an error path.
-        // 2. Most tables will have few indexes.
-        let index = &schema
-            .indexes
-            .iter()
-            .find(|index_schema| index_schema.index_id == index.index_id)
-            .expect("Unique constraint violation for index which doesn't appear in schema");
         IndexError::UniqueConstraintViolation {
-            constraint_name: index.index_name.clone(),
+            constraint_name: index.name.clone().into_string(),
             table_name: schema.table_name.clone(),
-            cols: index
-                .columns
+            cols: cols
                 .iter()
                 .map(|x| schema.columns()[x.idx()].col_name.clone())
                 .collect(),
