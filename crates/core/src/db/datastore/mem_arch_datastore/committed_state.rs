@@ -1,11 +1,7 @@
 use super::{
-    blob_store::{BlobStore, HashMapBlobStore},
-    btree_index::BTreeIndex,
     datastore::Result,
-    indexes::{RowPointer, SquashedOffset},
     sequence::{Sequence, SequencesState},
     state_view::{Iter, IterByColRange, ScanIterByColRange, StateView},
-    table::{IndexScanIter, InsertError, RowRef, Table, TableScanIter},
     tx_state::TxState,
 };
 use crate::{
@@ -31,6 +27,12 @@ use spacetimedb_sats::{
         def::TableSchema,
     },
     AlgebraicValue, DataKey, ProductValue, ToDataKey,
+};
+use spacetimedb_table::{
+    blob_store::{BlobStore, HashMapBlobStore},
+    btree_index::BTreeIndex,
+    indexes::{RowPointer, SquashedOffset},
+    table::{IndexScanIter, InsertError, RowRef, Table, TableScanIter},
 };
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
@@ -233,7 +235,7 @@ impl CommittedState {
     pub fn build_sequence_state(&mut self, sequence_state: &mut SequencesState) -> Result<()> {
         let st_sequences = self.tables.get(&ST_SEQUENCES_ID).unwrap();
         for row_ref in st_sequences.scan_rows(&self.blob_store) {
-            let row = row_ref.read_row();
+            let row = row_ref.to_product_value();
             let sequence = StSequenceRow::try_from(&row)?;
             // TODO: The system tables have initialized their value already, but this is wrong:
             // If we exceed  `SEQUENCE_PREALLOCATION_AMOUNT` we will get a unique violation
@@ -259,7 +261,7 @@ impl CommittedState {
         let st_indexes = self.tables.get(&ST_INDEXES_ID).unwrap();
         let rows = st_indexes
             .scan_rows(&self.blob_store)
-            .map(|r| r.read_row())
+            .map(|r| r.to_product_value())
             .collect::<Vec<_>>();
         for row in rows {
             let index_row = StIndexRow::try_from(&row)?;
@@ -281,7 +283,7 @@ impl CommittedState {
         let st_tables = self.get_table(ST_TABLES_ID).unwrap();
         let rows = st_tables
             .scan_rows(&self.blob_store)
-            .map(|r| r.read_row())
+            .map(|r| r.to_product_value())
             .collect::<Vec<_>>();
         for row in rows {
             let table_row = StTableRow::try_from(&row)?;
@@ -310,10 +312,7 @@ impl CommittedState {
         }
     }
 
-    // TODO(perf, deep-integration):
-    //   When [`Table::read_row`] and [`RowRef::new`] become `unsafe`,
-    //   make this method `unsafe` as well.
-    //   Add the following to the docs:
+    // TODO(perf, deep-integration): Make this method `unsafe`. Add the following to the docs:
     //
     // # Safety
     //
@@ -335,11 +334,8 @@ impl CommittedState {
             .tables
             .get(&table_id)
             .expect("Attempt to get COMMITTED_STATE row from table not present in tables.");
-        // TODO(perf, deep-integration):
-        // See above. Once `RowRef::new` is unsafe, justify with:
-        //
-        // Our invariants satisfy `RowRef::new`.
-        RowRef::new(table, &self.blob_store, row_ptr)
+        // TODO(perf, deep-integration): Use `get_row_ref_unchecked`.
+        table.get_row_ref(&self.blob_store, row_ptr).unwrap()
     }
 
     pub fn merge(&mut self, tx_state: TxState) -> TxData {
@@ -408,7 +404,7 @@ impl CommittedState {
                     }
 
                     for row_ref in tx_table.scan_rows(&tx_blob_store) {
-                        let pv = row_ref.read_row();
+                        let pv = row_ref.to_product_value();
                         commit_table
                             .insert(commit_blob_store, &pv)
                             .expect("Failed to insert when merging commit");
@@ -556,7 +552,7 @@ impl<'a> Iterator for CommittedStateIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         for row_ref in &mut self.iter {
-            let row = row_ref.read_row();
+            let row = row_ref.to_product_value();
             let table_id = row.project_not_empty(self.table_id_col).unwrap();
             if table_id == *self.value {
                 return Some(row_ref);

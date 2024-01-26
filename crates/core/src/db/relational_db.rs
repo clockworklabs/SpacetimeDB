@@ -1,9 +1,7 @@
 use super::commit_log::{CommitLog, CommitLogMut};
 use super::datastore::mem_arch_datastore::{
     datastore::MemArchPrototype,
-    indexes::RowPointer,
     state_view::{Iter, IterByColEq, IterByColRange},
-    table::RowRef,
 };
 use super::datastore::traits::{
     MutProgrammable, MutTx as _, MutTxDatastore, Programmable, Tx as _, TxData, TxDatastore,
@@ -26,6 +24,7 @@ use spacetimedb_primitives::*;
 use spacetimedb_sats::data_key::ToDataKey;
 use spacetimedb_sats::db::def::{IndexDef, SequenceDef, TableDef, TableSchema};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
+use spacetimedb_table::{indexes::RowPointer, table::RowRef};
 use std::borrow::Cow;
 use std::fs::{create_dir_all, File};
 use std::ops::RangeBounds;
@@ -52,7 +51,7 @@ impl DataRow for RelationalDB {
     type DataRef<'a> = RowRef<'a>;
 
     fn view_product_value<'a>(&self, data_ref: Self::DataRef<'a>) -> Cow<'a, ProductValue> {
-        Cow::Owned(data_ref.read_row())
+        Cow::Owned(data_ref.to_product_value())
     }
 }
 
@@ -911,7 +910,7 @@ mod tests {
 
         let mut rows = stdb
             .iter_mut(&ExecutionContext::default(), &tx, table_id)?
-            .map(|r| *r.read_row().elements[0].as_i32().unwrap())
+            .map(|r| *r.to_product_value().elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
         rows.sort();
 
@@ -936,7 +935,7 @@ mod tests {
         let tx = stdb.begin_mut_tx();
         let mut rows = stdb
             .iter_mut(&ExecutionContext::default(), &tx, table_id)?
-            .map(|r| *r.read_row().elements[0].as_i32().unwrap())
+            .map(|r| *r.to_product_value().elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
         rows.sort();
 
@@ -965,7 +964,7 @@ mod tests {
                 ColId(0),
                 AlgebraicValue::I32(0)..,
             )?
-            .map(|r| *r.read_row().elements[0].as_i32().unwrap())
+            .map(|r| *r.to_product_value().elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
         rows.sort();
 
@@ -996,7 +995,7 @@ mod tests {
                 ColId(0),
                 AlgebraicValue::I32(0)..,
             )?
-            .map(|r| *r.read_row().elements[0].as_i32().unwrap())
+            .map(|r| *r.to_product_value().elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
         rows.sort();
 
@@ -1051,7 +1050,7 @@ mod tests {
         let tx = stdb.begin_mut_tx();
         let mut rows = stdb
             .iter_mut(&ctx, &tx, table_id)?
-            .map(|r| *r.read_row().elements[0].as_i32().unwrap())
+            .map(|r| *r.to_product_value().elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
         rows.sort();
 
@@ -1093,7 +1092,7 @@ mod tests {
                 ColId(0),
                 AlgebraicValue::I64(0)..,
             )?
-            .map(|r| *r.read_row().elements[0].as_i64().unwrap())
+            .map(|r| *r.to_product_value().elements[0].as_i64().unwrap())
             .collect::<Vec<i64>>();
         rows.sort();
 
@@ -1124,7 +1123,7 @@ mod tests {
                 ColId(0),
                 AlgebraicValue::I64(0)..,
             )?
-            .map(|r| *r.read_row().elements[0].as_i64().unwrap())
+            .map(|r| *r.to_product_value().elements[0].as_i64().unwrap())
             .collect::<Vec<i64>>();
         rows.sort();
 
@@ -1178,7 +1177,7 @@ mod tests {
                 ColId(0),
                 AlgebraicValue::I64(0)..,
             )?
-            .map(|r| *r.read_row().elements[0].as_i64().unwrap())
+            .map(|r| *r.to_product_value().elements[0].as_i64().unwrap())
             .collect::<Vec<i64>>();
         rows.sort();
 
@@ -1202,7 +1201,7 @@ mod tests {
                 ColId(0),
                 AlgebraicValue::I64(0)..,
             )?
-            .map(|r| *r.read_row().elements[0].as_i64().unwrap())
+            .map(|r| *r.to_product_value().elements[0].as_i64().unwrap())
             .collect::<Vec<i64>>();
         rows.sort();
 
@@ -1235,7 +1234,7 @@ mod tests {
                 ColId(0),
                 AlgebraicValue::I64(0)..,
             )?
-            .map(|r| *r.read_row().elements[0].as_i64().unwrap())
+            .map(|r| *r.to_product_value().elements[0].as_i64().unwrap())
             .collect::<Vec<i64>>();
         rows.sort();
 
@@ -1321,7 +1320,7 @@ mod tests {
                 ColId(0),
                 AlgebraicValue::I64(0)..,
             )?
-            .map(|r| *r.read_row().elements[0].as_i64().unwrap())
+            .map(|r| *r.to_product_value().elements[0].as_i64().unwrap())
             .collect::<Vec<i64>>();
         rows.sort();
 
@@ -1375,21 +1374,21 @@ mod tests {
 
         let indexes = stdb
             .iter_mut(&ctx, &tx, ST_INDEXES_ID)?
-            .map(|x| StIndexRow::try_from(&x.read_row()).unwrap().to_owned())
+            .map(|x| StIndexRow::try_from(&x.to_product_value()).unwrap().to_owned())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(indexes.len(), 4, "Wrong number of indexes");
 
         let sequences = stdb
             .iter_mut(&ctx, &tx, ST_SEQUENCES_ID)?
-            .map(|x| StSequenceRow::try_from(&x.read_row()).unwrap().to_owned())
+            .map(|x| StSequenceRow::try_from(&x.to_product_value()).unwrap().to_owned())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(sequences.len(), 1, "Wrong number of sequences");
 
         let constraints = stdb
             .iter_mut(&ctx, &tx, ST_CONSTRAINTS_ID)?
-            .map(|x| StConstraintRow::try_from(&x.read_row()).unwrap().to_owned())
+            .map(|x| StConstraintRow::try_from(&x.to_product_value()).unwrap().to_owned())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(constraints.len(), 4, "Wrong number of constraints");
@@ -1398,21 +1397,21 @@ mod tests {
 
         let indexes = stdb
             .iter_mut(&ctx, &tx, ST_INDEXES_ID)?
-            .map(|x| StIndexRow::try_from(&x.read_row()).unwrap().to_owned())
+            .map(|x| StIndexRow::try_from(&x.to_product_value()).unwrap().to_owned())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(indexes.len(), 0, "Wrong number of indexes DROP");
 
         let sequences = stdb
             .iter_mut(&ctx, &tx, ST_SEQUENCES_ID)?
-            .map(|x| StSequenceRow::try_from(&x.read_row()).unwrap().to_owned())
+            .map(|x| StSequenceRow::try_from(&x.to_product_value()).unwrap().to_owned())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(sequences.len(), 0, "Wrong number of sequences DROP");
 
         let constraints = stdb
             .iter_mut(&ctx, &tx, ST_CONSTRAINTS_ID)?
-            .map(|x| StConstraintRow::try_from(&x.read_row()).unwrap().to_owned())
+            .map(|x| StConstraintRow::try_from(&x.to_product_value()).unwrap().to_owned())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(constraints.len(), 0, "Wrong number of constraints DROP");
@@ -1450,7 +1449,7 @@ mod tests {
         // Also make sure we've removed the old ST_TABLES_ID row
         let mut n = 0;
         for row in stdb.iter_mut(&ctx, &tx, ST_TABLES_ID)? {
-            let row = row.read_row();
+            let row = row.to_product_value();
             let table = StTableRow::try_from(&row)?;
             if table.table_id == table_id {
                 n += 1;
@@ -1507,7 +1506,7 @@ mod tests {
         };
 
         assert_eq!(
-            row.read_row(),
+            row.to_product_value(),
             product![AlgebraicValue::U64(0), AlgebraicValue::U64(1), AlgebraicValue::U64(2)]
         );
 
@@ -1580,7 +1579,7 @@ mod tests {
                 let last = db
                     .iter_mut(ctx, tx, table_id)?
                     .last()
-                    .map(|row| row.read_row().field_as_u64(0, None))
+                    .map(|row| row.to_product_value().field_as_u64(0, None))
                     .transpose()?
                     .unwrap_or_default();
                 Ok(last)

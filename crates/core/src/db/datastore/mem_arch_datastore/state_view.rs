@@ -1,10 +1,6 @@
 use super::{
-    committed_state::CommittedIndexIter,
-    committed_state::CommittedState,
-    datastore::Result,
-    mut_tx::IndexSeekIterMutTxId,
-    table::{RowRef, TableScanIter},
-    tx_state::TxState,
+    committed_state::CommittedIndexIter, committed_state::CommittedState, datastore::Result,
+    mut_tx::IndexSeekIterMutTxId, tx_state::TxState,
 };
 use crate::{
     address::Address,
@@ -21,6 +17,7 @@ use spacetimedb_sats::{
     db::def::{ColumnSchema, ConstraintSchema, IndexSchema, SequenceSchema, TableSchema},
     AlgebraicValue,
 };
+use spacetimedb_table::table::{RowRef, TableScanIter};
 use std::{borrow::Cow, ops::RangeBounds};
 
 // StateView trait, is designed to define the behavior of viewing internal datastore states.
@@ -37,7 +34,7 @@ pub trait StateView {
         )
         .map(|mut iter| {
             iter.next()
-                .map(|row| TableId(*row.read_row().elements[0].as_u32().unwrap()))
+                .map(|row| TableId(*row.to_product_value().elements[0].as_u32().unwrap()))
         })
     }
 
@@ -82,7 +79,7 @@ pub trait StateView {
         let row = rows
             .first()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, table_id.into()))?;
-        let row = row.read_row();
+        let row = row.to_product_value();
         let el = StTableRow::try_from(&row)?;
         let table_name = el.table_name.to_owned();
         let table_id = el.table_id;
@@ -96,7 +93,7 @@ pub trait StateView {
                 value,
             )?
             .map(|row| {
-                let row = row.read_row();
+                let row = row.to_product_value();
                 let el = StColumnRow::try_from(&row)?;
                 Ok(ColumnSchema {
                     table_id: el.table_id,
@@ -117,7 +114,7 @@ pub trait StateView {
             ColList::new(StConstraintFields::TableId.col_id()),
             table_id.into(),
         )? {
-            let row = data_ref.read_row();
+            let row = data_ref.to_product_value();
 
             let el = StConstraintRow::try_from(&row)?;
             let constraint_schema = ConstraintSchema {
@@ -138,7 +135,7 @@ pub trait StateView {
             ColList::new(StSequenceFields::TableId.col_id()),
             AlgebraicValue::U32(table_id.into()),
         )? {
-            let row = data_ref.read_row();
+            let row = data_ref.to_product_value();
 
             let el = StSequenceRow::try_from(&row)?;
             let sequence_schema = SequenceSchema {
@@ -163,7 +160,7 @@ pub trait StateView {
             ColList::new(StIndexFields::TableId.col_id()),
             table_id.into(),
         )? {
-            let row = data_ref.read_row();
+            let row = data_ref.to_product_value();
 
             let el = StIndexRow::try_from(&row)?;
             let index_schema = IndexSchema {
@@ -367,7 +364,7 @@ impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for ScanIterByColRange<'a, R> 
     // #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Option<Self::Item> {
         for row_ref in &mut self.scan_iter {
-            let row = row_ref.read_row();
+            let row = row_ref.to_product_value();
             let value = row.project_not_empty(&self.cols).unwrap();
             if self.range.contains(&value) {
                 return Some(row_ref);

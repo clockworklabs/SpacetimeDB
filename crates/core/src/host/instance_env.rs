@@ -285,7 +285,7 @@ impl InstanceEnv {
         let results = stdb.iter_by_col_eq_mut(ctx, tx, table_id, col_id, value)?;
         let mut bytes = Vec::new();
         for result in results {
-            bsatn::to_writer(&mut bytes, &result.read_row()).unwrap();
+            bsatn::to_writer(&mut bytes, &result.to_product_value()).unwrap();
         }
         Ok(bytes)
     }
@@ -298,7 +298,7 @@ impl InstanceEnv {
         let tx = &mut *self.tx.get()?;
 
         for row in stdb.iter_mut(ctx, tx, table_id)? {
-            row.read_row().encode(&mut chunked_writer);
+            row.to_product_value().encode(&mut chunked_writer);
             // Flush at row boundaries.
             chunked_writer.flush();
         }

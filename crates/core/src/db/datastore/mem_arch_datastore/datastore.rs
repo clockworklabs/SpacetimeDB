@@ -1,10 +1,8 @@
 use super::{
     committed_state::CommittedState,
-    indexes::RowPointer,
     mut_tx::MutTxId,
     sequence::SequencesState,
     state_view::{Iter, IterByColRange, StateView},
-    table::RowRef,
     tx::TxId,
     tx_state::TxState,
 };
@@ -26,6 +24,7 @@ use parking_lot::{Mutex, RwLock};
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::db::def::{IndexDef, SequenceDef, TableDef, TableSchema};
 use spacetimedb_sats::{AlgebraicValue, DataKey, ProductType, ProductValue};
+use spacetimedb_table::{indexes::RowPointer, table::RowRef};
 use std::borrow::Cow;
 use std::ops::RangeBounds;
 use std::sync::Arc;
@@ -175,7 +174,7 @@ impl DataRow for MemArchPrototype {
     type DataRef<'a> = RowRef<'a>;
 
     fn view_product_value<'a>(&self, data_ref: Self::DataRef<'a>) -> Cow<'a, ProductValue> {
-        Cow::Owned(data_ref.read_row())
+        Cow::Owned(data_ref.to_product_value())
     }
 }
 
@@ -245,7 +244,7 @@ impl TxDatastore for MemArchPrototype {
     fn get_all_tables_tx<'tx>(&self, ctx: &ExecutionContext, tx: &'tx Self::Tx) -> Result<Vec<Cow<'tx, TableSchema>>> {
         self.iter_tx(ctx, tx, ST_TABLES_ID)?
             .map(|row_ref| {
-                let data = row_ref.read_row();
+                let data = row_ref.to_product_value();
                 let row = StTableRow::try_from(&data)?;
                 self.schema_for_table_tx(tx, row.table_id)
             })
@@ -540,7 +539,7 @@ impl Programmable for MemArchPrototype {
         {
             None => Ok(None),
             Some(data) => {
-                let row = data.read_row();
+                let row = data.to_product_value();
                 let row = StModuleRow::try_from(&row)?;
                 Ok(Some(row.program_hash))
             }
@@ -560,7 +559,7 @@ impl MutProgrammable for MemArchPrototype {
         let ctx = ExecutionContext::internal(self.database_address);
         let mut iter = tx.iter(&ctx, &ST_MODULE_ID)?;
         if let Some(row_ref) = iter.next() {
-            let row_pv = row_ref.read_row();
+            let row_pv = row_ref.to_product_value();
             let row = StModuleRow::try_from(&row_pv)?;
             if fence <= row.epoch.0 {
                 return Err(anyhow!("stale fencing token: {}, storage is at epoch: {}", fence, row.epoch).into());

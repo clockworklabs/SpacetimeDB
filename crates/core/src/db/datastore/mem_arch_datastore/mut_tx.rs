@@ -1,11 +1,8 @@
 use super::{
-    btree_index::BTreeIndex,
     committed_state::{CommittedIndexIter, CommittedState},
     datastore::Result,
-    indexes::{RowPointer, SquashedOffset},
     sequence::{Sequence, SequenceError, SequencesState},
     state_view::{Iter, IterByColRange, ScanIterByColRange, StateView},
-    table::{IndexScanIter, InsertError, RowRef, Table},
     tx_state::TxState,
     SharedMutexGuard, SharedWriteGuard,
 };
@@ -19,7 +16,7 @@ use crate::{
         },
         traits::TxData,
     },
-    error::{DBError, TableError},
+    error::{DBError, IndexError, TableError},
     execution_context::ExecutionContext,
 };
 use anyhow::anyhow;
@@ -33,6 +30,11 @@ use spacetimedb_sats::{
         error::SchemaErrors,
     },
     AlgebraicType, AlgebraicValue, ProductType, ProductValue,
+};
+use spacetimedb_table::{
+    btree_index::BTreeIndex,
+    indexes::{RowPointer, SquashedOffset},
+    table::{IndexScanIter, InsertError, RowRef, Table},
 };
 use std::{
     borrow::Cow,
@@ -189,7 +191,7 @@ impl MutTxId {
         .map(|mut iter| {
             iter.next().map(|row| {
                 TableId(
-                    *row.read_row().elements[StTableFields::TableId.col_idx()]
+                    *row.to_product_value().elements[StTableFields::TableId.col_idx()]
                         .as_u32()
                         .unwrap(),
                 )
@@ -201,7 +203,7 @@ impl MutTxId {
         self.iter_by_col_eq(ctx, &ST_TABLES_ID, StTableFields::TableId.into(), table_id.into())
             .map(|mut iter| {
                 iter.next().map(|row| {
-                    let ProductValue { mut elements, .. } = row.read_row();
+                    let ProductValue { mut elements, .. } = row.to_product_value();
                     let elt = elements.swap_remove(StTableFields::TableName.col_idx());
                     elt.into_string().unwrap()
                 })
@@ -305,7 +307,7 @@ impl MutTxId {
         .map(|mut iter| {
             iter.next().map(|row| {
                 IndexId(
-                    *row.read_row().elements[StIndexFields::IndexId.col_idx()]
+                    *row.to_product_value().elements[StIndexFields::IndexId.col_idx()]
                         .as_u32()
                         .unwrap(),
                 )
@@ -337,7 +339,7 @@ impl MutTxId {
             )?
             .last()
             .unwrap();
-        let old_seq_row = old_seq_row_ref.read_row();
+        let old_seq_row = old_seq_row_ref.to_product_value();
         let old_seq_row_ptr = old_seq_row_ref.pointer();
         let seq_row = {
             let mut seq_row = StSequenceRow::try_from(&old_seq_row)?.to_owned();
@@ -420,7 +422,7 @@ impl MutTxId {
         )
         .map(|mut iter| {
             iter.next().map(|row| {
-                let row = row.read_row();
+                let row = row.to_product_value();
                 let id = row.elements[StSequenceFields::SequenceId.col_idx()].as_u32().unwrap();
                 (*id).into()
             })
@@ -496,7 +498,7 @@ impl MutTxId {
         )
         .map(|mut iter| {
             iter.next().map(|row| {
-                let row = row.read_row();
+                let row = row.to_product_value();
                 let id = row.elements[StConstraintFields::ConstraintId.col_idx()]
                     .as_u32()
                     .unwrap();
@@ -614,7 +616,7 @@ impl MutTxId {
                 StSequenceFields::TableId.into(),
                 table_id.into(),
             )? {
-                let seq_row = seq_row.read_row();
+                let seq_row = seq_row.to_product_value();
                 let seq_row = StSequenceRow::try_from(&seq_row)?;
                 if seq_row.col_pos != seq.col_pos {
                     continue;
@@ -655,7 +657,8 @@ impl MutTxId {
         // so this method needs only to check the committed state.
         if let Some(commit_table) = commit_table {
             commit_table
-                .check_unique_constraints(row, |maybe_conflict| self.tx_state.is_deleted(table_id, maybe_conflict))?;
+                .check_unique_constraints(row, |maybe_conflict| self.tx_state.is_deleted(table_id, maybe_conflict))
+                .map_err(IndexError::from)?;
         }
 
         // Get the insert table, so we can write the row into it.
@@ -699,7 +702,7 @@ impl MutTxId {
 
             // Index error: return more structured error type
             // rather than `anyhow::Error`.
-            Err(InsertError::IndexError(e)) => Err(e.into()),
+            Err(InsertError::IndexError(e)) => Err(IndexError::from(e).into()),
 
             // Misc. insertion error; fail.
             Err(e) => Err(anyhow!("Table::insert failed: {:?}", e).into()),

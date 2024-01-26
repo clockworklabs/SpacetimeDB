@@ -7,7 +7,7 @@ use super::{
 };
 use crate::{
     db::{
-        datastore::{mem_arch_datastore::indexes::RowPointer, traits::TxOp},
+        datastore::traits::TxOp,
         db_metrics::DB_METRICS,
         messages::{
             transaction::Transaction,
@@ -20,6 +20,7 @@ use crate::{
 use anyhow::Context;
 use spacetimedb_sats::hash::{hash_bytes, Hash};
 use spacetimedb_sats::DataKey;
+use spacetimedb_table::indexes::RowPointer;
 use std::{
     collections::{hash_map, HashMap},
     io,

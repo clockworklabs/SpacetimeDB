@@ -1,10 +1,10 @@
-use super::{
+use spacetimedb_primitives::{ColList, TableId};
+use spacetimedb_sats::AlgebraicValue;
+use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
     table::{IndexScanIter, RowRef, Table},
 };
-use spacetimedb_primitives::{ColList, TableId};
-use spacetimedb_sats::AlgebraicValue;
 use std::{
     collections::{btree_map, BTreeMap, BTreeSet},
     ops::RangeBounds,
@@ -98,10 +98,7 @@ impl TxState {
             .index_seek(&self.blob_store, cols, range)
     }
 
-    // TODO(perf, deep-integration):
-    //   When [`Table::read_row`] and [`RowRef::new`] become `unsafe`,
-    //   make this method `unsafe` as well.
-    //   Add the following to the docs:
+    // TODO(perf, deep-integration): Make this unsafe. Add the following to the docs:
     //
     // # Safety
     //
@@ -124,11 +121,8 @@ impl TxState {
             .get(&table_id)
             .expect("Attempt to get TX_STATE row from table not present in insert_tables.");
 
-        // TODO(perf, deep-integration):
-        // See above. Once `RowRef::new` is unsafe, justify with:
-        //
-        // Our invariants satisfy `RowRef::new`.
-        RowRef::new(table, &self.blob_store, row_ptr)
+        // TODO(perf, deep-integration): Use `get_row_ref_unchecked`.
+        table.get_row_ref(&self.blob_store, row_ptr).unwrap()
     }
 
     pub fn is_deleted(&self, table_id: TableId, row_ptr: RowPointer) -> bool {
