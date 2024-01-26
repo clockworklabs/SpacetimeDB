@@ -314,6 +314,7 @@ impl Insn {
     const FIXUP: Self = Self::Goto(u16::MAX);
 }
 
+#[allow(clippy::disallowed_macros)] // This is for test code.
 pub fn dump_visitor_program(program: &VarLenVisitorProgram) {
     for (idx, insn) in program.insns.iter().enumerate() {
         eprintln!("{idx:2}: {insn}");
