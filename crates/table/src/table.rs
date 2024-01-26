@@ -42,9 +42,9 @@ pub struct Table {
     /// Maps `RowHash -> [RowPointer]` where a [`RowPointer`] points into `pages`.
     pointer_map: PointerMap,
     /// The indices associated with a set of columns of the table.
-    pub(crate) indexes: AHashMap<ColList, BTreeIndex>,
+    pub indexes: AHashMap<ColList, BTreeIndex>,
     /// The schema of the table, from which the type, and other details are derived.
-    pub(crate) schema: Box<TableSchema>,
+    pub schema: Box<TableSchema>,
 
     /// `SquashedOffset::TX_STATE` or `SquashedOffset::COMMITTED_STATE`
     /// depending on whether this is a tx scratchpad table
@@ -203,7 +203,7 @@ impl Table {
     /// - `tx_ptr` must refer to a valid row in `tx_table`.
     /// - `row_hash` must be the hash of the row at `tx_ptr`,
     ///   as returned by `tx_table.insert`.
-    pub(crate) unsafe fn find_same_row(
+    pub unsafe fn find_same_row(
         committed_table: &Table,
         tx_table: &Table,
         tx_ptr: RowPointer,
@@ -371,13 +371,12 @@ impl Table {
     }
 
     /// Returns the row type for rows in this table.
-    #[allow(unused)] // Used in a later PR, when implementing the datastore interface.
-    pub(crate) fn get_row_type(&self) -> &ProductType {
+    pub fn get_row_type(&self) -> &ProductType {
         self.get_schema().get_row_type()
     }
 
     /// Returns the schema for this table.
-    pub(crate) fn get_schema(&self) -> &TableSchema {
+    pub fn get_schema(&self) -> &TableSchema {
         &self.schema
     }
 
@@ -389,7 +388,7 @@ impl Table {
     }
 
     /// Returns an iterator over all the rows of `self`, yielded as [`RefRef`]s.
-    pub(crate) fn scan_rows<'a>(&'a self, blob_store: &'a dyn BlobStore) -> TableScanIter<'a> {
+    pub fn scan_rows<'a>(&'a self, blob_store: &'a dyn BlobStore) -> TableScanIter<'a> {
         TableScanIter {
             current_page: None, // Will be filled by the iterator.
             current_page_idx: PageIndex(0),
@@ -423,8 +422,7 @@ impl Table {
     /// the same schema, visitor program, and indices.
     /// The new table will be completely empty
     /// and will use the given `squashed_offset` instead of that of `self`.
-    #[allow(unused)] // Used in a later PR, when implementing the datastore interface.
-    pub(crate) fn clone_structure(&self, squashed_offset: SquashedOffset) -> Self {
+    pub fn clone_structure(&self, squashed_offset: SquashedOffset) -> Self {
         // TODO(perf): Consider `Arc`ing `self.schema`.
         // We'll still need to mutate the schema sometimes,
         // but those are rare, so we could use `ArcSwap` for that.
@@ -631,22 +629,13 @@ impl Table {
     ) -> UniqueConstraintViolation {
         let schema = self.get_schema();
 
-        // Linear scan here is inefficient, but fine for two reasons:
-        // 1. This is an error path.
-        // 2. Most tables will have few indexes.
-        let index = schema
-            .indexes
-            .iter()
-            .find(|index_schema| index_schema.index_id == index.index_id)
-            .expect("Unique constraint violation for index which doesn't appear in schema");
-
         let cols = cols
             .iter()
             .map(|x| schema.columns()[x.idx()].col_name.clone())
             .collect();
 
         UniqueConstraintViolation {
-            constraint_name: index.index_name.clone(),
+            constraint_name: index.name.clone().into(),
             table_name: schema.table_name.clone(),
             cols,
             value,
