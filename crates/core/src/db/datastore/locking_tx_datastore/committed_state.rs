@@ -37,6 +37,7 @@ use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
     table::{IndexScanIter, InsertError, RowRef, Table},
+    MemoryUsage,
 };
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -53,6 +54,18 @@ pub struct CommittedState {
     pub(crate) blob_store: HashMapBlobStore,
     /// Provides fast lookup for index id -> an index.
     pub(super) index_id_map: IndexIdMap,
+}
+
+impl MemoryUsage for CommittedState {
+    fn heap_usage(&self) -> usize {
+        let Self {
+            next_tx_offset,
+            tables,
+            blob_store,
+            index_id_map,
+        } = self;
+        next_tx_offset.heap_usage() + tables.heap_usage() + blob_store.heap_usage() + index_id_map.heap_usage()
+    }
 }
 
 impl StateView for CommittedState {

@@ -20,6 +20,8 @@
 //! one of 20 bytes to copy the leading `(u64, u64, u32)`, which contains no padding,
 //! and then one of 8 bytes to copy the trailing `u64`, skipping over 4 bytes of padding in between.
 
+use crate::MemoryUsage;
+
 use super::{
     indexes::{Byte, Bytes},
     layout::{
@@ -45,6 +47,13 @@ pub(crate) struct StaticBsatnLayout {
     /// A series of `memcpy` invocations from a BFLATN row into a BSATN buffer
     /// which are sufficient to BSATN serialize the row.
     fields: Box<[MemcpyField]>,
+}
+
+impl MemoryUsage for StaticBsatnLayout {
+    fn heap_usage(&self) -> usize {
+        let Self { bsatn_length, fields } = self;
+        bsatn_length.heap_usage() + fields.heap_usage()
+    }
 }
 
 impl StaticBsatnLayout {
@@ -155,6 +164,8 @@ struct MemcpyField {
     /// Length to `memcpy`, in bytes.
     length: u16,
 }
+
+impl MemoryUsage for MemcpyField {}
 
 impl MemcpyField {
     /// Copies the bytes at `row[self.bflatn_offset .. self.bflatn_offset + self.length]`
