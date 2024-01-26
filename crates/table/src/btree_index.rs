@@ -69,17 +69,20 @@ pub struct BTreeIndex {
     pub(crate) is_unique: bool,
     /// The actual index.
     idx: MultiMap<IndexKey, RowPointer>,
+    /// The index name, used for reporting unique constraint violations.
+    pub(crate) name: Box<str>,
 }
 
-static_assert_size!(BTreeIndex, 32);
+static_assert_size!(BTreeIndex, 48);
 
 impl BTreeIndex {
     /// Returns a new possibly unique index, with `index_id` for a set of columns.
-    pub fn new(index_id: IndexId, is_unique: bool) -> Self {
+    pub fn new(index_id: IndexId, is_unique: bool, name: impl Into<Box<str>>) -> Self {
         Self {
             index_id,
             is_unique,
             idx: MultiMap::new(),
+            name: name.into(),
         }
     }
 
@@ -189,7 +192,7 @@ mod test {
     }
 
     fn new_index(is_unique: bool) -> BTreeIndex {
-        BTreeIndex::new(0.into(), is_unique)
+        BTreeIndex::new(0.into(), is_unique, "test_index")
     }
 
     proptest! {
