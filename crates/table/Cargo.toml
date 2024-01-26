@@ -29,7 +29,6 @@ proptest = ["dep:proptest", "dep:proptest-derive"]
 blake3_pure = ["blake3/pure"]
 
 [dependencies]
-spacetimedb-core = { path = "../core" }
 spacetimedb-primitives = { path = "../primitives" }
 spacetimedb-sats = { path = "../sats" }
 

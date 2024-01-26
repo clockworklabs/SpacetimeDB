@@ -669,6 +669,7 @@ mod tests {
     use spacetimedb_primitives::Constraints;
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::product;
+    use spacetimedb_table::table::UniqueConstraintViolation;
 
     /// Utility to query the system tables and return their concrete table row
     pub struct SystemTableQuery<'a> {
@@ -1327,12 +1328,12 @@ mod tests {
         datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
         let result = datastore.insert_mut_tx(&mut tx, table_id, row);
         match result {
-            Err(DBError::Index(IndexError::UniqueConstraintViolation {
+            Err(DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
                 constraint_name: _,
                 table_name: _,
                 cols: _,
                 value: _,
-            })) => (),
+            }))) => (),
             _ => panic!("Expected an unique constraint violation error."),
         }
         #[rustfmt::skip]
@@ -1349,12 +1350,12 @@ mod tests {
         let mut tx = datastore.begin_mut_tx();
         let result = datastore.insert_mut_tx(&mut tx, table_id, row);
         match result {
-            Err(DBError::Index(IndexError::UniqueConstraintViolation {
+            Err(DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
                 constraint_name: _,
                 table_name: _,
                 cols: _,
                 value: _,
-            })) => (),
+            }))) => (),
             _ => panic!("Expected an unique constraint violation error."),
         }
         #[rustfmt::skip]
@@ -1407,12 +1408,12 @@ mod tests {
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         let result = datastore.insert_mut_tx(&mut tx, table_id, row);
         match result {
-            Err(DBError::Index(IndexError::UniqueConstraintViolation {
+            Err(DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
                 constraint_name: _,
                 table_name: _,
                 cols: _,
                 value: _,
-            })) => (),
+            }))) => (),
             _ => panic!("Expected an unique constraint violation error."),
         }
         #[rustfmt::skip]
@@ -1450,12 +1451,12 @@ mod tests {
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         let result = datastore.insert_mut_tx(&mut tx, table_id, row);
         match result {
-            Err(DBError::Index(IndexError::UniqueConstraintViolation {
+            Err(DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
                 constraint_name: _,
                 table_name: _,
                 cols: _,
                 value: _,
-            })) => (),
+            }))) => (),
             _ => panic!("Expected an unique constraint violation error."),
         }
         #[rustfmt::skip]

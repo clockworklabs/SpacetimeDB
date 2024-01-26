@@ -17,11 +17,11 @@ use ahash::AHashMap;
 use core::fmt;
 use core::hash::{BuildHasher, Hasher};
 use core::ops::RangeBounds;
-use spacetimedb::error::IndexError;
 use spacetimedb_primitives::ColList;
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer,
     db::def::TableSchema,
+    satn::Satn,
     ser::{Serialize, Serializer},
     AlgebraicValue, ProductType, ProductValue,
 };
@@ -42,9 +42,9 @@ pub struct Table {
     /// Maps `RowHash -> [RowPointer]` where a [`RowPointer`] points into `pages`.
     pointer_map: PointerMap,
     /// The indices associated with a set of columns of the table.
-    pub(crate) indexes: AHashMap<ColList, BTreeIndex>,
+    pub indexes: AHashMap<ColList, BTreeIndex>,
     /// The schema of the table, from which the type, and other details are derived.
-    pub(crate) schema: Box<TableSchema>,
+    pub schema: Box<TableSchema>,
 
     /// `SquashedOffset::TX_STATE` or `SquashedOffset::COMMITTED_STATE`
     /// depending on whether this is a tx scratchpad table
@@ -67,7 +67,7 @@ pub enum InsertError {
 
     /// Some index related error occurred.
     #[error(transparent)]
-    IndexError(#[from] IndexError),
+    IndexError(#[from] UniqueConstraintViolation),
 }
 
 // Public API:
@@ -88,12 +88,12 @@ impl Table {
         &self,
         row: &ProductValue,
         mut is_deleted: impl FnMut(RowPointer) -> bool,
-    ) -> Result<(), IndexError> {
+    ) -> Result<(), UniqueConstraintViolation> {
         for (cols, index) in self.indexes.iter().filter(|(_, index)| index.is_unique) {
             let value = row.project_not_empty(cols).unwrap();
             if let Some(mut conflicts) = index.get_rows_that_violate_unique_constraint(&value) {
                 if conflicts.any(|ptr| !is_deleted(ptr)) {
-                    return Err(self.build_error_unique(index, value));
+                    return Err(self.build_error_unique(index, cols, value));
                 }
             }
         }
@@ -203,7 +203,7 @@ impl Table {
     /// - `tx_ptr` must refer to a valid row in `tx_table`.
     /// - `row_hash` must be the hash of the row at `tx_ptr`,
     ///   as returned by `tx_table.insert`.
-    pub(crate) unsafe fn find_same_row(
+    pub unsafe fn find_same_row(
         committed_table: &Table,
         tx_table: &Table,
         tx_ptr: RowPointer,
@@ -371,13 +371,12 @@ impl Table {
     }
 
     /// Returns the row type for rows in this table.
-    #[allow(unused)] // Used in a later PR, when implementing the datastore interface.
-    pub(crate) fn get_row_type(&self) -> &ProductType {
+    pub fn get_row_type(&self) -> &ProductType {
         self.get_schema().get_row_type()
     }
 
     /// Returns the schema for this table.
-    pub(crate) fn get_schema(&self) -> &TableSchema {
+    pub fn get_schema(&self) -> &TableSchema {
         &self.schema
     }
 
@@ -389,7 +388,7 @@ impl Table {
     }
 
     /// Returns an iterator over all the rows of `self`, yielded as [`RefRef`]s.
-    pub(crate) fn scan_rows<'a>(&'a self, blob_store: &'a dyn BlobStore) -> TableScanIter<'a> {
+    pub fn scan_rows<'a>(&'a self, blob_store: &'a dyn BlobStore) -> TableScanIter<'a> {
         TableScanIter {
             current_page: None, // Will be filled by the iterator.
             current_page_idx: PageIndex(0),
@@ -423,8 +422,7 @@ impl Table {
     /// the same schema, visitor program, and indices.
     /// The new table will be completely empty
     /// and will use the given `squashed_offset` instead of that of `self`.
-    #[allow(unused)] // Used in a later PR, when implementing the datastore interface.
-    pub(crate) fn clone_structure(&self, squashed_offset: SquashedOffset) -> Self {
+    pub fn clone_structure(&self, squashed_offset: SquashedOffset) -> Self {
         // TODO(perf): Consider `Arc`ing `self.schema`.
         // We'll still need to mutate the schema sometimes,
         // but those are rare, so we could use `ArcSwap` for that.
@@ -437,7 +435,7 @@ impl Table {
             new.insert_index(
                 &NullBlobStore,
                 cols.clone(),
-                BTreeIndex::new(index.index_id, index.is_unique),
+                BTreeIndex::new(index.index_id, index.is_unique, index.name.clone()),
             );
         }
         new
@@ -610,21 +608,36 @@ impl<'a> Iterator for IndexScanIter<'a> {
     }
 }
 
+#[derive(Error, Debug, PartialEq, Eq)]
+#[error("Unique constraint violation '{}' in table '{}': column(s): '{:?}' value: {}", constraint_name, table_name, cols, value.to_satn())]
+pub struct UniqueConstraintViolation {
+    pub constraint_name: String,
+    pub table_name: String,
+    pub cols: Vec<String>,
+    pub value: AlgebraicValue,
+}
+
 // Private API:
 impl Table {
     /// Returns a unique constraint violation error for the given `index`
     /// and the `value` that would have been duplicated.
-    fn build_error_unique(&self, index: &BTreeIndex, value: AlgebraicValue) -> IndexError {
+    fn build_error_unique(
+        &self,
+        index: &BTreeIndex,
+        cols: &ColList,
+        value: AlgebraicValue,
+    ) -> UniqueConstraintViolation {
         let schema = self.get_schema();
-        let index = &schema.indexes[index.index_id.idx()];
-        IndexError::UniqueConstraintViolation {
-            constraint_name: index.index_name.clone(),
+
+        let cols = cols
+            .iter()
+            .map(|x| schema.columns()[x.idx()].col_name.clone())
+            .collect();
+
+        UniqueConstraintViolation {
+            constraint_name: index.name.clone().into(),
             table_name: schema.table_name.clone(),
-            cols: index
-                .columns
-                .iter()
-                .map(|x| schema.columns()[x.idx()].col_name.clone())
-                .collect(),
+            cols,
             value,
         }
     }
@@ -719,13 +732,61 @@ mod test {
     use proptest::prelude::*;
     use proptest::test_runner::TestCaseResult;
     use spacetimedb_sats::bsatn::to_vec;
-    use spacetimedb_sats::db::def::TableDef;
+    use spacetimedb_sats::db::def::{ColumnDef, IndexDef, IndexType, TableDef};
     use spacetimedb_sats::{product, AlgebraicType, ArrayValue};
 
     fn table(ty: ProductType) -> Table {
         let def = TableDef::from_product("", ty);
         let schema = TableSchema::from_def(0.into(), def);
         Table::new(schema, SquashedOffset::COMMITTED_STATE)
+    }
+
+    #[test]
+    fn unique_violation_error() {
+        let index_name = "my_unique_constraint";
+        // Build a table for (I32, I32) with a unique index on the 0th column.
+        let table_def = TableDef::new(
+            "UniqueIndexed".into(),
+            ["unique_col", "other_col"]
+                .map(|c| ColumnDef {
+                    col_name: c.into(),
+                    col_type: AlgebraicType::I32,
+                })
+                .into(),
+        )
+        .with_indexes(vec![IndexDef {
+            columns: 0.into(),
+            index_name: index_name.into(),
+            is_unique: true,
+            index_type: IndexType::BTree,
+        }]);
+        let schema = TableSchema::from_def(0.into(), table_def);
+        let index_schema = &schema.indexes[0];
+        let index = BTreeIndex::new(index_schema.index_id, true, index_name);
+        let mut table = Table::new(schema, SquashedOffset::COMMITTED_STATE);
+        table.insert_index(&NullBlobStore, ColList::new(0.into()), index);
+
+        // Insert the row (0, 0).
+        table
+            .insert(&mut NullBlobStore, &product![0i32, 0i32])
+            .expect("Initial insert failed");
+
+        // Try to insert the row (0, 1), and assert that we get the expected error.
+        match table.insert(&mut NullBlobStore, &product![0i32, 1i32]) {
+            Ok(_) => panic!("Second insert with same unique value succeeded"),
+            Err(InsertError::IndexError(UniqueConstraintViolation {
+                constraint_name,
+                table_name,
+                cols,
+                value,
+            })) => {
+                assert_eq!(constraint_name, index_name);
+                assert_eq!(table_name, "UniqueIndexed");
+                assert_eq!(cols, &["unique_col"]);
+                assert_eq!(value, AlgebraicValue::I32(0));
+            }
+            Err(e) => panic!("Expected UniqueConstraintViolation but found {:?}", e),
+        }
     }
 
     fn insert_retrieve_body(ty: impl Into<ProductType>, val: impl Into<ProductValue>) -> TestCaseResult {

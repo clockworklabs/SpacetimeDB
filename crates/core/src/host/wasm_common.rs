@@ -7,6 +7,7 @@ use std::time::Instant;
 use super::AbiCall;
 use crate::error::{DBError, IndexError, NodesError};
 use spacetimedb_sats::typespace::TypeRefError;
+use spacetimedb_table::table::UniqueConstraintViolation;
 
 pub const CALL_REDUCER_DUNDER: &str = "__call_reducer__";
 
@@ -353,12 +354,12 @@ pub fn err_to_errno(err: &NodesError) -> Option<u16> {
         }
         NodesError::AlreadyExists(_) => Some(errnos::UNIQUE_ALREADY_EXISTS),
         NodesError::Internal(internal) => match **internal {
-            DBError::Index(IndexError::UniqueConstraintViolation {
+            DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
                 constraint_name: _,
                 table_name: _,
                 cols: _,
                 value: _,
-            }) => Some(errnos::UNIQUE_ALREADY_EXISTS),
+            })) => Some(errnos::UNIQUE_ALREADY_EXISTS),
             _ => None,
         },
         _ => None,
