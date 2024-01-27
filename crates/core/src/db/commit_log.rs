@@ -7,7 +7,7 @@ use super::{
 };
 use crate::{
     db::{
-        datastore::{locking_tx_datastore::RowId, traits::TxOp},
+        datastore::traits::TxOp,
         db_metrics::DB_METRICS,
         messages::{
             transaction::Transaction,
@@ -20,6 +20,7 @@ use crate::{
 use anyhow::Context;
 use spacetimedb_sats::hash::{hash_bytes, Hash};
 use spacetimedb_sats::DataKey;
+use spacetimedb_table::indexes::RowPointer;
 use std::{
     collections::{hash_map, HashMap},
     io,
@@ -313,7 +314,7 @@ impl CommitLogMut {
         datastore: &D,
     ) -> Result<Option<usize>, DBError>
     where
-        D: MutTxDatastore<RowId = RowId>,
+        D: MutTxDatastore<RowId = RowPointer>,
     {
         // IMPORTANT: writes to the log must be sequential, so as to maintain
         // the commit order. `generate_commit` establishes an order between
@@ -350,7 +351,7 @@ impl CommitLogMut {
         Ok(commit.len())
     }
 
-    fn generate_commit<D: MutTxDatastore<RowId = RowId>>(
+    fn generate_commit<D: MutTxDatastore<RowId = RowPointer>>(
         &self,
         ctx: &ExecutionContext,
         tx_data: &TxData,

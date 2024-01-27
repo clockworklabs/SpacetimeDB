@@ -1,16 +1,14 @@
-mod btree_index;
-mod committed_state;
-mod datastore;
-mod mut_tx;
-mod sequence;
-mod state_view;
-mod table;
-mod tx;
-mod tx_state;
+#![forbid(unsafe_op_in_unsafe_fn)]
 
-pub use self::mut_tx::MutTxId;
-pub use datastore::{DataRef, Locking, RowId};
-pub use state_view::{Iter, IterByColEq, IterByColRange, StateView as _};
+pub mod committed_state;
+pub mod datastore;
+pub mod mut_tx;
+pub use mut_tx::MutTxId;
+pub mod sequence;
+pub mod state_view;
+pub use state_view::{Iter, IterByColEq, IterByColRange};
+pub mod tx;
+pub mod tx_state;
 
 use parking_lot::{
     lock_api::{ArcMutexGuard, ArcRwLockReadGuard, ArcRwLockWriteGuard},
