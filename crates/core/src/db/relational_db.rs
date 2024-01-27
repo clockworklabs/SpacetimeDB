@@ -429,6 +429,7 @@ impl RelationalDB {
     }
 
     pub fn drop_table(&self, ctx: &ExecutionContext, tx: &mut MutTx, table_id: TableId) -> Result<(), DBError> {
+        #[cfg(feature = "metrics")]
         let _guard = DB_METRICS
             .rdb_drop_table_time
             .with_label_values(&table_id.0)
@@ -619,6 +620,7 @@ impl RelationalDB {
 
     #[tracing::instrument(skip(self, tx, row))]
     pub fn insert(&self, tx: &mut MutTx, table_id: TableId, row: ProductValue) -> Result<ProductValue, DBError> {
+        #[cfg(feature = "metrics")]
         let _guard = DB_METRICS
             .rdb_insert_row_time
             .with_label_values(&table_id.0)
@@ -644,6 +646,7 @@ impl RelationalDB {
 
     #[tracing::instrument(skip_all)]
     pub fn delete_by_rel<R: Relation>(&self, tx: &mut MutTx, table_id: TableId, relation: R) -> u32 {
+        #[cfg(feature = "metrics")]
         let _guard = DB_METRICS
             .rdb_delete_by_rel_time
             .with_label_values(&table_id.0)

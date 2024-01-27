@@ -385,6 +385,7 @@ pub struct CommittedIndexIter<'a> {
     pub(crate) num_committed_rows_fetched: u64,
 }
 
+#[cfg(feature = "metrics")]
 impl Drop for CommittedIndexIter<'_> {
     fn drop(&mut self) {
         let table_name = self

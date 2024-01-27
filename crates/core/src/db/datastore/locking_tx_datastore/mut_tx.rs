@@ -89,23 +89,26 @@ impl StateView for TxId {
 #[allow(dead_code)]
 impl TxId {
     pub(crate) fn release(self, ctx: &ExecutionContext) {
-        let workload = &ctx.workload();
-        let db = &ctx.database();
-        let reducer = ctx.reducer_name();
-        let elapsed_time = self.timer.elapsed();
-        let cpu_time = elapsed_time - self.lock_wait_time;
-        DB_METRICS
-            .rdb_num_txns
-            .with_label_values(workload, db, reducer, &false)
-            .inc();
-        DB_METRICS
-            .rdb_txn_cpu_time_sec
-            .with_label_values(workload, db, reducer)
-            .observe(cpu_time.as_secs_f64());
-        DB_METRICS
-            .rdb_txn_elapsed_time_sec
-            .with_label_values(workload, db, reducer)
-            .observe(elapsed_time.as_secs_f64());
+        #[cfg(feature = "metrics")]
+        {
+            let workload = &ctx.workload();
+            let db = &ctx.database();
+            let reducer = ctx.reducer_name();
+            let elapsed_time = self.timer.elapsed();
+            let cpu_time = elapsed_time - self.lock_wait_time;
+            DB_METRICS
+                .rdb_num_txns
+                .with_label_values(workload, db, reducer, &false)
+                .inc();
+            DB_METRICS
+                .rdb_txn_cpu_time_sec
+                .with_label_values(workload, db, reducer)
+                .observe(cpu_time.as_secs_f64());
+            DB_METRICS
+                .rdb_txn_elapsed_time_sec
+                .with_label_values(workload, db, reducer)
+                .observe(elapsed_time.as_secs_f64());
+        }
     }
 }
 

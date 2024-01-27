@@ -94,10 +94,12 @@ wasmtime.workspace = true
 rocksdb = {workspace = true, optional = true}
 
 [features]
+# Enable metrics in spacetimedb.
+metrics = []
 # Optional storage engines.
 odb_rocksdb = ["dep:rocksdb"]
 odb_sled = []
-default = ["odb_sled"]
+default = ["odb_sled", "metrics"]
 
 [dev-dependencies]
 spacetimedb-lib = { path = "../lib", features = ["proptest"] }
