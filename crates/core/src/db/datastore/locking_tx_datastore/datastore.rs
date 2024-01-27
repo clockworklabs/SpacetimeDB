@@ -610,12 +610,12 @@ mod tests {
     };
     use crate::db::datastore::traits::MutTx;
     use crate::db::datastore::Result;
-    use crate::error::IndexError;
+    use crate::error::{DBError, IndexError};
     use itertools::Itertools;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_primitives::Constraints;
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
-    use spacetimedb_sats::product;
+    use spacetimedb_sats::{product, AlgebraicType};
     use spacetimedb_table::table::UniqueConstraintViolation;
 
     /// Utility to query the system tables and return their concrete table row
