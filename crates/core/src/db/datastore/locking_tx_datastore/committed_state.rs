@@ -1,10 +1,10 @@
 use super::{
     btree_index::{BTreeIndex, BTreeIndexRangeIter},
+    datastore::{DataRef, RowId},
     sequence::{Sequence, SequencesState},
-    state_view::StateView,
+    state_view::{Iter, IterByColRange, ScanIterByColRange, StateView},
     table::Table,
     tx_state::TxState,
-    DataRef, Iter, IterByColRange, RowId, ScanIterByColRange,
 };
 use crate::{
     db::{
