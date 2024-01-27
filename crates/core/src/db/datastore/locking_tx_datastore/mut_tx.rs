@@ -4,7 +4,7 @@ use super::sequence::SequencesState;
 use super::state_view::{IndexSeekIterMutTxId, ScanIterByColRange, StateView};
 use super::table::Table;
 use super::tx_state::{RowState, TxState};
-use super::{DataRef, Iter, IterByColRange, RowId};
+use super::{DataRef, Iter, IterByColRange, RowId, SharedMutexGuard, SharedWriteGuard};
 use crate::db::datastore::locking_tx_datastore::sequence::Sequence;
 use crate::db::datastore::system_tables::{
     table_name_is_system, StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StIndexFields, StIndexRow,
@@ -13,15 +13,9 @@ use crate::db::datastore::system_tables::{
 };
 use crate::db::datastore::traits::TxData;
 use crate::db::datastore::Result;
-use crate::db::db_metrics::DB_METRICS;
 use crate::error::{DBError, IndexError, SequenceError, TableError};
 use crate::execution_context::ExecutionContext;
 use core::ops::{Deref, RangeBounds};
-use parking_lot::{lock_api::ArcRwLockWriteGuard, RawRwLock};
-use parking_lot::{
-    lock_api::{ArcMutexGuard, ArcRwLockReadGuard},
-    RawMutex,
-};
 use spacetimedb_lib::Address;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::data_key::{DataKey, ToDataKey};
@@ -33,83 +27,6 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-
-// Type aliases for lock gaurds
-type SharedWriteGuard<T> = ArcRwLockWriteGuard<RawRwLock, T>;
-type SharedMutexGuard<T> = ArcMutexGuard<RawMutex, T>;
-type SharedReadGuard<T> = ArcRwLockReadGuard<RawRwLock, T>;
-
-#[allow(dead_code)]
-pub struct TxId {
-    pub(crate) committed_state_shared_lock: SharedReadGuard<CommittedState>,
-    pub(crate) lock_wait_time: Duration,
-    pub(crate) timer: Instant,
-}
-
-impl StateView for TxId {
-    fn get_schema(&self, table_id: &TableId) -> Option<&TableSchema> {
-        self.committed_state_shared_lock.get_schema(table_id)
-    }
-
-    fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: &TableId) -> Result<Iter<'a>> {
-        self.committed_state_shared_lock.iter(ctx, table_id)
-    }
-
-    fn table_exists(&self, table_id: &TableId) -> Option<&str> {
-        self.committed_state_shared_lock.table_exists(table_id)
-    }
-
-    /// Returns an iterator,
-    /// yielding every row in the table identified by `table_id`,
-    /// where the values of `cols` are contained in `range`.
-    fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
-        &'a self,
-        ctx: &'a ExecutionContext,
-        table_id: &TableId,
-        cols: ColList,
-        range: R,
-    ) -> Result<IterByColRange<'a, R>> {
-        match self.committed_state_shared_lock.index_seek(table_id, &cols, &range) {
-            Some(committed_rows) => Ok(IterByColRange::CommittedIndex(CommittedIndexIter {
-                ctx,
-                table_id: *table_id,
-                tx_state: None,
-                committed_state: &self.committed_state_shared_lock,
-                committed_rows,
-                num_committed_rows_fetched: 0,
-            })),
-            None => self
-                .committed_state_shared_lock
-                .iter_by_col_range(ctx, table_id, cols, range),
-        }
-    }
-}
-
-#[allow(dead_code)]
-impl TxId {
-    pub(crate) fn release(self, ctx: &ExecutionContext) {
-        #[cfg(feature = "metrics")]
-        {
-            let workload = &ctx.workload();
-            let db = &ctx.database();
-            let reducer = ctx.reducer_name();
-            let elapsed_time = self.timer.elapsed();
-            let cpu_time = elapsed_time - self.lock_wait_time;
-            DB_METRICS
-                .rdb_num_txns
-                .with_label_values(workload, db, reducer, &false)
-                .inc();
-            DB_METRICS
-                .rdb_txn_cpu_time_sec
-                .with_label_values(workload, db, reducer)
-                .observe(cpu_time.as_secs_f64());
-            DB_METRICS
-                .rdb_txn_elapsed_time_sec
-                .with_label_values(workload, db, reducer)
-                .observe(elapsed_time.as_secs_f64());
-        }
-    }
-}
 
 /// Represents a Mutable transaction. Holds locks for its duration
 ///

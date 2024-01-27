@@ -4,16 +4,18 @@ mod mut_tx;
 mod sequence;
 mod state_view;
 mod table;
+mod tx;
 mod tx_state;
 
 pub use self::mut_tx::MutTxId;
 pub use state_view::{Iter, IterByColEq, IterByColRange, StateView as _};
 
 use self::committed_state::CommittedState;
-use self::mut_tx::TxId;
 use self::sequence::SequencesState;
 use self::state_view::ScanIterByColRange;
+use self::tx::TxId;
 use self::tx_state::TxState;
+use super::system_tables::ST_TABLES_ID;
 use crate::db::datastore::system_tables::{Epoch, StModuleRow, StTableRow, ST_MODULE_ID, WASM_MODULE};
 use crate::db::datastore::traits::{self, DataRow, MutTxDatastore, TxData, TxDatastore};
 use crate::db::db_metrics::{DB_METRICS, MAX_TX_CPU_TIME};
@@ -23,7 +25,10 @@ use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
 use anyhow::anyhow;
 use core::ops::RangeBounds;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::{
+    lock_api::{ArcMutexGuard, ArcRwLockReadGuard, ArcRwLockWriteGuard},
+    Mutex, RawMutex, RawRwLock, RwLock,
+};
 use spacetimedb_lib::Address;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::data_key::DataKey;
@@ -36,7 +41,10 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
 
-use super::system_tables::ST_TABLES_ID;
+// Type aliases for lock guards
+type SharedWriteGuard<T> = ArcRwLockWriteGuard<RawRwLock, T>;
+type SharedMutexGuard<T> = ArcMutexGuard<RawMutex, T>;
+type SharedReadGuard<T> = ArcRwLockReadGuard<RawRwLock, T>;
 
 /// A `DataRef` represents a row stored in a table.
 ///
