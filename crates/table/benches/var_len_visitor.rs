@@ -91,7 +91,7 @@ fn visit_var_len_sum(c: &mut C) {
     });
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(target_os = "linux", target_arch="x86")]
 mod config {
     use criterion::Criterion;
     use criterion_perf_events::Perf;

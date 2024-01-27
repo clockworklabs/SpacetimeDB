@@ -49,7 +49,9 @@ proptest-derive = { workspace = true, optional = true }
 [dev-dependencies]
 criterion.workspace = true
 criterion-perf-events.workspace = true
-perfcnt.workspace = true
 proptest.workspace = true
 proptest-derive.workspace = true
 rand.workspace = true
+
+[target.'cfg(all(target_os = "linux", target_arch = "x86"))'.dev-dependencies]
+perfcnt = "0.8"
