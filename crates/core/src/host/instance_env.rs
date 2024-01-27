@@ -8,7 +8,7 @@ use super::scheduler::{ScheduleError, ScheduledReducerId, Scheduler};
 use super::timestamp::Timestamp;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
-use crate::db::datastore::locking_tx_datastore::{MutTxId, RowId};
+use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::error::{IndexError, NodesError};
 use crate::execution_context::ExecutionContext;
 use crate::util::ResultInspectExt;
@@ -161,7 +161,7 @@ impl InstanceEnv {
         // Find all rows in the table where the column data equates to `value`.
         let rows_to_delete = stdb
             .iter_by_col_eq_mut(ctx, tx, table_id, col_id, eq_value)?
-            .map(|x| RowId(*x.id()))
+            .map(|row_ref| row_ref.pointer())
             // `delete_by_field` only cares about 1 element,
             // so optimize for that.
             .collect::<SmallVec<[_; 1]>>();
@@ -285,7 +285,7 @@ impl InstanceEnv {
         let results = stdb.iter_by_col_eq_mut(ctx, tx, table_id, col_id, value)?;
         let mut bytes = Vec::new();
         for result in results {
-            bsatn::to_writer(&mut bytes, result.view()).unwrap();
+            bsatn::to_writer(&mut bytes, &result.to_product_value()).unwrap();
         }
         Ok(bytes)
     }
@@ -298,7 +298,7 @@ impl InstanceEnv {
         let tx = &mut *self.tx.get()?;
 
         for row in stdb.iter_mut(ctx, tx, table_id)? {
-            row.view().encode(&mut chunked_writer);
+            row.to_product_value().encode(&mut chunked_writer);
             // Flush at row boundaries.
             chunked_writer.flush();
         }
