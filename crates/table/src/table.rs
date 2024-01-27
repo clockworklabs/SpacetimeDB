@@ -608,6 +608,13 @@ impl<'a> Iterator for IndexScanIter<'a> {
     }
 }
 
+impl IndexScanIter<'_> {
+    /// Returns the current number of pointers the iterator has returned thus far.
+    pub fn pointers_yielded(&self) -> u64 {
+        self.btree_index_iter.pointers_yielded()
+    }
+}
+
 #[derive(Error, Debug, PartialEq, Eq)]
 #[error("Unique constraint violation '{}' in table '{}': column(s): '{:?}' value: {}", constraint_name, table_name, cols, value.to_satn())]
 pub struct UniqueConstraintViolation {

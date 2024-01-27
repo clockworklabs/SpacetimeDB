@@ -4,7 +4,7 @@ use super::sequence::SequencesState;
 use super::state_view::{IndexSeekIterMutTxId, ScanIterByColRange, StateView};
 use super::table::Table;
 use super::tx_state::{RowState, TxState};
-use super::{DataRef, Iter, IterByColRange, RowId, SequenceError};
+use super::{DataRef, Iter, IterByColRange, RowId};
 use crate::db::datastore::locking_tx_datastore::sequence::Sequence;
 use crate::db::datastore::system_tables::{
     table_name_is_system, StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StIndexFields, StIndexRow,
@@ -14,8 +14,7 @@ use crate::db::datastore::system_tables::{
 use crate::db::datastore::traits::TxData;
 use crate::db::datastore::Result;
 use crate::db::db_metrics::DB_METRICS;
-use crate::error::IndexError;
-use crate::error::{DBError, TableError};
+use crate::error::{DBError, IndexError, SequenceError, TableError};
 use crate::execution_context::ExecutionContext;
 use core::ops::{Deref, RangeBounds};
 use parking_lot::{lock_api::ArcRwLockWriteGuard, RawRwLock};
