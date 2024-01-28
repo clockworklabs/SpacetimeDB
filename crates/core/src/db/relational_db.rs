@@ -620,13 +620,13 @@ impl RelationalDB {
         self.inner.iter_by_col_range_tx(ctx, tx, table_id.into(), cols, range)
     }
 
-    #[tracing::instrument(skip(self, tx, row))]
+    // #[tracing::instrument(skip(self, tx, row))]
     pub fn insert(&self, tx: &mut MutTx, table_id: TableId, row: ProductValue) -> Result<ProductValue, DBError> {
         #[cfg(feature = "metrics")]
-        let _guard = DB_METRICS
-            .rdb_insert_row_time
-            .with_label_values(&table_id.0)
-            .start_timer();
+        // let _guard = DB_METRICS
+        //     .rdb_insert_row_time
+        //     .with_label_values(&table_id.0)
+        //     .start_timer();
         self.inner.insert_mut_tx(tx, table_id, row)
     }
 

@@ -654,11 +654,11 @@ impl MutTxId {
         // to ensure that `UniqueConstraintViolation` errors have precedence over other errors.
         // `tx_table.insert` will later perform the same check on the tx table,
         // so this method needs only to check the committed state.
-        if let Some(commit_table) = commit_table {
-            commit_table
-                .check_unique_constraints(row, |maybe_conflict| self.tx_state.is_deleted(table_id, maybe_conflict))
-                .map_err(IndexError::from)?;
-        }
+        // if let Some(commit_table) = commit_table {
+        //     commit_table
+        //         .check_unique_constraints(row, |maybe_conflict| self.tx_state.is_deleted(table_id, maybe_conflict))
+        //         .map_err(IndexError::from)?;
+        // }
 
         // Get the insert table, so we can write the row into it.
         let (tx_table, tx_blob_store, delete_table) = self

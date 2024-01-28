@@ -168,48 +168,72 @@ impl BflatnSerializedRowBuffer<'_> {
         let ty_alignment = ty.align();
         self.curr_offset = align_to(self.curr_offset, ty_alignment);
 
-        match (ty, val) {
-            // For sums, select the type based on the sum tag,
-            // write the variant data given the variant type,
-            // and finally write the tag.
-            (AlgebraicTypeLayout::Sum(ty), AlgebraicValue::Sum(val)) => self.write_sum(ty, val)?,
-            // For products, write every element in order.
-            (AlgebraicTypeLayout::Product(ty), AlgebraicValue::Product(val)) => self.write_product(ty, val)?,
 
+        match val {
             // For primitive types, write their contents by LE-encoding.
-            (&AlgebraicTypeLayout::Bool, AlgebraicValue::Bool(val)) => self.write_bool(*val),
-            // Integer types:
-            (&AlgebraicTypeLayout::I8, AlgebraicValue::I8(val)) => self.write_i8(*val),
-            (&AlgebraicTypeLayout::U8, AlgebraicValue::U8(val)) => self.write_u8(*val),
-            (&AlgebraicTypeLayout::I16, AlgebraicValue::I16(val)) => self.write_i16(*val),
-            (&AlgebraicTypeLayout::U16, AlgebraicValue::U16(val)) => self.write_u16(*val),
-            (&AlgebraicTypeLayout::I32, AlgebraicValue::I32(val)) => self.write_i32(*val),
-            (&AlgebraicTypeLayout::U32, AlgebraicValue::U32(val)) => self.write_u32(*val),
-            (&AlgebraicTypeLayout::I64, AlgebraicValue::I64(val)) => self.write_i64(*val),
-            (&AlgebraicTypeLayout::U64, AlgebraicValue::U64(val)) => self.write_u64(*val),
-            (&AlgebraicTypeLayout::I128, AlgebraicValue::I128(val)) => self.write_i128(*val),
-            (&AlgebraicTypeLayout::U128, AlgebraicValue::U128(val)) => self.write_u128(*val),
-            // Float types:
-            (&AlgebraicTypeLayout::F32, AlgebraicValue::F32(val)) => self.write_f32((*val).into()),
-            (&AlgebraicTypeLayout::F64, AlgebraicValue::F64(val)) => self.write_f64((*val).into()),
-
-            // For strings, we reserve space for a `VarLenRef`
-            // and push the bytes as a var-len object.
-            (&AlgebraicTypeLayout::String, AlgebraicValue::String(val)) => self.write_string(val)?,
-
-            // For array and maps, we reserve space for a `VarLenRef`
-            // and push the bytes, after BSATN encoding, as a var-len object.
-            (AlgebraicTypeLayout::VarLen(VarLenType::Array(_)), val @ AlgebraicValue::Array(_))
-            | (AlgebraicTypeLayout::VarLen(VarLenType::Map(_)), val @ AlgebraicValue::Map(_)) => {
-                self.write_av_bsatn(val)?
-            }
-
-            // TODO(error-handling): return type error
-            (ty, val) => panic!(
-                "AlgebraicValue is not valid instance of AlgebraicTypeLayout: {:?} should be of type {:?}",
-                val, ty,
-            ),
+            AlgebraicValue::Bool(val) => self.write_bool(*val),
+            
+            AlgebraicValue::I8(val) => self.write_i8(*val),
+            AlgebraicValue::U8(val) => self.write_u8(*val),
+            AlgebraicValue::I16(val) => self.write_i16(*val),
+            AlgebraicValue::U16(val) => self.write_u16(*val),
+            AlgebraicValue::I32(val) => self.write_i32(*val),
+            AlgebraicValue::U32(val) => self.write_u32(*val),
+            AlgebraicValue::I64(val) => self.write_i64(*val),
+            AlgebraicValue::U64(val) => self.write_u64(*val),
+            AlgebraicValue::I128(val) => self.write_i128(*val),
+            AlgebraicValue::U128(val) => self.write_u128(*val),
+            
+            AlgebraicValue::F32(val) => self.write_f32((*val).into()),
+            AlgebraicValue::F64(val) => self.write_f64((*val).into()),
+            AlgebraicValue::String(val) => self.write_string(val)?,
+            AlgebraicValue::Product(val) => self.write_product(ty.as_product().unwrap(), val)?,
+            val @ AlgebraicValue::Array(_) => self.write_av_bsatn(val)?,
+            _ => panic!("at the disco {:?}!", ty)
         }
+
+        // match (ty, val) {
+        //     // For sums, select the type based on the sum tag,
+        //     // write the variant data given the variant type,
+        //     // and finally write the tag.
+        //     (AlgebraicTypeLayout::Sum(ty), AlgebraicValue::Sum(val)) => self.write_sum(ty, val)?,
+        //     // For products, write every element in order.
+        //     (AlgebraicTypeLayout::Product(ty), AlgebraicValue::Product(val)) => self.write_product(ty, val)?,
+
+        //     // For primitive types, write their contents by LE-encoding.
+        //     (&AlgebraicTypeLayout::Bool, AlgebraicValue::Bool(val)) => self.write_bool(*val),
+        //     // Integer types:
+        //     (&AlgebraicTypeLayout::I8, AlgebraicValue::I8(val)) => self.write_i8(*val),
+        //     (&AlgebraicTypeLayout::U8, AlgebraicValue::U8(val)) => self.write_u8(*val),
+        //     (&AlgebraicTypeLayout::I16, AlgebraicValue::I16(val)) => self.write_i16(*val),
+        //     (&AlgebraicTypeLayout::U16, AlgebraicValue::U16(val)) => self.write_u16(*val),
+        //     (&AlgebraicTypeLayout::I32, AlgebraicValue::I32(val)) => self.write_i32(*val),
+        //     (&AlgebraicTypeLayout::U32, AlgebraicValue::U32(val)) => self.write_u32(*val),
+        //     (&AlgebraicTypeLayout::I64, AlgebraicValue::I64(val)) => self.write_i64(*val),
+        //     (&AlgebraicTypeLayout::U64, AlgebraicValue::U64(val)) => self.write_u64(*val),
+        //     (&AlgebraicTypeLayout::I128, AlgebraicValue::I128(val)) => self.write_i128(*val),
+        //     (&AlgebraicTypeLayout::U128, AlgebraicValue::U128(val)) => self.write_u128(*val),
+        //     // Float types:
+        //     (&AlgebraicTypeLayout::F32, AlgebraicValue::F32(val)) => self.write_f32((*val).into()),
+        //     (&AlgebraicTypeLayout::F64, AlgebraicValue::F64(val)) => self.write_f64((*val).into()),
+
+        //     // For strings, we reserve space for a `VarLenRef`
+        //     // and push the bytes as a var-len object.
+        //     (&AlgebraicTypeLayout::String, AlgebraicValue::String(val)) => self.write_string(val)?,
+
+        //     // For array and maps, we reserve space for a `VarLenRef`
+        //     // and push the bytes, after BSATN encoding, as a var-len object.
+        //     (AlgebraicTypeLayout::VarLen(VarLenType::Array(_)), val @ AlgebraicValue::Array(_))
+        //     | (AlgebraicTypeLayout::VarLen(VarLenType::Map(_)), val @ AlgebraicValue::Map(_)) => {
+        //         self.write_av_bsatn(val)?
+        //     }
+
+        //     // TODO(error-handling): return type error
+        //     (ty, val) => panic!(
+        //         "AlgebraicValue is not valid instance of AlgebraicTypeLayout: {:?} should be of type {:?}",
+        //         val, ty,
+        //     ),
+        // }
 
         self.curr_offset = align_to(self.curr_offset, ty_alignment);
 

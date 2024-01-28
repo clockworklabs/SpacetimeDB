@@ -423,7 +423,7 @@ impl CommitLogMut {
                 let mut guard = self.odb.lock().unwrap();
                 for record in &tx_data.records {
                     if let (DataKey::Hash(_), TxOp::Insert(bytes)) = (&record.key, &record.op) {
-                        guard.add(Vec::clone(bytes));
+                        guard.add(bytes.to_vec());
                     }
                 }
             }

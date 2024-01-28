@@ -119,12 +119,12 @@ impl Table {
     ) -> Result<(RowHash, RowPointer), InsertError> {
         // Check unique constraints.
         // This error should take precedence over any other potential failures.
-        self.check_unique_constraints(
-            row,
-            // No need to worry about the committed vs tx state dichotomy here;
-            // just treat all rows in the table as live.
-            |_| false,
-        )?;
+        // self.check_unique_constraints(
+        //     row,
+        //     // No need to worry about the committed vs tx state dichotomy here;
+        //     // just treat all rows in the table as live.
+        //     |_| false,
+        // )?;
 
         // Optimistically insert the `row` before checking for set-semantic collisions,
         // under the assumption that set-semantic collisions are rare.
@@ -133,31 +133,31 @@ impl Table {
         // Ensure row isn't already there.
         // SAFETY: We just inserted `ptr`, so we know it's valid.
         let hash = unsafe { self.row_hash_for(ptr) };
-        // Safety:
-        // We just inserted `ptr` and computed `hash`, so they're valid.
-        // `self` trivially has the same `row_layout` as `self`.
-        let existing_row = unsafe { Self::find_same_row(self, self, ptr, hash) };
+        // // Safety:
+        // // We just inserted `ptr` and computed `hash`, so they're valid.
+        // // `self` trivially has the same `row_layout` as `self`.
+        // let existing_row = unsafe { Self::find_same_row(self, self, ptr, hash) };
 
-        if let Some(existing_row) = existing_row {
-            // If an equal row was already present,
-            // roll back our optimistic insert to avoid violating set semantics.
+        // if let Some(existing_row) = existing_row {
+        //     // If an equal row was already present,
+        //     // roll back our optimistic insert to avoid violating set semantics.
 
-            // SAFETY: we just inserted `ptr`, so it must be valid.
-            unsafe {
-                self.pages
-                    .delete_row(&self.visitor_prog, self.row_size(), ptr, blob_store)
-            };
-            return Err(InsertError::Duplicate(existing_row));
-        }
+        //     // SAFETY: we just inserted `ptr`, so it must be valid.
+        //     unsafe {
+        //         self.pages
+        //             .delete_row(&self.visitor_prog, self.row_size(), ptr, blob_store)
+        //     };
+        //     return Err(InsertError::Duplicate(existing_row));
+        // }
 
         // If the optimistic insertion was correct,
         // i.e. this is not a set-semantic duplicate,
         // add it to the `pointer_map`.
-        self.pointer_map.insert(hash, ptr);
+        // self.pointer_map.insert(hash, ptr);
 
         // Insert row into indices.
         for (cols, index) in self.indexes.iter_mut() {
-            index.insert(cols, row, ptr).unwrap();
+            // index.insert(cols, row, ptr).unwrap();
         }
 
         Ok((hash, ptr))

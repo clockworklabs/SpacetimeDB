@@ -28,11 +28,21 @@ use spacetimedb_sats::{F32, F64};
 pub unsafe fn hash_row_in_page(hasher: &mut impl Hasher, page: &Page, fixed_offset: PageOffset, ty: &RowTypeLayout) {
     let fixed_bytes = page.get_row_data(fixed_offset, ty.size());
 
+    let u8_slice: &[u8] = unsafe {
+        // Convert &[MaybeUninit<u8>] to &[u8]
+        std::slice::from_raw_parts(
+            fixed_bytes.as_ptr() as *const u8,
+            fixed_bytes.len(),
+        )
+    };
+
+    hasher.write(u8_slice);
+
     // SAFETY:
     // - Per 1. and 2., `fixed_bytes` points at a row in `page` valid for `ty`.
     // - Per 3., for any `vlr: VarLenRef` stored in `fixed_bytes`,
     //   `vlr.first_offset` is either `NULL` or points to a valid granule in `page`.
-    unsafe { hash_product(hasher, fixed_bytes, page, &mut 0, ty.product()) };
+    // unsafe { hash_product(hasher, fixed_bytes, page, &mut 0, ty.product()) };
 }
 
 /// Hashes every product field in `value = &bytes[range_move(0..ty.size(), *curr_offset)]`
