@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use bytestring::ByteString;
 use serde::Serialize;
 use spacetimedb_lib::Address;
@@ -61,7 +63,7 @@ pub struct FunctionCallJson {
 #[derive(Debug, Clone, Serialize)]
 pub struct TableUpdateJson {
     pub table_id: u32,
-    pub table_name: String,
+    pub table_name: Arc<str>,
     pub table_row_operations: Vec<TableRowOperationJson>,
 }
 
@@ -113,6 +115,6 @@ pub struct OneOffQueryResponseJson {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct OneOffTableJson {
-    pub table_name: String,
+    pub table_name: Arc<str>,
     pub rows: Vec<Vec<AlgebraicValue>>,
 }

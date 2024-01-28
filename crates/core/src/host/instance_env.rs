@@ -315,7 +315,7 @@ impl InstanceEnv {
     ) -> Result<Vec<Box<[u8]>>, NodesError> {
         use spacetimedb_lib::filter;
 
-        fn filter_to_column_op(table_name: &str, filter: filter::Expr) -> ColumnOp {
+        fn filter_to_column_op(table_name: Arc<str>, filter: filter::Expr) -> ColumnOp {
             match filter {
                 filter::Expr::Cmp(filter::Cmp {
                     op,
@@ -323,7 +323,7 @@ impl InstanceEnv {
                 }) => ColumnOp::Cmp {
                     op: OpQuery::Cmp(op),
                     lhs: Box::new(ColumnOp::Field(FieldExpr::Name(FieldName::positional(
-                        table_name,
+                        table_name.clone(),
                         lhs_field as usize,
                     )))),
                     rhs: Box::new(ColumnOp::Field(match rhs {
@@ -335,7 +335,7 @@ impl InstanceEnv {
                 },
                 filter::Expr::Logic(filter::Logic { lhs, op, rhs }) => ColumnOp::Cmp {
                     op: OpQuery::Logic(op),
-                    lhs: Box::new(filter_to_column_op(table_name, *lhs)),
+                    lhs: Box::new(filter_to_column_op(table_name.clone(), *lhs)),
                     rhs: Box::new(filter_to_column_op(table_name, *rhs)),
                 },
                 filter::Expr::Unary(_) => todo!("unary operations are not yet supported"),
@@ -357,7 +357,8 @@ impl InstanceEnv {
             filter,
         )
         .map_err(NodesError::DecodeFilter)?;
-        let q = spacetimedb_vm::dsl::query(&*schema).with_select(filter_to_column_op(&schema.table_name, filter));
+        let q =
+            spacetimedb_vm::dsl::query(&*schema).with_select(filter_to_column_op(schema.table_name.clone(), filter));
         //TODO: How pass the `caller` here?
         let mut tx: TxMode = tx.into();
         let p = &mut DbProgram::new(ctx, stdb, &mut tx, AuthCtx::for_current(self.dbic.identity));

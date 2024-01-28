@@ -1,6 +1,7 @@
-use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::marker::PhantomData;
+use std::sync::Arc;
+use std::{borrow::Cow, rc::Rc};
 
 // use crate::type_value::{ElementValue, EnumValue};
 // use crate::{ProductTypeElement, SumType, PrimitiveType, ReducerDef, ProductType, ProductValue, AlgebraicType, AlgebraicValue};
@@ -104,7 +105,11 @@ impl_deserialize!([] String, de => de.deserialize_str(OwnedSliceVisitor));
 impl_deserialize!([T: Deserialize<'de>] Vec<T>, de => T::__deserialize_vec(de));
 impl_deserialize!([T: Deserialize<'de>, const N: usize] [T; N], de => T::__deserialize_array(de));
 impl_deserialize!([] Box<str>, de => String::deserialize(de).map(|s| s.into_boxed_str()));
+impl_deserialize!([] Rc<str>, de => String::deserialize(de).map(|s| s.into()));
+impl_deserialize!([] Arc<str>, de => String::deserialize(de).map(|s| s.into()));
 impl_deserialize!([T: Deserialize<'de>] Box<[T]>, de => Vec::deserialize(de).map(|s| s.into_boxed_slice()));
+impl_deserialize!([T: Deserialize<'de>] Rc<[T]>, de => Vec::deserialize(de).map(|s| s.into()));
+impl_deserialize!([T: Deserialize<'de>] Arc<[T]>, de => Vec::deserialize(de).map(|s| s.into()));
 
 /// The visitor converts the slice to its owned version.
 struct OwnedSliceVisitor;

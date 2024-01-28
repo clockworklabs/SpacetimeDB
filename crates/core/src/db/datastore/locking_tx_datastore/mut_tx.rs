@@ -426,7 +426,7 @@ impl MutTxId {
     // `Self::schema_for_table`, as it must reflect the same steps used
     // to create database objects when querying for information about the table.
     pub(crate) fn create_table(&mut self, table_schema: TableDef, database_address: Address) -> Result<TableId> {
-        log::trace!("TABLE CREATING: {}", table_schema.table_name);
+        log::trace!("TABLE CREATING: {}", &table_schema.table_name);
 
         Self::validate_table(&table_schema)?;
 
@@ -435,11 +435,13 @@ impl MutTxId {
         // fail if the table already exists.
         let row = StTableRow {
             table_id: ST_TABLES_ID,
-            table_name: table_schema.table_name.clone(),
+            table_name: &*table_schema.table_name,
             table_type: table_schema.table_type,
             table_access: table_schema.table_access,
         };
-        let table_id = StTableRow::try_from(&self.insert(ST_TABLES_ID, row.into(), database_address)?)?.table_id;
+        let row = self.insert(ST_TABLES_ID, row.into(), database_address)?;
+        let row = StTableRow::try_from(&row)?;
+        let table_id = row.table_id;
 
         // Generate the full definition of the table, with the generated indexes, constraints, sequences...
         let table_schema = table_schema.into_schema(table_id);
@@ -478,7 +480,7 @@ impl MutTxId {
             self.create_index(table_id, index.into(), database_address)?;
         }
 
-        log::trace!("TABLE CREATED: {}, table_id:{table_id}", table_schema.table_name);
+        log::trace!("TABLE CREATED: {}, table_id:{table_id}", row.table_name);
 
         Ok(table_id)
     }
@@ -559,14 +561,14 @@ impl MutTxId {
         let st: StTableRow<&str> = self
             .find_by_col_eq(&ctx, ST_TABLES_ID, StTableFields::TableId.col_id(), table_id.into())?
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, table_id.into()))?;
-        let mut st = st.to_owned();
 
-        let row_ids = RowId(ProductValue::from(st.to_owned()).to_data_key());
+        let mut pv = ProductValue::from(st);
+        let row_ids = RowId(ProductValue::from(st).to_data_key());
 
         self.delete(&ST_TABLES_ID, [row_ids]);
         // Update the table's name in st_tables.
-        st.table_name = new_name.to_string();
-        self.insert(ST_TABLES_ID, st.to_owned().into(), database_address)?;
+        pv.elements[StTableFields::TableName.col_idx()] = AlgebraicValue::String(new_name.into());
+        self.insert(ST_TABLES_ID, pv, database_address)?;
         Ok(())
     }
 

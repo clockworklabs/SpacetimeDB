@@ -10,6 +10,7 @@ use spacetimedb_lib::{ReducerDef, TableDesc};
 use spacetimedb_primitives::ColList;
 use std::collections::HashSet;
 use std::fmt::Write;
+use std::ops::Deref;
 
 type Indenter = CodeIndenter<String>;
 
@@ -336,7 +337,7 @@ pub fn autogen_rust_table(ctx: &GenCtx, table: &TableDesc) -> String {
     let mut output = CodeIndenter::new(String::new());
     let out = &mut output;
 
-    let type_name = table.schema.table_name.to_case(Case::Pascal);
+    let type_name = table.schema.table_name.deref().to_case(Case::Pascal);
 
     begin_rust_struct_def_shared(ctx, out, &type_name, &find_product_type(ctx, table.data).elements);
 
@@ -413,7 +414,7 @@ fn find_primary_key_column_index(table: &TableSchema) -> Option<usize> {
 }
 
 fn print_impl_tabletype(ctx: &GenCtx, out: &mut Indenter, table: &TableSchema) {
-    let type_name = table.table_name.to_case(Case::Pascal);
+    let type_name = table.table_name.deref().to_case(Case::Pascal);
 
     write!(out, "impl TableType for {} ", type_name).unwrap();
 
@@ -503,23 +504,23 @@ fn print_table_filter_methods(ctx: &GenCtx, out: &mut Indenter, table_type_name:
 }
 
 fn reducer_type_name(reducer: &ReducerDef) -> String {
-    let mut name = reducer.name.to_case(Case::Pascal);
+    let mut name = reducer.name.deref().to_case(Case::Pascal);
     name.push_str("Args");
     name
 }
 
 fn reducer_variant_name(reducer: &ReducerDef) -> String {
-    reducer.name.to_case(Case::Pascal)
+    reducer.name.deref().to_case(Case::Pascal)
 }
 
 fn reducer_module_name(reducer: &ReducerDef) -> String {
-    let mut name = reducer.name.to_case(Case::Snake);
+    let mut name = reducer.name.deref().to_case(Case::Snake);
     name.push_str("_reducer");
     name
 }
 
 fn reducer_function_name(reducer: &ReducerDef) -> String {
-    reducer.name.to_case(Case::Snake)
+    reducer.name.deref().to_case(Case::Snake)
 }
 
 fn iter_reducer_arg_names(reducer: &ReducerDef) -> impl Iterator<Item = Option<String>> + '_ {
@@ -799,8 +800,8 @@ fn iter_table_items(items: &[GenItem]) -> impl Iterator<Item = &TableDesc> {
 
 fn iter_module_names(items: &[GenItem]) -> impl Iterator<Item = String> + '_ {
     items.iter().map(|item| match item {
-        GenItem::Table(table) => table.schema.table_name.to_case(Case::Snake),
-        GenItem::TypeAlias(ty) => ty.name.to_case(Case::Snake),
+        GenItem::Table(table) => table.schema.table_name.deref().to_case(Case::Snake),
+        GenItem::TypeAlias(ty) => ty.name.deref().to_case(Case::Snake),
         GenItem::Reducer(reducer) => reducer_module_name(reducer),
     })
 }
@@ -870,17 +871,18 @@ fn print_handle_table_update_defn(_ctx: &GenCtx, out: &mut Indenter, items: &[Ge
                 |out| {
                     for table in iter_table_items(items) {
                         let table = table.schema.clone().into_schema(0.into()).validated().unwrap();
+                        let table_name = &*table.table_name;
                         writeln!(
                             out,
                             "{:?} => client_cache.{}::<{}::{}>(callbacks, table_update),",
-                            table.table_name,
+                            table_name,
                             if find_primary_key_column_index(&table).is_some() {
                                 "handle_table_update_with_primary_key"
                             } else {
                                 "handle_table_update_no_primary_key"
                             },
-                            table.table_name.to_case(Case::Snake),
-                            table.table_name.to_case(Case::Pascal),
+                            table_name.to_case(Case::Snake),
+                            table_name.to_case(Case::Pascal),
                         ).unwrap();
                     }
                     writeln!(
@@ -902,11 +904,12 @@ fn print_invoke_row_callbacks_defn(out: &mut Indenter, items: &[GenItem]) {
         "fn invoke_row_callbacks(&self, reminders: &mut RowCallbackReminders, worker: &mut DbCallbacks, reducer_event: Option<Arc<AnyReducerEvent>>, state: &Arc<ClientCache>) {",
         |out| {
             for table in iter_table_items(items) {
+                let table_name = &*table.schema.table_name;
                 writeln!(
                     out,
                     "reminders.invoke_callbacks::<{}::{}>(worker, &reducer_event, state);",
-                    table.schema.table_name.to_case(Case::Snake),
-                    table.schema.table_name.to_case(Case::Pascal),
+                    table_name.to_case(Case::Snake),
+                    table_name.to_case(Case::Pascal),
                 ).unwrap();
             }
         },
@@ -926,12 +929,13 @@ fn print_handle_resubscribe_defn(out: &mut Indenter, items: &[GenItem]) {
                 "match table_name {",
                 |out| {
                     for table in iter_table_items(items) {
+                        let table_name = &*table.schema.table_name;
                         writeln!(
                             out,
                             "{:?} => client_cache.handle_resubscribe_for_type::<{}::{}>(callbacks, new_subs),",
-                            table.schema.table_name,
-                            table.schema.table_name.to_case(Case::Snake),
-                            table.schema.table_name.to_case(Case::Pascal),
+                            table_name,
+                            table_name.to_case(Case::Snake),
+                            table_name.to_case(Case::Pascal),
                         ).unwrap();
                     }
                     writeln!(

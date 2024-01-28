@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::Context;
 use spacetimedb_sats::db::def::TableDef;
 use spacetimedb_sats::{impl_serialize, WithTypespace};
@@ -109,7 +111,7 @@ impl TableDesc {
 
 #[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
 pub struct ReducerDef {
-    pub name: String,
+    pub name: Arc<str>,
     pub args: Vec<ProductTypeElement>,
 }
 
@@ -192,6 +194,6 @@ pub enum MiscModuleExport {
 
 #[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
 pub struct TypeAlias {
-    pub name: String,
+    pub name: Arc<str>,
     pub ty: sats::AlgebraicTypeRef,
 }

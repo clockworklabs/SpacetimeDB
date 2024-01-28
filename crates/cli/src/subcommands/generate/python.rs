@@ -526,6 +526,8 @@ pub fn encode_type<'a>(
 }
 
 pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
+    let reducer_name = &*reducer.name;
+
     let mut output = CodeIndenter::new(String::new());
 
     writeln!(
@@ -561,7 +563,7 @@ pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     }
     writeln!(output).unwrap();
 
-    writeln!(output, "reducer_name = \"{}\"", reducer.name).unwrap();
+    writeln!(output, "reducer_name = \"{}\"", reducer_name).unwrap();
     writeln!(output).unwrap();
 
     let mut func_call = Vec::new();
@@ -571,7 +573,7 @@ pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
         let arg_name = arg
             .name
             .as_deref()
-            .unwrap_or_else(|| panic!("reducer args should have names: {}", reducer.name));
+            .unwrap_or_else(|| panic!("reducer args should have names: {}", reducer_name));
 
         let arg_type = ty_fmt(ctx, &arg.algebraic_type, "");
 
@@ -596,7 +598,7 @@ pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     writeln!(
         output,
         "def {}({}):",
-        reducer.name.to_case(Case::Snake),
+        reducer_name.to_case(Case::Snake),
         func_arguments_str
     )
     .unwrap();
@@ -607,7 +609,7 @@ pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
             let field_name = arg
                 .name
                 .as_deref()
-                .unwrap_or_else(|| panic!("reducer args should have names: {}", reducer.name));
+                .unwrap_or_else(|| panic!("reducer args should have names: {}", reducer_name));
 
             let field_type = &arg.algebraic_type;
             let python_field_name = field_name.to_string().replace("r#", "");
@@ -622,7 +624,7 @@ pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
         writeln!(
             output,
             "SpacetimeDBClient.instance._reducer_call(\"{}\"{})",
-            reducer.name, func_call_str
+            reducer_name, func_call_str
         )
         .unwrap();
     }
@@ -631,7 +633,7 @@ pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     writeln!(
         output,
         "def register_on_{}(callback: Callable[[Identity, Optional[Address], str, str{}], None]):",
-        reducer.name.to_case(Case::Snake),
+        reducer_name.to_case(Case::Snake),
         callback_sig_str
     )
     .unwrap();
@@ -641,7 +643,7 @@ pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
         writeln!(
             output,
             "SpacetimeDBClient.instance._register_reducer(\"{}\", callback)",
-            reducer.name
+            reducer_name
         )
         .unwrap();
     }

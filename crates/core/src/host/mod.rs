@@ -10,6 +10,7 @@ use spacetimedb_lib::{ProductValue, ReducerDef};
 use spacetimedb_metrics::impl_prometheusvalue_string;
 use spacetimedb_metrics::typed_prometheus::AsPrometheusLabel;
 use spacetimedb_sats::WithTypespace;
+use std::sync::Arc;
 
 mod host_controller;
 pub(crate) mod module_host;
@@ -118,7 +119,7 @@ impl From<usize> for ReducerId {
 pub struct InvalidReducerArguments {
     #[source]
     err: anyhow::Error,
-    reducer: String,
+    reducer: Arc<str>,
 }
 
 fn from_json_seed<'de, T: serde::de::DeserializeSeed<'de>>(s: &'de str, seed: T) -> anyhow::Result<T::Value> {

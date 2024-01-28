@@ -4,6 +4,7 @@ use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
 use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 use crate::algebraic_value::AlgebraicValue;
 use crate::data_key::DataKey;
@@ -21,7 +22,7 @@ pub fn calculate_hash<T: Hash>(t: &T) -> u64 {
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub struct TableField<'a> {
-    pub table: Option<&'a str>,
+    pub table: Option<Arc<str>>,
     pub field: &'a str,
 }
 
@@ -30,7 +31,7 @@ pub fn extract_table_field(ident: &str) -> Result<TableField, RelationError> {
 
     match parts[..] {
         [table, field] => Ok(TableField {
-            table: Some(table),
+            table: Some(table.into()),
             field,
         }),
         [field] => Ok(TableField { table: None, field }),
@@ -59,23 +60,20 @@ impl fmt::Display for FieldOnly<'_> {
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub enum FieldName {
-    Name { table: String, field: String },
-    Pos { table: String, field: usize },
+    Name { table: Arc<str>, field: String },
+    Pos { table: Arc<str>, field: usize },
 }
 
 impl FieldName {
-    pub fn named(table: &str, field: &str) -> Self {
+    pub fn named(table: Arc<str>, field: &str) -> Self {
         Self::Name {
-            table: table.to_string(),
+            table,
             field: field.to_string(),
         }
     }
 
-    pub fn positional(table: &str, field: usize) -> Self {
-        Self::Pos {
-            table: table.to_string(),
-            field,
-        }
+    pub fn positional(table: Arc<str>, field: usize) -> Self {
+        Self::Pos { table, field }
     }
 
     pub fn table(&self) -> &str {
@@ -176,13 +174,13 @@ pub struct HeaderOnlyField<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Header {
-    pub table_name: String,
+    pub table_name: Arc<str>,
     pub fields: Vec<Column>,
     pub constraints: Vec<(ColList, Constraints)>,
 }
 
 impl Header {
-    pub fn new(table_name: String, fields: Vec<Column>, constraints: Vec<(ColList, Constraints)>) -> Self {
+    pub fn new(table_name: Arc<str>, fields: Vec<Column>, constraints: Vec<(ColList, Constraints)>) -> Self {
         Self {
             table_name,
             fields,
@@ -190,7 +188,7 @@ impl Header {
         }
     }
 
-    pub fn from_product_type(table_name: String, fields: ProductType) -> Self {
+    pub fn from_product_type(table_name: Arc<str>, fields: ProductType) -> Self {
         let cols = fields
             .elements
             .into_iter()
@@ -215,7 +213,7 @@ impl Header {
 
     pub fn for_mem_table(fields: ProductType) -> Self {
         let table_name = format!("mem#{:x}", calculate_hash(&fields));
-        Self::from_product_type(table_name, fields)
+        Self::from_product_type(table_name.into(), fields)
     }
 
     pub fn as_without_table_name(&self) -> HeaderOnlyField {
@@ -255,7 +253,7 @@ impl Header {
 
     /// Finds the position of a field with `name`.
     pub fn find_pos_by_name(&self, name: &str) -> Option<ColId> {
-        self.column_pos(&FieldName::named(&self.table_name, name))
+        self.column_pos(&FieldName::named(self.table_name.clone(), name))
     }
 
     pub fn column<'a>(&'a self, col: &'a FieldName) -> Option<&Column> {
@@ -337,7 +335,7 @@ impl Header {
         let mut cont = 0;
         //Avoid duplicated field names...
         for mut f in right.fields.iter().cloned() {
-            if f.field.table() == self.table_name && self.column_pos(&f.field).is_some() {
+            if f.field.table() == &*self.table_name && self.column_pos(&f.field).is_some() {
                 let name = format!("{}_{}", f.field.field(), cont);
                 f.field = FieldName::Name {
                     table: f.field.table().into(),
@@ -712,10 +710,11 @@ mod tests {
             (col_list![pos_rhs, pos_lhs], Constraints::unique()),
         ];
 
+        let table: Arc<str> = table.into();
         Header::new(
-            table.into(),
+            table.clone(),
             vec![
-                Column::new(FieldName::named(table, fields.0), AlgebraicType::I8, 0.into()),
+                Column::new(FieldName::named(table.clone(), fields.0), AlgebraicType::I8, 0.into()),
                 Column::new(FieldName::named(table, fields.1), AlgebraicType::I8, 0.into()),
             ],
             ct,
@@ -735,7 +734,7 @@ mod tests {
 
         let all = head.clone();
         let new = head
-            .project(&[FieldName::named("t1", "a"), FieldName::named("t1", "b")])
+            .project(&[FieldName::named("t1".into(), "a"), FieldName::named("t1".into(), "b")])
             .unwrap();
 
         assert_eq!(all, new);
@@ -744,7 +743,7 @@ mod tests {
         first.fields.pop();
         first.constraints = first.retain_constraints(&0.into());
 
-        let new = head.project(&[FieldName::named("t1", "a")]).unwrap();
+        let new = head.project(&[FieldName::named("t1".into(), "a")]).unwrap();
 
         assert_eq!(first, new);
 
@@ -752,7 +751,7 @@ mod tests {
         second.fields.remove(0);
         second.constraints = second.retain_constraints(&1.into());
 
-        let new = head.project(&[FieldName::named("t1", "b")]).unwrap();
+        let new = head.project(&[FieldName::named("t1".into(), "b")]).unwrap();
 
         assert_eq!(second, new);
     }
@@ -765,7 +764,7 @@ mod tests {
         let new = head_lhs.extend(&head_rhs);
 
         let lhs = new
-            .project(&[FieldName::named("t1", "a"), FieldName::named("t1", "b")])
+            .project(&[FieldName::named("t1".into(), "a"), FieldName::named("t1".into(), "b")])
             .unwrap();
 
         assert_eq!(head_lhs, lhs);
@@ -774,7 +773,7 @@ mod tests {
         head_rhs.table_name = head_lhs.table_name.clone();
 
         let rhs = new
-            .project(&[FieldName::named("t2", "c"), FieldName::named("t2", "d")])
+            .project(&[FieldName::named("t2".into(), "c"), FieldName::named("t2".into(), "d")])
             .unwrap();
 
         assert_eq!(head_rhs, rhs);

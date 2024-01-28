@@ -766,7 +766,7 @@ mod tests {
         schema: &[(&str, AlgebraicType)],
         indexes: &[(ColId, &str)],
     ) -> Result<TableId, DBError> {
-        let table_name = name.to_string();
+        let table_name = name.into();
         let table_type = StTableType::User;
         let table_access = StAccess::Public;
 
@@ -840,7 +840,7 @@ mod tests {
         };
         let delta = DatabaseTableUpdate {
             table_id: lhs_id,
-            table_name: String::from("lhs"),
+            table_name: "lhs".into(),
             ops: vec![insert],
         };
 
@@ -883,7 +883,7 @@ mod tests {
         assert_eq!(index_table, rhs_id);
         assert_eq!(index_col, 0.into());
         assert_eq!(probe_field, "b");
-        assert_eq!(probe_table, "lhs");
+        assert_eq!(&**probe_table, "lhs");
         Ok(())
     }
 
@@ -936,7 +936,7 @@ mod tests {
         };
         let delta = DatabaseTableUpdate {
             table_id: rhs_id,
-            table_name: String::from("rhs"),
+            table_name: "rhs".into(),
             ops: vec![insert],
         };
 
@@ -980,7 +980,7 @@ mod tests {
         assert_eq!(index_table, lhs_id);
         assert_eq!(index_col, 1.into());
         assert_eq!(probe_field, "b");
-        assert_eq!(probe_table, "rhs");
+        assert_eq!(&**probe_table, "rhs");
         Ok(())
     }
 }

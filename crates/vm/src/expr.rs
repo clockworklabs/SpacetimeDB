@@ -1879,6 +1879,8 @@ impl From<Code> for CodeResult {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
 
     const ALICE: Identity = Identity::from_byte_array([1; 32]);
@@ -1986,12 +1988,13 @@ mod tests {
     fn mem_table(name: &str, fields: &[(&str, AlgebraicType, bool)]) -> MemTable {
         let table_access = StAccess::Public;
         let data = Vec::new();
+        let name: Arc<str> = name.into();
         let head = Header::new(
-            name.into(),
+            name.clone(),
             fields
                 .iter()
                 .enumerate()
-                .map(|(i, (field, ty, _))| Column::new(FieldName::named(name, field), ty.clone(), i.into()))
+                .map(|(i, (field, ty, _))| Column::new(FieldName::named(name.clone(), field), ty.clone(), i.into()))
                 .collect(),
             fields
                 .iter()
@@ -2042,8 +2045,8 @@ mod tests {
             panic!("expected an inner join, but got {:#?}", expr.query[0]);
         };
 
-        assert_eq!(join.col_lhs, FieldName::named("probe", "b"));
-        assert_eq!(join.col_rhs, FieldName::named("index", "b"));
+        assert_eq!(join.col_lhs, FieldName::named("probe".into(), "b"));
+        assert_eq!(join.col_rhs, FieldName::named("index".into(), "b"));
         assert_eq!(
             join.rhs,
             QueryExpr {
@@ -2059,8 +2062,8 @@ mod tests {
         assert_eq!(
             fields,
             &vec![
-                FieldName::named("probe", "c").into(),
-                FieldName::named("probe", "b").into()
+                FieldName::named("probe".into(), "c").into(),
+                FieldName::named("probe".into(), "b").into()
             ]
         );
     }

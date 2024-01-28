@@ -1,6 +1,7 @@
 use derive_more::Display;
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use crate::db::auth::{StAccess, StTableType};
 use crate::db::error::{DefType, SchemaError};
@@ -288,12 +289,12 @@ impl From<&ColumnSchema> for ProductTypeElement {
 #[derive(Debug, Clone)]
 pub struct FieldDef<'a> {
     pub column: &'a ColumnSchema,
-    pub table_name: &'a str,
+    pub table_name: Arc<str>,
 }
 
 impl From<FieldDef<'_>> for FieldName {
     fn from(value: FieldDef) -> Self {
-        FieldName::named(value.table_name, &value.column.col_name)
+        FieldName::named(value.table_name.clone(), &value.column.col_name)
     }
 }
 
@@ -473,7 +474,7 @@ impl From<ConstraintSchema> for ConstraintDef {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableSchema {
     pub table_id: TableId,
-    pub table_name: String,
+    pub table_name: Arc<str>,
     columns: Vec<ColumnSchema>,
     pub indexes: Vec<IndexSchema>,
     pub constraints: Vec<ConstraintSchema>,
@@ -488,7 +489,7 @@ impl TableSchema {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         table_id: TableId,
-        table_name: String,
+        table_name: Arc<str>,
         columns: Vec<ColumnSchema>,
         indexes: Vec<IndexSchema>,
         constraints: Vec<ConstraintSchema>,
@@ -622,7 +623,10 @@ impl TableSchema {
 
     /// Turn a [TableField] that could be an unqualified field `id` into `table.id`
     pub fn normalize_field(&self, or_use: &TableField) -> FieldName {
-        FieldName::named(or_use.table.unwrap_or(&self.table_name), or_use.field)
+        FieldName::named(
+            or_use.table.clone().unwrap_or_else(|| self.table_name.clone()),
+            or_use.field,
+        )
     }
 
     /// Project the fields from the supplied `indexes`.
@@ -674,7 +678,7 @@ impl TableSchema {
         //testing.
         TableSchema::new(
             table_id,
-            schema.table_name.trim().to_string(),
+            schema.table_name.clone(),
             schema
                 .columns
                 .into_iter()
@@ -952,7 +956,7 @@ impl From<&TableSchema> for Header {
             .enumerate()
             .map(|(pos, x)| {
                 Column::new(
-                    FieldName::named(&value.table_name, &x.col_name),
+                    FieldName::named(value.table_name.clone(), &x.col_name),
                     x.col_type.clone(),
                     ColId(pos as u32),
                 )
@@ -970,7 +974,7 @@ impl From<&TableSchema> for Header {
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
 #[sats(crate = crate)]
 pub struct TableDef {
-    pub table_name: String,
+    pub table_name: Arc<str>,
     pub columns: Vec<ColumnDef>,
     pub indexes: Vec<IndexDef>,
     pub constraints: Vec<ConstraintDef>,
@@ -987,7 +991,7 @@ impl TableDef {
     /// - `table_name`: The name of the table.
     /// - `columns`: A `vec` of `ColumnDef` instances representing the columns of the table.
     ///
-    pub fn new(table_name: String, columns: Vec<ColumnDef>) -> Self {
+    pub fn new(table_name: Arc<str>, columns: Vec<ColumnDef>) -> Self {
         Self {
             table_name,
             columns,
@@ -1393,7 +1397,7 @@ mod tests {
 
         // Empty names
         let mut t_name = t.clone();
-        t_name.table_name.clear();
+        t_name.table_name = "".into();
         assert_eq!(
             t_name.into_schema(TableId(0)).validated(),
             Err(vec![SchemaError::EmptyTableName { table_id: TableId(0) }])
@@ -1404,7 +1408,7 @@ mod tests {
         assert_eq!(
             t_col.into_schema(TableId(0)).validated(),
             Err(vec![SchemaError::EmptyName {
-                table: "test".to_string(),
+                table: "test".into(),
                 ty: DefType::Column,
                 id: 5
             },])
@@ -1416,7 +1420,7 @@ mod tests {
         assert_eq!(
             t_ct.into_schema(TableId(0)).validated(),
             Err(vec![SchemaError::EmptyName {
-                table: "test".to_string(),
+                table: "test".into(),
                 ty: DefType::Constraint,
                 id: 0,
             },])

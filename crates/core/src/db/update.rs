@@ -1,6 +1,7 @@
 use core::fmt;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::sync::Arc;
 
 use anyhow::Context;
 use spacetimedb_primitives::Constraints;
@@ -17,7 +18,7 @@ use spacetimedb_sats::hash::Hash;
 #[derive(thiserror::Error, Debug)]
 pub enum UpdateDatabaseError {
     #[error("incompatible schema changes for: {tables:?}")]
-    IncompatibleSchema { tables: Vec<String> },
+    IncompatibleSchema { tables: Vec<Arc<str>> },
     #[error(transparent)]
     Database(#[from] DBError),
 }
@@ -83,7 +84,7 @@ impl fmt::Display for TaintReason {
 /// A table with name `table_name` marked tainted for reason [`TaintReason`].
 #[derive(Debug, PartialEq)]
 pub struct Tainted {
-    pub table_name: String,
+    pub table_name: Arc<str>,
     pub reason: TaintReason,
 }
 
@@ -94,7 +95,7 @@ pub enum SchemaUpdates {
     /// The schema can be updates.
     Updates {
         /// Tables to create.
-        new_tables: HashMap<String, TableDef>,
+        new_tables: HashMap<Arc<str>, TableDef>,
     },
 }
 
@@ -118,7 +119,7 @@ pub fn schema_updates(
     let mut new_tables = HashMap::new();
     let mut tainted_tables = Vec::new();
 
-    let mut known_tables: BTreeMap<String, Cow<TableSchema>> = existing_tables
+    let mut known_tables: BTreeMap<_, Cow<TableSchema>> = existing_tables
         .into_iter()
         .map(|schema| (schema.table_name.clone(), schema))
         .collect();
@@ -129,12 +130,12 @@ pub fn schema_updates(
             let known_schema_def = TableDef::from(known_schema.as_ref().clone());
             if !equiv(&known_schema_def, &proposed_schema_def) {
                 tainted_tables.push(Tainted {
-                    table_name: proposed_table_name.to_owned(),
+                    table_name: proposed_table_name.clone(),
                     reason: TaintReason::IncompatibleSchema,
                 });
             }
         } else {
-            new_tables.insert(proposed_table_name.to_owned(), proposed_schema_def);
+            new_tables.insert(proposed_table_name.clone(), proposed_schema_def);
         }
     }
     // We may at some point decide to drop orphaned tables automatically,

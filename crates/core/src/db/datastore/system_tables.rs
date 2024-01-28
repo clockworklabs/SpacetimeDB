@@ -353,11 +353,11 @@ impl StTableRow<&str> {
     }
 }
 
-impl From<StTableRow<String>> for ProductValue {
-    fn from(x: StTableRow<String>) -> Self {
+impl From<StTableRow<&str>> for ProductValue {
+    fn from(x: StTableRow<&str>) -> Self {
         product![
             x.table_id,
-            x.table_name,
+            x.table_name.to_owned(),
             x.table_type.as_str().to_owned(),
             x.table_access.as_str().to_owned()
         ]

@@ -1,6 +1,7 @@
 use super::util::fmt_fn;
 
 use std::fmt::{self, Write};
+use std::ops::Deref;
 
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::db::def::TableSchema;
@@ -1357,7 +1358,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
             writeln!(output, "var _message = new SpacetimeDBClient.ReducerCallRequest {{").unwrap();
             {
                 indent_scope!(output);
-                writeln!(output, "fn = \"{}\",", reducer.name).unwrap();
+                writeln!(output, "fn = \"{}\",", func_name).unwrap();
                 writeln!(output, "args = _argArray,").unwrap();
             }
             writeln!(output, "}};").unwrap();
@@ -1503,7 +1504,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
         .collect();
     let reducer_names: Vec<String> = reducers
         .iter()
-        .map(|reducer| reducer.name.to_case(Case::Pascal))
+        .map(|reducer| reducer.name.deref().to_case(Case::Pascal))
         .collect();
 
     let use_namespace = true;
@@ -1570,7 +1571,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
         writeln!(output).unwrap();
         // Properties for reducer args
         for reducer in &reducers {
-            let reducer_name = reducer.name.to_case(Case::Pascal);
+            let reducer_name = reducer.name.deref().to_case(Case::Pascal);
             writeln!(output, "public {reducer_name}ArgsStruct {reducer_name}Args").unwrap();
             writeln!(output, "{{").unwrap();
             {
@@ -1598,7 +1599,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
             {
                 indent_scope!(output);
                 for reducer in &reducers {
-                    let reducer_name = reducer.name.to_case(Case::Pascal);
+                    let reducer_name = reducer.name.deref().to_case(Case::Pascal);
                     writeln!(output, "case ReducerType.{reducer_name}:").unwrap();
                     writeln!(output, "{{").unwrap();
                     {

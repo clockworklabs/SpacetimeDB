@@ -372,7 +372,7 @@ impl CommitLogMut {
 
         for record in &tx_data.records {
             let table_id: u32 = record.table_id.into();
-            let table_name = record.table_name.as_str();
+            let table_name = &*record.table_name;
 
             let operation = match record.op {
                 TxOp::Insert(_) => {

@@ -745,7 +745,7 @@ mod tests {
             "Project"
         );
 
-        let field = FieldName::positional(&table.head.table_name, 1);
+        let field = FieldName::positional(table.head.table_name, 1);
         let q = source.with_project(&[field.clone().into()], None);
 
         let result = run_ast(p, q.into());

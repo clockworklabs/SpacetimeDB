@@ -25,6 +25,7 @@ use spacetimedb_sats::{
     ser::{Serialize, Serializer},
     AlgebraicValue, ProductType, ProductValue,
 };
+use std::sync::Arc;
 use thiserror::Error;
 
 /// A database table containing the row schema, the rows, and indices.
@@ -619,7 +620,7 @@ impl IndexScanIter<'_> {
 #[error("Unique constraint violation '{}' in table '{}': column(s): '{:?}' value: {}", constraint_name, table_name, cols, value.to_satn())]
 pub struct UniqueConstraintViolation {
     pub constraint_name: String,
-    pub table_name: String,
+    pub table_name: Arc<str>,
     pub cols: Vec<String>,
     pub value: AlgebraicValue,
 }
@@ -788,7 +789,7 @@ mod test {
                 value,
             })) => {
                 assert_eq!(constraint_name, index_name);
-                assert_eq!(table_name, "UniqueIndexed");
+                assert_eq!(table_name, "UniqueIndexed".into());
                 assert_eq!(cols, &["unique_col"]);
                 assert_eq!(value, AlgebraicValue::I32(0));
             }

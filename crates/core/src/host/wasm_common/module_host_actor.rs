@@ -290,7 +290,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
             // so we can assume there's only one table to clear.
             if let Some(table_id) = tables
                 .iter()
-                .find_map(|t| (t.table_name == table_name).then_some(t.table_id))
+                .find_map(|t| (*t.table_name == *table_name).then_some(t.table_id))
             {
                 db.clear_table(tx, table_id)?;
             }
