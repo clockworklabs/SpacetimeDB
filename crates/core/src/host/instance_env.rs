@@ -49,6 +49,12 @@ impl BufWriter for ChunkedWriter {
 }
 
 impl ChunkedWriter {
+    /// Reserves `len` additional bytes in the scratch space,
+    /// or does nothing if the capacity is already sufficient.
+    fn reserve_in_scratch(&mut self, len: usize) {
+        self.scratch_space.reserve(len);
+    }
+
     /// Flushes the data collected in the scratch space if it's larger than our
     /// chunking threshold.
     pub fn flush(&mut self) {
@@ -285,7 +291,10 @@ impl InstanceEnv {
         let results = stdb.iter_by_col_eq_mut(ctx, tx, table_id, col_id, value)?;
         let mut bytes = Vec::new();
         for result in results {
-            bsatn::to_writer(&mut bytes, &result.to_product_value()).unwrap();
+            // Pre-allocate the capacity needed to write `result`.
+            bytes.reserve(bsatn::to_len(&result).unwrap());
+            // Write the ref directly to the BSATN `bytes` buffer.
+            bsatn::to_writer(&mut bytes, &result).unwrap();
         }
         Ok(bytes)
     }
@@ -298,7 +307,10 @@ impl InstanceEnv {
         let tx = &mut *self.tx.get()?;
 
         for row in stdb.iter_mut(ctx, tx, table_id)? {
-            row.to_product_value().encode(&mut chunked_writer);
+            // Pre-allocate the capacity needed to write `row`.
+            chunked_writer.reserve_in_scratch(bsatn::to_len(&row).unwrap());
+            // Write the ref directly to the BSATN `chunked_writer` buffer.
+            bsatn::to_writer(&mut chunked_writer, &row).unwrap();
             // Flush at row boundaries.
             chunked_writer.flush();
         }
