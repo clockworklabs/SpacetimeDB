@@ -54,7 +54,7 @@ impl Iterator for BTreeIndexRangeIter<'_> {
 
 impl BTreeIndexRangeIter<'_> {
     /// Returns the current number of pointers the iterator has returned thus far.
-    pub fn pointers_yielded(&self) -> u64 {
+    pub fn num_pointers_yielded(&self) -> u64 {
         self.num_pointers_yielded
     }
 }

@@ -610,8 +610,8 @@ impl<'a> Iterator for IndexScanIter<'a> {
 
 impl IndexScanIter<'_> {
     /// Returns the current number of pointers the iterator has returned thus far.
-    pub fn pointers_yielded(&self) -> u64 {
-        self.btree_index_iter.pointers_yielded()
+    pub fn num_pointers_yielded(&self) -> u64 {
+        self.btree_index_iter.num_pointers_yielded()
     }
 }
 
