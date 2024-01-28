@@ -119,12 +119,12 @@ impl Table {
     ) -> Result<(RowHash, RowPointer), InsertError> {
         // Check unique constraints.
         // This error should take precedence over any other potential failures.
-        self.check_unique_constraints(
-            row,
-            // No need to worry about the committed vs tx state dichotomy here;
-            // just treat all rows in the table as live.
-            |_| false,
-        )?;
+        // self.check_unique_constraints(
+        //     row,
+        //     // No need to worry about the committed vs tx state dichotomy here;
+        //     // just treat all rows in the table as live.
+        //     |_| false,
+        // )?;
 
         // Optimistically insert the `row` before checking for set-semantic collisions,
         // under the assumption that set-semantic collisions are rare.
@@ -157,7 +157,7 @@ impl Table {
 
         // Insert row into indices.
         for (cols, index) in self.indexes.iter_mut() {
-            index.insert(cols, row, ptr).unwrap();
+            // index.insert(cols, row, ptr).unwrap();
         }
 
         Ok((hash, ptr))

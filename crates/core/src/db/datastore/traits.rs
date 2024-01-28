@@ -15,7 +15,7 @@ use super::{system_tables::StTableRow, Result};
 /// Inserts report the byte objects they inserted, to be persisted
 /// later in an object store.
 pub enum TxOp {
-    Insert(Arc<Vec<u8>>),
+    Insert(Arc<[u8]>),
     Delete,
 }
 

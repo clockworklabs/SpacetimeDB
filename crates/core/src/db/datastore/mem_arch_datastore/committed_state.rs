@@ -393,6 +393,7 @@ impl CommittedState {
         //             Likely we want to decide dynamically whether to move a page or copy its contents,
         //             based on the available holes in the committed state
         //             and the fullness of the page.
+        let mut bytes = Vec::with_capacity(1024);
 
         for (table_id, mut tx_table) in insert_tables {
             self.with_table_and_blob_store_or_create(
@@ -408,15 +409,17 @@ impl CommittedState {
                         commit_table
                             .insert(commit_blob_store, &pv)
                             .expect("Failed to insert when merging commit");
-                        let bytes = bsatn::to_vec(&pv).expect("Failed to BSATN-serialize ProductValue");
+                        bsatn::to_writer(&mut bytes, &pv).expect("Failed to BSATN-serialize ProductValue");
+                        // let bytes = bsatn::to_vec(&pv).expect("Failed to BSATN-serialize ProductValue");
                         let data_key = DataKey::from_data(&bytes);
                         tx_data.records.push(TxRecord {
-                            op: TxOp::Insert(Arc::new(bytes)),
+                            op: TxOp::Insert(Arc::from(bytes.clone().into_boxed_slice())),
                             product_value: pv,
                             key: data_key,
                             table_name: commit_table.schema.table_name.clone(),
                             table_id,
                         });
+                        bytes.clear();
                     }
 
                     for (cols, mut index) in std::mem::take(&mut tx_table.indexes) {
