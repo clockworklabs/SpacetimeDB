@@ -13,7 +13,6 @@ pub use ser::Serializer;
 pub use crate::buffer::DecodeError;
 
 /// Serialize `value` into the buffered writer `w` in the BSATN format.
-#[tracing::instrument(skip_all)]
 pub fn to_writer<W: BufWriter, T: Serialize + ?Sized>(w: &mut W, value: &T) -> Result<(), ser::BsatnError> {
     value.serialize(Serializer::new(w))
 }

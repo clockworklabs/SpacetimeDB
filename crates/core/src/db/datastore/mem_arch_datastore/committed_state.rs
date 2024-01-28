@@ -406,19 +406,19 @@ impl CommittedState {
 
                     for row_ref in tx_table.scan_rows(&tx_blob_store) {
                         let pv = row_ref.to_product_value();
-                        commit_table
-                            .insert(commit_blob_store, &pv)
-                            .expect("Failed to insert when merging commit");
+                        // commit_table
+                        //     .insert(commit_blob_store, &pv)
+                        //     .expect("Failed to insert when merging commit");
                         bsatn::to_writer(&mut bytes, &pv).expect("Failed to BSATN-serialize ProductValue");
                         // let bytes = bsatn::to_vec(&pv).expect("Failed to BSATN-serialize ProductValue");
                         let data_key = DataKey::from_data(&bytes);
-                        tx_data.records.push(TxRecord {
-                            op: TxOp::Insert(Arc::from(bytes.clone().into_boxed_slice())),
-                            product_value: pv,
-                            key: data_key,
-                            table_name: commit_table.schema.table_name.clone(),
-                            table_id,
-                        });
+                        // tx_data.records.push(TxRecord {
+                        //     op: TxOp::Insert(Arc::from(bytes.clone().into_boxed_slice())),
+                        //     product_value: pv,
+                        //     key: data_key,
+                        //     table_name: commit_table.schema.table_name.clone(),
+                        //     table_id,
+                        // });
                         bytes.clear();
                     }
 
