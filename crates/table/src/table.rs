@@ -435,7 +435,7 @@ impl Table {
             new.insert_index(
                 &NullBlobStore,
                 cols.clone(),
-                BTreeIndex::new(index.index_id, index.is_unique, index.name.clone()),
+                BTreeIndex::new(index.index_id, new.get_row_type(), cols, index.is_unique, index.name.clone()),
             );
         }
         new
@@ -762,9 +762,10 @@ mod test {
         }]);
         let schema = TableSchema::from_def(0.into(), table_def);
         let index_schema = &schema.indexes[0];
-        let index = BTreeIndex::new(index_schema.index_id, true, index_name);
         let mut table = Table::new(schema, SquashedOffset::COMMITTED_STATE);
-        table.insert_index(&NullBlobStore, ColList::new(0.into()), index);
+        let cols = ColList::new(0.into());
+        let index = BTreeIndex::new(index_schema.index_id, table.get_row_type(), &cols, true, index_name);
+        table.insert_index(&NullBlobStore, cols, index);
 
         // Insert the row (0, 0).
         table

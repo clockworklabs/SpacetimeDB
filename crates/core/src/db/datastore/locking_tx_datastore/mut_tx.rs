@@ -161,7 +161,26 @@ impl StateView for MutTxId {
         } else if let Some(table) = self.committed_state_write_lock.tables.get(table_id) {
             Some(&table.schema.table_name)
         } else {
-            None
+            let ctx = ExecutionContext::internal(database_address);
+            let schema = self.schema_for_table(&ctx, table_id)?.into_owned();
+            self.tx_state
+                .insert_tables
+                .insert(index.table_id, Table::new(schema, SquashedOffset::TX_STATE));
+            self.tx_state.get_table_and_blob_store_mut(table_id).unwrap()
+        };
+
+        let mut insert_index = BTreeIndex::new(index.index_id, table.get_row_type(), &index.columns, index.is_unique, index.index_name.clone());
+        insert_index.build_from_rows(&index.columns, table.scan_rows(blob_store))?;
+
+        // NOTE: Also add all the rows in the already committed table to the index.
+        // FIXME: Is this correct? Index scan iterators (incl. the existing `Locking` versions)
+        // appear to assume that a table's index refers only to rows within that table,
+        // and does not handle the case where a `TxState` index refers to `CommittedState` rows.
+        if let Some(committed_table) = self.committed_state_write_lock.get_table(table_id) {
+            insert_index.build_from_rows(
+                &index.columns,
+                committed_table.scan_rows(&self.committed_state_write_lock.blob_store),
+            )?;
         }
     }
 
