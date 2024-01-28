@@ -292,7 +292,7 @@ impl CommittedState {
         for row in rows {
             let index_row = StIndexRow::try_from(&row)?;
             self.with_table_and_blob_store(index_row.table_id, |table, blob_store| {
-                let mut index = BTreeIndex::new(index_row.index_id, index_row.is_unique, index_row.index_name);
+                let mut index = BTreeIndex::new(index_row.index_id, table.get_row_type(), &index_row.columns, index_row.is_unique, index_row.index_name);
                 index.build_from_rows(&index_row.columns, table.scan_rows(blob_store))?;
                 table.indexes.insert(index_row.columns, index);
                 Ok::<(), DBError>(())
