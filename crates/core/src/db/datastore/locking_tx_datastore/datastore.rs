@@ -942,7 +942,7 @@ mod tests {
         datastore
             .iter_mut_tx(&ExecutionContext::default(), tx, table_id)
             .unwrap()
-            .map(|r| dbg!(r).to_product_value().clone())
+            .map(|r| r.to_product_value().clone())
             .collect()
     }
 
