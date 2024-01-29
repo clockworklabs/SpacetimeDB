@@ -361,7 +361,7 @@ impl From<StTableRow<String>> for ProductValue {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StColumnRow<Name: AsRef<str>> {
     pub(crate) table_id: TableId,
     pub(crate) col_pos: ColId,
@@ -395,7 +395,18 @@ impl From<StColumnRow<String>> for ProductValue {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+impl From<StColumnRow<String>> for ColumnSchema {
+    fn from(column: StColumnRow<String>) -> Self {
+        Self {
+            table_id: column.table_id,
+            col_pos: column.col_pos,
+            col_name: column.col_name,
+            col_type: column.col_type,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StIndexRow<Name: AsRef<str>> {
     pub(crate) index_id: IndexId,
     pub(crate) table_id: TableId,
@@ -452,7 +463,20 @@ impl From<StIndexRow<String>> for ProductValue {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+impl From<StIndexRow<String>> for IndexSchema {
+    fn from(x: StIndexRow<String>) -> Self {
+        Self {
+            index_id: x.index_id,
+            table_id: x.table_id,
+            index_type: x.index_type,
+            index_name: x.index_name,
+            is_unique: x.is_unique,
+            columns: x.columns,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StSequenceRow<Name: AsRef<str>> {
     pub(crate) sequence_id: SequenceId,
     pub(crate) sequence_name: Name,
@@ -514,7 +538,7 @@ impl From<StSequenceRow<String>> for SequenceSchema {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StConstraintRow<Name: AsRef<str>> {
     pub(crate) constraint_id: ConstraintId,
     pub(crate) constraint_name: Name,
@@ -552,6 +576,18 @@ impl From<StConstraintRow<String>> for ProductValue {
             x.table_id,
             ArrayValue::from(x.columns.to_u32_vec())
         ]
+    }
+}
+
+impl From<StConstraintRow<String>> for ConstraintSchema {
+    fn from(x: StConstraintRow<String>) -> Self {
+        Self {
+            constraint_id: x.constraint_id,
+            constraint_name: x.constraint_name,
+            constraints: x.constraints,
+            table_id: x.table_id,
+            columns: x.columns,
+        }
     }
 }
 

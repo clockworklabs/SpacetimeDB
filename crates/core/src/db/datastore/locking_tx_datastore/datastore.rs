@@ -626,8 +626,8 @@ impl MutProgrammable for Locking {
 mod tests {
     use super::*;
     use crate::db::datastore::system_tables::{
-        StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_COLUMNS_ID, ST_CONSTRAINTS_ID,
-        ST_INDEXES_ID, ST_SEQUENCES_ID,
+        system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_COLUMNS_ID,
+        ST_CONSTRAINTS_ID, ST_INDEXES_ID, ST_SEQUENCES_ID,
     };
     use crate::db::datastore::traits::MutTx;
     use crate::db::datastore::Result;
@@ -1068,6 +1068,60 @@ mod tests {
             ConstraintRow { constraint_id: 4, table_id: 3, columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_indexes_index_id_primary_key_auto" },
             ConstraintRow { constraint_id: 5, table_id: 4, columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_constraints_constraint_id_primary_key_auto" },
         ]));
+
+        // Verify we get back the tables correctly with the proper ids...
+        let cols = query.scan_st_columns()?;
+        let idx = query.scan_st_indexes()?;
+        let seq = query.scan_st_sequences()?;
+        let ct = query.scan_st_constraints()?;
+
+        for st in system_tables() {
+            let schema = datastore.schema_for_table_mut_tx(&tx, st.table_id).unwrap();
+            assert_eq!(
+                schema.columns().to_vec(),
+                cols.iter()
+                    .filter(|x| x.table_id == st.table_id)
+                    .cloned()
+                    .map(Into::into)
+                    .collect::<Vec<_>>(),
+                "Columns for {}",
+                schema.table_name
+            );
+
+            assert_eq!(
+                schema.indexes,
+                idx.iter()
+                    .filter(|x| x.table_id == st.table_id)
+                    .cloned()
+                    .map(Into::into)
+                    .collect::<Vec<_>>(),
+                "Indexes for {}",
+                schema.table_name
+            );
+
+            assert_eq!(
+                schema.sequences,
+                seq.iter()
+                    .filter(|x| x.table_id == st.table_id)
+                    .cloned()
+                    .map(Into::into)
+                    .collect::<Vec<_>>(),
+                "Sequences for {}",
+                schema.table_name
+            );
+
+            assert_eq!(
+                schema.constraints,
+                ct.iter()
+                    .filter(|x| x.table_id == st.table_id)
+                    .cloned()
+                    .map(Into::into)
+                    .collect::<Vec<_>>(),
+                "Constraints for {}",
+                schema.table_name
+            );
+        }
+
         datastore.rollback_mut_tx_for_test(tx);
         Ok(())
     }
