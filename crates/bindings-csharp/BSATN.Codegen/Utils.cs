@@ -87,7 +87,7 @@ static class Utils
                                     a.AttributeClass?.ToDisplayString()
                                     == "SpacetimeDB.TypeAttribute"
                                 )
-                        => $"SpacetimeDB.BSATN.MakeEnum<{type}>()",
+                        => $"SpacetimeDB.BSATN.Enum<{type}>",
                     // Handle generic types.
                     SpecialType.None
                         => GetTypeInfoForNamedType(namedType),
@@ -237,7 +237,7 @@ static class Utils
             || kind == SyntaxKind.StructDeclaration
             || kind == SyntaxKind.RecordDeclaration;
 
-        public string GenerateExtensions(string contents)
+        public string GenerateExtensions(string contents, string? intf = null)
         {
             var sb = new StringBuilder();
 
@@ -265,8 +265,14 @@ static class Utils
                     .Append(parentClasses.Keyword) // e.g. class/struct/record
                     .Append(' ')
                     .Append(parentClasses.Name) // e.g. Outer/Generic<T>
-                    .Append(' ')
-                    .Append(parentClasses.Constraints) // e.g. where T: new()
+                    .Append(' ');
+
+                if (parentClasses.Child is null && intf is not null)
+                {
+                    sb.Append(" : ").Append(intf);
+                }
+
+                sb.Append(parentClasses.Constraints) // e.g. where T: new()
                     .AppendLine(
                         @"
             {"

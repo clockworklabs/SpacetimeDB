@@ -125,6 +125,7 @@ public class Type : IIncrementalGenerator
                     return new
                     {
                         Scope = new Scope(type),
+                        ShortName = type.Identifier.Text,
                         FullName = SymbolToName(context.SemanticModel.GetDeclaredSymbol(type, ct)!),
                         GenericName = $"{type.Identifier}{type.TypeParameterList}",
                         IsTaggedEnum = taggedEnumVariants is not null,
@@ -145,24 +146,23 @@ public class Type : IIncrementalGenerator
 
                     var typeDesc = "";
 
-                    var fieldIO = type.Members.Select(m => new
+                    var fieldIO = type.Members.Select(m =>
                     {
-                        m.Name,
-                        Read = $"{m.Name} = fieldTypeInfo.{m.Name}.Read(reader),",
-                        Write = $"fieldTypeInfo.{m.Name}.Write(writer, value.{m.Name});"
+                        var typeInfo = GetTypeInfo(m.TypeSymbol);
+
+                        return new { m.Name, TypeInfo = typeInfo, };
                     });
 
                     if (type.IsTaggedEnum)
                     {
                         typeDesc +=
                             $@"
-                            public enum TagKind: byte
+                            private {type.ShortName}() {{ }}
+
+                            enum __Tag: byte
                             {{
                                 {string.Join(", ", type.Members.Select(m => m.Name))}
                             }}
-
-                            public TagKind Tag {{ get; private set; }}
-                            private object? boxedValue;
                         ";
 
                         typeDesc += string.Join(
@@ -170,95 +170,56 @@ public class Type : IIncrementalGenerator
                             type.Members.Select(m =>
                             {
                                 var name = m.Name;
-                                var type = m.TypeSymbol.ToDisplayString();
+                                var fieldType = m.TypeSymbol.ToDisplayString();
 
-                                return $@"
-                                public bool Is{name} => Tag == TagKind.{name};
-
-                                public {type} {name} {{
-                                    get => Is{name} ? ({type})boxedValue! : throw new System.InvalidOperationException($""Expected {name} but got {{Tag}}"");
-                                    set {{
-                                        Tag = TagKind.{name};
-                                        boxedValue = value;
-                                    }}
-                                }}
-                                ";
+                                return $@"public record {name}({fieldType} Value) : {type.ShortName};";
                             })
                         );
 
                         read =
-                            $@"(TagKind)reader.ReadByte() switch {{
-                                {string.Join("\n", fieldIO.Select(m => $"TagKind.{m.Name} => new {type.GenericName} {{ {m.Read} }},"))}
-                                var tag => throw new System.InvalidOperationException($""Unknown tag {{tag}}"")
+                            $@"(__Tag)reader.ReadByte() switch {{
+                                {string.Join("\n", fieldIO.Select(m => $"__Tag.{m.Name} => new {m.Name}({m.TypeInfo}.Read(reader)),"))}
+                                var tag => throw new System.InvalidOperationException($""Unsupported tag {{tag}}"")
                             }}";
 
                         write =
-                            $@"writer.Write((byte)value.Tag);
-                            switch (value.Tag) {{
+                            $@"switch (value) {{
                                 {string.Join("\n", fieldIO.Select(m => $@"
-                                    case TagKind.{m.Name}:
-                                        {m.Write};
+                                    case {m.Name}(var inner):
+                                        writer.Write((byte)__Tag.{m.Name});
+                                        {m.TypeInfo}.Write(writer, inner);
                                         break;
                                 "))}
-                                default:
-                                    throw new System.InvalidOperationException($""Tagged enum is corrupted and has an unsupported tag {{value.Tag}}"");
-                            }}
-                        ";
+                            }}";
                     }
                     else
                     {
                         read =
                             $@"new {type.GenericName} {{
-                                {string.Join("\n", fieldIO.Select(m => m.Read))}
+                                {string.Join(",\n", fieldIO.Select(m => $"{m.Name} = {m.TypeInfo}.Read(reader)"))}
                             }}";
 
-                        write = string.Join("\n", fieldIO.Select(m => m.Write));
+                        write = string.Join(
+                            "\n",
+                            fieldIO.Select(m => $"{m.TypeInfo}.Write(writer, value.{m.Name});")
+                        );
                     }
 
                     typeDesc +=
                         $@"
-private static SpacetimeDB.SATS.TypeInfo<{type.GenericName}>? satsTypeInfo;
+                        public static {type.GenericName} Read(BinaryReader reader) => {read};
 
-public static SpacetimeDB.SATS.TypeInfo<{type.GenericName}> GetSatsTypeInfo({string.Join(", ", type.TypeParams.Select(p => $"SpacetimeDB.SATS.TypeInfo<{p}> {p}TypeInfo"))}) {{
-    if (satsTypeInfo is not null) {{
-        return satsTypeInfo;
-    }}
-    var typeRef = SpacetimeDB.Module.FFI.AllocTypeRef();
-    // Careful with the order: to prevent infinite recursion, we need to assign satsTypeInfo first,
-    // and populate fieldTypeInfo and, correspondingly, read/write implementations, after that.
-    System.Func<System.IO.BinaryReader, {type.GenericName}> read = (reader) => throw new System.InvalidOperationException(""Recursive type is not yet initialized"");
-    System.Action<System.IO.BinaryWriter, {type.GenericName}> write = (writer, value) => throw new System.InvalidOperationException(""Recursive type is not yet initialized"");
-    satsTypeInfo = new(
-        typeRef,
-        (reader) => read(reader),
-        (writer, value) => write(writer, value)
-    );
-    var fieldTypeInfo = new {{
-        {string.Join("\n", type.Members.Select(m => $"{m.Name} = {GetTypeInfo(m.TypeSymbol)},"))}
-    }};
-    SpacetimeDB.Module.FFI.SetTypeRef<{type.GenericName}>(
-        typeRef,
-        new SpacetimeDB.SATS.{typeKind}Type {{
-            {string.Join("\n", type.Members.Select(m => $"{{ nameof({m.Name}), fieldTypeInfo.{m.Name}.AlgebraicType }},"))}
-        }},
-        {(
-            fullyQualifiedMetadataName == "SpacetimeDB.TableAttribute"
-            // anonymous (don't register type alias) if it's a table that will register its own name in a different way
-            ? "true"
-            : "false"
-        )}
-    );
-    read = (reader) => {read};
-    write = (writer, value) => {{
-        {write}
-    }};
-    return satsTypeInfo;
-}}
+                        public static void Write(BinaryWriter writer, {type.GenericName} value) {{
+                            {write}
+                        }}
                     ";
 
                     return new KeyValuePair<string, string>(
                         type.FullName,
-                        type.Scope.GenerateExtensions(typeDesc)
+                        type.Scope.GenerateExtensions(
+                            typeDesc,
+                            $"SpacetimeDB.BSATN.IReadWrite<{type.GenericName}>"
+                        )
                     );
                 }
             )
