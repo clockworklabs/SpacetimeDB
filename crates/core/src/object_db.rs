@@ -11,7 +11,7 @@ impl ObjectDb {
     pub fn init() -> Result<Self, anyhow::Error> {
         let config = sled::Config::default()
             .path(stdb_path("control_node/object_db"))
-            .flush_every_ms(Some(50))
+            .flush_every_ms(None)
             .mode(sled::Mode::HighThroughput);
         let db = config.open()?;
         Ok(Self { db })

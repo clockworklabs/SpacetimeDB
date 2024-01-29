@@ -55,7 +55,7 @@ impl Scheduler {
     pub fn open(scheduler_db_path: impl AsRef<Path>) -> anyhow::Result<(Self, SchedulerStarter)> {
         let db = sled::Config::default()
             .path(scheduler_db_path)
-            .flush_every_ms(Some(50))
+            .flush_every_ms(None)
             .mode(sled::Mode::HighThroughput)
             .open()?;
 
