@@ -53,7 +53,7 @@ impl ServerMessage for IdentityTokenMessage {
 }
 
 pub struct TransactionUpdateMessage<'a> {
-    pub event: &'a mut ModuleEvent,
+    pub event: &'a ModuleEvent,
     pub database_update: DatabaseUpdate,
 }
 
@@ -124,14 +124,14 @@ impl ServerMessage for TransactionUpdateMessage<'_> {
 impl ServerMessage for &mut TransactionUpdateMessage<'_> {
     fn serialize_text(self) -> MessageJson {
         TransactionUpdateMessage {
-            event: &mut *self.event,
+            event: self.event,
             database_update: self.database_update.clone(),
         }
         .serialize_text()
     }
     fn serialize_binary(self) -> Message {
         TransactionUpdateMessage {
-            event: &mut *self.event,
+            event: self.event,
             database_update: self.database_update.clone(),
         }
         .serialize_binary()
