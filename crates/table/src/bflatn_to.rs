@@ -237,6 +237,14 @@ impl BflatnSerializedRowBuffer<'_> {
 
     /// Write an `val`, a [`ProductValue`], typed at `ty`, to the buffer.
     fn write_product(&mut self, ty: &ProductTypeLayout, val: &ProductValue) -> Result<(), ()> {
+        // `Iterator::zip` silently drops elements if the two iterators have different lengths,
+        // so we need to check that our `ProductValue` has the same number of elements
+        // as our `ProductTypeLayout` to be sure it's typed correctly.
+        // Otherwise, if the value is too long, we'll discard its fields (whatever),
+        // or if it's too long, we'll leave some fields in the page uninit (very bad).
+        if ty.elements.len() != val.elements.len() {
+            panic!("Invalid value for type: expected a value of type {ty:?}, but found {val:?}");
+        }
         for (elt_ty, elt) in ty.elements.iter().zip(val.elements.iter()) {
             self.write_value(&elt_ty.ty, elt)?;
         }
