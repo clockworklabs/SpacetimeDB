@@ -203,7 +203,7 @@ impl ModuleSubscriptionActor {
     }
 
     async fn broadcast_commit_event(&mut self, event: ModuleEvent) -> Result<(), DBError> {
-        async fn _broadcast_commit_event(
+        fn _broadcast_commit_event(
             auth: AuthCtx,
             mut event: ModuleEvent,
             subscription: SubscriptionRw,
@@ -235,7 +235,7 @@ impl ModuleSubscriptionActor {
                 let message = message.serialize(subscriber.protocol);
                 futures.push(subscriber.send(message).map(drop))
             }
-            futures.collect::<()>().await;
+            tokio::runtime::Handle::current().block_on(futures.collect::<()>());
 
             relational_db.release_tx(&ctx, tx);
             Ok(())
@@ -243,21 +243,21 @@ impl ModuleSubscriptionActor {
 
         let auth = AuthCtx::new(self.owner_identity, event.caller_identity);
         let relational_db = self.relational_db.clone();
-        let futures: FuturesUnordered<tokio::task::JoinHandle<Result<(), DBError>>> = FuturesUnordered::new();
+
+        let mut futures = Vec::new();
 
         for subscription in &self.subscriptions {
-            let future: JoinHandle<Result<(), _>> = tokio::spawn(_broadcast_commit_event(
-                auth,
-                event.clone(),
-                subscription.clone(),
-                relational_db.clone(),
-            ));
+            let (event, subscription, relational_db) = (event.clone(), subscription.clone(), relational_db.clone());
+            let future: JoinHandle<Result<(), _>> =
+                tokio::task::spawn_blocking(move || _broadcast_commit_event(auth, event, subscription, relational_db));
 
             futures.push(future);
         }
 
         // waiting for for all subscription query sets to process
-        futures.collect::<Vec<_>>().await;
+        for task in futures {
+            let _ = task.await;
+        }
 
         Ok(())
     }
