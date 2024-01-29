@@ -309,7 +309,7 @@ impl CommitLogMut {
         &self,
         ctx: &ExecutionContext,
         tx_data: &TxData,
-        datastore: &D,
+        _datastore: &D,
     ) -> Result<Option<usize>, DBError>
     where
         D: MutTxDatastore<RowId = RowId>,
@@ -320,14 +320,34 @@ impl CommitLogMut {
         //
         // See also: https://github.com/clockworklabs/SpacetimeDB/pull/465
         let mut mlog = self.mlog.lock().unwrap();
-        self.generate_commit(ctx, tx_data, datastore)
-            .as_deref()
-            .map(|bytes| self.append_commit_bytes(&mut mlog, bytes))
-            .transpose()
+        // Also applies to `unwritten_commit` (see below).
+        let mut unwritten_commit = self.unwritten_commit.lock().unwrap();
+        let sz = if let Some(encoded_commit) = self.generate_commit(ctx, &mut unwritten_commit, tx_data) {
+            // Clear transations immediately, so we don't write them again after
+            // `append_commit_bytes` returned and error.
+            unwritten_commit.transactions.clear();
+
+            // Write and flush to the log.
+            let sz = self.append_commit_bytes(&mut mlog, &encoded_commit)?;
+
+            // Update offsets and parent hash only after we are reasonably sure
+            // that the commit has been flushed to disk.
+            // Otherwise gaps in the offset sequence will be hard to distinguish
+            // from otherwise corrupt commits.
+            // Commit checksums will be helpful in the future.
+            unwritten_commit.parent_commit_hash = Some(hash_bytes(&encoded_commit));
+            unwritten_commit.commit_offset += 1;
+            unwritten_commit.min_tx_offset += unwritten_commit.transactions.len() as u64;
+
+            Some(sz)
+        } else {
+            None
+        };
+
+        Ok(sz)
     }
 
-    // For testing -- doesn't require a `MutTxDatastore`, which is currently
-    // unused anyway.
+    // Only for testing! Use `append_tx` if at all possible.
     fn append_commit_bytes(&self, mlog: &mut MutexGuard<'_, MessageLog>, commit: &[u8]) -> Result<usize, DBError> {
         mlog.append(commit)?;
         match self.fsync {
@@ -349,11 +369,11 @@ impl CommitLogMut {
         Ok(commit.len())
     }
 
-    fn generate_commit<D: MutTxDatastore<RowId = RowId>>(
+    fn generate_commit(
         &self,
         ctx: &ExecutionContext,
+        unwritten_commit: &mut MutexGuard<'_, Commit>,
         tx_data: &TxData,
-        _datastore: &D,
     ) -> Option<Vec<u8>> {
         // We are not creating a commit for empty transactions.
         // The reason for this is that empty transactions get encoded as 0 bytes,
@@ -362,7 +382,6 @@ impl CommitLogMut {
             return None;
         }
 
-        let mut unwritten_commit = self.unwritten_commit.lock().unwrap();
         let mut writes = Vec::with_capacity(tx_data.records.len());
 
         let workload = &ctx.workload();
@@ -426,12 +445,6 @@ impl CommitLogMut {
 
             let mut bytes = Vec::with_capacity(unwritten_commit.encoded_len());
             unwritten_commit.encode(&mut bytes);
-
-            unwritten_commit.parent_commit_hash = Some(hash_bytes(&bytes));
-            unwritten_commit.commit_offset += 1;
-            unwritten_commit.min_tx_offset += unwritten_commit.transactions.len() as u64;
-            unwritten_commit.transactions.clear();
-
             Some(bytes)
         } else {
             None
