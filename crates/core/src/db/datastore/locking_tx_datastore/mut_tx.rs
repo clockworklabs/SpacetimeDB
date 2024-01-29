@@ -716,7 +716,7 @@ impl MutTxId {
         // If the tx table exists, get it.
         // If it doesn't exist, but the commit table does,
         // create the tx table using the commit table as a template.
-        let Some((tx_table, tx_blob_store, delete_table)) = self
+        let Some((tx_table, tx_blob_store, _)) = self
             .tx_state
             .get_table_and_blob_store_or_maybe_create_from(table_id, commit_table.as_deref())
         else {
@@ -725,37 +725,55 @@ impl MutTxId {
             return Ok(false);
         };
 
-        match tx_table.insert(tx_blob_store, rel) {
-            Ok((hash, ptr)) => {
-                // Not present in insert tables; attempt to delete from commit tables.
-                let to_delete = commit_table.and_then(|commit_table| {
-                    // Safety:
-                    // - `commit_table` and `tx_table` use the same schema
-                    //   because `tx_table` is derived from `commit_table`.
-                    // - `ptr` and `hash` are correct because we just got them from `tx_table.insert`.
-                    unsafe { Table::find_same_row(commit_table, tx_table, ptr, hash) }
-                });
+        // We need `insert_internal_allow_duplicate` rather than `insert` here
+        // to bypass unique constraint checks.
+        match tx_table.insert_internal_allow_duplicate(tx_blob_store, rel) {
+            Err(InsertError::WriteRowToPages) => {
+                Err(anyhow!("Table::insert failed: {:?}", InsertError::WriteRowToPages).into())
+            }
+            Err(e) => unreachable!(
+                "Table::insert_internal_allow_duplicates returned error of unexpected variant: {:?}",
+                e
+            ),
+            Ok(ptr) => {
+                // Safety: `ptr` must be valid, because we just inserted it and haven't deleted it since.
+                let hash = unsafe { tx_table.row_hash_for(ptr) };
+
+                dbg!((ptr, hash));
+
+                // First, check if a matching row exists in the `tx_table`.
+                // If it does, no need to check the `commit_table`.
+                //
+                // Safety:
+                // - `tx_table` trivially uses the same schema as itself.
+                // - `ptr` is valid because we just inserted it.
+                // - `hash` is correct because we just computed it.
+                let to_delete = unsafe { Table::find_same_row(tx_table, tx_table, ptr, hash) }
+                    // Not present in insert tables; check if present in the commit tables.
+                    .or_else(|| {
+                        commit_table.and_then(|commit_table| {
+                            // Safety:
+                            // - `commit_table` and `tx_table` use the same schema
+                            // - `ptr` is valid because we just inserted it.
+                            // - `hash` is correct because we just computed it.
+                            unsafe { Table::find_same_row(commit_table, tx_table, ptr, hash) }
+                        })
+                    });
+
+                debug_assert_ne!(to_delete, Some(ptr));
 
                 // Remove the temporary entry from the insert tables.
                 // Do this before actually deleting to drop the borrows on the tables.
-                tx_table.delete(tx_blob_store, ptr);
+                // Safety: `ptr` is valid because we just inserted it and haven't deleted it since.
+                unsafe {
+                    tx_table.delete_internal_skip_pointer_map(tx_blob_store, ptr);
+                }
 
                 // Mark the committed row to be deleted by adding it to the delete table.
-                Ok(to_delete
-                    .map(|to_delete| delete_table.insert(to_delete))
-                    .unwrap_or(false))
+                to_delete
+                    .map(|to_delete| self.delete(table_id, to_delete))
+                    .unwrap_or(Ok(false))
             }
-
-            Err(InsertError::Duplicate(existing)) => {
-                // Present in insert tables; delete.
-                // Set semantics mean no need to check commit tables.
-                tx_table
-                    .delete(tx_blob_store, existing)
-                    .expect("Discovered pointer from Table::insert of duplicate, but failed to delete");
-                Ok(true)
-            }
-
-            Err(e) => Err(anyhow!("Table::insert failed: {:?}", e).into()),
         }
     }
 }

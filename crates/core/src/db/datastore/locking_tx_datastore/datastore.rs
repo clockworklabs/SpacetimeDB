@@ -611,8 +611,11 @@ mod tests {
     use crate::error::{DBError, IndexError};
     use itertools::Itertools;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_primitives::Constraints;
+    use spacetimedb_primitives::{col_list, ColId, Constraints};
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
+    use spacetimedb_sats::db::def::{
+        ColumnDef, ColumnSchema, ConstraintSchema, IndexSchema, IndexType, SequenceSchema,
+    };
     use spacetimedb_sats::{product, AlgebraicType};
     use spacetimedb_table::table::UniqueConstraintViolation;
 
@@ -631,7 +634,7 @@ mod tests {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_TABLES_ID)?
-                .map(|x| StTableRow::try_from(x.view()).unwrap().to_owned())
+                .map(|x| StTableRow::try_from(&x.to_product_value()).unwrap().to_owned())
                 .sorted_by_key(|x| x.table_id)
                 .collect::<Vec<_>>())
         }
@@ -644,7 +647,7 @@ mod tests {
             Ok(self
                 .db
                 .iter_by_col_eq(self.ctx, &ST_TABLES_ID, cols.into(), value)?
-                .map(|x| StTableRow::try_from(x.view()).unwrap().to_owned())
+                .map(|x| StTableRow::try_from(&x.to_product_value()).unwrap().to_owned())
                 .sorted_by_key(|x| x.table_id)
                 .collect::<Vec<_>>())
         }
@@ -653,7 +656,7 @@ mod tests {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_COLUMNS_ID)?
-                .map(|x| StColumnRow::try_from(x.view()).unwrap().to_owned())
+                .map(|x| StColumnRow::try_from(&x.to_product_value()).unwrap().to_owned())
                 .sorted_by_key(|x| (x.table_id, x.col_pos))
                 .collect::<Vec<_>>())
         }
@@ -666,7 +669,7 @@ mod tests {
             Ok(self
                 .db
                 .iter_by_col_eq(self.ctx, &ST_COLUMNS_ID, cols.into(), value)?
-                .map(|x| StColumnRow::try_from(x.view()).unwrap().to_owned())
+                .map(|x| StColumnRow::try_from(&x.to_product_value()).unwrap().to_owned())
                 .sorted_by_key(|x| (x.table_id, x.col_pos))
                 .collect::<Vec<_>>())
         }
@@ -675,7 +678,7 @@ mod tests {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_CONSTRAINTS_ID)?
-                .map(|x| StConstraintRow::try_from(x.view()).unwrap().to_owned())
+                .map(|x| StConstraintRow::try_from(&x.to_product_value()).unwrap().to_owned())
                 .sorted_by_key(|x| x.constraint_id)
                 .collect::<Vec<_>>())
         }
@@ -684,7 +687,7 @@ mod tests {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_SEQUENCES_ID)?
-                .map(|x| StSequenceRow::try_from(x.view()).unwrap().to_owned())
+                .map(|x| StSequenceRow::try_from(&x.to_product_value()).unwrap().to_owned())
                 .sorted_by_key(|x| (x.table_id, x.sequence_id))
                 .collect::<Vec<_>>())
         }
@@ -693,7 +696,7 @@ mod tests {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_INDEXES_ID)?
-                .map(|x| StIndexRow::try_from(x.view()).unwrap().to_owned())
+                .map(|x| StIndexRow::try_from(&x.to_product_value()).unwrap().to_owned())
                 .sorted_by_key(|x| x.index_id)
                 .collect::<Vec<_>>())
         }
@@ -939,7 +942,7 @@ mod tests {
         datastore
             .iter_mut_tx(&ExecutionContext::default(), tx, table_id)
             .unwrap()
-            .map(|r| r.view().clone())
+            .map(|r| dbg!(r).to_product_value().clone())
             .collect()
     }
 
@@ -959,7 +962,7 @@ mod tests {
     fn all_rows_tx(tx: &TxId, table_id: TableId) -> Vec<ProductValue> {
         tx.iter(&ExecutionContext::default(), &table_id)
             .unwrap()
-            .map(|r| r.view().clone())
+            .map(|r| r.to_product_value().clone())
             .collect()
     }
 
@@ -1252,16 +1255,30 @@ mod tests {
     #[test]
     fn test_insert_delete_insert_delete_insert() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
-        let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
-        datastore.insert_mut_tx(&mut tx, table_id, row)?;
-        for _ in 0..2 {
-            let created_row = u32_str_u32(1, "Foo", 18);
-            let num_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, [created_row.clone()]);
-            assert_eq!(num_deleted, 1);
-            assert_eq!(all_rows(&datastore, &tx, table_id).len(), 0);
-            datastore.insert_mut_tx(&mut tx, table_id, created_row)?;
-            #[rustfmt::skip]
-            assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, "Foo", 18)]);
+        let row = u32_str_u32(1, "Foo", 18); // 0 will be ignored.
+        datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
+        for i in 0..2 {
+            assert_eq!(
+                all_rows(&datastore, &tx, table_id),
+                vec![row.clone()],
+                "Found unexpected set of rows before deleting",
+            );
+            let num_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, [row.clone()]);
+            assert_eq!(
+                num_deleted, 1,
+                "delete_by_rel deleted an unexpected number of rows on iter {i}",
+            );
+            assert_eq!(
+                &all_rows(&datastore, &tx, table_id),
+                &[],
+                "Found rows present after deleting",
+            );
+            datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
+            assert_eq!(
+                all_rows(&datastore, &tx, table_id),
+                vec![row.clone()],
+                "Found unexpected set of rows after inserting",
+            );
         }
         Ok(())
     }
@@ -1466,7 +1483,7 @@ mod tests {
                     AlgebraicValue::U32(1),
                 )
                 .unwrap()
-                .map(|data_ref| data_ref.data.clone())
+                .map(|data_ref| data_ref.to_product_value())
                 .collect::<Vec<_>>()
         };
 

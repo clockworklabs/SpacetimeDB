@@ -272,7 +272,7 @@ impl Table {
     /// # Safety
     ///
     /// `ptr` must point to a valid, live row in this table.
-    unsafe fn delete_internal_skip_pointer_map(&mut self, blob_store: &mut dyn BlobStore, ptr: RowPointer) {
+    pub unsafe fn delete_internal_skip_pointer_map(&mut self, blob_store: &mut dyn BlobStore, ptr: RowPointer) {
         // Delete the physical row.
         //
         // SAFETY:
@@ -439,6 +439,25 @@ impl Table {
             );
         }
         new
+    }
+
+    /// Returns the row hash for `ptr`.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` must refer to a valid fixed row in this table,
+    /// i.e. have been previously returned by [`Table::insert`] or [`Table::insert_internal_allow_duplicates`],
+    /// and not deleted since.
+    pub unsafe fn row_hash_for(&self, ptr: RowPointer) -> RowHash {
+        let mut hasher = RowHash::hasher_builder().build_hasher();
+        let (page, offset) = self.page_and_offset(ptr);
+        // SAFETY: Caller promised that `ptr` refers to a live fixed row in this table, so:
+        // 1. `offset` points at a row in `page` lasting `self.row_fixed_size` bytes.
+        // 2. the row must be valid for `self.row_layout`.
+        // 3. for any `vlr: VarLenRef` stored in the row,
+        //    `vlr.first_offset` is either `NULL` or points to a valid granule in `page`.
+        unsafe { hash_row_in_page(&mut hasher, page, offset, &self.row_layout) };
+        RowHash(hasher.finish())
     }
 }
 
@@ -708,25 +727,6 @@ impl Table {
     fn get_fixed_row(&self, ptr: RowPointer) -> &Bytes {
         let (page, offset) = self.page_and_offset(ptr);
         page.get_row_data(offset, self.row_size())
-    }
-
-    /// Returns the row hash for `ptr`.
-    ///
-    /// # Safety
-    ///
-    /// `ptr` must refer to a valid fixed row in this table,
-    /// i.e. have been previously returned by [`Table::insert`],
-    /// and not deleted since.
-    unsafe fn row_hash_for(&self, ptr: RowPointer) -> RowHash {
-        let mut hasher = RowHash::hasher_builder().build_hasher();
-        let (page, offset) = self.page_and_offset(ptr);
-        // SAFETY: Caller promised that `ptr` refers to a live fixed row in this table, so:
-        // 1. `offset` points at a row in `page` lasting `self.row_fixed_size` bytes.
-        // 2. the row must be valid for `self.row_layout`.
-        // 3. for any `vlr: VarLenRef` stored in the row,
-        //    `vlr.first_offset` is either `NULL` or points to a valid granule in `page`.
-        unsafe { hash_row_in_page(&mut hasher, page, offset, &self.row_layout) };
-        RowHash(hasher.finish())
     }
 }
 
