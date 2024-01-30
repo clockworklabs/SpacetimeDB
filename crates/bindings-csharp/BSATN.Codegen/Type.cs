@@ -172,7 +172,7 @@ public class Type : IIncrementalGenerator
                                 var name = m.Name;
                                 var fieldType = m.TypeSymbol.ToDisplayString();
 
-                                return $@"public record {name}({fieldType} Value) : {type.ShortName};";
+                                return $@"public sealed record {name}({fieldType} Value) : {type.ShortName};";
                             })
                         );
 
