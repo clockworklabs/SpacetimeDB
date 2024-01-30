@@ -1,11 +1,8 @@
 namespace SpacetimeDB;
 
 using System;
-using System.Collections;
-using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
-using static System.Text.Encoding;
 
 public static partial class RawBindings
 {

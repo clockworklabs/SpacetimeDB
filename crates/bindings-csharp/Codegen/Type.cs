@@ -3,9 +3,7 @@ namespace SpacetimeDB.Codegen;
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Globalization;
 using System.Linq;
-using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -64,8 +62,7 @@ public class Type : IIncrementalGenerator
     )
     {
         context
-            .SyntaxProvider
-            .ForAttributeWithMetadataName(
+            .SyntaxProvider.ForAttributeWithMetadataName(
                 fullyQualifiedMetadataName,
                 predicate: (node, ct) => predicate(node),
                 transform: (context, ct) =>
@@ -73,31 +70,25 @@ public class Type : IIncrementalGenerator
                     var type = (TypeDeclarationSyntax)context.TargetNode;
 
                     // Check if type implements generic `SpacetimeDB.TaggedEnum<Variants>` and, if so, extract the `Variants` type.
-                    var taggedEnumVariants = type.BaseList
-                        ?.Types
+                    var taggedEnumVariants = type.BaseList?.Types
                         .OfType<SimpleBaseTypeSyntax>()
                         .Select(t => context.SemanticModel.GetTypeInfo(t.Type, ct).Type)
                         .OfType<INamedTypeSymbol>()
-                        .Where(
-                            t =>
-                                t.OriginalDefinition.ToString()
-                                == "SpacetimeDB.TaggedEnum<Variants>"
+                        .Where(t =>
+                            t.OriginalDefinition.ToString() == "SpacetimeDB.TaggedEnum<Variants>"
                         )
-                        .Select(
-                            t =>
-                                (ImmutableArray<IFieldSymbol>?)
-                                    ((INamedTypeSymbol)t.TypeArguments[0]).TupleElements
+                        .Select(t =>
+                            (ImmutableArray<IFieldSymbol>?)
+                                ((INamedTypeSymbol)t.TypeArguments[0]).TupleElements
                         )
                         .FirstOrDefault();
 
-                    var fields = type.Members
-                        .OfType<FieldDeclarationSyntax>()
+                    var fields = type.Members.OfType<FieldDeclarationSyntax>()
                         .Where(f => !f.Modifiers.Any(m => m.IsKind(SyntaxKind.StaticKeyword)))
                         .SelectMany(f =>
                         {
                             var typeSymbol = context
-                                .SemanticModel
-                                .GetTypeInfo(f.Declaration.Type, ct)
+                                .SemanticModel.GetTypeInfo(f.Declaration.Type, ct)
                                 .Type!;
                             // Seems like a bug in Roslyn - nullability annotation is not set on the top type.
                             // Set it manually for now. TODO: report upstream.
@@ -107,16 +98,11 @@ public class Type : IIncrementalGenerator
                                     NullableAnnotation.Annotated
                                 );
                             }
-                            return f.Declaration
-                                .Variables
-                                .Select(
-                                    v =>
-                                        new VariableDeclaration
-                                        {
-                                            Name = v.Identifier.Text,
-                                            TypeSymbol = typeSymbol,
-                                        }
-                                );
+                            return f.Declaration.Variables.Select(v => new VariableDeclaration
+                            {
+                                Name = v.Identifier.Text,
+                                TypeSymbol = typeSymbol,
+                            });
                         });
 
                     if (taggedEnumVariants is not null)
@@ -126,10 +112,11 @@ public class Type : IIncrementalGenerator
                             throw new InvalidOperationException("Tagged enums cannot have fields.");
                         }
                         fields = taggedEnumVariants
-                            .Value
-                            .Select(
-                                v => new VariableDeclaration { Name = v.Name, TypeSymbol = v.Type, }
-                            )
+                            .Value.Select(v => new VariableDeclaration
+                            {
+                                Name = v.Name,
+                                TypeSymbol = v.Type,
+                            })
                             .ToArray();
                     }
 
@@ -139,10 +126,9 @@ public class Type : IIncrementalGenerator
                         FullName = SymbolToName(context.SemanticModel.GetDeclaredSymbol(type, ct)!),
                         GenericName = $"{type.Identifier}{type.TypeParameterList}",
                         IsTaggedEnum = taggedEnumVariants is not null,
-                        TypeParams = type.TypeParameterList
-                            ?.Parameters
+                        TypeParams = type.TypeParameterList?.Parameters
                             .Select(p => p.Identifier.Text)
-                            .ToArray() ?? new string[] { },
+                            .ToArray() ?? [],
                         Members = fields,
                     };
                 }
@@ -157,15 +143,12 @@ public class Type : IIncrementalGenerator
 
                     var typeDesc = "";
 
-                    var fieldIO = type.Members.Select(
-                        m =>
-                            new
-                            {
-                                m.Name,
-                                Read = $"{m.Name} = fieldTypeInfo.{m.Name}.Read(reader),",
-                                Write = $"fieldTypeInfo.{m.Name}.Write(writer, value.{m.Name});"
-                            }
-                    );
+                    var fieldIO = type.Members.Select(m => new
+                    {
+                        m.Name,
+                        Read = $"{m.Name} = fieldTypeInfo.{m.Name}.Read(reader),",
+                        Write = $"fieldTypeInfo.{m.Name}.Write(writer, value.{m.Name});"
+                    });
 
                     if (type.IsTaggedEnum)
                     {

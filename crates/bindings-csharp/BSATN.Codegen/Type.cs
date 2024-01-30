@@ -3,9 +3,7 @@ namespace SpacetimeDB.Codegen;
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Globalization;
 using System.Linq;
-using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -131,7 +129,7 @@ public class Type : IIncrementalGenerator
                         IsTaggedEnum = taggedEnumVariants is not null,
                         TypeParams = type.TypeParameterList?.Parameters
                             .Select(p => p.Identifier.Text)
-                            .ToArray() ?? new string[] { },
+                            .ToArray() ?? [],
                         Members = fields,
                     };
                 }
