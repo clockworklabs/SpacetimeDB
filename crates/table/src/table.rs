@@ -62,8 +62,8 @@ pub enum InsertError {
     Duplicate(RowPointer),
 
     /// Couldn't write the row to the page manager.
-    #[error("TODO(error-handling): describe possible failures in `write_row_to_pages`")]
-    WriteRowToPages,
+    #[error(transparent)]
+    Bflatn(#[from] super::bflatn_to::Error),
 
     /// Some index related error occurred.
     #[error(transparent)]
@@ -185,7 +185,7 @@ impl Table {
                 self.squashed_offset,
             )
         }
-        .map_err(|_| InsertError::WriteRowToPages)
+        .map_err(Into::into)
     }
 
     /// Finds the [`RowPointer`] to the row in `committed_table`

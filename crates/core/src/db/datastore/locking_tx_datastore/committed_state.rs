@@ -89,7 +89,7 @@ fn ignore_duplicate_insert<T>(res: std::result::Result<T, InsertError>) -> Resul
         Ok(_) => Ok(()),
         Err(InsertError::Duplicate(_)) => Ok(()),
         // TODO(error-handling): impl From<InsertError> for DBError.
-        Err(err) => Err(DBError::Other(anyhow!(err))),
+        Err(err) => Err(TableError::Insert(err).into()),
     }
 }
 
@@ -253,7 +253,7 @@ impl CommittedState {
         let blob_store = &mut self.blob_store;
         table
             .delete_equal_row(blob_store, rel)
-            .map_err(|e| anyhow!("Table::delete_equal_row failed: {:?}", e))?
+            .map_err(TableError::Insert)?
             .ok_or_else(|| anyhow!("Delete for non-existent row when replaying transaction"))?;
         Ok(())
     }
@@ -379,6 +379,10 @@ impl CommittedState {
         for (table_id, row_ptrs) in delete_tables {
             if self
                 .with_table_and_blob_store(table_id, |table, blob_store| {
+                    // Note: we maintain the invariant that the delete_tables
+                    // holds only committed rows which should be deleted,
+                    // i.e. `RowPointer`s with `SquashedOffset::COMMITTED_STATE`,
+                    // so no need to check before applying the deletes.
                     for row_ptr in row_ptrs.iter().copied() {
                         debug_assert!(row_ptr.squashed_offset().is_committed_state());
 
@@ -421,10 +425,7 @@ impl CommittedState {
                 table_id,
                 *tx_table.schema.clone(),
                 |commit_table, commit_blob_store| {
-                    if commit_table.schema != tx_table.schema {
-                        todo!("Determine how to handle a modified schema")
-                    }
-
+                    // For each newly-inserted row, insert it into the committed state.
                     for row_ref in tx_table.scan_rows(&tx_blob_store) {
                         let pv = row_ref.to_product_value();
                         commit_table
@@ -441,12 +442,18 @@ impl CommittedState {
                         });
                     }
 
+                    // Add all newly created indexes to the committed state.
                     for (cols, mut index) in std::mem::take(&mut tx_table.indexes) {
                         if !commit_table.indexes.contains_key(&cols) {
                             index.clear();
                             commit_table.insert_index(commit_blob_store, cols, index);
                         }
                     }
+
+                    // The schema may have been modified in the transaction.
+                    // Update this last to placate borrowck and avoid a clone.
+                    // None of the above operations will inspect the schema.
+                    commit_table.schema = tx_table.schema;
                 },
             );
         }

@@ -13,7 +13,10 @@ use super::{
 use core::mem;
 use core::ops::Index;
 use enum_as_inner::EnumAsInner;
-use spacetimedb_sats::{bsatn, AlgebraicType, AlgebraicValue, BuiltinType, ProductType, ProductValue, SumType};
+use spacetimedb_sats::{
+    bsatn, AlgebraicType, AlgebraicValue, BuiltinType, ProductType, ProductTypeElement, ProductValue, SumType,
+    SumTypeVariant,
+};
 
 /// Aligns a `base` offset to the `required_alignment` and returns it.
 ///
@@ -314,6 +317,8 @@ impl HasLayout for VarLenType {
     }
 }
 
+// # Conversions from `AlgebraicType` and friends
+
 impl From<AlgebraicType> for AlgebraicTypeLayout {
     fn from(ty: AlgebraicType) -> Self {
         match ty {
@@ -420,6 +425,110 @@ impl From<SumType> for SumTypeLayout {
         }
     }
 }
+
+// # Conversions to `AlgebraicType` and friends
+// Used for error reporting.
+
+impl AlgebraicTypeLayout {
+    /// Convert an `AlgebraicTypeLayout` back into an `AlgebraicType`,
+    /// removing layout information.
+    ///
+    /// This operation is O(n) in the number of nodes in the argument,
+    /// and may heap-allocate.
+    /// It is intended for use in error paths, where performance is a secondary concern.
+    pub fn algebraic_type(&self) -> AlgebraicType {
+        match self {
+            AlgebraicTypeLayout::Primitive(prim) => prim.algebraic_type(),
+            AlgebraicTypeLayout::VarLen(var_len) => var_len.algebraic_type(),
+            AlgebraicTypeLayout::Product(prod) => AlgebraicType::Product(prod.product_type()),
+            AlgebraicTypeLayout::Sum(sum) => AlgebraicType::Sum(sum.sum_type()),
+        }
+    }
+}
+
+impl PrimitiveType {
+    fn algebraic_type(&self) -> AlgebraicType {
+        match self {
+            PrimitiveType::Bool => AlgebraicType::Bool,
+            PrimitiveType::I8 => AlgebraicType::I8,
+            PrimitiveType::U8 => AlgebraicType::U8,
+            PrimitiveType::I16 => AlgebraicType::I16,
+            PrimitiveType::U16 => AlgebraicType::U16,
+            PrimitiveType::I32 => AlgebraicType::I32,
+            PrimitiveType::U32 => AlgebraicType::U32,
+            PrimitiveType::I64 => AlgebraicType::I64,
+            PrimitiveType::U64 => AlgebraicType::U64,
+            PrimitiveType::I128 => AlgebraicType::I128,
+            PrimitiveType::U128 => AlgebraicType::U128,
+            PrimitiveType::F32 => AlgebraicType::F32,
+            PrimitiveType::F64 => AlgebraicType::F64,
+        }
+    }
+}
+
+impl VarLenType {
+    fn algebraic_type(&self) -> AlgebraicType {
+        match self {
+            VarLenType::String => AlgebraicType::String,
+            VarLenType::Array(ty) => ty.as_ref().clone(),
+            VarLenType::Map(ty) => ty.as_ref().clone(),
+        }
+    }
+}
+
+impl ProductTypeLayout {
+    fn product_type(&self) -> ProductType {
+        ProductType {
+            elements: self
+                .elements
+                .iter()
+                .map(ProductTypeElementLayout::product_type_element)
+                .collect(),
+        }
+    }
+
+    /// Convert a `ProductTypeLayout` back into an `AlgebraicType::Product`,
+    /// removing layout information.
+    ///
+    /// This operation is O(n) in the number of nodes in the argument,
+    /// and will heap-allocate.
+    /// It is intended for use in error paths, where performance is a secondary concern.
+    pub fn algebraic_type(&self) -> AlgebraicType {
+        AlgebraicType::Product(self.product_type())
+    }
+}
+
+impl ProductTypeElementLayout {
+    fn product_type_element(&self) -> ProductTypeElement {
+        ProductTypeElement {
+            algebraic_type: self.ty.algebraic_type(),
+            name: self.name.clone(),
+        }
+    }
+}
+
+impl SumTypeLayout {
+    fn sum_type(&self) -> SumType {
+        SumType {
+            variants: self
+                .variants
+                .iter()
+                .map(SumTypeVariantLayout::sum_type_variant)
+                .collect(),
+        }
+    }
+}
+
+impl SumTypeVariantLayout {
+    fn sum_type_variant(&self) -> SumTypeVariant {
+        SumTypeVariant {
+            algebraic_type: self.ty.algebraic_type(),
+            name: self.name.clone(),
+        }
+    }
+}
+
+// # Inspecting layout
 
 impl SumTypeLayout {
     pub fn offset_of_variant_data(&self, _variant_tag: u8) -> usize {

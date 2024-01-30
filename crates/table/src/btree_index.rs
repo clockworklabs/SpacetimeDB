@@ -62,7 +62,7 @@ impl BTreeIndexRangeIter<'_> {
 /// A B-Tree based index on a set of [`ColId`]s of a table.
 pub struct BTreeIndex {
     /// The ID of this index.
-    pub(crate) index_id: IndexId,
+    pub index_id: IndexId,
     /// Whether this index is also a unique constraint.
     pub(crate) is_unique: bool,
     /// The actual index.

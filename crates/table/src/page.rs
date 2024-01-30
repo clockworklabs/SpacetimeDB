@@ -34,6 +34,13 @@ use core::{
     ops::ControlFlow,
     ptr,
 };
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("Unknown error in page")]
+    Todo,
+}
 
 // TODO(error-handling,integration): define an error type and return useful errors rather than `()`.
 
@@ -463,7 +470,7 @@ impl<'page> VarView<'page> {
     /// 2. The caller must initialize each granule with data for the claimed length
     ///    of the granule's data.
     #[allow(clippy::result_unit_err)] // TODO(error-handling,integration): useful error type
-    pub fn alloc_for_len(&mut self, obj_len: usize) -> Result<(VarLenRef, bool), ()> {
+    pub fn alloc_for_len(&mut self, obj_len: usize) -> Result<(VarLenRef, bool), Error> {
         // Safety post-requirements of `alloc_for_obj_common`:
         // 1. caller promised they will be satisfied.
         // 2a. already satisfied as the closure below returns all the summands of `obj_len`.
@@ -519,7 +526,7 @@ impl<'page> VarView<'page> {
     ///    has an initialized header and a data section initialized to at least
     ///    as many bytes as claimed by the header.
     #[allow(clippy::result_unit_err)] // TODO(error-handling,integration): useful error type
-    pub fn alloc_for_slice(&mut self, slice: &[u8]) -> Result<(VarLenRef, bool), ()> {
+    pub fn alloc_for_slice(&mut self, slice: &[u8]) -> Result<(VarLenRef, bool), Error> {
         let obj_len = slice.len();
         // Safety post-requirement 2. of `alloc_for_obj_common` is already satisfied
         // as `chunks(slice)` will return sub-slices where the sum is `obj_len`.
@@ -568,11 +575,11 @@ impl<'page> VarView<'page> {
         &mut self,
         obj_len: usize,
         chunks: impl Copy + FnOnce(usize) -> Cs,
-    ) -> Result<(VarLenRef, bool), ()> {
+    ) -> Result<(VarLenRef, bool), Error> {
         // Check that we have sufficient space to allocate `obj_len` bytes in var-len data.
         let (req_granules, enough_space, in_blob) = self.has_enough_space_for(obj_len);
         if !enough_space {
-            return Err(());
+            return Err(Error::Todo);
         }
 
         // For large blob objects, only reserve a granule.
@@ -620,7 +627,7 @@ impl<'page> VarView<'page> {
     /// The granule is left completely uninitialized.
     /// It is the caller's responsibility to initialize it with a [`BlobHash`](super::blob_hash::BlobHash).
     #[cold]
-    fn alloc_blob_hash(&mut self) -> Result<VarLenRef, ()> {
+    fn alloc_blob_hash(&mut self) -> Result<VarLenRef, Error> {
         // Var-len hashes are 32 bytes, which fits within a single granule.
         self.alloc_granule().map(VarLenRef::large_blob)
     }
@@ -698,10 +705,10 @@ impl<'page> VarView<'page> {
     /// This offset will be properly aligned for `VarLenGranule` when converted to a pointer.
     ///
     /// Returns an error when there are neither free granules nor space in the gap left.
-    fn alloc_granule(&mut self) -> Result<PageOffset, ()> {
+    fn alloc_granule(&mut self) -> Result<PageOffset, Error> {
         let uninit_granule = self
             .alloc_from_freelist()
-            .ok_or(())
+            .ok_or(Error::Todo)
             .or_else(|_| self.alloc_from_gap())?;
 
         debug_assert!(
@@ -730,14 +737,14 @@ impl<'page> VarView<'page> {
     /// Allocate a [`MaybeUninit<VarLenGranule>`](VarLenGranule) at the returned [`PageOffset`]
     /// taken from the gap, if there is space left, or error.
     #[inline]
-    fn alloc_from_gap(&mut self) -> Result<PageOffset, ()> {
+    fn alloc_from_gap(&mut self) -> Result<PageOffset, Error> {
         if gap_enough_size_for_row(self.header.first, self.last_fixed, VarLenGranule::SIZE) {
             // `var.first` points *at* the lowest-indexed var-len granule,
             // *not* before it, so pre-decrement.
             self.header.first -= VarLenGranule::SIZE;
             Ok(self.header.first)
         } else {
-            Err(())
+            Err(Error::Todo)
         }
     }
 
@@ -1147,7 +1154,7 @@ impl Page {
         var_len_objects: &[impl AsRef<[u8]>],
         var_len_visitor: &impl VarLenMembers,
         blob_store: &mut dyn BlobStore,
-    ) -> Result<PageOffset, ()> {
+    ) -> Result<PageOffset, Error> {
         // Allocate the fixed-len row.
         let fixed_row_size = Size(fixed_row.len() as u16);
         self.header.fixed.debug_check_fixed_row_size(fixed_row_size);
@@ -1193,11 +1200,11 @@ impl Page {
     /// `fixed_row_size` must be equal to the value passed
     /// to all other methods ever invoked on `self`.
     #[allow(clippy::result_unit_err)] // TODO(error-handling,integration): useful error type
-    pub unsafe fn alloc_fixed_len(&mut self, fixed_row_size: Size) -> Result<PageOffset, ()> {
+    pub unsafe fn alloc_fixed_len(&mut self, fixed_row_size: Size) -> Result<PageOffset, Error> {
         self.header.fixed.debug_check_fixed_row_size(fixed_row_size);
 
         self.alloc_fixed_len_from_freelist(fixed_row_size)
-            .ok_or(())
+            .ok_or(Error::Todo)
             .or_else(|_| self.alloc_fixed_len_from_gap(fixed_row_size))
     }
 
@@ -1213,7 +1220,7 @@ impl Page {
 
     /// Allocates a space for a fixed size row of `fixed_row_size` in the freelist, if possible.
     #[inline]
-    fn alloc_fixed_len_from_gap(&mut self, fixed_row_size: Size) -> Result<PageOffset, ()> {
+    fn alloc_fixed_len_from_gap(&mut self, fixed_row_size: Size) -> Result<PageOffset, Error> {
         if gap_enough_size_for_row(self.header.var.first, self.header.fixed.last, fixed_row_size) {
             // Enough space in the gap; move the high water mark and return the old HWM.
             // `fixed.last` points *after* the highest-indexed fixed-len row,
@@ -1224,7 +1231,7 @@ impl Page {
             Ok(ptr)
         } else {
             // Not enough space in the gap for another row!
-            Err(())
+            Err(Error::Todo)
         }
     }
 
@@ -1513,7 +1520,7 @@ impl Page {
         src_vlr: VarLenRef,
         dst_var: &mut VarView<'_>,
         blob_store: &mut dyn BlobStore,
-    ) -> Result<VarLenRef, ()> {
+    ) -> Result<VarLenRef, Error> {
         // SAFETY: Caller promised that `src_vlr.first_granule` points to a valid granule is be NULL.
         let mut iter = unsafe { self.iter_var_len_object(src_vlr.first_granule) };
 

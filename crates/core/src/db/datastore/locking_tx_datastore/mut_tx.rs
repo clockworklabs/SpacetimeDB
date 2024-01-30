@@ -7,7 +7,7 @@ use super::{
     SharedMutexGuard, SharedWriteGuard,
 };
 use crate::db::datastore::system_tables::{
-    table_name_is_system, StColumnRow, StConstraintFields, StConstraintRow, StIndexFields, StIndexRow,
+    table_name_is_system, StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StIndexFields, StIndexRow,
     StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMNS_ID, ST_CONSTRAINTS_ID,
     ST_INDEXES_ID, ST_SEQUENCES_ID, ST_TABLES_ID,
 };
@@ -17,8 +17,7 @@ use crate::{
     error::{DBError, IndexError, SequenceError, TableError},
     execution_context::ExecutionContext,
 };
-use anyhow::anyhow;
-use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
+use spacetimedb_primitives::{ColId, ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::{
     db::{
         def::{
@@ -56,6 +55,30 @@ pub struct MutTxId {
 }
 
 impl MutTxId {
+    fn drop_col_eq(
+        &mut self,
+        table_id: TableId,
+        col_pos: ColId,
+        value: AlgebraicValue,
+        database_address: Address,
+    ) -> Result<()> {
+        let ctx = ExecutionContext::internal(database_address);
+        let rows = self.iter_by_col_eq(&ctx, &table_id, col_pos.into(), value)?;
+        let ptrs_to_delete = rows.map(|row_ref| row_ref.pointer()).collect::<Vec<_>>();
+        if ptrs_to_delete.is_empty() {
+            return Err(TableError::IdNotFound(SystemTable::st_columns, col_pos.0).into());
+        }
+
+        for ptr in ptrs_to_delete {
+            // TODO(error-handling,bikeshedding): Consider correct failure semantics here.
+            // We can't really roll back the operation,
+            // but we could conceivably attempt all the deletions rather than stopping at the first error.
+            self.delete(table_id, ptr)?;
+        }
+
+        Ok(())
+    }
+
     fn validate_table(table_schema: &TableDef) -> Result<()> {
         if table_name_is_system(&table_schema.table_name) {
             return Err(TableError::System(table_schema.table_name.clone()).into());
@@ -172,12 +195,67 @@ impl MutTxId {
         })
     }
 
-    pub fn drop_table(&mut self, _table_id: TableId, _database_address: Address) -> Result<()> {
-        unimplemented!("Phoebe remains unconvinced that dynamic schema modifications are a good idea")
+    pub fn drop_table(&mut self, table_id: TableId, database_address: Address) -> Result<()> {
+        let schema = self
+            .schema_for_table(&ExecutionContext::internal(database_address), table_id)?
+            .into_owned();
+
+        for row in schema.indexes {
+            self.drop_index(row.index_id, database_address)?;
+        }
+
+        for row in schema.sequences {
+            self.drop_sequence(row.sequence_id, database_address)?;
+        }
+
+        for row in schema.constraints {
+            self.drop_constraint(row.constraint_id, database_address)?;
+        }
+
+        // Drop the table and their columns
+        self.drop_col_eq(
+            ST_TABLES_ID,
+            StTableFields::TableId.col_id(),
+            table_id.into(),
+            database_address,
+        )?;
+        self.drop_col_eq(
+            ST_COLUMNS_ID,
+            StColumnFields::TableId.col_id(),
+            table_id.into(),
+            database_address,
+        )?;
+
+        // Delete the table and its rows and indexes from memory.
+        // TODO: This needs to not remove it from the committed state, because it can still be rolled back.
+        // We will have to store the deletion in the TxState and then apply it to the CommittedState in commit.
+
+        // NOT use unwrap
+        self.committed_state_write_lock.tables.remove(&table_id);
+        Ok(())
     }
 
-    pub fn rename_table(&mut self, _table_id: TableId, _new_name: &str, _database_address: Address) -> Result<()> {
-        unimplemented!("Phoebe remains unconvinced that dynamic schema modifications are a good idea")
+    pub fn rename_table(&mut self, table_id: TableId, new_name: &str, database_address: Address) -> Result<()> {
+        let ctx = ExecutionContext::internal(database_address);
+
+        let st_table_ref = self
+            .iter_by_col_eq(
+                &ctx,
+                &ST_TABLES_ID,
+                StTableFields::TableId.col_id().into(),
+                table_id.into(),
+            )?
+            .next()
+            .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, table_id.into()))?;
+        let st = st_table_ref.to_product_value();
+        let mut st = StTableRow::try_from(&st)?.to_owned();
+        let st_table_ptr = st_table_ref.pointer();
+
+        self.delete(ST_TABLES_ID, st_table_ptr)?;
+        // Update the table's name in st_tables.
+        st.table_name = new_name.to_string();
+        self.insert(ST_TABLES_ID, &mut st.into(), database_address)?;
+        Ok(())
     }
 
     pub fn table_id_from_name(&self, table_name: &str, database_address: Address) -> Result<Option<TableId>> {
@@ -292,8 +370,53 @@ impl MutTxId {
         Ok(())
     }
 
-    pub fn drop_index(&mut self, _index_id: IndexId, _database_address: Address) -> Result<()> {
-        unimplemented!("Phoebe remains unconvinced that dynamic schema modifications are a good idea")
+    pub fn drop_index(&mut self, index_id: IndexId, database_address: Address) -> Result<()> {
+        log::trace!("INDEX DROPPING: {}", index_id);
+        let ctx = ExecutionContext::internal(database_address);
+
+        let st_index_ref = self
+            .iter_by_col_eq(
+                &ctx,
+                &ST_INDEXES_ID,
+                StIndexFields::IndexId.col_id().into(),
+                index_id.into(),
+            )?
+            .next()
+            .ok_or_else(|| TableError::IdNotFound(SystemTable::st_indexes, index_id.into()))?;
+        let st = st_index_ref.to_product_value();
+        let st = StIndexRow::try_from(&st)?.to_owned();
+        let table_id = st.table_id;
+        let st_index_ptr = st_index_ref.pointer();
+
+        // Remove the index from st_indexes.
+        self.delete(ST_INDEXES_ID, st_index_ptr)?;
+
+        let clear_indexes = |table: &mut Table| {
+            let cols: Vec<_> = table
+                .indexes
+                .iter()
+                .filter(|(_cols, idx)| idx.index_id == index_id)
+                .map(|(cols, _idx)| cols.clone())
+                .collect();
+
+            for col in cols {
+                table.schema.indexes.retain(|x| x.columns != col);
+                table.indexes.remove(&col);
+            }
+        };
+
+        for (_, table) in self.committed_state_write_lock.tables.iter_mut() {
+            // TODO: Transactionality.
+            // Currently, it appears that a TX which drops an index and then aborts
+            // will leave the index dropped, rather than restoring it.
+            clear_indexes(table);
+        }
+        if let Some((insert_table, _)) = self.tx_state.get_table_and_blob_store_mut(table_id) {
+            clear_indexes(insert_table);
+        }
+
+        log::trace!("INDEX DROPPED: {}", index_id);
+        Ok(())
     }
 
     pub fn index_id_from_name(&self, index_name: &str, database_address: Address) -> Result<Option<IndexId>> {
@@ -407,8 +530,34 @@ impl MutTxId {
         Ok(sequence_id)
     }
 
-    pub fn drop_sequence(&mut self, _sequence_id: SequenceId, _database_address: Address) -> Result<()> {
-        unimplemented!("Phoebe remains unconvinced that dynamic schema modifications are a good idea")
+    pub fn drop_sequence(&mut self, sequence_id: SequenceId, database_address: Address) -> Result<()> {
+        let ctx = ExecutionContext::internal(database_address);
+
+        let st_sequence_ref = self
+            .iter_by_col_eq(
+                &ctx,
+                &ST_SEQUENCES_ID,
+                StSequenceFields::SequenceId.col_id().into(),
+                sequence_id.into(),
+            )?
+            .next()
+            .ok_or_else(|| TableError::IdNotFound(SystemTable::st_sequence, sequence_id.into()))?;
+        let st = st_sequence_ref.to_product_value();
+        let st = StSequenceRow::try_from(&st)?.to_owned();
+        let st_sequence_ptr = st_sequence_ref.pointer();
+        let table_id = st.table_id;
+
+        self.delete(ST_SEQUENCES_ID, st_sequence_ptr)?;
+
+        // TODO: Transactionality.
+        // Currently, a TX which drops a sequence then aborts
+        // will leave the sequence deleted,
+        // rather than restoring it during rollback.
+        self.sequence_state_lock.remove(sequence_id);
+        if let Some((insert_table, _)) = self.tx_state.get_table_and_blob_store_mut(table_id) {
+            insert_table.schema.remove_sequence(sequence_id);
+        }
+        Ok(())
     }
 
     pub fn sequence_id_from_name(&self, seq_name: &str, database_address: Address) -> Result<Option<SequenceId>> {
@@ -479,8 +628,34 @@ impl MutTxId {
             .ok_or_else(|| TableError::IdNotFoundState(table_id).into())
     }
 
-    pub fn drop_constraint(&mut self, _constraint_id: ConstraintId, _database_address: Address) -> Result<()> {
-        unimplemented!("Phoebe remains unconvinced that dynamic schema modifications are a good idea")
+    pub fn drop_constraint(&mut self, constraint_id: ConstraintId, database_address: Address) -> Result<()> {
+        let ctx = ExecutionContext::internal(database_address);
+
+        let st_constraint_ref = self
+            .iter_by_col_eq(
+                &ctx,
+                &ST_CONSTRAINTS_ID,
+                StConstraintFields::ConstraintId.col_id().into(),
+                constraint_id.into(),
+            )?
+            .next()
+            .ok_or_else(|| TableError::IdNotFound(SystemTable::st_constraints, constraint_id.into()))?;
+        let st = st_constraint_ref.to_product_value();
+        let st = StConstraintRow::try_from(&st)?;
+        let st_constraint_ptr = st_constraint_ref.pointer();
+
+        let table_id = st.table_id;
+
+        self.delete(ST_CONSTRAINTS_ID, st_constraint_ptr)?;
+
+        if let Some((insert_table, _)) = self.tx_state.get_table_and_blob_store_mut(table_id) {
+            // TODO: Transactionality.
+            // Currently, it appears that a TX which drops a constraint and then aborts
+            // will leave the constraint dropped, rather than restoring it.
+            insert_table.schema.remove_constraint(constraint_id);
+        }
+
+        Ok(())
     }
 
     pub fn constraint_id_from_name(
@@ -666,12 +841,12 @@ impl MutTxId {
             // `row` previously present in insert tables; do nothing.
             Err(InsertError::Duplicate(_)) => Ok(()),
 
-            // Index error: return more structured error type
-            // rather than `anyhow::Error`.
+            // Index error: unbox and return `TableError::IndexError`
+            // rather than `TableError::Insert(InsertError::IndexError)`.
             Err(InsertError::IndexError(e)) => Err(IndexError::from(e).into()),
 
             // Misc. insertion error; fail.
-            Err(e) => Err(anyhow!("Table::insert failed: {:?}", e).into()),
+            Err(e) => Err(TableError::Insert(e).into()),
         }
     }
 
@@ -728,9 +903,7 @@ impl MutTxId {
         // We need `insert_internal_allow_duplicate` rather than `insert` here
         // to bypass unique constraint checks.
         match tx_table.insert_internal_allow_duplicate(tx_blob_store, rel) {
-            Err(InsertError::WriteRowToPages) => {
-                Err(anyhow!("Table::insert failed: {:?}", InsertError::WriteRowToPages).into())
-            }
+            Err(err @ InsertError::Bflatn(_)) => Err(TableError::Insert(err).into()),
             Err(e) => unreachable!(
                 "Table::insert_internal_allow_duplicates returned error of unexpected variant: {:?}",
                 e
@@ -738,8 +911,6 @@ impl MutTxId {
             Ok(ptr) => {
                 // Safety: `ptr` must be valid, because we just inserted it and haven't deleted it since.
                 let hash = unsafe { tx_table.row_hash_for(ptr) };
-
-                dbg!((ptr, hash));
 
                 // First, check if a matching row exists in the `tx_table`.
                 // If it does, no need to check the `commit_table`.

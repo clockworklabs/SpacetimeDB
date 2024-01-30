@@ -1333,7 +1333,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_cascade_drop_table() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
@@ -1423,7 +1422,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_rename_table() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 

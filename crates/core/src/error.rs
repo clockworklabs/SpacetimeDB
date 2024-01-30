@@ -5,7 +5,7 @@ use std::sync::{MutexGuard, PoisonError};
 
 use hex::FromHexError;
 use spacetimedb_sats::AlgebraicType;
-use spacetimedb_table::table::UniqueConstraintViolation;
+use spacetimedb_table::table::{self, UniqueConstraintViolation};
 use thiserror::Error;
 
 use crate::client::ClientActorId;
@@ -59,6 +59,8 @@ pub enum TableError {
         expect: String,
         found: String,
     },
+    #[error(transparent)]
+    Insert(#[from] table::InsertError),
 }
 
 #[derive(Error, Debug, PartialEq, Eq)]
