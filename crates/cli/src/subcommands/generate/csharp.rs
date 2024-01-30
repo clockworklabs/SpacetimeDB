@@ -1262,6 +1262,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
     writeln!(output, "using System;").unwrap();
     writeln!(output, "using ClientApi;").unwrap();
     writeln!(output, "using Newtonsoft.Json.Linq;").unwrap();
+    writeln!(output, "using CommunityToolkit.HighPerformance;").unwrap();
     if namespace != "SpacetimeDB" {
         writeln!(output, "using SpacetimeDB;").unwrap();
     }
@@ -1432,29 +1433,13 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
         {
             indent_scope!(output);
 
-            writeln!(output, "var args = new {func_name_pascal_case}ArgsStruct();").unwrap();
-            writeln!(output, "var bsatnBytes = dbEvent.FunctionCall.ArgBytes;").unwrap();
-            writeln!(output, "using var ms = new System.IO.MemoryStream();").unwrap();
-            writeln!(output, "ms.SetLength(bsatnBytes.Length);").unwrap();
-            writeln!(output, "bsatnBytes.CopyTo(ms.GetBuffer(), 0);").unwrap();
-            writeln!(output, "ms.Position = 0;").unwrap();
-            writeln!(output, "using var reader = new System.IO.BinaryReader(ms);").unwrap();
-            for (i, arg) in reducer.args.iter().enumerate() {
-                let arg_name = arg
-                    .name
-                    .clone()
-                    .unwrap_or_else(|| format!("arg_{}", i))
-                    .to_case(Case::Pascal);
-                let algebraic_type = convert_algebraic_type(ctx, &arg.algebraic_type, namespace);
-                writeln!(
-                    output,
-                    "var args_{i}_value = SpacetimeDB.SATS.AlgebraicValue.Deserialize({algebraic_type}, reader);"
-                )
-                .unwrap();
-                let convert = convert_type(ctx, 0, &arg.algebraic_type, format!("args_{i}_value"), namespace);
-                writeln!(output, "args.{arg_name} = {convert};").unwrap();
-            }
-
+            writeln!(
+                output,
+                "using var stream = dbEvent.FunctionCall.ArgBytes.Memory.AsStream();"
+            )
+            .unwrap();
+            writeln!(output, "using var reader = new System.IO.BinaryReader(stream);").unwrap();
+            writeln!(output, "var args = {func_name_pascal_case}ArgsStruct.Read(reader);").unwrap();
             writeln!(output, "dbEvent.FunctionCall.CallInfo = new ReducerEvent(ReducerType.{func_name_pascal_case}, \"{func_name}\", dbEvent.Timestamp, Identity.From(dbEvent.CallerIdentity.ToByteArray()), Address.From(dbEvent.CallerAddress.ToByteArray()), dbEvent.Message, dbEvent.Status, args);").unwrap();
         }
 
