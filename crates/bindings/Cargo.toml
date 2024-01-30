@@ -23,6 +23,7 @@ spacetimedb-lib.workspace = true
 spacetimedb-bindings-macro.workspace = true
 spacetimedb-primitives.workspace = true
 
+chrono.workspace = true
 derive_more.workspace = true
 log.workspace = true
 scoped-tls.workspace = true

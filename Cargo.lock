@@ -4152,6 +4152,7 @@ dependencies = [
 name = "spacetimedb"
 version = "0.9.3"
 dependencies = [
+ "chrono",
  "derive_more",
  "getrandom",
  "log",
