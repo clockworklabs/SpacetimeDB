@@ -13,6 +13,7 @@ use crate::{
             system_tables::{Epoch, StModuleRow, StTableRow, ST_MODULE_ID, ST_TABLES_ID, WASM_MODULE},
             traits::{DataRow, MutProgrammable, MutTx, MutTxDatastore, Programmable, Tx, TxData, TxDatastore},
         },
+        db_metrics::{DB_METRICS, MAX_TX_CPU_TIME},
         messages::{transaction::Transaction, write::Operation},
         ostorage::ObjectDB,
     },
@@ -113,6 +114,7 @@ impl Locking {
             let schema = committed_state
                 .schema_for_table(&ExecutionContext::default(), table_id)?
                 .into_owned();
+            let table_name = schema.table_name.clone();
             let row_type = schema.get_row_type();
 
             let decode_row = |mut data: &[u8], source: &str| {
@@ -141,11 +143,11 @@ impl Locking {
                 Operation::Delete => {
                     committed_state
                         .replay_delete_by_rel(table_id, &row)
-                        .expect("Error deleting row while replaying transaction")
-                    // METRICS
-                    //     .rdb_num_table_rows
-                    //     .with_label_values(&self.database_address, &table_id.into())
-                    //     .dec();
+                        .expect("Error deleting row while replaying transaction");
+                    DB_METRICS
+                        .rdb_num_table_rows
+                        .with_label_values(&self.database_address, &table_id.into(), &table_name)
+                        .dec();
                 }
                 Operation::Insert => {
                     committed_state.with_table_and_blob_store_or_create_ref_schema(
@@ -158,10 +160,10 @@ impl Locking {
                         },
                     );
 
-                    // METRICS
-                    //     .rdb_num_table_rows
-                    //     .with_label_values(&self.database_address, &table_id.into())
-                    //     .inc();
+                    DB_METRICS
+                        .rdb_num_table_rows
+                        .with_label_values(&self.database_address, &table_id.into(), &table_name)
+                        .inc();
                 }
             }
         }
@@ -447,75 +449,74 @@ impl MutTx for Locking {
         }
     }
 
-    fn rollback_mut_tx(&self, _ctx: &ExecutionContext, tx: Self::MutTx) {
-        // let workload = &ctx.workload();
-        // let db = &ctx.database();
-        // let reducer = ctx.reducer_name().unwrap_or_default();
-        // let elapsed_time = tx.timer.elapsed();
-        // let cpu_time = elapsed_time - tx.lock_wait_time;
-        // DB_METRICS
-        //     .rdb_num_txns
-        //     .with_label_values(workload, db, reducer, &false)
-        //     .inc();
-        // DB_METRICS
-        //     .rdb_txn_cpu_time_sec
-        //     .with_label_values(workload, db, reducer)
-        //     .observe(cpu_time.as_secs_f64());
-        // DB_METRICS
-        //     .rdb_txn_elapsed_time_sec
-        //     .with_label_values(workload, db, reducer)
-        //     .observe(elapsed_time.as_secs_f64());
+    fn rollback_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) {
+        let workload = &ctx.workload();
+        let db = &ctx.database();
+        let reducer = ctx.reducer_name();
+        let elapsed_time = tx.timer.elapsed();
+        let cpu_time = elapsed_time - tx.lock_wait_time;
+        #[cfg(feature = "metrics")]
+        DB_METRICS
+            .rdb_num_txns
+            .with_label_values(workload, db, reducer, &false)
+            .inc();
+
+        #[cfg(feature = "metrics")]
+        DB_METRICS
+            .rdb_txn_cpu_time_sec
+            .with_label_values(workload, db, reducer)
+            .observe(cpu_time.as_secs_f64());
+
+        #[cfg(feature = "metrics")]
+        DB_METRICS
+            .rdb_txn_elapsed_time_sec
+            .with_label_values(workload, db, reducer)
+            .observe(elapsed_time.as_secs_f64());
         tx.rollback();
     }
 
-    fn commit_mut_tx(&self, _ctx: &ExecutionContext, tx: Self::MutTx) -> Result<Option<TxData>> {
-        // let workload = &ctx.workload();
-        // let db = &ctx.database();
-        // let reducer = ctx.reducer_name().unwrap_or_default();
-        // let elapsed_time = tx.timer.elapsed();
-        // let cpu_time = elapsed_time - tx.lock_wait_time;
+    fn commit_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) -> Result<Option<TxData>> {
+        #[cfg(feature = "metrics")]
+        {
+            let workload = &ctx.workload();
+            let db = &ctx.database();
+            let reducer = ctx.reducer_name();
+            let elapsed_time = tx.timer.elapsed();
+            let cpu_time = elapsed_time - tx.lock_wait_time;
 
-        // let elapsed_time = elapsed_time.as_secs_f64();
-        // let cpu_time = cpu_time.as_secs_f64();
-        // Note, we record empty transactions in our metrics.
-        // That is, transactions that don't write any rows to the commit log.
-        // DB_METRICS
-        //     .rdb_num_txns
-        //     .with_label_values(workload, db, reducer, &true)
-        //     .inc();
-        // DB_METRICS
-        //     .rdb_txn_cpu_time_sec
-        //     .with_label_values(workload, db, reducer)
-        //     .observe(cpu_time);
-        // DB_METRICS
-        //     .rdb_txn_elapsed_time_sec
-        //     .with_label_values(workload, db, reducer)
-        //     .observe(elapsed_time);
+            let elapsed_time = elapsed_time.as_secs_f64();
+            let cpu_time = cpu_time.as_secs_f64();
+            // Note, we record empty transactions in our metrics.
+            // That is, transactions that don't write any rows to the commit log.
+            DB_METRICS
+                .rdb_num_txns
+                .with_label_values(workload, db, reducer, &true)
+                .inc();
+            DB_METRICS
+                .rdb_txn_cpu_time_sec
+                .with_label_values(workload, db, reducer)
+                .observe(cpu_time);
+            DB_METRICS
+                .rdb_txn_elapsed_time_sec
+                .with_label_values(workload, db, reducer)
+                .observe(elapsed_time);
 
-        // fn hash(a: &WorkloadType, b: &Address, c: &str) -> u64 {
-        //     use std::hash::Hash;
-        //     let mut hasher = DefaultHasher::new();
-        //     a.hash(&mut hasher);
-        //     b.hash(&mut hasher);
-        //     c.hash(&mut hasher);
-        //     hasher.finish()
-        // }
+            let mut guard = MAX_TX_CPU_TIME.lock().unwrap();
+            let max_cpu_time = *guard
+                .entry((*db, *workload, reducer.to_owned()))
+                .and_modify(|max| {
+                    if cpu_time > *max {
+                        *max = cpu_time;
+                    }
+                })
+                .or_insert_with(|| cpu_time);
 
-        // let mut guard = MAX_TX_CPU_TIME.lock().unwrap();
-        // let max_cpu_time = *guard
-        //     .entry(hash(workload, db, reducer))
-        //     .and_modify(|max| {
-        //         if cpu_time > *max {
-        //             *max = cpu_time;
-        //         }
-        //     })
-        //     .or_insert_with(|| cpu_time);
-
-        // drop(guard);
-        // DB_METRICS
-        //     .rdb_txn_cpu_time_sec_max
-        //     .with_label_values(workload, db, reducer)
-        //     .set(max_cpu_time);
+            drop(guard);
+            DB_METRICS
+                .rdb_txn_cpu_time_sec_max
+                .with_label_values(workload, db, reducer)
+                .set(max_cpu_time);
+        }
 
         Ok(Some(tx.commit()))
     }
