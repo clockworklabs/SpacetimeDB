@@ -1248,8 +1248,27 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
 
     let mut output = CodeIndenter::new(String::new());
 
-    let mut func_arguments: String = String::new();
-    let mut arg_types: String = String::new();
+    let mut func_params: String = String::new();
+    let mut struct_fields: String = String::new();
+    let mut field_inits: String = String::new();
+
+    for (arg_i, arg) in reducer.args.iter().enumerate() {
+        let name = arg
+            .name
+            .as_deref()
+            .unwrap_or_else(|| panic!("reducer args should have names: {}", func_name));
+        let arg_name = name.to_case(Case::Camel);
+        let field_name = name.to_case(Case::Pascal);
+        let arg_type_str = ty_fmt(ctx, &arg.algebraic_type, namespace);
+
+        if arg_i != 0 {
+            func_params.push_str(", ");
+            field_inits.push_str(", ");
+        }
+        write!(func_params, "{arg_type_str} {arg_name}").unwrap();
+        write!(struct_fields, "public {arg_type_str} {field_name};").unwrap();
+        write!(field_inits, "{field_name} = {arg_name}").unwrap();
+    }
 
     writeln!(
         output,
@@ -1280,66 +1299,11 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
 
     {
         indent_scope!(output);
-        let mut json_args = String::new();
-        for (arg_i, arg) in reducer.args.iter().enumerate() {
-            let name = arg
-                .name
-                .as_deref()
-                .unwrap_or_else(|| panic!("reducer args should have names: {}", func_name));
-            let arg_name = name.to_case(Case::Camel);
-            let arg_type_str = ty_fmt(ctx, &arg.algebraic_type, namespace);
 
-            if !json_args.is_empty() {
-                json_args.push_str(", ");
-            }
-
-            match &arg.algebraic_type {
-                AlgebraicType::Sum(sum_type) => {
-                    if sum_type.as_option().is_some() {
-                        json_args.push_str(&format!("new SpacetimeDB.SomeWrapper<{}>({})", arg_type_str, arg_name));
-                    } else {
-                        json_args.push_str(&arg_name);
-                    }
-                }
-                AlgebraicType::Product(_) => {
-                    json_args.push_str(arg_name.as_str());
-                }
-                Builtin(_) => {
-                    json_args.push_str(arg_name.as_str());
-                }
-                AlgebraicType::Ref(type_ref) => {
-                    let ref_type = &ctx.typespace.types[type_ref.idx()];
-                    if let AlgebraicType::Sum(sum_type) = ref_type {
-                        if is_enum(sum_type) {
-                            json_args.push_str(
-                                format!("new SpacetimeDB.EnumWrapper<{}>({})", arg_type_str, arg_name).as_str(),
-                            );
-                        } else {
-                            unimplemented!()
-                        }
-                    } else {
-                        json_args.push_str(arg_name.as_str());
-                    }
-                }
-            }
-
-            if arg_i > 0 {
-                func_arguments.push_str(", ");
-            }
-            arg_types.push_str(", ");
-
-            write!(func_arguments, "{} {}", arg_type_str, arg_name).unwrap();
-            write!(arg_types, "{}", arg_type_str).unwrap();
-        }
-
-        let delegate_args = if !reducer.args.is_empty() {
-            format!(", {}", func_arguments.clone())
-        } else {
-            func_arguments.clone()
-        };
+        let delegate_separator = if !reducer.args.is_empty() { ", " } else { "" };
         writeln!(
             output,
-            "public delegate void {func_name_pascal_case}Handler(ReducerEvent reducerEvent{delegate_args});"
+            "public delegate void {func_name_pascal_case}Handler(ReducerEvent reducerEvent{delegate_separator}{func_params});"
         )
         .unwrap();
         writeln!(
@@ -1350,26 +1314,26 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
 
         writeln!(output).unwrap();
 
-        writeln!(output, "public static void {func_name_pascal_case}({func_arguments})").unwrap();
+        writeln!(output, "public static void {func_name_pascal_case}({func_params})").unwrap();
         writeln!(output, "{{").unwrap();
         {
             indent_scope!(output);
 
             // Tell the network manager to send this message
-            writeln!(output, "var _argArray = new object[] {{{}}};", json_args).unwrap();
-            writeln!(output, "var _message = new SpacetimeDBClient.ReducerCallRequest {{").unwrap();
-            {
-                indent_scope!(output);
-                writeln!(output, "fn = \"{}\",", reducer.name).unwrap();
-                writeln!(output, "args = _argArray,").unwrap();
-            }
-            writeln!(output, "}};").unwrap();
+            writeln!(output, "using var stream = new MemoryStream();").unwrap();
+            writeln!(output, "using var writer = new BinaryWriter(stream);").unwrap();
+            writeln!(
+                output,
+                "{func_name_pascal_case}ArgsStruct.Write(writer, new {func_name_pascal_case}ArgsStruct {{ {field_inits} }});"
+            )
+            .unwrap();
 
             writeln!(
                 output,
-                "SpacetimeDBClient.instance.InternalCallReducer(Newtonsoft.Json.JsonConvert.SerializeObject(_message, _settings));"
+                "SpacetimeDBClient.instance.InternalCallReducer(\"{reducer_name}\", stream.ToArray());",
+                reducer_name = reducer.name
             )
-                .unwrap();
+            .unwrap();
         }
         // Closing brace for reducer
         writeln!(output, "}}").unwrap();
@@ -1452,21 +1416,8 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
 
     //Args struct
     writeln!(output, "[SpacetimeDB.Type]").unwrap();
-    writeln!(output, "public partial class {func_name_pascal_case}ArgsStruct").unwrap();
-    writeln!(output, "{{").unwrap();
-    {
-        indent_scope!(output);
-        for (i, arg) in reducer.args.iter().enumerate() {
-            let arg_name = arg
-                .name
-                .clone()
-                .unwrap_or_else(|| format!("arg_{}", i))
-                .to_case(Case::Pascal);
-            let cs_type = ty_fmt(ctx, &arg.algebraic_type, namespace);
-            writeln!(output, "public {cs_type} {arg_name};").unwrap();
-        }
-    }
-    // Closing brace for struct ReducerArgs
+    writeln!(output, "public partial class {func_name_pascal_case}ArgsStruct {{").unwrap();
+    writeln!(output, "{struct_fields}").unwrap();
     writeln!(output, "}}").unwrap();
     writeln!(output).unwrap();
 
