@@ -463,6 +463,7 @@ pub fn autogen_csharp_enum(ctx: &GenCtx, name: &str, sum_type: &SumType, namespa
                     writeln!(output, "{{").unwrap();
                     {
                         indent_scope!(output);
+                        writeln!(output, "[SpacetimeDB.Type]").unwrap();
                         writeln!(output, "public enum {}", sum_type_name).unwrap();
                         writeln!(output, "{{").unwrap();
                         {
@@ -609,6 +610,7 @@ fn autogen_csharp_product_table_common(
             "[Newtonsoft.Json.JsonObject(Newtonsoft.Json.MemberSerialization.OptIn)]"
         )
         .unwrap();
+        writeln!(output, "[SpacetimeDB.Type]").unwrap();
         writeln!(output, "public partial class {name} : IDatabaseTable").unwrap();
         writeln!(output, "{{").unwrap();
         {
@@ -1464,6 +1466,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
     writeln!(output).unwrap();
 
     //Args struct
+    writeln!(output, "[SpacetimeDB.Type]").unwrap();
     writeln!(output, "public partial class {func_name_pascal_case}ArgsStruct").unwrap();
     writeln!(output, "{{").unwrap();
     {
