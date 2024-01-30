@@ -21,6 +21,7 @@ spacetimedb-lib = { path = "../lib", default-features = false, version = "0.8.1"
 spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.8.1"}
 spacetimedb-primitives = { path = "../primitives", version = "0.8.1" }
 
+chrono.workspace = true
 derive_more.workspace = true
 log.workspace = true
 once_cell.workspace = true
