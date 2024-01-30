@@ -605,11 +605,6 @@ fn autogen_csharp_product_table_common(
     writeln!(output, "{{").unwrap();
     {
         indent_scope!(output);
-        writeln!(
-            output,
-            "[Newtonsoft.Json.JsonObject(Newtonsoft.Json.MemberSerialization.OptIn)]"
-        )
-        .unwrap();
         writeln!(output, "[SpacetimeDB.Type]").unwrap();
         writeln!(output, "public partial class {name} : IDatabaseTable").unwrap();
         writeln!(output, "{{").unwrap();
@@ -622,36 +617,6 @@ fn autogen_csharp_product_table_common(
                     .as_ref()
                     .expect("autogen'd tuples should have field names")
                     .replace("r#", "");
-                writeln!(output, "[Newtonsoft.Json.JsonProperty(\"{field_name}\")]").unwrap();
-                match &field.algebraic_type {
-                    Builtin(BuiltinType::Array(ArrayType { elem_ty: array_type })) => {
-                        if let Builtin(BuiltinType::U8) = **array_type {
-                            writeln!(
-                                output,
-                                "[Newtonsoft.Json.JsonConverter(typeof(SpacetimeDB.ByteArrayConverter))]"
-                            )
-                            .unwrap();
-                        }
-                    }
-                    AlgebraicType::Sum(sum) => {
-                        if sum.as_option().is_some() {
-                            writeln!(output, "[SpacetimeDB.Some]").unwrap();
-                        } else {
-                            unimplemented!()
-                        }
-                    }
-                    AlgebraicType::Ref(type_ref) => {
-                        let ref_type = &ctx.typespace.types[type_ref.idx()];
-                        if let AlgebraicType::Sum(sum_type) = ref_type {
-                            if is_enum(sum_type) {
-                                writeln!(output, "[SpacetimeDB.Enum]").unwrap();
-                            } else {
-                                unimplemented!()
-                            }
-                        }
-                    }
-                    _ => {}
-                }
 
                 writeln!(
                     output,
@@ -1280,7 +1245,6 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
 
     writeln!(output, "using System;").unwrap();
     writeln!(output, "using ClientApi;").unwrap();
-    writeln!(output, "using Newtonsoft.Json.Linq;").unwrap();
     writeln!(output, "using CommunityToolkit.HighPerformance;").unwrap();
     if namespace != "SpacetimeDB" {
         writeln!(output, "using SpacetimeDB;").unwrap();
@@ -1458,7 +1422,6 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
 
     writeln!(output, "using System;").unwrap();
     writeln!(output, "using ClientApi;").unwrap();
-    writeln!(output, "using Newtonsoft.Json.Linq;").unwrap();
     if namespace != "SpacetimeDB" {
         writeln!(output, "using SpacetimeDB;").unwrap();
     }
@@ -1576,51 +1539,5 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
         writeln!(output, "}}").unwrap();
     }
 
-    let mut result = vec![vec![("ReducerEvent.cs".to_string(), output.into_inner())]];
-
-    let mut output = CodeIndenter::new(String::new());
-
-    writeln!(output, "using SpacetimeDB;").unwrap();
-
-    writeln!(output).unwrap();
-
-    if use_namespace {
-        writeln!(output, "namespace {}", namespace).unwrap();
-        writeln!(output, "{{").unwrap();
-        output.indent(1);
-    }
-
-    writeln!(output, "[ReducerClass]").unwrap();
-    writeln!(output, "public partial class Reducer").unwrap();
-    writeln!(output, "{{").unwrap();
-    {
-        indent_scope!(output);
-        writeln!(
-            output,
-            "private static Newtonsoft.Json.JsonSerializerSettings _settings = new Newtonsoft.Json.JsonSerializerSettings"
-        )
-        .unwrap();
-        writeln!(output, "{{").unwrap();
-        {
-            indent_scope!(output);
-            writeln!(
-                output,
-                "Converters = {{ new SpacetimeDB.SomeWrapperConverter(), new SpacetimeDB.EnumWrapperConverter() }},"
-            )
-            .unwrap();
-            writeln!(output, "ContractResolver = new SpacetimeDB.JsonContractResolver(),").unwrap();
-        }
-        writeln!(output, "}};").unwrap();
-    }
-    // Closing brace for struct ReducerArgs
-    writeln!(output, "}}").unwrap();
-
-    if use_namespace {
-        output.dedent(1);
-        writeln!(output, "}}").unwrap();
-    }
-
-    result.push(vec![("ReducerJsonSettings.cs".into(), output.into_inner())]);
-
-    result
+    vec![vec![("ReducerEvent.cs".to_string(), output.into_inner())]]
 }
