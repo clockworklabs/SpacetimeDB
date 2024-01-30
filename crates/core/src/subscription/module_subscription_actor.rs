@@ -19,7 +19,7 @@ use crate::{
     db::relational_db::Tx,
     host::module_host::{EventStatus, ModuleEvent},
 };
-use futures::{stream::FuturesUnordered, Future, FutureExt, StreamExt};
+use futures::{stream::FuturesUnordered, Future, StreamExt};
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
@@ -119,7 +119,7 @@ impl ModuleSubscriptionActor {
         match command {
             Command::AddSubscriber { sender, subscription } => self.add_subscription(sender, subscription).await?,
             Command::RemoveSubscriber { client_id } => self.remove_subscriber(client_id),
-            Command::BroadcastCommitEvent { event } => self.broadcast_commit_event(event)?.await,
+            Command::BroadcastCommitEvent { event } => self.broadcast_commit_event(event).await,
         }
         Ok(())
     }
@@ -197,9 +197,10 @@ impl ModuleSubscriptionActor {
         })
     }
 
-    fn broadcast_commit_event(&mut self, event: ModuleEvent) -> Result<impl Future<Output = ()> + '_, DBError> {
+    fn broadcast_commit_event(&mut self, event: ModuleEvent) -> impl Future<Output = ()> + '_ {
         let auth = AuthCtx::new(self.owner_identity, event.caller_identity);
 
+        let tokio_handle = tokio::runtime::Handle::current();
         let futures = FuturesUnordered::new();
 
         let iter = self.subscriptions.par_iter_mut().map_init(
@@ -209,21 +210,25 @@ impl ModuleSubscriptionActor {
                     self.relational_db.release_tx(&ctx, tx);
                 })
             },
-            |tx, subscription| -> Result<_, DBError> {
+            |tx, subscription| {
                 let database_update = event.status.database_update().unwrap();
                 let incr = subscription
                     .queries
-                    .eval_incr(&self.relational_db, tx, database_update, auth)?;
-                Ok((subscription, incr))
+                    .eval_incr(&self.relational_db, tx, database_update, auth)
+                    .map_err(|err| {
+                        // TODO: log an id for the subscription somehow as well
+                        tracing::error!(err = &err as &dyn std::error::Error, "subscription eval_incr failed")
+                    })
+                    .ok()?;
+                if incr.tables.is_empty() {
+                    return None;
+                }
+                Some((subscription, incr))
             },
         );
-        let iter = iter.map(|r| -> Result<(), DBError> {
-            let (subscription, incr) = r?;
+        let iter = iter.filter_map(|x| x);
 
-            if incr.tables.is_empty() {
-                return Ok(());
-            }
-
+        let iter = iter.map(|(subscription, incr)| {
             let message = TransactionUpdateMessage {
                 event: &event,
                 database_update: incr,
@@ -234,13 +239,15 @@ impl ModuleSubscriptionActor {
                 // rustc realllly doesn't like subscriber.send_message(message) here for weird
                 // lifetime reasons, even though it would be sound
                 let message = message.serialize(subscriber.protocol);
-                futures.push(subscriber.send(message).map(drop))
+                let subscriber = subscriber.clone();
+                futures.push(tokio_handle.spawn(async move {
+                    let _ = subscriber.send(message).await;
+                }))
             }
-            Ok(())
         });
 
-        tokio::task::block_in_place(|| iter.collect::<Result<(), DBError>>())?;
+        tokio::task::block_in_place(|| iter.collect::<()>());
 
-        Ok(futures.collect::<()>())
+        futures.map(drop).collect::<()>()
     }
 }
