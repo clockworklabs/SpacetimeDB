@@ -12,6 +12,9 @@
 //! (except strings, which are stored directly as UTF-8 bytestrings),
 //! and stored in a linked list of 64-byte "granules,"
 //! each of which has a 2-byte header and up to 62 bytes of data.
+//! This means that var-length objects never store padding bytes;
+//! every byte in a var-len object at an index less than the object's length
+//! will be initialized.
 //!
 //! At various points in the row's lifecycle,
 //! we must visit all of the `VarLenRef`s within the row,
@@ -211,9 +214,6 @@ impl VarLenGranuleHeader {
     /// Returns a new header for a granule storing `len` bytes
     /// and with the next granule in the list located `next`.
     pub fn new(len: u8, next: PageOffset) -> Self {
-        // TODO: check for large rows and error,
-        //       to signal that we should use the blob store instead of pages?
-        //       Or otherwise handle large fixed-len rows.
         Self(0).with_len(len).with_next(next)
     }
 
@@ -283,13 +283,10 @@ impl VarLenGranule {
 
     /// Returns the data from the var-len object in this granule.
     pub fn data(&self) -> &[u8] {
-        // TODO: Does this need to return `&Byte`, in case we store padding bytes?
-        //       If we put non-byte-string arrays in a `VarLenGranule`,
-        //       we may have structures in there which include padding bytes.
         let len = self.header.len() as usize;
         let slice = &self.data[0..len];
 
-        // SAFETY: Assuming we've determined that we never store `uninit` padding bytes in a var-len object,
+        // SAFETY: Because we never store `uninit` padding bytes in a var-len object,
         //         the paths that construct a `VarLenGranule` always initialize the bytes up to the length.
         unsafe { slice_assume_init_ref(slice) }
     }

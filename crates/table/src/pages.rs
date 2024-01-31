@@ -114,7 +114,6 @@ impl Pages {
 
     /// Call `f` with a reference to a page which satisfies
     /// `page.has_space_for_row(fixed_row_size, num_var_len_granules)`.
-    #[allow(clippy::result_unit_err)] // TODO(error-handling,integration): useful errors
     pub fn with_page_to_insert_row<Res>(
         &mut self,
         fixed_row_size: Size,
@@ -165,8 +164,7 @@ impl Pages {
     /// - `fixed_row.len()` is consistent
     ///    with what has been passed to the manager in all other ops
     ///    and must be consistent with the `var_len_visitor` the manager was made with.
-    //// TODO(bikeshedding): rename to make purpose as bench interface clear?
-    #[allow(clippy::result_unit_err)] // TODO(error-handling,bikeshedding): useful errors. Matters less because this is not a public interface.
+    // TODO(bikeshedding): rename to make purpose as bench interface clear?
     pub unsafe fn insert_row(
         &mut self,
         var_len_visitor: &impl VarLenMembers,

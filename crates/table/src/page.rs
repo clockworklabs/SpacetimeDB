@@ -38,11 +38,11 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("Unknown error in page")]
-    Todo,
+    #[error("Want to allocate a var-len object of {need} granules, but have only {have} granules available")]
+    InsufficientVarLenSpace { need: u16, have: u16 },
+    #[error("Want to allocate a fixed-len row of {} bytes, but the page is full", need.len())]
+    InsufficientFixedLenSpace { need: Size },
 }
-
-// TODO(error-handling,integration): define an error type and return useful errors rather than `()`.
 
 /// A cons-cell in a freelist either
 /// for an unused fixed-len cell or a variable-length granule.
@@ -469,7 +469,6 @@ impl<'page> VarView<'page> {
     ///
     /// 2. The caller must initialize each granule with data for the claimed length
     ///    of the granule's data.
-    #[allow(clippy::result_unit_err)] // TODO(error-handling,integration): useful error type
     pub fn alloc_for_len(&mut self, obj_len: usize) -> Result<(VarLenRef, bool), Error> {
         // Safety post-requirements of `alloc_for_obj_common`:
         // 1. caller promised they will be satisfied.
@@ -525,7 +524,6 @@ impl<'page> VarView<'page> {
     ///    the granule pointed to by the returned `vlr.first_granule`
     ///    has an initialized header and a data section initialized to at least
     ///    as many bytes as claimed by the header.
-    #[allow(clippy::result_unit_err)] // TODO(error-handling,integration): useful error type
     pub fn alloc_for_slice(&mut self, slice: &[u8]) -> Result<(VarLenRef, bool), Error> {
         let obj_len = slice.len();
         // Safety post-requirement 2. of `alloc_for_obj_common` is already satisfied
@@ -570,7 +568,6 @@ impl<'page> VarView<'page> {
     ///    b. For each `(_, len) ∈ cs`, caller must ensure that
     ///       the relevant granule is initialized with data for at least `len`
     ///       before the granule's data is read from / assumed to be initialized.
-    #[allow(clippy::result_unit_err)] // TODO(error-handling,integration): useful error type
     fn alloc_for_obj_common<'chunk, Cs: Iterator<Item = (&'chunk [u8], usize)>>(
         &mut self,
         obj_len: usize,
@@ -579,7 +576,10 @@ impl<'page> VarView<'page> {
         // Check that we have sufficient space to allocate `obj_len` bytes in var-len data.
         let (req_granules, enough_space, in_blob) = self.has_enough_space_for(obj_len);
         if !enough_space {
-            return Err(Error::Todo);
+            return Err(Error::InsufficientVarLenSpace {
+                need: req_granules.try_into().unwrap_or(u16::MAX),
+                have: self.num_granules_available().try_into().unwrap_or(u16::MAX),
+            });
         }
 
         // For large blob objects, only reserve a granule.
@@ -676,7 +676,7 @@ impl<'page> VarView<'page> {
         // SAFETY: A `PageOffset` is always in bounds of the page.
         let ptr: *mut VarLenGranule = unsafe { offset_to_ptr_mut(self.var_row_data, granule).cast() };
 
-        // TODO(centril,perf,bikeshedding): check if creating the `VarLenGranule` first on stack
+        // TODO(centril,bikeshedding): check if creating the `VarLenGranule` first on stack
         // and then writing to `ptr` would have any impact on perf.
         // This would be nicer as it requires less `unsafe`.
 
@@ -708,8 +708,8 @@ impl<'page> VarView<'page> {
     fn alloc_granule(&mut self) -> Result<PageOffset, Error> {
         let uninit_granule = self
             .alloc_from_freelist()
-            .ok_or(Error::Todo)
-            .or_else(|_| self.alloc_from_gap())?;
+            .or_else(|| self.alloc_from_gap())
+            .ok_or(Error::InsufficientVarLenSpace { need: 1, have: 0 })?;
 
         debug_assert!(
             is_granule_offset_aligned(uninit_granule),
@@ -735,16 +735,16 @@ impl<'page> VarView<'page> {
     }
 
     /// Allocate a [`MaybeUninit<VarLenGranule>`](VarLenGranule) at the returned [`PageOffset`]
-    /// taken from the gap, if there is space left, or error.
+    /// taken from the gap, if there is space left, or `None` if there is insufficient space.
     #[inline]
-    fn alloc_from_gap(&mut self) -> Result<PageOffset, Error> {
+    fn alloc_from_gap(&mut self) -> Option<PageOffset> {
         if gap_enough_size_for_row(self.header.first, self.last_fixed, VarLenGranule::SIZE) {
             // `var.first` points *at* the lowest-indexed var-len granule,
             // *not* before it, so pre-decrement.
             self.header.first -= VarLenGranule::SIZE;
-            Ok(self.header.first)
+            Some(self.header.first)
         } else {
-            Err(Error::Todo)
+            None
         }
     }
 
@@ -1147,7 +1147,6 @@ impl Page {
     ///   That is, `VarLenMembers` must be specialized for a row type with that length,
     ///   and all past, present, and future fixed-length rows stored in this `Page`
     ///   must also be of that length.
-    #[allow(clippy::result_unit_err)] // TODO(error-handling,integration): useful error type
     pub unsafe fn insert_row(
         &mut self,
         fixed_row: &Bytes,
@@ -1199,13 +1198,12 @@ impl Page {
     ///
     /// `fixed_row_size` must be equal to the value passed
     /// to all other methods ever invoked on `self`.
-    #[allow(clippy::result_unit_err)] // TODO(error-handling,integration): useful error type
     pub unsafe fn alloc_fixed_len(&mut self, fixed_row_size: Size) -> Result<PageOffset, Error> {
         self.header.fixed.debug_check_fixed_row_size(fixed_row_size);
 
         self.alloc_fixed_len_from_freelist(fixed_row_size)
-            .ok_or(Error::Todo)
-            .or_else(|_| self.alloc_fixed_len_from_gap(fixed_row_size))
+            .or_else(|| self.alloc_fixed_len_from_gap(fixed_row_size))
+            .ok_or(Error::InsufficientFixedLenSpace { need: fixed_row_size })
     }
 
     /// Allocates a space for a fixed size row of `fixed_row_size` in the freelist, if possible.
@@ -1220,7 +1218,7 @@ impl Page {
 
     /// Allocates a space for a fixed size row of `fixed_row_size` in the freelist, if possible.
     #[inline]
-    fn alloc_fixed_len_from_gap(&mut self, fixed_row_size: Size) -> Result<PageOffset, Error> {
+    fn alloc_fixed_len_from_gap(&mut self, fixed_row_size: Size) -> Option<PageOffset> {
         if gap_enough_size_for_row(self.header.var.first, self.header.fixed.last, fixed_row_size) {
             // Enough space in the gap; move the high water mark and return the old HWM.
             // `fixed.last` points *after* the highest-indexed fixed-len row,
@@ -1228,10 +1226,10 @@ impl Page {
             let ptr = self.header.fixed.last;
             self.header.fixed.last += fixed_row_size;
             self.header.fixed.set_row_present(ptr, fixed_row_size);
-            Ok(ptr)
+            Some(ptr)
         } else {
             // Not enough space in the gap for another row!
-            Err(Error::Todo)
+            None
         }
     }
 

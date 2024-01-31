@@ -38,7 +38,6 @@ pub enum Error {
 /// This includes that its `visitor` must be prepared to visit var-len members within `ty`,
 /// and must do so in the same order as a `VarLenVisitorProgram` for `ty` would,
 /// i.e. by monotonically increasing offsets.
-#[allow(clippy::result_unit_err)] // TODO(error-handling,integration): useful error type
 pub unsafe fn write_row_to_pages(
     pages: &mut Pages,
     visitor: &impl VarLenMembers,
@@ -78,7 +77,6 @@ pub unsafe fn write_row_to_pages(
 ///   i.e. by monotonically increasing offsets.
 ///
 /// - `page` must use a var-len visitor which visits the same var-len members in the same order.
-#[allow(clippy::result_unit_err)] // TODO(error-handling,integration): useful error type
 pub unsafe fn write_row_to_page(
     page: &mut Page,
     blob_store: &mut dyn BlobStore,
@@ -215,7 +213,7 @@ impl BflatnSerializedRowBuffer<'_> {
                 self.write_av_bsatn(val)?
             }
 
-            // TODO(error-handling): return type error
+            // If the type doesn't match the value, return an error.
             (ty, val) => Err(Error::WrongType(ty.algebraic_type(), val.clone()))?,
         }
 
