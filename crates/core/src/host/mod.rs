@@ -3,6 +3,7 @@ use bytes::Bytes;
 use bytestring::ByteString;
 use derive_more::Display;
 use enum_map::Enum;
+use once_cell::sync::OnceCell;
 use spacetimedb_lib::bsatn;
 use spacetimedb_lib::de::serde::SeedWrapper;
 use spacetimedb_lib::de::DeserializeSeed;
@@ -45,13 +46,13 @@ impl ReducerArgs {
         Ok(match self {
             ReducerArgs::Json(json) => ArgsTuple {
                 tuple: from_json_seed(&json, SeedWrapper(ReducerDef::deserialize(schema)))?,
-                bsatn: None,
-                json: Some(json),
+                bsatn: OnceCell::new(),
+                json: OnceCell::with_value(json),
             },
             ReducerArgs::Bsatn(bytes) => ArgsTuple {
                 tuple: ReducerDef::deserialize(schema).deserialize(bsatn::Deserializer::new(&mut &bytes[..]))?,
-                bsatn: Some(bytes),
-                json: None,
+                bsatn: OnceCell::with_value(bytes),
+                json: OnceCell::new(),
             },
             ReducerArgs::Nullary => {
                 anyhow::ensure!(schema.ty().args.is_empty(), "failed to typecheck args");
@@ -64,29 +65,28 @@ impl ReducerArgs {
 #[derive(Debug, Clone)]
 pub struct ArgsTuple {
     tuple: ProductValue,
-    bsatn: Option<Bytes>,
-    json: Option<ByteString>,
+    bsatn: OnceCell<Bytes>,
+    json: OnceCell<ByteString>,
 }
 
 impl ArgsTuple {
     #[allow(clippy::declare_interior_mutable_const)] // false positive on Bytes
     const NULLARY: Self = ArgsTuple {
         tuple: spacetimedb_sats::product![],
-        bsatn: Some(Bytes::new()),
-        json: Some(ByteString::from_static("[]")),
+        bsatn: OnceCell::with_value(Bytes::new()),
+        json: OnceCell::with_value(ByteString::from_static("[]")),
     };
 
     pub const fn nullary() -> Self {
         Self::NULLARY
     }
 
-    pub fn get_bsatn(&mut self) -> &Bytes {
-        self.bsatn
-            .get_or_insert_with(|| bsatn::to_vec(&self.tuple).unwrap().into())
+    pub fn get_bsatn(&self) -> &Bytes {
+        self.bsatn.get_or_init(|| bsatn::to_vec(&self.tuple).unwrap().into())
     }
-    pub fn get_json(&mut self) -> &ByteString {
+    pub fn get_json(&self) -> &ByteString {
         use spacetimedb_sats::ser::serde::SerializeWrapper;
-        self.json.get_or_insert_with(|| {
+        self.json.get_or_init(|| {
             serde_json::to_string(SerializeWrapper::from_ref(&self.tuple))
                 .unwrap()
                 .into()
