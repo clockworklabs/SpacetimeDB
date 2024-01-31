@@ -5,7 +5,7 @@ use std::hash::Hash;
 
 pub const BENCH_PKEY_INDEX: u32 = 0;
 
-// the following piece of code must remain synced with `modules/bencmarks/src/lib.rs`
+// the following piece of code must remain synced with `modules/benchmarks/src/lib.rs`
 // These are the schemas used for these database tables outside of the benchmark module.
 // It needs to match the schemas used inside the benchmark .
 

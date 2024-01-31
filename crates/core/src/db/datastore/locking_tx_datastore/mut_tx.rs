@@ -871,7 +871,7 @@ impl MutTxId {
             //    we should fail, as we would otherwise violate set semantics.
             // 3. If the row was originally present, and is currently going to be deleted
             //    by this transaction, we will remove it from `delete_tables`, and the
-            //    cummulative effect will be to leave the row in place in the committed state.
+            //    cumulative effect will be to leave the row in place in the committed state.
 
             let delete_table = self.tx_state.get_or_create_delete_table(table_id);
             let row_was_previously_deleted = delete_table.remove(&row_id);
