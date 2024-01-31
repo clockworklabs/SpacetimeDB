@@ -484,7 +484,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             caller_address,
             client,
             reducer_id,
-            mut args,
+            args,
         } = params;
         let caller_address_opt = (caller_address != Address::__DUMMY).then_some(caller_address);
 
