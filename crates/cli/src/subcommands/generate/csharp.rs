@@ -1113,36 +1113,14 @@ fn autogen_csharp_access_funcs_for_struct(
     }
 
     if let Some(primary_col_index) = primary_col_idx {
-        writeln!(
-            output,
-            "public static SpacetimeDB.SATS.AlgebraicValue GetPrimaryKeyValue(SpacetimeDB.SATS.AlgebraicValue v)"
-        )
-        .unwrap();
+        writeln!(output, "public static object GetPrimaryKeyValue(object v)").unwrap();
         writeln!(output, "{{").unwrap();
         {
             indent_scope!(output);
             writeln!(
                 output,
-                "return v.AsProductValue().elements[{}];",
-                primary_col_index.col_pos
-            )
-            .unwrap();
-        }
-        writeln!(output, "}}").unwrap();
-        writeln!(output).unwrap();
-
-        writeln!(
-            output,
-            "public static SpacetimeDB.SATS.AlgebraicType GetPrimaryKeyType(SpacetimeDB.SATS.AlgebraicType t)"
-        )
-        .unwrap();
-        writeln!(output, "{{").unwrap();
-        {
-            indent_scope!(output);
-            writeln!(
-                output,
-                "return t.product.elements[{}].algebraicType;",
-                primary_col_index.col_pos
+                "return (({struct_name_pascal_case})v).{col_name_pascal_case};",
+                col_name_pascal_case = primary_col_index.col_name.replace("r#", "").to_case(Case::Pascal)
             )
             .unwrap();
         }
