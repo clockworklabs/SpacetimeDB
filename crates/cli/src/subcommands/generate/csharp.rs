@@ -1147,18 +1147,6 @@ fn autogen_csharp_access_funcs_for_struct(
             .unwrap();
         }
         writeln!(output, "}}").unwrap();
-    } else {
-        writeln!(
-            output,
-            "public static bool ComparePrimaryKey(SpacetimeDB.SATS.AlgebraicType t, SpacetimeDB.SATS.AlgebraicValue _v1, SpacetimeDB.SATS.AlgebraicValue _v2)"
-        )
-            .unwrap();
-        writeln!(output, "{{").unwrap();
-        {
-            indent_scope!(output);
-            writeln!(output, "return false;").unwrap();
-        }
-        writeln!(output, "}}").unwrap();
     }
 
     primary_col_idx.is_some()
