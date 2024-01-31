@@ -1283,18 +1283,9 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
         {
             indent_scope!(output);
 
-            // Tell the network manager to send this message
-            writeln!(output, "using var stream = new MemoryStream();").unwrap();
-            writeln!(output, "using var writer = new BinaryWriter(stream);").unwrap();
             writeln!(
                 output,
-                "{func_name_pascal_case}ArgsStruct.Write(writer, new {func_name_pascal_case}ArgsStruct {{ {field_inits} }});"
-            )
-            .unwrap();
-
-            writeln!(
-                output,
-                "SpacetimeDBClient.instance.InternalCallReducer(\"{reducer_name}\", stream.ToArray());",
+                "SpacetimeDBClient.instance.InternalCallReducer(\"{reducer_name}\", new {func_name_pascal_case}ArgsStruct {{ {field_inits} }});",
                 reducer_name = reducer.name
             )
             .unwrap();
@@ -1361,14 +1352,24 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
         {
             indent_scope!(output);
 
-            writeln!(
-                output,
-                "using var stream = dbEvent.FunctionCall.ArgBytes.Memory.AsStream();"
-            )
-            .unwrap();
-            writeln!(output, "using var reader = new System.IO.BinaryReader(stream);").unwrap();
-            writeln!(output, "var args = {func_name_pascal_case}ArgsStruct.Read(reader);").unwrap();
-            writeln!(output, "dbEvent.FunctionCall.CallInfo = new ReducerEvent(ReducerType.{func_name_pascal_case}, \"{func_name}\", dbEvent.Timestamp, Identity.From(dbEvent.CallerIdentity.ToByteArray()), Address.From(dbEvent.CallerAddress.ToByteArray()), dbEvent.Message, dbEvent.Status, args);").unwrap();
+            writeln!(output, "dbEvent.FunctionCall.CallInfo = new ReducerEvent(").unwrap();
+            {
+                indent_scope!(output);
+
+                writeln!(output, "ReducerType.{func_name_pascal_case},").unwrap();
+                writeln!(output, "\"{func_name}\",").unwrap();
+                writeln!(output, "dbEvent.Timestamp,").unwrap();
+                writeln!(output, "Identity.From(dbEvent.CallerIdentity.ToByteArray()),").unwrap();
+                writeln!(output, "Address.From(dbEvent.CallerAddress.ToByteArray()),").unwrap();
+                writeln!(output, "dbEvent.Message,").unwrap();
+                writeln!(output, "dbEvent.Status,").unwrap();
+                writeln!(
+                    output,
+                    "ProtobufBSATN.FromProtoBytes<{func_name_pascal_case}ArgsStruct>(dbEvent.FunctionCall.ArgBytes)"
+                )
+                .unwrap();
+            }
+            writeln!(output, ");").unwrap();
         }
 
         // Closing brace for Event parsing function
