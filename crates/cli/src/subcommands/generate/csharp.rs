@@ -1115,35 +1115,6 @@ fn autogen_csharp_access_funcs_for_struct(
     if let Some(primary_col_index) = primary_col_idx {
         writeln!(
             output,
-            "public static bool ComparePrimaryKey(SpacetimeDB.SATS.AlgebraicType t, SpacetimeDB.SATS.AlgebraicValue v1, SpacetimeDB.SATS.AlgebraicValue v2)"
-        )
-            .unwrap();
-        writeln!(output, "{{").unwrap();
-        {
-            indent_scope!(output);
-            writeln!(
-                output,
-                "var primaryColumnValue1 = v1.AsProductValue().elements[{}];",
-                primary_col_index.col_pos
-            )
-            .unwrap();
-            writeln!(
-                output,
-                "var primaryColumnValue2 = v2.AsProductValue().elements[{}];",
-                primary_col_index.col_pos
-            )
-            .unwrap();
-            writeln!(
-                output,
-                "return SpacetimeDB.SATS.AlgebraicValue.Compare(t.product.elements[0].algebraicType, primaryColumnValue1, primaryColumnValue2);"
-            )
-                .unwrap();
-        }
-        writeln!(output, "}}").unwrap();
-        writeln!(output).unwrap();
-
-        writeln!(
-            output,
             "public static SpacetimeDB.SATS.AlgebraicValue GetPrimaryKeyValue(SpacetimeDB.SATS.AlgebraicValue v)"
         )
         .unwrap();
