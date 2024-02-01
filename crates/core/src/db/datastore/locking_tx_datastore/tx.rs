@@ -13,9 +13,9 @@ use std::{
 };
 
 pub struct TxId {
-    pub committed_state_shared_lock: SharedReadGuard<CommittedState>,
-    pub lock_wait_time: Duration,
-    pub timer: Instant,
+    pub(crate) committed_state_shared_lock: SharedReadGuard<CommittedState>,
+    pub(crate) lock_wait_time: Duration,
+    pub(crate) timer: Instant,
 }
 
 impl StateView for TxId {

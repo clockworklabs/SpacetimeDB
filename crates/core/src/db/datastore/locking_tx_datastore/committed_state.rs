@@ -18,7 +18,7 @@ use crate::{
         },
         db_metrics::DB_METRICS,
     },
-    error::{DBError, TableError},
+    error::TableError,
     execution_context::ExecutionContext,
 };
 use anyhow::anyhow;
@@ -45,7 +45,7 @@ use std::{
 };
 
 #[derive(Default)]
-pub struct CommittedState {
+pub(crate) struct CommittedState {
     pub(crate) tables: HashMap<TableId, Table>,
     pub(crate) blob_store: HashMapBlobStore,
 }
@@ -67,6 +67,9 @@ impl StateView for CommittedState {
             None
         }
     }
+    /// Returns an iterator,
+    /// yielding every row in the table identified by `table_id`,
+    /// where the values of `cols` are contained in `range`.
     fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         ctx: &'a ExecutionContext,
@@ -84,7 +87,15 @@ impl StateView for CommittedState {
     }
 }
 
-fn ignore_duplicate_insert<T>(res: std::result::Result<T, InsertError>) -> Result<()> {
+/// Swallow `Err(TableError::Duplicate(_))`, which signals a set-semantic collision,
+/// and convert it into `Ok(())`.
+///
+/// This necessarily drops any `Ok` payload, since a `Duplicate` will not hold that payload.
+///
+/// Used because the datastore's external APIs (as in, those that face the rest of SpacetimeDB)
+/// treat duplicate insertion as a silent no-op,
+/// whereas `Table` and friends treat it as an error.
+fn ignore_duplicate_insert_error<T>(res: std::result::Result<T, InsertError>) -> Result<()> {
     match res {
         Ok(_) => Ok(()),
         Err(InsertError::Duplicate(_)) => Ok(()),
@@ -98,149 +109,154 @@ impl CommittedState {
         let mut sequences_start: HashMap<TableId, i128> = HashMap::with_capacity(10);
 
         // Insert the table row into st_tables, creating st_tables if it's missing
-        self.with_table_and_blob_store_or_create(ST_TABLES_ID, st_table_schema(), |st_tables, blob_store| {
-            // Insert the table row into `st_tables` for all system tables
-            for schema in system_tables() {
-                let table_id = schema.table_id;
-                //  metric for this system table
-                DB_METRICS
-                    .rdb_num_table_rows
-                    .with_label_values(&database_address, &table_id.0, &schema.table_name)
-                    .set(0);
+        let (st_tables, blob_store) = self.get_table_and_blob_store_or_create(ST_TABLES_ID, st_table_schema());
+        // Insert the table row into `st_tables` for all system tables
+        for schema in system_tables() {
+            let table_id = schema.table_id;
+            // metric for this system table
+            // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
+            // and therefore has performance implications and must not be disabled.
+            DB_METRICS
+                .rdb_num_table_rows
+                .with_label_values(&database_address, &table_id.0, &schema.table_name)
+                .set(0);
 
-                let row = StTableRow {
-                    table_id,
-                    table_name: schema.table_name,
-                    table_type: StTableType::System,
-                    table_access: StAccess::Public,
-                };
-                let row = ProductValue::from(row);
-                ignore_duplicate_insert(st_tables.insert(blob_store, &row))?;
+            let row = StTableRow {
+                table_id,
+                table_name: schema.table_name,
+                table_type: StTableType::System,
+                table_access: StAccess::Public,
+            };
+            let row = ProductValue::from(row);
+            // Insert the meta-row into the in-memory ST_TABLES.
+            // If the row is already there, no-op.
+            ignore_duplicate_insert_error(st_tables.insert(blob_store, &row))?;
 
-                *sequences_start.entry(ST_TABLES_ID).or_default() += 1;
-            }
-            Ok::<(), DBError>(())
-        })?;
+            *sequences_start.entry(ST_TABLES_ID).or_default() += 1;
+        }
 
         // Insert the columns into `st_columns`
-        self.with_table_and_blob_store_or_create(ST_COLUMNS_ID, st_columns_schema(), |st_columns, blob_store| {
-            for col in system_tables().into_iter().flat_map(|x| x.columns().to_vec()) {
-                let row = StColumnRow {
-                    table_id: col.table_id,
-                    col_pos: col.col_pos,
-                    col_name: col.col_name.clone(),
-                    col_type: col.col_type.clone(),
-                };
-                let row = ProductValue::from(row);
-                ignore_duplicate_insert(st_columns.insert(blob_store, &row))?;
-                // Increment row count for st_columns
-                DB_METRICS
-                    .rdb_num_table_rows
-                    .with_label_values(&database_address, &ST_COLUMNS_ID.into(), ST_COLUMNS_NAME)
-                    .inc();
-            }
-            Ok::<(), DBError>(())
-        })?;
+        let (st_columns, blob_store) = self.get_table_and_blob_store_or_create(ST_COLUMNS_ID, st_columns_schema());
+        for col in system_tables().into_iter().flat_map(|x| x.columns().to_vec()) {
+            let row = StColumnRow {
+                table_id: col.table_id,
+                col_pos: col.col_pos,
+                col_name: col.col_name.clone(),
+                col_type: col.col_type.clone(),
+            };
+            let row = ProductValue::from(row);
+            // Insert the meta-row into the in-memory ST_COLUMNS.
+            // If the row is already there, no-op.
+            ignore_duplicate_insert_error(st_columns.insert(blob_store, &row))?;
+            // Increment row count for st_columns
+            // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
+            // and therefore has performance implications and must not be disabled.
+            DB_METRICS
+                .rdb_num_table_rows
+                .with_label_values(&database_address, &ST_COLUMNS_ID.into(), ST_COLUMNS_NAME)
+                .inc();
+        }
 
         // Insert the FK sorted by table/column so it show together when queried.
 
         // Insert constraints into `st_constraints`
-        self.with_table_and_blob_store_or_create(
-            ST_CONSTRAINTS_ID,
-            st_constraints_schema(),
-            |st_constraints, blob_store| {
-                for (i, constraint) in system_tables()
-                    .iter()
-                    .flat_map(|x| &x.constraints)
-                    .sorted_by_key(|x| (x.table_id, x.columns.clone()))
-                    .enumerate()
-                {
-                    let row = StConstraintRow {
-                        constraint_id: i.into(),
-                        columns: constraint.columns.clone(),
-                        constraint_name: constraint.constraint_name.clone(),
-                        constraints: constraint.constraints,
-                        table_id: constraint.table_id,
-                    };
-                    let row = ProductValue::from(row);
-                    ignore_duplicate_insert(st_constraints.insert(blob_store, &row))?;
-                    // Increment row count for st_constraints
-                    DB_METRICS
-                        .rdb_num_table_rows
-                        .with_label_values(&database_address, &ST_CONSTRAINTS_ID.into(), ST_CONSTRAINTS_NAME)
-                        .inc();
+        let (st_constraints, blob_store) =
+            self.get_table_and_blob_store_or_create(ST_CONSTRAINTS_ID, st_constraints_schema());
+        for (i, constraint) in system_tables()
+            .iter()
+            .flat_map(|x| &x.constraints)
+            .sorted_by_key(|x| (x.table_id, x.columns.clone()))
+            .enumerate()
+        {
+            let row = StConstraintRow {
+                constraint_id: i.into(),
+                columns: constraint.columns.clone(),
+                constraint_name: constraint.constraint_name.clone(),
+                constraints: constraint.constraints,
+                table_id: constraint.table_id,
+            };
+            let row = ProductValue::from(row);
+            // Insert the meta-row into the in-memory ST_CONSTRAINTS.
+            // If the row is already there, no-op.
+            ignore_duplicate_insert_error(st_constraints.insert(blob_store, &row))?;
+            // Increment row count for st_constraints
+            // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
+            // and therefore has performance implications and must not be disabled.
+            DB_METRICS
+                .rdb_num_table_rows
+                .with_label_values(&database_address, &ST_CONSTRAINTS_ID.into(), ST_CONSTRAINTS_NAME)
+                .inc();
 
-                    *sequences_start.entry(ST_CONSTRAINTS_ID).or_default() += 1;
-                }
-                Ok::<(), DBError>(())
-            },
-        )?;
+            *sequences_start.entry(ST_CONSTRAINTS_ID).or_default() += 1;
+        }
 
         // Insert the indexes into `st_indexes`
-        self.with_table_and_blob_store_or_create(ST_INDEXES_ID, st_indexes_schema(), |st_indexes, blob_store| {
-            for (i, index) in system_tables()
-                .iter()
-                .flat_map(|x| &x.indexes)
-                .sorted_by_key(|x| (&x.table_id, &x.columns))
-                .enumerate()
-            {
-                let row = StIndexRow {
-                    index_id: i.into(),
-                    table_id: index.table_id,
-                    index_type: index.index_type,
-                    columns: index.columns.clone(),
-                    index_name: index.index_name.clone(),
-                    is_unique: index.is_unique,
-                };
-                let row = ProductValue::from(row);
-                ignore_duplicate_insert(st_indexes.insert(blob_store, &row))?;
-                // Increment row count for st_indexes
-                DB_METRICS
-                    .rdb_num_table_rows
-                    .with_label_values(&database_address, &ST_INDEXES_ID.into(), ST_INDEXES_NAME)
-                    .inc();
+        let (st_indexes, blob_store) = self.get_table_and_blob_store_or_create(ST_INDEXES_ID, st_indexes_schema());
+        for (i, index) in system_tables()
+            .iter()
+            .flat_map(|x| &x.indexes)
+            .sorted_by_key(|x| (&x.table_id, &x.columns))
+            .enumerate()
+        {
+            let row = StIndexRow {
+                index_id: i.into(),
+                table_id: index.table_id,
+                index_type: index.index_type,
+                columns: index.columns.clone(),
+                index_name: index.index_name.clone(),
+                is_unique: index.is_unique,
+            };
+            let row = ProductValue::from(row);
+            // Insert the meta-row into the in-memory ST_INDEXES.
+            // If the row is already there, no-op.
+            ignore_duplicate_insert_error(st_indexes.insert(blob_store, &row))?;
+            // Increment row count for st_indexes
+            // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
+            // and therefore has performance implications and must not be disabled.
+            DB_METRICS
+                .rdb_num_table_rows
+                .with_label_values(&database_address, &ST_INDEXES_ID.into(), ST_INDEXES_NAME)
+                .inc();
 
-                *sequences_start.entry(ST_INDEXES_ID).or_default() += 1;
-            }
-            Ok::<(), DBError>(())
-        })?;
+            *sequences_start.entry(ST_INDEXES_ID).or_default() += 1;
+        }
 
         // We don't add the row here but with `MutProgrammable::set_program_hash`, but we need to register the table
         // in the internal state.
         self.create_table(ST_MODULE_ID, st_module_schema());
 
-        self.with_table_and_blob_store_or_create(
-            ST_SEQUENCES_ID,
-            st_sequences_schema(),
-            |st_sequences, blob_store| {
-                // We create sequences last to get right the starting number
-                // so, we don't sort here
-                for (i, col) in system_tables().into_iter().flat_map(|x| x.sequences).enumerate() {
-                    //Is required to advance the start position before insert the row
-                    *sequences_start.entry(ST_SEQUENCES_ID).or_default() += 1;
+        // Insert the sequences into `st_sequences`
+        let (st_sequences, blob_store) =
+            self.get_table_and_blob_store_or_create(ST_SEQUENCES_ID, st_sequences_schema());
+        // We create sequences last to get right the starting number
+        // so, we don't sort here
+        for (i, col) in system_tables().into_iter().flat_map(|x| x.sequences).enumerate() {
+            //Is required to advance the start position before insert the row
+            *sequences_start.entry(ST_SEQUENCES_ID).or_default() += 1;
 
-                    let row = StSequenceRow {
-                        sequence_id: i.into(),
-                        sequence_name: col.sequence_name,
-                        table_id: col.table_id,
-                        col_pos: col.col_pos,
-                        increment: col.increment,
-                        start: *sequences_start.get(&col.table_id).unwrap_or(&col.start),
-                        min_value: col.min_value,
-                        max_value: col.max_value,
-                        allocated: col.allocated,
-                    };
-                    let row = ProductValue::from(row);
-                    ignore_duplicate_insert(st_sequences.insert(blob_store, &row))?;
-                    // Increment row count for st_sequences
-                    DB_METRICS
-                        .rdb_num_table_rows
-                        .with_label_values(&database_address, &ST_SEQUENCES_ID.into(), ST_SEQUENCES_NAME)
-                        .inc();
-                }
-                Ok::<(), DBError>(())
-            },
-        )?;
+            let row = StSequenceRow {
+                sequence_id: i.into(),
+                sequence_name: col.sequence_name,
+                table_id: col.table_id,
+                col_pos: col.col_pos,
+                increment: col.increment,
+                start: *sequences_start.get(&col.table_id).unwrap_or(&col.start),
+                min_value: col.min_value,
+                max_value: col.max_value,
+                allocated: col.allocated,
+            };
+            let row = ProductValue::from(row);
+            // Insert the meta-row into the in-memory ST_SEQUENCES.
+            // If the row is already there, no-op.
+            ignore_duplicate_insert_error(st_sequences.insert(blob_store, &row))?;
+            // Increment row count for st_sequences
+            // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
+            // and therefore has performance implications and must not be disabled.
+            DB_METRICS
+                .rdb_num_table_rows
+                .with_label_values(&database_address, &ST_SEQUENCES_ID.into(), ST_SEQUENCES_NAME)
+                .inc();
+        }
 
         Ok(())
     }
@@ -291,13 +307,12 @@ impl CommittedState {
             .collect::<Vec<_>>();
         for row in rows {
             let index_row = StIndexRow::try_from(&row)?;
-            self.with_table_and_blob_store(index_row.table_id, |table, blob_store| {
-                let mut index = BTreeIndex::new(index_row.index_id, index_row.is_unique, index_row.index_name);
-                index.build_from_rows(&index_row.columns, table.scan_rows(blob_store))?;
-                table.indexes.insert(index_row.columns, index);
-                Ok::<(), DBError>(())
-            })
-            .unwrap()?;
+            let Some((table, blob_store)) = self.get_table_and_blob_store(index_row.table_id) else {
+                panic!("Cannot create index for table which doesn't exist in committed state");
+            };
+            let mut index = BTreeIndex::new(index_row.index_id, index_row.is_unique, index_row.index_name);
+            index.build_from_rows(&index_row.columns, table.scan_rows(blob_store))?;
+            table.indexes.insert(index_row.columns, index);
         }
         Ok(())
     }
@@ -377,30 +392,26 @@ impl CommittedState {
 
     fn merge_apply_deletes(&mut self, tx_data: &mut TxData, delete_tables: BTreeMap<TableId, BTreeSet<RowPointer>>) {
         for (table_id, row_ptrs) in delete_tables {
-            if self
-                .with_table_and_blob_store(table_id, |table, blob_store| {
-                    // Note: we maintain the invariant that the delete_tables
-                    // holds only committed rows which should be deleted,
-                    // i.e. `RowPointer`s with `SquashedOffset::COMMITTED_STATE`,
-                    // so no need to check before applying the deletes.
-                    for row_ptr in row_ptrs.iter().copied() {
-                        debug_assert!(row_ptr.squashed_offset().is_committed_state());
+            if let Some((table, blob_store)) = self.get_table_and_blob_store(table_id) {
+                // Note: we maintain the invariant that the delete_tables
+                // holds only committed rows which should be deleted,
+                // i.e. `RowPointer`s with `SquashedOffset::COMMITTED_STATE`,
+                // so no need to check before applying the deletes.
+                for row_ptr in row_ptrs.iter().copied() {
+                    debug_assert!(row_ptr.squashed_offset().is_committed_state());
 
-                        // TODO: re-write `TxRecord` to remove `product_value`, or at least `key`.
-                        let pv = table.delete(blob_store, row_ptr).expect("Delete for non-existent row!");
-                        let data_key = pv.to_data_key();
-                        tx_data.records.push(TxRecord {
-                            op: TxOp::Delete,
-                            table_name: table.schema.table_name.clone(),
-                            table_id,
-                            key: data_key,
-                            product_value: pv,
-                        });
-                    }
-                })
-                .is_none()
-                && !row_ptrs.is_empty()
-            {
+                    // TODO: re-write `TxRecord` to remove `product_value`, or at least `key`.
+                    let pv = table.delete(blob_store, row_ptr).expect("Delete for non-existent row!");
+                    let data_key = pv.to_data_key();
+                    tx_data.records.push(TxRecord {
+                        op: TxOp::Delete,
+                        table_name: table.schema.table_name.clone(),
+                        table_id,
+                        key: data_key,
+                        product_value: pv,
+                    });
+                }
+            } else if !row_ptrs.is_empty() {
                 panic!("Deletion for non-existent table {:?}... huh?", table_id);
             }
         }
@@ -421,41 +432,40 @@ impl CommittedState {
         //             and the fullness of the page.
 
         for (table_id, mut tx_table) in insert_tables {
-            self.with_table_and_blob_store_or_create(
+            let (commit_table, commit_blob_store) = self.get_table_and_blob_store_or_create(
                 table_id,
+                // TODO(perf): avoid cloning here.
                 *tx_table.schema.clone(),
-                |commit_table, commit_blob_store| {
-                    // For each newly-inserted row, insert it into the committed state.
-                    for row_ref in tx_table.scan_rows(&tx_blob_store) {
-                        let pv = row_ref.to_product_value();
-                        commit_table
-                            .insert(commit_blob_store, &pv)
-                            .expect("Failed to insert when merging commit");
-                        let bytes = bsatn::to_vec(&pv).expect("Failed to BSATN-serialize ProductValue");
-                        let data_key = DataKey::from_data(&bytes);
-                        tx_data.records.push(TxRecord {
-                            op: TxOp::Insert(Arc::new(bytes)),
-                            product_value: pv,
-                            key: data_key,
-                            table_name: commit_table.schema.table_name.clone(),
-                            table_id,
-                        });
-                    }
-
-                    // Add all newly created indexes to the committed state.
-                    for (cols, mut index) in std::mem::take(&mut tx_table.indexes) {
-                        if !commit_table.indexes.contains_key(&cols) {
-                            index.clear();
-                            commit_table.insert_index(commit_blob_store, cols, index);
-                        }
-                    }
-
-                    // The schema may have been modified in the transaction.
-                    // Update this last to placate borrowck and avoid a clone.
-                    // None of the above operations will inspect the schema.
-                    commit_table.schema = tx_table.schema;
-                },
             );
+            // For each newly-inserted row, insert it into the committed state.
+            for row_ref in tx_table.scan_rows(&tx_blob_store) {
+                let pv = row_ref.to_product_value();
+                commit_table
+                    .insert(commit_blob_store, &pv)
+                    .expect("Failed to insert when merging commit");
+                let bytes = bsatn::to_vec(&pv).expect("Failed to BSATN-serialize ProductValue");
+                let data_key = DataKey::from_data(&bytes);
+                tx_data.records.push(TxRecord {
+                    op: TxOp::Insert(Arc::new(bytes)),
+                    product_value: pv,
+                    key: data_key,
+                    table_name: commit_table.schema.table_name.clone(),
+                    table_id,
+                });
+            }
+
+            // Add all newly created indexes to the committed state.
+            for (cols, mut index) in std::mem::take(&mut tx_table.indexes) {
+                if !commit_table.indexes.contains_key(&cols) {
+                    index.clear();
+                    commit_table.insert_index(commit_blob_store, cols, index);
+                }
+            }
+
+            // The schema may have been modified in the transaction.
+            // Update this last to placate borrowck and avoid a clone.
+            // None of the above operations will inspect the schema.
+            commit_table.schema = tx_table.schema;
         }
     }
 
@@ -465,16 +475,6 @@ impl CommittedState {
 
     pub fn get_table_mut(&mut self, table_id: TableId) -> Option<&mut Table> {
         self.tables.get_mut(&table_id)
-    }
-
-    pub fn with_table_and_blob_store<Res>(
-        &mut self,
-        table_id: TableId,
-        f: impl FnOnce(&mut Table, &mut dyn BlobStore) -> Res,
-    ) -> Option<Res> {
-        let table = self.tables.get_mut(&table_id)?;
-        let blob_store = &mut self.blob_store;
-        Some(f(table, blob_store))
     }
 
     pub fn get_table_and_blob_store(&mut self, table_id: TableId) -> Option<(&mut Table, &mut dyn BlobStore)> {
@@ -488,34 +488,33 @@ impl CommittedState {
             .insert(table_id, Table::new(schema, SquashedOffset::COMMITTED_STATE));
     }
 
-    pub fn with_table_and_blob_store_or_create_ref_schema<Res>(
-        &mut self,
+    pub fn get_table_and_blob_store_or_create_ref_schema<'this>(
+        &'this mut self,
         table_id: TableId,
-        schema: &TableSchema,
-        f: impl FnOnce(&mut Table, &mut dyn BlobStore) -> Res,
-    ) -> Res {
+        schema: &'_ TableSchema,
+    ) -> (&'this mut Table, &'this mut dyn BlobStore) {
         let table = self
             .tables
             .entry(table_id)
             .or_insert_with(|| Table::new(schema.clone(), SquashedOffset::COMMITTED_STATE));
         let blob_store = &mut self.blob_store;
-        f(table, blob_store)
+        (table, blob_store)
     }
 
-    pub fn with_table_and_blob_store_or_create<Res>(
+    pub fn get_table_and_blob_store_or_create(
         &mut self,
         table_id: TableId,
         schema: TableSchema,
-        f: impl FnOnce(&mut Table, &mut dyn BlobStore) -> Res,
-    ) -> Res {
+    ) -> (&mut Table, &mut dyn BlobStore) {
         let table = self
             .tables
             .entry(table_id)
             .or_insert_with(|| Table::new(schema, SquashedOffset::COMMITTED_STATE));
         let blob_store = &mut self.blob_store;
-        f(table, blob_store)
+        (table, blob_store)
     }
 
+    #[allow(unused)]
     pub fn iter_by_col_range_maybe_index<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         ctx: &'a ExecutionContext,
@@ -568,7 +567,7 @@ pub struct CommittedIndexIter<'a> {
 }
 
 impl<'a> CommittedIndexIter<'a> {
-    pub fn new(
+    pub(crate) fn new(
         ctx: &'a ExecutionContext,
         table_id: TableId,
         tx_state: Option<&'a TxState>,

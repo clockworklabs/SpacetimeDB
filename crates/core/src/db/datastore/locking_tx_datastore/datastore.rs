@@ -144,22 +144,21 @@ impl Locking {
                     committed_state
                         .replay_delete_by_rel(table_id, &row)
                         .expect("Error deleting row while replaying transaction");
+                    // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
+                    // and therefore has performance implications and must not be disabled.
                     DB_METRICS
                         .rdb_num_table_rows
                         .with_label_values(&self.database_address, &table_id.into(), &table_name)
                         .dec();
                 }
                 Operation::Insert => {
-                    committed_state.with_table_and_blob_store_or_create_ref_schema(
-                        table_id,
-                        &schema,
-                        |table, blob_store| {
-                            table.insert(blob_store, &row).unwrap_or_else(|e| {
-                                panic!("Failed to insert during transaction playback: {:?}", e);
-                            });
-                        },
-                    );
-
+                    let (table, blob_store) =
+                        committed_state.get_table_and_blob_store_or_create_ref_schema(table_id, &schema);
+                    table.insert(blob_store, &row).unwrap_or_else(|e| {
+                        panic!("Failed to insert during transaction playback: {:?}", e);
+                    });
+                    // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
+                    // and therefore has performance implications and must not be disabled.
                     DB_METRICS
                         .rdb_num_table_rows
                         .with_label_values(&self.database_address, &table_id.into(), &table_name)
@@ -404,11 +403,11 @@ impl MutTxDatastore for Locking {
         &self,
         tx: &mut Self::MutTx,
         table_id: TableId,
-        relations: impl IntoIterator<Item = ProductValue>,
+        relation: impl IntoIterator<Item = ProductValue>,
     ) -> u32 {
         let mut num_deleted = 0;
-        for rel in relations {
-            match tx.delete_by_rel(table_id, &rel) {
+        for row in relation {
+            match tx.delete_by_row_value(table_id, &row) {
                 Err(e) => log::error!("delete_by_rel_mut_tx: {:?}", e),
                 Ok(b) => num_deleted += b as u32,
             }
@@ -568,7 +567,7 @@ impl MutProgrammable for Locking {
             // there will be another immutable borrow of self after the two mutable borrows below.
             drop(iter);
 
-            tx.delete_by_rel(ST_MODULE_ID, &row_pv)?;
+            tx.delete_by_row_value(ST_MODULE_ID, &row_pv)?;
             tx.insert(
                 ST_MODULE_ID,
                 &mut ProductValue::from(&StModuleRow {

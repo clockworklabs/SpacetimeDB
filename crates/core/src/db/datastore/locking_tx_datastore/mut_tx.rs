@@ -332,7 +332,7 @@ impl MutTxId {
         let index_id = index.index_id;
         let table_id = index.table_id;
 
-        let (table, blob_store) = if let Some(pair) = self.tx_state.get_table_and_blob_store_mut(table_id) {
+        let (table, blob_store) = if let Some(pair) = self.tx_state.get_table_and_blob_store(table_id) {
             pair
         } else {
             let ctx = ExecutionContext::internal(database_address);
@@ -340,7 +340,7 @@ impl MutTxId {
             self.tx_state
                 .insert_tables
                 .insert(index.table_id, Table::new(schema, SquashedOffset::TX_STATE));
-            self.tx_state.get_table_and_blob_store_mut(table_id).unwrap()
+            self.tx_state.get_table_and_blob_store(table_id).unwrap()
         };
 
         let mut insert_index = BTreeIndex::new(index.index_id, index.is_unique, index.index_name.clone());
@@ -411,7 +411,7 @@ impl MutTxId {
             // will leave the index dropped, rather than restoring it.
             clear_indexes(table);
         }
-        if let Some((insert_table, _)) = self.tx_state.get_table_and_blob_store_mut(table_id) {
+        if let Some((insert_table, _)) = self.tx_state.get_table_and_blob_store(table_id) {
             clear_indexes(insert_table);
         }
 
@@ -554,7 +554,7 @@ impl MutTxId {
         // will leave the sequence deleted,
         // rather than restoring it during rollback.
         self.sequence_state_lock.remove(sequence_id);
-        if let Some((insert_table, _)) = self.tx_state.get_table_and_blob_store_mut(table_id) {
+        if let Some((insert_table, _)) = self.tx_state.get_table_and_blob_store(table_id) {
             insert_table.schema.remove_sequence(sequence_id);
         }
         Ok(())
@@ -623,7 +623,7 @@ impl MutTxId {
 
     fn get_insert_table_mut(&mut self, table_id: TableId) -> Result<&mut Table> {
         self.tx_state
-            .get_table_and_blob_store_mut(table_id)
+            .get_table_and_blob_store(table_id)
             .map(|(tbl, _)| tbl)
             .ok_or_else(|| TableError::IdNotFoundState(table_id).into())
     }
@@ -648,10 +648,7 @@ impl MutTxId {
 
         self.delete(ST_CONSTRAINTS_ID, st_constraint_ptr)?;
 
-        if let Some((insert_table, _)) = self.tx_state.get_table_and_blob_store_mut(table_id) {
-            // TODO: Transactionality.
-            // Currently, it appears that a TX which drops a constraint and then aborts
-            // will leave the constraint dropped, rather than restoring it.
+        if let Ok(insert_table) = self.get_insert_table_mut(table_id) {
             insert_table.schema.remove_constraint(constraint_id);
         }
 
@@ -855,12 +852,13 @@ impl MutTxId {
             // For newly-inserted rows,
             // just delete them from the insert tables
             // - there's no reason to have them in both the insert and delete tables.
-            SquashedOffset::TX_STATE => self
-                .tx_state
-                .with_table_and_blob_store(table_id, |table, blob_store| {
-                    table.delete(blob_store, row_pointer).is_some()
-                })
-                .ok_or_else(|| TableError::IdNotFoundState(table_id).into()),
+            SquashedOffset::TX_STATE => {
+                let (table, blob_store) = self
+                    .tx_state
+                    .get_table_and_blob_store(table_id)
+                    .ok_or_else(|| TableError::IdNotFoundState(table_id))?;
+                Ok(table.delete(blob_store, row_pointer).is_some())
+            }
             SquashedOffset::COMMITTED_STATE => {
                 // NOTE: We trust the `row_pointer` refers to an extant row,
                 // and check only that it hasn't yet been deleted.
@@ -872,7 +870,7 @@ impl MutTxId {
         }
     }
 
-    pub fn delete_by_rel(&mut self, table_id: TableId, rel: &ProductValue) -> Result<bool> {
+    pub fn delete_by_row_value(&mut self, table_id: TableId, rel: &ProductValue) -> Result<bool> {
         // Four cases here:
         // - Table exists in both tx_state and committed_state.
         //   - Temporary insert into tx_state.

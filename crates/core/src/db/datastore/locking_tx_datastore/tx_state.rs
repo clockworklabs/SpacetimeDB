@@ -127,16 +127,7 @@ impl TxState {
         self.delete_tables.entry(table_id).or_default()
     }
 
-    pub fn with_table_and_blob_store<Res>(
-        &mut self,
-        table_id: TableId,
-        f: impl FnOnce(&mut Table, &mut dyn BlobStore) -> Res,
-    ) -> Option<Res> {
-        let (table, blob_store) = self.get_table_and_blob_store_mut(table_id)?;
-        Some(f(table, blob_store))
-    }
-
-    pub fn get_table_and_blob_store_mut(&mut self, table_id: TableId) -> Option<(&mut Table, &mut dyn BlobStore)> {
+    pub fn get_table_and_blob_store(&mut self, table_id: TableId) -> Option<(&mut Table, &mut dyn BlobStore)> {
         let table = self.insert_tables.get_mut(&table_id)?;
         let blob_store = &mut self.blob_store;
         Some((table, blob_store))
@@ -158,18 +149,5 @@ impl TxState {
             btree_map::Entry::Occupied(e) => e.into_mut(),
         };
         Some((tbl, blob_store, delete_tables.entry(table_id).or_default()))
-    }
-
-    pub fn with_table_and_blob_store_or_create_from<Res>(
-        &mut self,
-        table_id: TableId,
-        template: &Table,
-        f: impl FnOnce(&mut Table, &mut dyn BlobStore) -> Res,
-    ) -> Res {
-        let table = self
-            .insert_tables
-            .entry(table_id)
-            .or_insert_with(|| template.clone_structure(SquashedOffset::TX_STATE));
-        f(table, &mut self.blob_store)
     }
 }

@@ -24,7 +24,7 @@ use std::{borrow::Cow, ops::RangeBounds};
 
 // StateView trait, is designed to define the behavior of viewing internal datastore states.
 // Currently, it applies to: CommittedState, MutTxId, and TxId.
-pub trait StateView {
+pub(crate) trait StateView {
     fn get_schema(&self, table_id: &TableId) -> Option<&TableSchema>;
 
     fn table_id_from_name(&self, table_name: &str, database_address: Address) -> Result<Option<TableId>> {
@@ -439,7 +439,7 @@ pub struct ScanIterByColRange<'a, R: RangeBounds<AlgebraicValue>> {
 }
 
 impl<'a, R: RangeBounds<AlgebraicValue>> ScanIterByColRange<'a, R> {
-    pub fn new(scan_iter: Iter<'a>, cols: ColList, range: R) -> Self {
+    pub(crate) fn new(scan_iter: Iter<'a>, cols: ColList, range: R) -> Self {
         Self { scan_iter, cols, range }
     }
 }
