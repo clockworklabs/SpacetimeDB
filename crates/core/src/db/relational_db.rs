@@ -1709,4 +1709,49 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    /// Test that iteration yields each row only once
+    /// in the edge case where a row is committed and has been deleted and re-inserted within the iterating TX.
+    fn test_insert_delete_insert_iter() {
+        let (stdb, _tmp_dir) = make_test_db().expect("make_test_db failed");
+        let ctx = ExecutionContext::default();
+
+        let mut initial_tx = stdb.begin_mut_tx();
+        let schema = TableDef::from_product("test_table", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
+        let table_id = stdb.create_table(&mut initial_tx, schema).expect("create_table failed");
+
+        stdb.commit_tx(&ctx, initial_tx).expect("Commit initial_tx failed");
+
+        // Insert a row and commit it, so the row is in the committed_state.
+        let mut insert_tx = stdb.begin_mut_tx();
+        stdb.insert(&mut insert_tx, table_id, product!(AlgebraicValue::I32(0)))
+            .expect("Insert insert_tx failed");
+        stdb.commit_tx(&ctx, insert_tx).expect("Commit insert_tx failed");
+
+        let mut delete_insert_tx = stdb.begin_mut_tx();
+        // Delete the row, so it's in the `delete_tables` of `delete_insert_tx`.
+        assert_eq!(
+            stdb.delete_by_rel(&mut delete_insert_tx, table_id, [product!(AlgebraicValue::I32(0))]),
+            1
+        );
+
+        // Insert the row again, so that depending on the datastore internals,
+        // it may now be only in the committed_state,
+        // or in all three of the committed_state, delete_tables and insert_tables.
+        stdb.insert(&mut delete_insert_tx, table_id, product!(AlgebraicValue::I32(0)))
+            .expect("Insert delete_insert_tx failed");
+
+        // Iterate over the table and assert that we see the committed-deleted-inserted row only once.
+        assert_eq!(
+            &stdb
+                .iter_mut(&ctx, &delete_insert_tx, table_id)
+                .expect("iter delete_insert_tx failed")
+                .map(|row_ref| row_ref.to_product_value())
+                .collect::<Vec<_>>(),
+            &[product!(AlgebraicValue::I32(0))],
+        );
+
+        stdb.rollback_mut_tx(&ctx, delete_insert_tx);
+    }
 }

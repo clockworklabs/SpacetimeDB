@@ -290,6 +290,8 @@ impl<'a> Iterator for Iter<'a> {
                         // Check the committed row's state in the current tx.
                         // If it's been deleted, skip it.
                         // If it's still present, yield it.
+                        // Note that the committed state and the insert tables are disjoint sets,
+                        // so at this point we know the row will not be yielded in (2).
                         if !self
                             .tx_state
                             .map(|tx_state| tx_state.is_deleted(table_id, row_ref.pointer()))
