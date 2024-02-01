@@ -13,7 +13,10 @@ use super::{
 use core::mem;
 use core::ops::Index;
 use enum_as_inner::EnumAsInner;
-use spacetimedb_sats::{bsatn, AlgebraicType, AlgebraicValue, BuiltinType, ProductType, ProductValue, SumType};
+use spacetimedb_sats::{
+    bsatn, AlgebraicType, AlgebraicValue, BuiltinType, ProductType, ProductTypeElement, ProductValue, SumType,
+    SumTypeVariant,
+};
 
 /// Aligns a `base` offset to the `required_alignment` and returns it.
 ///
@@ -78,7 +81,7 @@ pub trait HasLayout {
 ///
 /// - `Ref`s are not supported.
 ///   Supporting recursive types remains a TODO(future-work).
-///   Note that existing Spacetime does not support recursive types in tables.
+///   Note that the previous Spacetime datastore did not support recursive types in tables.
 ///
 /// - [`BuiltinType`] is separated into [`PrimitveType`] (atomically-sized types like integers)
 ///   and  [`VarLenType`] (strings, arrays, and maps).
@@ -221,10 +224,10 @@ pub struct ProductTypeElementLayout {
     /// The type of the field.
     pub ty: AlgebraicTypeLayout,
 
-    // TODO(perf,integration): Determine whether this is useful.
-    //       It's possible that `Table` needs to store both an `AlgebraicValue` and `AlgebraicValueLayout` anyway,
-    //       in which case there's no reason to keep debug metadata in the `Layout` version.
     /// An optional name of the field.
+    ///
+    /// This allows us to convert back to `ProductTypeElement`,
+    /// which we do when reporting type errors.
     pub name: Option<String>,
 }
 
@@ -251,10 +254,10 @@ pub struct SumTypeVariantLayout {
     /// The type of the variant.
     pub ty: AlgebraicTypeLayout,
 
-    // TODO(perf,integration): Determine whether this is useful.
-    //       It's possible that `Table` needs to store both an `AlgebraicValue` and `AlgebraicValueLayout` anyway,
-    //       in which case there's no reason to keep debug metadata in the `Layout` version.
     /// An optional name of the variant.
+    ///
+    /// This allows us to convert back to `SumTypeVariant`,
+    /// which we do when reporting type errors.
     pub name: Option<String>,
 }
 
@@ -296,10 +299,14 @@ pub enum VarLenType {
     /// The string type corresponds to `AlgebraicType::String`.
     String,
     /// An array type. The whole outer `AlgebraicType` is stored here.
-    /// TODO(integration): Only store the element type.
+    ///
+    /// Storing the whole `AlgebraicType` here allows us to directly call BSATN ser/de,
+    /// and to report type errors.
     Array(Box<AlgebraicType>),
     /// A map type.  The whole outer `AlgebraicType` is stored here.
-    /// TODO(integration): Only store the key and value types.
+    ///
+    /// Storing the whole `AlgebraicType` here allows us to directly call BSATN ser/de,
+    /// and to report type errors.
     Map(Box<AlgebraicType>),
 }
 
@@ -313,6 +320,8 @@ impl HasLayout for VarLenType {
         &VAR_LEN_REF_LAYOUT
     }
 }
+
+// # Conversions from `AlgebraicType` and friends
 
 impl From<AlgebraicType> for AlgebraicTypeLayout {
     fn from(ty: AlgebraicType) -> Self {
@@ -421,6 +430,110 @@ impl From<SumType> for SumTypeLayout {
     }
 }
 
+// # Conversions to `AlgebraicType` and friends
+// Used for error reporting.
+
+impl AlgebraicTypeLayout {
+    /// Convert an `AlgebraicTypeLayout` back into an `AlgebraicType`,
+    /// removing layout information.
+    ///
+    /// This operation is O(n) in the number of nodes in the argument,
+    /// and may heap-allocate.
+    /// It is intended for use in error paths, where performance is a secondary concern.
+    pub fn algebraic_type(&self) -> AlgebraicType {
+        match self {
+            AlgebraicTypeLayout::Primitive(prim) => prim.algebraic_type(),
+            AlgebraicTypeLayout::VarLen(var_len) => var_len.algebraic_type(),
+            AlgebraicTypeLayout::Product(prod) => AlgebraicType::Product(prod.product_type()),
+            AlgebraicTypeLayout::Sum(sum) => AlgebraicType::Sum(sum.sum_type()),
+        }
+    }
+}
+
+impl PrimitiveType {
+    fn algebraic_type(&self) -> AlgebraicType {
+        match self {
+            PrimitiveType::Bool => AlgebraicType::Bool,
+            PrimitiveType::I8 => AlgebraicType::I8,
+            PrimitiveType::U8 => AlgebraicType::U8,
+            PrimitiveType::I16 => AlgebraicType::I16,
+            PrimitiveType::U16 => AlgebraicType::U16,
+            PrimitiveType::I32 => AlgebraicType::I32,
+            PrimitiveType::U32 => AlgebraicType::U32,
+            PrimitiveType::I64 => AlgebraicType::I64,
+            PrimitiveType::U64 => AlgebraicType::U64,
+            PrimitiveType::I128 => AlgebraicType::I128,
+            PrimitiveType::U128 => AlgebraicType::U128,
+            PrimitiveType::F32 => AlgebraicType::F32,
+            PrimitiveType::F64 => AlgebraicType::F64,
+        }
+    }
+}
+
+impl VarLenType {
+    fn algebraic_type(&self) -> AlgebraicType {
+        match self {
+            VarLenType::String => AlgebraicType::String,
+            VarLenType::Array(ty) => ty.as_ref().clone(),
+            VarLenType::Map(ty) => ty.as_ref().clone(),
+        }
+    }
+}
+
+impl ProductTypeLayout {
+    fn product_type(&self) -> ProductType {
+        ProductType {
+            elements: self
+                .elements
+                .iter()
+                .map(ProductTypeElementLayout::product_type_element)
+                .collect(),
+        }
+    }
+
+    /// Convert a `ProductTypeLayout` back into an `AlgebraicType::Product`,
+    /// removing layout information.
+    ///
+    /// This operation is O(n) in the number of nodes in the argument,
+    /// and will heap-allocate.
+    /// It is intended for use in error paths, where performance is a secondary concern.
+    pub fn algebraic_type(&self) -> AlgebraicType {
+        AlgebraicType::Product(self.product_type())
+    }
+}
+
+impl ProductTypeElementLayout {
+    fn product_type_element(&self) -> ProductTypeElement {
+        ProductTypeElement {
+            algebraic_type: self.ty.algebraic_type(),
+            name: self.name.clone(),
+        }
+    }
+}
+
+impl SumTypeLayout {
+    fn sum_type(&self) -> SumType {
+        SumType {
+            variants: self
+                .variants
+                .iter()
+                .map(SumTypeVariantLayout::sum_type_variant)
+                .collect(),
+        }
+    }
+}
+
+impl SumTypeVariantLayout {
+    fn sum_type_variant(&self) -> SumTypeVariant {
+        SumTypeVariant {
+            algebraic_type: self.ty.algebraic_type(),
+            name: self.name.clone(),
+        }
+    }
+}
+
+// # Inspecting layout
+
 impl SumTypeLayout {
     pub fn offset_of_variant_data(&self, _variant_tag: u8) -> usize {
         // Store the tag at the end, so that the payloads are trivially aligned without padding before.
@@ -434,11 +547,9 @@ impl SumTypeLayout {
         // (Could swap the order of the tag & the padding, but it doesn't matter,
         // as you need to know size & align of the variant data to compute the tag offset either way.)
         //
-        // TODO(perf,bikeshedding): consider if this is better than storing the tag at the beginning.
-        //       This scheme makes accessing variant data cheaper,
-        //       but accessing the tag more expensive.
-        //       This tradeoff can be eliminated by memoizing offsets.
-
+        // TODO(bikeshedding): consider if this is better than storing the tag at the beginning.
+        // Given that we pre-compute and memoize the offset of the tag,
+        // there's very little performance reason to switch.
         0
     }
 
@@ -495,10 +606,6 @@ pub fn bsatn_len(val: &AlgebraicValue) -> usize {
     // so we need to go through BSATN encoding to determine the size of the resulting byte blob,
     // but we don't actually need that byte blob in this calculation,
     // instead, we can just count them as a serialization format.
-    //
-    // TODO(perf,bikeshedding): consider refactoring
-    //       to go through `val.encode` only once during `write_av_to_pages`,
-    //       rather than once here and then again in `write_av_to_page`.
     bsatn::to_len(val).unwrap()
 }
 

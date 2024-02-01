@@ -1,60 +1,37 @@
-use super::committed_state::CommittedState;
-use super::mut_tx::MutTxId;
-use super::sequence::SequencesState;
-use super::state_view::{Iter, IterByColRange, StateView as _};
-use super::tx::TxId;
-use super::tx_state::TxState;
-use crate::db::datastore::system_tables::{Epoch, StModuleRow, StTableRow, ST_MODULE_ID, ST_TABLES_ID, WASM_MODULE};
-use crate::db::datastore::traits::{self, DataRow, MutTxDatastore, TxData, TxDatastore};
-use crate::db::datastore::Result;
-use crate::db::db_metrics::{DB_METRICS, MAX_TX_CPU_TIME};
-use crate::db::messages::{transaction::Transaction, write::Operation};
-use crate::db::ostorage::ObjectDB;
-use crate::execution_context::ExecutionContext;
+use super::{
+    committed_state::CommittedState,
+    mut_tx::MutTxId,
+    sequence::SequencesState,
+    state_view::{Iter, IterByColRange, StateView},
+    tx::TxId,
+    tx_state::TxState,
+};
+use crate::{
+    address::Address,
+    db::{
+        datastore::{
+            system_tables::{Epoch, StModuleRow, StTableRow, ST_MODULE_ID, ST_TABLES_ID, WASM_MODULE},
+            traits::{DataRow, MutProgrammable, MutTx, MutTxDatastore, Programmable, Tx, TxData, TxDatastore},
+        },
+        db_metrics::{DB_METRICS, MAX_TX_CPU_TIME},
+        messages::{transaction::Transaction, write::Operation},
+        ostorage::ObjectDB,
+    },
+    error::DBError,
+    execution_context::ExecutionContext,
+};
 use anyhow::anyhow;
-use core::ops::RangeBounds;
 use parking_lot::{Mutex, RwLock};
-use spacetimedb_lib::Address;
-use spacetimedb_primitives::*;
-use spacetimedb_sats::data_key::DataKey;
-use spacetimedb_sats::db::def::*;
-use spacetimedb_sats::hash::Hash;
-use spacetimedb_sats::relation::RelValue;
-use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
+use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
+use spacetimedb_sats::db::def::{IndexDef, SequenceDef, TableDef, TableSchema};
+use spacetimedb_sats::{hash::Hash, AlgebraicValue, DataKey, ProductType, ProductValue};
+use spacetimedb_table::{indexes::RowPointer, table::RowRef};
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::ops::RangeBounds;
 use std::sync::Arc;
 use std::time::Instant;
 
-/// A `DataRef` represents a row stored in a table.
-///
-/// A table row always has a [`DataKey`] associated with it.
-/// This is in contrast to rows that are materialized during query execution
-/// which may or may not have an associated `DataKey`.
-#[derive(Copy, Clone)]
-pub struct DataRef<'a> {
-    id: &'a DataKey,
-    pub(crate) data: &'a ProductValue,
-}
-
-impl<'a> DataRef<'a> {
-    pub(crate) fn new(id: &'a RowId, data: &'a ProductValue) -> Self {
-        let id = &id.0;
-        Self { id, data }
-    }
-
-    pub fn view(self) -> &'a ProductValue {
-        self.data
-    }
-
-    pub fn id(self) -> &'a DataKey {
-        self.id
-    }
-
-    pub fn to_rel_value(self) -> RelValue {
-        RelValue::new(self.data.clone(), Some(*self.id))
-    }
-}
+pub type Result<T> = std::result::Result<T, DBError>;
 
 /// Struct contains various database states, each protected by
 /// their own lock. To avoid deadlocks, it is crucial to acquire these locks
@@ -68,8 +45,6 @@ impl<'a> DataRef<'a> {
 /// All locking mechanisms are encapsulated within the struct through local methods.
 #[derive(Clone)]
 pub struct Locking {
-    /// All of the byte objects inserted in the current transaction.
-    memory: Arc<Mutex<BTreeMap<DataKey, Arc<Vec<u8>>>>>,
     /// The state of the database up to the point of the last committed transaction.
     committed_state: Arc<RwLock<CommittedState>>,
     /// The state of sequence generation in this database.
@@ -81,7 +56,6 @@ pub struct Locking {
 impl Locking {
     pub fn new(database_address: Address) -> Self {
         Self {
-            memory: <_>::default(),
             committed_state: <_>::default(),
             sequence_state: <_>::default(),
             database_address,
@@ -141,41 +115,50 @@ impl Locking {
                 .schema_for_table(&ExecutionContext::default(), table_id)?
                 .into_owned();
             let table_name = schema.table_name.clone();
+            let row_type = schema.get_row_type();
+
+            let decode_row = |mut data: &[u8], source: &str| {
+                ProductValue::decode(row_type, &mut data).unwrap_or_else(|e| {
+                    panic!(
+                        "Couldn't decode product value from {}: `{}`. Expected row type: {:?}",
+                        source, e, row_type
+                    )
+                })
+            };
+
+            let data_key_to_av = |data_key| match data_key {
+                DataKey::Data(data) => decode_row(&data, "message log"),
+
+                DataKey::Hash(hash) => {
+                    let data = odb.get(hash).unwrap_or_else(|| {
+                        panic!("Object {hash} referenced from transaction not present in object DB");
+                    });
+                    decode_row(&data, "object DB")
+                }
+            };
+
+            let row = data_key_to_av(write.data_key);
 
             match write.operation {
                 Operation::Delete => {
                     committed_state
-                        .table_rows(table_id, schema)
-                        .remove(&RowId(write.data_key));
+                        .replay_delete_by_rel(table_id, &row)
+                        .expect("Error deleting row while replaying transaction");
+                    // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
+                    // and therefore has performance implications and must not be disabled.
                     DB_METRICS
                         .rdb_num_table_rows
                         .with_label_values(&self.database_address, &table_id.into(), &table_name)
                         .dec();
                 }
                 Operation::Insert => {
-                    let row_type = schema.get_row_type();
-                    let product_value = match write.data_key {
-                        DataKey::Data(data) => ProductValue::decode(row_type, &mut &data[..]).unwrap_or_else(|e| {
-                            panic!(
-                                "Couldn't decode product value from message log: `{}`. Expected row type: {:?}",
-                                e, row_type
-                            )
-                        }),
-                        DataKey::Hash(hash) => {
-                            let data = odb.get(hash).unwrap_or_else(|| {
-                                panic!("Object {hash} referenced from transaction not present in object DB");
-                            });
-                            ProductValue::decode(row_type, &mut &data[..]).unwrap_or_else(|e| {
-                                panic!(
-                                    "Couldn't decode product value {} from object DB: `{}`. Expected row type: {:?}",
-                                    hash, e, row_type
-                                )
-                            })
-                        }
-                    };
-                    committed_state
-                        .table_rows(table_id, schema)
-                        .insert(RowId(write.data_key), product_value);
+                    let (table, blob_store) =
+                        committed_state.get_table_and_blob_store_or_create_ref_schema(table_id, &schema);
+                    table.insert(blob_store, &row).unwrap_or_else(|e| {
+                        panic!("Failed to insert during transaction playback: {:?}", e);
+                    });
+                    // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
+                    // and therefore has performance implications and must not be disabled.
                     DB_METRICS
                         .rdb_num_table_rows
                         .with_label_values(&self.database_address, &table_id.into(), &table_name)
@@ -187,19 +170,16 @@ impl Locking {
     }
 }
 
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
-pub struct RowId(pub(crate) DataKey);
-
 impl DataRow for Locking {
-    type RowId = RowId;
-    type DataRef<'a> = DataRef<'a>;
+    type RowId = RowPointer;
+    type DataRef<'a> = RowRef<'a>;
 
     fn view_product_value<'a>(&self, data_ref: Self::DataRef<'a>) -> Cow<'a, ProductValue> {
-        Cow::Borrowed(data_ref.data)
+        Cow::Owned(data_ref.to_product_value())
     }
 }
 
-impl traits::Tx for Locking {
+impl Tx for Locking {
     type Tx = TxId;
 
     fn begin_tx(&self) -> Self::Tx {
@@ -263,115 +243,13 @@ impl TxDatastore for Locking {
     }
 
     fn get_all_tables_tx<'tx>(&self, ctx: &ExecutionContext, tx: &'tx Self::Tx) -> Result<Vec<Cow<'tx, TableSchema>>> {
-        let mut tables = Vec::new();
-        let table_rows = self.iter_tx(ctx, tx, ST_TABLES_ID)?.collect::<Vec<_>>();
-        for data_ref in table_rows {
-            let data = self.view_product_value(data_ref);
-            let row = StTableRow::try_from(data.as_ref())?;
-            tables.push(self.schema_for_table_tx(tx, row.table_id)?);
-        }
-        Ok(tables)
-    }
-}
-
-impl traits::MutTx for Locking {
-    type MutTx = MutTxId;
-
-    fn begin_mut_tx(&self) -> Self::MutTx {
-        let timer = Instant::now();
-
-        let committed_state_write_lock = self.committed_state.write_arc();
-        let sequence_state_lock = self.sequence_state.lock_arc();
-        let memory_lock = self.memory.lock_arc();
-        let lock_wait_time = timer.elapsed();
-        MutTxId {
-            committed_state_write_lock,
-            sequence_state_lock,
-            tx_state: TxState::default(),
-            memory_lock,
-            lock_wait_time,
-            timer,
-        }
-    }
-
-    fn rollback_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) {
-        let workload = &ctx.workload();
-        let db = &ctx.database();
-        let reducer = ctx.reducer_name();
-        let elapsed_time = tx.timer.elapsed();
-        let cpu_time = elapsed_time - tx.lock_wait_time;
-        #[cfg(feature = "metrics")]
-        DB_METRICS
-            .rdb_num_txns
-            .with_label_values(workload, db, reducer, &false)
-            .inc();
-        #[cfg(feature = "metrics")]
-        DB_METRICS
-            .rdb_txn_cpu_time_sec
-            .with_label_values(workload, db, reducer)
-            .observe(cpu_time.as_secs_f64());
-        #[cfg(feature = "metrics")]
-        DB_METRICS
-            .rdb_txn_elapsed_time_sec
-            .with_label_values(workload, db, reducer)
-            .observe(elapsed_time.as_secs_f64());
-        tx.rollback();
-    }
-
-    fn commit_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) -> Result<Option<TxData>> {
-        #[cfg(feature = "metrics")]
-        {
-            let workload = &ctx.workload();
-            let db = &ctx.database();
-            let reducer = ctx.reducer_name();
-            let elapsed_time = tx.timer.elapsed();
-            let cpu_time = elapsed_time - tx.lock_wait_time;
-
-            let elapsed_time = elapsed_time.as_secs_f64();
-            let cpu_time = cpu_time.as_secs_f64();
-            // Note, we record empty transactions in our metrics.
-            // That is, transactions that don't write any rows to the commit log.
-            DB_METRICS
-                .rdb_num_txns
-                .with_label_values(workload, db, reducer, &true)
-                .inc();
-            DB_METRICS
-                .rdb_txn_cpu_time_sec
-                .with_label_values(workload, db, reducer)
-                .observe(cpu_time);
-            DB_METRICS
-                .rdb_txn_elapsed_time_sec
-                .with_label_values(workload, db, reducer)
-                .observe(elapsed_time);
-
-            let mut guard = MAX_TX_CPU_TIME.lock().unwrap();
-            let max_cpu_time = *guard
-                .entry((*db, *workload, reducer.to_owned()))
-                .and_modify(|max| {
-                    if cpu_time > *max {
-                        *max = cpu_time;
-                    }
-                })
-                .or_insert_with(|| cpu_time);
-
-            drop(guard);
-            DB_METRICS
-                .rdb_txn_cpu_time_sec_max
-                .with_label_values(workload, db, reducer)
-                .set(max_cpu_time);
-        }
-
-        tx.commit()
-    }
-
-    #[cfg(test)]
-    fn rollback_mut_tx_for_test(&self, tx: Self::MutTx) {
-        tx.rollback();
-    }
-
-    #[cfg(test)]
-    fn commit_mut_tx_for_test(&self, tx: Self::MutTx) -> Result<Option<TxData>> {
-        tx.commit()
+        self.iter_tx(ctx, tx, ST_TABLES_ID)?
+            .map(|row_ref| {
+                let data = row_ref.to_product_value();
+                let row = StTableRow::try_from(&data)?;
+                self.schema_for_table_tx(tx, row.table_id)
+            })
+            .collect()
     }
 }
 
@@ -425,7 +303,7 @@ impl MutTxDatastore for Locking {
         tx: &'a Self::MutTx,
         table_id: TableId,
     ) -> Result<Option<Cow<'a, str>>> {
-        tx.table_name_from_id(ctx, table_id).map(|opt| opt.map(Cow::Borrowed))
+        tx.table_name_from_id(ctx, table_id).map(|opt| opt.map(Cow::Owned))
     }
 
     fn create_index_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, index: IndexDef) -> Result<IndexId> {
@@ -499,18 +377,26 @@ impl MutTxDatastore for Locking {
         &self,
         tx: &'a Self::MutTx,
         table_id: TableId,
-        row_id: &'a Self::RowId,
+        row_ptr: &'a Self::RowId,
     ) -> Result<Option<Self::DataRef<'a>>> {
-        tx.get(&table_id, row_id)
+        // TODO(perf, deep-integration): Rework this interface so that `row_ptr` can be trusted.
+        tx.get(table_id, *row_ptr)
     }
 
     fn delete_mut_tx<'a>(
         &'a self,
         tx: &'a mut Self::MutTx,
         table_id: TableId,
-        row_ids: impl IntoIterator<Item = Self::RowId>,
+        row_ptrs: impl IntoIterator<Item = Self::RowId>,
     ) -> u32 {
-        tx.delete(&table_id, row_ids)
+        let mut num_deleted = 0;
+        for row_ptr in row_ptrs {
+            match tx.delete(table_id, row_ptr) {
+                Err(e) => log::error!("delete_mut_tx: {:?}", e),
+                Ok(b) => num_deleted += b as u32,
+            }
+        }
+        num_deleted
     }
 
     fn delete_by_rel_mut_tx(
@@ -519,16 +405,24 @@ impl MutTxDatastore for Locking {
         table_id: TableId,
         relation: impl IntoIterator<Item = ProductValue>,
     ) -> u32 {
-        tx.delete_by_rel(&table_id, relation)
+        let mut num_deleted = 0;
+        for row in relation {
+            match tx.delete_by_row_value(table_id, &row) {
+                Err(e) => log::error!("delete_by_rel_mut_tx: {:?}", e),
+                Ok(b) => num_deleted += b as u32,
+            }
+        }
+        num_deleted
     }
 
     fn insert_mut_tx<'a>(
         &'a self,
         tx: &'a mut Self::MutTx,
         table_id: TableId,
-        row: ProductValue,
+        mut row: ProductValue,
     ) -> Result<ProductValue> {
-        tx.insert(table_id, row, self.database_address)
+        tx.insert(table_id, &mut row, self.database_address)?;
+        Ok(row)
     }
 
     fn table_id_exists_mut_tx(&self, tx: &Self::MutTx, table_id: &TableId) -> bool {
@@ -536,29 +430,132 @@ impl MutTxDatastore for Locking {
     }
 }
 
-impl traits::Programmable for Locking {
-    fn program_hash(&self, tx: &TxId) -> Result<Option<Hash>> {
+impl MutTx for Locking {
+    type MutTx = MutTxId;
+
+    fn begin_mut_tx(&self) -> Self::MutTx {
+        let timer = Instant::now();
+
+        let committed_state_write_lock = self.committed_state.write_arc();
+        let sequence_state_lock = self.sequence_state.lock_arc();
+        let lock_wait_time = timer.elapsed();
+        MutTxId {
+            committed_state_write_lock,
+            sequence_state_lock,
+            tx_state: TxState::default(),
+            lock_wait_time,
+            timer,
+        }
+    }
+
+    fn rollback_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) {
+        let workload = &ctx.workload();
+        let db = &ctx.database();
+        let reducer = ctx.reducer_name();
+        let elapsed_time = tx.timer.elapsed();
+        let cpu_time = elapsed_time - tx.lock_wait_time;
+        #[cfg(feature = "metrics")]
+        DB_METRICS
+            .rdb_num_txns
+            .with_label_values(workload, db, reducer, &false)
+            .inc();
+
+        #[cfg(feature = "metrics")]
+        DB_METRICS
+            .rdb_txn_cpu_time_sec
+            .with_label_values(workload, db, reducer)
+            .observe(cpu_time.as_secs_f64());
+
+        #[cfg(feature = "metrics")]
+        DB_METRICS
+            .rdb_txn_elapsed_time_sec
+            .with_label_values(workload, db, reducer)
+            .observe(elapsed_time.as_secs_f64());
+        tx.rollback();
+    }
+
+    fn commit_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) -> Result<Option<TxData>> {
+        #[cfg(feature = "metrics")]
+        {
+            let workload = &ctx.workload();
+            let db = &ctx.database();
+            let reducer = ctx.reducer_name();
+            let elapsed_time = tx.timer.elapsed();
+            let cpu_time = elapsed_time - tx.lock_wait_time;
+
+            let elapsed_time = elapsed_time.as_secs_f64();
+            let cpu_time = cpu_time.as_secs_f64();
+            // Note, we record empty transactions in our metrics.
+            // That is, transactions that don't write any rows to the commit log.
+            DB_METRICS
+                .rdb_num_txns
+                .with_label_values(workload, db, reducer, &true)
+                .inc();
+            DB_METRICS
+                .rdb_txn_cpu_time_sec
+                .with_label_values(workload, db, reducer)
+                .observe(cpu_time);
+            DB_METRICS
+                .rdb_txn_elapsed_time_sec
+                .with_label_values(workload, db, reducer)
+                .observe(elapsed_time);
+
+            let mut guard = MAX_TX_CPU_TIME.lock().unwrap();
+            let max_cpu_time = *guard
+                .entry((*db, *workload, reducer.to_owned()))
+                .and_modify(|max| {
+                    if cpu_time > *max {
+                        *max = cpu_time;
+                    }
+                })
+                .or_insert_with(|| cpu_time);
+
+            drop(guard);
+            DB_METRICS
+                .rdb_txn_cpu_time_sec_max
+                .with_label_values(workload, db, reducer)
+                .set(max_cpu_time);
+        }
+
+        Ok(Some(tx.commit()))
+    }
+
+    #[cfg(test)]
+    fn commit_mut_tx_for_test(&self, tx: Self::MutTx) -> crate::db::datastore::Result<Option<TxData>> {
+        self.commit_mut_tx(&ExecutionContext::default(), tx)
+    }
+
+    #[cfg(test)]
+    fn rollback_mut_tx_for_test(&self, tx: Self::MutTx) {
+        self.rollback_mut_tx(&ExecutionContext::default(), tx)
+    }
+}
+
+impl Programmable for Locking {
+    fn program_hash(&self, tx: &TxId) -> Result<Option<spacetimedb_sats::hash::Hash>> {
         match tx
             .iter(&ExecutionContext::internal(self.database_address), &ST_MODULE_ID)?
             .next()
         {
             None => Ok(None),
             Some(data) => {
-                let row = StModuleRow::try_from(data.view())?;
+                let row = data.to_product_value();
+                let row = StModuleRow::try_from(&row)?;
                 Ok(Some(row.program_hash))
             }
         }
     }
 }
 
-impl traits::MutProgrammable for Locking {
+impl MutProgrammable for Locking {
     type FencingToken = u128;
 
     fn set_program_hash(&self, tx: &mut MutTxId, fence: Self::FencingToken, hash: Hash) -> Result<()> {
         let ctx = ExecutionContext::internal(self.database_address);
         let mut iter = tx.iter(&ctx, &ST_MODULE_ID)?;
-        if let Some(data) = iter.next() {
-            let row = StModuleRow::try_from(data.view())?;
+        if let Some(row_ref) = iter.next() {
+            let row_pv = row_ref.to_product_value();
+            let row = StModuleRow::try_from(&row_pv)?;
             if fence <= row.epoch.0 {
                 return Err(anyhow!("stale fencing token: {}, storage is at epoch: {}", fence, row.epoch).into());
             }
@@ -570,10 +567,10 @@ impl traits::MutProgrammable for Locking {
             // there will be another immutable borrow of self after the two mutable borrows below.
             drop(iter);
 
-            tx.delete_by_rel(&ST_MODULE_ID, Some(ProductValue::from(&row)));
+            tx.delete_by_row_value(ST_MODULE_ID, &row_pv)?;
             tx.insert(
                 ST_MODULE_ID,
-                ProductValue::from(&StModuleRow {
+                &mut ProductValue::from(&StModuleRow {
                     program_hash: hash,
                     kind: WASM_MODULE,
                     epoch: Epoch(fence),
@@ -591,7 +588,7 @@ impl traits::MutProgrammable for Locking {
 
         tx.insert(
             ST_MODULE_ID,
-            ProductValue::from(&StModuleRow {
+            &mut ProductValue::from(&StModuleRow {
                 program_hash: hash,
                 kind: WASM_MODULE,
                 epoch: Epoch(fence),
@@ -601,6 +598,7 @@ impl traits::MutProgrammable for Locking {
         Ok(())
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -613,8 +611,11 @@ mod tests {
     use crate::error::{DBError, IndexError};
     use itertools::Itertools;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_primitives::Constraints;
+    use spacetimedb_primitives::{col_list, ColId, Constraints};
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
+    use spacetimedb_sats::db::def::{
+        ColumnDef, ColumnSchema, ConstraintSchema, IndexSchema, IndexType, SequenceSchema,
+    };
     use spacetimedb_sats::{product, AlgebraicType};
     use spacetimedb_table::table::UniqueConstraintViolation;
 
@@ -633,7 +634,7 @@ mod tests {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_TABLES_ID)?
-                .map(|x| StTableRow::try_from(x.view()).unwrap().to_owned())
+                .map(|x| StTableRow::try_from(&x.to_product_value()).unwrap().to_owned())
                 .sorted_by_key(|x| x.table_id)
                 .collect::<Vec<_>>())
         }
@@ -646,7 +647,7 @@ mod tests {
             Ok(self
                 .db
                 .iter_by_col_eq(self.ctx, &ST_TABLES_ID, cols.into(), value)?
-                .map(|x| StTableRow::try_from(x.view()).unwrap().to_owned())
+                .map(|x| StTableRow::try_from(&x.to_product_value()).unwrap().to_owned())
                 .sorted_by_key(|x| x.table_id)
                 .collect::<Vec<_>>())
         }
@@ -655,7 +656,7 @@ mod tests {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_COLUMNS_ID)?
-                .map(|x| StColumnRow::try_from(x.view()).unwrap().to_owned())
+                .map(|x| StColumnRow::try_from(&x.to_product_value()).unwrap().to_owned())
                 .sorted_by_key(|x| (x.table_id, x.col_pos))
                 .collect::<Vec<_>>())
         }
@@ -668,7 +669,7 @@ mod tests {
             Ok(self
                 .db
                 .iter_by_col_eq(self.ctx, &ST_COLUMNS_ID, cols.into(), value)?
-                .map(|x| StColumnRow::try_from(x.view()).unwrap().to_owned())
+                .map(|x| StColumnRow::try_from(&x.to_product_value()).unwrap().to_owned())
                 .sorted_by_key(|x| (x.table_id, x.col_pos))
                 .collect::<Vec<_>>())
         }
@@ -677,7 +678,7 @@ mod tests {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_CONSTRAINTS_ID)?
-                .map(|x| StConstraintRow::try_from(x.view()).unwrap().to_owned())
+                .map(|x| StConstraintRow::try_from(&x.to_product_value()).unwrap().to_owned())
                 .sorted_by_key(|x| x.constraint_id)
                 .collect::<Vec<_>>())
         }
@@ -686,7 +687,7 @@ mod tests {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_SEQUENCES_ID)?
-                .map(|x| StSequenceRow::try_from(x.view()).unwrap().to_owned())
+                .map(|x| StSequenceRow::try_from(&x.to_product_value()).unwrap().to_owned())
                 .sorted_by_key(|x| (x.table_id, x.sequence_id))
                 .collect::<Vec<_>>())
         }
@@ -695,7 +696,7 @@ mod tests {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_INDEXES_ID)?
-                .map(|x| StIndexRow::try_from(x.view()).unwrap().to_owned())
+                .map(|x| StIndexRow::try_from(&x.to_product_value()).unwrap().to_owned())
                 .sorted_by_key(|x| x.index_id)
                 .collect::<Vec<_>>())
         }
@@ -941,7 +942,7 @@ mod tests {
         datastore
             .iter_mut_tx(&ExecutionContext::default(), tx, table_id)
             .unwrap()
-            .map(|r| r.view().clone())
+            .map(|r| r.to_product_value().clone())
             .collect()
     }
 
@@ -961,7 +962,7 @@ mod tests {
     fn all_rows_tx(tx: &TxId, table_id: TableId) -> Vec<ProductValue> {
         tx.iter(&ExecutionContext::default(), &table_id)
             .unwrap()
-            .map(|r| r.view().clone())
+            .map(|r| r.to_product_value().clone())
             .collect()
     }
 
@@ -1254,16 +1255,30 @@ mod tests {
     #[test]
     fn test_insert_delete_insert_delete_insert() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
-        let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
-        datastore.insert_mut_tx(&mut tx, table_id, row)?;
-        for _ in 0..2 {
-            let created_row = u32_str_u32(1, "Foo", 18);
-            let num_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, [created_row.clone()]);
-            assert_eq!(num_deleted, 1);
-            assert_eq!(all_rows(&datastore, &tx, table_id).len(), 0);
-            datastore.insert_mut_tx(&mut tx, table_id, created_row)?;
-            #[rustfmt::skip]
-            assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, "Foo", 18)]);
+        let row = u32_str_u32(1, "Foo", 18); // 0 will be ignored.
+        datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
+        for i in 0..2 {
+            assert_eq!(
+                all_rows(&datastore, &tx, table_id),
+                vec![row.clone()],
+                "Found unexpected set of rows before deleting",
+            );
+            let num_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, [row.clone()]);
+            assert_eq!(
+                num_deleted, 1,
+                "delete_by_rel deleted an unexpected number of rows on iter {i}",
+            );
+            assert_eq!(
+                &all_rows(&datastore, &tx, table_id),
+                &[],
+                "Found rows present after deleting",
+            );
+            datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
+            assert_eq!(
+                all_rows(&datastore, &tx, table_id),
+                vec![row.clone()],
+                "Found unexpected set of rows after inserting",
+            );
         }
         Ok(())
     }
@@ -1468,7 +1483,7 @@ mod tests {
                     AlgebraicValue::U32(1),
                 )
                 .unwrap()
-                .map(|data_ref| data_ref.data.clone())
+                .map(|data_ref| data_ref.to_product_value())
                 .collect::<Vec<_>>()
         };
 

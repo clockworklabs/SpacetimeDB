@@ -1,16 +1,17 @@
 use super::{
     committed_state::{CommittedIndexIter, CommittedState},
+    datastore::Result,
     state_view::{Iter, IterByColRange, StateView},
     SharedReadGuard,
 };
-use crate::db::datastore::Result;
 use crate::{db::db_metrics::DB_METRICS, execution_context::ExecutionContext};
-use core::ops::RangeBounds;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::{db::def::TableSchema, AlgebraicValue};
-use std::time::{Duration, Instant};
+use std::{
+    ops::RangeBounds,
+    time::{Duration, Instant},
+};
 
-#[allow(dead_code)]
 pub struct TxId {
     pub(crate) committed_state_shared_lock: SharedReadGuard<CommittedState>,
     pub(crate) lock_wait_time: Duration,
@@ -40,15 +41,14 @@ impl StateView for TxId {
         cols: ColList,
         range: R,
     ) -> Result<IterByColRange<'a, R>> {
-        match self.committed_state_shared_lock.index_seek(table_id, &cols, &range) {
-            Some(committed_rows) => Ok(IterByColRange::CommittedIndex(CommittedIndexIter {
+        match self.committed_state_shared_lock.index_seek(*table_id, &cols, &range) {
+            Some(committed_rows) => Ok(IterByColRange::CommittedIndex(CommittedIndexIter::new(
                 ctx,
-                table_id: *table_id,
-                tx_state: None,
-                committed_state: &self.committed_state_shared_lock,
+                *table_id,
+                None,
+                &self.committed_state_shared_lock,
                 committed_rows,
-                num_committed_rows_fetched: 0,
-            })),
+            ))),
             None => self
                 .committed_state_shared_lock
                 .iter_by_col_range(ctx, table_id, cols, range),

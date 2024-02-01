@@ -14,7 +14,18 @@ use super::{
     util::{maybe_uninit_write_slice, range_move},
     var_len::{visit_var_len_assume_init, VarLenGranule, VarLenMembers, VarLenRef},
 };
-use spacetimedb_sats::{bsatn::to_writer, buffer::BufWriter, AlgebraicValue, ProductValue, SumValue};
+use spacetimedb_sats::{bsatn::to_writer, buffer::BufWriter, AlgebraicType, AlgebraicValue, ProductValue, SumValue};
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("Expected a value of type {0:?}, but found {1:?}")]
+    WrongType(AlgebraicType, AlgebraicValue),
+    #[error(transparent)]
+    PageError(#[from] super::page::Error),
+    #[error(transparent)]
+    PagesError(#[from] super::pages::Error),
+}
 
 /// Writes `row` typed at `ty` to `pages`
 /// using `blob_store` as needed to write large blobs.
@@ -27,7 +38,6 @@ use spacetimedb_sats::{bsatn::to_writer, buffer::BufWriter, AlgebraicValue, Prod
 /// This includes that its `visitor` must be prepared to visit var-len members within `ty`,
 /// and must do so in the same order as a `VarLenVisitorProgram` for `ty` would,
 /// i.e. by monotonically increasing offsets.
-#[allow(clippy::result_unit_err)] // TODO(error-handling,integration): useful error type
 pub unsafe fn write_row_to_pages(
     pages: &mut Pages,
     visitor: &impl VarLenMembers,
@@ -35,7 +45,7 @@ pub unsafe fn write_row_to_pages(
     ty: &RowTypeLayout,
     val: &ProductValue,
     squashed_offset: SquashedOffset,
-) -> Result<RowPointer, ()> {
+) -> Result<RowPointer, Error> {
     let num_granules = required_var_len_granules_for_row(val);
 
     match pages.with_page_to_insert_row(ty.size(), num_granules, |page| {
@@ -67,14 +77,13 @@ pub unsafe fn write_row_to_pages(
 ///   i.e. by monotonically increasing offsets.
 ///
 /// - `page` must use a var-len visitor which visits the same var-len members in the same order.
-#[allow(clippy::result_unit_err)] // TODO(error-handling,integration): useful error type
 pub unsafe fn write_row_to_page(
     page: &mut Page,
     blob_store: &mut dyn BlobStore,
     visitor: &impl VarLenMembers,
     ty: &RowTypeLayout,
     val: &ProductValue,
-) -> Result<PageOffset, ()> {
+) -> Result<PageOffset, Error> {
     let fixed_row_size = ty.size();
     // SAFETY: We've used the right `row_size` and we trust that others have too.
     // `RowTypeLayout` also ensures that we satisfy the minimum row size.
@@ -164,7 +173,7 @@ impl BflatnSerializedRowBuffer<'_> {
     }
 
     /// Write an `val`, an [`AlgebraicValue`], typed at `ty`, to the buffer.
-    fn write_value(&mut self, ty: &AlgebraicTypeLayout, val: &AlgebraicValue) -> Result<(), ()> {
+    fn write_value(&mut self, ty: &AlgebraicTypeLayout, val: &AlgebraicValue) -> Result<(), Error> {
         let ty_alignment = ty.align();
         self.curr_offset = align_to(self.curr_offset, ty_alignment);
 
@@ -204,11 +213,8 @@ impl BflatnSerializedRowBuffer<'_> {
                 self.write_av_bsatn(val)?
             }
 
-            // TODO(error-handling): return type error
-            (ty, val) => panic!(
-                "AlgebraicValue is not valid instance of AlgebraicTypeLayout: {:?} should be of type {:?}",
-                val, ty,
-            ),
+            // If the type doesn't match the value, return an error.
+            (ty, val) => Err(Error::WrongType(ty.algebraic_type(), val.clone()))?,
         }
 
         self.curr_offset = align_to(self.curr_offset, ty_alignment);
@@ -217,7 +223,7 @@ impl BflatnSerializedRowBuffer<'_> {
     }
 
     /// Write a `val`, a [`SumValue`], typed at `ty`, to the buffer.
-    fn write_sum(&mut self, ty: &SumTypeLayout, val: &SumValue) -> Result<(), ()> {
+    fn write_sum(&mut self, ty: &SumTypeLayout, val: &SumValue) -> Result<(), Error> {
         // Extract sum value components and variant type, and offsets.
         let SumValue { tag, ref value } = *val;
         let variant_ty = &ty.variants[tag as usize];
@@ -236,7 +242,18 @@ impl BflatnSerializedRowBuffer<'_> {
     }
 
     /// Write an `val`, a [`ProductValue`], typed at `ty`, to the buffer.
-    fn write_product(&mut self, ty: &ProductTypeLayout, val: &ProductValue) -> Result<(), ()> {
+    fn write_product(&mut self, ty: &ProductTypeLayout, val: &ProductValue) -> Result<(), Error> {
+        // `Iterator::zip` silently drops elements if the two iterators have different lengths,
+        // so we need to check that our `ProductValue` has the same number of elements
+        // as our `ProductTypeLayout` to be sure it's typed correctly.
+        // Otherwise, if the value is too long, we'll discard its fields (whatever),
+        // or if it's too long, we'll leave some fields in the page uninit (very bad).
+        if ty.elements.len() != val.elements.len() {
+            return Err(Error::WrongType(
+                ty.algebraic_type(),
+                AlgebraicValue::Product(val.clone()),
+            ));
+        }
         for (elt_ty, elt) in ty.elements.iter().zip(val.elements.iter()) {
             self.write_value(&elt_ty.ty, elt)?;
         }
@@ -245,7 +262,7 @@ impl BflatnSerializedRowBuffer<'_> {
 
     /// Write the string `str` to the var-len section
     /// and a `VarLenRef` to the fixed buffer and advance the `curr_offset`.
-    fn write_string(&mut self, val: &str) -> Result<(), ()> {
+    fn write_string(&mut self, val: &str) -> Result<(), Error> {
         let val = val.as_bytes();
 
         // Write `val` to the page. The handle is `vlr`.
@@ -261,7 +278,7 @@ impl BflatnSerializedRowBuffer<'_> {
 
     /// Write `val` BSATN-encoded to var-len section
     /// and a `VarLenRef` to the fixed buffer and advance the `curr_offset`.
-    fn write_av_bsatn(&mut self, val: &AlgebraicValue) -> Result<(), ()> {
+    fn write_av_bsatn(&mut self, val: &AlgebraicValue) -> Result<(), Error> {
         // Allocate space.
         let len_in_bytes = bsatn_len(val);
         let (vlr, in_blob) = self.var_view.alloc_for_len(len_in_bytes)?;
