@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::{DBError, PlanError};
@@ -78,12 +79,14 @@ macro_rules! unsupported{
 
 /// A convenient wrapper for a table name (that comes from an `ObjectName`).
 pub struct Table {
-    pub(crate) name: String,
+    pub(crate) name: Arc<str>,
 }
 
 impl Table {
     pub fn new(name: ObjectName) -> Self {
-        Self { name: name.to_string() }
+        Self {
+            name: name.to_string().into(),
+        }
     }
 }
 
@@ -92,7 +95,7 @@ pub enum Column {
     /// Any expression, not followed by `[ AS ] alias`
     UnnamedExpr(Expr),
     /// An qualified `table.*`
-    QualifiedWildcard { table: String },
+    QualifiedWildcard { table: Arc<str> },
     /// An unqualified `SELECT *`
     Wildcard,
 }
@@ -137,7 +140,7 @@ impl From {
 
         // Check if the field are inverted:
         // FROM t1 JOIN t2 ON t2.id = t1.id
-        let on = if on.rhs.table() == x.root.table_name && x.root.get_column_by_field(&on.rhs).is_some() {
+        let on = if on.rhs.table() == &*x.root.table_name && x.root.get_column_by_field(&on.rhs).is_some() {
             OnExpr {
                 op: on.op.reverse(),
                 lhs: on.rhs,
@@ -164,8 +167,8 @@ impl From {
         }))
     }
 
-    /// Returns all the table names as a `Vec<String>`, including the ones inside the joins.
-    pub fn table_names(&self) -> Vec<String> {
+    /// Returns all the table names as a `Vec<Arc<str>>`, including the ones inside the joins.
+    pub fn table_names(&self) -> Vec<Arc<str>> {
         self.iter_tables().map(|x| x.table_name.clone()).collect()
     }
 
@@ -178,7 +181,7 @@ impl From {
                 if column.col_name == field.field {
                     Some(FieldDef {
                         column,
-                        table_name: field.table.unwrap_or(&t.table_name),
+                        table_name: field.table.clone().unwrap_or_else(|| t.table_name.clone()),
                     })
                 } else {
                     None
@@ -199,7 +202,7 @@ impl From {
                 let field = extract_table_field(named)?;
 
                 Err(PlanError::UnknownField {
-                    field: FieldName::named(field.table.unwrap_or("?"), field.field),
+                    field: FieldName::named(field.table.unwrap_or_else(|| "?".into()), field.field),
                     tables: self.table_names(),
                 })
             }
@@ -548,7 +551,7 @@ fn compile_select_item(from: &From, select_item: SelectItem) -> Result<Column, P
             feature: "ExprWithAlias".into(),
         }),
         SelectItem::QualifiedWildcard(ident, _) => Ok(Column::QualifiedWildcard {
-            table: ident.to_string(),
+            table: ident.to_string().into(),
         }),
         SelectItem::Wildcard(_) => Ok(Column::Wildcard),
     }
@@ -638,7 +641,7 @@ fn compile_insert<T: TableSchemaView>(
 
     let columns = columns
         .into_iter()
-        .map(|x| FieldName::named(&table.table_name, &x.to_string()))
+        .map(|x| FieldName::named(table.table_name.clone(), &x.to_string()))
         .collect();
 
     let table = From::new(table);
@@ -679,7 +682,7 @@ fn compile_update<T: TableSchemaView>(
 
         let field = table.root.get_column_by_name(&name).map(ProductTypeElement::from);
         let value = compile_expr_field(&table, field.as_ref(), col.value)?;
-        x.insert(FieldName::named(&table.root.table_name, &name), value);
+        x.insert(FieldName::named(table.root.table_name.clone(), &name), value);
     }
 
     Ok(SqlAst::Update {
@@ -844,7 +847,7 @@ fn compile_create_table(table: Table, cols: Vec<SqlColumnDef>) -> Result<SqlAst,
         });
     }
 
-    let table = TableDef::new(table.name, columns).with_constraints(constraints);
+    let table = TableDef::new(table.name.clone(), columns).with_constraints(constraints);
 
     Ok(SqlAst::CreateTable { table })
 }

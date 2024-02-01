@@ -170,15 +170,16 @@ impl CommittedState {
         // Insert the table row into `st_tables` for all system tables
         for schema in system_tables() {
             let table_id = schema.table_id;
+            let table_name = &*schema.table_name;
             // Reset the row count metric for this system table
             DB_METRICS
                 .rdb_num_table_rows
-                .with_label_values(&database_address, &table_id.0, &schema.table_name)
+                .with_label_values(&database_address, &table_id.0, table_name)
                 .set(0);
 
             let row = StTableRow {
                 table_id,
-                table_name: schema.table_name,
+                table_name,
                 table_type: StTableType::System,
                 table_access: StAccess::Public,
             };
@@ -391,7 +392,7 @@ impl Drop for CommittedIndexIter<'_> {
         let table_name = self
             .committed_state
             .get_schema(&self.table_id)
-            .map(|table| table.table_name.as_str())
+            .map(|table| &*table.table_name)
             .unwrap_or_default();
 
         DB_METRICS

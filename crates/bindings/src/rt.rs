@@ -518,7 +518,7 @@ impl TypespaceBuilder for ModuleBuilder {
                 // Alias provided? Relate `name -> slot_ref`.
                 if let Some(name) = name {
                     self.module.misc_exports.push(MiscModuleExport::TypeAlias(TypeAlias {
-                        name: name.to_owned(),
+                        name: name.into(),
                         ty: slot_ref,
                     }));
                 }

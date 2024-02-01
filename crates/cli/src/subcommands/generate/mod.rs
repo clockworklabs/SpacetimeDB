@@ -1,6 +1,8 @@
 use std::fs;
 use std::io::Write;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use clap::Arg;
 use clap::ArgAction::SetTrue;
@@ -210,7 +212,7 @@ impl clap::ValueEnum for Language {
 
 pub struct GenCtx {
     typespace: Typespace,
-    names: Vec<Option<String>>,
+    names: Vec<Option<Arc<str>>>,
 }
 
 pub fn generate<'a>(wasm_file: &'a Path, lang: Language, namespace: &'a str) -> anyhow::Result<Vec<(String, String)>> {
@@ -255,13 +257,13 @@ pub fn extract_from_moduledef(module: ModuleDef) -> (GenCtx, impl Iterator<Item 
 
     let mut names = vec![None; typespace.types.len()];
     let name_info = itertools::chain!(
-        tables.iter().map(|t| (t.data, &t.schema.table_name)),
+        tables.iter().map(|t| (t.data, t.schema.table_name.clone())),
         misc_exports
             .iter()
-            .map(|MiscModuleExport::TypeAlias(a)| (a.ty, &a.name)),
+            .map(|MiscModuleExport::TypeAlias(a)| (a.ty, a.name.clone())),
     );
     for (typeref, name) in name_info {
-        names[typeref.idx()] = Some(name.clone())
+        names[typeref.idx()] = Some(name);
     }
     let ctx = GenCtx { typespace, names };
     let iter = itertools::chain!(
@@ -322,7 +324,7 @@ impl GenItem {
         match self {
             GenItem::Table(table) => {
                 let code = python::autogen_python_table(ctx, table);
-                let name = table.schema.table_name.to_case(Case::Snake);
+                let name = table.schema.table_name.deref().to_case(Case::Snake);
                 Some((name + ".py", code))
             }
             GenItem::TypeAlias(TypeAlias { name, ty }) => match &ctx.typespace[*ty] {
@@ -333,7 +335,7 @@ impl GenItem {
                 }
                 AlgebraicType::Product(prod) => {
                     let code = python::autogen_python_tuple(ctx, name, prod);
-                    let name = name.to_case(Case::Snake);
+                    let name = name.deref().to_case(Case::Snake);
                     Some((name + ".py", code))
                 }
                 AlgebraicType::Builtin(_) => todo!(),
@@ -341,7 +343,7 @@ impl GenItem {
             },
             GenItem::Reducer(reducer) => {
                 let code = python::autogen_python_reducer(ctx, reducer);
-                let name = reducer.name.to_case(Case::Snake);
+                let name = reducer.name.deref().to_case(Case::Snake);
                 Some((name + "_reducer.py", code))
             }
         }
@@ -351,7 +353,7 @@ impl GenItem {
         match self {
             GenItem::Table(table) => {
                 let code = typescript::autogen_typescript_table(ctx, table);
-                let name = table.schema.table_name.to_case(Case::Snake);
+                let name = table.schema.table_name.deref().to_case(Case::Snake);
                 Some((name + ".ts", code))
             }
             GenItem::TypeAlias(TypeAlias { name, ty }) => match &ctx.typespace[*ty] {
@@ -362,7 +364,7 @@ impl GenItem {
                 }
                 AlgebraicType::Product(prod) => {
                     let code = typescript::autogen_typescript_tuple(ctx, name, prod);
-                    let name = name.to_case(Case::Snake);
+                    let name = name.deref().to_case(Case::Snake);
                     Some((name + ".ts", code))
                 }
                 AlgebraicType::Builtin(_) => todo!(),
@@ -370,34 +372,35 @@ impl GenItem {
             },
             GenItem::Reducer(reducer) => {
                 let code = typescript::autogen_typescript_reducer(ctx, reducer);
-                let name = reducer.name.to_case(Case::Snake);
+                let name = reducer.name.deref().to_case(Case::Snake);
                 Some((name + "_reducer.ts", code))
             }
         }
     }
 
     fn generate_csharp(&self, ctx: &GenCtx, namespace: &str) -> Option<(String, String)> {
+        let cs = |s: &str| format!("{}.cs", s);
         match self {
             GenItem::Table(table) => {
                 let code = csharp::autogen_csharp_table(ctx, table, namespace);
-                Some((table.schema.table_name.clone() + ".cs", code))
+                Some((cs(&table.schema.table_name), code))
             }
             GenItem::TypeAlias(TypeAlias { name, ty }) => match &ctx.typespace[*ty] {
                 AlgebraicType::Sum(sum) => {
                     let filename = name.replace('.', "");
                     let code = csharp::autogen_csharp_sum(ctx, name, sum, namespace);
-                    Some((filename + ".cs", code))
+                    Some((cs(&filename), code))
                 }
                 AlgebraicType::Product(prod) => {
                     let code = csharp::autogen_csharp_tuple(ctx, name, prod, namespace);
-                    Some((name.clone() + ".cs", code))
+                    Some((cs(name), code))
                 }
                 AlgebraicType::Builtin(_) => todo!(),
                 AlgebraicType::Ref(_) => todo!(),
             },
             GenItem::Reducer(reducer) => {
                 let code = csharp::autogen_csharp_reducer(ctx, reducer, namespace);
-                let pascalcase = reducer.name.to_case(Case::Pascal);
+                let pascalcase = reducer.name.deref().to_case(Case::Pascal);
                 Some((pascalcase + "Reducer.cs", code))
             }
         }

@@ -221,7 +221,7 @@ impl ServerMessage for OneOffQueryResponseMessage {
                     .results
                     .into_iter()
                     .map(|table| OneOffTable {
-                        table_name: table.head.table_name,
+                        table_name: table.head.table_name.to_string(),
                         row: table
                             .data
                             .into_iter()

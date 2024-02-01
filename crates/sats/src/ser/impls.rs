@@ -1,5 +1,5 @@
 use spacetimedb_primitives::ColList;
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, rc::Rc, sync::Arc};
 
 use crate::{
     AlgebraicType, AlgebraicValue, ArrayValue, MapType, MapValue, ProductValue, SumValue, ValueWithType, F32, F64,
@@ -72,6 +72,8 @@ impl_serialize!([T: Serialize] Vec<T>, (self, ser)  => (**self).serialize(ser));
 impl_serialize!([T: Serialize] [T], (self, ser) => T::__serialize_array(self, ser));
 impl_serialize!([T: Serialize, const N: usize] [T; N], (self, ser) => T::__serialize_array(self, ser));
 impl_serialize!([T: Serialize + ?Sized] Box<T>, (self, ser) => (**self).serialize(ser));
+impl_serialize!([T: Serialize + ?Sized] Rc<T>, (self, ser) => (**self).serialize(ser));
+impl_serialize!([T: Serialize + ?Sized] Arc<T>, (self, ser) => (**self).serialize(ser));
 impl_serialize!([T: Serialize + ?Sized] &T, (self, ser) => (**self).serialize(ser));
 impl_serialize!([] String, (self, ser) => ser.serialize_str(self));
 impl_serialize!([T: Serialize] Option<T>, (self, ser) => match self {

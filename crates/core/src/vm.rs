@@ -678,7 +678,7 @@ pub(crate) mod tests {
         let data = MemTable::from_value(scalar(1u64));
         let rhs = data.get_field_pos(0).unwrap().clone();
 
-        let q = query(inv).with_join_inner(data, FieldName::positional("inventory", 0), rhs);
+        let q = query(inv).with_join_inner(data, FieldName::positional("inventory".into(), 0), rhs);
 
         let result = match run_ast(p, q.into()) {
             Code::Table(x) => x,
@@ -721,7 +721,7 @@ pub(crate) mod tests {
 
         let q = query(&st_table_schema()).with_select_cmp(
             OpCmp::Eq,
-            FieldName::named(ST_TABLES_NAME, StTableFields::TableName.name()),
+            FieldName::named(ST_TABLES_NAME.into(), StTableFields::TableName.name()),
             scalar(ST_TABLES_NAME),
         );
         check_catalog(
@@ -729,7 +729,7 @@ pub(crate) mod tests {
             ST_TABLES_NAME,
             StTableRow {
                 table_id: ST_TABLES_ID,
-                table_name: ST_TABLES_NAME.to_string(),
+                table_name: ST_TABLES_NAME,
                 table_type: StTableType::System,
                 table_access: StAccess::Public,
             }
@@ -755,12 +755,12 @@ pub(crate) mod tests {
         let q = query(&st_columns_schema())
             .with_select_cmp(
                 OpCmp::Eq,
-                FieldName::named(ST_COLUMNS_NAME, StColumnFields::TableId.name()),
+                FieldName::named(ST_COLUMNS_NAME.into(), StColumnFields::TableId.name()),
                 scalar(ST_COLUMNS_ID),
             )
             .with_select_cmp(
                 OpCmp::Eq,
-                FieldName::named(ST_COLUMNS_NAME, StColumnFields::ColPos.name()),
+                FieldName::named(ST_COLUMNS_NAME.into(), StColumnFields::ColPos.name()),
                 scalar(StColumnFields::TableId as u32),
             );
         check_catalog(
@@ -802,7 +802,7 @@ pub(crate) mod tests {
 
         let q = query(&st_indexes_schema()).with_select_cmp(
             OpCmp::Eq,
-            FieldName::named(ST_INDEXES_NAME, StIndexFields::IndexName.name()),
+            FieldName::named(ST_INDEXES_NAME.into(), StIndexFields::IndexName.name()),
             scalar("idx_1"),
         );
         check_catalog(
@@ -837,7 +837,7 @@ pub(crate) mod tests {
 
         let q = query(&st_sequences_schema()).with_select_cmp(
             OpCmp::Eq,
-            FieldName::named(ST_SEQUENCES_NAME, StSequenceFields::TableId.name()),
+            FieldName::named(ST_SEQUENCES_NAME.into(), StSequenceFields::TableId.name()),
             scalar(ST_SEQUENCES_ID),
         );
         check_catalog(

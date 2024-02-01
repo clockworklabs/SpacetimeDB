@@ -30,7 +30,7 @@ pub struct TxRecord {
     /// The table that was modified.
     pub(crate) table_id: TableId,
     /// The table that was modified.
-    pub(crate) table_name: String,
+    pub(crate) table_name: Arc<str>,
 }
 
 /// A record of all the operations within a transaction.

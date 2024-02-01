@@ -85,7 +85,7 @@ pub trait StateView {
             .first()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, table_id.into()))?;
         let el = StTableRow::try_from(row.view())?;
-        let table_name = el.table_name.to_owned();
+        let table_name = el.table_name.into();
         let table_id = el.table_id;
 
         // Look up the columns for the table in question.
@@ -340,7 +340,7 @@ impl Drop for IndexSeekIterMutTxId<'_> {
         let table_name = self
             .committed_state
             .get_schema(&self.table_id)
-            .map(|table| table.table_name.as_str())
+            .map(|table| &*table.table_name)
             .unwrap_or_default();
 
         // Increment number of index seeks

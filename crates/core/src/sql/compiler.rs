@@ -114,7 +114,7 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
             Column::QualifiedWildcard { table: name } => {
                 if let Some(t) = table.iter_tables().find(|x| x.table_name == name) {
                     for c in t.columns().iter() {
-                        col_ids.push(FieldName::named(&t.table_name, &c.col_name).into());
+                        col_ids.push(FieldName::named(t.table_name.clone(), &c.col_name).into());
                     }
                     qualified_wildcards.push(t.table_id);
                 } else {
@@ -177,7 +177,7 @@ fn compile_columns(table: &TableSchema, columns: Vec<FieldName>) -> DbTable {
 
     for col in columns.into_iter() {
         if let Some(x) = table.get_column_by_field(&col) {
-            let field = FieldName::named(&table.table_name, &x.col_name);
+            let field = FieldName::named(table.table_name.clone(), &x.col_name);
             new.push(relation::Column::new(field, x.col_type.clone(), x.col_pos));
         }
     }
@@ -294,7 +294,7 @@ mod tests {
         schema: &[(&str, AlgebraicType)],
         indexes: &[(ColId, &str)],
     ) -> ResultTest<TableId> {
-        let table_name = name.to_string();
+        let table_name = name.into();
         let table_type = StTableType::User;
         let table_access = StAccess::Public;
 
@@ -678,8 +678,8 @@ mod tests {
         assert_eq!(table_id, rhs_id);
         assert_eq!(lhs_field, "b");
         assert_eq!(rhs_field, "b");
-        assert_eq!(lhs_table, "lhs");
-        assert_eq!(rhs_table, "rhs");
+        assert_eq!(&**lhs_table, "lhs");
+        assert_eq!(&**rhs_table, "rhs");
         Ok(())
     }
 
@@ -728,7 +728,7 @@ mod tests {
             panic!("unexpected left hand side {:#?}", **lhs);
         };
 
-        assert_eq!(table, "lhs");
+        assert_eq!(&**table, "lhs");
         assert_eq!(field, "a");
 
         let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **rhs else {
@@ -760,8 +760,8 @@ mod tests {
         assert_eq!(table_id, rhs_id);
         assert_eq!(lhs_field, "b");
         assert_eq!(rhs_field, "b");
-        assert_eq!(lhs_table, "lhs");
-        assert_eq!(rhs_table, "rhs");
+        assert_eq!(&**lhs_table, "lhs");
+        assert_eq!(&**rhs_table, "rhs");
         assert!(rhs.is_empty());
         Ok(())
     }
@@ -822,8 +822,8 @@ mod tests {
         assert_eq!(table_id, rhs_id);
         assert_eq!(lhs_field, "b");
         assert_eq!(rhs_field, "b");
-        assert_eq!(lhs_table, "lhs");
-        assert_eq!(rhs_table, "rhs");
+        assert_eq!(&**lhs_table, "lhs");
+        assert_eq!(&**rhs_table, "rhs");
 
         // The selection should be pushed onto the rhs of the join
         let Query::Select(ColumnOp::Cmp {
@@ -839,7 +839,7 @@ mod tests {
             panic!("unexpected left hand side {:#?}", **lhs);
         };
 
-        assert_eq!(table, "rhs");
+        assert_eq!(&**table, "rhs");
         assert_eq!(field, "c");
 
         let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **rhs else {
@@ -917,8 +917,8 @@ mod tests {
         assert_eq!(table_id, rhs_id);
         assert_eq!(lhs_field, "b");
         assert_eq!(rhs_field, "b");
-        assert_eq!(lhs_table, "lhs");
-        assert_eq!(rhs_table, "rhs");
+        assert_eq!(&**lhs_table, "lhs");
+        assert_eq!(&**rhs_table, "rhs");
 
         assert_eq!(1, rhs.len());
 
@@ -997,7 +997,7 @@ mod tests {
         assert_eq!(index_table, lhs_id);
         assert_eq!(index_col, 1.into());
         assert_eq!(probe_field, "b");
-        assert_eq!(probe_table, "rhs");
+        assert_eq!(&**probe_table, "rhs");
 
         assert_eq!(2, rhs.len());
 
@@ -1025,7 +1025,7 @@ mod tests {
             panic!("unexpected left hand side {:#?}", field);
         };
 
-        assert_eq!(table, "rhs");
+        assert_eq!(&**table, "rhs");
         assert_eq!(field, "d");
 
         let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **value else {

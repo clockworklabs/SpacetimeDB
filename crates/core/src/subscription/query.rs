@@ -44,7 +44,7 @@ pub fn to_mem_table_with_op_type(head: Header, table_access: StAccess, data: &Da
         }));
     } else {
         t.head.fields.push(Column::new(
-            FieldName::named(&t.head.table_name, OP_TYPE_FIELD_NAME),
+            FieldName::named(t.head.table_name.clone(), OP_TYPE_FIELD_NAME),
             AlgebraicType::U8,
             t.head.fields.len().into(),
         ));
@@ -224,7 +224,7 @@ mod tests {
         schema: &[(&str, AlgebraicType)],
         indexes: &[(ColId, &str)],
     ) -> ResultTest<TableId> {
-        let table_name = name.to_string();
+        let table_name = name.into();
         let table_type = StTableType::User;
         let table_access = StAccess::Public;
 
@@ -253,7 +253,7 @@ mod tests {
         let row_pk = row.to_data_key().to_bytes();
         DatabaseTableUpdate {
             table_id,
-            table_name: table_name.to_string(),
+            table_name: table_name.into(),
             ops: vec![TableOp {
                 op_type: 1,
                 row,
@@ -266,7 +266,7 @@ mod tests {
         let row_pk = row.to_data_key().to_bytes();
         DatabaseTableUpdate {
             table_id,
-            table_name: table_name.to_string(),
+            table_name: table_name.into(),
             ops: vec![TableOp {
                 op_type: 0,
                 row,
@@ -304,7 +304,7 @@ mod tests {
 
         let data = DatabaseTableUpdate {
             table_id,
-            table_name: table_name.to_string(),
+            table_name: table_name.into(),
             ops: vec![op],
         };
 
@@ -331,8 +331,8 @@ mod tests {
 
         // For filtering out the hidden field `OP_TYPE_FIELD_NAME`
         let fields = &[
-            FieldName::named(table_name, "inventory_id").into(),
-            FieldName::named(table_name, "name").into(),
+            FieldName::named(table_name.into(), "inventory_id").into(),
+            FieldName::named(table_name.into(), "name").into(),
         ];
 
         let q = q.with_project(fields, None);
@@ -352,8 +352,8 @@ mod tests {
 
         // For filtering out the hidden field `OP_TYPE_FIELD_NAME`
         let fields = &[
-            FieldName::named(table_name, "player_id").into(),
-            FieldName::named(table_name, "name").into(),
+            FieldName::named(table_name.into(), "player_id").into(),
+            FieldName::named(table_name.into(), "name").into(),
         ];
 
         let q = q.with_project(fields, None);
@@ -825,7 +825,11 @@ mod tests {
         let q_1 = q.clone();
         check_query(&db, &table, &mut tx, &q_1, &data)?;
 
-        let q_2 = q.with_select_cmp(OpCmp::Eq, FieldName::named("inventory", "inventory_id"), scalar(1u64));
+        let q_2 = q.with_select_cmp(
+            OpCmp::Eq,
+            FieldName::named("inventory".into(), "inventory_id"),
+            scalar(1u64),
+        );
         check_query(&db, &table, &mut tx, &q_2, &data)?;
 
         Ok(())
@@ -849,10 +853,11 @@ mod tests {
         //SELECT * FROM inventory
         let q_all = QueryExpr::new(db_table(&schema, schema.table_id));
         //SELECT * FROM inventory WHERE inventory_id = 1
-        let q_id =
-            q_all
-                .clone()
-                .with_select_cmp(OpCmp::Eq, FieldName::named("_inventory", "inventory_id"), scalar(1u64));
+        let q_id = q_all.clone().with_select_cmp(
+            OpCmp::Eq,
+            FieldName::named("_inventory".into(), "inventory_id"),
+            scalar(1u64),
+        );
 
         let s = [q_all, q_id]
             .into_iter()
@@ -873,7 +878,7 @@ mod tests {
 
         let data = DatabaseTableUpdate {
             table_id: schema.table_id,
-            table_name: "_inventory".to_string(),
+            table_name: "_inventory".into(),
             ops: vec![row1, row2],
         };
 
@@ -923,10 +928,11 @@ mod tests {
         //SELECT * FROM inventory
         let q_all = QueryExpr::new(db_table(&schema, schema.table_id));
         //SELECT * FROM inventory WHERE inventory_id = 1
-        let q_id =
-            q_all
-                .clone()
-                .with_select_cmp(OpCmp::Eq, FieldName::named("_inventory", "inventory_id"), scalar(1u64));
+        let q_id = q_all.clone().with_select_cmp(
+            OpCmp::Eq,
+            FieldName::named("_inventory".into(), "inventory_id"),
+            scalar(1u64),
+        );
 
         let s = [q_all, q_id]
             .into_iter()
@@ -953,7 +959,7 @@ mod tests {
 
         let data = DatabaseTableUpdate {
             table_id: schema.table_id,
-            table_name: "inventory".to_string(),
+            table_name: "inventory".into(),
             ops: vec![row1, row2],
         };
 
@@ -1060,13 +1066,13 @@ mod tests {
 
         let data1 = DatabaseTableUpdate {
             table_id: schema_1.table_id,
-            table_name: "inventory".to_string(),
+            table_name: "inventory".into(),
             ops: vec![row1],
         };
 
         let data2 = DatabaseTableUpdate {
             table_id: schema_2.table_id,
-            table_name: "player".to_string(),
+            table_name: "player".into(),
             ops: vec![row2],
         };
 

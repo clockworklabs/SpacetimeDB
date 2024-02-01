@@ -77,10 +77,10 @@ impl DatabaseUpdate {
             let table_name = table_name_map
                 .entry(table_id)
                 .or_insert_with(|| stdb.table_name_from_id(&ctx, &tx, table_id).unwrap().unwrap());
-            let table_name: &str = table_name.as_ref();
+            let table_name: &str = table_name;
             table_updates.push(DatabaseTableUpdate {
                 table_id,
-                table_name: table_name.to_owned(),
+                table_name: table_name.into(),
                 ops: table_row_operations,
             });
         }
@@ -96,7 +96,7 @@ impl DatabaseUpdate {
                 .into_iter()
                 .map(|table| TableUpdate {
                     table_id: table.table_id.into(),
-                    table_name: table.table_name,
+                    table_name: table.table_name.to_string(),
                     table_row_operations: table
                         .ops
                         .into_iter()
@@ -154,7 +154,7 @@ impl DatabaseUpdate {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatabaseTableUpdate {
     pub table_id: TableId,
-    pub table_name: String,
+    pub table_name: Arc<str>,
     pub ops: Vec<TableOp>,
 }
 
@@ -205,12 +205,12 @@ pub struct ModuleInfo {
     pub module_hash: Hash,
     pub typespace: Typespace,
     pub reducers: ReducersMap,
-    pub catalog: HashMap<String, EntityDef>,
+    pub catalog: HashMap<Arc<str>, EntityDef>,
     pub log_tx: tokio::sync::broadcast::Sender<bytes::Bytes>,
     pub subscription: ModuleSubscriptionManager,
 }
 
-pub struct ReducersMap(pub IndexMap<String, ReducerDef>);
+pub struct ReducersMap(pub IndexMap<Arc<str>, ReducerDef>);
 
 impl fmt::Debug for ReducersMap {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
