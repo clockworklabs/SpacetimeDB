@@ -174,7 +174,7 @@ pub struct HeaderOnlyField<'a> {
     pub fields: Vec<ColumnOnlyField<'a>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Header {
     pub table_name: String,
     pub fields: Vec<Column>,
@@ -613,7 +613,7 @@ impl Relation for MemTable {
 }
 
 /// A stored table from [RelationalDB]
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub struct DbTable {
     pub head: Header,
     pub table_id: TableId,
@@ -646,6 +646,25 @@ impl Relation for DbTable {
 pub enum Table {
     MemTable(MemTable),
     DbTable(DbTable),
+}
+
+impl Hash for Table {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        // IMPORTANT: Required for hashing query plans.
+        // In general a query plan will only contain static data.
+        // However, currently it is possible to inline a virtual table.
+        // Such plans though are hybrids and should not be hashed,
+        // Since they contain raw data values.
+        // Therefore we explicitly disallow it here.
+        match self {
+            Table::DbTable(t) => {
+                t.hash(state);
+            }
+            Table::MemTable(_) => {
+                panic!("Cannot hash a virtual table");
+            }
+        }
+    }
 }
 
 impl Table {
