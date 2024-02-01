@@ -823,6 +823,24 @@ impl MutTxId {
                         // and leave it in the committed state.
                         // Either way, it should not appear in the insert tables,
                         // so roll back the insertion.
+                        //
+                        // NOTE for future MVCC implementors:
+                        // In MVCC, it is no longer valid to elide inserts in this way.
+                        // When a transaction inserts a row, that row *must* appear in its insert tables,
+                        // even if the row is already present in the committed state.
+                        //
+                        // Imagine a chain of committed but un-squashed transactions:
+                        // `Committed 0: Insert Row A` - `Committed 1: Delete Row A`
+                        // where `Committed 1` happens after `Committed 0`.
+                        // Imagine a transaction `Running 2: Insert Row A`,
+                        // which began before `Committed 1` was committed.
+                        // Because `Committed 1` has since been committed,
+                        // `Running 2` *must* happen after `Committed 1`.
+                        // Therefore, the correct sequence of events is:
+                        // - Insert Row A
+                        // - Delete Row A
+                        // - Insert Row A
+                        // This is impossible to recover if `Running 2` elides its insert.
                         tx_table
                             .delete(tx_blob_store, ptr)
                             .expect("Failed to delete a row we just inserted");

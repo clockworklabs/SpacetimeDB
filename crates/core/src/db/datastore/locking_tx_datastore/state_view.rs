@@ -292,6 +292,27 @@ impl<'a> Iterator for Iter<'a> {
                         // If it's still present, yield it.
                         // Note that the committed state and the insert tables are disjoint sets,
                         // so at this point we know the row will not be yielded in (2).
+                        //
+                        // NOTE for future MVCC implementors:
+                        // In MVCC, it is no longer valid to elide inserts in this way.
+                        // When a transaction inserts a row, that row *must* appear in its insert tables,
+                        // even if the row is already present in the committed state.
+                        //
+                        // Imagine a chain of committed but un-squashed transactions:
+                        // `Committed 0: Insert Row A` - `Committed 1: Delete Row A`
+                        // where `Committed 1` happens after `Committed 0`.
+                        // Imagine a transaction `Running 2: Insert Row A`,
+                        // which began before `Committed 1` was committed.
+                        // Because `Committed 1` has since been committed,
+                        // `Running 2` *must* happen after `Committed 1`.
+                        // Therefore, the correct sequence of events is:
+                        // - Insert Row A
+                        // - Delete Row A
+                        // - Insert Row A
+                        // This is impossible to recover if `Running 2` elides its insert.
+                        //
+                        // As a result, in MVCC, this branch will need to check if the `row_ref`
+                        // also exists in the `tx_state.insert_tables` and ensure it is yielded only once.
                         if !self
                             .tx_state
                             .map(|tx_state| tx_state.is_deleted(table_id, row_ref.pointer()))
@@ -392,6 +413,26 @@ impl<'a> Iterator for IndexSeekIterMutTxId<'a> {
         if let Some(row_ref) = self
             .committed_rows
             .as_mut()
+            // NOTE for future MVCC implementors:
+            // In MVCC, it is no longer valid to elide inserts in this way.
+            // When a transaction inserts a row, that row *must* appear in its insert tables,
+            // even if the row is already present in the committed state.
+            //
+            // Imagine a chain of committed but un-squashed transactions:
+            // `Committed 0: Insert Row A` - `Committed 1: Delete Row A`
+            // where `Committed 1` happens after `Committed 0`.
+            // Imagine a transaction `Running 2: Insert Row A`,
+            // which began before `Committed 1` was committed.
+            // Because `Committed 1` has since been committed,
+            // `Running 2` *must* happen after `Committed 1`.
+            // Therefore, the correct sequence of events is:
+            // - Insert Row A
+            // - Delete Row A
+            // - Insert Row A
+            // This is impossible to recover if `Running 2` elides its insert.
+            //
+            // As a result, in MVCC, this branch will need to check if the `row_ref`
+            // also exists in the `tx_state.insert_tables` and ensure it is yielded only once.
             .and_then(|i| i.find(|row_ref| !self.tx_state.is_deleted(self.table_id, row_ref.pointer())))
         {
             // TODO(metrics): This doesn't actually fetch a row.
