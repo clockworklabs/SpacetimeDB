@@ -329,6 +329,7 @@ impl QuerySet {
                     }
                 }
             }
+            #[cfg(feature = "metrics")]
             record_query_duration_metrics(WorkloadType::Update, &db.address(), start);
         }
         for (table_id, (table_name, ops)) in table_ops.into_iter().filter(|(_, (_, ops))| !ops.is_empty()) {
