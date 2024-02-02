@@ -193,6 +193,7 @@ impl RelationalDB {
             .map_or(Ok(0), |commit_log| commit_log.object_db_size_on_disk())
     }
 
+    /// The size in bytes of all of the in-memory data in this database.
     pub fn size_in_memory(&self) -> usize {
         self.inner.memory_usage()
     }
