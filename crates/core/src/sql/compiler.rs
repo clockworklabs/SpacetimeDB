@@ -276,6 +276,7 @@ mod tests {
     use crate::db::relational_db::tests_utils::make_test_db;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::operator::OpQuery;
+    use spacetimedb_lib::{Address, Identity};
     use spacetimedb_primitives::{col_list, ColList, TableId};
     use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue};
     use spacetimedb_vm::expr::{IndexJoin, IndexScan, JoinExpr, Query};
@@ -366,6 +367,41 @@ mod tests {
         };
         assert_eq!(1, query.len());
         assert_one_eq_index_scan(&query[0], 0, 1u64.into());
+        Ok(())
+    }
+
+    #[test]
+    fn compile_eq_identity_address() -> ResultTest<()> {
+        let (db, _tmp) = make_test_db()?;
+
+        // Create table [test] without any indexes
+        let schema = &[("identity", Identity::get_type()), ("address", Address::get_type())];
+        let indexes = &[];
+        db.create_table_for_test("test", schema, indexes)?;
+
+        let tx = db.begin_tx();
+        // Compile query, check for both hex formats...
+        let sql = &format!(
+            "select * from test where identity = 0x{} AND identity = {} AND address = {} AND address = 0x{}",
+            Identity::__dummy(),
+            Identity::__dummy(),
+            Address::__DUMMY,
+            Address::__DUMMY,
+        );
+        let CrudExpr::Query(QueryExpr {
+            source: _,
+            query: mut ops,
+        }) = compile_sql(&db, &tx, sql)?.remove(0)
+        else {
+            panic!("Expected QueryExpr");
+        };
+
+        assert_eq!(1, ops.len());
+
+        // Assert no index scan
+        let Query::Select(_) = ops.remove(0) else {
+            panic!("Expected Select");
+        };
         Ok(())
     }
 

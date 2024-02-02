@@ -3,6 +3,7 @@ use hex::FromHex as _;
 use sats::{impl_deserialize, impl_serialize, impl_st, AlgebraicType};
 use spacetimedb_bindings_macro::{Deserialize, Serialize};
 use spacetimedb_metrics::typed_prometheus::AsPrometheusLabel;
+use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use std::{fmt, net::Ipv6Addr};
 
 use crate::sats;
@@ -52,6 +53,10 @@ impl Address {
     pub const ZERO: Self = Self {
         __address_bytes: [0; 16],
     };
+
+    pub fn get_type() -> AlgebraicType {
+        AlgebraicType::product([("__address_bytes", AlgebraicType::bytes())])
+    }
 
     pub fn from_arr(arr: &[u8; 16]) -> Self {
         Self { __address_bytes: *arr }
@@ -114,6 +119,14 @@ impl Address {
 impl From<u128> for Address {
     fn from(value: u128) -> Self {
         Self::from_u128(value)
+    }
+}
+
+impl From<Address> for AlgebraicValue {
+    fn from(value: Address) -> Self {
+        AlgebraicValue::Product(ProductValue::from(AlgebraicValue::Bytes(
+            value.__address_bytes.to_vec(),
+        )))
     }
 }
 
