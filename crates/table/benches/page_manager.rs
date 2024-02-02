@@ -5,14 +5,6 @@ use criterion::measurement::{Measurement, WallTime};
 use criterion::{
     black_box, criterion_group, criterion_main, Bencher, BenchmarkGroup, BenchmarkId, Criterion, Throughput,
 };
-use mem_arch_prototype::blob_store::NullBlobStore;
-use mem_arch_prototype::btree_index::BTreeIndex;
-use mem_arch_prototype::indexes::{PageOffset, RowPointer, Size, SquashedOffset, PAGE_DATA_SIZE};
-use mem_arch_prototype::layout::{row_size_for_bytes, row_size_for_type};
-use mem_arch_prototype::pages::Pages;
-use mem_arch_prototype::row_type_visitor::{row_type_visitor, VarLenVisitorProgram};
-use mem_arch_prototype::table::Table;
-use mem_arch_prototype::var_len::{NullVarLenVisitor, VarLenGranule, VarLenMembers, VarLenRef};
 use rand::distributions::OpenClosed01;
 use rand::prelude::Distribution;
 use rand::rngs::StdRng;
@@ -20,6 +12,14 @@ use rand::SeedableRng;
 use spacetimedb_primitives::{ColList, IndexId, TableId};
 use spacetimedb_sats::db::def::{TableDef, TableSchema};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
+use spacetimedb_table::blob_store::NullBlobStore;
+use spacetimedb_table::btree_index::BTreeIndex;
+use spacetimedb_table::indexes::{PageOffset, RowPointer, Size, SquashedOffset, PAGE_DATA_SIZE};
+use spacetimedb_table::layout::{row_size_for_bytes, row_size_for_type};
+use spacetimedb_table::pages::Pages;
+use spacetimedb_table::row_type_visitor::{row_type_visitor, VarLenVisitorProgram};
+use spacetimedb_table::table::Table;
+use spacetimedb_table::var_len::{NullVarLenVisitor, VarLenGranule, VarLenMembers, VarLenRef};
 
 fn time<R>(acc: &mut Duration, body: impl FnOnce() -> R) -> R {
     let start = WallTime.start();
@@ -731,7 +731,7 @@ fn make_table_with_indexes<R: IndexedRow>() -> Table {
     let schema = R::make_schema();
     let mut tbl = Table::new(schema, SquashedOffset::COMMITTED_STATE);
 
-    let idx = BTreeIndex::new(IndexId(0), false);
+    let idx = BTreeIndex::new(IndexId(0), false, "idx");
     tbl.insert_index(&mut NullBlobStore, R::indexed_columns(), idx);
 
     tbl
