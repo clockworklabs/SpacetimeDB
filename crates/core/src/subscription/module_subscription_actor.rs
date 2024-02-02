@@ -23,7 +23,7 @@ use futures::{stream::FuturesUnordered, Future, StreamExt};
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 /// All of these commands (and likely any future ones) should all be in the same enum with the
 /// same queue so that e.g. db updates from commit events and db updates from subscription
@@ -39,6 +39,8 @@ enum Command {
     },
     BroadcastCommitEvent {
         event: ModuleEvent,
+        // channel for signaling that all subscriptions have been evaluated.
+        feedback_tx: oneshot::Sender<()>,
     },
 }
 
@@ -76,9 +78,13 @@ impl ModuleSubscriptionManager {
     pub async fn broadcast_event(&self, client: Option<&ClientConnectionSender>, mut event: ModuleEvent) {
         match event.status {
             EventStatus::Committed(_) => {
+                let (tx, rx) = oneshot::channel();
                 self.tx
-                    .send(Command::BroadcastCommitEvent { event })
+                    .send(Command::BroadcastCommitEvent { event, feedback_tx: tx })
                     .expect("subscription actor panicked");
+                if (rx.await).is_err() {
+                    log::error!("failed to receive acknowledgement of successful evaluation from subscription actor")
+                }
             }
             EventStatus::Failed(_) => {
                 if let Some(client) = client {
@@ -119,7 +125,10 @@ impl ModuleSubscriptionActor {
         match command {
             Command::AddSubscriber { sender, subscription } => self.add_subscription(sender, subscription).await?,
             Command::RemoveSubscriber { client_id } => self.remove_subscriber(client_id),
-            Command::BroadcastCommitEvent { event } => self.broadcast_commit_event(event).await,
+            Command::BroadcastCommitEvent { event, feedback_tx } => {
+                self.broadcast_commit_event(event).await;
+                let _ = feedback_tx.send(());
+            }
         }
         Ok(())
     }

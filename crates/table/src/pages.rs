@@ -4,8 +4,16 @@ use super::blob_store::BlobStore;
 use super::indexes::{Bytes, PageIndex, PageOffset, RowPointer, Size};
 use super::page::Page;
 use super::var_len::VarLenMembers;
-use core::ops::ControlFlow;
-use core::ops::{Deref, Index, IndexMut};
+use core::ops::{ControlFlow, Deref, Index, IndexMut};
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("Attempt to allocate more than {} pages.", PageIndex::MAX.idx())]
+    TooManyPages,
+    #[error(transparent)]
+    Page(#[from] super::page::Error),
+}
 
 impl Index<PageIndex> for Pages {
     type Output = Page;
@@ -30,18 +38,14 @@ pub struct Pages {
     non_full_pages: Vec<PageIndex>,
 }
 
-// Could not allocate a new page as the number would exceed `u32::MAX`.
-#[derive(Debug)]
-pub struct TooManyPagesError;
-
 impl Pages {
     /// Is there space to allocate another page?
-    pub fn can_allocate_new_page(&self) -> Result<PageIndex, TooManyPagesError> {
+    pub fn can_allocate_new_page(&self) -> Result<PageIndex, Error> {
         let new_idx = self.len();
         if new_idx <= PageIndex::MAX.idx() {
             Ok(PageIndex(new_idx as _))
         } else {
-            Err(TooManyPagesError)
+            Err(Error::TooManyPages)
         }
     }
 
@@ -80,7 +84,7 @@ impl Pages {
     ///
     /// The new page is initially empty, but is not added to the non-full set.
     /// Callers should call [`Pages::maybe_mark_page_non_full`] after operating on the new page.
-    fn allocate_new_page(&mut self, fixed_row_size: Size) -> Result<PageIndex, TooManyPagesError> {
+    fn allocate_new_page(&mut self, fixed_row_size: Size) -> Result<PageIndex, Error> {
         let new_idx = self.can_allocate_new_page()?;
 
         self.pages.push(Page::new(fixed_row_size));
@@ -89,7 +93,7 @@ impl Pages {
     }
 
     /// Reserve a new, initially empty page.
-    pub fn reserve_empty_page(&mut self, fixed_row_size: Size) -> Result<PageIndex, TooManyPagesError> {
+    pub fn reserve_empty_page(&mut self, fixed_row_size: Size) -> Result<PageIndex, Error> {
         let idx = self.allocate_new_page(fixed_row_size)?;
         self.mark_page_non_full(idx);
         Ok(idx)
@@ -110,13 +114,12 @@ impl Pages {
 
     /// Call `f` with a reference to a page which satisfies
     /// `page.has_space_for_row(fixed_row_size, num_var_len_granules)`.
-    #[allow(clippy::result_unit_err)] // TODO(error-handling,integration): useful errors
     pub fn with_page_to_insert_row<Res>(
         &mut self,
         fixed_row_size: Size,
         num_var_len_granules: usize,
         f: impl FnOnce(&mut Page) -> Res,
-    ) -> Result<(PageIndex, Res), ()> {
+    ) -> Result<(PageIndex, Res), Error> {
         let page_index = self.find_page_with_space_for_row(fixed_row_size, num_var_len_granules)?;
         let res = f(&mut self[page_index]);
         self.maybe_mark_page_non_full(page_index, fixed_row_size);
@@ -133,7 +136,7 @@ impl Pages {
         &mut self,
         fixed_row_size: Size,
         num_var_len_granules: usize,
-    ) -> Result<PageIndex, ()> {
+    ) -> Result<PageIndex, Error> {
         if let Some((page_idx_idx, page_idx)) = self
             .non_full_pages
             .iter()
@@ -145,7 +148,7 @@ impl Pages {
             return Ok(page_idx);
         }
 
-        self.allocate_new_page(fixed_row_size).map_err(|_| ())
+        self.allocate_new_page(fixed_row_size)
     }
 
     /// Superseded by `write_av_to_pages`, but exposed for benchmarking
@@ -161,8 +164,7 @@ impl Pages {
     /// - `fixed_row.len()` is consistent
     ///    with what has been passed to the manager in all other ops
     ///    and must be consistent with the `var_len_visitor` the manager was made with.
-    //// TODO(bikeshedding): rename to make purpose as bench interface clear?
-    #[allow(clippy::result_unit_err)] // TODO(error-handling,bikeshedding): useful errors. Matters less because this is not a public interface.
+    // TODO(bikeshedding): rename to make purpose as bench interface clear?
     pub unsafe fn insert_row(
         &mut self,
         var_len_visitor: &impl VarLenMembers,
@@ -170,7 +172,7 @@ impl Pages {
         fixed_len: &Bytes,
         var_len: &[&[u8]],
         blob_store: &mut dyn BlobStore,
-    ) -> Result<(PageIndex, PageOffset), ()> {
+    ) -> Result<(PageIndex, PageOffset), Error> {
         debug_assert!(fixed_len.len() == fixed_row_size.len());
 
         match self.with_page_to_insert_row(
@@ -191,7 +193,7 @@ impl Pages {
             },
         )? {
             (page, Ok(offset)) => Ok((page, offset)),
-            (_, Err(e)) => Err(e),
+            (_, Err(e)) => Err(e.into()),
         }
     }
 
