@@ -351,12 +351,17 @@ pub async fn exec_ping(config: Config, args: &ArgMatches) -> Result<(), anyhow::
     let url = config.get_host_url(server)?;
 
     let builder = reqwest::Client::new().get(format!("{}/database/ping", url).as_str());
-    match builder.send().await {
-        Ok(_) => {
+    let response = builder.send().await?;
+
+    match response.status() {
+        reqwest::StatusCode::OK => {
             println!("Server is online: {}", url);
         }
-        Err(_) => {
-            println!("Server could not be reached: {}", url);
+        reqwest::StatusCode::NOT_FOUND => {
+            println!("Server returned 404 (Not Found): {}", url);
+        }
+        err => {
+            println!("Server could not be reached ({}): {}", err, url);
         }
     }
     Ok(())
