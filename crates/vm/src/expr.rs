@@ -922,6 +922,24 @@ impl QueryExpr {
         }
     }
 
+    /// Does this query read from a given table?
+    pub fn reads_from_table(&self, id: &TableId) -> bool {
+        self.source
+            .get_db_table()
+            .is_some_and(|DbTable { table_id, .. }| table_id == id)
+            || self.query.iter().any(|q| match q {
+                Query::Select(_) | Query::Project(_, _) => false,
+                Query::IndexScan(scan) => scan.table.table_id == *id,
+                Query::JoinInner(join) => join.rhs.reads_from_table(id),
+                Query::IndexJoin(join) => {
+                    join.index_side
+                        .get_db_table()
+                        .is_some_and(|DbTable { table_id, .. }| table_id == id)
+                        || join.probe_side.reads_from_table(id)
+                }
+            })
+    }
+
     // Generate an index scan for an equality predicate if this is the first operator.
     // Otherwise generate a select.
     // TODO: Replace these methods with a proper query optimization pass.
