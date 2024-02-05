@@ -33,12 +33,12 @@ use thiserror::Error;
 /// and uses an internal map to ensure that no identical row is stored more than once.
 pub struct Table {
     /// The type of rows this table stores, with layout information included.
-    row_layout: RowTypeLayout,
+    pub(crate) row_layout: RowTypeLayout,
     /// The visitor program for `row_layout`.
     visitor_prog: VarLenVisitorProgram,
     /// The page manager that holds rows
     /// including both their fixed and variable components.
-    pages: Pages,
+    pub pages: Pages,
     /// Maps `RowHash -> [RowPointer]` where a [`RowPointer`] points into `pages`.
     pointer_map: PointerMap,
     /// The indices associated with a set of columns of the table.
@@ -529,6 +529,14 @@ impl<'a> RowRef<'a> {
     pub fn pointer(&self) -> RowPointer {
         self.pointer
     }
+
+    pub(crate) fn table(&self) -> &Table {
+        self.table
+    }
+
+    pub(crate) fn blob_store(&self) -> &dyn BlobStore {
+        self.blob_store
+    }
 }
 
 impl Serialize for RowRef<'_> {
@@ -689,7 +697,7 @@ impl Table {
     }
 
     /// Returns the page and page offset that `ptr` points to.
-    fn page_and_offset(&self, ptr: RowPointer) -> (&Page, PageOffset) {
+    pub(crate) fn page_and_offset(&self, ptr: RowPointer) -> (&Page, PageOffset) {
         (&self.pages[ptr.page_index()], ptr.page_offset())
     }
 

@@ -175,7 +175,8 @@ impl_serialize!(['a] Value<'a>, (self, ser) => {
 /// 1. the `value` must be valid at type `ty` and properly aligned for `ty`.
 /// 2. for any `vlr: VarLenRef` stored in `value`,
 ///   `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
-unsafe fn serialize_value<S: Serializer>(
+/// 3. `align_to(curr_offset.get(), ty.align())` must be the offset of a field typed at `ty`.
+pub(crate) unsafe fn serialize_value<S: Serializer>(
     ser: S,
     bytes: &Bytes,
     page: &Page,
@@ -322,7 +323,7 @@ unsafe fn serialize_bsatn<S: Serializer>(
 /// - `vlr.first_granule` must point to a valid granule in `page`.
 #[cold]
 #[inline(never)]
-unsafe fn vlr_blob_bytes<'b>(page: &Page, blob_store: &'b dyn BlobStore, vlr: VarLenRef) -> &'b [u8] {
+pub(crate) unsafe fn vlr_blob_bytes<'b>(page: &Page, blob_store: &'b dyn BlobStore, vlr: VarLenRef) -> &'b [u8] {
     // Read the blob hash.
     // SAFETY: `vlr.first_granule` points to a valid granule.
     let mut var_iter = unsafe { page.iter_var_len_object(vlr.first_granule) };

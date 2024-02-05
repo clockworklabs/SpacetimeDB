@@ -481,7 +481,7 @@ impl VarLenType {
 }
 
 impl ProductTypeLayout {
-    fn product_type(&self) -> ProductType {
+    pub(crate) fn product_type(&self) -> ProductType {
         ProductType {
             elements: self
                 .elements
