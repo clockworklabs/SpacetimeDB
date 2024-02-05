@@ -7,11 +7,11 @@ use std::time::Duration;
 use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
 use futures::{Future, FutureExt};
 use indexmap::IndexMap;
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, RwLock};
 
 use super::host_controller::HostThreadpool;
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
-use crate::client::ClientConnectionSender;
+use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_logger::LogLevel;
 use crate::db::datastore::traits::{TxData, TxOp};
 use crate::db::relational_db::RelationalDB;
@@ -23,7 +23,7 @@ use crate::hash::Hash;
 use crate::identity::Identity;
 use crate::json::client_api::{SubscriptionUpdateJson, TableRowOperationJson, TableUpdateJson};
 use crate::protobuf::client_api::{table_row_operation, SubscriptionUpdate, TableRowOperation, TableUpdate};
-use crate::subscription::module_subscription_actor::ModuleSubscriptionManager;
+use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
 use crate::util::notify_once::NotifyOnce;
 use spacetimedb_lib::{Address, ReducerDef, TableDesc};
@@ -207,7 +207,7 @@ pub struct ModuleInfo {
     pub reducers: ReducersMap,
     pub catalog: HashMap<String, EntityDef>,
     pub log_tx: tokio::sync::broadcast::Sender<bytes::Bytes>,
-    pub subscription: ModuleSubscriptionManager,
+    pub subscriptions: Arc<RwLock<ModuleSubscriptions>>,
 }
 
 pub struct ReducersMap(pub IndexMap<String, ReducerDef>);
@@ -499,8 +499,8 @@ impl ModuleHost {
     }
 
     #[inline]
-    pub fn subscription(&self) -> &ModuleSubscriptionManager {
-        &self.info.subscription
+    pub fn subscriptions(&self) -> &RwLock<ModuleSubscriptions> {
+        &self.info.subscriptions
     }
 
     async fn call<F, R>(&self, _reducer_name: &str, f: F) -> Result<R, NoSuchModule>
@@ -515,6 +515,15 @@ impl ModuleHost {
             let _ = tx.send(f(&mut *inst));
         });
         Ok(rx.await.expect("instance panicked"))
+    }
+
+    pub async fn disconnect_client(&self, client_id: ClientActorId) {
+        tokio::join!(
+            async { self.subscriptions().write().await.remove_subscriber(client_id) },
+            self.call_identity_connected_disconnected(client_id.identity, client_id.address, false)
+                // ignore NoSuchModule; if the module's already closed, that's fine
+                .map(drop)
+        );
     }
 
     pub async fn call_identity_connected_disconnected(

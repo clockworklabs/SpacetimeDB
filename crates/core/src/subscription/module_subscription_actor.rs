@@ -4,116 +4,30 @@ use super::{
     query::compile_read_only_query,
     subscription::{QuerySet, Subscription},
 };
+use crate::client::{
+    messages::{CachedMessage, SubscriptionUpdateMessage, TransactionUpdateMessage},
+    ClientActorId, ClientConnectionSender,
+};
+use crate::db::relational_db::RelationalDB;
+use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
+use crate::host::module_host::{EventStatus, ModuleEvent};
 use crate::protobuf::client_api::Subscribe;
 use crate::worker_metrics::WORKER_METRICS;
-use crate::{
-    client::{
-        messages::{CachedMessage, SubscriptionUpdateMessage, TransactionUpdateMessage},
-        ClientActorId, ClientConnectionSender,
-    },
-    host::NoSuchModule,
-};
-use crate::{db::relational_db::RelationalDB, error::DBError};
-use crate::{
-    db::relational_db::Tx,
-    host::module_host::{EventStatus, ModuleEvent},
-};
 use futures::Future;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
-use tokio::sync::{mpsc, oneshot};
 
-/// All of these commands (and likely any future ones) should all be in the same enum with the
-/// same queue so that e.g. db updates from commit events and db updates from subscription
-/// modifications don't get sent to the client out of order.
 #[derive(Debug)]
-enum Command {
-    AddSubscriber {
-        sender: ClientConnectionSender,
-        subscription: Subscribe,
-    },
-    RemoveSubscriber {
-        client_id: ClientActorId,
-    },
-    BroadcastCommitEvent {
-        event: ModuleEvent,
-        // channel for signaling that all subscriptions have been evaluated.
-        feedback_tx: oneshot::Sender<()>,
-    },
-}
-
-#[derive(Clone, Debug)]
-pub struct ModuleSubscriptionManager {
-    tx: mpsc::UnboundedSender<Command>,
-}
-
-impl ModuleSubscriptionManager {
-    pub fn spawn(relational_db: Arc<RelationalDB>, owner_identity: Identity) -> Self {
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        tokio::spawn(async move {
-            let mut actor = ModuleSubscriptionActor::new(relational_db, owner_identity);
-            while let Some(command) = rx.recv().await {
-                if let Err(e) = actor.handle_message(command).await {
-                    log::error!("error occurred in ModuleSubscriptionActor: {e}")
-                }
-            }
-        });
-        Self { tx }
-    }
-
-    pub fn add_subscriber(&self, sender: ClientConnectionSender, subscription: Subscribe) -> Result<(), NoSuchModule> {
-        self.tx
-            .send(Command::AddSubscriber { sender, subscription })
-            .map_err(|_| NoSuchModule)
-    }
-
-    pub fn remove_subscriber(&self, client_id: ClientActorId) -> Result<(), NoSuchModule> {
-        self.tx
-            .send(Command::RemoveSubscriber { client_id })
-            .map_err(|_| NoSuchModule)
-    }
-
-    pub async fn broadcast_event(&self, client: Option<&ClientConnectionSender>, mut event: ModuleEvent) {
-        match event.status {
-            EventStatus::Committed(_) => {
-                let (tx, rx) = oneshot::channel();
-                self.tx
-                    .send(Command::BroadcastCommitEvent { event, feedback_tx: tx })
-                    .expect("subscription actor panicked");
-                if (rx.await).is_err() {
-                    log::error!("failed to receive acknowledgement of successful evaluation from subscription actor")
-                }
-            }
-            EventStatus::Failed(_) => {
-                if let Some(client) = client {
-                    let message = TransactionUpdateMessage {
-                        event: &mut event,
-                        database_update: Default::default(),
-                    };
-                    let _ = client.send_message(message).await;
-                } else {
-                    log::trace!("Reducer failed but there is no client to send the failure to!")
-                }
-            }
-            EventStatus::OutOfEnergy => {} // ?
-        }
-    }
-
-    pub fn broadcast_event_blocking(&self, client: Option<&ClientConnectionSender>, event: ModuleEvent) {
-        tokio::runtime::Handle::current().block_on(self.broadcast_event(client, event))
-    }
-}
-
-struct ModuleSubscriptionActor {
+pub struct ModuleSubscriptions {
     relational_db: Arc<RelationalDB>,
     subscriptions: Vec<Subscription>,
     owner_identity: Identity,
 }
 
-impl ModuleSubscriptionActor {
-    fn new(relational_db: Arc<RelationalDB>, owner_identity: Identity) -> Self {
+impl ModuleSubscriptions {
+    pub fn new(relational_db: Arc<RelationalDB>, owner_identity: Identity) -> Self {
         Self {
             relational_db,
             subscriptions: Vec::new(),
@@ -121,25 +35,15 @@ impl ModuleSubscriptionActor {
         }
     }
 
-    async fn handle_message(&mut self, command: Command) -> Result<(), DBError> {
-        match command {
-            Command::AddSubscriber { sender, subscription } => self.add_subscription(sender, subscription).await?,
-            Command::RemoveSubscriber { client_id } => self.remove_subscriber(client_id),
-            Command::BroadcastCommitEvent { event, feedback_tx } => {
-                tokio::task::block_in_place(|| self.broadcast_commit_event(event)).await;
-                let _ = feedback_tx.send(());
-            }
-        }
-        Ok(())
-    }
-
-    async fn _add_subscription(
-        &mut self,
-        sender: ClientConnectionSender,
-        subscription: Subscribe,
-        tx: &mut Tx,
-    ) -> Result<(), DBError> {
+    /// Add a subscriber to the module. NOTE: this function is blocking.
+    pub fn add_subscriber(&mut self, sender: ClientConnectionSender, subscription: Subscribe) -> Result<(), DBError> {
         self.remove_subscriber(sender.id);
+
+        let tx = &mut *scopeguard::guard(self.relational_db.begin_tx(), |tx| {
+            let ctx = ExecutionContext::subscribe(self.relational_db.address());
+            self.relational_db.release_tx(&ctx, tx);
+        });
+
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
         let mut queries = QuerySet::new();
         for sql in subscription.query_strings {
@@ -163,7 +67,7 @@ impl ModuleSubscriptionActor {
             }
         };
 
-        let database_update = subscription.queries.eval(&self.relational_db, tx, auth)?;
+        let database_update = tokio::task::block_in_place(|| subscription.queries.eval(&self.relational_db, tx, auth))?;
 
         let sender = subscription.subscribers().last().unwrap();
 
@@ -171,29 +75,13 @@ impl ModuleSubscriptionActor {
         // thread it's possible for messages to get sent to the client out of order. If you do
         // spawn in another thread messages will need to be buffered until the state is sent out
         // on the wire
-        let _ = sender.send_message(SubscriptionUpdateMessage { database_update }).await;
+        let fut = sender.send_message(SubscriptionUpdateMessage { database_update });
+        let _ = tokio::runtime::Handle::current().block_on(fut);
 
         Ok(())
     }
 
-    async fn add_subscription(
-        &mut self,
-        sender: ClientConnectionSender,
-        subscription: Subscribe,
-    ) -> Result<(), DBError> {
-        // Split logic to properly handle `Error` + `Tx`
-        let mut tx = self.relational_db.begin_tx();
-
-        let result = self._add_subscription(sender, subscription, &mut tx).await;
-
-        // Note: the missing QueryDebugInfo here is only used for finishing the transaction;
-        // all of the relevant queries already executed, with debug info, in _add_subscription
-        let ctx = ExecutionContext::subscribe(self.relational_db.address());
-        self.relational_db.release_tx(&ctx, tx);
-        result
-    }
-
-    fn remove_subscriber(&mut self, client_id: ClientActorId) {
+    pub fn remove_subscriber(&mut self, client_id: ClientActorId) {
         self.subscriptions.retain_mut(|subscription| {
             subscription.remove_subscriber(client_id);
             if subscription.subscribers().is_empty() {
@@ -206,13 +94,43 @@ impl ModuleSubscriptionActor {
         })
     }
 
+    /// Broadcast a ModuleEvent to all interested subscribers.
+    ///
+    /// It's recommended to take a read lock on `ModuleSubscriptions` *before* you commit
+    /// the transaction that will give you the event you pass here, to prevent a race condition
+    /// where a just-added subscriber receives the same update twice.
+    pub async fn broadcast_event(&self, client: Option<&ClientConnectionSender>, event: &ModuleEvent) {
+        match event.status {
+            EventStatus::Committed(_) => {
+                tokio::task::block_in_place(|| self.broadcast_commit_event(event)).await;
+            }
+            EventStatus::Failed(_) => {
+                if let Some(client) = client {
+                    let message = TransactionUpdateMessage {
+                        event,
+                        database_update: Default::default(),
+                    };
+                    let _ = client.send_message(message).await;
+                } else {
+                    log::trace!("Reducer failed but there is no client to send the failure to!")
+                }
+            }
+            EventStatus::OutOfEnergy => {} // ?
+        }
+    }
+
+    /// A blocking version of [`broadcast_event`][Self::broadcast_event].
+    pub fn blocking_broadcast_event(&self, client: Option<&ClientConnectionSender>, event: &ModuleEvent) {
+        tokio::runtime::Handle::current().block_on(self.broadcast_event(client, &event))
+    }
+
     /// Broadcast the commit event to all interested subscribers.
     ///
     /// This function is blocking, even though it returns a future. The returned future resolves
     /// once all updates have been successfully added to the subscribers' send queues (i.e. after
     /// it resolves, it's guaranteed that if you call `subscriber.send(x)` the client will receive
     /// x after they receive this subscription update).
-    fn broadcast_commit_event(&self, event: ModuleEvent) -> impl Future<Output = ()> + '_ {
+    fn broadcast_commit_event(&self, event: &ModuleEvent) -> impl Future<Output = ()> + '_ {
         let database_update = event.status.database_update().unwrap();
 
         let auth = AuthCtx::new(self.owner_identity, event.caller_identity);
@@ -241,11 +159,8 @@ impl ModuleSubscriptionActor {
                     }
                 }
             })
-            .flat_map_iter(|(subscription, incr)| {
-                let message = TransactionUpdateMessage {
-                    event: &event,
-                    database_update: incr,
-                };
+            .flat_map_iter(|(subscription, database_update)| {
+                let message = TransactionUpdateMessage { event, database_update };
                 let mut message = CachedMessage::new(message);
 
                 subscription.subscribers().iter().cloned().map(move |subscriber| {
