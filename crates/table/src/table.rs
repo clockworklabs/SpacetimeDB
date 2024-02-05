@@ -33,7 +33,10 @@ use thiserror::Error;
 /// and uses an internal map to ensure that no identical row is stored more than once.
 pub struct Table {
     /// The type of rows this table stores, with layout information included.
-    row_layout: RowTypeLayout,
+    //
+    // Public because it's used in the `locking_tx_datastore` (in `core`)
+    // when constructing indexes.
+    pub row_layout: RowTypeLayout,
     /// The visitor program for `row_layout`.
     visitor_prog: VarLenVisitorProgram,
     /// The page manager that holds rows
@@ -316,8 +319,7 @@ impl Table {
 
         // Delete row from indices.
         for (cols, index) in self.indexes.iter_mut() {
-            let col_value = row_value.project_not_empty(cols).unwrap();
-            let deleted = index.delete(&col_value, ptr);
+            let deleted = index.delete(cols, &row_value, ptr).unwrap();
             debug_assert!(deleted);
         }
 
@@ -435,7 +437,14 @@ impl Table {
             new.insert_index(
                 &NullBlobStore,
                 cols.clone(),
-                BTreeIndex::new(index.index_id, index.is_unique, index.name.clone()),
+                BTreeIndex::new(
+                    index.index_id,
+                    &self.row_layout,
+                    cols,
+                    index.is_unique,
+                    index.name.clone(),
+                )
+                .unwrap(),
             );
         }
         new
@@ -768,10 +777,11 @@ mod test {
             index_type: IndexType::BTree,
         }]);
         let schema = TableSchema::from_def(0.into(), table_def);
-        let index_schema = &schema.indexes[0];
-        let index = BTreeIndex::new(index_schema.index_id, true, index_name);
+        let index_schema = schema.indexes[0].clone();
         let mut table = Table::new(schema, SquashedOffset::COMMITTED_STATE);
-        table.insert_index(&NullBlobStore, ColList::new(0.into()), index);
+        let cols = ColList::new(0.into());
+        let index = BTreeIndex::new(index_schema.index_id, &table.row_layout, &cols, true, index_name).unwrap();
+        table.insert_index(&NullBlobStore, cols, index);
 
         // Insert the row (0, 0).
         table

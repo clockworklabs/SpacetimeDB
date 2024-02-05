@@ -310,7 +310,13 @@ impl CommittedState {
             let Some((table, blob_store)) = self.get_table_and_blob_store(index_row.table_id) else {
                 panic!("Cannot create index for table which doesn't exist in committed state");
             };
-            let mut index = BTreeIndex::new(index_row.index_id, index_row.is_unique, index_row.index_name);
+            let mut index = BTreeIndex::new(
+                index_row.index_id,
+                &table.row_layout,
+                &index_row.columns,
+                index_row.is_unique,
+                index_row.index_name,
+            )?;
             index.build_from_rows(&index_row.columns, table.scan_rows(blob_store))?;
             table.indexes.insert(index_row.columns, index);
         }
