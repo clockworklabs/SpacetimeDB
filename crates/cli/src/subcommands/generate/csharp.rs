@@ -560,14 +560,18 @@ fn autogen_csharp_access_funcs_for_struct(
     indented_block(output, |output| {
         writeln!(
             output,
-            "return SpacetimeDBClient.clientDB.GetObjects(\"{table_name}\").Cast<{struct_name_pascal_case}>();"
+            "return SpacetimeDBClient.clientDB.GetObjects<{struct_name_pascal_case}>();"
         )
         .unwrap();
     });
 
     writeln!(output, "public static int Count()").unwrap();
     indented_block(output, |output| {
-        writeln!(output, "return SpacetimeDBClient.clientDB.Count(\"{table_name}\");",).unwrap();
+        writeln!(
+            output,
+            "return SpacetimeDBClient.clientDB.Count<{struct_name_pascal_case}>();",
+        )
+        .unwrap();
     });
 
     let constraints = schema.column_constraints();
