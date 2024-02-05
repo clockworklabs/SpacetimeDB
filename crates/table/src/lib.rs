@@ -16,6 +16,7 @@ pub mod layout;
 pub mod page;
 pub mod pages;
 pub mod pointer_map;
+pub mod read_column;
 pub mod row_hash;
 pub mod row_type_visitor;
 pub mod table;
