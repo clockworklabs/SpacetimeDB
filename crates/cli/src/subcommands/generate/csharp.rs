@@ -922,13 +922,9 @@ fn autogen_csharp_access_funcs_for_struct(
     indented_block(output, |output| {
         writeln!(
             output,
-            "foreach(var entry in SpacetimeDBClient.clientDB.GetEntries(\"{table_name}\"))",
+            "return SpacetimeDBClient.clientDB.GetObjects(\"{table_name}\").Cast<{struct_name_pascal_case}>();"
         )
         .unwrap();
-        indented_block(output, |output| {
-            // TODO: best way to handle this?
-            writeln!(output, "yield return ({struct_name_pascal_case})entry.Item2;").unwrap();
-        });
     });
 
     writeln!(output, "public static int Count()").unwrap();
@@ -1020,91 +1016,13 @@ fn autogen_csharp_access_funcs_for_struct(
                 .unwrap();
                 writeln!(output, "return r;").unwrap();
             } else {
-                writeln!(
-                    output,
-                    "foreach(var entry in SpacetimeDBClient.clientDB.GetEntries(\"{}\"))",
-                    table_name
-                )
-                .unwrap();
-                writeln!(output, "{{").unwrap();
-                {
-                    indent_scope!(output);
-                    writeln!(output, "var productValue = entry.Item1.AsProductValue();").unwrap();
-                    if field_type == "Identity" {
-                        writeln!(
-                            output,
-                            "var compareValue = Identity.From(productValue.elements[{}].AsProductValue().elements[0].AsBytes());",
-                            col_i
-                        )
-                        .unwrap();
-                    } else if is_option {
-                        writeln!(
-                            output,
-                            "var compareValue = ({})(productValue.elements[{}].AsSumValue().tag == 1 ? null : productValue.elements[{}].AsSumValue().value.As{}());",
-                            csharp_field_type, col_i, col_i, field_type
-                        )
-                        .unwrap();
-                    } else if field_type == "Address" {
-                        writeln!(
-                            output,
-                            "var compareValue = (Address)Address.From(productValue.elements[{}].AsProductValue().elements[0].AsBytes());",
-                            col_i
-                        )
-                            .unwrap();
-                    } else {
-                        writeln!(
-                            output,
-                            "var compareValue = ({})productValue.elements[{}].As{}();",
-                            csharp_field_type, col_i, field_type
-                        )
-                        .unwrap();
-                    }
-                    if csharp_field_type == "byte[]" {
-                        writeln!(
-                            output,
-                            "static bool ByteArrayCompare(byte[] a1, byte[] a2)
-    {{
-        if (a1.Length != a2.Length)
-            return false;
-
-        for (int i=0; i<a1.Length; i++)
-            if (a1[i]!=a2[i])
-                return false;
-
-        return true;
-    }}"
-                        )
-                        .unwrap();
-                        writeln!(output).unwrap();
-                        writeln!(output, "if (ByteArrayCompare(compareValue, value)) {{").unwrap();
-                        {
-                            indent_scope!(output);
-                            if is_unique {
-                                writeln!(output, "return ({struct_name_pascal_case})entry.Item2;").unwrap();
-                            } else {
-                                writeln!(output, "yield return ({struct_name_pascal_case})entry.Item2;").unwrap();
-                            }
-                        }
-                        writeln!(output, "}}").unwrap();
-                    } else {
-                        writeln!(output, "if (compareValue == value) {{").unwrap();
-                        {
-                            indent_scope!(output);
-                            if is_unique {
-                                writeln!(output, "return ({struct_name_pascal_case})entry.Item2;").unwrap();
-                            } else {
-                                writeln!(output, "yield return ({struct_name_pascal_case})entry.Item2;").unwrap();
-                            }
-                        }
-                        writeln!(output, "}}").unwrap();
-                    }
-                }
-                // End foreach
-                writeln!(output, "}}").unwrap();
+                write!(output, "return Iter().Where(x => x.{csharp_field_name_pascal} == value)").unwrap();
 
                 if is_unique {
-                    writeln!(output, "return null;").unwrap();
+                    write!(output, ".SingleOrDefault()").unwrap();
                 }
+
+                writeln!(output, ";").unwrap();
             }
         }
         // End Func
@@ -1302,7 +1220,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
                 writeln!(output, "dbEvent.Status,").unwrap();
                 writeln!(
                     output,
-                    "ProtobufBSATN.FromProtoBytes<{func_name_pascal_case}ArgsStruct>(dbEvent.FunctionCall.ArgBytes)"
+                    "BSATNHelpers.FromProtoBytes<{func_name_pascal_case}ArgsStruct>(dbEvent.FunctionCall.ArgBytes)"
                 )
                 .unwrap();
             }
