@@ -42,7 +42,7 @@ impl WasmtimeModule {
             .func_wrap("spacetime_7.0", "_schedule_reducer", WasmInstanceEnv::schedule_reducer)?
             .func_wrap("spacetime_7.0", "_cancel_reducer", WasmInstanceEnv::cancel_reducer)?
             .func_wrap("spacetime_7.0", "_delete_by_col_eq", WasmInstanceEnv::delete_by_col_eq)?
-            .func_wrap("spacetime_7.0", "delete_by_rel", WasmInstanceEnv::delete_by_rel)?
+            .func_wrap("spacetime_7.0", "_delete_by_rel", WasmInstanceEnv::delete_by_rel)?
             .func_wrap("spacetime_7.0", "_insert", WasmInstanceEnv::insert)?
             .func_wrap("spacetime_7.0", "_get_table_id", WasmInstanceEnv::get_table_id)?
             .func_wrap("spacetime_7.0", "_create_index", WasmInstanceEnv::create_index)?

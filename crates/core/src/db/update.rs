@@ -128,6 +128,9 @@ pub fn schema_updates(
         if let Some(known_schema) = known_tables.remove(proposed_table_name) {
             let known_schema_def = TableDef::from(known_schema.as_ref().clone());
             if !equiv(&known_schema_def, &proposed_schema_def) {
+                log::warn!("Schema incompatible: {proposed_table_name}");
+                log::debug!("Existing: {known_schema_def:?}");
+                log::debug!("Proposed: {proposed_schema_def:?}");
                 tainted_tables.push(Tainted {
                     table_name: proposed_table_name.to_owned(),
                     reason: TaintReason::IncompatibleSchema,
@@ -167,11 +170,30 @@ pub fn schema_updates(
 ///
 /// - `indexes` are never equal, because they only exist in the database
 /// - `sequences` are never equal, because they only exist in the database
-/// - only `constraints` which have set column attributes can be equal (the
-///   module may emit unset attributes)
+/// - `constraints` are delicate:
 ///
-/// Thus, `indexes` and `sequences` are ignored, while `constraints` are
-/// compared sans any unset attributes.
+///   - The number of `constraints` obtained from the module will always be the
+///     same as the number of columns, emitting [`Constraints::unset()`] if no
+///     specific constraint is defined.
+///
+///   - Indexes defined using `#[spacetimedb(index, ..)]` will not have a
+///     corresponding [`Constraints::indexed()`] constraint (it will be unset).
+///     The schema obtained from the database **will** have one such constraint,
+///     however.
+///
+///   - The other possibilities (primary key, autoinc, unique) will have a
+///     [`ConstraintDef`] in the module's schema, but no corresponding index
+///     or sequence definitions.
+///
+///     There is no stable API to migrate such changes, so we won't try.
+///
+/// Thus:
+///
+/// - `indexes` and `sequences` are ignored
+/// - `constraints` are compared sans unset or indexed-only definitions
+///
+/// A return value of `false` indicates that the table definitions are not
+/// compatible.
 fn equiv(a: &TableDef, b: &TableDef) -> bool {
     let TableDef {
         table_name,
@@ -188,7 +210,11 @@ fn equiv(a: &TableDef, b: &TableDef) -> bool {
     fn as_set(constraints: &[ConstraintDef]) -> BTreeSet<&ConstraintDef> {
         constraints
             .iter()
-            .filter(|c| c.constraints != Constraints::unset())
+            .filter(|c| {
+                ![Constraints::unset(), Constraints::indexed()]
+                    .iter()
+                    .any(|val| val == &c.constraints)
+            })
             .collect()
     }
 
