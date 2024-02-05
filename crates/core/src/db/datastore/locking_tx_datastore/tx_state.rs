@@ -22,13 +22,13 @@ pub type DeleteTable = BTreeSet<RowPointer>;
 /// Note that because a transaction may have several operations performed on the same
 /// row, it is not the case that a call to insert a row guarantees that the row
 /// will be present in `insert_tables`. Rather, a row will be present in `insert_tables`
-/// if the cummulative effect of all the calls results in the row being inserted during
+/// if the cumulative effect of all the calls results in the row being inserted during
 /// this transaction. The same holds for delete tables.
 ///
 /// For a concrete example, suppose a row is already present in a table at the start
 /// of a transaction. A call to delete that row will enter it into `delete_tables`.
 /// A subsequent call to reinsert that row will not put it into `insert_tables`, but
-/// instead remove it from `delete_tables`, as the cummulative effect is to do nothing.
+/// instead remove it from `delete_tables`, as the cumulative effect is to do nothing.
 ///
 /// This data structure also tracks modifications beyond inserting and deleting rows.
 /// In particular, creating indexes and sequences is tracked by `insert_tables`.

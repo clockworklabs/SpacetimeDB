@@ -19,7 +19,7 @@ use super::{ClientConnection, DataMessage};
 pub enum MessageHandleError {
     #[error(transparent)]
     BinaryDecode(#[from] prost::DecodeError),
-    #[error("unexepected protobuf message type")]
+    #[error("unexpected protobuf message type")]
     InvalidMessage,
     #[error(transparent)]
     TextDecode(#[from] serde_json::Error),

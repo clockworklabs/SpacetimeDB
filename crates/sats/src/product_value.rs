@@ -3,7 +3,7 @@ use crate::product_type::ProductType;
 use crate::{ArrayValue, SumValue, ValueWithType};
 use spacetimedb_primitives::{ColId, ColList};
 
-/// A product value is made of a a list of
+/// A product value is made of a list of
 /// "elements" / "fields" / "factors" of other `AlgebraicValue`s.
 ///
 /// The type of a product value is a [product type](`ProductType`).
