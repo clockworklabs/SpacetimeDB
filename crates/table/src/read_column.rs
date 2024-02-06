@@ -142,7 +142,7 @@ pub unsafe trait ReadColumn: Sized {
     /// Check that the `idx`th column of the row type stored by `row_ref` is compatible with `Self`,
     /// and read the value of that column from `row_ref`.
     fn read_column(row_ref: RowRef<'_>, idx: usize) -> Result<Self, TypeError> {
-        let layout = row_ref.table().row_layout.product();
+        let layout = row_ref.row_layout().product();
 
         // Look up the `ProductTypeElementLayout` of the requested column,
         // or return an error on an out-of-bounds index.
@@ -179,10 +179,7 @@ unsafe impl ReadColumn for bool {
     unsafe fn unchecked_read_column(row_ref: RowRef<'_>, layout: &ProductTypeElementLayout) -> Self {
         debug_assert!(Self::is_compatible_type(&layout.ty));
 
-        let table = row_ref.table();
-        let pointer = row_ref.pointer();
-
-        let (page, offset) = table.page_and_offset(pointer);
+        let (page, offset) = row_ref.page_and_offset();
         let col_offset = offset + PageOffset(layout.offset);
 
         let data = page.get_row_data(col_offset, Size(mem::size_of::<Self>() as u16));
@@ -208,10 +205,7 @@ macro_rules! impl_read_column_number {
             ) -> Self {
                 debug_assert!(Self::is_compatible_type(&layout.ty));
 
-                let table = row_ref.table();
-                let pointer = row_ref.pointer();
-
-                let (page, offset) = table.page_and_offset(pointer);
+                let (page, offset) = row_ref.page_and_offset();
                 let col_offset = offset + PageOffset(layout.offset);
 
                 let data = page.get_row_data(col_offset, Size(mem::size_of::<Self>() as u16));
@@ -257,11 +251,9 @@ unsafe impl ReadColumn for AlgebraicValue {
     }
     unsafe fn unchecked_read_column(row_ref: RowRef<'_>, layout: &ProductTypeElementLayout) -> Self {
         let curr_offset = Cell::new(layout.offset as usize);
-        let table = row_ref.table();
-        let pointer = row_ref.pointer();
         let blob_store = row_ref.blob_store();
-        let (page, page_offset) = table.page_and_offset(pointer);
-        let fixed_bytes = page.get_row_data(page_offset, table.row_layout.size());
+        let (page, page_offset) = row_ref.page_and_offset();
+        let fixed_bytes = page.get_row_data(page_offset, row_ref.row_layout().size());
 
         // SAFETY:
         // 1. Our requirements on `row_ref` and `layout` mean that the column is valid at `layout`.
