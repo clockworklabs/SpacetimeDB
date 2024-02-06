@@ -117,7 +117,6 @@ public class Type : IIncrementalGenerator
                                 Name = v.Name,
                                 TypeSymbol = v.Type,
                             })
-                            .ToArray();
                     }
 
                     return new
@@ -130,7 +129,7 @@ public class Type : IIncrementalGenerator
                         TypeParams = type.TypeParameterList?.Parameters
                             .Select(p => p.Identifier.Text)
                             .ToArray() ?? [],
-                        Members = fields,
+                        Members = fields.ToArray(),
                     };
                 }
             )
