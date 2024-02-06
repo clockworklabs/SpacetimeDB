@@ -389,14 +389,14 @@ fn autogen_csharp_product_table_common(
             )
             .unwrap();
             writeln!(output, "public delegate void RowUpdateEventHandler(SpacetimeDBClient.TableOp op, {name} oldValue, {name} newValue, {namespace}.ReducerEvent dbEvent);").unwrap();
-            writeln!(output, "public static event InsertEventHandler OnInsert;").unwrap();
+            writeln!(output, "public static event InsertEventHandler? OnInsert;").unwrap();
             if has_primary_key {
-                writeln!(output, "public static event UpdateEventHandler OnUpdate;").unwrap();
+                writeln!(output, "public static event UpdateEventHandler? OnUpdate;").unwrap();
             }
-            writeln!(output, "public static event DeleteEventHandler OnBeforeDelete;").unwrap();
-            writeln!(output, "public static event DeleteEventHandler OnDelete;").unwrap();
+            writeln!(output, "public static event DeleteEventHandler? OnBeforeDelete;").unwrap();
+            writeln!(output, "public static event DeleteEventHandler? OnDelete;").unwrap();
 
-            writeln!(output, "public static event RowUpdateEventHandler OnRowUpdate;").unwrap();
+            writeln!(output, "public static event RowUpdateEventHandler? OnRowUpdate;").unwrap();
 
             writeln!(output).unwrap();
 
@@ -651,7 +651,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
         .unwrap();
         writeln!(
             output,
-            "public static event {func_name_pascal_case}Handler On{func_name_pascal_case}Event;"
+            "public static event {func_name_pascal_case}Handler? On{func_name_pascal_case}Event;"
         )
         .unwrap();
 
