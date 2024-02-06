@@ -79,6 +79,11 @@ namespace SpacetimeDB
         public event RowUpdate onRowUpdate;
 
         /// <summary>
+        /// Invoked when a subscription is about to start being processed. This is called even before OnBeforeDelete.
+        /// </summary>
+        public event Action onBeforeSubscriptionApplied;
+        
+        /// <summary>
         /// Invoked when the local client cache is updated as a result of changes made to the subscription queries.
         /// </summary>
         public event Action onSubscriptionApplied;
@@ -630,6 +635,13 @@ namespace SpacetimeDB
 
         private void OnMessageProcessComplete(Message message, List<DbOp> dbOps)
         {
+            switch (message.TypeCase)
+            {
+                case Message.TypeOneofCase.SubscriptionUpdate:
+                    onBeforeSubscriptionApplied?.Invoke();
+                    break;
+            }
+            
             switch (message.TypeCase)
             {
                 case Message.TypeOneofCase.SubscriptionUpdate:
