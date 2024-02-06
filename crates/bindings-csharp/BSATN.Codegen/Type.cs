@@ -111,12 +111,11 @@ public class Type : IIncrementalGenerator
                         {
                             throw new InvalidOperationException("Tagged enums cannot have fields.");
                         }
-                        fields = taggedEnumVariants
-                            .Value.Select(v => new VariableDeclaration
-                            {
-                                Name = v.Name,
-                                TypeSymbol = v.Type,
-                            })
+                        fields = taggedEnumVariants.Value.Select(v => new VariableDeclaration
+                        {
+                            Name = v.Name,
+                            TypeSymbol = v.Type,
+                        });
                     }
 
                     return new
