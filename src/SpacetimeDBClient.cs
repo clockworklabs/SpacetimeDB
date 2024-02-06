@@ -518,12 +518,9 @@ namespace SpacetimeDB
             public HashSet<byte[]> inserts;
         }
 
-        // The lock that must be acquired in order to manipulate _stateDiffMessage
-        private object _stateDiffLock = new object();
-
         // The message that has been preprocessed and has had its state diff calculated
-        private ProcessedMessage? _stateDiffMessage = null;
-
+        
+        private BlockingCollection<ProcessedMessage> _stateDiffMessages = new BlockingCollection<ProcessedMessage>();
         private CancellationTokenSource _stateDiffCancellationTokenSource = new CancellationTokenSource();
         private CancellationToken _stateDiffCancellationToken;
 
@@ -533,21 +530,9 @@ namespace SpacetimeDB
             {
                 try
                 {
-                    lock (_stateDiffLock)
-                    {
-                        while (_stateDiffMessage != null)
-                        {
-                            Monitor.Wait(_stateDiffLock);
-                        }
-                    }
-                    
                     var message = _preProcessedNetworkMessages.Take(_stateDiffCancellationToken);
                     var (m, events) = CalculateStateDiff(message);
-                    
-                    lock (_stateDiffLock)
-                    {
-                        _stateDiffMessage = new ProcessedMessage { dbOps = events, message = m, };
-                    }
+                    _stateDiffMessages.Add(new ProcessedMessage { dbOps = events, message = m, });
                 }
                 catch (OperationCanceledException)
                 {
@@ -603,10 +588,6 @@ namespace SpacetimeDB
             webSocket.Close();
             _preProcessCancellationTokenSource.Cancel();
             _stateDiffCancellationTokenSource.Cancel();
-            lock (_stateDiffLock)
-            {
-                Monitor.Pulse(_stateDiffLock);
-            }
 
             webSocket = null;
         }
@@ -1076,15 +1057,9 @@ namespace SpacetimeDB
         public void Update()
         {
             webSocket.Update();
-
-            lock (_stateDiffLock)
+            while (_stateDiffMessages.TryTake(out var stateDiffMessage))
             {
-                if (_stateDiffMessage != null)
-                {
-                    OnMessageProcessComplete(_stateDiffMessage.Value.message, _stateDiffMessage.Value.dbOps);
-                    _stateDiffMessage = null;
-                    Monitor.Pulse(_stateDiffLock);
-                }
+                OnMessageProcessComplete(stateDiffMessage.message, stateDiffMessage.dbOps);
             }
         }
     }
