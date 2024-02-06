@@ -345,7 +345,7 @@ impl MutTxId {
 
         let mut insert_index = BTreeIndex::new(
             index.index_id,
-            &table.row_layout(),
+            table.row_layout(),
             &index.columns,
             index.is_unique,
             index.index_name.clone(),
