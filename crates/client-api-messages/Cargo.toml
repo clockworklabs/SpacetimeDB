@@ -1,6 +1,6 @@
 [package]
 name = "spacetimedb-client-api-messages"
-version = "0.8.1"
+version = "0.8.2"
 edition = "2021"
 license-file = "LICENSE"
 description = "Types for the SpacetimeDB client API messages"

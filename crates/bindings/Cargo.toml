@@ -1,6 +1,6 @@
 [package]
 name = "spacetimedb"
-version = "0.8.1"
+version = "0.8.2"
 edition = "2021"
 license-file = "LICENSE"
 description = "Easy support for interacting between SpacetimeDB and Rust."
@@ -16,10 +16,10 @@ bench = false
 getrandom = ["spacetimedb-bindings-sys/getrandom"]
 
 [dependencies]
-spacetimedb-bindings-sys = { path = "../bindings-sys", version = "0.8.1" }
-spacetimedb-lib = { path = "../lib", default-features = false, version = "0.8.1"}
-spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.8.1"}
-spacetimedb-primitives = { path = "../primitives", version = "0.8.1" }
+spacetimedb-bindings-sys = { path = "../bindings-sys", version = "0.8.2" }
+spacetimedb-lib = { path = "../lib", default-features = false, version = "0.8.2"}
+spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.8.2"}
+spacetimedb-primitives = { path = "../primitives", version = "0.8.2" }
 
 derive_more.workspace = true
 log.workspace = true
