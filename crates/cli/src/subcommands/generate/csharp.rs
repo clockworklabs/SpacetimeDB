@@ -545,7 +545,7 @@ fn autogen_csharp_access_funcs_for_struct(
     output: &mut CodeIndenter<String>,
     struct_name_pascal_case: &str,
     product_type: &ProductType,
-    table_name: &str,
+    _table_name: &str,
     schema: &TableSchema,
     ctx: &GenCtx,
     namespace: &str,
@@ -877,6 +877,10 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
         writeln!(output, "{{").unwrap();
         output.indent(1);
     }
+
+    writeln!(output, "[ReducerClass]").unwrap();
+    writeln!(output, "public partial class Reducer {{ }}").unwrap();
+    writeln!(output).unwrap();
 
     writeln!(output, "public enum ReducerType").unwrap();
     writeln!(output, "{{").unwrap();
