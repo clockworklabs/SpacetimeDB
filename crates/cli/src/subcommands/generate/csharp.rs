@@ -5,9 +5,7 @@ use std::fmt::{self, Write};
 use convert_case::{Case, Casing};
 use nonempty::NonEmpty;
 use spacetimedb_lib::sats::db::def::TableSchema;
-use spacetimedb_lib::sats::{
-    AlgebraicType, AlgebraicType::Builtin, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, SumType,
-};
+use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, SumType};
 use spacetimedb_lib::{ReducerDef, TableDesc};
 
 use super::code_indenter::CodeIndenter;
@@ -47,32 +45,7 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
         AlgebraicType::Sum(sum_type) => {
             // This better be an option type
             if let Some(inner_ty) = sum_type.as_option() {
-                match inner_ty {
-                    Builtin(b) => match b {
-                        BuiltinType::Bool
-                        | BuiltinType::I8
-                        | BuiltinType::U8
-                        | BuiltinType::I16
-                        | BuiltinType::U16
-                        | BuiltinType::I32
-                        | BuiltinType::U32
-                        | BuiltinType::I64
-                        | BuiltinType::U64
-                        | BuiltinType::I128
-                        | BuiltinType::U128
-                        | BuiltinType::F32
-                        | BuiltinType::F64 => {
-                            // This has to be a nullable type.
-                            write!(f, "{}?", ty_fmt(ctx, inner_ty, namespace))
-                        }
-                        _ => {
-                            write!(f, "{}", ty_fmt(ctx, inner_ty, namespace))
-                        }
-                    },
-                    _ => {
-                        write!(f, "{}", ty_fmt(ctx, inner_ty, namespace))
-                    }
-                }
+                write!(f, "{}?", ty_fmt(ctx, inner_ty, namespace))
             } else {
                 unimplemented!()
             }
@@ -193,6 +166,9 @@ pub fn autogen_csharp_enum(name: &str, sum_type: &SumType, namespace: &str) -> S
     writeln!(output, "// WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.").unwrap();
     writeln!(output).unwrap();
 
+    writeln!(output, "#nullable enable").unwrap();
+    writeln!(output).unwrap();
+
     writeln!(output, "using System;").unwrap();
     if namespace != "SpacetimeDB" {
         writeln!(output, "using SpacetimeDB;").unwrap();
@@ -298,6 +274,9 @@ fn autogen_csharp_product_table_common(
     )
     .unwrap();
     writeln!(output, "// WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.").unwrap();
+    writeln!(output).unwrap();
+
+    writeln!(output, "#nullable enable").unwrap();
     writeln!(output).unwrap();
 
     writeln!(output, "using System;").unwrap();
@@ -686,6 +665,9 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
     writeln!(output, "// WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.").unwrap();
     writeln!(output).unwrap();
 
+    writeln!(output, "#nullable enable").unwrap();
+    writeln!(output).unwrap();
+
     writeln!(output, "using System;").unwrap();
     writeln!(output, "using ClientApi;").unwrap();
     writeln!(output, "using CommunityToolkit.HighPerformance;").unwrap();
@@ -862,6 +844,9 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
     )
     .unwrap();
     writeln!(output, "// WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.").unwrap();
+    writeln!(output).unwrap();
+
+    writeln!(output, "#nullable enable").unwrap();
     writeln!(output).unwrap();
 
     writeln!(output, "using System;").unwrap();

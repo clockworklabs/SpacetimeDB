@@ -20,8 +20,8 @@ pub enum MessageHandleError {
     BinaryDecode(#[from] prost::DecodeError),
     #[error("unexepected protobuf message type")]
     InvalidMessage,
-    #[error(transparent)]
-    TextDecode(#[from] serde_json::Error),
+    #[error("error handling message '{1}': {0}")]
+    TextDecode(#[source] serde_json::Error, String),
     #[error(transparent)]
     Base64Decode(#[from] base64::DecodeError),
 
@@ -92,9 +92,10 @@ enum RawJsonMessage<'a> {
     },
 }
 
-async fn handle_text(client: &ClientConnection, message: String) -> Result<(), MessageHandleError> {
-    let message = ByteString::from(message);
-    let msg = serde_json::from_str::<RawJsonMessage>(&message)?;
+async fn handle_text(client: &ClientConnection, message_s: String) -> Result<(), MessageHandleError> {
+    let message = ByteString::from(message_s.clone());
+    let msg = serde_json::from_str::<RawJsonMessage>(&message)
+        .map_err(|err| MessageHandleError::TextDecode(err, message_s))?;
     let mut message_id_ = Vec::new();
     let msg = match msg {
         RawJsonMessage::Call { ref func, args } => {
@@ -156,7 +157,7 @@ impl DecodedMessage<'_> {
     }
 }
 
-/// An error that arises from executing a message.  
+/// An error that arises from executing a message.
 #[derive(thiserror::Error, Debug)]
 #[error("error executing message (reducer: {reducer:?}) (err: {err:?})")]
 pub struct MessageExecutionError {
