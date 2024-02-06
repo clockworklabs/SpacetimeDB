@@ -637,7 +637,7 @@ namespace SpacetimeDB
         {
             switch (message.TypeCase)
             {
-                case Message.TypeOneofCase.Subscribe:
+                case Message.TypeOneofCase.SubscriptionUpdate:
                     onBeforeSubscriptionApplied?.Invoke();
                     break;
             }
