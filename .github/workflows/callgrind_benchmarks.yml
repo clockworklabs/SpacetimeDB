@@ -2,7 +2,6 @@ on:
   push:
     branches:
       - master
-      - kazimuth/callgrind
 
   workflow_dispatch:
     inputs:
@@ -27,6 +26,7 @@ jobs:
     # Fortunately, we can run on standard Github Actions infra because we don't care
     # about other stuff running on the machine!
     # runs-on: benchmarks-runner
+    runs-on: ubuntu-latest
     timeout-minutes: 20 # on a successful run, runs in 8 minutes
     container:
       image: rust:1.72

@@ -2,7 +2,6 @@ on:
   push:
     branches:
       - master
-      - kazimuth/unify-benches
 
   workflow_dispatch:
     inputs:
