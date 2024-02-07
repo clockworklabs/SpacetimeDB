@@ -15,6 +15,7 @@ use crate::host::module_host::{EventStatus, ModuleEvent};
 use crate::protobuf::client_api::Subscribe;
 use crate::worker_metrics::WORKER_METRICS;
 use futures::Future;
+use parking_lot::RwLock;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
@@ -22,7 +23,7 @@ use spacetimedb_lib::Identity;
 #[derive(Debug)]
 pub struct ModuleSubscriptions {
     relational_db: Arc<RelationalDB>,
-    subscriptions: Vec<Subscription>,
+    subscriptions: Arc<RwLock<Vec<Subscription>>>,
     owner_identity: Identity,
 }
 
@@ -30,13 +31,13 @@ impl ModuleSubscriptions {
     pub fn new(relational_db: Arc<RelationalDB>, owner_identity: Identity) -> Self {
         Self {
             relational_db,
-            subscriptions: Vec::new(),
+            subscriptions: Arc::new(RwLock::new(Vec::new())),
             owner_identity,
         }
     }
 
     /// Add a subscriber to the module. NOTE: this function is blocking.
-    pub fn add_subscriber(&mut self, sender: ClientConnectionSender, subscription: Subscribe) -> Result<(), DBError> {
+    pub fn add_subscriber(&self, sender: ClientConnectionSender, subscription: Subscribe) -> Result<(), DBError> {
         self.remove_subscriber(sender.id);
 
         let tx = &mut *scopeguard::guard(self.relational_db.begin_tx(), |tx| {
@@ -51,19 +52,20 @@ impl ModuleSubscriptions {
             queries.extend(qset);
         }
 
-        let subscription = match self.subscriptions.iter_mut().find(|s| s.queries == queries) {
+        let mut subscriptions = self.subscriptions.write();
+        let subscription = match subscriptions.iter_mut().find(|s| s.queries == queries) {
             Some(sub) => {
                 sub.add_subscriber(sender);
                 sub
             }
             None => {
                 let n = queries.len();
-                self.subscriptions.push(Subscription::new(queries, sender));
+                subscriptions.push(Subscription::new(queries, sender));
                 WORKER_METRICS
                     .subscription_queries
                     .with_label_values(&self.relational_db.address())
                     .add(n as i64);
-                self.subscriptions.last_mut().unwrap()
+                subscriptions.last_mut().unwrap()
             }
         };
 
@@ -74,19 +76,18 @@ impl ModuleSubscriptions {
         let database_update = tokio::task::block_in_place(|| subscription.queries.eval(&self.relational_db, tx, auth))?;
 
         let sender = subscription.subscribers().last().unwrap();
-
         // NOTE: It is important to send the state in this thread because if you spawn a new
         // thread it's possible for messages to get sent to the client out of order. If you do
         // spawn in another thread messages will need to be buffered until the state is sent out
         // on the wire
         let fut = sender.send_message(SubscriptionUpdateMessage { database_update });
         let _ = tokio::runtime::Handle::current().block_on(fut);
-
+        drop(subscriptions);
         Ok(())
     }
 
-    pub fn remove_subscriber(&mut self, client_id: ClientActorId) {
-        self.subscriptions.retain_mut(|subscription| {
+    pub fn remove_subscriber(&self, client_id: ClientActorId) {
+        self.subscriptions.write().retain_mut(|subscription| {
             subscription.remove_subscriber(client_id);
             if subscription.subscribers().is_empty() {
                 WORKER_METRICS
@@ -148,6 +149,7 @@ impl ModuleSubscriptions {
 
         let tasks = self
             .subscriptions
+            .read()
             .par_iter()
             .filter_map(|subscription| {
                 let incr = subscription
