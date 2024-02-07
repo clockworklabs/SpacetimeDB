@@ -28,9 +28,6 @@ pub trait BenchDatabase: Sized {
     /// Perform an empty transaction.
     fn empty_transaction(&mut self) -> ResultBench<()>;
 
-    /// Perform a transaction that commits a single row.
-    fn insert<T: BenchTable>(&mut self, table_id: &Self::TableId, row: T) -> ResultBench<()>;
-
     /// Perform a transaction that commits many rows.
     fn insert_bulk<T: BenchTable>(&mut self, table_id: &Self::TableId, rows: Vec<T>) -> ResultBench<()>;
 

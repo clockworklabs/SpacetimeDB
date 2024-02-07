@@ -44,12 +44,12 @@ impl BenchDatabase for SpacetimeRaw {
             let table_id = self.db.create_table(tx, table_def)?;
             self.db.rename_table(tx, table_id, &name)?;
             match index_strategy {
-                IndexStrategy::Unique => {
+                IndexStrategy::Unique0 => {
                     self.db
                         .create_index(tx, table_id, IndexDef::btree("id".into(), ColId(0), true))?;
                 }
-                IndexStrategy::NonUnique => (),
-                IndexStrategy::MultiIndex => {
+                IndexStrategy::NoIndex => (),
+                IndexStrategy::BTreeEachColumn => {
                     for (i, column) in T::product_type().elements.iter().enumerate() {
                         self.db.create_index(
                             tx,
@@ -80,13 +80,6 @@ impl BenchDatabase for SpacetimeRaw {
 
     fn empty_transaction(&mut self) -> ResultBench<()> {
         self.db.with_auto_commit(&ExecutionContext::default(), |_tx| Ok(()))
-    }
-
-    fn insert<T: BenchTable>(&mut self, table_id: &Self::TableId, row: T) -> ResultBench<()> {
-        self.db.with_auto_commit(&ExecutionContext::default(), |tx| {
-            self.db.insert(tx, *table_id, row.into_product_value())?;
-            Ok(())
-        })
     }
 
     fn insert_bulk<T: BenchTable>(&mut self, table_id: &Self::TableId, rows: Vec<T>) -> ResultBench<()> {
