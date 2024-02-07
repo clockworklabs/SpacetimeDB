@@ -105,7 +105,7 @@ impl BenchDatabase for SpacetimeRaw {
                 .db
                 .iter_mut(&ctx, tx, *table_id)?
                 .take(row_count as usize)
-                .map(|row| row.view().clone())
+                .map(|row| row.to_product_value())
                 .collect::<Vec<_>>();
 
             assert_eq!(rows.len(), row_count as usize, "not enough rows found for update_bulk!");
@@ -118,11 +118,10 @@ impl BenchDatabase for SpacetimeRaw {
                     .iter_by_col_eq_mut(&ctx, tx, *table_id, ColId(0), row.elements[0].clone())?
                     .next()
                     .expect("failed to find row during update!")
-                    .id()
-                    .clone();
+                    .pointer();
 
                 assert_eq!(
-                    self.db.delete(tx, *table_id, [id.into()]),
+                    self.db.delete(tx, *table_id, [id]),
                     1,
                     "failed to delete row during update!"
                 );
