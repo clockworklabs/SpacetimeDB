@@ -63,6 +63,10 @@ rpath = false
 [profile.bench]
 debug = true
 
+[workspace.package]
+# update rust-toolchain.toml too!
+rust-version = "1.74.0"
+
 [workspace.dependencies]
 ahash = "0.8"
 anyhow = { version = "1.0.68", features = ["backtrace"] }
