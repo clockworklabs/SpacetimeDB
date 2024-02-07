@@ -1,7 +1,7 @@
 #![forbid(unsafe_op_in_unsafe_fn)]
 
 pub(crate) mod committed_state;
-pub(crate) mod datastore;
+pub mod datastore;
 pub(crate) mod mut_tx;
 pub use mut_tx::MutTxId;
 pub(crate) mod sequence;
