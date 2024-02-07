@@ -24,7 +24,7 @@ use spacetimedb_vm::rel_ops::RelOps;
 
 pub enum TxMode<'a> {
     MutTx(&'a mut MutTx),
-    Tx(&'a mut Tx),
+    Tx(&'a Tx),
 }
 
 impl<'a> From<&'a mut MutTx> for TxMode<'a> {
@@ -33,8 +33,8 @@ impl<'a> From<&'a mut MutTx> for TxMode<'a> {
     }
 }
 
-impl<'a> From<&'a mut Tx> for TxMode<'a> {
-    fn from(tx: &'a mut Tx) -> Self {
+impl<'a> From<&'a Tx> for TxMode<'a> {
+    fn from(tx: &'a Tx) -> Self {
         TxMode::Tx(tx)
     }
 }

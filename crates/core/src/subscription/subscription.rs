@@ -182,7 +182,7 @@ fn evaluator_for_secondary_updates(
     db: &RelationalDB,
     auth: AuthCtx,
     inserts: bool,
-) -> impl Fn(&mut Tx, &QueryExpr) -> Result<HashMap<PrimaryKey, Op>, DBError> + '_ {
+) -> impl Fn(&Tx, &QueryExpr) -> Result<HashMap<PrimaryKey, Op>, DBError> + '_ {
     move |tx, query| {
         let mut out = HashMap::new();
         // If we are evaluating inserts, the op type should be 1.
@@ -208,7 +208,7 @@ fn evaluator_for_secondary_updates(
 fn evaluator_for_primary_updates(
     db: &RelationalDB,
     auth: AuthCtx,
-) -> impl Fn(&mut Tx, &QueryExpr) -> Result<HashMap<PrimaryKey, Op>, DBError> + '_ {
+) -> impl Fn(&Tx, &QueryExpr) -> Result<HashMap<PrimaryKey, Op>, DBError> + '_ {
     move |tx, query| {
         let mut out = HashMap::new();
         for MemTable { data, head, .. } in
@@ -272,7 +272,7 @@ impl QuerySet {
     pub fn eval_incr(
         &self,
         db: &RelationalDB,
-        tx: &mut Tx,
+        tx: &Tx,
         database_update: &DatabaseUpdate,
         auth: AuthCtx,
     ) -> Result<DatabaseUpdate, DBError> {
@@ -350,7 +350,7 @@ impl QuerySet {
     ///
     /// This is a *major* difference with normal query execution, where is expected to return the full result set for each query.
     #[tracing::instrument(skip_all)]
-    pub fn eval(&self, db: &RelationalDB, tx: &mut Tx, auth: AuthCtx) -> Result<DatabaseUpdate, DBError> {
+    pub fn eval(&self, db: &RelationalDB, tx: &Tx, auth: AuthCtx) -> Result<DatabaseUpdate, DBError> {
         let mut database_update: DatabaseUpdate = DatabaseUpdate { tables: vec![] };
         let mut table_ops = HashMap::new();
         let mut seen = HashSet::new();
@@ -607,10 +607,10 @@ impl<'a> IncrementalJoin<'a> {
     /// * `||`: Concatenation.
     ///
     /// For a more in-depth discussion, see the [module-level documentation](./index.html).
-    pub fn eval(&self, db: &RelationalDB, tx: &mut Tx, auth: &AuthCtx) -> Result<impl Iterator<Item = Op>, DBError> {
+    pub fn eval(&self, db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> Result<impl Iterator<Item = Op>, DBError> {
         let mut inserts = {
             // A query evaluator for inserts
-            let mut eval = |query, is_primary| {
+            let eval = |query, is_primary| {
                 if is_primary {
                     evaluator_for_primary_updates(db, *auth)(tx, query)
                 } else {
@@ -638,7 +638,7 @@ impl<'a> IncrementalJoin<'a> {
         };
         let mut deletes = {
             // A query evaluator for deletes
-            let mut eval = |query, is_primary| {
+            let eval = |query, is_primary| {
                 if is_primary {
                     evaluator_for_primary_updates(db, *auth)(tx, query)
                 } else {

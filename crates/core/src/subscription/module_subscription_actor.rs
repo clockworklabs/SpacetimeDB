@@ -19,8 +19,8 @@ use crate::{
     db::relational_db::Tx,
     host::module_host::{EventStatus, ModuleEvent},
 };
-use futures::{stream::FuturesUnordered, Future, StreamExt};
-use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
+use futures::Future;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
 use tokio::sync::{mpsc, oneshot};
@@ -126,7 +126,7 @@ impl ModuleSubscriptionActor {
             Command::AddSubscriber { sender, subscription } => self.add_subscription(sender, subscription).await?,
             Command::RemoveSubscriber { client_id } => self.remove_subscriber(client_id),
             Command::BroadcastCommitEvent { event, feedback_tx } => {
-                self.broadcast_commit_event(event).await;
+                tokio::task::block_in_place(|| self.broadcast_commit_event(event)).await;
                 let _ = feedback_tx.send(());
             }
         }
@@ -206,57 +206,61 @@ impl ModuleSubscriptionActor {
         })
     }
 
-    fn broadcast_commit_event(&mut self, event: ModuleEvent) -> impl Future<Output = ()> + '_ {
+    /// Broadcast the commit event to all interested subscribers.
+    ///
+    /// This function is blocking, even though it returns a future. The returned future resolves
+    /// once all updates have been successfully added to the subscribers' send queues (i.e. after
+    /// it resolves, it's guaranteed that if you call `subscriber.send(x)` the client will receive
+    /// x after they receive this subscription update).
+    fn broadcast_commit_event(&self, event: ModuleEvent) -> impl Future<Output = ()> + '_ {
+        let database_update = event.status.database_update().unwrap();
+
         let auth = AuthCtx::new(self.owner_identity, event.caller_identity);
 
-        let tokio_handle = tokio::runtime::Handle::current();
-        let futures = FuturesUnordered::new();
+        let tokio_handle = &tokio::runtime::Handle::current();
 
-        let iter = self.subscriptions.par_iter_mut().map_init(
-            || {
-                scopeguard::guard(self.relational_db.begin_tx(), |tx| {
-                    let ctx = ExecutionContext::incremental_update(self.relational_db.address());
-                    self.relational_db.release_tx(&ctx, tx);
-                })
-            },
-            |tx, subscription| {
-                let database_update = event.status.database_update().unwrap();
-                let incr = subscription
-                    .queries
-                    .eval_incr(&self.relational_db, tx, database_update, auth)
-                    .map_err(|err| {
-                        // TODO: log an id for the subscription somehow as well
-                        tracing::error!(err = &err as &dyn std::error::Error, "subscription eval_incr failed")
-                    })
-                    .ok()?;
-                if incr.tables.is_empty() {
-                    return None;
-                }
-                Some((subscription, incr))
-            },
-        );
-        let iter = iter.filter_map(|x| x);
-
-        let iter = iter.map(|(subscription, incr)| {
-            let message = TransactionUpdateMessage {
-                event: &event,
-                database_update: incr,
-            };
-            let mut message = CachedMessage::new(message);
-
-            for subscriber in subscription.subscribers() {
-                // rustc realllly doesn't like subscriber.send_message(message) here for weird
-                // lifetime reasons, even though it would be sound
-                let message = message.serialize(subscriber.protocol);
-                let subscriber = subscriber.clone();
-                futures.push(tokio_handle.spawn(async move {
-                    let _ = subscriber.send(message).await;
-                }))
-            }
+        let tx = &*scopeguard::guard(self.relational_db.begin_tx(), |tx| {
+            let ctx = ExecutionContext::incremental_update(self.relational_db.address());
+            self.relational_db.release_tx(&ctx, tx);
         });
 
-        tokio::task::block_in_place(|| iter.collect::<()>());
+        let tasks = self
+            .subscriptions
+            .par_iter()
+            .filter_map(|subscription| {
+                let incr = subscription
+                    .queries
+                    .eval_incr(&self.relational_db, tx, database_update, auth);
+                match incr {
+                    Ok(incr) if incr.tables.is_empty() => None,
+                    Ok(incr) => Some((subscription, incr)),
+                    Err(err) => {
+                        // TODO: log an id for the subscription somehow as well
+                        tracing::error!(err = &err as &dyn std::error::Error, "subscription eval_incr failed");
+                        None
+                    }
+                }
+            })
+            .flat_map_iter(|(subscription, incr)| {
+                let message = TransactionUpdateMessage {
+                    event: &event,
+                    database_update: incr,
+                };
+                let mut message = CachedMessage::new(message);
 
-        futures.map(drop).collect::<()>()
+                subscription.subscribers().iter().cloned().map(move |subscriber| {
+                    let message = message.serialize(subscriber.protocol);
+                    tokio_handle.spawn(async move {
+                        let _ = subscriber.send(message).await;
+                    })
+                })
+            })
+            .collect::<Vec<_>>();
+
+        async move {
+            for task in tasks {
+                let _ = task.await;
+            }
+        }
     }
 }
