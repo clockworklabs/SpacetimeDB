@@ -3,6 +3,7 @@ use criterion::{
     measurement::{Measurement, WallTime},
     Bencher, BenchmarkGroup, Criterion,
 };
+use lazy_static::lazy_static;
 use mimalloc::MiMalloc;
 use spacetimedb_bench::{
     database::BenchDatabase,
@@ -13,6 +14,10 @@ use spacetimedb_lib::sats::AlgebraicType;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
+
+lazy_static! {
+    static ref RUN_ONE_MILLION: bool = std::env::var("RUN_ONE_MILLION").is_ok();
+}
 
 fn criterion_benchmark(c: &mut Criterion) {
     bench_suite::<sqlite::SQLite>(c, true).unwrap();
@@ -70,6 +75,9 @@ fn table_suite<DB: BenchDatabase, T: BenchTable + RandomTable>(g: &mut Group, db
     for (_, table_id, table_params) in &tables {
         insert_bulk::<DB, T>(g, table_params, db, table_id, 0, 100)?;
         insert_bulk::<DB, T>(g, table_params, db, table_id, 1000, 100)?;
+        if *RUN_ONE_MILLION {
+            insert_bulk::<DB, T>(g, table_params, db, table_id, 0, 1_000_000)?;
+        }
     }
     for (index_strategy, table_id, table_params) in &tables {
         if *index_strategy == IndexStrategy::Unique {
@@ -79,9 +87,15 @@ fn table_suite<DB: BenchDatabase, T: BenchTable + RandomTable>(g: &mut Group, db
                 // perform "find" benchmarks
                 find::<DB, T>(g, db, table_id, index_strategy, BENCH_PKEY_INDEX, 1000, 100)?;
             }
+
+            update_bulk::<DB, T>(g, table_params, db, table_id, 1000, 10)?;
+            update_bulk::<DB, T>(g, table_params, db, table_id, 1000, 100)?;
+            if *RUN_ONE_MILLION {
+                update_bulk::<DB, T>(g, table_params, db, table_id, 1_000_000, 1_000_000)?;
+            }
         } else {
             // perform "filter" benchmarks
-            filter::<DB, T>(g, db, table_id, index_strategy, 1, 1000, 100)?;
+            filter::<DB, T>(g, db, table_id, index_strategy, 2, 1000, 100)?;
         }
     }
 
@@ -191,6 +205,8 @@ fn insert_bulk<DB: BenchDatabase, T: BenchTable + RandomTable>(
 
     // Each iteration performs one transaction, though it inserts many rows.
     g.throughput(criterion::Throughput::Elements(1));
+    // FIXME: only for 1_000_000 inserts
+    g.sample_size(10);
 
     g.bench_function(&id, |b| {
         bench_harness(
@@ -207,6 +223,44 @@ fn insert_bulk<DB: BenchDatabase, T: BenchTable + RandomTable>(
             },
             |db, to_insert| {
                 db.insert_bulk(table_id, to_insert)?;
+                Ok(())
+            },
+        )
+    });
+    db.clear_table(table_id)?;
+    Ok(())
+}
+
+#[inline(never)]
+fn update_bulk<DB: BenchDatabase, T: BenchTable + RandomTable>(
+    g: &mut Group,
+    table_params: &str,
+    db: &mut DB,
+    table_id: &DB::TableId,
+    load: u32,
+    count: u32,
+) -> ResultBench<()> {
+    let id = format!("update_bulk/{table_params}/load={load}/count={count}");
+    let data = create_sequential::<T>(0xdeadbeef, load, 1000);
+
+    // Each iteration performs one transaction, though it inserts many rows.
+    g.throughput(criterion::Throughput::Elements(1));
+
+    // running a big guy
+    g.sample_size(10);
+
+    g.bench_function(&id, |b| {
+        bench_harness(
+            b,
+            db,
+            |db| {
+                let data = data.clone();
+                db.clear_table(table_id)?;
+                db.insert_bulk(table_id, data)?;
+                Ok(())
+            },
+            |db, _| {
+                db.update_bulk::<T>(table_id, count)?;
                 Ok(())
             },
         )
