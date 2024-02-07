@@ -7,11 +7,11 @@
 //! does no work to hash the value as it is already a hash.
 
 use criterion::{black_box, criterion_group, criterion_main, Bencher, BenchmarkId, Criterion, Throughput};
-use mem_arch_prototype::indexes::{PageIndex, PageOffset, RowHash, RowPointer, SquashedOffset};
-use mem_arch_prototype::pointer_map::PointerMap;
 use rand::rngs::ThreadRng;
 use rand::seq::SliceRandom;
 use rand::{thread_rng, Rng};
+use spacetimedb_table::indexes::{PageIndex, PageOffset, RowHash, RowPointer, SquashedOffset};
+use spacetimedb_table::pointer_map::PointerMap;
 use std::time::{Duration, Instant};
 
 type RngMut<'r> = &'r mut ThreadRng;
