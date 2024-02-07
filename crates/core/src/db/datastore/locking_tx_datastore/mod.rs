@@ -3,7 +3,7 @@
 pub(crate) mod committed_state;
 pub(crate) mod datastore;
 pub(crate) mod mut_tx;
-pub(crate) use mut_tx::MutTxId;
+pub use mut_tx::MutTxId;
 pub(crate) mod sequence;
 pub(crate) mod state_view;
 pub use state_view::{Iter, IterByColEq, IterByColRange};
