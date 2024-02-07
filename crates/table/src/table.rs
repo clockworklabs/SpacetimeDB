@@ -888,6 +888,7 @@ mod test {
         let index_schema = schema.indexes[0].clone();
         let mut table = Table::new(schema, SquashedOffset::COMMITTED_STATE);
         let cols = ColList::new(0.into());
+
         let index = BTreeIndex::new(index_schema.index_id, &table.inner.row_layout, &cols, true, index_name).unwrap();
         table.insert_index(&NullBlobStore, cols, index);
 
