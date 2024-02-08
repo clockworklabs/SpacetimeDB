@@ -4760,6 +4760,7 @@ dependencies = [
  "hostname",
  "http 1.0.0",
  "log",
+ "once_cell",
  "openssl",
  "prometheus",
  "scopeguard",
@@ -4768,6 +4769,8 @@ dependencies = [
  "spacetimedb-client-api",
  "spacetimedb-core",
  "spacetimedb-lib",
+ "tempfile",
+ "thiserror",
  "tokio",
  "tower-http",
 ]
