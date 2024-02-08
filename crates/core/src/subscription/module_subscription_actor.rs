@@ -121,7 +121,7 @@ impl ModuleSubscriptions {
 
     /// A blocking version of [`broadcast_event`][Self::broadcast_event].
     pub fn blocking_broadcast_event(&self, client: Option<&ClientConnectionSender>, event: &ModuleEvent) {
-        tokio::runtime::Handle::current().block_on(self.broadcast_event(client, &event))
+        tokio::runtime::Handle::current().block_on(self.broadcast_event(client, event))
     }
 
     /// Broadcast the commit event to all interested subscribers.
