@@ -46,6 +46,7 @@ use std::{
 
 #[derive(Default)]
 pub(crate) struct CommittedState {
+    pub(crate) next_tx_offset: u64,
     pub(crate) tables: HashMap<TableId, Table>,
     pub(crate) blob_store: HashMapBlobStore,
 }
@@ -267,10 +268,12 @@ impl CommittedState {
             .get_mut(&table_id)
             .ok_or_else(|| TableError::IdNotFoundState(table_id))?;
         let blob_store = &mut self.blob_store;
-        table
-            .delete_equal_row(blob_store, rel)
-            .map_err(TableError::Insert)?
-            .ok_or_else(|| anyhow!("Delete for non-existent row when replaying transaction"))?;
+
+        // NOTE: We are eating the error here because during replay, it is assumed that
+        // the order of operations within a transaction mattered prior to mem-arch
+        // and that deleting and inserting the same row cannot occur in the commitlog
+        // after mem-arch.
+        let _ = table.delete_equal_row(blob_store, rel);
         Ok(())
     }
 
@@ -384,6 +387,8 @@ impl CommittedState {
     pub fn merge(&mut self, tx_state: TxState) -> TxData {
         // TODO(perf): pre-allocate `Vec::with_capacity`?
         let mut tx_data = TxData { records: vec![] };
+
+        self.next_tx_offset += 1;
 
         // First, apply deletes. This will free up space in the committed tables.
         self.merge_apply_deletes(&mut tx_data, tx_state.delete_tables);

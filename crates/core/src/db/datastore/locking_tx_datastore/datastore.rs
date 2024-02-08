@@ -107,6 +107,41 @@ impl Locking {
         Ok(())
     }
 
+    /// n.b. (Tyler) We actually **do not** want to check constraints at replay
+    /// time because not only is it a pain, but actually **subtly wrong** the
+    /// way we have it implemented. It's wrong because the actual constraints of
+    /// the database may change as different transactions are added to the
+    /// schema and you would actually have to change your indexes and
+    /// constraints as you replayed the log. This we are not currently doing
+    /// (we're building all the non-bootstrapped indexes at the end after
+    /// replaying), and thus aren't implementing constraint checking correctly
+    /// as it stands.
+    ///
+    /// However, the above is all rendered moot anyway because we don't need to
+    /// check constraints while replaying if we just assume that they were all
+    /// checked prior to the transaction committing in the first place.
+    ///
+    /// Note also that operation/mutation ordering **does not** matter for
+    /// operations inside a transaction of the message log assuming we only ever
+    /// insert **OR** delete a unique row in one transaction. If we ever insert
+    /// **AND** delete then order **does** matter. The issue caused by checking
+    /// constraints for each operation while replaying does not imply that order
+    /// matters. Ordering of operations would **only** matter if you wanted to
+    /// view the state of the database as of a partially applied transaction. We
+    /// never actually want to do this, because after a transaction has been
+    /// committed, it is assumed that all operations happen instantaneously and
+    /// atomically at the timestamp of the transaction. The only time that we
+    /// actually want to view the state of a database while a transaction is
+    /// partially applied is while the transaction is running **before** it
+    /// commits. Thus, we only care about operation ordering while the
+    /// transaction is running, but we do not care about it at all in the
+    /// context of the commit log.
+    ///
+    /// Not caring about the order in the log, however, requires that we **do
+    /// not** check index constraints during replay of transaction operatoins.
+    /// We **could** check them in between transactions if we wanted to update
+    /// the indexes and constraints as they changed during replay, but that is
+    /// unnecessary.
     pub fn replay_transaction(&self, transaction: &Transaction, odb: &dyn ObjectDB) -> Result<()> {
         let mut committed_state = self.committed_state.write_arc();
         for write in &transaction.writes {
@@ -143,7 +178,12 @@ impl Locking {
                 Operation::Delete => {
                     committed_state
                         .replay_delete_by_rel(table_id, &row)
-                        .expect("Error deleting row while replaying transaction");
+                        .unwrap_or_else(|e| {
+                            panic!(
+                                "Error deleting row {:?} during transaction {:?} playback: {:?}",
+                                &row, committed_state.next_tx_offset, e
+                            );
+                        });
                     // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
                     // and therefore has performance implications and must not be disabled.
                     DB_METRICS
@@ -154,9 +194,14 @@ impl Locking {
                 Operation::Insert => {
                     let (table, blob_store) =
                         committed_state.get_table_and_blob_store_or_create_ref_schema(table_id, &schema);
-                    table.insert(blob_store, &row).unwrap_or_else(|e| {
-                        panic!("Failed to insert during transaction playback: {:?}", e);
-                    });
+                    table
+                        .insert_internal_allow_duplicate(blob_store, &row)
+                        .unwrap_or_else(|e| {
+                            panic!(
+                                "Failed to insert row {:?} during transaction {:?} playback: {:?}",
+                                &row, committed_state.next_tx_offset, e
+                            );
+                        });
                     // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
                     // and therefore has performance implications and must not be disabled.
                     DB_METRICS
@@ -166,6 +211,7 @@ impl Locking {
                 }
             }
         }
+        committed_state.next_tx_offset += 1;
         Ok(())
     }
 }
