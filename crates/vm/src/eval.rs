@@ -361,7 +361,7 @@ pub fn eval<P: ProgramVm>(p: &mut P, code: Code) -> Code {
 
             match result.len() {
                 0 => Code::Pass,
-                1 => result[0].clone(),
+                1 => result.pop().unwrap(),
                 _ => Code::Block(result),
             }
         }
