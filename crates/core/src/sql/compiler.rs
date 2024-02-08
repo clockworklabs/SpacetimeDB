@@ -291,19 +291,20 @@ fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, P
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::ops::Bound;
-
+    use crate::db::datastore::traits::IsolationLevel;
     use crate::db::relational_db::tests_utils::make_test_db;
+    use crate::subscription::subscription::create_table_multi_index;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::operator::OpQuery;
     use spacetimedb_primitives::{ColId, TableId};
-    use spacetimedb_sats::AlgebraicType;
+    use spacetimedb_sats::{product, AlgebraicType};
     use spacetimedb_vm::expr::{IndexJoin, IndexScan, JoinExpr, Query};
     use spacetimedb_vm::relation::Table;
+    use std::ops::Bound;
 
-    fn assert_index_scan(
+    fn assert_index_scan<T: Into<ColList>>(
         op: Query,
-        col: ColId,
+        cols: T,
         low_bound: Bound<AlgebraicValue>,
         up_bound: Bound<AlgebraicValue>,
     ) -> TableId {
@@ -314,7 +315,7 @@ mod tests {
             upper_bound,
         }) = op
         {
-            assert_eq!(columns, col.into(), "Columns don't match");
+            assert_eq!(columns, cols.into(), "Columns don't match");
             assert_eq!(lower_bound, low_bound, "Lower bound don't match");
             assert_eq!(upper_bound, up_bound, "Upper bound don't match");
             table.table_id
@@ -377,7 +378,7 @@ mod tests {
         // Assert index scan.
         assert_index_scan(
             ops.swap_remove(0),
-            0.into(),
+            ColId(0),
             Bound::Included(1u64.into()),
             Bound::Included(1u64.into()),
         );
@@ -440,9 +441,44 @@ mod tests {
         // Assert index scan.
         assert_index_scan(
             ops.swap_remove(0),
-            1.into(),
+            ColId(1),
             Bound::Included(2u64.into()),
             Bound::Included(2u64.into()),
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn compile_index_multi_eq_and_eq() -> ResultTest<()> {
+        let (db, _) = make_test_db()?;
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
+
+        // Create table [test] with index on [b]
+        let schema = &[
+            ("a", AlgebraicType::U64),
+            ("b", AlgebraicType::U64),
+            ("c", AlgebraicType::U64),
+            ("d", AlgebraicType::U64),
+        ];
+        let indexes = &[(0.into(), "a"), (1.into(), "b")];
+        create_table_multi_index(&db, &mut tx, "test", schema, indexes)?;
+
+        let sql = "select * from test where b = 2 and a = 1";
+        let CrudExpr::Query(QueryExpr {
+            source: _,
+            query: mut ops,
+        }) = compile_sql(&db, &tx, sql)?.remove(0)
+        else {
+            panic!("Expected QueryExpr");
+        };
+        assert_eq!(1, ops.len());
+
+        // Assert index scan.
+        assert_index_scan(
+            ops.swap_remove(0),
+            col_list![ColId(0), ColId(1)],
+            Bound::Included(product![2u64, 1u64].into()),
+            Bound::Included(product![2u64, 1u64].into()),
         );
         Ok(())
     }
@@ -499,7 +535,7 @@ mod tests {
 
         assert_index_scan(
             ops.remove(0),
-            1.into(),
+            ColId(1),
             Bound::Excluded(AlgebraicValue::U64(2)),
             Bound::Unbounded,
         );
@@ -531,7 +567,7 @@ mod tests {
 
         assert_index_scan(
             ops.remove(0),
-            1.into(),
+            ColId(1),
             Bound::Excluded(AlgebraicValue::U64(2)),
             Bound::Excluded(AlgebraicValue::U64(5)),
         );
@@ -560,12 +596,11 @@ mod tests {
         else {
             panic!("Expected QueryExpr");
         };
-
         assert_eq!(2, ops.len());
 
         assert_index_scan(
             ops.remove(0),
-            0.into(),
+            ColId(0),
             Bound::Included(AlgebraicValue::U64(3)),
             Bound::Included(AlgebraicValue::U64(3)),
         );
@@ -610,7 +645,7 @@ mod tests {
         // First operation in the pipeline should be an index scan
         let table_id = assert_index_scan(
             query[0].clone(),
-            0.into(),
+            ColId(0),
             Bound::Included(AlgebraicValue::U64(3)),
             Bound::Included(AlgebraicValue::U64(3)),
         );
@@ -672,7 +707,6 @@ mod tests {
         else {
             panic!("unexpected expression: {:#?}", exp);
         };
-
         assert_eq!(table_id, lhs_id);
         assert_eq!(query.len(), 2);
 
@@ -843,7 +877,7 @@ mod tests {
         // First operation in the pipeline should be an index scan
         let table_id = assert_index_scan(
             query[0].clone(),
-            0.into(),
+            ColId(0),
             Bound::Included(AlgebraicValue::U64(3)),
             Bound::Included(AlgebraicValue::U64(3)),
         );
@@ -883,7 +917,7 @@ mod tests {
         // The right side of the join should be an index scan
         let table_id = assert_index_scan(
             rhs[0].clone(),
-            1.into(),
+            ColId(1),
             Bound::Unbounded,
             Bound::Excluded(AlgebraicValue::U64(4)),
         );
@@ -960,7 +994,7 @@ mod tests {
         // The probe side of the join should be an index scan
         let table_id = assert_index_scan(
             rhs[0].clone(),
-            1.into(),
+            ColId(1),
             Bound::Excluded(AlgebraicValue::U64(2)),
             Bound::Excluded(AlgebraicValue::U64(4)),
         );
