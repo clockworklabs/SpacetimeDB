@@ -164,14 +164,9 @@ impl ClientConnection {
 
     pub async fn subscribe(&self, subscription: Subscribe) -> Result<(), DBError> {
         let me = self.clone();
-        tokio::task::spawn_blocking(move || {
-            me.module
-                .subscriptions()
-                .blocking_write()
-                .add_subscriber(me.sender, subscription)
-        })
-        .await
-        .unwrap()
+        tokio::task::spawn_blocking(move || me.module.subscriptions().add_subscriber(me.sender, subscription))
+            .await
+            .unwrap()
     }
 
     pub async fn one_off_query(&self, query: &str, message_id: &[u8]) -> Result<(), anyhow::Error> {

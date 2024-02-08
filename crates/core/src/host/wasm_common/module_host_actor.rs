@@ -2,7 +2,6 @@ use anyhow::{anyhow, Context};
 use bytes::Bytes;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::RwLock;
 
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
@@ -143,7 +142,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 
         let owner_identity = database_instance_context.identity;
         let relational_db = database_instance_context.relational_db.clone();
-        let subscriptions = Arc::new(RwLock::new(ModuleSubscriptions::new(relational_db, owner_identity)));
+        let subscriptions = ModuleSubscriptions::new(relational_db, owner_identity);
 
         let uninit_instance = module.instantiate_pre()?;
         let mut instance = uninit_instance.instantiate(
@@ -565,9 +564,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             .observe(timings.total_duration.as_secs_f64());
 
         // Take a lock on our subscriptions now. Otherwise, we could have a race condition where we commit
-        // the tx, someone adds a subscription and receives this tx as an update, and then receives the
+        // the tx, someone adds a subscription and receives this tx as an initial update, and then receives the
         // update again when we broadcast_event.
-        let subscriptions = self.info.subscriptions.blocking_read();
+        let subscriptions = self.info.subscriptions.subscriptions.read();
 
         let ctx = ExecutionContext::reducer(address, reducer_name);
         let status = match call_result {
@@ -629,7 +628,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             energy_quanta_used: energy.used,
             host_execution_duration: timings.total_duration,
         };
-        subscriptions.blocking_broadcast_event(client.as_ref(), &event);
+        self.info
+            .subscriptions
+            .blocking_broadcast_event(client.as_ref(), &subscriptions, &event);
 
         ReducerCallResult {
             outcome,

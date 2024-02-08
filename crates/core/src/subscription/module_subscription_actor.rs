@@ -20,10 +20,11 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
 
+type Subscriptions = Arc<RwLock<Vec<Subscription>>>;
 #[derive(Debug)]
 pub struct ModuleSubscriptions {
     relational_db: Arc<RelationalDB>,
-    subscriptions: Arc<RwLock<Vec<Subscription>>>,
+    pub subscriptions: Subscriptions,
     owner_identity: Identity,
 }
 
@@ -38,8 +39,6 @@ impl ModuleSubscriptions {
 
     /// Add a subscriber to the module. NOTE: this function is blocking.
     pub fn add_subscriber(&self, sender: ClientConnectionSender, subscription: Subscribe) -> Result<(), DBError> {
-        self.remove_subscriber(sender.id);
-
         let tx = &mut *scopeguard::guard(self.relational_db.begin_tx(), |tx| {
             let ctx = ExecutionContext::subscribe(self.relational_db.address());
             self.relational_db.release_tx(&ctx, tx);
@@ -52,7 +51,12 @@ impl ModuleSubscriptions {
             queries.extend(qset);
         }
 
+        let database_update = tokio::task::block_in_place(|| queries.eval(&self.relational_db, tx, auth))?;
+        // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
+        // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
+        // but that should not pose an issue.
         let mut subscriptions = self.subscriptions.write();
+        self._remove_subscriber(sender.id, &mut subscriptions);
         let subscription = match subscriptions.iter_mut().find(|s| s.queries == queries) {
             Some(sub) => {
                 sub.add_subscriber(sender);
@@ -73,7 +77,6 @@ impl ModuleSubscriptions {
             .initial_subscription_evals
             .with_label_values(&self.relational_db.address())
             .inc();
-        let database_update = tokio::task::block_in_place(|| subscription.queries.eval(&self.relational_db, tx, auth))?;
 
         let sender = subscription.subscribers().last().unwrap();
         // NOTE: It is important to send the state in this thread because if you spawn a new
@@ -82,12 +85,16 @@ impl ModuleSubscriptions {
         // on the wire
         let fut = sender.send_message(SubscriptionUpdateMessage { database_update });
         let _ = tokio::runtime::Handle::current().block_on(fut);
-        drop(subscriptions);
         Ok(())
     }
 
     pub fn remove_subscriber(&self, client_id: ClientActorId) {
-        self.subscriptions.write().retain_mut(|subscription| {
+        let mut subscriptions = self.subscriptions.write();
+        self._remove_subscriber(client_id, &mut subscriptions);
+    }
+
+    fn _remove_subscriber(&self, client_id: ClientActorId, subscriptions: &mut [Subscription]) {
+        let _ = subscriptions.iter_mut().map(|subscription| {
             subscription.remove_subscriber(client_id);
             if subscription.subscribers().is_empty() {
                 WORKER_METRICS
@@ -96,18 +103,23 @@ impl ModuleSubscriptions {
                     .sub(subscription.queries.len() as i64);
             }
             !subscription.subscribers().is_empty()
-        })
+        });
     }
 
     /// Broadcast a ModuleEvent to all interested subscribers.
     ///
-    /// It's recommended to take a read lock on `ModuleSubscriptions` *before* you commit
+    /// It's recommended to take a read lock on `subscriptions` field *before* you commit
     /// the transaction that will give you the event you pass here, to prevent a race condition
     /// where a just-added subscriber receives the same update twice.
-    pub async fn broadcast_event(&self, client: Option<&ClientConnectionSender>, event: &ModuleEvent) {
+    pub async fn broadcast_event(
+        &self,
+        client: Option<&ClientConnectionSender>,
+        subscriptions: &[Subscription],
+        event: &ModuleEvent,
+    ) {
         match event.status {
             EventStatus::Committed(_) => {
-                tokio::task::block_in_place(|| self.broadcast_commit_event(event)).await;
+                tokio::task::block_in_place(|| self.broadcast_commit_event(subscriptions, event)).await;
             }
             EventStatus::Failed(_) => {
                 if let Some(client) = client {
@@ -125,8 +137,13 @@ impl ModuleSubscriptions {
     }
 
     /// A blocking version of [`broadcast_event`][Self::broadcast_event].
-    pub fn blocking_broadcast_event(&self, client: Option<&ClientConnectionSender>, event: &ModuleEvent) {
-        tokio::runtime::Handle::current().block_on(self.broadcast_event(client, event))
+    pub fn blocking_broadcast_event(
+        &self,
+        client: Option<&ClientConnectionSender>,
+        subscriptions: &[Subscription],
+        event: &ModuleEvent,
+    ) {
+        tokio::runtime::Handle::current().block_on(self.broadcast_event(client, subscriptions, event))
     }
 
     /// Broadcast the commit event to all interested subscribers.
@@ -135,7 +152,11 @@ impl ModuleSubscriptions {
     /// once all updates have been successfully added to the subscribers' send queues (i.e. after
     /// it resolves, it's guaranteed that if you call `subscriber.send(x)` the client will receive
     /// x after they receive this subscription update).
-    fn broadcast_commit_event(&self, event: &ModuleEvent) -> impl Future<Output = ()> + '_ {
+    fn broadcast_commit_event(
+        &self,
+        subscriptions: &[Subscription],
+        event: &ModuleEvent,
+    ) -> impl Future<Output = ()> + '_ {
         let database_update = event.status.database_update().unwrap();
 
         let auth = AuthCtx::new(self.owner_identity, event.caller_identity);
@@ -147,9 +168,7 @@ impl ModuleSubscriptions {
             self.relational_db.release_tx(&ctx, tx);
         });
 
-        let tasks = self
-            .subscriptions
-            .read()
+        let tasks = subscriptions
             .par_iter()
             .filter_map(|subscription| {
                 let incr = subscription

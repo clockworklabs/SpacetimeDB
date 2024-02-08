@@ -7,7 +7,7 @@ use std::time::Duration;
 use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
 use futures::{Future, FutureExt};
 use indexmap::IndexMap;
-use tokio::sync::{oneshot, RwLock};
+use tokio::sync::oneshot;
 
 use super::host_controller::HostThreadpool;
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
@@ -207,7 +207,7 @@ pub struct ModuleInfo {
     pub reducers: ReducersMap,
     pub catalog: HashMap<String, EntityDef>,
     pub log_tx: tokio::sync::broadcast::Sender<bytes::Bytes>,
-    pub subscriptions: Arc<RwLock<ModuleSubscriptions>>,
+    pub subscriptions: ModuleSubscriptions,
 }
 
 pub struct ReducersMap(pub IndexMap<String, ReducerDef>);
@@ -499,7 +499,7 @@ impl ModuleHost {
     }
 
     #[inline]
-    pub fn subscriptions(&self) -> &RwLock<ModuleSubscriptions> {
+    pub fn subscriptions(&self) -> &ModuleSubscriptions {
         &self.info.subscriptions
     }
 
@@ -519,7 +519,7 @@ impl ModuleHost {
 
     pub async fn disconnect_client(&self, client_id: ClientActorId) {
         tokio::join!(
-            async { self.subscriptions().write().await.remove_subscriber(client_id) },
+            async { self.subscriptions().remove_subscriber(client_id) },
             self.call_identity_connected_disconnected(client_id.identity, client_id.address, false)
                 // ignore NoSuchModule; if the module's already closed, that's fine
                 .map(drop)
