@@ -1,7 +1,5 @@
 use derive_more::Display;
 use spacetimedb_lib::Address;
-use spacetimedb_metrics::impl_prometheusvalue_string;
-use spacetimedb_metrics::typed_prometheus::AsPrometheusLabel;
 
 /// Represents the context under which a database runtime method is executed.
 /// In particular it provides details about the currently executing txn to runtime operations.
@@ -20,7 +18,7 @@ pub struct ExecutionContext<'a> {
 /// A transaction can be executing a reducer.
 /// It can be used to satisfy a one-off sql query or subscription.
 /// It can also be an internal operation that is not associated with a reducer or sql request.
-#[derive(Clone, Copy, Display, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Display, Hash, PartialEq, Eq, strum::AsRefStr)]
 pub enum WorkloadType {
     Reducer,
     Sql,
@@ -28,8 +26,6 @@ pub enum WorkloadType {
     Update,
     Internal,
 }
-
-impl_prometheusvalue_string!(WorkloadType);
 
 impl Default for WorkloadType {
     fn default() -> Self {

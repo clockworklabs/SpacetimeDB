@@ -4676,6 +4676,7 @@ dependencies = [
 name = "spacetimedb-metrics"
 version = "0.8.1"
 dependencies = [
+ "arrayvec",
  "itertools 0.12.0",
  "paste",
  "prometheus",
