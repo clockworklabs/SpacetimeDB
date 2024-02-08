@@ -256,7 +256,7 @@ fn convert_product_type<'a>(
 ) -> impl fmt::Display + 'a {
     fmt_fn(move |f| {
         writeln!(f, "AlgebraicType.createProductType([")?;
-        for (_, elem) in product_type.elements.iter().enumerate() {
+        for elem in &product_type.elements {
             writeln!(
                 f,
                 "{INDENT}new ProductTypeElement(\"{}\", {}),",
@@ -280,7 +280,7 @@ fn convert_product_type<'a>(
 fn convert_sum_type<'a>(ctx: &'a GenCtx, sum_type: &'a SumType, ref_prefix: &'a str) -> impl fmt::Display + 'a {
     fmt_fn(move |f| {
         writeln!(f, "AlgebraicType.createSumType([")?;
-        for (_, elem) in sum_type.variants.iter().enumerate() {
+        for elem in &sum_type.variants {
             writeln!(
                 f,
                 "\tnew SumTypeVariant({}, {}),",

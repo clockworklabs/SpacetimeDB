@@ -23,6 +23,7 @@ pub struct Transaction {
     pub writes: Vec<Write>,
 }
 
+#[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod arbitrary {
     use super::*;

@@ -349,7 +349,7 @@ fn convert_product_type<'a>(
             "SpacetimeDB.SATS.AlgebraicType.CreateProductType(new SpacetimeDB.SATS.ProductTypeElement[]"
         )?;
         writeln!(f, "{{")?;
-        for (_, elem) in product_type.elements.iter().enumerate() {
+        for elem in &product_type.elements {
             writeln!(
                 f,
                 "{INDENT}new SpacetimeDB.SATS.ProductTypeElement({}, {}),",
@@ -371,7 +371,7 @@ fn convert_sum_type<'a>(ctx: &'a GenCtx, sum_type: &'a SumType, namespace: &'a s
             "SpacetimeDB.SATS.AlgebraicType.CreateSumType(new System.Collections.Generic.List<SpacetimeDB.SATS.SumTypeVariant>"
         )?;
         writeln!(f, "{{")?;
-        for (_, elem) in sum_type.variants.iter().enumerate() {
+        for elem in &sum_type.variants {
             writeln!(
                 f,
                 "\tnew SpacetimeDB.SATS.SumTypeVariant({}, {}),",
