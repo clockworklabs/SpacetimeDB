@@ -1,23 +1,22 @@
 use std::collections::HashMap;
 
-use spacetimedb_sats::algebraic_type::AlgebraicType;
-use spacetimedb_sats::algebraic_value::AlgebraicValue;
-use spacetimedb_sats::relation::{FieldExpr, MemTable, RelIter, Relation, Table};
-use spacetimedb_sats::{product, ProductType, ProductValue};
-
 use crate::dsl::{bin_op, call_fn, if_, mem_table, scalar, var};
 use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
 use crate::expr::{
-    Code, CrudCode, CrudExpr, CrudExprOpt, Expr, ExprOpt, FunctionOpt, QueryCode, QueryExpr, QueryExprOpt, SourceExpr,
-    SourceExprOpt, TyExpr,
+    Code, CrudCode, CrudExpr, CrudExprOpt, Expr, ExprOpt, Function, FunctionOpt, Query, QueryCode, QueryExpr,
+    QueryExprOpt, SourceExpr, SourceExprOpt, TyExpr,
 };
-use crate::expr::{Function, Query};
 use crate::functions::{Args, Param};
 use crate::operator::*;
 use crate::program::ProgramVm;
 use crate::rel_ops::RelOps;
+use crate::relation::{MemTable, RelIter, Table};
 use crate::typecheck::check_types;
 use crate::types::{ty_op, Ty};
+use spacetimedb_sats::algebraic_type::AlgebraicType;
+use spacetimedb_sats::algebraic_value::AlgebraicValue;
+use spacetimedb_sats::relation::{FieldExpr, Relation};
+use spacetimedb_sats::{product, ProductType, ProductValue};
 
 fn to_vec<P: ProgramVm>(p: &mut P, of: &[Expr]) -> Vec<ExprOpt> {
     let mut new = Vec::with_capacity(of.len());
@@ -541,10 +540,11 @@ mod tests {
     use super::*;
     use crate::dsl::{prefix_op, query, value};
     use crate::program::Program;
+    use crate::relation::{MemTable, RelValue};
     use spacetimedb_lib::identity::AuthCtx;
     use spacetimedb_sats::db::auth::StAccess;
     use spacetimedb_sats::db::error::RelationError;
-    use spacetimedb_sats::relation::{FieldName, MemTable, RelValue};
+    use spacetimedb_sats::relation::FieldName;
 
     fn fib(n: u64) -> u64 {
         if n < 2 {

@@ -13,11 +13,12 @@ use regex::Regex;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Address;
 use spacetimedb_sats::db::auth::StAccess;
-use spacetimedb_sats::relation::{Column, FieldName, Header, MemTable, RelValue};
+use spacetimedb_sats::relation::{Column, FieldName, Header};
 use spacetimedb_sats::AlgebraicType;
 use spacetimedb_sats::DataKey;
 use spacetimedb_vm::expr;
 use spacetimedb_vm::expr::{Crud, CrudExpr, DbType, QueryExpr};
+use spacetimedb_vm::relation::{MemTable, RelValue};
 
 static WHITESPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap());
 pub const SUBSCRIBE_TO_ALL_QUERY: &str = "SELECT * FROM *";

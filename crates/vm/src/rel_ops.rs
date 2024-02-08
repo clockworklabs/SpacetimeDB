@@ -1,6 +1,7 @@
 use crate::errors::ErrorVm;
+use crate::relation::{RelValue, RelValueRef};
 use spacetimedb_sats::product_value::ProductValue;
-use spacetimedb_sats::relation::{FieldExpr, Header, RelValue, RelValueRef, RowCount};
+use spacetimedb_sats::relation::{FieldExpr, Header, RowCount};
 use std::collections::HashMap;
 
 pub(crate) trait ResultExt<T> {

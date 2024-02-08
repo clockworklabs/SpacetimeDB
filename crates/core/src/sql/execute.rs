@@ -1,8 +1,8 @@
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{ProductType, ProductValue};
-use spacetimedb_sats::relation::MemTable;
 use spacetimedb_vm::eval::run_ast;
 use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
+use spacetimedb_vm::relation::MemTable;
 use tracing::info;
 
 use crate::database_instance_context_controller::DatabaseInstanceContextController;
@@ -130,10 +130,11 @@ pub(crate) mod tests {
     use itertools::Itertools;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
-    use spacetimedb_sats::relation::{Header, RelValue};
+    use spacetimedb_sats::relation::Header;
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
     use spacetimedb_vm::dsl::{mem_table, scalar};
     use spacetimedb_vm::eval::create_game_data;
+    use spacetimedb_vm::relation::RelValue;
     use tempfile::TempDir;
 
     /// Short-cut for simplify test execution

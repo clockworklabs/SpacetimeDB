@@ -12,8 +12,7 @@ use crate::execution_context::ExecutionContext;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::def::TableDef;
-use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldName, RelValueRef, Relation};
-use spacetimedb_sats::relation::{Header, MemTable, RelIter, RelValue, RowCount, Table};
+use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldName, Header, Relation, RowCount};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::env::EnvDb;
 use spacetimedb_vm::errors::ErrorVm;
@@ -21,6 +20,7 @@ use spacetimedb_vm::eval::IterRows;
 use spacetimedb_vm::expr::*;
 use spacetimedb_vm::program::{ProgramRef, ProgramVm};
 use spacetimedb_vm::rel_ops::RelOps;
+use spacetimedb_vm::relation::{MemTable, RelIter, RelValue, RelValueRef, Table};
 
 pub enum TxMode<'a> {
     MutTx(&'a mut MutTx),

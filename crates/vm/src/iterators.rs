@@ -1,7 +1,8 @@
 use crate::errors::ErrorVm;
 use crate::rel_ops::RelOps;
+use crate::relation::{MemTable, RelIter, RelValue};
 use spacetimedb_sats::product_value::ProductValue;
-use spacetimedb_sats::relation::{Header, MemTable, RelIter, RelValue, RowCount};
+use spacetimedb_sats::relation::{Header, RowCount};
 
 impl RelOps for RelIter<ProductValue> {
     fn head(&self) -> &Header {

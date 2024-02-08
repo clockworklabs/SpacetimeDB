@@ -280,9 +280,9 @@ mod tests {
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::operator::OpQuery;
     use spacetimedb_primitives::{ColId, TableId};
-    use spacetimedb_sats::relation::Table;
     use spacetimedb_sats::AlgebraicType;
     use spacetimedb_vm::expr::{IndexJoin, IndexScan, JoinExpr, Query};
+    use spacetimedb_vm::relation::Table;
 
     fn assert_index_scan(
         op: Query,

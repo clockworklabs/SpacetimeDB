@@ -1,11 +1,6 @@
 //! Definition for a `Program` to run code.
 //!
 //! It carries an [EnvDb] with the functions, idents, types.
-use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::Address;
-use spacetimedb_sats::relation::{MemTable, RelIter, Relation, Table};
-use std::collections::HashMap;
-
 use crate::env::EnvDb;
 use crate::errors::ErrorVm;
 use crate::eval::{build_query, IterRows};
@@ -15,6 +10,11 @@ use crate::operator::*;
 use crate::ops::logic;
 use crate::ops::math;
 use crate::rel_ops::RelOps;
+use crate::relation::{MemTable, RelIter, Table};
+use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::Address;
+use spacetimedb_sats::relation::Relation;
+use std::collections::HashMap;
 
 /// A trait to allow split the execution of `programs` to allow executing
 /// `queries` that take in account each `program` state/enviroment.

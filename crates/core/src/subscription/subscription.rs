@@ -42,9 +42,10 @@ use crate::{
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{Address, PrimaryKey};
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
-use spacetimedb_sats::relation::{DbTable, Header, MemTable, RelValue, Relation};
+use spacetimedb_sats::relation::{DbTable, Header, Relation};
 use spacetimedb_sats::{AlgebraicValue, DataKey, ProductValue};
 use spacetimedb_vm::expr::{self, IndexJoin, QueryExpr};
+use spacetimedb_vm::relation::{MemTable, RelValue};
 
 use super::query;
 
@@ -752,9 +753,10 @@ mod tests {
     use crate::sql::compiler::compile_sql;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_sats::data_key::ToDataKey;
-    use spacetimedb_sats::relation::{FieldName, Table};
+    use spacetimedb_sats::relation::FieldName;
     use spacetimedb_sats::{product, AlgebraicType};
     use spacetimedb_vm::expr::{CrudExpr, IndexJoin, Query, SourceExpr};
+    use spacetimedb_vm::relation::Table;
 
     #[test]
     // Compile an index join after replacing the index side with a virtual table.

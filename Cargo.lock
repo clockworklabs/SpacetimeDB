@@ -4927,6 +4927,7 @@ dependencies = [
  "spacetimedb-core",
  "spacetimedb-lib",
  "spacetimedb-sats",
+ "spacetimedb-vm",
  "sqllogictest",
  "sqllogictest-engines",
  "tempfile",

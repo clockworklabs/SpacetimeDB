@@ -35,5 +35,6 @@ pub mod iterators;
 pub mod ops;
 pub mod program;
 pub mod rel_ops;
+pub mod relation;
 mod typecheck;
 pub mod types;

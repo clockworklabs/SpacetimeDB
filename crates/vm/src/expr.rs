@@ -1,14 +1,9 @@
-use derive_more::From;
-use std::cmp::Ordering;
-use std::collections::{HashMap, VecDeque};
-use std::fmt;
-use std::hash::{Hash, Hasher};
-use std::ops::Bound;
-
 use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
 use crate::functions::{FunDef, Param};
 use crate::operator::{Op, OpCmp, OpLogic, OpQuery};
+use crate::relation::{MemTable, RelValueRef, Table};
 use crate::types::Ty;
+use derive_more::From;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_type::AlgebraicType;
@@ -16,11 +11,14 @@ use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{TableDef, TableSchema};
 use spacetimedb_sats::db::error::AuthError;
-use spacetimedb_sats::relation::{
-    Column, DbTable, FieldExpr, FieldName, Header, MemTable, RelValueRef, Relation, RowCount, Table,
-};
+use spacetimedb_sats::relation::{Column, DbTable, FieldExpr, FieldName, Header, Relation, RowCount};
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
+use std::cmp::Ordering;
+use std::collections::{HashMap, VecDeque};
+use std::fmt;
+use std::hash::{Hash, Hasher};
+use std::ops::Bound;
 
 /// A `index` into the list of [Fun]
 pub type FunctionId = usize;

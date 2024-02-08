@@ -10,7 +10,7 @@ use crate::json::client_api::{
 use crate::protobuf::client_api::{event, message, Event, FunctionCall, IdentityToken, Message, TransactionUpdate};
 use spacetimedb_client_api_messages::client_api::{OneOffQueryResponse, OneOffTable};
 use spacetimedb_lib::Address;
-use spacetimedb_sats::relation::MemTable;
+use spacetimedb_vm::relation::MemTable;
 
 use super::{DataMessage, Protocol};
 
