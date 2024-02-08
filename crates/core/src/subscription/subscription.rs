@@ -50,6 +50,7 @@ use super::query;
 
 /// A subscription is a [`QuerySet`], along with a set of subscribers all
 /// interested in the same set of queries.
+#[derive(Debug)]
 pub struct Subscription {
     pub queries: QuerySet,
     subscribers: Vec<ClientConnectionSender>,
