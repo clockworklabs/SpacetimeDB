@@ -138,7 +138,7 @@ impl Locking {
     /// context of the commit log.
     ///
     /// Not caring about the order in the log, however, requires that we **do
-    /// not** check index constraints during replay of transaction operatoins.
+    /// not** check index constraints during replay of transaction operations.
     /// We **could** check them in between transactions if we wanted to update
     /// the indexes and constraints as they changed during replay, but that is
     /// unnecessary.
@@ -195,7 +195,7 @@ impl Locking {
                     let (table, blob_store) =
                         committed_state.get_table_and_blob_store_or_create_ref_schema(table_id, &schema);
                     table
-                        .insert_internal_allow_duplicate(blob_store, &row)
+                        .insert_replay_ignore_unique_constraints(blob_store, &row)
                         .unwrap_or_else(|e| {
                             panic!(
                                 "Failed to insert row {:?} during transaction {:?} playback: {:?}",

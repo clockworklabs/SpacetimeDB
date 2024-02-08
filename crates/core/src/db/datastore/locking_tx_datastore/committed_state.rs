@@ -46,6 +46,9 @@ use std::{
 
 #[derive(Default)]
 pub(crate) struct CommittedState {
+    /// A counter which starts at 0 and increments each time a transaction is merged.
+    ///
+    /// Used for error reporting.
     pub(crate) next_tx_offset: u64,
     pub(crate) tables: HashMap<TableId, Table>,
     pub(crate) blob_store: HashMapBlobStore,
@@ -269,11 +272,10 @@ impl CommittedState {
             .ok_or_else(|| TableError::IdNotFoundState(table_id))?;
         let blob_store = &mut self.blob_store;
 
-        // NOTE: We are eating the error here because during replay, it is assumed that
-        // the order of operations within a transaction mattered prior to mem-arch
-        // and that deleting and inserting the same row cannot occur in the commitlog
-        // after mem-arch.
-        let _ = table.delete_equal_row(blob_store, rel);
+        table
+            .delete_equal_row(blob_store, rel)
+            .map_err(TableError::Insert)?
+            .ok_or_else(|| anyhow!("Delete for non-existent row when replaying transaction"))?;
         Ok(())
     }
 

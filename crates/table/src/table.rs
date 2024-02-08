@@ -105,30 +105,13 @@ impl Table {
 
     /// Insert a `row` into this table, storing its large var-len members in the `blob_store`.
     ///
-    /// On success, returns the hash of the newly-inserted row,
-    /// and a `RowPointer` which identifies it.
-    ///
-    /// When a row equal to `row` already exists in `self`,
-    /// returns `InsertError::Duplicate(existing_row_pointer)`,
-    /// where `existing_row_pointer` is a `RowPointer` which identifies the existing row.
-    /// In this case, the duplicate is not inserted,
-    /// but internal data structures may be altered in ways that affect performance and fragmentation.
-    ///
-    /// TODO(error-handling): describe errors from `write_row_to_pages` and return meaningful errors.
-    pub fn insert(
+    /// As the name suggests, this method does not check unique constraints,
+    /// and is used during replay of the message log.
+    pub fn insert_replay_ignore_unique_constraints(
         &mut self,
         blob_store: &mut dyn BlobStore,
         row: &ProductValue,
     ) -> Result<(RowHash, RowPointer), InsertError> {
-        // Check unique constraints.
-        // This error should take precedence over any other potential failures.
-        self.check_unique_constraints(
-            row,
-            // No need to worry about the committed vs tx state dichotomy here;
-            // just treat all rows in the table as live.
-            |_| false,
-        )?;
-
         // Optimistically insert the `row` before checking for set-semantic collisions,
         // under the assumption that set-semantic collisions are rare.
         let ptr = self.insert_internal_allow_duplicate(blob_store, row)?;
@@ -164,6 +147,33 @@ impl Table {
         }
 
         Ok((hash, ptr))
+    }
+
+    /// Insert a `row` into this table, storing its large var-len members in the `blob_store`.
+    ///
+    /// On success, returns the hash of the newly-inserted row,
+    /// and a `RowPointer` which identifies it.
+    ///
+    /// When a row equal to `row` already exists in `self`,
+    /// returns `InsertError::Duplicate(existing_row_pointer)`,
+    /// where `existing_row_pointer` is a `RowPointer` which identifies the existing row.
+    /// In this case, the duplicate is not inserted,
+    /// but internal data structures may be altered in ways that affect performance and fragmentation.
+    pub fn insert(
+        &mut self,
+        blob_store: &mut dyn BlobStore,
+        row: &ProductValue,
+    ) -> Result<(RowHash, RowPointer), InsertError> {
+        // Check unique constraints.
+        // This error should take precedence over any other potential failures.
+        self.check_unique_constraints(
+            row,
+            // No need to worry about the committed vs tx state dichotomy here;
+            // just treat all rows in the table as live.
+            |_| false,
+        )?;
+
+        self.insert_replay_ignore_unique_constraints(blob_store, row)
     }
 
     /// Physically inserts `row` into the page
