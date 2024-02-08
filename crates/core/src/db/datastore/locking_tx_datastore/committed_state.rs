@@ -268,12 +268,17 @@ impl CommittedState {
             .get_mut(&table_id)
             .ok_or_else(|| TableError::IdNotFoundState(table_id))?;
         let blob_store = &mut self.blob_store;
-
-        // NOTE: We are eating the error here because during replay, it is assumed that
-        // the order of operations within a transaction mattered prior to mem-arch
-        // and that deleting and inserting the same row cannot occur in the commitlog
-        // after mem-arch.
-        let _ = table.delete_equal_row(blob_store, rel);
+        table
+            .delete_equal_row(blob_store, rel)
+            .map_err(TableError::Insert)?
+            .ok_or_else(|| anyhow!("Delete for non-existent row when replaying transaction"))?;
+        Ok(())
+    }
+    
+    pub fn replay_insert(&mut self, table_id: TableId, schema: &TableSchema, row: &ProductValue) -> Result<()> {
+        let (table, blob_store) =
+            self.get_table_and_blob_store_or_create_ref_schema(table_id, schema);
+        table.insert_internal(blob_store, row).map_err(TableError::Insert)?;
         Ok(())
     }
 

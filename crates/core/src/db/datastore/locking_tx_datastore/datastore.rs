@@ -192,10 +192,8 @@ impl Locking {
                         .dec();
                 }
                 Operation::Insert => {
-                    let (table, blob_store) =
-                        committed_state.get_table_and_blob_store_or_create_ref_schema(table_id, &schema);
-                    table
-                        .insert_internal_allow_duplicate(blob_store, &row)
+                    committed_state 
+                        .replay_insert(table_id, &schema, &row)
                         .unwrap_or_else(|e| {
                             panic!(
                                 "Failed to insert row {:?} during transaction {:?} playback: {:?}",

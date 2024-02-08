@@ -129,6 +129,18 @@ impl Table {
             |_| false,
         )?;
 
+        // Insert the row into the page manager.
+        let (hash, ptr) = self.insert_internal(blob_store, row)?;
+
+        // Insert row into indices.
+        for (cols, index) in self.indexes.iter_mut() {
+            index.insert(cols, row, ptr).unwrap();
+        }
+
+        Ok((hash, ptr))
+    }
+
+    pub fn insert_internal(&mut self, blob_store: &mut dyn BlobStore, row: &ProductValue) -> Result<(RowHash, RowPointer), InsertError> {
         // Optimistically insert the `row` before checking for set-semantic collisions,
         // under the assumption that set-semantic collisions are rare.
         let ptr = self.insert_internal_allow_duplicate(blob_store, row)?;
@@ -157,11 +169,6 @@ impl Table {
         // i.e. this is not a set-semantic duplicate,
         // add it to the `pointer_map`.
         self.pointer_map.insert(hash, ptr);
-
-        // Insert row into indices.
-        for (cols, index) in self.indexes.iter_mut() {
-            index.insert(cols, row, ptr).unwrap();
-        }
 
         Ok((hash, ptr))
     }
