@@ -9,6 +9,7 @@ description = "A VM for SpacetimeDB"
 spacetimedb-sats.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-primitives.workspace = true
+spacetimedb-table.workspace = true
 
 anyhow.workspace = true
 derive_more.workspace = true

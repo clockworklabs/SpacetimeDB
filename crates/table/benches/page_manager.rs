@@ -92,7 +92,7 @@ unsafe impl Row for u64 {
     }
 
     fn to_product(self) -> ProductValue {
-        ProductValue::new(&[AlgebraicValue::U64(self)])
+        AlgebraicValue::U64(self).into()
     }
 }
 
@@ -124,7 +124,7 @@ unsafe impl Row for U32x8 {
     }
 
     fn to_product(self) -> ProductValue {
-        ProductValue::new(&self.vals.iter().copied().map(AlgebraicValue::U32).collect::<Vec<_>>())
+        self.vals.map(AlgebraicValue::U32).into()
     }
 }
 
@@ -155,7 +155,7 @@ unsafe impl Row for U32x64 {
     }
 
     fn to_product(self) -> ProductValue {
-        ProductValue::new(&self.vals.iter().copied().map(AlgebraicValue::U32).collect::<Vec<_>>())
+        self.vals.map(AlgebraicValue::U32).into()
     }
 }
 
@@ -180,7 +180,7 @@ unsafe impl Row for String {
     }
 
     fn to_product(self) -> ProductValue {
-        ProductValue::new(&[AlgebraicValue::String(self)])
+        AlgebraicValue::String(self).into()
     }
 }
 

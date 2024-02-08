@@ -23,6 +23,7 @@
 //!
 //! Run the AST build from [expr::Expr]. It assumes is correct.
 //!
+
 pub use spacetimedb_lib::operator;
 
 pub mod dsl;
@@ -33,3 +34,4 @@ pub mod iterators;
 pub mod ops;
 pub mod program;
 pub mod rel_ops;
+pub mod relation;

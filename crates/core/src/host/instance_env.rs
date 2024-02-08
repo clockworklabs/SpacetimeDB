@@ -381,7 +381,7 @@ impl InstanceEnv {
 
         // write all rows and flush at row boundaries
         for row in results.data {
-            row.data.encode(&mut chunked_writer);
+            row.encode(&mut chunked_writer);
             chunked_writer.flush();
         }
 

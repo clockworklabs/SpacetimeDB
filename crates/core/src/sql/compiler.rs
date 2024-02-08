@@ -5,7 +5,7 @@ use spacetimedb_primitives::*;
 use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::db::def::{TableDef, TableSchema};
 use spacetimedb_sats::relation::{self, DbTable, FieldExpr, FieldName, Header};
-use spacetimedb_sats::{AlgebraicValue, ProductValue};
+use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_vm::dsl::{db_table, db_table_raw, query};
 use spacetimedb_vm::expr::{ColumnOp, CrudExpr, DbType, Expr, QueryExpr, SourceExpr};
 use spacetimedb_vm::operator::OpCmp;
@@ -210,7 +210,7 @@ fn compile_insert(
                 }
             }
         }
-        rows.push(ProductValue::new(&row))
+        rows.push(row.into())
     }
 
     Ok(CrudExpr::Insert {
@@ -296,9 +296,9 @@ mod tests {
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::operator::OpQuery;
     use spacetimedb_primitives::{ColId, TableId};
-    use spacetimedb_sats::relation::Table;
     use spacetimedb_sats::AlgebraicType;
     use spacetimedb_vm::expr::{IndexJoin, IndexScan, JoinExpr, Query};
+    use spacetimedb_vm::relation::Table;
 
     fn assert_index_scan(
         op: Query,
