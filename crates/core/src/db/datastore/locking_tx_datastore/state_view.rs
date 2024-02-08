@@ -493,8 +493,7 @@ impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for ScanIterByColRange<'a, R> 
     #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Option<Self::Item> {
         for row_ref in &mut self.scan_iter {
-            let row = row_ref.to_product_value();
-            let value = row.project_not_empty(&self.cols).unwrap();
+            let value = row_ref.project_not_empty(&self.cols).unwrap();
             if self.range.contains(&value) {
                 return Some(row_ref);
             }
