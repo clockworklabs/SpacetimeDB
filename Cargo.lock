@@ -4833,6 +4833,7 @@ dependencies = [
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-sats",
+ "spacetimedb-table",
  "tempfile",
  "thiserror",
  "tracing",

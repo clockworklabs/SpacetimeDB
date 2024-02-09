@@ -5,6 +5,7 @@ use spacetimedb_sats::db::error::RelationError;
 use spacetimedb_sats::product_value::ProductValue;
 use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldName, Header, HeaderOnlyField, Relation, RowCount};
 use spacetimedb_sats::AlgebraicValue;
+use spacetimedb_table::table::RowRef;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
 
@@ -31,45 +32,48 @@ impl<T> RelIter<T> {
 /// A borrowed version of [RelValue].
 #[derive(Debug, Clone, Copy)]
 pub struct RelValueRef<'a> {
-    pub data: &'a ProductValue,
+    pub data: &'a RelValue<'a>,
 }
 
 impl<'a> RelValueRef<'a> {
-    pub fn new(data: &'a ProductValue) -> Self {
+    pub fn new(data: &'a RelValue<'a>) -> Self {
         Self { data }
     }
 
     pub fn get(&self, col: &'a FieldExpr, header: &'a Header) -> Result<&'a AlgebraicValue, RelationError> {
-        let val = match col {
-            FieldExpr::Name(col) => {
-                let pos = header.column_pos_or_err(col)?.idx();
-                self.data
-                    .elements
-                    .get(pos)
-                    .ok_or_else(|| RelationError::FieldNotFoundAtPos(pos, col.clone()))?
-            }
-            FieldExpr::Value(x) => x,
-        };
+        // let val = match col {
+        //     FieldExpr::Name(col) => {
+        //         let pos = header.column_pos_or_err(col)?.idx();
+        //         self.data
+        //             .elements
+        //             .get(pos)
+        //             .ok_or_else(|| RelationError::FieldNotFoundAtPos(pos, col.clone()))?
+        //     }
+        //     FieldExpr::Value(x) => x,
+        // };
 
-        Ok(val)
+        todo!("read_column")
+
+        // Ok(val)
     }
 
     pub fn project(&self, cols: &[FieldExpr], header: &'a Header) -> Result<ProductValue, RelationError> {
-        let mut elements = Vec::with_capacity(cols.len());
+        // let mut elements = Vec::with_capacity(cols.len());
 
-        for col in cols {
-            match col {
-                FieldExpr::Name(col) => {
-                    let pos = header.column_pos_or_err(col)?.idx();
-                    elements.push(self.data.elements[pos].clone());
-                }
-                FieldExpr::Value(col) => {
-                    elements.push(col.clone());
-                }
-            }
-        }
+        // for col in cols {
+        //     match col {
+        //         FieldExpr::Name(col) => {
+        //             let pos = header.column_pos_or_err(col)?.idx();
+        //             elements.push(self.data.elements[pos].clone());
+        //         }
+        //         FieldExpr::Value(col) => {
+        //             elements.push(col.clone());
+        //         }
+        //     }
+        // }
 
-        Ok(ProductValue::new(&elements))
+        // Ok(ProductValue::new(&elements))
+        todo!("project_not_empty)")
     }
 }
 
@@ -78,42 +82,66 @@ impl<'a> RelValueRef<'a> {
 /// This is in contrast to a `DataRef` which represents a row belonging to a table.
 /// The difference being that a RelValue's [DataKey] is optional since relational
 /// operators can modify their input rows.
-#[derive(Debug, Clone, Eq)]
-pub struct RelValue {
-    pub id: Option<DataKey>,
-    pub data: ProductValue,
+#[derive(Debug, Clone)]
+pub enum RelValue<'a> {
+    Row(RowRef<'a>),
+    Projection(ProductValue),
 }
 
-impl RelValue {
-    pub fn new(data: ProductValue, id: Option<DataKey>) -> Self {
-        Self { id, data }
+impl<'a> RelValue<'a> {
+    pub fn new(data: ProductValue, _id: Option<DataKey>) -> Self {
+        RelValue::Projection(data)
     }
 
-    pub fn as_val_ref(&self) -> RelValueRef {
-        RelValueRef::new(&self.data)
+    pub fn as_val_ref(&'a self) -> RelValueRef<'a> {
+        RelValueRef::new(self)
+    }
+
+    pub fn into_product_value(self) -> ProductValue {
+        match self {
+            Self::Row(row_ref) => row_ref.to_product_value(),
+            Self::Projection(row) => row,
+        }
+    }
+
+    pub fn clone_product_value(&self) -> ProductValue {
+        match self {
+            Self::Row(row_ref) => row_ref.to_product_value(),
+
+            Self::Projection(row) => row.clone(),
+        }
+    }
+
+    pub fn num_columns(&self) -> usize {
+        match self {
+            Self::Row(row_ref) => row_ref.row_layout().product().elements.len(),
+            Self::Projection(row) => row.elements.len(),
+        }
     }
 
     pub fn extend(self, with: RelValue) -> RelValue {
-        let mut x = self;
-        x.id = None;
-        x.data.elements.extend(with.data.elements);
-        x
+        let mut x = self.into_product_value();
+        x.elements.extend(with.into_product_value().elements);
+        RelValue::Projection(x)
     }
 }
 
-impl PartialEq for RelValue {
+impl<'a> Eq for RelValue<'a> {}
+
+impl<'a> PartialEq for RelValue<'a> {
     fn eq(&self, other: &Self) -> bool {
-        self.data == other.data
+        todo!("eq_row_in_table")
+        // self.data == other.data
     }
 }
 
-impl Ord for RelValue {
+impl<'a> Ord for RelValue<'a> {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.data.cmp(&other.data)
+        todo!("no clue lmao")
     }
 }
 
-impl PartialOrd for RelValue {
+impl<'a> PartialOrd for RelValue<'a> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
@@ -123,26 +151,27 @@ impl PartialOrd for RelValue {
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct MemTableWithoutTableName<'a> {
     pub head: HeaderOnlyField<'a>,
-    pub data: &'a [RelValue],
+    pub data: &'a [ProductValue],
 }
 
 /// An in-memory table
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct MemTable {
     pub head: Header,
-    pub data: Vec<RelValue>,
+    pub data: Vec<ProductValue>,
     pub table_access: StAccess,
 }
 
 impl MemTable {
-    pub fn new(head: Header, table_access: StAccess, data: Vec<RelValue>) -> Self {
+    pub fn new(head: Header, table_access: StAccess, data: Vec<RelValue<'_>>) -> Self {
         assert_eq!(
             head.fields.len(),
             data.first()
-                .map(|x| x.data.elements.len())
+                .map(RelValue::num_columns)
                 .unwrap_or_else(|| head.fields.len()),
             "number of columns in `header.len() != data.len()`"
         );
+        let data = data.into_iter().map(RelValue::into_product_value).collect();
         Self {
             head,
             data,
@@ -159,7 +188,7 @@ impl MemTable {
     pub fn from_iter(head: Header, data: impl Iterator<Item = ProductValue>) -> Self {
         Self {
             head,
-            data: data.map(|row| RelValue::new(row, None)).collect(),
+            data: data.collect(),
             table_access: StAccess::Public,
         }
     }

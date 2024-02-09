@@ -379,10 +379,10 @@ pub fn eval<P: ProgramVm>(p: &mut P, code: Code) -> Code {
     }
 }
 
-pub type IterRows<'a> = dyn RelOps + 'a;
+pub type IterRows<'a> = dyn RelOps<'a> + 'a;
 
 #[tracing::instrument(skip_all)]
-pub fn build_query(mut result: Box<IterRows>, query: Vec<Query>) -> Result<Box<IterRows<'_>>, ErrorVm> {
+pub fn build_query<'a>(mut result: Box<IterRows<'a>>, query: Vec<Query>) -> Result<Box<IterRows<'a>>, ErrorVm> {
     for q in query {
         result = match q {
             Query::IndexScan(_) => {

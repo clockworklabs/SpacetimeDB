@@ -1606,7 +1606,7 @@ impl fmt::Display for SourceExpr {
             SourceExpr::MemTable(x) => {
                 let ty = &AlgebraicType::Product(x.head().ty());
                 for row in &x.data {
-                    let x = fmt_value(ty, &row.data.clone().into());
+                    let x = fmt_value(ty, &row.clone().into());
                     write!(f, "{x}")?;
                 }
                 Ok(())

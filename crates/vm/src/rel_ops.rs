@@ -9,11 +9,11 @@ pub(crate) trait ResultExt<T> {
 }
 
 /// A trait for dealing with fallible iterators for the database.
-pub trait RelOps {
+pub trait RelOps<'a> {
     fn head(&self) -> &Header;
     fn row_count(&self) -> RowCount;
     /// Advances the `iterator` and returns the next [RelValue].
-    fn next(&mut self) -> Result<Option<RelValue>, ErrorVm>;
+    fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm>;
 
     /// Applies a function over the elements of the iterator, producing a single final value.
     ///
@@ -23,7 +23,7 @@ pub trait RelOps {
     where
         Self: Sized,
         E: From<ErrorVm>,
-        F: FnMut(B, RelValue) -> Result<B, ErrorVm>,
+        F: for<'b> FnMut(B, RelValue<'b>) -> Result<B, ErrorVm>,
     {
         while let Some(v) = self.next()? {
             init = f(init, v)?;
@@ -42,7 +42,7 @@ pub trait RelOps {
     #[inline]
     fn select<P>(self, predicate: P) -> Select<Self, P>
     where
-        P: FnMut(RelValueRef) -> Result<bool, ErrorVm>,
+        P: for<'b> FnMut(RelValueRef<'b>) -> Result<bool, ErrorVm>,
         Self: Sized,
     {
         let count = self.row_count();
@@ -62,7 +62,7 @@ pub trait RelOps {
     #[inline]
     fn project<P>(self, cols: &[FieldExpr], extractor: P) -> Result<Project<Self, P>, ErrorVm>
     where
-        P: FnMut(RelValueRef) -> Result<ProductValue, ErrorVm>,
+        P: for<'b> FnMut(RelValueRef<'b>) -> Result<ProductValue, ErrorVm>,
         Self: Sized,
     {
         let count = self.row_count();
@@ -89,21 +89,21 @@ pub trait RelOps {
         key_rhs: KeyRhs,
         predicate: Pred,
         project: Proj,
-    ) -> Result<JoinInner<Self, Rhs, KeyLhs, KeyRhs, Pred, Proj>, ErrorVm>
+    ) -> Result<JoinInner<'a, Self, Rhs, KeyLhs, KeyRhs, Pred, Proj>, ErrorVm>
     where
         Self: Sized,
         Pred: FnMut(RelValueRef, RelValueRef) -> Result<bool, ErrorVm>,
-        Proj: FnMut(RelValue, RelValue) -> RelValue,
-        KeyLhs: FnMut(RelValueRef) -> Result<ProductValue, ErrorVm>,
-        KeyRhs: FnMut(RelValueRef) -> Result<ProductValue, ErrorVm>,
-        Rhs: RelOps,
+        Proj: FnMut(RelValue<'a>, RelValue<'a>) -> RelValue<'a>,
+        KeyLhs: for<'b> FnMut(RelValueRef<'b>) -> Result<ProductValue, ErrorVm>,
+        KeyRhs: for<'b> FnMut(RelValueRef<'b>) -> Result<ProductValue, ErrorVm>,
+        Rhs: RelOps<'a>,
     {
         Ok(JoinInner::new(head, self, with, key_lhs, key_rhs, predicate, project))
     }
 
     /// Utility to collect the results into a [Vec]
     #[inline]
-    fn collect_vec(mut self) -> Result<Vec<RelValue>, ErrorVm>
+    fn collect_vec(mut self) -> Result<Vec<RelValue<'a>>, ErrorVm>
     where
         Self: Sized,
     {
@@ -119,7 +119,7 @@ pub trait RelOps {
     }
 }
 
-impl<I: RelOps + ?Sized> RelOps for Box<I> {
+impl<'a, I: RelOps<'a> + ?Sized> RelOps<'a> for Box<I> {
     fn head(&self) -> &Header {
         (**self).head()
     }
@@ -128,7 +128,7 @@ impl<I: RelOps + ?Sized> RelOps for Box<I> {
         (**self).row_count()
     }
 
-    fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
+    fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
         (**self).next()
     }
 }
@@ -152,10 +152,10 @@ impl<I, P> Select<I, P> {
     }
 }
 
-impl<I, P> RelOps for Select<I, P>
+impl<'a, I, P> RelOps<'a> for Select<I, P>
 where
-    I: RelOps,
-    P: FnMut(RelValueRef) -> Result<bool, ErrorVm>,
+    I: RelOps<'a>,
+    P: for<'b> FnMut(RelValueRef<'b>) -> Result<bool, ErrorVm>,
 {
     fn head(&self) -> &Header {
         &self.head
@@ -165,7 +165,7 @@ where
         self.count
     }
 
-    fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
+    fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
         let filter = &mut self.predicate;
         while let Some(v) = self.iter.next()? {
             if filter(v.as_val_ref())? {
@@ -195,10 +195,10 @@ impl<I, P> Project<I, P> {
     }
 }
 
-impl<I, P> RelOps for Project<I, P>
+impl<'a, I, P> RelOps<'a> for Project<I, P>
 where
-    I: RelOps,
-    P: FnMut(RelValueRef) -> Result<ProductValue, ErrorVm>,
+    I: RelOps<'a>,
+    P: for<'b> FnMut(RelValueRef<'b>) -> Result<ProductValue, ErrorVm>,
 {
     fn head(&self) -> &Header {
         &self.head
@@ -208,7 +208,7 @@ where
         self.count
     }
 
-    fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
+    fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
         let extract = &mut self.extractor;
         if let Some(v) = self.iter.next()? {
             let row = extract(v.as_val_ref())?;
@@ -219,7 +219,7 @@ where
 }
 
 #[derive(Clone, Debug)]
-pub struct JoinInner<Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> {
+pub struct JoinInner<'a, Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> {
     pub(crate) head: Header,
     pub(crate) count: RowCount,
     pub(crate) lhs: Lhs,
@@ -228,12 +228,12 @@ pub struct JoinInner<Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> {
     pub(crate) key_rhs: KeyRhs,
     pub(crate) predicate: Pred,
     pub(crate) projection: Proj,
-    map: HashMap<ProductValue, Vec<RelValue>>,
+    map: HashMap<ProductValue, Vec<RelValue<'a>>>,
     filled: bool,
-    left: Option<RelValue>,
+    left: Option<RelValue<'a>>,
 }
 
-impl<Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> JoinInner<Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> {
+impl<'a, Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> JoinInner<'a, Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> {
     pub fn new(
         head: Header,
         lhs: Lhs,
@@ -259,14 +259,14 @@ impl<Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> JoinInner<Lhs, Rhs, KeyLhs, KeyRhs, P
     }
 }
 
-impl<Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> RelOps for JoinInner<Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj>
+impl<'a, Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> RelOps<'a> for JoinInner<'a, Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj>
 where
-    Lhs: RelOps,
-    Rhs: RelOps,
-    KeyLhs: FnMut(RelValueRef) -> Result<ProductValue, ErrorVm>,
-    KeyRhs: FnMut(RelValueRef) -> Result<ProductValue, ErrorVm>,
-    Pred: FnMut(RelValueRef, RelValueRef) -> Result<bool, ErrorVm>,
-    Proj: FnMut(RelValue, RelValue) -> RelValue,
+    Lhs: RelOps<'a>,
+    Rhs: RelOps<'a>,
+    KeyLhs: for<'b> FnMut(RelValueRef<'b>) -> Result<ProductValue, ErrorVm>,
+    KeyRhs: for<'b> FnMut(RelValueRef<'b>) -> Result<ProductValue, ErrorVm>,
+    Pred: for<'b> FnMut(RelValueRef<'b>, RelValueRef<'b>) -> Result<bool, ErrorVm>,
+    Proj: FnMut(RelValue<'a>, RelValue<'a>) -> RelValue<'a>,
 {
     fn head(&self) -> &Header {
         &self.head
@@ -276,7 +276,7 @@ where
         self.count
     }
 
-    fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
+    fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
         if !self.filled {
             self.map = HashMap::with_capacity(self.rhs.row_count().min);
             while let Some(v) = self.rhs.next()? {

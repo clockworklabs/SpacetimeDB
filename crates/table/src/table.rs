@@ -668,7 +668,7 @@ impl<'a> RowRef<'a> {
         self.blob_store
     }
 
-    pub(crate) fn row_layout(&self) -> &RowTypeLayout {
+    pub fn row_layout(&self) -> &RowTypeLayout {
         &self.table.row_layout
     }
 
