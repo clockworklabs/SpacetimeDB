@@ -32,6 +32,7 @@ reset_project() {
 	PROJECT_PATH="$(mktemp -d)"
 	rmdir "$PROJECT_PATH"
 	cp -rp "$RESET_PROJECT_PATH" "$PROJECT_PATH"
+	cp "$SPACETIME_DIR"/rust-toolchain.toml "$PROJECT_PATH"
 	export PROJECT_PATH
 }
 

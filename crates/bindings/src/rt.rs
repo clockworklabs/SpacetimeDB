@@ -44,7 +44,7 @@ pub fn invoke_reducer<'a, A: Args<'a>, T>(
     let res = with_timestamp_set(ctx.timestamp, || {
         let res: Result<(), Box<str>> = reducer.invoke(ctx, args);
         // Then run the epilogue.
-        epilogue(res.as_ref().map(|()| ()).map_err(|e| &**e));
+        epilogue(res.as_ref().copied().map_err(|e| &**e));
         res
     });
 

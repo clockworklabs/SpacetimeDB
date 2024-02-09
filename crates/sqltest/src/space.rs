@@ -52,7 +52,7 @@ impl ColumnType for Kind {
 
 #[allow(dead_code)]
 fn append_file(to: &std::path::Path, content: &str) -> anyhow::Result<()> {
-    let mut f = fs::OpenOptions::new().create(true).append(true).write(true).open(to)?;
+    let mut f = fs::OpenOptions::new().create(true).append(true).open(to)?;
 
     f.write_all(format!("{content}\n").as_bytes())?;
 

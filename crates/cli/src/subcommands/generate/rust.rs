@@ -161,7 +161,6 @@ fn print_auto_generated_file_comment(output: &mut Indenter) {
 const ALLOW_UNUSED: &str = "#[allow(unused)]";
 
 const SPACETIMEDB_IMPORTS: &[&str] = &[
-    ALLOW_UNUSED,
     "use spacetimedb_sdk::{",
     "\tAddress,",
     "\tsats::{ser::Serialize, de::Deserialize},",
@@ -181,6 +180,7 @@ fn print_spacetimedb_imports(output: &mut Indenter) {
 
 fn print_file_header(output: &mut Indenter) {
     print_auto_generated_file_comment(output);
+    print_lines(output, &["#![allow(unused_imports)]"]);
     print_spacetimedb_imports(output);
 }
 
