@@ -274,10 +274,9 @@ impl CommittedState {
             .ok_or_else(|| anyhow!("Delete for non-existent row when replaying transaction"))?;
         Ok(())
     }
-    
+
     pub fn replay_insert(&mut self, table_id: TableId, schema: &TableSchema, row: &ProductValue) -> Result<()> {
-        let (table, blob_store) =
-            self.get_table_and_blob_store_or_create_ref_schema(table_id, schema);
+        let (table, blob_store) = self.get_table_and_blob_store_or_create_ref_schema(table_id, schema);
         table.insert_internal(blob_store, row).map_err(TableError::Insert)?;
         Ok(())
     }

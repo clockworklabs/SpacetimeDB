@@ -198,7 +198,11 @@ impl Table {
         Ok((hash, ptr))
     }
 
-    pub fn insert_internal(&mut self, blob_store: &mut dyn BlobStore, row: &ProductValue) -> Result<(RowHash, RowPointer), InsertError> {
+    pub fn insert_internal(
+        &mut self,
+        blob_store: &mut dyn BlobStore,
+        row: &ProductValue,
+    ) -> Result<(RowHash, RowPointer), InsertError> {
         // Optimistically insert the `row` before checking for set-semantic collisions,
         // under the assumption that set-semantic collisions are rare.
         let ptr = self.insert_internal_allow_duplicate(blob_store, row)?;

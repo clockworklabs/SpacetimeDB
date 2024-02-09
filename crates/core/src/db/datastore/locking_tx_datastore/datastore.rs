@@ -192,7 +192,7 @@ impl Locking {
                         .dec();
                 }
                 Operation::Insert => {
-                    committed_state 
+                    committed_state
                         .replay_insert(table_id, &schema, &row)
                         .unwrap_or_else(|e| {
                             panic!(
