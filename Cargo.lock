@@ -4785,6 +4785,7 @@ dependencies = [
  "blake3",
  "criterion",
  "criterion-perf-events",
+ "decorum",
  "derive_more",
  "enum-as-inner",
  "itertools 0.12.0",
