@@ -187,7 +187,7 @@ impl Table {
         // Insert the row into the page manager.
         let (hash, ptr) = self.insert_internal(blob_store, row)?;
 
-         // SAFETY: We just inserted `ptr`, so it must be present.
+        // SAFETY: We just inserted `ptr`, so it must be present.
         let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
 
         // Insert row into indices.
