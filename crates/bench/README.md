@@ -77,8 +77,7 @@ stdb_module/
     large_arguments/64KiB/
     
 game/
-    insert/[count]
-    query/[count]
+    headers    
 ```
 
 Typically you don't want to run all benchmarks at once, there are a lot of them and it will take many minutes.

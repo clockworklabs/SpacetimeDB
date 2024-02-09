@@ -4434,6 +4434,7 @@ dependencies = [
  "spacetimedb-sats",
  "spacetimedb-standalone",
  "spacetimedb-testing",
+ "spacetimedb-vm",
  "tempdir",
  "tokio",
  "tracing-subscriber",

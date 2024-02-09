@@ -2,7 +2,7 @@
 ///
 /// NOTE: It should be running with `--release` or `--profile bench` when looking with perf tools...
 use criterion::black_box;
-use std::sync::Arc;
+use itertools::Itertools;
 use std::time::{Duration, Instant};
 use tempdir::TempDir;
 
@@ -13,39 +13,45 @@ use spacetimedb::sql::execute::run;
 use spacetimedb::subscription::subscription::create_table;
 use spacetimedb_lib::error::ResultTest;
 use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::operator::OpCmp;
 use spacetimedb_primitives::TableId;
-use spacetimedb_sats::{product, AlgebraicType};
+use spacetimedb_sats::relation::FieldName;
+use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue};
+use spacetimedb_vm::dsl::mem_table;
+use spacetimedb_vm::eval::run_ast;
+use spacetimedb_vm::expr::{Code, ColumnOp, QueryExpr};
+use spacetimedb_vm::program::Program;
 
 fn make_test_db() -> Result<(RelationalDB, TempDir), DBError> {
     let tmp_dir = TempDir::new("stdb_test")?;
-    let stdb = open_db(&tmp_dir, true, false)?.with_row_count(Arc::new(|_, _| i64::MAX));
+    let stdb = open_db(&tmp_dir, true, false)?;
     Ok((stdb, tmp_dir))
 }
 
+#[cfg(not(debug_assertions))]
+pub const EXPECT_ROWS: usize = 1_000_000;
+// To avoid very slow execution on `debug`
+#[cfg(debug_assertions)]
+pub const EXPECT_ROWS: usize = 10_000;
+#[cfg(debug_assertions)]
+const EXPECT_QUERY_ROWS: usize = EXPECT_ROWS / 100;
+#[cfg(not(debug_assertions))]
+const EXPECT_QUERY_ROWS: usize = EXPECT_ROWS / 100;
+
 #[derive(Clone, Copy)]
 pub struct GameData {
-    location_state: u64,
-    footprint_tile_state: u64,
+    num_rows: u64,
 }
 
 impl GameData {
     /// Will generate on `release`:
-    /// Chunks * 100
-    /// FootprintTileState * 1'000
-    /// LocationState * 1'000.000 rows
-    pub fn new(base_rows: u64) -> Self {
-        Self {
-            footprint_tile_state: base_rows,
-            location_state: base_rows * 10,
-        }
+    /// FootprintTileState | LocationState
+    ///    EXPECT_ROWS (1'000.000 rows)
+    /// Chunks * 12_000 | 1_200
+    pub fn new(num_rows: u64) -> Self {
+        Self { num_rows }
     }
 }
-
-#[cfg(not(debug_assertions))]
-pub const BASE_ROWS: usize = 1_000;
-#[cfg(debug_assertions)]
-pub const BASE_ROWS: usize = 10;
-const EXPECT_ROWS: usize = BASE_ROWS * 1_000;
 
 pub struct Tables {
     db: RelationalDB,
@@ -94,25 +100,40 @@ fn make_tables() -> Result<Tables, DBError> {
     })
 }
 
+/// Generate `chunk_ids` of 1200 * 10, 12_000 * 1
+fn chunks_cycle() -> impl Iterator<Item = usize> {
+    vec![1200; 10]
+        .into_iter()
+        .into_iter()
+        .chain(std::iter::once(12_000))
+        .cycle()
+        .enumerate()
+        .flat_map(|(id, chunk_size)| (0..chunk_size).map(move |_| id))
+}
 fn fill_tables(tables: &Tables, data: GameData) -> Result<(), DBError> {
     let db = &tables.db;
     let mut tx = db.begin_mut_tx();
 
-    for i in 0..data.location_state {
-        for chunk_id in 0u64..100 {
-            db.insert(
-                &mut tx,
-                tables.location_state,
-                product![i, chunk_id, (i + 10) as i32, (i + 20) as i32, (i + 30) as u32],
-            )?;
-        }
+    // Generate locations
+    for (i, chunk_id) in chunks_cycle().take(data.num_rows as usize).enumerate() {
+        db.insert(
+            &mut tx,
+            tables.location_state,
+            product![
+                i as u64,
+                chunk_id as u64,
+                (i + 10) as i32,
+                (i + 20) as i32,
+                (i + 30) as u32
+            ],
+        )?;
     }
 
-    for i in 0..data.footprint_tile_state {
+    for (i, owner_entity_id) in chunks_cycle().take(data.num_rows as usize).enumerate() {
         db.insert(
             &mut tx,
             tables.footprint_tile_state,
-            product![i, (i + 10) as i32, i + 30],
+            product![i as u64, (i + 10) as i32, owner_entity_id as u64],
         )?;
     }
 
@@ -121,11 +142,16 @@ fn fill_tables(tables: &Tables, data: GameData) -> Result<(), DBError> {
     Ok(())
 }
 
-pub fn query(tables: &Tables, data: GameData) -> Result<usize, DBError> {
+pub fn query(tables: &Tables) -> Result<usize, DBError> {
     let db = &tables.db;
     let tx = db.begin_tx();
     let mut found = 0;
-    for chunk_index in 0..data.footprint_tile_state {
+    for chunk_index in chunks_cycle()
+        .group_by(|x| *x)
+        .into_iter()
+        .map(|(chunk_id, _)| chunk_id)
+        .take(EXPECT_QUERY_ROWS)
+    {
         found += run(
             db,
             &format!(
@@ -145,7 +171,7 @@ WHERE LocationState.chunk_index = {chunk_index}"
     Ok(found)
 }
 
-pub fn game_insert(base_rows: usize) -> ResultTest<Duration> {
+pub fn game_insert_select(base_rows: usize) -> ResultTest<Duration> {
     let tables = make_tables()?;
 
     let data = GameData::new(base_rows as u64);
@@ -164,17 +190,55 @@ pub fn game_query(base_rows: usize) -> ResultTest<Duration> {
     let tables = make_tables()?;
 
     let data = GameData::new(base_rows as u64);
-    fill_tables(&tables, data)?;
+    black_box(fill_tables(&tables, data)?);
 
     let start = Instant::now();
 
-    let result = query(&tables, data)?;
+    let result = black_box(query(&tables)?);
 
-    #[cfg(debug_assertions)]
-    assert_eq!(result, EXPECT_ROWS / 100);
+    assert_eq!(result, EXPECT_ROWS);
 
-    #[cfg(not(debug_assertions))]
-    assert_eq!(result, EXPECT_ROWS / 10);
+    Ok(start.elapsed())
+}
+
+const TOTAL: usize = 500;
+/// Generate `TOTAL` selections to check the overhead of clone headers
+pub fn query_header() -> Result<Duration, DBError> {
+    let columns: Vec<_> = (0..TOTAL)
+        .map(|i| ProductTypeElement::new(AlgebraicType::U64, Some(i.to_string())))
+        .collect();
+
+    let p = &mut Program::new(AuthCtx::for_testing());
+
+    let schema = ProductType::new(columns);
+
+    let row = ProductValue::new(
+        &std::iter::repeat(AlgebraicValue::U64(0))
+            .take(TOTAL)
+            .collect::<Vec<_>>(),
+    );
+
+    let input = mem_table(schema, vec![row]);
+    let table_name = input.head.table_name.clone();
+    let inv = input.clone();
+
+    let mut q = QueryExpr::new(input.clone());
+    for i in 0..TOTAL {
+        q = q.with_select(ColumnOp::cmp(
+            FieldName::Pos {
+                table: table_name.clone(),
+                field: i,
+            },
+            OpCmp::Eq,
+            AlgebraicValue::U64(0),
+        ));
+    }
+
+    let start = Instant::now();
+
+    let result = black_box(run_ast(p, q.into()));
+
+    assert_eq!(result, Code::Table(inv.clone()), "Query And");
 
     Ok(start.elapsed())
 }
@@ -185,14 +249,20 @@ mod tests {
 
     #[test]
     fn test_game_insert() -> ResultTest<()> {
-        game_insert(BASE_ROWS)?;
+        game_insert_select(EXPECT_ROWS)?;
 
         Ok(())
     }
 
     #[test]
     fn test_game_query() -> ResultTest<()> {
-        println!("{:?}", game_query(BASE_ROWS)?);
+        println!("{:?}", game_query(EXPECT_ROWS)?);
+        Ok(())
+    }
+
+    #[test]
+    fn test_query_header() -> ResultTest<()> {
+        println!("{:?}", query_header()?);
         Ok(())
     }
 }

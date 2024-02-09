@@ -1,7 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use mimalloc::MiMalloc;
 use spacetimedb::db::{Config, Storage};
-use spacetimedb_bench::game::{game_insert, game_query};
+use spacetimedb_bench::game::{game_insert_select, game_query, query_header, BASE_ROWS};
 use spacetimedb_bench::{
     schemas::{create_sequential, BenchTable, Location, Person, RandomTable},
     spacetime_module::BENCHMARKS_MODULE,
@@ -51,15 +51,7 @@ fn custom_module_benchmarks(c: &mut Criterion) {
 }
 
 fn game_sql_benchmarks(c: &mut Criterion) {
-    for n in [1_000, 10_000] {
-        c.bench_function(&format!("game/insert/rows={n}"), |b| {
-            b.iter_custom(|iters| game_insert(iters as usize).unwrap())
-        });
-
-        c.bench_function(&format!("game/query/rows={n}"), |b| {
-            b.iter_custom(|iters| game_query(iters as usize).unwrap())
-        });
-    }
+    c.bench_function("game/header", |b| b.iter(|| query_header().unwrap()));
 }
 
 fn serialize_benchmarks<T: BenchTable + RandomTable>(c: &mut Criterion) {
