@@ -7,32 +7,41 @@ pub const BENCH_PKEY_INDEX: u32 = 0;
 
 // the following piece of code must remain synced with `modules/benchmarks/src/lib.rs`
 // These are the schemas used for these database tables outside of the benchmark module.
-// It needs to match the schemas used inside the benchmark .
+// It needs to match the schemas used inside the benchmark.
 
 // ---------- SYNCED CODE ----------
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Person {
+    // column 0
     id: u32,
-    name: String,
+    // column 1
     age: u64,
+    // column 2
+    name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Location {
+    // column 0
     id: u32,
+    // column 1
     x: u64,
+    // column 2
     y: u64,
 }
 // ---------- END SYNCED CODE ----------
 
+/// A schema used in the benchmarks.
+/// Schemas should convert to a `ProductType` / `ProductValue` in a canonical way.
+/// We require that, when converted, to a ProductValue:
+/// - column 0 is a u32 (used in many places)
+/// - and column 1 is a u64 (used in `update_bulk`).
 pub trait BenchTable: Debug + Clone + PartialEq + Eq + Hash {
     /// PascalCase name. This is used to name tables.
     fn name_pascal_case() -> &'static str;
     /// snake_case name. This is used to look up reducers.
     fn name_snake_case() -> &'static str;
 
-    /// Note: the first field will be used as the primary key, when using
-    /// `TableStyle::Unique`. It should be a u32.
     fn product_type() -> sats::ProductType;
     /// MUST match product_type.
     fn into_product_value(self) -> sats::ProductValue;
@@ -55,18 +64,18 @@ impl BenchTable for Person {
     fn product_type() -> sats::ProductType {
         [
             ("id", sats::AlgebraicType::U32),
-            ("name", sats::AlgebraicType::String),
             ("age", sats::AlgebraicType::U64),
+            ("name", sats::AlgebraicType::String),
         ]
         .into()
     }
     fn into_product_value(self) -> sats::ProductValue {
-        sats::product![self.id, self.name, self.age]
+        sats::product![self.id, self.age, self.name,]
     }
 
-    type SqliteParams = (u32, String, u64);
+    type SqliteParams = (u32, u64, String);
     fn into_sqlite_params(self) -> Self::SqliteParams {
-        (self.id, self.name, self.age)
+        (self.id, self.age, self.name)
     }
 }
 
@@ -92,7 +101,7 @@ impl BenchTable for Location {
 
     type SqliteParams = (u32, u64, u64);
     fn into_sqlite_params(self) -> Self::SqliteParams {
-        (self.id, self.x, self.x)
+        (self.id, self.x, self.y)
     }
 }
 

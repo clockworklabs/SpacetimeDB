@@ -320,7 +320,7 @@ impl CommittedState {
             };
             let mut index = BTreeIndex::new(
                 index_row.index_id,
-                &table.row_layout,
+                table.row_layout(),
                 &index_row.columns,
                 index_row.is_unique,
                 index_row.index_name,

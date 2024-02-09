@@ -1,7 +1,7 @@
 [package]
 name = "spacetimedb-table"
-version = "0.8.1"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 license-file = "LICENSE"
 description = "A database Table implementation and friends"
 
@@ -53,5 +53,5 @@ proptest.workspace = true
 proptest-derive.workspace = true
 rand.workspace = true
 
-[target.'cfg(all(target_os = "linux", target_arch = "x86"))'.dev-dependencies]
+[target.'cfg(all(target_os = "linux", target_arch = "x86_64"))'.dev-dependencies]
 perfcnt = "0.8"

@@ -1,7 +1,7 @@
 [package]
 name = "sqltest"
-version = "0.8.1"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 description = "Sql integration test for SpacetimeDB"
 
 [dependencies]

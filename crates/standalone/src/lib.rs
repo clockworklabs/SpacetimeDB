@@ -1,8 +1,10 @@
+mod control_db;
 mod energy_monitor;
 pub mod routes;
 pub mod subcommands;
 pub mod util;
 
+use crate::control_db::ControlDb;
 use crate::subcommands::start::ProgramMode;
 use crate::subcommands::{start, version};
 use anyhow::{anyhow, ensure, Context};
@@ -16,7 +18,6 @@ use scopeguard::defer_on_success;
 use spacetimedb::address::Address;
 use spacetimedb::auth::identity::{DecodingKey, EncodingKey};
 use spacetimedb::client::ClientActorIndex;
-use spacetimedb::control_db::{self, ControlDb};
 use spacetimedb::database_instance_context::DatabaseInstanceContext;
 use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
 use spacetimedb::db::db_metrics;
@@ -211,7 +212,7 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
         Some(0)
     }
 
-    fn get_node_by_id(&self, node_id: u64) -> spacetimedb::control_db::Result<Option<Node>> {
+    fn get_node_by_id(&self, node_id: u64) -> anyhow::Result<Option<Node>> {
         if node_id == 0 {
             return Ok(Some(Node {
                 id: 0,
@@ -222,30 +223,30 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
         Ok(None)
     }
 
-    fn get_nodes(&self) -> spacetimedb::control_db::Result<Vec<Node>> {
+    fn get_nodes(&self) -> anyhow::Result<Vec<Node>> {
         Ok(vec![self.get_node_by_id(0)?.unwrap()])
     }
 
     // Databases
-    fn get_database_by_id(&self, id: u64) -> spacetimedb::control_db::Result<Option<Database>> {
-        self.control_db.get_database_by_id(id)
+    fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>> {
+        Ok(self.control_db.get_database_by_id(id)?)
     }
 
-    fn get_database_by_address(&self, address: &Address) -> spacetimedb::control_db::Result<Option<Database>> {
-        self.control_db.get_database_by_address(address)
+    fn get_database_by_address(&self, address: &Address) -> anyhow::Result<Option<Database>> {
+        Ok(self.control_db.get_database_by_address(address)?)
     }
 
-    fn get_databases(&self) -> spacetimedb::control_db::Result<Vec<Database>> {
-        self.control_db.get_databases()
+    fn get_databases(&self) -> anyhow::Result<Vec<Database>> {
+        Ok(self.control_db.get_databases()?)
     }
 
     // Database instances
-    fn get_database_instance_by_id(&self, id: u64) -> spacetimedb::control_db::Result<Option<DatabaseInstance>> {
-        self.control_db.get_database_instance_by_id(id)
+    fn get_database_instance_by_id(&self, id: u64) -> anyhow::Result<Option<DatabaseInstance>> {
+        Ok(self.control_db.get_database_instance_by_id(id)?)
     }
 
-    fn get_database_instances(&self) -> spacetimedb::control_db::Result<Vec<DatabaseInstance>> {
-        self.control_db.get_database_instances()
+    fn get_database_instances(&self) -> anyhow::Result<Vec<DatabaseInstance>> {
+        Ok(self.control_db.get_database_instances()?)
     }
 
     fn get_leader_database_instance_by_database(&self, database_id: u64) -> Option<DatabaseInstance> {
@@ -253,37 +254,37 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
     }
 
     // Identities
-    fn get_identities_for_email(&self, email: &str) -> spacetimedb::control_db::Result<Vec<IdentityEmail>> {
-        self.control_db.get_identities_for_email(email)
+    fn get_identities_for_email(&self, email: &str) -> anyhow::Result<Vec<IdentityEmail>> {
+        Ok(self.control_db.get_identities_for_email(email)?)
     }
 
-    fn get_emails_for_identity(&self, identity: &Identity) -> spacetimedb::control_db::Result<Vec<IdentityEmail>> {
-        self.control_db.get_emails_for_identity(identity)
+    fn get_emails_for_identity(&self, identity: &Identity) -> anyhow::Result<Vec<IdentityEmail>> {
+        Ok(self.control_db.get_emails_for_identity(identity)?)
     }
 
-    fn get_recovery_codes(&self, email: &str) -> spacetimedb::control_db::Result<Vec<RecoveryCode>> {
-        self.control_db.spacetime_get_recovery_codes(email)
+    fn get_recovery_codes(&self, email: &str) -> anyhow::Result<Vec<RecoveryCode>> {
+        Ok(self.control_db.spacetime_get_recovery_codes(email)?)
     }
 
     // Energy
-    fn get_energy_balance(&self, identity: &Identity) -> spacetimedb::control_db::Result<Option<EnergyBalance>> {
-        self.control_db.get_energy_balance(identity)
+    fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>> {
+        Ok(self.control_db.get_energy_balance(identity)?)
     }
 
     // DNS
-    fn lookup_address(&self, domain: &DomainName) -> spacetimedb::control_db::Result<Option<Address>> {
-        self.control_db.spacetime_dns(domain)
+    fn lookup_address(&self, domain: &DomainName) -> anyhow::Result<Option<Address>> {
+        Ok(self.control_db.spacetime_dns(domain)?)
     }
 
-    fn reverse_lookup(&self, address: &Address) -> spacetimedb::control_db::Result<Vec<DomainName>> {
-        self.control_db.spacetime_reverse_dns(address)
+    fn reverse_lookup(&self, address: &Address) -> anyhow::Result<Vec<DomainName>> {
+        Ok(self.control_db.spacetime_reverse_dns(address)?)
     }
 }
 
 #[async_trait]
 impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
-    async fn create_address(&self) -> spacetimedb::control_db::Result<Address> {
-        self.control_db.alloc_spacetime_address()
+    async fn create_address(&self) -> anyhow::Result<Address> {
+        Ok(self.control_db.alloc_spacetime_address()?)
     }
 
     async fn publish_database(
@@ -291,7 +292,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         identity: &Identity,
         publisher_address: Option<Address>,
         spec: spacetimedb_client_api::DatabaseDef,
-    ) -> spacetimedb::control_db::Result<Option<UpdateDatabaseResult>> {
+    ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
         let existing_db = self.control_db.get_database_by_address(&spec.address)?;
         let program_bytes_address = self.object_db.insert_object(spec.program_bytes)?;
         let mut database = match existing_db.as_ref() {
@@ -314,14 +315,11 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         };
 
         if let Some(existing) = existing_db.as_ref() {
-            if &existing.identity != identity {
-                return Err(anyhow!(
-                    "Permission denied: `{}` does not own database `{}`",
-                    identity.to_hex(),
-                    spec.address.to_abbreviated_hex()
-                )
-                .into());
-            }
+            anyhow::ensure!(
+                &existing.identity == identity,
+                "Permission denied: `{identity}` does not own database `{}`",
+                spec.address.to_abbreviated_hex()
+            );
             self.control_db.update_database(database.clone())?;
         } else {
             let id = self.control_db.insert_database(database.clone())?;
@@ -344,21 +342,18 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         }
     }
 
-    async fn delete_database(&self, identity: &Identity, address: &Address) -> spacetimedb::control_db::Result<()> {
+    async fn delete_database(&self, identity: &Identity, address: &Address) -> anyhow::Result<()> {
         let Some(database) = self.control_db.get_database_by_address(address)? else {
             return Ok(());
         };
-        if &database.identity != identity {
+        anyhow::ensure!(
+            &database.identity == identity,
             // TODO: `PermissionDenied` should be a variant of `Error`,
             //       so we can match on it and return better error responses
             //       from HTTP endpoints.
-            return Err(anyhow!(
-                "Permission denied: `{}` does not own database `{}`",
-                identity.to_hex(),
-                address.to_abbreviated_hex()
-            )
-            .into());
-        }
+            "Permission denied: `{identity}` does not own database `{}`",
+            address.to_abbreviated_hex()
+        );
 
         self.control_db.delete_database(database.id)?;
         self.schedule_database(None, Some(database)).await?;
@@ -366,26 +361,22 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         Ok(())
     }
 
-    async fn create_identity(&self) -> spacetimedb::control_db::Result<Identity> {
-        self.control_db.alloc_spacetime_identity()
+    async fn create_identity(&self) -> anyhow::Result<Identity> {
+        Ok(self.control_db.alloc_spacetime_identity()?)
     }
 
-    async fn add_email(&self, identity: &Identity, email: &str) -> spacetimedb::control_db::Result<()> {
+    async fn add_email(&self, identity: &Identity, email: &str) -> anyhow::Result<()> {
         self.control_db
             .associate_email_spacetime_identity(*identity, email)
-            .await
+            .await?;
+        Ok(())
     }
 
-    async fn insert_recovery_code(
-        &self,
-        _identity: &Identity,
-        email: &str,
-        code: RecoveryCode,
-    ) -> spacetimedb::control_db::Result<()> {
-        self.control_db.spacetime_insert_recovery_code(email, code)
+    async fn insert_recovery_code(&self, _identity: &Identity, email: &str, code: RecoveryCode) -> anyhow::Result<()> {
+        Ok(self.control_db.spacetime_insert_recovery_code(email, code)?)
     }
 
-    async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> spacetimedb::control_db::Result<()> {
+    async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {
         let balance = self
             .control_db
             .get_energy_balance(identity)?
@@ -393,14 +384,15 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
 
         let balance = balance.saturating_add_energy(amount);
 
-        self.control_db.set_energy_balance(*identity, balance)
+        self.control_db.set_energy_balance(*identity, balance)?;
+        Ok(())
     }
-    async fn withdraw_energy(&self, identity: &Identity, amount: EnergyQuanta) -> spacetimedb::control_db::Result<()> {
+    async fn withdraw_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {
         withdraw_energy(&self.control_db, identity, amount)
     }
 
-    async fn register_tld(&self, identity: &Identity, tld: Tld) -> spacetimedb::control_db::Result<RegisterTldResult> {
-        self.control_db.spacetime_register_tld(tld, *identity)
+    async fn register_tld(&self, identity: &Identity, tld: Tld) -> anyhow::Result<RegisterTldResult> {
+        Ok(self.control_db.spacetime_register_tld(tld, *identity)?)
     }
 
     async fn create_dns_record(
@@ -408,9 +400,10 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         identity: &Identity,
         domain: &DomainName,
         address: &Address,
-    ) -> spacetimedb::control_db::Result<InsertDomainResult> {
-        self.control_db
-            .spacetime_insert_domain(address, domain.clone(), *identity, true)
+    ) -> anyhow::Result<InsertDomainResult> {
+        Ok(self
+            .control_db
+            .spacetime_insert_domain(address, domain.clone(), *identity, true)?)
     }
 }
 
@@ -679,17 +672,14 @@ impl StandaloneEnv {
     }
 }
 
-fn withdraw_energy(
-    control_db: &ControlDb,
-    identity: &Identity,
-    amount: EnergyQuanta,
-) -> spacetimedb::control_db::Result<()> {
+fn withdraw_energy(control_db: &ControlDb, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {
     let energy_balance = control_db.get_energy_balance(identity)?;
     let energy_balance = energy_balance.unwrap_or(EnergyBalance::ZERO);
     log::trace!("Withdrawing {} from {}", amount, identity);
     log::trace!("Old balance: {}", energy_balance);
     let new_balance = energy_balance.saturating_sub_energy(amount);
-    control_db.set_energy_balance(*identity, new_balance)
+    control_db.set_energy_balance(*identity, new_balance)?;
+    Ok(())
 }
 
 pub async fn exec_subcommand(cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {

@@ -25,6 +25,7 @@ use super::indexes::RowPointer;
 use super::table::RowRef;
 use crate::{
     layout::{AlgebraicTypeLayout, RowTypeLayout},
+    read_column::ReadColumn,
     static_assert_size,
 };
 use core::ops::RangeBounds;
@@ -121,90 +122,85 @@ enum TypedIndex {
 }
 
 impl TypedIndex {
-    // NOTE(pgoldman 2024-02-05): this method is structured the way it is,
-    // taking the `cols` and `row` rather than the new key,
-    // so that it will be amenable to rewriting in terms of `ReadColumn::read_column`,
-    // once that PR lands.
-    fn insert(&mut self, cols: &ColList, row: &ProductValue, ptr: RowPointer) -> Result<bool, InvalidFieldError> {
-        fn insert_at_type<T: Clone + Ord>(
+    /// Add the row referred to by `row_ref` to the index `self`,
+    /// which must be keyed at `cols`.
+    ///
+    /// If `cols` is inconsistent with `self`,
+    /// or the `row_ref` has a row type other than that used for `self`,
+    /// this will behave oddly; it may return an error,
+    /// or may insert a nonsense value into the index.
+    /// Note, however, that it will not invoke undefined behavior.
+    fn insert(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<bool, InvalidFieldError> {
+        fn insert_at_type<T: Ord + ReadColumn>(
             this: &mut MultiMap<T, RowPointer>,
             cols: &ColList,
-            row: &ProductValue,
-            ptr: RowPointer,
-            av_as_t: impl FnOnce(&AlgebraicValue) -> Option<&T>,
+            row_ref: RowRef<'_>,
         ) -> Result<bool, InvalidFieldError> {
             debug_assert!(cols.is_singleton());
             let col_pos = cols.head();
-            let key = row
-                .elements
-                .get(col_pos.idx())
-                .and_then(av_as_t)
-                .ok_or(InvalidFieldError { col_pos, name: None })?;
-            Ok(this.insert(key.clone(), ptr))
+            let key = T::read_column(row_ref, col_pos.idx()).map_err(|_| InvalidFieldError { col_pos, name: None })?;
+            Ok(this.insert(key, row_ref.pointer()))
         }
         match self {
-            TypedIndex::Bool(ref mut this) => insert_at_type(this, cols, row, ptr, AlgebraicValue::as_bool),
+            TypedIndex::Bool(ref mut this) => insert_at_type(this, cols, row_ref),
 
-            TypedIndex::U8(ref mut this) => insert_at_type(this, cols, row, ptr, AlgebraicValue::as_u8),
-            TypedIndex::I8(ref mut this) => insert_at_type(this, cols, row, ptr, AlgebraicValue::as_i8),
-            TypedIndex::U16(ref mut this) => insert_at_type(this, cols, row, ptr, AlgebraicValue::as_u16),
-            TypedIndex::I16(ref mut this) => insert_at_type(this, cols, row, ptr, AlgebraicValue::as_i16),
-            TypedIndex::U32(ref mut this) => insert_at_type(this, cols, row, ptr, AlgebraicValue::as_u32),
-            TypedIndex::I32(ref mut this) => insert_at_type(this, cols, row, ptr, AlgebraicValue::as_i32),
-            TypedIndex::U64(ref mut this) => insert_at_type(this, cols, row, ptr, AlgebraicValue::as_u64),
-            TypedIndex::I64(ref mut this) => insert_at_type(this, cols, row, ptr, AlgebraicValue::as_i64),
-            TypedIndex::U128(ref mut this) => insert_at_type(this, cols, row, ptr, AlgebraicValue::as_u128),
-            TypedIndex::I128(ref mut this) => insert_at_type(this, cols, row, ptr, AlgebraicValue::as_i128),
-            TypedIndex::String(ref mut this) => insert_at_type(this, cols, row, ptr, AlgebraicValue::as_string),
+            TypedIndex::U8(ref mut this) => insert_at_type(this, cols, row_ref),
+            TypedIndex::I8(ref mut this) => insert_at_type(this, cols, row_ref),
+            TypedIndex::U16(ref mut this) => insert_at_type(this, cols, row_ref),
+            TypedIndex::I16(ref mut this) => insert_at_type(this, cols, row_ref),
+            TypedIndex::U32(ref mut this) => insert_at_type(this, cols, row_ref),
+            TypedIndex::I32(ref mut this) => insert_at_type(this, cols, row_ref),
+            TypedIndex::U64(ref mut this) => insert_at_type(this, cols, row_ref),
+            TypedIndex::I64(ref mut this) => insert_at_type(this, cols, row_ref),
+            TypedIndex::U128(ref mut this) => insert_at_type(this, cols, row_ref),
+            TypedIndex::I128(ref mut this) => insert_at_type(this, cols, row_ref),
+            TypedIndex::String(ref mut this) => insert_at_type(this, cols, row_ref),
 
             TypedIndex::AlgebraicValue(ref mut this) => {
-                let key = row.project_not_empty(cols)?;
-                Ok(this.insert(key, ptr))
+                let key = row_ref.project_not_empty(cols)?;
+                Ok(this.insert(key, row_ref.pointer()))
             }
         }
     }
 
-    // NOTE(pgoldman 2024-02-05): this method is structured the way it is,
-    // taking the `cols` and `row` rather than the sought key,
-    // so that it will be amenable to rewriting in terms of `ReadColumn::read_column`,
-    // once that PR lands.
-    fn delete(&mut self, cols: &ColList, row: &ProductValue, ptr: RowPointer) -> Result<bool, InvalidFieldError> {
-        fn delete_at_type<T: Ord>(
+    /// Remove the row referred to by `row_ref` from the index `self`,
+    /// which must be keyed at `cols`.
+    ///
+    /// If `cols` is inconsistent with `self`,
+    /// or the `row_ref` has a row type other than that used for `self`,
+    /// this will behave oddly; it may return an error, do nothing,
+    /// or remove the wrong value from the index.
+    /// Note, however, that it will not invoke undefined behavior.
+    fn delete(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<bool, InvalidFieldError> {
+        fn delete_at_type<T: Ord + ReadColumn>(
             this: &mut MultiMap<T, RowPointer>,
-
             cols: &ColList,
-            row: &ProductValue,
-            ptr: RowPointer,
-            av_as_t: impl FnOnce(&AlgebraicValue) -> Option<&T>,
+            row_ref: RowRef<'_>,
         ) -> Result<bool, InvalidFieldError> {
             debug_assert!(cols.is_singleton());
             let col_pos = cols.head();
-            let key = row
-                .elements
-                .get(col_pos.idx())
-                .and_then(av_as_t)
-                .ok_or(InvalidFieldError { col_pos, name: None })?;
-            Ok(this.delete(key, &ptr))
+            let key = T::read_column(row_ref, col_pos.idx()).map_err(|_| InvalidFieldError { col_pos, name: None })?;
+            Ok(this.delete(&key, &row_ref.pointer()))
         }
 
         match self {
-            TypedIndex::Bool(ref mut this) => delete_at_type(this, cols, row, ptr, AlgebraicValue::as_bool),
+            TypedIndex::Bool(ref mut this) => delete_at_type(this, cols, row_ref),
 
-            TypedIndex::U8(ref mut this) => delete_at_type(this, cols, row, ptr, AlgebraicValue::as_u8),
-            TypedIndex::I8(ref mut this) => delete_at_type(this, cols, row, ptr, AlgebraicValue::as_i8),
-            TypedIndex::U16(ref mut this) => delete_at_type(this, cols, row, ptr, AlgebraicValue::as_u16),
-            TypedIndex::I16(ref mut this) => delete_at_type(this, cols, row, ptr, AlgebraicValue::as_i16),
-            TypedIndex::U32(ref mut this) => delete_at_type(this, cols, row, ptr, AlgebraicValue::as_u32),
-            TypedIndex::I32(ref mut this) => delete_at_type(this, cols, row, ptr, AlgebraicValue::as_i32),
-            TypedIndex::U64(ref mut this) => delete_at_type(this, cols, row, ptr, AlgebraicValue::as_u64),
-            TypedIndex::I64(ref mut this) => delete_at_type(this, cols, row, ptr, AlgebraicValue::as_i64),
-            TypedIndex::U128(ref mut this) => delete_at_type(this, cols, row, ptr, AlgebraicValue::as_u128),
-            TypedIndex::I128(ref mut this) => delete_at_type(this, cols, row, ptr, AlgebraicValue::as_i128),
-            TypedIndex::String(ref mut this) => delete_at_type(this, cols, row, ptr, AlgebraicValue::as_string),
+            TypedIndex::U8(ref mut this) => delete_at_type(this, cols, row_ref),
+            TypedIndex::I8(ref mut this) => delete_at_type(this, cols, row_ref),
+            TypedIndex::U16(ref mut this) => delete_at_type(this, cols, row_ref),
+            TypedIndex::I16(ref mut this) => delete_at_type(this, cols, row_ref),
+            TypedIndex::U32(ref mut this) => delete_at_type(this, cols, row_ref),
+            TypedIndex::I32(ref mut this) => delete_at_type(this, cols, row_ref),
+            TypedIndex::U64(ref mut this) => delete_at_type(this, cols, row_ref),
+            TypedIndex::I64(ref mut this) => delete_at_type(this, cols, row_ref),
+            TypedIndex::U128(ref mut this) => delete_at_type(this, cols, row_ref),
+            TypedIndex::I128(ref mut this) => delete_at_type(this, cols, row_ref),
+            TypedIndex::String(ref mut this) => delete_at_type(this, cols, row_ref),
 
             TypedIndex::AlgebraicValue(ref mut this) => {
-                let key = row.project_not_empty(cols)?;
-                Ok(this.delete(&key, &ptr))
+                let key = row_ref.project_not_empty(cols)?;
+                Ok(this.delete(&key, &row_ref.pointer()))
             }
         }
     }
@@ -391,15 +387,15 @@ impl BTreeIndex {
     /// This index will extract the necessary values from `row` based on `self.cols`.
     ///
     /// Return false if `ptr` was already indexed prior to this call.
-    pub fn insert(&mut self, cols: &ColList, row: &ProductValue, ptr: RowPointer) -> Result<bool, InvalidFieldError> {
-        self.idx.insert(cols, row, ptr)
+    pub fn insert(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<bool, InvalidFieldError> {
+        self.idx.insert(cols, row_ref)
     }
 
     /// Deletes `ptr` with its indexed value `col_value` from this index.
     ///
     /// Returns whether `ptr` was present.
-    pub fn delete(&mut self, cols: &ColList, row: &ProductValue, ptr: RowPointer) -> Result<bool, InvalidFieldError> {
-        self.idx.delete(cols, row, ptr)
+    pub fn delete(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<bool, InvalidFieldError> {
+        self.idx.delete(cols, row_ref)
     }
 
     /// Returns whether indexing `row` again would violate a unique constraint, if any.
@@ -444,8 +440,7 @@ impl BTreeIndex {
     ) -> Result<bool, InvalidFieldError> {
         let mut all_inserted = true;
         for row_ref in rows {
-            let row = row_ref.to_product_value();
-            all_inserted &= self.insert(cols, &row, row_ref.pointer())?;
+            all_inserted &= self.insert(cols, row_ref)?;
         }
         Ok(all_inserted)
     }
@@ -464,18 +459,20 @@ impl BTreeIndex {
 mod test {
     use super::*;
     use crate::{
-        indexes::{PageIndex, PageOffset, SquashedOffset},
+        blob_store::HashMapBlobStore,
+        indexes::SquashedOffset,
         proptest_sats::{generate_product_value, generate_row_type},
+        table::Table,
     };
     use core::ops::Bound::*;
     use proptest::prelude::*;
     use proptest::{collection::vec, test_runner::TestCaseResult};
     use spacetimedb_primitives::ColListBuilder;
-    use spacetimedb_sats::{product, AlgebraicType, ProductType};
-
-    fn gen_row_pointer() -> impl Strategy<Value = RowPointer> {
-        (any::<PageOffset>(), any::<PageIndex>()).prop_map(|(po, pi)| RowPointer::new(false, pi, po, SquashedOffset(0)))
-    }
+    use spacetimedb_sats::{
+        db::def::{TableDef, TableSchema},
+        product, AlgebraicType, ProductType,
+    };
+    use std::collections::HashMap;
 
     fn gen_cols(ty_len: usize) -> impl Strategy<Value = ColList> {
         vec((0..ty_len as u32).prop_map_into(), 1..=ty_len)
@@ -497,37 +494,56 @@ mod test {
         BTreeIndex::new(0.into(), &row_layout, cols, is_unique, "test_index").unwrap()
     }
 
+    fn table(ty: ProductType) -> Table {
+        let def = TableDef::from_product("", ty);
+        let schema = TableSchema::from_def(0.into(), def);
+        Table::new(schema, SquashedOffset::COMMITTED_STATE)
+    }
+
     proptest! {
         #[test]
-        fn remove_nonexistent_noop(((ty, cols, pv), ptr, is_unique) in (gen_row_and_cols(), gen_row_pointer(), any::<bool>())) {
+        fn remove_nonexistent_noop(((ty, cols, pv), is_unique) in (gen_row_and_cols(), any::<bool>())) {
             let mut index = new_index(&ty, &cols, is_unique);
-            prop_assert_eq!(index.delete(&cols, &pv, ptr).unwrap(), false);
+            let mut table = table(ty);
+            let mut blob_store = HashMapBlobStore::default();
+            let ptr = table.insert(&mut blob_store, &pv).unwrap().1;
+            let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
+            prop_assert_eq!(index.delete(&cols, row_ref).unwrap(), false);
             prop_assert!(index.idx.is_empty());
         }
 
         #[test]
-        fn insert_delete_noop(((ty, cols, pv), ptr, is_unique) in (gen_row_and_cols(), gen_row_pointer(), any::<bool>())) {
+        fn insert_delete_noop(((ty, cols, pv), is_unique) in (gen_row_and_cols(), any::<bool>())) {
             let mut index = new_index(&ty, &cols, is_unique);
+            let mut table = table(ty);
+            let mut blob_store = HashMapBlobStore::default();
+            let ptr = table.insert(&mut blob_store, &pv).unwrap().1;
+            let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
             let value = index.get_fields(&cols, &pv).unwrap();
+
             prop_assert_eq!(index.idx.len(), 0);
             prop_assert_eq!(index.contains_any(&value), false);
 
-            prop_assert_eq!(index.insert(&cols, &pv, ptr).unwrap(), true);
+            prop_assert_eq!(index.insert(&cols, row_ref).unwrap(), true);
             prop_assert_eq!(index.idx.len(), 1);
             prop_assert_eq!(index.contains_any(&value), true);
 
             // Try inserting again, it should fail.
-            prop_assert_eq!(index.insert(&cols, &pv, ptr).unwrap(), false);
+            prop_assert_eq!(index.insert(&cols, row_ref).unwrap(), false);
             prop_assert_eq!(index.idx.len(), 1);
 
-            prop_assert_eq!(index.delete(&cols, &pv, ptr).unwrap(), true);
+            prop_assert_eq!(index.delete(&cols, row_ref).unwrap(), true);
             prop_assert_eq!(index.idx.len(), 0);
             prop_assert_eq!(index.contains_any(&value), false);
         }
 
         #[test]
-        fn insert_again_violates_unique_constraint(((ty, cols, pv), ptr) in (gen_row_and_cols(), gen_row_pointer())) {
+        fn insert_again_violates_unique_constraint((ty, cols, pv) in gen_row_and_cols()) {
             let mut index = new_index(&ty, &cols, true);
+            let mut table = table(ty);
+            let mut blob_store = HashMapBlobStore::default();
+            let ptr = table.insert(&mut blob_store, &pv).unwrap().1;
+            let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
             let value = index.get_fields(&cols, &pv).unwrap();
 
             // Nothing in the index yet.
@@ -539,7 +555,7 @@ mod test {
             );
 
             // Insert.
-            prop_assert_eq!(index.insert(&cols, &pv, ptr).unwrap(), true);
+            prop_assert_eq!(index.insert(&cols, row_ref).unwrap(), true);
 
             // Inserting again would be a problem.
             prop_assert_eq!(index.idx.len(), 1);
@@ -555,74 +571,87 @@ mod test {
             use AlgebraicValue::U64 as V;
 
             let cols = 0.into();
-            let mut index = new_index(&ProductType::from_iter([AlgebraicType::U64]), &cols, true);
+            let ty = ProductType::from_iter([AlgebraicType::U64]);
+            let mut index = new_index(&ty, &cols, true);
+            let mut table = table(ty);
+            let mut blob_store = HashMapBlobStore::default();
 
             let prev = needle - 1;
             let next = needle + 1;
             let range = prev..=next;
 
+            let mut val_to_ptr = HashMap::new();
+
             // Insert `prev`, `needle`, and `next`.
             for x in range.clone() {
-                prop_assert_eq!(index.insert(&cols, &product![x], RowPointer(x)).unwrap(), true);
+                let row = product![x];
+                let ptr = table.insert(&mut blob_store, &row).unwrap().1;
+                val_to_ptr.insert(x, ptr);
+                let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
+                prop_assert_eq!(index.insert(&cols, row_ref).unwrap(), true);
             }
 
-            fn test_seek(index: &BTreeIndex, range: impl RangeBounds<AlgebraicValue>, expect: impl IntoIterator<Item = u64>) -> TestCaseResult {
+            fn test_seek(index: &BTreeIndex, val_to_ptr: &HashMap<u64, RowPointer>, range: impl RangeBounds<AlgebraicValue>, expect: impl IntoIterator<Item = u64>) -> TestCaseResult {
+                let mut ptrs_in_index = index.seek(&range).collect::<Vec<_>>();
+                ptrs_in_index.sort();
+                let mut expected_ptrs = expect.into_iter().map(|expected| val_to_ptr.get(&expected).unwrap()).copied().collect::<Vec<_>>();
+                expected_ptrs.sort();
                 prop_assert_eq!(
-                    index.seek(&range).collect::<Vec<_>>(),
-                    expect.into_iter().map(RowPointer).collect::<Vec<_>>()
+                    ptrs_in_index,
+                    expected_ptrs
                 );
                 Ok(())
             }
 
             // Test point ranges.
             for x in range.clone() {
-                test_seek(&index, V(x), [x])?;
+                test_seek(&index, &val_to_ptr, V(x), [x])?;
             }
 
             // Test `..` (`RangeFull`).
-            test_seek(&index, .., [prev, needle, next])?;
+            test_seek(&index, &val_to_ptr, .., [prev, needle, next])?;
 
             // Test `x..` (`RangeFrom`).
-            test_seek(&index, V(prev).., [prev, needle, next])?;
-            test_seek(&index, V(needle).., [needle, next])?;
-            test_seek(&index, V(next).., [next])?;
+            test_seek(&index, &val_to_ptr, V(prev).., [prev, needle, next])?;
+            test_seek(&index, &val_to_ptr, V(needle).., [needle, next])?;
+            test_seek(&index, &val_to_ptr, V(next).., [next])?;
 
             // Test `..x` (`RangeTo`).
-            test_seek(&index, ..V(prev), [])?;
-            test_seek(&index, ..V(needle), [prev])?;
-            test_seek(&index, ..V(next), [prev, needle])?;
+            test_seek(&index, &val_to_ptr, ..V(prev), [])?;
+            test_seek(&index, &val_to_ptr, ..V(needle), [prev])?;
+            test_seek(&index, &val_to_ptr, ..V(next), [prev, needle])?;
 
             // Test `..=x` (`RangeToInclusive`).
-            test_seek(&index, ..=V(prev), [prev])?;
-            test_seek(&index, ..=V(needle), [prev, needle])?;
-            test_seek(&index, ..=V(next), [prev, needle, next])?;
+            test_seek(&index, &val_to_ptr, ..=V(prev), [prev])?;
+            test_seek(&index, &val_to_ptr, ..=V(needle), [prev, needle])?;
+            test_seek(&index, &val_to_ptr, ..=V(next), [prev, needle, next])?;
 
             // Test `x..y` (`Range`).
-            test_seek(&index, V(prev)..V(prev), [])?;
-            test_seek(&index, V(prev)..V(needle), [prev])?;
-            test_seek(&index, V(prev)..V(next), [prev, needle])?;
-            test_seek(&index, V(needle)..V(next), [needle])?;
+            test_seek(&index, &val_to_ptr, V(prev)..V(prev), [])?;
+            test_seek(&index, &val_to_ptr, V(prev)..V(needle), [prev])?;
+            test_seek(&index, &val_to_ptr, V(prev)..V(next), [prev, needle])?;
+            test_seek(&index, &val_to_ptr, V(needle)..V(next), [needle])?;
 
             // Test `x..=y` (`RangeInclusive`).
-            test_seek(&index, V(prev)..=V(prev), [prev])?;
-            test_seek(&index, V(prev)..=V(needle), [prev, needle])?;
-            test_seek(&index, V(prev)..=V(next), [prev, needle, next])?;
-            test_seek(&index, V(needle)..=V(next), [needle, next])?;
-            test_seek(&index, V(next)..=V(next), [next])?;
+            test_seek(&index, &val_to_ptr, V(prev)..=V(prev), [prev])?;
+            test_seek(&index, &val_to_ptr, V(prev)..=V(needle), [prev, needle])?;
+            test_seek(&index, &val_to_ptr, V(prev)..=V(next), [prev, needle, next])?;
+            test_seek(&index, &val_to_ptr, V(needle)..=V(next), [needle, next])?;
+            test_seek(&index, &val_to_ptr, V(next)..=V(next), [next])?;
 
             // Test `(x, y]` (Exclusive start, inclusive end).
-            test_seek(&index, (Excluded(V(prev)), Included(V(prev))), [])?;
-            test_seek(&index, (Excluded(V(prev)), Included(V(needle))), [needle])?;
-            test_seek(&index, (Excluded(V(prev)), Included(V(next))), [needle, next])?;
+            test_seek(&index, &val_to_ptr, (Excluded(V(prev)), Included(V(prev))), [])?;
+            test_seek(&index, &val_to_ptr, (Excluded(V(prev)), Included(V(needle))), [needle])?;
+            test_seek(&index, &val_to_ptr, (Excluded(V(prev)), Included(V(next))), [needle, next])?;
 
             // Test `(x, inf]` (Exclusive start, unbounded end).
-            test_seek(&index, (Excluded(V(prev)), Unbounded), [needle, next])?;
-            test_seek(&index, (Excluded(V(needle)), Unbounded), [next])?;
-            test_seek(&index, (Excluded(V(next)), Unbounded), [])?;
+            test_seek(&index, &val_to_ptr, (Excluded(V(prev)), Unbounded), [needle, next])?;
+            test_seek(&index, &val_to_ptr, (Excluded(V(needle)), Unbounded), [next])?;
+            test_seek(&index, &val_to_ptr, (Excluded(V(next)), Unbounded), [])?;
 
             // Test `(x, y)` (Exclusive start, exclusive end).
-            test_seek(&index, (Excluded(V(prev)), Excluded(V(needle))), [])?;
-            test_seek(&index, (Excluded(V(prev)), Excluded(V(next))), [needle])?;
+            test_seek(&index, &val_to_ptr, (Excluded(V(prev)), Excluded(V(needle))), [])?;
+            test_seek(&index, &val_to_ptr, (Excluded(V(prev)), Excluded(V(next))), [needle])?;
         }
     }
 }

@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
-use crate::messages::control_db::HostType;
 use once_cell::sync::Lazy;
+use spacetimedb::messages::control_db::HostType;
 use spacetimedb_lib::error::ResultTest;
 use spacetimedb_lib::Hash;
 use tempfile::TempDir;

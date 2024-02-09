@@ -1,9 +1,9 @@
 use core::slice;
-use criterion::{black_box, criterion_group, criterion_main};
-use mem_arch_prototype::row_type_visitor::{dump_visitor_program, row_type_visitor, VarLenVisitorProgram};
-use mem_arch_prototype::util::uninit_array;
-use mem_arch_prototype::var_len::{AlignedVarLenOffsets, NullVarLenVisitor, VarLenMembers, VarLenRef};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use spacetimedb_sats::{AlgebraicType, ProductType};
+use spacetimedb_table::row_type_visitor::{dump_visitor_program, row_type_visitor, VarLenVisitorProgram};
+use spacetimedb_table::util::uninit_array;
+use spacetimedb_table::var_len::{AlignedVarLenOffsets, NullVarLenVisitor, VarLenMembers, VarLenRef};
 use std::mem::{self, MaybeUninit};
 
 fn visit_count(row: &[MaybeUninit<u8>], visitor: &impl VarLenMembers) {
@@ -91,26 +91,30 @@ fn visit_var_len_sum(c: &mut C) {
     });
 }
 
-#[cfg(target_os = "linux", target_arch = "x86")]
-mod config {
-    use criterion::Criterion;
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+mod measurement {
     use criterion_perf_events::Perf;
     use perfcnt::linux::HardwareEventType as Hardware;
     use perfcnt::linux::PerfCounterBuilderLinux as Builder;
 
-    pub type C = Criterion<Perf>;
-    pub fn config() -> C {
-        Criterion::default().with_measurement(Perf::new(Builder::from_hardware_event(Hardware::Instructions)))
+    pub type Measurement = Perf;
+    pub fn get() -> Measurement {
+        Perf::new(Builder::from_hardware_event(Hardware::Instructions))
     }
 }
-#[cfg(not(target_os = "linux"))]
-mod config {
-    pub type C = Criterion;
-    pub fn config() -> C {
-        Criterion::default()
+#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+mod measurement {
+    use criterion::measurement::WallTime;
+    pub type Measurement = WallTime;
+    pub fn get() -> Measurement {
+        WallTime
     }
 }
-use config::*;
+
+type C = Criterion<measurement::Measurement>;
+fn config() -> C {
+    Criterion::default().with_measurement(measurement::get())
+}
 
 criterion_group!(
     name = var_len_visitors;
