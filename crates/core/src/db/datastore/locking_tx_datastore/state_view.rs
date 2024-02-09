@@ -269,7 +269,6 @@ impl<'a> Iterator for Iter<'a> {
         loop {
             match &mut self.stage {
                 ScanStage::Start => {
-                    let _span = tracing::debug_span!("ScanStage::Start").entered();
                     if let Some(table) = self.committed_state.tables.get(&table_id) {
                         // The committed state has changes for this table.
                         // Go through them in (1).
@@ -283,7 +282,6 @@ impl<'a> Iterator for Iter<'a> {
                 }
                 ScanStage::Committed { iter } => {
                     // (1) Go through the committed state for this table.
-                    let _span = tracing::debug_span!("ScanStage::Committed").entered();
                     for row_ref in iter {
                         // Increment metric for number of committed rows scanned.
                         self.num_committed_rows_fetched += 1;
@@ -332,7 +330,6 @@ impl<'a> Iterator for Iter<'a> {
                 }
                 ScanStage::CurrentTx { iter } => {
                     // (2) look for inserts in the current tx.
-                    let _span = tracing::debug_span!("ScanStage::CurrentTx").entered();
                     return iter.next();
                 }
             }
