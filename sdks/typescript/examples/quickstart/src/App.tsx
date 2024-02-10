@@ -1,5 +1,6 @@
 import "./App.css";
 
+// Bindings
 import Message from "./module_bindings/message";
 import SendMessageReducer from "./module_bindings/send_message_reducer";
 import SetNameReducer from "./module_bindings/set_name_reducer";
