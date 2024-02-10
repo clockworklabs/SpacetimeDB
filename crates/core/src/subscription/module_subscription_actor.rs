@@ -67,6 +67,10 @@ impl ModuleSubscriptions {
             }
         };
 
+        WORKER_METRICS
+            .initial_subscription_evals
+            .with_label_values(&self.relational_db.address())
+            .inc();
         let database_update = tokio::task::block_in_place(|| subscription.queries.eval(&self.relational_db, tx, auth))?;
 
         let sender = subscription.subscribers().last().unwrap();
