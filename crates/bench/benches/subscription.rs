@@ -1,0 +1,154 @@
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use itertools::Itertools;
+use spacetimedb::db::relational_db::{open_db, RelationalDB};
+use spacetimedb::error::DBError;
+use spacetimedb::execution_context::ExecutionContext;
+use spacetimedb::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp};
+use spacetimedb::subscription::query::compile_read_only_query;
+use spacetimedb_lib::{error::ResultTest, identity::AuthCtx};
+use spacetimedb_primitives::{ColId, TableId};
+use spacetimedb_sats::db::auth::{StAccess, StTableType};
+use spacetimedb_sats::db::def::{ColumnDef, IndexDef, TableDef};
+use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductValue, ToDataKey};
+use tempdir::TempDir;
+
+fn create_table(
+    db: &RelationalDB,
+    name: &str,
+    schema: &[(&str, AlgebraicType)],
+    indexes: &[(ColId, &str)],
+) -> ResultTest<TableId> {
+    let table_name = name.to_string();
+    let table_type = StTableType::User;
+    let table_access = StAccess::Public;
+
+    let columns = schema
+        .iter()
+        .map(|(col_name, col_type)| ColumnDef {
+            col_name: col_name.to_string(),
+            col_type: col_type.clone(),
+        })
+        .collect_vec();
+
+    let indexes = indexes
+        .iter()
+        .map(|(col_id, index_name)| IndexDef::btree(index_name.to_string(), *col_id, false))
+        .collect_vec();
+
+    let schema = TableDef::new(table_name, columns)
+        .with_indexes(indexes)
+        .with_type(table_type)
+        .with_access(table_access);
+
+    Ok(db.with_auto_commit(&ExecutionContext::default(), |tx| db.create_table(tx, schema))?)
+}
+
+fn create_table_location(db: &RelationalDB) -> ResultTest<TableId> {
+    let schema = &[
+        ("entity_id", AlgebraicType::U64),
+        ("chunk_index", AlgebraicType::U64),
+        ("x", AlgebraicType::I32),
+        ("z", AlgebraicType::I32),
+        ("dimension", AlgebraicType::U32),
+    ];
+    let indexes = &[(0.into(), "entity_id"), (1.into(), "chunk_index"), (2.into(), "x")];
+    create_table(&db, "location", schema, indexes)
+}
+
+fn create_table_footprint(db: &RelationalDB) -> ResultTest<TableId> {
+    let footprint = AlgebraicType::sum([
+        ("A", AlgebraicType::unit()),
+        ("B", AlgebraicType::unit()),
+        ("C", AlgebraicType::unit()),
+        ("D", AlgebraicType::unit()),
+    ]);
+    let schema = &[
+        ("entity_id", AlgebraicType::U64),
+        ("type", footprint),
+        ("owner_entity_id", AlgebraicType::U64),
+    ];
+    let indexes = &[(0.into(), "entity_id"), (2.into(), "owner_entity_id")];
+    create_table(&db, "footprint", schema, indexes)
+}
+
+fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
+    let row_pk = row.to_data_key().to_bytes();
+    DatabaseTableUpdate {
+        table_id,
+        table_name: table_name.to_string(),
+        ops: vec![TableOp {
+            op_type: 1,
+            row,
+            row_pk,
+        }],
+    }
+}
+
+fn eval_incr_join(c: &mut Criterion) {
+    let tmp_dir = TempDir::new("stdb_test").unwrap();
+    let db = open_db(&tmp_dir, false, false).unwrap();
+
+    let lhs = create_table_footprint(&db).unwrap();
+    let rhs = create_table_location(&db).unwrap();
+
+    let _ = db.with_auto_commit(&ExecutionContext::default(), |tx| -> Result<(), DBError> {
+        // 1M rows
+        for entity_id in 0u64..1_000_000 {
+            let owner = entity_id % 1_000;
+            let footprint = AlgebraicValue::sum(entity_id as u8 % 4, AlgebraicValue::unit());
+            let row = product!(entity_id, footprint, owner);
+            let _ = db.insert(tx, rhs, row)?;
+        }
+        Ok(())
+    });
+
+    let _ = db.with_auto_commit(&ExecutionContext::default(), |tx| -> Result<(), DBError> {
+        // 1000 chunks, 1200 rows per chunk = 1.2M rows
+        for chunk_index in 0u64..1_000 {
+            for i in 0u64..1200 {
+                let entity_id = chunk_index * 1200 + i;
+                let x = 0i32;
+                let z = 0i32;
+                let dimension = 0i32;
+                let row = product!(entity_id, chunk_index, x, z, dimension);
+                let _ = db.insert(tx, rhs, row)?;
+            }
+        }
+        Ok(())
+    });
+
+    let entity_id = 1_200_000u64;
+    let chunk_index = 5u64;
+    let x = 0i32;
+    let z = 0i32;
+    let dimension = 0u32;
+
+    let footprint = AlgebraicValue::sum(1, AlgebraicValue::unit());
+    let owner = 6u64;
+
+    let new_lhs_row = product!(entity_id, footprint, owner);
+    let new_rhs_row = product!(entity_id, chunk_index, x, z, dimension);
+
+    let update = DatabaseUpdate {
+        tables: vec![
+            insert_op(lhs, "footprint", new_lhs_row),
+            insert_op(rhs, "location", new_rhs_row),
+        ],
+    };
+
+    let tx = db.begin_tx();
+    let sql = "select footprint.* from footprint join location on footprint.entity_id = location.entity_id where location.chunk_index = 13";
+    let auth = AuthCtx::for_testing();
+    let query = compile_read_only_query(&db, &tx, &auth, sql).unwrap();
+
+    c.bench_function("insert", |b| {
+        let tx = db.begin_tx();
+        b.iter(|| {
+            let out = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing()).unwrap();
+            black_box(out);
+        })
+    });
+}
+
+criterion_group!(benches, eval_incr_join);
+criterion_main!(benches);

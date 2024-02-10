@@ -17,6 +17,10 @@ harness = false
 name = "callgrind"
 harness = false
 
+[[bench]]
+name = "subscription"
+harness = false
+
 [[bin]]
 name = "summarize"
 

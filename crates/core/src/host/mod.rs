@@ -13,7 +13,7 @@ use spacetimedb_metrics::typed_prometheus::AsPrometheusLabel;
 use spacetimedb_sats::WithTypespace;
 
 mod host_controller;
-pub(crate) mod module_host;
+pub mod module_host;
 pub mod scheduler;
 mod wasmtime;
 // Visible for integration testing.

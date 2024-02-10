@@ -63,6 +63,10 @@ rpath = false
 [profile.bench]
 debug = true
 
+[profile.profiling]
+inherits = "release"
+debug = true
+
 [workspace.package]
 version = "0.8.1"
 edition = "2021"
