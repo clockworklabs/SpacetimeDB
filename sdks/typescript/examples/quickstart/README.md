@@ -1,30 +1,17 @@
-# React + TypeScript + Vite
+# SpacetimeDB Quickstart in TypeScript
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This is a Vite+React+TypeScript project that demonstrates how to use SpacetimeDB in a web application.
 
-Currently, two official plugins are available:
+## Getting started
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+1. `npm install`(or `pnpm install`) to install the dependencies.
+2. `npm run dev` to start the development server.
+3. Open `http://localhost:5173` in your browser.
 
-## Expanding the ESLint configuration
+### Run the Spacetime DB Server
 
-If you are developing a production application, we recommend updating the configuration to enable type aware lint rules:
+1. Open a terminal, `cd` to this folder, and type `npm run spacetime:start`. This will start spacetime DB server on `http://localhost:3000`.
+2. Open another terminal, run `npm run spacetime:publish:local`. This will build the Spacetime rust files and publish them to the local server, with the database name `chat`.
+3. Run `npm run spacetime:generate-bindings` to generate the TypeScript bindings for the Spacetime database.
 
-- Configure the top-level `parserOptions` property like this:
-
-```js
-export default {
-  // other rules...
-  parserOptions: {
-    ecmaVersion: "latest",
-    sourceType: "module",
-    project: ["./tsconfig.json", "./tsconfig.node.json"],
-    tsconfigRootDir: __dirname,
-  },
-};
-```
-
-- Replace `plugin:@typescript-eslint/recommended` to `plugin:@typescript-eslint/recommended-type-checked` or `plugin:@typescript-eslint/strict-type-checked`
-- Optionally add `plugin:@typescript-eslint/stylistic-type-checked`
-- Install [eslint-plugin-react](https://github.com/jsx-eslint/eslint-plugin-react) and add `plugin:react/recommended` & `plugin:react/jsx-runtime` to the `extends` list
+That should be it! You should now be able to run the app and see the chat messages being sent and received.
