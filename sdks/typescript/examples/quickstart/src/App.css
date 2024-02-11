@@ -62,7 +62,7 @@ form {
 
   border: none;
   border-radius: 0.5rem;
-  background-color: var(--header-color);
+  background-color: var(--textbox-color);
   caret-color: var(--theme-color);
   font-family: monospace;
   font-size: 1rem;

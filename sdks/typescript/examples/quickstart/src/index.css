@@ -7,8 +7,8 @@
 }
 
 :root {
-  --theme-color: #4cf490;
-  --header-color: #f4f4f4;
+  --theme-color: #3dc373;
+  --theme-color-contrast: #08180e;
   --textbox-color: #f4f4f4;
   color-scheme: light dark;
 
@@ -22,7 +22,7 @@
   :root {
     --theme-color: #4cf490;
     --theme-color-contrast: #132219;
-    --header-color: #333;
+    --textbox-color: #0f311d;
   }
 }
 
