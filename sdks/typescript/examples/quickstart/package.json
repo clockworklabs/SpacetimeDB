@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "postinstall": "npm run spacetime:generate-bindings",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
