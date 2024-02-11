@@ -9,14 +9,14 @@ import User from "./module_bindings/user";
 import { Identity, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
 import React, { useEffect, useRef, useState } from "react";
 
-// Register the tables and reducers before creating the SpacetimeDBClient
-SpacetimeDBClient.registerTables(Message, User);
-SpacetimeDBClient.registerReducers(SendMessageReducer, SetNameReducer);
-
 export type MessageType = {
   name: string;
   message: string;
 };
+
+// Register the tables and reducers before creating the SpacetimeDBClient
+SpacetimeDBClient.registerTables(Message, User);
+SpacetimeDBClient.registerReducers(SendMessageReducer, SetNameReducer);
 
 const token = localStorage.getItem("auth_token") || undefined;
 const spacetimeDBClient = new SpacetimeDBClient(
@@ -170,7 +170,7 @@ function App() {
   return (
     <div className="App">
       <div className="profile">
-        <h1>Profile</h1>
+        <h2>Profile</h2>
         {!settingName ? (
           <>
             <p>{name}</p>
@@ -181,7 +181,7 @@ function App() {
                 setNewName(name);
               }}
             >
-              Edit Name
+              EDIT NAME
             </button>
           </>
         ) : (
@@ -192,12 +192,12 @@ function App() {
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
             />
-            <button type="submit">Submit</button>
+            <button type="submit">SUBMIT</button>
           </form>
         )}
       </div>
       <div className="message">
-        <h1>Messages</h1>
+        <h2>Messages</h2>
         {messages.length < 1 && <p>No messages</p>}
         <div>
           {messages.map((message) => (
@@ -210,7 +210,7 @@ function App() {
         </div>
       </div>
       <div className="system" style={{ whiteSpace: "pre-wrap" }}>
-        <h1>System</h1>
+        <h2>System</h2>
         <div>
           <p>{systemMessage}</p>
         </div>
