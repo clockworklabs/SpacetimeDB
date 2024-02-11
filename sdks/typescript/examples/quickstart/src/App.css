@@ -57,14 +57,15 @@ form {
   min-width: 0;
   flex: 1 1 auto;
 
-  padding: 1.5rem;
+  padding: 1.7rem;
   padding-right: 5rem;
 
   border: none;
-  border-radius: 0.5rem;
+  border-radius: 3rem;
   background-color: var(--textbox-color);
   caret-color: var(--theme-color);
   font-family: monospace;
+  font-weight: 400;
   font-size: 1rem;
   resize: none;
   box-shadow: var(--shadow);
@@ -75,10 +76,18 @@ form {
   box-shadow: var(--shadow), 0 0 0 2px var(--theme-color);
 }
 
+@media (prefers-color-scheme: dark) {
+  .new-message input {
+    --shadow: 0 0 0 1px #17492b;
+  }
+}
+
 .new-message button {
   position: absolute;
-  right: 0.5rem;
+  right: 0.75rem;
   top: 50%;
+
+  border-radius: 2rem;
 
   translate: 0 -50%;
 }

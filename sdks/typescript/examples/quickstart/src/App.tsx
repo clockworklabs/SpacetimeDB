@@ -221,9 +221,11 @@ function App() {
         <div className="new-message">
           <form onSubmit={onMessageSubmit}>
             <input
-              type="text"
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
+              placeholder="Send a message..."
+              autoFocus
+              type="text"
             />
             <button type="submit">Send</button>
           </form>
