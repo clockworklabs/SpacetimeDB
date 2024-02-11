@@ -1,39 +1,84 @@
 .App {
-  text-align: center;
-  padding: 2rem;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 2rem;
+
+  height: 100%;
 }
 
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
-}
-
-.App-header {
-  background-color: #282c34;
-  min-height: 100vh;
+.profile {
   display: flex;
-  flex-direction: column;
   align-items: center;
+  flex-direction: row;
+  gap: 1rem;
   justify-content: center;
-  font-size: calc(10px + 2vmin);
-  color: white;
+  width: 100%;
+  margin-top: 20px;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--theme-color);
 }
 
-.App-link {
-  color: #61dafb;
+h2 {
+  flex: 1 1 auto;
+  margin-bottom: 1em;
 }
 
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+form {
+  display: contents;
+}
+
+.chatbox {
+  display: grid;
+  grid-template-rows: 1fr auto;
+
+  padding: 1rem 0;
+}
+
+.system {
+  position: fixed;
+  top: 5%;
+  right: 2%;
+
+  font-family: monospace;
+}
+
+.new-message {
+  position: relative;
+
+  display: flex;
+  gap: 1rem;
+
+  width: 100%;
+}
+
+.new-message input {
+  --shadow: 0px 2.9px 10px rgba(0, 0, 0, 0.095),
+    0px 23px 80px rgba(0, 0, 0, 0.19);
+  min-width: 0;
+  flex: 1 1 auto;
+
+  padding: 1.5rem;
+  padding-right: 5rem;
+
+  border: none;
+  border-radius: 0.5rem;
+  background-color: var(--header-color);
+  caret-color: var(--theme-color);
+  font-family: monospace;
+  font-size: 1rem;
+  resize: none;
+  box-shadow: var(--shadow);
+}
+
+.new-message input:focus {
+  outline: none;
+  box-shadow: var(--shadow), 0 0 0 2px var(--theme-color);
+}
+
+.new-message button {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+
+  translate: 0 -50%;
 }
