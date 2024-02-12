@@ -4,7 +4,6 @@ use bytestring::ByteString;
 use derive_more::Display;
 use enum_map::Enum;
 use once_cell::sync::OnceCell;
-use spacetimedb_lib::bsatn;
 use spacetimedb_lib::de::serde::SeedWrapper;
 use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::{bsatn, Identity};
