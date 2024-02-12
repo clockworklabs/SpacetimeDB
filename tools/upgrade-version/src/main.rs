@@ -67,19 +67,7 @@ fn process_crate_toml(path: &PathBuf, upgrade_version: &str, upgrade_package_ver
                             line
                         }
                     }
-                    FileProcessState::Dependencies => {
-                        if line.starts_with("spacetimedb") {
-                            if !line.contains('{') {
-                                format!("spacetimedb = \"{}\"", upgrade_version)
-                            } else {
-                                // Match the version number and capture it
-                                re.replace(&line, format!("version = \"{}", upgrade_version).as_str())
-                                    .into()
-                            }
-                        } else {
-                            line
-                        }
-                    }
+                    FileProcessState::Dependencies => line,
                 };
 
                 writeln!(temp_file, "{}", new_line).unwrap();
