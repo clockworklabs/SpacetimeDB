@@ -146,7 +146,6 @@ impl DatabaseLogger {
         Self { file, tx }
     }
 
-    #[tracing::instrument(name = "DatabaseLogger::size", skip(self), err)]
     pub fn size(&self) -> Result<u64, DBError> {
         Ok(self.file.metadata()?.len())
     }

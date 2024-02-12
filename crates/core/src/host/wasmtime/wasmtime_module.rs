@@ -1,9 +1,9 @@
 use super::wasm_instance_env::WasmInstanceEnv;
 use super::{Mem, WasmtimeFuel};
-use crate::energy::ReducerBudget;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::wasm_common::module_host_actor::{DescribeError, InitializationError, ReducerOp};
 use crate::host::wasm_common::*;
+use crate::host::EnergyQuanta;
 use crate::util::ResultInspectExt;
 use anyhow::anyhow;
 use bytes::Bytes;
@@ -106,7 +106,7 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
         store.data_mut().instantiate(mem);
 
         // Note: this budget is just for initializers
-        set_store_fuel(&mut store, ReducerBudget::DEFAULT_BUDGET.into());
+        set_store_fuel(&mut store, EnergyQuanta::DEFAULT_BUDGET);
 
         for preinit in &func_names.preinits {
             let func = instance.get_typed_func::<(), ()>(&mut store, preinit).unwrap();
@@ -192,13 +192,13 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
     fn call_reducer(
         &mut self,
         op: ReducerOp<'_>,
-        budget: ReducerBudget,
+        budget: EnergyQuanta,
     ) -> module_host_actor::ExecuteResult<Self::Trap> {
         let store = &mut self.store;
-        // note that ReducerBudget being a u64 is load-bearing here - although we convert budget right back into
+        // note that this conversion is load-bearing - although we convert budget right back into
         // EnergyQuanta at the end of this function, from_energy_quanta clamps it to a u64 range.
         // otherwise, we'd return something like `used: i128::MAX - u64::MAX`, which is inaccurate.
-        set_store_fuel(store, budget.into());
+        let budget: WasmtimeFuel = set_store_fuel(store, budget);
 
         let mut make_buf = |data| store.data_mut().insert_buffer(data);
 
@@ -232,9 +232,9 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         // associated to the call.
         let timings = store.data_mut().finish_reducer();
 
-        let remaining: ReducerBudget = get_store_fuel(store).into();
+        let remaining: EnergyQuanta = get_store_fuel(store).into();
         let energy = module_host_actor::EnergyStats {
-            used: (budget - remaining).into(),
+            used: EnergyQuanta::from(budget) - remaining,
             remaining,
         };
 
@@ -250,8 +250,10 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
     }
 }
 
-fn set_store_fuel(store: &mut impl AsContextMut, fuel: WasmtimeFuel) {
+fn set_store_fuel(store: &mut impl AsContextMut, fuel: EnergyQuanta) -> WasmtimeFuel {
+    let (fuel, _excess) = WasmtimeFuel::from_energy_quanta(fuel);
     store.as_context_mut().set_fuel(fuel.0).unwrap();
+    fuel
 }
 
 fn get_store_fuel(store: &impl AsContext) -> WasmtimeFuel {
@@ -261,7 +263,7 @@ fn get_store_fuel(store: &impl AsContext) -> WasmtimeFuel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::energy::EnergyQuanta;
+    use crate::host::EnergyDiff;
 
     #[test]
     fn test_fuel() {
@@ -269,11 +271,11 @@ mod tests {
             &wasmtime::Engine::new(wasmtime::Config::new().consume_fuel(true)).unwrap(),
             (),
         );
-        let budget = ReducerBudget::DEFAULT_BUDGET;
-        set_store_fuel(&mut store, budget.into());
+        let budget = EnergyQuanta::DEFAULT_BUDGET;
+        let budget = set_store_fuel(&mut store, budget);
         store.set_fuel(store.get_fuel().unwrap() - 10).unwrap();
         let remaining: EnergyQuanta = get_store_fuel(&store).into();
         let used = EnergyQuanta::from(budget) - remaining;
-        assert_eq!(used, EnergyQuanta::new(10_000));
+        assert_eq!(used, EnergyDiff(10_000));
     }
 }

@@ -6,7 +6,6 @@ use once_cell::sync::Lazy;
 use wasmtime::{Engine, Linker, Module, StoreContext, StoreContextMut};
 
 use crate::database_instance_context::DatabaseInstanceContext;
-use crate::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget};
 use crate::error::NodesError;
 use crate::hash::Hash;
 use crate::stdb_path;
@@ -18,9 +17,10 @@ use wasmtime_module::WasmtimeModule;
 
 use self::wasm_instance_env::WasmInstanceEnv;
 
+use super::scheduler::Scheduler;
 use super::wasm_common::module_host_actor::InitializationError;
 use super::wasm_common::{abi, module_host_actor::WasmModuleHostActor, ModuleCreationError};
-use super::Scheduler;
+use super::{EnergyMonitor, EnergyQuanta};
 
 static ENGINE: Lazy<Engine> = Lazy::new(|| {
     let mut config = wasmtime::Config::new();
@@ -91,28 +91,34 @@ struct WasmtimeFuel(u64);
 
 impl WasmtimeFuel {
     /// 1000 energy quanta == 1 wasmtime fuel unit
-    const QUANTA_MULTIPLIER: u64 = 1_000;
-}
+    const QUANTA_MULTIPLIER: i128 = 1_000;
 
-impl From<ReducerBudget> for WasmtimeFuel {
-    fn from(v: ReducerBudget) -> Self {
-        // ReducerBudget being u64 is load-bearing here - if it was u128 and v was ReducerBudget::MAX,
-        // truncating this result would mean that with set_store_fuel(budget.into()), get_store_fuel()
-        // would be wildly different than the original `budget`, and the energy usage for the reducer
-        // would be u64::MAX even if it did nothing. ask how I know.
-        WasmtimeFuel(v.get() / Self::QUANTA_MULTIPLIER)
-    }
-}
-
-impl From<WasmtimeFuel> for ReducerBudget {
-    fn from(v: WasmtimeFuel) -> Self {
-        ReducerBudget::new(v.0 * WasmtimeFuel::QUANTA_MULTIPLIER)
+    /// Convert from EnergyQuanta to wasmtime fuel. The second element of the tuple is the remainder
+    /// of quanta in the case that `eq` isn't in u64 range. It can be safely ignored if the supplied
+    /// budget isn't being bookkept.
+    fn from_energy_quanta(eq: EnergyQuanta) -> (Self, EnergyQuanta) {
+        if eq.get() < 0 {
+            return (Self(0), eq);
+        }
+        let fuel = eq.get() / Self::QUANTA_MULTIPLIER;
+        let div_remainder = eq.get() % Self::QUANTA_MULTIPLIER;
+        let u64_max = i128::from(u64::MAX);
+        let fuel_clamped = fuel.clamp(0, u64_max) as u64;
+        let clamp_remainder = if fuel > u64_max {
+            (fuel - u64_max) * Self::QUANTA_MULTIPLIER
+        } else {
+            0
+        };
+        (
+            WasmtimeFuel(fuel_clamped),
+            EnergyQuanta::new(div_remainder + clamp_remainder),
+        )
     }
 }
 
 impl From<WasmtimeFuel> for EnergyQuanta {
     fn from(fuel: WasmtimeFuel) -> Self {
-        EnergyQuanta::new(u128::from(fuel.0) * u128::from(WasmtimeFuel::QUANTA_MULTIPLIER))
+        EnergyQuanta::new(i128::from(fuel.0) * WasmtimeFuel::QUANTA_MULTIPLIER)
     }
 }
 

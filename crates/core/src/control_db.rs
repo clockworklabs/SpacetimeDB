@@ -5,9 +5,10 @@ use anyhow::{anyhow, Context};
 use crate::address::Address;
 
 use crate::hash::hash_bytes;
+use crate::host::EnergyQuanta;
 use crate::identity::Identity;
 use crate::messages::control_db::{Database, DatabaseInstance, EnergyBalance, IdentityEmail, Node};
-use crate::{energy, stdb_path};
+use crate::stdb_path;
 
 use spacetimedb_lib::name::{DomainName, DomainParsingError, InsertDomainResult, RegisterTldResult, Tld, TldRef};
 use spacetimedb_lib::recovery::RecoveryCode;
@@ -16,7 +17,6 @@ use spacetimedb_sats::bsatn;
 #[cfg(test)]
 mod tests;
 
-#[derive(Clone)]
 pub struct ControlDb {
     db: sled::Db,
 }
@@ -558,7 +558,7 @@ impl ControlDb {
     /// Return the current budget for a given identity as stored in the db.
     /// Note: this function is for the stored budget only and should *only* be called by functions in
     /// `control_budget`, where a cached copy is stored along with business logic for managing it.
-    pub fn get_energy_balance(&self, identity: &Identity) -> Result<Option<energy::EnergyBalance>> {
+    pub fn get_energy_balance(&self, identity: &Identity) -> Result<Option<EnergyQuanta>> {
         let tree = self.db.open_tree("energy_budget")?;
         let value = tree.get(identity.as_bytes())?;
         if let Some(value) = value {
@@ -570,7 +570,7 @@ impl ControlDb {
                 }));
             };
             let balance = i128::from_be_bytes(arr);
-            Ok(Some(energy::EnergyBalance::new(balance)))
+            Ok(Some(EnergyQuanta::new(balance)))
         } else {
             Ok(None)
         }
@@ -579,7 +579,7 @@ impl ControlDb {
     /// Update the stored current budget for a identity.
     /// Note: this function is for the stored budget only and should *only* be called by functions in
     /// `control_budget`, where a cached copy is stored along with business logic for managing it.
-    pub fn set_energy_balance(&self, identity: Identity, energy_balance: energy::EnergyBalance) -> Result<()> {
+    pub fn set_energy_balance(&self, identity: Identity, energy_balance: EnergyQuanta) -> Result<()> {
         let tree = self.db.open_tree("energy_budget")?;
         tree.insert(identity.as_bytes(), &energy_balance.get().to_be_bytes())?;
 

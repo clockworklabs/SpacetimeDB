@@ -11,7 +11,7 @@ use serde::Deserialize;
 use spacetimedb::auth::identity::{
     decode_token, encode_token, DecodingKey, EncodingKey, JwtError, JwtErrorKind, SpacetimeIdentityClaims,
 };
-use spacetimedb::energy::EnergyQuanta;
+use spacetimedb::host::EnergyDiff;
 use spacetimedb::identity::Identity;
 
 use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
@@ -227,7 +227,7 @@ impl headers::Header for SpacetimeIdentityToken {
     }
 }
 
-pub struct SpacetimeEnergyUsed(pub EnergyQuanta);
+pub struct SpacetimeEnergyUsed(pub EnergyDiff);
 impl headers::Header for SpacetimeEnergyUsed {
     fn name() -> &'static http::HeaderName {
         static NAME: http::HeaderName = http::HeaderName::from_static("spacetime-energy-used");
@@ -240,7 +240,7 @@ impl headers::Header for SpacetimeEnergyUsed {
 
     fn encode<E: Extend<HeaderValue>>(&self, values: &mut E) {
         let mut buf = BytesMut::new();
-        let _ = buf.write_str(itoa::Buffer::new().format(self.0.get()));
+        let _ = buf.write_str(itoa::Buffer::new().format(self.0 .0));
         values.extend([HeaderValue::from_bytes(&buf).unwrap()]);
     }
 }
