@@ -11,7 +11,6 @@ use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::error::{IndexError, NodesError};
 use crate::execution_context::ExecutionContext;
-use crate::util::ResultInspectExt;
 use crate::vm::{DbProgram, TxMode};
 use spacetimedb_lib::filter::CmpArgs;
 use spacetimedb_lib::identity::AuthCtx;
@@ -126,7 +125,7 @@ impl InstanceEnv {
         let tx = &mut *self.get_tx()?;
         let ret = stdb
             .insert_bytes_as_row(tx, table_id, buffer)
-            .inspect_err_(|e| match e {
+            .inspect_err(|e| match e {
                 crate::error::DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
                     constraint_name: _,
                     table_name: _,

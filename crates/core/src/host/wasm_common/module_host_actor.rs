@@ -26,7 +26,7 @@ use crate::identity::Identity;
 use crate::messages::control_db::Database;
 use crate::sql;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
-use crate::util::{const_unwrap, ResultInspectExt};
+use crate::util::const_unwrap;
 use crate::worker_metrics::WORKER_METRICS;
 use spacetimedb_sats::db::def::TableDef;
 
@@ -353,7 +353,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                 stdb.set_program_hash(tx, fence, self.info.module_hash)?;
                 anyhow::Ok(())
             })
-            .inspect_err_(|e| log::error!("{e:?}"))?;
+            .inspect_err(|e| log::error!("{e:?}"))?;
 
         let rcr = match self.info.reducers.lookup_id(INIT_DUNDER) {
             None => {
