@@ -302,6 +302,27 @@ pub fn filter_multi_index_location_by_x(x: u64) {
     }
 }
 
+#[spacetimedb(reducer)]
+pub fn filter_unique_location_by_y(x: u64) {
+    for loc in UniqueLocation::filter_by_y(&x) {
+        black_box(loc);
+    }
+}
+
+#[spacetimedb(reducer)]
+pub fn filter_non_unique_location_by_y(x: u64) {
+    for loc in NonUniqueLocation::filter_by_y(&x) {
+        black_box(loc);
+    }
+}
+
+#[spacetimedb(reducer)]
+pub fn filter_multi_index_location_by_y(x: u64) {
+    for loc in MultiIndexLocation::filter_by_y(&x) {
+        black_box(loc);
+    }
+}
+
 // ---------- delete ----------
 
 // FIXME: current nonunique delete interface is UNUSABLE!!!!
