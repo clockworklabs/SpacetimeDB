@@ -144,7 +144,7 @@ fn main() {
 
     let current_dir = env::current_dir().expect("No current directory!");
     let dir_name = current_dir.file_name().expect("No current directory!");
-    if dir_name != "SpacetimeDB" {
+    if dir_name != "SpacetimeDB" && dir_name != "public" {
         println!("You must execute this binary from inside of the SpacetimeDB directory, or use --spacetime-path");
         return;
     }
