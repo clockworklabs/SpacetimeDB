@@ -7,7 +7,6 @@ use super::every_primitive_struct::EveryPrimitiveStruct;
 use super::every_vec_struct::EveryVecStruct;
 use super::simple_enum::SimpleEnum;
 use super::unit_struct::UnitStruct;
-#[allow(unused)]
 use spacetimedb_sdk::{
     anyhow::{anyhow, Result},
     identity::Identity,
