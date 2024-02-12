@@ -620,7 +620,6 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
 
     let mut output = autogen_csharp_header(namespace);
     writeln!(output, "using ClientApi;").unwrap();
-    writeln!(output, "using CommunityToolkit.HighPerformance;").unwrap();
     writeln!(output).unwrap();
 
     let mut func_params: String = String::new();
