@@ -1,14 +1,10 @@
-use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::Mutex;
-use std::time::Duration;
+use std::{collections::HashMap, sync::Mutex};
 
 use once_cell::sync::OnceCell;
 
-use crate::database_instance_context::TotalDiskUsage;
 use crate::db::db_metrics::DB_METRICS;
-use crate::energy::EnergyMonitor;
-use crate::host::Scheduler;
+use crate::host::scheduler::Scheduler;
 
 use super::database_instance_context::DatabaseInstanceContext;
 
@@ -30,18 +26,14 @@ use super::database_instance_context::DatabaseInstanceContext;
 /// internal map.
 type Context = Arc<OnceCell<(Arc<DatabaseInstanceContext>, Scheduler)>>;
 
-#[derive(Clone)]
+#[derive(Default)]
 pub struct DatabaseInstanceContextController {
-    contexts: Arc<Mutex<HashMap<u64, (Context, TotalDiskUsage)>>>,
-    energy_monitor: Arc<dyn EnergyMonitor>,
+    contexts: Mutex<HashMap<u64, Context>>,
 }
 
 impl DatabaseInstanceContextController {
-    pub fn new(energy_monitor: Arc<dyn EnergyMonitor>) -> Self {
-        Self {
-            contexts: Arc::default(),
-            energy_monitor,
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Get the database instance state if it is already initialized.
@@ -53,7 +45,7 @@ impl DatabaseInstanceContextController {
         let contexts = self.contexts.lock().unwrap();
         contexts
             .get(&database_instance_id)
-            .and_then(|cell| cell.0.get())
+            .and_then(|cell| cell.get())
             .map(|(dbic, scheduler)| (dbic.clone(), scheduler.clone()))
     }
 
@@ -81,9 +73,9 @@ impl DatabaseInstanceContextController {
     {
         let cell = {
             let mut guard = self.contexts.lock().unwrap();
-            let (cell, _) = guard
+            let cell = guard
                 .entry(database_instance_id)
-                .or_insert_with(|| (Arc::new(OnceCell::new()), TotalDiskUsage::default()));
+                .or_insert_with(|| Arc::new(OnceCell::new()));
             Arc::clone(cell)
         };
         cell.get_or_try_init(|| {
@@ -103,7 +95,7 @@ impl DatabaseInstanceContextController {
     #[tracing::instrument(skip_all)]
     pub fn remove(&self, database_instance_id: u64) -> Option<(Arc<DatabaseInstanceContext>, Scheduler)> {
         let mut contexts = self.contexts.lock().unwrap();
-        let (arc, _) = contexts.remove(&database_instance_id)?;
+        let arc = contexts.remove(&database_instance_id)?;
         match Arc::try_unwrap(arc) {
             Ok(cell) => cell.into_inner(),
             Err(arc) => {
@@ -111,7 +103,6 @@ impl DatabaseInstanceContextController {
                 // executing the `get_or_try_init` closure. Wait until it
                 // completes (instead of returning `None`), as callers rely on
                 // calling `scheduler.clear()`.
-                // TODO(noa): this can deadlock if get_or_try_init() errors. maybe use a different datastructure?
                 let (dbic, scheduler) = arc.wait();
                 Some((dbic.clone(), scheduler.clone()))
             }
@@ -120,12 +111,15 @@ impl DatabaseInstanceContextController {
 
     #[tracing::instrument(skip_all)]
     pub fn update_metrics(&self) {
-        for (cell, _) in self.contexts.lock().unwrap().values() {
+        for cell in self.contexts.lock().unwrap().values() {
             if let Some((db, _)) = cell.get() {
-                DB_METRICS
-                    .message_log_size
-                    .with_label_values(&db.address)
-                    .set(db.message_log_size_on_disk() as i64);
+                // Use the previous gauge value if there is an issue getting the file size.
+                if let Ok(num_bytes) = db.message_log_size_on_disk() {
+                    DB_METRICS
+                        .message_log_size
+                        .with_label_values(&db.address)
+                        .set(num_bytes as i64);
+                }
                 // Use the previous gauge value if there is an issue getting the file size.
                 if let Ok(num_bytes) = db.object_db_size_on_disk() {
                     DB_METRICS
@@ -141,34 +135,6 @@ impl DatabaseInstanceContextController {
                         .set(num_bytes as i64);
                 }
             }
-        }
-    }
-
-    pub fn start_disk_monitor(&self) {
-        tokio::spawn(self.clone().disk_monitor());
-    }
-
-    const DISK_METERING_INTERVAL: Duration = Duration::from_secs(5);
-
-    async fn disk_monitor(self) {
-        let mut interval = tokio::time::interval(Self::DISK_METERING_INTERVAL);
-        // we don't care about happening precisely every 5 seconds - it just matters that the time between
-        // ticks is accurate
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-
-        let mut prev_tick = interval.tick().await;
-        loop {
-            let tick = interval.tick().await;
-            let dt = tick - prev_tick;
-            for (cell, prev_disk_usage) in self.contexts.lock().unwrap().values_mut() {
-                if let Some((db, _)) = cell.get() {
-                    let disk_usage = db.total_disk_usage().or(*prev_disk_usage);
-                    self.energy_monitor
-                        .record_disk_usage(&db.database, db.database_instance_id, disk_usage.sum(), dt);
-                    *prev_disk_usage = disk_usage;
-                }
-            }
-            prev_tick = tick;
         }
     }
 }
