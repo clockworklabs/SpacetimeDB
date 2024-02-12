@@ -268,8 +268,9 @@ impl CommittedState {
             .get_mut(&table_id)
             .ok_or_else(|| TableError::IdNotFoundState(table_id))?;
         let blob_store = &mut self.blob_store;
+        let skip_index_update = true;
         table
-            .delete_equal_row(blob_store, rel)
+            .delete_equal_row(blob_store, rel, skip_index_update)
             .map_err(TableError::Insert)?
             .ok_or_else(|| anyhow!("Delete for non-existent row when replaying transaction"))?;
         Ok(())
