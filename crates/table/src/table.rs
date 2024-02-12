@@ -184,6 +184,27 @@ impl Table {
             |_| false,
         )?;
 
+        // Insert the row into the page manager.
+        let (hash, ptr) = self.insert_internal(blob_store, row)?;
+
+        // SAFETY: We just inserted `ptr`, so it must be present.
+        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
+
+        // Insert row into indices.
+        for (cols, index) in self.indexes.iter_mut() {
+            index.insert(cols, row_ref).unwrap();
+        }
+
+        Ok((hash, ptr))
+    }
+
+    /// Insert a `row` into this table.
+    /// NOTE: This method skips index updating. Use `insert` to insert a row with index updating.
+    pub fn insert_internal(
+        &mut self,
+        blob_store: &mut dyn BlobStore,
+        row: &ProductValue,
+    ) -> Result<(RowHash, RowPointer), InsertError> {
         // Optimistically insert the `row` before checking for set-semantic collisions,
         // under the assumption that set-semantic collisions are rare.
         let ptr = self.insert_internal_allow_duplicate(blob_store, row)?;
@@ -213,14 +234,6 @@ impl Table {
         // i.e. this is not a set-semantic duplicate,
         // add it to the `pointer_map`.
         self.pointer_map.insert(hash, ptr);
-
-        // SAFETY: We just inserted `ptr`, so it must be present.
-        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
-
-        // Insert row into indices.
-        for (cols, index) in self.indexes.iter_mut() {
-            index.insert(cols, row_ref).unwrap();
-        }
 
         Ok((hash, ptr))
     }
@@ -349,6 +362,26 @@ impl Table {
     }
 
     /// Deletes the row identified by `ptr` from the table.
+    /// NOTE: This method skips updating indexes. Use `delete` to delete a row with index updating.
+    pub fn delete_internal(&mut self, blob_store: &mut dyn BlobStore, ptr: RowPointer) -> Option<ProductValue> {
+        let row_value = self.get_row_ref(blob_store, ptr)?.to_product_value();
+
+        // Remove the set semantic association.
+        // SAFETY: `ptr` points to a valid row in this table as we extracted `row_value`.
+        let hash = unsafe { self.row_hash_for(ptr) };
+        let _remove_result = self.pointer_map.remove(hash, ptr);
+        debug_assert!(_remove_result);
+
+        // Delete the physical row.
+        // SAFETY: `ptr` points to a valid row in this table as we extracted `row_value`.
+        unsafe {
+            self.delete_internal_skip_pointer_map(blob_store, ptr);
+        };
+
+        Some(row_value)
+    }
+
+    /// Deletes the row identified by `ptr` from the table.
     // TODO(perf,bikeshedding): Make this `unsafe` and trust `ptr`; remove `Option` from return.
     //     See TODO comment on `Table::is_row_present`.
     // TODO(perf): Remove returned `ProductValue`.
@@ -365,7 +398,6 @@ impl Table {
         //
         // But for now since we need to check whether the row is present,
         // the method can be safe.
-        let row_value = self.get_row_ref(blob_store, ptr)?.to_product_value();
 
         // SAFETY: `ptr` points to a valid row in this table as we extracted `row_value`.
         let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
@@ -378,19 +410,7 @@ impl Table {
             debug_assert!(deleted);
         }
 
-        // Remove the set semantic association.
-        // SAFETY: `ptr` points to a valid row in this table as we extracted `row_value`.
-        let hash = unsafe { self.row_hash_for(ptr) };
-        let _remove_result = self.pointer_map.remove(hash, ptr);
-        debug_assert!(_remove_result);
-
-        // Delete the physical row.
-        // SAFETY: `ptr` points to a valid row in this table as we extracted `row_value`.
-        unsafe {
-            self.delete_internal_skip_pointer_map(blob_store, ptr);
-        };
-
-        Some(row_value)
+        self.delete_internal(blob_store, ptr)
     }
 
     /// If a row exists in `self` which matches `row`
@@ -408,6 +428,7 @@ impl Table {
         &mut self,
         blob_store: &mut dyn BlobStore,
         row: &ProductValue,
+        skip_index_update: bool,
     ) -> Result<Option<RowPointer>, InsertError> {
         // Insert `row` temporarily so `temp_ptr` and `hash` can be used to find the row.
         // This must avoid consulting and inserting to the pointer map,
@@ -424,9 +445,14 @@ impl Table {
         let existing_row_ptr = unsafe { Self::find_same_row(self, self, temp_ptr, hash) };
 
         if let Some(existing_row_ptr) = existing_row_ptr {
-            // If an equal row was present, delete it.
-            self.delete(blob_store, existing_row_ptr)
-                .expect("Found a row by `Table::find_same_row`, but then failed to delete it");
+            if skip_index_update {
+                self.delete_internal(blob_store, existing_row_ptr)
+                    .expect("Found a row by `Table::find_same_row`, but then failed to delete it");
+            } else {
+                // If an equal row was present, delete it.
+                self.delete(blob_store, existing_row_ptr)
+                    .expect("Found a row by `Table::find_same_row`, but then failed to delete it");
+            }
         }
 
         // Remove the temporary row we inserted in the beginning.

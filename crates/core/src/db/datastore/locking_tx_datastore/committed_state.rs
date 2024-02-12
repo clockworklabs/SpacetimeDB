@@ -46,6 +46,7 @@ use std::{
 
 #[derive(Default)]
 pub(crate) struct CommittedState {
+    pub(crate) next_tx_offset: u64,
     pub(crate) tables: HashMap<TableId, Table>,
     pub(crate) blob_store: HashMapBlobStore,
 }
@@ -267,10 +268,17 @@ impl CommittedState {
             .get_mut(&table_id)
             .ok_or_else(|| TableError::IdNotFoundState(table_id))?;
         let blob_store = &mut self.blob_store;
+        let skip_index_update = true;
         table
-            .delete_equal_row(blob_store, rel)
+            .delete_equal_row(blob_store, rel, skip_index_update)
             .map_err(TableError::Insert)?
             .ok_or_else(|| anyhow!("Delete for non-existent row when replaying transaction"))?;
+        Ok(())
+    }
+
+    pub fn replay_insert(&mut self, table_id: TableId, schema: &TableSchema, row: &ProductValue) -> Result<()> {
+        let (table, blob_store) = self.get_table_and_blob_store_or_create_ref_schema(table_id, schema);
+        table.insert_internal(blob_store, row).map_err(TableError::Insert)?;
         Ok(())
     }
 
@@ -384,6 +392,8 @@ impl CommittedState {
     pub fn merge(&mut self, tx_state: TxState) -> TxData {
         // TODO(perf): pre-allocate `Vec::with_capacity`?
         let mut tx_data = TxData { records: vec![] };
+
+        self.next_tx_offset += 1;
 
         // First, apply deletes. This will free up space in the committed tables.
         self.merge_apply_deletes(&mut tx_data, tx_state.delete_tables);
