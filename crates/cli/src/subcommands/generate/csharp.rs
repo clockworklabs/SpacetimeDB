@@ -277,8 +277,12 @@ fn autogen_csharp_product_table_common(
     if let Some(schema) = &schema {
         write!(
             output,
-            " : IDatabaseTable{}",
-            if schema.pk().is_some() { "WithPrimaryKey" } else { "" }
+            " : IDatabaseTableRowUpdate{}",
+            if schema.pk().is_some() {
+                ", IDatabaseTableWithPrimaryKey"
+            } else {
+                ""
+            }
         )
         .unwrap();
     }
@@ -459,7 +463,7 @@ fn autogen_csharp_product_table_common(
 
             writeln!(
                 output,
-                "public void OnRowUpdateEvent(SpacetimeDBClient.TableOp op, IDatabaseTable newValue, ClientApi.Event dbEvent)"
+                "public static void OnRowUpdateEvent(SpacetimeDBClient.TableOp op, IDatabaseTable? oldValue, IDatabaseTable? newValue, ClientApi.Event dbEvent)"
             )
             .unwrap();
             writeln!(output, "{{").unwrap();
@@ -467,7 +471,7 @@ fn autogen_csharp_product_table_common(
                 indent_scope!(output);
                 writeln!(
                     output,
-                    "OnRowUpdate?.Invoke(op, this, ({name})newValue, (ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
+                    "OnRowUpdate?.Invoke(op, ({name})oldValue, ({name})newValue, (ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
                 )
                 .unwrap();
             }
