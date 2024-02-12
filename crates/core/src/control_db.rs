@@ -2,16 +2,16 @@ use std::borrow::Cow;
 
 use anyhow::{anyhow, Context};
 
-use spacetimedb::address::Address;
+use crate::address::Address;
 
-use spacetimedb::hash::hash_bytes;
-use spacetimedb::identity::Identity;
-use spacetimedb::messages::control_db::{Database, DatabaseInstance, EnergyBalance, IdentityEmail, Node};
-use spacetimedb::{energy, stdb_path};
+use crate::hash::hash_bytes;
+use crate::identity::Identity;
+use crate::messages::control_db::{Database, DatabaseInstance, EnergyBalance, IdentityEmail, Node};
+use crate::{energy, stdb_path};
 
-use spacetimedb_lib::bsatn;
 use spacetimedb_lib::name::{DomainName, DomainParsingError, InsertDomainResult, RegisterTldResult, Tld, TldRef};
 use spacetimedb_lib::recovery::RecoveryCode;
+use spacetimedb_sats::bsatn;
 
 #[cfg(test)]
 mod tests;
@@ -28,7 +28,7 @@ pub enum Error {
     #[error("collection not found")]
     CollectionNotFound(sled::Error),
     #[error("database error")]
-    Database(sled::Error),
+    DatabaseError(sled::Error),
     #[error("record with the name {0} already exists")]
     RecordAlreadyExists(DomainName),
     #[error("database with address {0} already exists")]
@@ -36,11 +36,13 @@ pub enum Error {
     #[error("failed to register {0} domain")]
     DomainRegistrationFailure(DomainName),
     #[error("failed to decode data")]
-    Decoding(#[from] bsatn::DecodeError),
+    DecodingError(#[from] bsatn::DecodeError),
     #[error(transparent)]
-    DomainParsing(#[from] DomainParsingError),
+    DomainParsingError(#[from] DomainParsingError),
+    #[error("connection error")]
+    ConnectionError(),
     #[error(transparent)]
-    Json(#[from] serde_json::Error),
+    JSONDeserializationError(#[from] serde_json::Error),
     #[error(transparent)]
     Task(#[from] tokio::task::JoinError),
     #[error(transparent)]
@@ -51,7 +53,7 @@ impl From<sled::Error> for Error {
     fn from(err: sled::Error) -> Self {
         match err {
             sled::Error::CollectionNotFound(_) => Error::CollectionNotFound(err),
-            err => Error::Database(err),
+            err => Error::DatabaseError(err),
         }
     }
 }
@@ -219,7 +221,7 @@ impl ControlDb {
             .unwrap_or(Ok(vec![]))
     }
 
-    pub fn _spacetime_get_recovery_code(&self, email: &str, code: &str) -> Result<Option<RecoveryCode>> {
+    pub fn spacetime_get_recovery_code(&self, email: &str, code: &str) -> Result<Option<RecoveryCode>> {
         for recovery_code in self.spacetime_get_recovery_codes(email)? {
             if recovery_code.code == code {
                 return Ok(Some(recovery_code));
@@ -470,7 +472,7 @@ impl ControlDb {
         Ok(())
     }
 
-    pub fn _get_nodes(&self) -> Result<Vec<Node>> {
+    pub fn get_nodes(&self) -> Result<Vec<Node>> {
         let tree = self.db.open_tree("node")?;
         let mut nodes = Vec::new();
         let scan_key: &[u8] = b"";
@@ -482,7 +484,7 @@ impl ControlDb {
         Ok(nodes)
     }
 
-    pub fn _get_node(&self, id: u64) -> Result<Option<Node>> {
+    pub fn get_node(&self, id: u64) -> Result<Option<Node>> {
         let tree = self.db.open_tree("node")?;
 
         let value = tree.get(id.to_be_bytes())?;
@@ -494,7 +496,7 @@ impl ControlDb {
         }
     }
 
-    pub fn _insert_node(&self, mut node: Node) -> Result<u64> {
+    pub fn insert_node(&self, mut node: Node) -> Result<u64> {
         let tree = self.db.open_tree("node")?;
 
         let id = self.db.generate_id()?;
@@ -507,7 +509,7 @@ impl ControlDb {
         Ok(id)
     }
 
-    pub fn _update_node(&self, node: Node) -> Result<()> {
+    pub fn update_node(&self, node: Node) -> Result<()> {
         let tree = self.db.open_tree("node")?;
 
         let buf = bsatn::to_vec(&node).unwrap();
@@ -525,7 +527,7 @@ impl ControlDb {
     /// Return the current budget for all identities as stored in the db.
     /// Note: this function is for the stored budget only and should *only* be called by functions in
     /// `control_budget`, where a cached copy is stored along with business logic for managing it.
-    pub fn _get_energy_balances(&self) -> Result<Vec<EnergyBalance>> {
+    pub fn get_energy_balances(&self) -> Result<Vec<EnergyBalance>> {
         let mut balances = vec![];
         let tree = self.db.open_tree("energy_budget")?;
         for balance_entry in tree.iter() {
@@ -536,11 +538,13 @@ impl ControlDb {
                     continue;
                 }
             };
-            let arr = <[u8; 16]>::try_from(balance_entry.1.as_ref()).map_err(|_| bsatn::DecodeError::BufferLength {
-                for_type: "balance_entry".into(),
-                expected: 16,
-                given: balance_entry.1.len(),
-            })?;
+            let Ok(arr) = <[u8; 16]>::try_from(balance_entry.1.as_ref()) else {
+                return Err(Error::DecodingError(bsatn::DecodeError::BufferLength {
+                    for_type: "balance_entry".into(),
+                    expected: 16,
+                    given: balance_entry.1.len(),
+                }));
+            };
             let balance = i128::from_be_bytes(arr);
             let energy_balance = EnergyBalance {
                 identity: Identity::from_slice(balance_entry.0.iter().as_slice()),
@@ -558,11 +562,13 @@ impl ControlDb {
         let tree = self.db.open_tree("energy_budget")?;
         let value = tree.get(identity.as_bytes())?;
         if let Some(value) = value {
-            let arr = <[u8; 16]>::try_from(value.as_ref()).map_err(|_| bsatn::DecodeError::BufferLength {
-                for_type: "Identity".into(),
-                expected: 16,
-                given: value.as_ref().len(),
-            })?;
+            let Ok(arr) = <[u8; 16]>::try_from(value.as_ref()) else {
+                return Err(Error::DecodingError(bsatn::DecodeError::BufferLength {
+                    for_type: "Identity".into(),
+                    expected: 16,
+                    given: value.as_ref().len(),
+                }));
+            };
             let balance = i128::from_be_bytes(arr);
             Ok(Some(energy::EnergyBalance::new(balance)))
         } else {
@@ -623,7 +629,7 @@ impl Lock<'_> {
     /// A [`Lock`] is automatically released when it goes out of scope, however
     /// any errors are lost in this case. Use [`Self::release`] to observe those
     /// errors.
-    pub fn _release(mut self) -> Result<()> {
+    pub fn release(mut self) -> Result<()> {
         let this = &mut self;
         this.release_internal()
     }
