@@ -4,7 +4,6 @@ use crate::energy::ReducerBudget;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::wasm_common::module_host_actor::{DescribeError, InitializationError, ReducerOp};
 use crate::host::wasm_common::*;
-use crate::util::ResultInspectExt;
 use anyhow::anyhow;
 use bytes::Bytes;
 use wasmtime::{AsContext, AsContextMut, ExternType, Instance, InstancePre, Linker, Store, TypedFunc, WasmBacktrace};
@@ -173,7 +172,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let duration = start.elapsed();
         log::trace!("Describer \"{}\" ran: {} us", describer_func_name, duration.as_micros(),);
         let buf = result
-            .inspect_err_(|err| log_traceback("describer", describer_func_name, err))
+            .inspect_err(|err| log_traceback("describer", describer_func_name, err))
             .map_err(DescribeError::RuntimeError)?;
         let bytes = store.data_mut().take_buffer(buf).ok_or(DescribeError::BadBuffer)?;
 
