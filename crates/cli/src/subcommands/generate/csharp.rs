@@ -618,7 +618,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
             field_inits.push_str(", ");
         }
         write!(func_params, "{arg_type_str} {arg_name}").unwrap();
-        write!(struct_fields, "public {arg_type_str} {field_name};").unwrap();
+        write!(struct_fields, "public required {arg_type_str} {field_name};").unwrap();
         write!(field_inits, "{field_name} = {arg_name}").unwrap();
     }
 
