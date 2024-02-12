@@ -21,7 +21,12 @@ fn cargo_cmd(subcommand: &str, build_debug: bool, args: &[&str]) -> duct::Expres
 
 pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bool) -> anyhow::Result<PathBuf> {
     // Make sure that we have the wasm target installed (ok to run if its already installed)
-    cmd!("rustup", "target", "add", "wasm32-unknown-unknown").run()?;
+    match cmd!("rustup", "target", "add", "wasm32-unknown-unknown").run() {
+        Ok(_) => {}
+        Err(err) => {
+            warn!("Failed to install wasm32-unknown-unknown target: {}", err);
+        }
+    }
 
     // Note: Clippy has to run first so that it can build & cache deps for actual build while checking in parallel.
     if !skip_clippy {
