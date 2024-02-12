@@ -277,12 +277,8 @@ fn autogen_csharp_product_table_common(
     if let Some(schema) = &schema {
         write!(
             output,
-            " : {intf}<{name}>",
-            intf = if schema.pk().is_some() {
-                "IDatabaseTableWithPrimaryKey"
-            } else {
-                "IDatabaseTable"
-            }
+            " : IDatabaseTable{}",
+            if schema.pk().is_some() { "WithPrimaryKey" } else { "" }
         )
         .unwrap();
     }
@@ -332,7 +328,7 @@ fn autogen_csharp_product_table_common(
             }
             writeln!(output).unwrap();
             // OnInsert method for updating indexes
-            writeln!(output, "private static void InternalOnValueInserted({name} val)").unwrap();
+            writeln!(output, "void IDatabaseTable.InternalOnValueInserted()").unwrap();
             writeln!(output, "{{").unwrap();
             {
                 indent_scope!(output);
@@ -341,13 +337,13 @@ fn autogen_csharp_product_table_common(
                     if !constraints[&NonEmpty::new(col.col_pos)].has_unique() {
                         continue;
                     }
-                    writeln!(output, "{field_name}_Index[val.{field_name}] = val;").unwrap();
+                    writeln!(output, "{field_name}_Index[{field_name}] = this;").unwrap();
                 }
             }
             writeln!(output, "}}").unwrap();
             writeln!(output).unwrap();
             // OnDelete method for updating indexes
-            writeln!(output, "private static void InternalOnValueDeleted({name} val)").unwrap();
+            writeln!(output, "void IDatabaseTable.InternalOnValueDeleted()").unwrap();
             writeln!(output, "{{").unwrap();
             {
                 indent_scope!(output);
@@ -356,7 +352,7 @@ fn autogen_csharp_product_table_common(
                     if !constraints[&NonEmpty::new(col.col_pos)].has_unique() {
                         continue;
                     }
-                    writeln!(output, "{field_name}_Index.Remove(val.{field_name});").unwrap();
+                    writeln!(output, "{field_name}_Index.Remove({field_name});").unwrap();
                 }
             }
             writeln!(output, "}}").unwrap();
@@ -403,17 +399,13 @@ fn autogen_csharp_product_table_common(
 
             writeln!(output).unwrap();
 
-            writeln!(
-                output,
-                "public static void OnInsertEvent({name} newValue, ClientApi.Event dbEvent)"
-            )
-            .unwrap();
+            writeln!(output, "public void OnInsertEvent(ClientApi.Event dbEvent)").unwrap();
             writeln!(output, "{{").unwrap();
             {
                 indent_scope!(output);
                 writeln!(
                     output,
-                    "OnInsert?.Invoke(newValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
+                    "OnInsert?.Invoke(this, (ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
                 )
                 .unwrap();
             }
@@ -423,7 +415,7 @@ fn autogen_csharp_product_table_common(
             if has_primary_key {
                 writeln!(
                     output,
-                    "public static void OnUpdateEvent({name} oldValue, {name} newValue, ClientApi.Event dbEvent)"
+                    "public void OnUpdateEvent(IDatabaseTableWithPrimaryKey newValue, ClientApi.Event dbEvent)"
                 )
                 .unwrap();
                 writeln!(output, "{{").unwrap();
@@ -431,7 +423,7 @@ fn autogen_csharp_product_table_common(
                     indent_scope!(output);
                     writeln!(
                         output,
-                        "OnUpdate?.Invoke(oldValue, newValue, (ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
+                        "OnUpdate?.Invoke(this, ({name})newValue, (ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
                     )
                     .unwrap();
                 }
@@ -439,17 +431,26 @@ fn autogen_csharp_product_table_common(
                 writeln!(output).unwrap();
             }
 
-            writeln!(
-                output,
-                "public static void OnBeforeDeleteEvent({name} oldValue, ClientApi.Event dbEvent)"
-            )
-            .unwrap();
+            writeln!(output, "public void OnBeforeDeleteEvent(ClientApi.Event dbEvent)").unwrap();
             writeln!(output, "{{").unwrap();
             {
                 indent_scope!(output);
                 writeln!(
                     output,
-                    "OnBeforeDelete?.Invoke(oldValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
+                    "OnBeforeDelete?.Invoke(this, (ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
+                )
+                .unwrap();
+            }
+            writeln!(output, "}}").unwrap();
+            writeln!(output).unwrap();
+
+            writeln!(output, "public void OnDeleteEvent(ClientApi.Event dbEvent)").unwrap();
+            writeln!(output, "{{").unwrap();
+            {
+                indent_scope!(output);
+                writeln!(
+                    output,
+                    "OnDelete?.Invoke(this, (ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
                 )
                 .unwrap();
             }
@@ -458,7 +459,7 @@ fn autogen_csharp_product_table_common(
 
             writeln!(
                 output,
-                "public static void OnDeleteEvent({name} oldValue, ClientApi.Event dbEvent)"
+                "public void OnRowUpdateEvent(SpacetimeDBClient.TableOp op, IDatabaseTable newValue, ClientApi.Event dbEvent)"
             )
             .unwrap();
             writeln!(output, "{{").unwrap();
@@ -466,24 +467,7 @@ fn autogen_csharp_product_table_common(
                 indent_scope!(output);
                 writeln!(
                     output,
-                    "OnDelete?.Invoke(oldValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
-                )
-                .unwrap();
-            }
-            writeln!(output, "}}").unwrap();
-            writeln!(output).unwrap();
-
-            writeln!(
-                output,
-                "public static void OnRowUpdateEvent(SpacetimeDBClient.TableOp op, {name} oldValue, {name} newValue, ClientApi.Event dbEvent)"
-            )
-            .unwrap();
-            writeln!(output, "{{").unwrap();
-            {
-                indent_scope!(output);
-                writeln!(
-                    output,
-                    "OnRowUpdate?.Invoke(op, oldValue, newValue, (ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
+                    "OnRowUpdate?.Invoke(op, this, ({name})newValue, (ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
                 )
                 .unwrap();
             }
@@ -594,20 +578,10 @@ fn autogen_csharp_access_funcs_for_struct(
     if let Some(primary_col_index) = primary_col_idx {
         writeln!(
             output,
-            "public static object GetPrimaryKeyValue({struct_name_pascal_case} v)"
+            "public object GetPrimaryKeyValue() => {col_name_pascal_case};",
+            col_name_pascal_case = primary_col_index.col_name.replace("r#", "").to_case(Case::Pascal)
         )
         .unwrap();
-        writeln!(output, "{{").unwrap();
-        {
-            indent_scope!(output);
-            writeln!(
-                output,
-                "return (({struct_name_pascal_case})v).{col_name_pascal_case};",
-                col_name_pascal_case = primary_col_index.col_name.replace("r#", "").to_case(Case::Pascal)
-            )
-            .unwrap();
-        }
-        writeln!(output, "}}").unwrap();
     }
 
     primary_col_idx.is_some()
