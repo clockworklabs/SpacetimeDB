@@ -650,7 +650,6 @@ impl Drop for CommittedIndexIter<'_> {
 impl<'a> Iterator for CommittedIndexIter<'a> {
     type Item = RowRef<'a>;
 
-    #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(row_ref) = self.committed_rows.find(|row_ref| {
             !self

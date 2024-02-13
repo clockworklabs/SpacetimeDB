@@ -279,7 +279,6 @@ impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
         RowCount::unknown()
     }
 
-    #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
         // Return a value from the current index iterator, if not exhausted.
         if self.return_index_rows {
@@ -550,7 +549,6 @@ impl RelOps for TableCursor<'_> {
         RowCount::unknown()
     }
 
-    #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
         Ok(self.iter.next().map(|row| RelValue::new(row.to_product_value(), None)))
     }
@@ -565,7 +563,6 @@ impl<R: RangeBounds<AlgebraicValue>> RelOps for IndexCursor<'_, R> {
         RowCount::unknown()
     }
 
-    #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
         Ok(self.iter.next().map(|row| RelValue::new(row.to_product_value(), None)))
     }
@@ -583,7 +580,6 @@ where
         self.row_count
     }
 
-    #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
         if let Some(row) = self.iter.next() {
             return Ok(Some(RelValue::new(row, None)));
