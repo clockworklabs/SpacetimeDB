@@ -142,9 +142,7 @@ impl DecodedMessage<'_> {
                 let res = client.call_reducer(reducer, args).await;
                 res.map(drop).map_err(|e| (Some(reducer), e.into()))
             }
-            DecodedMessage::Subscribe(subscription) => {
-                client.subscribe(subscription).await.map_err(|e| (None, e.into()))
-            }
+            DecodedMessage::Subscribe(subscription) => client.subscribe(subscription).map_err(|e| (None, e.into())),
             DecodedMessage::OneOffQuery {
                 query_string: query,
                 message_id,

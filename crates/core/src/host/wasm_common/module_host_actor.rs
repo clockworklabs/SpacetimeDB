@@ -2,7 +2,6 @@ use anyhow::{anyhow, Context};
 use bytes::Bytes;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::RwLock;
 
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
@@ -25,7 +24,7 @@ use crate::host::{ArgsTuple, EntityDef, ReducerCallResult, ReducerId, ReducerOut
 use crate::identity::Identity;
 use crate::messages::control_db::Database;
 use crate::sql;
-use crate::subscription::module_subscription_actor::ModuleSubscriptions;
+use crate::subscription::module_subscription_actor::ModuleSubscriptionManager;
 use crate::util::{const_unwrap, ResultInspectExt};
 use crate::worker_metrics::WORKER_METRICS;
 use spacetimedb_sats::db::def::TableDef;
@@ -143,7 +142,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 
         let owner_identity = database_instance_context.identity;
         let relational_db = database_instance_context.relational_db.clone();
-        let subscriptions = Arc::new(RwLock::new(ModuleSubscriptions::new(relational_db, owner_identity)));
+        let subscription = ModuleSubscriptionManager::spawn(relational_db, owner_identity);
 
         let uninit_instance = module.instantiate_pre()?;
         let mut instance = uninit_instance.instantiate(
@@ -185,7 +184,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             reducers,
             catalog,
             log_tx,
-            subscriptions,
+            subscription,
         });
 
         let func_names = Arc::new(func_names);
@@ -564,11 +563,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             .with_label_values(&address, reducer_name)
             .observe(timings.total_duration.as_secs_f64());
 
-        // Take a lock on our subscriptions now. Otherwise, we could have a race condition where we commit
-        // the tx, someone adds a subscription and receives this tx as an update, and then receives the
-        // update again when we broadcast_event.
-        let subscriptions = self.info.subscriptions.blocking_read();
-
         let ctx = ExecutionContext::reducer(address, reducer_name);
         let status = match call_result {
             Err(err) => {
@@ -629,7 +623,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             energy_quanta_used: energy.used,
             host_execution_duration: timings.total_duration,
         };
-        subscriptions.blocking_broadcast_event(client.as_ref(), &event);
+        self.info.subscription.broadcast_event_blocking(client.as_ref(), event);
 
         ReducerCallResult {
             outcome,
