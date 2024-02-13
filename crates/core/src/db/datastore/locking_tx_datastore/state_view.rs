@@ -244,7 +244,6 @@ enum ScanStage<'a> {
 impl<'a> Iterator for Iter<'a> {
     type Item = RowRef<'a>;
 
-    #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Option<Self::Item> {
         let table_id = self.table_id;
 
@@ -401,7 +400,6 @@ impl Drop for IndexSeekIterMutTxId<'_> {
 impl<'a> Iterator for IndexSeekIterMutTxId<'a> {
     type Item = RowRef<'a>;
 
-    #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(row_ref) = self.inserted_rows.next() {
             return Some(row_ref);
@@ -462,7 +460,6 @@ pub enum IterByColRange<'a, R: RangeBounds<AlgebraicValue>> {
 impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for IterByColRange<'a, R> {
     type Item = RowRef<'a>;
 
-    #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Option<Self::Item> {
         match self {
             IterByColRange::Scan(range) => range.next(),
@@ -487,11 +484,9 @@ impl<'a, R: RangeBounds<AlgebraicValue>> ScanIterByColRange<'a, R> {
 impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for ScanIterByColRange<'a, R> {
     type Item = RowRef<'a>;
 
-    #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Option<Self::Item> {
         for row_ref in &mut self.scan_iter {
-            let row = row_ref.to_product_value();
-            let value = row.project_not_empty(&self.cols).unwrap();
+            let value = row_ref.project_not_empty(&self.cols).unwrap();
             if self.range.contains(&value) {
                 return Some(row_ref);
             }
