@@ -75,9 +75,6 @@ deserialize/
 stdb_module/
     print_bulk/[count]
     large_arguments/64KiB/
-    
-game/
-    headers    
 ```
 
 Typically you don't want to run all benchmarks at once, there are a lot of them and it will take many minutes.
@@ -140,8 +137,9 @@ cargo install samply
 Run *any* command to see perf data on Firefox:
 
 ```bash
-# Note: if the `cargo` command trigger a re-compile then it will be profiled. It could be necessary to run this twice
-samply record cargo test --profile bench --package spacetimedb-bench --lib game::tests::test_game_query -- --exact  --nocapture 
+# Note if the `cargo` command triggers compilation, it will also be captured in the profile.
+# Therefore it is useful to run this after the artifact has already been cached.
+samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- full-scan --exact --profile-time=30
 ```
 
 ### OSX Only
