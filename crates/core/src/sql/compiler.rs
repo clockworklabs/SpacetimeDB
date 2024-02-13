@@ -276,48 +276,13 @@ mod tests {
     use super::*;
     use std::ops::Bound;
 
-    use crate::db::relational_db::{tests_utils::make_test_db, MutTx};
-    use crate::execution_context::ExecutionContext;
+    use crate::db::relational_db::tests_utils::make_test_db;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::operator::OpQuery;
     use spacetimedb_primitives::{ColId, TableId};
-    use spacetimedb_sats::db::auth::StTableType;
-    use spacetimedb_sats::db::def::{ColumnDef, IndexDef, TableDef};
     use spacetimedb_sats::relation::Table;
     use spacetimedb_sats::AlgebraicType;
     use spacetimedb_vm::expr::{IndexJoin, IndexScan, JoinExpr, Query};
-
-    fn create_table(
-        db: &RelationalDB,
-        tx: &mut MutTx,
-        name: &str,
-        schema: &[(&str, AlgebraicType)],
-        indexes: &[(ColId, &str)],
-    ) -> ResultTest<TableId> {
-        let table_name = name.to_string();
-        let table_type = StTableType::User;
-        let table_access = StAccess::Public;
-
-        let columns: Vec<_> = schema
-            .iter()
-            .map(|(col_name, col_type)| ColumnDef {
-                col_name: col_name.to_string(),
-                col_type: col_type.clone(),
-            })
-            .collect();
-
-        let indexes: Vec<_> = indexes
-            .iter()
-            .map(|(col_id, index_name)| IndexDef::btree(index_name.to_string(), *col_id, false))
-            .collect();
-
-        let schema = TableDef::new(table_name, columns)
-            .with_indexes(indexes)
-            .with_type(table_type)
-            .with_access(table_access);
-
-        Ok(db.create_table(tx, schema)?)
-    }
 
     fn assert_index_scan(
         op: Query,
@@ -344,13 +309,11 @@ mod tests {
     #[test]
     fn compile_eq() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
 
         // Create table [test] without any indexes
         let schema = &[("a", AlgebraicType::U64)];
         let indexes = &[];
-        create_table(&db, &mut tx, "test", schema, indexes)?;
-        db.commit_tx(&ExecutionContext::default(), tx)?;
+        db.create_table_for_test("test", schema, indexes)?;
 
         let tx = db.begin_tx();
         // Compile query
@@ -375,13 +338,11 @@ mod tests {
     #[test]
     fn compile_index_eq() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
 
         // Create table [test] with index on [a]
         let schema = &[("a", AlgebraicType::U64)];
         let indexes = &[(0.into(), "a")];
-        create_table(&db, &mut tx, "test", schema, indexes)?;
-        db.commit_tx(&ExecutionContext::default(), tx)?;
+        db.create_table_for_test("test", schema, indexes)?;
 
         let tx = db.begin_tx();
         //Compile query
@@ -409,13 +370,11 @@ mod tests {
     #[test]
     fn compile_eq_and_eq() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
 
         // Create table [test] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
         let indexes = &[(1.into(), "b")];
-        create_table(&db, &mut tx, "test", schema, indexes)?;
-        db.commit_tx(&ExecutionContext::default(), tx)?;
+        db.create_table_for_test("test", schema, indexes)?;
 
         let tx = db.begin_tx();
         // Note, order matters - the sargable predicate occurs last which means
@@ -441,13 +400,11 @@ mod tests {
     #[test]
     fn compile_index_eq_and_eq() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
 
         // Create table [test] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
         let indexes = &[(1.into(), "b")];
-        create_table(&db, &mut tx, "test", schema, indexes)?;
-        db.commit_tx(&ExecutionContext::default(), tx)?;
+        db.create_table_for_test("test", schema, indexes)?;
 
         let tx = db.begin_tx();
         // Note, order matters - the sargable predicate occurs first which
@@ -476,13 +433,11 @@ mod tests {
     #[test]
     fn compile_eq_or_eq() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
 
         // Create table [test] with indexes on [a] and [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
         let indexes = &[(0.into(), "a"), (1.into(), "b")];
-        create_table(&db, &mut tx, "test", schema, indexes)?;
-        db.commit_tx(&ExecutionContext::default(), tx)?;
+        db.create_table_for_test("test", schema, indexes)?;
 
         let tx = db.begin_tx();
         // Compile query
@@ -506,13 +461,11 @@ mod tests {
     #[test]
     fn compile_index_range_open() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
 
         // Create table [test] with indexes on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
         let indexes = &[(1.into(), "b")];
-        create_table(&db, &mut tx, "test", schema, indexes)?;
-        db.commit_tx(&ExecutionContext::default(), tx)?;
+        db.create_table_for_test("test", schema, indexes)?;
 
         let tx = db.begin_tx();
         // Compile query
@@ -540,13 +493,11 @@ mod tests {
     #[test]
     fn compile_index_range_closed() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
 
         // Create table [test] with indexes on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
         let indexes = &[(1.into(), "b")];
-        create_table(&db, &mut tx, "test", schema, indexes)?;
-        db.commit_tx(&ExecutionContext::default(), tx)?;
+        db.create_table_for_test("test", schema, indexes)?;
 
         let tx = db.begin_tx();
         // Compile query
@@ -574,13 +525,11 @@ mod tests {
     #[test]
     fn compile_index_eq_select_range() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
 
         // Create table [test] with indexes on [a] and [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
         let indexes = &[(0.into(), "a"), (1.into(), "b")];
-        create_table(&db, &mut tx, "test", schema, indexes)?;
-        db.commit_tx(&ExecutionContext::default(), tx)?;
+        db.create_table_for_test("test", schema, indexes)?;
 
         let tx = db.begin_tx();
         // Note, order matters - the equality condition occurs first which
@@ -613,18 +562,16 @@ mod tests {
     #[test]
     fn compile_join_lhs_push_down() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
 
         // Create table [lhs] with index on [a]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
         let indexes = &[(0.into(), "a")];
-        let lhs_id = create_table(&db, &mut tx, "lhs", schema, indexes)?;
+        let lhs_id = db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with no indexes
         let schema = &[("b", AlgebraicType::U64), ("c", AlgebraicType::U64)];
         let indexes = &[];
-        let rhs_id = create_table(&db, &mut tx, "rhs", schema, indexes)?;
-        db.commit_tx(&ExecutionContext::default(), tx)?;
+        let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
 
         let tx = db.begin_tx();
         // Should push sargable equality condition below join
@@ -686,16 +633,14 @@ mod tests {
     #[test]
     fn compile_join_lhs_push_down_no_index() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
 
         // Create table [lhs] with no indexes
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let lhs_id = create_table(&db, &mut tx, "lhs", schema, &[])?;
+        let lhs_id = db.create_table_for_test("lhs", schema, &[])?;
 
         // Create table [rhs] with no indexes
         let schema = &[("b", AlgebraicType::U64), ("c", AlgebraicType::U64)];
-        let rhs_id = create_table(&db, &mut tx, "rhs", schema, &[])?;
-        db.commit_tx(&ExecutionContext::default(), tx)?;
+        let rhs_id = db.create_table_for_test("rhs", schema, &[])?;
 
         let tx = db.begin_tx();
         // Should push equality condition below join
@@ -769,16 +714,14 @@ mod tests {
     #[test]
     fn compile_join_rhs_push_down_no_index() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
 
         // Create table [lhs] with no indexes
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let lhs_id = create_table(&db, &mut tx, "lhs", schema, &[])?;
+        let lhs_id = db.create_table_for_test("lhs", schema, &[])?;
 
         // Create table [rhs] with no indexes
         let schema = &[("b", AlgebraicType::U64), ("c", AlgebraicType::U64)];
-        let rhs_id = create_table(&db, &mut tx, "rhs", schema, &[])?;
-        db.commit_tx(&ExecutionContext::default(), tx)?;
+        let rhs_id = db.create_table_for_test("rhs", schema, &[])?;
 
         let tx = db.begin_tx();
         // Should push equality condition below join
@@ -851,18 +794,16 @@ mod tests {
     #[test]
     fn compile_join_lhs_and_rhs_push_down() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
 
         // Create table [lhs] with index on [a]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
         let indexes = &[(0.into(), "a")];
-        let lhs_id = create_table(&db, &mut tx, "lhs", schema, indexes)?;
+        let lhs_id = db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [c]
         let schema = &[("b", AlgebraicType::U64), ("c", AlgebraicType::U64)];
         let indexes = &[(1.into(), "c")];
-        let rhs_id = create_table(&db, &mut tx, "rhs", schema, indexes)?;
-        db.commit_tx(&ExecutionContext::default(), tx)?;
+        let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
 
         let tx = db.begin_tx();
         // Should push the sargable equality condition into the join's left arg.
@@ -937,12 +878,11 @@ mod tests {
     #[test]
     fn compile_index_join() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
         let indexes = &[(1.into(), "b")];
-        let lhs_id = create_table(&db, &mut tx, "lhs", schema, indexes)?;
+        let lhs_id = db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [b, c]
         let schema = &[
@@ -951,8 +891,7 @@ mod tests {
             ("d", AlgebraicType::U64),
         ];
         let indexes = &[(0.into(), "b"), (1.into(), "c")];
-        let rhs_id = create_table(&db, &mut tx, "rhs", schema, indexes)?;
-        db.commit_tx(&ExecutionContext::default(), tx)?;
+        let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
 
         let tx = db.begin_tx();
         // Should generate an index join since there is an index on `lhs.b`.
