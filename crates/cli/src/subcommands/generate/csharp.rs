@@ -465,27 +465,37 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
     writeln!(output, "using ClientApi;").unwrap();
     writeln!(output).unwrap();
 
+    //Args struct
+    writeln!(output, "[SpacetimeDB.Type]").unwrap();
+    writeln!(output, "public partial class {func_name_pascal_case}ArgsStruct {{").unwrap();
+
     let mut func_params: String = String::new();
-    let mut struct_fields: String = String::new();
     let mut field_inits: String = String::new();
 
-    for (arg_i, arg) in reducer.args.iter().enumerate() {
-        let name = arg
-            .name
-            .as_deref()
-            .unwrap_or_else(|| panic!("reducer args should have names: {}", func_name));
-        let arg_name = name.to_case(Case::Camel);
-        let field_name = name.to_case(Case::Pascal);
-        let arg_type_str = ty_fmt(ctx, &arg.algebraic_type, namespace);
+    {
+        indent_scope!(output);
 
-        if arg_i != 0 {
-            func_params.push_str(", ");
-            field_inits.push_str(", ");
+        for (arg_i, arg) in reducer.args.iter().enumerate() {
+            let name = arg
+                .name
+                .as_deref()
+                .unwrap_or_else(|| panic!("reducer args should have names: {}", func_name));
+            let arg_name = name.to_case(Case::Camel);
+            let field_name = name.to_case(Case::Pascal);
+            let arg_type_str = ty_fmt(ctx, &arg.algebraic_type, namespace);
+
+            if arg_i != 0 {
+                func_params.push_str(", ");
+                field_inits.push_str(", ");
+            }
+            writeln!(output, "public required {arg_type_str} {field_name};").unwrap();
+            write!(func_params, "{arg_type_str} {arg_name}").unwrap();
+            write!(field_inits, "{field_name} = {arg_name}").unwrap();
         }
-        write!(func_params, "{arg_type_str} {arg_name}").unwrap();
-        write!(struct_fields, "public required {arg_type_str} {field_name};").unwrap();
-        write!(field_inits, "{field_name} = {arg_name}").unwrap();
     }
+
+    writeln!(output, "}}").unwrap();
+    writeln!(output).unwrap();
 
     writeln!(output, "public static partial class Reducer").unwrap();
     writeln!(output, "{{").unwrap();
@@ -595,13 +605,6 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
         writeln!(output, "}}").unwrap();
     }
     // Closing brace for class
-    writeln!(output, "}}").unwrap();
-    writeln!(output).unwrap();
-
-    //Args struct
-    writeln!(output, "[SpacetimeDB.Type]").unwrap();
-    writeln!(output, "public partial class {func_name_pascal_case}ArgsStruct {{").unwrap();
-    writeln!(output, "{struct_fields}").unwrap();
     writeln!(output, "}}").unwrap();
     writeln!(output).unwrap();
 
