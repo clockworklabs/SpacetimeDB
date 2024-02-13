@@ -277,11 +277,11 @@ fn autogen_csharp_product_table_common(
     if let Some(schema) = &schema {
         write!(
             output,
-            " : IDatabaseTableRowUpdate{}",
-            if schema.pk().is_some() {
-                ", IDatabaseTableWithPrimaryKey"
+            " : SpacetimeDB.{parent}<{name}, {namespace}.ReducerEvent>",
+            parent = if schema.pk().is_some() {
+                "DatabaseTableWithPrimaryKey"
             } else {
-                ""
+                "DatabaseTable"
             }
         )
         .unwrap();
@@ -306,12 +306,15 @@ fn autogen_csharp_product_table_common(
             )
             .unwrap();
         }
+        writeln!(output).unwrap();
 
+        writeln!(output, "protected override {name} GetThis() => this;").unwrap();
         writeln!(output).unwrap();
 
         // If this is a table, we want to generate indexes
         if let Some(schema) = &schema {
             let constraints = schema.column_constraints();
+            let mut unique_indexes = Vec::new();
             // Declare custom index dictionaries
             for col in schema.columns() {
                 let field_name = col.col_name.replace("r#", "").to_case(Case::Pascal);
@@ -329,165 +332,53 @@ fn autogen_csharp_product_table_common(
                     "private static Dictionary<{type_name}, {name}> {field_name}_Index = new (16{comparer});"
                 )
                 .unwrap();
+                unique_indexes.push(field_name);
             }
-            writeln!(output).unwrap();
-            // OnInsert method for updating indexes
-            writeln!(output, "void IDatabaseTable.InternalOnValueInserted()").unwrap();
-            writeln!(output, "{{").unwrap();
-            {
-                indent_scope!(output);
-                for col in schema.columns() {
-                    let field_name = col.col_name.replace("r#", "").to_case(Case::Pascal);
-                    if !constraints[&NonEmpty::new(col.col_pos)].has_unique() {
-                        continue;
+            if !unique_indexes.is_empty() {
+                writeln!(output).unwrap();
+                // OnInsert method for updating indexes
+                writeln!(output, "public override void InternalOnValueInserted()").unwrap();
+                writeln!(output, "{{").unwrap();
+                {
+                    indent_scope!(output);
+                    for col in schema.columns() {
+                        let field_name = col.col_name.replace("r#", "").to_case(Case::Pascal);
+                        if !constraints[&NonEmpty::new(col.col_pos)].has_unique() {
+                            continue;
+                        }
+                        writeln!(output, "{field_name}_Index[{field_name}] = this;").unwrap();
                     }
-                    writeln!(output, "{field_name}_Index[{field_name}] = this;").unwrap();
                 }
-            }
-            writeln!(output, "}}").unwrap();
-            writeln!(output).unwrap();
-            // OnDelete method for updating indexes
-            writeln!(output, "void IDatabaseTable.InternalOnValueDeleted()").unwrap();
-            writeln!(output, "{{").unwrap();
-            {
-                indent_scope!(output);
-                for col in schema.columns() {
-                    let field_name = col.col_name.replace("r#", "").to_case(Case::Pascal);
-                    if !constraints[&NonEmpty::new(col.col_pos)].has_unique() {
-                        continue;
+                writeln!(output, "}}").unwrap();
+                writeln!(output).unwrap();
+                // OnDelete method for updating indexes
+                writeln!(output, "public override void InternalOnValueDeleted()").unwrap();
+                writeln!(output, "{{").unwrap();
+                {
+                    indent_scope!(output);
+                    for col in schema.columns() {
+                        let field_name = col.col_name.replace("r#", "").to_case(Case::Pascal);
+                        if !constraints[&NonEmpty::new(col.col_pos)].has_unique() {
+                            continue;
+                        }
+                        writeln!(output, "{field_name}_Index.Remove({field_name});").unwrap();
                     }
-                    writeln!(output, "{field_name}_Index.Remove({field_name});").unwrap();
                 }
+                writeln!(output, "}}").unwrap();
+                writeln!(output).unwrap();
             }
-            writeln!(output, "}}").unwrap();
-            writeln!(output).unwrap();
         } // End indexes
 
         // If this is a table, we want to include functions for accessing the table data
         if let Some(column_attrs) = &schema {
             // Insert the funcs for accessing this struct
-            let has_primary_key = autogen_csharp_access_funcs_for_struct(
-                &mut output,
-                name,
-                product_type,
-                name,
-                column_attrs,
-                ctx,
-                namespace,
-            );
-
+            autogen_csharp_access_funcs_for_struct(&mut output, name, product_type, name, column_attrs, ctx, namespace);
             writeln!(output).unwrap();
-
-            writeln!(
-                output,
-                "public delegate void InsertEventHandler({name} insertedValue, {namespace}.ReducerEvent? dbEvent);"
-            )
-            .unwrap();
-            if has_primary_key {
-                writeln!(output, "public delegate void UpdateEventHandler({name} oldValue, {name} newValue, {namespace}.ReducerEvent? dbEvent);").unwrap();
-            }
-            writeln!(
-                output,
-                "public delegate void DeleteEventHandler({name} deletedValue, {namespace}.ReducerEvent? dbEvent);"
-            )
-            .unwrap();
-            writeln!(output, "public delegate void RowUpdateEventHandler(SpacetimeDBClient.TableOp op, {name}? oldValue, {name}? newValue, {namespace}.ReducerEvent? dbEvent);").unwrap();
-            writeln!(output, "public static event InsertEventHandler? OnInsert;").unwrap();
-            if has_primary_key {
-                writeln!(output, "public static event UpdateEventHandler? OnUpdate;").unwrap();
-            }
-            writeln!(output, "public static event DeleteEventHandler? OnBeforeDelete;").unwrap();
-            writeln!(output, "public static event DeleteEventHandler? OnDelete;").unwrap();
-
-            writeln!(output, "public static event RowUpdateEventHandler? OnRowUpdate;").unwrap();
-
-            writeln!(output).unwrap();
-
-            writeln!(output, "public void OnInsertEvent(ClientApi.Event dbEvent)").unwrap();
-            writeln!(output, "{{").unwrap();
-            {
-                indent_scope!(output);
-                writeln!(
-                    output,
-                    "OnInsert?.Invoke(this, (ReducerEvent?)dbEvent?.FunctionCall.CallInfo);"
-                )
-                .unwrap();
-            }
-            writeln!(output, "}}").unwrap();
-            writeln!(output).unwrap();
-
-            if has_primary_key {
-                writeln!(
-                    output,
-                    "public void OnUpdateEvent(IDatabaseTableWithPrimaryKey newValue, ClientApi.Event dbEvent)"
-                )
-                .unwrap();
-                writeln!(output, "{{").unwrap();
-                {
-                    indent_scope!(output);
-                    writeln!(
-                        output,
-                        "OnUpdate?.Invoke(this, ({name})newValue, (ReducerEvent?)dbEvent?.FunctionCall.CallInfo);"
-                    )
-                    .unwrap();
-                }
-                writeln!(output, "}}").unwrap();
-                writeln!(output).unwrap();
-            }
-
-            writeln!(output, "public void OnBeforeDeleteEvent(ClientApi.Event dbEvent)").unwrap();
-            writeln!(output, "{{").unwrap();
-            {
-                indent_scope!(output);
-                writeln!(
-                    output,
-                    "OnBeforeDelete?.Invoke(this, (ReducerEvent?)dbEvent?.FunctionCall.CallInfo);"
-                )
-                .unwrap();
-            }
-            writeln!(output, "}}").unwrap();
-            writeln!(output).unwrap();
-
-            writeln!(output, "public void OnDeleteEvent(ClientApi.Event dbEvent)").unwrap();
-            writeln!(output, "{{").unwrap();
-            {
-                indent_scope!(output);
-                writeln!(
-                    output,
-                    "OnDelete?.Invoke(this, (ReducerEvent?)dbEvent?.FunctionCall.CallInfo);"
-                )
-                .unwrap();
-            }
-            writeln!(output, "}}").unwrap();
-            writeln!(output).unwrap();
-
-            writeln!(
-                output,
-                "public static void OnRowUpdateEvent(SpacetimeDBClient.TableOp op, IDatabaseTable? oldValue, IDatabaseTable? newValue, ClientApi.Event dbEvent)"
-            )
-            .unwrap();
-            writeln!(output, "{{").unwrap();
-            {
-                indent_scope!(output);
-                writeln!(
-                    output,
-                    "OnRowUpdate?.Invoke(op, ({name}?)oldValue, ({name}?)newValue, (ReducerEvent?)dbEvent?.FunctionCall.CallInfo);"
-                )
-                .unwrap();
-            }
-            writeln!(output, "}}").unwrap();
         }
     }
     writeln!(output, "}}").unwrap();
 
     output.into_inner()
-}
-
-fn indented_block<R>(output: &mut CodeIndenter<String>, f: impl FnOnce(&mut CodeIndenter<String>) -> R) -> R {
-    writeln!(output, "{{").unwrap();
-    let res = f(&mut output.indented(1));
-    writeln!(output, "}}").unwrap();
-    res
 }
 
 fn autogen_csharp_access_funcs_for_struct(
@@ -498,31 +389,7 @@ fn autogen_csharp_access_funcs_for_struct(
     schema: &TableSchema,
     ctx: &GenCtx,
     namespace: &str,
-) -> bool {
-    let primary_col_idx = schema.pk();
-
-    writeln!(
-        output,
-        "public static System.Collections.Generic.IEnumerable<{struct_name_pascal_case}> Iter()"
-    )
-    .unwrap();
-    indented_block(output, |output| {
-        writeln!(
-            output,
-            "return SpacetimeDBClient.clientDB.GetObjects<{struct_name_pascal_case}>();"
-        )
-        .unwrap();
-    });
-
-    writeln!(output, "public static int Count()").unwrap();
-    indented_block(output, |output| {
-        writeln!(
-            output,
-            "return SpacetimeDBClient.clientDB.Count<{struct_name_pascal_case}>();",
-        )
-        .unwrap();
-    });
-
+) {
     let constraints = schema.column_constraints();
     for col in schema.columns() {
         let is_unique = constraints[&NonEmpty::new(col.col_pos)].has_unique();
@@ -539,7 +406,7 @@ fn autogen_csharp_access_funcs_for_struct(
             if is_unique {
                 write!(f, "{struct_name_pascal_case}?")
             } else {
-                write!(f, "System.Collections.Generic.IEnumerable<{struct_name_pascal_case}>")
+                write!(f, "IEnumerable<{struct_name_pascal_case}>")
             }
         });
 
@@ -579,16 +446,14 @@ fn autogen_csharp_access_funcs_for_struct(
         writeln!(output).unwrap();
     }
 
-    if let Some(primary_col_index) = primary_col_idx {
+    if let Some(primary_col_index) = schema.pk() {
         writeln!(
             output,
-            "public object GetPrimaryKeyValue() => {col_name_pascal_case};",
+            "public override object GetPrimaryKeyValue() => {col_name_pascal_case};",
             col_name_pascal_case = primary_col_index.col_name.replace("r#", "").to_case(Case::Pascal)
         )
         .unwrap();
     }
-
-    primary_col_idx.is_some()
 }
 
 pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &str) -> String {
