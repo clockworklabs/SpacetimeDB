@@ -84,7 +84,12 @@ public class Type : IIncrementalGenerator
                         .FirstOrDefault();
 
                     var fields = type.Members.OfType<FieldDeclarationSyntax>()
-                        .Where(f => !f.Modifiers.Any(m => m.IsKind(SyntaxKind.StaticKeyword)))
+                        .Where(f =>
+                            !f.Modifiers.Any(m =>
+                                m.IsKind(SyntaxKind.StaticKeyword)
+                                || m.IsKind(SyntaxKind.ConstKeyword)
+                            )
+                        )
                         .SelectMany(f =>
                         {
                             var typeSymbol = context
