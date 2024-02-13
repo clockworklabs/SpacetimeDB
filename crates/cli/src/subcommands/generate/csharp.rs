@@ -320,7 +320,7 @@ fn autogen_csharp_product_table_common(
                 }
                 let type_name = ty_fmt(ctx, &col.col_type, namespace);
                 let comparer = if format!("{}", type_name) == "byte[]" {
-                    ", new SpacetimeDB.ByteArrayComparer()"
+                    ", SpacetimeDB.ByteArrayComparer.Instance"
                 } else {
                     ""
                 };
