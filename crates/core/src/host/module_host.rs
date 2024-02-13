@@ -11,8 +11,7 @@ use tokio::sync::oneshot;
 
 use super::host_controller::HostThreadpool;
 use super::{ArgsTuple, EnergyDiff, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
-use super::{ArgsTuple, EnergyDiff, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
-use crate::client::{ClientActorId, ClientConnectionSender};
+use crate::client::ClientConnectionSender;
 use crate::database_logger::LogLevel;
 use crate::db::datastore::traits::{TxData, TxOp};
 use crate::db::relational_db::RelationalDB;
