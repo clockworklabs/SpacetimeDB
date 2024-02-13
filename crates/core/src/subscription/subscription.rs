@@ -25,12 +25,13 @@
 
 use anyhow::Context;
 use derive_more::{Deref, DerefMut, From, IntoIterator};
+use itertools::Itertools;
 use std::collections::{btree_set, BTreeSet, HashMap, HashSet};
 use std::ops::Deref;
 use std::time::Instant;
 
 use crate::db::db_metrics::{DB_METRICS, MAX_QUERY_CPU_TIME};
-use crate::db::relational_db::Tx;
+use crate::db::relational_db::{MutTx, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::{ExecutionContext, WorkloadType};
 use crate::subscription::query::{run_query, to_mem_table_with_op_type, OP_TYPE_FIELD_NAME};
@@ -41,9 +42,11 @@ use crate::{
 };
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{Address, PrimaryKey};
+use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
+use spacetimedb_sats::db::def::{ColumnDef, IndexDef, TableDef};
 use spacetimedb_sats::relation::{DbTable, Header, MemTable, RelValue, Relation};
-use spacetimedb_sats::{AlgebraicValue, DataKey, ProductValue};
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue, DataKey, ProductValue};
 use spacetimedb_vm::expr::{self, IndexJoin, QueryExpr};
 
 use super::query;
@@ -744,54 +747,49 @@ fn with_delta_table(mut join: IndexJoin, index_side: bool, delta: DatabaseTableU
     join
 }
 
+pub fn create_table(
+    db: &RelationalDB,
+    tx: &mut MutTx,
+    name: &str,
+    schema: &[(&str, AlgebraicType)],
+    indexes: &[(ColId, &str)],
+) -> Result<TableId, DBError> {
+    let table_name = name.to_string();
+    let table_type = StTableType::User;
+    let table_access = StAccess::Public;
+
+    let columns = schema
+        .iter()
+        .map(|(col_name, col_type)| ColumnDef {
+            col_name: col_name.to_string(),
+            col_type: col_type.clone(),
+        })
+        .collect_vec();
+
+    let indexes = indexes
+        .iter()
+        .map(|(col_id, index_name)| IndexDef::btree(index_name.to_string(), *col_id, false))
+        .collect_vec();
+
+    let schema = TableDef::new(table_name, columns)
+        .with_indexes(indexes)
+        .with_type(table_type)
+        .with_access(table_access);
+
+    db.create_table(tx, schema)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::db::relational_db::tests_utils::make_test_db;
-    use crate::db::relational_db::MutTx;
     use crate::host::module_host::TableOp;
     use crate::sql::compiler::compile_sql;
-    use itertools::Itertools;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::data_key::ToDataKey;
-    use spacetimedb_sats::db::auth::{StAccess, StTableType};
-    use spacetimedb_sats::db::def::*;
     use spacetimedb_sats::relation::{FieldName, Table};
     use spacetimedb_sats::{product, AlgebraicType};
     use spacetimedb_vm::expr::{CrudExpr, IndexJoin, Query, SourceExpr};
-
-    fn create_table(
-        db: &RelationalDB,
-        tx: &mut MutTx,
-        name: &str,
-        schema: &[(&str, AlgebraicType)],
-        indexes: &[(ColId, &str)],
-    ) -> Result<TableId, DBError> {
-        let table_name = name.to_string();
-        let table_type = StTableType::User;
-        let table_access = StAccess::Public;
-
-        let columns = schema
-            .iter()
-            .map(|(col_name, col_type)| ColumnDef {
-                col_name: col_name.to_string(),
-                col_type: col_type.clone(),
-            })
-            .collect_vec();
-
-        let indexes = indexes
-            .iter()
-            .map(|(col_id, index_name)| IndexDef::btree(index_name.to_string(), *col_id, false))
-            .collect_vec();
-
-        let schema = TableDef::new(table_name, columns)
-            .with_indexes(indexes)
-            .with_type(table_type)
-            .with_access(table_access);
-
-        db.create_table(tx, schema)
-    }
 
     #[test]
     // Compile an index join after replacing the index side with a virtual table.
