@@ -537,9 +537,9 @@ fn autogen_csharp_access_funcs_for_struct(
 
         let filter_return_type = fmt_fn(|f| {
             if is_unique {
-                f.write_str(struct_name_pascal_case)
+                write!(f, "{struct_name_pascal_case}?")
             } else {
-                write!(f, "System.Collections.Generic.IEnumerable<{}>", struct_name_pascal_case)
+                write!(f, "System.Collections.Generic.IEnumerable<{struct_name_pascal_case}>")
             }
         });
 
