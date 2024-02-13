@@ -36,8 +36,8 @@ fn maybe_primitive(b: &BuiltinType) -> MaybePrimitive {
         BuiltinType::I128 => "i128",
         BuiltinType::U128 => "u128",
         BuiltinType::String => "String",
-        BuiltinType::F32 => "f32",
-        BuiltinType::F64 => "f64",
+        BuiltinType::F32 => "F32",
+        BuiltinType::F64 => "F64",
         BuiltinType::Array(ty) => return MaybePrimitive::Array(ty),
         BuiltinType::Map(m) => return MaybePrimitive::Map(m),
     })
@@ -163,7 +163,7 @@ const ALLOW_UNUSED: &str = "#[allow(unused)]";
 const SPACETIMEDB_IMPORTS: &[&str] = &[
     "use spacetimedb_sdk::{",
     "\tAddress,",
-    "\tsats::{ser::Serialize, de::Deserialize},",
+    "\tsats::{ser::Serialize, de::Deserialize, F32, F64},",
     "\ttable::{TableType, TableIter, TableWithPrimaryKey},",
     "\treducer::{Reducer, ReducerCallbackId, Status},",
     "\tidentity::Identity,",
@@ -193,7 +193,7 @@ fn print_file_header(output: &mut Indenter) {
 //    - Complicated because `HashMap` is not `Hash`.
 // - others?
 
-const ENUM_DERIVES: &[&str] = &["#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]"];
+const ENUM_DERIVES: &[&str] = &["#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Debug)]"];
 
 fn print_enum_derives(output: &mut Indenter) {
     print_lines(output, ENUM_DERIVES);
@@ -372,16 +372,14 @@ pub fn rust_reducer_file_name(type_name: &str) -> String {
     filename + "_reducer.rs"
 }
 
-const STRUCT_DERIVES: &[&str] = &["#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]"];
+const STRUCT_DERIVES: &[&str] = &["#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Debug)]"];
 
 fn print_struct_derives(output: &mut Indenter) {
     print_lines(output, STRUCT_DERIVES);
 }
 
 fn begin_rust_struct_def_shared(ctx: &GenCtx, out: &mut Indenter, name: &str, elements: &[ProductTypeElement]) {
-    print_auto_generated_file_comment(out);
-
-    print_spacetimedb_imports(out);
+    print_file_header(out);
 
     // Pass this file into `gen_and_print_imports` to avoid recursively importing self
     // for recursive types.
@@ -732,10 +730,7 @@ pub fn autogen_rust_globals(ctx: &GenCtx, items: &[GenItem]) -> Vec<Vec<(String,
     let out = &mut output;
 
     // Warn people not to edit the file by hand.
-    print_auto_generated_file_comment(out);
-
-    // Import everything all the other files import.
-    print_spacetimedb_imports(out);
+    print_file_header(out);
 
     // Import some extra stuff, just for the root module.
     print_dispatch_imports(out);

@@ -2,7 +2,6 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused_imports)]
-
 use spacetimedb_sdk::callbacks::{DbCallbacks, ReducerCallbacks};
 use spacetimedb_sdk::client_api_messages::{Event, TableUpdate};
 use spacetimedb_sdk::client_cache::{ClientCache, RowCallbackReminders};
@@ -14,7 +13,7 @@ use spacetimedb_sdk::{
     anyhow::{anyhow, Result},
     identity::Identity,
     reducer::{Reducer, ReducerCallbackId, Status},
-    sats::{de::Deserialize, ser::Serialize},
+    sats::{de::Deserialize, ser::Serialize, F32, F64},
     spacetimedb_lib,
     table::{TableIter, TableType, TableWithPrimaryKey},
     Address,
@@ -460,7 +459,7 @@ pub use vec_u_8::*;
 pub use vec_unit_struct::*;
 
 #[allow(unused)]
-#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Debug)]
 pub enum ReducerEvent {
     DeletePkAddress(delete_pk_address_reducer::DeletePkAddressArgs),
     DeletePkBool(delete_pk_bool_reducer::DeletePkBoolArgs),

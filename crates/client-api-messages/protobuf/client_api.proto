@@ -179,10 +179,6 @@ message TableUpdate {
 /// - `op` of `INSERT` means that the row in question has been either newly inserted or
 ///                    updated, and is resident in the table.
 ///
-/// - `row_pk` is a hash of the row computed by the database. As of 2023-06-13, even for
-///            tables with a `#[primarykey]` annotation on one column, the `row_pk` is not
-///            that primary key.
-///
 /// - `row` is the row itself, encoded as BSATN.
 message TableRowOperation {
     enum OperationType {
@@ -190,7 +186,6 @@ message TableRowOperation {
         INSERT = 1;
     }
     OperationType op = 1;
-    bytes row_pk = 2;
     bytes row = 3;
 }
 

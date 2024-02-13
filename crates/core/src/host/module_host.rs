@@ -109,7 +109,6 @@ impl DatabaseUpdate {
                                 } else {
                                     table_row_operation::OperationType::Delete.into()
                                 },
-                                row_pk: op.row_pk,
                                 row: row_bytes,
                             }
                         })

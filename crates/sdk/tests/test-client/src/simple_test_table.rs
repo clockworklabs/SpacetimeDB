@@ -1,6 +1,11 @@
 use crate::module_bindings::*;
 use anyhow::anyhow;
-use spacetimedb_sdk::{identity::Identity, table::TableType, Address};
+use spacetimedb_sdk::{
+    identity::Identity,
+    spacetimedb_lib::sats::{F32, F64},
+    table::TableType,
+    Address,
+};
 use std::sync::Arc;
 use test_counter::TestCounter;
 
@@ -113,13 +118,13 @@ impl_simple_test_table! {
     }
 
     OneF32 {
-        Contents = f32;
+        Contents = F32;
         field_name = f;
         insert_reducer = insert_one_f_32;
         insert_reducer_event = InsertOneF32;
     }
     OneF64 {
-        Contents = f64;
+        Contents = F64;
         field_name = f;
         insert_reducer = insert_one_f_64;
         insert_reducer_event = InsertOneF64;
@@ -254,13 +259,13 @@ impl_simple_test_table! {
     }
 
     VecF32 {
-        Contents = Vec<f32>;
+        Contents = Vec<F32>;
         field_name = f;
         insert_reducer = insert_vec_f_32;
         insert_reducer_event = InsertVecF32;
     }
     VecF64 {
-        Contents = Vec<f64>;
+        Contents = Vec<F64>;
         field_name = f;
         insert_reducer = insert_vec_f_64;
         insert_reducer_event = InsertVecF64;
