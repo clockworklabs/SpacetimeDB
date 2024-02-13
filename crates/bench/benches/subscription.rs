@@ -84,7 +84,7 @@ fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> Database
     }
 }
 
-fn eval_incr_join(c: &mut Criterion) {
+fn eval(c: &mut Criterion) {
     let tmp_dir = TempDir::new("stdb_test").unwrap();
     let db = open_db(&tmp_dir, false, false).unwrap();
 
@@ -97,7 +97,7 @@ fn eval_incr_join(c: &mut Criterion) {
             let owner = entity_id % 1_000;
             let footprint = AlgebraicValue::sum(entity_id as u8 % 4, AlgebraicValue::unit());
             let row = product!(entity_id, footprint, owner);
-            let _ = db.insert(tx, rhs, row)?;
+            let _ = db.insert(tx, lhs, row)?;
         }
         Ok(())
     });
@@ -136,13 +136,40 @@ fn eval_incr_join(c: &mut Criterion) {
         ],
     };
 
-    let tx = db.begin_tx();
-    let sql = "select footprint.* from footprint join location on footprint.entity_id = location.entity_id where location.chunk_index = 13";
-    let auth = AuthCtx::for_testing();
-    let query = compile_read_only_query(&db, &tx, &auth, sql).unwrap();
-
-    c.bench_function("insert", |b| {
+    // To profile this benchmark for 30s
+    // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- incr-select --exact --profile-time=30
+    c.bench_function("incr-select", |b| {
+        // A passthru executed independently of the database.
+        let select_lhs = "select * from footprint";
+        let select_rhs = "select * from location";
+        let auth = AuthCtx::for_testing();
         let tx = db.begin_tx();
+        let query_lhs = compile_read_only_query(&db, &tx, &auth, select_lhs).unwrap();
+        let query_rhs = compile_read_only_query(&db, &tx, &auth, select_rhs).unwrap();
+
+        let mut query = query_lhs;
+        query.extend(query_rhs);
+
+        b.iter(|| {
+            let out = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing()).unwrap();
+            black_box(out);
+        })
+    });
+
+    // To profile this benchmark for 30s
+    // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- incr-join --exact --profile-time=30
+    c.bench_function("incr-join", |b| {
+        // Not a passthru - requires reading of database state.
+        let join = format!(
+            "\
+            select footprint.* \
+            from footprint join location on footprint.entity_id = location.entity_id \
+            where location.chunk_index = {chunk_index}"
+        );
+        let auth = AuthCtx::for_testing();
+        let tx = db.begin_tx();
+        let query = compile_read_only_query(&db, &tx, &auth, &join).unwrap();
+
         b.iter(|| {
             let out = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing()).unwrap();
             black_box(out);
@@ -150,5 +177,5 @@ fn eval_incr_join(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, eval_incr_join);
+criterion_group!(benches, eval);
 criterion_main!(benches);
