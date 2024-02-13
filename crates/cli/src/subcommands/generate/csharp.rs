@@ -300,7 +300,7 @@ fn autogen_csharp_product_table_common(
 
             writeln!(
                 output,
-                "public {} {};",
+                "public required {} {};",
                 ty_fmt(ctx, &field.algebraic_type, namespace),
                 field_name.to_case(Case::Pascal)
             )
