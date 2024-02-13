@@ -532,39 +532,30 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
         {
             indent_scope!(output);
 
-            writeln!(output, "if(On{func_name_pascal_case}Event != null)").unwrap();
-            writeln!(output, "{{").unwrap();
+            writeln!(output, "if (On{func_name_pascal_case}Event == null) return false;").unwrap();
+            writeln!(
+                output,
+                "var args = ((ReducerEvent)dbEvent.FunctionCall.CallInfo).{func_name_pascal_case}Args;"
+            )
+            .unwrap();
+            writeln!(output, "On{func_name_pascal_case}Event(").unwrap();
+            // Write out arguments one per line
             {
                 indent_scope!(output);
-                writeln!(
-                    output,
-                    "var args = ((ReducerEvent)dbEvent.FunctionCall.CallInfo).{func_name_pascal_case}Args;"
-                )
-                .unwrap();
-                writeln!(
-                    output,
-                    "On{func_name_pascal_case}Event((ReducerEvent)dbEvent.FunctionCall.CallInfo"
-                )
-                .unwrap();
-                // Write out arguments one per line
-                {
-                    indent_scope!(output);
-                    for (i, arg) in reducer.args.iter().enumerate() {
-                        let arg_name = arg
-                            .name
-                            .clone()
-                            .unwrap_or_else(|| format!("arg_{}", i))
-                            .to_case(Case::Pascal);
-                        let arg_type_str = ty_fmt(ctx, &arg.algebraic_type, namespace);
-                        writeln!(output, ",({arg_type_str})args.{arg_name}").unwrap();
-                    }
+                write!(output, "(ReducerEvent)dbEvent.FunctionCall.CallInfo").unwrap();
+                for (i, arg) in reducer.args.iter().enumerate() {
+                    writeln!(output, ",").unwrap();
+                    let arg_name = arg
+                        .name
+                        .clone()
+                        .unwrap_or_else(|| format!("arg_{i}"))
+                        .to_case(Case::Pascal);
+                    write!(output, "args.{arg_name}").unwrap();
                 }
-                writeln!(output, ");").unwrap();
-                writeln!(output, "return true;").unwrap();
+                writeln!(output).unwrap();
             }
-            // Closing brace for if event is registered
-            writeln!(output, "}}").unwrap();
-            writeln!(output, "return false;").unwrap();
+            writeln!(output, ");").unwrap();
+            writeln!(output, "return true;").unwrap();
         }
         // Closing brace for Event parsing function
         writeln!(output, "}}").unwrap();
