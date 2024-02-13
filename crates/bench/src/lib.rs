@@ -1,5 +1,4 @@
 pub mod database;
-pub mod game;
 pub mod schemas;
 pub mod spacetime_module;
 pub mod spacetime_raw;
