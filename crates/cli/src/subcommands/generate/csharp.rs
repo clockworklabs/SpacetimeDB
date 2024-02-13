@@ -391,7 +391,7 @@ fn autogen_csharp_product_table_common(
                 "public delegate void DeleteEventHandler({name} deletedValue, {namespace}.ReducerEvent dbEvent);"
             )
             .unwrap();
-            writeln!(output, "public delegate void RowUpdateEventHandler(SpacetimeDBClient.TableOp op, {name} oldValue, {name} newValue, {namespace}.ReducerEvent dbEvent);").unwrap();
+            writeln!(output, "public delegate void RowUpdateEventHandler(SpacetimeDBClient.TableOp op, {name}? oldValue, {name}? newValue, {namespace}.ReducerEvent dbEvent);").unwrap();
             writeln!(output, "public static event InsertEventHandler? OnInsert;").unwrap();
             if has_primary_key {
                 writeln!(output, "public static event UpdateEventHandler? OnUpdate;").unwrap();
@@ -471,7 +471,7 @@ fn autogen_csharp_product_table_common(
                 indent_scope!(output);
                 writeln!(
                     output,
-                    "OnRowUpdate?.Invoke(op, ({name})oldValue, ({name})newValue, (ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
+                    "OnRowUpdate?.Invoke(op, ({name}?)oldValue, ({name}?)newValue, (ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
                 )
                 .unwrap();
             }
