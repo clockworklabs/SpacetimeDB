@@ -24,7 +24,7 @@ pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bo
     match cmd!("rustup", "target", "add", "wasm32-unknown-unknown").run() {
         Ok(_) => {}
         Err(err) => {
-            warn!("Failed to install wasm32-unknown-unknown target: {}. Is `rustup` installed?", err);
+            println!("Warning: Failed to install wasm32-unknown-unknown target: {}. Is `rustup` installed?", err);
         }
     }
 
