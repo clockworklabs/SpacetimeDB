@@ -8,6 +8,8 @@ use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::{
     impl_deserialize, impl_serialize, product, AlgebraicType, AlgebraicValue, ArrayValue, ProductValue,
 };
+use spacetimedb_table::table::RowRef;
+use std::ops::Deref as _;
 use strum::Display;
 
 /// The static ID of the table that defines tables
@@ -307,6 +309,43 @@ pub struct StTableRow<Name: AsRef<str>> {
     pub(crate) table_access: StAccess,
 }
 
+impl TryFrom<RowRef<'_>> for StTableRow<String> {
+    type Error = DBError;
+    // TODO(cloutiertyler): Noa, can we just decorate `StTableRow` with Deserialize or something instead?
+    fn try_from(row: RowRef<'_>) -> Result<StTableRow<String>, DBError> {
+        let table_id = row.read_col::<u32>(StTableFields::TableId.col_id())?.into();
+        let table_name = row.read_col(StTableFields::TableName.col_id())?;
+        let table_type = row
+            .read_col::<String>(StTableFields::TableType.col_id())?
+            .deref()
+            .try_into()
+            .map_err(|x: &str| TableError::DecodeField {
+                table: ST_TABLES_NAME.into(),
+                field: StTableFields::TableType.col_name(),
+                expect: format!("`{}` or `{}`", StTableType::System.as_str(), StTableType::User.as_str()),
+                found: x.to_string(),
+            })?;
+
+        let table_access = row
+            .read_col::<String>(StTableFields::TablesAccess.col_id())?
+            .deref()
+            .try_into()
+            .map_err(|x: &str| TableError::DecodeField {
+                table: ST_TABLES_NAME.into(),
+                field: StTableFields::TablesAccess.col_name(),
+                expect: format!("`{}` or `{}`", StAccess::Public.as_str(), StAccess::Private.as_str()),
+                found: x.to_string(),
+            })?;
+
+        Ok(StTableRow {
+            table_id,
+            table_name,
+            table_type,
+            table_access,
+        })
+    }
+}
+
 impl<'a> TryFrom<&'a ProductValue> for StTableRow<&'a str> {
     type Error = DBError;
     // TODO(cloutiertyler): Noa, can we just decorate `StTableRow` with Deserialize or something instead?
@@ -383,6 +422,27 @@ impl StColumnRow<&str> {
     }
 }
 
+impl TryFrom<RowRef<'_>> for StColumnRow<String> {
+    type Error = DBError;
+    fn try_from(row: RowRef<'_>) -> Result<StColumnRow<String>, DBError> {
+        let table_id = row.read_col::<u32>(StColumnFields::TableId.col_id())?.into();
+        let col_pos = row.read_col::<u32>(StColumnFields::ColPos.col_id())?.into();
+        let col_name = row.read_col::<String>(StColumnFields::ColName.col_id())?;
+
+        let bytes = row.read_col::<AlgebraicValue>(StColumnFields::ColType.col_id())?;
+        let bytes = bytes.as_bytes().unwrap_or_default();
+        let col_type =
+            AlgebraicType::decode(&mut &*bytes).map_err(|e| TableError::InvalidSchema(table_id, e.into()))?;
+
+        Ok(StColumnRow {
+            table_id,
+            col_pos,
+            col_name,
+            col_type,
+        })
+    }
+}
+
 impl<'a> TryFrom<&'a ProductValue> for StColumnRow<&'a str> {
     type Error = DBError;
     fn try_from(row: &'a ProductValue) -> Result<StColumnRow<&'a str>, DBError> {
@@ -433,7 +493,21 @@ impl StIndexRow<&str> {
     }
 }
 
-fn to_cols(row: &ProductValue, col_pos: ColId, col_name: &'static str) -> Result<ColList, DBError> {
+fn to_cols(row: RowRef<'_>, col_pos: ColId, col_name: &'static str) -> Result<ColList, DBError> {
+    let name = Some(col_name);
+    let cols = row.read_col(col_pos)?;
+    if let ArrayValue::U32(x) = &cols {
+        Ok(x.iter()
+            .map(|x| ColId::from(*x))
+            .collect::<ColListBuilder>()
+            .build()
+            .expect("empty ColList"))
+    } else {
+        Err(InvalidFieldError { name, col_pos }.into())
+    }
+}
+
+fn to_cols_old(row: &ProductValue, col_pos: ColId, col_name: &'static str) -> Result<ColList, DBError> {
     let index = col_pos.idx();
     let name = Some(col_name);
     let cols = row.field_as_array(index, name)?;
@@ -448,13 +522,38 @@ fn to_cols(row: &ProductValue, col_pos: ColId, col_name: &'static str) -> Result
     }
 }
 
+impl TryFrom<RowRef<'_>> for StIndexRow<String> {
+    type Error = DBError;
+    fn try_from(row: RowRef<'_>) -> Result<StIndexRow<String>, DBError> {
+        let index_id = row.read_col::<u32>(StIndexFields::IndexId.col_id())?.into();
+        let table_id = row.read_col::<u32>(StIndexFields::TableId.col_id())?.into();
+        let index_name = row.read_col::<String>(StIndexFields::IndexName.col_id())?;
+        let columns = to_cols(row, StIndexFields::Columns.col_id(), StIndexFields::Columns.name())?;
+        let is_unique = row.read_col::<bool>(StIndexFields::IsUnique.col_id())?;
+        let index_type = row.read_col::<u8>(StIndexFields::IndexType.col_id())?;
+        let index_type = IndexType::try_from(index_type).map_err(|_| InvalidFieldError {
+            col_pos: StIndexFields::IndexType.col_id(),
+            name: Some(StIndexFields::IndexType.name()),
+        })?;
+
+        Ok(StIndexRow {
+            index_id,
+            table_id,
+            index_name,
+            columns,
+            is_unique,
+            index_type,
+        })
+    }
+}
+
 impl<'a> TryFrom<&'a ProductValue> for StIndexRow<&'a str> {
     type Error = DBError;
     fn try_from(row: &'a ProductValue) -> Result<StIndexRow<&'a str>, DBError> {
         let index_id = row.field_as_u32(StIndexFields::IndexId.col_idx(), None)?.into();
         let table_id = row.field_as_u32(StIndexFields::TableId.col_idx(), None)?.into();
         let index_name = row.field_as_str(StIndexFields::IndexName.col_idx(), None)?;
-        let columns = to_cols(row, StIndexFields::Columns.col_id(), StIndexFields::Columns.name())?;
+        let columns = to_cols_old(row, StIndexFields::Columns.col_id(), StIndexFields::Columns.name())?;
         let is_unique = row.field_as_bool(StIndexFields::IsUnique.col_idx(), None)?;
         let index_type = row.field_as_u8(StIndexFields::IndexType.col_idx(), None)?;
         let index_type = IndexType::try_from(index_type).map_err(|_| InvalidFieldError {
@@ -512,6 +611,32 @@ impl<Name: AsRef<str>> StSequenceRow<Name> {
             max_value: self.max_value,
             allocated: self.allocated,
         }
+    }
+}
+
+impl<'a> TryFrom<RowRef<'_>> for StSequenceRow<String> {
+    type Error = DBError;
+    fn try_from(row: RowRef<'_>) -> Result<StSequenceRow<String>, DBError> {
+        let sequence_id = row.read_col::<u32>(StSequenceFields::SequenceId.col_id())?.into();
+        let sequence_name = row.read_col::<String>(StSequenceFields::SequenceName.col_id())?;
+        let table_id = row.read_col::<u32>(StSequenceFields::TableId.col_id())?.into();
+        let col_pos = row.read_col::<u32>(StSequenceFields::ColPos.col_id())?.into();
+        let increment = row.read_col::<i128>(StSequenceFields::Increment.col_id())?;
+        let start = row.read_col::<i128>(StSequenceFields::Start.col_id())?;
+        let min_value = row.read_col::<i128>(StSequenceFields::MinValue.col_id())?;
+        let max_value = row.read_col::<i128>(StSequenceFields::MaxValue.col_id())?;
+        let allocated = row.read_col::<i128>(StSequenceFields::Allocated.col_id())?;
+        Ok(StSequenceRow {
+            sequence_id,
+            sequence_name,
+            table_id,
+            col_pos,
+            increment,
+            start,
+            min_value,
+            max_value,
+            allocated,
+        })
     }
 }
 
@@ -594,6 +719,30 @@ impl StConstraintRow<&str> {
     }
 }
 
+impl TryFrom<RowRef<'_>> for StConstraintRow<String> {
+    type Error = DBError;
+    fn try_from(row: RowRef<'_>) -> Result<StConstraintRow<String>, DBError> {
+        let constraint_id = row.read_col::<u32>(StConstraintFields::ConstraintId.col_id())?.into();
+        let constraint_name = row.read_col::<String>(StConstraintFields::ConstraintName.col_id())?;
+        let constraints = row.read_col::<u8>(StConstraintFields::Constraints.col_id())?;
+        let constraints = Constraints::try_from(constraints).expect("Fail to decode Constraints");
+        let table_id = row.read_col::<u32>(StConstraintFields::TableId.col_id())?.into();
+        let columns = to_cols(
+            row,
+            StConstraintFields::Columns.col_id(),
+            StConstraintFields::Columns.name(),
+        )?;
+
+        Ok(StConstraintRow {
+            constraint_id,
+            constraint_name,
+            constraints,
+            table_id,
+            columns,
+        })
+    }
+}
+
 impl<'a> TryFrom<&'a ProductValue> for StConstraintRow<&'a str> {
     type Error = DBError;
     fn try_from(row: &'a ProductValue) -> Result<StConstraintRow<&'a str>, DBError> {
@@ -604,7 +753,7 @@ impl<'a> TryFrom<&'a ProductValue> for StConstraintRow<&'a str> {
         let constraints = row.field_as_u8(StConstraintFields::Constraints.col_idx(), None)?;
         let constraints = Constraints::try_from(constraints).expect("Fail to decode Constraints");
         let table_id = row.field_as_u32(StConstraintFields::TableId.col_idx(), None)?.into();
-        let columns = to_cols(
+        let columns = to_cols_old(
             row,
             StConstraintFields::Columns.col_id(),
             StConstraintFields::Columns.name(),

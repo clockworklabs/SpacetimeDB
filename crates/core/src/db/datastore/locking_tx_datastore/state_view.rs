@@ -72,110 +72,86 @@ pub(crate) trait StateView {
         }
 
         // Look up the table_name for the table in question.
-        let table_id_col = ColList::new(StTableFields::TableId.col_id());
-
-        // let table_id_col = ColList::new(.col_id());
+        let st_table_table_id_col = StTableFields::TableId.col_id().into();
         let value: AlgebraicValue = table_id.into();
-        let rows = self
-            .iter_by_col_eq(ctx, &ST_TABLES_ID, table_id_col, table_id.into())?
-            .collect::<Vec<_>>();
-        let row = rows
-            .first()
+        let row = self
+            .iter_by_col_eq(ctx, &ST_TABLES_ID, st_table_table_id_col, table_id.into())?
+            .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, table_id.into()))?;
-        let row = row.to_product_value();
-        let el = StTableRow::try_from(&row)?;
-        let table_name = el.table_name.to_owned();
-        let table_id = el.table_id;
+        let row = StTableRow::try_from(row)?;
+        let table_name: String = row.table_name;
+        let table_id: TableId = row.table_id;
+        let table_type = row.table_type;
+        let table_access = row.table_access;
 
         // Look up the columns for the table in question.
+        let st_columns_table_id_col = StColumnFields::TableId.col_id().into();
         let mut columns = self
-            .iter_by_col_eq(
-                ctx,
-                &ST_COLUMNS_ID,
-                ColList::new(StColumnFields::TableId.col_id()),
-                value,
-            )?
+            .iter_by_col_eq(ctx, &ST_COLUMNS_ID, st_columns_table_id_col, value)?
             .map(|row| {
-                let row = row.to_product_value();
-                let el = StColumnRow::try_from(&row)?;
+                let row = StColumnRow::try_from(row)?;
                 Ok(ColumnSchema {
-                    table_id: el.table_id,
-                    col_pos: el.col_pos,
-                    col_name: el.col_name.into(),
-                    col_type: el.col_type,
+                    table_id: row.table_id,
+                    col_pos: row.col_pos,
+                    col_name: row.col_name,
+                    col_type: row.col_type,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        columns.sort_by_key(|col| col.col_pos);
+
+        // Look up the constraints for the table in question.
+        let st_constraints_table_id = StConstraintFields::TableId.col_id().into();
+        let constraints = self
+            .iter_by_col_eq(ctx, &ST_CONSTRAINTS_ID, st_constraints_table_id, table_id.into())?
+            .map(|row| {
+                let row = StConstraintRow::try_from(row)?;
+                Ok(ConstraintSchema {
+                    constraint_id: row.constraint_id,
+                    constraint_name: row.constraint_name,
+                    constraints: row.constraints,
+                    table_id: row.table_id,
+                    columns: row.columns,
                 })
             })
             .collect::<Result<Vec<_>>>()?;
 
-        columns.sort_by_key(|col| col.col_pos);
-
-        // Look up the constraints for the table in question.
-        let mut constraints = Vec::new();
-        for data_ref in self.iter_by_col_eq(
-            ctx,
-            &ST_CONSTRAINTS_ID,
-            ColList::new(StConstraintFields::TableId.col_id()),
-            table_id.into(),
-        )? {
-            let row = data_ref.to_product_value();
-
-            let el = StConstraintRow::try_from(&row)?;
-            let constraint_schema = ConstraintSchema {
-                constraint_id: el.constraint_id,
-                constraint_name: el.constraint_name.to_string(),
-                constraints: el.constraints,
-                table_id: el.table_id,
-                columns: el.columns,
-            };
-            constraints.push(constraint_schema);
-        }
-
         // Look up the sequences for the table in question.
-        let mut sequences = Vec::new();
-        for data_ref in self.iter_by_col_eq(
-            ctx,
-            &ST_SEQUENCES_ID,
-            ColList::new(StSequenceFields::TableId.col_id()),
-            AlgebraicValue::U32(table_id.into()),
-        )? {
-            let row = data_ref.to_product_value();
-
-            let el = StSequenceRow::try_from(&row)?;
-            let sequence_schema = SequenceSchema {
-                sequence_id: el.sequence_id,
-                sequence_name: el.sequence_name.to_string(),
-                table_id: el.table_id,
-                col_pos: el.col_pos,
-                increment: el.increment,
-                start: el.start,
-                min_value: el.min_value,
-                max_value: el.max_value,
-                allocated: el.allocated,
-            };
-            sequences.push(sequence_schema);
-        }
+        let st_seq_table_id = StSequenceFields::TableId.col_id().into();
+        let sequences = self
+            .iter_by_col_eq(ctx, &ST_SEQUENCES_ID, st_seq_table_id, table_id.into())?
+            .map(|row| {
+                let row = StSequenceRow::try_from(row)?;
+                Ok(SequenceSchema {
+                    sequence_id: row.sequence_id,
+                    sequence_name: row.sequence_name,
+                    table_id: row.table_id,
+                    col_pos: row.col_pos,
+                    increment: row.increment,
+                    start: row.start,
+                    min_value: row.min_value,
+                    max_value: row.max_value,
+                    allocated: row.allocated,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
 
         // Look up the indexes for the table in question.
-        let mut indexes = Vec::new();
-        for data_ref in self.iter_by_col_eq(
-            ctx,
-            &ST_INDEXES_ID,
-            ColList::new(StIndexFields::TableId.col_id()),
-            table_id.into(),
-        )? {
-            let row = data_ref.to_product_value();
-
-            let el = StIndexRow::try_from(&row)?;
-            let index_schema = IndexSchema {
-                table_id: el.table_id,
-                columns: el.columns,
-                index_name: el.index_name.into(),
-                is_unique: el.is_unique,
-                index_id: el.index_id,
-                index_type: el.index_type,
-            };
-            indexes.push(index_schema);
-        }
+        let st_idx_table_id = StIndexFields::TableId.col_id().into();
+        let indexes = self
+            .iter_by_col_eq(ctx, &ST_INDEXES_ID, st_idx_table_id, table_id.into())?
+            .map(|row| {
+                let row = StIndexRow::try_from(row)?;
+                Ok(IndexSchema {
+                    table_id: row.table_id,
+                    columns: row.columns,
+                    index_name: row.index_name,
+                    is_unique: row.is_unique,
+                    index_id: row.index_id,
+                    index_type: row.index_type,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
 
         Ok(Cow::Owned(TableSchema::new(
             table_id,
@@ -184,8 +160,8 @@ pub(crate) trait StateView {
             indexes,
             constraints,
             sequences,
-            el.table_type,
-            el.table_access,
+            table_type,
+            table_access,
         )))
     }
 }
