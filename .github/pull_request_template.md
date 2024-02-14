@@ -16,8 +16,10 @@ These change(s) include:
 
 # Breaking changes
 
-_Does this change break API or ABI compatibility, or break the Rust library
-interface? **If so, please apply the corresponding GitHub label.**_
+*Does this change break API or ABI compatibility, or break the Rust library
+interface?*
+
+_**If so, please apply the corresponding GitHub label.**_
 
 # Expected complexity level and risk
 
