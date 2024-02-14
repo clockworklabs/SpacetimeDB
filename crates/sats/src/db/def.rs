@@ -628,12 +628,7 @@ impl TableSchema {
     /// Project the fields from the supplied `indexes`.
     pub fn project(&self, indexes: impl Iterator<Item = ColId>) -> Result<Vec<&ColumnSchema>, InvalidFieldError> {
         indexes
-            .map(|index| {
-                self.get_column(index.0 as usize).ok_or(InvalidFieldError {
-                    col_pos: index,
-                    name: None,
-                })
-            })
+            .map(|index| self.get_column(index.0 as usize).ok_or_else(|| index.into()))
             .collect()
     }
 

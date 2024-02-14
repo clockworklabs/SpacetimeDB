@@ -71,6 +71,12 @@ pub struct InvalidFieldError {
     pub name: Option<&'static str>,
 }
 
+impl From<ColId> for InvalidFieldError {
+    fn from(col_pos: ColId) -> Self {
+        Self { col_pos, name: None }
+    }
+}
+
 impl ProductValue {
     /// Borrow the value at field of `self` identified by `col_pos`.
     ///
