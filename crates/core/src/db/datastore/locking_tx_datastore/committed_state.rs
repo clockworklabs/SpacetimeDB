@@ -308,10 +308,9 @@ impl CommittedState {
         let st_indexes = self.tables.get(&ST_INDEXES_ID).unwrap();
         let rows = st_indexes
             .scan_rows(&self.blob_store)
-            .map(|r| r.to_product_value())
-            .collect::<Vec<_>>();
-        for row in rows {
-            let index_row = StIndexRow::try_from(&row)?;
+            .map(|row| StIndexRow::try_from(row))
+            .collect::<Result<Vec<_>>>()?;
+        for index_row in rows {
             let Some((table, blob_store)) = self.get_table_and_blob_store(index_row.table_id) else {
                 panic!("Cannot create index for table which doesn't exist in committed state");
             };
