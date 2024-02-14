@@ -322,8 +322,8 @@ fn exec_insert_primitive() {
 
             insert_one::<OneBool>(&test_counter, false);
 
-            insert_one::<OneF32>(&test_counter, 0.0.into());
-            insert_one::<OneF64>(&test_counter, 0.0.into());
+            insert_one::<OneF32>(&test_counter, 0.0);
+            insert_one::<OneF64>(&test_counter, 0.0);
 
             insert_one::<OneString>(&test_counter, "".to_string());
 
@@ -816,8 +816,8 @@ fn exec_insert_vec() {
 
             insert_one::<VecBool>(&test_counter, vec![false, true]);
 
-            insert_one::<VecF32>(&test_counter, vec![0.0.into(), 1.0.into()]);
-            insert_one::<VecF64>(&test_counter, vec![0.0.into(), 1.0.into()]);
+            insert_one::<VecF32>(&test_counter, vec![0.0, 1.0]);
+            insert_one::<VecF64>(&test_counter, vec![0.0, 1.0]);
 
             insert_one::<VecString>(&test_counter, vec!["zero".to_string(), "one".to_string()]);
 
@@ -864,8 +864,8 @@ fn exec_insert_struct() {
                     i: -4,
                     j: -5,
                     k: false,
-                    l: 1.0.into(),
-                    m: (-1.0).into(),
+                    l: 1.0,
+                    m: -1.0,
                     n: "string".to_string(),
                     o: identity().unwrap(),
                     p: address().unwrap(),
@@ -885,8 +885,8 @@ fn exec_insert_struct() {
                     i: vec![-4, -4, -4, -4],
                     j: vec![-5, -5, -5, -5, -5],
                     k: vec![false, true, true, false],
-                    l: vec![0.0.into(), (-1.0).into(), 1.0.into(), (-2.0).into(), 2.0.into()],
-                    m: vec![0.0.into(), (-0.5).into(), 0.5.into(), (-1.5).into(), 1.5.into()],
+                    l: vec![0.0, -1.0, 1.0, -2.0, 2.0],
+                    m: vec![0.0, -0.5, 0.5, -1.5, 1.5],
                     n: ["vec", "of", "strings"].into_iter().map(str::to_string).collect(),
                     o: vec![identity().unwrap()],
                     p: vec![address().unwrap()],
@@ -909,8 +909,8 @@ fn exec_insert_struct() {
                     i: -4,
                     j: -5,
                     k: false,
-                    l: 1.0.into(),
-                    m: (-1.0).into(),
+                    l: 1.0,
+                    m: -1.0,
                     n: "string".to_string(),
                     o: identity().unwrap(),
                     p: address().unwrap(),
@@ -930,8 +930,8 @@ fn exec_insert_struct() {
                     i: vec![-4, -4, -4, -4],
                     j: vec![-5, -5, -5, -5, -5],
                     k: vec![false, true, true, false],
-                    l: vec![0.0.into(), (-1.0).into(), 1.0.into(), (-2.0).into(), 2.0.into()],
-                    m: vec![0.0.into(), (-0.5).into(), 0.5.into(), (-1.5).into(), 1.5.into()],
+                    l: vec![0.0, -1.0, 1.0, -2.0, 2.0],
+                    m: vec![0.0, -0.5, 0.5, -1.5, 1.5],
                     n: ["vec", "of", "strings"].into_iter().map(str::to_string).collect(),
                     o: vec![identity().unwrap()],
                     p: vec![address().unwrap()],
@@ -1006,8 +1006,8 @@ fn exec_insert_enum_with_payload() {
                     EnumWithPayload::I64(-3),
                     EnumWithPayload::I128(-4),
                     EnumWithPayload::Bool(true),
-                    EnumWithPayload::F32(0.0.into()),
-                    EnumWithPayload::F64(100.0.into()),
+                    EnumWithPayload::F32(0.0),
+                    EnumWithPayload::F64(100.0),
                     EnumWithPayload::Str("enum holds string".to_string()),
                     EnumWithPayload::Identity(identity().unwrap()),
                     EnumWithPayload::Bytes(vec![0xde, 0xad, 0xbe, 0xef]),
@@ -1084,8 +1084,8 @@ fn exec_insert_long_table() {
                 i: -3,
                 j: -4,
                 k: false,
-                l: 0.0.into(),
-                m: 1.0.into(),
+                l: 0.0,
+                m: 1.0,
                 n: "string".to_string(),
                 o: identity().unwrap(),
                 p: address().unwrap(),
@@ -1102,8 +1102,8 @@ fn exec_insert_long_table() {
                 i: vec![-3],
                 j: vec![-4],
                 k: vec![false],
-                l: vec![0.0.into()],
-                m: vec![1.0.into()],
+                l: vec![0.0],
+                m: vec![1.0],
                 n: vec!["string".to_string()],
                 o: vec![identity().unwrap()],
                 p: vec![address().unwrap()],
@@ -1157,8 +1157,8 @@ fn exec_insert_long_table() {
                 -3,
                 -4,
                 false,
-                0.0.into(),
-                1.0.into(),
+                0.0,
+                1.0,
                 "string".to_string(),
                 SimpleEnum::Zero,
                 EnumWithPayload::Bool(false),

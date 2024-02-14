@@ -6,13 +6,13 @@ use spacetimedb_sdk::{
     anyhow::{anyhow, Result},
     identity::Identity,
     reducer::{Reducer, ReducerCallbackId, Status},
-    sats::{de::Deserialize, ser::Serialize, F32, F64},
+    sats::{de::Deserialize, ser::Serialize},
     spacetimedb_lib,
     table::{TableIter, TableType, TableWithPrimaryKey},
     Address,
 };
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct InsertPkI16Args {
     pub n: i16,
     pub data: i32,

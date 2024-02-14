@@ -6,15 +6,15 @@ use spacetimedb_sdk::{
     anyhow::{anyhow, Result},
     identity::Identity,
     reducer::{Reducer, ReducerCallbackId, Status},
-    sats::{de::Deserialize, ser::Serialize, F32, F64},
+    sats::{de::Deserialize, ser::Serialize},
     spacetimedb_lib,
     table::{TableIter, TableType, TableWithPrimaryKey},
     Address,
 };
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct InsertOneF32Args {
-    pub f: F32,
+    pub f: f32,
 }
 
 impl Reducer for InsertOneF32Args {
@@ -22,13 +22,13 @@ impl Reducer for InsertOneF32Args {
 }
 
 #[allow(unused)]
-pub fn insert_one_f_32(f: F32) {
+pub fn insert_one_f_32(f: f32) {
     InsertOneF32Args { f }.invoke();
 }
 
 #[allow(unused)]
 pub fn on_insert_one_f_32(
-    mut __callback: impl FnMut(&Identity, Option<Address>, &Status, &F32) + Send + 'static,
+    mut __callback: impl FnMut(&Identity, Option<Address>, &Status, &f32) + Send + 'static,
 ) -> ReducerCallbackId<InsertOneF32Args> {
     InsertOneF32Args::on_reducer(move |__identity, __addr, __status, __args| {
         let InsertOneF32Args { f } = __args;
@@ -38,7 +38,7 @@ pub fn on_insert_one_f_32(
 
 #[allow(unused)]
 pub fn once_on_insert_one_f_32(
-    __callback: impl FnOnce(&Identity, Option<Address>, &Status, &F32) + Send + 'static,
+    __callback: impl FnOnce(&Identity, Option<Address>, &Status, &f32) + Send + 'static,
 ) -> ReducerCallbackId<InsertOneF32Args> {
     InsertOneF32Args::once_on_reducer(move |__identity, __addr, __status, __args| {
         let InsertOneF32Args { f } = __args;

@@ -12,13 +12,13 @@ use spacetimedb_sdk::{
     anyhow::{anyhow, Result},
     identity::Identity,
     reducer::{Reducer, ReducerCallbackId, Status},
-    sats::{de::Deserialize, ser::Serialize, F32, F64},
+    sats::{de::Deserialize, ser::Serialize},
     spacetimedb_lib,
     table::{TableIter, TableType, TableWithPrimaryKey},
     Address,
 };
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct LargeTable {
     pub a: u8,
     pub b: u16,
@@ -31,8 +31,8 @@ pub struct LargeTable {
     pub i: i64,
     pub j: i128,
     pub k: bool,
-    pub l: F32,
-    pub m: F64,
+    pub l: f32,
+    pub m: f64,
     pub n: String,
     pub o: SimpleEnum,
     pub p: EnumWithPayload,
@@ -93,11 +93,11 @@ impl LargeTable {
         Self::filter(|row| row.k == k)
     }
     #[allow(unused)]
-    pub fn filter_by_l(l: F32) -> TableIter<Self> {
+    pub fn filter_by_l(l: f32) -> TableIter<Self> {
         Self::filter(|row| row.l == l)
     }
     #[allow(unused)]
-    pub fn filter_by_m(m: F64) -> TableIter<Self> {
+    pub fn filter_by_m(m: f64) -> TableIter<Self> {
         Self::filter(|row| row.m == m)
     }
     #[allow(unused)]

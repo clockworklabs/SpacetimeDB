@@ -7,7 +7,7 @@ use anymap::{
     any::{Any, CloneAny},
     Map,
 };
-use im::HashSet;
+use im::HashMap;
 use spacetimedb_sats::bsatn;
 use std::collections::HashMap as StdHashMap;
 use std::sync::Arc;
@@ -20,10 +20,18 @@ use std::sync::Arc;
 /// `handle_resubscribe` functions. Users should not reference this struct directly.
 #[derive(Clone)]
 pub struct TableCache<T: TableType> {
-    /// A set of rows.
+    /// A map of row-bytes to rows.
     ///
-    /// Note that this is an [`im::HashSet`], and so can be shared efficiently.
-    entries: HashSet<T>,
+    /// The keys are BSATN-serialized representations of the values.
+    /// Storing both the bytes and the deserialized rows allows us to have a `HashMap`
+    /// even when `T` is not `Hash + Eq`, e.g. for row types which contain floats.
+    /// We also suspect that hashing and equality comparisons for byte arrays
+    /// are more efficient than for domain types,
+    /// as they can be implemented directly via SIMD without skipping padding
+    /// or branching on enum variants.
+    ///
+    /// Note that this is an [`im::HashMap`], and so can be shared efficiently.
+    entries: HashMap<Vec<u8>, T>,
 }
 
 // In order to be resilient against future extensions to the protocol,
@@ -54,19 +62,25 @@ impl<T: TableType> TableCache<T> {
     }
 
     /// Insert `value` into the cache and invoke any on-insert callbacks.
-    fn insert(&mut self, callbacks: &mut Vec<RowCallback<T>>, value: T) {
+    ///
+    /// `row_bytes` should be the BSATN-serialized representation of `value`.
+    /// It will be used as the key in a `HashMap`.
+    fn insert(&mut self, callbacks: &mut Vec<RowCallback<T>>, row_bytes: Vec<u8>, value: T) {
         callbacks.push(RowCallback::Insert(value.clone()));
 
-        if self.entries.insert(value).is_some() {
+        if self.entries.insert(row_bytes, value).is_some() {
             log::warn!("Inserting a row already presint in table {:?}", T::TABLE_NAME);
         }
     }
 
     /// Delete `value` from the cache and invoke any on-delete callbacks.
-    fn delete(&mut self, callbacks: &mut Vec<RowCallback<T>>, value: T) {
-        callbacks.push(RowCallback::Delete(value.clone()));
+    ///
+    /// `row_bytes` should be the BSATN-serialized representation of `value`.
+    /// It will be used as the key in a `HashMap`.
+    fn delete(&mut self, callbacks: &mut Vec<RowCallback<T>>, row_bytes: Vec<u8>, value: T) {
+        callbacks.push(RowCallback::Delete(value));
 
-        if self.entries.remove(&value).is_none() {
+        if self.entries.remove(&row_bytes).is_none() {
             log::error!(
                 "Received delete for table {:?} row we weren't subscribed to",
                 T::TABLE_NAME
@@ -76,7 +90,7 @@ impl<T: TableType> TableCache<T> {
 
     fn new() -> TableCache<T> {
         TableCache {
-            entries: HashSet::new(),
+            entries: HashMap::new(),
         }
     }
 
@@ -99,11 +113,11 @@ impl<T: TableType> TableCache<T> {
             }
             Ok(value) => {
                 if op_is_delete(op) {
-                    log::trace!("Got delete event for {:?} row {:?}", T::TABLE_NAME, value,);
-                    self.delete(callbacks, value);
+                    log::trace!("Got delete event for {:?} row {:?}", T::TABLE_NAME, value);
+                    self.delete(callbacks, row, value);
                 } else if op_is_insert(op) {
-                    log::trace!("Got insert event for {:?} row {:?}", T::TABLE_NAME, value,);
-                    self.insert(callbacks, value);
+                    log::trace!("Got insert event for {:?} row {:?}", T::TABLE_NAME, value);
+                    self.insert(callbacks, row, value);
                 } else {
                     log::error!("Unknown table_row_operation::OperationType {}", op);
                 }
@@ -151,15 +165,15 @@ impl<T: TableType> TableCache<T> {
     // but it's can't be generic over `T`. So until we figure out a better way, we just
     // copy out of the `HashMap` into a `Vec`, and `into_iter` that.
     pub(crate) fn values(&self) -> Vec<T> {
-        self.entries.iter().cloned().collect()
+        self.entries.values().cloned().collect()
     }
 
     pub(crate) fn filter(&self, mut test: impl FnMut(&T) -> bool) -> Vec<T> {
-        self.entries.iter().filter(|&t| test(t)).cloned().collect()
+        self.entries.values().filter(|&t| test(t)).cloned().collect()
     }
 
     pub(crate) fn find(&self, mut test: impl FnMut(&T) -> bool) -> Option<T> {
-        self.entries.iter().find(|&t| test(t)).cloned()
+        self.entries.values().find(|&t| test(t)).cloned()
     }
 
     /// For each previously-subscribed row not in the `new_subs`, delete it from the cache
@@ -173,33 +187,33 @@ impl<T: TableType> TableCache<T> {
         // TODO: there should be a fast path where `self` is empty prior to this
         //       operation, where we avoid building a diff and just insert all the
         //       `new_subs`.
-        enum DiffEntry {
-            Insert,
-            Delete,
-            NoChange,
+        enum DiffEntry<T> {
+            Insert(T),
+            Delete(T),
+            NoChange(T),
         }
 
         let prev_subs = std::mem::take(&mut self.entries);
 
-        let mut diff: StdHashMap<T, DiffEntry> = StdHashMap::with_capacity(
+        let mut diff: StdHashMap<Vec<u8>, DiffEntry<T>> = StdHashMap::with_capacity(
             // pre-allocate plenty of space to avoid hash conflicts
             (new_subs.table_row_operations.len() + prev_subs.len()) * 2,
         );
 
-        for row in prev_subs.into_iter() {
+        for (row_bytes, value) in prev_subs.into_iter() {
             log::trace!(
                 "Initalizing table {:?}: row previously resident: {:?}",
                 T::TABLE_NAME,
-                row,
+                value,
             );
-            if diff.insert(row, DiffEntry::Delete).is_some() {
+            if diff.insert(row_bytes, DiffEntry::Delete(value)).is_some() {
                 // This should be impossible, but just in case...
                 log::error!("Found duplicate row in existing `TableCache` for {:?}", T::TABLE_NAME);
             }
         }
 
         for row_op in new_subs.table_row_operations.into_iter() {
-            let client_api_messages::TableRowOperation { op, row } = row_op;
+            let client_api_messages::TableRowOperation { op, row: row_bytes } = row_op;
 
             if !op_is_insert(op) {
                 log::error!(
@@ -209,55 +223,54 @@ impl<T: TableType> TableCache<T> {
                 continue;
             }
 
-            let row = match bsatn::from_slice(&row) {
-                Err(e) => {
-                    log::error!(
-                        "Error while deserializing row from `TableRowOperation`: {:?}. Row is {:?}",
-                        e,
-                        row
-                    );
-                    continue;
-                }
-                Ok(row) => row,
-            };
-
             // TODO: It would be cool to be able to do this with the `HashMap::entry` api,
             //       but I couldn't get the upgrade branch (i.e. the `DiffEntry::Delete`
             //       pattern) to borrowck, since `Entry` only provides `and_modify`, not
             //       `map`, and we need to move the row of the `Delete` into the
             //       `NoChange`.
-            match diff.remove(&row) {
-                None => {
-                    log::trace!("Initializing table {:?}: got new row {:?}.", T::TABLE_NAME, row);
-                    diff.insert(row, DiffEntry::Insert);
-                }
-                Some(diff_entry @ (DiffEntry::Insert | DiffEntry::NoChange)) => {
+            match diff.remove(&row_bytes) {
+                None => match bsatn::from_slice(&row_bytes) {
+                    Err(e) => {
+                        log::error!(
+                            "Error while deserializing row from `TableRowOperation`: {:?}. Row is {:?}",
+                            e,
+                            row_bytes,
+                        );
+                        continue;
+                    }
+                    Ok(row) => {
+                        log::trace!("Initializing table {:?}: got new row {:?}.", T::TABLE_NAME, row);
+                        diff.insert(row_bytes, DiffEntry::Insert(row));
+                    }
+                },
+
+                Some(diff_entry @ (DiffEntry::Insert(_) | DiffEntry::NoChange(_))) => {
                     log::warn!("Received duplicate `Insert` for {:?} in new set", T::TABLE_NAME);
-                    diff.insert(row, diff_entry);
+                    diff.insert(row_bytes, diff_entry);
                 }
-                Some(DiffEntry::Delete) => {
+                Some(DiffEntry::Delete(row)) => {
                     log::trace!("Initializing table {:?}: row {:?} remains present", T::TABLE_NAME, row);
-                    diff.insert(row, DiffEntry::NoChange);
+                    diff.insert(row_bytes, DiffEntry::NoChange(row));
                 }
             };
         }
 
-        for (row, diff_entry) in diff.into_iter() {
+        for (row_bytes, diff_entry) in diff.into_iter() {
             match diff_entry {
-                DiffEntry::Delete => {
+                DiffEntry::Delete(row) => {
                     // Invoke `on_delete` callbacks; the row was previously resident but
                     // is going away.
                     callbacks.push(RowCallback::Delete(row));
                 }
-                DiffEntry::NoChange => {
+                DiffEntry::NoChange(row) => {
                     // Insert into the new cache table, but do not invoke `on_insert`
                     // callbacks; the row was already resident.
-                    self.entries.insert(row);
+                    self.entries.insert(row_bytes, row);
                 }
-                DiffEntry::Insert => {
+                DiffEntry::Insert(row) => {
                     // Insert into the new cache table and invoke `on_insert` callbacks;
                     // the row is new.
-                    self.insert(callbacks, row);
+                    self.insert(callbacks, row_bytes, row);
                 }
             }
         }
@@ -276,9 +289,14 @@ impl<T: TableWithPrimaryKey> TableCache<T> {
         log::trace!("Handling TableUpdate for table {:?} with primary key", T::TABLE_NAME);
 
         enum DiffEntry<T> {
-            Insert(T),
-            Delete(T),
-            Update { old: T, new: T },
+            Insert(Vec<u8>, T),
+            Delete(Vec<u8>, T),
+            Update {
+                old: T,
+                old_bytes: Vec<u8>,
+                new: T,
+                new_bytes: Vec<u8>,
+            },
         }
 
         fn merge_diff_entries<T: std::fmt::Debug>(left: DiffEntry<T>, right: Option<DiffEntry<T>>) -> DiffEntry<T> {
@@ -288,47 +306,52 @@ impl<T: TableWithPrimaryKey> TableCache<T> {
                     log::warn!("Received a third `TableRowOperation` for a row which already has an `Update` within one `TableUpdate`");
                     u
                 }
-                (DiffEntry::Insert(new), Some(DiffEntry::Delete(old)))
-                | (DiffEntry::Delete(old), Some(DiffEntry::Insert(new))) => DiffEntry::Update { old, new },
-                (DiffEntry::Insert(left), Some(DiffEntry::Insert(right))) => {
+                (DiffEntry::Insert(new_bytes, new), Some(DiffEntry::Delete(old_bytes, old)))
+                | (DiffEntry::Delete(old_bytes, old), Some(DiffEntry::Insert(new_bytes, new))) => DiffEntry::Update {
+                    old,
+                    old_bytes,
+                    new,
+                    new_bytes,
+                },
+                (DiffEntry::Insert(left_bytes, left), Some(DiffEntry::Insert(_, right))) => {
                     log::warn!(
                         "Received duplicate insert operations for a row within one `TableUpdate`: {:?}; {:?}",
                         left,
                         right,
                     );
-                    DiffEntry::Insert(left)
+                    DiffEntry::Insert(left_bytes, left)
                 }
-                (DiffEntry::Delete(left), Some(DiffEntry::Delete(right))) => {
+                (DiffEntry::Delete(left_bytes, left), Some(DiffEntry::Delete(_, right))) => {
                     log::warn!(
                         "Received duplicate delete operations for a row within one `TableUpdate`: {:?}; {:?}",
                         left,
                         right,
                     );
-                    DiffEntry::Delete(left)
+                    DiffEntry::Delete(left_bytes, left)
                 }
                 (DiffEntry::Update { .. }, _) => unreachable!(),
             }
         }
 
         fn parse_diff_entry<T: TableWithPrimaryKey>(
-            client_api_messages::TableRowOperation { op, row }: client_api_messages::TableRowOperation,
+            client_api_messages::TableRowOperation { op, row: row_bytes }: client_api_messages::TableRowOperation,
         ) -> Option<DiffEntry<T>> {
-            match bsatn::from_slice(&row) {
+            match bsatn::from_slice(&row_bytes) {
                 Err(e) => {
                     log::error!(
                         "Error while deserializing row from `TableRowOperation`: {:?}. Row is {:?}",
                         e,
-                        row
+                        row_bytes,
                     );
                     None
                 }
                 Ok(row) => {
                     if op_is_delete(op) {
-                        log::trace!("Got delete event for {:?} row {:?}", T::TABLE_NAME, row,);
-                        Some(DiffEntry::Delete(row))
+                        log::trace!("Got delete event for {:?} row {:?}", T::TABLE_NAME, row);
+                        Some(DiffEntry::Delete(row_bytes, row))
                     } else if op_is_insert(op) {
-                        log::trace!("Got insert event for {:?} row {:?}", T::TABLE_NAME, row,);
-                        Some(DiffEntry::Insert(row))
+                        log::trace!("Got insert event for {:?} row {:?}", T::TABLE_NAME, row);
+                        Some(DiffEntry::Insert(row_bytes, row))
                     } else {
                         log::error!("Unknown table_row_operation::OperationType {}", op);
                         None
@@ -339,8 +362,8 @@ impl<T: TableWithPrimaryKey> TableCache<T> {
 
         fn primary_key<T: TableWithPrimaryKey>(entry: &DiffEntry<T>) -> &T::PrimaryKey {
             match entry {
-                DiffEntry::Insert(new) => new.primary_key(),
-                DiffEntry::Delete(old) => old.primary_key(),
+                DiffEntry::Insert(_, new) => new.primary_key(),
+                DiffEntry::Delete(_, old) => old.primary_key(),
                 DiffEntry::Update { new, .. } => new.primary_key(),
             }
         }
@@ -364,25 +387,30 @@ impl<T: TableWithPrimaryKey> TableCache<T> {
         // Apply the `diff`.
         for diff_entry in diff.into_values() {
             match diff_entry {
-                DiffEntry::Insert(row) => self.insert(callbacks, row),
-                DiffEntry::Delete(row) => self.delete(callbacks, row),
-                DiffEntry::Update { new, old } => self.update(callbacks, old, new),
+                DiffEntry::Insert(row_bytes, row) => self.insert(callbacks, row_bytes, row),
+                DiffEntry::Delete(row_bytes, row) => self.delete(callbacks, row_bytes, row),
+                DiffEntry::Update {
+                    new,
+                    new_bytes,
+                    old,
+                    old_bytes,
+                } => self.update(callbacks, old_bytes, old, new_bytes, new),
             }
         }
     }
 
     /// Remove `old` from the cache and replace it with `new`,
     /// and invoke any on-update callbacks.
-    fn update(&mut self, callbacks: &mut Vec<RowCallback<T>>, old: T, new: T) {
-        callbacks.push(RowCallback::Update(old.clone(), new.clone()));
+    fn update(&mut self, callbacks: &mut Vec<RowCallback<T>>, old_bytes: Vec<u8>, old: T, new_bytes: Vec<u8>, new: T) {
+        callbacks.push(RowCallback::Update(old, new.clone()));
 
-        if self.entries.remove(&old).is_none() {
+        if self.entries.remove(&old_bytes).is_none() {
             log::warn!(
                 "Received update for not previously resident row in table {:?}",
                 T::TABLE_NAME,
             );
         }
-        if self.entries.insert(new).is_some() {
+        if self.entries.insert(new_bytes, new).is_some() {
             log::warn!(
                 "Received update with already present new row in table {:?}",
                 T::TABLE_NAME

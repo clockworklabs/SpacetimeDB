@@ -13,7 +13,7 @@ use spacetimedb_sdk::{
     anyhow::{anyhow, Result},
     identity::Identity,
     reducer::{Reducer, ReducerCallbackId, Status},
-    sats::{de::Deserialize, ser::Serialize, F32, F64},
+    sats::{de::Deserialize, ser::Serialize},
     spacetimedb_lib,
     table::{TableIter, TableType, TableWithPrimaryKey},
     Address,
@@ -459,7 +459,7 @@ pub use vec_u_8::*;
 pub use vec_unit_struct::*;
 
 #[allow(unused)]
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ReducerEvent {
     DeletePkAddress(delete_pk_address_reducer::DeletePkAddressArgs),
     DeletePkBool(delete_pk_bool_reducer::DeletePkBoolArgs),

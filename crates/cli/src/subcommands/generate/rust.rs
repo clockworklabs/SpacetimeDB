@@ -36,8 +36,8 @@ fn maybe_primitive(b: &BuiltinType) -> MaybePrimitive {
         BuiltinType::I128 => "i128",
         BuiltinType::U128 => "u128",
         BuiltinType::String => "String",
-        BuiltinType::F32 => "F32",
-        BuiltinType::F64 => "F64",
+        BuiltinType::F32 => "f32",
+        BuiltinType::F64 => "f64",
         BuiltinType::Array(ty) => return MaybePrimitive::Array(ty),
         BuiltinType::Map(m) => return MaybePrimitive::Map(m),
     })
@@ -163,7 +163,7 @@ const ALLOW_UNUSED: &str = "#[allow(unused)]";
 const SPACETIMEDB_IMPORTS: &[&str] = &[
     "use spacetimedb_sdk::{",
     "\tAddress,",
-    "\tsats::{ser::Serialize, de::Deserialize, F32, F64},",
+    "\tsats::{ser::Serialize, de::Deserialize},",
     "\ttable::{TableType, TableIter, TableWithPrimaryKey},",
     "\treducer::{Reducer, ReducerCallbackId, Status},",
     "\tidentity::Identity,",
@@ -193,7 +193,7 @@ fn print_file_header(output: &mut Indenter) {
 //    - Complicated because `HashMap` is not `Hash`.
 // - others?
 
-const ENUM_DERIVES: &[&str] = &["#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Debug)]"];
+const ENUM_DERIVES: &[&str] = &["#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]"];
 
 fn print_enum_derives(output: &mut Indenter) {
     print_lines(output, ENUM_DERIVES);
@@ -372,7 +372,7 @@ pub fn rust_reducer_file_name(type_name: &str) -> String {
     filename + "_reducer.rs"
 }
 
-const STRUCT_DERIVES: &[&str] = &["#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Debug)]"];
+const STRUCT_DERIVES: &[&str] = &["#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]"];
 
 fn print_struct_derives(output: &mut Indenter) {
     print_lines(output, STRUCT_DERIVES);

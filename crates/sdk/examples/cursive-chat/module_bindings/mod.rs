@@ -13,7 +13,7 @@ use spacetimedb_sdk::{
     anyhow::{anyhow, Result},
     identity::Identity,
     reducer::{Reducer, ReducerCallbackId, Status},
-    sats::{de::Deserialize, ser::Serialize, F32, F64},
+    sats::{de::Deserialize, ser::Serialize},
     spacetimedb_lib,
     table::{TableIter, TableType, TableWithPrimaryKey},
     Address,
@@ -31,7 +31,7 @@ pub use set_name_reducer::*;
 pub use user::*;
 
 #[allow(unused)]
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ReducerEvent {
     SendMessage(send_message_reducer::SendMessageArgs),
     SetName(set_name_reducer::SetNameArgs),

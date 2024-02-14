@@ -6,13 +6,13 @@ use spacetimedb_sdk::{
     anyhow::{anyhow, Result},
     identity::Identity,
     reducer::{Reducer, ReducerCallbackId, Status},
-    sats::{de::Deserialize, ser::Serialize, F32, F64},
+    sats::{de::Deserialize, ser::Serialize},
     spacetimedb_lib,
     table::{TableIter, TableType, TableWithPrimaryKey},
     Address,
 };
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct EveryVecStruct {
     pub a: Vec<u8>,
     pub b: Vec<u16>,
@@ -25,8 +25,8 @@ pub struct EveryVecStruct {
     pub i: Vec<i64>,
     pub j: Vec<i128>,
     pub k: Vec<bool>,
-    pub l: Vec<F32>,
-    pub m: Vec<F64>,
+    pub l: Vec<f32>,
+    pub m: Vec<f64>,
     pub n: Vec<String>,
     pub o: Vec<Identity>,
     pub p: Vec<Address>,

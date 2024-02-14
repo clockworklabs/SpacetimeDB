@@ -6,15 +6,15 @@ use spacetimedb_sdk::{
     anyhow::{anyhow, Result},
     identity::Identity,
     reducer::{Reducer, ReducerCallbackId, Status},
-    sats::{de::Deserialize, ser::Serialize, F32, F64},
+    sats::{de::Deserialize, ser::Serialize},
     spacetimedb_lib,
     table::{TableIter, TableType, TableWithPrimaryKey},
     Address,
 };
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct OneF64 {
-    pub f: F64,
+    pub f: f64,
 }
 
 impl TableType for OneF64 {
@@ -24,7 +24,7 @@ impl TableType for OneF64 {
 
 impl OneF64 {
     #[allow(unused)]
-    pub fn filter_by_f(f: F64) -> TableIter<Self> {
+    pub fn filter_by_f(f: f64) -> TableIter<Self> {
         Self::filter(|row| row.f == f)
     }
 }

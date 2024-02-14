@@ -6,13 +6,13 @@ use spacetimedb_sdk::{
     anyhow::{anyhow, Result},
     identity::Identity,
     reducer::{Reducer, ReducerCallbackId, Status},
-    sats::{de::Deserialize, ser::Serialize, F32, F64},
+    sats::{de::Deserialize, ser::Serialize},
     spacetimedb_lib,
     table::{TableIter, TableType, TableWithPrimaryKey},
     Address,
 };
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct EveryPrimitiveStruct {
     pub a: u8,
     pub b: u16,
@@ -25,8 +25,8 @@ pub struct EveryPrimitiveStruct {
     pub i: i64,
     pub j: i128,
     pub k: bool,
-    pub l: F32,
-    pub m: F64,
+    pub l: f32,
+    pub m: f64,
     pub n: String,
     pub o: Identity,
     pub p: Address,
