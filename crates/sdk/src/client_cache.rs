@@ -288,8 +288,8 @@ impl<T: TableWithPrimaryKey> TableCache<T> {
                     log::warn!("Received a third `TableRowOperation` for a row which already has an `Update` within one `TableUpdate`");
                     u
                 }
-                (DiffEntry::Insert(new), Some(DiffEntry::Delete(old))) => DiffEntry::Update { old, new },
-                (DiffEntry::Delete(old), Some(DiffEntry::Insert(new))) => DiffEntry::Update { old, new },
+                (DiffEntry::Insert(new), Some(DiffEntry::Delete(old)))
+                | (DiffEntry::Delete(old), Some(DiffEntry::Insert(new))) => DiffEntry::Update { old, new },
                 (DiffEntry::Insert(left), Some(DiffEntry::Insert(right))) => {
                     log::warn!(
                         "Received duplicate insert operations for a row within one `TableUpdate`: {:?}; {:?}",
