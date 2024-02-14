@@ -909,6 +909,30 @@ mod tests {
         row.read_col(0.into()).unwrap()
     }
 
+    fn collect_sorted<T: ReadColumn + Ord>(stdb: &RelationalDB, tx: &MutTx, table_id: TableId) -> ResultTest<Vec<T>> {
+        let mut rows = stdb
+            .iter_mut(&ExecutionContext::default(), tx, table_id)?
+            .map(read_first_col)
+            .collect::<Vec<T>>();
+        rows.sort();
+        Ok(rows)
+    }
+
+    fn collect_from_sorted<T: ReadColumn + Into<AlgebraicValue> + Ord>(
+        stdb: &RelationalDB,
+        tx: &MutTx,
+        table_id: TableId,
+        from: T,
+    ) -> ResultTest<Vec<T>> {
+        let from: AlgebraicValue = from.into();
+        let mut rows = stdb
+            .iter_by_col_range_mut(&ExecutionContext::default(), &tx, table_id, 0, from..)?
+            .map(read_first_col)
+            .collect::<Vec<T>>();
+        rows.sort();
+        Ok(rows)
+    }
+
     #[test]
     fn test_pre_commit() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
@@ -921,13 +945,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![0i32])?;
         stdb.insert(&mut tx, table_id, product![1i32])?;
 
-        let mut rows = stdb
-            .iter_mut(&ExecutionContext::default(), &tx, table_id)?
-            .map(read_first_col::<i32>)
-            .collect::<Vec<i32>>();
-        rows.sort();
-
-        assert_eq!(rows, vec![-1, 0, 1]);
+        assert_eq!(collect_sorted::<i32>(&stdb, &tx, table_id)?, vec![-1, 0, 1]);
         Ok(())
     }
 
@@ -945,13 +963,7 @@ mod tests {
         stdb.commit_tx(&ExecutionContext::default(), tx)?;
 
         let tx = stdb.begin_mut_tx();
-        let mut rows = stdb
-            .iter_mut(&ExecutionContext::default(), &tx, table_id)?
-            .map(|r| *r.to_product_value().elements[0].as_i32().unwrap())
-            .collect::<Vec<i32>>();
-        rows.sort();
-
-        assert_eq!(rows, vec![-1, 0, 1]);
+        assert_eq!(collect_sorted::<i32>(&stdb, &tx, table_id)?, vec![-1, 0, 1]);
         Ok(())
     }
 
@@ -967,13 +979,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![0i32])?;
         stdb.insert(&mut tx, table_id, product![1i32])?;
 
-        let mut rows = stdb
-            .iter_by_col_range_mut(&ExecutionContext::default(), &tx, table_id, 0, AlgebraicValue::I32(0)..)?
-            .map(|r| *r.to_product_value().elements[0].as_i32().unwrap())
-            .collect::<Vec<i32>>();
-        rows.sort();
-
-        assert_eq!(rows, vec![0, 1]);
+        assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i32)?, vec![0, 1]);
         Ok(())
     }
 
@@ -991,13 +997,7 @@ mod tests {
         stdb.commit_tx(&ExecutionContext::default(), tx)?;
 
         let tx = stdb.begin_mut_tx();
-        let mut rows = stdb
-            .iter_by_col_range_mut(&ExecutionContext::default(), &tx, table_id, 0, AlgebraicValue::I32(0)..)?
-            .map(|r| *r.to_product_value().elements[0].as_i32().unwrap())
-            .collect::<Vec<i32>>();
-        rows.sort();
-
-        assert_eq!(rows, vec![0, 1]);
+        assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i32)?, vec![0, 1]);
         Ok(())
     }
 
@@ -1044,14 +1044,7 @@ mod tests {
         stdb.rollback_mut_tx(&ctx, tx);
 
         let tx = stdb.begin_mut_tx();
-        let mut rows = stdb
-            .iter_mut(&ctx, &tx, table_id)?
-            .map(|r| *r.to_product_value().elements[0].as_i32().unwrap())
-            .collect::<Vec<i32>>();
-        rows.sort();
-
-        let expected: Vec<i32> = Vec::new();
-        assert_eq!(rows, expected);
+        assert_eq!(collect_sorted::<i32>(&stdb, &tx, table_id)?, Vec::<i32>::new());
         Ok(())
     }
 
@@ -1073,14 +1066,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![0i64])?;
         stdb.insert(&mut tx, table_id, product![0i64])?;
 
-        let mut rows = stdb
-            .iter_by_col_range_mut(&ExecutionContext::default(), &tx, table_id, 0, AlgebraicValue::I64(0)..)?
-            .map(|r| *r.to_product_value().elements[0].as_i64().unwrap())
-            .collect::<Vec<i64>>();
-        rows.sort();
-
-        assert_eq!(rows, vec![1, 2]);
-
+        assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?, vec![1, 2]);
         Ok(())
     }
 
@@ -1098,14 +1084,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![5i64])?;
         stdb.insert(&mut tx, table_id, product![6i64])?;
 
-        let mut rows = stdb
-            .iter_by_col_range_mut(&ExecutionContext::default(), &tx, table_id, 0, AlgebraicValue::I64(0)..)?
-            .map(|r| *r.to_product_value().elements[0].as_i64().unwrap())
-            .collect::<Vec<i64>>();
-        rows.sort();
-
-        assert_eq!(rows, vec![5, 6]);
-
+        assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?, vec![5, 6]);
         Ok(())
     }
 
@@ -1126,14 +1105,7 @@ mod tests {
         assert!(sequence.is_some(), "Sequence not created");
 
         stdb.insert(&mut tx, table_id, product![0i64])?;
-
-        let mut rows = stdb
-            .iter_by_col_range_mut(&ExecutionContext::default(), &tx, table_id, 0, AlgebraicValue::I64(0)..)?
-            .map(|r| *r.to_product_value().elements[0].as_i64().unwrap())
-            .collect::<Vec<i64>>();
-        rows.sort();
-
-        assert_eq!(rows, vec![1]);
+        assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?, vec![1]);
 
         stdb.commit_tx(&ExecutionContext::default(), tx)?;
         drop(stdb);
@@ -1142,17 +1114,10 @@ mod tests {
         let stdb = open_db(&tmp_dir, false, true)?;
 
         let mut tx = stdb.begin_mut_tx();
-
         stdb.insert(&mut tx, table_id, product![0i64])?;
 
-        let mut rows = stdb
-            .iter_by_col_range_mut(&ExecutionContext::default(), &tx, table_id, 0, AlgebraicValue::I64(0)..)?
-            .map(|r| *r.to_product_value().elements[0].as_i64().unwrap())
-            .collect::<Vec<i64>>();
-        rows.sort();
-
         // Check the second row start after `SEQUENCE_PREALLOCATION_AMOUNT`
-        assert_eq!(rows, vec![1, 4098]);
+        assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?, vec![1, 4098]);
         Ok(())
     }
 
@@ -1172,14 +1137,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![1i64])?;
         stdb.insert(&mut tx, table_id, product![1i64])?;
 
-        let mut rows = stdb
-            .iter_by_col_range_mut(&ExecutionContext::default(), &tx, table_id, 0, AlgebraicValue::I64(0)..)?
-            .map(|r| *r.to_product_value().elements[0].as_i64().unwrap())
-            .collect::<Vec<i64>>();
-        rows.sort();
-
-        assert_eq!(rows, vec![1]);
-
+        assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?, vec![1]);
         Ok(())
     }
 
@@ -1239,14 +1197,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![0i64])?;
         stdb.insert(&mut tx, table_id, product![0i64])?;
 
-        let mut rows = stdb
-            .iter_by_col_range_mut(&ExecutionContext::default(), &tx, table_id, 0, AlgebraicValue::I64(0)..)?
-            .map(|r| *r.to_product_value().elements[0].as_i64().unwrap())
-            .collect::<Vec<i64>>();
-        rows.sort();
-
-        assert_eq!(rows, vec![1, 2]);
-
+        assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?, vec![1, 2]);
         Ok(())
     }
 
