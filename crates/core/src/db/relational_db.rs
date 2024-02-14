@@ -926,25 +926,27 @@ mod tests {
     ) -> ResultTest<Vec<T>> {
         let from: AlgebraicValue = from.into();
         let mut rows = stdb
-            .iter_by_col_range_mut(&ExecutionContext::default(), &tx, table_id, 0, from..)?
+            .iter_by_col_range_mut(&ExecutionContext::default(), tx, table_id, 0, from..)?
             .map(read_first_col)
             .collect::<Vec<T>>();
         rows.sort();
         Ok(rows)
     }
 
+    fn insert_three_i32s(stdb: &RelationalDB, tx: &mut MutTx, table_id: TableId) -> ResultTest<()> {
+        for v in [-1, 0, 1] {
+            stdb.insert(tx, table_id, product![v])?;
+        }
+        Ok(())
+    }
+
     #[test]
     fn test_pre_commit() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
-
         let mut tx = stdb.begin_mut_tx();
-
         let table_id = stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
 
-        stdb.insert(&mut tx, table_id, product![-1i32])?;
-        stdb.insert(&mut tx, table_id, product![0i32])?;
-        stdb.insert(&mut tx, table_id, product![1i32])?;
-
+        insert_three_i32s(&stdb, &mut tx, table_id)?;
         assert_eq!(collect_sorted::<i32>(&stdb, &tx, table_id)?, vec![-1, 0, 1]);
         Ok(())
     }
@@ -957,9 +959,7 @@ mod tests {
 
         let table_id = stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
 
-        stdb.insert(&mut tx, table_id, product![-1i32])?;
-        stdb.insert(&mut tx, table_id, product![0i32])?;
-        stdb.insert(&mut tx, table_id, product![1i32])?;
+        insert_three_i32s(&stdb, &mut tx, table_id)?;
         stdb.commit_tx(&ExecutionContext::default(), tx)?;
 
         let tx = stdb.begin_mut_tx();
@@ -974,11 +974,7 @@ mod tests {
         let mut tx = stdb.begin_mut_tx();
 
         let table_id = stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
-
-        stdb.insert(&mut tx, table_id, product![-1i32])?;
-        stdb.insert(&mut tx, table_id, product![0i32])?;
-        stdb.insert(&mut tx, table_id, product![1i32])?;
-
+        insert_three_i32s(&stdb, &mut tx, table_id)?;
         assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i32)?, vec![0, 1]);
         Ok(())
     }
@@ -991,9 +987,7 @@ mod tests {
 
         let table_id = stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
 
-        stdb.insert(&mut tx, table_id, product![-1i32])?;
-        stdb.insert(&mut tx, table_id, product![0i32])?;
-        stdb.insert(&mut tx, table_id, product![1i32])?;
+        insert_three_i32s(&stdb, &mut tx, table_id)?;
         stdb.commit_tx(&ExecutionContext::default(), tx)?;
 
         let tx = stdb.begin_mut_tx();
@@ -1038,9 +1032,7 @@ mod tests {
         stdb.commit_tx(&ctx, tx)?;
 
         let mut tx = stdb.begin_mut_tx();
-        stdb.insert(&mut tx, table_id, product![-1i32])?;
-        stdb.insert(&mut tx, table_id, product![0i32])?;
-        stdb.insert(&mut tx, table_id, product![1i32])?;
+        insert_three_i32s(&stdb, &mut tx, table_id)?;
         stdb.rollback_mut_tx(&ctx, tx);
 
         let tx = stdb.begin_mut_tx();
