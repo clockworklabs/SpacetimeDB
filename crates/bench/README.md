@@ -127,6 +127,21 @@ See that f
 
 There are also some scripts that rely on external tools to extract data from the benchmarks.
 
+### OSX + Linux
+
+- [samply](https://github.com/mstange/samply/)
+
+```bash
+cargo install samply
+```
+Run *any* command to see perf data on Firefox:
+
+```bash
+# Note if the `cargo` command triggers compilation, it will also be captured in the profile.
+# Therefore it is useful to run this after the artifact has already been cached.
+samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- full-scan --exact --profile-time=30
+```
+
 ### OSX Only
 
 - [cargo-instrument](https://github.com/cmyr/cargo-instruments)
