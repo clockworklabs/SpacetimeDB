@@ -44,6 +44,8 @@ static class Utils
         );
     }
 
+    public static string MakeRwTypeParam(string typeParam) => typeParam + "RW";
+
     public static string GetTypeInfo(ITypeSymbol type)
     {
         // We need to distinguish handle nullable reference types specially:
@@ -61,7 +63,7 @@ static class Utils
         }
         return type switch
         {
-            ITypeParameterSymbol typeParameter => $"{typeParameter.Name}RW",
+            ITypeParameterSymbol typeParameter => MakeRwTypeParam(typeParameter.Name),
             INamedTypeSymbol namedType
                 => type.SpecialType switch
                 {
@@ -111,19 +113,19 @@ static class Utils
                 // (U)Int128 are not treated by C# as regular primitives, so we need to match them by type name.
                 "System.Int128" => "SpacetimeDB.BSATN.I128",
                 "System.UInt128" => "SpacetimeDB.BSATN.U128",
-                "System.Collections.Generic.List<T>" => "SpacetimeDB.BSATN.List",
+                "System.Collections.Generic.List<T>" => $"SpacetimeDB.BSATN.List",
                 "System.Collections.Generic.Dictionary<TKey, TValue>"
-                    => "SpacetimeDB.BSATN.Dictionary",
+                    => $"SpacetimeDB.BSATN.Dictionary",
                 // If we're here, then this is nullable *value* type like `int?`.
                 "System.Nullable<T>" => $"SpacetimeDB.BSATN.ValueOption",
                 var name when name.StartsWith("System.")
                     => throw new InvalidOperationException($"Unsupported system type {name}"),
-                _ => SymbolToName(type),
+                _ => $"{SymbolToName(type)}.BSATN"
             };
             if (type.IsGenericType)
             {
                 result +=
-                    $"<{string.Join(", ", Enumerable.Concat(type.TypeArguments.Select(t => t.Name), type.TypeArguments.Select(GetTypeInfo)))}>";
+                    $"<{string.Join(", ", type.TypeArguments.Select(t => t.Name).Concat(type.TypeArguments.Select(GetTypeInfo)))}>";
             }
             return result;
         }

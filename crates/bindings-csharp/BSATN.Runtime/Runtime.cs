@@ -1,272 +1,302 @@
-namespace SpacetimeDB.BSATN;
-
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
 
-// Normally, T will be the same as the type the interface is implemented on.
-// However, unlike Rust, C# doesn't allow implementing interfaces on built-in
-// types like primitives, enums, nullable types, etc. So, we have to use
-// wrapper classes sometimes that will take care of reading T while not being
-// T themselves.
-public interface IReadWrite<T>
+namespace SpacetimeDB.BSATN
 {
-    static abstract T Read(BinaryReader reader);
-    static abstract void Write(BinaryWriter writer, T value);
-}
-
-public class Enum<T> : IReadWrite<T>
-    where T : struct, System.Enum
-{
-    public static T Read(BinaryReader reader) =>
-        (T)System.Enum.ToObject(typeof(T), reader.ReadByte());
-
-    public static void Write(BinaryWriter writer, T value) =>
-        writer.Write(System.Convert.ToByte(value));
-}
-
-public class RefOption<Inner, InnerRW> : IReadWrite<Inner?>
-    where Inner : class
-    where InnerRW : IReadWrite<Inner>
-{
-    public static Inner? Read(BinaryReader reader) =>
-        reader.ReadBoolean() ? null : InnerRW.Read(reader);
-
-    public static void Write(BinaryWriter writer, Inner? value)
+    public interface IStructuralReadWrite
     {
-        writer.Write(value is null);
-        if (value is not null)
+        void ReadFields(BinaryReader reader);
+
+        void WriteFields(BinaryWriter writer);
+
+        static T Read<T>(BinaryReader reader)
+            where T : IStructuralReadWrite, new()
         {
-            InnerRW.Write(writer, value);
+            var result = new T();
+            result.ReadFields(reader);
+            return result;
         }
     }
-}
 
-// This implementation is nearly identical to RefOption. The only difference is the constraint on T.
-// Yes, this is dumb, but apparently you can't have *really* generic `T?` because,
-// despite identical bodies, compiler will desugar it to very different
-// types based on whether the constraint makes it a reference type or a value type.
-public class ValueOption<Inner, InnerRW> : IReadWrite<Inner?>
-    where Inner : struct
-    where InnerRW : IReadWrite<Inner>
-{
-    public static Inner? Read(BinaryReader reader) =>
-        reader.ReadBoolean() ? null : InnerRW.Read(reader);
-
-    public static void Write(BinaryWriter writer, Inner? value)
+    public interface IReadWrite<T>
     {
-        writer.Write(!value.HasValue);
-        if (value.HasValue)
+        T Read(BinaryReader reader);
+
+        void Write(BinaryWriter writer, T value);
+    }
+
+    public readonly struct Enum<T> : IReadWrite<T>
+        where T : struct, Enum
+    {
+        private static T Validate(T value)
         {
-            InnerRW.Write(writer, value.Value);
+            if (!Enum.IsDefined(typeof(T), value))
+            {
+                throw new ArgumentException(
+                    $"Value {value} is out of range of enum {typeof(T).Name}"
+                );
+            }
+            return value;
+        }
+
+        public T Read(BinaryReader reader) =>
+            Validate((T)Enum.ToObject(typeof(T), reader.ReadByte()));
+
+        public void Write(BinaryWriter writer, T value) =>
+            writer.Write(Convert.ToByte(Validate(value)));
+    }
+
+    public readonly struct RefOption<Inner, InnerRW> : IReadWrite<Inner?>
+        where Inner : class
+        where InnerRW : IReadWrite<Inner>, new()
+    {
+        private static readonly InnerRW innerRW = new();
+
+        public Inner? Read(BinaryReader reader) =>
+            reader.ReadBoolean() ? null : innerRW.Read(reader);
+
+        public void Write(BinaryWriter writer, Inner? value)
+        {
+            writer.Write(value is null);
+            if (value is not null)
+            {
+                innerRW.Write(writer, value);
+            }
         }
     }
-}
 
-public class Bool : IReadWrite<bool>
-{
-    public static bool Read(BinaryReader reader) => reader.ReadBoolean();
+    // This implementation is nearly identical to RefOption. The only difference is the constraint on T.
+    // Yes, this is dumb, but apparently you can't have *really* generic `T?` because,
+    // despite identical bodies, compiler will desugar it to very different
+    // types based on whether the constraint makes it a reference type or a value type.
+    public readonly struct ValueOption<Inner, InnerRW> : IReadWrite<Inner?>
+        where Inner : struct
+        where InnerRW : IReadWrite<Inner>, new()
+    {
+        private static readonly InnerRW innerRW = new();
 
-    public static void Write(BinaryWriter writer, bool value) => writer.Write(value);
-}
+        public Inner? Read(BinaryReader reader) =>
+            reader.ReadBoolean() ? null : innerRW.Read(reader);
 
-public class U8 : IReadWrite<byte>
-{
-    public static byte Read(BinaryReader reader) => reader.ReadByte();
+        public void Write(BinaryWriter writer, Inner? value)
+        {
+            writer.Write(!value.HasValue);
+            if (value.HasValue)
+            {
+                innerRW.Write(writer, value.Value);
+            }
+        }
+    }
 
-    public static void Write(BinaryWriter writer, byte value) => writer.Write(value);
-}
+    public readonly struct Bool : IReadWrite<bool>
+    {
+        public bool Read(BinaryReader reader) => reader.ReadBoolean();
 
-public class U16 : IReadWrite<ushort>
-{
-    public static ushort Read(BinaryReader reader) => reader.ReadUInt16();
+        public void Write(BinaryWriter writer, bool value) => writer.Write(value);
+    }
 
-    public static void Write(BinaryWriter writer, ushort value) => writer.Write(value);
-}
+    public readonly struct U8 : IReadWrite<byte>
+    {
+        public byte Read(BinaryReader reader) => reader.ReadByte();
 
-public class U32 : IReadWrite<uint>
-{
-    public static uint Read(BinaryReader reader) => reader.ReadUInt32();
+        public void Write(BinaryWriter writer, byte value) => writer.Write(value);
+    }
 
-    public static void Write(BinaryWriter writer, uint value) => writer.Write(value);
-}
+    public readonly struct U16 : IReadWrite<ushort>
+    {
+        public ushort Read(BinaryReader reader) => reader.ReadUInt16();
 
-public class U64 : IReadWrite<ulong>
-{
-    public static ulong Read(BinaryReader reader) => reader.ReadUInt64();
+        public void Write(BinaryWriter writer, ushort value) => writer.Write(value);
+    }
 
-    public static void Write(BinaryWriter writer, ulong value) => writer.Write(value);
-}
+    public readonly struct U32 : IReadWrite<uint>
+    {
+        public uint Read(BinaryReader reader) => reader.ReadUInt32();
+
+        public void Write(BinaryWriter writer, uint value) => writer.Write(value);
+    }
+
+    public readonly struct U64 : IReadWrite<ulong>
+    {
+        public ulong Read(BinaryReader reader) => reader.ReadUInt64();
+
+        public void Write(BinaryWriter writer, ulong value) => writer.Write(value);
+    }
 
 #if NET7_0_OR_GREATER
-public class U128 : IReadWrite<System.UInt128>
-{
-    public static System.UInt128 Read(BinaryReader reader) =>
-        new(reader.ReadUInt64(), reader.ReadUInt64());
-
-    public static void Write(BinaryWriter writer, System.UInt128 value)
+    public readonly struct U128 : IReadWrite<System.UInt128>
     {
-        writer.Write((ulong)(value >> 64));
-        writer.Write((ulong)value);
+        public System.UInt128 Read(BinaryReader reader) =>
+            new(reader.ReadUInt64(), reader.ReadUInt64());
+
+        public void Write(BinaryWriter writer, System.UInt128 value)
+        {
+            writer.Write((ulong)(value >> 64));
+            writer.Write((ulong)value);
+        }
     }
-}
 #endif
 
-public class I8 : IReadWrite<sbyte>
-{
-    public static sbyte Read(BinaryReader reader) => reader.ReadSByte();
+    public readonly struct I8 : IReadWrite<sbyte>
+    {
+        public sbyte Read(BinaryReader reader) => reader.ReadSByte();
 
-    public static void Write(BinaryWriter writer, sbyte value) => writer.Write(value);
-}
+        public void Write(BinaryWriter writer, sbyte value) => writer.Write(value);
+    }
 
-public class I16 : IReadWrite<short>
-{
-    public static short Read(BinaryReader reader) => reader.ReadInt16();
+    public readonly struct I16 : IReadWrite<short>
+    {
+        public short Read(BinaryReader reader) => reader.ReadInt16();
 
-    public static void Write(BinaryWriter writer, short value) => writer.Write(value);
-}
+        public void Write(BinaryWriter writer, short value) => writer.Write(value);
+    }
 
-public class I32 : IReadWrite<int>
-{
-    public static int Read(BinaryReader reader) => reader.ReadInt32();
+    public readonly struct I32 : IReadWrite<int>
+    {
+        public int Read(BinaryReader reader) => reader.ReadInt32();
 
-    public static void Write(BinaryWriter writer, int value) => writer.Write(value);
-}
+        public void Write(BinaryWriter writer, int value) => writer.Write(value);
+    }
 
-public class I64 : IReadWrite<long>
-{
-    public static long Read(BinaryReader reader) => reader.ReadInt64();
+    public readonly struct I64 : IReadWrite<long>
+    {
+        public long Read(BinaryReader reader) => reader.ReadInt64();
 
-    public static void Write(BinaryWriter writer, long value) => writer.Write(value);
-}
+        public void Write(BinaryWriter writer, long value) => writer.Write(value);
+    }
 
 #if NET7_0_OR_GREATER
-public class I128 : IReadWrite<System.Int128>
-{
-    public static System.Int128 Read(BinaryReader reader) =>
-        new(reader.ReadUInt64(), reader.ReadUInt64());
-
-    public static void Write(BinaryWriter writer, System.Int128 value)
+    public readonly struct I128 : IReadWrite<System.Int128>
     {
-        writer.Write((long)(value >> 64));
-        writer.Write((long)value);
+        public System.Int128 Read(BinaryReader reader) =>
+            new(reader.ReadUInt64(), reader.ReadUInt64());
+
+        public void Write(BinaryWriter writer, System.Int128 value)
+        {
+            writer.Write((long)(value >> 64));
+            writer.Write((long)value);
+        }
     }
-}
 #endif
 
-public class F32 : IReadWrite<float>
-{
-    public static float Read(BinaryReader reader) => reader.ReadSingle();
-
-    public static void Write(BinaryWriter writer, float value) => writer.Write(value);
-}
-
-public class F64 : IReadWrite<double>
-{
-    public static double Read(BinaryReader reader) => reader.ReadDouble();
-
-    public static void Write(BinaryWriter writer, double value) => writer.Write(value);
-}
-
-class Enumerable<Element, ElementRW> : IReadWrite<IEnumerable<Element>>
-    where ElementRW : IReadWrite<Element>
-{
-    public static IEnumerable<Element> Read(BinaryReader reader)
+    public readonly struct F32 : IReadWrite<float>
     {
-        var count = reader.ReadInt32();
-        for (var i = 0; i < count; i++)
+        public float Read(BinaryReader reader) => reader.ReadSingle();
+
+        public void Write(BinaryWriter writer, float value) => writer.Write(value);
+    }
+
+    public readonly struct F64 : IReadWrite<double>
+    {
+        public double Read(BinaryReader reader) => reader.ReadDouble();
+
+        public void Write(BinaryWriter writer, double value) => writer.Write(value);
+    }
+
+    readonly struct Enumerable<Element, ElementRW> : IReadWrite<IEnumerable<Element>>
+        where ElementRW : IReadWrite<Element>, new()
+    {
+        private static readonly ElementRW elementRW = new();
+
+        public IEnumerable<Element> Read(BinaryReader reader)
         {
-            yield return ElementRW.Read(reader);
+            var count = reader.ReadInt32();
+            for (var i = 0; i < count; i++)
+            {
+                yield return elementRW.Read(reader);
+            }
+        }
+
+        public void Write(BinaryWriter writer, IEnumerable<Element> value)
+        {
+            writer.Write(value.Count());
+            foreach (var element in value)
+            {
+                elementRW.Write(writer, element);
+            }
         }
     }
 
-    public static void Write(BinaryWriter writer, IEnumerable<Element> value)
+    public readonly struct Array<Element, ElementRW> : IReadWrite<Element[]>
+        where ElementRW : IReadWrite<Element>, new()
     {
-        writer.Write(value.Count());
-        foreach (var element in value)
+        private static readonly Enumerable<Element, ElementRW> enumerable = new();
+
+        public Element[] Read(BinaryReader reader) => enumerable.Read(reader).ToArray();
+
+        public void Write(BinaryWriter writer, Element[] value) => enumerable.Write(writer, value);
+    }
+
+    // Special case for byte arrays that can be dealt with more efficiently.
+    public readonly struct ByteArray : IReadWrite<byte[]>
+    {
+        internal static readonly ByteArray Instance = new();
+
+        public byte[] Read(BinaryReader reader) => reader.ReadBytes(reader.ReadInt32());
+
+        public void Write(BinaryWriter writer, byte[] value)
         {
-            ElementRW.Write(writer, element);
+            writer.Write(value.Length);
+            writer.Write(value);
         }
     }
-}
 
-public class Array<Element, ElementRW> : IReadWrite<Element[]>
-    where ElementRW : IReadWrite<Element>
-{
-    public static Element[] Read(BinaryReader reader)
+    // String is a special case of byte array with extra checks.
+    public readonly struct String : IReadWrite<string>
     {
-        return Enumerable<Element, ElementRW>.Read(reader).ToArray();
+        public string Read(BinaryReader reader) =>
+            Encoding.UTF8.GetString(ByteArray.Instance.Read(reader));
+
+        public void Write(BinaryWriter writer, string value) =>
+            ByteArray.Instance.Write(writer, Encoding.UTF8.GetBytes(value));
     }
 
-    public static void Write(BinaryWriter writer, Element[] value)
+    public readonly struct List<Element, ElementRW> : IReadWrite<List<Element>>
+        where ElementRW : IReadWrite<Element>, new()
     {
-        Enumerable<Element, ElementRW>.Write(writer, value);
-    }
-}
+        private static readonly Enumerable<Element, ElementRW> enumerable = new();
 
-// Special case for byte arrays that can be dealt with more efficiently.
-public class ByteArray : IReadWrite<byte[]>
-{
-    public static byte[] Read(BinaryReader reader)
-    {
-        return reader.ReadBytes(reader.ReadInt32());
+        public List<Element> Read(BinaryReader reader) => enumerable.Read(reader).ToList();
+
+        public void Write(BinaryWriter writer, List<Element> value) =>
+            enumerable.Write(writer, value);
     }
 
-    public static void Write(BinaryWriter writer, byte[] value)
+    readonly struct KeyValuePair<Key, Value, KeyRW, ValueRW> : IReadWrite<KeyValuePair<Key, Value>>
+        where KeyRW : IReadWrite<Key>, new()
+        where ValueRW : IReadWrite<Value>, new()
     {
-        writer.Write(value.Length);
-        writer.Write(value);
+        private static readonly KeyRW keyRW = new();
+        private static readonly ValueRW valueRW = new();
+
+        public KeyValuePair<Key, Value> Read(BinaryReader reader) =>
+            new(keyRW.Read(reader), valueRW.Read(reader));
+
+        public void Write(BinaryWriter writer, KeyValuePair<Key, Value> value)
+        {
+            keyRW.Write(writer, value.Key);
+            valueRW.Write(writer, value.Value);
+        }
     }
-}
 
-// String is a special case of byte array with extra checks.
-public class String : IReadWrite<string>
-{
-    public static string Read(BinaryReader reader) =>
-        Encoding.UTF8.GetString(ByteArray.Read(reader));
-
-    public static void Write(BinaryWriter writer, string value) =>
-        ByteArray.Write(writer, Encoding.UTF8.GetBytes(value));
-}
-
-public class List<Element, ElementRW> : IReadWrite<List<Element>>
-    where ElementRW : IReadWrite<Element>
-{
-    public static List<Element> Read(BinaryReader reader) =>
-        Enumerable<Element, ElementRW>.Read(reader).ToList();
-
-    public static void Write(BinaryWriter writer, List<Element> value) =>
-        Enumerable<Element, ElementRW>.Write(writer, value);
-}
-
-class KeyValuePair<Key, Value, KeyRW, ValueRW> : IReadWrite<KeyValuePair<Key, Value>>
-    where KeyRW : IReadWrite<Key>
-    where ValueRW : IReadWrite<Value>
-{
-    public static KeyValuePair<Key, Value> Read(BinaryReader reader) =>
-        new(KeyRW.Read(reader), ValueRW.Read(reader));
-
-    public static void Write(BinaryWriter writer, KeyValuePair<Key, Value> value)
+    public readonly struct Dictionary<Key, Value, KeyRW, ValueRW>
+        : IReadWrite<Dictionary<Key, Value>>
+        where Key : notnull
+        where KeyRW : IReadWrite<Key>, new()
+        where ValueRW : IReadWrite<Value>, new()
     {
-        KeyRW.Write(writer, value.Key);
-        ValueRW.Write(writer, value.Value);
+        private static readonly Enumerable<
+            KeyValuePair<Key, Value>,
+            KeyValuePair<Key, Value, KeyRW, ValueRW>
+        > enumerable = new();
+
+        public Dictionary<Key, Value> Read(BinaryReader reader) =>
+            enumerable.Read(reader).ToDictionary(kv => kv.Key, kv => kv.Value);
+
+        public void Write(BinaryWriter writer, Dictionary<Key, Value> value) =>
+            enumerable.Write(writer, value);
     }
-}
-
-public class Dictionary<Key, Value, KeyRW, ValueRW> : IReadWrite<Dictionary<Key, Value>>
-    where Key : notnull
-    where KeyRW : IReadWrite<Key>
-    where ValueRW : IReadWrite<Value>
-{
-    public static Dictionary<Key, Value> Read(BinaryReader reader) =>
-        Enumerable<KeyValuePair<Key, Value>, KeyValuePair<Key, Value, KeyRW, ValueRW>>
-            .Read(reader)
-            .ToDictionary();
-
-    public static void Write(BinaryWriter writer, Dictionary<Key, Value> value) =>
-        Enumerable<KeyValuePair<Key, Value>, KeyValuePair<Key, Value, KeyRW, ValueRW>>.Write(
-            writer,
-            value
-        );
 }

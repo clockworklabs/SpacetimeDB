@@ -123,16 +123,19 @@ public class Type : IIncrementalGenerator
                         });
                     }
 
+                    if (type.TypeParameterList is not null)
+                    {
+                        throw new InvalidOperationException(
+                            "Types with type parameters are not yet supported."
+                        );
+                    }
+
                     return new
                     {
                         Scope = new Scope(type),
                         ShortName = type.Identifier.Text,
                         FullName = SymbolToName(context.SemanticModel.GetDeclaredSymbol(type, ct)!),
-                        GenericName = $"{type.Identifier}{type.TypeParameterList}",
                         IsTaggedEnum = taggedEnumVariants is not null,
-                        TypeParams = type.TypeParameterList?.Parameters
-                            .Select(p => p.Identifier.Text)
-                            .ToArray() ?? [],
                         Members = fields.ToArray(),
                     };
                 }
@@ -147,12 +150,12 @@ public class Type : IIncrementalGenerator
 
                     var typeDesc = "";
 
-                    var fieldIO = type.Members.Select(m =>
-                    {
-                        var typeInfo = GetTypeInfo(m.TypeSymbol);
+                    var bsatnDecls = type.Members.Select(m =>
+                        (m.Name, TypeInfo: GetTypeInfo(m.TypeSymbol))
+                    )
+                        .ToList();
 
-                        return new { m.Name, TypeInfo = typeInfo, };
-                    });
+                    var fieldNames = bsatnDecls.Select(m => m.Name).ToArray();
 
                     if (type.IsTaggedEnum)
                     {
@@ -160,58 +163,69 @@ public class Type : IIncrementalGenerator
                             $@"
                             private {type.ShortName}() {{ }}
 
-                            enum __Tag: byte
+                            enum @enum: byte
                             {{
-                                {string.Join(", ", type.Members.Select(m => m.Name))}
+                                {string.Join(",\n", type.Members.Select(m => m.Name))}
                             }}
                         ";
+
+                        bsatnDecls.Insert(
+                            0,
+                            (Name: "@enum", TypeInfo: "SpacetimeDB.BSATN.Enum<@enum>")
+                        );
 
                         typeDesc += string.Join(
                             "\n",
                             type.Members.Select(m =>
-                            {
-                                var name = m.Name;
-                                var fieldType = m.TypeSymbol.ToDisplayString();
-
-                                return $@"public sealed record {name}({fieldType} Value) : {type.ShortName};";
-                            })
+                                $@"public sealed record {m.Name}({m.TypeSymbol} Value) : {type.ShortName};"
+                            )
                         );
 
                         read =
-                            $@"(__Tag)reader.ReadByte() switch {{
-                                {string.Join("\n", fieldIO.Select(m => $"__Tag.{m.Name} => new {m.Name}({m.TypeInfo}.Read(reader)),"))}
-                                var tag => throw new System.InvalidOperationException($""Unsupported tag {{tag}}"")
+                            $@"@enum.Read() switch {{
+                                {string.Join(",\n", fieldNames.Select(name => $"@enum.{name} => new {name}({name}.Read(reader))"))}
                             }}";
 
                         write =
                             $@"switch (value) {{
-                                {string.Join("\n", fieldIO.Select(m => $@"
-                                    case {m.Name}(var inner):
-                                        writer.Write((byte)__Tag.{m.Name});
-                                        {m.TypeInfo}.Write(writer, inner);
+                                {string.Join("\n", fieldNames.Select(name => $@"
+                                    case {name}(var inner):
+                                        @enum.Write(writer, @enum.{name});
+                                        {name}.Write(writer, inner);
                                         break;
                                 "))}
                             }}";
                     }
                     else
                     {
-                        read =
-                            $@"new {type.GenericName} {{
-                                {string.Join(",\n", fieldIO.Select(m => $"{m.Name} = {m.TypeInfo}.Read(reader)"))}
-                            }}";
+                        typeDesc +=
+                            $@"
+                            public void ReadFields(System.IO.BinaryReader reader) {{
+                                {string.Join("\n", fieldNames.Select(name => $"{name} = BSATN.{name}.Read(reader);"))}
+                            }}
 
-                        write = string.Join(
-                            "\n",
-                            fieldIO.Select(m => $"{m.TypeInfo}.Write(writer, value.{m.Name});")
-                        );
+                            public void WriteFields(System.IO.BinaryWriter writer) {{
+                                {string.Join("\n", fieldNames.Select(name => $"BSATN.{name}.Write(writer, {name});"))}
+                            }}
+                        ";
+
+                        read =
+                            $"SpacetimeDB.BSATN.IStructuralReadWrite.Read<{type.ShortName}>(reader)";
+
+                        write = "value.WriteFields(writer);";
                     }
 
                     typeDesc +=
                         $@"
-                        public static {type.GenericName} Read(BinaryReader reader) => {read};
+                        public readonly struct BSATN : SpacetimeDB.BSATN.IReadWrite<{type.ShortName}>
+                        {{
+                            {string.Join("\n", bsatnDecls.Select(decl => $"internal static readonly {decl.TypeInfo} {decl.Name} = new();"))}
 
-                        public static void Write(BinaryWriter writer, {type.GenericName} value) {{
-                            {write}
+                            public {type.ShortName} Read(System.IO.BinaryReader reader) => {read};
+
+                            public void Write(System.IO.BinaryWriter writer, {type.ShortName} value) {{
+                                {write}
+                            }}
                         }}
                     ";
 
@@ -219,7 +233,7 @@ public class Type : IIncrementalGenerator
                         type.FullName,
                         type.Scope.GenerateExtensions(
                             typeDesc,
-                            $"SpacetimeDB.BSATN.IReadWrite<{type.GenericName}>"
+                            type.IsTaggedEnum ? null : "SpacetimeDB.BSATN.IStructuralReadWrite"
                         )
                     );
                 }

@@ -88,7 +88,7 @@ static partial class Module
     }
 
     [SpacetimeDB.Type]
-    public partial struct Foo<T, TRW>
+    public partial struct Foo<T>
         where TRW : SpacetimeDB.BSATN.IReadWrite<T>
     {
         public T a;

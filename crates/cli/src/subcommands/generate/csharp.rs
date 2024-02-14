@@ -130,7 +130,7 @@ pub fn is_enum(sum_type: &SumType) -> bool {
     true
 }
 
-fn autogen_csharp_header(namespace: &str) -> CodeIndenter<String> {
+fn autogen_csharp_header(namespace: &str, extra_usings: &[&str]) -> CodeIndenter<String> {
     let mut output = String::new();
 
     writeln!(
@@ -141,9 +141,6 @@ fn autogen_csharp_header(namespace: &str) -> CodeIndenter<String> {
     writeln!(output, "// WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.").unwrap();
     writeln!(output).unwrap();
 
-    writeln!(output, "namespace {namespace};").unwrap();
-    writeln!(output).unwrap();
-
     writeln!(output, "#nullable enable").unwrap();
     writeln!(output).unwrap();
 
@@ -151,8 +148,23 @@ fn autogen_csharp_header(namespace: &str) -> CodeIndenter<String> {
     if namespace != "SpacetimeDB" {
         writeln!(output, "using SpacetimeDB;").unwrap();
     }
+    for extra_using in extra_usings {
+        writeln!(output, "using {extra_using};").unwrap();
+    }
+    writeln!(output).unwrap();
 
-    CodeIndenter::new(output)
+    writeln!(output, "namespace {}", namespace).unwrap();
+    writeln!(output, "{{").unwrap();
+
+    let mut output = CodeIndenter::new(output);
+    output.indent(1);
+    output
+}
+
+fn autogen_csharp_footer(output: CodeIndenter<String>) -> String {
+    let mut output = output.into_inner();
+    writeln!(output, "}}").unwrap();
+    output
 }
 
 pub fn autogen_csharp_sum(
@@ -169,8 +181,7 @@ pub fn autogen_csharp_sum(
 }
 
 pub fn autogen_csharp_enum(name: &str, sum_type: &SumType, namespace: &str) -> String {
-    let mut output = autogen_csharp_header(namespace);
-    writeln!(output).unwrap();
+    let mut output = autogen_csharp_header(namespace, &[]);
 
     let mut sum_namespace = None;
     let mut sum_type_name = name.replace("r#", "").to_case(Case::Pascal);
@@ -236,7 +247,7 @@ pub fn autogen_csharp_enum(name: &str, sum_type: &SumType, namespace: &str) -> S
     // End either enum or class def
     writeln!(output, "}}").unwrap();
 
-    output.into_inner()
+    autogen_csharp_footer(output)
 }
 
 pub fn autogen_csharp_tuple(ctx: &GenCtx, name: &str, tuple: &ProductType, namespace: &str) -> String {
@@ -268,9 +279,7 @@ fn autogen_csharp_product_table_common(
     schema: Option<TableSchema>,
     namespace: &str,
 ) -> String {
-    let mut output = autogen_csharp_header(namespace);
-    writeln!(output, "using System.Collections.Generic;").unwrap();
-    writeln!(output).unwrap();
+    let mut output = autogen_csharp_header(namespace, &["System.Collections.Generic"]);
 
     writeln!(output, "[SpacetimeDB.Type]").unwrap();
     write!(output, "public partial class {name}").unwrap();
@@ -300,7 +309,7 @@ fn autogen_csharp_product_table_common(
 
             writeln!(
                 output,
-                "public required {} {};",
+                "public {} {};",
                 ty_fmt(ctx, &field.algebraic_type, namespace),
                 field_name.to_case(Case::Pascal)
             )
@@ -378,7 +387,7 @@ fn autogen_csharp_product_table_common(
     }
     writeln!(output, "}}").unwrap();
 
-    output.into_inner()
+    autogen_csharp_footer(output)
 }
 
 fn autogen_csharp_access_funcs_for_struct(
@@ -461,13 +470,12 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
     // let reducer_pascal_name = func_name.to_case(Case::Pascal);
     let func_name_pascal_case = func_name.to_case(Case::Pascal);
 
-    let mut output = autogen_csharp_header(namespace);
-    writeln!(output, "using ClientApi;").unwrap();
-    writeln!(output).unwrap();
+    let mut output = autogen_csharp_header(namespace, &["ClientApi"]);
 
     //Args struct
     writeln!(output, "[SpacetimeDB.Type]").unwrap();
-    writeln!(output, "public partial class {func_name_pascal_case}ArgsStruct {{").unwrap();
+    writeln!(output, "public partial class {func_name_pascal_case}ArgsStruct").unwrap();
+    writeln!(output, "{{").unwrap();
 
     let mut func_params: String = String::new();
     let mut field_inits: String = String::new();
@@ -488,7 +496,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
                 func_params.push_str(", ");
                 field_inits.push_str(", ");
             }
-            writeln!(output, "public required {arg_type_str} {field_name};").unwrap();
+            writeln!(output, "public {arg_type_str} {field_name};").unwrap();
             write!(func_params, "{arg_type_str} {arg_name}").unwrap();
             write!(field_inits, "{field_name} = {arg_name}").unwrap();
         }
@@ -586,12 +594,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
                 indent_scope!(output);
 
                 writeln!(output, "ReducerType.{func_name_pascal_case},").unwrap();
-                writeln!(output, "\"{func_name}\",").unwrap();
-                writeln!(output, "dbEvent.Timestamp,").unwrap();
-                writeln!(output, "Identity.From(dbEvent.CallerIdentity.ToByteArray()),").unwrap();
-                writeln!(output, "Address.From(dbEvent.CallerAddress.ToByteArray()),").unwrap();
-                writeln!(output, "dbEvent.Message,").unwrap();
-                writeln!(output, "dbEvent.Status,").unwrap();
+                writeln!(output, "dbEvent,").unwrap();
                 writeln!(
                     output,
                     "BSATNHelpers.FromProtoBytes<{func_name_pascal_case}ArgsStruct>(dbEvent.FunctionCall.ArgBytes)"
@@ -608,7 +611,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
     writeln!(output, "}}").unwrap();
     writeln!(output).unwrap();
 
-    output.into_inner()
+    autogen_csharp_footer(output)
 }
 
 pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(String, String)>> {
@@ -627,9 +630,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
         .map(|reducer| reducer.name.to_case(Case::Pascal))
         .collect();
 
-    let mut output = autogen_csharp_header(namespace);
-    writeln!(output, "using ClientApi;").unwrap();
-    writeln!(output).unwrap();
+    let mut output = autogen_csharp_header(namespace, &["ClientApi"]);
 
     writeln!(output, "[ReducerClass]").unwrap();
     writeln!(output, "public partial class Reducer {{ }}").unwrap();
@@ -652,17 +653,13 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
     writeln!(output, "{{").unwrap();
     {
         indent_scope!(output);
-        writeln!(output, "public ReducerType Reducer {{ get; private set; }}").unwrap();
+        writeln!(output, "public ReducerType Reducer {{ get; }}").unwrap();
         writeln!(output).unwrap();
-        writeln!(output, "public ReducerEvent(ReducerType reducer, string reducerName, ulong timestamp, SpacetimeDB.Identity identity, SpacetimeDB.Address? callerAddress, string errMessage, ClientApi.Event.Types.Status status, object args)").unwrap();
-        {
-            indent_scope!(output);
-            writeln!(
-                output,
-                ": base(reducerName, timestamp, identity, callerAddress, errMessage, status, args)"
-            )
-            .unwrap();
-        }
+        writeln!(
+            output,
+            "public ReducerEvent(ReducerType reducer, ClientApi.Event dbEvent, object args) : base(dbEvent, args)"
+        )
+        .unwrap();
         writeln!(output, "{{").unwrap();
         {
             indent_scope!(output);
@@ -735,5 +732,5 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
     // Closing brace for ReducerEvent
     writeln!(output, "}}").unwrap();
 
-    vec![vec![("ReducerEvent.cs".to_string(), output.into_inner())]]
+    vec![vec![("ReducerEvent.cs".to_string(), autogen_csharp_footer(output))]]
 }
