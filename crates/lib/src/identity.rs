@@ -1,5 +1,4 @@
 use spacetimedb_bindings_macro::{Deserialize, Serialize};
-use spacetimedb_metrics::impl_prometheusvalue_string;
 use spacetimedb_metrics::typed_prometheus::AsPrometheusLabel;
 use spacetimedb_sats::hex::HexString;
 use spacetimedb_sats::{hash, impl_st, AlgebraicType};
@@ -34,7 +33,12 @@ pub struct Identity {
 }
 
 impl_st!([] Identity, _ts => Identity::get_type());
-impl_prometheusvalue_string!(Identity);
+
+impl AsPrometheusLabel for Identity {
+    fn as_prometheus_str(&self) -> impl AsRef<str> + '_ {
+        self.to_hex()
+    }
+}
 
 impl Identity {
     /// Returns an `Identity` defined as the given `bytes` byte array.

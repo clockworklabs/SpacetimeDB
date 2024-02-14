@@ -11,3 +11,4 @@ description = "Prometheus utilities for SpacetimeDB"
 itertools.workspace = true
 paste.workspace = true
 prometheus.workspace = true
+arrayvec.workspace = true
