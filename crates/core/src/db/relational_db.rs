@@ -19,10 +19,12 @@ use crate::error::{DBError, DatabaseError, TableError};
 use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
 use fs2::FileExt;
+use itertools::Itertools;
 use spacetimedb_lib::PrimaryKey;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::data_key::ToDataKey;
-use spacetimedb_sats::db::def::{IndexDef, SequenceDef, TableDef, TableSchema};
+use spacetimedb_sats::db::auth::{StAccess, StTableType};
+use spacetimedb_sats::db::def::{ColumnDef, IndexDef, SequenceDef, TableDef, TableSchema};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_table::{indexes::RowPointer, table::RowRef};
 use std::borrow::Cow;
@@ -428,6 +430,37 @@ impl RelationalDB {
 impl RelationalDB {
     pub fn create_table<T: Into<TableDef>>(&self, tx: &mut MutTx, schema: T) -> Result<TableId, DBError> {
         self.inner.create_table_mut_tx(tx, schema.into())
+    }
+
+    pub fn create_table_for_test(
+        &self,
+        name: &str,
+        schema: &[(&str, AlgebraicType)],
+        indexes: &[(ColId, &str)],
+    ) -> Result<TableId, DBError> {
+        let table_name = name.to_string();
+        let table_type = StTableType::User;
+        let table_access = StAccess::Public;
+
+        let columns = schema
+            .iter()
+            .map(|(col_name, col_type)| ColumnDef {
+                col_name: col_name.to_string(),
+                col_type: col_type.clone(),
+            })
+            .collect_vec();
+
+        let indexes = indexes
+            .iter()
+            .map(|(col_id, index_name)| IndexDef::btree(index_name.to_string(), *col_id, false))
+            .collect_vec();
+
+        let schema = TableDef::new(table_name, columns)
+            .with_indexes(indexes)
+            .with_type(table_type)
+            .with_access(table_access);
+
+        self.with_auto_commit(&ExecutionContext::default(), |tx| self.create_table(tx, schema))
     }
 
     pub fn drop_table(&self, ctx: &ExecutionContext, tx: &mut MutTx, table_id: TableId) -> Result<(), DBError> {
