@@ -10,7 +10,7 @@ use crate::{
     address::Address,
     db::{
         datastore::{
-            system_tables::{Epoch, StModuleRow, StTableRow, ST_MODULE_ID, ST_TABLES_ID, WASM_MODULE},
+            system_tables::{Epoch, StModuleRow, StTableFields, StTableRow, ST_MODULE_ID, ST_TABLES_ID, WASM_MODULE},
             traits::{DataRow, MutProgrammable, MutTx, MutTxDatastore, Programmable, Tx, TxData, TxDatastore},
         },
         db_metrics::{DB_METRICS, MAX_TX_CPU_TIME},
@@ -293,9 +293,8 @@ impl TxDatastore for Locking {
     fn get_all_tables_tx<'tx>(&self, ctx: &ExecutionContext, tx: &'tx Self::Tx) -> Result<Vec<Cow<'tx, TableSchema>>> {
         self.iter_tx(ctx, tx, ST_TABLES_ID)?
             .map(|row_ref| {
-                let data = row_ref.to_product_value();
-                let row = StTableRow::try_from(&data)?;
-                self.schema_for_table_tx(tx, row.table_id)
+                let table_id = row_ref.read_col::<u32>(StTableFields::TableId.col_id())?.into();
+                self.schema_for_table_tx(tx, table_id)
             })
             .collect()
     }
