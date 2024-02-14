@@ -823,27 +823,22 @@ impl StModuleRow {
     }
 }
 
-impl TryFrom<&ProductValue> for StModuleRow {
+impl TryFrom<RowRef<'_>> for StModuleRow {
     type Error = DBError;
 
-    fn try_from(row: &ProductValue) -> Result<Self, Self::Error> {
-        let program_hash = row
-            .field_as_bytes(
-                StModuleFields::ProgramHash.col_idx(),
-                Some(StModuleFields::ProgramHash.name()),
-            )
-            .map(Hash::from_slice)?;
-        let kind = row
-            .field_as_u8(StModuleFields::Kind.col_idx(), Some(StModuleFields::Kind.name()))
-            .map(ModuleKind)?;
-        let epoch = row
-            .field_as_u128(StModuleFields::Epoch.col_idx(), Some(StModuleFields::Epoch.name()))
-            .map(Epoch)?;
+    fn try_from(row: RowRef<'_>) -> Result<Self, Self::Error> {
+        let col_pos = StModuleFields::ProgramHash.col_id();
+        let bytes = row.read_col::<ArrayValue>(col_pos)?;
+        let ArrayValue::U8(bytes) = bytes else {
+            let name = Some(StModuleFields::ProgramHash.name());
+            return Err(InvalidFieldError { name, col_pos }.into());
+        };
+        let program_hash = Hash::from_slice(&bytes);
 
         Ok(Self {
             program_hash,
-            kind,
-            epoch,
+            kind: row.read_col::<u8>(StModuleFields::Kind.col_id()).map(ModuleKind)?,
+            epoch: row.read_col::<u128>(StModuleFields::Epoch.col_id()).map(Epoch)?,
         })
     }
 }

@@ -10,7 +10,9 @@ use crate::{
     address::Address,
     db::{
         datastore::{
-            system_tables::{Epoch, StModuleRow, StTableFields, StTableRow, ST_MODULE_ID, ST_TABLES_ID, WASM_MODULE},
+            system_tables::{
+                Epoch, StModuleFields, StModuleRow, StTableFields, ST_MODULE_ID, ST_TABLES_ID, WASM_MODULE,
+            },
             traits::{DataRow, MutProgrammable, MutTx, MutTxDatastore, Programmable, Tx, TxData, TxDatastore},
         },
         db_metrics::{DB_METRICS, MAX_TX_CPU_TIME},
@@ -562,17 +564,10 @@ impl MutTx for Locking {
 
 impl Programmable for Locking {
     fn program_hash(&self, tx: &TxId) -> Result<Option<spacetimedb_sats::hash::Hash>> {
-        match tx
-            .iter(&ExecutionContext::internal(self.database_address), &ST_MODULE_ID)?
+        tx.iter(&ExecutionContext::internal(self.database_address), &ST_MODULE_ID)?
             .next()
-        {
-            None => Ok(None),
-            Some(data) => {
-                let row = data.to_product_value();
-                let row = StModuleRow::try_from(&row)?;
-                Ok(Some(row.program_hash))
-            }
-        }
+            .map(|row| StModuleRow::try_from(row).map(|st| st.program_hash))
+            .transpose()
     }
 }
 
@@ -583,10 +578,9 @@ impl MutProgrammable for Locking {
         let ctx = ExecutionContext::internal(self.database_address);
         let mut iter = tx.iter(&ctx, &ST_MODULE_ID)?;
         if let Some(row_ref) = iter.next() {
-            let row_pv = row_ref.to_product_value();
-            let row = StModuleRow::try_from(&row_pv)?;
-            if fence <= row.epoch.0 {
-                return Err(anyhow!("stale fencing token: {}, storage is at epoch: {}", fence, row.epoch).into());
+            let epoch = row_ref.read_col::<u128>(StModuleFields::Epoch.col_id())?;
+            if fence <= epoch {
+                return Err(anyhow!("stale fencing token: {}, storage is at epoch: {}", fence, epoch).into());
             }
 
             // Note the borrow checker requires that we explictly drop the iterator.
@@ -596,7 +590,7 @@ impl MutProgrammable for Locking {
             // there will be another immutable borrow of self after the two mutable borrows below.
             drop(iter);
 
-            tx.delete_by_row_value(ST_MODULE_ID, &row_pv)?;
+            tx.delete(ST_MODULE_ID, row_ref.pointer())?;
             tx.insert(
                 ST_MODULE_ID,
                 &mut ProductValue::from(&StModuleRow {
@@ -632,8 +626,8 @@ impl MutProgrammable for Locking {
 mod tests {
     use super::*;
     use crate::db::datastore::system_tables::{
-        StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, ST_COLUMNS_ID, ST_CONSTRAINTS_ID, ST_INDEXES_ID,
-        ST_SEQUENCES_ID,
+        StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_COLUMNS_ID, ST_CONSTRAINTS_ID,
+        ST_INDEXES_ID, ST_SEQUENCES_ID,
     };
     use crate::db::datastore::traits::MutTx;
     use crate::db::datastore::Result;
