@@ -36,7 +36,7 @@ use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     btree_index::BTreeIndex,
     indexes::{RowPointer, SquashedOffset},
-    table::{IndexScanIter, InsertError, RowRef, Table, TableScanIter},
+    table::{IndexScanIter, InsertError, RowRef, Table},
 };
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
@@ -546,28 +546,6 @@ impl CommittedState {
             ))),
             None => self.iter_by_col_range(ctx, table_id, cols, range),
         }
-    }
-}
-
-struct CommittedStateIter<'a> {
-    iter: TableScanIter<'a>,
-    table_id_col: &'a ColList,
-    value: &'a AlgebraicValue,
-}
-
-impl<'a> Iterator for CommittedStateIter<'a> {
-    type Item = RowRef<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        for row_ref in &mut self.iter {
-            let row = row_ref.to_product_value();
-            let table_id = row.project_not_empty(self.table_id_col).unwrap();
-            if table_id == *self.value {
-                return Some(row_ref);
-            }
-        }
-
-        None
     }
 }
 
