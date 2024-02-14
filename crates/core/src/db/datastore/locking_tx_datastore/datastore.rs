@@ -663,7 +663,7 @@ mod tests {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_TABLES_ID)?
-                .map(|x| StTableRow::try_from(&x.to_product_value()).unwrap().to_owned())
+                .map(|row| StTableRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.table_id)
                 .collect::<Vec<_>>())
         }
@@ -676,7 +676,7 @@ mod tests {
             Ok(self
                 .db
                 .iter_by_col_eq(self.ctx, &ST_TABLES_ID, cols.into(), value)?
-                .map(|x| StTableRow::try_from(&x.to_product_value()).unwrap().to_owned())
+                .map(|row| StTableRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.table_id)
                 .collect::<Vec<_>>())
         }
@@ -685,7 +685,7 @@ mod tests {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_COLUMNS_ID)?
-                .map(|x| StColumnRow::try_from(&x.to_product_value()).unwrap().to_owned())
+                .map(|row| StColumnRow::try_from(row).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.col_pos))
                 .collect::<Vec<_>>())
         }
@@ -698,7 +698,7 @@ mod tests {
             Ok(self
                 .db
                 .iter_by_col_eq(self.ctx, &ST_COLUMNS_ID, cols.into(), value)?
-                .map(|x| StColumnRow::try_from(&x.to_product_value()).unwrap().to_owned())
+                .map(|row| StColumnRow::try_from(row).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.col_pos))
                 .collect::<Vec<_>>())
         }
@@ -707,7 +707,7 @@ mod tests {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_CONSTRAINTS_ID)?
-                .map(|x| StConstraintRow::try_from(&x.to_product_value()).unwrap().to_owned())
+                .map(|row| StConstraintRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.constraint_id)
                 .collect::<Vec<_>>())
         }
@@ -716,7 +716,7 @@ mod tests {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_SEQUENCES_ID)?
-                .map(|x| StSequenceRow::try_from(&x.to_product_value()).unwrap().to_owned())
+                .map(|row| StSequenceRow::try_from(row).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.sequence_id))
                 .collect::<Vec<_>>())
         }
@@ -725,7 +725,7 @@ mod tests {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_INDEXES_ID)?
-                .map(|x| StIndexRow::try_from(&x.to_product_value()).unwrap().to_owned())
+                .map(|row| StIndexRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.index_id)
                 .collect::<Vec<_>>())
         }
