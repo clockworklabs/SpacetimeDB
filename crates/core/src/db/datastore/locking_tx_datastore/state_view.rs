@@ -28,16 +28,16 @@ pub(crate) trait StateView {
     fn get_schema(&self, table_id: &TableId) -> Option<&TableSchema>;
 
     fn table_id_from_name(&self, table_name: &str, database_address: Address) -> Result<Option<TableId>> {
-        self.iter_by_col_eq(
-            &ExecutionContext::internal(database_address),
-            &ST_TABLES_ID,
-            ColList::new(StTableFields::TableName.col_id()),
-            AlgebraicValue::String(table_name.to_owned()),
-        )
-        .map(|mut iter| {
-            iter.next()
-                .map(|row| TableId(*row.to_product_value().elements[0].as_u32().unwrap()))
-        })
+        let ctx = ExecutionContext::internal(database_address);
+        let row = self
+            .iter_by_col_eq(
+                &ctx,
+                &ST_TABLES_ID,
+                StTableFields::TableName.col_id().into(),
+                table_name.to_owned().into(),
+            )?
+            .next();
+        Ok(row.map(|row| row.read_col::<u32>(StTableFields::TableId.col_id()).unwrap().into()))
     }
 
     fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: &TableId) -> Result<Iter<'a>>;
