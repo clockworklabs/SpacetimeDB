@@ -285,8 +285,7 @@ impl CommittedState {
     pub fn build_sequence_state(&mut self, sequence_state: &mut SequencesState) -> Result<()> {
         let st_sequences = self.tables.get(&ST_SEQUENCES_ID).unwrap();
         for row_ref in st_sequences.scan_rows(&self.blob_store) {
-            let row = row_ref.to_product_value();
-            let sequence = StSequenceRow::try_from(&row)?;
+            let sequence = StSequenceRow::try_from(row_ref)?;
             // TODO: The system tables have initialized their value already, but this is wrong:
             // If we exceed  `SEQUENCE_PREALLOCATION_AMOUNT` we will get a unique violation
             let is_system_table = self
@@ -294,15 +293,13 @@ impl CommittedState {
                 .get(&sequence.table_id)
                 .map_or(false, |x| x.schema.table_type == StTableType::System);
 
-            let schema = sequence.to_owned().into();
-
-            let mut seq = Sequence::new(schema);
+            let mut seq = Sequence::new(sequence.into());
             // Now we need to recover the last allocation value.
-            if !is_system_table && seq.value < sequence.allocated + 1 {
-                seq.value = sequence.allocated + 1;
+            if !is_system_table && seq.value < seq.allocated() + 1 {
+                seq.value = seq.allocated() + 1;
             }
 
-            sequence_state.insert(sequence.sequence_id, seq);
+            sequence_state.insert(seq.id(), seq);
         }
         Ok(())
     }
