@@ -1,19 +1,28 @@
 # Description of Changes
 
-Please describe your change, mention any related tickets, and so on here.
+*Please describe the contents of your change.
 
-# API and ABI breaking changes
+*Mention any related issues, other PRs, and so on here.*
 
-If this is an API or ABI breaking change, please apply the
-corresponding GitHub label.
+These change(s) include:
+- Interface changes
+    - [ ] API/ABI changes
+    - [ ] Changes to the Rust library interface
+    - [ ] Command-Line interface (CLI)
+- [ ] Bugfixes
+- [ ] Performance improvements
+- [ ] Refactoring
+- [ ] Other (briefly describe)
 
-# Expected complexity level and risk
+# Breaking Changes
 
-*How complicated do you think these changes are? Grade on a scale from 1 to 5,
-where 1 is a trivial change, and 5 is a deep-reaching and complex change.*
+_Does this change break API or ABI compatibility, or break the Rust library
+interface? **If so, please apply the corresponding GitHub label.**_
 
-*This complexity rating applies not only to the complexity apparent in the diff,
-but also to its interactions with existing and future code.*
+# Testing Procedure
 
-*If you answered more than a 2, explain what is complex about the PR,
-and what other components it interacts with in potentially concerning ways.*
+*Describe why you're confident that all the changes work as expected, for
+example any automated tests or manual testing process.*
+
+*Reviewers should be able to follow this procedure and confirm for themselves
+that this works as expected!*
