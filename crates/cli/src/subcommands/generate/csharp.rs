@@ -279,7 +279,7 @@ fn autogen_csharp_product_table_common(
     schema: Option<TableSchema>,
     namespace: &str,
 ) -> String {
-    let mut output = autogen_csharp_header(namespace, &["System.Collections.Generic"]);
+    let mut output = autogen_csharp_header(namespace, &["System.Collections.Generic", "System.Linq"]);
 
     writeln!(output, "[SpacetimeDB.Type]").unwrap();
     write!(output, "public partial class {name}").unwrap();
@@ -317,11 +317,11 @@ fn autogen_csharp_product_table_common(
         }
         writeln!(output).unwrap();
 
-        writeln!(output, "protected override {name} GetThis() => this;").unwrap();
-        writeln!(output).unwrap();
-
-        // If this is a table, we want to generate indexes
+        // If this is a table, we want to generate event accessor and indexes
         if let Some(schema) = &schema {
+            writeln!(output, "protected override {name} GetThis() => this;").unwrap();
+            writeln!(output).unwrap();
+
             let constraints = schema.column_constraints();
             let mut unique_indexes = Vec::new();
             // Declare custom index dictionaries
@@ -376,12 +376,10 @@ fn autogen_csharp_product_table_common(
                 writeln!(output, "}}").unwrap();
                 writeln!(output).unwrap();
             }
-        } // End indexes
 
-        // If this is a table, we want to include functions for accessing the table data
-        if let Some(column_attrs) = &schema {
+            // If this is a table, we want to include functions for accessing the table data
             // Insert the funcs for accessing this struct
-            autogen_csharp_access_funcs_for_struct(&mut output, name, product_type, name, column_attrs, ctx, namespace);
+            autogen_csharp_access_funcs_for_struct(&mut output, name, product_type, name, schema, ctx, namespace);
             writeln!(output).unwrap();
         }
     }
