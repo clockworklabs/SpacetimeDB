@@ -1266,21 +1266,21 @@ mod tests {
 
         let indexes = stdb
             .iter_mut(&ctx, &tx, ST_INDEXES_ID)?
-            .map(|x| StIndexRow::try_from(&x.to_product_value()).unwrap().to_owned())
+            .map(|x| StIndexRow::try_from(x).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(indexes.len(), 4, "Wrong number of indexes");
 
         let sequences = stdb
             .iter_mut(&ctx, &tx, ST_SEQUENCES_ID)?
-            .map(|x| StSequenceRow::try_from(&x.to_product_value()).unwrap().to_owned())
+            .map(|x| StSequenceRow::try_from(x).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(sequences.len(), 1, "Wrong number of sequences");
 
         let constraints = stdb
             .iter_mut(&ctx, &tx, ST_CONSTRAINTS_ID)?
-            .map(|x| StConstraintRow::try_from(&x.to_product_value()).unwrap().to_owned())
+            .map(|x| StConstraintRow::try_from(x).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(constraints.len(), 4, "Wrong number of constraints");
@@ -1289,21 +1289,21 @@ mod tests {
 
         let indexes = stdb
             .iter_mut(&ctx, &tx, ST_INDEXES_ID)?
-            .map(|x| StIndexRow::try_from(&x.to_product_value()).unwrap().to_owned())
+            .map(|x| StIndexRow::try_from(x).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(indexes.len(), 0, "Wrong number of indexes DROP");
 
         let sequences = stdb
             .iter_mut(&ctx, &tx, ST_SEQUENCES_ID)?
-            .map(|x| StSequenceRow::try_from(&x.to_product_value()).unwrap().to_owned())
+            .map(|x| StSequenceRow::try_from(x).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(sequences.len(), 0, "Wrong number of sequences DROP");
 
         let constraints = stdb
             .iter_mut(&ctx, &tx, ST_CONSTRAINTS_ID)?
-            .map(|x| StConstraintRow::try_from(&x.to_product_value()).unwrap().to_owned())
+            .map(|x| StConstraintRow::try_from(x).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(constraints.len(), 0, "Wrong number of constraints DROP");
@@ -1326,8 +1326,7 @@ mod tests {
         // Also make sure we've removed the old ST_TABLES_ID row
         let mut n = 0;
         for row in stdb.iter_mut(&ctx, &tx, ST_TABLES_ID)? {
-            let row = row.to_product_value();
-            let table = StTableRow::try_from(&row)?;
+            let table = StTableRow::try_from(row)?;
             if table.table_id == table_id {
                 n += 1;
             }
