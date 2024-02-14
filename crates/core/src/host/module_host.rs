@@ -130,15 +130,13 @@ impl DatabaseUpdate {
                     table_row_operations: table
                         .ops
                         .into_iter()
-                        .map(|op| {
-                            TableRowOperationJson {
-                                op: if op.op_type == 1 {
-                                    "insert".into()
-                                } else {
-                                    "delete".into()
-                                },
-                                row: op.row.elements,
-                            }
+                        .map(|op| TableRowOperationJson {
+                            op: if op.op_type == 1 {
+                                "insert".into()
+                            } else {
+                                "delete".into()
+                            },
+                            row: op.row.elements,
                         })
                         .collect(),
                 })
