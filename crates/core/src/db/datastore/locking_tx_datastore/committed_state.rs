@@ -10,9 +10,9 @@ use crate::{
         datastore::{
             system_tables::{
                 st_columns_schema, st_constraints_schema, st_indexes_schema, st_module_schema, st_sequences_schema,
-                st_table_schema, system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableRow,
-                SystemTable, ST_COLUMNS_ID, ST_COLUMNS_NAME, ST_CONSTRAINTS_ID, ST_CONSTRAINTS_NAME, ST_INDEXES_ID,
-                ST_INDEXES_NAME, ST_MODULE_ID, ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID,
+                st_table_schema, system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableFields,
+                StTableRow, SystemTable, ST_COLUMNS_ID, ST_COLUMNS_NAME, ST_CONSTRAINTS_ID, ST_CONSTRAINTS_NAME,
+                ST_INDEXES_ID, ST_INDEXES_NAME, ST_MODULE_ID, ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID,
             },
             traits::{TxData, TxOp, TxRecord},
         },
@@ -335,21 +335,23 @@ impl CommittedState {
     /// have been created in memory, but tables with no rows will not have
     /// been created. This function ensures that they are created.
     pub fn build_missing_tables(&mut self) -> Result<()> {
-        let st_tables = self.get_table(ST_TABLES_ID).unwrap();
-        let rows = st_tables
+        // Find all ids of tables that are in `st_tables` but haven't been built.
+        let table_ids = self
+            .get_table(ST_TABLES_ID)
+            .unwrap()
             .scan_rows(&self.blob_store)
-            .map(|r| r.to_product_value())
+            .map(|r| r.read_col(StTableFields::TableId.col_id()).unwrap())
+            .map(TableId)
+            .filter(|table_id| self.get_table(*table_id).is_none())
             .collect::<Vec<_>>();
-        for row in rows {
-            let table_row = StTableRow::try_from(&row)?;
-            let table_id = table_row.table_id;
-            if self.get_table(table_id).is_none() {
-                let schema = self
-                    .schema_for_table(&ExecutionContext::default(), table_id)?
-                    .into_owned();
-                self.tables
-                    .insert(table_id, Table::new(schema, SquashedOffset::COMMITTED_STATE));
-            }
+
+        // Construct their schemas and insert tables for them.
+        for table_id in table_ids {
+            let schema = self
+                .schema_for_table(&ExecutionContext::default(), table_id)?
+                .into_owned();
+            self.tables
+                .insert(table_id, Table::new(schema, SquashedOffset::COMMITTED_STATE));
         }
         Ok(())
     }
