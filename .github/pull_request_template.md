@@ -1,8 +1,4 @@
-# Description of Changes
-
-*Please describe the contents of your change.
-
-*Mention any related issues, other PRs, and so on here.*
+# Overview of Changes
 
 These change(s) include:
 - Interface changes
@@ -14,12 +10,16 @@ These change(s) include:
 - [ ] Refactoring
 - [ ] Other (briefly describe)
 
-# Breaking Changes
+# Description of Changes
+
+*Please describe the details of your change. Mention any related issues, other PRs, and so on here.*
+
+# Breaking changes
 
 _Does this change break API or ABI compatibility, or break the Rust library
 interface? **If so, please apply the corresponding GitHub label.**_
 
-# Testing Procedure
+# Testing procedure
 
 *Describe why you're confident that all the changes work as expected, for
 example any automated tests or manual testing process.*
