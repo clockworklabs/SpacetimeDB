@@ -4,7 +4,6 @@ use std::fmt;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
-use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
 use futures::{Future, FutureExt};
 use indexmap::IndexMap;
 use tokio::sync::{oneshot, RwLock};
@@ -132,14 +131,12 @@ impl DatabaseUpdate {
                         .ops
                         .into_iter()
                         .map(|op| {
-                            let row_pk = BASE_64_STD.encode(&op.row_pk);
                             TableRowOperationJson {
                                 op: if op.op_type == 1 {
                                     "insert".into()
                                 } else {
                                     "delete".into()
                                 },
-                                row_pk,
                                 row: op.row.elements,
                             }
                         })
