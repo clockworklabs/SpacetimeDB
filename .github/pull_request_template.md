@@ -34,8 +34,8 @@ and what other components it interacts with in potentially concerning ways.*
 
 # Testing procedure
 
-*Describe why you're confident that all the changes work as expected, for
-example any automated tests or manual testing process.*
+*Describe why you're confident that all the changes work as expected, including
+any automated tests or manual testing process.*
 
 *Reviewers should be able to follow this procedure and confirm for themselves
 that this works as expected!*
