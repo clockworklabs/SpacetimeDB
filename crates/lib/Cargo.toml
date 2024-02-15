@@ -37,7 +37,7 @@ hex.workspace = true
 itertools.workspace = true
 once_cell.workspace = true
 prometheus.workspace = true
-serde = { workspace = true, optional = true }
+serde = { workspace = true, optional = true, features = ["derive"] }
 serde_with = {workspace = true, optional = true }
 thiserror.workspace = true
 tracing.workspace = true
