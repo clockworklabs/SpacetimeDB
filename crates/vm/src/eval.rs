@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::dsl::{bin_op, call_fn, if_, mem_table, scalar, var};
 use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
 use crate::expr::{
@@ -17,6 +15,8 @@ use spacetimedb_sats::algebraic_type::AlgebraicType;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::relation::{FieldExpr, Relation};
 use spacetimedb_sats::{product, ProductType, ProductValue};
+use std::collections::HashMap;
+use std::ops::Deref;
 
 fn to_vec<P: ProgramVm>(p: &mut P, of: &[Expr]) -> Vec<ExprOpt> {
     let mut new = Vec::with_capacity(of.len());
@@ -439,11 +439,11 @@ pub fn build_query<'a>(mut result: Box<IterRows<'a>>, query: Vec<Query>) -> Resu
                     col_lhs_header.extend(&col_rhs_header),
                     move |row| {
                         let f = row.get(&key_lhs, &key_lhs_header)?;
-                        Ok(f.into())
+                        Ok(f.deref().into())
                     },
                     move |row| {
                         let f = row.get(&key_rhs, &key_rhs_header)?;
-                        Ok(f.into())
+                        Ok(f.deref().into())
                     },
                     move |l, r| {
                         let l = l.get(&col_lhs, &col_lhs_header)?;

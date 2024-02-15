@@ -167,15 +167,6 @@ impl TryFrom<QueryExpr> for QuerySet {
     }
 }
 
-// If a RelValue has an id (DataKey) return it directly, otherwise we must construct it from the
-// row itself which can be an expensive operation.
-fn pk_for_row(row: &RelValue) -> PrimaryKey {
-    match row.id {
-        Some(data_key) => PrimaryKey { data_key },
-        None => RelationalDB::pk_for_row(&row.data),
-    }
-}
-
 // Returns a closure for evaluating a query.
 // One that consists of updates to secondary tables only.
 // A secondary table is one whose rows are not directly returned by the query.
@@ -194,8 +185,7 @@ fn evaluator_for_secondary_updates(
             run_query(&ExecutionContext::incremental_update(db.address()), db, tx, query, auth)?
         {
             for row in data {
-                let row_pk = pk_for_row(&row);
-                let row = row.data;
+                let row_pk = RelationalDB::pk_for_row(&row);
                 out.insert(row_pk, Op { op_type, row_pk, row });
             }
         }
@@ -227,13 +217,12 @@ fn evaluator_for_primary_updates(
             let pos_op_type = pos_op_type.idx();
 
             for mut row in data {
-                let op_type = if let AlgebraicValue::U8(op) = row.data.elements.remove(pos_op_type) {
+                let op_type = if let AlgebraicValue::U8(op) = row.elements.remove(pos_op_type) {
                     op
                 } else {
                     panic!("Failed to extract `{OP_TYPE_FIELD_NAME}` from `{}`", head.table_name);
                 };
-                let row_pk = pk_for_row(&row);
-                let row = row.data;
+                let row_pk = RelationalDB::pk_for_row(&row);
                 out.insert(row_pk, Op { op_type, row_pk, row });
             }
         }
@@ -366,7 +355,7 @@ impl QuerySet {
                     .or_insert_with(|| (t.head.table_name.clone(), vec![]));
                 for table in run_query(&ExecutionContext::subscribe(db.address()), db, tx, expr, auth)? {
                     for row in table.data {
-                        let row_pk = pk_for_row(&row);
+                        let row_pk = RelationalDB::pk_for_row(&row);
 
                         //Skip rows that are already resolved in a previous subscription...
                         if seen.contains(&(t.table_id, row_pk)) {
@@ -375,7 +364,6 @@ impl QuerySet {
                         seen.insert((t.table_id, row_pk));
 
                         let row_pk = row_pk.to_bytes();
-                        let row = row.data;
                         table_row_operations.push(TableOp {
                             op_type: 1, // Insert
                             row_pk,

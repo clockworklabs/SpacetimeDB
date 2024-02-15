@@ -206,7 +206,7 @@ impl ServerMessage for OneOffQueryResponseMessage {
                 .into_iter()
                 .map(|table| OneOffTableJson {
                     table_name: table.head.table_name,
-                    rows: table.data.into_iter().map(|row| row.data.elements).collect(),
+                    rows: table.data.into_iter().map(|row| row.elements).collect(),
                 })
                 .collect(),
         })
@@ -227,7 +227,7 @@ impl ServerMessage for OneOffQueryResponseMessage {
                             .into_iter()
                             .map(|row| {
                                 let mut row_bytes = Vec::new();
-                                row.data.encode(&mut row_bytes);
+                                row.encode(&mut row_bytes);
                                 row_bytes
                             })
                             .collect(),

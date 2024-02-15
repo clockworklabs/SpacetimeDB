@@ -672,7 +672,7 @@ impl<'a> RowRef<'a> {
         &self.table.row_layout
     }
 
-    pub(crate) fn page_and_offset(&self) -> (&Page, PageOffset) {
+    pub fn page_and_offset(&self) -> (&Page, PageOffset) {
         self.table.page_and_offset(self.pointer())
     }
 }

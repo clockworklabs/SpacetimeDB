@@ -1,11 +1,14 @@
 use derive_more::From;
+use spacetimedb_primitives::ColList;
 use spacetimedb_sats::data_key::DataKey;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::error::RelationError;
 use spacetimedb_sats::product_value::ProductValue;
 use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldName, Header, HeaderOnlyField, Relation, RowCount};
 use spacetimedb_sats::AlgebraicValue;
+use spacetimedb_table::read_column::ReadColumn;
 use spacetimedb_table::table::RowRef;
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
 
@@ -40,40 +43,28 @@ impl<'a> RelValueRef<'a> {
         Self { data }
     }
 
-    pub fn get(&self, col: &'a FieldExpr, header: &'a Header) -> Result<&'a AlgebraicValue, RelationError> {
-        // let val = match col {
-        //     FieldExpr::Name(col) => {
-        //         let pos = header.column_pos_or_err(col)?.idx();
-        //         self.data
-        //             .elements
-        //             .get(pos)
-        //             .ok_or_else(|| RelationError::FieldNotFoundAtPos(pos, col.clone()))?
-        //     }
-        //     FieldExpr::Value(x) => x,
-        // };
+    pub fn get(&self, col: &'a FieldExpr, header: &'a Header) -> Result<Cow<'a, AlgebraicValue>, RelationError> {
+        let val = match col {
+            FieldExpr::Name(col) => {
+                let pos = header.column_pos_or_err(col)?.idx();
+                self.data
+                    .read_column(pos)
+                    .ok_or_else(|| RelationError::FieldNotFoundAtPos(pos, col.clone()))?
+            }
+            FieldExpr::Value(x) => Cow::Borrowed(x),
+        };
 
-        todo!("read_column")
-
-        // Ok(val)
+        Ok(val)
     }
 
     pub fn project(&self, cols: &[FieldExpr], header: &'a Header) -> Result<ProductValue, RelationError> {
-        // let mut elements = Vec::with_capacity(cols.len());
+        let mut elements = Vec::with_capacity(cols.len());
 
-        // for col in cols {
-        //     match col {
-        //         FieldExpr::Name(col) => {
-        //             let pos = header.column_pos_or_err(col)?.idx();
-        //             elements.push(self.data.elements[pos].clone());
-        //         }
-        //         FieldExpr::Value(col) => {
-        //             elements.push(col.clone());
-        //         }
-        //     }
-        // }
+        for col in cols {
+            elements.push(self.get(col, header)?.into_owned());
+        }
 
-        // Ok(ProductValue::new(&elements))
-        todo!("project_not_empty)")
+        Ok(ProductValue::new(&elements))
     }
 }
 
@@ -124,20 +115,104 @@ impl<'a> RelValue<'a> {
         x.elements.extend(with.into_product_value().elements);
         RelValue::Projection(x)
     }
+
+    pub fn read_column<'b>(&'b self, col: usize) -> Option<Cow<'b, AlgebraicValue>> {
+        match self {
+            Self::Row(row_ref) => AlgebraicValue::read_column(*row_ref, col).ok().map(Cow::Owned),
+            Self::Projection(pv) => pv.elements.get(col).map(Cow::Borrowed),
+        }
+    }
+
+    pub fn project_not_empty(&self, cols: &ColList) -> Option<ProductValue> {
+        let av = match self {
+            Self::Row(row_ref) => row_ref.project_not_empty(cols).ok()?,
+            Self::Projection(pv) => pv.project_not_empty(cols).ok()?,
+        };
+        if av.is_product() {
+            Some(av.into_product().unwrap())
+        } else {
+            Some(ProductValue::from_iter([av]))
+        }
+    }
 }
 
 impl<'a> Eq for RelValue<'a> {}
 
 impl<'a> PartialEq for RelValue<'a> {
     fn eq(&self, other: &Self) -> bool {
-        todo!("eq_row_in_table")
-        // self.data == other.data
+        match (self, other) {
+            (RelValue::Row(left), RelValue::Row(right)) => {
+                let layout = left.row_layout();
+
+                // Check that the rows have the same type,
+                // so that we can use the unsafe `eq_row_in_page`.
+                // TODO(perf): Determine if this check is expensive, and if so,
+                // whether it can be optimized or removed.
+                // If not, consider removing this branch and always following the other branch,
+                // i.e. sequential `read_column` of each column in both rows.
+                if right.row_layout() != layout {
+                    return false;
+                }
+
+                let (left_page, left_offset) = left.page_and_offset();
+                let (right_page, right_offset) = right.page_and_offset();
+                unsafe {
+                    // SAFETY:
+                    // - Existence of a `RowRef` is sufficient proof that the row is valid,
+                    //   so we can trust that the pages and offsets refer to valid rows.
+                    // - We checked above that the row layouts are the same,
+                    //   so `layout` applies to both of them.
+                    spacetimedb_table::eq::eq_row_in_page(left_page, right_page, left_offset, right_offset, layout);
+                }
+                todo!("eq_row_in_table")
+            }
+            (left, right) => {
+                let num_columns = left.num_columns();
+
+                // Check that the rows have the same number of columns.
+                // If not, there's no need to ever get an `AlgebraicValue` for comparison.
+                if right.num_columns() != num_columns {
+                    return false;
+                }
+
+                for col_idx in 0..num_columns {
+                    // These unwraps will never fail because we've asserted above
+                    // that both rows have exactly `num_columns` rows.
+                    let left_col = left.read_column(col_idx).unwrap();
+                    let right_col = right.read_column(col_idx).unwrap();
+                    if left_col != right_col {
+                        return false;
+                    }
+                }
+                true
+            }
+        }
     }
 }
 
 impl<'a> Ord for RelValue<'a> {
     fn cmp(&self, other: &Self) -> Ordering {
-        todo!("no clue lmao")
+        let left_num_cols = self.num_columns();
+        let right_num_cols = self.num_columns();
+        let shared_num_cols = usize::min(left_num_cols, right_num_cols);
+
+        // First, compare all the columns for which both rows have a column at that index.
+        // Upon finding a non-equal column, return that ordering.
+        for col_idx in 0..shared_num_cols {
+            // These unwraps will never fail because we've determined above
+            // that both rows have at least `shared_num_columns` rows.
+            let left_col = self.read_column(col_idx).unwrap();
+            let right_col = other.read_column(col_idx).unwrap();
+            match left_col.cmp(&right_col) {
+                Ordering::Less => return Ordering::Less,
+                Ordering::Greater => return Ordering::Greater,
+                Ordering::Equal => (),
+            }
+        }
+
+        // Finally, if all the shared columns match, i.e. one row is a prefix of the other,
+        // the shorter row is ordered less.
+        left_num_cols.cmp(&right_num_cols)
     }
 }
 
