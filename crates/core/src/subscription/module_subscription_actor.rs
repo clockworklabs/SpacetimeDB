@@ -78,7 +78,8 @@ impl ModuleSubscriptions {
             .with_label_values(&self.relational_db.address())
             .inc();
 
-        let sender = subscription.subscribers().last().unwrap();
+        let sender = subscription.subscribers().last().unwrap().clone();
+        drop(subscriptions);
         // NOTE: It is important to send the state in this thread because if you spawn a new
         // thread it's possible for messages to get sent to the client out of order. If you do
         // spawn in another thread messages will need to be buffered until the state is sent out
