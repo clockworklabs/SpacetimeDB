@@ -282,6 +282,10 @@ impl TxDatastore for Locking {
         tx.table_id_from_name(table_name, self.database_address)
     }
 
+    fn table_name_from_id_tx<'a>(&'a self, tx: &'a Self::Tx, table_id: TableId) -> Result<Option<Cow<'a, str>>> {
+        Ok(tx.table_exists(&table_id).map(Cow::Borrowed))
+    }
+
     fn schema_for_table_tx<'tx>(&self, tx: &'tx Self::Tx, table_id: TableId) -> Result<Cow<'tx, TableSchema>> {
         tx.schema_for_table(&ExecutionContext::internal(self.database_address), table_id)
     }

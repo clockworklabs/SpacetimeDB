@@ -386,10 +386,9 @@ impl RelationalDB {
     /// TODO(jgilles): when we support actual read-only transactions, use those here instead.
     /// TODO(jgilles, kim): get this merged with the above function (two people had similar ideas
     /// at the same time)
-    pub fn with_read_only<F, A, E>(&self, ctx: &ExecutionContext, f: F) -> Result<A, E>
+    pub fn with_read_only<F, T>(&self, ctx: &ExecutionContext, f: F) -> T
     where
-        F: FnOnce(&mut Tx) -> Result<A, E>,
-        E: From<DBError>,
+        F: FnOnce(&mut Tx) -> T,
     {
         let mut tx = self.inner.begin_tx();
         let res = f(&mut tx);
@@ -470,7 +469,7 @@ impl RelationalDB {
             .with_label_values(&table_id.0)
             .start_timer();
         let table_name = self
-            .table_name_from_id(ctx, tx, table_id)?
+            .table_name_from_id_mut(ctx, tx, table_id)?
             .map(|name| name.to_string())
             .unwrap_or_default();
         self.inner.drop_table_mut_tx(tx, table_id).map(|_| {
@@ -512,7 +511,12 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn table_name_from_id<'a>(
+    pub fn table_name_from_id<'a>(&'a self, tx: &'a Tx, table_id: TableId) -> Result<Option<Cow<'a, str>>, DBError> {
+        self.inner.table_name_from_id_tx(tx, table_id)
+    }
+
+    #[tracing::instrument(skip_all)]
+    pub fn table_name_from_id_mut<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
         tx: &'a MutTx,
@@ -1058,10 +1062,10 @@ mod tests {
 
         let ctx = ExecutionContext::default();
 
-        let result = stdb.table_name_from_id(&ctx, &tx, table_id)?;
+        let result = stdb.table_name_from_id_mut(&ctx, &tx, table_id)?;
         assert!(
             result.is_none(),
-            "Table should not exist, so table_name_from_id should return none",
+            "Table should not exist, so table_name_from_id_mut should return none",
         );
         Ok(())
     }
@@ -1477,7 +1481,7 @@ mod tests {
 
         let table_id = stdb.create_table(&mut tx, schema)?;
         stdb.rename_table(&mut tx, table_id, "YourTable")?;
-        let table_name = stdb.table_name_from_id(&ctx, &tx, table_id)?;
+        let table_name = stdb.table_name_from_id_mut(&ctx, &tx, table_id)?;
 
         assert_eq!(Some("YourTable"), table_name.as_ref().map(Cow::as_ref));
         // Also make sure we've removed the old ST_TABLES_ID row

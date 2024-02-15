@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Weak};
@@ -46,45 +45,29 @@ impl DatabaseUpdate {
 
     pub fn from_writes(stdb: &RelationalDB, tx_data: &TxData) -> Self {
         let mut map: HashMap<TableId, Vec<TableOp>> = HashMap::new();
-        //TODO: This should be wrapped with .auto_commit
-        let tx = stdb.begin_mut_tx();
         for record in tx_data.records.iter() {
-            let op = match record.op {
-                TxOp::Delete => 0,
-                TxOp::Insert(_) => 1,
-            };
-
-            let vec = if let Some(vec) = map.get_mut(&record.table_id) {
-                vec
-            } else {
-                map.insert(record.table_id, Vec::new());
-                map.get_mut(&record.table_id).unwrap()
-            };
-
-            let (row, row_pk) = (record.product_value.clone(), record.key.to_bytes());
+            let vec = map.entry(record.table_id).or_default();
 
             vec.push(TableOp {
-                op_type: op,
-                row_pk,
-                row,
+                op_type: match record.op {
+                    TxOp::Delete => 0,
+                    TxOp::Insert(_) => 1,
+                },
+                row_pk: record.key.to_bytes(),
+                row: record.product_value.clone(),
             });
         }
 
         let ctx = ExecutionContext::internal(stdb.address());
-        let mut table_name_map: HashMap<TableId, Cow<'_, str>> = HashMap::new();
-        let mut table_updates = Vec::new();
-        for (table_id, table_row_operations) in map.drain() {
-            let table_name = table_name_map
-                .entry(table_id)
-                .or_insert_with(|| stdb.table_name_from_id(&ctx, &tx, table_id).unwrap().unwrap());
-            let table_name: &str = table_name.as_ref();
-            table_updates.push(DatabaseTableUpdate {
-                table_id,
-                table_name: table_name.to_owned(),
-                ops: table_row_operations,
-            });
-        }
-        stdb.rollback_mut_tx(&ctx, tx);
+        let table_updates = stdb.with_read_only(&ctx, |tx| {
+            map.into_iter()
+                .map(|(table_id, ops)| DatabaseTableUpdate {
+                    table_id,
+                    table_name: stdb.table_name_from_id(tx, table_id).unwrap().unwrap().into_owned(),
+                    ops,
+                })
+                .collect()
+        });
 
         DatabaseUpdate { tables: table_updates }
     }
