@@ -195,7 +195,6 @@ impl RelationalDB {
             .map_or(Ok(0), |commit_log| commit_log.object_db_size_on_disk())
     }
 
-    #[tracing::instrument(skip_all)]
     pub fn pk_for_row(row: &ProductValue) -> PrimaryKey {
         PrimaryKey {
             data_key: row.to_data_key(),
