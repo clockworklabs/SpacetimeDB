@@ -66,7 +66,7 @@ rustc-demangle.workspace = true
 rustc-hash.workspace = true
 scopeguard.workspace = true
 sendgrid.workspace = true
-serde.workspace = true
+serde.workspace = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 serde_path_to_error.workspace = true
 serde_with = { workspace = true, features = ["chrono_0_4"] }

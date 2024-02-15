@@ -21,7 +21,7 @@
 //! of join query _can_ be evaluated incrementally without materialized views,
 //! as described in the following section:
 //!
-#![doc = include_str!("../../../../docs/incremental-joins.md")]
+// #![doc = include_str!("../../../../docs/incremental-joins.md")]
 
 use anyhow::Context;
 use derive_more::{Deref, DerefMut, From, IntoIterator};
