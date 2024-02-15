@@ -247,8 +247,7 @@ impl MutTxId {
             )?
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, table_id.into()))?;
-        let st = st_table_ref.to_product_value();
-        let mut st = StTableRow::try_from(&st)?.to_owned();
+        let mut st = StTableRow::try_from(st_table_ref)?;
         let st_table_ptr = st_table_ref.pointer();
 
         self.delete(ST_TABLES_ID, st_table_ptr)?;
@@ -259,31 +258,23 @@ impl MutTxId {
     }
 
     pub fn table_id_from_name(&self, table_name: &str, database_address: Address) -> Result<Option<TableId>> {
-        self.iter_by_col_eq(
-            &ExecutionContext::internal(database_address),
-            &ST_TABLES_ID,
-            StTableFields::TableName.into(),
-            AlgebraicValue::String(table_name.to_owned()),
-        )
-        .map(|mut iter| {
-            iter.next().map(|row| {
-                TableId(
-                    *row.to_product_value().elements[StTableFields::TableId.col_idx()]
-                        .as_u32()
-                        .unwrap(),
-                )
-            })
-        })
+        let ctx = ExecutionContext::internal(database_address);
+        let row = self
+            .iter_by_col_eq(
+                &ctx,
+                &ST_TABLES_ID,
+                StTableFields::TableName.into(),
+                table_name.to_owned().into(),
+            )?
+            .next();
+        Ok(row.map(|row| row.read_col::<u32>(StTableFields::TableId.col_id()).unwrap().into()))
     }
 
     pub fn table_name_from_id<'a>(&'a self, ctx: &'a ExecutionContext, table_id: TableId) -> Result<Option<String>> {
         self.iter_by_col_eq(ctx, &ST_TABLES_ID, StTableFields::TableId.into(), table_id.into())
             .map(|mut iter| {
-                iter.next().map(|row| {
-                    let ProductValue { mut elements, .. } = row.to_product_value();
-                    let elt = elements.swap_remove(StTableFields::TableName.col_idx());
-                    elt.into_string().unwrap()
-                })
+                iter.next()
+                    .map(|row| row.read_col(StTableFields::TableName.col_id()).unwrap())
             })
     }
 
@@ -389,23 +380,18 @@ impl MutTxId {
             )?
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_indexes, index_id.into()))?;
-        let st = st_index_ref.to_product_value();
-        let st = StIndexRow::try_from(&st)?.to_owned();
-        let table_id = st.table_id;
-        let st_index_ptr = st_index_ref.pointer();
+        let table_id = st_index_ref.read_col::<u32>(StIndexFields::TableId.col_id())?.into();
 
         // Remove the index from st_indexes.
-        self.delete(ST_INDEXES_ID, st_index_ptr)?;
+        self.delete(ST_INDEXES_ID, st_index_ref.pointer())?;
 
         let clear_indexes = |table: &mut Table| {
-            let cols: Vec<_> = table
+            if let Some(col) = table
                 .indexes
                 .iter()
-                .filter(|(_cols, idx)| idx.index_id == index_id)
-                .map(|(cols, _idx)| cols.clone())
-                .collect();
-
-            for col in cols {
+                .find(|(_, idx)| idx.index_id == index_id)
+                .map(|(cols, _)| cols.clone())
+            {
                 table.schema.indexes.retain(|x| x.columns != col);
                 table.indexes.remove(&col);
             }
@@ -430,16 +416,11 @@ impl MutTxId {
             &ExecutionContext::internal(database_address),
             &ST_INDEXES_ID,
             StIndexFields::IndexName.into(),
-            AlgebraicValue::String(index_name.to_owned()),
+            index_name.to_owned().into(),
         )
         .map(|mut iter| {
-            iter.next().map(|row| {
-                IndexId(
-                    *row.to_product_value().elements[StIndexFields::IndexId.col_idx()]
-                        .as_u32()
-                        .unwrap(),
-                )
-            })
+            iter.next()
+                .map(|row| row.read_col::<u32>(StIndexFields::IndexId.col_id()).unwrap().into())
         })
     }
 
@@ -467,10 +448,9 @@ impl MutTxId {
             )?
             .last()
             .unwrap();
-        let old_seq_row = old_seq_row_ref.to_product_value();
         let old_seq_row_ptr = old_seq_row_ref.pointer();
         let seq_row = {
-            let mut seq_row = StSequenceRow::try_from(&old_seq_row)?.to_owned();
+            let mut seq_row = StSequenceRow::try_from(old_seq_row_ref)?;
 
             let Some(sequence) = self.sequence_state_lock.get_sequence_mut(seq_id) else {
                 return Err(SequenceError::NotFound(seq_id).into());
@@ -548,12 +528,11 @@ impl MutTxId {
             )?
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_sequence, sequence_id.into()))?;
-        let st = st_sequence_ref.to_product_value();
-        let st = StSequenceRow::try_from(&st)?.to_owned();
-        let st_sequence_ptr = st_sequence_ref.pointer();
-        let table_id = st.table_id;
+        let table_id = st_sequence_ref
+            .read_col::<u32>(StSequenceFields::TableId.col_id())?
+            .into();
 
-        self.delete(ST_SEQUENCES_ID, st_sequence_ptr)?;
+        self.delete(ST_SEQUENCES_ID, st_sequence_ref.pointer())?;
 
         // TODO: Transactionality.
         // Currently, a TX which drops a sequence then aborts
@@ -571,13 +550,13 @@ impl MutTxId {
             &ExecutionContext::internal(database_address),
             &ST_SEQUENCES_ID,
             StSequenceFields::SequenceName.into(),
-            AlgebraicValue::String(seq_name.to_owned()),
+            seq_name.to_owned().into(),
         )
         .map(|mut iter| {
             iter.next().map(|row| {
-                let row = row.to_product_value();
-                let id = row.elements[StSequenceFields::SequenceId.col_idx()].as_u32().unwrap();
-                (*id).into()
+                row.read_col::<u32>(StSequenceFields::SequenceId.col_id())
+                    .unwrap()
+                    .into()
             })
         })
     }
@@ -646,13 +625,12 @@ impl MutTxId {
             )?
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_constraints, constraint_id.into()))?;
-        let st = st_constraint_ref.to_product_value();
-        let st = StConstraintRow::try_from(&st)?;
-        let st_constraint_ptr = st_constraint_ref.pointer();
 
-        let table_id = st.table_id;
+        let table_id = st_constraint_ref
+            .read_col::<u32>(StConstraintFields::TableId.col_id())?
+            .into();
 
-        self.delete(ST_CONSTRAINTS_ID, st_constraint_ptr)?;
+        self.delete(ST_CONSTRAINTS_ID, st_constraint_ref.pointer())?;
 
         if let Ok(insert_table) = self.get_insert_table_mut(table_id) {
             insert_table.schema.remove_constraint(constraint_id);
@@ -670,15 +648,13 @@ impl MutTxId {
             &ExecutionContext::internal(database_address),
             &ST_CONSTRAINTS_ID,
             StConstraintFields::ConstraintName.into(),
-            AlgebraicValue::String(constraint_name.to_owned()),
+            constraint_name.to_owned().into(),
         )
         .map(|mut iter| {
             iter.next().map(|row| {
-                let row = row.to_product_value();
-                let id = row.elements[StConstraintFields::ConstraintId.col_idx()]
-                    .as_u32()
-                    .unwrap();
-                (*id).into()
+                row.read_col::<u32>(StConstraintFields::ConstraintId.col_id())
+                    .unwrap()
+                    .into()
             })
         })
     }
@@ -750,24 +726,23 @@ impl MutTxId {
         let schema = self.schema_for_table(&ctx, table_id)?;
 
         let mut col_to_update = None;
-        for seq in &schema.sequences {
-            if !row.elements[usize::from(seq.col_pos)].is_numeric_zero() {
-                continue;
-            }
+        for seq in schema
+            .sequences
+            .iter()
+            .filter(|seq| row.elements[usize::from(seq.col_pos)].is_numeric_zero())
+        {
             for seq_row in self.iter_by_col_eq(
                 &ctx,
                 &ST_SEQUENCES_ID,
                 StSequenceFields::TableId.into(),
                 table_id.into(),
             )? {
-                let seq_row = seq_row.to_product_value();
-                let seq_row = StSequenceRow::try_from(&seq_row)?;
-                if seq_row.col_pos != seq.col_pos {
-                    continue;
+                let seq_col_pos: ColId = seq_row.read_col::<u32>(StSequenceFields::ColPos.col_id())?.into();
+                if seq_col_pos == seq.col_pos {
+                    let seq_id = seq_row.read_col::<u32>(StSequenceFields::SequenceId.col_id())?.into();
+                    col_to_update = Some((seq.col_pos, seq_id));
+                    break;
                 }
-
-                col_to_update = Some((seq.col_pos, seq_row.sequence_id));
-                break;
             }
         }
 

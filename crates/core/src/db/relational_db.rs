@@ -10,7 +10,6 @@ use super::message_log::MessageLog;
 use super::ostorage::memory_object_db::MemoryObjectDB;
 use super::relational_operators::Relation;
 use crate::address::Address;
-use crate::db::datastore::traits::DataRow;
 use crate::db::db_metrics::DB_METRICS;
 use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 use crate::db::ostorage::ObjectDB;
@@ -26,7 +25,7 @@ use spacetimedb_sats::data_key::ToDataKey;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{ColumnDef, IndexDef, SequenceDef, TableDef, TableSchema};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
-use spacetimedb_table::{indexes::RowPointer, table::RowRef};
+use spacetimedb_table::indexes::RowPointer;
 use std::borrow::Cow;
 use std::fs::{create_dir_all, File};
 use std::ops::RangeBounds;
@@ -46,15 +45,6 @@ pub struct RelationalDB {
     _lock: Arc<File>,
     address: Address,
     row_count_fn: RowCountFn,
-}
-
-impl DataRow for RelationalDB {
-    type RowId = RowPointer;
-    type DataRef<'a> = RowRef<'a>;
-
-    fn view_product_value<'a>(&self, data_ref: Self::DataRef<'a>) -> Cow<'a, ProductValue> {
-        Cow::Owned(data_ref.to_product_value())
-    }
 }
 
 impl std::fmt::Debug for RelationalDB {
@@ -823,6 +813,7 @@ mod tests {
     use spacetimedb_sats::db::def::{ColumnDef, ConstraintDef};
     use spacetimedb_sats::product;
     use spacetimedb_table::read_column::ReadColumn;
+    use spacetimedb_table::table::RowRef;
     use std::io::{self, Seek, SeekFrom, Write};
     use std::ops::Range;
     use tempfile::TempDir;

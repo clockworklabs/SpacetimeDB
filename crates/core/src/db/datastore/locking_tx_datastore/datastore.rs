@@ -218,10 +218,10 @@ impl Locking {
 
 impl DataRow for Locking {
     type RowId = RowPointer;
-    type DataRef<'a> = RowRef<'a>;
+    type RowRef<'a> = RowRef<'a>;
 
-    fn view_product_value<'a>(&self, data_ref: Self::DataRef<'a>) -> Cow<'a, ProductValue> {
-        Cow::Owned(data_ref.to_product_value())
+    fn read_table_id<'a>(&self, row_ref: Self::RowRef<'a>) -> Result<TableId> {
+        Ok(row_ref.read_col::<u32>(StTableFields::TableId.col_id())?.into())
     }
 }
 
@@ -427,7 +427,7 @@ impl MutTxDatastore for Locking {
         tx: &'a Self::MutTx,
         table_id: TableId,
         row_ptr: &'a Self::RowId,
-    ) -> Result<Option<Self::DataRef<'a>>> {
+    ) -> Result<Option<Self::RowRef<'a>>> {
         // TODO(perf, deep-integration): Rework this interface so that `row_ptr` can be trusted.
         tx.get(table_id, *row_ptr)
     }
@@ -1510,7 +1510,7 @@ mod tests {
                     AlgebraicValue::U32(1),
                 )
                 .unwrap()
-                .map(|data_ref| data_ref.to_product_value())
+                .map(|row_ref| row_ref.to_product_value())
                 .collect::<Vec<_>>()
         };
 

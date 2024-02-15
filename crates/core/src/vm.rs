@@ -249,11 +249,11 @@ pub struct IndexSemiJoin<'a, Rhs: RelOps> {
 
 impl<'a, Rhs: RelOps> IndexSemiJoin<'a, Rhs> {
     fn filter(&self, index_row: RelValueRef) -> Result<bool, ErrorVm> {
-        if let Some(op) = &self.index_select {
-            Ok(op.compare(index_row, &self.index_header)?)
+        Ok(if let Some(op) = &self.index_select {
+            op.compare(index_row, &self.index_header)?
         } else {
-            Ok(true)
-        }
+            true
+        })
     }
 
     fn map(&self, index_row: RelValue, probe_row: Option<RelValue>) -> RelValue {
