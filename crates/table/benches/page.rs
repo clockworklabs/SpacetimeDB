@@ -3,8 +3,6 @@ use core::mem::{self, MaybeUninit};
 use core::time::Duration;
 use criterion::measurement::{Measurement, WallTime};
 use criterion::{black_box, criterion_group, criterion_main, Bencher, BenchmarkId, Criterion, Throughput};
-use rand::distributions::OpenClosed01;
-use rand::prelude::Distribution;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
@@ -326,8 +324,8 @@ fn insert_opt_str(c: &mut Criterion) {
                     unsafe { page.zero_data() };
 
                     let body = |_, _, page: &mut Page| loop {
-                        let insert_none = <OpenClosed01 as Distribution<f64>>::sample(&OpenClosed01, &mut rng);
-                        if insert_none > some_ratio {
+                        let insert_none = rng.gen_bool(some_ratio);
+                        if !insert_none {
                             if !page.has_space_for_row(fixed_row_size, 0) {
                                 break;
                             }
@@ -365,8 +363,8 @@ fn delete_to_approx_fullness_ratio<Row: FixedLenRow>(page: &mut Page, fullness: 
     let row_offsets = page.iter_fixed_len(row_size_for_type::<Row>()).collect::<Vec<_>>();
     let visitor = Row::var_len_visitor();
     for row in row_offsets.into_iter() {
-        let should_keep = <OpenClosed01 as Distribution<f64>>::sample(&OpenClosed01, &mut rng);
-        if should_keep > fullness {
+        let should_keep = rng.gen_bool(fullness);
+        if !should_keep {
             unsafe { page.delete_row(row, row_size_for_type::<Row>(), &visitor, &mut NullBlobStore) };
         }
     }
@@ -450,10 +448,7 @@ fn copy_filter_into_fixed_len_keep_ratio<Row: FixedLenRow>(b: &mut Bencher, keep
                 row_size_for_type::<Row>(),
                 &visitor,
                 &mut NullBlobStore,
-                |_page, _row| {
-                    let should_keep = <OpenClosed01 as Distribution<f64>>::sample(&OpenClosed01, &mut rng);
-                    should_keep < *keep_ratio
-                },
+                |_page, _row| rng.gen_bool(*keep_ratio),
             )
         };
     });
@@ -775,7 +770,8 @@ fn hash_in_page(c: &mut Criterion) {
         group.bench_function(name, |b| {
             let mut hasher = RowHash::hasher_builder().build_hasher();
             b.iter(|| {
-                black_box(unsafe { hash_row_in_page(&mut hasher, black_box(&page), black_box(offset), black_box(&ty)) })
+                unsafe { hash_row_in_page(&mut hasher, black_box(&page), black_box(offset), black_box(&ty)) };
+                black_box(&mut hasher);
             });
         });
     }

@@ -38,7 +38,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v3
         with:
-          dotnet-version: '8.x'
+          dotnet-version: "8.x"
 
       - name: Create /stdb dir
         run: |
@@ -62,10 +62,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Run cargo clippy
-        run: cargo clippy --all --tests --features odb_rocksdb,odb_sled,metrics -- -D warnings
-
-      - name: Check benchmarks
-        run: cd crates/bench && cargo check --benches
+        run: cargo clippy --all --tests --benches --features odb_rocksdb,odb_sled,metrics -- -D warnings
 
   wasm_bindings:
     name: Build and test wasm bindings
