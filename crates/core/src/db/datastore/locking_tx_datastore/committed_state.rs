@@ -308,7 +308,7 @@ impl CommittedState {
         let st_indexes = self.tables.get(&ST_INDEXES_ID).unwrap();
         let rows = st_indexes
             .scan_rows(&self.blob_store)
-            .map(|row| StIndexRow::try_from(row))
+            .map(StIndexRow::try_from)
             .collect::<Result<Vec<_>>>()?;
         for index_row in rows {
             let Some((table, blob_store)) = self.get_table_and_blob_store(index_row.table_id) else {
@@ -336,8 +336,7 @@ impl CommittedState {
             .get_table(ST_TABLES_ID)
             .unwrap()
             .scan_rows(&self.blob_store)
-            .map(|r| r.read_col(StTableFields::TableId.col_id()).unwrap())
-            .map(TableId)
+            .map(|r| r.read_col(StTableFields::TableId).unwrap())
             .filter(|table_id| self.get_table(*table_id).is_none())
             .collect::<Vec<_>>();
 

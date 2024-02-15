@@ -29,15 +29,11 @@ pub(crate) trait StateView {
 
     fn table_id_from_name(&self, table_name: &str, database_address: Address) -> Result<Option<TableId>> {
         let ctx = ExecutionContext::internal(database_address);
+        let name = table_name.to_owned().into();
         let row = self
-            .iter_by_col_eq(
-                &ctx,
-                &ST_TABLES_ID,
-                StTableFields::TableName.col_id().into(),
-                table_name.to_owned().into(),
-            )?
+            .iter_by_col_eq(&ctx, &ST_TABLES_ID, StTableFields::TableName.col_id().into(), name)?
             .next();
-        Ok(row.map(|row| row.read_col::<u32>(StTableFields::TableId.col_id()).unwrap().into()))
+        Ok(row.map(|row| row.read_col(StTableFields::TableId).unwrap()))
     }
 
     fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: &TableId) -> Result<Iter<'a>>;

@@ -107,9 +107,10 @@ impl MutTxId {
             table_type: table_schema.table_type,
             table_access: table_schema.table_access,
         };
-        let mut row = row.into();
-        self.insert(ST_TABLES_ID, &mut row, database_address)?;
-        let table_id = StTableRow::try_from(&row)?.table_id;
+        let table_id = self
+            .insert(ST_TABLES_ID, &mut row.into(), database_address)?
+            .collapse()
+            .read_col(StTableFields::TableId)?;
 
         // Generate the full definition of the table, with the generated indexes, constraints, sequences...
         let table_schema = table_schema.into_schema(table_id);
@@ -148,7 +149,7 @@ impl MutTxId {
             self.create_index(table_id, index.into(), database_address)?;
         }
 
-        log::trace!("TABLE CREATED: {}, table_id:{table_id}", table_schema.table_name);
+        log::trace!("TABLE CREATED: {}, table_id: {table_id}", table_schema.table_name);
 
         Ok(table_id)
     }
@@ -259,23 +260,16 @@ impl MutTxId {
 
     pub fn table_id_from_name(&self, table_name: &str, database_address: Address) -> Result<Option<TableId>> {
         let ctx = ExecutionContext::internal(database_address);
+        let table_name = table_name.to_owned().into();
         let row = self
-            .iter_by_col_eq(
-                &ctx,
-                &ST_TABLES_ID,
-                StTableFields::TableName.into(),
-                table_name.to_owned().into(),
-            )?
+            .iter_by_col_eq(&ctx, &ST_TABLES_ID, StTableFields::TableName.into(), table_name)?
             .next();
-        Ok(row.map(|row| row.read_col::<u32>(StTableFields::TableId.col_id()).unwrap().into()))
+        Ok(row.map(|row| row.read_col(StTableFields::TableId).unwrap()))
     }
 
     pub fn table_name_from_id<'a>(&'a self, ctx: &'a ExecutionContext, table_id: TableId) -> Result<Option<String>> {
         self.iter_by_col_eq(ctx, &ST_TABLES_ID, StTableFields::TableId.into(), table_id.into())
-            .map(|mut iter| {
-                iter.next()
-                    .map(|row| row.read_col(StTableFields::TableName.col_id()).unwrap())
-            })
+            .map(|mut iter| iter.next().map(|row| row.read_col(StTableFields::TableName).unwrap()))
     }
 
     pub fn create_index(&mut self, table_id: TableId, index: IndexDef, database_address: Address) -> Result<IndexId> {
@@ -300,19 +294,19 @@ impl MutTxId {
             columns: index.columns.clone(),
             is_unique: index.is_unique,
         };
-        let mut row = row.into();
-        self.insert(ST_INDEXES_ID, &mut row, database_address)?;
-        let index_id = StIndexRow::try_from(&row)?.index_id;
+        let index_id = self
+            .insert(ST_INDEXES_ID, &mut row.into(), database_address)?
+            .collapse()
+            .read_col(StIndexFields::IndexId)?;
 
         let mut index = IndexSchema::from_def(table_id, index);
         index.index_id = index_id;
-        let index_name = index.index_name.clone();
         let columns = index.columns.clone();
         self.create_index_internal(index, database_address)?;
 
         log::trace!(
             "INDEX CREATED: {} for table: {} and col(s): {:?}",
-            index_name,
+            index_id,
             table_id,
             columns
         );
@@ -380,7 +374,7 @@ impl MutTxId {
             )?
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_indexes, index_id.into()))?;
-        let table_id = st_index_ref.read_col::<u32>(StIndexFields::TableId.col_id())?.into();
+        let table_id = st_index_ref.read_col(StIndexFields::TableId)?;
 
         // Remove the index from st_indexes.
         self.delete(ST_INDEXES_ID, st_index_ref.pointer())?;
@@ -412,16 +406,10 @@ impl MutTxId {
     }
 
     pub fn index_id_from_name(&self, index_name: &str, database_address: Address) -> Result<Option<IndexId>> {
-        self.iter_by_col_eq(
-            &ExecutionContext::internal(database_address),
-            &ST_INDEXES_ID,
-            StIndexFields::IndexName.into(),
-            index_name.to_owned().into(),
-        )
-        .map(|mut iter| {
-            iter.next()
-                .map(|row| row.read_col::<u32>(StIndexFields::IndexId.col_id()).unwrap().into())
-        })
+        let ctx = ExecutionContext::internal(database_address);
+        let name = index_name.to_owned().into();
+        self.iter_by_col_eq(&ctx, &ST_INDEXES_ID, StIndexFields::IndexName.into(), name)
+            .map(|mut iter| iter.next().map(|row| row.read_col(StIndexFields::IndexId).unwrap()))
     }
 
     pub fn get_next_sequence_value(&mut self, seq_id: SequenceId, database_address: Address) -> Result<i128> {
@@ -488,7 +476,7 @@ impl MutTxId {
         // Insert the sequence row into st_sequences
         // NOTE: Because st_sequences has a unique index on sequence_name, this will
         // fail if the table already exists.
-        let sequence_row = StSequenceRow {
+        let mut sequence_row = StSequenceRow {
             sequence_id: 0.into(), // autogen'd
             sequence_name: seq.sequence_name,
             table_id,
@@ -499,21 +487,18 @@ impl MutTxId {
             min_value: seq.min_value.unwrap_or(1),
             max_value: seq.max_value.unwrap_or(i128::MAX),
         };
-        let mut row = sequence_row.into();
-        self.insert(ST_SEQUENCES_ID, &mut row, database_address)?;
-        // TODO(centril): `row` is already owned, so pass that in.
-        let sequence_row = StSequenceRow::try_from(&row)?.to_owned();
-        let sequence_id = sequence_row.sequence_id;
+        let row = self.insert(ST_SEQUENCES_ID, &mut sequence_row.clone().into(), database_address)?;
+        let seq_id = row.collapse().read_col(StSequenceFields::SequenceId)?;
+        sequence_row.sequence_id = seq_id;
 
         let schema: SequenceSchema = sequence_row.into();
         let insert_table = self.get_insert_table_mut(schema.table_id)?;
         insert_table.schema.update_sequence(schema.clone());
-        self.sequence_state_lock
-            .insert(schema.sequence_id, Sequence::new(schema));
+        self.sequence_state_lock.insert(seq_id, Sequence::new(schema));
 
-        log::trace!("SEQUENCE CREATED: id = {}", sequence_id);
+        log::trace!("SEQUENCE CREATED: id = {}", seq_id);
 
-        Ok(sequence_id)
+        Ok(seq_id)
     }
 
     pub fn drop_sequence(&mut self, sequence_id: SequenceId, database_address: Address) -> Result<()> {
@@ -528,9 +513,7 @@ impl MutTxId {
             )?
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_sequence, sequence_id.into()))?;
-        let table_id = st_sequence_ref
-            .read_col::<u32>(StSequenceFields::TableId.col_id())?
-            .into();
+        let table_id = st_sequence_ref.read_col(StSequenceFields::TableId)?;
 
         self.delete(ST_SEQUENCES_ID, st_sequence_ref.pointer())?;
 
@@ -546,19 +529,13 @@ impl MutTxId {
     }
 
     pub fn sequence_id_from_name(&self, seq_name: &str, database_address: Address) -> Result<Option<SequenceId>> {
-        self.iter_by_col_eq(
-            &ExecutionContext::internal(database_address),
-            &ST_SEQUENCES_ID,
-            StSequenceFields::SequenceName.into(),
-            seq_name.to_owned().into(),
-        )
-        .map(|mut iter| {
-            iter.next().map(|row| {
-                row.read_col::<u32>(StSequenceFields::SequenceId.col_id())
-                    .unwrap()
-                    .into()
+        let ctx = ExecutionContext::internal(database_address);
+        let name = seq_name.to_owned().into();
+        self.iter_by_col_eq(&ctx, &ST_SEQUENCES_ID, StSequenceFields::SequenceName.into(), name)
+            .map(|mut iter| {
+                iter.next()
+                    .map(|row| row.read_col(StSequenceFields::SequenceId).unwrap())
             })
-        })
     }
 
     fn create_constraint(
@@ -590,18 +567,24 @@ impl MutTxId {
             table_id,
         };
 
-        let mut row = ProductValue::from(constraint_row);
-        self.insert(ST_CONSTRAINTS_ID, &mut row, database_address)?;
-        let constraint_row = StConstraintRow::try_from(&row)?;
-        let constraint_id = constraint_row.constraint_id;
+        let constraint_row = self.insert(
+            ST_CONSTRAINTS_ID,
+            &mut ProductValue::from(constraint_row),
+            database_address,
+        )?;
+        let constraint_id = constraint_row.collapse().read_col(StConstraintFields::ConstraintId)?;
+        let existed = matches!(constraint_row, RowRefInsertion::Existed(_));
+        // TODO: Can we return early here?
 
         let mut constraint = ConstraintSchema::from_def(table_id, constraint);
         constraint.constraint_id = constraint_id;
         let insert_table = self.get_insert_table_mut(constraint.table_id)?;
-        let constraint_name = constraint.constraint_name.clone();
+        if existed {
+            log::trace!("CONSTRAINT ALREADY EXISTS: {constraint_id}");
+        } else {
+            log::trace!("CONSTRAINT CREATED: {}", &constraint.constraint_name);
+        }
         insert_table.schema.update_constraint(constraint);
-
-        log::trace!("CONSTRAINT CREATED: {}", constraint_name);
 
         Ok(constraint_id)
     }
@@ -626,9 +609,7 @@ impl MutTxId {
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_constraints, constraint_id.into()))?;
 
-        let table_id = st_constraint_ref
-            .read_col::<u32>(StConstraintFields::TableId.col_id())?
-            .into();
+        let table_id = st_constraint_ref.read_col(StConstraintFields::TableId)?;
 
         self.delete(ST_CONSTRAINTS_ID, st_constraint_ref.pointer())?;
 
@@ -651,11 +632,8 @@ impl MutTxId {
             constraint_name.to_owned().into(),
         )
         .map(|mut iter| {
-            iter.next().map(|row| {
-                row.read_col::<u32>(StConstraintFields::ConstraintId.col_id())
-                    .unwrap()
-                    .into()
-            })
+            iter.next()
+                .map(|row| row.read_col(StConstraintFields::ConstraintId).unwrap())
         })
     }
 
@@ -717,8 +695,33 @@ impl MutTxId {
     pub fn rollback(self) {
         // TODO: Check that no sequences exceed their allocation after the rollback.
     }
+}
 
-    pub fn insert(&mut self, table_id: TableId, row: &mut ProductValue, database_address: Address) -> Result<()> {
+/// Either a row just inserted to a table or a row that already existed in some table.
+#[derive(Clone, Copy)]
+pub enum RowRefInsertion<'a> {
+    /// The row was just inserted.
+    Inserted(RowRef<'a>),
+    /// The row already existed.
+    Existed(RowRef<'a>),
+}
+
+impl RowRefInsertion<'_> {
+    /// Returns a row,
+    /// collapsing the distinction between inserted and existing rows.
+    fn collapse(&self) -> RowRef<'_> {
+        let (Self::Inserted(row) | Self::Existed(row)) = *self;
+        row
+    }
+}
+
+impl MutTxId {
+    pub fn insert(
+        &mut self,
+        table_id: TableId,
+        row: &mut ProductValue,
+        database_address: Address,
+    ) -> Result<RowRefInsertion<'_>> {
         let ctx = ExecutionContext::internal(database_address);
 
         // TODO: Executing schema_for_table for every row insert is expensive.
@@ -737,9 +740,9 @@ impl MutTxId {
                 StSequenceFields::TableId.into(),
                 table_id.into(),
             )? {
-                let seq_col_pos: ColId = seq_row.read_col::<u32>(StSequenceFields::ColPos.col_id())?.into();
+                let seq_col_pos: ColId = seq_row.read_col(StSequenceFields::ColPos)?;
                 if seq_col_pos == seq.col_pos {
-                    let seq_id = seq_row.read_col::<u32>(StSequenceFields::SequenceId.col_id())?.into();
+                    let seq_id = seq_row.read_col(StSequenceFields::SequenceId)?;
                     col_to_update = Some((seq.col_pos, seq_id));
                     break;
                 }
@@ -762,12 +765,10 @@ impl MutTxId {
             row.elements[col_idx] = AlgebraicValue::from_sequence_value(&col_ty, seq_val);
         }
 
-        self.insert_row_internal(table_id, row)?;
-
-        Ok(())
+        self.insert_row_internal(table_id, row)
     }
 
-    pub fn insert_row_internal(&mut self, table_id: TableId, row: &ProductValue) -> Result<()> {
+    pub fn insert_row_internal(&mut self, table_id: TableId, row: &ProductValue) -> Result<RowRefInsertion<'_>> {
         let commit_table = self.committed_state_write_lock.get_table(table_id);
 
         // Check for constraint violations as early as possible,
@@ -830,12 +831,26 @@ impl MutTxId {
                         // but is marked as deleted.
                         // In this case, undelete it, so it remains in the committed state.
                         delete_table.remove(&committed_ptr);
+
+                        // No new row was inserted, but return `committed_ptr`.
+                        let blob_store = &self.committed_state_write_lock.blob_store;
+                        return Ok(RowRefInsertion::Existed(
+                            // SAFETY: `find_same_row` told us that `ptr` refers to a valid row in `commit_table`.
+                            unsafe { commit_table.get_row_ref_unchecked(blob_store, committed_ptr) },
+                        ));
                     }
                 }
-                Ok(())
+
+                Ok(RowRefInsertion::Inserted(unsafe {
+                    // SAFETY: `ptr` came from `tx_table.insert` just now without any interleaving calls.
+                    tx_table.get_row_ref_unchecked(tx_blob_store, ptr)
+                }))
             }
-            // `row` previously present in insert tables; do nothing.
-            Err(InsertError::Duplicate(_)) => Ok(()),
+            // `row` previously present in insert tables; do nothing but return `ptr`.
+            Err(InsertError::Duplicate(ptr)) => Ok(RowRefInsertion::Existed(
+                // SAFETY: `tx_table` told us that `ptr` refers to a valid row in it.
+                unsafe { tx_table.get_row_ref_unchecked(tx_blob_store, ptr) },
+            )),
 
             // Index error: unbox and return `TableError::IndexError`
             // rather than `TableError::Insert(InsertError::IndexError)`.

@@ -934,7 +934,7 @@ mod tests {
     }
 
     fn read_first_col<T: ReadColumn>(row: RowRef<'_>) -> T {
-        row.read_col(0.into()).unwrap()
+        row.read_col(0).unwrap()
     }
 
     fn collect_sorted<T: ReadColumn + Ord>(stdb: &RelationalDB, tx: &MutTx, table_id: TableId) -> ResultTest<Vec<T>> {

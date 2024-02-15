@@ -220,8 +220,8 @@ impl DataRow for Locking {
     type RowId = RowPointer;
     type RowRef<'a> = RowRef<'a>;
 
-    fn read_table_id<'a>(&self, row_ref: Self::RowRef<'a>) -> Result<TableId> {
-        Ok(row_ref.read_col::<u32>(StTableFields::TableId.col_id())?.into())
+    fn read_table_id(&self, row_ref: Self::RowRef<'_>) -> Result<TableId> {
+        Ok(row_ref.read_col(StTableFields::TableId)?)
     }
 }
 
@@ -295,7 +295,7 @@ impl TxDatastore for Locking {
     fn get_all_tables_tx<'tx>(&self, ctx: &ExecutionContext, tx: &'tx Self::Tx) -> Result<Vec<Cow<'tx, TableSchema>>> {
         self.iter_tx(ctx, tx, ST_TABLES_ID)?
             .map(|row_ref| {
-                let table_id = row_ref.read_col::<u32>(StTableFields::TableId.col_id())?.into();
+                let table_id = row_ref.read_col(StTableFields::TableId)?;
                 self.schema_for_table_tx(tx, table_id)
             })
             .collect()
@@ -578,7 +578,7 @@ impl MutProgrammable for Locking {
         let ctx = ExecutionContext::internal(self.database_address);
         let mut iter = tx.iter(&ctx, &ST_MODULE_ID)?;
         if let Some(row_ref) = iter.next() {
-            let epoch = row_ref.read_col::<u128>(StModuleFields::Epoch.col_id())?;
+            let epoch = row_ref.read_col::<u128>(StModuleFields::Epoch)?;
             if fence <= epoch {
                 return Err(anyhow!("stale fencing token: {}, storage is at epoch: {}", fence, epoch).into());
             }

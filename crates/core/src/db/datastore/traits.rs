@@ -48,7 +48,7 @@ pub trait DataRow: Send + Sync {
 
     /// Assuming `row_ref` refers to a row in `st_tables`,
     /// read out the table id from the row.
-    fn read_table_id<'a>(&self, row_ref: Self::RowRef<'a>) -> Result<TableId>;
+    fn read_table_id(&self, row_ref: Self::RowRef<'_>) -> Result<TableId>;
 }
 
 pub trait Tx {
