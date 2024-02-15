@@ -26,10 +26,10 @@ use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId
 use spacetimedb_sats::db::def::{IndexDef, SequenceDef, TableDef, TableSchema};
 use spacetimedb_sats::{hash::Hash, AlgebraicValue, DataKey, ProductType, ProductValue};
 use spacetimedb_table::{indexes::RowPointer, table::RowRef};
-use std::borrow::Cow;
 use std::ops::RangeBounds;
 use std::sync::Arc;
 use std::time::Instant;
+use std::{borrow::Cow, time::Duration};
 
 pub type Result<T> = std::result::Result<T, DBError>;
 
@@ -474,6 +474,48 @@ impl MutTxDatastore for Locking {
     }
 }
 
+#[cfg(feature = "metrics")]
+pub(crate) fn record_metrics(ctx: &ExecutionContext, tx_timer: Instant, lock_wait_time: Duration, committed: bool) {
+    let workload = &ctx.workload();
+    let db = &ctx.database();
+    let reducer = ctx.reducer_name();
+    let elapsed_time = tx_timer.elapsed();
+    let cpu_time = elapsed_time - lock_wait_time;
+
+    let elapsed_time = elapsed_time.as_secs_f64();
+    let cpu_time = cpu_time.as_secs_f64();
+    // Note, we record empty transactions in our metrics.
+    // That is, transactions that don't write any rows to the commit log.
+    DB_METRICS
+        .rdb_num_txns
+        .with_label_values(workload, db, reducer, &committed)
+        .inc();
+    DB_METRICS
+        .rdb_txn_cpu_time_sec
+        .with_label_values(workload, db, reducer)
+        .observe(cpu_time);
+    DB_METRICS
+        .rdb_txn_elapsed_time_sec
+        .with_label_values(workload, db, reducer)
+        .observe(elapsed_time);
+
+    let mut guard = MAX_TX_CPU_TIME.lock().unwrap();
+    let max_cpu_time = *guard
+        .entry((*db, *workload, reducer.to_owned()))
+        .and_modify(|max| {
+            if cpu_time > *max {
+                *max = cpu_time;
+            }
+        })
+        .or_insert_with(|| cpu_time);
+
+    drop(guard);
+    DB_METRICS
+        .rdb_txn_cpu_time_sec_max
+        .with_label_values(workload, db, reducer)
+        .set(max_cpu_time);
+}
+
 impl MutTx for Locking {
     type MutTx = MutTxId;
 
@@ -493,74 +535,12 @@ impl MutTx for Locking {
     }
 
     fn rollback_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) {
-        let workload = &ctx.workload();
-        let db = &ctx.database();
-        let reducer = ctx.reducer_name();
-        let elapsed_time = tx.timer.elapsed();
-        let cpu_time = elapsed_time - tx.lock_wait_time;
-        #[cfg(feature = "metrics")]
-        DB_METRICS
-            .rdb_num_txns
-            .with_label_values(workload, db, reducer, &false)
-            .inc();
-
-        #[cfg(feature = "metrics")]
-        DB_METRICS
-            .rdb_txn_cpu_time_sec
-            .with_label_values(workload, db, reducer)
-            .observe(cpu_time.as_secs_f64());
-
-        #[cfg(feature = "metrics")]
-        DB_METRICS
-            .rdb_txn_elapsed_time_sec
-            .with_label_values(workload, db, reducer)
-            .observe(elapsed_time.as_secs_f64());
+        record_metrics(ctx, tx.timer, tx.lock_wait_time, false);
         tx.rollback();
     }
 
     fn commit_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) -> Result<Option<TxData>> {
-        #[cfg(feature = "metrics")]
-        {
-            let workload = &ctx.workload();
-            let db = &ctx.database();
-            let reducer = ctx.reducer_name();
-            let elapsed_time = tx.timer.elapsed();
-            let cpu_time = elapsed_time - tx.lock_wait_time;
-
-            let elapsed_time = elapsed_time.as_secs_f64();
-            let cpu_time = cpu_time.as_secs_f64();
-            // Note, we record empty transactions in our metrics.
-            // That is, transactions that don't write any rows to the commit log.
-            DB_METRICS
-                .rdb_num_txns
-                .with_label_values(workload, db, reducer, &true)
-                .inc();
-            DB_METRICS
-                .rdb_txn_cpu_time_sec
-                .with_label_values(workload, db, reducer)
-                .observe(cpu_time);
-            DB_METRICS
-                .rdb_txn_elapsed_time_sec
-                .with_label_values(workload, db, reducer)
-                .observe(elapsed_time);
-
-            let mut guard = MAX_TX_CPU_TIME.lock().unwrap();
-            let max_cpu_time = *guard
-                .entry((*db, *workload, reducer.to_owned()))
-                .and_modify(|max| {
-                    if cpu_time > *max {
-                        *max = cpu_time;
-                    }
-                })
-                .or_insert_with(|| cpu_time);
-
-            drop(guard);
-            DB_METRICS
-                .rdb_txn_cpu_time_sec_max
-                .with_label_values(workload, db, reducer)
-                .set(max_cpu_time);
-        }
-
+        record_metrics(ctx, tx.timer, tx.lock_wait_time, true);
         Ok(Some(tx.commit()))
     }
 
