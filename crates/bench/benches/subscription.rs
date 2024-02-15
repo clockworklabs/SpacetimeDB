@@ -75,7 +75,7 @@ fn eval(c: &mut Criterion) {
                 let entity_id = chunk_index * 1200 + i;
                 let x = 0i32;
                 let z = 0i32;
-                let dimension = 0i32;
+                let dimension = 0u32;
                 let row = product!(entity_id, chunk_index, x, z, dimension);
                 let _ = db.insert(tx, rhs, row)?;
             }
