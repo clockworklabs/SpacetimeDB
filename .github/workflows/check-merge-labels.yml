@@ -22,4 +22,6 @@ jobs:
         if: |
           contains(github.event.pull_request.labels.*.name, 'abi-break') ||
           contains(github.event.pull_request.labels.*.name, 'breaking change')
-        run: echo "::error::This is a breaking change." && exit 1
+        run: |
+          echo "::error ::This is a breaking change." >/dev/stderr
+          exit 1
