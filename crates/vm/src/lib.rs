@@ -29,6 +29,7 @@ pub mod dsl;
 pub mod env;
 pub mod errors;
 pub mod eval;
+pub mod eval_query;
 pub mod expr;
 pub mod functions;
 pub mod iterators;

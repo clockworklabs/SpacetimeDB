@@ -44,6 +44,55 @@ fn build_query_opt(q: QueryExpr) -> QueryExprOpt {
     QueryExprOpt { source, query: q.query }
 }
 
+pub(crate) fn optimize_query(q: CrudExpr) -> ExprOpt {
+    let q = q.optimize(&|_, _| i64::MAX);
+    match q {
+        CrudExpr::Query(q) => {
+            let source = crate::eval::build_query_opt(q);
+
+            ExprOpt::Query(Box::new(source))
+        }
+        CrudExpr::Insert { source, rows: data } => {
+            let source = crate::eval::build_source(source);
+            let mut rows = Vec::with_capacity(data.len());
+            for x in data {
+                let mut row = Vec::with_capacity(x.len());
+                for v in x {
+                    match v {
+                        FieldExpr::Name(x) => {
+                            todo!("Deal with idents in insert?: {}", x)
+                        }
+                        FieldExpr::Value(x) => {
+                            row.push(x);
+                        }
+                    }
+                }
+                rows.push(ProductValue::new(&row))
+            }
+            ExprOpt::Crud(Box::new(CrudExprOpt::Insert { source, rows }))
+        }
+        CrudExpr::Update { delete, assignments } => {
+            let delete = crate::eval::build_query_opt(delete);
+
+            ExprOpt::Crud(Box::new(CrudExprOpt::Update { delete, assignments }))
+        }
+        CrudExpr::Delete { query } => {
+            let query = crate::eval::build_query_opt(query);
+
+            ExprOpt::Crud(Box::new(CrudExprOpt::Delete { query }))
+        }
+        CrudExpr::CreateTable { table } => ExprOpt::Crud(Box::new(CrudExprOpt::CreateTable { table })),
+        CrudExpr::Drop {
+            name,
+            kind,
+            table_access,
+        } => ExprOpt::Crud(Box::new(CrudExprOpt::Drop {
+            name,
+            kind,
+            table_access,
+        })),
+    }
+}
 fn build_typed<P: ProgramVm>(p: &mut P, node: Expr) -> ExprOpt {
     match node {
         Expr::Value(x) => ExprOpt::Value(TyExpr::new(x.clone(), x.type_of().into())),
@@ -76,55 +125,7 @@ fn build_typed<P: ProgramVm>(p: &mut P, node: Expr) -> ExprOpt {
                 ExprOpt::CallLambda(name, params.collect())
             }
         }
-        Expr::Crud(q) => {
-            let q = q.optimize(&|_, _| i64::MAX);
-            match q {
-                CrudExpr::Query(q) => {
-                    let source = build_query_opt(q);
-
-                    ExprOpt::Query(Box::new(source))
-                }
-                CrudExpr::Insert { source, rows: data } => {
-                    let source = build_source(source);
-                    let mut rows = Vec::with_capacity(data.len());
-                    for x in data {
-                        let mut row = Vec::with_capacity(x.len());
-                        for v in x {
-                            match v {
-                                FieldExpr::Name(x) => {
-                                    todo!("Deal with idents in insert?: {}", x)
-                                }
-                                FieldExpr::Value(x) => {
-                                    row.push(x);
-                                }
-                            }
-                        }
-                        rows.push(ProductValue::new(&row))
-                    }
-                    ExprOpt::Crud(Box::new(CrudExprOpt::Insert { source, rows }))
-                }
-                CrudExpr::Update { delete, assignments } => {
-                    let delete = build_query_opt(delete);
-
-                    ExprOpt::Crud(Box::new(CrudExprOpt::Update { delete, assignments }))
-                }
-                CrudExpr::Delete { query } => {
-                    let query = build_query_opt(query);
-
-                    ExprOpt::Crud(Box::new(CrudExprOpt::Delete { query }))
-                }
-                CrudExpr::CreateTable { table } => ExprOpt::Crud(Box::new(CrudExprOpt::CreateTable { table })),
-                CrudExpr::Drop {
-                    name,
-                    kind,
-                    table_access,
-                } => ExprOpt::Crud(Box::new(CrudExprOpt::Drop {
-                    name,
-                    kind,
-                    table_access,
-                })),
-            }
-        }
+        Expr::Crud(q) => optimize_query(*q),
         x => {
             todo!("{:?}", x)
         }
@@ -165,7 +166,7 @@ fn collect_map<P: ProgramVm>(
     Ok(code)
 }
 
-fn compile_query(q: QueryExprOpt) -> QueryCode {
+pub(crate) fn compile_query(q: QueryExprOpt) -> QueryCode {
     match q.source {
         SourceExprOpt::Value(x) => {
             let data = mem_table(x.of.type_of(), vec![x.of]);
@@ -182,6 +183,49 @@ fn compile_query(q: QueryExprOpt) -> QueryCode {
             table: Table::DbTable(x.of),
             query: q.query.clone(),
         },
+    }
+}
+
+pub(crate) fn compile_query_expr(q: CrudExprOpt) -> Code {
+    match q {
+        CrudExprOpt::Insert { source, rows } => {
+            let q = match source {
+                SourceExprOpt::Value(x) => {
+                    let data = mem_table(x.of.type_of(), vec![x.of]);
+                    CrudCode::Insert {
+                        table: Table::MemTable(data),
+                        rows,
+                    }
+                }
+                SourceExprOpt::MemTable(x) => CrudCode::Insert {
+                    table: Table::MemTable(x.of),
+                    rows,
+                },
+                SourceExprOpt::DbTable(x) => CrudCode::Insert {
+                    table: Table::DbTable(x.of),
+                    rows,
+                },
+            };
+            Code::Crud(q)
+        }
+        CrudExprOpt::Update { delete, assignments } => {
+            let delete = compile_query(delete);
+            Code::Crud(CrudCode::Update { delete, assignments })
+        }
+        CrudExprOpt::Delete { query } => {
+            let query = compile_query(query);
+            Code::Crud(CrudCode::Delete { query })
+        }
+        CrudExprOpt::CreateTable { table } => Code::Crud(CrudCode::CreateTable { table }),
+        CrudExprOpt::Drop {
+            name,
+            kind,
+            table_access,
+        } => Code::Crud(CrudCode::Drop {
+            name,
+            kind,
+            table_access,
+        }),
     }
 }
 
@@ -238,50 +282,7 @@ fn compile<P: ProgramVm>(p: &mut P, node: ExprOpt) -> Result<Code, ErrorVm> {
             let q = compile_query(*q);
             Code::Crud(CrudCode::Query(q))
         }
-        ExprOpt::Crud(q) => {
-            let q = *q;
-
-            match q {
-                CrudExprOpt::Insert { source, rows } => {
-                    let q = match source {
-                        SourceExprOpt::Value(x) => {
-                            let data = mem_table(x.of.type_of(), vec![x.of]);
-                            CrudCode::Insert {
-                                table: Table::MemTable(data),
-                                rows,
-                            }
-                        }
-                        SourceExprOpt::MemTable(x) => CrudCode::Insert {
-                            table: Table::MemTable(x.of),
-                            rows,
-                        },
-                        SourceExprOpt::DbTable(x) => CrudCode::Insert {
-                            table: Table::DbTable(x.of),
-                            rows,
-                        },
-                    };
-                    Code::Crud(q)
-                }
-                CrudExprOpt::Update { delete, assignments } => {
-                    let delete = compile_query(delete);
-                    Code::Crud(CrudCode::Update { delete, assignments })
-                }
-                CrudExprOpt::Delete { query } => {
-                    let query = compile_query(query);
-                    Code::Crud(CrudCode::Delete { query })
-                }
-                CrudExprOpt::CreateTable { table } => Code::Crud(CrudCode::CreateTable { table }),
-                CrudExprOpt::Drop {
-                    name,
-                    kind,
-                    table_access,
-                } => Code::Crud(CrudCode::Drop {
-                    name,
-                    kind,
-                    table_access,
-                }),
-            }
-        }
+        ExprOpt::Crud(q) => compile_query_expr(*q),
         x => todo!("{}", x),
     })
 }
@@ -365,14 +366,7 @@ pub fn eval<P: ProgramVm>(p: &mut P, code: Code) -> Code {
                 _ => Code::Block(result),
             }
         }
-        Code::Crud(q) => {
-            let result = p.eval_query(q);
-
-            match result {
-                Ok(x) => x,
-                Err(err) => Code::Halt(err.into()),
-            }
-        }
+        Code::Crud(q) => p.eval_query(q).unwrap_or_else(|err| Code::Halt(err.into())),
         Code::Pass => Code::Pass,
         Code::Halt(_) => code,
         Code::Fun(_) => Code::Pass,

@@ -1543,6 +1543,51 @@ impl From<QueryExpr> for Expr {
     }
 }
 
+pub(crate) struct ExprAstPrinter<'a> {
+    pub(crate) ast: &'a Expr,
+}
+
+impl<'a> fmt::Display for ExprAstPrinter<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.ast {
+            Expr::Value(x) => {
+                write!(f, "Value: {x:?}")
+            }
+            Expr::Ty(x) => {
+                write!(f, "Type: {x:?}")
+            }
+            Expr::Op(x, _) => {
+                write!(f, "Op: {x}")
+            }
+            Expr::Fun(x) => {
+                write!(f, "Function: {}", x.head.name)
+            }
+            Expr::Block(_) => {
+                write!(f, "Block")
+            }
+            Expr::CallFn(x, _) => {
+                write!(f, "Call: {}", x)
+            }
+            Expr::Param(x) => {
+                write!(f, "Param: {x:?}")
+            }
+            Expr::Let(x) => {
+                write!(f, "Let: {x:?}")
+            }
+            Expr::Ident(x) => {
+                write!(f, "Ident: {x:?}")
+            }
+            Expr::If(x) => {
+                let (check, _, _) = &**x;
+                write!(f, "If: {}", ExprAstPrinter { ast: check })
+            }
+            Expr::Crud(x) => {
+                write!(f, "Crud: {x:?}")
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum SourceExprOpt {
     Value(TyExpr<AlgebraicValue>),

@@ -1,5 +1,4 @@
 //! The [DbProgram] that execute arbitrary queries & code against the database.
-use std::collections::HashMap;
 use std::ops::RangeBounds;
 
 use itertools::Itertools;
@@ -318,8 +317,6 @@ impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
 /// query execution
 pub struct DbProgram<'db, 'tx> {
     ctx: &'tx ExecutionContext<'tx>,
-    pub(crate) env: EnvDb,
-    pub(crate) stats: HashMap<String, u64>,
     pub(crate) db: &'db RelationalDB,
     pub(crate) tx: &'tx mut TxMode<'tx>,
     pub(crate) auth: AuthCtx,
@@ -327,16 +324,7 @@ pub struct DbProgram<'db, 'tx> {
 
 impl<'db, 'tx> DbProgram<'db, 'tx> {
     pub fn new(ctx: &'tx ExecutionContext, db: &'db RelationalDB, tx: &'tx mut TxMode<'tx>, auth: AuthCtx) -> Self {
-        let mut env = EnvDb::new();
-        Self::load_ops(&mut env);
-        Self {
-            ctx,
-            env,
-            db,
-            stats: Default::default(),
-            tx,
-            auth,
-        }
+        Self { ctx, db, tx, auth }
     }
 
     #[tracing::instrument(skip_all)]
@@ -441,11 +429,11 @@ impl ProgramVm for DbProgram<'_, '_> {
     }
 
     fn env(&self) -> &EnvDb {
-        &self.env
+        unreachable!()
     }
 
     fn env_mut(&mut self) -> &mut EnvDb {
-        &mut self.env
+        unreachable!()
     }
 
     fn ctx(&self) -> &dyn ProgramVm {
@@ -532,11 +520,7 @@ impl ProgramVm for DbProgram<'_, '_> {
     }
 
     fn as_program_ref(&self) -> ProgramRef<'_> {
-        ProgramRef {
-            env: &self.env,
-            stats: &self.stats,
-            ctx: self.ctx(),
-        }
+        unreachable!()
     }
 }
 
@@ -604,7 +588,7 @@ pub(crate) mod tests {
     use spacetimedb_sats::relation::{DbTable, FieldName};
     use spacetimedb_sats::{product, AlgebraicType, ProductType, ProductValue};
     use spacetimedb_vm::dsl::*;
-    use spacetimedb_vm::eval::run_ast;
+    use spacetimedb_vm::eval_query::run_ast;
     use spacetimedb_vm::operator::OpCmp;
 
     pub(crate) fn create_table_with_rows(
