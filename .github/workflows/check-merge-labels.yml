@@ -20,7 +20,8 @@ jobs:
     - run: exit 1
 
   check_breaking_change_labels:
-    if: | ${{
+    if: |
+      ${{
         contains(github.event.pull_request.labels.*.name, 'abi-break') ||
         contains(github.event.pull_request.labels.*.name, 'breaking change')
       }}
