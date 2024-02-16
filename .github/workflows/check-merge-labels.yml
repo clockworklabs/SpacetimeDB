@@ -7,7 +7,7 @@ on:
 permissions: read-all
 
 jobs:
-  check_merge_block_label:
+  Check merge labels:
     if: ${{ contains(github.event.pull_request.labels.*.name, 'Do not merge') }}
     runs-on: ubuntu-latest
     steps:
