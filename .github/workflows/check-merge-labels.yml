@@ -7,16 +7,19 @@ on:
 permissions: read-all
 
 jobs:
-  check:
+  checks:
     runs-on: ubuntu-latest
     steps:
-      - if: |
+      - id: explicitly_disallowed
+        if: |
           contains(github.event.pull_request.labels.*.name, 'do not merge')
         run: echo "::error::This is labeled \"Do not merge\"." && exit 1
-      - if: |
+      - id: future_release
+        if: |
           contains(github.event.pull_request.labels.*.name, 'release-0.9')
         run: echo "::error::This is targeted for a future release." && exit 1
-      - if: |
+      - id: breaking_change
+        if: |
           contains(github.event.pull_request.labels.*.name, 'abi-break') ||
           contains(github.event.pull_request.labels.*.name, 'breaking change')
         run: echo "::error::This is a breaking change." && exit 1
