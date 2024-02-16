@@ -535,11 +535,13 @@ impl MutTx for Locking {
     }
 
     fn rollback_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) {
+        #[cfg(feature = "metrics")]
         record_metrics(ctx, tx.timer, tx.lock_wait_time, false);
         tx.rollback();
     }
 
     fn commit_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) -> Result<Option<TxData>> {
+        #[cfg(feature = "metrics")]
         record_metrics(ctx, tx.timer, tx.lock_wait_time, true);
         Ok(Some(tx.commit()))
     }

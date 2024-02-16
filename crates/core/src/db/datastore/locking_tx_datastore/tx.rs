@@ -1,6 +1,8 @@
+#[cfg(feature = "metrics")]
+use super::datastore::record_metrics;
 use super::{
     committed_state::{CommittedIndexIter, CommittedState},
-    datastore::{record_metrics, Result},
+    datastore::Result,
     state_view::{Iter, IterByColRange, StateView},
     SharedReadGuard,
 };
@@ -58,6 +60,7 @@ impl StateView for TxId {
 
 impl TxId {
     pub(crate) fn release(self, ctx: &ExecutionContext) {
+        #[cfg(feature = "metrics")]
         record_metrics(ctx, self.timer, self.lock_wait_time, true);
     }
 }
