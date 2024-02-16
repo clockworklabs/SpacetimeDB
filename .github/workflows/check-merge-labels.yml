@@ -8,11 +8,15 @@ permissions: read-all
 
 jobs:
   check:
-    if: |
-      contains(github.event.pull_request.labels.*.name, 'abi-break') ||
-      contains(github.event.pull_request.labels.*.name, 'breaking change') ||
-      contains(github.event.pull_request.labels.*.name, 'Do not merge') ||
-      contains(github.event.pull_request.labels.*.name, 'release-0.9')
     runs-on: ubuntu-latest
     steps:
-    - run: exit 1
+      - if: |
+          contains(github.event.pull_request.labels.*.name, 'do not merge')
+        run: echo "::error::This is labeled \"Do not merge\"." && exit 1
+      - if: |
+          contains(github.event.pull_request.labels.*.name, 'release-0.9')
+        run: echo "::error::This is targeted for a future release." && exit 1
+      - if: |
+          contains(github.event.pull_request.labels.*.name, 'abi-break') ||
+          contains(github.event.pull_request.labels.*.name, 'breaking change')
+        run: echo "::error::This is a breaking change." && exit 1
