@@ -94,8 +94,8 @@ impl ModuleSubscriptions {
         self._remove_subscriber(client_id, &mut subscriptions);
     }
 
-    fn _remove_subscriber(&self, client_id: ClientActorId, subscriptions: &mut [Subscription]) {
-        let _ = subscriptions.iter_mut().map(|subscription| {
+    fn _remove_subscriber(&self, client_id: ClientActorId, subscriptions: &mut Vec<Subscription>) {
+        subscriptions.retain_mut(|subscription| {
             subscription.remove_subscriber(client_id);
             if subscription.subscribers().is_empty() {
                 WORKER_METRICS
@@ -104,7 +104,7 @@ impl ModuleSubscriptions {
                     .sub(subscription.queries.len() as i64);
             }
             !subscription.subscribers().is_empty()
-        });
+        })
     }
 
     /// Broadcast a ModuleEvent to all interested subscribers.
