@@ -27,63 +27,39 @@ pub fn cli() -> Command {
 
 fn get_subcommands() -> Vec<Command> {
     vec![
-        Command::new("list").about("List saved identities which apply to a server")
-            .arg(
-                Arg::new("server")
-                    .help("The nickname, host name or URL of the server to list identities for")
-                    .conflicts_with("all")
-            )
-            .arg(
-                Arg::new("all")
-                    .short('a')
-                    .long("all")
-                    .help("List all stored identities, regardless of server")
-                    .action(ArgAction::SetTrue)
-                    .conflicts_with("server")
-            )
-            // TODO: project flag?
-            ,
-        Command::new("set-default").about("Set the default identity for a server")
-            .arg(
-                Arg::new("identity")
-                    .help("The identity string or name that should become the new default identity")
-                    .required(true),
-            )
-            .arg(
-                Arg::new("server")
-                    .long("server")
-                    .short('s')
-                    .help("The server nickname, host name or URL of the server which should use this identity as a default")
-            )
-            // TODO: project flag?
-            ,
-        Command::new("set-email")
-            .about("Associates an email address with an identity")
-            .arg(
-                Arg::new("identity")
-                    .help("The identity string or name that should be associated with the email")
-                    .required(true),
-            )
+        Command::new("find").about("Find an identity for an email")
             .arg(
                 Arg::new("email")
-                    .help("The email that should be assigned to the provided identity")
-                    .required(true),
+                    .required(true)
+                    .help("The email associated with the identity that you would like to find"),
             )
             .arg(
                 Arg::new("server")
                     .long("server")
                     .short('s')
-                    .help("The server that should be informed of the email change")
-                    .conflicts_with("all-servers")
+                    .help("The server to search for identities matching the email"),
+            ),
+        Command::new("import")
+            .about("Import an existing identity into your spacetime config")
+            .arg(
+                Arg::new("identity")
+                    .required(true)
+                    .value_parser(clap::value_parser!(Identity))
+                    .help("The identity string associated with the provided token"),
             )
             .arg(
-                Arg::new("all-servers")
-                    .long("all-servers")
-                    .short('a')
-                    .action(ArgAction::SetTrue)
-                    .help("Inform all known servers of the email change")
-                    .conflicts_with("server")
-            ),
+                Arg::new("token")
+                    .required(true)
+                    .help("The identity token to import. This is used for authenticating with SpacetimeDB"),
+            )
+            .arg(
+                Arg::new("name")
+                    .long("name")
+                    .short('n')
+                    .help("A name for the newly imported identity"),
+            )
+            // TODO: project flag?
+            ,
         Command::new("init-default")
             .about("Initialize a new default identity if it is missing from a server's config")
             .arg(
@@ -105,6 +81,22 @@ fn get_subcommands() -> Vec<Command> {
                     .action(ArgAction::SetTrue)
                     .help("Runs command in silent mode"),
             ),
+        Command::new("list").about("List saved identities which apply to a server")
+            .arg(
+                Arg::new("server")
+                    .help("The nickname, host name or URL of the server to list identities for")
+                    .conflicts_with("all")
+            )
+            .arg(
+                Arg::new("all")
+                    .short('a')
+                    .long("all")
+                    .help("List all stored identities, regardless of server")
+                    .action(ArgAction::SetTrue)
+                    .conflicts_with("server")
+            )
+            // TODO: project flag?
+            ,
         Command::new("new")
             .about("Creates a new identity")
             .arg(
@@ -148,6 +140,24 @@ fn get_subcommands() -> Vec<Command> {
                     .conflicts_with("no-save")
                     .action(ArgAction::SetTrue),
             ),
+        Command::new("recover")
+            .about("Recover an existing identity and import it into your local config")
+            .arg(
+                Arg::new("email")
+                    .required(true)
+                    .help("The email associated with the identity that you would like to recover."),
+            )
+            .arg(Arg::new("identity").required(true).help(
+                "The identity you would like to recover. This identity must be associated with the email provided.",
+            ).value_parser(clap::value_parser!(Identity)))
+            .arg(
+                Arg::new("server")
+                    .long("server")
+                    .short('s')
+                    .help("The server from which to request recovery codes"),
+            )
+            // TODO: project flag?
+            ,
         Command::new("remove")
             .about("Removes a saved identity from your spacetime config")
             .arg(Arg::new("identity")
@@ -181,6 +191,47 @@ fn get_subcommands() -> Vec<Command> {
                 .help("The identity string or name that we should print the token for")
                 .required(true),
         ),
+        Command::new("set-default").about("Set the default identity for a server")
+            .arg(
+                Arg::new("identity")
+                    .help("The identity string or name that should become the new default identity")
+                    .required(true),
+            )
+            .arg(
+                Arg::new("server")
+                    .long("server")
+                    .short('s')
+                    .help("The server nickname, host name or URL of the server which should use this identity as a default")
+            )
+            // TODO: project flag?
+            ,
+        Command::new("set-email")
+            .about("Associates an email address with an identity")
+            .arg(
+                Arg::new("identity")
+                    .help("The identity string or name that should be associated with the email")
+                    .required(true),
+            )
+            .arg(
+                Arg::new("email")
+                    .help("The email that should be assigned to the provided identity")
+                    .required(true),
+            )
+            .arg(
+                Arg::new("server")
+                    .long("server")
+                    .short('s')
+                    .help("The server that should be informed of the email change")
+                    .conflicts_with("all-servers")
+            )
+            .arg(
+                Arg::new("all-servers")
+                    .long("all-servers")
+                    .short('a')
+                    .action(ArgAction::SetTrue)
+                    .help("Inform all known servers of the email change")
+                    .conflicts_with("server")
+            ),
         Command::new("set-name").about("Set the name of an identity or rename an existing identity nickname").arg(
             Arg::new("identity")
                 .help("The identity string or name to be named. If a name is supplied, the corresponding identity will be renamed.")
@@ -189,57 +240,6 @@ fn get_subcommands() -> Vec<Command> {
                 .help("The new name for the identity")
                 .required(true)
         ),
-        Command::new("import")
-            .about("Import an existing identity into your spacetime config")
-            .arg(
-                Arg::new("identity")
-                    .required(true)
-                    .value_parser(clap::value_parser!(Identity))
-                    .help("The identity string associated with the provided token"),
-            )
-            .arg(
-                Arg::new("token")
-                    .required(true)
-                    .help("The identity token to import. This is used for authenticating with SpacetimeDB"),
-            )
-            .arg(
-                Arg::new("name")
-                    .long("name")
-                    .short('n')
-                    .help("A name for the newly imported identity"),
-            )
-            // TODO: project flag?
-            ,
-        Command::new("find").about("Find an identity for an email")
-            .arg(
-                Arg::new("email")
-                    .required(true)
-                    .help("The email associated with the identity that you would like to find"),
-            )
-            .arg(
-                Arg::new("server")
-                    .long("server")
-                    .short('s')
-                    .help("The server to search for identities matching the email"),
-            ),
-        Command::new("recover")
-            .about("Recover an existing identity and import it into your local config")
-            .arg(
-                Arg::new("email")
-                    .required(true)
-                    .help("The email associated with the identity that you would like to recover."),
-            )
-            .arg(Arg::new("identity").required(true).help(
-                "The identity you would like to recover. This identity must be associated with the email provided.",
-            ).value_parser(clap::value_parser!(Identity)))
-            .arg(
-                Arg::new("server")
-                    .long("server")
-                    .short('s')
-                    .help("The server from which to request recovery codes"),
-            )
-            // TODO: project flag?
-            ,
     ]
 }
 
