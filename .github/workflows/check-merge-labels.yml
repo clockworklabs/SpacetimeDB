@@ -21,7 +21,8 @@ jobs:
 
   check_breaking_change_labels:
     if: |
-      contains(github.event.pull_request.labels.*.name, 'abi-break')
+      contains(github.event.pull_request.labels.*.name, 'abi-break') ||
+      contains(github.event.pull_request.labels.*.name, 'breaking change')
     runs-on: ubuntu-latest
     steps:
     - run: exit 1
