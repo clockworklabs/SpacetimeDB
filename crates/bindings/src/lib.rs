@@ -505,6 +505,23 @@ pub mod query {
         }
     }
 
+    /// Deletes all rows of `Table` where the column at `COL_IDX` matches `val`,
+    /// as defined by decoding to an `AlgebraicValue`
+    /// according to the column's schema and then `Ord for AlgebraicValue`.
+    ///
+    /// Returns the number of deleted rows.
+    ///
+    /// **NOTE:** Do not use directly.
+    /// This is exposed as `delete_by_{$field_name}` on types with `#[spacetimedb(table)]`
+    /// where the field does not have a unique constraint.
+    #[doc(hidden)]
+    pub fn delete_by_field<Table: TableType, T: FilterableValue, const COL_IDX: u8>(val: &T) -> u32 {
+        delete_by_col_eq(Table::table_id(), COL_IDX, val)
+            // TODO: Returning `Err` here was supposed to signify an error,
+            //       but it can also return `Err(_)` when there is nothing to delete.
+            .unwrap_or(0)
+    }
+
     /// Deletes the row of `Table` where the column at `COL_IDX` matches `val`,
     /// as defined by decoding to an `AlgebraicValue`
     /// according to the column's schema and then `Ord for AlgebraicValue`.
@@ -512,23 +529,12 @@ pub mod query {
     /// Returns whether any rows were deleted.
     ///
     /// **NOTE:** Do not use directly.
-    /// This is exposed as `delete_by_{$field_name}` on types with `#[spacetimedb(table)]`.
-    #[doc(hidden)]
-    pub fn delete_by_field<Table: TableType, T: UniqueValue, const COL_IDX: u8>(val: &T) -> bool {
-        let result = delete_by_col_eq(Table::table_id(), COL_IDX, val);
-        match result {
-            Err(_) => {
-                // TODO: Returning here was supposed to signify an error,
-                //       but it can also return `Err(_)` when there is nothing to delete.
-                //spacetimedb::println!("Internal server error on equatable type: {}", #primary_key_tuple_type_str);
-                false
-            }
-            // Should never be `> 1`.
-            Ok(count) => {
-                debug_assert!(count <= 1);
-                count > 0
-            }
-        }
+    /// This is exposed as `delete_by_{$field_name}` on types with `#[spacetimedb(table)]`
+    /// where the field has a unique constraint.
+    pub fn delete_by_unique_field<Table: TableType, T: UniqueValue, const COL_IDX: u8>(val: &T) -> bool {
+        let count = delete_by_field::<Table, T, COL_IDX>(val);
+        debug_assert!(count <= 1);
+        count > 0
     }
 
     /// Updates the row of `Table`, where the column at `COL_IDX` matches `old`, to be `new` instead.

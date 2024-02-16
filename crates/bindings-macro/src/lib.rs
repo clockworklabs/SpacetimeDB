@@ -633,7 +633,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
 
         unique_delete_funcs.push(quote! {
             #vis fn #delete_func_ident(#column_ident: &#column_type) -> bool {
-                spacetimedb::query::delete_by_field::<Self, #column_type, #column_index>(#column_ident)
+                spacetimedb::query::delete_by_unique_field::<Self, #column_type, #column_index>(#column_ident)
             }
         });
     }
@@ -645,6 +645,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
         let column_index = column.index;
 
         let filter_func_ident = format_ident!("filter_by_{}", column_ident);
+        let delete_func_ident = format_ident!("delete_by_{}", column_ident);
 
         let skip = if let syn::Type::Path(p) = column_type {
             // TODO: this is janky as heck
@@ -664,6 +665,9 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
             // TODO: should we expose spacetimedb::query::FilterByIter ?
             #vis fn #filter_func_ident<'a>(#column_ident: &#column_type) -> impl Iterator<Item = Self> {
                 spacetimedb::query::filter_by_field::<Self, #column_type, #column_index>(#column_ident)
+            }
+            #vis fn #delete_func_ident(#column_ident: &#column_type) -> u32 {
+                spacetimedb::query::delete_by_field::<Self, #column_type, #column_index>(#column_ident)
             }
         })
     });
