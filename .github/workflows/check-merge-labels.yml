@@ -17,7 +17,9 @@ jobs:
       - id: future_release
         if: |
           contains(github.event.pull_request.labels.*.name, 'release-0.9')
-        run: echo "::error::This is targeted for a future release." && exit 1
+        run: |
+          echo "::error ::This is targeted for a future release." >/dev/stderr
+          exit 1
       - id: breaking_change
         if: |
           contains(github.event.pull_request.labels.*.name, 'abi-break') ||
