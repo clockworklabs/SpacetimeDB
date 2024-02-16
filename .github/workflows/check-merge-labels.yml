@@ -7,7 +7,7 @@ on:
 permissions: read-all
 
 jobs:
-  checks:
+  label_checks:
     runs-on: ubuntu-latest
     steps:
       - id: explicitly_disallowed
