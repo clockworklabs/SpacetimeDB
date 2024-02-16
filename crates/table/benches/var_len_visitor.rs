@@ -10,6 +10,7 @@ fn visit_count(row: &[MaybeUninit<u8>], visitor: &impl VarLenMembers) {
     black_box(unsafe { visitor.visit_var_len(row) }.count());
 }
 
+#[allow(clippy::disallowed_macros)]
 fn visitor_program(row_ty: impl Into<ProductType>) -> VarLenVisitorProgram {
     let row_ty: ProductType = row_ty.into();
     let visitor = row_type_visitor(&row_ty.into());
