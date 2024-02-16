@@ -8,7 +8,7 @@ use crate::execution_context::{ExecutionContext, WorkloadType};
 use crate::host::module_host::DatabaseTableUpdate;
 use crate::sql::compiler::compile_sql;
 use crate::sql::execute::execute_single_sql;
-use crate::subscription::subscription::{QuerySet, SupportedQuery};
+use crate::subscription::subscription::SupportedQuery;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use spacetimedb_lib::identity::AuthCtx;
@@ -19,6 +19,8 @@ use spacetimedb_sats::AlgebraicType;
 use spacetimedb_vm::expr;
 use spacetimedb_vm::expr::{Crud, CrudExpr, DbType, QueryExpr};
 use spacetimedb_vm::relation::MemTable;
+
+use super::subscription::get_all;
 
 static WHITESPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap());
 pub const SUBSCRIBE_TO_ALL_QUERY: &str = "SELECT * FROM *";
@@ -104,7 +106,7 @@ pub fn compile_read_only_query(
     tx: &Tx,
     auth: &AuthCtx,
     input: &str,
-) -> Result<QuerySet, DBError> {
+) -> Result<Vec<SupportedQuery>, DBError> {
     let input = input.trim();
     if input.is_empty() {
         return Err(SubscriptionError::Empty.into());
@@ -113,7 +115,7 @@ pub fn compile_read_only_query(
     // Remove redundant whitespace, and in particular newlines, for debug info.
     let input = WHITESPACE.replace_all(input, " ");
     if input == SUBSCRIBE_TO_ALL_QUERY {
-        return QuerySet::get_all(relational_db, tx, auth);
+        return get_all(relational_db, tx, auth);
     }
 
     let compiled = compile_sql(relational_db, tx, &input)?;
@@ -206,6 +208,7 @@ mod tests {
     use crate::db::relational_db::MutTx;
     use crate::host::module_host::{DatabaseUpdate, TableOp};
     use crate::sql::execute::run;
+    use crate::subscription::subscription::ExecutionSet;
     use crate::vm::tests::create_table_with_rows;
     use itertools::Itertools;
     use spacetimedb_lib::error::ResultTest;
@@ -361,7 +364,7 @@ mod tests {
     fn check_query_incr(
         db: &RelationalDB,
         tx: &Tx,
-        s: &QuerySet,
+        s: &ExecutionSet,
         update: &DatabaseUpdate,
         total_tables: usize,
         rows: &[ProductValue],
@@ -383,7 +386,7 @@ mod tests {
     fn check_query_eval(
         db: &RelationalDB,
         tx: &Tx,
-        s: &QuerySet,
+        s: &ExecutionSet,
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
@@ -416,7 +419,7 @@ mod tests {
         let table_id = create_table_with_rows(&db, &mut tx, "test", schema.clone(), &[])?;
 
         // select * from test
-        let query: QuerySet = QueryExpr::new(db_table(schema.clone(), table_id)).try_into()?;
+        let query: ExecutionSet = QueryExpr::new(db_table(schema.clone(), table_id)).try_into()?;
 
         let op = TableOp {
             op_type: 0,
@@ -483,7 +486,7 @@ mod tests {
             panic!("unexpected query {:#?}", exp[0]);
         };
 
-        let query = QuerySet::try_from(query)?;
+        let query: ExecutionSet = query.try_into()?;
 
         let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
 
@@ -548,7 +551,8 @@ mod tests {
             panic!("unexpected query {:#?}", exp[0]);
         };
 
-        let query = QuerySet::try_from(query)?;
+        let query: ExecutionSet = query.try_into()?;
+
         db.release_tx(&ExecutionContext::default(), tx);
 
         fn case_env(
@@ -828,7 +832,7 @@ mod tests {
         let s = [q_all, q_id]
             .into_iter()
             .map(TryFrom::try_from)
-            .collect::<Result<QuerySet, _>>()?;
+            .collect::<Result<ExecutionSet, _>>()?;
 
         let row1 = TableOp {
             op_type: 0,
@@ -902,7 +906,8 @@ mod tests {
         let s = [q_all, q_id]
             .into_iter()
             .map(TryFrom::try_from)
-            .collect::<Result<QuerySet, _>>()?;
+            .collect::<Result<ExecutionSet, _>>()?;
+
         db.commit_tx(&ExecutionContext::default(), tx)?;
 
         let tx = db.begin_tx();
@@ -1012,7 +1017,7 @@ mod tests {
         let row_1 = product!(1u64, "health");
         let row_2 = product!(2u64, "jhon doe");
         let tx = db.begin_tx();
-        let s = compile_read_only_query(&db, &tx, &AuthCtx::for_testing(), SUBSCRIBE_TO_ALL_QUERY)?;
+        let s = compile_read_only_query(&db, &tx, &AuthCtx::for_testing(), SUBSCRIBE_TO_ALL_QUERY)?.into();
         check_query_eval(&db, &tx, &s, 2, &[row_1.clone(), row_2.clone()])?;
 
         let row1 = TableOp {
@@ -1081,14 +1086,14 @@ mod tests {
             "SELECT * FROM lhs WHERE id > 5",
         ];
         for scan in scans {
-            let expr = compile_read_only_query(&db, &tx, &auth, scan)?.pop_first().unwrap();
+            let expr = compile_read_only_query(&db, &tx, &auth, scan)?.pop().unwrap();
             assert_eq!(expr.kind(), Supported::Scan, "{scan}\n{expr:#?}");
         }
 
         // Only index semijoins are supported
         let joins = ["SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE rhs.y < 10"];
         for join in joins {
-            let expr = compile_read_only_query(&db, &tx, &auth, join)?.pop_first().unwrap();
+            let expr = compile_read_only_query(&db, &tx, &auth, join)?.pop().unwrap();
             assert_eq!(expr.kind(), Supported::Semijoin, "{join}\n{expr:#?}");
         }
 
