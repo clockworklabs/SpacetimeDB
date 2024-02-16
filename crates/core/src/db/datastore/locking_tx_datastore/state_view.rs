@@ -42,6 +42,7 @@ pub(crate) trait StateView {
 
     fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: &TableId) -> Result<Iter<'a>>;
 
+    // TODO(noa): rename to table_name, and TableId doesn't need to be a reference
     fn table_exists(&self, table_id: &TableId) -> Option<&str>;
 
     /// Returns an iterator,
