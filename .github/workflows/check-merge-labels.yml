@@ -13,17 +13,21 @@ jobs:
       - id: explicitly_disallowed
         if: |
           contains(github.event.pull_request.labels.*.name, 'do not merge')
-        run: echo "::error::This is labeled \"Do not merge\"." && exit 1
+        run: |
+          echo "This is labeled \"Do not merge\"."
+          exit 1
+
       - id: future_release
         if: |
           contains(github.event.pull_request.labels.*.name, 'release-0.9')
         run: |
-          echo "::error ::This is targeted for a future release." >/dev/stderr
+          echo "This is targeted for a future release."
           exit 1
+
       - id: breaking_change
         if: |
           contains(github.event.pull_request.labels.*.name, 'abi-break') ||
           contains(github.event.pull_request.labels.*.name, 'breaking change')
         run: |
-          echo "::error ::This is a breaking change." >/dev/stderr
+          echo "This is a breaking change."
           exit 1
