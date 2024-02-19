@@ -350,7 +350,7 @@ mod test {
             let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
 
             for (idx, orig_col_value) in val.elements.into_iter().enumerate() {
-                let read_col_value = AlgebraicValue::read_column(row_ref, idx).unwrap();
+                let read_col_value = row_ref.read_col::<AlgebraicValue>(idx.into()).unwrap();
                 prop_assert_eq!(orig_col_value, read_col_value);
             }
         }
@@ -399,7 +399,7 @@ mod test {
 
             let oob = ty.elements.len();
 
-            match AlgebraicValue::read_column(row_ref, oob) {
+            match row_ref.read_col::<AlgebraicValue>(oob.into()) {
                 Err(TypeError::IndexOutOfBounds { desired, found }) => {
                     prop_assert_eq!(desired, oob);
                     // Constructing a table changes the `ProductType` by adding column names
@@ -419,7 +419,7 @@ mod test {
     }
 
     /// Assert, if and only if `col_ty` is not `correct_col_ty`,
-    /// that `Col::read_column(row_ref, col_idx)` returns a `TypeError::WrongType`.
+    /// that `row_ref.read_col::<Col>(col_idx)` returns a `TypeError::WrongType`.
     ///
     /// If `col_ty == correct_col_ty`, do nothing.
     fn assert_wrong_type_error<Col: ReadColumn + PartialEq + std::fmt::Debug>(
@@ -429,7 +429,7 @@ mod test {
         correct_col_ty: AlgebraicType,
     ) -> TestCaseResult {
         if col_ty != &correct_col_ty {
-            match Col::read_column(row_ref, col_idx) {
+            match row_ref.read_col::<Col>(col_idx.into()) {
                 Err(TypeError::WrongType { desired, found }) => {
                     prop_assert_eq!(desired, std::any::type_name::<Col>());
                     prop_assert_eq!(&found, col_ty);
@@ -456,7 +456,7 @@ mod test {
                 let (_, ptr) = table.insert(&mut blob_store, &product![val.clone()]).unwrap();
                 let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
 
-                assert_eq!(val, <$rust_type as ReadColumn>::read_column(row_ref, 0).unwrap());
+                assert_eq!(val, row_ref.read_col::<$rust_type>(0.into()).unwrap());
             }
         };
 

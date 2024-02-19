@@ -138,7 +138,7 @@ impl TypedIndex {
         ) -> Result<bool, InvalidFieldError> {
             debug_assert!(cols.is_singleton());
             let col_pos = cols.head();
-            let key = T::read_column(row_ref, col_pos.idx()).map_err(|_| InvalidFieldError { col_pos, name: None })?;
+            let key = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
             Ok(this.insert(key, row_ref.pointer()))
         }
         match self {
@@ -179,7 +179,7 @@ impl TypedIndex {
         ) -> Result<bool, InvalidFieldError> {
             debug_assert!(cols.is_singleton());
             let col_pos = cols.head();
-            let key = T::read_column(row_ref, col_pos.idx()).map_err(|_| InvalidFieldError { col_pos, name: None })?;
+            let key = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
             Ok(this.delete(&key, &row_ref.pointer()))
         }
 
@@ -342,11 +342,8 @@ impl BTreeIndex {
         // If the index is on a single column of a primitive type,
         // use a homogeneous map with a native key type.
         let typed_index = if indexed_columns.is_singleton() {
-            let col_pos = indexed_columns.head().idx();
-            let col = row_type.product().elements.get(col_pos).ok_or(InvalidFieldError {
-                col_pos: col_pos.into(),
-                name: None,
-            })?;
+            let col_pos = indexed_columns.head();
+            let col = row_type.product().elements.get(col_pos.idx()).ok_or(col_pos)?;
 
             match col.ty {
                 AlgebraicTypeLayout::Bool => TypedIndex::Bool(MultiMap::new()),
