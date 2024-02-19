@@ -1121,6 +1121,10 @@ mod tests {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.rollback_mut_tx_for_test(tx);
         let tx = datastore.begin_mut_tx();
+        assert!(
+            !datastore.table_id_exists_mut_tx(&tx, &table_id),
+            "Table should not exist"
+        );
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
 
