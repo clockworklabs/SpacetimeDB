@@ -195,57 +195,38 @@ pub fn autogen_csharp_enum(name: &str, sum_type: &SumType, namespace: &str) -> S
         sum_type_name = split[1].to_string().to_case(Case::Pascal);
     }
 
-    writeln!(
-        output,
-        "public {}",
-        match sum_namespace.clone() {
-            None => format!("enum {}", sum_type_name),
-            Some(namespace) => format!("partial class {}", namespace),
-        },
-    )
-    .unwrap();
+    if let Some(sum_namespace) = &sum_namespace {
+        writeln!(output, "public partial class {sum_namespace}").unwrap();
+        writeln!(output, "{{").unwrap();
+        output.indent(1);
+
+        writeln!(output, "public partial class Types").unwrap();
+        writeln!(output, "{{").unwrap();
+        output.indent(1);
+    }
+
+    writeln!(output, "[SpacetimeDB.Type]").unwrap();
+    writeln!(output, "public enum {sum_type_name}").unwrap();
     writeln!(output, "{{").unwrap();
     {
         indent_scope!(output);
-        match sum_namespace {
-            Some(_) => {
-                writeln!(output, "public partial class Types").unwrap();
-                writeln!(output, "{{").unwrap();
-                {
-                    indent_scope!(output);
-                    writeln!(output, "[SpacetimeDB.Type]").unwrap();
-                    writeln!(output, "public enum {}", sum_type_name).unwrap();
-                    writeln!(output, "{{").unwrap();
-                    {
-                        indent_scope!(output);
-                        for variant in &sum_type.variants {
-                            let variant_name = variant
-                                .name
-                                .as_ref()
-                                .expect("All sum variants should have names!")
-                                .replace("r#", "");
-                            writeln!(output, "{},", variant_name).unwrap();
-                        }
-                    }
-                    writeln!(output, "}}").unwrap();
-                }
-                writeln!(output, "}}").unwrap();
-            }
-            None => {
-                for variant in &sum_type.variants {
-                    let variant_name = variant
-                        .name
-                        .as_ref()
-                        .expect("All sum variants should have names!")
-                        .replace("r#", "");
-                    writeln!(output, "{},", variant_name).unwrap();
-                }
-            }
+        for variant in &sum_type.variants {
+            let variant_name = variant
+                .name
+                .as_ref()
+                .expect("All sum variants should have names!")
+                .replace("r#", "");
+            writeln!(output, "{},", variant_name).unwrap();
         }
     }
-
-    // End either enum or class def
     writeln!(output, "}}").unwrap();
+
+    if sum_namespace.is_some() {
+        for _ in 0..2 {
+            output.dedent(1);
+            writeln!(output, "}}").unwrap();
+        }
+    }
 
     autogen_csharp_footer(output)
 }
