@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::cmp::Ordering;
 use std::{ops::RangeBounds, sync::Arc};
 
 use crate::db::datastore::system_tables::ST_TABLES_ID;
@@ -10,6 +11,40 @@ use spacetimedb_sats::DataKey;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
 
 use super::{system_tables::StTableRow, Result};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IsolationLevel {
+    Serializable,
+    Snapshot,
+    LastWriterWinsSnapshot,
+    RepeatableRead,
+    ReadCommitted,
+    ReadUncommitted,
+}
+
+impl PartialOrd for IsolationLevel {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for IsolationLevel {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Convert the enum variant into a numerical value for comparison
+        fn rank(level: &IsolationLevel) -> u8 {
+            match level {
+                IsolationLevel::Serializable => 6,
+                IsolationLevel::Snapshot => 5,
+                IsolationLevel::LastWriterWinsSnapshot => 4,
+                IsolationLevel::RepeatableRead => 3,
+                IsolationLevel::ReadCommitted => 2,
+                IsolationLevel::ReadUncommitted => 1,
+            }
+        }
+
+        rank(self).cmp(&rank(other))
+    }
+}
 
 /// Operations in a transaction are either Inserts or Deletes.
 /// Inserts report the byte objects they inserted, to be persisted
@@ -67,7 +102,7 @@ pub trait Tx {
 pub trait MutTx {
     type MutTx;
 
-    fn begin_mut_tx(&self) -> Self::MutTx;
+    fn begin_mut_tx(&self, isolation_level: IsolationLevel) -> Self::MutTx;
     fn commit_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) -> Result<Option<TxData>>;
     fn rollback_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx);
 

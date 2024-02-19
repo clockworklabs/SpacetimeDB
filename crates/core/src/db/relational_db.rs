@@ -4,7 +4,7 @@ use super::datastore::locking_tx_datastore::{
     state_view::{Iter, IterByColEq, IterByColRange},
 };
 use super::datastore::traits::{
-    MutProgrammable, MutTx as _, MutTxDatastore, Programmable, Tx as _, TxData, TxDatastore,
+    IsolationLevel, MutProgrammable, MutTx as _, MutTxDatastore, Programmable, Tx as _, TxData, TxDatastore,
 };
 use super::message_log::MessageLog;
 use super::ostorage::memory_object_db::MemoryObjectDB;
@@ -287,9 +287,9 @@ impl RelationalDB {
     /// [`Self::commit_tx`], otherwise the database will be left in an invalid
     /// state. See also [`Self::with_auto_commit`].
     #[tracing::instrument(skip_all)]
-    pub fn begin_mut_tx(&self) -> MutTx {
+    pub fn begin_mut_tx(&self, isolation_level: IsolationLevel) -> MutTx {
         log::trace!("BEGIN MUT TX");
-        self.inner.begin_mut_tx()
+        self.inner.begin_mut_tx(isolation_level)
     }
 
     #[tracing::instrument(skip_all)]
@@ -336,7 +336,7 @@ impl RelationalDB {
     /// wrong:
     ///
     /// ```ignore
-    /// let tx = db.begin_mut_tx();
+    /// let tx = db.begin_mut_tx(IsolationLevel::Serializable);
     /// let _ = db.schema_for_table(tx, 42)?;
     /// // ...
     /// let _ = db.commit_tx(tx)?;
@@ -358,7 +358,7 @@ impl RelationalDB {
         F: FnOnce(&mut MutTx) -> Result<A, E>,
         E: From<DBError>,
     {
-        let mut tx = self.begin_mut_tx();
+        let mut tx = self.begin_mut_tx(IsolationLevel::Serializable);
         let res = f(&mut tx);
         self.finish_tx(ctx, tx, res)
     }
@@ -856,7 +856,7 @@ mod tests {
     fn test() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_mut_tx();
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let schema = TableDef::from_product("MyTable", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         stdb.create_table(&mut tx, schema)?;
         stdb.commit_tx(&ExecutionContext::default(), tx)?;
@@ -868,7 +868,7 @@ mod tests {
     fn test_open_twice() -> ResultTest<()> {
         let (stdb, tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_mut_tx();
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
 
         let schema = TableDef::from_product("MyTable", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         stdb.create_table(&mut tx, schema)?;
@@ -901,7 +901,7 @@ mod tests {
     fn test_table_name() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_mut_tx();
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let schema = TableDef::from_product("MyTable", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         let table_id = stdb.create_table(&mut tx, schema)?;
         let t_id = stdb.table_id_from_name_mut(&tx, "MyTable")?;
@@ -913,7 +913,7 @@ mod tests {
     fn test_column_name() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_mut_tx();
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let schema = TableDef::from_product("MyTable", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         stdb.create_table(&mut tx, schema)?;
         let table_id = stdb.table_id_from_name_mut(&tx, "MyTable")?.unwrap();
@@ -927,7 +927,7 @@ mod tests {
     fn test_create_table_pre_commit() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_mut_tx();
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let schema = TableDef::from_product("MyTable", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         stdb.create_table(&mut tx, schema.clone())?;
         let result = stdb.create_table(&mut tx, schema);
@@ -939,7 +939,7 @@ mod tests {
     fn test_pre_commit() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_mut_tx();
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
 
         let schema = TableDef::from_product("MyTable", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         let table_id = stdb.create_table(&mut tx, schema)?;
@@ -962,7 +962,7 @@ mod tests {
     fn test_post_commit() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_mut_tx();
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
 
         let schema = TableDef::from_product("MyTable", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         let table_id = stdb.create_table(&mut tx, schema)?;
@@ -972,7 +972,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(1)])?;
         stdb.commit_tx(&ExecutionContext::default(), tx)?;
 
-        let tx = stdb.begin_mut_tx();
+        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let mut rows = stdb
             .iter_mut(&ExecutionContext::default(), &tx, table_id)?
             .map(|r| *r.to_product_value().elements[0].as_i32().unwrap())
@@ -987,7 +987,7 @@ mod tests {
     fn test_filter_range_pre_commit() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_mut_tx();
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
 
         let schema = TableDef::from_product("MyTable", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         let table_id = stdb.create_table(&mut tx, schema)?;
@@ -1016,7 +1016,7 @@ mod tests {
     fn test_filter_range_post_commit() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_mut_tx();
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
 
         let schema = TableDef::from_product("MyTable", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         let table_id = stdb.create_table(&mut tx, schema)?;
@@ -1026,7 +1026,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(1)])?;
         stdb.commit_tx(&ExecutionContext::default(), tx)?;
 
-        let tx = stdb.begin_mut_tx();
+        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let mut rows = stdb
             .iter_by_col_range_mut(
                 &ExecutionContext::default(),
@@ -1047,13 +1047,13 @@ mod tests {
     fn test_create_table_rollback() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_mut_tx();
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
 
         let schema = TableDef::from_product("MyTable", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         let table_id = stdb.create_table(&mut tx, schema)?;
         stdb.rollback_mut_tx(&ExecutionContext::default(), tx);
 
-        let tx = stdb.begin_mut_tx();
+        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let result = stdb.table_id_from_name_mut(&tx, "MyTable")?;
         assert!(
             result.is_none(),
@@ -1074,20 +1074,20 @@ mod tests {
     fn test_rollback() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_mut_tx();
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
 
         let schema = TableDef::from_product("MyTable", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         let table_id = stdb.create_table(&mut tx, schema)?;
         stdb.commit_tx(&ctx, tx)?;
 
-        let mut tx = stdb.begin_mut_tx();
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(-1)])?;
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(0)])?;
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(1)])?;
         stdb.rollback_mut_tx(&ctx, tx);
 
-        let tx = stdb.begin_mut_tx();
+        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let mut rows = stdb
             .iter_mut(&ctx, &tx, table_id)?
             .map(|r| *r.to_product_value().elements[0].as_i32().unwrap())
@@ -1114,7 +1114,7 @@ mod tests {
     fn test_auto_inc() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_mut_tx();
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let schema = table_auto_inc();
         let table_id = stdb.create_table(&mut tx, schema)?;
 
@@ -1145,7 +1145,7 @@ mod tests {
     fn test_auto_inc_disable() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_mut_tx();
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let schema = table_auto_inc();
         let table_id = stdb.create_table(&mut tx, schema)?;
 
@@ -1192,7 +1192,7 @@ mod tests {
     fn test_auto_inc_reload() -> ResultTest<()> {
         let (stdb, tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_mut_tx();
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let schema = TableDef::new(
             "MyTable".into(),
             vec![ColumnDef {
@@ -1229,7 +1229,7 @@ mod tests {
         dbg!("reopen...");
         let stdb = open_db(&tmp_dir, false, true)?;
 
-        let mut tx = stdb.begin_mut_tx();
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
 
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(0)])?;
 
@@ -1254,7 +1254,7 @@ mod tests {
     fn test_indexed() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_mut_tx();
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let schema = table_indexed(false);
         let table_id = stdb.create_table(&mut tx, schema)?;
 
@@ -1287,7 +1287,7 @@ mod tests {
     fn test_unique() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_mut_tx();
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
 
         let schema = table_indexed(true);
         let table_id = stdb.create_table(&mut tx, schema).expect("stdb.create_table failed");
@@ -1323,7 +1323,7 @@ mod tests {
     fn test_identity() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_mut_tx();
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let schema = TableDef::new(
             "MyTable".into(),
             vec![ColumnDef {
@@ -1373,7 +1373,7 @@ mod tests {
     fn test_cascade_drop_table() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_mut_tx();
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let schema = TableDef::new(
             "MyTable".into(),
             vec![
@@ -1462,7 +1462,7 @@ mod tests {
     fn test_rename_table() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_mut_tx();
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
 
         let schema = TableDef::new(
@@ -1511,7 +1511,7 @@ mod tests {
         let indexes = vec![index("0", &[0, 1])];
         let schema = table("t", columns, indexes, vec![]);
 
-        let mut tx = stdb.begin_mut_tx();
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         stdb.insert(
@@ -1557,7 +1557,7 @@ mod tests {
     // fn test_rename_column() -> ResultTest<()> {
     //     let (mut stdb, _tmp_dir) = make_test_db()?;
 
-    //     let mut tx_ = stdb.begin_mut_tx();
+    //     let mut tx_ = stdb.begin_mut_tx(IsolationLevel::Serializable);
     //     let (tx, stdb) = tx_.get();
 
     //     let schema = &[("col1", AlgebraicType::U64, ColumnIndexAttribute::Identity)];
@@ -1754,19 +1754,19 @@ mod tests {
         let (stdb, _tmp_dir) = make_test_db().expect("make_test_db failed");
         let ctx = ExecutionContext::default();
 
-        let mut initial_tx = stdb.begin_mut_tx();
+        let mut initial_tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let schema = TableDef::from_product("test_table", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         let table_id = stdb.create_table(&mut initial_tx, schema).expect("create_table failed");
 
         stdb.commit_tx(&ctx, initial_tx).expect("Commit initial_tx failed");
 
         // Insert a row and commit it, so the row is in the committed_state.
-        let mut insert_tx = stdb.begin_mut_tx();
+        let mut insert_tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         stdb.insert(&mut insert_tx, table_id, product!(AlgebraicValue::I32(0)))
             .expect("Insert insert_tx failed");
         stdb.commit_tx(&ctx, insert_tx).expect("Commit insert_tx failed");
 
-        let mut delete_insert_tx = stdb.begin_mut_tx();
+        let mut delete_insert_tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         // Delete the row, so it's in the `delete_tables` of `delete_insert_tx`.
         assert_eq!(
             stdb.delete_by_rel(&mut delete_insert_tx, table_id, [product!(AlgebraicValue::I32(0))]),

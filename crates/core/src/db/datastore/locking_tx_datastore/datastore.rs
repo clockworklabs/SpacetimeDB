@@ -11,7 +11,9 @@ use crate::{
     db::{
         datastore::{
             system_tables::{Epoch, StModuleRow, StTableRow, ST_MODULE_ID, ST_TABLES_ID, WASM_MODULE},
-            traits::{DataRow, MutProgrammable, MutTx, MutTxDatastore, Programmable, Tx, TxData, TxDatastore},
+            traits::{
+                DataRow, IsolationLevel, MutProgrammable, MutTx, MutTxDatastore, Programmable, Tx, TxData, TxDatastore,
+            },
         },
         db_metrics::{DB_METRICS, MAX_TX_CPU_TIME},
         messages::{transaction::Transaction, write::Operation},
@@ -523,7 +525,9 @@ pub(crate) fn record_metrics(ctx: &ExecutionContext, tx_timer: Instant, lock_wai
 impl MutTx for Locking {
     type MutTx = MutTxId;
 
-    fn begin_mut_tx(&self) -> Self::MutTx {
+    /// Note: We do not use the isolation level here because this implementation
+    /// guarantees the highest isolation level, Serializable.
+    fn begin_mut_tx(&self, _isolation_level: IsolationLevel) -> Self::MutTx {
         let timer = Instant::now();
 
         let committed_state_write_lock = self.committed_state.write_arc();
@@ -636,7 +640,7 @@ mod tests {
         StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, ST_COLUMNS_ID, ST_CONSTRAINTS_ID, ST_INDEXES_ID,
         ST_SEQUENCES_ID,
     };
-    use crate::db::datastore::traits::MutTx;
+    use crate::db::datastore::traits::{IsolationLevel, MutTx};
     use crate::db::datastore::Result;
     use crate::error::{DBError, IndexError};
     use itertools::Itertools;
@@ -962,7 +966,7 @@ mod tests {
 
     fn setup_table() -> ResultTest<(Locking, MutTxId, TableId)> {
         let datastore = get_datastore()?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         let schema = basic_table_schema();
         let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
         Ok((datastore, tx, table_id))
@@ -999,7 +1003,7 @@ mod tests {
     #[test]
     fn test_bootstrapping_sets_up_tables() -> ResultTest<()> {
         let datastore = get_datastore()?;
-        let tx = datastore.begin_mut_tx();
+        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
         #[rustfmt::skip]
@@ -1100,7 +1104,7 @@ mod tests {
     fn test_create_table_post_commit() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let tx = datastore.begin_mut_tx();
+        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
 
@@ -1120,7 +1124,7 @@ mod tests {
     fn test_create_table_post_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.rollback_mut_tx_for_test(tx);
-        let tx = datastore.begin_mut_tx();
+        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
 
@@ -1144,7 +1148,7 @@ mod tests {
     fn test_schema_for_table_post_commit() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let tx = datastore.begin_mut_tx();
+        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         let schema = &*datastore.schema_for_table_mut_tx(&tx, table_id)?;
         #[rustfmt::skip]
         assert_eq!(schema, &basic_table_schema_created(table_id));
@@ -1156,7 +1160,7 @@ mod tests {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx_for_test(tx)?;
 
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         let schema = datastore.schema_for_table_mut_tx(&tx, table_id)?.into_owned();
 
         for index in &*schema.indexes {
@@ -1168,7 +1172,7 @@ mod tests {
         );
         datastore.commit_mut_tx_for_test(tx)?;
 
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         assert!(
             datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes.is_empty(),
             "no indexes should be left in the schema post-commit"
@@ -1196,7 +1200,7 @@ mod tests {
 
         datastore.commit_mut_tx_for_test(tx)?;
 
-        let tx = datastore.begin_mut_tx();
+        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         assert_eq!(
             datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes,
             expected_indexes,
@@ -1212,7 +1216,7 @@ mod tests {
     fn test_schema_for_table_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.rollback_mut_tx_for_test(tx);
-        let tx = datastore.begin_mut_tx();
+        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         let schema = datastore.schema_for_table_mut_tx(&tx, table_id);
         assert!(schema.is_err());
         Ok(())
@@ -1244,7 +1248,7 @@ mod tests {
         // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, u32_str_u32(0, "Foo", 18))?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let tx = datastore.begin_mut_tx();
+        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, "Foo", 18)]);
         Ok(())
@@ -1255,10 +1259,10 @@ mod tests {
         let (datastore, tx, table_id) = setup_table()?;
         let row = u32_str_u32(15, "Foo", 18); // 15 is ignored.
         datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.rollback_mut_tx_for_test(tx);
-        let tx = datastore.begin_mut_tx();
+        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![]);
         Ok(())
@@ -1270,7 +1274,7 @@ mod tests {
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         let created_row = u32_str_u32(1, "Foo", 18);
         let num_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, [created_row]);
         assert_eq!(num_deleted, 1);
@@ -1339,7 +1343,7 @@ mod tests {
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         let result = datastore.insert_mut_tx(&mut tx, table_id, row);
         match result {
             Err(DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
@@ -1359,11 +1363,11 @@ mod tests {
     fn test_unique_constraint_post_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
         datastore.rollback_mut_tx_for_test(tx);
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(2, "Foo", 18)]);
@@ -1374,11 +1378,11 @@ mod tests {
     fn test_create_index_pre_commit() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         let index_def = IndexDef::btree("age_idx".into(), ColId(2), true);
         datastore.create_index_mut_tx(&mut tx, table_id, index_def)?;
         let ctx = ExecutionContext::default();
@@ -1419,11 +1423,11 @@ mod tests {
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         let index_def = IndexDef::btree("age_idx".into(), ColId(2), true);
         datastore.create_index_mut_tx(&mut tx, table_id, index_def)?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
 
@@ -1462,11 +1466,11 @@ mod tests {
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         let index_def = IndexDef::btree("age_idx".into(), ColId(2), true);
         datastore.create_index_mut_tx(&mut tx, table_id, index_def)?;
         datastore.rollback_mut_tx_for_test(tx);
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
 
@@ -1518,7 +1522,7 @@ mod tests {
         };
 
         // Update the db with the same actual value for that row, in a new tx.
-        let mut tx = datastore.begin_mut_tx();
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         // Iterate over all rows with the value 1 (from the autoinc) in column 0.
         let rows = all_rows_col_0_eq_1(&tx);
         assert_eq!(rows.len(), 1);

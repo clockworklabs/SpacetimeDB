@@ -596,6 +596,7 @@ pub(crate) mod tests {
         StIndexFields, StIndexRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, ST_COLUMNS_ID,
         ST_COLUMNS_NAME, ST_INDEXES_NAME, ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID, ST_TABLES_NAME,
     };
+    use crate::db::datastore::traits::IsolationLevel;
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::execution_context::ExecutionContext;
     use spacetimedb_lib::error::ResultTest;
@@ -660,7 +661,7 @@ pub(crate) mod tests {
     fn test_db_query() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_mut_tx();
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
         let tx_mode = &mut TxMode::MutTx(&mut tx);
         let p = &mut DbProgram::new(&ctx, &stdb, tx_mode, AuthCtx::for_testing());
@@ -710,7 +711,7 @@ pub(crate) mod tests {
     fn test_query_catalog_tables() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_mut_tx();
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
         let tx_mode = &mut TxMode::MutTx(&mut tx);
         let p = &mut DbProgram::new(&ctx, &stdb, tx_mode, AuthCtx::for_testing());
@@ -743,7 +744,7 @@ pub(crate) mod tests {
     fn test_query_catalog_columns() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let mut tx = stdb.begin_mut_tx();
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
         let tx_mode = &mut TxMode::MutTx(&mut tx);
         let p = &mut DbProgram::new(&ctx, &stdb, tx_mode, AuthCtx::for_testing());
@@ -785,12 +786,12 @@ pub(crate) mod tests {
         let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row = product!(1u64, "health");
 
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
         let table_id = create_table_with_rows(&db, &mut tx, "inventory", head, &[row])?;
         db.commit_tx(&ctx, tx)?;
 
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
         let index = IndexDef::btree("idx_1".into(), ColId(0), true);
         let index_id = db.create_index(&mut tx, table_id, index)?;
         let tx_mode = &mut TxMode::MutTx(&mut tx);
@@ -826,7 +827,7 @@ pub(crate) mod tests {
     fn test_query_catalog_sequences() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
 
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
         let tx_mode = &mut TxMode::MutTx(&mut tx);
         let p = &mut DbProgram::new(&ctx, &db, tx_mode, AuthCtx::for_testing());
