@@ -2892,6 +2892,44 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn test_drop_table_is_transactional() -> ResultTest<()> {
+        let (datastore, mut tx, table_id) = setup_table()?;
+
+        // Insert a row and commit.
+        insert(&datastore, &mut tx, table_id, &random_row())?;
+        commit(&datastore, tx)?;
+
+        // Create a transaction and drop the table and roll back.
+        let mut tx = begin_mut_tx(&datastore);
+        assert!(datastore.drop_table_mut_tx(&mut tx, table_id).is_ok());
+        datastore.rollback_mut_tx(tx);
+
+        // Ensure the table still exists in the next transaction.
+        let tx = begin_mut_tx(&datastore);
+        assert!(
+            datastore.table_id_exists_mut_tx(&tx, &table_id),
+            "Table should still exist",
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_table_is_transactional() -> ResultTest<()> {
+        // Create a table in a failed transaction.
+        let (datastore, tx, table_id) = setup_table()?;
+        datastore.rollback_mut_tx(tx);
+
+        // Nothing should have happened.
+        let tx = begin_mut_tx(&datastore);
+        assert!(
+            !datastore.table_id_exists_mut_tx(&tx, &table_id),
+            "Table should not exist"
+        );
+        Ok(())
+    }
+
     // TODO: Add the following tests
     // - Create index with unique constraint and immediately insert a row that violates the constraint before committing.
     // - Create a tx that inserts 2000 rows with an auto_inc column
