@@ -125,6 +125,7 @@ pub fn run(db: &RelationalDB, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTa
 pub(crate) mod tests {
     use super::*;
     use crate::db::datastore::system_tables::{ST_TABLES_ID, ST_TABLES_NAME};
+    use crate::db::datastore::traits::IsolationLevel;
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::vm::tests::create_table_with_rows;
     use itertools::Itertools;
@@ -144,7 +145,7 @@ pub(crate) mod tests {
     fn create_data(total_rows: u64) -> ResultTest<(RelationalDB, MemTable, TempDir)> {
         let (db, tmp_dir) = make_test_db()?;
 
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
         let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let rows: Vec<_> = (1..=total_rows).map(|i| product!(i, format!("health{i}"))).collect();
         create_table_with_rows(&db, &mut tx, "inventory", head.clone(), &rows)?;
@@ -368,7 +369,7 @@ pub(crate) mod tests {
 
         let (db, _tmp_dir) = make_test_db()?;
 
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
         create_table_with_rows(
             &db,
             &mut tx,

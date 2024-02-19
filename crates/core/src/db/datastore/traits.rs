@@ -10,6 +10,155 @@ use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::DataKey;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
 
+/// The `IsolationLevel` enum specifies the degree to which a transaction is
+/// isolated from concurrently running transactions. The higher the isolation
+/// level, the more protection a transaction has from the effects of other
+/// transactions. The highest isolation level, `Serializable`, guarantees that
+/// transactions produce effects which are indistinguishable from the effects
+/// that would have been created by running the transactions one at a time, in
+/// some order, even though they may not actually have been run one at a time.
+///
+/// NOTE: It is always possible to achieve `Serializable` isolation by running
+/// transactions one at a time, although it is not necessarily performant.
+///
+/// Relaxing the isolation level can allow certain implementations to improve
+/// performance at the cost of allowing the produced transactions to include
+/// isolation anomalies. An isolation anomaly is a situation in which the
+/// results of a transaction are affected by the presence of other transactions
+/// running concurrently. Isolation anomalies can cause the database to violate
+/// the Isolation properties of the ACID guarantee, but not Atomicity or
+/// Durability.
+///
+/// Whether relaxing isolation level should be allowed to violate Consistency
+/// guarantees of the datastore is of some debate, although most databases
+/// choose to maintain consistency guarantees regardless of the isolation level,
+/// and we should too even at the cost of performance. See the following for a
+/// nuanced example of how postgres deals with consistency guarantees at lower
+/// isolation levels.
+///
+/// - https://stackoverflow.com/questions/55254236/do-i-need-higher-transaction-isolation-to-make-constraints-work-reliably-in-post
+///
+/// Thus from an application perspective, isolation anomalies may cause the data
+/// to be inconsistent or incorrect but will **not** cause it to violate the
+/// consistency constraints of the database like referential integrity,
+/// uniqueness, check constraints, etc.
+///
+/// NOTE: The datastore must treat unsupported isolation levels as though they
+/// ran at the strongest supported level.
+///
+/// The SQL standard defines four levels of transaction isolation.
+/// - Read Uncommitted
+/// - Read Committed
+/// - Repeatable Read
+/// - Serializable
+///
+/// We include an additional isolation level, `Snapshot`, which is not part of
+/// the SQL standard which offers a higher level of isolation than `Repeatable
+/// Read`. Snapshot is the same as Serializable, but permits certain
+/// serialization anomalies, such as write skew, to occur.
+///
+/// The ANSI SQL standard defined three anomalies in 1992:
+///
+/// - Dirty Reads: Occur when a transaction reads data written by a concurrent
+/// uncommitted transaction.
+///
+/// - Non-repeatable Reads: Occur when a transaction reads the same row twice
+/// and gets different data each time because another transaction has modified
+/// the data in between the reads.
+///
+/// - Phantom Reads: Occur when a transaction re-executes a query returning a
+/// set of rows that satisfy a search condition and finds that the set of rows
+/// satisfying the condition has changed due to another recently-committed
+/// transaction.
+///
+/// However since then database researchers have identified and cataloged many
+/// more. See:
+///
+/// - https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/tr-95-51.pdf
+/// - https://pmg.csail.mit.edu/papers/adya-phd.pdf
+///
+/// See the following table of anomalies for a more complete list used as a
+/// reference for database implementers:
+///
+/// - https://github.com/ept/hermitage?tab=readme-ov-file#summary-of-test-results
+///
+/// The following anomalies are not part of the SQL standard, but are important:
+///
+/// - Write Skew: Occurs when two transactions concurrently read the same data,
+/// make decisions based on that data, and then write back modifications that
+/// are mutually inconsistent with the decisions made by the other transaction,
+/// despite no direct conflict on the same row being detected. e.g. I read what
+/// you write and you read what I write.
+///
+/// - Serialization Anomalies: Occur when the results of a set of transactions
+/// are inconsistent with any serial execution of those transactions.
+
+/// PostgreSQL's documentation provides a good summary of the anomalies and
+/// isolation levels that it supports:
+///
+/// - https://www.postgresql.org/docs/current/transaction-iso.html
+///
+/// IMPORTANT!!! The order of these isolation levels in the enum is significant
+/// because we often must check if one isolation level is higher (offers more
+/// protection) than another, and the order is derived based on the lexical
+/// order of the enum variants.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum IsolationLevel {
+    /// ReadUncommitted allows transactions to see changes made by other
+    /// transactions even if those changes have not been committed. This level does
+    /// not protect against any of the isolation anomalies, including dirty reads.
+    ReadUncommitted,
+
+    /// ReadCommitted guarantees that any data read is committed at the moment
+    /// it is read.  Thus, it prevents dirty reads but does not prevent
+    /// non-repeatable reads or phantom reads.
+    ReadCommitted,
+
+    /// RepeatableRead ensures that if a transaction reads the same data more
+    /// than once, it will read the same data each time, thereby preventing
+    /// non-repeatable reads.  However, it does not necessarily prevent phantom
+    /// reads.
+    RepeatableRead,
+
+    /// Snapshot isolation provides a view of the database as it was at the
+    /// beginning of the transaction, ensuring that the transaction can only see
+    /// data committed before it started. This level of isolation guarantees
+    /// consistency across multiple reads by providing each transaction with a
+    /// "snapshot" of the database, preventing dirty reads, non-repeatable
+    /// reads, and phantom reads. However, snapshot isolation does not
+    /// completely eliminate all concurrency-related anomalies. One such anomaly
+    /// is write skew, a situation where two transactions concurrently read the
+    /// same data, make decisions based on that data, and then write back
+    /// modifications that are mutually inconsistent with the decisions made by
+    /// the other transaction, despite no direct conflict on the same row being
+    /// detected. This can occur because each transaction operates on its
+    /// snapshot without being aware of the other's uncommitted changes.  For
+    /// instance, in a scheduling application, two transactions might
+    /// concurrently check a condition (e.g., that a shift is not overstaffed),
+    /// and both decide to add a worker based on that condition, leading to an
+    /// overstaffing situation because they are unaware of each other's
+    /// decisions. Snapshot isolation requires additional mechanisms, such as
+    /// explicit locking or application-level checks, to prevent write skew
+    /// anomalies.
+    ///
+    /// NOTE: Snapshot isolation does not permit write-write conflicts and any
+    /// implementations of snapshot isolation must ensure that write-write
+    /// conflicts cannot occur.
+    Snapshot,
+
+    /// Serializable is the highest isolation level, where transactions are
+    /// executed with the illusion of being the only transaction running in the
+    /// system. This level prevents dirty reads, non-repeatable reads, and
+    /// phantom reads, effectively serializing access to the database to ensure
+    /// complete isolation.
+    ///
+    /// Correct implementations of Serializable isolation must either actually
+    /// permit only one transaction to run at a time , or track reads to ensure
+    /// that the data which has been read by one transaction has not been
+    /// modified by another transaction before the first transaction commits.
+    Serializable,
+}
+
 /// Operations in a transaction are either Inserts or Deletes.
 /// Inserts report the byte objects they inserted, to be persisted
 /// later in an object store.
@@ -61,7 +210,7 @@ pub trait Tx {
 pub trait MutTx {
     type MutTx;
 
-    fn begin_mut_tx(&self) -> Self::MutTx;
+    fn begin_mut_tx(&self, isolation_level: IsolationLevel) -> Self::MutTx;
     fn commit_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) -> Result<Option<TxData>>;
     fn rollback_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx);
 
