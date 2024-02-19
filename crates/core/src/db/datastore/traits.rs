@@ -16,7 +16,6 @@ use super::{system_tables::StTableRow, Result};
 pub enum IsolationLevel {
     Serializable,
     Snapshot,
-    LastWriterWinsSnapshot,
     RepeatableRead,
     ReadCommitted,
     ReadUncommitted,
@@ -33,9 +32,8 @@ impl Ord for IsolationLevel {
         // Convert the enum variant into a numerical value for comparison
         fn rank(level: &IsolationLevel) -> u8 {
             match level {
-                IsolationLevel::Serializable => 6,
-                IsolationLevel::Snapshot => 5,
-                IsolationLevel::LastWriterWinsSnapshot => 4,
+                IsolationLevel::Serializable => 5,
+                IsolationLevel::Snapshot => 4,
                 IsolationLevel::RepeatableRead => 3,
                 IsolationLevel::ReadCommitted => 2,
                 IsolationLevel::ReadUncommitted => 1,
