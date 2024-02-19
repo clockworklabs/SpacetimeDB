@@ -10,9 +10,9 @@ use crate::{
         datastore::{
             system_tables::{
                 st_columns_schema, st_constraints_schema, st_indexes_schema, st_module_schema, st_sequences_schema,
-                st_table_schema, system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableRow,
-                SystemTable, ST_COLUMNS_ID, ST_COLUMNS_NAME, ST_CONSTRAINTS_ID, ST_CONSTRAINTS_NAME, ST_INDEXES_ID,
-                ST_INDEXES_NAME, ST_MODULE_ID, ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID,
+                st_table_schema, system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableFields,
+                StTableRow, SystemTable, ST_COLUMNS_ID, ST_COLUMNS_NAME, ST_CONSTRAINTS_ID, ST_CONSTRAINTS_NAME,
+                ST_INDEXES_ID, ST_INDEXES_NAME, ST_MODULE_ID, ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID,
             },
             traits::{TxData, TxOp, TxRecord},
         },
@@ -36,7 +36,7 @@ use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     btree_index::BTreeIndex,
     indexes::{RowPointer, SquashedOffset},
-    table::{IndexScanIter, InsertError, RowRef, Table, TableScanIter},
+    table::{IndexScanIter, InsertError, RowRef, Table},
 };
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
@@ -285,8 +285,7 @@ impl CommittedState {
     pub fn build_sequence_state(&mut self, sequence_state: &mut SequencesState) -> Result<()> {
         let st_sequences = self.tables.get(&ST_SEQUENCES_ID).unwrap();
         for row_ref in st_sequences.scan_rows(&self.blob_store) {
-            let row = row_ref.to_product_value();
-            let sequence = StSequenceRow::try_from(&row)?;
+            let sequence = StSequenceRow::try_from(row_ref)?;
             // TODO: The system tables have initialized their value already, but this is wrong:
             // If we exceed  `SEQUENCE_PREALLOCATION_AMOUNT` we will get a unique violation
             let is_system_table = self
@@ -294,15 +293,13 @@ impl CommittedState {
                 .get(&sequence.table_id)
                 .map_or(false, |x| x.schema.table_type == StTableType::System);
 
-            let schema = sequence.to_owned().into();
-
-            let mut seq = Sequence::new(schema);
+            let mut seq = Sequence::new(sequence.into());
             // Now we need to recover the last allocation value.
-            if !is_system_table && seq.value < sequence.allocated + 1 {
-                seq.value = sequence.allocated + 1;
+            if !is_system_table && seq.value < seq.allocated() + 1 {
+                seq.value = seq.allocated() + 1;
             }
 
-            sequence_state.insert(sequence.sequence_id, seq);
+            sequence_state.insert(seq.id(), seq);
         }
         Ok(())
     }
@@ -311,10 +308,9 @@ impl CommittedState {
         let st_indexes = self.tables.get(&ST_INDEXES_ID).unwrap();
         let rows = st_indexes
             .scan_rows(&self.blob_store)
-            .map(|r| r.to_product_value())
-            .collect::<Vec<_>>();
-        for row in rows {
-            let index_row = StIndexRow::try_from(&row)?;
+            .map(StIndexRow::try_from)
+            .collect::<Result<Vec<_>>>()?;
+        for index_row in rows {
             let Some((table, blob_store)) = self.get_table_and_blob_store(index_row.table_id) else {
                 panic!("Cannot create index for table which doesn't exist in committed state");
             };
@@ -335,21 +331,22 @@ impl CommittedState {
     /// have been created in memory, but tables with no rows will not have
     /// been created. This function ensures that they are created.
     pub fn build_missing_tables(&mut self) -> Result<()> {
-        let st_tables = self.get_table(ST_TABLES_ID).unwrap();
-        let rows = st_tables
+        // Find all ids of tables that are in `st_tables` but haven't been built.
+        let table_ids = self
+            .get_table(ST_TABLES_ID)
+            .unwrap()
             .scan_rows(&self.blob_store)
-            .map(|r| r.to_product_value())
+            .map(|r| r.read_col(StTableFields::TableId).unwrap())
+            .filter(|table_id| self.get_table(*table_id).is_none())
             .collect::<Vec<_>>();
-        for row in rows {
-            let table_row = StTableRow::try_from(&row)?;
-            let table_id = table_row.table_id;
-            if self.get_table(table_id).is_none() {
-                let schema = self
-                    .schema_for_table(&ExecutionContext::default(), table_id)?
-                    .into_owned();
-                self.tables
-                    .insert(table_id, Table::new(schema, SquashedOffset::COMMITTED_STATE));
-            }
+
+        // Construct their schemas and insert tables for them.
+        for table_id in table_ids {
+            let schema = self
+                .schema_for_table(&ExecutionContext::default(), table_id)?
+                .into_owned();
+            self.tables
+                .insert(table_id, Table::new(schema, SquashedOffset::COMMITTED_STATE));
         }
         Ok(())
     }
@@ -548,28 +545,6 @@ impl CommittedState {
             ))),
             None => self.iter_by_col_range(ctx, table_id, cols, range),
         }
-    }
-}
-
-struct CommittedStateIter<'a> {
-    iter: TableScanIter<'a>,
-    table_id_col: &'a ColList,
-    value: &'a AlgebraicValue,
-}
-
-impl<'a> Iterator for CommittedStateIter<'a> {
-    type Item = RowRef<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        for row_ref in &mut self.iter {
-            let row = row_ref.to_product_value();
-            let table_id = row.project_not_empty(self.table_id_col).unwrap();
-            if table_id == *self.value {
-                return Some(row_ref);
-            }
-        }
-
-        None
     }
 }
 

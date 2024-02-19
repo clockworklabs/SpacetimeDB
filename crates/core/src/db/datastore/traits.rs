@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::{ops::RangeBounds, sync::Arc};
 
+use super::Result;
 use crate::db::datastore::system_tables::ST_TABLES_ID;
 use crate::execution_context::ExecutionContext;
 use spacetimedb_primitives::*;
@@ -8,8 +9,6 @@ use spacetimedb_sats::db::def::*;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::DataKey;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
-
-use super::{system_tables::StTableRow, Result};
 
 /// Operations in a transaction are either Inserts or Deletes.
 /// Inserts report the byte objects they inserted, to be persisted
@@ -45,16 +44,11 @@ pub trait Data: Into<ProductValue> {
 pub trait DataRow: Send + Sync {
     type RowId: Copy;
 
-    type DataRef<'a>;
+    type RowRef<'a>;
 
-    /// Return a `Cow`, which currently will always be `Borrowed`,
-    /// to avoid leaking the fact that the datastore stores `ProductValue`s
-    /// rather than some other format.
-    ///
-    /// This will not always be the case;
-    /// eventually, our datastore will store a more optimized representation,
-    /// and so will be unable to return a reference to a `ProductValue`.
-    fn view_product_value<'a>(&self, data_ref: Self::DataRef<'a>) -> Cow<'a, ProductValue>;
+    /// Assuming `row_ref` refers to a row in `st_tables`,
+    /// read out the table id from the row.
+    fn read_table_id(&self, row_ref: Self::RowRef<'_>) -> Result<TableId>;
 }
 
 pub trait Tx {
@@ -79,15 +73,15 @@ pub trait MutTx {
 }
 
 pub trait TxDatastore: DataRow + Tx {
-    type Iter<'a>: Iterator<Item = Self::DataRef<'a>>
+    type Iter<'a>: Iterator<Item = Self::RowRef<'a>>
     where
         Self: 'a;
 
-    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>>: Iterator<Item = Self::DataRef<'a>>
+    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>>: Iterator<Item = Self::RowRef<'a>>
     where
         Self: 'a;
 
-    type IterByColEq<'a>: Iterator<Item = Self::DataRef<'a>>
+    type IterByColEq<'a>: Iterator<Item = Self::RowRef<'a>>
     where
         Self: 'a;
 
@@ -147,10 +141,9 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     ) -> super::Result<Vec<Cow<'tx, TableSchema>>> {
         let mut tables = Vec::new();
         let table_rows = self.iter_mut_tx(ctx, tx, ST_TABLES_ID)?.collect::<Vec<_>>();
-        for data_ref in table_rows {
-            let data = self.view_product_value(data_ref);
-            let row = StTableRow::try_from(data.as_ref())?;
-            tables.push(self.schema_for_table_mut_tx(tx, row.table_id)?);
+        for row in table_rows {
+            let table_id = self.read_table_id(row)?;
+            tables.push(self.schema_for_table_mut_tx(tx, table_id)?);
         }
         Ok(tables)
     }
@@ -203,7 +196,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         tx: &'a Self::MutTx,
         table_id: TableId,
         row_id: &'a Self::RowId,
-    ) -> Result<Option<Self::DataRef<'a>>>;
+    ) -> Result<Option<Self::RowRef<'a>>>;
     fn delete_mut_tx<'a>(
         &'a self,
         tx: &'a mut Self::MutTx,

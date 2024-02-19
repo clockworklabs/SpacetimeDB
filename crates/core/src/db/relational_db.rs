@@ -10,7 +10,6 @@ use super::message_log::MessageLog;
 use super::ostorage::memory_object_db::MemoryObjectDB;
 use super::relational_operators::Relation;
 use crate::address::Address;
-use crate::db::datastore::traits::DataRow;
 use crate::db::db_metrics::DB_METRICS;
 use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 use crate::db::ostorage::ObjectDB;
@@ -26,7 +25,7 @@ use spacetimedb_sats::data_key::ToDataKey;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{ColumnDef, IndexDef, SequenceDef, TableDef, TableSchema};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
-use spacetimedb_table::{indexes::RowPointer, table::RowRef};
+use spacetimedb_table::indexes::RowPointer;
 use std::borrow::Cow;
 use std::fs::{create_dir_all, File};
 use std::ops::RangeBounds;
@@ -46,15 +45,6 @@ pub struct RelationalDB {
     _lock: Arc<File>,
     address: Address,
     row_count_fn: RowCountFn,
-}
-
-impl DataRow for RelationalDB {
-    type RowId = RowPointer;
-    type DataRef<'a> = RowRef<'a>;
-
-    fn view_product_value<'a>(&self, data_ref: Self::DataRef<'a>) -> Cow<'a, ProductValue> {
-        Cow::Owned(data_ref.to_product_value())
-    }
 }
 
 impl std::fmt::Debug for RelationalDB {
@@ -823,6 +813,7 @@ mod tests {
     use spacetimedb_sats::db::def::{ColumnDef, ConstraintDef};
     use spacetimedb_sats::product;
     use spacetimedb_table::read_column::ReadColumn;
+    use spacetimedb_table::table::RowRef;
     use std::io::{self, Seek, SeekFrom, Write};
     use std::ops::Range;
     use tempfile::TempDir;
@@ -943,7 +934,7 @@ mod tests {
     }
 
     fn read_first_col<T: ReadColumn>(row: RowRef<'_>) -> T {
-        row.read_col(0.into()).unwrap()
+        row.read_col(0).unwrap()
     }
 
     fn collect_sorted<T: ReadColumn + Ord>(stdb: &RelationalDB, tx: &MutTx, table_id: TableId) -> ResultTest<Vec<T>> {
@@ -1266,21 +1257,21 @@ mod tests {
 
         let indexes = stdb
             .iter_mut(&ctx, &tx, ST_INDEXES_ID)?
-            .map(|x| StIndexRow::try_from(&x.to_product_value()).unwrap().to_owned())
+            .map(|x| StIndexRow::try_from(x).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(indexes.len(), 4, "Wrong number of indexes");
 
         let sequences = stdb
             .iter_mut(&ctx, &tx, ST_SEQUENCES_ID)?
-            .map(|x| StSequenceRow::try_from(&x.to_product_value()).unwrap().to_owned())
+            .map(|x| StSequenceRow::try_from(x).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(sequences.len(), 1, "Wrong number of sequences");
 
         let constraints = stdb
             .iter_mut(&ctx, &tx, ST_CONSTRAINTS_ID)?
-            .map(|x| StConstraintRow::try_from(&x.to_product_value()).unwrap().to_owned())
+            .map(|x| StConstraintRow::try_from(x).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(constraints.len(), 4, "Wrong number of constraints");
@@ -1289,21 +1280,21 @@ mod tests {
 
         let indexes = stdb
             .iter_mut(&ctx, &tx, ST_INDEXES_ID)?
-            .map(|x| StIndexRow::try_from(&x.to_product_value()).unwrap().to_owned())
+            .map(|x| StIndexRow::try_from(x).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(indexes.len(), 0, "Wrong number of indexes DROP");
 
         let sequences = stdb
             .iter_mut(&ctx, &tx, ST_SEQUENCES_ID)?
-            .map(|x| StSequenceRow::try_from(&x.to_product_value()).unwrap().to_owned())
+            .map(|x| StSequenceRow::try_from(x).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(sequences.len(), 0, "Wrong number of sequences DROP");
 
         let constraints = stdb
             .iter_mut(&ctx, &tx, ST_CONSTRAINTS_ID)?
-            .map(|x| StConstraintRow::try_from(&x.to_product_value()).unwrap().to_owned())
+            .map(|x| StConstraintRow::try_from(x).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(constraints.len(), 0, "Wrong number of constraints DROP");
@@ -1326,8 +1317,7 @@ mod tests {
         // Also make sure we've removed the old ST_TABLES_ID row
         let mut n = 0;
         for row in stdb.iter_mut(&ctx, &tx, ST_TABLES_ID)? {
-            let row = row.to_product_value();
-            let table = StTableRow::try_from(&row)?;
+            let table = StTableRow::try_from(row)?;
             if table.table_id == table_id {
                 n += 1;
             }

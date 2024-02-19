@@ -10,7 +10,9 @@ use crate::{
     address::Address,
     db::{
         datastore::{
-            system_tables::{Epoch, StModuleRow, StTableRow, ST_MODULE_ID, ST_TABLES_ID, WASM_MODULE},
+            system_tables::{
+                Epoch, StModuleFields, StModuleRow, StTableFields, ST_MODULE_ID, ST_TABLES_ID, WASM_MODULE,
+            },
             traits::{DataRow, MutProgrammable, MutTx, MutTxDatastore, Programmable, Tx, TxData, TxDatastore},
         },
         db_metrics::{DB_METRICS, MAX_TX_CPU_TIME},
@@ -216,10 +218,10 @@ impl Locking {
 
 impl DataRow for Locking {
     type RowId = RowPointer;
-    type DataRef<'a> = RowRef<'a>;
+    type RowRef<'a> = RowRef<'a>;
 
-    fn view_product_value<'a>(&self, data_ref: Self::DataRef<'a>) -> Cow<'a, ProductValue> {
-        Cow::Owned(data_ref.to_product_value())
+    fn read_table_id(&self, row_ref: Self::RowRef<'_>) -> Result<TableId> {
+        Ok(row_ref.read_col(StTableFields::TableId)?)
     }
 }
 
@@ -293,9 +295,8 @@ impl TxDatastore for Locking {
     fn get_all_tables_tx<'tx>(&self, ctx: &ExecutionContext, tx: &'tx Self::Tx) -> Result<Vec<Cow<'tx, TableSchema>>> {
         self.iter_tx(ctx, tx, ST_TABLES_ID)?
             .map(|row_ref| {
-                let data = row_ref.to_product_value();
-                let row = StTableRow::try_from(&data)?;
-                self.schema_for_table_tx(tx, row.table_id)
+                let table_id = row_ref.read_col(StTableFields::TableId)?;
+                self.schema_for_table_tx(tx, table_id)
             })
             .collect()
     }
@@ -426,7 +427,7 @@ impl MutTxDatastore for Locking {
         tx: &'a Self::MutTx,
         table_id: TableId,
         row_ptr: &'a Self::RowId,
-    ) -> Result<Option<Self::DataRef<'a>>> {
+    ) -> Result<Option<Self::RowRef<'a>>> {
         // TODO(perf, deep-integration): Rework this interface so that `row_ptr` can be trusted.
         tx.get(table_id, *row_ptr)
     }
@@ -563,17 +564,10 @@ impl MutTx for Locking {
 
 impl Programmable for Locking {
     fn program_hash(&self, tx: &TxId) -> Result<Option<spacetimedb_sats::hash::Hash>> {
-        match tx
-            .iter(&ExecutionContext::internal(self.database_address), &ST_MODULE_ID)?
+        tx.iter(&ExecutionContext::internal(self.database_address), &ST_MODULE_ID)?
             .next()
-        {
-            None => Ok(None),
-            Some(data) => {
-                let row = data.to_product_value();
-                let row = StModuleRow::try_from(&row)?;
-                Ok(Some(row.program_hash))
-            }
-        }
+            .map(|row| StModuleRow::try_from(row).map(|st| st.program_hash))
+            .transpose()
     }
 }
 
@@ -584,10 +578,9 @@ impl MutProgrammable for Locking {
         let ctx = ExecutionContext::internal(self.database_address);
         let mut iter = tx.iter(&ctx, &ST_MODULE_ID)?;
         if let Some(row_ref) = iter.next() {
-            let row_pv = row_ref.to_product_value();
-            let row = StModuleRow::try_from(&row_pv)?;
-            if fence <= row.epoch.0 {
-                return Err(anyhow!("stale fencing token: {}, storage is at epoch: {}", fence, row.epoch).into());
+            let epoch = row_ref.read_col::<u128>(StModuleFields::Epoch)?;
+            if fence <= epoch {
+                return Err(anyhow!("stale fencing token: {}, storage is at epoch: {}", fence, epoch).into());
             }
 
             // Note the borrow checker requires that we explictly drop the iterator.
@@ -597,7 +590,7 @@ impl MutProgrammable for Locking {
             // there will be another immutable borrow of self after the two mutable borrows below.
             drop(iter);
 
-            tx.delete_by_row_value(ST_MODULE_ID, &row_pv)?;
+            tx.delete(ST_MODULE_ID, row_ref.pointer())?;
             tx.insert(
                 ST_MODULE_ID,
                 &mut ProductValue::from(&StModuleRow {
@@ -633,8 +626,8 @@ impl MutProgrammable for Locking {
 mod tests {
     use super::*;
     use crate::db::datastore::system_tables::{
-        StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, ST_COLUMNS_ID, ST_CONSTRAINTS_ID, ST_INDEXES_ID,
-        ST_SEQUENCES_ID,
+        StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_COLUMNS_ID, ST_CONSTRAINTS_ID,
+        ST_INDEXES_ID, ST_SEQUENCES_ID,
     };
     use crate::db::datastore::traits::MutTx;
     use crate::db::datastore::Result;
@@ -664,7 +657,7 @@ mod tests {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_TABLES_ID)?
-                .map(|x| StTableRow::try_from(&x.to_product_value()).unwrap().to_owned())
+                .map(|row| StTableRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.table_id)
                 .collect::<Vec<_>>())
         }
@@ -677,7 +670,7 @@ mod tests {
             Ok(self
                 .db
                 .iter_by_col_eq(self.ctx, &ST_TABLES_ID, cols.into(), value)?
-                .map(|x| StTableRow::try_from(&x.to_product_value()).unwrap().to_owned())
+                .map(|row| StTableRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.table_id)
                 .collect::<Vec<_>>())
         }
@@ -686,7 +679,7 @@ mod tests {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_COLUMNS_ID)?
-                .map(|x| StColumnRow::try_from(&x.to_product_value()).unwrap().to_owned())
+                .map(|row| StColumnRow::try_from(row).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.col_pos))
                 .collect::<Vec<_>>())
         }
@@ -699,7 +692,7 @@ mod tests {
             Ok(self
                 .db
                 .iter_by_col_eq(self.ctx, &ST_COLUMNS_ID, cols.into(), value)?
-                .map(|x| StColumnRow::try_from(&x.to_product_value()).unwrap().to_owned())
+                .map(|row| StColumnRow::try_from(row).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.col_pos))
                 .collect::<Vec<_>>())
         }
@@ -708,7 +701,7 @@ mod tests {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_CONSTRAINTS_ID)?
-                .map(|x| StConstraintRow::try_from(&x.to_product_value()).unwrap().to_owned())
+                .map(|row| StConstraintRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.constraint_id)
                 .collect::<Vec<_>>())
         }
@@ -717,7 +710,7 @@ mod tests {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_SEQUENCES_ID)?
-                .map(|x| StSequenceRow::try_from(&x.to_product_value()).unwrap().to_owned())
+                .map(|row| StSequenceRow::try_from(row).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.sequence_id))
                 .collect::<Vec<_>>())
         }
@@ -726,7 +719,7 @@ mod tests {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_INDEXES_ID)?
-                .map(|x| StIndexRow::try_from(&x.to_product_value()).unwrap().to_owned())
+                .map(|row| StIndexRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.index_id)
                 .collect::<Vec<_>>())
         }
@@ -1517,7 +1510,7 @@ mod tests {
                     AlgebraicValue::U32(1),
                 )
                 .unwrap()
-                .map(|data_ref| data_ref.to_product_value())
+                .map(|row_ref| row_ref.to_product_value())
                 .collect::<Vec<_>>()
         };
 

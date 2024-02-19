@@ -8,6 +8,8 @@ use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::{
     impl_deserialize, impl_serialize, product, AlgebraicType, AlgebraicValue, ArrayValue, ProductValue,
 };
+use spacetimedb_table::table::RowRef;
+use std::ops::Deref as _;
 use strum::Display;
 
 /// The static ID of the table that defines tables
@@ -83,6 +85,12 @@ macro_rules! st_fields_enum {
                 match self {
                     $(Self::$var => $name,)*
                 }
+            }
+        }
+
+        impl From<$ty_name> for ColId {
+            fn from(value: $ty_name) -> Self {
+                value.col_id()
             }
         }
 
@@ -307,14 +315,13 @@ pub struct StTableRow<Name: AsRef<str>> {
     pub(crate) table_access: StAccess,
 }
 
-impl<'a> TryFrom<&'a ProductValue> for StTableRow<&'a str> {
+impl TryFrom<RowRef<'_>> for StTableRow<String> {
     type Error = DBError;
     // TODO(cloutiertyler): Noa, can we just decorate `StTableRow` with Deserialize or something instead?
-    fn try_from(row: &'a ProductValue) -> Result<StTableRow<&'a str>, DBError> {
-        let table_id = row.field_as_u32(StTableFields::TableId.col_idx(), None)?.into();
-        let table_name = row.field_as_str(StTableFields::TableName.col_idx(), None)?;
+    fn try_from(row: RowRef<'_>) -> Result<StTableRow<String>, DBError> {
         let table_type = row
-            .field_as_str(StTableFields::TableType.col_idx(), None)?
+            .read_col::<String>(StTableFields::TableType)?
+            .deref()
             .try_into()
             .map_err(|x: &str| TableError::DecodeField {
                 table: ST_TABLES_NAME.into(),
@@ -324,7 +331,8 @@ impl<'a> TryFrom<&'a ProductValue> for StTableRow<&'a str> {
             })?;
 
         let table_access = row
-            .field_as_str(StTableFields::TablesAccess.col_idx(), None)?
+            .read_col::<String>(StTableFields::TablesAccess)?
+            .deref()
             .try_into()
             .map_err(|x: &str| TableError::DecodeField {
                 table: ST_TABLES_NAME.into(),
@@ -334,22 +342,11 @@ impl<'a> TryFrom<&'a ProductValue> for StTableRow<&'a str> {
             })?;
 
         Ok(StTableRow {
-            table_id,
-            table_name,
+            table_id: row.read_col(StTableFields::TableId)?,
+            table_name: row.read_col(StTableFields::TableName)?,
             table_type,
             table_access,
         })
-    }
-}
-
-impl StTableRow<&str> {
-    pub fn to_owned(&self) -> StTableRow<String> {
-        StTableRow {
-            table_id: self.table_id,
-            table_name: self.table_name.to_owned(),
-            table_type: self.table_type,
-            table_access: self.table_access,
-        }
     }
 }
 
@@ -372,31 +369,19 @@ pub struct StColumnRow<Name: AsRef<str>> {
     pub(crate) col_type: AlgebraicType,
 }
 
-impl StColumnRow<&str> {
-    pub fn to_owned(&self) -> StColumnRow<String> {
-        StColumnRow {
-            table_id: self.table_id,
-            col_pos: self.col_pos,
-            col_name: self.col_name.to_owned(),
-            col_type: self.col_type.clone(),
-        }
-    }
-}
-
-impl<'a> TryFrom<&'a ProductValue> for StColumnRow<&'a str> {
+impl TryFrom<RowRef<'_>> for StColumnRow<String> {
     type Error = DBError;
-    fn try_from(row: &'a ProductValue) -> Result<StColumnRow<&'a str>, DBError> {
-        let table_id: TableId = row.field_as_u32(StColumnFields::TableId.col_idx(), None)?.into();
-        let col_pos = row.field_as_u32(StColumnFields::ColPos.col_idx(), None)?.into();
-        let col_name = row.field_as_str(StColumnFields::ColName.col_idx(), None)?;
-        let bytes = row.field_as_bytes(StColumnFields::ColType.col_idx(), None)?;
+    fn try_from(row: RowRef<'_>) -> Result<StColumnRow<String>, DBError> {
+        let table_id = row.read_col(StColumnFields::TableId)?;
+        let bytes = row.read_col::<AlgebraicValue>(StColumnFields::ColType)?;
+        let bytes = bytes.as_bytes().unwrap_or_default();
         let col_type =
-            AlgebraicType::decode(&mut &bytes[..]).map_err(|e| TableError::InvalidSchema(table_id, e.into()))?;
+            AlgebraicType::decode(&mut &*bytes).map_err(|e| TableError::InvalidSchema(table_id, e.into()))?;
 
         Ok(StColumnRow {
+            col_pos: row.read_col(StColumnFields::ColPos)?,
+            col_name: row.read_col(StColumnFields::ColName)?,
             table_id,
-            col_pos,
-            col_name,
             col_type,
         })
     }
@@ -420,23 +405,10 @@ pub struct StIndexRow<Name: AsRef<str>> {
     pub(crate) index_type: IndexType,
 }
 
-impl StIndexRow<&str> {
-    pub fn to_owned(&self) -> StIndexRow<String> {
-        StIndexRow {
-            index_id: self.index_id,
-            table_id: self.table_id,
-            columns: self.columns.clone(),
-            index_name: self.index_name.to_owned(),
-            is_unique: self.is_unique,
-            index_type: self.index_type,
-        }
-    }
-}
-
-fn to_cols(row: &ProductValue, col_pos: ColId, col_name: &'static str) -> Result<ColList, DBError> {
-    let index = col_pos.idx();
+fn to_cols(row: RowRef<'_>, col_pos: impl Into<ColId>, col_name: &'static str) -> Result<ColList, DBError> {
+    let col_pos = col_pos.into();
     let name = Some(col_name);
-    let cols = row.field_as_array(index, name)?;
+    let cols = row.read_col(col_pos)?;
     if let ArrayValue::U32(x) = &cols {
         Ok(x.iter()
             .map(|x| ColId::from(*x))
@@ -448,26 +420,20 @@ fn to_cols(row: &ProductValue, col_pos: ColId, col_name: &'static str) -> Result
     }
 }
 
-impl<'a> TryFrom<&'a ProductValue> for StIndexRow<&'a str> {
+impl TryFrom<RowRef<'_>> for StIndexRow<String> {
     type Error = DBError;
-    fn try_from(row: &'a ProductValue) -> Result<StIndexRow<&'a str>, DBError> {
-        let index_id = row.field_as_u32(StIndexFields::IndexId.col_idx(), None)?.into();
-        let table_id = row.field_as_u32(StIndexFields::TableId.col_idx(), None)?.into();
-        let index_name = row.field_as_str(StIndexFields::IndexName.col_idx(), None)?;
-        let columns = to_cols(row, StIndexFields::Columns.col_id(), StIndexFields::Columns.name())?;
-        let is_unique = row.field_as_bool(StIndexFields::IsUnique.col_idx(), None)?;
-        let index_type = row.field_as_u8(StIndexFields::IndexType.col_idx(), None)?;
+    fn try_from(row: RowRef<'_>) -> Result<StIndexRow<String>, DBError> {
+        let index_type = row.read_col::<u8>(StIndexFields::IndexType)?;
         let index_type = IndexType::try_from(index_type).map_err(|_| InvalidFieldError {
             col_pos: StIndexFields::IndexType.col_id(),
             name: Some(StIndexFields::IndexType.name()),
         })?;
-
         Ok(StIndexRow {
-            index_id,
-            table_id,
-            index_name,
-            columns,
-            is_unique,
+            index_id: row.read_col(StIndexFields::IndexId)?,
+            table_id: row.read_col(StIndexFields::TableId)?,
+            index_name: row.read_col(StIndexFields::IndexName)?,
+            columns: to_cols(row, StIndexFields::Columns, StIndexFields::Columns.name())?,
+            is_unique: row.read_col(StIndexFields::IsUnique)?,
             index_type,
         })
     }
@@ -486,7 +452,7 @@ impl From<StIndexRow<String>> for ProductValue {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct StSequenceRow<Name: AsRef<str>> {
     pub(crate) sequence_id: SequenceId,
     pub(crate) sequence_name: Name,
@@ -499,44 +465,19 @@ pub struct StSequenceRow<Name: AsRef<str>> {
     pub(crate) allocated: i128,
 }
 
-impl<Name: AsRef<str>> StSequenceRow<Name> {
-    pub fn to_owned(&self) -> StSequenceRow<String> {
-        StSequenceRow {
-            sequence_id: self.sequence_id,
-            sequence_name: self.sequence_name.as_ref().to_owned(),
-            table_id: self.table_id,
-            col_pos: self.col_pos,
-            increment: self.increment,
-            start: self.start,
-            min_value: self.min_value,
-            max_value: self.max_value,
-            allocated: self.allocated,
-        }
-    }
-}
-
-impl<'a> TryFrom<&'a ProductValue> for StSequenceRow<&'a str> {
+impl TryFrom<RowRef<'_>> for StSequenceRow<String> {
     type Error = DBError;
-    fn try_from(row: &'a ProductValue) -> Result<StSequenceRow<&'a str>, DBError> {
-        let sequence_id = row.field_as_u32(StSequenceFields::SequenceId.col_idx(), None)?.into();
-        let sequence_name = row.field_as_str(StSequenceFields::SequenceName.col_idx(), None)?;
-        let table_id = row.field_as_u32(StSequenceFields::TableId.col_idx(), None)?.into();
-        let col_pos = row.field_as_u32(StSequenceFields::ColPos.col_idx(), None)?.into();
-        let increment = row.field_as_i128(StSequenceFields::Increment.col_idx(), None)?;
-        let start = row.field_as_i128(StSequenceFields::Start.col_idx(), None)?;
-        let min_value = row.field_as_i128(StSequenceFields::MinValue.col_idx(), None)?;
-        let max_value = row.field_as_i128(StSequenceFields::MaxValue.col_idx(), None)?;
-        let allocated = row.field_as_i128(StSequenceFields::Allocated.col_idx(), None)?;
+    fn try_from(row: RowRef<'_>) -> Result<StSequenceRow<String>, DBError> {
         Ok(StSequenceRow {
-            sequence_id,
-            sequence_name,
-            table_id,
-            col_pos,
-            increment,
-            start,
-            min_value,
-            max_value,
-            allocated,
+            sequence_id: row.read_col(StSequenceFields::SequenceId)?,
+            sequence_name: row.read_col(StSequenceFields::SequenceName)?,
+            table_id: row.read_col(StSequenceFields::TableId)?,
+            col_pos: row.read_col(StSequenceFields::ColPos)?,
+            increment: row.read_col(StSequenceFields::Increment)?,
+            start: row.read_col(StSequenceFields::Start)?,
+            min_value: row.read_col(StSequenceFields::MinValue)?,
+            max_value: row.read_col(StSequenceFields::MaxValue)?,
+            allocated: row.read_col(StSequenceFields::Allocated)?,
         })
     }
 }
@@ -582,39 +523,21 @@ pub struct StConstraintRow<Name: AsRef<str>> {
     pub(crate) columns: ColList,
 }
 
-impl StConstraintRow<&str> {
-    pub fn to_owned(&self) -> StConstraintRow<String> {
-        StConstraintRow {
-            constraint_id: self.constraint_id,
-            constraint_name: self.constraint_name.to_string(),
-            constraints: self.constraints,
-            table_id: self.table_id,
-            columns: self.columns.clone(),
-        }
-    }
-}
-
-impl<'a> TryFrom<&'a ProductValue> for StConstraintRow<&'a str> {
+impl TryFrom<RowRef<'_>> for StConstraintRow<String> {
     type Error = DBError;
-    fn try_from(row: &'a ProductValue) -> Result<StConstraintRow<&'a str>, DBError> {
-        let constraint_id = row
-            .field_as_u32(StConstraintFields::ConstraintId.col_idx(), None)?
-            .into();
-        let constraint_name = row.field_as_str(StConstraintFields::ConstraintName.col_idx(), None)?;
-        let constraints = row.field_as_u8(StConstraintFields::Constraints.col_idx(), None)?;
+    fn try_from(row: RowRef<'_>) -> Result<StConstraintRow<String>, DBError> {
+        let constraints = row.read_col::<u8>(StConstraintFields::Constraints)?;
         let constraints = Constraints::try_from(constraints).expect("Fail to decode Constraints");
-        let table_id = row.field_as_u32(StConstraintFields::TableId.col_idx(), None)?.into();
         let columns = to_cols(
             row,
             StConstraintFields::Columns.col_id(),
             StConstraintFields::Columns.name(),
         )?;
-
         Ok(StConstraintRow {
-            constraint_id,
-            constraint_name,
+            table_id: row.read_col(StConstraintFields::TableId)?,
+            constraint_id: row.read_col(StConstraintFields::ConstraintId)?,
+            constraint_name: row.read_col(StConstraintFields::ConstraintName)?,
             constraints,
-            table_id,
             columns,
         })
     }
@@ -668,33 +591,22 @@ pub struct StModuleRow {
     pub(crate) epoch: Epoch,
 }
 
-impl StModuleRow {
-    pub fn to_owned(&self) -> StModuleRow {
-        self.clone()
-    }
-}
-
-impl TryFrom<&ProductValue> for StModuleRow {
+impl TryFrom<RowRef<'_>> for StModuleRow {
     type Error = DBError;
 
-    fn try_from(row: &ProductValue) -> Result<Self, Self::Error> {
-        let program_hash = row
-            .field_as_bytes(
-                StModuleFields::ProgramHash.col_idx(),
-                Some(StModuleFields::ProgramHash.name()),
-            )
-            .map(Hash::from_slice)?;
-        let kind = row
-            .field_as_u8(StModuleFields::Kind.col_idx(), Some(StModuleFields::Kind.name()))
-            .map(ModuleKind)?;
-        let epoch = row
-            .field_as_u128(StModuleFields::Epoch.col_idx(), Some(StModuleFields::Epoch.name()))
-            .map(Epoch)?;
+    fn try_from(row: RowRef<'_>) -> Result<Self, Self::Error> {
+        let col_pos = StModuleFields::ProgramHash.col_id();
+        let bytes = row.read_col::<ArrayValue>(col_pos)?;
+        let ArrayValue::U8(bytes) = bytes else {
+            let name = Some(StModuleFields::ProgramHash.name());
+            return Err(InvalidFieldError { name, col_pos }.into());
+        };
+        let program_hash = Hash::from_slice(&bytes);
 
         Ok(Self {
             program_hash,
-            kind,
-            epoch,
+            kind: row.read_col::<u8>(StModuleFields::Kind).map(ModuleKind)?,
+            epoch: row.read_col::<u128>(StModuleFields::Epoch).map(Epoch)?,
         })
     }
 }

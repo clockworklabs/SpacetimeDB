@@ -630,8 +630,8 @@ impl<'a> RowRef<'a> {
     /// Check that the `idx`th column of the row type stored by `self` is compatible with `T`,
     /// and read the value of that column from `self`.
     #[inline]
-    pub fn read_col<T: ReadColumn>(self, col: ColId) -> Result<T, TypeError> {
-        T::read_column(self, col.idx())
+    pub fn read_col<T: ReadColumn>(self, col: impl Into<ColId>) -> Result<T, TypeError> {
+        T::read_column(self, col.into().idx())
     }
 
     /// Construct a projection of the row at `self` by extracting the `cols`.
