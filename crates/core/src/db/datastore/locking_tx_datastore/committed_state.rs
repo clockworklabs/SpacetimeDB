@@ -456,6 +456,27 @@ impl CommittedState {
             // For each newly-inserted row, insert it into the committed state.
             for row_ref in tx_table.scan_rows(&tx_blob_store) {
                 let pv = row_ref.to_product_value();
+
+                // Note that as we are inserting rows into the committed state
+                // we are checking for unique constraint violations. This is not
+                // necessary in the current implementation when executing at
+                // Serializable isolation level. The reason is that in the
+                // current implementation for Serializable isolation we have an
+                // exclusive write lock to the database and we check the unique
+                // constraint violations at insert time. This means that it is
+                // impossible to have a unique constraint violation at merge
+                // time.
+                //
+                // This is only true for Serializable isolation level. If a
+                // transactiion is run at Snapshot isolation level then we must
+                // check for unique constraint violations at merge time. This is
+                // because for Snapshot isolation we only hold a read lock
+                // during the execution of the transaction and then we release
+                // and reaquire a write lock. This means that another
+                // transaction could have committed inbetween this time. Thus to
+                // maintain unique constraints we must recheck the constraints
+                // at commit time. This is basically checking for write-write
+                // conflicts which are possible at Snapshot isolation level.
                 commit_table
                     .insert(commit_blob_store, &pv)
                     .expect("Failed to insert when merging commit");

@@ -4,7 +4,7 @@ use super::{
     sequence::{Sequence, SequencesState},
     state_view::{IndexSeekIterMutTxId, Iter, IterByColRange, ScanIterByColRange, StateView},
     tx_state::TxState,
-    SharedMutexGuard, SharedWriteGuard,
+    SharedMutexGuard, SharedReadGuard, SharedWriteGuard,
 };
 use crate::db::datastore::system_tables::{
     table_name_is_system, StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StIndexFields, StIndexRow,
@@ -17,6 +17,8 @@ use crate::{
     error::{DBError, IndexError, SequenceError, TableError},
     execution_context::ExecutionContext,
 };
+use futures::future::Either;
+use parking_lot::RwLock;
 use spacetimedb_primitives::{ColId, ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::{
     db::{
@@ -36,6 +38,7 @@ use spacetimedb_table::{
 use std::{
     borrow::Cow,
     ops::RangeBounds,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -46,6 +49,8 @@ use std::{
 /// `Locking::begin_mut_tx()` for instantiation to ensure safe acquisition of locks.
 pub struct MutTxId {
     pub(crate) tx_state: TxState,
+    pub(crate) committed_state: Arc<RwLock<CommittedState>>,
+    pub(crate) committed_state_lock_guard: Either<SharedReadGuard<CommittedState>, SharedWriteGuard<CommittedState>>,
     pub(crate) committed_state_write_lock: SharedWriteGuard<CommittedState>,
     pub(crate) sequence_state_lock: SharedMutexGuard<SequencesState>,
     #[allow(unused)]
@@ -732,9 +737,23 @@ impl MutTxId {
     pub fn commit(self) -> TxData {
         let Self {
             mut committed_state_write_lock,
+            mut committed_state,
+            mut committed_state_lock_guard,
             tx_state,
             ..
         } = self;
+
+        let mut committed_state_write_lock = match committed_state_lock_guard {
+            Either::Left(read) => {
+                // NOTE: We drop the read lock here to avoid a deadlock.
+                // This is only safe in the event that the transaction is being
+                // run with snapshot isolation or lower.
+                drop(read);
+                committed_state.write_arc()
+            }
+            Either::Right(write) => write,
+        };
+
         committed_state_write_lock.merge(tx_state)
     }
 

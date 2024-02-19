@@ -23,6 +23,7 @@ use crate::{
     execution_context::ExecutionContext,
 };
 use anyhow::anyhow;
+use futures::future::Either;
 use parking_lot::{Mutex, RwLock};
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::db::def::{IndexDef, SequenceDef, TableDef, TableSchema};
@@ -527,13 +528,22 @@ impl MutTx for Locking {
 
     /// Note: We do not use the isolation level here because this implementation
     /// guarantees the highest isolation level, Serializable.
-    fn begin_mut_tx(&self, _isolation_level: IsolationLevel) -> Self::MutTx {
+    fn begin_mut_tx(&self, isolation_level: IsolationLevel) -> Self::MutTx {
         let timer = Instant::now();
 
+        let committed_state_lock_guard = if isolation_level < IsolationLevel::Serializable {
+            Either::Left(self.committed_state.read_arc())
+        } else {
+            Either::Right(self.committed_state.write_arc())
+        };
+
+        let committed_state = self.committed_state.clone();
         let committed_state_write_lock = self.committed_state.write_arc();
         let sequence_state_lock = self.sequence_state.lock_arc();
         let lock_wait_time = timer.elapsed();
         MutTxId {
+            committed_state_lock_guard,
+            committed_state,
             committed_state_write_lock,
             sequence_state_lock,
             tx_state: TxState::default(),
