@@ -41,7 +41,7 @@ use std::sync::Arc;
 
 pub struct StandaloneEnv {
     control_db: ControlDb,
-    db_inst_ctx_controller: DatabaseInstanceContextController,
+    db_inst_ctx_controller: Arc<DatabaseInstanceContextController>,
     object_db: ObjectDb,
     host_controller: Arc<HostController>,
     client_actor_index: ClientActorIndex,

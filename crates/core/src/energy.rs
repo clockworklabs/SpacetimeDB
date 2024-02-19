@@ -36,6 +36,13 @@ impl EnergyQuanta {
         let energy = bytes_stored * sec + (bytes_stored * nsec) / 1_000_000_000;
         Self(energy)
     }
+
+    const ENERGY_PER_MEM_BYTE_SEC: u128 = 100;
+
+    pub fn from_memory_usage(bytes_stored: u64, storage_period: Duration) -> Self {
+        let byte_seconds = Self::from_disk_usage(bytes_stored, storage_period).get();
+        Self(byte_seconds * Self::ENERGY_PER_MEM_BYTE_SEC)
+    }
 }
 
 impl fmt::Display for EnergyQuanta {
@@ -172,6 +179,7 @@ pub trait EnergyMonitor: Send + Sync + 'static {
         execution_duration: Duration,
     );
     fn record_disk_usage(&self, database: &Database, instance_id: u64, disk_usage: u64, period: Duration);
+    fn record_memory_usage(&self, database: &Database, instance_id: u64, mem_usage: u64, period: Duration);
 }
 
 #[derive(Default)]
@@ -191,4 +199,6 @@ impl EnergyMonitor for NullEnergyMonitor {
     }
 
     fn record_disk_usage(&self, _database: &Database, _instance_id: u64, _disk_usage: u64, _period: Duration) {}
+
+    fn record_memory_usage(&self, _database: &Database, _instance_id: u64, _mem_usage: u64, _period: Duration) {}
 }

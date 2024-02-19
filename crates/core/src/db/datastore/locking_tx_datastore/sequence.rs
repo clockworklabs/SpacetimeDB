@@ -1,11 +1,14 @@
 use spacetimedb_primitives::SequenceId;
 use spacetimedb_sats::db::def::SequenceSchema;
+use spacetimedb_table::MemoryUsage;
 use std::collections::HashMap;
 
 pub struct Sequence {
     schema: SequenceSchema,
     pub(crate) value: i128,
 }
+
+impl MemoryUsage for Sequence {}
 
 impl Sequence {
     pub fn new(schema: SequenceSchema) -> Self {
@@ -94,6 +97,12 @@ impl Sequence {
 #[derive(Default)]
 pub struct SequencesState {
     sequences: HashMap<SequenceId, Sequence>,
+}
+
+impl MemoryUsage for SequencesState {
+    fn memory_usage(&self) -> usize {
+        self.sequences.memory_usage()
+    }
 }
 
 impl SequencesState {

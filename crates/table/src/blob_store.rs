@@ -14,6 +14,8 @@
 use blake3::hash;
 use std::collections::{hash_map::Entry, HashMap};
 
+use crate::MemoryUsage;
+
 /// The content address of a blob-stored object.
 #[derive(Eq, PartialEq, PartialOrd, Ord, Clone, Copy, Hash, Debug)]
 pub struct BlobHash {
@@ -22,6 +24,8 @@ pub struct BlobHash {
     /// Uses BLAKE3 which fits in 32 bytes.
     pub data: [u8; Self::SIZE],
 }
+
+impl MemoryUsage for BlobHash {}
 
 impl BlobHash {
     /// The size of the hash function's output in bytes.
@@ -109,12 +113,24 @@ pub struct HashMapBlobStore {
     map: HashMap<BlobHash, BlobObject>,
 }
 
+impl MemoryUsage for HashMapBlobStore {
+    fn memory_usage(&self) -> usize {
+        self.map.memory_usage()
+    }
+}
+
 /// A blob object including a reference count and the data.
 struct BlobObject {
     /// Reference count of the blob.
     uses: usize,
     /// The blob data.
     blob: Box<[u8]>,
+}
+
+impl MemoryUsage for BlobObject {
+    fn memory_usage(&self) -> usize {
+        self.blob.memory_usage()
+    }
 }
 
 impl BlobStore for HashMapBlobStore {

@@ -98,6 +98,11 @@ impl DatabaseInstanceContext {
             logs: self.log_file_size().ok(),
         }
     }
+
+    /// The size in bytes of all of the in-memory data of the database.
+    pub fn mem_usage(&self) -> usize {
+        self.relational_db.size_in_memory()
+    }
 }
 
 impl Deref for DatabaseInstanceContext {

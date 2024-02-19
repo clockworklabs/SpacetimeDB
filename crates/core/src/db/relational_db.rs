@@ -26,7 +26,7 @@ use spacetimedb_sats::data_key::ToDataKey;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{ColumnDef, IndexDef, SequenceDef, TableDef, TableSchema};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
-use spacetimedb_table::{indexes::RowPointer, table::RowRef};
+use spacetimedb_table::{indexes::RowPointer, table::RowRef, MemoryUsage};
 use std::borrow::Cow;
 use std::fs::{create_dir_all, File};
 use std::ops::RangeBounds;
@@ -44,7 +44,6 @@ pub struct RelationalDB {
     pub(crate) inner: Locking,
     commit_log: Option<CommitLogMut>,
     _lock: Arc<File>,
-    address: Address,
     row_count_fn: RowCountFn,
 }
 
@@ -148,7 +147,6 @@ impl RelationalDB {
             inner: datastore,
             commit_log,
             _lock: Arc::new(lock),
-            address: db_address,
             row_count_fn: Arc::new(move |table_id, table_name| {
                 DB_METRICS
                     .rdb_num_table_rows
@@ -175,7 +173,7 @@ impl RelationalDB {
 
     /// Returns the address for this database
     pub fn address(&self) -> Address {
-        self.address
+        self.inner.address()
     }
 
     /// Obtain a read-only view of this database's [`CommitLog`].
@@ -193,6 +191,11 @@ impl RelationalDB {
     pub fn object_db_size_on_disk(&self) -> std::result::Result<u64, DBError> {
         self.commit_log()
             .map_or(Ok(0), |commit_log| commit_log.object_db_size_on_disk())
+    }
+
+    /// The size in bytes of all of the in-memory data in this database.
+    pub fn size_in_memory(&self) -> usize {
+        self.inner.memory_usage()
     }
 
     #[tracing::instrument(skip_all)]
@@ -233,12 +236,12 @@ impl RelationalDB {
 
     pub fn get_all_tables_mut<'tx>(&self, tx: &'tx MutTx) -> Result<Vec<Cow<'tx, TableSchema>>, DBError> {
         self.inner
-            .get_all_tables_mut_tx(&ExecutionContext::internal(self.address), tx)
+            .get_all_tables_mut_tx(&ExecutionContext::internal(self.address()), tx)
     }
 
     pub fn get_all_tables<'tx>(&self, tx: &'tx Tx) -> Result<Vec<Cow<'tx, TableSchema>>, DBError> {
         self.inner
-            .get_all_tables_tx(&ExecutionContext::internal(self.address), tx)
+            .get_all_tables_tx(&ExecutionContext::internal(self.address()), tx)
     }
 
     #[tracing::instrument(skip_all)]
@@ -475,7 +478,7 @@ impl RelationalDB {
         self.inner.drop_table_mut_tx(tx, table_id).map(|_| {
             DB_METRICS
                 .rdb_num_table_rows
-                .with_label_values(&self.address, &table_id.into(), &table_name)
+                .with_label_values(&self.address(), &table_id.into(), &table_name)
                 .set(0)
         })
     }
@@ -698,7 +701,7 @@ impl RelationalDB {
     #[tracing::instrument(skip_all)]
     pub fn clear_table(&self, tx: &mut MutTx, table_id: TableId) -> Result<(), DBError> {
         let relation = self
-            .iter_mut(&ExecutionContext::internal(self.address), tx, table_id)?
+            .iter_mut(&ExecutionContext::internal(self.address()), tx, table_id)?
             .map(|row_ref| row_ref.pointer())
             .collect::<Vec<_>>();
         self.delete(tx, table_id, relation);
