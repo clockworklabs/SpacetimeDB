@@ -109,18 +109,21 @@ impl CommittedState {
     pub fn bootstrap_system_tables(&mut self, database_address: Address) -> Result<()> {
         let mut sequences_start: HashMap<TableId, i128> = HashMap::with_capacity(10);
 
+        // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
+        // and therefore has performance implications and must not be disabled.
+        let with_label_values = |table_id: TableId, table_name: &str| {
+            DB_METRICS
+                .rdb_num_table_rows
+                .with_label_values(&database_address, &table_id.0, table_name)
+        };
+
         // Insert the table row into st_tables, creating st_tables if it's missing
         let (st_tables, blob_store) = self.get_table_and_blob_store_or_create(ST_TABLES_ID, st_table_schema());
         // Insert the table row into `st_tables` for all system tables
         for schema in system_tables() {
             let table_id = schema.table_id;
-            // metric for this system table
-            // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
-            // and therefore has performance implications and must not be disabled.
-            DB_METRICS
-                .rdb_num_table_rows
-                .with_label_values(&database_address, &table_id.0, &schema.table_name)
-                .set(0);
+            // Metric for this system table.
+            with_label_values(table_id, &schema.table_name).set(0);
 
             let row = StTableRow {
                 table_id,
@@ -138,24 +141,19 @@ impl CommittedState {
 
         // Insert the columns into `st_columns`
         let (st_columns, blob_store) = self.get_table_and_blob_store_or_create(ST_COLUMNS_ID, st_columns_schema());
-        for col in system_tables().into_iter().flat_map(|x| x.columns().to_vec()) {
+        for col in system_tables().into_iter().flat_map(|x| x.into_columns()) {
             let row = StColumnRow {
                 table_id: col.table_id,
                 col_pos: col.col_pos,
-                col_name: col.col_name.clone(),
-                col_type: col.col_type.clone(),
+                col_name: col.col_name,
+                col_type: col.col_type,
             };
             let row = ProductValue::from(row);
             // Insert the meta-row into the in-memory ST_COLUMNS.
             // If the row is already there, no-op.
             ignore_duplicate_insert_error(st_columns.insert(blob_store, &row))?;
-            // Increment row count for st_columns
-            // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
-            // and therefore has performance implications and must not be disabled.
-            DB_METRICS
-                .rdb_num_table_rows
-                .with_label_values(&database_address, &ST_COLUMNS_ID.into(), ST_COLUMNS_NAME)
-                .inc();
+            // Increment row count for st_columns.
+            with_label_values(ST_COLUMNS_ID, ST_COLUMNS_NAME).inc();
         }
 
         // Insert the FK sorted by table/column so it show together when queried.
@@ -164,15 +162,15 @@ impl CommittedState {
         let (st_constraints, blob_store) =
             self.get_table_and_blob_store_or_create(ST_CONSTRAINTS_ID, st_constraints_schema());
         for (i, constraint) in system_tables()
-            .iter()
-            .flat_map(|x| &x.constraints)
+            .into_iter()
+            .flat_map(|x| x.constraints)
             .sorted_by_key(|x| (x.table_id, x.columns.clone()))
             .enumerate()
         {
             let row = StConstraintRow {
                 constraint_id: i.into(),
-                columns: constraint.columns.clone(),
-                constraint_name: constraint.constraint_name.clone(),
+                columns: constraint.columns,
+                constraint_name: constraint.constraint_name,
                 constraints: constraint.constraints,
                 table_id: constraint.table_id,
             };
@@ -180,13 +178,8 @@ impl CommittedState {
             // Insert the meta-row into the in-memory ST_CONSTRAINTS.
             // If the row is already there, no-op.
             ignore_duplicate_insert_error(st_constraints.insert(blob_store, &row))?;
-            // Increment row count for st_constraints
-            // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
-            // and therefore has performance implications and must not be disabled.
-            DB_METRICS
-                .rdb_num_table_rows
-                .with_label_values(&database_address, &ST_CONSTRAINTS_ID.into(), ST_CONSTRAINTS_NAME)
-                .inc();
+            // Increment row count for st_constraints.
+            with_label_values(ST_CONSTRAINTS_ID, ST_CONSTRAINTS_NAME).inc();
 
             *sequences_start.entry(ST_CONSTRAINTS_ID).or_default() += 1;
         }
@@ -194,30 +187,25 @@ impl CommittedState {
         // Insert the indexes into `st_indexes`
         let (st_indexes, blob_store) = self.get_table_and_blob_store_or_create(ST_INDEXES_ID, st_indexes_schema());
         for (i, index) in system_tables()
-            .iter()
-            .flat_map(|x| &x.indexes)
-            .sorted_by_key(|x| (&x.table_id, &x.columns))
+            .into_iter()
+            .flat_map(|x| x.indexes)
+            .sorted_by_key(|x| (x.table_id, x.columns.clone()))
             .enumerate()
         {
             let row = StIndexRow {
                 index_id: i.into(),
                 table_id: index.table_id,
                 index_type: index.index_type,
-                columns: index.columns.clone(),
-                index_name: index.index_name.clone(),
+                columns: index.columns,
+                index_name: index.index_name,
                 is_unique: index.is_unique,
             };
             let row = ProductValue::from(row);
             // Insert the meta-row into the in-memory ST_INDEXES.
             // If the row is already there, no-op.
             ignore_duplicate_insert_error(st_indexes.insert(blob_store, &row))?;
-            // Increment row count for st_indexes
-            // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
-            // and therefore has performance implications and must not be disabled.
-            DB_METRICS
-                .rdb_num_table_rows
-                .with_label_values(&database_address, &ST_INDEXES_ID.into(), ST_INDEXES_NAME)
-                .inc();
+            // Increment row count for st_indexes.
+            with_label_values(ST_INDEXES_ID, ST_INDEXES_NAME).inc();
 
             *sequences_start.entry(ST_INDEXES_ID).or_default() += 1;
         }
@@ -251,12 +239,7 @@ impl CommittedState {
             // If the row is already there, no-op.
             ignore_duplicate_insert_error(st_sequences.insert(blob_store, &row))?;
             // Increment row count for st_sequences
-            // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
-            // and therefore has performance implications and must not be disabled.
-            DB_METRICS
-                .rdb_num_table_rows
-                .with_label_values(&database_address, &ST_SEQUENCES_ID.into(), ST_SEQUENCES_NAME)
-                .inc();
+            with_label_values(ST_SEQUENCES_ID, ST_SEQUENCES_NAME).inc();
         }
 
         // Re-read the schema with the correct ids...
@@ -586,6 +569,10 @@ impl<'a> CommittedIndexIter<'a> {
 #[cfg(feature = "metrics")]
 impl Drop for CommittedIndexIter<'_> {
     fn drop(&mut self) {
+        let workload = &self.ctx.workload();
+        let db = &self.ctx.database();
+        let reducer_name = self.ctx.reducer_name();
+        let table_id = &self.table_id.0;
         let table_name = self
             .committed_state
             .get_schema(&self.table_id)
@@ -594,37 +581,19 @@ impl Drop for CommittedIndexIter<'_> {
 
         DB_METRICS
             .rdb_num_index_seeks
-            .with_label_values(
-                &self.ctx.workload(),
-                &self.ctx.database(),
-                self.ctx.reducer_name(),
-                &self.table_id.0,
-                table_name,
-            )
+            .with_label_values(workload, db, reducer_name, table_id, table_name)
             .inc();
 
         // Increment number of index keys scanned
         DB_METRICS
             .rdb_num_keys_scanned
-            .with_label_values(
-                &self.ctx.workload(),
-                &self.ctx.database(),
-                self.ctx.reducer_name(),
-                &self.table_id.0,
-                table_name,
-            )
+            .with_label_values(workload, db, reducer_name, table_id, table_name)
             .inc_by(self.committed_rows.num_pointers_yielded());
 
         // Increment number of rows fetched
         DB_METRICS
             .rdb_num_rows_fetched
-            .with_label_values(
-                &self.ctx.workload(),
-                &self.ctx.database(),
-                self.ctx.reducer_name(),
-                &self.table_id.0,
-                table_name,
-            )
+            .with_label_values(workload, db, reducer_name, table_id, table_name)
             .inc_by(self.num_committed_rows_fetched);
     }
 }

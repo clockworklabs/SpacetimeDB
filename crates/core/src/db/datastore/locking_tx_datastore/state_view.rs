@@ -332,6 +332,10 @@ pub struct IndexSeekIterMutTxId<'a> {
 #[cfg(feature = "metrics")]
 impl Drop for IndexSeekIterMutTxId<'_> {
     fn drop(&mut self) {
+        let workload = &self.ctx.workload();
+        let db = &self.ctx.database();
+        let reducer_name = self.ctx.reducer_name();
+        let table_id = &self.table_id.0;
         let table_name = self
             .committed_state
             .get_schema(&self.table_id)
@@ -341,25 +345,13 @@ impl Drop for IndexSeekIterMutTxId<'_> {
         // Increment number of index seeks
         DB_METRICS
             .rdb_num_index_seeks
-            .with_label_values(
-                &self.ctx.workload(),
-                &self.ctx.database(),
-                self.ctx.reducer_name(),
-                &self.table_id.0,
-                table_name,
-            )
+            .with_label_values(workload, db, reducer_name, table_id, table_name)
             .inc();
 
         // Increment number of index keys scanned
         DB_METRICS
             .rdb_num_keys_scanned
-            .with_label_values(
-                &self.ctx.workload(),
-                &self.ctx.database(),
-                self.ctx.reducer_name(),
-                &self.table_id.0,
-                table_name,
-            )
+            .with_label_values(workload, db, reducer_name, table_id, table_name)
             .inc_by(
                 self.committed_rows
                     .as_ref()
@@ -369,13 +361,7 @@ impl Drop for IndexSeekIterMutTxId<'_> {
         // Increment number of rows fetched
         DB_METRICS
             .rdb_num_rows_fetched
-            .with_label_values(
-                &self.ctx.workload(),
-                &self.ctx.database(),
-                self.ctx.reducer_name(),
-                &self.table_id.0,
-                table_name,
-            )
+            .with_label_values(workload, db, reducer_name, table_id, table_name)
             .inc_by(self.num_committed_rows_fetched);
     }
 }
