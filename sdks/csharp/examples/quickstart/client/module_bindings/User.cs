@@ -7,6 +7,7 @@ using SpacetimeDB;
 
 namespace SpacetimeDB.Types
 {
+	[Newtonsoft.Json.JsonObject(Newtonsoft.Json.MemberSerialization.OptIn)]
 	public partial class User : IDatabaseTable
 	{
 		[Newtonsoft.Json.JsonProperty("identity")]
@@ -79,6 +80,18 @@ namespace SpacetimeDB.Types
 		{
 			Identity_Index.TryGetValue(value, out var r);
 			return r;
+		}
+
+		public static System.Collections.Generic.IEnumerable<User> FilterByName(string? value)
+		{
+			foreach(var entry in SpacetimeDBClient.clientDB.GetEntries("User"))
+			{
+				var productValue = entry.Item1.AsProductValue();
+				var compareValue = (string?)(productValue.elements[1].AsSumValue().tag == 1 ? null : productValue.elements[1].AsSumValue().value.AsString());
+				if (compareValue == value) {
+					yield return (User)entry.Item2;
+				}
+			}
 		}
 
 		public static System.Collections.Generic.IEnumerable<User> FilterByOnline(bool value)
