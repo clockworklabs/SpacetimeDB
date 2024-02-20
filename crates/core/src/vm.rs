@@ -284,6 +284,7 @@ impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoin<'a, Rhs> {
                 }
             }
         }
+
         // Otherwise probe the index with a row from the probe side.
         while let Some(row) = self.probe_side.next()? {
             if let Some(pos) = self.probe_side.head().column_pos(&self.probe_field) {

@@ -23,7 +23,7 @@ pub trait RelOps<'a> {
     where
         Self: Sized,
         E: From<ErrorVm>,
-        F: for<'b> FnMut(B, RelValue<'b>) -> Result<B, ErrorVm>,
+        F: FnMut(B, RelValue<'_>) -> Result<B, ErrorVm>,
     {
         while let Some(v) = self.next()? {
             init = f(init, v)?;
@@ -290,7 +290,7 @@ where
         }
 
         loop {
-            // Consume a row in Lhs,
+            // Consume a row in `Lhs` and project to `KeyLhs`.
             let lhs = if let Some(left) = &self.left {
                 left.clone()
             } else {
@@ -302,8 +302,10 @@ where
                     }
                 }
             };
-
             let k = (self.key_lhs)(&lhs)?;
+
+            // If we can relate `KeyLhs` and `KeyRhs`, we have candidate.
+            // If that candidate still has rhs elements, test against the predicate and yield.
             if let Some(rvv) = self.map.get_mut(&k) {
                 if let Some(rhs) = rvv.pop() {
                     if (self.predicate)(&lhs, &rhs)? {
