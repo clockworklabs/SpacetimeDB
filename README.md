@@ -170,8 +170,8 @@ You can write SpacetimeDB modules in a bunch of popular languages, with many mor
 
 #### Serverside Libraries
 
-- [Rust](https://spacetimedb.com/docs/server-languages/rust/rust-module-quickstart-guide)
-- [C# (experimental)](https://spacetimedb.com/docs/server-languages/csharp/csharp-module-reference)
+- [Rust](https://spacetimedb.com/docs/modules/rust/quickstart)
+- [C# (experimental)](https://spacetimedb.com/docs/modules/c-sharp/quickstart)
 - Typescript (coming soon)
 - Python (coming soon)
 - C++ (planned)
@@ -179,10 +179,10 @@ You can write SpacetimeDB modules in a bunch of popular languages, with many mor
 
 #### Client Libraries
 
-- [Rust](https://spacetimedb.com/docs/client-languages/rust/rust-sdk-quickstart-guide)
-- [C#](https://spacetimedb.com/docs/client-languages/csharp/csharp-sdk-quickstart-guide)
-- [Typescript](https://spacetimedb.com/docs/client-languages/typescript/typescript-sdk-quickstart-guide)
-- [Python](https://spacetimedb.com/docs/client-languages/python/python-sdk-quickstart-guide)
+- [Rust](https://spacetimedb.com/docs/sdks/rust/quickstart)
+- [C#](https://spacetimedb.com/docs/sdks/c-sharp/quickstart)
+- [Typescript](https://spacetimedb.com/docs/sdks/typescript/quickstart)
+- [Python](https://spacetimedb.com/docs/sdks/python/quickstart)
 - C++ (planned)
 - Lua (planned)
 

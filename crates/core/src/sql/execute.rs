@@ -56,7 +56,7 @@ fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Result<(), DBErr
 pub fn execute_single_sql(
     cx: &ExecutionContext,
     db: &RelationalDB,
-    tx: &mut Tx,
+    tx: &Tx,
     ast: CrudExpr,
     auth: AuthCtx,
 ) -> Result<Vec<MemTable>, DBError> {
@@ -103,7 +103,7 @@ pub fn execute_sql(db: &RelationalDB, ast: Vec<CrudExpr>, auth: AuthCtx) -> Resu
             collect_result(&mut result, run_ast(p, q).into())
         }),
         true => db.with_read_only(&ctx, |tx| {
-            let mut tx: TxMode = tx.into();
+            let mut tx = TxMode::Tx(tx);
             let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
             let p = &mut DbProgram::new(&ctx, db, &mut tx, auth);
             collect_result(&mut result, run_ast(p, q).into())

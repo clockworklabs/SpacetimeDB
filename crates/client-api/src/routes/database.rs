@@ -910,10 +910,8 @@ pub async fn set_name<S: ControlStateDelegate>(
     let response = ctx
         .create_dns_record(&auth.identity, &domain, &address)
         .await
-        .map_err(|err| match err {
-            spacetimedb::control_db::Error::RecordAlreadyExists(_) => StatusCode::CONFLICT.into(),
-            _ => log_and_500(err),
-        })?;
+        // TODO: better error code handling
+        .map_err(log_and_500)?;
 
     Ok(axum::Json(response))
 }

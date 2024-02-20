@@ -377,7 +377,7 @@ mod criterion {
 mod callgrind {
     use std::path::{Path, PathBuf};
 
-    use anyhow::Result;
+    use anyhow::{Context, Result};
     use serde::{Deserialize, Serialize};
 
     pub fn pack(name: String, target_dir: &Path) {
@@ -435,44 +435,19 @@ mod callgrind {
         let mut reader = std::io::BufReader::new(file);
         let contents: serde_json::Map<String, serde_json::Value> = serde_json::from_reader(&mut reader)?;
 
-        #[derive(Debug)]
-        struct Err;
-        impl std::fmt::Display for Err {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.write_str("unexpected summary layout")
-            }
-        }
-        impl std::error::Error for Err {}
-
         // get the measurements field out of the summary file
-        let measurements = contents
-            .get("callgrind_summary")
-            .ok_or(Err)?
-            .as_object()
-            .ok_or(Err)?
-            .get("summaries")
-            .ok_or(Err)?
-            .as_array()
-            .ok_or(Err)?
-            .get(0)
-            .ok_or(Err)?
-            .as_object()
-            .ok_or(Err)?
-            .get("events")
-            .ok_or(Err)?
-            .as_object()
-            .ok_or(Err)?;
-        let measurements = itertools::process_results(
-            measurements
+        let measurements = (|| {
+            contents
+                .get("callgrind_summary")?
+                .get("summaries")?
+                .get(0)?
+                .get("events")?
+                .as_object()?
                 .iter()
-                .map(|(k, v)| -> Result<(String, serde_json::Value)> {
-                    Ok((
-                        relabel_callgrind_metric(k).to_string(),
-                        v.as_object().ok_or(Err)?.get("new").ok_or(Err)?.clone(),
-                    ))
-                }),
-            |iter| iter.collect(),
-        )?;
+                .map(|(k, v)| Some((relabel_callgrind_metric(k).to_string(), v.get("new")?.clone())))
+                .collect::<Option<_>>()
+        })()
+        .context("unexpected summary layout")?;
 
         let details = contents.get("details").unwrap().as_str().unwrap();
         let basic_format_correct = details.starts_with("r#\"{") && details.ends_with("}\"#");

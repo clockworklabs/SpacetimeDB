@@ -1,5 +1,6 @@
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
+use spacetimedb_table::table::UniqueConstraintViolation;
 use std::ops::DerefMut;
 use std::sync::Arc;
 
@@ -7,10 +8,9 @@ use super::scheduler::{ScheduleError, ScheduledReducerId, Scheduler};
 use super::timestamp::Timestamp;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
-use crate::db::datastore::locking_tx_datastore::{MutTxId, RowId};
+use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::error::{IndexError, NodesError};
 use crate::execution_context::ExecutionContext;
-use crate::util::ResultInspectExt;
 use crate::vm::{DbProgram, TxMode};
 use spacetimedb_lib::filter::CmpArgs;
 use spacetimedb_lib::identity::AuthCtx;
@@ -48,6 +48,12 @@ impl BufWriter for ChunkedWriter {
 }
 
 impl ChunkedWriter {
+    /// Reserves `len` additional bytes in the scratch space,
+    /// or does nothing if the capacity is already sufficient.
+    fn reserve_in_scratch(&mut self, len: usize) {
+        self.scratch_space.reserve(len);
+    }
+
     /// Flushes the data collected in the scratch space if it's larger than our
     /// chunking threshold.
     pub fn flush(&mut self) {
@@ -119,15 +125,15 @@ impl InstanceEnv {
         let tx = &mut *self.get_tx()?;
         let ret = stdb
             .insert_bytes_as_row(tx, table_id, buffer)
-            .inspect_err_(|e| match e {
-                crate::error::DBError::Index(IndexError::UniqueConstraintViolation {
+            .inspect_err(|e| match e {
+                crate::error::DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
                     constraint_name: _,
                     table_name: _,
                     cols: _,
                     value: _,
-                }) => {}
+                })) => {}
                 _ => {
-                    let res = stdb.table_name_from_id(ctx, tx, table_id);
+                    let res = stdb.table_name_from_id_mut(ctx, tx, table_id);
                     if let Ok(Some(table_name)) = res {
                         log::debug!("insert(table: {table_name}, table_id: {table_id}): {e}")
                     } else {
@@ -160,7 +166,7 @@ impl InstanceEnv {
         // Find all rows in the table where the column data equates to `value`.
         let rows_to_delete = stdb
             .iter_by_col_eq_mut(ctx, tx, table_id, col_id, eq_value)?
-            .map(|x| RowId(*x.id()))
+            .map(|row_ref| row_ref.pointer())
             // `delete_by_field` only cares about 1 element,
             // so optimize for that.
             .collect::<SmallVec<[_; 1]>>();
@@ -284,7 +290,10 @@ impl InstanceEnv {
         let results = stdb.iter_by_col_eq_mut(ctx, tx, table_id, col_id, value)?;
         let mut bytes = Vec::new();
         for result in results {
-            bsatn::to_writer(&mut bytes, result.view()).unwrap();
+            // Pre-allocate the capacity needed to write `result`.
+            bytes.reserve(bsatn::to_len(&result).unwrap());
+            // Write the ref directly to the BSATN `bytes` buffer.
+            bsatn::to_writer(&mut bytes, &result).unwrap();
         }
         Ok(bytes)
     }
@@ -297,7 +306,10 @@ impl InstanceEnv {
         let tx = &mut *self.tx.get()?;
 
         for row in stdb.iter_mut(ctx, tx, table_id)? {
-            row.view().encode(&mut chunked_writer);
+            // Pre-allocate the capacity needed to write `row`.
+            chunked_writer.reserve_in_scratch(bsatn::to_len(&row).unwrap());
+            // Write the ref directly to the BSATN `chunked_writer` buffer.
+            bsatn::to_writer(&mut chunked_writer, &row).unwrap();
             // Flush at row boundaries.
             chunked_writer.flush();
         }

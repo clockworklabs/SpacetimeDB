@@ -34,7 +34,6 @@ pub mod protobuf {
 pub mod callgrind_flag;
 pub mod client;
 pub mod config;
-pub mod control_db;
 pub mod database_instance_context;
 pub mod database_instance_context_controller;
 pub mod database_logger;

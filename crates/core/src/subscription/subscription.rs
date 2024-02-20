@@ -50,6 +50,7 @@ use super::query;
 
 /// A subscription is a [`QuerySet`], along with a set of subscribers all
 /// interested in the same set of queries.
+#[derive(Debug)]
 pub struct Subscription {
     pub queries: QuerySet,
     subscribers: Vec<ClientConnectionSender>,
@@ -182,7 +183,7 @@ fn evaluator_for_secondary_updates(
     db: &RelationalDB,
     auth: AuthCtx,
     inserts: bool,
-) -> impl Fn(&mut Tx, &QueryExpr) -> Result<HashMap<PrimaryKey, Op>, DBError> + '_ {
+) -> impl Fn(&Tx, &QueryExpr) -> Result<HashMap<PrimaryKey, Op>, DBError> + '_ {
     move |tx, query| {
         let mut out = HashMap::new();
         // If we are evaluating inserts, the op type should be 1.
@@ -208,7 +209,7 @@ fn evaluator_for_secondary_updates(
 fn evaluator_for_primary_updates(
     db: &RelationalDB,
     auth: AuthCtx,
-) -> impl Fn(&mut Tx, &QueryExpr) -> Result<HashMap<PrimaryKey, Op>, DBError> + '_ {
+) -> impl Fn(&Tx, &QueryExpr) -> Result<HashMap<PrimaryKey, Op>, DBError> + '_ {
     move |tx, query| {
         let mut out = HashMap::new();
         for MemTable { data, head, .. } in
@@ -272,7 +273,7 @@ impl QuerySet {
     pub fn eval_incr(
         &self,
         db: &RelationalDB,
-        tx: &mut Tx,
+        tx: &Tx,
         database_update: &DatabaseUpdate,
         auth: AuthCtx,
     ) -> Result<DatabaseUpdate, DBError> {
@@ -329,6 +330,7 @@ impl QuerySet {
                     }
                 }
             }
+            #[cfg(feature = "metrics")]
             record_query_duration_metrics(WorkloadType::Update, &db.address(), start);
         }
         for (table_id, (table_name, ops)) in table_ops.into_iter().filter(|(_, (_, ops))| !ops.is_empty()) {
@@ -349,7 +351,7 @@ impl QuerySet {
     ///
     /// This is a *major* difference with normal query execution, where is expected to return the full result set for each query.
     #[tracing::instrument(skip_all)]
-    pub fn eval(&self, db: &RelationalDB, tx: &mut Tx, auth: AuthCtx) -> Result<DatabaseUpdate, DBError> {
+    pub fn eval(&self, db: &RelationalDB, tx: &Tx, auth: AuthCtx) -> Result<DatabaseUpdate, DBError> {
         let mut database_update: DatabaseUpdate = DatabaseUpdate { tables: vec![] };
         let mut table_ops = HashMap::new();
         let mut seen = HashSet::new();
@@ -380,6 +382,7 @@ impl QuerySet {
                         });
                     }
                 }
+                #[cfg(feature = "metrics")]
                 record_query_duration_metrics(WorkloadType::Subscribe, &db.address(), start);
             }
         }
@@ -394,6 +397,7 @@ impl QuerySet {
     }
 }
 
+#[cfg(feature = "metrics")]
 fn record_query_duration_metrics(workload: WorkloadType, db: &Address, start: Instant) {
     let query_duration = start.elapsed().as_secs_f64();
 
@@ -604,10 +608,10 @@ impl<'a> IncrementalJoin<'a> {
     /// * `||`: Concatenation.
     ///
     /// For a more in-depth discussion, see the [module-level documentation](./index.html).
-    pub fn eval(&self, db: &RelationalDB, tx: &mut Tx, auth: &AuthCtx) -> Result<impl Iterator<Item = Op>, DBError> {
+    pub fn eval(&self, db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> Result<impl Iterator<Item = Op>, DBError> {
         let mut inserts = {
             // A query evaluator for inserts
-            let mut eval = |query, is_primary| {
+            let eval = |query, is_primary| {
                 if is_primary {
                     evaluator_for_primary_updates(db, *auth)(tx, query)
                 } else {
@@ -635,7 +639,7 @@ impl<'a> IncrementalJoin<'a> {
         };
         let mut deletes = {
             // A query evaluator for deletes
-            let mut eval = |query, is_primary| {
+            let eval = |query, is_primary| {
                 if is_primary {
                     evaluator_for_primary_updates(db, *auth)(tx, query)
                 } else {
@@ -744,62 +748,24 @@ fn with_delta_table(mut join: IndexJoin, index_side: bool, delta: DatabaseTableU
 mod tests {
     use super::*;
     use crate::db::relational_db::tests_utils::make_test_db;
-    use crate::db::relational_db::MutTx;
     use crate::host::module_host::TableOp;
     use crate::sql::compiler::compile_sql;
-    use itertools::Itertools;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::data_key::ToDataKey;
-    use spacetimedb_sats::db::auth::{StAccess, StTableType};
-    use spacetimedb_sats::db::def::*;
     use spacetimedb_sats::relation::{FieldName, Table};
     use spacetimedb_sats::{product, AlgebraicType};
     use spacetimedb_vm::expr::{CrudExpr, IndexJoin, Query, SourceExpr};
-
-    fn create_table(
-        db: &RelationalDB,
-        tx: &mut MutTx,
-        name: &str,
-        schema: &[(&str, AlgebraicType)],
-        indexes: &[(ColId, &str)],
-    ) -> Result<TableId, DBError> {
-        let table_name = name.to_string();
-        let table_type = StTableType::User;
-        let table_access = StAccess::Public;
-
-        let columns = schema
-            .iter()
-            .map(|(col_name, col_type)| ColumnDef {
-                col_name: col_name.to_string(),
-                col_type: col_type.clone(),
-            })
-            .collect_vec();
-
-        let indexes = indexes
-            .iter()
-            .map(|(col_id, index_name)| IndexDef::btree(index_name.to_string(), *col_id, false))
-            .collect_vec();
-
-        let schema = TableDef::new(table_name, columns)
-            .with_indexes(indexes)
-            .with_type(table_type)
-            .with_access(table_access);
-
-        db.create_table(tx, schema)
-    }
 
     #[test]
     // Compile an index join after replacing the index side with a virtual table.
     // The original index and probe sides should be swapped after introducing the delta table.
     fn compile_incremental_index_join_index_side() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
         let indexes = &[(1.into(), "b")];
-        let lhs_id = create_table(&db, &mut tx, "lhs", schema, indexes)?;
+        let lhs_id = db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [b, c]
         let schema = &[
@@ -808,8 +774,7 @@ mod tests {
             ("d", AlgebraicType::U64),
         ];
         let indexes = &[(0.into(), "b"), (1.into(), "c")];
-        let rhs_id = create_table(&db, &mut tx, "rhs", schema, indexes)?;
-        db.commit_tx(&ExecutionContext::default(), tx)?;
+        let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
 
         let tx = db.begin_tx();
         // Should generate an index join since there is an index on `lhs.b`.
@@ -890,12 +855,11 @@ mod tests {
     // The original index and probe sides should remain after introducing the virtual table.
     fn compile_incremental_index_join_probe_side() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
         let indexes = &[(1.into(), "b")];
-        let lhs_id = create_table(&db, &mut tx, "lhs", schema, indexes)?;
+        let lhs_id = db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [b, c]
         let schema = &[
@@ -904,8 +868,7 @@ mod tests {
             ("d", AlgebraicType::U64),
         ];
         let indexes = &[(0.into(), "b"), (1.into(), "c")];
-        let rhs_id = create_table(&db, &mut tx, "rhs", schema, indexes)?;
-        db.commit_tx(&ExecutionContext::default(), tx)?;
+        let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
 
         let tx = db.begin_tx();
         // Should generate an index join since there is an index on `lhs.b`.

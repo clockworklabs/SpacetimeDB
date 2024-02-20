@@ -7,25 +7,21 @@ To run the criterion benchmarks:
 cargo bench --bench generic --bench special
 ```
 
+To enable the criterion benchmarks that do one million inserts or updates, set the RUN_ONE_MILLION environment variable:
+
+```bash
+RUN_ONE_MILLION=true cargo bench --bench generic --bench special
+```
+
 To run the callgrind benchmarks, you need valgrind installed.
 The easiest way to get it is to use the docker image in this folder. 
 There's a handy bash script:
 ```bash
-# enter a prepared docker image with valgrind & a rust toolchain available.
-# mounts the host SpacetimeDB folder to `/projects/SpacetimeDB`.
-# this works on at least Linux and MinGW, but if you're on windows you're probably better off running it from WSL, because windows-docker filesystem sharing is slow.
 bash callgrind-docker.sh 
 ```
-Then, in the docker image:
-```bash
-cd /projects/SpacetimeDB/crates/bench
-cargo bench --bench callgrind
-```
-To avoid fighting with the host system, the docker image uses a separate CARGO_TARGET_DIR.
-This will be visible on the host system as `SpacetimeDB/linux-target`.
-Callgrind benchmark outputs will be placed in the folder `SpacetimeDB/linux-target/iai`. 
+Which will build the docker image and run the callgrind benchmarks inside of it.
 
-You can also comment "benchmarks please" or "callgrind please" on a pull request in the SpacetimeDB repository to run the criterion/callgrind benchmarks on that PR. The results will be posted in a comment on the most recent *commit* in that PR. Note: not a PR comment, a *commit* comment! You'll see a comment symbol next to the commit, click on that to see the benchmark report.
+You can also comment "benchmarks please" or "callgrind please" on a pull request in the SpacetimeDB repository to run the criterion/callgrind benchmarks on that PR. The results will be posted in a comment on the PR.
 
 This is coordinated using the benchmarks Github Actions: see [`../../.github/workflows/benchmarks.yml`](../../.github/workflows/benchmarks.yml), and
 [`../../.github/workflows/callgrind_benchmarks.yml`](../../.github/workflows/callgrind_benchmarks.yml). 
@@ -130,6 +126,21 @@ See that f
 ## Install tools
 
 There are also some scripts that rely on external tools to extract data from the benchmarks.
+
+### OSX + Linux
+
+- [samply](https://github.com/mstange/samply/)
+
+```bash
+cargo install samply
+```
+Run *any* command to see perf data on Firefox:
+
+```bash
+# Note if the `cargo` command triggers compilation, it will also be captured in the profile.
+# Therefore it is useful to run this after the artifact has already been cached.
+samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- full-scan --exact --profile-time=30
+```
 
 ### OSX Only
 

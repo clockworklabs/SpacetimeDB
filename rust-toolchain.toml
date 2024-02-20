@@ -1,5 +1,5 @@
 [toolchain]
-# change crates/standalone/Dockerfile too!
-channel = "1.74.0"
+# change crates/standalone/Dockerfile and rust-version in Cargo.toml too!
+channel = "1.76.0"
 profile = "default"
 targets = ["wasm32-unknown-unknown"]

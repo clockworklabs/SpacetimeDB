@@ -24,7 +24,7 @@ use spacetimedb_vm::rel_ops::RelOps;
 
 pub enum TxMode<'a> {
     MutTx(&'a mut MutTx),
-    Tx(&'a mut Tx),
+    Tx(&'a Tx),
 }
 
 impl<'a> From<&'a mut MutTx> for TxMode<'a> {
@@ -33,8 +33,8 @@ impl<'a> From<&'a mut MutTx> for TxMode<'a> {
     }
 }
 
-impl<'a> From<&'a mut Tx> for TxMode<'a> {
-    fn from(tx: &'a mut Tx) -> Self {
+impl<'a> From<&'a Tx> for TxMode<'a> {
+    fn from(tx: &'a Tx) -> Self {
         TxMode::Tx(tx)
     }
 }
@@ -249,11 +249,11 @@ pub struct IndexSemiJoin<'a, Rhs: RelOps> {
 
 impl<'a, Rhs: RelOps> IndexSemiJoin<'a, Rhs> {
     fn filter(&self, index_row: RelValueRef) -> Result<bool, ErrorVm> {
-        if let Some(op) = &self.index_select {
-            Ok(op.compare(index_row, &self.index_header)?)
+        Ok(if let Some(op) = &self.index_select {
+            op.compare(index_row, &self.index_header)?
         } else {
-            Ok(true)
-        }
+            true
+        })
     }
 
     fn map(&self, index_row: RelValue, probe_row: Option<RelValue>) -> RelValue {
@@ -279,12 +279,11 @@ impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
         RowCount::unknown()
     }
 
-    #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
         // Return a value from the current index iterator, if not exhausted.
         if self.return_index_rows {
             while let Some(value) = self.index_iter.as_mut().and_then(|iter| iter.next()) {
-                let value = value.to_rel_value();
+                let value = RelValue::new(value.to_product_value(), None);
                 if self.filter(value.as_val_ref())? {
                     return Ok(Some(self.map(value, None)));
                 }
@@ -302,7 +301,7 @@ impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
                         TxMode::Tx(tx) => self.db.iter_by_col_eq(self.ctx, tx, table_id, col_id, value)?,
                     };
                     while let Some(value) = index_iter.next() {
-                        let value = value.to_rel_value();
+                        let value = RelValue::new(value.to_product_value(), None);
                         if self.filter(value.as_val_ref())? {
                             self.index_iter = Some(index_iter);
                             return Ok(Some(self.map(value, Some(row))));
@@ -550,9 +549,8 @@ impl RelOps for TableCursor<'_> {
         RowCount::unknown()
     }
 
-    #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
-        Ok(self.iter.next().map(|row| row.to_rel_value()))
+        Ok(self.iter.next().map(|row| RelValue::new(row.to_product_value(), None)))
     }
 }
 
@@ -565,9 +563,8 @@ impl<R: RangeBounds<AlgebraicValue>> RelOps for IndexCursor<'_, R> {
         RowCount::unknown()
     }
 
-    #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
-        Ok(self.iter.next().map(|row| row.to_rel_value()))
+        Ok(self.iter.next().map(|row| RelValue::new(row.to_product_value(), None)))
     }
 }
 
@@ -583,7 +580,6 @@ where
         self.row_count
     }
 
-    #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
         if let Some(row) = self.iter.next() {
             return Ok(Some(RelValue::new(row, None)));

@@ -1,9 +1,10 @@
 [package]
 name = "spacetimedb-lib"
-version = "0.8.1"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 license-file = "LICENSE"
 description = "A common library for SpacetimeDB"
+rust-version.workspace = true
 
 [lib]
 # Benching off, because of https://bheisler.github.io/criterion.rs/book/faq.html#cargo-bench-gives-unrecognized-option-errors-for-valid-command-line-options
@@ -21,10 +22,10 @@ cli = ["clap"]
 proptest = ["dep:proptest", "dep:proptest-derive"]
 
 [dependencies]
-spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.8.1" }
-spacetimedb-sats = { path = "../sats", version = "0.8.1" }
-spacetimedb-primitives = { path = "../primitives", version = "0.8.1" }
-spacetimedb-metrics = { path = "../metrics", version = "0.8.1" }
+spacetimedb-bindings-macro.workspace = true
+spacetimedb-sats.workspace = true
+spacetimedb-primitives.workspace = true
+spacetimedb-metrics.workspace = true
 
 anyhow.workspace = true
 bitflags.workspace = true
@@ -36,7 +37,7 @@ hex.workspace = true
 itertools.workspace = true
 once_cell.workspace = true
 prometheus.workspace = true
-serde = { workspace = true, optional = true }
+serde = { workspace = true, optional = true, features = ["derive"] }
 serde_with = {workspace = true, optional = true }
 thiserror.workspace = true
 tracing.workspace = true

@@ -33,15 +33,15 @@ use std::hint::black_box;
 pub struct UniquePerson {
     #[unique]
     id: u32,
-    name: String,
     age: u64,
+    name: String,
 }
 
 #[spacetimedb(table)]
 pub struct NonUniquePerson {
     id: u32,
-    name: String,
     age: u64,
+    name: String,
 }
 
 #[spacetimedb(table)]
@@ -50,8 +50,8 @@ pub struct NonUniquePerson {
 #[spacetimedb(index(btree, name = "age", age))]
 pub struct MultiIndexPerson {
     id: u32,
-    name: String,
     age: u64,
+    name: String,
 }
 
 #[spacetimedb(table)]
@@ -86,17 +86,17 @@ pub fn empty() {}
 
 // ---------- insert ----------
 #[spacetimedb(reducer)]
-pub fn insert_unique_person(id: u32, name: String, age: u64) {
+pub fn insert_unique_person(id: u32, age: u64, name: String) {
     UniquePerson::insert(UniquePerson { id, name, age }).unwrap();
 }
 
 #[spacetimedb(reducer)]
-pub fn insert_non_unique_person(id: u32, name: String, age: u64) {
+pub fn insert_non_unique_person(id: u32, age: u64, name: String) {
     NonUniquePerson::insert(NonUniquePerson { id, name, age });
 }
 
 #[spacetimedb(reducer)]
-pub fn insert_multi_index_person(id: u32, name: String, age: u64) {
+pub fn insert_multi_index_person(id: u32, age: u64, name: String) {
     MultiIndexPerson::insert(MultiIndexPerson { id, name, age });
 }
 
@@ -157,6 +157,48 @@ pub fn insert_bulk_multi_index_person(people: Vec<MultiIndexPerson>) {
     for person in people {
         MultiIndexPerson::insert(person);
     }
+}
+
+// ---------- update ----------
+
+#[spacetimedb(reducer)]
+pub fn update_bulk_unique_location(row_count: u32) {
+    let mut hit: u32 = 0;
+    for loc in UniqueLocation::iter().take(row_count as usize) {
+        hit += 1;
+        assert!(
+            UniqueLocation::update_by_id(
+                &loc.id,
+                UniqueLocation {
+                    id: loc.id,
+                    x: loc.x.wrapping_add(1),
+                    y: loc.y,
+                },
+            ),
+            "failed to update location"
+        );
+    }
+    assert_eq!(hit, row_count, "not enough rows to perform requested amount of updates");
+}
+
+#[spacetimedb(reducer)]
+pub fn update_bulk_unique_person(row_count: u32) {
+    let mut hit: u32 = 0;
+    for person in UniquePerson::iter().take(row_count as usize) {
+        hit += 1;
+        assert!(
+            UniquePerson::update_by_id(
+                &person.id,
+                UniquePerson {
+                    id: person.id,
+                    name: person.name,
+                    age: person.age.wrapping_add(1),
+                },
+            ),
+            "failed to update person"
+        );
+    }
+    assert_eq!(hit, row_count, "not enough rows to perform requested amount of updates");
 }
 
 // ---------- iterate ----------
@@ -256,6 +298,27 @@ pub fn filter_non_unique_location_by_x(x: u64) {
 #[spacetimedb(reducer)]
 pub fn filter_multi_index_location_by_x(x: u64) {
     for loc in MultiIndexLocation::filter_by_x(&x) {
+        black_box(loc);
+    }
+}
+
+#[spacetimedb(reducer)]
+pub fn filter_unique_location_by_y(x: u64) {
+    for loc in UniqueLocation::filter_by_y(&x) {
+        black_box(loc);
+    }
+}
+
+#[spacetimedb(reducer)]
+pub fn filter_non_unique_location_by_y(x: u64) {
+    for loc in NonUniqueLocation::filter_by_y(&x) {
+        black_box(loc);
+    }
+}
+
+#[spacetimedb(reducer)]
+pub fn filter_multi_index_location_by_y(x: u64) {
+    for loc in MultiIndexLocation::filter_by_y(&x) {
         black_box(loc);
     }
 }

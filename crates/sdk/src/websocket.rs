@@ -2,7 +2,7 @@ use crate::identity::Credentials;
 use anyhow::{bail, Result};
 use futures::{SinkExt, StreamExt, TryStreamExt};
 use futures_channel::mpsc;
-use http::uri::{Parts, Scheme, Uri};
+use http::uri::{Scheme, Uri};
 use prost::Message as ProtobufMessage;
 use spacetimedb_client_api_messages::client_api::Message;
 use spacetimedb_lib::Address;
@@ -37,7 +37,7 @@ where
     <Host as TryInto<Uri>>::Error: std::error::Error + Send + Sync + 'static,
 {
     let host: Uri = host.try_into()?;
-    let mut parts = Parts::try_from(host)?;
+    let mut parts = host.into_parts();
     let scheme = parse_scheme(parts.scheme.take())?;
     parts.scheme = Some(scheme);
     let mut path = if let Some(path_and_query) = parts.path_and_query {
@@ -57,7 +57,7 @@ where
     path.push_str("?client_address=");
     path.push_str(&client_address.to_hex());
     parts.path_and_query = Some(path.parse()?);
-    Ok(Uri::try_from(parts)?)
+    Ok(Uri::from_parts(parts)?)
 }
 
 // Tungstenite doesn't offer an interface to specify a WebSocket protocol, which frankly

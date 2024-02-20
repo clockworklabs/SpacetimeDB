@@ -19,7 +19,7 @@ use super::{ClientConnection, DataMessage};
 pub enum MessageHandleError {
     #[error(transparent)]
     BinaryDecode(#[from] prost::DecodeError),
-    #[error("unexepected protobuf message type")]
+    #[error("unexpected protobuf message type")]
     InvalidMessage,
     #[error(transparent)]
     TextDecode(#[from] serde_json::Error),
@@ -142,7 +142,9 @@ impl DecodedMessage<'_> {
                 let res = client.call_reducer(reducer, args).await;
                 res.map(drop).map_err(|e| (Some(reducer), e.into()))
             }
-            DecodedMessage::Subscribe(subscription) => client.subscribe(subscription).map_err(|e| (None, e.into())),
+            DecodedMessage::Subscribe(subscription) => {
+                client.subscribe(subscription).await.map_err(|e| (None, e.into()))
+            }
             DecodedMessage::OneOffQuery {
                 query_string: query,
                 message_id,

@@ -76,7 +76,7 @@ pub enum AttributeKind {
 }
 
 bitflags::bitflags! {
-    #[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
+    #[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash)]
     pub struct ColumnAttribute: u8 {
         const UNSET = Self::empty().bits();
         ///  Index no unique
@@ -140,7 +140,7 @@ impl ColumnAttribute {
 }
 
 /// Represents `constraints` for a database `table`.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub struct Constraints {
     attr: ColumnAttribute,
 }

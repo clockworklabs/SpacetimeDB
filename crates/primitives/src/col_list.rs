@@ -203,6 +203,11 @@ impl ColList {
         false
     }
 
+    /// Is this a list of a single column?
+    pub fn is_singleton(&self) -> bool {
+        self.len() == 1
+    }
+
     /// Push `col` onto the list.
     ///
     /// If `col >= 63` or if this list was already heap allocated, it will now be heap allocated.

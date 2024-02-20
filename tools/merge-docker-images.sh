@@ -32,3 +32,8 @@ docker manifest annotate clockworklabs/spacetimedb:$FULL_TAG \
 
 # Push the manifest
 docker manifest push clockworklabs/spacetimedb:$FULL_TAG
+
+# re-tag the manifeast with a tag
+VERSION=${GITHUB_REF#refs/*/}
+docker buildx imagetools create clockworklabs/spacetimedb:$FULL_TAG --tag clockworklabs/spacetimedb:$VERSION
+

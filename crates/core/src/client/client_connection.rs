@@ -1,6 +1,7 @@
 use std::ops::Deref;
 
-use crate::host::{ModuleHost, NoSuchModule, ReducerArgs, ReducerCallError, ReducerCallResult};
+use crate::error::DBError;
+use crate::host::{ModuleHost, ReducerArgs, ReducerCallError, ReducerCallResult};
 use crate::protobuf::client_api::Subscribe;
 use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
@@ -161,8 +162,11 @@ impl ClientConnection {
             .await
     }
 
-    pub fn subscribe(&self, subscription: Subscribe) -> Result<(), NoSuchModule> {
-        self.module.subscription().add_subscriber(self.sender(), subscription)
+    pub async fn subscribe(&self, subscription: Subscribe) -> Result<(), DBError> {
+        let me = self.clone();
+        tokio::task::spawn_blocking(move || me.module.subscriptions().add_subscriber(me.sender, subscription))
+            .await
+            .unwrap()
     }
 
     pub async fn one_off_query(&self, query: &str, message_id: &[u8]) -> Result<(), anyhow::Error> {

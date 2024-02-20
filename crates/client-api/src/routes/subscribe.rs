@@ -306,12 +306,7 @@ async fn ws_client_actor(client: ClientConnection, mut ws: WebSocketStream, mut 
     // https://rust-lang.github.io/wg-async/vision/submitted_stories/status_quo/aws_engineer/solving_a_deadlock.html
     handle_queue.clear();
 
-    // ignore NoSuchModule; if the module's already closed, that's fine
-    let _ = client.module.subscription().remove_subscriber(client.id);
-    let _ = client
-        .module
-        .call_identity_connected_disconnected(client.id.identity, client.id.address, false)
-        .await;
+    client.module.disconnect_client(client.id).await;
 }
 
 enum ClientMessage {

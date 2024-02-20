@@ -3,7 +3,7 @@ use crate::{impl_deserialize, impl_serialize};
 use crate::de::Error;
 
 /// Describe the visibility of the table
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum StAccess {
     /// Visible to all
     Public,
@@ -54,7 +54,7 @@ impl_deserialize!([] StAccess, de => {
 });
 
 /// Describe is the table is a `system table` or not.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum StTableType {
     /// Created by the system
     ///

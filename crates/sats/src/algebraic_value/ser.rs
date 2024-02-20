@@ -186,8 +186,7 @@ impl ser::SerializeArray for SerializeArrayValue {
     }
 
     fn end(self) -> Result<Self::Ok, Self::Error> {
-        let array: ArrayValue = self.array.try_into().unwrap_or_else(|e| match e {});
-        Ok(array.into())
+        Ok(ArrayValue::from(self.array).into())
     }
 }
 

@@ -1,9 +1,10 @@
 [package]
 name = "spacetimedb-core"
-version = "0.8.1"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 license-file = "LICENSE"
 description = "The core library for SpacetimeDB"
+rust-version.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
@@ -18,12 +19,13 @@ name = "odb_flavor_bench"
 harness = false
 
 [dependencies]
-spacetimedb-lib = { path = "../lib", version = "0.8.1" }
-spacetimedb-sats = { path = "../sats", version = "0.8.1" }
-spacetimedb-vm = { path = "../vm", version = "0.8.1" }
-spacetimedb-client-api-messages = { path = "../client-api-messages", version = "0.8.1" }
-spacetimedb-primitives = { path = "../primitives", version = "0.8.1" }
-spacetimedb-metrics = { path = "../metrics", version = "0.8.1" }
+spacetimedb-lib = { workspace = true, features = ["serde"] }
+spacetimedb-client-api-messages.workspace = true
+spacetimedb-metrics.workspace = true
+spacetimedb-primitives.workspace = true
+spacetimedb-sats.workspace = true
+spacetimedb-table.workspace = true
+spacetimedb-vm.workspace = true
 
 anyhow.workspace = true
 async-trait.workspace = true
@@ -57,11 +59,11 @@ paste.workspace = true
 pin-project-lite.workspace = true
 prometheus.workspace = true
 prost.workspace = true
+rayon.workspace = true
 rayon-core.workspace = true
 regex.workspace = true
 rustc-demangle.workspace = true
 rustc-hash.workspace = true
-smallvec.workspace = true
 scopeguard.workspace = true
 sendgrid.workspace = true
 serde.workspace = true
@@ -71,12 +73,14 @@ serde_with = { workspace = true, features = ["chrono_0_4"] }
 sha1.workspace = true
 slab.workspace = true
 sled.workspace = true
+smallvec.workspace = true
 sqlparser.workspace = true
 strum.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 tokio-util.workspace = true
 tokio.workspace = true
+tokio-stream = "0.1"
 toml.workspace = true
 tracing-appender.workspace = true
 tracing-core.workspace = true
@@ -93,10 +97,12 @@ wasmtime.workspace = true
 rocksdb = {workspace = true, optional = true}
 
 [features]
+# Enable metrics in spacetimedb.
+metrics = []
 # Optional storage engines.
 odb_rocksdb = ["dep:rocksdb"]
 odb_sled = []
-default = ["odb_sled"]
+default = ["odb_sled", "metrics"]
 
 [dev-dependencies]
 spacetimedb-lib = { path = "../lib", features = ["proptest"] }

@@ -1,4 +1,4 @@
-use spacetimedb::control_db::ControlDb;
+use crate::control_db::ControlDb;
 use spacetimedb::energy::{EnergyBalance, EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
 use spacetimedb::messages::control_db::Database;
 use spacetimedb_lib::Identity;

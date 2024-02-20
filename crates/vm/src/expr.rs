@@ -2,6 +2,7 @@ use derive_more::From;
 use std::cmp::Ordering;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::ops::Bound;
 
 use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
@@ -297,6 +298,25 @@ pub enum SourceExpr {
     DbTable(DbTable),
 }
 
+impl Hash for SourceExpr {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        // IMPORTANT: Required for hashing query plans.
+        // In general a query plan will only contain static data.
+        // However, currently it is possible to inline a virtual table.
+        // Such plans though are hybrids and should not be hashed,
+        // Since they contain raw data values.
+        // Therefore we explicitly disallow it here.
+        match self {
+            SourceExpr::DbTable(t) => {
+                t.hash(state);
+            }
+            SourceExpr::MemTable(_) => {
+                panic!("Cannot hash a virtual table");
+            }
+        }
+    }
+}
+
 impl SourceExpr {
     pub fn get_db_table(&self) -> Option<&DbTable> {
         match self {
@@ -397,7 +417,7 @@ impl From<&SourceExpr> for DbTable {
 
 // A descriptor for an index join operation.
 // The semantics are those of a semijoin with rows from the index or the probe side being returned.
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub struct IndexJoin {
     pub probe_side: QueryExpr,
     pub probe_field: FieldName,
@@ -565,7 +585,7 @@ impl IndexJoin {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub struct JoinExpr {
     pub rhs: QueryExpr,
     pub col_lhs: FieldName,
@@ -651,7 +671,7 @@ impl CrudExpr {
 //     }
 // }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct IndexScan {
     pub table: DbTable,
     pub columns: ColList,
@@ -717,7 +737,7 @@ impl Ord for IndexScan {
 }
 
 // An individual operation in a query.
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, From)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, From, Hash)]
 pub enum Query {
     // Fetching rows via an index.
     IndexScan(IndexScan),
@@ -831,7 +851,7 @@ fn is_sargable(table: &SourceExpr, op: &ColumnOp) -> Option<IndexArgument> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct QueryExpr {
     pub source: SourceExpr,
     pub query: Vec<Query>,
@@ -900,6 +920,24 @@ impl QueryExpr {
             head: Some(self.source.clone()),
             tail: self.query.iter().map(Query::sources).collect(),
         }
+    }
+
+    /// Does this query read from a given table?
+    pub fn reads_from_table(&self, id: &TableId) -> bool {
+        self.source
+            .get_db_table()
+            .is_some_and(|DbTable { table_id, .. }| table_id == id)
+            || self.query.iter().any(|q| match q {
+                Query::Select(_) | Query::Project(_, _) => false,
+                Query::IndexScan(scan) => scan.table.table_id == *id,
+                Query::JoinInner(join) => join.rhs.reads_from_table(id),
+                Query::IndexJoin(join) => {
+                    join.index_side
+                        .get_db_table()
+                        .is_some_and(|DbTable { table_id, .. }| table_id == id)
+                        || join.probe_side.reads_from_table(id)
+                }
+            })
     }
 
     // Generate an index scan for an equality predicate if this is the first operator.

@@ -74,7 +74,7 @@ pub fn to_mem_table(mut of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr 
 pub(crate) fn run_query(
     cx: &ExecutionContext,
     db: &RelationalDB,
-    tx: &mut Tx,
+    tx: &Tx,
     query: &QueryExpr,
     auth: AuthCtx,
 ) -> Result<Vec<MemTable>, DBError> {
@@ -217,38 +217,6 @@ mod tests {
     use spacetimedb_vm::dsl::{db_table, mem_table, scalar};
     use spacetimedb_vm::operator::OpCmp;
 
-    fn create_table(
-        db: &RelationalDB,
-        tx: &mut MutTx,
-        name: &str,
-        schema: &[(&str, AlgebraicType)],
-        indexes: &[(ColId, &str)],
-    ) -> ResultTest<TableId> {
-        let table_name = name.to_string();
-        let table_type = StTableType::User;
-        let table_access = StAccess::Public;
-
-        let columns = schema
-            .iter()
-            .map(|(col_name, col_type)| ColumnDef {
-                col_name: col_name.to_string(),
-                col_type: col_type.clone(),
-            })
-            .collect_vec();
-
-        let indexes = indexes
-            .iter()
-            .map(|(col_id, index_name)| IndexDef::btree(index_name.to_string(), *col_id, false))
-            .collect_vec();
-
-        let schema = TableDef::new(table_name, columns)
-            .with_indexes(indexes)
-            .with_type(table_type)
-            .with_access(table_access);
-
-        Ok(db.create_table(tx, schema)?)
-    }
-
     fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
         let row_pk = row.to_data_key().to_bytes();
         DatabaseTableUpdate {
@@ -364,7 +332,7 @@ mod tests {
     fn check_query(
         db: &RelationalDB,
         table: &MemTable,
-        tx: &mut Tx,
+        tx: &Tx,
         q: &QueryExpr,
         data: &DatabaseTableUpdate,
     ) -> ResultTest<()> {
@@ -390,7 +358,7 @@ mod tests {
 
     fn check_query_incr(
         db: &RelationalDB,
-        tx: &mut Tx,
+        tx: &Tx,
         s: &QuerySet,
         update: &DatabaseUpdate,
         total_tables: usize,
@@ -412,7 +380,7 @@ mod tests {
 
     fn check_query_eval(
         db: &RelationalDB,
-        tx: &mut Tx,
+        tx: &Tx,
         s: &QuerySet,
         total_tables: usize,
         rows: &[ProductValue],
@@ -462,8 +430,8 @@ mod tests {
 
         let update = DatabaseUpdate { tables: vec![update] };
         db.rollback_mut_tx(&ExecutionContext::default(), tx);
-        let mut tx = db.begin_tx();
-        let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
+        let tx = db.begin_tx();
+        let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
         let id2 = &result.tables[0].ops[0].row_pk;
 
         // check that both row ids are the same
@@ -474,13 +442,13 @@ mod tests {
     #[test]
     fn test_eval_incr_for_index_scan() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
 
         // Create table [test] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
         let indexes = &[(1.into(), "b")];
-        let table_id = create_table(&db, &mut tx, "test", schema, indexes)?;
+        let table_id = db.create_table_for_test("test", schema, indexes)?;
 
+        let mut tx = db.begin_mut_tx();
         let mut ops = Vec::new();
         for i in 0u64..9u64 {
             let row = product!(i, i);
@@ -504,7 +472,7 @@ mod tests {
         };
 
         db.commit_tx(&ExecutionContext::default(), tx)?;
-        let mut tx = db.begin_tx();
+        let tx = db.begin_tx();
 
         let sql = "select * from test where b = 3";
         let mut exp = compile_sql(&db, &tx, sql)?;
@@ -515,7 +483,7 @@ mod tests {
 
         let query = QuerySet::try_from(query)?;
 
-        let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
+        let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
 
         assert_eq!(result.tables.len(), 1);
 
@@ -542,12 +510,10 @@ mod tests {
     }
 
     fn run_eval_incr_for_index_join(db: RelationalDB) -> ResultTest<()> {
-        let mut tx = db.begin_mut_tx();
-
         // Create table [lhs] with index on [id]
         let schema = &[("id", AlgebraicType::I32), ("x", AlgebraicType::I32)];
         let indexes = &[(0.into(), "id")];
-        let lhs_id = create_table(&db, &mut tx, "lhs", schema, indexes)?;
+        let lhs_id = db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [id]
         let schema = &[
@@ -556,7 +522,9 @@ mod tests {
             ("y", AlgebraicType::I32),
         ];
         let indexes = &[(1.into(), "id")];
-        let rhs_id = create_table(&db, &mut tx, "rhs", schema, indexes)?;
+        let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
+
+        let mut tx = db.begin_mut_tx();
 
         // Insert into lhs
         for i in 0..5 {
@@ -604,9 +572,9 @@ mod tests {
                 delete_op(rhs_id, "rhs", r1.clone()),
                 insert_op(rhs_id, "rhs", r2.clone()),
             ];
-            let mut tx = db.begin_tx();
+            let tx = db.begin_tx();
             let update = DatabaseUpdate { tables: updates };
-            let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
+            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
             db.release_tx(&ExecutionContext::default(), tx);
 
             // No updates to report
@@ -629,8 +597,8 @@ mod tests {
             ];
 
             let update = DatabaseUpdate { tables: updates };
-            let mut tx = db.begin_tx();
-            let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
+            let tx = db.begin_tx();
+            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
             db.release_tx(&ExecutionContext::default(), tx);
 
             // No updates to report
@@ -653,8 +621,8 @@ mod tests {
             ];
 
             let update = DatabaseUpdate { tables: updates };
-            let mut tx = db.begin_tx();
-            let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
+            let tx = db.begin_tx();
+            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
             db.release_tx(&ExecutionContext::default(), tx);
 
             // A single delete from lhs
@@ -678,8 +646,8 @@ mod tests {
             ];
 
             let update = DatabaseUpdate { tables: updates };
-            let mut tx = db.begin_tx();
-            let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
+            let tx = db.begin_tx();
+            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
             db.release_tx(&ExecutionContext::default(), tx);
 
             // A single insert into lhs
@@ -705,8 +673,8 @@ mod tests {
             ];
 
             let update = DatabaseUpdate { tables: updates };
-            let mut tx = db.begin_tx();
-            let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
+            let tx = db.begin_tx();
+            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
             db.release_tx(&ExecutionContext::default(), tx);
 
             // A single insert into lhs
@@ -714,7 +682,7 @@ mod tests {
             assert_eq!(result.tables[0], insert_op(lhs_id, "lhs", product!(5, 10)));
 
             // Clean up tx
-            let mut tx = db.begin_mut_tx();
+            let mut tx: crate::db::datastore::locking_tx_datastore::MutTxId = db.begin_mut_tx();
             delete_row(&db, &mut tx, lhs_id, lhs_row.clone());
             delete_row(&db, &mut tx, rhs_id, rhs_row.clone());
             db.commit_tx(&ExecutionContext::default(), tx)?;
@@ -735,8 +703,8 @@ mod tests {
             ];
 
             let update = DatabaseUpdate { tables: updates };
-            let mut tx = db.begin_tx();
-            let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
+            let tx = db.begin_tx();
+            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
             db.release_tx(&ExecutionContext::default(), tx);
 
             // No updates to report
@@ -764,8 +732,8 @@ mod tests {
             ];
 
             let update = DatabaseUpdate { tables: updates };
-            let mut tx = db.begin_tx();
-            let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
+            let tx = db.begin_tx();
+            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
             db.release_tx(&ExecutionContext::default(), tx);
 
             // A single delete from lhs
@@ -794,8 +762,8 @@ mod tests {
             ];
 
             let update = DatabaseUpdate { tables: updates };
-            let mut tx = db.begin_tx();
-            let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
+            let tx = db.begin_tx();
+            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
             db.release_tx(&ExecutionContext::default(), tx);
 
             // No updates to report
@@ -821,12 +789,12 @@ mod tests {
         assert_eq!(schema.table_type, StTableType::User);
         assert_eq!(schema.table_access, StAccess::Public);
 
-        let mut tx = db.begin_tx();
+        let tx = db.begin_tx();
         let q_1 = q.clone();
-        check_query(&db, &table, &mut tx, &q_1, &data)?;
+        check_query(&db, &table, &tx, &q_1, &data)?;
 
         let q_2 = q.with_select_cmp(OpCmp::Eq, FieldName::named("inventory", "inventory_id"), scalar(1u64));
-        check_query(&db, &table, &mut tx, &q_2, &data)?;
+        check_query(&db, &table, &tx, &q_2, &data)?;
 
         Ok(())
     }
@@ -843,8 +811,8 @@ mod tests {
         assert_eq!(schema.table_access, StAccess::Private);
 
         let row = product!(1u64, "health");
-        let mut tx = db.begin_tx();
-        check_query(&db, &table, &mut tx, &q, &data)?;
+        let tx = db.begin_tx();
+        check_query(&db, &table, &tx, &q, &data)?;
 
         //SELECT * FROM inventory
         let q_all = QueryExpr::new(db_table(&schema, schema.table_id));
@@ -881,7 +849,7 @@ mod tests {
             tables: vec![data.clone()],
         };
 
-        check_query_incr(&db, &mut tx, &s, &update, 1, &[row])?;
+        check_query_incr(&db, &tx, &s, &update, 1, &[row])?;
 
         let q = QueryExpr::new(db_table(&schema, schema.table_id));
 
@@ -890,7 +858,7 @@ mod tests {
         match run_query(
             &ExecutionContext::default(),
             &db,
-            &mut tx,
+            &tx,
             &q,
             AuthCtx::new(Identity::__dummy(), Identity::from_byte_array([1u8; 32])),
         ) {
@@ -934,8 +902,8 @@ mod tests {
             .collect::<Result<QuerySet, _>>()?;
         db.commit_tx(&ExecutionContext::default(), tx)?;
 
-        let mut tx = db.begin_tx();
-        check_query_eval(&db, &mut tx, &s, 1, &[product!(1u64, "health")])?;
+        let tx = db.begin_tx();
+        check_query_eval(&db, &tx, &s, 1, &[product!(1u64, "health")])?;
 
         let row = product!(1u64, "health");
 
@@ -959,7 +927,7 @@ mod tests {
 
         let update = DatabaseUpdate { tables: vec![data] };
 
-        check_query_incr(&db, &mut tx, &s, &update, 1, &[row])?;
+        check_query_incr(&db, &tx, &s, &update, 1, &[row])?;
 
         Ok(())
     }
@@ -967,7 +935,6 @@ mod tests {
     #[test]
     fn test_subscribe_sql() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
 
         // Create table [MobileEntityState]
         let schema = &[
@@ -985,7 +952,7 @@ mod tests {
             (1.into(), "location_x"),
             (2.into(), "location_z"),
         ];
-        create_table(&db, &mut tx, "MobileEntityState", schema, indexes)?;
+        db.create_table_for_test("MobileEntityState", schema, indexes)?;
 
         // Create table [EnemyState]
         let schema = &[
@@ -996,8 +963,7 @@ mod tests {
             ("direction", AlgebraicType::I32),
         ];
         let indexes = &[(0.into(), "entity_id")];
-        create_table(&db, &mut tx, "EnemyState", schema, indexes)?;
-        db.commit_tx(&ExecutionContext::default(), tx)?;
+        db.create_table_for_test("EnemyState", schema, indexes)?;
 
         let sql_insert = "\
         insert into MobileEntityState (entity_id, location_x, location_z, destination_x, destination_z, is_running, timestamp, dimension) values (1, 96001, 96001, 96001, 1867045146, false, 17167179743690094247, 3926297397);\
@@ -1015,14 +981,14 @@ mod tests {
             AND MobileEntityState.location_z > 96000 \
             AND MobileEntityState.location_z < 192000";
 
-        let mut tx = db.begin_tx();
+        let tx = db.begin_tx();
         let qset = compile_read_only_query(&db, &tx, &AuthCtx::for_testing(), sql_query)?;
 
         for q in qset {
             let result = run_query(
                 &ExecutionContext::default(),
                 &db,
-                &mut tx,
+                &tx,
                 q.as_expr(),
                 AuthCtx::for_testing(),
             )?;
@@ -1042,9 +1008,9 @@ mod tests {
         db.commit_tx(&ExecutionContext::default(), tx)?;
         let row_1 = product!(1u64, "health");
         let row_2 = product!(2u64, "jhon doe");
-        let mut tx = db.begin_tx();
+        let tx = db.begin_tx();
         let s = compile_read_only_query(&db, &tx, &AuthCtx::for_testing(), SUBSCRIBE_TO_ALL_QUERY)?;
-        check_query_eval(&db, &mut tx, &s, 2, &[row_1.clone(), row_2.clone()])?;
+        check_query_eval(&db, &tx, &s, 2, &[row_1.clone(), row_2.clone()])?;
 
         let row1 = TableOp {
             op_type: 0,
@@ -1076,7 +1042,7 @@ mod tests {
 
         let row_1 = product!(1u64, "health");
         let row_2 = product!(2u64, "jhon doe");
-        check_query_incr(&db, &mut tx, &s, &update, 2, &[row_1, row_2])?;
+        check_query_incr(&db, &tx, &s, &update, 2, &[row_1, row_2])?;
 
         Ok(())
     }
@@ -1084,22 +1050,20 @@ mod tests {
     #[test]
     fn test_classify() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
 
         // Create table [plain]
         let schema = &[("id", AlgebraicType::U64)];
-        create_table(&db, &mut tx, "plain", schema, &[])?;
+        db.create_table_for_test("plain", schema, &[])?;
 
         // Create table [lhs] with indexes on [id] and [x]
         let schema = &[("id", AlgebraicType::U64), ("x", AlgebraicType::I32)];
         let indexes = &[(ColId(0), "id"), (ColId(1), "x")];
-        create_table(&db, &mut tx, "lhs", schema, indexes)?;
+        db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with indexes on [id] and [y]
         let schema = &[("id", AlgebraicType::U64), ("y", AlgebraicType::I32)];
         let indexes = &[(ColId(0), "id"), (ColId(1), "y")];
-        create_table(&db, &mut tx, "rhs", schema, indexes)?;
-        db.commit_tx(&ExecutionContext::default(), tx)?;
+        db.create_table_for_test("rhs", schema, indexes)?;
 
         let tx = db.begin_tx();
         let auth = AuthCtx::for_testing();

@@ -34,6 +34,13 @@ pub trait BenchDatabase: Sized {
     /// Perform a transaction that commits many rows.
     fn insert_bulk<T: BenchTable>(&mut self, table_id: &Self::TableId, rows: Vec<T>) -> ResultBench<()>;
 
+    /// Perform a transaction that updates many rows, without
+    /// sending updated rows across a serialization boundary.
+    /// (e.g. in a module, the updates are generated *inside* the reducer).
+    /// Update logic should be fast, e.g. wrapping integer increment.
+    /// Requires that the table was created with `IndexStrategy::Unique`
+    fn update_bulk<T: BenchTable>(&mut self, table_id: &Self::TableId, row_count: u32) -> ResultBench<()>;
+
     /// Perform a transaction that iterates an entire database table.
     /// Note: this can be non-generic because none of the implementations use the relevant generic argument.
     fn iterate(&mut self, table_id: &Self::TableId) -> ResultBench<()>;
