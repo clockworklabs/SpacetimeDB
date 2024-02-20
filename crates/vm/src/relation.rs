@@ -1,6 +1,5 @@
 use derive_more::From;
 use spacetimedb_primitives::ColList;
-use spacetimedb_sats::data_key::DataKey;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::error::RelationError;
 use spacetimedb_sats::product_value::ProductValue;
@@ -12,67 +11,10 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
 
-/// Common wrapper for relational iterators that work like cursors.
-#[derive(Debug)]
-pub struct RelIter<T> {
-    pub head: Header,
-    pub row_count: RowCount,
-    pub pos: usize,
-    pub of: T,
-}
-
-impl<T> RelIter<T> {
-    pub fn new(head: Header, row_count: RowCount, of: T) -> Self {
-        Self {
-            head,
-            row_count,
-            pos: 0,
-            of,
-        }
-    }
-}
-
-/// A borrowed version of [RelValue].
-#[derive(Debug, Clone, Copy)]
-pub struct RelValueRef<'a> {
-    pub data: &'a RelValue<'a>,
-}
-
-impl<'a> RelValueRef<'a> {
-    pub fn new(data: &'a RelValue<'a>) -> Self {
-        Self { data }
-    }
-
-    pub fn get(&self, col: &'a FieldExpr, header: &'a Header) -> Result<Cow<'a, AlgebraicValue>, RelationError> {
-        let val = match col {
-            FieldExpr::Name(col) => {
-                let pos = header.column_pos_or_err(col)?.idx();
-                self.data
-                    .read_column(pos)
-                    .ok_or_else(|| RelationError::FieldNotFoundAtPos(pos, col.clone()))?
-            }
-            FieldExpr::Value(x) => Cow::Borrowed(x),
-        };
-
-        Ok(val)
-    }
-
-    pub fn project(&self, cols: &[FieldExpr], header: &'a Header) -> Result<ProductValue, RelationError> {
-        let mut elements = Vec::with_capacity(cols.len());
-
-        for col in cols {
-            elements.push(self.get(col, header)?.into_owned());
-        }
-
-        Ok(ProductValue::new(&elements))
-    }
-}
-
-/// RelValue represents a materialized row during query execution.
-/// In particular it is the type generated/consumed by a [Relation] operator.
-/// This is in contrast to a `DataRef` which represents a row belonging to a table.
-/// The difference being that a RelValue's [DataKey] is optional since relational
-/// operators can modify their input rows.
+/// RelValue represents either a reference to a row in a table,
+/// or an ephemeral row constructed during query execution.
+///
+/// A `RelValue` is the type generated/consumed by a [Relation] operator.
 #[derive(Debug, Clone)]
 pub enum RelValue<'a> {
     Row(RowRef<'a>),
@@ -80,14 +22,6 @@ pub enum RelValue<'a> {
 }
 
 impl<'a> RelValue<'a> {
-    pub fn new(data: ProductValue, _id: Option<DataKey>) -> Self {
-        RelValue::Projection(data)
-    }
-
-    pub fn as_val_ref(&'a self) -> RelValueRef<'a> {
-        RelValueRef::new(self)
-    }
-
     pub fn into_product_value(self) -> ProductValue {
         match self {
             Self::Row(row_ref) => row_ref.to_product_value(),
@@ -116,7 +50,7 @@ impl<'a> RelValue<'a> {
         RelValue::Projection(x)
     }
 
-    pub fn read_column<'b>(&'b self, col: usize) -> Option<Cow<'b, AlgebraicValue>> {
+    pub fn read_column(&self, col: usize) -> Option<Cow<'_, AlgebraicValue>> {
         match self {
             Self::Row(row_ref) => AlgebraicValue::read_column(*row_ref, col).ok().map(Cow::Owned),
             Self::Projection(pv) => pv.elements.get(col).map(Cow::Borrowed),
@@ -133,6 +67,27 @@ impl<'a> RelValue<'a> {
         } else {
             Some(ProductValue::from_iter([av]))
         }
+    }
+
+    pub fn get<'b>(&'a self, col: &'a FieldExpr, header: &'b Header) -> Result<Cow<'a, AlgebraicValue>, RelationError> {
+        let val = match col {
+            FieldExpr::Name(col) => {
+                let pos = header.column_pos_or_err(col)?.idx();
+                self.read_column(pos)
+                    .ok_or_else(|| RelationError::FieldNotFoundAtPos(pos, col.clone()))?
+            }
+            FieldExpr::Value(x) => Cow::Borrowed(x),
+        };
+
+        Ok(val)
+    }
+
+    pub fn project(&self, cols: &[FieldExpr], header: &'a Header) -> Result<ProductValue, RelationError> {
+        let mut elements = Vec::with_capacity(cols.len());
+        for col in cols {
+            elements.push(self.get(col, header)?.into_owned());
+        }
+        Ok(elements.into())
     }
 }
 
@@ -238,15 +193,14 @@ pub struct MemTable {
 }
 
 impl MemTable {
-    pub fn new(head: Header, table_access: StAccess, data: Vec<RelValue<'_>>) -> Self {
+    pub fn new(head: Header, table_access: StAccess, data: Vec<ProductValue>) -> Self {
         assert_eq!(
             head.fields.len(),
             data.first()
-                .map(RelValue::num_columns)
+                .map(|pv| pv.elements.len())
                 .unwrap_or_else(|| head.fields.len()),
             "number of columns in `header.len() != data.len()`"
         );
-        let data = data.into_iter().map(RelValue::into_product_value).collect();
         Self {
             head,
             data,
@@ -256,8 +210,7 @@ impl MemTable {
 
     pub fn from_value(of: AlgebraicValue) -> Self {
         let head = Header::for_mem_table(of.type_of().into());
-        let row = RelValue::new(of.into(), None);
-        Self::new(head, StAccess::Public, [row].into())
+        Self::new(head, StAccess::Public, [of.into()].into())
     }
 
     pub fn from_iter(head: Header, data: impl Iterator<Item = ProductValue>) -> Self {

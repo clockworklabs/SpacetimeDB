@@ -6,11 +6,12 @@ use crate::errors::ErrorVm;
 use crate::eval::{build_query, IterRows};
 use crate::expr::{Code, CrudCode, FunctionId};
 use crate::functions::FunDef;
+use crate::iterators::RelIter;
 use crate::operator::*;
 use crate::ops::logic;
 use crate::ops::math;
 use crate::rel_ops::RelOps;
-use crate::relation::{MemTable, RelIter, Table};
+use crate::relation::{MemTable, Table};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Address;
 use spacetimedb_sats::relation::Relation;
@@ -190,7 +191,7 @@ impl ProgramVm for Program {
                 let result = build_query(result, query.query)?;
 
                 let head = result.head().clone();
-                let rows: Vec<_> = result.collect_vec()?;
+                let rows: Vec<_> = result.collect_vec(|row| row.into_product_value())?;
 
                 Ok(Code::Table(MemTable::new(head, table_access, rows)))
             }

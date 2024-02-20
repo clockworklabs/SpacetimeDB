@@ -43,9 +43,9 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{Address, PrimaryKey};
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::relation::{DbTable, Header, Relation};
-use spacetimedb_sats::{AlgebraicValue, DataKey, ProductValue};
+use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::expr::{self, IndexJoin, QueryExpr};
-use spacetimedb_vm::relation::{MemTable, RelValue};
+use spacetimedb_vm::relation::MemTable;
 
 use super::query;
 
@@ -681,16 +681,11 @@ impl<'a> IncrementalJoin<'a> {
 /// Replace an [IndexJoin]'s scan or fetch operation with a delta table.
 /// A delta table consists purely of updates or changes to the base table.
 fn with_delta_table(mut join: IndexJoin, index_side: bool, delta: DatabaseTableUpdate) -> IndexJoin {
-    fn as_rel_value(op: &TableOp) -> RelValue {
-        let mut bytes: &[u8] = op.row_pk.as_ref();
-        RelValue::new(op.row.clone(), Some(DataKey::decode(&mut bytes).unwrap()))
-    }
-
     fn to_mem_table(head: Header, table_access: StAccess, delta: DatabaseTableUpdate) -> MemTable {
         MemTable::new(
             head,
             table_access,
-            delta.ops.iter().map(as_rel_value).collect::<Vec<_>>(),
+            delta.ops.into_iter().map(|op| op.row).collect::<Vec<_>>(),
         )
     }
 

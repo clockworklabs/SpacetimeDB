@@ -2,7 +2,7 @@
 //! which, for `value_a/b = page_a/b.get_row_data(offset_a/b, fixed_row_size)` typed at `ty`,
 //! compares `value_a` and `value_b`.
 //!
-//! String comparison uses lexicographic ordering of the bytes in the utf-8 encoding of the strings.
+//! String comparison uses lexicographic ordering of the bytes in the UTF-8 encoding of the strings.
 use std::cmp::Ordering;
 
 use super::{
@@ -193,7 +193,7 @@ unsafe fn cmp_vlo(ctx: &mut CmpCtx<'_, '_>) -> Ordering {
     let mut var_iter_b = unsafe { ctx.b.page.iter_vlo_data(vlr_b.first_granule) };
     loop {
         match (var_iter_a.next(), var_iter_b.next()) {
-            (Some(byte_a), Some(byte_b)) => match byte_a.cmp(&byte_b) {
+            (Some(byte_a), Some(byte_b)) => match byte_a.cmp(byte_b) {
                 Ordering::Equal => {}
                 ord => return ord,
             },

@@ -1,7 +1,8 @@
 use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
 use crate::functions::{FunDef, Param};
 use crate::operator::{Op, OpCmp, OpLogic, OpQuery};
-use crate::relation::{MemTable, RelValueRef, Table};
+use crate::relation::RelValue;
+use crate::relation::{MemTable, Table};
 use crate::types::Ty;
 use derive_more::From;
 use spacetimedb_lib::Identity;
@@ -98,14 +99,14 @@ impl ColumnOp {
         }
     }
 
-    fn reduce(&self, row: RelValueRef, value: &ColumnOp, header: &Header) -> Result<AlgebraicValue, ErrorLang> {
+    fn reduce(&self, row: &RelValue<'_>, value: &ColumnOp, header: &Header) -> Result<AlgebraicValue, ErrorLang> {
         match value {
             ColumnOp::Field(field) => Ok(row.get(field, header)?.into_owned()),
             ColumnOp::Cmp { op, lhs, rhs } => Ok(self.compare_bin_op(row, *op, lhs, rhs, header)?.into()),
         }
     }
 
-    fn reduce_bool(&self, row: RelValueRef, value: &ColumnOp, header: &Header) -> Result<bool, ErrorLang> {
+    fn reduce_bool(&self, row: &RelValue<'_>, value: &ColumnOp, header: &Header) -> Result<bool, ErrorLang> {
         match value {
             ColumnOp::Field(field) => {
                 let field = row.get(field, header)?;
@@ -121,7 +122,7 @@ impl ColumnOp {
 
     fn compare_bin_op(
         &self,
-        row: RelValueRef,
+        row: &RelValue<'_>,
         op: OpQuery,
         lhs: &ColumnOp,
         rhs: &ColumnOp,
@@ -153,7 +154,7 @@ impl ColumnOp {
         }
     }
 
-    pub fn compare(&self, row: RelValueRef, header: &Header) -> Result<bool, ErrorVm> {
+    pub fn compare(&self, row: &RelValue<'_>, header: &Header) -> Result<bool, ErrorVm> {
         match self {
             ColumnOp::Field(field) => {
                 let lhs = row.get(field, header)?;

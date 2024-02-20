@@ -1,15 +1,11 @@
 //! The [DbProgram] that execute arbitrary queries & code against the database.
-use std::collections::HashMap;
-use std::ops::{Deref, RangeBounds};
-
-use itertools::Itertools;
-use spacetimedb_lib::Address;
-
 use crate::db::cursor::{CatalogCursor, IndexCursor, TableCursor};
 use crate::db::datastore::locking_tx_datastore::IterByColEq;
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::execution_context::ExecutionContext;
+use itertools::Itertools;
 use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::Address;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::def::TableDef;
 use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldName, Header, Relation, RowCount};
@@ -18,9 +14,12 @@ use spacetimedb_vm::env::EnvDb;
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::eval::IterRows;
 use spacetimedb_vm::expr::*;
+use spacetimedb_vm::iterators::RelIter;
 use spacetimedb_vm::program::{ProgramRef, ProgramVm};
 use spacetimedb_vm::rel_ops::RelOps;
-use spacetimedb_vm::relation::{MemTable, RelIter, RelValue, RelValueRef, Table};
+use spacetimedb_vm::relation::{MemTable, RelValue, Table};
+use std::collections::HashMap;
+use std::ops::RangeBounds;
 
 pub enum TxMode<'a> {
     MutTx(&'a mut MutTx),
@@ -120,7 +119,9 @@ pub fn build_query<'a>(
                     result
                 } else {
                     let header = result.head().clone();
-                    let iter = result.project(&cols.clone(), move |row| Ok(row.project(&cols, &header)?))?;
+                    let iter = result.project(cols, move |cols, row| {
+                        Ok(RelValue::Projection(row.project(cols, &header)?))
+                    })?;
                     Box::new(iter)
                 }
             }
@@ -143,8 +144,8 @@ fn join_inner<'a>(
 ) -> Result<impl RelOps<'a> + 'a, ErrorVm> {
     let col_lhs = FieldExpr::Name(rhs.col_lhs);
     let col_rhs = FieldExpr::Name(rhs.col_rhs);
-    let key_lhs = col_lhs.clone();
-    let key_rhs = col_rhs.clone();
+    let key_lhs = [col_lhs.clone()];
+    let key_rhs = [col_rhs.clone()];
 
     let rhs = build_query(ctx, db, tx, rhs.rhs.into())?;
     let key_lhs_header = lhs.head().clone();
@@ -161,14 +162,8 @@ fn join_inner<'a>(
     lhs.join_inner(
         rhs,
         header,
-        move |row| {
-            let f = row.get(&key_lhs, &key_lhs_header)?;
-            Ok(f.deref().into())
-        },
-        move |row| {
-            let f = row.get(&key_rhs, &key_rhs_header)?;
-            Ok(f.deref().into())
-        },
+        move |row| Ok(row.project(&key_lhs, &key_lhs_header)?),
+        move |row| Ok(row.project(&key_rhs, &key_rhs_header)?),
         move |l, r| {
             let l = l.get(&col_lhs, &col_lhs_header)?;
             let r = r.get(&col_rhs, &col_rhs_header)?;
@@ -248,7 +243,7 @@ pub struct IndexSemiJoin<'a, Rhs: RelOps<'a>> {
 }
 
 impl<'a, Rhs: RelOps<'a>> IndexSemiJoin<'a, Rhs> {
-    fn filter(&self, index_row: RelValueRef) -> Result<bool, ErrorVm> {
+    fn filter(&self, index_row: &RelValue<'_>) -> Result<bool, ErrorVm> {
         Ok(if let Some(op) = &self.index_select {
             op.compare(index_row, &self.index_header)?
         } else {
@@ -256,7 +251,7 @@ impl<'a, Rhs: RelOps<'a>> IndexSemiJoin<'a, Rhs> {
         })
     }
 
-    fn map(&self, index_row: RelValue, probe_row: Option<RelValue>) -> RelValue {
+    fn map(&self, index_row: RelValue<'a>, probe_row: Option<RelValue<'a>>) -> RelValue<'a> {
         if let Some(value) = probe_row {
             if !self.return_index_rows {
                 return value;
@@ -283,8 +278,8 @@ impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoin<'a, Rhs> {
         // Return a value from the current index iterator, if not exhausted.
         if self.return_index_rows {
             while let Some(value) = self.index_iter.as_mut().and_then(|iter| iter.next()) {
-                let value = RelValue::new(value.to_product_value(), None);
-                if self.filter(value.as_val_ref())? {
+                let value = RelValue::Row(value);
+                if self.filter(&value)? {
                     return Ok(Some(self.map(value, None)));
                 }
             }
@@ -301,8 +296,8 @@ impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoin<'a, Rhs> {
                         TxMode::Tx(tx) => self.db.iter_by_col_eq(self.ctx, tx, table_id, col_id, value)?,
                     };
                     while let Some(value) = index_iter.next() {
-                        let value = RelValue::new(value.to_product_value(), None);
-                        if self.filter(value.as_val_ref())? {
+                        let value = RelValue::Row(value);
+                        if self.filter(&value)? {
                             self.index_iter = Some(index_iter);
                             return Ok(Some(self.map(value, Some(row))));
                         }
@@ -346,7 +341,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
 
         let result = build_query(self.ctx, self.db, self.tx, query)?;
         let head = result.head().clone();
-        let rows: Vec<_> = result.collect_vec()?;
+        let rows = result.collect_vec(|row| row.into_product_value())?;
 
         Ok(Code::Table(MemTable::new(head, table_access, rows)))
     }
@@ -386,9 +381,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         let result = self._eval_query(query)?;
 
         match result {
-            Code::Table(result) => {
-                self._execute_delete(&table, result.data.into_iter().map(|row| row.data).collect_vec())
-            }
+            Code::Table(result) => self._execute_delete(&table, result.data),
             _ => Ok(result),
         }
     }
@@ -470,14 +463,10 @@ impl ProgramVm for DbProgram<'_, '_> {
                 let table = delete.table.clone();
                 let result = self._eval_query(delete)?;
 
-                let deleted = match result {
-                    Code::Table(result) => result,
-                    _ => return Ok(result),
+                let Code::Table(deleted) = result else {
+                    return Ok(result);
                 };
-                self._execute_delete(
-                    &table,
-                    deleted.data.clone().into_iter().map(|row| row.data).collect_vec(),
-                )?;
+                self._execute_delete(&table, deleted.data.clone())?;
 
                 // Replace the columns in the matched rows with the assigned
                 // values. No typechecking is performed here, nor that all
@@ -493,7 +482,6 @@ impl ProgramVm for DbProgram<'_, '_> {
                     .into_iter()
                     .map(|row| {
                         let elements = row
-                            .data
                             .elements
                             .into_iter()
                             .zip(&exprs)
@@ -550,7 +538,7 @@ impl<'a> RelOps<'a> for TableCursor<'a> {
     }
 
     fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
-        Ok(self.iter.next().map(|row| RelValue::new(row.to_product_value(), None)))
+        Ok(self.iter.next().map(RelValue::Row))
     }
 }
 
@@ -564,7 +552,7 @@ impl<'a, R: RangeBounds<AlgebraicValue>> RelOps<'a> for IndexCursor<'a, R> {
     }
 
     fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
-        Ok(self.iter.next().map(|row| RelValue::new(row.to_product_value(), None)))
+        Ok(self.iter.next().map(RelValue::Row))
     }
 }
 
@@ -582,7 +570,7 @@ where
 
     fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
         if let Some(row) = self.iter.next() {
-            return Ok(Some(RelValue::new(row, None)));
+            return Ok(Some(RelValue::Projection(row)));
         };
         Ok(None)
     }
