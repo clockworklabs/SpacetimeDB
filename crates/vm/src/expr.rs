@@ -6,9 +6,7 @@ use std::hash::{Hash, Hasher};
 use std::ops::Bound;
 
 use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
-use crate::functions::{FunDef, Param};
-use crate::operator::{Op, OpCmp, OpLogic, OpQuery};
-use crate::types::Ty;
+use crate::operator::{OpCmp, OpLogic, OpQuery};
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_type::AlgebraicType;
@@ -22,54 +20,9 @@ use spacetimedb_sats::relation::{
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
 
-/// A `index` into the list of [Fun]
-pub type FunctionId = usize;
-
 /// Trait for checking if the `caller` have access to `Self`
 pub trait AuthAccess {
     fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError>;
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct TyExpr<T> {
-    pub(crate) of: T,
-    pub(crate) ty: Ty,
-}
-
-impl<T> TyExpr<T> {
-    pub fn new(of: T, ty: Ty) -> Self {
-        Self { of, ty }
-    }
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct Function {
-    pub head: FunDef,
-    pub body: Vec<Expr>,
-}
-
-impl Function {
-    pub fn new(name: &str, params: &[Param], result: AlgebraicType, body: &[Expr]) -> Self {
-        Self {
-            head: FunDef::new(name, params, result),
-            body: body.into(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct FunctionOpt {
-    pub(crate) head: FunDef,
-    pub(crate) body: Vec<ExprOpt>,
-}
-
-impl FunctionOpt {
-    pub fn new(head: FunDef, body: &[ExprOpt]) -> Self {
-        Self {
-            head,
-            body: body.into(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From)]
@@ -621,7 +574,7 @@ pub enum CrudExpr {
     Query(QueryExpr),
     Insert {
         source: SourceExpr,
-        rows: Vec<Vec<FieldExpr>>,
+        rows: Vec<ProductValue>,
     },
     Update {
         delete: QueryExpr,
@@ -652,24 +605,6 @@ impl CrudExpr {
         exprs.iter().all(|expr| matches!(expr, CrudExpr::Query(_)))
     }
 }
-
-// impl AuthAccess for CrudExpr {
-//     fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
-//         if owner == caller {
-//             return Ok(());
-//         };
-//         match self {
-//             CrudExpr::Query(from) => {
-//                 from.source.table_access() == StAccess::Public && from.query.iter().any(|x| x.check_auth(owner, caller))
-//             }
-//             CrudExpr::Insert { source, .. } => source.table_access() == StAccess::Public,
-//             CrudExpr::Update { insert, delete } => insert.check_auth(owner, caller) && delete.check_auth(owner, caller),
-//             CrudExpr::Delete { query, .. } => query.check_auth(owner, caller),
-//             CrudExpr::CreateTable { table_access, .. } => table_access == &StAccess::Public,
-//             CrudExpr::Drop { .. } => Ok(()),
-//         }
-//     }
-// }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct IndexScan {
@@ -1514,27 +1449,15 @@ impl AuthAccess for Query {
         Ok(())
     }
 }
-//
-// impl AuthAccess for QueryExpr {
-//     fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
-//         self.source.table_access() == StAccess::Public && self.query.iter().any(|x| x.check_auth(owner, caller))
-//     }
-// }
 
 #[derive(Debug, Clone, Eq, PartialEq, From)]
 pub enum Expr {
     #[from]
     Value(AlgebraicValue),
-    Ty(AlgebraicType),
-    Op(Op, Vec<Expr>),
-    Fun(Function),
     Block(Vec<Expr>),
-    CallFn(String, HashMap<String, Expr>),
-    Param(Box<(String, Expr)>),
-    Let(Box<(String, Expr)>),
     Ident(String),
-    If(Box<(Expr, Expr, Expr)>),
     Crud(Box<CrudExpr>),
+    Halt(ErrorLang),
 }
 
 impl From<QueryExpr> for Expr {
@@ -1543,56 +1466,11 @@ impl From<QueryExpr> for Expr {
     }
 }
 
-pub(crate) struct ExprAstPrinter<'a> {
-    pub(crate) ast: &'a Expr,
-}
-
-impl<'a> fmt::Display for ExprAstPrinter<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.ast {
-            Expr::Value(x) => {
-                write!(f, "Value: {x:?}")
-            }
-            Expr::Ty(x) => {
-                write!(f, "Type: {x:?}")
-            }
-            Expr::Op(x, _) => {
-                write!(f, "Op: {x}")
-            }
-            Expr::Fun(x) => {
-                write!(f, "Function: {}", x.head.name)
-            }
-            Expr::Block(_) => {
-                write!(f, "Block")
-            }
-            Expr::CallFn(x, _) => {
-                write!(f, "Call: {}", x)
-            }
-            Expr::Param(x) => {
-                write!(f, "Param: {x:?}")
-            }
-            Expr::Let(x) => {
-                write!(f, "Let: {x:?}")
-            }
-            Expr::Ident(x) => {
-                write!(f, "Ident: {x:?}")
-            }
-            Expr::If(x) => {
-                let (check, _, _) = &**x;
-                write!(f, "If: {}", ExprAstPrinter { ast: check })
-            }
-            Expr::Crud(x) => {
-                write!(f, "Crud: {x:?}")
-            }
-        }
-    }
-}
-
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum SourceExprOpt {
-    Value(TyExpr<AlgebraicValue>),
-    MemTable(TyExpr<MemTable>),
-    DbTable(TyExpr<DbTable>),
+    Value(AlgebraicValue),
+    MemTable(MemTable),
+    DbTable(DbTable),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1626,16 +1504,8 @@ pub enum CrudExprOpt {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum ExprOpt {
-    Value(TyExpr<AlgebraicValue>),
-    Ty(Ty),
-    Op(TyExpr<Op>, Vec<ExprOpt>),
-    Fun(FunctionOpt),
-    CallFn(String, Vec<ExprOpt>),
-    CallLambda(String, HashMap<String, ExprOpt>),
-    Param(Box<(String, ExprOpt)>),
-    Let(Box<(String, ExprOpt)>),
+    Value(AlgebraicValue),
     Ident(String),
-    If(Box<(ExprOpt, ExprOpt, ExprOpt)>),
     Block(Vec<ExprOpt>),
     Query(Box<QueryExprOpt>),
     Crud(Box<CrudExprOpt>),
@@ -1669,18 +1539,14 @@ impl fmt::Display for SourceExprOpt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SourceExprOpt::Value(x) => {
-                let ty = match &x.ty {
-                    Ty::Val(x) => x,
-                    x => unreachable!("Formatting of `{}`", x),
-                };
-                let x = fmt_value(ty, &x.of);
+                let x = fmt_value(&x.type_of(), x);
                 write!(f, "{x}")
             }
             SourceExprOpt::MemTable(x) => {
-                write!(f, "{:?}", x.of)
+                write!(f, "{:?}", x)
             }
             SourceExprOpt::DbTable(x) => {
-                write!(f, "{:?}", x.of)
+                write!(f, "{:?}", x)
             }
         }
     }
@@ -1722,54 +1588,10 @@ impl fmt::Display for ExprOpt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ExprOpt::Value(x) => {
-                write!(f, "{:?}", &x.of)
-            }
-            ExprOpt::Ty(x) => {
                 write!(f, "{:?}", &x)
-            }
-
-            ExprOpt::Op(op, _) => {
-                write!(f, "{:?}", op.of)
-            }
-            ExprOpt::Fun(x) => {
-                write!(f, "fn {}({:?}):{:?}", x.head.name, x.head.params, x.head.result)?;
-                writeln!(f, "{{")?;
-                writeln!(f, "{:?}", x.body)?;
-                writeln!(f, "}}")
-            }
-            ExprOpt::CallFn(x, params) => {
-                write!(f, "{}(", x)?;
-                for (pos, v) in params.iter().enumerate() {
-                    write!(f, "{v}")?;
-                    if pos + 1 < params.len() {
-                        write!(f, ", ")?;
-                    }
-                }
-                write!(f, ")",)
-            }
-            ExprOpt::CallLambda(x, params) => {
-                write!(f, "{}(", x)?;
-                for (pos, (k, v)) in params.iter().enumerate() {
-                    write!(f, "{k} = {v}")?;
-                    if pos + 1 < params.len() {
-                        write!(f, ", ")?;
-                    }
-                }
-                write!(f, ")",)
-            }
-            ExprOpt::Param(inner) => {
-                let (name, p) = &**inner;
-                write!(f, "{name} = {p}")
-            }
-            ExprOpt::Let(x) => {
-                write!(f, "{:?}", x)
             }
             ExprOpt::Ident(x) => {
                 write!(f, "{}", x)
-            }
-            ExprOpt::If(inner) => {
-                let (test, if_true, if_false) = &**inner;
-                write!(f, "if {test}\n\t{if_true}else\n\t{if_false}else")
             }
             ExprOpt::Halt(x) => {
                 write!(f, "{}", x)
@@ -1902,12 +1724,7 @@ impl AuthAccess for CrudCode {
 pub enum Code {
     Value(AlgebraicValue),
     Table(MemTable),
-    CallFn(FunctionId, Vec<Code>),
-    CallLambda(FunctionId, HashMap<String, Code>),
-    If(Box<(Code, Code, Code)>),
-    Ident(String),
     Halt(ErrorLang),
-    Fun(FunctionId),
     Block(Vec<Code>),
     Crud(CrudCode),
     Pass,
@@ -1919,11 +1736,7 @@ impl fmt::Display for Code {
             Code::Value(x) => {
                 write!(f, "{:?}", &x)
             }
-            Code::CallFn(id, _) => {
-                write!(f, "Fn({})", id)
-            }
             Code::Block(_) => write!(f, "Block"),
-            Code::If(_) => write!(f, "If"),
             x => todo!("{:?}", x),
         }
     }

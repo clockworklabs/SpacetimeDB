@@ -14,7 +14,6 @@ use spacetimedb_sats::db::def::TableDef;
 use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldName, RelValueRef, Relation};
 use spacetimedb_sats::relation::{Header, MemTable, RelIter, RelValue, RowCount, Table};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
-use spacetimedb_vm::env::EnvDb;
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::eval::IterRows;
 use spacetimedb_vm::expr::*;
@@ -428,14 +427,6 @@ impl ProgramVm for DbProgram<'_, '_> {
         Some(self.db.address())
     }
 
-    fn env(&self) -> &EnvDb {
-        unreachable!()
-    }
-
-    fn env_mut(&mut self) -> &mut EnvDb {
-        unreachable!()
-    }
-
     fn ctx(&self) -> &dyn ProgramVm {
         self as &dyn ProgramVm
     }
@@ -588,7 +579,7 @@ pub(crate) mod tests {
     use spacetimedb_sats::relation::{DbTable, FieldName};
     use spacetimedb_sats::{product, AlgebraicType, ProductType, ProductValue};
     use spacetimedb_vm::dsl::*;
-    use spacetimedb_vm::eval_query::run_ast;
+    use spacetimedb_vm::eval::run_ast;
     use spacetimedb_vm::operator::OpCmp;
 
     pub(crate) fn create_table_with_rows(

@@ -1,7 +1,7 @@
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{ProductType, ProductValue};
 use spacetimedb_sats::relation::MemTable;
-use spacetimedb_vm::eval_query::run_ast;
+use spacetimedb_vm::eval::run_ast;
 use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
 use tracing::info;
 
