@@ -62,11 +62,8 @@ pub(crate) trait StateView {
         self.iter_by_col_range(ctx, table_id, cols, value)
     }
 
-    fn schema_for_table(&self, ctx: &ExecutionContext, table_id: TableId) -> Result<Cow<'_, TableSchema>> {
-        if let Some(schema) = self.get_schema(&table_id) {
-            return Ok(Cow::Borrowed(schema));
-        }
-
+    /// Reads the schema information for the specified `table_id` directly from the database.
+    fn schema_for_table_raw(&self, ctx: &ExecutionContext, table_id: TableId) -> Result<TableSchema> {
         // Look up the table_name for the table in question.
         let st_table_table_id_col = StTableFields::TableId.col_id().into();
         let value: AlgebraicValue = table_id.into();
@@ -149,7 +146,7 @@ pub(crate) trait StateView {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        Ok(Cow::Owned(TableSchema::new(
+        Ok(TableSchema::new(
             table_id,
             table_name,
             columns,
@@ -158,7 +155,20 @@ pub(crate) trait StateView {
             sequences,
             table_type,
             table_access,
-        )))
+        ))
+    }
+
+    /// Reads the schema information for the specified `table_id`, consulting the `cache` first.
+    ///
+    /// If the schema is not found in the cache, the method calls [Self::schema_for_table_raw].
+    ///
+    /// Note: The responsibility of populating the cache is left to the caller.
+    fn schema_for_table(&self, ctx: &ExecutionContext, table_id: TableId) -> Result<Cow<'_, TableSchema>> {
+        if let Some(schema) = self.get_schema(&table_id) {
+            return Ok(Cow::Borrowed(schema));
+        }
+
+        self.schema_for_table_raw(ctx, table_id).map(Cow::Owned)
     }
 }
 

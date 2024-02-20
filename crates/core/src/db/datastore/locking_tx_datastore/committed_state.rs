@@ -259,6 +259,13 @@ impl CommittedState {
                 .inc();
         }
 
+        // Re-read the schema with the correct ids...
+        let ctx = ExecutionContext::internal(database_address);
+        for schema in system_tables() {
+            *self.tables.get_mut(&schema.table_id).unwrap().schema =
+                self.schema_for_table_raw(&ctx, schema.table_id)?;
+        }
+
         Ok(())
     }
 
