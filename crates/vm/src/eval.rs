@@ -402,7 +402,7 @@ pub fn build_query<'a>(mut result: Box<IterRows<'a>>, query: Vec<Query>) -> Resu
                 } else {
                     let header = result.head().clone();
                     let iter = result.project(cols, move |cols, row| {
-                        Ok(RelValue::Projection(row.project(cols, &header)?))
+                        Ok(RelValue::Projection(row.project_owned(cols, &header)?))
                     })?;
                     Box::new(iter)
                 }

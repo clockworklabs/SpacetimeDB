@@ -1,5 +1,4 @@
 use derive_more::From;
-use spacetimedb_primitives::ColList;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::error::RelationError;
 use spacetimedb_sats::product_value::ProductValue;
@@ -10,6 +9,7 @@ use spacetimedb_table::table::RowRef;
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
+use std::mem;
 
 /// RelValue represents either a reference to a row in a table,
 /// or an ephemeral row constructed during query execution.
@@ -22,6 +22,8 @@ pub enum RelValue<'a> {
 }
 
 impl<'a> RelValue<'a> {
+    /// Converts `self` into a `ProductValue`
+    /// either by reading a value from a table or consuming the owned product.
     pub fn into_product_value(self) -> ProductValue {
         match self {
             Self::Row(row_ref) => row_ref.to_product_value(),
@@ -29,14 +31,7 @@ impl<'a> RelValue<'a> {
         }
     }
 
-    pub fn clone_product_value(&self) -> ProductValue {
-        match self {
-            Self::Row(row_ref) => row_ref.to_product_value(),
-
-            Self::Projection(row) => row.clone(),
-        }
-    }
-
+    /// Computes the number of columns in this value.
     pub fn num_columns(&self) -> usize {
         match self {
             Self::Row(row_ref) => row_ref.row_layout().product().elements.len(),
@@ -44,28 +39,22 @@ impl<'a> RelValue<'a> {
         }
     }
 
-    pub fn extend(self, with: RelValue) -> RelValue {
+    /// Extends `self` with the columns in `other`.
+    ///
+    /// This will always cause `RowRef<'_>`s to be read out into
+    pub fn extend(self, other: RelValue<'a>) -> RelValue<'a> {
         let mut x = self.into_product_value();
-        x.elements.extend(with.into_product_value().elements);
+        x.elements.extend(other.into_product_value().elements);
         RelValue::Projection(x)
     }
 
+    /// Read the column at index `col`.
+    ///
+    /// Use `read_or_take_column` instead if you have ownership of `self`.
     pub fn read_column(&self, col: usize) -> Option<Cow<'_, AlgebraicValue>> {
         match self {
             Self::Row(row_ref) => AlgebraicValue::read_column(*row_ref, col).ok().map(Cow::Owned),
             Self::Projection(pv) => pv.elements.get(col).map(Cow::Borrowed),
-        }
-    }
-
-    pub fn project_not_empty(&self, cols: &ColList) -> Option<ProductValue> {
-        let av = match self {
-            Self::Row(row_ref) => row_ref.project_not_empty(cols).ok()?,
-            Self::Projection(pv) => pv.project_not_empty(cols).ok()?,
-        };
-        if av.is_product() {
-            Some(av.into_product().unwrap())
-        } else {
-            Some(ProductValue::from_iter([av]))
         }
     }
 
@@ -86,6 +75,35 @@ impl<'a> RelValue<'a> {
         let mut elements = Vec::with_capacity(cols.len());
         for col in cols {
             elements.push(self.get(col, header)?.into_owned());
+        }
+        Ok(elements.into())
+    }
+
+    /// Reads or takes the column at `col`.
+    /// Calling this method consumes the column at `col`
+    /// so it should not be called again for the same input.
+    fn read_or_take_column(&mut self, col: usize) -> Option<AlgebraicValue> {
+        match self {
+            Self::Row(row_ref) => AlgebraicValue::read_column(*row_ref, col).ok(),
+            Self::Projection(pv) => {
+                let elem = pv.elements.get_mut(col)?;
+                Some(mem::replace(elem, AlgebraicValue::U8(0)))
+            }
+        }
+    }
+
+    pub fn project_owned(mut self, cols: &[FieldExpr], header: &Header) -> Result<ProductValue, RelationError> {
+        let mut elements = Vec::with_capacity(cols.len());
+        for col in cols {
+            let val = match col {
+                FieldExpr::Name(col) => {
+                    let pos = header.column_pos_or_err(col)?.idx();
+                    self.read_or_take_column(pos)
+                        .ok_or_else(|| RelationError::FieldNotFoundAtPos(pos, col.clone()))?
+                }
+                FieldExpr::Value(x) => x.clone(),
+            };
+            elements.push(val);
         }
         Ok(elements.into())
     }
@@ -117,9 +135,8 @@ impl<'a> PartialEq for RelValue<'a> {
                     //   so we can trust that the pages and offsets refer to valid rows.
                     // - We checked above that the row layouts are the same,
                     //   so `layout` applies to both of them.
-                    spacetimedb_table::eq::eq_row_in_page(left_page, right_page, left_offset, right_offset, layout);
+                    spacetimedb_table::eq::eq_row_in_page(left_page, right_page, left_offset, right_offset, layout)
                 }
-                todo!("eq_row_in_table")
             }
             (left, right) => {
                 let num_columns = left.num_columns();
