@@ -519,6 +519,10 @@ impl TableSchema {
         }
     }
 
+    pub fn into_columns(self) -> Vec<ColumnSchema> {
+        self.columns
+    }
+
     /// IMPORTANT: Ban changes from outside so [Self::row_type] won't get invalidated.
     pub fn columns(&self) -> &[ColumnSchema] {
         &self.columns
