@@ -206,7 +206,7 @@ impl ServerMessage for OneOffQueryResponseMessage {
                 .into_iter()
                 .map(|table| OneOffTableJson {
                     table_name: table.head.table_name,
-                    rows: table.data.into_iter().map(|row| row.elements).collect(),
+                    rows: table.data,
                 })
                 .collect(),
         })
