@@ -17,7 +17,7 @@ use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::eval::IterRows;
 use spacetimedb_vm::expr::*;
-use spacetimedb_vm::program::{ProgramRef, ProgramVm};
+use spacetimedb_vm::program::ProgramVm;
 use spacetimedb_vm::rel_ops::RelOps;
 
 pub enum TxMode<'a> {
@@ -508,10 +508,6 @@ impl ProgramVm for DbProgram<'_, '_> {
                 Ok(result)
             }
         }
-    }
-
-    fn as_program_ref(&self) -> ProgramRef<'_> {
-        unreachable!()
     }
 }
 
