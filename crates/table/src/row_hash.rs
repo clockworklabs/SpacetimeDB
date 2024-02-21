@@ -181,7 +181,6 @@ unsafe fn hash_vlo(hasher: &mut impl Hasher, page: &Page, bytes: &Bytes, curr_of
 pub unsafe fn read_from_bytes<T: Copy>(bytes: &Bytes, curr_offset: &mut usize) -> T {
     let bytes = &bytes[*curr_offset..];
     *curr_offset += mem::size_of::<T>();
-    // TODO: Endianness concerns? Do we need to explicitly read as little-endian here?
     let ptr: *const T = bytes.as_ptr().cast();
     // SAFETY: Caller promised that `ptr` points to a `T`.
     // Moreover, `ptr` is derived from a shared reference with permission to read this range.

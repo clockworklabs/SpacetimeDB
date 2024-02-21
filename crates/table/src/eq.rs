@@ -5,7 +5,7 @@
 use super::{
     bflatn_from::read_tag,
     indexes::{Bytes, PageOffset},
-    layout::{align_to, AlgebraicTypeLayout, HasLayout, ProductTypeLayout, RowTypeLayout},
+    layout::{align_to, AlgebraicTypeLayout, HasLayout, ProductTypeLayout, RowTypeLayout, SumTypeLayout},
     page::Page,
     row_hash::read_from_bytes,
     util::{range_move, slice_assume_init_ref},
@@ -108,6 +108,27 @@ unsafe fn eq_product(ctx: &mut BinCtx<'_, '_>, ty: &ProductTypeLayout) -> bool {
         unsafe { eq_value(ctx, &elem_ty.ty) })
 }
 
+/// Adjusts `ctx.curr_offset` to the alignment of `ty` before and after `run`.
+pub(super) fn with_adjusted_align<R>(
+    ctx: &mut BinCtx<'_, '_>,
+    ty: &AlgebraicTypeLayout,
+    run: impl FnOnce(&mut BinCtx<'_, '_>) -> R,
+) -> R {
+    let ty_alignment = ty.align();
+    ctx.curr_offset = align_to(ctx.curr_offset, ty_alignment);
+    let ret = run(ctx);
+    // TODO(perf,bikeshedding): unncessary work for some cases?
+    ctx.curr_offset = align_to(ctx.curr_offset, ty_alignment);
+    ret
+}
+
+/// Constructs a new `BinCtx` for the variant with `tag` in values in `ctx` of type sum type `ty`.
+pub(super) fn variant_bin_ctx<'a, 'b>(ctx: &mut BinCtx<'a, 'b>, ty: &SumTypeLayout, tag: u8) -> BinCtx<'a, 'b> {
+    let curr_offset = ctx.curr_offset + ty.offset_of_variant_data(tag);
+    ctx.curr_offset += ty.size();
+    BinCtx { curr_offset, ..*ctx }
+}
+
 /// For `value_a/b = &ctx.a/b.bytes[range_move(0..ty.size(), *ctx.curr_offset)]` typed at `ty`,
 /// equates `value_a == value_b`, including any var-len objects,
 /// and advances the `ctx.curr_offset`.
@@ -117,10 +138,7 @@ unsafe fn eq_product(ctx: &mut BinCtx<'_, '_>, ty: &ProductTypeLayout) -> bool {
 /// 2. for any `vlr_a/b: VarLenRef` stored in `value_a/b`,
 ///   `vlr_a/b.first_offset` must either be `NULL` or point to a valid granule in `page_a/b`.
 unsafe fn eq_value(ctx: &mut BinCtx<'_, '_>, ty: &AlgebraicTypeLayout) -> bool {
-    let ty_alignment = ty.align();
-    ctx.curr_offset = align_to(ctx.curr_offset, ty_alignment);
-
-    let res = match ty {
+    with_adjusted_align(ctx, ty, |ctx| match ty {
         AlgebraicTypeLayout::Sum(ty) => {
             // Read the tags of the sum values.
             // SAFETY: `ctx.a.bytes[curr_offset..]` hold a sum value at `ty`.
@@ -134,9 +152,7 @@ unsafe fn eq_value(ctx: &mut BinCtx<'_, '_>, ty: &AlgebraicTypeLayout) -> bool {
             }
 
             // Equate the variant data values.
-            let curr_offset = ctx.curr_offset + ty.offset_of_variant_data(tag_a);
-            ctx.curr_offset += ty.size();
-            let mut ctx = BinCtx { curr_offset, ..*ctx };
+            let mut ctx = variant_bin_ctx(ctx, ty, tag_a);
             // SAFETY: `value_a/b` are valid at `ty` so given `tag`,
             // we know `data_value_a/b = &ctx.a/b.bytes[range_move(0..data_ty.size(), data_offset))`
             // are valid at `data_ty`.
@@ -176,10 +192,7 @@ unsafe fn eq_value(ctx: &mut BinCtx<'_, '_>, ty: &AlgebraicTypeLayout) -> bool {
             // to either be `NULL` or point to a valid granule in `page_a/page_b`.
             unsafe { eq_vlo(ctx) }
         }
-    };
-    // TODO(perf,bikeshedding): unncessary work for some cases?
-    ctx.curr_offset = align_to(ctx.curr_offset, ty_alignment);
-    res
+    })
 }
 
 /// Equates the bytes of two var-len objects
