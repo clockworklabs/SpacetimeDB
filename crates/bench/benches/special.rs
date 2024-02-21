@@ -9,6 +9,8 @@ use spacetimedb_bench::{
 use spacetimedb_lib::{sats, ProductValue};
 use spacetimedb_primitives::TableId;
 use spacetimedb_testing::modules::start_runtime;
+use std::hint::black_box;
+use std::time::{Duration, Instant};
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
@@ -19,6 +21,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     serialize_benchmarks::<u64_u64_u32>(c);
 
     custom_module_benchmarks(c);
+    custom_db_benchmarks(c);
 }
 
 fn custom_module_benchmarks(c: &mut Criterion) {
@@ -46,6 +49,68 @@ fn custom_module_benchmarks(c: &mut Criterion) {
                 |args| runtime.block_on(async { module.call_reducer_binary("print_many_things", args).await.unwrap() }),
                 criterion::BatchSize::PerIteration,
             )
+        });
+    }
+}
+
+fn custom_db_benchmarks(c: &mut Criterion) {
+    let runtime = start_runtime();
+
+    let config = Config {
+        storage: Storage::Memory,
+        fsync: spacetimedb::db::FsyncPolicy::Never,
+    };
+    let module = runtime.block_on(async { BENCHMARKS_MODULE.load_module(config, None).await });
+    let mut group = c.benchmark_group("special");
+    // This bench take long, so adjust for it
+    group.measurement_time(Duration::from_secs(60 * 2));
+    group.sample_size(10);
+
+    for n in [10, 100] {
+        let args = sats::product![n];
+        group.bench_function(&format!("db_game/circles/load={n}"), |b| {
+            b.iter_custom(|iters| {
+                runtime.block_on(async {
+                    module
+                        .call_reducer_binary("init_game_circles", args.clone())
+                        .await
+                        .unwrap()
+                });
+
+                let start = Instant::now();
+
+                for _ in 0..iters {
+                    black_box(
+                        runtime.block_on(async {
+                            module.call_reducer_binary("run_game_circles", args.clone()).await.ok()
+                        }),
+                    );
+                }
+
+                start.elapsed()
+            })
+        });
+    }
+
+    for n in [10, 100] {
+        let args = sats::product![n];
+        group.bench_function(&format!("db_game/ia_loop/load={n}"), |b| {
+            b.iter_custom(|_iters| {
+                runtime.block_on(async {
+                    module
+                        .call_reducer_binary("init_game_ia_loop", args.clone())
+                        .await
+                        .unwrap()
+                });
+
+                let start = Instant::now();
+
+                black_box(
+                    runtime.block_on(async { module.call_reducer_binary("run_game_ia_loop", args.clone()).await.ok() }),
+                );
+
+                start.elapsed()
+            })
         });
     }
 }
