@@ -180,7 +180,6 @@ fn print_spacetimedb_imports(output: &mut Indenter) {
 
 fn print_file_header(output: &mut Indenter) {
     print_auto_generated_file_comment(output);
-    print_lines(output, &["#![allow(unused_imports)]"]);
     print_spacetimedb_imports(output);
 }
 
@@ -733,6 +732,9 @@ pub fn autogen_rust_globals(ctx: &GenCtx, items: &[GenItem]) -> Vec<Vec<(String,
 
     // Warn people not to edit the file by hand.
     print_auto_generated_file_comment(out);
+
+    // allow unused imports, for the whole module tree
+    print_lines(out, &["#![allow(unused_imports)]", ""]);
 
     // Import everything all the other files import.
     print_spacetimedb_imports(out);

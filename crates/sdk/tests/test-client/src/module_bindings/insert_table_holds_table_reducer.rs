@@ -3,7 +3,6 @@
 
 use super::one_u_8::OneU8;
 use super::vec_u_8::VecU8;
-#[allow(unused)]
 use spacetimedb_sdk::{
     anyhow::{anyhow, Result},
     identity::Identity,

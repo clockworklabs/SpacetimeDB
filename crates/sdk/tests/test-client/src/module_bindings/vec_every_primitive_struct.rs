@@ -2,7 +2,6 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 use super::every_primitive_struct::EveryPrimitiveStruct;
-#[allow(unused)]
 use spacetimedb_sdk::{
     anyhow::{anyhow, Result},
     identity::Identity,
