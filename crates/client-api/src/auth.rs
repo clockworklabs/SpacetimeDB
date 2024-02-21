@@ -61,13 +61,13 @@ impl SpacetimeCreds {
     fn from_request_parts(parts: &request::Parts) -> Result<Option<Self>, headers::Error> {
         let res = match parts.headers.typed_try_get::<headers::Authorization<Self>>() {
             Ok(Some(headers::Authorization(creds))) => return Ok(Some(creds)),
-            Ok(None) => Ok(()),
+            Ok(None) => Ok(None),
             Err(e) => Err(e),
         };
         if let Ok(Query(creds)) = Query::<Self>::try_from_uri(&parts.uri) {
             return Ok(Some(creds));
         }
-        res.map(|()| None)
+        res
     }
 }
 
