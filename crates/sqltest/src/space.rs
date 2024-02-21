@@ -7,9 +7,9 @@ use spacetimedb::sql::compiler::compile_sql;
 use spacetimedb::sql::execute::execute_sql;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_sats::meta_type::MetaType;
+use spacetimedb_sats::relation::MemTable;
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, BuiltinType};
-use spacetimedb_vm::relation::MemTable;
 use sqllogictest::{AsyncDB, ColumnType, DBOutput};
 use std::fs;
 use std::io::Write;
@@ -116,10 +116,11 @@ impl AsyncDB for SpaceDb {
             .data
             .into_iter()
             .map(|row| {
-                row.elements
-                    .into_iter()
+                row.data
+                    .elements
+                    .iter()
                     .map(|value| match value {
-                        AlgebraicValue::Bool(x) => if x { "1" } else { "0" }.to_string(),
+                        AlgebraicValue::Bool(x) => if *x { "1" } else { "0" }.to_string(),
                         // ^-- For compat with sqlite.
                         AlgebraicValue::I8(x) => x.to_string(),
                         AlgebraicValue::U8(x) => x.to_string(),

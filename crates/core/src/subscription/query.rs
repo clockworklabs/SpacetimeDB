@@ -13,11 +13,11 @@ use regex::Regex;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Address;
 use spacetimedb_sats::db::auth::StAccess;
-use spacetimedb_sats::relation::{Column, FieldName, Header};
+use spacetimedb_sats::relation::{Column, FieldName, Header, MemTable, RelValue};
 use spacetimedb_sats::AlgebraicType;
+use spacetimedb_sats::DataKey;
 use spacetimedb_vm::expr;
 use spacetimedb_vm::expr::{Crud, CrudExpr, DbType, QueryExpr};
-use spacetimedb_vm::relation::MemTable;
 
 static WHITESPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap());
 pub const SUBSCRIBE_TO_ALL_QUERY: &str = "SELECT * FROM *";
@@ -39,7 +39,8 @@ pub fn to_mem_table_with_op_type(head: Header, table_access: StAccess, data: &Da
         t.data.extend(data.ops.iter().map(|row| {
             let mut new = row.row.clone();
             new.elements[pos.idx()] = row.op_type.into();
-            new
+            let mut bytes: &[u8] = row.row_pk.as_ref();
+            RelValue::new(new, Some(DataKey::decode(&mut bytes).unwrap()))
         }));
     } else {
         t.head.fields.push(Column::new(
@@ -50,7 +51,9 @@ pub fn to_mem_table_with_op_type(head: Header, table_access: StAccess, data: &Da
         for row in &data.ops {
             let mut new = row.row.clone();
             new.elements.push(row.op_type.into());
-            t.data.push(new);
+            let mut bytes: &[u8] = row.row_pk.as_ref();
+            t.data
+                .push(RelValue::new(new, Some(DataKey::decode(&mut bytes).unwrap())));
         }
     }
     t

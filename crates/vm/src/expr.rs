@@ -1,7 +1,12 @@
+use derive_more::From;
+use std::cmp::Ordering;
+use std::collections::{HashMap, VecDeque};
+use std::fmt;
+use std::hash::{Hash, Hasher};
+use std::ops::Bound;
+
 use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
 use crate::operator::{OpCmp, OpLogic, OpQuery};
-use crate::relation::{MemTable, RelValue, Table};
-use derive_more::From;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_type::AlgebraicType;
@@ -9,14 +14,11 @@ use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{TableDef, TableSchema};
 use spacetimedb_sats::db::error::AuthError;
-use spacetimedb_sats::relation::{Column, DbTable, FieldExpr, FieldName, Header, Relation, RowCount};
+use spacetimedb_sats::relation::{
+    Column, DbTable, FieldExpr, FieldName, Header, MemTable, RelValueRef, Relation, RowCount, Table,
+};
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
-use std::cmp::Ordering;
-use std::collections::{HashMap, VecDeque};
-use std::fmt;
-use std::hash::{Hash, Hasher};
-use std::ops::Bound;
 
 /// Trait for checking if the `caller` have access to `Self`
 pub trait AuthAccess {
@@ -51,21 +53,21 @@ impl ColumnOp {
         }
     }
 
-    fn reduce(&self, row: &RelValue<'_>, value: &ColumnOp, header: &Header) -> Result<AlgebraicValue, ErrorLang> {
+    fn reduce(&self, row: RelValueRef, value: &ColumnOp, header: &Header) -> Result<AlgebraicValue, ErrorLang> {
         match value {
-            ColumnOp::Field(field) => Ok(row.get(field, header)?.into_owned()),
+            ColumnOp::Field(field) => Ok(row.get(field, header)?.clone()),
             ColumnOp::Cmp { op, lhs, rhs } => Ok(self.compare_bin_op(row, *op, lhs, rhs, header)?.into()),
         }
     }
 
-    fn reduce_bool(&self, row: &RelValue<'_>, value: &ColumnOp, header: &Header) -> Result<bool, ErrorLang> {
+    fn reduce_bool(&self, row: RelValueRef, value: &ColumnOp, header: &Header) -> Result<bool, ErrorLang> {
         match value {
             ColumnOp::Field(field) => {
                 let field = row.get(field, header)?;
 
                 match field.as_bool() {
                     Some(b) => Ok(*b),
-                    None => Err(ErrorType::FieldBool(field.into_owned()).into()),
+                    None => Err(ErrorType::FieldBool(field.clone()).into()),
                 }
             }
             ColumnOp::Cmp { op, lhs, rhs } => Ok(self.compare_bin_op(row, *op, lhs, rhs, header)?),
@@ -74,7 +76,7 @@ impl ColumnOp {
 
     fn compare_bin_op(
         &self,
-        row: &RelValue<'_>,
+        row: RelValueRef,
         op: OpQuery,
         lhs: &ColumnOp,
         rhs: &ColumnOp,
@@ -106,7 +108,7 @@ impl ColumnOp {
         }
     }
 
-    pub fn compare(&self, row: &RelValue<'_>, header: &Header) -> Result<bool, ErrorVm> {
+    pub fn compare(&self, row: RelValueRef, header: &Header) -> Result<bool, ErrorVm> {
         match self {
             ColumnOp::Field(field) => {
                 let lhs = row.get(field, header)?;
@@ -1475,7 +1477,7 @@ impl fmt::Display for SourceExpr {
             SourceExpr::MemTable(x) => {
                 let ty = &AlgebraicType::Product(x.head().ty());
                 for row in &x.data {
-                    let x = fmt_value(ty, &row.clone().into());
+                    let x = fmt_value(ty, &row.data.clone().into());
                     write!(f, "{x}")?;
                 }
                 Ok(())
@@ -1664,8 +1666,6 @@ impl From<Code> for CodeResult {
 
 #[cfg(test)]
 mod tests {
-    use crate::relation::{MemTable, Table};
-
     use super::*;
 
     const ALICE: Identity = Identity::from_byte_array([1; 32]);

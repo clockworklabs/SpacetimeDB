@@ -42,10 +42,9 @@ use crate::{
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{Address, PrimaryKey};
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
-use spacetimedb_sats::relation::{DbTable, Header, Relation};
-use spacetimedb_sats::{AlgebraicValue, ProductValue};
+use spacetimedb_sats::relation::{DbTable, Header, MemTable, RelValue, Relation};
+use spacetimedb_sats::{AlgebraicValue, DataKey, ProductValue};
 use spacetimedb_vm::expr::{self, IndexJoin, QueryExpr};
-use spacetimedb_vm::relation::MemTable;
 
 use super::query;
 
@@ -167,6 +166,15 @@ impl TryFrom<QueryExpr> for QuerySet {
     }
 }
 
+// If a RelValue has an id (DataKey) return it directly, otherwise we must construct it from the
+// row itself which can be an expensive operation.
+fn pk_for_row(row: &RelValue) -> PrimaryKey {
+    match row.id {
+        Some(data_key) => PrimaryKey { data_key },
+        None => RelationalDB::pk_for_row(&row.data),
+    }
+}
+
 // Returns a closure for evaluating a query.
 // One that consists of updates to secondary tables only.
 // A secondary table is one whose rows are not directly returned by the query.
@@ -185,7 +193,8 @@ fn evaluator_for_secondary_updates(
             run_query(&ExecutionContext::incremental_update(db.address()), db, tx, query, auth)?
         {
             for row in data {
-                let row_pk = RelationalDB::pk_for_row(&row);
+                let row_pk = pk_for_row(&row);
+                let row = row.data;
                 out.insert(row_pk, Op { op_type, row_pk, row });
             }
         }
@@ -217,12 +226,13 @@ fn evaluator_for_primary_updates(
             let pos_op_type = pos_op_type.idx();
 
             for mut row in data {
-                let op_type = if let AlgebraicValue::U8(op) = row.elements.remove(pos_op_type) {
+                let op_type = if let AlgebraicValue::U8(op) = row.data.elements.remove(pos_op_type) {
                     op
                 } else {
                     panic!("Failed to extract `{OP_TYPE_FIELD_NAME}` from `{}`", head.table_name);
                 };
-                let row_pk = RelationalDB::pk_for_row(&row);
+                let row_pk = pk_for_row(&row);
+                let row = row.data;
                 out.insert(row_pk, Op { op_type, row_pk, row });
             }
         }
@@ -355,7 +365,7 @@ impl QuerySet {
                     .or_insert_with(|| (t.head.table_name.clone(), vec![]));
                 for table in run_query(&ExecutionContext::subscribe(db.address()), db, tx, expr, auth)? {
                     for row in table.data {
-                        let row_pk = RelationalDB::pk_for_row(&row);
+                        let row_pk = pk_for_row(&row);
 
                         //Skip rows that are already resolved in a previous subscription...
                         if seen.contains(&(t.table_id, row_pk)) {
@@ -364,6 +374,7 @@ impl QuerySet {
                         seen.insert((t.table_id, row_pk));
 
                         let row_pk = row_pk.to_bytes();
+                        let row = row.data;
                         table_row_operations.push(TableOp {
                             op_type: 1, // Insert
                             row_pk,
@@ -681,11 +692,16 @@ impl<'a> IncrementalJoin<'a> {
 /// Replace an [IndexJoin]'s scan or fetch operation with a delta table.
 /// A delta table consists purely of updates or changes to the base table.
 fn with_delta_table(mut join: IndexJoin, index_side: bool, delta: DatabaseTableUpdate) -> IndexJoin {
+    fn as_rel_value(op: &TableOp) -> RelValue {
+        let mut bytes: &[u8] = op.row_pk.as_ref();
+        RelValue::new(op.row.clone(), Some(DataKey::decode(&mut bytes).unwrap()))
+    }
+
     fn to_mem_table(head: Header, table_access: StAccess, delta: DatabaseTableUpdate) -> MemTable {
         MemTable::new(
             head,
             table_access,
-            delta.ops.into_iter().map(|op| op.row).collect::<Vec<_>>(),
+            delta.ops.iter().map(as_rel_value).collect::<Vec<_>>(),
         )
     }
 
@@ -736,10 +752,9 @@ mod tests {
     use crate::sql::compiler::compile_sql;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_sats::data_key::ToDataKey;
-    use spacetimedb_sats::relation::FieldName;
+    use spacetimedb_sats::relation::{FieldName, Table};
     use spacetimedb_sats::{product, AlgebraicType};
     use spacetimedb_vm::expr::{CrudExpr, IndexJoin, Query, SourceExpr};
-    use spacetimedb_vm::relation::Table;
 
     #[test]
     // Compile an index join after replacing the index side with a virtual table.

@@ -23,7 +23,7 @@ spacetimedb-lib = { workspace = true, features = ["serde"] }
 spacetimedb-client-api-messages.workspace = true
 spacetimedb-metrics.workspace = true
 spacetimedb-primitives.workspace = true
-spacetimedb-sats = { workspace = true, features = ["serde"] }
+spacetimedb-sats.workspace = true
 spacetimedb-table.workspace = true
 spacetimedb-vm.workspace = true
 

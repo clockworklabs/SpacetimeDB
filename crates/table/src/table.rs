@@ -668,11 +668,11 @@ impl<'a> RowRef<'a> {
         self.blob_store
     }
 
-    pub fn row_layout(&self) -> &RowTypeLayout {
+    pub(crate) fn row_layout(&self) -> &RowTypeLayout {
         &self.table.row_layout
     }
 
-    pub fn page_and_offset(&self) -> (&Page, PageOffset) {
+    pub(crate) fn page_and_offset(&self) -> (&Page, PageOffset) {
         self.table.page_and_offset(self.pointer())
     }
 }

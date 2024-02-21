@@ -7,7 +7,7 @@ use spacetimedb_primitives::{ColId, ColList};
 /// "elements" / "fields" / "factors" of other `AlgebraicValue`s.
 ///
 /// The type of a product value is a [product type](`ProductType`).
-#[derive(Debug, Clone, Ord, PartialOrd, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub struct ProductValue {
     /// The values that make up this product value.
     pub elements: Vec<AlgebraicValue>,
@@ -21,6 +21,15 @@ macro_rules! product {
     [$($elems:expr),*$(,)?] => {
         $crate::ProductValue {
             elements: vec![$($crate::AlgebraicValue::from($elems)),*],
+        }
+    }
+}
+
+impl ProductValue {
+    /// Returns a product value constructed from the given values in `elements`.
+    pub fn new(elements: &[AlgebraicValue]) -> Self {
+        Self {
+            elements: elements.into(),
         }
     }
 }
@@ -90,15 +99,16 @@ impl ProductValue {
     ///
     /// The resulting [AlgebraicValue] will wrap into a [ProductValue] when projecting multiple
     /// fields, otherwise it will consist of a single [AlgebraicValue].
+    ///
     pub fn project(&self, indexes: &[(ColId, Option<&'static str>)]) -> Result<AlgebraicValue, InvalidFieldError> {
         let fields = match indexes {
             [(index, name)] => self.get_field((*index).into(), *name)?.clone(),
             indexes => {
-                let fields = indexes
+                let fields: Result<Vec<_>, _> = indexes
                     .iter()
                     .map(|(index, name)| self.get_field((*index).into(), *name).cloned())
-                    .collect::<Result<Vec<_>, _>>()?;
-                AlgebraicValue::product(fields)
+                    .collect();
+                AlgebraicValue::Product(ProductValue::new(&fields?))
             }
         };
 
@@ -113,7 +123,8 @@ impl ProductValue {
     /// fields, otherwise it will consist of a single [AlgebraicValue].
     ///
     /// **Parameters:**
-    /// - `cols`: A [ColList] containing the indexes of fields to be projected.s
+    /// - `cols`: A [ColList] containing the indexes of fields to be projected.
+    ///
     pub fn project_not_empty(&self, cols: &ColList) -> Result<AlgebraicValue, InvalidFieldError> {
         let proj_len = cols.len();
         if proj_len == 1 {

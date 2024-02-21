@@ -10,7 +10,7 @@ use crate::json::client_api::{
 use crate::protobuf::client_api::{event, message, Event, FunctionCall, IdentityToken, Message, TransactionUpdate};
 use spacetimedb_client_api_messages::client_api::{OneOffQueryResponse, OneOffTable};
 use spacetimedb_lib::Address;
-use spacetimedb_vm::relation::MemTable;
+use spacetimedb_sats::relation::MemTable;
 
 use super::{DataMessage, Protocol};
 
@@ -206,7 +206,7 @@ impl ServerMessage for OneOffQueryResponseMessage {
                 .into_iter()
                 .map(|table| OneOffTableJson {
                     table_name: table.head.table_name,
-                    rows: table.data,
+                    rows: table.data.into_iter().map(|row| row.data.elements).collect(),
                 })
                 .collect(),
         })
@@ -227,7 +227,7 @@ impl ServerMessage for OneOffQueryResponseMessage {
                             .into_iter()
                             .map(|row| {
                                 let mut row_bytes = Vec::new();
-                                row.encode(&mut row_bytes);
+                                row.data.encode(&mut row_bytes);
                                 row_bytes
                             })
                             .collect(),

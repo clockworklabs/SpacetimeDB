@@ -1,8 +1,8 @@
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{ProductType, ProductValue};
+use spacetimedb_sats::relation::MemTable;
 use spacetimedb_vm::eval::run_ast;
 use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
-use spacetimedb_vm::relation::MemTable;
 use tracing::info;
 
 use crate::database_instance_context_controller::DatabaseInstanceContextController;
@@ -128,9 +128,10 @@ pub(crate) mod tests {
     use crate::db::datastore::traits::IsolationLevel;
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::vm::tests::create_table_with_rows;
+    use itertools::Itertools;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
-    use spacetimedb_sats::relation::Header;
+    use spacetimedb_sats::relation::{Header, RelValue};
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
     use spacetimedb_vm::dsl::{mem_table, scalar};
     use spacetimedb_vm::eval::create_game_data;
@@ -369,9 +370,27 @@ pub(crate) mod tests {
         let (db, _tmp_dir) = make_test_db()?;
 
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
-        create_table_with_rows(&db, &mut tx, "Inventory", data.inv.head.into(), &data.inv.data)?;
-        create_table_with_rows(&db, &mut tx, "Player", data.player.head.into(), &data.player.data)?;
-        create_table_with_rows(&db, &mut tx, "Location", data.location.head.into(), &data.location.data)?;
+        create_table_with_rows(
+            &db,
+            &mut tx,
+            "Inventory",
+            data.inv.head.into(),
+            &data.inv.data.iter().map(|row| row.data.clone()).collect_vec(),
+        )?;
+        create_table_with_rows(
+            &db,
+            &mut tx,
+            "Player",
+            data.player.head.into(),
+            &data.player.data.iter().map(|row| row.data.clone()).collect_vec(),
+        )?;
+        create_table_with_rows(
+            &db,
+            &mut tx,
+            "Location",
+            data.location.head.into(),
+            &data.location.data.iter().map(|row| row.data.clone()).collect_vec(),
+        )?;
         db.commit_tx(&ExecutionContext::default(), tx)?;
 
         let result = &run_for_testing(
@@ -433,7 +452,7 @@ pub(crate) mod tests {
         let mut result = result.first().unwrap().clone();
 
         let row = product!(scalar(2u64), scalar("test"));
-        input.data.push(row);
+        input.data.push(RelValue::new(row, None));
         input.data.sort();
         result.data.sort();
 
@@ -497,7 +516,7 @@ pub(crate) mod tests {
 
         let mut change = input;
         change.data.clear();
-        change.data.push(row);
+        change.data.push(RelValue::new(row, None));
 
         assert_eq!(
             change.as_without_table_name(),
@@ -514,7 +533,7 @@ pub(crate) mod tests {
             .map(|x| {
                 x.data
                     .into_iter()
-                    .map(|x| x.field_as_str(1, None).unwrap().to_string())
+                    .map(|x| x.data.field_as_str(1, None).unwrap().to_string())
                     .collect::<Vec<_>>()
             })
             .collect();

@@ -126,7 +126,7 @@ impl BenchDatabase for SpacetimeModule {
 
         let count = runtime.block_on(async move {
             let name = format!("count_{}", table_id.snake_case);
-            module.call_reducer_binary(&name, [].into()).await?;
+            module.call_reducer_binary(&name, ProductValue::new(&[])).await?;
             let logs = module.read_log(Some(1)).await;
             let message = serde_json::from_str::<LoggerRecord>(&logs)?;
             if !message.message.starts_with("COUNT: ") {
@@ -144,7 +144,7 @@ impl BenchDatabase for SpacetimeModule {
         let module = module.as_mut().unwrap();
 
         runtime.block_on(async move {
-            module.call_reducer_binary("empty", [].into()).await?;
+            module.call_reducer_binary("empty", ProductValue::new(&[])).await?;
             Ok(())
         })
     }
@@ -193,7 +193,9 @@ impl BenchDatabase for SpacetimeModule {
         let reducer_name = format!("iterate_{}", table_id.snake_case);
 
         runtime.block_on(async move {
-            module.call_reducer_binary(&reducer_name, [].into()).await?;
+            module
+                .call_reducer_binary(&reducer_name, ProductValue::new(&[]))
+                .await?;
             Ok(())
         })
     }
