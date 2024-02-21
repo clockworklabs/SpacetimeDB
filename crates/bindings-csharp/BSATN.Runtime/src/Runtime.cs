@@ -233,7 +233,7 @@ namespace SpacetimeDB.BSATN
     // Special case for byte arrays that can be dealt with more efficiently.
     public readonly struct ByteArray : IReadWrite<byte[]>
     {
-        internal static readonly ByteArray Instance = new();
+        public static readonly ByteArray Instance = new();
 
         public byte[] Read(BinaryReader reader) => reader.ReadBytes(reader.ReadInt32());
 

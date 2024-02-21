@@ -79,23 +79,10 @@ static class Utils
                     SpecialType.System_Single => "SpacetimeDB.BSATN.F32",
                     SpecialType.System_Double => "SpacetimeDB.BSATN.F64",
                     SpecialType.System_String => "SpacetimeDB.BSATN.String",
-                    SpecialType.None
-                        when namedType.EnumUnderlyingType is not null
-                            // check that enums also have [SpacetimeDB.Type]
-                            // we don't currently do anything special whether or not it exists but might in the future
-                            // so this requirement is mostly for future-proofing
-                            && type.GetAttributes()
-                                .Any(a =>
-                                    a.AttributeClass?.ToDisplayString()
-                                    == "SpacetimeDB.TypeAttribute"
-                                )
-                        => $"SpacetimeDB.BSATN.Enum<{type}>",
-                    // Handle generic types.
-                    SpecialType.None
-                        => GetTypeInfoForNamedType(namedType),
+                    SpecialType.None => GetTypeInfoForNamedType(namedType),
                     _
                         => throw new InvalidOperationException(
-                            $"Unsupported special type {type.SpecialType} ({type})"
+                            $"Unsupported special type {type} ({type.SpecialType})"
                         )
                 },
             IArrayTypeSymbol { ElementType: var elementType }
@@ -108,6 +95,21 @@ static class Utils
 
         static string GetTypeInfoForNamedType(INamedTypeSymbol type)
         {
+            if (type.TypeKind == TypeKind.Enum)
+            {
+                if (
+                    !type.GetAttributes()
+                        .Any(a =>
+                            a.AttributeClass?.ToDisplayString() == "SpacetimeDB.TypeAttribute"
+                        )
+                )
+                {
+                    throw new InvalidOperationException(
+                        $"Enum {type} does not have a [SpacetimeDB.Type] attribute"
+                    );
+                }
+                return $"SpacetimeDB.BSATN.Enum<{SymbolToName(type)}>";
+            }
             var result = type.OriginalDefinition.ToString() switch
             {
                 // (U)Int128 are not treated by C# as regular primitives, so we need to match them by type name.
@@ -125,7 +127,7 @@ static class Utils
             if (type.IsGenericType)
             {
                 result +=
-                    $"<{string.Join(", ", type.TypeArguments.Select(t => t.Name).Concat(type.TypeArguments.Select(GetTypeInfo)))}>";
+                    $"<{string.Join(", ", type.TypeArguments.Select(SymbolToName).Concat(type.TypeArguments.Select(GetTypeInfo)))}>";
             }
             return result;
         }

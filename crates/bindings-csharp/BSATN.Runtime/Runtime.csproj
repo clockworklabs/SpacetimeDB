@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <TargetFrameworks>netstandard2.1;net8.0</TargetFrameworks>
-    <LangVersion>latest</LangVersion>
+    <LangVersion>9</LangVersion>
     <Nullable>enable</Nullable>
     <AssemblyName>SpacetimeDB.BSATN.Runtime</AssemblyName>
     <AssemblyVersion>0.8.2</AssemblyVersion>
