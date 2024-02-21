@@ -31,17 +31,8 @@ pub unsafe fn eq_row_in_page(
     fixed_offset_b: PageOffset,
     ty: &RowTypeLayout,
 ) -> bool {
-    // Context for a row at `offset` in `page`.
-    let bytes_page = |page, offset| BytesPage {
-        page,
-        bytes: page.get_row_data(offset, ty.size()),
-    };
     // Context for the whole comparison.
-    let mut ctx = EqCtx {
-        a: bytes_page(page_a, fixed_offset_a),
-        b: bytes_page(page_b, fixed_offset_b),
-        curr_offset: 0,
-    };
+    let mut ctx = BinCtx::new(ty, page_a, page_b, fixed_offset_a, fixed_offset_b);
     // Test for equality!
     // SAFETY:
     // 1. Per requirement 1., rows `a/b` are valid at type `ty` and properly aligned for `ty`.
@@ -55,22 +46,48 @@ pub unsafe fn eq_row_in_page(
 
 /// A view into the fixed part of a row combined with the page it belongs to.
 #[derive(Clone, Copy)]
-struct BytesPage<'page> {
+pub(super) struct BytesPage<'page> {
     /// The `Bytes` of the fixed part of a row in `page`.
-    bytes: &'page Bytes,
+    pub(super) bytes: &'page Bytes,
     /// The `Page` which has the fixed part `bytes` and associated var-len objects.
-    page: &'page Page,
+    pub(super) page: &'page Page,
 }
 
-/// Comparison context used in the functions below.
+impl<'page> BytesPage<'page> {
+    /// Returns a context for a row at `offset` in `page`.
+    fn new(page: &'page Page, offset: PageOffset, ty: &RowTypeLayout) -> Self {
+        let bytes = page.get_row_data(offset, ty.size());
+        Self { page, bytes }
+    }
+}
+
+/// Context used for traversing two rows at the same time.
+///
+/// Used in the functions below and in `cmp`.
 #[derive(Clone, Copy)]
-struct EqCtx<'page_a, 'page_b> {
-    /// The view into the fixed part of row `a` in page `A` to compare against `b`.
-    a: BytesPage<'page_a>,
-    /// The view into the fixed part of row `b` in page `B` to compare against `a`.
-    b: BytesPage<'page_b>,
+pub(super) struct BinCtx<'page_a, 'page_b> {
+    /// The view into the fixed part of row `a` in page `A`.
+    pub(super) a: BytesPage<'page_a>,
+    /// The view into the fixed part of row `b` in page `B`.
+    pub(super) b: BytesPage<'page_b>,
     /// The current offset at which some sub-object of both `a` and `b` exist.
-    curr_offset: usize,
+    pub(super) curr_offset: usize,
+}
+
+impl<'page_a, 'page_b> BinCtx<'page_a, 'page_b> {
+    /// Returns a new binary context for traversing two rows
+    /// `page_a[offset_a..]` and `page_b[offset_b..]` at the same time.
+    pub(super) fn new(
+        ty: &RowTypeLayout,
+        page_a: &'page_a Page,
+        page_b: &'page_b Page,
+        offset_a: PageOffset,
+        offset_b: PageOffset,
+    ) -> Self {
+        let a = BytesPage::new(page_a, offset_a, ty);
+        let b = BytesPage::new(page_b, offset_b, ty);
+        Self { a, b, curr_offset: 0 }
+    }
 }
 
 /// For every product field in `value_a/b = &ctx.a/b.bytes[range_move(0..ty.size(), *ctx.curr_offset)]`,
@@ -82,7 +99,7 @@ struct EqCtx<'page_a, 'page_b> {
 /// 1. `value_a/b` must be valid at type `ty` and properly aligned for `ty`.
 /// 2. for any `vlr_a/b: VarLenRef` stored in `value_a/b`,
 ///   `vlr_a/b.first_offset` must either be `NULL` or point to a valid granule in `page_a/b`.
-unsafe fn eq_product(ctx: &mut EqCtx<'_, '_>, ty: &ProductTypeLayout) -> bool {
+unsafe fn eq_product(ctx: &mut BinCtx<'_, '_>, ty: &ProductTypeLayout) -> bool {
     ty.elements.iter().all(|elem_ty|
         // SAFETY: By 1., `value_a/b` are valid at `ty`,
         // so it follows that valid and properly aligned sub-`value_a/b`s
@@ -99,7 +116,7 @@ unsafe fn eq_product(ctx: &mut EqCtx<'_, '_>, ty: &ProductTypeLayout) -> bool {
 /// 1. `value_a/b` must both be valid at type `ty` and properly aligned for `ty`.
 /// 2. for any `vlr_a/b: VarLenRef` stored in `value_a/b`,
 ///   `vlr_a/b.first_offset` must either be `NULL` or point to a valid granule in `page_a/b`.
-unsafe fn eq_value(ctx: &mut EqCtx<'_, '_>, ty: &AlgebraicTypeLayout) -> bool {
+unsafe fn eq_value(ctx: &mut BinCtx<'_, '_>, ty: &AlgebraicTypeLayout) -> bool {
     let ty_alignment = ty.align();
     ctx.curr_offset = align_to(ctx.curr_offset, ty_alignment);
 
@@ -119,7 +136,7 @@ unsafe fn eq_value(ctx: &mut EqCtx<'_, '_>, ty: &AlgebraicTypeLayout) -> bool {
             // Equate the variant data values.
             let curr_offset = ctx.curr_offset + ty.offset_of_variant_data(tag_a);
             ctx.curr_offset += ty.size();
-            let mut ctx = EqCtx { curr_offset, ..*ctx };
+            let mut ctx = BinCtx { curr_offset, ..*ctx };
             // SAFETY: `value_a/b` are valid at `ty` so given `tag`,
             // we know `data_value_a/b = &ctx.a/b.bytes[range_move(0..data_ty.size(), data_offset))`
             // are valid at `data_ty`.
@@ -175,7 +192,7 @@ unsafe fn eq_value(ctx: &mut EqCtx<'_, '_>, ty: &AlgebraicTypeLayout) -> bool {
 /// SAFETY: `data_a/b = ctx.a/b.bytes[range_move(0..size_of::<VarLenRef>(), *ctx.curr_offset)]`
 /// must be valid `vlr_a/b = VarLenRef` and `&data_a/b` must be properly aligned for a `VarLenRef`.
 /// The `vlr_a/b.first_granule`s must be `NULL` or must point to a valid granule in `ctx.a/b.page`.
-unsafe fn eq_vlo(ctx: &mut EqCtx<'_, '_>) -> bool {
+unsafe fn eq_vlo(ctx: &mut BinCtx<'_, '_>) -> bool {
     // SAFETY: We have a valid `VarLenRef` at `&data_a`.
     let vlr_a = unsafe { read_from_bytes::<VarLenRef>(ctx.a.bytes, &mut { ctx.curr_offset }) };
     // SAFETY: We have a valid `VarLenRef` at `&data_b`.
@@ -200,7 +217,7 @@ unsafe fn eq_vlo(ctx: &mut EqCtx<'_, '_>) -> bool {
 /// and advances the offset.
 ///
 /// SAFETY: `data_a/b` must both be initialized as valid `&[u8]`s.
-unsafe fn eq_byte_array(ctx: &mut EqCtx<'_, '_>, len: usize) -> bool {
+unsafe fn eq_byte_array(ctx: &mut BinCtx<'_, '_>, len: usize) -> bool {
     let data_a = &ctx.a.bytes[range_move(0..len, ctx.curr_offset)];
     let data_b = &ctx.b.bytes[range_move(0..len, ctx.curr_offset)];
     ctx.curr_offset += len;

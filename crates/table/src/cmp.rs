@@ -3,23 +3,24 @@
 //! compares `value_a` and `value_b`.
 //!
 //! String comparison uses lexicographic ordering of the bytes in the utf-8 encoding of the strings.
-use std::cmp::Ordering;
 
 use super::{
     bflatn_from::read_tag,
+    eq::BinCtx,
     indexes::{Bytes, PageOffset},
     layout::{align_to, AlgebraicTypeLayout, HasLayout, ProductTypeLayout, RowTypeLayout},
     page::Page,
     row_hash::read_from_bytes,
     var_len::VarLenRef,
 };
+use core::cmp::Ordering;
 
-/// Equates row `a` in `page_a` with its fixed part starting at `fixed_offset_a`
+/// Compares row `a` in `page_a` with its fixed part starting at `fixed_offset_a`
 /// to row `b` in `page_b` with its fixed part starting at `fixed_offset_b`.
 /// Both rows last for `ty.size()` bytes
 /// and are assumed to be typed at `ty` and must be valid for `ty`.
 ///
-/// Returns whether row `a` is equal to row `b` including their var-len objects.
+/// Returns an ordering between row `a` and row `b` including their var-len objects.
 ///
 /// # Safety
 ///
@@ -33,17 +34,8 @@ pub unsafe fn cmp_row_in_page(
     fixed_offset_b: PageOffset,
     ty: &RowTypeLayout,
 ) -> Ordering {
-    // Context for a row at `offset` in `page`.
-    let bytes_page = |page, offset| BytesPage {
-        page,
-        bytes: page.get_row_data(offset, ty.size()),
-    };
     // Context for the whole comparison.
-    let mut ctx = CmpCtx {
-        a: bytes_page(page_a, fixed_offset_a),
-        b: bytes_page(page_b, fixed_offset_b),
-        curr_offset: 0,
-    };
+    let mut ctx = BinCtx::new(ty, page_a, page_b, fixed_offset_a, fixed_offset_b);
     // Test for equality!
     // SAFETY:
     // 1. Per requirement 1., rows `a/b` are valid at type `ty` and properly aligned for `ty`.
@@ -55,26 +47,6 @@ pub unsafe fn cmp_row_in_page(
     unsafe { cmp_product(&mut ctx, ty.product()) }
 }
 
-/// A view into the fixed part of a row combined with the page it belongs to.
-#[derive(Clone, Copy)]
-struct BytesPage<'page> {
-    /// The `Bytes` of the fixed part of a row in `page`.
-    bytes: &'page Bytes,
-    /// The `Page` which has the fixed part `bytes` and associated var-len objects.
-    page: &'page Page,
-}
-
-/// Comparison context used in the functions below.
-#[derive(Clone, Copy)]
-struct CmpCtx<'page_a, 'page_b> {
-    /// The view into the fixed part of row `a` in page `A` to compare against `b`.
-    a: BytesPage<'page_a>,
-    /// The view into the fixed part of row `b` in page `B` to compare against `a`.
-    b: BytesPage<'page_b>,
-    /// The current offset at which some sub-object of both `a` and `b` exist.
-    curr_offset: usize,
-}
-
 /// For every product field in `value_a/b = &ctx.a/b.bytes[range_move(0..ty.size(), *ctx.curr_offset)]`,
 /// which is typed at `ty`,
 /// compares `value_a/value_b`, including any var-len object,
@@ -84,7 +56,7 @@ struct CmpCtx<'page_a, 'page_b> {
 /// 1. `value_a/b` must be valid at type `ty` and properly aligned for `ty`.
 /// 2. for any `vlr_a/b: VarLenRef` stored in `value_a/b`,
 ///   `vlr_a/b.first_offset` must either be `NULL` or point to a valid granule in `page_a/b`.
-unsafe fn cmp_product(ctx: &mut CmpCtx<'_, '_>, ty: &ProductTypeLayout) -> Ordering {
+unsafe fn cmp_product(ctx: &mut BinCtx<'_, '_>, ty: &ProductTypeLayout) -> Ordering {
     for field_ty in ty.elements.iter() {
         // SAFETY: By 1., `value_a/b` are valid at `ty`,
         // so it follows that valid and properly aligned sub-`value_a/b`s
@@ -106,7 +78,7 @@ unsafe fn cmp_product(ctx: &mut CmpCtx<'_, '_>, ty: &ProductTypeLayout) -> Order
 /// 1. `value_a/b` must both be valid at type `ty` and properly aligned for `ty`.
 /// 2. for any `vlr_a/b: VarLenRef` stored in `value_a/b`,
 ///   `vlr_a/b.first_offset` must either be `NULL` or point to a valid granule in `page_a/b`.
-unsafe fn cmp_value(ctx: &mut CmpCtx<'_, '_>, ty: &AlgebraicTypeLayout) -> Ordering {
+unsafe fn cmp_value(ctx: &mut BinCtx<'_, '_>, ty: &AlgebraicTypeLayout) -> Ordering {
     let ty_alignment = ty.align();
     ctx.curr_offset = align_to(ctx.curr_offset, ty_alignment);
 
@@ -127,7 +99,7 @@ unsafe fn cmp_value(ctx: &mut CmpCtx<'_, '_>, ty: &AlgebraicTypeLayout) -> Order
             // Equate the variant data values.
             let curr_offset = ctx.curr_offset + ty.offset_of_variant_data(tag_a);
             ctx.curr_offset += ty.size();
-            let mut ctx = CmpCtx { curr_offset, ..*ctx };
+            let mut ctx = BinCtx { curr_offset, ..*ctx };
             // SAFETY: `value_a/b` are valid at `ty` so given `tag`,
             // we know `data_value_a/b = &ctx.a/b.bytes[range_move(0..data_ty.size(), data_offset))`
             // are valid at `data_ty`.
@@ -179,7 +151,7 @@ unsafe fn cmp_value(ctx: &mut CmpCtx<'_, '_>, ty: &AlgebraicTypeLayout) -> Order
 /// SAFETY: `data_a/b = ctx.a/b.bytes[range_move(0..size_of::<VarLenRef>(), *ctx.curr_offset)]`
 /// must be valid `vlr_a/b = VarLenRef` and `&data_a/b` must be properly aligned for a `VarLenRef`.
 /// The `vlr_a/b.first_granule`s must be `NULL` or must point to a valid granule in `ctx.a/b.page`.
-unsafe fn cmp_vlo(ctx: &mut CmpCtx<'_, '_>) -> Ordering {
+unsafe fn cmp_vlo(ctx: &mut BinCtx<'_, '_>) -> Ordering {
     // SAFETY: We have a valid `VarLenRef` at `&data_a`.
     let vlr_a = unsafe { read_from_bytes::<VarLenRef>(ctx.a.bytes, &mut { ctx.curr_offset }) };
     // SAFETY: We have a valid `VarLenRef` at `&data_b`.
@@ -193,7 +165,7 @@ unsafe fn cmp_vlo(ctx: &mut CmpCtx<'_, '_>) -> Ordering {
     let mut var_iter_b = unsafe { ctx.b.page.iter_vlo_data(vlr_b.first_granule) };
     loop {
         match (var_iter_a.next(), var_iter_b.next()) {
-            (Some(byte_a), Some(byte_b)) => match byte_a.cmp(&byte_b) {
+            (Some(byte_a), Some(byte_b)) => match byte_a.cmp(byte_b) {
                 Ordering::Equal => {}
                 ord => return ord,
             },
@@ -209,7 +181,7 @@ unsafe fn cmp_vlo(ctx: &mut CmpCtx<'_, '_>) -> Ordering {
 /// and advances the offset.
 ///
 /// SAFETY: `value_a/b` must be valid at type `ty` and properly aligned for `ty`.
-unsafe fn cmp_primitive<T: Sized + Ord + Copy>(ctx: &mut CmpCtx<'_, '_>) -> Ordering {
+unsafe fn cmp_primitive<T: Sized + Ord + Copy>(ctx: &mut BinCtx<'_, '_>) -> Ordering {
     let value_a = unsafe { read_primitive::<T>(ctx.a.bytes, ctx.curr_offset) };
     let value_b = unsafe { read_primitive::<T>(ctx.b.bytes, ctx.curr_offset) };
     ctx.curr_offset += std::mem::size_of::<T>();
@@ -221,7 +193,7 @@ unsafe fn cmp_primitive<T: Sized + Ord + Copy>(ctx: &mut CmpCtx<'_, '_>) -> Orde
 ///
 /// SAFETY: `value_a/b` must be valid at type `ty` and properly aligned for `ty`.
 unsafe fn cmp_primitive_with_conversion<Partial: Sized + Into<Total> + Copy, Total: Sized + Ord>(
-    ctx: &mut CmpCtx<'_, '_>,
+    ctx: &mut BinCtx<'_, '_>,
 ) -> Ordering {
     let value_a: Total = unsafe { read_primitive::<Partial>(ctx.a.bytes, ctx.curr_offset).into() };
     let value_b: Total = unsafe { read_primitive::<Partial>(ctx.b.bytes, ctx.curr_offset).into() };

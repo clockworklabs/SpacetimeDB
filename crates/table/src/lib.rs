@@ -10,6 +10,7 @@ pub mod bflatn_from;
 pub mod bflatn_to;
 pub mod blob_store;
 pub mod btree_index;
+pub mod cmp;
 pub mod eq;
 pub mod indexes;
 pub mod layout;

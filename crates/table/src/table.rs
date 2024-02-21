@@ -9,13 +9,11 @@ use super::{
     page::{FixedLenRowsIter, Page},
     pages::Pages,
     pointer_map::PointerMap,
+    read_column::{ReadColumn, TypeError},
     row_hash::hash_row_in_page,
     row_type_visitor::{row_type_visitor, VarLenVisitorProgram},
 };
-use crate::{
-    read_column::{ReadColumn, TypeError},
-    static_assert_size,
-};
+use crate::static_assert_size;
 use ahash::AHashMap;
 use core::fmt;
 use core::hash::{BuildHasher, Hasher};

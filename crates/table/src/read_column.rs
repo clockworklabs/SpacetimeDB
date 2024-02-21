@@ -10,11 +10,11 @@ use crate::{
     table::RowRef,
     util::slice_assume_init_ref,
 };
+use core::{cell::Cell, mem};
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer, AlgebraicType, AlgebraicValue, ArrayValue, MapValue, ProductType,
     ProductValue, SumValue,
 };
-use std::{cell::Cell, mem};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
