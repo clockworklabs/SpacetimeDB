@@ -13,7 +13,6 @@ pub use ser::Serializer;
 pub use crate::buffer::DecodeError;
 
 /// Serialize `value` into the buffered writer `w` in the BSATN format.
-#[tracing::instrument(skip_all)]
 pub fn to_writer<W: BufWriter, T: Serialize + ?Sized>(w: &mut W, value: &T) -> Result<(), ser::BsatnError> {
     value.serialize(Serializer::new(w))
 }
@@ -33,7 +32,6 @@ pub fn to_len<T: Serialize + ?Sized>(value: &T) -> Result<usize, ser::BsatnError
 }
 
 /// Deserialize a `T` from the BSATN format in the buffered `reader`.
-#[tracing::instrument(skip_all)]
 pub fn from_reader<'de, T: Deserialize<'de>>(reader: &mut impl BufReader<'de>) -> Result<T, DecodeError> {
     T::deserialize(Deserializer::new(reader))
 }
