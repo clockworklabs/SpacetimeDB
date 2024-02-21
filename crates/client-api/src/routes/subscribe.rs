@@ -13,6 +13,7 @@ use spacetimedb::client::{ClientActorId, ClientClosed, ClientConnection, DataMes
 use spacetimedb::util::future_queue;
 use spacetimedb_lib::address::AddressForUrl;
 use spacetimedb_lib::Address;
+use std::time::Instant;
 use tokio::sync::mpsc;
 
 use crate::auth::{SpacetimeAuthHeader, SpacetimeIdentity, SpacetimeIdentityToken};
@@ -173,7 +174,7 @@ async fn ws_client_actor(client: ClientConnection, mut ws: WebSocketStream, mut 
     // Build a queue of incoming messages to handle,
     // to be processed one at a time, in the order they're received.
     // TODO: do we want this to have a fixed capacity? or should it be unbounded
-    let mut handle_queue = pin!(future_queue(|message| client.handle_message(message)));
+    let mut handle_queue = pin!(future_queue(|(message, timer)| client.handle_message(message, timer)));
 
     let mut closed = false;
     loop {
@@ -250,7 +251,10 @@ async fn ws_client_actor(client: ClientConnection, mut ws: WebSocketStream, mut 
         //       and `Item::Message` comes from exactly one distinct `select!` branch.
         //       Consider merging this `match` with the previous `select!`.
         match message {
-            Item::Message(ClientMessage::Message(message)) => handle_queue.as_mut().push(message),
+            Item::Message(ClientMessage::Message(message)) => {
+                let timer = Instant::now();
+                handle_queue.as_mut().push((message, timer))
+            }
             Item::HandleResult(res) => {
                 if let Err(e) = res {
                     if let MessageHandleError::Execution(err) = e {

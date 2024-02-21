@@ -1,6 +1,8 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use crate::db::db_metrics::DB_METRICS;
 use crate::energy::EnergyQuanta;
+use crate::execution_context::WorkloadType;
 use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall};
 use crate::host::{ReducerArgs, Timestamp};
 use crate::identity::Identity;
@@ -30,7 +32,7 @@ pub enum MessageHandleError {
     Execution(#[from] MessageExecutionError),
 }
 
-pub async fn handle(client: &ClientConnection, message: DataMessage) -> Result<(), MessageHandleError> {
+pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Instant) -> Result<(), MessageHandleError> {
     let message_kind = match message {
         DataMessage::Text(_) => "text",
         DataMessage::Binary(_) => "binary",
@@ -47,12 +49,16 @@ pub async fn handle(client: &ClientConnection, message: DataMessage) -> Result<(
         .inc();
 
     match message {
-        DataMessage::Text(message) => handle_text(client, message).await,
-        DataMessage::Binary(message_buf) => handle_binary(client, message_buf).await,
+        DataMessage::Text(message) => handle_text(client, message, timer).await,
+        DataMessage::Binary(message_buf) => handle_binary(client, message_buf, timer).await,
     }
 }
 
-async fn handle_binary(client: &ClientConnection, message_buf: Vec<u8>) -> Result<(), MessageHandleError> {
+async fn handle_binary(
+    client: &ClientConnection,
+    message_buf: Vec<u8>,
+    timer: Instant,
+) -> Result<(), MessageHandleError> {
     let message = Message::decode(Bytes::from(message_buf))?;
     let message = match message.r#type {
         Some(message::Type::FunctionCall(FunctionCall { ref reducer, arg_bytes })) => {
@@ -67,7 +73,7 @@ async fn handle_binary(client: &ClientConnection, message_buf: Vec<u8>) -> Resul
         _ => return Err(MessageHandleError::InvalidMessage),
     };
 
-    message.handle(client).await?;
+    message.handle(client, timer).await?;
 
     Ok(())
 }
@@ -93,7 +99,7 @@ enum RawJsonMessage<'a> {
     },
 }
 
-async fn handle_text(client: &ClientConnection, message: String) -> Result<(), MessageHandleError> {
+async fn handle_text(client: &ClientConnection, message: String, timer: Instant) -> Result<(), MessageHandleError> {
     let message = ByteString::from(message);
     let msg = serde_json::from_str::<RawJsonMessage>(&message)?;
     let mut message_id_ = Vec::new();
@@ -118,7 +124,7 @@ async fn handle_text(client: &ClientConnection, message: String) -> Result<(), M
         }
     };
 
-    msg.handle(client).await?;
+    msg.handle(client, timer).await?;
 
     Ok(())
 }
@@ -136,19 +142,36 @@ enum DecodedMessage<'a> {
 }
 
 impl DecodedMessage<'_> {
-    async fn handle(self, client: &ClientConnection) -> Result<(), MessageExecutionError> {
+    async fn handle(self, client: &ClientConnection, timer: Instant) -> Result<(), MessageExecutionError> {
+        let address = client.module.info().address;
         let res = match self {
             DecodedMessage::Call { reducer, args } => {
                 let res = client.call_reducer(reducer, args).await;
+                DB_METRICS
+                    .request_round_trip
+                    .with_label_values(&WorkloadType::Reducer, &address, reducer)
+                    .observe(timer.elapsed().as_secs_f64());
                 res.map(drop).map_err(|e| (Some(reducer), e.into()))
             }
             DecodedMessage::Subscribe(subscription) => {
-                client.subscribe(subscription).await.map_err(|e| (None, e.into()))
+                let res = client.subscribe(subscription).await;
+                DB_METRICS
+                    .request_round_trip
+                    .with_label_values(&WorkloadType::Subscribe, &address, "")
+                    .observe(timer.elapsed().as_secs_f64());
+                res.map_err(|e| (None, e.into()))
             }
             DecodedMessage::OneOffQuery {
                 query_string: query,
                 message_id,
-            } => client.one_off_query(query, message_id).await.map_err(|err| (None, err)),
+            } => {
+                let res = client.one_off_query(query, message_id).await;
+                DB_METRICS
+                    .request_round_trip
+                    .with_label_values(&WorkloadType::Sql, &address, "")
+                    .observe(timer.elapsed().as_secs_f64());
+                res.map_err(|err| (None, err))
+            }
         };
         res.map_err(|(reducer, err)| MessageExecutionError {
             reducer: reducer.map(str::to_owned),
