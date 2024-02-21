@@ -200,6 +200,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
+    use crate::db::datastore::traits::IsolationLevel;
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::db::relational_db::MutTx;
     use crate::host::module_host::{DatabaseUpdate, TableOp};
@@ -402,7 +403,7 @@ mod tests {
     #[test]
     fn test_eval_incr_maintains_row_ids() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
 
         let schema = ProductType::from([("u8", AlgebraicType::U8)]);
         let row = product!(1u8);
@@ -448,7 +449,7 @@ mod tests {
         let indexes = &[(1.into(), "b")];
         let table_id = db.create_table_for_test("test", schema, indexes)?;
 
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
         let mut ops = Vec::new();
         for i in 0u64..9u64 {
             let row = product!(i, i);
@@ -524,7 +525,7 @@ mod tests {
         let indexes = &[(1.into(), "id")];
         let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
 
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
 
         // Insert into lhs
         for i in 0..5 {
@@ -555,7 +556,7 @@ mod tests {
             del_row: ProductValue,
             ins_row: ProductValue,
         ) -> ResultTest<()> {
-            let mut tx = db.begin_mut_tx();
+            let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
             delete_row(db, &mut tx, rhs_id, del_row);
             insert_row(db, &mut tx, rhs_id, ins_row)?;
             db.commit_tx(&ExecutionContext::default(), tx)?;
@@ -662,7 +663,7 @@ mod tests {
         {
             let lhs_row = product!(5, 10);
             let rhs_row = product!(20, 5, 3);
-            let mut tx = db.begin_mut_tx();
+            let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
             insert_row(&db, &mut tx, lhs_id, lhs_row.clone())?;
             insert_row(&db, &mut tx, rhs_id, rhs_row.clone())?;
             db.commit_tx(&ExecutionContext::default(), tx)?;
@@ -682,7 +683,8 @@ mod tests {
             assert_eq!(result.tables[0], insert_op(lhs_id, "lhs", product!(5, 10)));
 
             // Clean up tx
-            let mut tx: crate::db::datastore::locking_tx_datastore::MutTxId = db.begin_mut_tx();
+            let mut tx: crate::db::datastore::locking_tx_datastore::MutTxId =
+                db.begin_mut_tx(IsolationLevel::Serializable);
             delete_row(&db, &mut tx, lhs_id, lhs_row.clone());
             delete_row(&db, &mut tx, rhs_id, rhs_row.clone());
             db.commit_tx(&ExecutionContext::default(), tx)?;
@@ -692,7 +694,7 @@ mod tests {
         {
             let lhs_row = product!(5, 10);
             let rhs_row = product!(20, 5, 5);
-            let mut tx = db.begin_mut_tx();
+            let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
             insert_row(&db, &mut tx, lhs_id, lhs_row.clone())?;
             insert_row(&db, &mut tx, rhs_id, rhs_row.clone())?;
             db.commit_tx(&ExecutionContext::default(), tx)?;
@@ -711,7 +713,7 @@ mod tests {
             assert_eq!(result.tables.len(), 0);
 
             // Clean up tx
-            let mut tx = db.begin_mut_tx();
+            let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
             delete_row(&db, &mut tx, lhs_id, lhs_row.clone());
             delete_row(&db, &mut tx, rhs_id, rhs_row.clone());
             db.commit_tx(&ExecutionContext::default(), tx)?;
@@ -721,7 +723,7 @@ mod tests {
         {
             let lhs_row = product!(0, 5);
             let rhs_row = product!(10, 0, 2);
-            let mut tx = db.begin_mut_tx();
+            let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
             delete_row(&db, &mut tx, lhs_id, lhs_row.clone());
             delete_row(&db, &mut tx, rhs_id, rhs_row.clone());
             db.commit_tx(&ExecutionContext::default(), tx)?;
@@ -741,7 +743,7 @@ mod tests {
             assert_eq!(result.tables[0], delete_op(lhs_id, "lhs", product!(0, 5)));
 
             // Clean up tx
-            let mut tx = db.begin_mut_tx();
+            let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
             insert_row(&db, &mut tx, lhs_id, lhs_row.clone())?;
             insert_row(&db, &mut tx, rhs_id, rhs_row.clone())?;
             db.commit_tx(&ExecutionContext::default(), tx)?;
@@ -751,7 +753,7 @@ mod tests {
         {
             let lhs_row = product!(3, 8);
             let rhs_row = product!(13, 3, 5);
-            let mut tx = db.begin_mut_tx();
+            let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
             delete_row(&db, &mut tx, lhs_id, lhs_row.clone());
             delete_row(&db, &mut tx, rhs_id, rhs_row.clone());
             db.commit_tx(&ExecutionContext::default(), tx)?;
@@ -770,7 +772,7 @@ mod tests {
             assert_eq!(result.tables.len(), 0);
 
             // Clean up tx
-            let mut tx = db.begin_mut_tx();
+            let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
             insert_row(&db, &mut tx, lhs_id, lhs_row.clone())?;
             insert_row(&db, &mut tx, rhs_id, rhs_row.clone())?;
             db.commit_tx(&ExecutionContext::default(), tx)?;
@@ -782,7 +784,7 @@ mod tests {
     #[test]
     fn test_subscribe() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
 
         let (schema, table, data, q) = make_inv(&db, &mut tx, StAccess::Public)?;
         db.commit_tx(&ExecutionContext::default(), tx)?;
@@ -803,7 +805,7 @@ mod tests {
     #[test]
     fn test_subscribe_private() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
 
         let (schema, table, data, q) = make_inv(&db, &mut tx, StAccess::Private)?;
         db.commit_tx(&ExecutionContext::default(), tx)?;
@@ -884,7 +886,7 @@ mod tests {
     #[test]
     fn test_subscribe_dedup() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
 
         let (schema, _table, _data, _q) = make_inv(&db, &mut tx, StAccess::Private)?;
 
@@ -1001,7 +1003,7 @@ mod tests {
     #[test]
     fn test_subscribe_all() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
 
         let (schema_1, _, _, _) = make_inv(&db, &mut tx, StAccess::Public)?;
         let (schema_2, _, _, _) = make_player(&db, &mut tx)?;
