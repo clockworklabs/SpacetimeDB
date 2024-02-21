@@ -1466,13 +1466,6 @@ impl From<QueryExpr> for Expr {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum SourceExprOpt {
-    Value(AlgebraicValue),
-    MemTable(MemTable),
-    DbTable(DbTable),
-}
-
 pub(crate) fn fmt_value(ty: &AlgebraicType, val: &AlgebraicValue) -> String {
     let ts = Typespace::new(vec![]);
     WithTypespace::new(&ts, ty).with_value(val).to_satn()
@@ -1491,23 +1484,6 @@ impl fmt::Display for SourceExpr {
             }
             SourceExpr::DbTable(x) => {
                 write!(f, "DbTable({})", x.table_id)
-            }
-        }
-    }
-}
-
-impl fmt::Display for SourceExprOpt {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SourceExprOpt::Value(x) => {
-                let x = fmt_value(&x.type_of(), x);
-                write!(f, "{x}")
-            }
-            SourceExprOpt::MemTable(x) => {
-                write!(f, "{:?}", x)
-            }
-            SourceExprOpt::DbTable(x) => {
-                write!(f, "{:?}", x)
             }
         }
     }

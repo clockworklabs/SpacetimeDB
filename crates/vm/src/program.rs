@@ -24,8 +24,6 @@ pub trait ProgramVm {
     /// Allows to execute the query with the state carried by the implementation of this
     /// trait
     fn eval_query(&mut self, query: CrudCode) -> Result<Code, ErrorVm>;
-
-    fn as_program_ref(&self) -> ProgramRef<'_>;
 }
 
 pub struct ProgramStore<P> {
@@ -37,10 +35,6 @@ impl<P> ProgramStore<P> {
     pub fn new(p: P, code: Code) -> Self {
         Self { p, code }
     }
-}
-
-pub struct ProgramRef<'a> {
-    pub ctx: &'a dyn ProgramVm,
 }
 
 /// A default program that run in-memory without a database
@@ -104,9 +98,5 @@ impl ProgramVm for Program {
                 todo!()
             }
         }
-    }
-
-    fn as_program_ref(&self) -> ProgramRef<'_> {
-        ProgramRef { ctx: self.ctx() }
     }
 }
