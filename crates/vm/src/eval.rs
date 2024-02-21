@@ -1,12 +1,13 @@
-use spacetimedb_sats::relation::{FieldExpr, MemTable, RelIter, Relation, Table};
-use spacetimedb_sats::{product, AlgebraicType, ProductType};
-
 use crate::dsl::mem_table;
 use crate::errors::ErrorVm;
 use crate::expr::{Code, CrudCode, CrudExpr, QueryCode, QueryExpr, SourceExpr};
 use crate::expr::{Expr, Query};
+use crate::iterators::RelIter;
 use crate::program::ProgramVm;
 use crate::rel_ops::RelOps;
+use crate::relation::{MemTable, RelValue, Table};
+use spacetimedb_sats::relation::{FieldExpr, Relation};
+use spacetimedb_sats::{product, AlgebraicType, ProductType};
 
 fn compile_query(q: QueryExpr) -> QueryCode {
     match q.source {
@@ -58,10 +59,10 @@ fn compile_query_expr(q: CrudExpr) -> Code {
     }
 }
 
-pub type IterRows<'a> = dyn RelOps + 'a;
+pub type IterRows<'a> = dyn RelOps<'a> + 'a;
 
 #[tracing::instrument(skip_all)]
-pub fn build_query(mut result: Box<IterRows>, query: Vec<Query>) -> Result<Box<IterRows<'_>>, ErrorVm> {
+pub fn build_query<'a>(mut result: Box<IterRows<'a>>, query: Vec<Query>) -> Result<Box<IterRows<'a>>, ErrorVm> {
     for q in query {
         result = match q {
             Query::IndexScan(_) => {
@@ -80,7 +81,9 @@ pub fn build_query(mut result: Box<IterRows>, query: Vec<Query>) -> Result<Box<I
                     result
                 } else {
                     let header = result.head().clone();
-                    let iter = result.project(&cols.clone(), move |row| Ok(row.project(&cols, &header)?))?;
+                    let iter = result.project(cols, move |cols, row| {
+                        Ok(RelValue::Projection(row.project_owned(cols, &header)?))
+                    })?;
                     Box::new(iter)
                 }
             }
@@ -111,14 +114,8 @@ pub fn build_query(mut result: Box<IterRows>, query: Vec<Query>) -> Result<Box<I
                 let iter = lhs.join_inner(
                     rhs,
                     col_lhs_header.extend(&col_rhs_header),
-                    move |row| {
-                        let f = row.get(&key_lhs, &key_lhs_header)?;
-                        Ok(f.into())
-                    },
-                    move |row| {
-                        let f = row.get(&key_rhs, &key_rhs_header)?;
-                        Ok(f.into())
-                    },
+                    move |row| Ok(row.get(&key_lhs, &key_lhs_header)?.into_owned().into()),
+                    move |row| Ok(row.get(&key_rhs, &key_rhs_header)?.into_owned().into()),
                     move |l, r| {
                         let l = l.get(&col_lhs, &col_lhs_header)?;
                         let r = r.get(&col_rhs, &col_rhs_header)?;
@@ -231,11 +228,12 @@ mod tests {
     use super::*;
     use crate::dsl::{query, scalar};
     use crate::program::Program;
+    use crate::relation::MemTable;
     use spacetimedb_lib::identity::AuthCtx;
     use spacetimedb_lib::operator::{OpCmp, OpLogic};
     use spacetimedb_sats::db::auth::StAccess;
     use spacetimedb_sats::db::error::RelationError;
-    use spacetimedb_sats::relation::{FieldName, MemTable, RelValue};
+    use spacetimedb_sats::relation::FieldName;
 
     fn run_query(p: &mut Program, ast: Expr) -> MemTable {
         match run_ast(p, ast) {
@@ -255,7 +253,7 @@ mod tests {
         let head = q.source.head().clone();
 
         let result = run_ast(p, q.into());
-        let row = RelValue::new(scalar(1).into(), None);
+        let row = scalar(1).into();
         assert_eq!(
             result,
             Code::Table(MemTable::new(head, StAccess::Public, [row].into())),
@@ -275,7 +273,7 @@ mod tests {
         let head = q.source.head().clone();
 
         let result = run_ast(p, q.into());
-        let row = RelValue::new(input.into(), None);
+        let row = input.into();
         assert_eq!(
             result,
             Code::Table(MemTable::new(head.clone(), StAccess::Public, [row].into())),

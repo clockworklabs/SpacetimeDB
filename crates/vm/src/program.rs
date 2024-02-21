@@ -1,14 +1,16 @@
 //! Definition for a `Program` to run code.
 //!
 //! It carries an [EnvDb] with the functions, idents, types.
-use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::Address;
-use spacetimedb_sats::relation::{MemTable, RelIter, Relation, Table};
 
 use crate::errors::ErrorVm;
 use crate::eval::{build_query, IterRows};
 use crate::expr::{Code, CrudCode};
+use crate::iterators::RelIter;
 use crate::rel_ops::RelOps;
+use crate::relation::{MemTable, Table};
+use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::Address;
+use spacetimedb_sats::relation::Relation;
 
 /// A trait to allow split the execution of `programs` to allow executing
 /// `queries` that take in account each `program` state/enviroment.
@@ -78,7 +80,7 @@ impl ProgramVm for Program {
                 let result = build_query(result, query.query)?;
 
                 let head = result.head().clone();
-                let rows: Vec<_> = result.collect_vec()?;
+                let rows: Vec<_> = result.collect_vec(|row| row.into_product_value())?;
 
                 Ok(Code::Table(MemTable::new(head, table_access, rows)))
             }
