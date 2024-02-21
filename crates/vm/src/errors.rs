@@ -1,5 +1,3 @@
-use crate::operator::{Op, OpLogic};
-use crate::types::Ty;
 use spacetimedb_sats::db::error::{AuthError, RelationError};
 use spacetimedb_sats::AlgebraicValue;
 use std::fmt;
@@ -8,14 +6,6 @@ use thiserror::Error;
 /// Typing Errors
 #[derive(Error, Debug)]
 pub enum ErrorType {
-    #[error("Expect {0}, but got {1}")]
-    Expect(Ty, Ty),
-    #[error("Function {0} not found")]
-    NotFoundFun(String),
-    #[error("Binary op {0:?} expect {1} arguments, but got {2}")]
-    OpMiss(Op, usize, usize),
-    #[error("Logic op {0:?} expect arguments that resolve to `bool`, but it got the value `{{1.to_satn()}}`")]
-    OpLogic(OpLogic, AlgebraicValue),
     #[error("Field should resolve to `bool`, but it got the value `{{0.to_satn()}}`")]
     FieldBool(AlgebraicValue),
     #[error("Error Parsing `{value}` into type [{ty}]: {err}")]

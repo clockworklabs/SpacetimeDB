@@ -1,5 +1,4 @@
 //! The [DbProgram] that execute arbitrary queries & code against the database.
-use std::collections::HashMap;
 use std::ops::RangeBounds;
 
 use itertools::Itertools;
@@ -15,11 +14,10 @@ use spacetimedb_sats::db::def::TableDef;
 use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldName, RelValueRef, Relation};
 use spacetimedb_sats::relation::{Header, MemTable, RelIter, RelValue, RowCount, Table};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
-use spacetimedb_vm::env::EnvDb;
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::eval::IterRows;
 use spacetimedb_vm::expr::*;
-use spacetimedb_vm::program::{ProgramRef, ProgramVm};
+use spacetimedb_vm::program::ProgramVm;
 use spacetimedb_vm::rel_ops::RelOps;
 
 pub enum TxMode<'a> {
@@ -318,8 +316,6 @@ impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
 /// query execution
 pub struct DbProgram<'db, 'tx> {
     ctx: &'tx ExecutionContext<'tx>,
-    pub(crate) env: EnvDb,
-    pub(crate) stats: HashMap<String, u64>,
     pub(crate) db: &'db RelationalDB,
     pub(crate) tx: &'tx mut TxMode<'tx>,
     pub(crate) auth: AuthCtx,
@@ -327,16 +323,7 @@ pub struct DbProgram<'db, 'tx> {
 
 impl<'db, 'tx> DbProgram<'db, 'tx> {
     pub fn new(ctx: &'tx ExecutionContext, db: &'db RelationalDB, tx: &'tx mut TxMode<'tx>, auth: AuthCtx) -> Self {
-        let mut env = EnvDb::new();
-        Self::load_ops(&mut env);
-        Self {
-            ctx,
-            env,
-            db,
-            stats: Default::default(),
-            tx,
-            auth,
-        }
+        Self { ctx, db, tx, auth }
     }
 
     #[tracing::instrument(skip_all)]
@@ -440,14 +427,6 @@ impl ProgramVm for DbProgram<'_, '_> {
         Some(self.db.address())
     }
 
-    fn env(&self) -> &EnvDb {
-        &self.env
-    }
-
-    fn env_mut(&mut self) -> &mut EnvDb {
-        &mut self.env
-    }
-
     fn ctx(&self) -> &dyn ProgramVm {
         self as &dyn ProgramVm
     }
@@ -528,14 +507,6 @@ impl ProgramVm for DbProgram<'_, '_> {
                 let result = self._drop(&name, kind)?;
                 Ok(result)
             }
-        }
-    }
-
-    fn as_program_ref(&self) -> ProgramRef<'_> {
-        ProgramRef {
-            env: &self.env,
-            stats: &self.stats,
-            ctx: self.ctx(),
         }
     }
 }

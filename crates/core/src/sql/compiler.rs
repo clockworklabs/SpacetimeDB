@@ -5,7 +5,7 @@ use spacetimedb_primitives::*;
 use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::db::def::{TableDef, TableSchema};
 use spacetimedb_sats::relation::{self, DbTable, FieldExpr, FieldName, Header};
-use spacetimedb_sats::AlgebraicValue;
+use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::dsl::{db_table, db_table_raw, query};
 use spacetimedb_vm::expr::{ColumnOp, CrudExpr, DbType, Expr, QueryExpr, SourceExpr};
 use spacetimedb_vm::operator::OpCmp;
@@ -197,9 +197,25 @@ fn compile_insert(
 ) -> Result<CrudExpr, PlanError> {
     let db_table = compile_columns(&table, columns);
 
+    let mut rows = Vec::with_capacity(values.len());
+    for x in values {
+        let mut row = Vec::with_capacity(x.len());
+        for v in x {
+            match v {
+                FieldExpr::Name(x) => {
+                    todo!("Deal with idents in insert?: {}", x)
+                }
+                FieldExpr::Value(x) => {
+                    row.push(x);
+                }
+            }
+        }
+        rows.push(ProductValue::new(&row))
+    }
+
     Ok(CrudExpr::Insert {
         source: SourceExpr::DbTable(db_table),
-        rows: values,
+        rows,
     })
 }
 
