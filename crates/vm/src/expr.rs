@@ -1473,45 +1473,6 @@ pub enum SourceExprOpt {
     DbTable(DbTable),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct QueryExprOpt {
-    pub source: SourceExprOpt,
-    pub(crate) query: Vec<Query>,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum CrudExprOpt {
-    Insert {
-        source: SourceExprOpt,
-        rows: Vec<ProductValue>,
-    },
-    Update {
-        delete: QueryExprOpt,
-        assignments: HashMap<FieldName, FieldExpr>,
-    },
-    Delete {
-        query: QueryExprOpt,
-    },
-    CreateTable {
-        table: TableDef,
-    },
-    Drop {
-        name: String,
-        kind: DbType,
-        table_access: StAccess,
-    },
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum ExprOpt {
-    Value(AlgebraicValue),
-    Ident(String),
-    Block(Vec<ExprOpt>),
-    Query(Box<QueryExprOpt>),
-    Crud(Box<CrudExprOpt>),
-    Halt(ErrorLang),
-}
-
 pub(crate) fn fmt_value(ty: &AlgebraicType, val: &AlgebraicValue) -> String {
     let ts = Typespace::new(vec![]);
     WithTypespace::new(&ts, ty).with_value(val).to_satn()
@@ -1579,52 +1540,6 @@ impl fmt::Display for Query {
             }
             Query::JoinInner(q) => {
                 write!(f, "&inner {:?} ON {} = {}", q.rhs, q.col_lhs, q.col_rhs)
-            }
-        }
-    }
-}
-
-impl fmt::Display for ExprOpt {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ExprOpt::Value(x) => {
-                write!(f, "{:?}", &x)
-            }
-            ExprOpt::Ident(x) => {
-                write!(f, "{}", x)
-            }
-            ExprOpt::Halt(x) => {
-                write!(f, "{}", x)
-            }
-            ExprOpt::Query(q) => {
-                write!(f, "{}", q.source)?;
-                for op in &q.query {
-                    write!(f, "?{op}")?;
-                }
-                Ok(())
-            }
-            ExprOpt::Crud(x) => {
-                let x = &**x;
-                match x {
-                    CrudExprOpt::Insert { source, rows } => {
-                        write!(f, "{}", source)?;
-                        for row in rows {
-                            write!(f, "{row:?}")?;
-                        }
-                    }
-                    CrudExprOpt::Update { .. } => {}
-                    CrudExprOpt::Delete { .. } => {}
-                    CrudExprOpt::CreateTable { .. } => {}
-                    CrudExprOpt::Drop { .. } => {}
-                };
-                Ok(())
-            }
-
-            ExprOpt::Block(lines) => {
-                for x in lines {
-                    writeln!(f, "{x}")?;
-                }
-                Ok(())
             }
         }
     }

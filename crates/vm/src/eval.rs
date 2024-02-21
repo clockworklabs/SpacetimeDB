@@ -8,7 +8,7 @@ use crate::expr::{Expr, Query};
 use crate::program::ProgramVm;
 use crate::rel_ops::RelOps;
 
-pub(crate) fn compile_query(q: QueryExpr) -> QueryCode {
+fn compile_query(q: QueryExpr) -> QueryCode {
     match q.source {
         SourceExpr::MemTable(x) => QueryCode {
             table: Table::MemTable(x),
@@ -21,7 +21,7 @@ pub(crate) fn compile_query(q: QueryExpr) -> QueryCode {
     }
 }
 
-pub(crate) fn compile_query_expr(q: CrudExpr) -> Code {
+fn compile_query_expr(q: CrudExpr) -> Code {
     match q {
         CrudExpr::Query(q) => Code::Crud(CrudCode::Query(compile_query(q))),
         CrudExpr::Insert { source, rows } => {
@@ -135,13 +135,13 @@ pub fn build_query(mut result: Box<IterRows>, query: Vec<Query>) -> Result<Box<I
 
 /// Optimize & compile the [CrudExpr] for late execution
 #[tracing::instrument(skip_all)]
-pub fn build_ast(ast: CrudExpr) -> Code {
-    compile_query_expr(ast.optimize(&|_, _| i64::MAX))
+fn build_ast(ast: CrudExpr) -> Code {
+    compile_query_expr(ast)
 }
 
 /// Execute the code
 #[tracing::instrument(skip_all)]
-pub fn eval<P: ProgramVm>(p: &mut P, code: Code) -> Code {
+fn eval<P: ProgramVm>(p: &mut P, code: Code) -> Code {
     match code {
         Code::Value(_) => code.clone(),
         Code::Block(lines) => {
