@@ -303,9 +303,9 @@ mod tests {
     use spacetimedb_vm::relation::Table;
     use std::ops::Bound;
 
-    fn assert_index_scan<T: Into<ColList>>(
+    fn assert_index_scan(
         op: Query,
-        cols: T,
+        cols: impl Into<ColList>,
         low_bound: Bound<AlgebraicValue>,
         up_bound: Bound<AlgebraicValue>,
     ) -> TableId {
@@ -379,7 +379,7 @@ mod tests {
         // Assert index scan.
         assert_index_scan(
             ops.swap_remove(0),
-            ColId(0),
+            0,
             Bound::Included(1u64.into()),
             Bound::Included(1u64.into()),
         );
@@ -442,7 +442,7 @@ mod tests {
         // Assert index scan.
         assert_index_scan(
             ops.swap_remove(0),
-            ColId(1),
+            1,
             Bound::Included(2u64.into()),
             Bound::Included(2u64.into()),
         );
@@ -500,7 +500,7 @@ mod tests {
         // Assert index scan.
         assert_index_scan(
             ops.swap_remove(0),
-            col_list![ColId(0), ColId(1)],
+            col_list![0, 1],
             Bound::Included(product![2u64, 1u64].into()),
             Bound::Included(product![2u64, 1u64].into()),
         );
@@ -559,7 +559,7 @@ mod tests {
 
         assert_index_scan(
             ops.remove(0),
-            ColId(1),
+            1,
             Bound::Excluded(AlgebraicValue::U64(2)),
             Bound::Unbounded,
         );
@@ -591,7 +591,7 @@ mod tests {
 
         assert_index_scan(
             ops.remove(0),
-            ColId(1),
+            1,
             Bound::Excluded(AlgebraicValue::U64(2)),
             Bound::Excluded(AlgebraicValue::U64(5)),
         );
@@ -624,7 +624,7 @@ mod tests {
 
         assert_index_scan(
             ops.remove(0),
-            ColId(0),
+            0,
             Bound::Included(AlgebraicValue::U64(3)),
             Bound::Included(AlgebraicValue::U64(3)),
         );
@@ -669,7 +669,7 @@ mod tests {
         // First operation in the pipeline should be an index scan
         let table_id = assert_index_scan(
             query[0].clone(),
-            ColId(0),
+            0,
             Bound::Included(AlgebraicValue::U64(3)),
             Bound::Included(AlgebraicValue::U64(3)),
         );
@@ -901,7 +901,7 @@ mod tests {
         // First operation in the pipeline should be an index scan
         let table_id = assert_index_scan(
             query[0].clone(),
-            ColId(0),
+            0,
             Bound::Included(AlgebraicValue::U64(3)),
             Bound::Included(AlgebraicValue::U64(3)),
         );
@@ -941,7 +941,7 @@ mod tests {
         // The right side of the join should be an index scan
         let table_id = assert_index_scan(
             rhs[0].clone(),
-            ColId(1),
+            1,
             Bound::Unbounded,
             Bound::Excluded(AlgebraicValue::U64(4)),
         );
@@ -1018,7 +1018,7 @@ mod tests {
         // The probe side of the join should be an index scan
         let table_id = assert_index_scan(
             rhs[0].clone(),
-            ColId(1),
+            1,
             Bound::Excluded(AlgebraicValue::U64(2)),
             Bound::Excluded(AlgebraicValue::U64(4)),
         );
