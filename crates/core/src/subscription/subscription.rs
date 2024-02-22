@@ -762,41 +762,6 @@ pub fn create_table(
     db.create_table(tx, schema)
 }
 
-pub fn create_table_multi_index(
-    db: &RelationalDB,
-    tx: &mut MutTx,
-    name: &str,
-    schema: &[(&str, AlgebraicType)],
-    indexes: &[(ColId, &str)],
-) -> Result<TableId, DBError> {
-    let table_name = name.to_string();
-    let table_type = StTableType::User;
-    let table_access = StAccess::Public;
-
-    let columns = schema
-        .iter()
-        .map(|(col_name, col_type)| ColumnDef {
-            col_name: col_name.to_string(),
-            col_type: col_type.clone(),
-        })
-        .collect_vec();
-
-    let index_name = indexes.iter().map(|(_, index_name)| index_name).join("_");
-    let cols = indexes.iter().map(|(col_id, _)| *col_id).collect_vec();
-
-    let indexes = vec![IndexDef::btree(
-        index_name.to_string(),
-        cols.into_iter().collect::<ColListBuilder>().build().unwrap(),
-        false,
-    )];
-    let schema = TableDef::new(table_name, columns)
-        .with_indexes(indexes)
-        .with_type(table_type)
-        .with_access(table_access);
-
-    db.create_table(tx, schema)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

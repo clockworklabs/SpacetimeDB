@@ -292,10 +292,12 @@ mod tests {
     use super::*;
     use crate::db::datastore::traits::IsolationLevel;
     use crate::db::relational_db::tests_utils::make_test_db;
-    use crate::subscription::subscription::create_table_multi_index;
+    use crate::db::relational_db::MutTx;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::operator::OpQuery;
     use spacetimedb_primitives::{ColId, TableId};
+    use spacetimedb_sats::db::auth::StTableType;
+    use spacetimedb_sats::db::def::ColumnDef;
     use spacetimedb_sats::{product, AlgebraicType};
     use spacetimedb_vm::expr::{IndexJoin, IndexScan, JoinExpr, Query};
     use spacetimedb_vm::relation::Table;
@@ -447,6 +449,30 @@ mod tests {
         Ok(())
     }
 
+    pub fn create_table_multi_index(
+        db: &RelationalDB,
+        tx: &mut MutTx,
+        name: &str,
+        schema: &[(&str, AlgebraicType)],
+        idx_cols: ColList,
+    ) -> Result<TableId, DBError> {
+        let columns = schema
+            .iter()
+            .cloned()
+            .map(|(col_name, col_type)| ColumnDef {
+                col_name: col_name.into(),
+                col_type,
+            })
+            .collect();
+
+        let schema = TableDef::new(name.into(), columns)
+            .with_column_index(idx_cols, false)
+            .with_type(StTableType::User)
+            .with_access(StAccess::Public);
+
+        db.create_table(tx, schema)
+    }
+
     #[test]
     fn compile_index_multi_eq_and_eq() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
@@ -459,8 +485,7 @@ mod tests {
             ("c", AlgebraicType::U64),
             ("d", AlgebraicType::U64),
         ];
-        let indexes = &[(0.into(), "a"), (1.into(), "b")];
-        create_table_multi_index(&db, &mut tx, "test", schema, indexes)?;
+        create_table_multi_index(&db, &mut tx, "test", schema, col_list![0, 1])?;
 
         let sql = "select * from test where b = 2 and a = 1";
         let CrudExpr::Query(QueryExpr {
