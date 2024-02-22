@@ -295,7 +295,7 @@ mod tests {
     use crate::db::relational_db::MutTx;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::operator::OpQuery;
-    use spacetimedb_primitives::{ColId, TableId};
+    use spacetimedb_primitives::TableId;
     use spacetimedb_sats::db::auth::StTableType;
     use spacetimedb_sats::db::def::ColumnDef;
     use spacetimedb_sats::{product, AlgebraicType};

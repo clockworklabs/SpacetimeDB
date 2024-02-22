@@ -25,7 +25,7 @@
 
 use super::query;
 use crate::db::db_metrics::{DB_METRICS, MAX_QUERY_CPU_TIME};
-use crate::db::relational_db::{MutTx, Tx};
+use crate::db::relational_db::Tx;
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::{ExecutionContext, WorkloadType};
 use crate::subscription::query::{run_query, to_mem_table_with_op_type, OP_TYPE_FIELD_NAME};
@@ -36,15 +36,12 @@ use crate::{
 };
 use anyhow::Context;
 use derive_more::{Deref, DerefMut, From, IntoIterator};
-use itertools::Itertools;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{Address, PrimaryKey};
-use spacetimedb_primitives::{ColId, ColListBuilder, TableId};
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
-use spacetimedb_sats::db::def::{ColumnDef, IndexDef, TableDef};
 use spacetimedb_sats::relation::Relation;
 use spacetimedb_sats::relation::{DbTable, Header};
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductValue};
+use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::expr::{self, IndexJoin, QueryExpr};
 use spacetimedb_vm::relation::MemTable;
 use std::collections::{btree_set, BTreeSet, HashMap, HashSet};
@@ -728,38 +725,6 @@ fn with_delta_table(mut join: IndexJoin, index_side: bool, delta: DatabaseTableU
         return join;
     }
     join
-}
-
-pub fn create_table(
-    db: &RelationalDB,
-    tx: &mut MutTx,
-    name: &str,
-    schema: &[(&str, AlgebraicType)],
-    indexes: &[(ColId, &str)],
-) -> Result<TableId, DBError> {
-    let table_name = name.to_string();
-    let table_type = StTableType::User;
-    let table_access = StAccess::Public;
-
-    let columns = schema
-        .iter()
-        .map(|(col_name, col_type)| ColumnDef {
-            col_name: col_name.to_string(),
-            col_type: col_type.clone(),
-        })
-        .collect_vec();
-
-    let indexes = indexes
-        .iter()
-        .map(|(col_id, index_name)| IndexDef::btree(index_name.to_string(), *col_id, false))
-        .collect_vec();
-
-    let schema = TableDef::new(table_name, columns)
-        .with_indexes(indexes)
-        .with_type(table_type)
-        .with_access(table_access);
-
-    db.create_table(tx, schema)
 }
 
 #[cfg(test)]

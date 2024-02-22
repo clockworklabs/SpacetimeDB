@@ -440,7 +440,8 @@ impl RelationalDB {
 
         let indexes = indexes
             .iter()
-            .map(|(col_id, index_name)| IndexDef::btree(index_name.to_string(), *col_id, false))
+            .copied()
+            .map(|(col_id, index_name)| IndexDef::btree(index_name.into(), col_id, false))
             .collect_vec();
 
         let schema = TableDef::new(table_name, columns)
