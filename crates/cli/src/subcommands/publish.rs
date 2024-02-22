@@ -40,6 +40,13 @@ pub fn cli() -> clap::Command {
                 .help("The system path (absolute or relative) to the module project")
         )
         .arg(
+            Arg::new("precompiled_wasm")
+                .value_parser(clap::value_parser!(PathBuf))
+                .long("precompiled-wasm")
+                .short('w')
+                .help("Skip building the module. Instead, publish an existing wasm file at the provided path (absolute or relative).")
+        )
+        .arg(
             Arg::new("trace_log")
                 .long("trace_log")
                 .help("Turn on diagnostic/performance tracing for this project")
@@ -107,6 +114,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let anon_identity = args.get_flag("anon_identity");
     let skip_clippy = args.get_flag("skip_clippy");
     let build_debug = args.get_flag("debug");
+    let precompiled_wasm = args.get_one::<PathBuf>("precompiled_wasm");
     let database_host = config.get_host_url(server)?;
 
     let mut query_params = Vec::<(&str, &str)>::new();
@@ -137,10 +145,16 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         query_params.push(("trace_log", "true"));
     }
 
-    let path_to_wasm = if !path_to_project.is_dir() && path_to_project.extension().map_or(false, |ext| ext == "wasm") {
-        path_to_project.clone()
+    let path_to_wasm;
+    if !path_to_project.is_dir() && path_to_project.extension().map_or(false, |ext| ext == "wasm") {
+        println!("Note: Using --project-path to provide a wasm file is deprecated, and will be");
+        println!("removed in a future release. Please use --precompiled-wasm instead.");
+        path_to_wasm = path_to_project.clone();
+    } else if let Some(path) = precompiled_wasm {
+        println!("Skipping build and using precompiled wasm binary {}", path.display());
+        path_to_wasm = path.clone();
     } else {
-        crate::tasks::build(path_to_project, skip_clippy, build_debug)?
+        path_to_wasm = crate::tasks::build(path_to_project, skip_clippy, build_debug)?;
     };
     let program_bytes = fs::read(path_to_wasm)?;
     println!(
