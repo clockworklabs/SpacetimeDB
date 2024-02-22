@@ -293,6 +293,7 @@ mod tests {
     use crate::db::datastore::traits::IsolationLevel;
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::db::relational_db::MutTx;
+    use crate::execution_context::ExecutionContext;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::operator::OpQuery;
     use spacetimedb_primitives::TableId;
@@ -535,6 +536,7 @@ mod tests {
         };
         Ok(())
     }
+
     #[test]
     fn compile_index_range_open() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
@@ -1021,6 +1023,106 @@ mod tests {
             1,
             Bound::Excluded(AlgebraicValue::U64(2)),
             Bound::Excluded(AlgebraicValue::U64(4)),
+        );
+
+        assert_eq!(table_id, rhs_id);
+
+        // Followed by a selection
+        let Query::Select(ColumnOp::Cmp {
+            op: OpQuery::Cmp(OpCmp::Eq),
+            lhs: ref field,
+            rhs: ref value,
+        }) = rhs[1]
+        else {
+            panic!("unexpected operator {:#?}", rhs[0]);
+        };
+
+        let ColumnOp::Field(FieldExpr::Name(FieldName::Name { ref table, ref field })) = **field else {
+            panic!("unexpected left hand side {:#?}", field);
+        };
+
+        assert_eq!(table, "rhs");
+        assert_eq!(field, "d");
+
+        let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **value else {
+            panic!("unexpected right hand side {:#?}", value);
+        };
+        Ok(())
+    }
+
+    #[test]
+    fn compile_index_multi_join() -> ResultTest<()> {
+        let (db, _tmp) = make_test_db()?;
+
+        // Create table [lhs] with index on [b]
+        let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
+        let indexes = &[(1.into(), "b")];
+        let lhs_id = db.create_table_for_test("lhs", schema, indexes)?;
+
+        // Create table [rhs] with index on [b, c]
+        let schema = &[
+            ("b", AlgebraicType::U64),
+            ("c", AlgebraicType::U64),
+            ("d", AlgebraicType::U64),
+        ];
+        let indexes = col_list![0, 1];
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
+        let rhs_id = create_table_multi_index(&db, &mut tx, "rhs", schema, indexes)?;
+        db.commit_tx(&ExecutionContext::default(), tx)?;
+
+        let tx = db.begin_tx();
+        // Should generate an index join since there is an index on `lhs.b`.
+        // Should push the sargable range condition into the index join's probe side.
+        let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c = 2 and rhs.b = 4 and rhs.d = 3";
+        let exp = compile_sql(&db, &tx, sql)?.remove(0);
+
+        let CrudExpr::Query(QueryExpr {
+            source: SourceExpr::DbTable(DbTable { table_id, .. }),
+            query,
+            ..
+        }) = exp
+        else {
+            panic!("unexpected result from compilation: {:?}", exp);
+        };
+
+        assert_eq!(table_id, lhs_id);
+        assert_eq!(query.len(), 1);
+
+        let Query::IndexJoin(IndexJoin {
+            probe_side:
+                QueryExpr {
+                    source: SourceExpr::DbTable(DbTable { table_id, .. }),
+                    query: ref rhs,
+                },
+            probe_field:
+                FieldName::Name {
+                    table: ref probe_table,
+                    field: ref probe_field,
+                },
+            index_side: Table::DbTable(DbTable {
+                table_id: index_table, ..
+            }),
+            index_col,
+            ..
+        }) = query[0]
+        else {
+            panic!("unexpected operator {:#?}", query[0]);
+        };
+
+        assert_eq!(table_id, rhs_id);
+        assert_eq!(index_table, lhs_id);
+        assert_eq!(index_col, 1.into());
+        assert_eq!(probe_field, "b");
+        assert_eq!(probe_table, "rhs");
+
+        assert_eq!(2, rhs.len());
+
+        // The probe side of the join should be an index scan
+        let table_id = assert_index_scan(
+            rhs[0].clone(),
+            col_list![0, 1],
+            Bound::Included(product![2u64, 4u64].into()),
+            Bound::Included(product![2u64, 4u64].into()),
         );
 
         assert_eq!(table_id, rhs_id);
