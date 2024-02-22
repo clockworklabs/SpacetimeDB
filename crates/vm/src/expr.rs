@@ -884,7 +884,7 @@ pub enum ScanIndex {
 ///
 ///   -`ScanIndex::Index(Range(a > 1, a < 3))`
 ///   -`ScanIndex::Index(a = 2)`
-/// - The use of multiple tables could generated redundant/duplicate operations like `[ScanIndex::Index(a = 1), ScanIndex::Index(a = 1), ScanIndex::Scan(a = 1)]`.
+/// - The use of multiple tables could generate redundant/duplicate operations like `[ScanIndex::Index(a = 1), ScanIndex::Index(a = 1), ScanIndex::Scan(a = 1)]`.
 ///   This *can't* be handled here.
 ///
 /// # Parameters
@@ -2134,7 +2134,7 @@ mod tests {
             join.rhs,
             QueryExpr {
                 source: SourceExpr::MemTable(index_side),
-                query: vec![index_select.into()]
+                query: vec![index_select.into()],
             }
         );
 
@@ -2146,7 +2146,7 @@ mod tests {
             fields,
             &vec![
                 FieldName::named("probe", "c").into(),
-                FieldName::named("probe", "b").into()
+                FieldName::named("probe", "b").into(),
             ]
         );
     }
@@ -2257,7 +2257,7 @@ mod tests {
                     fv_eq(&col_a, &val_a),
                     fv_eq(&col_d, &val_d),
                     fv_eq(&col_c, &val_c),
-                ]
+                ],
             )
             .0,
             [idx_eq(
@@ -2275,7 +2275,7 @@ mod tests {
                     fv_eq(&col_a, &val_a),
                     fv_eq(&col_e, &val_e),
                     fv_eq(&col_d, &val_d),
-                ]
+                ],
             )
             .0,
             [
@@ -2289,7 +2289,7 @@ mod tests {
         assert_eq!(
             select_best_index(
                 &head1,
-                &[fv_eq(&col_b, &val_b), fv_eq(&col_c, &val_c), fv_eq(&col_d, &val_d),]
+                &[fv_eq(&col_b, &val_b), fv_eq(&col_c, &val_c), fv_eq(&col_d, &val_d),],
             )
             .0,
             [
@@ -2331,7 +2331,7 @@ mod tests {
                 &[
                     FieldValue::new(OpCmp::Gt, &col_a, &val_a),
                     FieldValue::new(OpCmp::Lt, &col_a, &val_b)
-                ]
+                ],
             )
             .0,
             [idx(OpCmp::Gt, &[&col_a], &val_a), idx(OpCmp::Lt, &[&col_a], &val_b)]
@@ -2344,7 +2344,7 @@ mod tests {
                 &[
                     FieldValue::new(OpCmp::Gt, &col_d, &val_d),
                     FieldValue::new(OpCmp::Lt, &col_d, &val_b)
-                ]
+                ],
             )
             .0,
             [scan(OpCmp::Gt, &col_d, &val_d), scan(OpCmp::Lt, &col_d, &val_b)]
@@ -2356,7 +2356,7 @@ mod tests {
                 &[
                     FieldValue::new(OpCmp::Gt, &col_b, &val_b),
                     FieldValue::new(OpCmp::Lt, &col_c, &val_c)
-                ]
+                ],
             )
             .0,
             [idx(OpCmp::Gt, &[&col_b], &val_b), scan(OpCmp::Lt, &col_c, &val_c)]
@@ -2370,7 +2370,7 @@ mod tests {
                     FieldValue::new(OpCmp::Eq, &col_b, &val_b),
                     FieldValue::new(OpCmp::GtEq, &col_a, &val_a),
                     FieldValue::new(OpCmp::Eq, &col_c, &val_c)
-                ]
+                ],
             )
             .0,
             [
@@ -2391,7 +2391,7 @@ mod tests {
                     FieldValue::new(OpCmp::Gt, &col_b, &val_b),
                     FieldValue::new(OpCmp::Eq, &col_a, &val_a),
                     FieldValue::new(OpCmp::Lt, &col_c, &val_c)
-                ]
+                ],
             )
             .0,
             [

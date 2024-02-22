@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use std::borrow::Cow;
 use std::collections::HashMap;
 
@@ -5,7 +6,7 @@ use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::{DBError, PlanError};
 use spacetimedb_primitives::{ColList, ConstraintKind, Constraints};
 use spacetimedb_sats::db::auth::StAccess;
-use spacetimedb_sats::db::def::{ColumnDef, ConstraintDef, FieldDef, TableDef, TableSchema};
+use spacetimedb_sats::db::def::{ColumnDef, ColumnSchema, ConstraintDef, FieldDef, TableDef, TableSchema};
 use spacetimedb_sats::db::error::RelationError;
 use spacetimedb_sats::relation::{extract_table_field, FieldExpr, FieldName};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductTypeElement};
@@ -33,6 +34,7 @@ impl Unsupported for bool {
         *self
     }
 }
+
 impl<T> Unsupported for Option<T> {
     fn unsupported(&self) -> bool {
         self.is_some()
@@ -60,7 +62,7 @@ impl Unsupported for sqlparser::ast::GroupByExpr {
     }
 }
 
-macro_rules! unsupported{
+macro_rules! unsupported {
     ($name:literal,$a:expr)=>{{
         let name = stringify!($name);
         let it = stringify!($a);
@@ -164,6 +166,13 @@ impl From {
         }))
     }
 
+    /// Returns all the columns from [Self::iter_tables], removing duplicates by `col_name`
+    pub fn iter_columns_dedup(&self) -> impl Iterator<Item = (&TableSchema, &ColumnSchema)> {
+        self.iter_tables()
+            .flat_map(|t| t.columns().iter().map(move |column| (t, column)))
+            .dedup_by(|(_, x), (_, y)| x.col_name == y.col_name)
+    }
+
     /// Returns all the table names as a `Vec<String>`, including the ones inside the joins.
     pub fn table_names(&self) -> Vec<String> {
         self.iter_tables().map(|x| x.table_name.clone()).collect()
@@ -173,17 +182,15 @@ impl From {
     /// including the ones inside the joins.
     pub fn find_field<'a>(&'a self, f: &'a str) -> Result<Vec<FieldDef>, RelationError> {
         let field = extract_table_field(f)?;
-        let fields = self.iter_tables().flat_map(|t| {
-            t.columns().iter().filter_map(|column| {
-                if column.col_name == field.field {
-                    Some(FieldDef {
-                        column,
-                        table_name: field.table.unwrap_or(&t.table_name),
-                    })
-                } else {
-                    None
-                }
-            })
+        let fields = self.iter_columns_dedup().filter_map(|(t, column)| {
+            if column.col_name == field.field {
+                Some(FieldDef {
+                    column,
+                    table_name: field.table.unwrap_or(&t.table_name),
+                })
+            } else {
+                None
+            }
         });
 
         Ok(fields.collect())
@@ -299,7 +306,7 @@ fn compile_expr_value(table: &From, field: Option<&ProductTypeElement>, of: SqlE
             x => {
                 return Err(PlanError::Unsupported {
                     feature: format!("Unsupported value: {x}."),
-                })
+                });
             }
         }),
         SqlExpr::BinaryOp { left, op, right } => {
@@ -313,7 +320,7 @@ fn compile_expr_value(table: &From, field: Option<&ProductTypeElement>, of: SqlE
         x => {
             return Err(PlanError::Unsupported {
                 feature: format!("Unsupported expression: {x}"),
-            })
+            });
         }
     }))
 }
@@ -367,7 +374,7 @@ fn compile_bin_op(
         x => {
             return Err(PlanError::Unsupported {
                 feature: format!("BinaryOperator not supported in WHERE: {x}."),
-            })
+            });
         }
     };
 
@@ -757,7 +764,7 @@ fn column_def_type(named: &String, is_null: bool, data_type: &DataType) -> Resul
         x => {
             return Err(PlanError::Unsupported {
                 feature: format!("Column {} of type {}", named, x),
-            })
+            });
         }
     };
 
@@ -798,7 +805,7 @@ fn compile_column_option(col: &SqlColumnDef) -> Result<(bool, Constraints), Plan
                     x => {
                         return Err(PlanError::Unsupported {
                             feature: format!("IDENTITY option {x:?}"),
-                        })
+                        });
                     }
                 }
             }
@@ -806,7 +813,7 @@ fn compile_column_option(col: &SqlColumnDef) -> Result<(bool, Constraints), Plan
             x => {
                 return Err(PlanError::Unsupported {
                     feature: format!("Column option {x}"),
-                })
+                });
             }
         }
     }
@@ -857,7 +864,7 @@ fn compile_drop(name: &ObjectName, kind: ObjectType) -> Result<SqlAst, PlanError
         x => {
             return Err(PlanError::Unsupported {
                 feature: format!("DROP {x}"),
-            })
+            });
         }
     };
 
@@ -902,7 +909,7 @@ fn compile_statement<T: TableSchemaView>(db: &RelationalDB, tx: &T, statement: S
                     _ => {
                         return Err(PlanError::Unsupported {
                             feature: "Insert WITHOUT values".into(),
-                        })
+                        });
                     }
                 };
 
