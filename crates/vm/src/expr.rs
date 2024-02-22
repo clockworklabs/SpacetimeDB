@@ -4,6 +4,7 @@ use crate::relation::{MemTable, RelValue, Table};
 use derive_more::From;
 use itertools::Itertools;
 use nonempty::NonEmpty;
+use smallvec::SmallVec;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_type::AlgebraicType;
@@ -25,76 +26,6 @@ pub trait AuthAccess {
     fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError>;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ColumnOpFlat {
-    Field(FieldExpr),
-    Cmp(Vec<ColumnOp>),
-}
-
-impl ColumnOpFlat {
-    /// # Returns
-    ///
-    /// - A list of [FieldValue] that *could* be answered by a `index`.
-    /// - A list of [ColumnOp] otherwise
-    ///
-    pub fn extract_fields<'a>(&'a self, table: &'a SourceExpr) -> (Vec<FieldValue>, Vec<ColumnOp>) {
-        let mut fields = Vec::new();
-        let mut expr = Vec::new();
-
-        match self {
-            ColumnOpFlat::Cmp(args) => {
-                for op in args {
-                    match op {
-                        ColumnOp::Cmp {
-                            op: OpQuery::Cmp(cmp),
-                            lhs,
-                            rhs,
-                        } => {
-                            // lhs must be a field
-                            if let ColumnOp::Field(FieldExpr::Name(ref name)) = **lhs {
-                                // rhs must be a value
-                                if let ColumnOp::Field(FieldExpr::Value(ref value)) = **rhs {
-                                    // lhs field must exist
-                                    if let Some(field) = table.get_column_by_field(name) {
-                                        fields.push(FieldValue::new(*cmp, field, value));
-                                        continue;
-                                    }
-                                }
-                            }
-                            expr.push(op.clone());
-                        }
-                        ColumnOp::Cmp {
-                            op: OpQuery::Logic(OpLogic::And),
-                            ref lhs,
-                            ref rhs,
-                        } => {
-                            // the columns must exist
-                            let Some((op_lhs, Some(column_lhs), value_lhs)) = is_column_value(table, lhs) else {
-                                expr.push(op.clone());
-                                continue;
-                            };
-                            let Some((op_rhs, Some(column_rhs), value_rhs)) = is_column_value(table, rhs) else {
-                                expr.push(op.clone());
-                                continue;
-                            };
-                            fields.push(FieldValue::new(*op_lhs, column_lhs, value_lhs));
-                            fields.push(FieldValue::new(*op_rhs, column_rhs, value_rhs));
-                        }
-                        _ => {
-                            expr.push(op.clone());
-                        }
-                    };
-                }
-            }
-            ColumnOpFlat::Field(x) => {
-                expr.push(ColumnOp::Field(x.clone()));
-            }
-        }
-
-        (fields, expr)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From)]
 pub enum ColumnOp {
     #[from]
@@ -105,6 +36,8 @@ pub enum ColumnOp {
         rhs: Box<ColumnOp>,
     },
 }
+
+type ColumnOpFlat = SmallVec<[ColumnOp; 1]>;
 
 impl ColumnOp {
     pub fn new(op: OpQuery, lhs: ColumnOp, rhs: ColumnOp) -> Self {
@@ -188,107 +121,56 @@ impl ColumnOp {
         }
     }
 
-    // Flattens a nested conjunction of AND expressions.
-    pub fn to_vec(self) -> Vec<ColumnOp> {
-        match self {
-            ColumnOp::Cmp {
-                op: OpQuery::Logic(OpLogic::And),
-                lhs,
-                rhs,
-            } => {
-                let mut lhs = lhs.to_vec();
-                let mut rhs = rhs.to_vec();
-                lhs.append(&mut rhs);
-                lhs
-            }
-            op => vec![op],
-        }
-    }
-
-    /// Flatten `Self` into a list of [ColumnOpFlat], so we can collect together all the `AND` expressions,
-    /// ie: `a = 1 AND b = 2 AND c = 3` to be `[a = 1, b = 2, c = 3]`
+    /// Flattens a nested conjunction of AND expressions.
     ///
-    /// It also split the kind of `queries` that *could* be answered by a `index`,
+    /// For example, `a = 1 AND b = 2 AND c = 3` becomes `[a = 1, b = 2, c = 3]`.
+    ///
+    /// This helps with splitting the kinds of `queries`,
+    /// that *could* be answered by a `index`,
     /// from the ones that need to be executed with a `scan`.
-    pub fn flatten_op(self) -> Vec<ColumnOpFlat> {
-        match self {
-            ColumnOp::Field(x) => vec![ColumnOpFlat::Field(x)],
-            ColumnOp::Cmp { op, lhs, rhs } => match op {
-                OpQuery::Logic(OpLogic::And) => {
-                    let mut alone = Vec::new();
-                    let mut expr: Vec<ColumnOp> = Vec::with_capacity(2);
-
-                    for x in [lhs.flatten_op(), rhs.flatten_op()].into_iter().flatten() {
-                        match x {
-                            ColumnOpFlat::Cmp(x) => expr.extend(x),
-                            ColumnOpFlat::Field(x) => alone.push(x),
-                        }
-                    }
-                    let mut result = Vec::with_capacity(alone.len() + expr.len());
-                    result.extend(alone.into_iter().map(ColumnOpFlat::Field));
-                    result.push(ColumnOpFlat::Cmp(expr));
-                    result
+    pub fn flatten_ands(self) -> ColumnOpFlat {
+        fn fill_vec(buf: &mut ColumnOpFlat, op: ColumnOp) {
+            match op {
+                ColumnOp::Cmp {
+                    op: OpQuery::Logic(OpLogic::And),
+                    lhs,
+                    rhs,
+                } => {
+                    fill_vec(buf, *lhs);
+                    fill_vec(buf, *rhs);
                 }
-                _ => {
-                    vec![ColumnOpFlat::Cmp(vec![ColumnOp::Cmp { op, lhs, rhs }])]
-                }
-            },
+                op => buf.push(op),
+            }
         }
+        let mut buf = SmallVec::new();
+        fill_vec(&mut buf, self);
+        buf
     }
 
-    pub fn extract_fields<'a>(&'a self, table: &'a SourceExpr) -> (Vec<FieldValue>, Vec<ColumnOp>) {
-        let mut fields = Vec::new();
-        let mut expr = Vec::new();
-
-        match self {
-            Self::Cmp { op, lhs, rhs } => {
-                match op {
-                    OpQuery::Cmp(cmp) => {
-                        // lhs must be a field
-                        let found = if let ColumnOp::Field(FieldExpr::Name(ref name)) = **lhs {
-                            // rhs must be a value
-                            if let ColumnOp::Field(FieldExpr::Value(ref value)) = **rhs {
-                                // lhs field must exist
-                                if let Some(field) = table.get_column_by_field(name) {
-                                    fields.push(FieldValue::new(*cmp, field, value));
-                                    true
-                                } else {
-                                    false
-                                }
-                            } else {
-                                false
-                            }
-                        } else {
-                            false
-                        };
-                        if !found {
-                            expr.push(self.clone());
-                        }
-                    }
-                    OpQuery::Logic(OpLogic::And) => {
-                        // the columns must exist
-                        let Some((op_lhs, Some(column_lhs), value_lhs)) = is_column_value(table, lhs) else {
-                            expr.push(self.clone());
-                            return (fields, expr);
-                        };
-                        let Some((op_rhs, Some(column_rhs), value_rhs)) = is_column_value(table, rhs) else {
-                            expr.push(self.clone());
-                            return (fields, expr);
-                        };
-                        fields.push(FieldValue::new(*op_lhs, column_lhs, value_lhs));
-                        fields.push(FieldValue::new(*op_rhs, column_rhs, value_rhs));
-                    }
-                    OpQuery::Logic(OpLogic::Or) => {
-                        expr.push(self.clone());
-                    }
+    /// Flattens a nested conjunction of AND expressions.
+    ///
+    /// For example, `a = 1 AND b = 2 AND c = 3` becomes `[a = 1, b = 2, c = 3]`.
+    ///
+    /// This helps with splitting the kinds of `queries`,
+    /// that *could* be answered by a `index`,
+    /// from the ones that need to be executed with a `scan`.
+    pub fn flatten_ands_ref(&self) -> ColumnOpFlat {
+        fn fill_vec(buf: &mut ColumnOpFlat, op: &ColumnOp) {
+            match op {
+                ColumnOp::Cmp {
+                    op: OpQuery::Logic(OpLogic::And),
+                    lhs,
+                    rhs,
+                } => {
+                    fill_vec(buf, lhs);
+                    fill_vec(buf, rhs);
                 }
-            }
-            Self::Field(x) => {
-                expr.push(ColumnOp::Field(x.clone()));
+                op => buf.push(op.clone()),
             }
         }
-
-        (fields, expr)
+        let mut buf = SmallVec::new();
+        fill_vec(&mut buf, self);
+        buf
     }
 }
 
@@ -881,27 +763,30 @@ pub enum IndexColumnOp {
     Scan(ColumnOp),
 }
 
-fn is_column_value<'a>(
+/// Extracts `name = val` when `lhs` is a field that exists and `rhs` is a value.
+fn ext_field_val<'a>(
+    table: &'a SourceExpr,
+    lhs: &'a ColumnOp,
+    rhs: &'a ColumnOp,
+) -> Option<(&'a Column, &'a AlgebraicValue)> {
+    if let (ColumnOp::Field(FieldExpr::Name(name)), ColumnOp::Field(FieldExpr::Value(val))) = (lhs, rhs) {
+        let column = table.get_column_by_field(name)?;
+        return Some((column, val));
+    }
+    None
+}
+
+/// Extracts `name = val` when `op` is `name = val` and `name` exists.
+fn ext_cmp_field_val<'a>(
     table: &'a SourceExpr,
     op: &'a ColumnOp,
-) -> Option<(&'a OpCmp, Option<&'a Column>, &'a AlgebraicValue)> {
+) -> Option<(&'a OpCmp, &'a Column, &'a AlgebraicValue)> {
     match op {
         ColumnOp::Cmp {
             op: OpQuery::Cmp(op),
             lhs,
             rhs,
-        } => {
-            // lhs must be a field
-            if let ColumnOp::Field(FieldExpr::Name(ref name)) = **lhs {
-                // rhs must be a value
-                if let ColumnOp::Field(FieldExpr::Value(ref value)) = **rhs {
-                    // lhs field must exist
-                    let column = table.get_column_by_field(name);
-                    return Some((op, column, value));
-                }
-            }
-            None
-        }
+        } => ext_field_val(table, lhs, rhs).map(|(f, v)| (op, f, v)),
         _ => None,
     }
 }
@@ -1088,6 +973,57 @@ pub fn select_best_index<'a>(
     (found, done)
 }
 
+/// Extracts a list of `field = val` constraints and other `ColumnOp`s.
+///
+/// # Returns
+///
+/// - A list of [FieldValue] that *could* be answered by a `index`.
+/// - A list of [ColumnOp] otherwise
+pub fn extract_fields<'a>(ops: &'a [ColumnOp], table: &'a SourceExpr) -> (Vec<FieldValue<'a>>, Vec<ColumnOp>) {
+    let mut expr = Vec::new();
+    let mut fields = Vec::new();
+    let mut add_field = |op, field, val| fields.push(FieldValue::new(op, field, val));
+
+    for op in ops {
+        match op {
+            ColumnOp::Cmp {
+                op: OpQuery::Cmp(cmp),
+                lhs,
+                rhs,
+            } => {
+                if let Some((field, val)) = ext_field_val(table, lhs, rhs) {
+                    // `lhs` must be a field that exists and `rhs` must be a value.
+                    add_field(*cmp, field, val);
+                    continue;
+                }
+            }
+            ColumnOp::Cmp {
+                op: OpQuery::Logic(OpLogic::And),
+                lhs,
+                rhs,
+            } => {
+                if let Some((op_lhs, col_lhs, val_lhs)) = ext_cmp_field_val(table, lhs) {
+                    if let Some((op_rhs, col_rhs, val_rhs)) = ext_cmp_field_val(table, rhs) {
+                        // Both lhs and rhs columns must exist.
+                        add_field(*op_lhs, col_lhs, val_lhs);
+                        add_field(*op_rhs, col_rhs, val_rhs);
+                        continue;
+                    }
+                }
+            }
+            ColumnOp::Cmp {
+                op: OpQuery::Logic(OpLogic::Or),
+                ..
+            }
+            | ColumnOp::Field(_) => {}
+        }
+
+        expr.push(op.clone());
+    }
+
+    (fields, expr)
+}
+
 // Sargable stands for Search ARGument ABLE.
 // A sargable predicate is one that can be answered using an index.
 fn is_sargable<'a>(
@@ -1097,19 +1033,27 @@ fn is_sargable<'a>(
     let mut result = Vec::new();
     let mut fields_found = HashSet::new();
 
-    for op in op.clone().flatten_op() {
-        match op {
-            ColumnOpFlat::Field(x) => result.push(IndexColumnOp::Scan(ColumnOp::Field(x))),
-            ColumnOpFlat::Cmp(_) => {
-                let (fields, expr) = op.extract_fields(table);
-                let (idxs, done) = select_best_index(table.head(), &fields);
-                // Mark which fields have been matched by a `index`
-                fields_found.extend(done);
+    let mut many = |result: &mut Vec<_>, ops: &[ColumnOp]| {
+        let (fields, expr) = extract_fields(ops, table);
+        let (idxs, done) = select_best_index(table.head(), &fields);
 
-                result.extend(make_index(idxs));
-                result.extend(expr.into_iter().map(IndexColumnOp::Scan))
-            }
+        // Mark which fields have been matched by a `index`.
+        fields_found.extend(done);
+
+        result.extend(make_index(idxs));
+        result.extend(expr.into_iter().map(IndexColumnOp::Scan))
+    };
+
+    let mut ops_flat = op.flatten_ands_ref();
+
+    if ops_flat.len() == 1 {
+        match ops_flat.swap_remove(0) {
+            // Special case; fast path for a single field.
+            op @ ColumnOp::Field(_) => result.push(IndexColumnOp::Scan(op)),
+            op => many(&mut result, &[op]),
         }
+    } else {
+        many(&mut result, &ops_flat);
     }
 
     (table, result, fields_found)
