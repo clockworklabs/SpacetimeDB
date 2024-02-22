@@ -930,32 +930,29 @@ pub fn select_best_index<'a>(
             .build()
             .unwrap();
 
+        let single_field = (fields.len() == 1).then(|| fields[0]);
+
         if header
             .constraints
             .iter()
             .any(|(col, ct)| col == &columns && ct.contains(&index))
         {
-            if fields.len() == 1 {
+            if let Some(field) = single_field {
                 done.extend(fields.iter().map(|x| (x.field, &x.cmp)));
                 fields_indexed.extend(fields.iter().map(|x| (x.field, &x.cmp)));
 
-                found.push(ScanIndex::Index {
-                    cmp: fields[0].cmp,
-                    columns,
-                    value: fields[0].value.clone(),
-                });
+                let cmp = field.cmp;
+                let value = field.value.clone();
+                found.push(ScanIndex::Index { cmp, columns, value });
             } else if fields.iter().all(|x| x.cmp == x.cmp.reverse()) {
                 done.extend(fields.iter().map(|x| (x.field, &x.cmp)));
                 fields_indexed.extend(fields.iter().map(|x| (x.field, &x.cmp)));
 
-                found.push(ScanIndex::Index {
-                    cmp: fields[0].cmp,
-                    columns,
-                    value: ProductValue::from_iter(fields.into_iter().map(|x| x.value.clone())).into(),
-                });
+                let cmp = fields[0].cmp;
+                let value = ProductValue::from_iter(fields.into_iter().map(|x| x.value.clone())).into();
+                found.push(ScanIndex::Index { cmp, columns, value });
             }
-        } else if fields.len() == 1 {
-            let field = fields[0];
+        } else if let Some(field) = single_field {
             if !done.contains(&(field.field, &field.cmp)) {
                 done.insert((field.field, &field.cmp));
 
