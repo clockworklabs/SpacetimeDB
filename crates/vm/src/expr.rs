@@ -2204,8 +2204,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn best_index() {
+    fn setup_best_index() -> (Header, [Column; 5], [AlgebraicValue; 5]) {
         let mut pos = 0;
         let fields = ["a", "b", "c", "d", "e"].map(|x| {
             let c = Column::new(FieldName::named("t1", x), AlgebraicType::I8, pos.into());
@@ -2213,11 +2212,7 @@ mod tests {
             c
         });
 
-        let a = ColId(0);
-        let b = ColId(1);
-        let c = ColId(2);
-        let d = ColId(3);
-
+        let [a, b, c, d] = [0, 1, 2, 3].map(ColId);
         let head1 = Header::new(
             "t1".into(),
             fields.to_vec(),
@@ -2233,8 +2228,16 @@ mod tests {
             ],
         );
 
+        let vals = [1, 2, 3, 4, 5].map(AlgebraicValue::U64);
+
+        (head1, fields, vals)
+    }
+
+    #[test]
+    fn best_index() {
+        let (head1, fields, vals) = setup_best_index();
         let [col_a, col_b, col_c, col_d, col_e] = fields;
-        let [val_a, val_b, val_c, val_d, val_e] = [1, 2, 3, 4, 5].map(AlgebraicValue::U64);
+        let [val_a, val_b, val_c, val_d, val_e] = vals;
 
         let fv_eq = |field, value| FieldValue::new(OpCmp::Eq, field, value);
         let scan_eq = |column, value| ScanIndex::Scan {
@@ -2354,41 +2357,9 @@ mod tests {
 
     #[test]
     fn best_index_range() {
-        let fields: Vec<_> = ["a", "b", "c", "d", "e"]
-            .iter()
-            .enumerate()
-            .map(|(pos, x)| Column::new(FieldName::named("t1", x), AlgebraicType::I8, pos.into()))
-            .collect();
-
-        let a = ColId(0);
-        let b = ColId(1);
-        let c = ColId(2);
-        let d = ColId(3);
-
-        let col_a = fields[0].clone();
-        let col_b = fields[1].clone();
-        let col_c = fields[2].clone();
-        let col_d = fields[3].clone();
-
-        let head1 = Header::new(
-            "t1".into(),
-            fields,
-            vec![
-                //Index a
-                (a.into(), Constraints::primary_key()),
-                //Index b
-                (b.into(), Constraints::indexed()),
-                //Index b + c
-                (col_list![b, c], Constraints::unique()),
-                //Index a+ b + c + d
-                (col_list![a, b, c, d], Constraints::indexed()),
-            ],
-        );
-
-        let val_a = AlgebraicValue::U64(1);
-        let val_b = AlgebraicValue::U64(2);
-        let val_c = AlgebraicValue::U64(3);
-        let val_d = AlgebraicValue::U64(4);
+        let (head1, fields, vals) = setup_best_index();
+        let [col_a, col_b, col_c, col_d, _] = fields;
+        let [val_a, val_b, val_c, val_d, _] = vals;
 
         // Same field indexed
         assert_eq!(
@@ -2400,7 +2371,7 @@ mod tests {
                 ]
             )
             .0,
-            vec![
+            [
                 ScanIndex::Index {
                     cmp: OpCmp::Gt,
                     columns: NonEmpty::new(&col_a),
@@ -2424,7 +2395,7 @@ mod tests {
                 ]
             )
             .0,
-            vec![
+            [
                 ScanIndex::Scan {
                     cmp: OpCmp::Gt,
                     column: &col_d,
@@ -2447,7 +2418,7 @@ mod tests {
                 ]
             )
             .0,
-            vec![
+            [
                 ScanIndex::Index {
                     cmp: OpCmp::Gt,
                     columns: NonEmpty::new(&col_b),
@@ -2472,7 +2443,7 @@ mod tests {
                 ]
             )
             .0,
-            vec![
+            [
                 ScanIndex::Index {
                     cmp: OpCmp::Eq,
                     columns: (&col_b, vec![&col_c]).into(),
@@ -2497,7 +2468,7 @@ mod tests {
                 ]
             )
             .0,
-            vec![
+            [
                 ScanIndex::Index {
                     cmp: OpCmp::Gt,
                     columns: NonEmpty::new(&col_b),
