@@ -159,22 +159,6 @@ impl ColList {
         Self { heap }
     }
 
-    /// Constructs a list from `iter` as long the iterator is not empty
-    pub fn from_iterator<I: IntoIterator<Item = ColId>>(iter: I) -> Option<Self> {
-        let mut iter = iter.into_iter();
-        if let Some(head) = iter.next() {
-            let size = iter.size_hint();
-            let mut x = Self::with_capacity(size.1.unwrap_or(size.0) as u32);
-            x.push(head);
-            for col in iter {
-                x.push(col);
-            }
-            Some(x)
-        } else {
-            None
-        }
-    }
-
     /// Returns the head of the list.
     pub fn head(&self) -> ColId {
         // SAFETY: There's always at least one element in the list when this is called.
