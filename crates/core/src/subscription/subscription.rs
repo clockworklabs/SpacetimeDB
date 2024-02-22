@@ -39,7 +39,7 @@ use derive_more::{Deref, DerefMut, From, IntoIterator};
 use itertools::Itertools;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{Address, PrimaryKey};
-use spacetimedb_primitives::{ColId, ColList, TableId};
+use spacetimedb_primitives::{ColId, ColListBuilder, TableId};
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{ColumnDef, IndexDef, TableDef};
 use spacetimedb_sats::relation::Relation;
@@ -786,7 +786,7 @@ pub fn create_table_multi_index(
 
     let indexes = vec![IndexDef::btree(
         index_name.to_string(),
-        ColList::from_iterator(cols).unwrap(),
+        cols.into_iter().collect::<ColListBuilder>().build().unwrap(),
         false,
     )];
     let schema = TableDef::new(table_name, columns)
