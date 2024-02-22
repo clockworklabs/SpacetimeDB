@@ -74,7 +74,7 @@ fn check_cmp_expr(table: &From, expr: &ColumnOp) -> Result<(), PlanError> {
 /// Compiles a `WHERE ...` clause
 fn compile_where(mut q: QueryExpr, table: &From, filter: Selection) -> Result<QueryExpr, PlanError> {
     check_cmp_expr(table, &filter.clause)?;
-    for op in filter.clause.to_vec() {
+    for op in filter.clause.flatten_ands() {
         q = q.with_select(op);
     }
     Ok(q)
