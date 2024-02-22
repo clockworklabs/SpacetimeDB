@@ -3,7 +3,6 @@ use crate::operator::{OpCmp, OpLogic, OpQuery};
 use crate::relation::{MemTable, RelValue, Table};
 use derive_more::From;
 use itertools::Itertools;
-use nonempty::NonEmpty;
 use smallvec::SmallVec;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::*;
@@ -797,7 +796,6 @@ fn make_index(idxs: Vec<ScanIndex>) -> Vec<IndexColumnOp> {
     for idx in idxs {
         let r = match idx {
             ScanIndex::Index { cmp, columns, value } => {
-                let columns = ColListBuilder::from_iter(columns.map(|x| x.col_id)).build().unwrap();
                 match cmp {
                     OpCmp::Eq => IndexColumnOp::Index(IndexArgument::Eq { columns, value }),
                     // a < 5 => exclusive upper bound
@@ -829,9 +827,9 @@ fn make_index(idxs: Vec<ScanIndex>) -> Vec<IndexColumnOp> {
                     }
                 }
             }
-            ScanIndex::Scan { cmp, column, value } => IndexColumnOp::Scan(ColumnOp::Cmp {
+            ScanIndex::Scan { cmp, field, value } => IndexColumnOp::Scan(ColumnOp::Cmp {
                 op: OpQuery::Cmp(cmp),
-                lhs: Box::new(ColumnOp::Field(FieldExpr::Name(column.field.clone()))),
+                lhs: Box::new(ColumnOp::Field(FieldExpr::Name(field))),
                 rhs: Box::new(ColumnOp::Field(FieldExpr::Value(value))),
             }),
         };
@@ -856,15 +854,15 @@ impl<'a> FieldValue<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ScanIndex<'a> {
+pub enum ScanIndex {
     Index {
         cmp: OpCmp,
-        columns: NonEmpty<&'a Column>,
+        columns: ColList,
         value: AlgebraicValue,
     },
     Scan {
         cmp: OpCmp,
-        column: &'a Column,
+        field: FieldName,
         value: AlgebraicValue,
     },
 }
@@ -911,7 +909,7 @@ pub enum ScanIndex<'a> {
 pub fn select_best_index<'a>(
     header: &'a Header,
     fields: &[FieldValue<'a>],
-) -> (Vec<ScanIndex<'a>>, HashSet<(FieldName, OpCmp)>) {
+) -> (Vec<ScanIndex>, HashSet<(FieldName, OpCmp)>) {
     let total = std::cmp::min(4, fields.len());
     let mut found = Vec::with_capacity(total);
     let mut done = HashSet::with_capacity(total);
@@ -923,14 +921,14 @@ pub fn select_best_index<'a>(
             continue;
         }
 
-        let find = NonEmpty::collect(fields.iter().map(|x| x.field)).unwrap();
-        let find_cols = ColListBuilder::from_iter(fields.iter().map(|x| x.field.col_id))
+        let columns = ColListBuilder::from_iter(fields.iter().map(|x| x.field.col_id))
             .build()
             .unwrap();
+
         if header
             .constraints
             .iter()
-            .any(|(col, ct)| col == &find_cols && ct.contains(&index))
+            .any(|(col, ct)| col == &columns && ct.contains(&index))
         {
             if fields.len() == 1 {
                 done.extend(fields.iter().map(|x| (x.field, &x.cmp)));
@@ -938,7 +936,7 @@ pub fn select_best_index<'a>(
 
                 found.push(ScanIndex::Index {
                     cmp: fields[0].cmp,
-                    columns: find,
+                    columns,
                     value: fields[0].value.clone(),
                 });
             } else if fields.iter().all(|x| x.cmp == x.cmp.reverse()) {
@@ -947,7 +945,7 @@ pub fn select_best_index<'a>(
 
                 found.push(ScanIndex::Index {
                     cmp: fields[0].cmp,
-                    columns: find,
+                    columns,
                     value: ProductValue::from_iter(fields.into_iter().map(|x| x.value.clone())).into(),
                 });
             }
@@ -958,7 +956,7 @@ pub fn select_best_index<'a>(
 
                 found.push(ScanIndex::Scan {
                     cmp: field.cmp,
-                    column: find.head,
+                    field: field.field.field.clone(),
                     value: field.value.clone(),
                 });
             }
@@ -2184,10 +2182,10 @@ mod tests {
         let [val_a, val_b, val_c, val_d, val_e] = vals;
 
         let fv_eq = |field, value| FieldValue::new(OpCmp::Eq, field, value);
-        let scan_eq = |column, value| ScanIndex::Scan {
+        let scan_eq = |col: &Column, val: &AlgebraicValue| ScanIndex::Scan {
             cmp: OpCmp::Eq,
-            column,
-            value,
+            field: col.field.clone(),
+            value: val.clone(),
         };
         let idx_eq = |columns, value| ScanIndex::Index {
             cmp: OpCmp::Eq,
@@ -2198,24 +2196,24 @@ mod tests {
         // Check for simple scan
         assert_eq!(
             select_best_index(&head1, &[fv_eq(&col_d, &val_e)]).0,
-            [scan_eq(&col_d, val_e.clone())],
+            [scan_eq(&col_d, &val_e)],
         );
 
         assert_eq!(
             select_best_index(&head1, &[fv_eq(&col_a, &val_a)]).0,
-            [idx_eq(NonEmpty::new(&col_a), val_a.clone())],
+            [idx_eq(col_a.col_id.into(), val_a.clone())],
         );
 
         assert_eq!(
             select_best_index(&head1, &[fv_eq(&col_b, &val_b)]).0,
-            [idx_eq(NonEmpty::new(&col_b), val_b.clone())],
+            [idx_eq(col_b.col_id.into(), val_b.clone())],
         );
 
         // Check for permutation
         assert_eq!(
             select_best_index(&head1, &[fv_eq(&col_b, &val_b), fv_eq(&col_c, &val_c)]).0,
             [idx_eq(
-                (&col_b, vec![&col_c]).into(),
+                col_list![col_b.col_id, col_c.col_id],
                 product![val_b.clone(), val_c.clone()].into()
             )],
         );
@@ -2223,7 +2221,7 @@ mod tests {
         assert_eq!(
             select_best_index(&head1, &[fv_eq(&col_c, &val_c), fv_eq(&col_b, &val_b)]).0,
             [idx_eq(
-                (&col_c, vec![&col_b]).into(),
+                col_list![col_c.col_id, col_b.col_id],
                 product![val_c.clone(), val_b.clone()].into()
             )],
         );
@@ -2241,7 +2239,7 @@ mod tests {
             )
             .0,
             [idx_eq(
-                (&col_a, vec![&col_b, &col_c, &col_d]).into(),
+                col_list![col_a.col_id, col_b.col_id, col_c.col_id, col_d.col_id],
                 product![val_a.clone(), val_b.clone(), val_c.clone(), val_d.clone()].into(),
             )],
         );
@@ -2258,7 +2256,7 @@ mod tests {
             )
             .0,
             [idx_eq(
-                (&col_b, vec![&col_a, &col_d, &col_c]).into(),
+                col_list![col_b.col_id, col_a.col_id, col_d.col_id, col_c.col_id],
                 product![val_b.clone(), val_a.clone(), val_d.clone(), val_c.clone()].into(),
             )]
         );
@@ -2276,10 +2274,10 @@ mod tests {
             )
             .0,
             [
-                idx_eq(NonEmpty::new(&col_b), val_b.clone()),
-                idx_eq(NonEmpty::new(&col_a), val_a.clone()),
-                scan_eq(&col_e, val_e.clone()),
-                scan_eq(&col_d, val_d.clone()),
+                idx_eq(col_b.col_id.into(), val_b.clone()),
+                idx_eq(col_a.col_id.into(), val_a.clone()),
+                scan_eq(&col_e, &val_e),
+                scan_eq(&col_d, &val_d),
             ]
         );
 
@@ -2291,10 +2289,10 @@ mod tests {
             .0,
             [
                 idx_eq(
-                    (&col_b, vec![&col_c]).into(),
+                    col_list![col_b.col_id, col_c.col_id],
                     product![val_b.clone(), val_c.clone()].into(),
                 ),
-                scan_eq(&col_d, val_d.clone()),
+                scan_eq(&col_d, &val_d),
             ]
         );
     }
@@ -2318,12 +2316,12 @@ mod tests {
             [
                 ScanIndex::Index {
                     cmp: OpCmp::Gt,
-                    columns: NonEmpty::new(&col_a),
+                    columns: col_a.col_id.into(),
                     value: val_a.clone()
                 },
                 ScanIndex::Index {
                     cmp: OpCmp::Lt,
-                    columns: NonEmpty::new(&col_a),
+                    columns: col_a.col_id.into(),
                     value: val_b.clone()
                 },
             ]
@@ -2342,12 +2340,12 @@ mod tests {
             [
                 ScanIndex::Scan {
                     cmp: OpCmp::Gt,
-                    column: &col_d,
+                    field: col_d.field.clone(),
                     value: val_d.clone()
                 },
                 ScanIndex::Scan {
                     cmp: OpCmp::Lt,
-                    column: &col_d,
+                    field: col_d.field.clone(),
                     value: val_b.clone()
                 }
             ]
@@ -2365,12 +2363,12 @@ mod tests {
             [
                 ScanIndex::Index {
                     cmp: OpCmp::Gt,
-                    columns: NonEmpty::new(&col_b),
+                    columns: col_b.col_id.into(),
                     value: val_b.clone()
                 },
                 ScanIndex::Scan {
                     cmp: OpCmp::Lt,
-                    column: &col_c,
+                    field: col_c.field.clone(),
                     value: val_c.clone()
                 }
             ]
@@ -2390,12 +2388,12 @@ mod tests {
             [
                 ScanIndex::Index {
                     cmp: OpCmp::Eq,
-                    columns: (&col_b, vec![&col_c]).into(),
+                    columns: col_list![col_b.col_id, col_c.col_id],
                     value: product![val_b.clone(), val_c.clone()].into()
                 },
                 ScanIndex::Index {
                     cmp: OpCmp::GtEq,
-                    columns: NonEmpty::new(&col_a),
+                    columns: col_a.col_id.into(),
                     value: val_a.clone()
                 },
             ]
@@ -2415,17 +2413,17 @@ mod tests {
             [
                 ScanIndex::Index {
                     cmp: OpCmp::Gt,
-                    columns: NonEmpty::new(&col_b),
+                    columns: col_b.col_id.into(),
                     value: val_b.clone()
                 },
                 ScanIndex::Index {
                     cmp: OpCmp::Eq,
-                    columns: NonEmpty::new(&col_a),
+                    columns: col_a.col_id.into(),
                     value: val_a.clone()
                 },
                 ScanIndex::Scan {
                     cmp: OpCmp::Lt,
-                    column: &col_c,
+                    field: col_c.field,
                     value: val_c.clone()
                 }
             ]
