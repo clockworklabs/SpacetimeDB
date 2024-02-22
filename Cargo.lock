@@ -2709,12 +2709,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nonempty"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "995defdca0a589acfdd1bd2e8e3b896b4d4f7675a31fd14c32611440c7f608e6"
-
-[[package]]
 name = "nu-ansi-term"
 version = "0.46.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4838,7 +4832,6 @@ dependencies = [
  "anyhow",
  "derive_more",
  "itertools 0.12.0",
- "nonempty",
  "smallvec",
  "spacetimedb-lib",
  "spacetimedb-primitives",
