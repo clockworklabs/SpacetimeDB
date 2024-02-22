@@ -40,7 +40,7 @@ pub fn cli() -> clap::Command {
                 .help("The system path (absolute or relative) to the module project")
         )
         .arg(
-            Arg::new("precompiled_wasm")
+            Arg::new("path_to_wasm_binary")
                 .value_parser(clap::value_parser!(PathBuf))
                 .long("precompiled-wasm")
                 .short('w')
@@ -114,7 +114,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let anon_identity = args.get_flag("anon_identity");
     let skip_clippy = args.get_flag("skip_clippy");
     let build_debug = args.get_flag("debug");
-    let precompiled_wasm = args.get_one::<PathBuf>("precompiled_wasm");
+    let precompiled_wasm = args.get_one::<PathBuf>("path_to_wasm_binary");
     let database_host = config.get_host_url(server)?;
 
     let mut query_params = Vec::<(&str, &str)>::new();
@@ -151,7 +151,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         println!("removed in a future release. Please use --precompiled-wasm instead.");
         path_to_wasm = path_to_project.clone();
     } else if let Some(path) = precompiled_wasm {
-        println!("Skipping build and using precompiled wasm binary {}", path.display());
+        println!("Skipping build. Instead we are publishing {}", path.display());
         path_to_wasm = path.clone();
     } else {
         path_to_wasm = crate::tasks::build(path_to_project, skip_clippy, build_debug)?;
