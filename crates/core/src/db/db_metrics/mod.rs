@@ -129,11 +129,6 @@ metrics_group!(
         #[help = "For a given module, the size of its log file (in bytes)"]
         #[labels(db: Address)]
         pub module_log_file_size: IntGaugeVec,
-
-        #[name = spacetime_request_round_time]
-        #[help = "The total time it takes for request to complete"]
-        #[labels(txn_type: WorkloadType, database_address: Address, reducer_symbol: str)]
-        pub request_round_trip: HistogramVec,
     }
 );
 

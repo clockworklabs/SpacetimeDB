@@ -1,6 +1,5 @@
 use std::time::{Duration, Instant};
 
-use crate::db::db_metrics::DB_METRICS;
 use crate::energy::EnergyQuanta;
 use crate::execution_context::WorkloadType;
 use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall};
@@ -147,7 +146,7 @@ impl DecodedMessage<'_> {
         let res = match self {
             DecodedMessage::Call { reducer, args } => {
                 let res = client.call_reducer(reducer, args).await;
-                DB_METRICS
+                WORKER_METRICS
                     .request_round_trip
                     .with_label_values(&WorkloadType::Reducer, &address, reducer)
                     .observe(timer.elapsed().as_secs_f64());
@@ -155,7 +154,7 @@ impl DecodedMessage<'_> {
             }
             DecodedMessage::Subscribe(subscription) => {
                 let res = client.subscribe(subscription).await;
-                DB_METRICS
+                WORKER_METRICS
                     .request_round_trip
                     .with_label_values(&WorkloadType::Subscribe, &address, "")
                     .observe(timer.elapsed().as_secs_f64());
@@ -166,7 +165,7 @@ impl DecodedMessage<'_> {
                 message_id,
             } => {
                 let res = client.one_off_query(query, message_id).await;
-                DB_METRICS
+                WORKER_METRICS
                     .request_round_trip
                     .with_label_values(&WorkloadType::Sql, &address, "")
                     .observe(timer.elapsed().as_secs_f64());
