@@ -40,11 +40,11 @@ pub fn cli() -> clap::Command {
                 .help("The system path (absolute or relative) to the module project")
         )
         .arg(
-            Arg::new("path_to_wasm_binary")
+            Arg::new("wasm_file")
                 .value_parser(clap::value_parser!(PathBuf))
-                .long("precompiled-wasm")
+                .long("wasm-file")
                 .short('w')
-                .help("Skip building the module. Instead, publish an existing wasm file at the provided path (absolute or relative).")
+                .help("The system path (absolute or relative) to the wasm file we should publish, instead of building the project."),
         )
         .arg(
             Arg::new("trace_log")
@@ -114,7 +114,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let anon_identity = args.get_flag("anon_identity");
     let skip_clippy = args.get_flag("skip_clippy");
     let build_debug = args.get_flag("debug");
-    let precompiled_wasm = args.get_one::<PathBuf>("path_to_wasm_binary");
+    let wasm_file = args.get_one::<PathBuf>("wasm_file");
     let database_host = config.get_host_url(server)?;
 
     let mut query_params = Vec::<(&str, &str)>::new();
@@ -150,7 +150,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         println!("Note: Using --project-path to provide a wasm file is deprecated, and will be");
         println!("removed in a future release. Please use --precompiled-wasm instead.");
         path_to_wasm = path_to_project.clone();
-    } else if let Some(path) = precompiled_wasm {
+    } else if let Some(path) = wasm_file {
         println!("Skipping build. Instead we are publishing {}", path.display());
         path_to_wasm = path.clone();
     } else {
