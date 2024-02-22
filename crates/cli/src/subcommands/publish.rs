@@ -148,7 +148,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let path_to_wasm;
     if !path_to_project.is_dir() && path_to_project.extension().map_or(false, |ext| ext == "wasm") {
         println!("Note: Using --project-path to provide a wasm file is deprecated, and will be");
-        println!("removed in a future release. Please use --precompiled-wasm instead.");
+        println!("removed in a future release. Please use --wasm-file instead.");
         path_to_wasm = path_to_project.clone();
     } else if let Some(path) = wasm_file {
         println!("Skipping build. Instead we are publishing {}", path.display());
