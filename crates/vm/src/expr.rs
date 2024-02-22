@@ -2303,6 +2303,22 @@ mod tests {
         let [col_a, col_b, col_c, col_d, _] = fields;
         let [val_a, val_b, val_c, val_d, _] = vals;
 
+        let scan = |cmp, col: &Column, val: &AlgebraicValue| ScanIndex::Scan {
+            cmp,
+            field: col.field.clone(),
+            value: val.clone(),
+        };
+        let idx = |cmp, cols: &[&Column], val: &AlgebraicValue| {
+            let value = val.clone();
+            let columns = cols
+                .iter()
+                .map(|c| c.col_id)
+                .collect::<ColListBuilder>()
+                .build()
+                .unwrap();
+            ScanIndex::Index { cmp, columns, value }
+        };
+
         // Same field indexed
         assert_eq!(
             select_best_index(
@@ -2313,18 +2329,7 @@ mod tests {
                 ]
             )
             .0,
-            [
-                ScanIndex::Index {
-                    cmp: OpCmp::Gt,
-                    columns: col_a.col_id.into(),
-                    value: val_a.clone()
-                },
-                ScanIndex::Index {
-                    cmp: OpCmp::Lt,
-                    columns: col_a.col_id.into(),
-                    value: val_b.clone()
-                },
-            ]
+            [idx(OpCmp::Gt, &[&col_a], &val_a), idx(OpCmp::Lt, &[&col_a], &val_b)]
         );
 
         // Same field scan
@@ -2337,18 +2342,7 @@ mod tests {
                 ]
             )
             .0,
-            [
-                ScanIndex::Scan {
-                    cmp: OpCmp::Gt,
-                    field: col_d.field.clone(),
-                    value: val_d.clone()
-                },
-                ScanIndex::Scan {
-                    cmp: OpCmp::Lt,
-                    field: col_d.field.clone(),
-                    value: val_b.clone()
-                }
-            ]
+            [scan(OpCmp::Gt, &col_d, &val_d), scan(OpCmp::Lt, &col_d, &val_b)]
         );
         // One indexed other scan
         assert_eq!(
@@ -2360,18 +2354,7 @@ mod tests {
                 ]
             )
             .0,
-            [
-                ScanIndex::Index {
-                    cmp: OpCmp::Gt,
-                    columns: col_b.col_id.into(),
-                    value: val_b.clone()
-                },
-                ScanIndex::Scan {
-                    cmp: OpCmp::Lt,
-                    field: col_c.field.clone(),
-                    value: val_c.clone()
-                }
-            ]
+            [idx(OpCmp::Gt, &[&col_b], &val_b), scan(OpCmp::Lt, &col_c, &val_c)]
         );
 
         // 1 multi-indexed 1 index
@@ -2386,16 +2369,12 @@ mod tests {
             )
             .0,
             [
-                ScanIndex::Index {
-                    cmp: OpCmp::Eq,
-                    columns: col_list![col_b.col_id, col_c.col_id],
-                    value: product![val_b.clone(), val_c.clone()].into()
-                },
-                ScanIndex::Index {
-                    cmp: OpCmp::GtEq,
-                    columns: col_a.col_id.into(),
-                    value: val_a.clone()
-                },
+                idx(
+                    OpCmp::Eq,
+                    &[&col_b, &col_c],
+                    &product![val_b.clone(), val_c.clone()].into()
+                ),
+                idx(OpCmp::GtEq, &[&col_a], &val_a),
             ]
         );
 
@@ -2411,21 +2390,9 @@ mod tests {
             )
             .0,
             [
-                ScanIndex::Index {
-                    cmp: OpCmp::Gt,
-                    columns: col_b.col_id.into(),
-                    value: val_b.clone()
-                },
-                ScanIndex::Index {
-                    cmp: OpCmp::Eq,
-                    columns: col_a.col_id.into(),
-                    value: val_a.clone()
-                },
-                ScanIndex::Scan {
-                    cmp: OpCmp::Lt,
-                    field: col_c.field,
-                    value: val_c.clone()
-                }
+                idx(OpCmp::Gt, &[&col_b], &val_b),
+                idx(OpCmp::Eq, &[&col_a], &val_a),
+                scan(OpCmp::Lt, &col_c, &val_c),
             ]
         );
     }
