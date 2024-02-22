@@ -14,6 +14,7 @@ spacetimedb-table.workspace = true
 anyhow.workspace = true
 derive_more.workspace = true
 itertools.workspace = true
+nonempty.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 

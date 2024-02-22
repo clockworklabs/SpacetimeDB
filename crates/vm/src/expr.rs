@@ -2,6 +2,8 @@ use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
 use crate::operator::{OpCmp, OpLogic, OpQuery};
 use crate::relation::{MemTable, RelValue, Table};
 use derive_more::From;
+use itertools::Itertools;
+use nonempty::NonEmpty;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_type::AlgebraicType;
@@ -55,7 +57,7 @@ impl ColumnOpFlat {
                                 if let ColumnOp::Field(FieldExpr::Value(ref value)) = **rhs {
                                     // lhs field must exist
                                     if let Some(field) = table.get_column_by_field(name) {
-                                        fields.push(FieldValue::new(to_op(cmp), field, value));
+                                        fields.push(FieldValue::new(*cmp, field, value));
                                         continue;
                                     }
                                 }
@@ -76,8 +78,8 @@ impl ColumnOpFlat {
                                 expr.push(op.clone());
                                 continue;
                             };
-                            fields.push(FieldValue::new(to_op(op_lhs), column_lhs, value_lhs));
-                            fields.push(FieldValue::new(to_op(op_rhs), column_rhs, value_rhs));
+                            fields.push(FieldValue::new(*op_lhs, column_lhs, value_lhs));
+                            fields.push(FieldValue::new(*op_rhs, column_rhs, value_rhs));
                         }
                         _ => {
                             expr.push(op.clone());
@@ -249,7 +251,7 @@ impl ColumnOp {
                             if let ColumnOp::Field(FieldExpr::Value(ref value)) = **rhs {
                                 // lhs field must exist
                                 if let Some(field) = table.get_column_by_field(name) {
-                                    fields.push(FieldValue::new(to_op(cmp), field, value));
+                                    fields.push(FieldValue::new(*cmp, field, value));
                                     true
                                 } else {
                                     false
@@ -274,8 +276,8 @@ impl ColumnOp {
                             expr.push(self.clone());
                             return (fields, expr);
                         };
-                        fields.push(FieldValue::new(to_op(op_lhs), column_lhs, value_lhs));
-                        fields.push(FieldValue::new(to_op(op_rhs), column_rhs, value_rhs));
+                        fields.push(FieldValue::new(*op_lhs, column_lhs, value_lhs));
+                        fields.push(FieldValue::new(*op_rhs, column_rhs, value_rhs));
                     }
                     OpQuery::Logic(OpLogic::Or) => {
                         expr.push(self.clone());
@@ -917,38 +919,38 @@ fn make_index(idxs: Vec<ScanIndex>) -> Vec<IndexColumnOp> {
             ScanIndex::Index { cmp, columns, value } => {
                 let columns = ColListBuilder::from_iter(columns.map(|x| x.col_id)).build().unwrap();
                 match cmp {
-                    OpCmpIdx::Eq => IndexColumnOp::Index(IndexArgument::Eq { columns, value }),
+                    OpCmp::Eq => IndexColumnOp::Index(IndexArgument::Eq { columns, value }),
                     // a < 5 => exclusive upper bound
-                    OpCmpIdx::Lt => IndexColumnOp::Index(IndexArgument::UpperBound {
+                    OpCmp::Lt => IndexColumnOp::Index(IndexArgument::UpperBound {
                         columns,
                         value,
                         inclusive: false,
                     }),
                     // a > 5 => exclusive lower bound
-                    OpCmpIdx::Gt => IndexColumnOp::Index(IndexArgument::LowerBound {
+                    OpCmp::Gt => IndexColumnOp::Index(IndexArgument::LowerBound {
                         columns,
                         value,
                         inclusive: false,
                     }),
                     // a <= 5 => inclusive upper bound
-                    OpCmpIdx::LtEq => IndexColumnOp::Index(IndexArgument::UpperBound {
+                    OpCmp::LtEq => IndexColumnOp::Index(IndexArgument::UpperBound {
                         columns,
                         value,
                         inclusive: true,
                     }),
                     // a >= 5 => inclusive lower bound
-                    OpCmpIdx::GtEq => IndexColumnOp::Index(IndexArgument::LowerBound {
+                    OpCmp::GtEq => IndexColumnOp::Index(IndexArgument::LowerBound {
                         columns,
                         value,
                         inclusive: true,
                     }),
-                    OpCmpIdx::NotEq => {
+                    OpCmp::NotEq => {
                         todo!("Need to implement `NotEq`")
                     }
                 }
             }
             ScanIndex::Scan { cmp, column, value } => IndexColumnOp::Scan(ColumnOp::Cmp {
-                op: OpQuery::Cmp(from_op(cmp)),
+                op: OpQuery::Cmp(cmp),
                 lhs: Box::new(ColumnOp::Field(FieldExpr::Name(column.field.clone()))),
                 rhs: Box::new(ColumnOp::Field(FieldExpr::Value(value))),
             }),
@@ -960,26 +962,135 @@ fn make_index(idxs: Vec<ScanIndex>) -> Vec<IndexColumnOp> {
     result
 }
 
-fn to_op(value: &OpCmp) -> OpCmpIdx {
-    match value {
-        OpCmp::Eq => OpCmpIdx::Eq,
-        OpCmp::NotEq => OpCmpIdx::NotEq,
-        OpCmp::Lt => OpCmpIdx::Lt,
-        OpCmp::LtEq => OpCmpIdx::LtEq,
-        OpCmp::Gt => OpCmpIdx::Gt,
-        OpCmp::GtEq => OpCmpIdx::GtEq,
+#[derive(Debug)]
+pub struct FieldValue<'a> {
+    cmp: OpCmp,
+    field: &'a Column,
+    value: &'a AlgebraicValue,
+}
+
+impl<'a> FieldValue<'a> {
+    pub fn new(cmp: OpCmp, field: &'a Column, value: &'a AlgebraicValue) -> Self {
+        Self { cmp, field, value }
     }
 }
 
-fn from_op(value: OpCmpIdx) -> OpCmp {
-    match value {
-        OpCmpIdx::Eq => OpCmp::Eq,
-        OpCmpIdx::NotEq => OpCmp::NotEq,
-        OpCmpIdx::Lt => OpCmp::Lt,
-        OpCmpIdx::LtEq => OpCmp::LtEq,
-        OpCmpIdx::Gt => OpCmp::Gt,
-        OpCmpIdx::GtEq => OpCmp::GtEq,
+#[derive(Debug, Clone, PartialEq)]
+pub enum ScanIndex<'a> {
+    Index {
+        cmp: OpCmp,
+        columns: NonEmpty<&'a Column>,
+        value: AlgebraicValue,
+    },
+    Scan {
+        cmp: OpCmp,
+        column: &'a Column,
+        value: AlgebraicValue,
+    },
+}
+
+/// Pick the best index that matches the *permutation* of the supplied `fields`.
+///
+/// This function is designed to handle complex scenarios when selecting the optimal index for a query. The scenarios include:
+///
+/// - Combination of multi and single column indexes that could refer to the same field,
+///   so, if we could have `indexes`: `[a], [a, b]` and being asked: `a = 1 AND b = 2 AND a = 3`.
+/// - Query expression can be supplied in any order, ie: `a = 1 AND b = 2` or `b = 2 AND a = 1`.
+/// - Different `operators` need to match different `index` operations, ie: `a > 1 AND a = 2 AND a < 3`,
+///   must return
+///
+///   -`ScanIndex::Index(Range(a > 1, a < 3))`
+///   -`ScanIndex::Index(a = 2)`
+/// - The use of multiple tables could generated redundant/duplicate operations like `[ScanIndex::Index(a = 1), ScanIndex::Index(a = 1), ScanIndex::Scan(a = 1)]`.
+///   This *can't* be handled here.
+///
+/// # Parameters
+///
+/// - `fields`: A slice of `FieldValue` representing the query conditions.
+///
+/// # Returns
+///
+/// - A vector of `ScanIndex` representing the selected `index` OR `scan` operations.
+/// - A HashSet of `(FieldName, OpCmp)` representing the fields and operators that where matched by a `index` operation.
+///   This is required to remove the redundant operation on `[ScanIndex::Index(a = 1), ScanIndex::Index(a = 1), ScanIndex::Scan(a = 1)]`,
+///   that could be generated by calling this function several times by using multiples `JOINS`
+///
+/// # Example
+///
+/// If we have a table with `indexes`: `[a], [b], [b, c]` and then try to
+/// optimize `WHERE a = 1 AND d > 2 AND c = 2 AND b = 1` we should return
+///
+/// -`ScanIndex::Index(a = 1)`
+/// -`ScanIndex::Scan(c = 2)`
+/// -`ScanIndex::Index([c,b] = [1, 2])`
+///
+/// NOTE:
+///
+/// - We don't do extra optimization here (like last the `Scan`), this should be handled in upper layers.
+/// - We only check up to 4 fields, to keep the permutation small. After that we will miss indexes.
+pub fn select_best_index<'a>(
+    header: &'a Header,
+    fields: &[FieldValue<'a>],
+) -> (Vec<ScanIndex<'a>>, HashSet<(FieldName, OpCmp)>) {
+    let total = std::cmp::min(4, fields.len());
+    let mut found = Vec::with_capacity(total);
+    let mut done = HashSet::with_capacity(total);
+    let mut fields_indexed = HashSet::with_capacity(total);
+
+    let index = Constraints::indexed();
+    for fields in (1..=total).rev().flat_map(|len| fields.iter().permutations(len)) {
+        if fields.iter().any(|x| done.contains(&(x.field, &x.cmp))) {
+            continue;
+        }
+
+        let find = NonEmpty::collect(fields.iter().map(|x| x.field)).unwrap();
+        let find_cols = ColListBuilder::from_iter(fields.iter().map(|x| x.field.col_id))
+            .build()
+            .unwrap();
+        if header
+            .constraints
+            .iter()
+            .any(|(col, ct)| col == &find_cols && ct.contains(&index))
+        {
+            if fields.len() == 1 {
+                done.extend(fields.iter().map(|x| (x.field, &x.cmp)));
+                fields_indexed.extend(fields.iter().map(|x| (x.field, &x.cmp)));
+
+                found.push(ScanIndex::Index {
+                    cmp: fields[0].cmp,
+                    columns: find,
+                    value: fields[0].value.clone(),
+                });
+            } else if fields.iter().all(|x| x.cmp == x.cmp.reverse()) {
+                done.extend(fields.iter().map(|x| (x.field, &x.cmp)));
+                fields_indexed.extend(fields.iter().map(|x| (x.field, &x.cmp)));
+
+                found.push(ScanIndex::Index {
+                    cmp: fields[0].cmp,
+                    columns: find,
+                    value: ProductValue::from_iter(fields.into_iter().map(|x| x.value.clone())).into(),
+                });
+            }
+        } else if fields.len() == 1 {
+            let field = fields[0];
+            if !done.contains(&(field.field, &field.cmp)) {
+                done.insert((field.field, &field.cmp));
+
+                found.push(ScanIndex::Scan {
+                    cmp: field.cmp,
+                    column: find.head,
+                    value: field.value.clone(),
+                });
+            }
+        }
     }
+
+    let done: HashSet<_> = fields_indexed
+        .iter()
+        .map(|(col, cmp)| (col.field.clone(), **cmp))
+        .collect();
+
+    (found, done)
 }
 
 // Sargable stands for Search ARGument ABLE.
@@ -987,7 +1098,7 @@ fn from_op(value: OpCmpIdx) -> OpCmp {
 fn is_sargable<'a>(
     table: &'a SourceExpr,
     op: &ColumnOp,
-) -> (&'a SourceExpr, Vec<IndexColumnOp>, HashSet<(FieldName, OpCmpIdx)>) {
+) -> (&'a SourceExpr, Vec<IndexColumnOp>, HashSet<(FieldName, OpCmp)>) {
     let mut result = Vec::new();
     let mut fields_found = HashSet::new();
 
@@ -996,7 +1107,7 @@ fn is_sargable<'a>(
             ColumnOpFlat::Field(x) => result.push(IndexColumnOp::Scan(ColumnOp::Field(x))),
             ColumnOpFlat::Cmp(_) => {
                 let (fields, expr) = op.extract_fields(table);
-                let (idxs, done) = table.head().select_best_index(&fields);
+                let (idxs, done) = select_best_index(table.head(), &fields);
                 // Mark which fields have been matched by a `index`
                 fields_found.extend(done);
 
@@ -1566,10 +1677,10 @@ impl QueryExpr {
                             // like `[ScanIndex::Index(a = 1), ScanIndex::Index(a = 1), ScanIndex::Scan(a = 1)]`
                             if let ColumnOp::Field(FieldExpr::Name(col)) = lhs.as_ref() {
                                 if let OpQuery::Cmp(cmp) = op {
-                                    if fields_found.contains(&(col.clone(), to_op(cmp))) {
+                                    if fields_found.contains(&(col.clone(), *cmp)) {
                                         continue;
                                     } else {
-                                        fields_found.insert((col.clone(), to_op(cmp)));
+                                        fields_found.insert((col.clone(), *cmp));
                                     }
                                 }
                             }
@@ -1910,9 +2021,9 @@ impl From<Code> for CodeResult {
 
 #[cfg(test)]
 mod tests {
-    use crate::relation::{MemTable, Table};
-
     use super::*;
+    use crate::relation::{MemTable, Table};
+    use spacetimedb_sats::product;
 
     const ALICE: Identity = Identity::from_byte_array([1; 32]);
     const BOB: Identity = Identity::from_byte_array([2; 32]);
@@ -2094,6 +2205,370 @@ mod tests {
             &vec![
                 FieldName::named("probe", "c").into(),
                 FieldName::named("probe", "b").into()
+            ]
+        );
+    }
+
+    #[test]
+    fn best_index() {
+        let fields: Vec<_> = ["a", "b", "c", "d", "e"]
+            .iter()
+            .enumerate()
+            .map(|(pos, x)| Column::new(FieldName::named("t1", x), AlgebraicType::I8, pos.into()))
+            .collect();
+
+        let a = ColId(0);
+        let b = ColId(1);
+        let c = ColId(2);
+        let d = ColId(3);
+
+        let col_a = fields[0].clone();
+        let col_b = fields[1].clone();
+        let col_c = fields[2].clone();
+        let col_d = fields[3].clone();
+        let col_e = fields[4].clone();
+
+        let head1 = Header::new(
+            "t1".into(),
+            fields,
+            vec![
+                //Index a
+                (a.into(), Constraints::primary_key()),
+                //Index b
+                (b.into(), Constraints::indexed()),
+                //Index b + c
+                (col_list![b, c], Constraints::unique()),
+                //Index a+ b + c + d
+                (col_list![a, b, c, d], Constraints::indexed()),
+            ],
+        );
+
+        let val_a = AlgebraicValue::U64(1);
+        let val_b = AlgebraicValue::U64(2);
+        let val_c = AlgebraicValue::U64(3);
+        let val_d = AlgebraicValue::U64(4);
+        let val_e = AlgebraicValue::U64(5);
+
+        // Check for simple scan
+        assert_eq!(
+            select_best_index(&head1, &[FieldValue::new(OpCmp::Eq, &col_d, &val_e)]).0,
+            vec![ScanIndex::Scan {
+                cmp: OpCmp::Eq,
+                column: &col_d,
+                value: val_e.clone(),
+            }]
+        );
+
+        assert_eq!(
+            select_best_index(&head1, &[FieldValue::new(OpCmp::Eq, &col_a, &val_a)]).0,
+            vec![ScanIndex::Index {
+                cmp: OpCmp::Eq,
+                columns: NonEmpty::new(&col_a),
+                value: val_a.clone()
+            }]
+        );
+
+        assert_eq!(
+            select_best_index(&head1, &[FieldValue::new(OpCmp::Eq, &col_b, &val_b)]).0,
+            vec![ScanIndex::Index {
+                cmp: OpCmp::Eq,
+                columns: NonEmpty::new(&col_b),
+                value: val_b.clone()
+            }]
+        );
+
+        // Check for permutation
+        assert_eq!(
+            select_best_index(
+                &head1,
+                &[
+                    FieldValue::new(OpCmp::Eq, &col_b, &val_b),
+                    FieldValue::new(OpCmp::Eq, &col_c, &val_c)
+                ]
+            )
+            .0,
+            vec![ScanIndex::Index {
+                cmp: OpCmp::Eq,
+                columns: (&col_b, vec![&col_c]).into(),
+                value: product![val_b.clone(), val_c.clone()].into()
+            }]
+        );
+
+        assert_eq!(
+            select_best_index(
+                &head1,
+                &[
+                    FieldValue::new(OpCmp::Eq, &col_c, &val_c),
+                    FieldValue::new(OpCmp::Eq, &col_b, &val_b)
+                ]
+            )
+            .0,
+            vec![ScanIndex::Index {
+                cmp: OpCmp::Eq,
+                columns: (&col_c, vec![&col_b]).into(),
+                value: product![val_c.clone(), val_b.clone()].into()
+            }]
+        );
+
+        // Check for permutation
+        assert_eq!(
+            select_best_index(
+                &head1,
+                &[
+                    FieldValue::new(OpCmp::Eq, &col_a, &val_a),
+                    FieldValue::new(OpCmp::Eq, &col_b, &val_b),
+                    FieldValue::new(OpCmp::Eq, &col_c, &val_c),
+                    FieldValue::new(OpCmp::Eq, &col_d, &val_d)
+                ]
+            )
+            .0,
+            vec![ScanIndex::Index {
+                cmp: OpCmp::Eq,
+                columns: (&col_a, vec![&col_b, &col_c, &col_d]).into(),
+                value: product![val_a.clone(), val_b.clone(), val_c.clone(), val_d.clone()].into(),
+            }]
+        );
+
+        assert_eq!(
+            select_best_index(
+                &head1,
+                &[
+                    FieldValue::new(OpCmp::Eq, &col_b, &val_b),
+                    FieldValue::new(OpCmp::Eq, &col_a, &val_a),
+                    FieldValue::new(OpCmp::Eq, &col_d, &val_d),
+                    FieldValue::new(OpCmp::Eq, &col_c, &val_c)
+                ]
+            )
+            .0,
+            vec![ScanIndex::Index {
+                cmp: OpCmp::Eq,
+                columns: (&col_b, vec![&col_a, &col_d, &col_c]).into(),
+                value: product![val_b.clone(), val_a.clone(), val_d.clone(), val_c.clone()].into(),
+            }]
+        );
+
+        // Check mix scan + index
+        assert_eq!(
+            select_best_index(
+                &head1,
+                &[
+                    FieldValue::new(OpCmp::Eq, &col_b, &val_b),
+                    FieldValue::new(OpCmp::Eq, &col_a, &val_a),
+                    FieldValue::new(OpCmp::Eq, &col_e, &val_e),
+                    FieldValue::new(OpCmp::Eq, &col_d, &val_d)
+                ]
+            )
+            .0,
+            vec![
+                ScanIndex::Index {
+                    cmp: OpCmp::Eq,
+                    columns: NonEmpty::new(&col_b),
+                    value: val_b.clone(),
+                },
+                ScanIndex::Index {
+                    cmp: OpCmp::Eq,
+                    columns: NonEmpty::new(&col_a),
+                    value: val_a.clone(),
+                },
+                ScanIndex::Scan {
+                    cmp: OpCmp::Eq,
+                    column: &col_e,
+                    value: val_e.clone(),
+                },
+                ScanIndex::Scan {
+                    cmp: OpCmp::Eq,
+                    column: &col_d,
+                    value: val_d.clone(),
+                }
+            ]
+        );
+
+        assert_eq!(
+            select_best_index(
+                &head1,
+                &[
+                    FieldValue::new(OpCmp::Eq, &col_b, &val_b),
+                    FieldValue::new(OpCmp::Eq, &col_c, &val_c),
+                    FieldValue::new(OpCmp::Eq, &col_d, &val_d)
+                ]
+            )
+            .0,
+            vec![
+                ScanIndex::Index {
+                    cmp: OpCmp::Eq,
+                    columns: (&col_b, vec![&col_c]).into(),
+                    value: product![val_b.clone(), val_c.clone()].into()
+                },
+                ScanIndex::Scan {
+                    cmp: OpCmp::Eq,
+                    column: &col_d,
+                    value: val_d.clone(),
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn best_index_range() {
+        let fields: Vec<_> = ["a", "b", "c", "d", "e"]
+            .iter()
+            .enumerate()
+            .map(|(pos, x)| Column::new(FieldName::named("t1", x), AlgebraicType::I8, pos.into()))
+            .collect();
+
+        let a = ColId(0);
+        let b = ColId(1);
+        let c = ColId(2);
+        let d = ColId(3);
+
+        let col_a = fields[0].clone();
+        let col_b = fields[1].clone();
+        let col_c = fields[2].clone();
+        let col_d = fields[3].clone();
+
+        let head1 = Header::new(
+            "t1".into(),
+            fields,
+            vec![
+                //Index a
+                (a.into(), Constraints::primary_key()),
+                //Index b
+                (b.into(), Constraints::indexed()),
+                //Index b + c
+                (col_list![b, c], Constraints::unique()),
+                //Index a+ b + c + d
+                (col_list![a, b, c, d], Constraints::indexed()),
+            ],
+        );
+
+        let val_a = AlgebraicValue::U64(1);
+        let val_b = AlgebraicValue::U64(2);
+        let val_c = AlgebraicValue::U64(3);
+        let val_d = AlgebraicValue::U64(4);
+
+        // Same field indexed
+        assert_eq!(
+            select_best_index(
+                &head1,
+                &[
+                    FieldValue::new(OpCmp::Gt, &col_a, &val_a),
+                    FieldValue::new(OpCmp::Lt, &col_a, &val_b)
+                ]
+            )
+            .0,
+            vec![
+                ScanIndex::Index {
+                    cmp: OpCmp::Gt,
+                    columns: NonEmpty::new(&col_a),
+                    value: val_a.clone()
+                },
+                ScanIndex::Index {
+                    cmp: OpCmp::Lt,
+                    columns: NonEmpty::new(&col_a),
+                    value: val_b.clone()
+                },
+            ]
+        );
+
+        // Same field scan
+        assert_eq!(
+            select_best_index(
+                &head1,
+                &[
+                    FieldValue::new(OpCmp::Gt, &col_d, &val_d),
+                    FieldValue::new(OpCmp::Lt, &col_d, &val_b)
+                ]
+            )
+            .0,
+            vec![
+                ScanIndex::Scan {
+                    cmp: OpCmp::Gt,
+                    column: &col_d,
+                    value: val_d.clone()
+                },
+                ScanIndex::Scan {
+                    cmp: OpCmp::Lt,
+                    column: &col_d,
+                    value: val_b.clone()
+                }
+            ]
+        );
+        // One indexed other scan
+        assert_eq!(
+            select_best_index(
+                &head1,
+                &[
+                    FieldValue::new(OpCmp::Gt, &col_b, &val_b),
+                    FieldValue::new(OpCmp::Lt, &col_c, &val_c)
+                ]
+            )
+            .0,
+            vec![
+                ScanIndex::Index {
+                    cmp: OpCmp::Gt,
+                    columns: NonEmpty::new(&col_b),
+                    value: val_b.clone()
+                },
+                ScanIndex::Scan {
+                    cmp: OpCmp::Lt,
+                    column: &col_c,
+                    value: val_c.clone()
+                }
+            ]
+        );
+
+        // 1 multi-indexed 1 index
+        assert_eq!(
+            select_best_index(
+                &head1,
+                &[
+                    FieldValue::new(OpCmp::Eq, &col_b, &val_b),
+                    FieldValue::new(OpCmp::GtEq, &col_a, &val_a),
+                    FieldValue::new(OpCmp::Eq, &col_c, &val_c)
+                ]
+            )
+            .0,
+            vec![
+                ScanIndex::Index {
+                    cmp: OpCmp::Eq,
+                    columns: (&col_b, vec![&col_c]).into(),
+                    value: product![val_b.clone(), val_c.clone()].into()
+                },
+                ScanIndex::Index {
+                    cmp: OpCmp::GtEq,
+                    columns: NonEmpty::new(&col_a),
+                    value: val_a.clone()
+                },
+            ]
+        );
+
+        // 1 indexed 2 scan
+        assert_eq!(
+            select_best_index(
+                &head1,
+                &[
+                    FieldValue::new(OpCmp::Gt, &col_b, &val_b),
+                    FieldValue::new(OpCmp::Eq, &col_a, &val_a),
+                    FieldValue::new(OpCmp::Lt, &col_c, &val_c)
+                ]
+            )
+            .0,
+            vec![
+                ScanIndex::Index {
+                    cmp: OpCmp::Gt,
+                    columns: NonEmpty::new(&col_b),
+                    value: val_b.clone()
+                },
+                ScanIndex::Index {
+                    cmp: OpCmp::Eq,
+                    columns: NonEmpty::new(&col_a),
+                    value: val_a.clone()
+                },
+                ScanIndex::Scan {
+                    cmp: OpCmp::Lt,
+                    column: &col_c,
+                    value: val_c.clone()
+                }
             ]
         );
     }

@@ -40,6 +40,7 @@ use spacetimedb_lib::PrimaryKey;
 use spacetimedb_primitives::{ColId, ColList, TableId};
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{ColumnDef, IndexDef, TableDef};
+use spacetimedb_sats::relation::Relation;
 use spacetimedb_sats::relation::{DbTable, Header};
 use spacetimedb_sats::{AlgebraicType, ProductValue};
 use spacetimedb_vm::expr::{self, IndexJoin, QueryExpr};
