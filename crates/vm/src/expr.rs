@@ -2206,26 +2206,21 @@ mod tests {
 
     #[test]
     fn best_index() {
-        let fields: Vec<_> = ["a", "b", "c", "d", "e"]
-            .iter()
-            .enumerate()
-            .map(|(pos, x)| Column::new(FieldName::named("t1", x), AlgebraicType::I8, pos.into()))
-            .collect();
+        let mut pos = 0;
+        let fields = ["a", "b", "c", "d", "e"].map(|x| {
+            let c = Column::new(FieldName::named("t1", x), AlgebraicType::I8, pos.into());
+            pos += 1;
+            c
+        });
 
         let a = ColId(0);
         let b = ColId(1);
         let c = ColId(2);
         let d = ColId(3);
 
-        let col_a = fields[0].clone();
-        let col_b = fields[1].clone();
-        let col_c = fields[2].clone();
-        let col_d = fields[3].clone();
-        let col_e = fields[4].clone();
-
         let head1 = Header::new(
             "t1".into(),
-            fields,
+            fields.to_vec(),
             vec![
                 //Index a
                 (a.into(), Constraints::primary_key()),
@@ -2238,38 +2233,52 @@ mod tests {
             ],
         );
 
-        let val_a = AlgebraicValue::U64(1);
-        let val_b = AlgebraicValue::U64(2);
-        let val_c = AlgebraicValue::U64(3);
-        let val_d = AlgebraicValue::U64(4);
-        let val_e = AlgebraicValue::U64(5);
+        let [col_a, col_b, col_c, col_d, col_e] = fields;
+        let [val_a, val_b, val_c, val_d, val_e] = [1, 2, 3, 4, 5].map(AlgebraicValue::U64);
+
+        let fv_eq = |field, value| FieldValue::new(OpCmp::Eq, field, value);
+        let scan_eq = |column, value| ScanIndex::Scan {
+            cmp: OpCmp::Eq,
+            column,
+            value,
+        };
+        let idx_eq = |columns, value| ScanIndex::Index {
+            cmp: OpCmp::Eq,
+            columns,
+            value,
+        };
 
         // Check for simple scan
         assert_eq!(
-            select_best_index(&head1, &[FieldValue::new(OpCmp::Eq, &col_d, &val_e)]).0,
-            vec![ScanIndex::Scan {
-                cmp: OpCmp::Eq,
-                column: &col_d,
-                value: val_e.clone(),
-            }]
+            select_best_index(&head1, &[fv_eq(&col_d, &val_e)]).0,
+            [scan_eq(&col_d, val_e.clone())],
         );
 
         assert_eq!(
-            select_best_index(&head1, &[FieldValue::new(OpCmp::Eq, &col_a, &val_a)]).0,
-            vec![ScanIndex::Index {
-                cmp: OpCmp::Eq,
-                columns: NonEmpty::new(&col_a),
-                value: val_a.clone()
-            }]
+            select_best_index(&head1, &[fv_eq(&col_a, &val_a)]).0,
+            [idx_eq(NonEmpty::new(&col_a), val_a.clone())],
         );
 
         assert_eq!(
-            select_best_index(&head1, &[FieldValue::new(OpCmp::Eq, &col_b, &val_b)]).0,
-            vec![ScanIndex::Index {
-                cmp: OpCmp::Eq,
-                columns: NonEmpty::new(&col_b),
-                value: val_b.clone()
-            }]
+            select_best_index(&head1, &[fv_eq(&col_b, &val_b)]).0,
+            [idx_eq(NonEmpty::new(&col_b), val_b.clone())],
+        );
+
+        // Check for permutation
+        assert_eq!(
+            select_best_index(&head1, &[fv_eq(&col_b, &val_b), fv_eq(&col_c, &val_c)]).0,
+            [idx_eq(
+                (&col_b, vec![&col_c]).into(),
+                product![val_b.clone(), val_c.clone()].into()
+            )],
+        );
+
+        assert_eq!(
+            select_best_index(&head1, &[fv_eq(&col_c, &val_c), fv_eq(&col_b, &val_b)]).0,
+            [idx_eq(
+                (&col_c, vec![&col_b]).into(),
+                product![val_c.clone(), val_b.clone()].into()
+            )],
         );
 
         // Check for permutation
@@ -2277,69 +2286,34 @@ mod tests {
             select_best_index(
                 &head1,
                 &[
-                    FieldValue::new(OpCmp::Eq, &col_b, &val_b),
-                    FieldValue::new(OpCmp::Eq, &col_c, &val_c)
+                    fv_eq(&col_a, &val_a),
+                    fv_eq(&col_b, &val_b),
+                    fv_eq(&col_c, &val_c),
+                    fv_eq(&col_d, &val_d),
                 ]
             )
             .0,
-            vec![ScanIndex::Index {
-                cmp: OpCmp::Eq,
-                columns: (&col_b, vec![&col_c]).into(),
-                value: product![val_b.clone(), val_c.clone()].into()
-            }]
+            [idx_eq(
+                (&col_a, vec![&col_b, &col_c, &col_d]).into(),
+                product![val_a.clone(), val_b.clone(), val_c.clone(), val_d.clone()].into(),
+            )],
         );
 
         assert_eq!(
             select_best_index(
                 &head1,
                 &[
-                    FieldValue::new(OpCmp::Eq, &col_c, &val_c),
-                    FieldValue::new(OpCmp::Eq, &col_b, &val_b)
+                    fv_eq(&col_b, &val_b),
+                    fv_eq(&col_a, &val_a),
+                    fv_eq(&col_d, &val_d),
+                    fv_eq(&col_c, &val_c),
                 ]
             )
             .0,
-            vec![ScanIndex::Index {
-                cmp: OpCmp::Eq,
-                columns: (&col_c, vec![&col_b]).into(),
-                value: product![val_c.clone(), val_b.clone()].into()
-            }]
-        );
-
-        // Check for permutation
-        assert_eq!(
-            select_best_index(
-                &head1,
-                &[
-                    FieldValue::new(OpCmp::Eq, &col_a, &val_a),
-                    FieldValue::new(OpCmp::Eq, &col_b, &val_b),
-                    FieldValue::new(OpCmp::Eq, &col_c, &val_c),
-                    FieldValue::new(OpCmp::Eq, &col_d, &val_d)
-                ]
-            )
-            .0,
-            vec![ScanIndex::Index {
-                cmp: OpCmp::Eq,
-                columns: (&col_a, vec![&col_b, &col_c, &col_d]).into(),
-                value: product![val_a.clone(), val_b.clone(), val_c.clone(), val_d.clone()].into(),
-            }]
-        );
-
-        assert_eq!(
-            select_best_index(
-                &head1,
-                &[
-                    FieldValue::new(OpCmp::Eq, &col_b, &val_b),
-                    FieldValue::new(OpCmp::Eq, &col_a, &val_a),
-                    FieldValue::new(OpCmp::Eq, &col_d, &val_d),
-                    FieldValue::new(OpCmp::Eq, &col_c, &val_c)
-                ]
-            )
-            .0,
-            vec![ScanIndex::Index {
-                cmp: OpCmp::Eq,
-                columns: (&col_b, vec![&col_a, &col_d, &col_c]).into(),
-                value: product![val_b.clone(), val_a.clone(), val_d.clone(), val_c.clone()].into(),
-            }]
+            [idx_eq(
+                (&col_b, vec![&col_a, &col_d, &col_c]).into(),
+                product![val_b.clone(), val_a.clone(), val_d.clone(), val_c.clone()].into(),
+            )]
         );
 
         // Check mix scan + index
@@ -2347,58 +2321,33 @@ mod tests {
             select_best_index(
                 &head1,
                 &[
-                    FieldValue::new(OpCmp::Eq, &col_b, &val_b),
-                    FieldValue::new(OpCmp::Eq, &col_a, &val_a),
-                    FieldValue::new(OpCmp::Eq, &col_e, &val_e),
-                    FieldValue::new(OpCmp::Eq, &col_d, &val_d)
+                    fv_eq(&col_b, &val_b),
+                    fv_eq(&col_a, &val_a),
+                    fv_eq(&col_e, &val_e),
+                    fv_eq(&col_d, &val_d),
                 ]
             )
             .0,
-            vec![
-                ScanIndex::Index {
-                    cmp: OpCmp::Eq,
-                    columns: NonEmpty::new(&col_b),
-                    value: val_b.clone(),
-                },
-                ScanIndex::Index {
-                    cmp: OpCmp::Eq,
-                    columns: NonEmpty::new(&col_a),
-                    value: val_a.clone(),
-                },
-                ScanIndex::Scan {
-                    cmp: OpCmp::Eq,
-                    column: &col_e,
-                    value: val_e.clone(),
-                },
-                ScanIndex::Scan {
-                    cmp: OpCmp::Eq,
-                    column: &col_d,
-                    value: val_d.clone(),
-                }
+            [
+                idx_eq(NonEmpty::new(&col_b), val_b.clone()),
+                idx_eq(NonEmpty::new(&col_a), val_a.clone()),
+                scan_eq(&col_e, val_e.clone()),
+                scan_eq(&col_d, val_d.clone()),
             ]
         );
 
         assert_eq!(
             select_best_index(
                 &head1,
-                &[
-                    FieldValue::new(OpCmp::Eq, &col_b, &val_b),
-                    FieldValue::new(OpCmp::Eq, &col_c, &val_c),
-                    FieldValue::new(OpCmp::Eq, &col_d, &val_d)
-                ]
+                &[fv_eq(&col_b, &val_b), fv_eq(&col_c, &val_c), fv_eq(&col_d, &val_d),]
             )
             .0,
-            vec![
-                ScanIndex::Index {
-                    cmp: OpCmp::Eq,
-                    columns: (&col_b, vec![&col_c]).into(),
-                    value: product![val_b.clone(), val_c.clone()].into()
-                },
-                ScanIndex::Scan {
-                    cmp: OpCmp::Eq,
-                    column: &col_d,
-                    value: val_d.clone(),
-                }
+            [
+                idx_eq(
+                    (&col_b, vec![&col_c]).into(),
+                    product![val_b.clone(), val_c.clone()].into(),
+                ),
+                scan_eq(&col_d, val_d.clone()),
             ]
         );
     }
