@@ -25,24 +25,20 @@
 
 use super::query;
 use crate::client::{ClientActorId, ClientConnectionSender};
-use crate::db::relational_db::{MutTx, RelationalDB, Tx};
+use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp};
 use crate::subscription::query::{run_query, to_mem_table_with_op_type, OP_TYPE_FIELD_NAME};
 use anyhow::Context;
-use derive_more::{Deref, DerefMut, From, IntoIterator};
 use itertools::Either;
-use itertools::Itertools;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::PrimaryKey;
-use spacetimedb_primitives::{ColId, ColListBuilder, TableId};
+use spacetimedb_primitives::TableId;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
-use spacetimedb_sats::db::def::{ColumnDef, IndexDef, TableDef};
+use spacetimedb_sats::relation::Header;
 use spacetimedb_sats::relation::Relation;
-use spacetimedb_sats::relation::{DbTable, Header};
-use spacetimedb_sats::{AlgebraicType, ProductValue};
+use spacetimedb_sats::ProductValue;
 use spacetimedb_vm::expr::{self, IndexJoin, QueryExpr};
 use spacetimedb_vm::relation::MemTable;
 use std::collections::{hash_map, HashMap, HashSet};
@@ -672,38 +668,6 @@ pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> 
             expr: QueryExpr::new(src),
         })
         .collect())
-}
-
-pub fn create_table(
-    db: &RelationalDB,
-    tx: &mut MutTx,
-    name: &str,
-    schema: &[(&str, AlgebraicType)],
-    indexes: &[(ColId, &str)],
-) -> Result<TableId, DBError> {
-    let table_name = name.to_string();
-    let table_type = StTableType::User;
-    let table_access = StAccess::Public;
-
-    let columns = schema
-        .iter()
-        .map(|(col_name, col_type)| ColumnDef {
-            col_name: col_name.to_string(),
-            col_type: col_type.clone(),
-        })
-        .collect_vec();
-
-    let indexes = indexes
-        .iter()
-        .map(|(col_id, index_name)| IndexDef::btree(index_name.to_string(), *col_id, false))
-        .collect_vec();
-
-    let schema = TableDef::new(table_name, columns)
-        .with_indexes(indexes)
-        .with_type(table_type)
-        .with_access(table_access);
-
-    db.create_table(tx, schema)
 }
 
 #[cfg(test)]
