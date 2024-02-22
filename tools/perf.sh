@@ -16,12 +16,6 @@ Options:
 EOF
 }
 
-# Check if no arguments were passed
-if [ $# -eq 0 ]; then
-    print_help
-    exit 0
-fi
-
 if ! [ -f /usr/share/d3-flame-graph/d3-flamegraph-base.html ] ; then
     read -p "Could not find d3-flamegraph-base.html, should we download it? (y/n): " answer
 
