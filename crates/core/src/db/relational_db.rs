@@ -444,6 +444,32 @@ impl RelationalDB {
         self.with_auto_commit(&ExecutionContext::default(), |tx| self.create_table(tx, schema))
     }
 
+    pub fn create_table_for_test_multi_column(
+        &self,
+        name: &str,
+        schema: &[(&str, AlgebraicType)],
+        idx_cols: ColList,
+    ) -> Result<TableId, DBError> {
+        let table_name = name.to_string();
+        let table_type = StTableType::User;
+        let table_access = StAccess::Public;
+
+        let columns = schema
+            .iter()
+            .map(|(col_name, col_type)| ColumnDef {
+                col_name: col_name.to_string(),
+                col_type: col_type.clone(),
+            })
+            .collect_vec();
+
+        let schema = TableDef::new(table_name, columns)
+            .with_column_index(idx_cols, false)
+            .with_type(table_type)
+            .with_access(table_access);
+
+        self.with_auto_commit(&ExecutionContext::default(), |tx| self.create_table(tx, schema))
+    }
+
     pub fn drop_table(&self, ctx: &ExecutionContext, tx: &mut MutTx, table_id: TableId) -> Result<(), DBError> {
         #[cfg(feature = "metrics")]
         let _guard = DB_METRICS
@@ -549,7 +575,7 @@ impl RelationalDB {
     /// Returns the `index_id`
     ///
     /// NOTE: It loads the data from the table into it before returning
-    #[tracing::instrument(skip(self, tx, index), fields(index=index.index_name))]
+    #[tracing::instrument(skip(self, tx, index), fields(index = index.index_name))]
     pub fn create_index(&self, tx: &mut MutTx, table_id: TableId, index: IndexDef) -> Result<IndexId, DBError> {
         self.inner.create_index_mut_tx(tx, table_id, index)
     }
@@ -692,7 +718,7 @@ impl RelationalDB {
     }
 
     /// Add a [Sequence] into the database instance, generates a stable [SequenceId] for it that will persist on restart.
-    #[tracing::instrument(skip(self, tx, seq), fields(seq=seq.sequence_name))]
+    #[tracing::instrument(skip(self, tx, seq), fields(seq = seq.sequence_name))]
     pub fn create_sequence(
         &mut self,
         tx: &mut MutTx,
