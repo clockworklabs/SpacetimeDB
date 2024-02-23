@@ -147,7 +147,6 @@ describe("SpacetimeDBClient", () => {
             table_row_operations: [
               {
                 op: "insert",
-                row_pk: "abcd123",
                 row: ["player-1", "drogus", [0, 0]],
               },
             ],
@@ -183,7 +182,6 @@ describe("SpacetimeDBClient", () => {
               table_row_operations: [
                 {
                   op: "insert",
-                  row_pk: "abcdef",
                   row: ["player-2", "drogus", [0, 0]],
                 },
               ],
@@ -262,12 +260,10 @@ describe("SpacetimeDBClient", () => {
             table_row_operations: [
               {
                 op: "delete",
-                row_pk: "abcd123",
                 row: ["player-1", "drogus", [0, 0]],
               },
               {
                 op: "insert",
-                row_pk: "def456",
                 row: ["player-1", "mr.drogus", [0, 0]],
               },
             ],
@@ -303,12 +299,10 @@ describe("SpacetimeDBClient", () => {
               table_row_operations: [
                 {
                   op: "delete",
-                  row_pk: "abcdef",
                   row: ["player-2", "Jaime", [0, 0]],
                 },
                 {
                   op: "insert",
-                  row_pk: "123456",
                   row: ["player-2", "Kingslayer", [0, 0]],
                 },
               ],
@@ -373,7 +367,6 @@ describe("SpacetimeDBClient", () => {
               table_row_operations: [
                 {
                   op: "insert",
-                  row_pk: "abcdef",
                   row: ["player-2", "foo", [0, 0]],
                 },
               ],
@@ -435,7 +428,6 @@ describe("SpacetimeDBClient", () => {
             table_row_operations: [
               {
                 op: "delete",
-                row_pk: "abcd123",
                 row: [
                   "41db74c20cdda916dd2637e5a11b9f31eb1672249aa7172f7e22b4043a6a9008",
                   "drogus",
@@ -443,7 +435,6 @@ describe("SpacetimeDBClient", () => {
               },
               {
                 op: "insert",
-                row_pk: "def456",
                 row: [
                   "41db74c20cdda916dd2637e5a11b9f31eb1672249aa7172f7e22b4043a6a9008",
                   "mr.drogus",
@@ -482,7 +473,6 @@ describe("SpacetimeDBClient", () => {
               table_row_operations: [
                 {
                   op: "delete",
-                  row_pk: "abcdef",
                   row: [
                     "11db74c20cdda916dd2637e5a11b9f31eb1672249aa7172f7e22b4043a6a9008",
                     "jaime",
@@ -490,7 +480,6 @@ describe("SpacetimeDBClient", () => {
                 },
                 {
                   op: "insert",
-                  row_pk: "123456",
                   row: [
                     "11db74c20cdda916dd2637e5a11b9f31eb1672249aa7172f7e22b4043a6a9008",
                     "kingslayer",

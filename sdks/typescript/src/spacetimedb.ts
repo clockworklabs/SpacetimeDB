@@ -26,11 +26,8 @@ import { EventType } from "./types";
 import { Identity } from "./identity";
 import { Address } from "./address";
 import { ReducerEvent } from "./reducer_event";
-import {
-  Message as ProtobufMessage,
-  event_StatusToJSON,
-  TableRowOperation_OperationType,
-} from "./client_api";
+import * as Proto from "./client_api";
+import * as JsonApi from "./json_api";
 import BinaryReader from "./binary_reader";
 import { Table, TableUpdate, TableOperation } from "./table";
 import { _tableProxy } from "./utils";
@@ -46,7 +43,6 @@ export {
   SumType,
   SumTypeVariant,
   BuiltinType,
-  ProtobufMessage,
   BinarySerializer,
   ReducerEvent,
   Reducer,
@@ -610,80 +606,85 @@ export class SpacetimeDBClient {
 
   private processMessage(wsMessage: any, callback: (message: Message) => void) {
     if (this.protocol === "binary") {
-      let data = wsMessage.data;
+      // Helpers for parsing message components which appear in multiple messages.
+      const parseTableRowOperation = (
+        rawTableOperation: Proto.TableRowOperation
+      ): TableOperation => {
+        const type =
+          rawTableOperation.op === Proto.TableRowOperation_OperationType.INSERT
+            ? "insert"
+            : "delete";
+        // Our SDKs are architected around having a hashable, equality-comparable key
+        // which uniquely identifies every row.
+        // This used to be a strong content-addressed hash computed by the DB,
+        // but the DB no longer computes those hashes,
+        // so now we just use the serialized row as the identifier.
+        const rowPk = new TextDecoder().decode(rawTableOperation.row);
+        return new TableOperation(type, rowPk, rawTableOperation.row);
+      };
+      const parseTableUpdate = (
+        rawTableUpdate: Proto.TableUpdate
+      ): TableUpdate => {
+        const tableName = rawTableUpdate.tableName;
+        const operations: TableOperation[] = [];
+        for (const rawTableOperation of rawTableUpdate.tableRowOperations) {
+          operations.push(parseTableRowOperation(rawTableOperation));
+        }
+        return new TableUpdate(tableName, operations);
+      };
+      const parseSubscriptionUpdate = (
+        subUpdate: Proto.SubscriptionUpdate
+      ): SubscriptionUpdateMessage => {
+        const tableUpdates: TableUpdate[] = [];
+        for (const rawTableUpdate of subUpdate.tableUpdates) {
+          tableUpdates.push(parseTableUpdate(rawTableUpdate));
+        }
+        return new SubscriptionUpdateMessage(tableUpdates);
+      };
 
+      let data = wsMessage.data;
       if (typeof data.arrayBuffer === "undefined") {
         data = new Blob([data]);
       }
       data.arrayBuffer().then((data: any) => {
-        const message: ProtobufMessage = ProtobufMessage.decode(
+        const message: Proto.Message = Proto.Message.decode(
           new Uint8Array(data)
         );
         if (message["subscriptionUpdate"]) {
-          let subUpdate = message["subscriptionUpdate"] as any;
-          const tableUpdates: TableUpdate[] = [];
-          for (const rawTableUpdate of subUpdate["tableUpdates"]) {
-            const tableName = rawTableUpdate["tableName"];
-            const operations: TableOperation[] = [];
-            for (const rawTableOperation of rawTableUpdate[
-              "tableRowOperations"
-            ]) {
-              const type =
-                rawTableOperation["op"] ===
-                TableRowOperation_OperationType.INSERT
-                  ? "insert"
-                  : "delete";
-              const rowPk = new TextDecoder().decode(
-                rawTableOperation["rowPk"]
-              );
-              operations.push(
-                new TableOperation(type, rowPk, rawTableOperation.row)
-              );
-            }
-            const tableUpdate = new TableUpdate(tableName, operations);
-            tableUpdates.push(tableUpdate);
-          }
-
-          const subscriptionUpdate = new SubscriptionUpdateMessage(
-            tableUpdates
+          const rawSubscriptionUpdate = message.subscriptionUpdate;
+          const subscriptionUpdate = parseSubscriptionUpdate(
+            rawSubscriptionUpdate
           );
           callback(subscriptionUpdate);
         } else if (message["transactionUpdate"]) {
-          let txUpdate = (message["transactionUpdate"] as any)[
-            "subscriptionUpdate"
-          ];
-          const tableUpdates: TableUpdate[] = [];
-          for (const rawTableUpdate of txUpdate["tableUpdates"]) {
-            const tableName = rawTableUpdate["tableName"];
-            const operations: TableOperation[] = [];
-            for (const rawTableOperation of rawTableUpdate[
-              "tableRowOperations"
-            ]) {
-              const type =
-                rawTableOperation["op"] ===
-                TableRowOperation_OperationType.INSERT
-                  ? "insert"
-                  : "delete";
-              const rowPk = new TextDecoder().decode(
-                rawTableOperation["rowPk"]
-              );
-              operations.push(
-                new TableOperation(type, rowPk, rawTableOperation.row)
-              );
-            }
-            const tableUpdate = new TableUpdate(tableName, operations);
-            tableUpdates.push(tableUpdate);
+          const txUpdate = message.transactionUpdate;
+          const rawSubscriptionUpdate = txUpdate.subscriptionUpdate;
+          if (!rawSubscriptionUpdate) {
+            throw new Error(
+              "Received TransactionUpdate without SubscriptionUpdate"
+            );
           }
+          const subscriptionUpdate = parseSubscriptionUpdate(
+            rawSubscriptionUpdate
+          );
 
-          const event = message["transactionUpdate"]["event"] as any;
-          const functionCall = event["functionCall"] as any;
-          const identity: Identity = new Identity(event["callerIdentity"]);
-          const address = Address.nullIfZero(event["callerAddress"]);
-          const originalReducerName: string = functionCall["reducer"];
+          const event = txUpdate.event;
+          if (!event) {
+            throw new Error("Received TransactionUpdate without Event");
+          }
+          const functionCall = event.functionCall;
+          if (!functionCall) {
+            throw new Error(
+              "Received TransactionUpdate with Event but no FunctionCall"
+            );
+          }
+          const identity: Identity = new Identity(event.callerIdentity);
+          const address = Address.nullIfZero(event.callerAddress);
+          const originalReducerName: string = functionCall.reducer;
           const reducerName: string = toPascalCase(originalReducerName);
-          const args = functionCall["argBytes"];
-          const status: string = event_StatusToJSON(event["status"]);
-          const messageStr = event["message"];
+          const args = functionCall.argBytes;
+          const status: string = Proto.event_StatusToJSON(event.status);
+          const messageStr = event.message;
 
           const transactionUpdateEvent: TransactionUpdateEvent =
             new TransactionUpdateEvent(
@@ -697,73 +698,77 @@ export class SpacetimeDBClient {
             );
 
           const transactionUpdate = new TransactionUpdateMessage(
-            tableUpdates,
+            subscriptionUpdate.tableUpdates,
             transactionUpdateEvent
           );
           callback(transactionUpdate);
         } else if (message["identityToken"]) {
-          const identityToken = message["identityToken"] as any;
-          const identity = new Identity(identityToken["identity"]);
-          const token = identityToken["token"];
-          const address = new Address(identityToken["address"]);
+          const identityToken = message.identityToken;
+          const identity = new Identity(identityToken.identity);
+          const token = identityToken.token;
+          const address = new Address(identityToken.address);
           const identityTokenMessage: IdentityTokenMessage =
             new IdentityTokenMessage(identity, token, address);
           callback(identityTokenMessage);
         }
       });
     } else {
-      const data = JSON.parse(wsMessage.data);
-      if (data["SubscriptionUpdate"]) {
-        let subUpdate = data["SubscriptionUpdate"];
-        const tableUpdates: TableUpdate[] = [];
-        for (const rawTableUpdate of subUpdate["table_updates"]) {
-          const tableName = rawTableUpdate["table_name"];
-          const operations: TableOperation[] = [];
-          for (const rawTableOperation of rawTableUpdate[
-            "table_row_operations"
-          ]) {
-            const type = rawTableOperation["op"];
-            const rowPk = rawTableOperation["row_pk"];
-            operations.push(
-              new TableOperation(type, rowPk, rawTableOperation.row)
-            );
-          }
-          const tableUpdate = new TableUpdate(tableName, operations);
-          tableUpdates.push(tableUpdate);
+      const parseTableRowOperation = (
+        rawTableOperation: JsonApi.TableRowOperation
+      ): TableOperation => {
+        const type = rawTableOperation["op"];
+        // Our SDKs are architected around having a hashable, equality-comparable key
+        // which uniquely identifies every row.
+        // This used to be a strong content-addressed hash computed by the DB,
+        // but the DB no longer computes those hashes,
+        // so now we just use the serialized row as the identifier.
+        //
+        // JSON.stringify may be expensive here, but if the client cared about performance
+        // they'd be using the binary format anyway, so we don't care.
+        const rowPk = JSON.stringify(rawTableOperation.row);
+        return new TableOperation(type, rowPk, rawTableOperation.row);
+      };
+      const parseTableUpdate = (
+        rawTableUpdate: JsonApi.TableUpdate
+      ): TableUpdate => {
+        const tableName = rawTableUpdate.table_name;
+        const operations: TableOperation[] = [];
+        for (const rawTableOperation of rawTableUpdate.table_row_operations) {
+          operations.push(parseTableRowOperation(rawTableOperation));
         }
+        return new TableUpdate(tableName, operations);
+      };
+      const parseSubscriptionUpdate = (
+        rawSubscriptionUpdate: JsonApi.SubscriptionUpdate
+      ): SubscriptionUpdateMessage => {
+        const tableUpdates: TableUpdate[] = [];
+        for (const rawTableUpdate of rawSubscriptionUpdate.table_updates) {
+          tableUpdates.push(parseTableUpdate(rawTableUpdate));
+        }
+        return new SubscriptionUpdateMessage(tableUpdates);
+      };
 
-        const subscriptionUpdate = new SubscriptionUpdateMessage(tableUpdates);
+      const data = JSON.parse(wsMessage.data) as JsonApi.Message;
+      if (data["SubscriptionUpdate"]) {
+        const subscriptionUpdate = parseSubscriptionUpdate(
+          data.SubscriptionUpdate
+        );
         callback(subscriptionUpdate);
       } else if (data["TransactionUpdate"]) {
-        const txUpdate = data["TransactionUpdate"];
-        const tableUpdates: TableUpdate[] = [];
-        for (const rawTableUpdate of txUpdate["subscription_update"][
-          "table_updates"
-        ]) {
-          const tableName = rawTableUpdate["table_name"];
-          const operations: TableOperation[] = [];
-          for (const rawTableOperation of rawTableUpdate[
-            "table_row_operations"
-          ]) {
-            const type = rawTableOperation["op"];
-            const rowPk = rawTableOperation["rowPk"];
-            operations.push(
-              new TableOperation(type, rowPk, rawTableOperation.row)
-            );
-          }
-          const tableUpdate = new TableUpdate(tableName, operations);
-          tableUpdates.push(tableUpdate);
-        }
+        const txUpdate = data.TransactionUpdate;
+        const subscriptionUpdate = parseSubscriptionUpdate(
+          txUpdate.subscription_update
+        );
 
-        const event = txUpdate["event"] as any;
-        const functionCall = event["function_call"] as any;
-        const identity: Identity = new Identity(event["caller_identity"]);
-        const address = Address.fromStringOrNull(event["caller_address"]);
-        const originalReducerName: string = functionCall["reducer"];
+        const event = txUpdate.event;
+        const functionCall = event.function_call;
+        const identity: Identity = new Identity(event.caller_identity);
+        const address = Address.fromStringOrNull(event.caller_address);
+        const originalReducerName: string = functionCall.reducer;
         const reducerName: string = toPascalCase(originalReducerName);
-        const args = JSON.parse(functionCall["args"]);
-        const status: string = event["status"];
-        const message = event["message"];
+        const args = JSON.parse(functionCall.args);
+        const status: string = event.status;
+        const message = event.message;
 
         const transactionUpdateEvent: TransactionUpdateEvent =
           new TransactionUpdateEvent(
@@ -777,15 +782,15 @@ export class SpacetimeDBClient {
           );
 
         const transactionUpdate = new TransactionUpdateMessage(
-          tableUpdates,
+          subscriptionUpdate.tableUpdates,
           transactionUpdateEvent
         );
         callback(transactionUpdate);
       } else if (data["IdentityToken"]) {
-        const identityToken = data["IdentityToken"];
-        const identity = new Identity(identityToken["identity"]);
-        const token = identityToken["token"];
-        const address = Address.fromString(identityToken["address"]);
+        const identityToken = data.IdentityToken;
+        const identity = new Identity(identityToken.identity);
+        const token = identityToken.token;
+        const address = Address.fromString(identityToken.address);
         const identityTokenMessage: IdentityTokenMessage =
           new IdentityTokenMessage(identity, token, address);
         callback(identityTokenMessage);
@@ -877,14 +882,14 @@ export class SpacetimeDBClient {
   public call(reducerName: string, serializer: Serializer) {
     let message: any;
     if (this.protocol === "binary") {
-      const pmessage: ProtobufMessage = {
+      const pmessage: Proto.Message = {
         functionCall: {
           reducer: reducerName,
           argBytes: serializer.args(),
         },
       };
 
-      message = ProtobufMessage.encode(pmessage).finish();
+      message = Proto.Message.encode(pmessage).finish();
     } else {
       message = JSON.stringify({
         call: {
