@@ -10,7 +10,7 @@ use tokio::sync::oneshot;
 
 use super::host_controller::HostThreadpool;
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
-use crate::client::{ClientActorId, ClientConnectionSender};
+use crate::client::ClientConnectionSender;
 use crate::database_logger::LogLevel;
 use crate::db::datastore::traits::{TxData, TxOp};
 use crate::db::relational_db::RelationalDB;
@@ -498,15 +498,6 @@ impl ModuleHost {
             let _ = tx.send(f(&mut *inst));
         });
         Ok(rx.await.expect("instance panicked"))
-    }
-
-    pub async fn disconnect_client(&self, client_id: ClientActorId) {
-        tokio::join!(
-            async { self.subscriptions().remove_subscriber(client_id) },
-            self.call_identity_connected_disconnected(client_id.identity, client_id.address, false)
-                // ignore NoSuchModule; if the module's already closed, that's fine
-                .map(drop)
-        );
     }
 
     pub async fn call_identity_connected_disconnected(
