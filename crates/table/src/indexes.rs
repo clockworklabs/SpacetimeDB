@@ -366,8 +366,7 @@ mod test {
     use proptest::prelude::*;
 
     proptest! {
-        #[tokio::test]
-async
+        #[test]
         fn row_pointer_ops_work(
             ((rb1, pi1, po1, so1), (rb2, pi2, po2, so2)) in (
                 (any::<bool>(), any::<PageIndex>(), any::<PageOffset>(), any::<SquashedOffset>()),

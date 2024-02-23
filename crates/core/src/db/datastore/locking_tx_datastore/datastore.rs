@@ -495,16 +495,14 @@ pub(crate) fn record_metrics(ctx: &ExecutionContext, tx_timer: Instant, lock_wai
     // That is, transactions that don't write any rows to the commit log.
     DB_METRICS
         .rdb_num_txns
-        .with_label_values(workload, db, reducer, &committed)
-        .inc();
+        .with_label_values_async(workload, db, reducer, &committed, |met| met.inc());
+
     DB_METRICS
         .rdb_txn_cpu_time_sec
-        .with_label_values(workload, db, reducer)
-        .observe(cpu_time);
+        .with_label_values_async(workload, db, reducer, move |met| met.observe(cpu_time));
     DB_METRICS
         .rdb_txn_elapsed_time_sec
-        .with_label_values(workload, db, reducer)
-        .observe(elapsed_time);
+        .with_label_values_async(workload, db, reducer, move |met| met.observe(elapsed_time));
 
     let mut guard = MAX_TX_CPU_TIME.lock().unwrap();
     let max_cpu_time = *guard
@@ -519,8 +517,7 @@ pub(crate) fn record_metrics(ctx: &ExecutionContext, tx_timer: Instant, lock_wai
     drop(guard);
     DB_METRICS
         .rdb_txn_cpu_time_sec_max
-        .with_label_values(workload, db, reducer)
-        .set(max_cpu_time);
+        .with_label_values_async(workload, db, reducer, move |met| met.set(max_cpu_time));
 }
 
 impl MutTx for Locking {

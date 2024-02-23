@@ -1,6 +1,5 @@
 use std::time::{Duration, Instant};
 
-use crate::db::db_metrics::DB_METRICS;
 use crate::energy::EnergyQuanta;
 use crate::execution_context::WorkloadType;
 use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall};

@@ -306,44 +306,44 @@ mod tests {
     };
     use crate::{ValueWithType, WithTypespace};
 
-    #[tokio::test]
-    async fn never() {
+    #[test]
+    fn never() {
         assert_eq!("(|)", fmt_algebraic_type(&AlgebraicType::never()).to_string());
     }
 
-    #[tokio::test]
-    async fn never_map() {
+    #[test]
+    fn never_map() {
         assert_eq!("{ ty_: Sum }", fmt_map(&AlgebraicType::never()).to_string());
     }
 
-    #[tokio::test]
-    async fn unit() {
+    #[test]
+    fn unit() {
         assert_eq!("()", fmt_algebraic_type(&AlgebraicType::unit()).to_string());
     }
 
-    #[tokio::test]
-    async fn unit_map() {
+    #[test]
+    fn unit_map() {
         assert_eq!("{ ty_: Product }", fmt_map(&AlgebraicType::unit()).to_string());
     }
 
-    #[tokio::test]
-    async fn primitive() {
+    #[test]
+    fn primitive() {
         assert_eq!("U8", fmt_algebraic_type(&AlgebraicType::U8).to_string());
     }
 
-    #[tokio::test]
-    async fn primitive_map() {
+    #[test]
+    fn primitive_map() {
         assert_eq!("{ ty_: U8 }", fmt_map(&AlgebraicType::U8).to_string());
     }
 
-    #[tokio::test]
-    async fn option() {
+    #[test]
+    fn option() {
         let option = AlgebraicType::option(AlgebraicType::never());
         assert_eq!("(some: (|) | none: ())", fmt_algebraic_type(&option).to_string());
     }
 
-    #[tokio::test]
-    async fn option_map() {
+    #[test]
+    fn option_map() {
         let option = AlgebraicType::option(AlgebraicType::never());
         assert_eq!(
             "{ ty_: Sum, some: { ty_: Sum }, none: { ty_: Product } }",
@@ -351,8 +351,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn algebraic_type() {
+    #[test]
+    fn algebraic_type() {
         let algebraic_type = AlgebraicType::meta_type();
         assert_eq!(
             "(sum: (variants: Array<(name: (some: String | none: ()), algebraic_type: &0)>) | product: (elements: Array<(name: (some: String | none: ()), algebraic_type: &0)>) | builtin: (bool: () | i8: () | u8: () | i16: () | u16: () | i32: () | u32: () | i64: () | u64: () | i128: () | u128: () | f32: () | f64: () | string: () | array: &0 | map: (key_ty: &0, ty: &0)) | ref: U32)",
@@ -360,8 +360,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn algebraic_type_map() {
+    #[test]
+    fn algebraic_type_map() {
         let algebraic_type = AlgebraicType::meta_type();
         assert_eq!(
             "{ ty_: Sum, sum: { ty_: Product, variants: { ty_: Array, 0: { ty_: Product, name: { ty_: Sum, some: { ty_: String }, none: { ty_: Product } }, algebraic_type: { ty_: Ref, 0: 0 } } } }, product: { ty_: Product, elements: { ty_: Array, 0: { ty_: Product, name: { ty_: Sum, some: { ty_: String }, none: { ty_: Product } }, algebraic_type: { ty_: Ref, 0: 0 } } } }, builtin: { ty_: Sum, bool: { ty_: Product }, i8: { ty_: Product }, u8: { ty_: Product }, i16: { ty_: Product }, u16: { ty_: Product }, i32: { ty_: Product }, u32: { ty_: Product }, i64: { ty_: Product }, u64: { ty_: Product }, i128: { ty_: Product }, u128: { ty_: Product }, f32: { ty_: Product }, f64: { ty_: Product }, string: { ty_: Product }, array: { ty_: Ref, 0: 0 }, map: { ty_: Product, key_ty: { ty_: Ref, 0: 0 }, ty: { ty_: Ref, 0: 0 } } }, ref: { ty_: U32 } }",
@@ -369,8 +369,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn nested_products_and_sums() {
+    #[test]
+    fn nested_products_and_sums() {
         let builtin = AlgebraicType::U8;
         let product = AlgebraicType::product([("thing", AlgebraicType::U8)]);
         let sum = AlgebraicType::sum([builtin.clone(), builtin.clone(), product]);
@@ -390,8 +390,8 @@ mod tests {
         WithTypespace::new(ts, ty).with_value(val)
     }
 
-    #[tokio::test]
-    async fn option_as_value() {
+    #[test]
+    fn option_as_value() {
         let option = AlgebraicType::option(AlgebraicType::never());
         let algebraic_type = AlgebraicType::meta_type();
         let typespace = Typespace::new(vec![algebraic_type]);
@@ -402,8 +402,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn builtin_as_value() {
+    #[test]
+    fn builtin_as_value() {
         let array = AlgebraicType::U8;
         let algebraic_type = AlgebraicType::meta_type();
         let typespace = Typespace::new(vec![algebraic_type]);
@@ -414,8 +414,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn algebraic_type_as_value() {
+    #[test]
+    fn algebraic_type_as_value() {
         let algebraic_type = AlgebraicType::meta_type();
         let typespace = Typespace::new(vec![algebraic_type.clone()]);
         let at_ref = AlgebraicType::Ref(AlgebraicTypeRef(0));
@@ -425,20 +425,20 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn option_from_value() {
+    #[test]
+    fn option_from_value() {
         let option = AlgebraicType::option(AlgebraicType::never());
         AlgebraicType::from_value(&option.as_value()).expect("No errors.");
     }
 
-    #[tokio::test]
-    async fn builtin_from_value() {
+    #[test]
+    fn builtin_from_value() {
         let u8 = AlgebraicType::U8;
         AlgebraicType::from_value(&u8.as_value()).expect("No errors.");
     }
 
-    #[tokio::test]
-    async fn algebraic_type_from_value() {
+    #[test]
+    fn algebraic_type_from_value() {
         let algebraic_type = AlgebraicType::meta_type();
         AlgebraicType::from_value(&algebraic_type.as_value()).expect("No errors.");
     }

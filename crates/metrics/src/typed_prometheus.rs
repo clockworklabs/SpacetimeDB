@@ -13,8 +13,16 @@ macro_rules! metrics_group {
         impl $type_name {
             #[allow(clippy::new_without_default)]
             pub fn new() -> Self {
+                
+                let (tx,mut rx) = tokio::sync::mpsc::unbounded_channel::<Box<dyn FnOnce() + Send>>();
+                tokio::spawn(async move {
+                    while let Some(f) = rx.recv().await {
+                        f();
+                    }
+                });
+
                 Self {
-                    $($field: $crate::make_collector!($crate::metrics_group!(@fieldtype $field $ty $(($($labels)*))?), stringify!($name), $help),)*
+                    $($field: $crate::make_collector!($crate::metrics_group!(@fieldtype $field $ty $(($($labels)*))?), stringify!($name), $help, tx.clone()),)*
                 }
             }
         }
@@ -58,11 +66,11 @@ pub use {itertools, paste::paste};
 
 #[macro_export]
 macro_rules! make_collector {
-    ($ty:ty, $name:expr, $help:expr $(,)?) => {
-        <$ty>::with_opts(prometheus::Opts::new($name, $help).into()).unwrap()
+    ($ty:ty, $name:expr, $help:expr, $tx:expr $(,)?) => {
+        <$ty>::with_opts(prometheus::Opts::new($name, $help).into(), $tx).unwrap()
     };
-    ($ty:ty, $name:expr, $help:expr, $labels:expr $(,)?) => {
-        <$ty>::new(prometheus::Opts::new($name, $help).into(), $labels).unwrap()
+    ($ty:ty, $name:expr, $help:expr, $labels:expr, $tx:expr $(,)?) => {
+        <$ty>::new(prometheus::Opts::new($name, $help).into(), $labels, $tx).unwrap()
     };
 }
 pub use make_collector;
@@ -71,11 +79,11 @@ pub use make_collector;
 macro_rules! metrics_histogram_vec {
     ($vis:vis $name:ident: $vecty:ident($($labels:ident: $labelty:ty),+ $(,)?) ($($bucket:literal)*)) => {
         #[derive(Clone)]
-        $vis struct $name($vecty);
+        $vis struct $name($vecty, tokio::sync::mpsc::UnboundedSender<Box<dyn FnOnce() + Send>>);
         impl $name {
-            pub fn with_opts(opts: prometheus::Opts) -> prometheus::Result<Self> {
+            pub fn with_opts(opts: prometheus::Opts, tx: tokio::sync::mpsc::UnboundedSender<Box<dyn FnOnce() + Send>>) -> prometheus::Result<Self> {
                 let opts = prometheus::HistogramOpts::from(opts).buckets(vec![$(f64::from($bucket)),*]);
-                $vecty::new(opts.into(), &[$(stringify!($labels)),+]).map(Self)
+                Ok(Self($vecty::new(opts.into(), &[$(stringify!($labels)),+] ).unwrap(), tx))
             }
 
             pub fn with_label_values(&self, $($labels: &$labelty),+) -> <$vecty as $crate::typed_prometheus::ExtractMetricVecT>::M {
@@ -94,11 +102,10 @@ macro_rules! metrics_histogram_vec {
                 $(
                     let $labels = $labels.to_owned();
                 )+
-
-                tokio::spawn(async move {
+                let _ = self.1.send(Box::new(move || {
                     let res = this.0.with_label_values(&[ $((&$labels).as_prometheus_str().as_ref()),+ ]);
                     op(res);
-                });
+                }));
             }
         }
 
@@ -120,10 +127,10 @@ pub use metrics_histogram_vec;
 macro_rules! metrics_vec {
     ($vis:vis $name:ident: $vecty:ident($($labels:ident: $labelty:ty),+ $(,)?)) => {
         #[derive(Clone)]
-        $vis struct $name($vecty);
+        $vis struct $name($vecty, tokio::sync::mpsc::UnboundedSender<Box<dyn FnOnce() + Send>>);
         impl $name {
-            pub fn with_opts(opts: prometheus::Opts) -> prometheus::Result<Self> {
-                $vecty::new(opts.into(), &[$(stringify!($labels)),+]).map(Self)
+            pub fn with_opts(opts: prometheus::Opts, tx: tokio::sync::mpsc::UnboundedSender<Box<dyn FnOnce() + Send>>) -> prometheus::Result<Self> {
+                Ok(Self($vecty::new(opts.into(), &[$(stringify!($labels)),+] ).unwrap(), tx))
             }
 
             pub fn with_label_values(&self, $($labels: &$labelty),+) -> <$vecty as $crate::typed_prometheus::ExtractMetricVecT>::M {
@@ -142,11 +149,12 @@ macro_rules! metrics_vec {
                 $(
                     let $labels = $labels.to_owned();
                 )+
-                tokio::spawn(async move {
+                let _ = self.1.send(Box::new(move || {
                     let res = this.0.with_label_values(&[ $((&$labels).as_prometheus_str().as_ref()),+ ]);
                     op(res);
-                });
+                }));
             }
+
         }
 
         impl prometheus::core::Collector for $name {

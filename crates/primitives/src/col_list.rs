@@ -537,8 +537,7 @@ mod tests {
     }
 
     proptest! {
-        #[tokio::test]
-async
+        #[test]
         fn test_inline(cols in vec((0..ColList::FIRST_HEAP_COL as u32).prop_map_into(), 1..100)) {
             let [head, tail @ ..] = &*cols else { unreachable!() };
 
@@ -567,8 +566,7 @@ async
             prop_assert_eq!(list.iter().collect::<Vec<_>>(), cols);
         }
 
-        #[tokio::test]
-async
+        #[test]
         fn test_heap(cols in vec((ColList::FIRST_HEAP_COL as u32.. ).prop_map_into(), 1..100)) {
             let contains = |list: &ColList, x| list.iter().collect::<Vec<_>>().contains(x);
 
