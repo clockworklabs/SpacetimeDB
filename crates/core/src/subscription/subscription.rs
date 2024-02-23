@@ -42,9 +42,10 @@ use crate::{
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{Address, PrimaryKey};
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
-use spacetimedb_sats::relation::{DbTable, Header, MemTable, RelValue, Relation};
-use spacetimedb_sats::{AlgebraicValue, DataKey, ProductValue};
+use spacetimedb_sats::relation::{DbTable, Header, Relation};
+use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::expr::{self, IndexJoin, QueryExpr};
+use spacetimedb_vm::relation::MemTable;
 
 use super::query;
 
@@ -166,15 +167,6 @@ impl TryFrom<QueryExpr> for QuerySet {
     }
 }
 
-// If a RelValue has an id (DataKey) return it directly, otherwise we must construct it from the
-// row itself which can be an expensive operation.
-fn pk_for_row(row: &RelValue) -> PrimaryKey {
-    match row.id {
-        Some(data_key) => PrimaryKey { data_key },
-        None => RelationalDB::pk_for_row(&row.data),
-    }
-}
-
 // Returns a closure for evaluating a query.
 // One that consists of updates to secondary tables only.
 // A secondary table is one whose rows are not directly returned by the query.
@@ -193,8 +185,7 @@ fn evaluator_for_secondary_updates(
             run_query(&ExecutionContext::incremental_update(db.address()), db, tx, query, auth)?
         {
             for row in data {
-                let row_pk = pk_for_row(&row);
-                let row = row.data;
+                let row_pk = RelationalDB::pk_for_row(&row);
                 out.insert(row_pk, Op { op_type, row_pk, row });
             }
         }
@@ -226,13 +217,12 @@ fn evaluator_for_primary_updates(
             let pos_op_type = pos_op_type.idx();
 
             for mut row in data {
-                let op_type = if let AlgebraicValue::U8(op) = row.data.elements.remove(pos_op_type) {
+                let op_type = if let AlgebraicValue::U8(op) = row.elements.remove(pos_op_type) {
                     op
                 } else {
                     panic!("Failed to extract `{OP_TYPE_FIELD_NAME}` from `{}`", head.table_name);
                 };
-                let row_pk = pk_for_row(&row);
-                let row = row.data;
+                let row_pk = RelationalDB::pk_for_row(&row);
                 out.insert(row_pk, Op { op_type, row_pk, row });
             }
         }
@@ -365,7 +355,7 @@ impl QuerySet {
                     .or_insert_with(|| (t.head.table_name.clone(), vec![]));
                 for table in run_query(&ExecutionContext::subscribe(db.address()), db, tx, expr, auth)? {
                     for row in table.data {
-                        let row_pk = pk_for_row(&row);
+                        let row_pk = RelationalDB::pk_for_row(&row);
 
                         //Skip rows that are already resolved in a previous subscription...
                         if seen.contains(&(t.table_id, row_pk)) {
@@ -374,7 +364,6 @@ impl QuerySet {
                         seen.insert((t.table_id, row_pk));
 
                         let row_pk = row_pk.to_bytes();
-                        let row = row.data;
                         table_row_operations.push(TableOp {
                             op_type: 1, // Insert
                             row_pk,
@@ -692,16 +681,11 @@ impl<'a> IncrementalJoin<'a> {
 /// Replace an [IndexJoin]'s scan or fetch operation with a delta table.
 /// A delta table consists purely of updates or changes to the base table.
 fn with_delta_table(mut join: IndexJoin, index_side: bool, delta: DatabaseTableUpdate) -> IndexJoin {
-    fn as_rel_value(op: &TableOp) -> RelValue {
-        let mut bytes: &[u8] = op.row_pk.as_ref();
-        RelValue::new(op.row.clone(), Some(DataKey::decode(&mut bytes).unwrap()))
-    }
-
     fn to_mem_table(head: Header, table_access: StAccess, delta: DatabaseTableUpdate) -> MemTable {
         MemTable::new(
             head,
             table_access,
-            delta.ops.iter().map(as_rel_value).collect::<Vec<_>>(),
+            delta.ops.into_iter().map(|op| op.row).collect::<Vec<_>>(),
         )
     }
 
@@ -748,62 +732,25 @@ fn with_delta_table(mut join: IndexJoin, index_side: bool, delta: DatabaseTableU
 mod tests {
     use super::*;
     use crate::db::relational_db::tests_utils::make_test_db;
-    use crate::db::relational_db::MutTx;
     use crate::host::module_host::TableOp;
     use crate::sql::compiler::compile_sql;
-    use itertools::Itertools;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::data_key::ToDataKey;
-    use spacetimedb_sats::db::auth::{StAccess, StTableType};
-    use spacetimedb_sats::db::def::*;
-    use spacetimedb_sats::relation::{FieldName, Table};
+    use spacetimedb_sats::relation::FieldName;
     use spacetimedb_sats::{product, AlgebraicType};
     use spacetimedb_vm::expr::{CrudExpr, IndexJoin, Query, SourceExpr};
-
-    fn create_table(
-        db: &RelationalDB,
-        tx: &mut MutTx,
-        name: &str,
-        schema: &[(&str, AlgebraicType)],
-        indexes: &[(ColId, &str)],
-    ) -> Result<TableId, DBError> {
-        let table_name = name.to_string();
-        let table_type = StTableType::User;
-        let table_access = StAccess::Public;
-
-        let columns = schema
-            .iter()
-            .map(|(col_name, col_type)| ColumnDef {
-                col_name: col_name.to_string(),
-                col_type: col_type.clone(),
-            })
-            .collect_vec();
-
-        let indexes = indexes
-            .iter()
-            .map(|(col_id, index_name)| IndexDef::btree(index_name.to_string(), *col_id, false))
-            .collect_vec();
-
-        let schema = TableDef::new(table_name, columns)
-            .with_indexes(indexes)
-            .with_type(table_type)
-            .with_access(table_access);
-
-        db.create_table(tx, schema)
-    }
+    use spacetimedb_vm::relation::Table;
 
     #[test]
     // Compile an index join after replacing the index side with a virtual table.
     // The original index and probe sides should be swapped after introducing the delta table.
     fn compile_incremental_index_join_index_side() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
         let indexes = &[(1.into(), "b")];
-        let lhs_id = create_table(&db, &mut tx, "lhs", schema, indexes)?;
+        let lhs_id = db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [b, c]
         let schema = &[
@@ -812,8 +759,7 @@ mod tests {
             ("d", AlgebraicType::U64),
         ];
         let indexes = &[(0.into(), "b"), (1.into(), "c")];
-        let rhs_id = create_table(&db, &mut tx, "rhs", schema, indexes)?;
-        db.commit_tx(&ExecutionContext::default(), tx)?;
+        let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
 
         let tx = db.begin_tx();
         // Should generate an index join since there is an index on `lhs.b`.
@@ -894,12 +840,11 @@ mod tests {
     // The original index and probe sides should remain after introducing the virtual table.
     fn compile_incremental_index_join_probe_side() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
-        let mut tx = db.begin_mut_tx();
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
         let indexes = &[(1.into(), "b")];
-        let lhs_id = create_table(&db, &mut tx, "lhs", schema, indexes)?;
+        let lhs_id = db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [b, c]
         let schema = &[
@@ -908,8 +853,7 @@ mod tests {
             ("d", AlgebraicType::U64),
         ];
         let indexes = &[(0.into(), "b"), (1.into(), "c")];
-        let rhs_id = create_table(&db, &mut tx, "rhs", schema, indexes)?;
-        db.commit_tx(&ExecutionContext::default(), tx)?;
+        let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
 
         let tx = db.begin_tx();
         // Should generate an index join since there is an index on `lhs.b`.

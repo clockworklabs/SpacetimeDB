@@ -1,9 +1,0 @@
-#!@duckscript
-
-# Make sure that we have the wasm target installed (ok to run if its already installed)
-exec --fail-on-error rustup target add wasm32-unknown-unknown
-exec --fail-on-error cargo --config net.git-fetch-with-cli=true build --target wasm32-unknown-unknown --release
-
-# Update the running module
-exec --fail-on-error spacetime identity init-default --quiet
-exec --fail-on-error spacetime energy set-balance 5000000000000000 --quiet

@@ -1,49 +1,15 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use itertools::Itertools;
 use spacetimedb::db::relational_db::{open_db, RelationalDB};
 use spacetimedb::error::DBError;
 use spacetimedb::execution_context::ExecutionContext;
 use spacetimedb::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp};
 use spacetimedb::subscription::query::compile_read_only_query;
-use spacetimedb_lib::{error::ResultTest, identity::AuthCtx};
-use spacetimedb_primitives::{ColId, TableId};
-use spacetimedb_sats::db::auth::{StAccess, StTableType};
-use spacetimedb_sats::db::def::{ColumnDef, IndexDef, TableDef};
+use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductValue, ToDataKey};
 use tempdir::TempDir;
 
-fn create_table(
-    db: &RelationalDB,
-    name: &str,
-    schema: &[(&str, AlgebraicType)],
-    indexes: &[(ColId, &str)],
-) -> ResultTest<TableId> {
-    let table_name = name.to_string();
-    let table_type = StTableType::User;
-    let table_access = StAccess::Public;
-
-    let columns = schema
-        .iter()
-        .map(|(col_name, col_type)| ColumnDef {
-            col_name: col_name.to_string(),
-            col_type: col_type.clone(),
-        })
-        .collect_vec();
-
-    let indexes = indexes
-        .iter()
-        .map(|(col_id, index_name)| IndexDef::btree(index_name.to_string(), *col_id, false))
-        .collect_vec();
-
-    let schema = TableDef::new(table_name, columns)
-        .with_indexes(indexes)
-        .with_type(table_type)
-        .with_access(table_access);
-
-    Ok(db.with_auto_commit(&ExecutionContext::default(), |tx| db.create_table(tx, schema))?)
-}
-
-fn create_table_location(db: &RelationalDB) -> ResultTest<TableId> {
+fn create_table_location(db: &RelationalDB) -> Result<TableId, DBError> {
     let schema = &[
         ("entity_id", AlgebraicType::U64),
         ("chunk_index", AlgebraicType::U64),
@@ -52,10 +18,10 @@ fn create_table_location(db: &RelationalDB) -> ResultTest<TableId> {
         ("dimension", AlgebraicType::U32),
     ];
     let indexes = &[(0.into(), "entity_id"), (1.into(), "chunk_index"), (2.into(), "x")];
-    create_table(&db, "location", schema, indexes)
+    db.create_table_for_test("location", schema, indexes)
 }
 
-fn create_table_footprint(db: &RelationalDB) -> ResultTest<TableId> {
+fn create_table_footprint(db: &RelationalDB) -> Result<TableId, DBError> {
     let footprint = AlgebraicType::sum([
         ("A", AlgebraicType::unit()),
         ("B", AlgebraicType::unit()),
@@ -68,7 +34,7 @@ fn create_table_footprint(db: &RelationalDB) -> ResultTest<TableId> {
         ("owner_entity_id", AlgebraicType::U64),
     ];
     let indexes = &[(0.into(), "entity_id"), (2.into(), "owner_entity_id")];
-    create_table(&db, "footprint", schema, indexes)
+    db.create_table_for_test("footprint", schema, indexes)
 }
 
 fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
@@ -84,7 +50,7 @@ fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> Database
     }
 }
 
-fn eval_incr_join(c: &mut Criterion) {
+fn eval(c: &mut Criterion) {
     let tmp_dir = TempDir::new("stdb_test").unwrap();
     let db = open_db(&tmp_dir, false, false).unwrap();
 
@@ -97,7 +63,7 @@ fn eval_incr_join(c: &mut Criterion) {
             let owner = entity_id % 1_000;
             let footprint = AlgebraicValue::sum(entity_id as u8 % 4, AlgebraicValue::unit());
             let row = product!(entity_id, footprint, owner);
-            let _ = db.insert(tx, rhs, row)?;
+            let _ = db.insert(tx, lhs, row)?;
         }
         Ok(())
     });
@@ -109,7 +75,7 @@ fn eval_incr_join(c: &mut Criterion) {
                 let entity_id = chunk_index * 1200 + i;
                 let x = 0i32;
                 let z = 0i32;
-                let dimension = 0i32;
+                let dimension = 0u32;
                 let row = product!(entity_id, chunk_index, x, z, dimension);
                 let _ = db.insert(tx, rhs, row)?;
             }
@@ -136,13 +102,76 @@ fn eval_incr_join(c: &mut Criterion) {
         ],
     };
 
-    let tx = db.begin_tx();
-    let sql = "select footprint.* from footprint join location on footprint.entity_id = location.entity_id where location.chunk_index = 13";
-    let auth = AuthCtx::for_testing();
-    let query = compile_read_only_query(&db, &tx, &auth, sql).unwrap();
-
-    c.bench_function("insert", |b| {
+    // To profile this benchmark for 30s
+    // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- full-scan --exact --profile-time=30
+    c.bench_function("full-scan", |b| {
+        // Iterate 1M rows.
+        let scan = "select * from footprint";
+        let auth = AuthCtx::for_testing();
         let tx = db.begin_tx();
+        let query = compile_read_only_query(&db, &tx, &auth, scan).unwrap();
+
+        b.iter(|| {
+            let out = query.eval(&db, &tx, auth).unwrap();
+            black_box(out);
+        })
+    });
+
+    // To profile this benchmark for 30s
+    // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- full-join --exact --profile-time=30
+    c.bench_function("full-join", |b| {
+        // Join 1M rows on the left with 12K rows on the right.
+        // Note, this should use an index join so as not to read the entire lhs table.
+        let join = format!(
+            "\
+            select footprint.* \
+            from footprint join location on footprint.entity_id = location.entity_id \
+            where location.chunk_index = {chunk_index}"
+        );
+        let auth = AuthCtx::for_testing();
+        let tx = db.begin_tx();
+        let query = compile_read_only_query(&db, &tx, &auth, &join).unwrap();
+
+        b.iter(|| {
+            let out = query.eval(&db, &tx, AuthCtx::for_testing()).unwrap();
+            black_box(out);
+        })
+    });
+
+    // To profile this benchmark for 30s
+    // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- incr-select --exact --profile-time=30
+    c.bench_function("incr-select", |b| {
+        // A passthru executed independently of the database.
+        let select_lhs = "select * from footprint";
+        let select_rhs = "select * from location";
+        let auth = AuthCtx::for_testing();
+        let tx = db.begin_tx();
+        let query_lhs = compile_read_only_query(&db, &tx, &auth, select_lhs).unwrap();
+        let query_rhs = compile_read_only_query(&db, &tx, &auth, select_rhs).unwrap();
+
+        let mut query = query_lhs;
+        query.extend(query_rhs);
+
+        b.iter(|| {
+            let out = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing()).unwrap();
+            black_box(out);
+        })
+    });
+
+    // To profile this benchmark for 30s
+    // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- incr-join --exact --profile-time=30
+    c.bench_function("incr-join", |b| {
+        // Not a passthru - requires reading of database state.
+        let join = format!(
+            "\
+            select footprint.* \
+            from footprint join location on footprint.entity_id = location.entity_id \
+            where location.chunk_index = {chunk_index}"
+        );
+        let auth = AuthCtx::for_testing();
+        let tx = db.begin_tx();
+        let query = compile_read_only_query(&db, &tx, &auth, &join).unwrap();
+
         b.iter(|| {
             let out = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing()).unwrap();
             black_box(out);
@@ -150,5 +179,5 @@ fn eval_incr_join(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, eval_incr_join);
+criterion_group!(benches, eval);
 criterion_main!(benches);

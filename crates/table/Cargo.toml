@@ -29,12 +29,13 @@ proptest = ["dep:proptest", "dep:proptest-derive"]
 blake3_pure = ["blake3/pure"]
 
 [dependencies]
-spacetimedb-primitives = { path = "../primitives" }
-spacetimedb-sats = { path = "../sats" }
+spacetimedb-primitives.workspace = true
+spacetimedb-sats.workspace = true
 
 ahash.workspace = true
 bit-vec.workspace = true
 blake3.workspace = true
+decorum.workspace = true
 derive_more.workspace = true
 enum-as-inner.workspace = true
 itertools.workspace = true

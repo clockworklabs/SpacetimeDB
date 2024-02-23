@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Weak};
@@ -6,7 +5,7 @@ use std::time::Duration;
 
 use futures::{Future, FutureExt};
 use indexmap::IndexMap;
-use tokio::sync::{oneshot, RwLock};
+use tokio::sync::oneshot;
 
 use super::host_controller::HostThreadpool;
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
@@ -27,8 +26,8 @@ use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
 use crate::util::notify_once::NotifyOnce;
 use spacetimedb_lib::{Address, ReducerDef, TableDesc};
 use spacetimedb_primitives::TableId;
-use spacetimedb_sats::relation::MemTable;
 use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
+use spacetimedb_vm::relation::MemTable;
 
 #[derive(Debug, Default, Clone)]
 pub struct DatabaseUpdate {
@@ -45,45 +44,29 @@ impl DatabaseUpdate {
 
     pub fn from_writes(stdb: &RelationalDB, tx_data: &TxData) -> Self {
         let mut map: HashMap<TableId, Vec<TableOp>> = HashMap::new();
-        //TODO: This should be wrapped with .auto_commit
-        let tx = stdb.begin_mut_tx();
         for record in tx_data.records.iter() {
-            let op = match record.op {
-                TxOp::Delete => 0,
-                TxOp::Insert(_) => 1,
-            };
-
-            let vec = if let Some(vec) = map.get_mut(&record.table_id) {
-                vec
-            } else {
-                map.insert(record.table_id, Vec::new());
-                map.get_mut(&record.table_id).unwrap()
-            };
-
-            let (row, row_pk) = (record.product_value.clone(), record.key.to_bytes());
+            let vec = map.entry(record.table_id).or_default();
 
             vec.push(TableOp {
-                op_type: op,
-                row_pk,
-                row,
+                op_type: match record.op {
+                    TxOp::Delete => 0,
+                    TxOp::Insert(_) => 1,
+                },
+                row_pk: record.key.to_bytes(),
+                row: record.product_value.clone(),
             });
         }
 
         let ctx = ExecutionContext::internal(stdb.address());
-        let mut table_name_map: HashMap<TableId, Cow<'_, str>> = HashMap::new();
-        let mut table_updates = Vec::new();
-        for (table_id, table_row_operations) in map.drain() {
-            let table_name = table_name_map
-                .entry(table_id)
-                .or_insert_with(|| stdb.table_name_from_id(&ctx, &tx, table_id).unwrap().unwrap());
-            let table_name: &str = table_name.as_ref();
-            table_updates.push(DatabaseTableUpdate {
-                table_id,
-                table_name: table_name.to_owned(),
-                ops: table_row_operations,
-            });
-        }
-        stdb.rollback_mut_tx(&ctx, tx);
+        let table_updates = stdb.with_read_only(&ctx, |tx| {
+            map.into_iter()
+                .map(|(table_id, ops)| DatabaseTableUpdate {
+                    table_id,
+                    table_name: stdb.table_name_from_id(tx, table_id).unwrap().unwrap().into_owned(),
+                    ops,
+                })
+                .collect()
+        });
 
         DatabaseUpdate { tables: table_updates }
     }
@@ -201,7 +184,7 @@ pub struct ModuleInfo {
     pub reducers: ReducersMap,
     pub catalog: HashMap<String, EntityDef>,
     pub log_tx: tokio::sync::broadcast::Sender<bytes::Bytes>,
-    pub subscriptions: Arc<RwLock<ModuleSubscriptions>>,
+    pub subscriptions: ModuleSubscriptions,
 }
 
 pub struct ReducersMap(pub IndexMap<String, ReducerDef>);
@@ -241,7 +224,7 @@ pub trait Module: Send + Sync + 'static {
         &self,
         caller_identity: Identity,
         query: String,
-    ) -> Result<Vec<spacetimedb_sats::relation::MemTable>, DBError>;
+    ) -> Result<Vec<spacetimedb_vm::relation::MemTable>, DBError>;
     fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error>;
     #[cfg(feature = "tracelogging")]
     fn get_trace(&self) -> Option<bytes::Bytes>;
@@ -332,7 +315,7 @@ trait DynModuleHost: Send + Sync + 'static {
         &self,
         caller_identity: Identity,
         query: String,
-    ) -> Result<Vec<spacetimedb_sats::relation::MemTable>, DBError>;
+    ) -> Result<Vec<spacetimedb_vm::relation::MemTable>, DBError>;
     fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error>;
     fn start(&self);
     fn exit(&self) -> Closed<'_>;
@@ -405,7 +388,7 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
         &self,
         caller_identity: Identity,
         query: String,
-    ) -> Result<Vec<spacetimedb_sats::relation::MemTable>, DBError> {
+    ) -> Result<Vec<spacetimedb_vm::relation::MemTable>, DBError> {
         self.module.one_off_query(caller_identity, query)
     }
 
@@ -493,7 +476,7 @@ impl ModuleHost {
     }
 
     #[inline]
-    pub fn subscriptions(&self) -> &RwLock<ModuleSubscriptions> {
+    pub fn subscriptions(&self) -> &ModuleSubscriptions {
         &self.info.subscriptions
     }
 
@@ -513,7 +496,7 @@ impl ModuleHost {
 
     pub async fn disconnect_client(&self, client_id: ClientActorId) {
         tokio::join!(
-            async { self.subscriptions().write().await.remove_subscriber(client_id) },
+            async { self.subscriptions().remove_subscriber(client_id) },
             self.call_identity_connected_disconnected(client_id.identity, client_id.address, false)
                 // ignore NoSuchModule; if the module's already closed, that's fine
                 .map(drop)

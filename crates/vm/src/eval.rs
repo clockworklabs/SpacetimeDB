@@ -1,389 +1,68 @@
-use std::collections::HashMap;
-
-use spacetimedb_sats::algebraic_type::AlgebraicType;
-use spacetimedb_sats::algebraic_value::AlgebraicValue;
-use spacetimedb_sats::relation::{FieldExpr, MemTable, RelIter, Relation, Table};
-use spacetimedb_sats::{product, ProductType, ProductValue};
-
-use crate::dsl::{bin_op, call_fn, if_, mem_table, scalar, var};
-use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
-use crate::expr::{
-    Code, CrudCode, CrudExpr, CrudExprOpt, Expr, ExprOpt, FunctionOpt, QueryCode, QueryExpr, QueryExprOpt, SourceExpr,
-    SourceExprOpt, TyExpr,
-};
-use crate::expr::{Function, Query};
-use crate::functions::{Args, Param};
-use crate::operator::*;
+use crate::dsl::mem_table;
+use crate::errors::ErrorVm;
+use crate::expr::{Code, CrudCode, CrudExpr, QueryCode, QueryExpr, SourceExpr};
+use crate::expr::{Expr, Query};
+use crate::iterators::RelIter;
 use crate::program::ProgramVm;
 use crate::rel_ops::RelOps;
-use crate::typecheck::check_types;
-use crate::types::{ty_op, Ty};
+use crate::relation::{MemTable, RelValue, Table};
+use spacetimedb_sats::relation::{FieldExpr, Relation};
+use spacetimedb_sats::{product, AlgebraicType, ProductType};
 
-fn to_vec<P: ProgramVm>(p: &mut P, of: &[Expr]) -> Vec<ExprOpt> {
-    let mut new = Vec::with_capacity(of.len());
-    for x in of {
-        new.push(build_typed(p, x.clone()));
-    }
-    new
-}
-
-fn build_source(source: SourceExpr) -> SourceExprOpt {
-    match source {
-        SourceExpr::MemTable(x) => {
-            SourceExprOpt::MemTable(TyExpr::new(x.clone(), Ty::Val(AlgebraicType::Product(x.head.ty()))))
-        }
-        SourceExpr::DbTable(x) => {
-            SourceExprOpt::DbTable(TyExpr::new(x.clone(), Ty::Val(AlgebraicType::Product(x.head.ty()))))
-        }
-    }
-}
-
-fn build_query_opt(q: QueryExpr) -> QueryExprOpt {
-    let source = build_source(q.source);
-
-    QueryExprOpt { source, query: q.query }
-}
-
-fn build_typed<P: ProgramVm>(p: &mut P, node: Expr) -> ExprOpt {
-    match node {
-        Expr::Value(x) => ExprOpt::Value(TyExpr::new(x.clone(), x.type_of().into())),
-        Expr::Ty(x) => ExprOpt::Ty(Ty::Val(x)),
-        Expr::Op(op, args) => {
-            let new = to_vec(p, &args);
-            ExprOpt::Op(TyExpr::new(op, Ty::Multi(ty_op(op))), new)
-        }
-        Expr::If(inner) => {
-            let (test, if_true, if_false) = *inner;
-            let test = build_typed(p, test);
-            let if_true = build_typed(p, if_true);
-            let if_false = build_typed(p, if_false);
-
-            ExprOpt::If(Box::new((test, if_true, if_false)))
-        }
-        Expr::Fun(f) => {
-            p.env_mut().ty.add(&f.head.name, f.head.result.clone().into());
-
-            ExprOpt::Fun(FunctionOpt::new(f.head, &to_vec(p, &f.body)))
-        }
-        Expr::Block(lines) => ExprOpt::Block(to_vec(p, &lines)),
-        Expr::Ident(name) => ExprOpt::Ident(name),
-        Expr::CallFn(name, params) => {
-            if p.env_mut().functions.get_by_name(&name).is_some() {
-                let params = params.into_iter().map(|(k, v)| (k, build_typed(p, v)));
-                ExprOpt::CallFn(name, params.map(|(_, v)| v).collect())
-            } else {
-                let params = params.into_iter().map(|(k, v)| (k, build_typed(p, v)));
-                ExprOpt::CallLambda(name, params.collect())
-            }
-        }
-        Expr::Crud(q) => {
-            let q = q.optimize(&|_, _| i64::MAX);
-            match q {
-                CrudExpr::Query(q) => {
-                    let source = build_query_opt(q);
-
-                    ExprOpt::Query(Box::new(source))
-                }
-                CrudExpr::Insert { source, rows: data } => {
-                    let source = build_source(source);
-                    let mut rows = Vec::with_capacity(data.len());
-                    for x in data {
-                        let mut row = Vec::with_capacity(x.len());
-                        for v in x {
-                            match v {
-                                FieldExpr::Name(x) => {
-                                    todo!("Deal with idents in insert?: {}", x)
-                                }
-                                FieldExpr::Value(x) => {
-                                    row.push(x);
-                                }
-                            }
-                        }
-                        rows.push(ProductValue::new(&row))
-                    }
-                    ExprOpt::Crud(Box::new(CrudExprOpt::Insert { source, rows }))
-                }
-                CrudExpr::Update { delete, assignments } => {
-                    let delete = build_query_opt(delete);
-
-                    ExprOpt::Crud(Box::new(CrudExprOpt::Update { delete, assignments }))
-                }
-                CrudExpr::Delete { query } => {
-                    let query = build_query_opt(query);
-
-                    ExprOpt::Crud(Box::new(CrudExprOpt::Delete { query }))
-                }
-                CrudExpr::CreateTable { table } => ExprOpt::Crud(Box::new(CrudExprOpt::CreateTable { table })),
-                CrudExpr::Drop {
-                    name,
-                    kind,
-                    table_access,
-                } => ExprOpt::Crud(Box::new(CrudExprOpt::Drop {
-                    name,
-                    kind,
-                    table_access,
-                })),
-            }
-        }
-        x => {
-            todo!("{:?}", x)
-        }
-    }
-}
-
-/// First pass:
-///
-/// Compile the [Expr] into a type-annotated AST [Tree<ExprOpt>].
-///
-/// Then validate & type-check it.
-#[tracing::instrument(skip_all)]
-pub fn optimize<P: ProgramVm>(p: &mut P, code: Expr) -> Result<ExprOpt, ErrorType> {
-    let result = build_typed(p, code);
-    check_types(&mut p.env_mut().ty, &result)?;
-
-    Ok(result)
-}
-
-fn collect_vec<P: ProgramVm>(p: &mut P, iter: impl ExactSizeIterator<Item = ExprOpt>) -> Result<Vec<Code>, ErrorVm> {
-    let mut code = Vec::with_capacity(iter.len());
-
-    for x in iter {
-        code.push(compile(p, x)?);
-    }
-    Ok(code)
-}
-
-fn collect_map<P: ProgramVm>(
-    p: &mut P,
-    iter: impl ExactSizeIterator<Item = (String, ExprOpt)>,
-) -> Result<HashMap<String, Code>, ErrorVm> {
-    let mut code = HashMap::with_capacity(iter.len());
-
-    for (name, x) in iter {
-        code.insert(name, compile(p, x)?);
-    }
-    Ok(code)
-}
-
-fn compile_query(q: QueryExprOpt) -> QueryCode {
+fn compile_query(q: QueryExpr) -> QueryCode {
     match q.source {
-        SourceExprOpt::Value(x) => {
-            let data = mem_table(x.of.type_of(), vec![x.of]);
-            QueryCode {
-                table: Table::MemTable(data),
-                query: q.query.clone(),
-            }
-        }
-        SourceExprOpt::MemTable(x) => QueryCode {
-            table: Table::MemTable(x.of),
+        SourceExpr::MemTable(x) => QueryCode {
+            table: Table::MemTable(x),
             query: q.query.clone(),
         },
-        SourceExprOpt::DbTable(x) => QueryCode {
-            table: Table::DbTable(x.of),
+        SourceExpr::DbTable(x) => QueryCode {
+            table: Table::DbTable(x),
             query: q.query.clone(),
         },
     }
 }
 
-/// Second pass:
-///
-/// Compiles [Tree<ExprOpt>] into [Code] moving the execution into closures.
-#[tracing::instrument(skip_all)]
-fn compile<P: ProgramVm>(p: &mut P, node: ExprOpt) -> Result<Code, ErrorVm> {
-    Ok(match node {
-        ExprOpt::Value(x) => Code::Value(x.of),
-        ExprOpt::Block(lines) => Code::Block(collect_vec(p, lines.into_iter())?),
-        ExprOpt::Op(op, args) => {
-            let function_id = p.env_mut().functions.get_function_id_op(op.of);
-            let args = collect_vec(p, args.into_iter())?;
-
-            Code::CallFn(function_id, args)
-        }
-        ExprOpt::Fun(f) => {
-            p.add_lambda(f.head.clone(), Code::Pass);
-            let body = collect_vec(p, f.body.into_iter())?;
-            p.update_lambda(f.head, Code::Block(body));
-
-            Code::Pass
-        }
-        ExprOpt::CallFn(name, args) => {
-            let args: Vec<_> = collect_vec(p, args.into_iter())?;
-            let f = p.env_mut().functions.get_by_name(&name).unwrap();
-
-            Code::CallFn(f.idx, args)
-        }
-        ExprOpt::CallLambda(name, args) => {
-            let args: HashMap<_, _> = collect_map(p, args.into_iter())?;
-            let fid = p.env_mut().lambdas.get_id(&name).unwrap();
-            Code::CallLambda(fid, args)
-        }
-        ExprOpt::Let(inner) => {
-            let (name, rhs) = *inner;
-
-            let rhs = compile(p, rhs)?;
-            p.add_ident(&name, rhs);
-            Code::Pass
-        }
-        ExprOpt::Ident(name) => Code::Ident(name),
-        ExprOpt::Halt(x) => Code::Halt(x),
-        ExprOpt::If(inner) => {
-            let (test, if_true, if_false) = &*inner;
-            let test = compile(p, test.clone())?;
-            let if_true = compile(p, if_true.clone())?;
-            let if_false = compile(p, if_false.clone())?;
-
-            Code::If(Box::new((test, if_true, if_false)))
-        }
-        ExprOpt::Query(q) => {
-            let q = compile_query(*q);
-            Code::Crud(CrudCode::Query(q))
-        }
-        ExprOpt::Crud(q) => {
-            let q = *q;
-
-            match q {
-                CrudExprOpt::Insert { source, rows } => {
-                    let q = match source {
-                        SourceExprOpt::Value(x) => {
-                            let data = mem_table(x.of.type_of(), vec![x.of]);
-                            CrudCode::Insert {
-                                table: Table::MemTable(data),
-                                rows,
-                            }
-                        }
-                        SourceExprOpt::MemTable(x) => CrudCode::Insert {
-                            table: Table::MemTable(x.of),
-                            rows,
-                        },
-                        SourceExprOpt::DbTable(x) => CrudCode::Insert {
-                            table: Table::DbTable(x.of),
-                            rows,
-                        },
-                    };
-                    Code::Crud(q)
-                }
-                CrudExprOpt::Update { delete, assignments } => {
-                    let delete = compile_query(delete);
-                    Code::Crud(CrudCode::Update { delete, assignments })
-                }
-                CrudExprOpt::Delete { query } => {
-                    let query = compile_query(query);
-                    Code::Crud(CrudCode::Delete { query })
-                }
-                CrudExprOpt::CreateTable { table } => Code::Crud(CrudCode::CreateTable { table }),
-                CrudExprOpt::Drop {
-                    name,
-                    kind,
-                    table_access,
-                } => Code::Crud(CrudCode::Drop {
-                    name,
-                    kind,
-                    table_access,
-                }),
-            }
-        }
-        x => todo!("{}", x),
-    })
-}
-
-/// Third pass:
-///
-/// Execute the code
-#[tracing::instrument(skip_all)]
-pub fn eval<P: ProgramVm>(p: &mut P, code: Code) -> Code {
-    match code {
-        Code::Value(_) => code.clone(),
-        Code::CallFn(id, old) => {
-            let mut params = Vec::with_capacity(old.len());
-            for param in old {
-                let param = match eval(p, param) {
-                    Code::Value(x) => x,
-                    Code::Halt(x) => return Code::Halt(x),
-                    Code::Pass => continue,
-                    x => {
-                        let name = &p.env().functions.get(id).unwrap().name;
-
-                        return Code::Halt(ErrorLang::new(
-                            ErrorKind::Params,
-                            Some(&format!("Invalid parameter `{x}` calling function {name}")),
-                        ));
-                    }
-                };
-
-                params.push(param);
-            }
-            let f = p.env().functions.get(id).unwrap();
-
-            let args = match params.len() {
-                1 => Args::Unary(&params[0]),
-                2 => Args::Binary(&params[0], &params[1]),
-                _ => Args::Splat(&params),
+fn compile_query_expr(q: CrudExpr) -> Code {
+    match q {
+        CrudExpr::Query(q) => Code::Crud(CrudCode::Query(compile_query(q))),
+        CrudExpr::Insert { source, rows } => {
+            let q = match source {
+                SourceExpr::MemTable(x) => CrudCode::Insert {
+                    table: Table::MemTable(x),
+                    rows,
+                },
+                SourceExpr::DbTable(x) => CrudCode::Insert {
+                    table: Table::DbTable(x),
+                    rows,
+                },
             };
-            f.call(p, args)
+            Code::Crud(q)
         }
-        Code::CallLambda(id, args) => {
-            let f = p.env().lambdas.get(id).unwrap();
-            let body = f.body.clone();
-            p.env_mut().push_scope();
-            for (k, v) in args {
-                let v = eval(p, v);
-                p.add_ident(&k, v);
-            }
-            let r = eval(p, body);
-            p.env_mut().pop_scope();
-
-            r
+        CrudExpr::Update { delete, assignments } => {
+            let delete = compile_query(delete);
+            Code::Crud(CrudCode::Update { delete, assignments })
         }
-        Code::Ident(name) => p.find_ident(&name).unwrap().clone(),
-        Code::If(inner) => {
-            let (test, if_true, if_false) = &*inner;
-            let test = eval(p, test.clone());
-
-            match test {
-                Code::Value(x) => {
-                    if x == AlgebraicValue::from(true) {
-                        eval(p, if_true.clone())
-                    } else {
-                        eval(p, if_false.clone())
-                    }
-                }
-                x => unimplemented!("{x}"),
-            }
+        CrudExpr::Delete { query } => {
+            let query = compile_query(query);
+            Code::Crud(CrudCode::Delete { query })
         }
-        Code::Block(lines) => {
-            let mut result = Vec::with_capacity(lines.len());
-            for x in lines {
-                let r = eval(p, x);
-                if r != Code::Pass {
-                    result.push(r);
-                }
-            }
-
-            match result.len() {
-                0 => Code::Pass,
-                1 => result.pop().unwrap(),
-                _ => Code::Block(result),
-            }
-        }
-        Code::Crud(q) => {
-            let result = p.eval_query(q);
-
-            match result {
-                Ok(x) => x,
-                Err(err) => Code::Halt(err.into()),
-            }
-        }
-        Code::Pass => Code::Pass,
-        Code::Halt(_) => code,
-        Code::Fun(_) => Code::Pass,
-        Code::Table(_) => code,
+        CrudExpr::CreateTable { table } => Code::Crud(CrudCode::CreateTable { table }),
+        CrudExpr::Drop {
+            name,
+            kind,
+            table_access,
+        } => Code::Crud(CrudCode::Drop {
+            name,
+            kind,
+            table_access,
+        }),
     }
 }
 
-pub type IterRows<'a> = dyn RelOps + 'a;
+pub type IterRows<'a> = dyn RelOps<'a> + 'a;
 
 #[tracing::instrument(skip_all)]
-pub fn build_query(mut result: Box<IterRows>, query: Vec<Query>) -> Result<Box<IterRows<'_>>, ErrorVm> {
+pub fn build_query<'a>(mut result: Box<IterRows<'a>>, query: Vec<Query>) -> Result<Box<IterRows<'a>>, ErrorVm> {
     for q in query {
         result = match q {
             Query::IndexScan(_) => {
@@ -402,7 +81,9 @@ pub fn build_query(mut result: Box<IterRows>, query: Vec<Query>) -> Result<Box<I
                     result
                 } else {
                     let header = result.head().clone();
-                    let iter = result.project(&cols.clone(), move |row| Ok(row.project(&cols, &header)?))?;
+                    let iter = result.project(cols, move |cols, row| {
+                        Ok(RelValue::Projection(row.project_owned(cols, &header)?))
+                    })?;
                     Box::new(iter)
                 }
             }
@@ -418,11 +99,6 @@ pub fn build_query(mut result: Box<IterRows>, query: Vec<Query>) -> Result<Box<I
                 let rhs = match q.rhs.source {
                     SourceExpr::MemTable(x) => Box::new(RelIter::new(head, row_rhs, x)) as Box<IterRows<'_>>,
                     SourceExpr::DbTable(_) => {
-                        // let iter = stdb.scan(tx, x.table_id)?;
-                        //
-                        // Box::new(TableCursor::new(x, iter)?) as Box<IterRows<'_>>
-                        //
-                        // Box::new(RelIter::new(q.rhs.head(), row_rhs, x)) as Box<IterRows<'_>>;
                         todo!("How pass the db iter?")
                     }
                 };
@@ -438,14 +114,8 @@ pub fn build_query(mut result: Box<IterRows>, query: Vec<Query>) -> Result<Box<I
                 let iter = lhs.join_inner(
                     rhs,
                     col_lhs_header.extend(&col_rhs_header),
-                    move |row| {
-                        let f = row.get(&key_lhs, &key_lhs_header)?;
-                        Ok(f.into())
-                    },
-                    move |row| {
-                        let f = row.get(&key_rhs, &key_rhs_header)?;
-                        Ok(f.into())
-                    },
+                    move |row| Ok(row.get(&key_lhs, &key_lhs_header)?.into_owned().into()),
+                    move |row| Ok(row.get(&key_rhs, &key_rhs_header)?.into_owned().into()),
                     move |l, r| {
                         let l = l.get(&col_lhs, &col_lhs_header)?;
                         let r = r.get(&col_rhs, &col_rhs_header)?;
@@ -460,46 +130,63 @@ pub fn build_query(mut result: Box<IterRows>, query: Vec<Query>) -> Result<Box<I
     Ok(result)
 }
 
-/// Optimize & compile the [Expr] for late execution
+/// Optimize & compile the [CrudExpr] for late execution
 #[tracing::instrument(skip_all)]
-pub fn build_ast<P: ProgramVm>(p: &mut P, ast: Expr) -> Result<Code, ErrorVm> {
-    let ast = optimize(p, ast)?;
-    compile(p, ast)
+fn build_ast(ast: CrudExpr) -> Code {
+    compile_query_expr(ast)
+}
+
+/// Execute the code
+#[tracing::instrument(skip_all)]
+fn eval<P: ProgramVm>(p: &mut P, code: Code) -> Code {
+    match code {
+        Code::Value(_) => code.clone(),
+        Code::Block(lines) => {
+            let mut result = Vec::with_capacity(lines.len());
+            for x in lines {
+                let r = eval(p, x);
+                if r != Code::Pass {
+                    result.push(r);
+                }
+            }
+
+            match result.len() {
+                0 => Code::Pass,
+                1 => result.pop().unwrap(),
+                _ => Code::Block(result),
+            }
+        }
+        Code::Crud(q) => p.eval_query(q).unwrap_or_else(|err| Code::Halt(err.into())),
+        Code::Pass => Code::Pass,
+        Code::Halt(_) => code,
+        Code::Table(_) => code,
+    }
+}
+
+fn to_vec(of: Vec<Expr>) -> Code {
+    let mut new = Vec::with_capacity(of.len());
+    for ast in of {
+        let code = match ast {
+            Expr::Block(x) => to_vec(x),
+            Expr::Crud(x) => build_ast(*x),
+            x => Code::Halt(ErrorVm::Unsupported(format!("{x:?}")).into()),
+        };
+        new.push(code);
+    }
+    Code::Block(new)
 }
 
 /// Optimize, compile & run the [Expr]
 #[tracing::instrument(skip_all)]
 pub fn run_ast<P: ProgramVm>(p: &mut P, ast: Expr) -> Code {
-    match build_ast(p, ast) {
-        Ok(code) => eval(p, code),
-        Err(err) => Code::Halt(err.into()),
-    }
-}
-
-// Used internally for testing recursion
-#[doc(hidden)]
-pub fn fibo(input: u64) -> Expr {
-    let ty = AlgebraicType::U64;
-
-    let less = |val: u64| bin_op(OpMath::Minus, var("n"), scalar(val));
-
-    let f = Function::new(
-        "fib",
-        &[Param::new("n", ty.clone())],
-        ty,
-        &[if_(
-            bin_op(OpCmp::Lt, var("n"), scalar(2u64)),
-            var("n"),
-            bin_op(
-                OpMath::Add,
-                call_fn("fib", &[("n", less(1))]),
-                call_fn("fib", &[("n", less(2))]),
-            ),
-        )],
-    );
-    let f = Expr::Fun(f);
-
-    Expr::Block(vec![f, call_fn("fib", &[("n", scalar(input))])])
+    let code = match ast {
+        Expr::Block(x) => to_vec(x),
+        Expr::Crud(x) => build_ast(*x),
+        Expr::Value(x) => Code::Value(x),
+        Expr::Halt(err) => Code::Halt(err),
+        Expr::Ident(x) => Code::Halt(ErrorVm::Unsupported(format!("Ident {x}")).into()),
+    };
+    eval(p, code)
 }
 
 // Used internally for testing SQL JOINS
@@ -539,172 +226,20 @@ mod tests {
     #![allow(clippy::disallowed_macros)]
 
     use super::*;
-    use crate::dsl::{prefix_op, query, value};
+    use crate::dsl::{query, scalar};
     use crate::program::Program;
+    use crate::relation::MemTable;
     use spacetimedb_lib::identity::AuthCtx;
+    use spacetimedb_lib::operator::{OpCmp, OpLogic};
     use spacetimedb_sats::db::auth::StAccess;
     use spacetimedb_sats::db::error::RelationError;
-    use spacetimedb_sats::relation::{FieldName, MemTable, RelValue};
+    use spacetimedb_sats::relation::FieldName;
 
-    fn fib(n: u64) -> u64 {
-        if n < 2 {
-            return n;
-        }
-
-        fib(n - 1) + fib(n - 2)
-    }
-
-    fn run_bin_op<O, A, B>(p: &mut Program, op: O, lhs: A, rhs: B) -> Code
-    where
-        O: Into<Op>,
-        A: Into<Expr>,
-        B: Into<Expr>,
-    {
-        let ast = bin_op(op, lhs, rhs);
-        run_ast(p, ast)
-    }
-
-    pub fn run_query(p: &mut Program, ast: Expr) -> MemTable {
+    fn run_query(p: &mut Program, ast: Expr) -> MemTable {
         match run_ast(p, ast) {
             Code::Table(x) => x,
             x => panic!("Unexpected result on query: {x}"),
         }
-    }
-
-    #[test]
-    fn test_optimize_values() {
-        let p = &mut Program::new(AuthCtx::for_testing());
-        let zero = scalar(0);
-
-        let x = value(zero);
-        let ast = optimize(p, x);
-        assert!(ast.is_ok());
-    }
-
-    #[test]
-    fn test_eval_scalar() {
-        let p = &mut Program::new(AuthCtx::for_testing());
-        let zero = scalar(0);
-        assert_eq!(run_ast(p, zero.clone().into()), Code::Value(zero));
-    }
-
-    #[test]
-    fn test_optimize_ops() {
-        let p = &mut Program::new(AuthCtx::for_testing());
-
-        let zero = scalar(0);
-        let one = scalar(1);
-
-        let plus = bin_op(OpMath::Add, zero, one);
-
-        let ast = optimize(p, plus);
-        assert!(ast.is_ok());
-    }
-
-    #[test]
-    fn test_math() {
-        let p = &mut Program::new(AuthCtx::for_testing());
-        let one = scalar(1);
-        let two = scalar(2);
-
-        let result = run_bin_op(p, OpMath::Add, one.clone(), two.clone());
-        assert_eq!(result, Code::Value(scalar(3)), "+");
-
-        let result = run_bin_op(p, OpMath::Minus, one.clone(), two.clone());
-        assert_eq!(result, Code::Value(scalar(-1)), "-");
-
-        let result = run_bin_op(p, OpMath::Mul, one.clone(), two.clone());
-        assert_eq!(result, Code::Value(scalar(2)), "*");
-
-        let result = run_bin_op(p, OpMath::Div, one, two);
-        assert_eq!(result, Code::Value(scalar(0)), "/ Int");
-
-        let result = run_bin_op(p, OpMath::Div, scalar(1.0), scalar(2.0));
-        assert_eq!(result, Code::Value(scalar(0.5)), "/ Float");
-
-        // Checking a vectorized ops: 0 + 1 + 2...
-        let nums = prefix_op(OpMath::Add, (0..9i64).map(value));
-        let result = run_ast(p, nums);
-
-        let total = (0..9i64).reduce(|a, b| a + b).unwrap();
-        assert_eq!(result, Code::Value(scalar(total)), "+ range");
-    }
-
-    #[test]
-    fn test_logic() {
-        let p = &mut Program::new(AuthCtx::for_testing());
-
-        let a = scalar(true);
-        let b = scalar(false);
-
-        let result = run_bin_op(p, OpCmp::Eq, a.clone(), b.clone());
-        assert_eq!(result, Code::Value(scalar(false)), "Eq");
-
-        let result = run_bin_op(p, OpCmp::NotEq, a.clone(), b.clone());
-        assert_eq!(result, Code::Value(scalar(true)), "NotEq");
-
-        let result = run_bin_op(p, OpCmp::Lt, a.clone(), b.clone());
-        assert_eq!(result, Code::Value(scalar(false)), "Less");
-
-        let result = run_bin_op(p, OpCmp::LtEq, a.clone(), b.clone());
-        assert_eq!(result, Code::Value(scalar(false)), "LessThan");
-
-        let result = run_bin_op(p, OpCmp::Gt, a.clone(), b.clone());
-        assert_eq!(result, Code::Value(scalar(true)), "Greater");
-
-        let result = run_bin_op(p, OpCmp::GtEq, a.clone(), b.clone());
-        assert_eq!(result, Code::Value(scalar(true)), "GreaterThan");
-
-        let result = run_bin_op(p, OpLogic::And, a.clone(), b.clone());
-        assert_eq!(result, Code::Value(scalar(false)), "And");
-
-        let result = run_bin_op(p, OpUnary::Not, a.clone(), b.clone());
-        assert_eq!(result, Code::Value(scalar(true)), "Not");
-
-        let result = run_bin_op(p, OpLogic::Or, a, b);
-        assert_eq!(result, Code::Value(scalar(true)), "Or");
-    }
-
-    #[test]
-    fn test_eval_if() {
-        let p = &mut Program::new(AuthCtx::for_testing());
-
-        let a = scalar(1);
-        let b = scalar(2);
-
-        let check = if_(bin_op(OpCmp::Eq, scalar(false), scalar(false)), a.clone(), b);
-        let result = run_ast(p, check);
-        assert_eq!(result, Code::Value(a), "if false = false then 1 else 2");
-    }
-
-    #[test]
-    fn test_fun() {
-        let p = &mut Program::new(AuthCtx::for_testing());
-        let ty = AlgebraicType::U64;
-        let f = Function::new(
-            "sum",
-            &[Param::new("a", ty.clone()), Param::new("b", ty.clone())],
-            ty,
-            &[bin_op(OpMath::Add, var("a"), var("b"))],
-        );
-
-        let f = Expr::Fun(f);
-
-        let check = Expr::Block(vec![f, call_fn("sum", &[("a", scalar(1u64)), ("b", scalar(2u64))])]);
-        let result = run_ast(p, check);
-        let a = scalar(3u64);
-        assert_eq!(result, Code::Value(a), "Sum");
-    }
-
-    #[test]
-    fn test_fibonacci() {
-        let p = &mut Program::new(AuthCtx::for_testing());
-        let input = 2;
-        let check = fibo(input);
-        let result = run_ast(p, check);
-        let a = scalar(fib(input));
-
-        assert_eq!(result, Code::Value(a), "Fib");
     }
 
     #[test]
@@ -718,7 +253,7 @@ mod tests {
         let head = q.source.head().clone();
 
         let result = run_ast(p, q.into());
-        let row = RelValue::new(scalar(1).into(), None);
+        let row = scalar(1).into();
         assert_eq!(
             result,
             Code::Table(MemTable::new(head, StAccess::Public, [row].into())),
@@ -738,7 +273,7 @@ mod tests {
         let head = q.source.head().clone();
 
         let result = run_ast(p, q.into());
-        let row = RelValue::new(input.into(), None);
+        let row = input.into();
         assert_eq!(
             result,
             Code::Table(MemTable::new(head.clone(), StAccess::Public, [row].into())),

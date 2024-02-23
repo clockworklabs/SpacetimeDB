@@ -15,6 +15,10 @@ impl Sequence {
         }
     }
 
+    pub(crate) fn id(&self) -> SequenceId {
+        self.schema.sequence_id
+    }
+
     /// Returns the next value in the sequence given the params.
     ///
     /// Examples:

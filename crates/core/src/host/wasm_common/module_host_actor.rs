@@ -2,7 +2,6 @@ use anyhow::{anyhow, Context};
 use bytes::Bytes;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::RwLock;
 
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
@@ -13,6 +12,7 @@ use super::instrumentation::CallTimes;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{LogLevel, Record, SystemLogger};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::db::datastore::traits::IsolationLevel;
 use crate::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
 use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
@@ -143,7 +143,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 
         let owner_identity = database_instance_context.identity;
         let relational_db = database_instance_context.relational_db.clone();
-        let subscriptions = Arc::new(RwLock::new(ModuleSubscriptions::new(relational_db, owner_identity)));
+        let subscriptions = ModuleSubscriptions::new(relational_db, owner_identity);
 
         let uninit_instance = module.instantiate_pre()?;
         let mut instance = uninit_instance.instantiate(
@@ -262,7 +262,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         &self,
         caller_identity: Identity,
         query: String,
-    ) -> Result<Vec<spacetimedb_sats::relation::MemTable>, DBError> {
+    ) -> Result<Vec<spacetimedb_vm::relation::MemTable>, DBError> {
         let db = &self.database_instance_context.relational_db;
         let auth = AuthCtx::new(self.database_instance_context.identity, caller_identity);
         log::debug!("One-off query: {query}");
@@ -338,7 +338,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         let timestamp = Timestamp::now();
         let stdb = &*self.database_instance_context().relational_db;
         let ctx = ExecutionContext::internal(stdb.address());
-        let tx = stdb.begin_mut_tx();
+        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let (tx, ()) = stdb
             .with_auto_rollback(&ctx, tx, |tx| {
                 for schema in get_tabledefs(&self.info) {
@@ -402,7 +402,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         let proposed_tables = get_tabledefs(&self.info).collect::<anyhow::Result<Vec<_>>>()?;
 
         let stdb = &*self.database_instance_context().relational_db;
-        let tx = stdb.begin_mut_tx();
+        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
 
         let res = crate::db::update::update_database(
             stdb,
@@ -522,7 +522,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             arg_bytes: args.get_bsatn().clone(),
         };
 
-        let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx());
+        let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable));
         let tx_slot = self.instance.instance_env().tx.clone();
 
         let reducer_span = tracing::trace_span!(
@@ -565,9 +565,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             .observe(timings.total_duration.as_secs_f64());
 
         // Take a lock on our subscriptions now. Otherwise, we could have a race condition where we commit
-        // the tx, someone adds a subscription and receives this tx as an update, and then receives the
+        // the tx, someone adds a subscription and receives this tx as an initial update, and then receives the
         // update again when we broadcast_event.
-        let subscriptions = self.info.subscriptions.blocking_read();
+        let subscriptions = self.info.subscriptions.subscriptions.read();
 
         let ctx = ExecutionContext::reducer(address, reducer_name);
         let status = match call_result {
@@ -629,7 +629,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             energy_quanta_used: energy.used,
             host_execution_duration: timings.total_duration,
         };
-        subscriptions.blocking_broadcast_event(client.as_ref(), &event);
+        self.info
+            .subscriptions
+            .blocking_broadcast_event(client.as_ref(), &subscriptions, &event);
 
         ReducerCallResult {
             outcome,

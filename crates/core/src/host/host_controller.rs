@@ -29,6 +29,7 @@ impl HostThreadpool {
     fn new() -> Self {
         let rt = tokio::runtime::Handle::current();
         let inner = rayon_core::ThreadPoolBuilder::new()
+            .thread_name(|_idx| "rayon-worker".to_string())
             .num_threads(std::thread::available_parallelism().unwrap().get() * 2)
             .spawn_handler(move |thread| {
                 rt.spawn_blocking(|| thread.run());

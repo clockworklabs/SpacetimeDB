@@ -1,14 +1,7 @@
-use derive_more::From;
-use std::cmp::Ordering;
-use std::collections::{HashMap, VecDeque};
-use std::fmt;
-use std::hash::{Hash, Hasher};
-use std::ops::Bound;
-
 use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
-use crate::functions::{FunDef, Param};
-use crate::operator::{Op, OpCmp, OpLogic, OpQuery};
-use crate::types::Ty;
+use crate::operator::{OpCmp, OpLogic, OpQuery};
+use crate::relation::{MemTable, RelValue, Table};
+use derive_more::From;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_type::AlgebraicType;
@@ -16,60 +9,18 @@ use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{TableDef, TableSchema};
 use spacetimedb_sats::db::error::AuthError;
-use spacetimedb_sats::relation::{
-    Column, DbTable, FieldExpr, FieldName, Header, MemTable, RelValueRef, Relation, RowCount, Table,
-};
+use spacetimedb_sats::relation::{Column, DbTable, FieldExpr, FieldName, Header, Relation, RowCount};
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
-
-/// A `index` into the list of [Fun]
-pub type FunctionId = usize;
+use std::cmp::Ordering;
+use std::collections::{HashMap, VecDeque};
+use std::fmt;
+use std::hash::{Hash, Hasher};
+use std::ops::Bound;
 
 /// Trait for checking if the `caller` have access to `Self`
 pub trait AuthAccess {
     fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError>;
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct TyExpr<T> {
-    pub(crate) of: T,
-    pub(crate) ty: Ty,
-}
-
-impl<T> TyExpr<T> {
-    pub fn new(of: T, ty: Ty) -> Self {
-        Self { of, ty }
-    }
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct Function {
-    pub head: FunDef,
-    pub body: Vec<Expr>,
-}
-
-impl Function {
-    pub fn new(name: &str, params: &[Param], result: AlgebraicType, body: &[Expr]) -> Self {
-        Self {
-            head: FunDef::new(name, params, result),
-            body: body.into(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct FunctionOpt {
-    pub(crate) head: FunDef,
-    pub(crate) body: Vec<ExprOpt>,
-}
-
-impl FunctionOpt {
-    pub fn new(head: FunDef, body: &[ExprOpt]) -> Self {
-        Self {
-            head,
-            body: body.into(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From)]
@@ -100,21 +51,21 @@ impl ColumnOp {
         }
     }
 
-    fn reduce(&self, row: RelValueRef, value: &ColumnOp, header: &Header) -> Result<AlgebraicValue, ErrorLang> {
+    fn reduce(&self, row: &RelValue<'_>, value: &ColumnOp, header: &Header) -> Result<AlgebraicValue, ErrorLang> {
         match value {
-            ColumnOp::Field(field) => Ok(row.get(field, header)?.clone()),
+            ColumnOp::Field(field) => Ok(row.get(field, header)?.into_owned()),
             ColumnOp::Cmp { op, lhs, rhs } => Ok(self.compare_bin_op(row, *op, lhs, rhs, header)?.into()),
         }
     }
 
-    fn reduce_bool(&self, row: RelValueRef, value: &ColumnOp, header: &Header) -> Result<bool, ErrorLang> {
+    fn reduce_bool(&self, row: &RelValue<'_>, value: &ColumnOp, header: &Header) -> Result<bool, ErrorLang> {
         match value {
             ColumnOp::Field(field) => {
                 let field = row.get(field, header)?;
 
                 match field.as_bool() {
                     Some(b) => Ok(*b),
-                    None => Err(ErrorType::FieldBool(field.clone()).into()),
+                    None => Err(ErrorType::FieldBool(field.into_owned()).into()),
                 }
             }
             ColumnOp::Cmp { op, lhs, rhs } => Ok(self.compare_bin_op(row, *op, lhs, rhs, header)?),
@@ -123,7 +74,7 @@ impl ColumnOp {
 
     fn compare_bin_op(
         &self,
-        row: RelValueRef,
+        row: &RelValue<'_>,
         op: OpQuery,
         lhs: &ColumnOp,
         rhs: &ColumnOp,
@@ -155,7 +106,7 @@ impl ColumnOp {
         }
     }
 
-    pub fn compare(&self, row: RelValueRef, header: &Header) -> Result<bool, ErrorVm> {
+    pub fn compare(&self, row: &RelValue<'_>, header: &Header) -> Result<bool, ErrorVm> {
         match self {
             ColumnOp::Field(field) => {
                 let lhs = row.get(field, header)?;
@@ -621,7 +572,7 @@ pub enum CrudExpr {
     Query(QueryExpr),
     Insert {
         source: SourceExpr,
-        rows: Vec<Vec<FieldExpr>>,
+        rows: Vec<ProductValue>,
     },
     Update {
         delete: QueryExpr,
@@ -652,24 +603,6 @@ impl CrudExpr {
         exprs.iter().all(|expr| matches!(expr, CrudExpr::Query(_)))
     }
 }
-
-// impl AuthAccess for CrudExpr {
-//     fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
-//         if owner == caller {
-//             return Ok(());
-//         };
-//         match self {
-//             CrudExpr::Query(from) => {
-//                 from.source.table_access() == StAccess::Public && from.query.iter().any(|x| x.check_auth(owner, caller))
-//             }
-//             CrudExpr::Insert { source, .. } => source.table_access() == StAccess::Public,
-//             CrudExpr::Update { insert, delete } => insert.check_auth(owner, caller) && delete.check_auth(owner, caller),
-//             CrudExpr::Delete { query, .. } => query.check_auth(owner, caller),
-//             CrudExpr::CreateTable { table_access, .. } => table_access == &StAccess::Public,
-//             CrudExpr::Drop { .. } => Ok(()),
-//         }
-//     }
-// }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct IndexScan {
@@ -1514,87 +1447,21 @@ impl AuthAccess for Query {
         Ok(())
     }
 }
-//
-// impl AuthAccess for QueryExpr {
-//     fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
-//         self.source.table_access() == StAccess::Public && self.query.iter().any(|x| x.check_auth(owner, caller))
-//     }
-// }
 
 #[derive(Debug, Clone, Eq, PartialEq, From)]
 pub enum Expr {
     #[from]
     Value(AlgebraicValue),
-    Ty(AlgebraicType),
-    Op(Op, Vec<Expr>),
-    Fun(Function),
     Block(Vec<Expr>),
-    CallFn(String, HashMap<String, Expr>),
-    Param(Box<(String, Expr)>),
-    Let(Box<(String, Expr)>),
     Ident(String),
-    If(Box<(Expr, Expr, Expr)>),
     Crud(Box<CrudExpr>),
+    Halt(ErrorLang),
 }
 
 impl From<QueryExpr> for Expr {
     fn from(x: QueryExpr) -> Self {
         Expr::Crud(Box::new(CrudExpr::Query(x)))
     }
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum SourceExprOpt {
-    Value(TyExpr<AlgebraicValue>),
-    MemTable(TyExpr<MemTable>),
-    DbTable(TyExpr<DbTable>),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct QueryExprOpt {
-    pub source: SourceExprOpt,
-    pub(crate) query: Vec<Query>,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum CrudExprOpt {
-    Insert {
-        source: SourceExprOpt,
-        rows: Vec<ProductValue>,
-    },
-    Update {
-        delete: QueryExprOpt,
-        assignments: HashMap<FieldName, FieldExpr>,
-    },
-    Delete {
-        query: QueryExprOpt,
-    },
-    CreateTable {
-        table: TableDef,
-    },
-    Drop {
-        name: String,
-        kind: DbType,
-        table_access: StAccess,
-    },
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum ExprOpt {
-    Value(TyExpr<AlgebraicValue>),
-    Ty(Ty),
-    Op(TyExpr<Op>, Vec<ExprOpt>),
-    Fun(FunctionOpt),
-    CallFn(String, Vec<ExprOpt>),
-    CallLambda(String, HashMap<String, ExprOpt>),
-    Param(Box<(String, ExprOpt)>),
-    Let(Box<(String, ExprOpt)>),
-    Ident(String),
-    If(Box<(ExprOpt, ExprOpt, ExprOpt)>),
-    Block(Vec<ExprOpt>),
-    Query(Box<QueryExprOpt>),
-    Crud(Box<CrudExprOpt>),
-    Halt(ErrorLang),
 }
 
 pub(crate) fn fmt_value(ty: &AlgebraicType, val: &AlgebraicValue) -> String {
@@ -1608,34 +1475,13 @@ impl fmt::Display for SourceExpr {
             SourceExpr::MemTable(x) => {
                 let ty = &AlgebraicType::Product(x.head().ty());
                 for row in &x.data {
-                    let x = fmt_value(ty, &row.data.clone().into());
+                    let x = fmt_value(ty, &row.clone().into());
                     write!(f, "{x}")?;
                 }
                 Ok(())
             }
             SourceExpr::DbTable(x) => {
                 write!(f, "DbTable({})", x.table_id)
-            }
-        }
-    }
-}
-
-impl fmt::Display for SourceExprOpt {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SourceExprOpt::Value(x) => {
-                let ty = match &x.ty {
-                    Ty::Val(x) => x,
-                    x => unreachable!("Formatting of `{}`", x),
-                };
-                let x = fmt_value(ty, &x.of);
-                write!(f, "{x}")
-            }
-            SourceExprOpt::MemTable(x) => {
-                write!(f, "{:?}", x.of)
-            }
-            SourceExprOpt::DbTable(x) => {
-                write!(f, "{:?}", x.of)
             }
         }
     }
@@ -1668,96 +1514,6 @@ impl fmt::Display for Query {
             }
             Query::JoinInner(q) => {
                 write!(f, "&inner {:?} ON {} = {}", q.rhs, q.col_lhs, q.col_rhs)
-            }
-        }
-    }
-}
-
-impl fmt::Display for ExprOpt {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ExprOpt::Value(x) => {
-                write!(f, "{:?}", &x.of)
-            }
-            ExprOpt::Ty(x) => {
-                write!(f, "{:?}", &x)
-            }
-
-            ExprOpt::Op(op, _) => {
-                write!(f, "{:?}", op.of)
-            }
-            ExprOpt::Fun(x) => {
-                write!(f, "fn {}({:?}):{:?}", x.head.name, x.head.params, x.head.result)?;
-                writeln!(f, "{{")?;
-                writeln!(f, "{:?}", x.body)?;
-                writeln!(f, "}}")
-            }
-            ExprOpt::CallFn(x, params) => {
-                write!(f, "{}(", x)?;
-                for (pos, v) in params.iter().enumerate() {
-                    write!(f, "{v}")?;
-                    if pos + 1 < params.len() {
-                        write!(f, ", ")?;
-                    }
-                }
-                write!(f, ")",)
-            }
-            ExprOpt::CallLambda(x, params) => {
-                write!(f, "{}(", x)?;
-                for (pos, (k, v)) in params.iter().enumerate() {
-                    write!(f, "{k} = {v}")?;
-                    if pos + 1 < params.len() {
-                        write!(f, ", ")?;
-                    }
-                }
-                write!(f, ")",)
-            }
-            ExprOpt::Param(inner) => {
-                let (name, p) = &**inner;
-                write!(f, "{name} = {p}")
-            }
-            ExprOpt::Let(x) => {
-                write!(f, "{:?}", x)
-            }
-            ExprOpt::Ident(x) => {
-                write!(f, "{}", x)
-            }
-            ExprOpt::If(inner) => {
-                let (test, if_true, if_false) = &**inner;
-                write!(f, "if {test}\n\t{if_true}else\n\t{if_false}else")
-            }
-            ExprOpt::Halt(x) => {
-                write!(f, "{}", x)
-            }
-            ExprOpt::Query(q) => {
-                write!(f, "{}", q.source)?;
-                for op in &q.query {
-                    write!(f, "?{op}")?;
-                }
-                Ok(())
-            }
-            ExprOpt::Crud(x) => {
-                let x = &**x;
-                match x {
-                    CrudExprOpt::Insert { source, rows } => {
-                        write!(f, "{}", source)?;
-                        for row in rows {
-                            write!(f, "{row:?}")?;
-                        }
-                    }
-                    CrudExprOpt::Update { .. } => {}
-                    CrudExprOpt::Delete { .. } => {}
-                    CrudExprOpt::CreateTable { .. } => {}
-                    CrudExprOpt::Drop { .. } => {}
-                };
-                Ok(())
-            }
-
-            ExprOpt::Block(lines) => {
-                for x in lines {
-                    writeln!(f, "{x}")?;
-                }
-                Ok(())
             }
         }
     }
@@ -1857,12 +1613,7 @@ impl AuthAccess for CrudCode {
 pub enum Code {
     Value(AlgebraicValue),
     Table(MemTable),
-    CallFn(FunctionId, Vec<Code>),
-    CallLambda(FunctionId, HashMap<String, Code>),
-    If(Box<(Code, Code, Code)>),
-    Ident(String),
     Halt(ErrorLang),
-    Fun(FunctionId),
     Block(Vec<Code>),
     Crud(CrudCode),
     Pass,
@@ -1874,11 +1625,7 @@ impl fmt::Display for Code {
             Code::Value(x) => {
                 write!(f, "{:?}", &x)
             }
-            Code::CallFn(id, _) => {
-                write!(f, "Fn({})", id)
-            }
             Code::Block(_) => write!(f, "Block"),
-            Code::If(_) => write!(f, "If"),
             x => todo!("{:?}", x),
         }
     }
@@ -1917,6 +1664,8 @@ impl From<Code> for CodeResult {
 
 #[cfg(test)]
 mod tests {
+    use crate::relation::{MemTable, Table};
+
     use super::*;
 
     const ALICE: Identity = Identity::from_byte_array([1; 32]);

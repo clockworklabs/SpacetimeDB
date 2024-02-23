@@ -133,7 +133,7 @@ impl InstanceEnv {
                     value: _,
                 })) => {}
                 _ => {
-                    let res = stdb.table_name_from_id(ctx, tx, table_id);
+                    let res = stdb.table_name_from_id_mut(ctx, tx, table_id);
                     if let Ok(Some(table_name)) = res {
                         log::debug!("insert(table: {table_name}, table_id: {table_id}): {e}")
                     } else {
@@ -381,7 +381,7 @@ impl InstanceEnv {
 
         // write all rows and flush at row boundaries
         for row in results.data {
-            row.data.encode(&mut chunked_writer);
+            row.encode(&mut chunked_writer);
             chunked_writer.flush();
         }
 

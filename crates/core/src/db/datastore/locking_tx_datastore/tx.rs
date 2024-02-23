@@ -1,10 +1,12 @@
+#[cfg(feature = "metrics")]
+use super::datastore::record_metrics;
 use super::{
     committed_state::{CommittedIndexIter, CommittedState},
     datastore::Result,
     state_view::{Iter, IterByColRange, StateView},
     SharedReadGuard,
 };
-use crate::{db::db_metrics::DB_METRICS, execution_context::ExecutionContext};
+use crate::execution_context::ExecutionContext;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::{db::def::TableSchema, AlgebraicValue};
 use std::{
@@ -59,24 +61,6 @@ impl StateView for TxId {
 impl TxId {
     pub(crate) fn release(self, ctx: &ExecutionContext) {
         #[cfg(feature = "metrics")]
-        {
-            let workload = &ctx.workload();
-            let db = &ctx.database();
-            let reducer = ctx.reducer_name();
-            let elapsed_time = self.timer.elapsed();
-            let cpu_time = elapsed_time - self.lock_wait_time;
-            DB_METRICS
-                .rdb_num_txns
-                .with_label_values(workload, db, reducer, &false)
-                .inc();
-            DB_METRICS
-                .rdb_txn_cpu_time_sec
-                .with_label_values(workload, db, reducer)
-                .observe(cpu_time.as_secs_f64());
-            DB_METRICS
-                .rdb_txn_elapsed_time_sec
-                .with_label_values(workload, db, reducer)
-                .observe(elapsed_time.as_secs_f64());
-        }
+        record_metrics(ctx, self.timer, self.lock_wait_time, true);
     }
 }

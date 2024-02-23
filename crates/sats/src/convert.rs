@@ -5,15 +5,21 @@ impl crate::Value for AlgebraicValue {
     type Type = AlgebraicType;
 }
 
-impl From<AlgebraicValue> for ProductValue {
-    fn from(x: AlgebraicValue) -> Self {
-        Self { elements: [x].into() }
+impl From<Vec<AlgebraicValue>> for ProductValue {
+    fn from(elements: Vec<AlgebraicValue>) -> Self {
+        ProductValue { elements }
     }
 }
 
-impl From<&AlgebraicValue> for ProductValue {
-    fn from(x: &AlgebraicValue) -> Self {
-        x.clone().into()
+impl<const N: usize> From<[AlgebraicValue; N]> for ProductValue {
+    fn from(fields: [AlgebraicValue; N]) -> Self {
+        Vec::from(fields).into()
+    }
+}
+
+impl From<AlgebraicValue> for ProductValue {
+    fn from(x: AlgebraicValue) -> Self {
+        [x].into()
     }
 }
 

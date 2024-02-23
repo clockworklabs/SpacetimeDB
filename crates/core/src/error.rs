@@ -5,6 +5,7 @@ use std::sync::{MutexGuard, PoisonError};
 
 use hex::FromHexError;
 use spacetimedb_sats::AlgebraicType;
+use spacetimedb_table::read_column;
 use spacetimedb_table::table::{self, UniqueConstraintViolation};
 use thiserror::Error;
 
@@ -61,6 +62,8 @@ pub enum TableError {
     },
     #[error(transparent)]
     Insert(#[from] table::InsertError),
+    #[error(transparent)]
+    ReadColTypeError(#[from] read_column::TypeError),
 }
 
 #[derive(Error, Debug, PartialEq, Eq)]
@@ -226,6 +229,12 @@ impl From<DBError> for ErrorVm {
 impl From<InvalidFieldError> for DBError {
     fn from(value: InvalidFieldError) -> Self {
         LibError::from(value).into()
+    }
+}
+
+impl From<spacetimedb_table::read_column::TypeError> for DBError {
+    fn from(err: spacetimedb_table::read_column::TypeError) -> Self {
+        TableError::from(err).into()
     }
 }
 

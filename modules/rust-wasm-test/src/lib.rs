@@ -1,8 +1,5 @@
 #![allow(clippy::disallowed_names)]
-use spacetimedb::{
-    delete_by_col_eq, query, spacetimedb, AlgebraicValue, Deserialize, ReducerContext, SpacetimeType, TableType,
-    Timestamp,
-};
+use spacetimedb::{query, spacetimedb, Deserialize, ReducerContext, SpacetimeType, Timestamp};
 use spacetimedb_lib::bsatn;
 
 #[spacetimedb(table)]
@@ -94,7 +91,6 @@ pub fn test(ctx: ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC) -> an
         TestC::Foo => log::info!("Foo"),
         TestC::Bar => log::info!("Bar"),
     }
-    let table_id = TestA::table_id();
     for i in 0..1000 {
         TestA::insert(TestA {
             x: i + arg.x,
@@ -103,15 +99,25 @@ pub fn test(ctx: ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC) -> an
         });
     }
 
-    let row_count = TestA::iter().count();
+    let row_count_before_delete = TestA::iter().count();
 
-    log::info!("Row count before delete: {:?}", row_count);
+    log::info!("Row count before delete: {:?}", row_count_before_delete);
 
+    let mut num_deleted = 0;
     for row in 5..10 {
-        delete_by_col_eq(table_id, 0, &AlgebraicValue::U32(row))?;
+        num_deleted += TestA::delete_by_x(&row);
     }
 
-    let row_count = TestA::iter().count();
+    let row_count_after_delete = TestA::iter().count();
+
+    if row_count_before_delete != row_count_after_delete + num_deleted as usize {
+        log::error!(
+            "Started with {} rows, deleted {}, and wound up with {} rows... huh?",
+            row_count_before_delete,
+            num_deleted,
+            row_count_after_delete,
+        );
+    }
 
     match TestE::insert(TestE {
         id: 0,
@@ -121,7 +127,7 @@ pub fn test(ctx: ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC) -> an
         Err(err) => log::info!("Error: {:?}", err),
     }
 
-    log::info!("Row count after delete: {:?}", row_count);
+    log::info!("Row count after delete: {:?}", row_count_after_delete);
 
     let other_row_count = query!(|row: TestA| row.x >= 0 && row.x <= u32::MAX).count();
 
@@ -148,6 +154,26 @@ pub fn test(ctx: ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC) -> an
 pub fn add_player(name: String) -> Result<(), String> {
     TestE::insert(TestE { id: 0, name })?;
     Ok(())
+}
+
+#[spacetimedb(reducer)]
+pub fn delete_player(id: u64) -> Result<(), String> {
+    if TestE::delete_by_id(&id) {
+        Ok(())
+    } else {
+        Err(format!("No TestE row with id {}", id))
+    }
+}
+
+#[spacetimedb(reducer)]
+pub fn delete_players_by_name(name: String) -> Result<(), String> {
+    match TestE::delete_by_name(&name) {
+        0 => Err(format!("No TestE row with name {:?}", name)),
+        num_deleted => {
+            log::info!("Deleted {} player(s) with name {:?}", num_deleted, name);
+            Ok(())
+        }
+    }
 }
 
 #[spacetimedb(connect)]

@@ -5,10 +5,8 @@ use criterion::measurement::{Measurement, WallTime};
 use criterion::{
     black_box, criterion_group, criterion_main, Bencher, BenchmarkGroup, BenchmarkId, Criterion, Throughput,
 };
-use rand::distributions::OpenClosed01;
-use rand::prelude::Distribution;
 use rand::rngs::StdRng;
-use rand::SeedableRng;
+use rand::{Rng, SeedableRng};
 use spacetimedb_primitives::{ColList, IndexId, TableId};
 use spacetimedb_sats::db::def::{TableDef, TableSchema};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
@@ -94,7 +92,7 @@ unsafe impl Row for u64 {
     }
 
     fn to_product(self) -> ProductValue {
-        ProductValue::new(&[AlgebraicValue::U64(self)])
+        AlgebraicValue::U64(self).into()
     }
 }
 
@@ -126,7 +124,7 @@ unsafe impl Row for U32x8 {
     }
 
     fn to_product(self) -> ProductValue {
-        ProductValue::new(&self.vals.iter().copied().map(AlgebraicValue::U32).collect::<Vec<_>>())
+        self.vals.map(AlgebraicValue::U32).into()
     }
 }
 
@@ -157,7 +155,7 @@ unsafe impl Row for U32x64 {
     }
 
     fn to_product(self) -> ProductValue {
-        ProductValue::new(&self.vals.iter().copied().map(AlgebraicValue::U32).collect::<Vec<_>>())
+        self.vals.map(AlgebraicValue::U32).into()
     }
 }
 
@@ -182,7 +180,7 @@ unsafe impl Row for String {
     }
 
     fn to_product(self) -> ProductValue {
-        ProductValue::new(&[AlgebraicValue::String(self)])
+        AlgebraicValue::String(self).into()
     }
 }
 
@@ -386,8 +384,7 @@ fn insert_with_holes_fixed_len(c: &mut Criterion) {
                         }
                         .unwrap();
 
-                        let should_delete = <OpenClosed01 as Distribution<f64>>::sample(&OpenClosed01, &mut rng);
-                        if should_delete < delete_ratio {
+                        if rng.gen_bool(delete_ratio) {
                             ptrs_to_delete.push(RowPointer::new(
                                 false,
                                 page_idx,
@@ -454,13 +451,7 @@ fn copy_filter_fixed_len(c: &mut Criterion) {
 
             // To avoid advancing RNG in the benchmark,
             // precompute a big vec of bools, with one bool for each value that we may or may not keep.
-            let keep_seq: Vec<bool> = (0..total_num_rows)
-                .into_iter()
-                .map(|_| {
-                    let should_keep = <OpenClosed01 as Distribution<f64>>::sample(&OpenClosed01, &mut rng);
-                    should_keep < keep_ratio
-                })
-                .collect();
+            let keep_seq: Vec<bool> = (0..total_num_rows).map(|_| rng.gen_bool(keep_ratio)).collect();
 
             group.bench_function(keep_ratio.to_string(), |b| {
                 b.iter_with_large_drop(|| unsafe {
@@ -629,7 +620,7 @@ fn table_extract_one_row(c: &mut Criterion) {
             b.iter_with_large_drop(|| {
                 black_box(
                     black_box(&table)
-                        .get_row_ref(&mut NullBlobStore, black_box(ptr))
+                        .get_row_ref(&NullBlobStore, black_box(ptr))
                         .unwrap()
                         .to_product_value(),
                 )
@@ -731,8 +722,9 @@ fn make_table_with_indexes<R: IndexedRow>() -> Table {
     let schema = R::make_schema();
     let mut tbl = Table::new(schema, SquashedOffset::COMMITTED_STATE);
 
-    let idx = BTreeIndex::new(IndexId(0), false, "idx");
-    tbl.insert_index(&mut NullBlobStore, R::indexed_columns(), idx);
+    let cols = R::indexed_columns();
+    let idx = BTreeIndex::new(IndexId(0), &R::row_type().into(), &cols, false, "idx").unwrap();
+    tbl.insert_index(&NullBlobStore, cols, idx);
 
     tbl
 }
@@ -767,7 +759,7 @@ fn insert_num_same<R: IndexedRow>(
 fn clear_all_same<R: IndexedRow>(tbl: &mut Table, val_same: u64) {
     let ptrs = tbl
         .index_seek(
-            &mut NullBlobStore,
+            &NullBlobStore,
             &R::indexed_columns(),
             &R::column_value_from_u64(val_same),
         )

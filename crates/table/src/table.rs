@@ -20,7 +20,7 @@ use ahash::AHashMap;
 use core::fmt;
 use core::hash::{BuildHasher, Hasher};
 use core::ops::RangeBounds;
-use spacetimedb_primitives::ColList;
+use spacetimedb_primitives::{ColId, ColList};
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer,
     db::def::TableSchema,
@@ -627,6 +627,13 @@ impl<'a> RowRef<'a> {
         unsafe { res.unwrap_unchecked() }
     }
 
+    /// Check that the `idx`th column of the row type stored by `self` is compatible with `T`,
+    /// and read the value of that column from `self`.
+    #[inline]
+    pub fn read_col<T: ReadColumn>(self, col: impl Into<ColId>) -> Result<T, TypeError> {
+        T::read_column(self, col.into().idx())
+    }
+
     /// Construct a projection of the row at `self` by extracting the `cols`.
     ///
     /// Returns an error if `cols` specifies an index which is out-of-bounds for the row at `self`.
@@ -634,29 +641,22 @@ impl<'a> RowRef<'a> {
     /// If `cols` contains more than one column, the values of the projected columns are wrapped in a [`ProductValue`].
     /// If `cols` is a single column, the value of that column is returned without wrapping in a `ProductValue`.
     pub fn project_not_empty(self, cols: &ColList) -> Result<AlgebraicValue, InvalidFieldError> {
-        match cols.len() {
+        let len = match cols.len() {
             0 => unreachable!("A `ColList` can never be empty"),
-            1 => AlgebraicValue::read_column(self, cols.head().idx()).map_err(|_| InvalidFieldError {
-                col_pos: cols.head(),
-                name: None,
-            }),
-            len => {
-                let mut elements = Vec::with_capacity(len as usize);
-                for col in cols.iter() {
-                    let col_val = AlgebraicValue::read_column(self, col.idx()).map_err(|err| match err {
-                        TypeError::WrongType { .. } => {
-                            unreachable!("AlgebraicValue::read_column never returns a `TypeError::WrongType`")
-                        }
-                        TypeError::IndexOutOfBounds { .. } => InvalidFieldError {
-                            col_pos: col,
-                            name: None,
-                        },
-                    })?;
-                    elements.push(col_val);
+            1 => return self.read_col(cols.head()).map_err(|_| cols.head().into()),
+            len => len,
+        };
+        let mut elements = Vec::with_capacity(len as usize);
+        for col in cols.iter() {
+            let col_val = self.read_col(col).map_err(|err| match err {
+                TypeError::WrongType { .. } => {
+                    unreachable!("AlgebraicValue::read_column never returns a `TypeError::WrongType`")
                 }
-                Ok(AlgebraicValue::Product(ProductValue { elements }))
-            }
+                TypeError::IndexOutOfBounds { .. } => col,
+            })?;
+            elements.push(col_val);
         }
+        Ok(AlgebraicValue::product(elements))
     }
 
     /// Returns the raw row pointer for this row reference.
@@ -668,11 +668,11 @@ impl<'a> RowRef<'a> {
         self.blob_store
     }
 
-    pub(crate) fn row_layout(&self) -> &RowTypeLayout {
+    pub fn row_layout(&self) -> &RowTypeLayout {
         &self.table.row_layout
     }
 
-    pub(crate) fn page_and_offset(&self) -> (&Page, PageOffset) {
+    pub fn page_and_offset(&self) -> (&Page, PageOffset) {
         self.table.page_and_offset(self.pointer())
     }
 }

@@ -8,8 +8,6 @@ use spacetimedb_lib::bsatn;
 use spacetimedb_lib::de::serde::SeedWrapper;
 use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::{ProductValue, ReducerDef};
-use spacetimedb_metrics::impl_prometheusvalue_string;
-use spacetimedb_metrics::typed_prometheus::AsPrometheusLabel;
 use spacetimedb_sats::WithTypespace;
 
 mod host_controller;
@@ -132,7 +130,7 @@ fn from_json_seed<'de, T: serde::de::DeserializeSeed<'de>>(s: &'de str, seed: T)
 }
 
 /// Tags for each call that a `WasmInstanceEnv` can make.
-#[derive(Debug, Display, Enum, Clone, Copy)]
+#[derive(Debug, Display, Enum, Clone, Copy, strum::AsRefStr)]
 pub enum AbiCall {
     CancelReducer,
     ConsoleLog,
@@ -148,5 +146,3 @@ pub enum AbiCall {
     IterStartFiltered,
     ScheduleReducer,
 }
-
-impl_prometheusvalue_string!(AbiCall);

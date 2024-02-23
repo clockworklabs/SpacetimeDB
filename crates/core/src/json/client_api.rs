@@ -6,6 +6,7 @@ use spacetimedb_lib::Identity;
 use spacetimedb_lib::ProductType;
 
 use serde_with::serde_as;
+use spacetimedb_sats::ProductValue;
 
 struct Sats;
 
@@ -95,12 +96,10 @@ pub struct TransactionUpdateJson {
     pub subscription_update: SubscriptionUpdateJson,
 }
 
-#[serde_as]
 #[derive(Debug, Clone, Serialize)]
 pub struct StmtResultJson {
     pub schema: ProductType,
-    #[serde_as(as = "Vec<Vec<Sats>>")]
-    pub rows: Vec<Vec<AlgebraicValue>>,
+    pub rows: Vec<ProductValue>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -113,5 +112,5 @@ pub struct OneOffQueryResponseJson {
 #[derive(Debug, Clone, Serialize)]
 pub struct OneOffTableJson {
     pub table_name: String,
-    pub rows: Vec<Vec<AlgebraicValue>>,
+    pub rows: Vec<ProductValue>,
 }

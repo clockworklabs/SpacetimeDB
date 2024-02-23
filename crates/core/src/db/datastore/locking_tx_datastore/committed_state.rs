@@ -10,9 +10,9 @@ use crate::{
         datastore::{
             system_tables::{
                 st_columns_schema, st_constraints_schema, st_indexes_schema, st_module_schema, st_sequences_schema,
-                st_table_schema, system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableRow,
-                SystemTable, ST_COLUMNS_ID, ST_COLUMNS_NAME, ST_CONSTRAINTS_ID, ST_CONSTRAINTS_NAME, ST_INDEXES_ID,
-                ST_INDEXES_NAME, ST_MODULE_ID, ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID,
+                st_table_schema, system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableFields,
+                StTableRow, SystemTable, ST_COLUMNS_ID, ST_COLUMNS_NAME, ST_CONSTRAINTS_ID, ST_CONSTRAINTS_NAME,
+                ST_INDEXES_ID, ST_INDEXES_NAME, ST_MODULE_ID, ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID,
             },
             traits::{TxData, TxOp, TxRecord},
         },
@@ -36,7 +36,7 @@ use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     btree_index::BTreeIndex,
     indexes::{RowPointer, SquashedOffset},
-    table::{IndexScanIter, InsertError, RowRef, Table, TableScanIter},
+    table::{IndexScanIter, InsertError, RowRef, Table},
 };
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
@@ -109,18 +109,21 @@ impl CommittedState {
     pub fn bootstrap_system_tables(&mut self, database_address: Address) -> Result<()> {
         let mut sequences_start: HashMap<TableId, i128> = HashMap::with_capacity(10);
 
+        // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
+        // and therefore has performance implications and must not be disabled.
+        let with_label_values = |table_id: TableId, table_name: &str| {
+            DB_METRICS
+                .rdb_num_table_rows
+                .with_label_values(&database_address, &table_id.0, table_name)
+        };
+
         // Insert the table row into st_tables, creating st_tables if it's missing
         let (st_tables, blob_store) = self.get_table_and_blob_store_or_create(ST_TABLES_ID, st_table_schema());
         // Insert the table row into `st_tables` for all system tables
         for schema in system_tables() {
             let table_id = schema.table_id;
-            // metric for this system table
-            // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
-            // and therefore has performance implications and must not be disabled.
-            DB_METRICS
-                .rdb_num_table_rows
-                .with_label_values(&database_address, &table_id.0, &schema.table_name)
-                .set(0);
+            // Metric for this system table.
+            with_label_values(table_id, &schema.table_name).set(0);
 
             let row = StTableRow {
                 table_id,
@@ -138,24 +141,19 @@ impl CommittedState {
 
         // Insert the columns into `st_columns`
         let (st_columns, blob_store) = self.get_table_and_blob_store_or_create(ST_COLUMNS_ID, st_columns_schema());
-        for col in system_tables().into_iter().flat_map(|x| x.columns().to_vec()) {
+        for col in system_tables().into_iter().flat_map(|x| x.into_columns()) {
             let row = StColumnRow {
                 table_id: col.table_id,
                 col_pos: col.col_pos,
-                col_name: col.col_name.clone(),
-                col_type: col.col_type.clone(),
+                col_name: col.col_name,
+                col_type: col.col_type,
             };
             let row = ProductValue::from(row);
             // Insert the meta-row into the in-memory ST_COLUMNS.
             // If the row is already there, no-op.
             ignore_duplicate_insert_error(st_columns.insert(blob_store, &row))?;
-            // Increment row count for st_columns
-            // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
-            // and therefore has performance implications and must not be disabled.
-            DB_METRICS
-                .rdb_num_table_rows
-                .with_label_values(&database_address, &ST_COLUMNS_ID.into(), ST_COLUMNS_NAME)
-                .inc();
+            // Increment row count for st_columns.
+            with_label_values(ST_COLUMNS_ID, ST_COLUMNS_NAME).inc();
         }
 
         // Insert the FK sorted by table/column so it show together when queried.
@@ -164,15 +162,15 @@ impl CommittedState {
         let (st_constraints, blob_store) =
             self.get_table_and_blob_store_or_create(ST_CONSTRAINTS_ID, st_constraints_schema());
         for (i, constraint) in system_tables()
-            .iter()
-            .flat_map(|x| &x.constraints)
+            .into_iter()
+            .flat_map(|x| x.constraints)
             .sorted_by_key(|x| (x.table_id, x.columns.clone()))
             .enumerate()
         {
             let row = StConstraintRow {
                 constraint_id: i.into(),
-                columns: constraint.columns.clone(),
-                constraint_name: constraint.constraint_name.clone(),
+                columns: constraint.columns,
+                constraint_name: constraint.constraint_name,
                 constraints: constraint.constraints,
                 table_id: constraint.table_id,
             };
@@ -180,13 +178,8 @@ impl CommittedState {
             // Insert the meta-row into the in-memory ST_CONSTRAINTS.
             // If the row is already there, no-op.
             ignore_duplicate_insert_error(st_constraints.insert(blob_store, &row))?;
-            // Increment row count for st_constraints
-            // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
-            // and therefore has performance implications and must not be disabled.
-            DB_METRICS
-                .rdb_num_table_rows
-                .with_label_values(&database_address, &ST_CONSTRAINTS_ID.into(), ST_CONSTRAINTS_NAME)
-                .inc();
+            // Increment row count for st_constraints.
+            with_label_values(ST_CONSTRAINTS_ID, ST_CONSTRAINTS_NAME).inc();
 
             *sequences_start.entry(ST_CONSTRAINTS_ID).or_default() += 1;
         }
@@ -194,30 +187,25 @@ impl CommittedState {
         // Insert the indexes into `st_indexes`
         let (st_indexes, blob_store) = self.get_table_and_blob_store_or_create(ST_INDEXES_ID, st_indexes_schema());
         for (i, index) in system_tables()
-            .iter()
-            .flat_map(|x| &x.indexes)
-            .sorted_by_key(|x| (&x.table_id, &x.columns))
+            .into_iter()
+            .flat_map(|x| x.indexes)
+            .sorted_by_key(|x| (x.table_id, x.columns.clone()))
             .enumerate()
         {
             let row = StIndexRow {
                 index_id: i.into(),
                 table_id: index.table_id,
                 index_type: index.index_type,
-                columns: index.columns.clone(),
-                index_name: index.index_name.clone(),
+                columns: index.columns,
+                index_name: index.index_name,
                 is_unique: index.is_unique,
             };
             let row = ProductValue::from(row);
             // Insert the meta-row into the in-memory ST_INDEXES.
             // If the row is already there, no-op.
             ignore_duplicate_insert_error(st_indexes.insert(blob_store, &row))?;
-            // Increment row count for st_indexes
-            // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
-            // and therefore has performance implications and must not be disabled.
-            DB_METRICS
-                .rdb_num_table_rows
-                .with_label_values(&database_address, &ST_INDEXES_ID.into(), ST_INDEXES_NAME)
-                .inc();
+            // Increment row count for st_indexes.
+            with_label_values(ST_INDEXES_ID, ST_INDEXES_NAME).inc();
 
             *sequences_start.entry(ST_INDEXES_ID).or_default() += 1;
         }
@@ -251,12 +239,14 @@ impl CommittedState {
             // If the row is already there, no-op.
             ignore_duplicate_insert_error(st_sequences.insert(blob_store, &row))?;
             // Increment row count for st_sequences
-            // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
-            // and therefore has performance implications and must not be disabled.
-            DB_METRICS
-                .rdb_num_table_rows
-                .with_label_values(&database_address, &ST_SEQUENCES_ID.into(), ST_SEQUENCES_NAME)
-                .inc();
+            with_label_values(ST_SEQUENCES_ID, ST_SEQUENCES_NAME).inc();
+        }
+
+        // Re-read the schema with the correct ids...
+        let ctx = ExecutionContext::internal(database_address);
+        for schema in system_tables() {
+            *self.tables.get_mut(&schema.table_id).unwrap().schema =
+                self.schema_for_table_raw(&ctx, schema.table_id)?;
         }
 
         Ok(())
@@ -285,8 +275,7 @@ impl CommittedState {
     pub fn build_sequence_state(&mut self, sequence_state: &mut SequencesState) -> Result<()> {
         let st_sequences = self.tables.get(&ST_SEQUENCES_ID).unwrap();
         for row_ref in st_sequences.scan_rows(&self.blob_store) {
-            let row = row_ref.to_product_value();
-            let sequence = StSequenceRow::try_from(&row)?;
+            let sequence = StSequenceRow::try_from(row_ref)?;
             // TODO: The system tables have initialized their value already, but this is wrong:
             // If we exceed  `SEQUENCE_PREALLOCATION_AMOUNT` we will get a unique violation
             let is_system_table = self
@@ -294,15 +283,13 @@ impl CommittedState {
                 .get(&sequence.table_id)
                 .map_or(false, |x| x.schema.table_type == StTableType::System);
 
-            let schema = sequence.to_owned().into();
-
-            let mut seq = Sequence::new(schema);
+            let mut seq = Sequence::new(sequence.into());
             // Now we need to recover the last allocation value.
-            if !is_system_table && seq.value < sequence.allocated + 1 {
-                seq.value = sequence.allocated + 1;
+            if !is_system_table && seq.value < seq.allocated() + 1 {
+                seq.value = seq.allocated() + 1;
             }
 
-            sequence_state.insert(sequence.sequence_id, seq);
+            sequence_state.insert(seq.id(), seq);
         }
         Ok(())
     }
@@ -311,10 +298,9 @@ impl CommittedState {
         let st_indexes = self.tables.get(&ST_INDEXES_ID).unwrap();
         let rows = st_indexes
             .scan_rows(&self.blob_store)
-            .map(|r| r.to_product_value())
-            .collect::<Vec<_>>();
-        for row in rows {
-            let index_row = StIndexRow::try_from(&row)?;
+            .map(StIndexRow::try_from)
+            .collect::<Result<Vec<_>>>()?;
+        for index_row in rows {
             let Some((table, blob_store)) = self.get_table_and_blob_store(index_row.table_id) else {
                 panic!("Cannot create index for table which doesn't exist in committed state");
             };
@@ -335,21 +321,22 @@ impl CommittedState {
     /// have been created in memory, but tables with no rows will not have
     /// been created. This function ensures that they are created.
     pub fn build_missing_tables(&mut self) -> Result<()> {
-        let st_tables = self.get_table(ST_TABLES_ID).unwrap();
-        let rows = st_tables
+        // Find all ids of tables that are in `st_tables` but haven't been built.
+        let table_ids = self
+            .get_table(ST_TABLES_ID)
+            .unwrap()
             .scan_rows(&self.blob_store)
-            .map(|r| r.to_product_value())
+            .map(|r| r.read_col(StTableFields::TableId).unwrap())
+            .filter(|table_id| self.get_table(*table_id).is_none())
             .collect::<Vec<_>>();
-        for row in rows {
-            let table_row = StTableRow::try_from(&row)?;
-            let table_id = table_row.table_id;
-            if self.get_table(table_id).is_none() {
-                let schema = self
-                    .schema_for_table(&ExecutionContext::default(), table_id)?
-                    .into_owned();
-                self.tables
-                    .insert(table_id, Table::new(schema, SquashedOffset::COMMITTED_STATE));
-            }
+
+        // Construct their schemas and insert tables for them.
+        for table_id in table_ids {
+            let schema = self
+                .schema_for_table(&ExecutionContext::default(), table_id)?
+                .into_owned();
+            self.tables
+                .insert(table_id, Table::new(schema, SquashedOffset::COMMITTED_STATE));
         }
         Ok(())
     }
@@ -551,28 +538,6 @@ impl CommittedState {
     }
 }
 
-struct CommittedStateIter<'a> {
-    iter: TableScanIter<'a>,
-    table_id_col: &'a ColList,
-    value: &'a AlgebraicValue,
-}
-
-impl<'a> Iterator for CommittedStateIter<'a> {
-    type Item = RowRef<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        for row_ref in &mut self.iter {
-            let row = row_ref.to_product_value();
-            let table_id = row.project_not_empty(self.table_id_col).unwrap();
-            if table_id == *self.value {
-                return Some(row_ref);
-            }
-        }
-
-        None
-    }
-}
-
 pub struct CommittedIndexIter<'a> {
     ctx: &'a ExecutionContext<'a>,
     table_id: TableId,
@@ -604,6 +569,10 @@ impl<'a> CommittedIndexIter<'a> {
 #[cfg(feature = "metrics")]
 impl Drop for CommittedIndexIter<'_> {
     fn drop(&mut self) {
+        let workload = &self.ctx.workload();
+        let db = &self.ctx.database();
+        let reducer_name = self.ctx.reducer_name();
+        let table_id = &self.table_id.0;
         let table_name = self
             .committed_state
             .get_schema(&self.table_id)
@@ -612,37 +581,19 @@ impl Drop for CommittedIndexIter<'_> {
 
         DB_METRICS
             .rdb_num_index_seeks
-            .with_label_values(
-                &self.ctx.workload(),
-                &self.ctx.database(),
-                self.ctx.reducer_name(),
-                &self.table_id.0,
-                table_name,
-            )
+            .with_label_values(workload, db, reducer_name, table_id, table_name)
             .inc();
 
         // Increment number of index keys scanned
         DB_METRICS
             .rdb_num_keys_scanned
-            .with_label_values(
-                &self.ctx.workload(),
-                &self.ctx.database(),
-                self.ctx.reducer_name(),
-                &self.table_id.0,
-                table_name,
-            )
+            .with_label_values(workload, db, reducer_name, table_id, table_name)
             .inc_by(self.committed_rows.num_pointers_yielded());
 
         // Increment number of rows fetched
         DB_METRICS
             .rdb_num_rows_fetched
-            .with_label_values(
-                &self.ctx.workload(),
-                &self.ctx.database(),
-                self.ctx.reducer_name(),
-                &self.table_id.0,
-                table_name,
-            )
+            .with_label_values(workload, db, reducer_name, table_id, table_name)
             .inc_by(self.num_committed_rows_fetched);
     }
 }
@@ -650,7 +601,6 @@ impl Drop for CommittedIndexIter<'_> {
 impl<'a> Iterator for CommittedIndexIter<'a> {
     type Item = RowRef<'a>;
 
-    #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(row_ref) = self.committed_rows.find(|row_ref| {
             !self
