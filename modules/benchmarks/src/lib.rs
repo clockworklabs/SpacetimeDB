@@ -16,13 +16,13 @@
 //! `{operation}_{index_strategy}_{table_name}`, in snake_case.
 //!
 //! The three index strategies are:
-//! - `Unique` / `unique`: a single unique key, declared first in the struct.
-//! - `NonUnique` / `non_unique`: no indexes.
-//! - `MultiIndex` / `multi_index`: one index for each row.
+//! - `unique`: a single unique key, declared first in the struct.
+//! - `no_index`: no indexes.
+//! - `btree_each_column`: one index for each column.
 //!
 //! Obviously more could be added...
 
-#![allow(clippy::too_many_arguments, unused_variables)]
+#![allow(clippy::too_many_arguments, unused_variables, non_camel_case_types)]
 
 use spacetimedb::{println, spacetimedb};
 use std::hint::black_box;
@@ -30,7 +30,7 @@ use std::hint::black_box;
 // ---------- schemas ----------
 
 #[spacetimedb(table)]
-pub struct UniquePerson {
+pub struct unique_0_u32_u64_str {
     #[unique]
     id: u32,
     age: u64,
@@ -38,7 +38,7 @@ pub struct UniquePerson {
 }
 
 #[spacetimedb(table)]
-pub struct NonUniquePerson {
+pub struct no_index_u32_u64_str {
     id: u32,
     age: u64,
     name: String,
@@ -48,14 +48,14 @@ pub struct NonUniquePerson {
 #[spacetimedb(index(btree, name = "id", id))]
 #[spacetimedb(index(btree, name = "name", name))]
 #[spacetimedb(index(btree, name = "age", age))]
-pub struct MultiIndexPerson {
+pub struct btree_each_column_u32_u64_str {
     id: u32,
     age: u64,
     name: String,
 }
 
 #[spacetimedb(table)]
-pub struct UniqueLocation {
+pub struct unique_0_u32_u64_u64 {
     #[unique]
     id: u32,
     x: u64,
@@ -63,7 +63,7 @@ pub struct UniqueLocation {
 }
 
 #[spacetimedb(table)]
-pub struct NonUniqueLocation {
+pub struct no_index_u32_u64_u64 {
     id: u32,
     x: u64,
     y: u64,
@@ -73,7 +73,7 @@ pub struct NonUniqueLocation {
 #[spacetimedb(index(btree, name = "id", id))]
 #[spacetimedb(index(btree, name = "x", x))]
 #[spacetimedb(index(btree, name = "y", y))]
-pub struct MultiIndexLocation {
+pub struct btree_each_column_u32_u64_u64 {
     id: u32,
     x: u64,
     y: u64,
@@ -86,116 +86,116 @@ pub fn empty() {}
 
 // ---------- insert ----------
 #[spacetimedb(reducer)]
-pub fn insert_unique_person(id: u32, age: u64, name: String) {
-    UniquePerson::insert(UniquePerson { id, name, age }).unwrap();
+pub fn insert_unique_0_u32_u64_str(id: u32, age: u64, name: String) {
+    unique_0_u32_u64_str::insert(unique_0_u32_u64_str { id, name, age }).unwrap();
 }
 
 #[spacetimedb(reducer)]
-pub fn insert_non_unique_person(id: u32, age: u64, name: String) {
-    NonUniquePerson::insert(NonUniquePerson { id, name, age });
+pub fn insert_no_index_u32_u64_str(id: u32, age: u64, name: String) {
+    no_index_u32_u64_str::insert(no_index_u32_u64_str { id, name, age });
 }
 
 #[spacetimedb(reducer)]
-pub fn insert_multi_index_person(id: u32, age: u64, name: String) {
-    MultiIndexPerson::insert(MultiIndexPerson { id, name, age });
+pub fn insert_btree_each_column_u32_u64_str(id: u32, age: u64, name: String) {
+    btree_each_column_u32_u64_str::insert(btree_each_column_u32_u64_str { id, name, age });
 }
 
 #[spacetimedb(reducer)]
-pub fn insert_unique_location(id: u32, x: u64, y: u64) {
-    UniqueLocation::insert(UniqueLocation { id, x, y }).unwrap();
+pub fn insert_unique_0_u32_u64_u64(id: u32, x: u64, y: u64) {
+    unique_0_u32_u64_u64::insert(unique_0_u32_u64_u64 { id, x, y }).unwrap();
 }
 
 #[spacetimedb(reducer)]
-pub fn insert_non_unique_location(id: u32, x: u64, y: u64) {
-    NonUniqueLocation::insert(NonUniqueLocation { id, x, y });
+pub fn insert_no_index_u32_u64_u64(id: u32, x: u64, y: u64) {
+    no_index_u32_u64_u64::insert(no_index_u32_u64_u64 { id, x, y });
 }
 
 #[spacetimedb(reducer)]
-pub fn insert_multi_index_location(id: u32, x: u64, y: u64) {
-    MultiIndexLocation::insert(MultiIndexLocation { id, x, y });
+pub fn insert_btree_each_column_u32_u64_u64(id: u32, x: u64, y: u64) {
+    btree_each_column_u32_u64_u64::insert(btree_each_column_u32_u64_u64 { id, x, y });
 }
 
 // ---------- insert bulk ----------
 
 #[spacetimedb(reducer)]
-pub fn insert_bulk_unique_location(locs: Vec<UniqueLocation>) {
+pub fn insert_bulk_unique_0_u32_u64_u64(locs: Vec<unique_0_u32_u64_u64>) {
     for loc in locs {
-        UniqueLocation::insert(loc).unwrap();
+        unique_0_u32_u64_u64::insert(loc).unwrap();
     }
 }
 
 #[spacetimedb(reducer)]
-pub fn insert_bulk_non_unique_location(locs: Vec<NonUniqueLocation>) {
+pub fn insert_bulk_no_index_u32_u64_u64(locs: Vec<no_index_u32_u64_u64>) {
     for loc in locs {
-        NonUniqueLocation::insert(loc);
+        no_index_u32_u64_u64::insert(loc);
     }
 }
 
 #[spacetimedb(reducer)]
-pub fn insert_bulk_multi_index_location(locs: Vec<MultiIndexLocation>) {
+pub fn insert_bulk_btree_each_column_u32_u64_u64(locs: Vec<btree_each_column_u32_u64_u64>) {
     for loc in locs {
-        MultiIndexLocation::insert(loc);
+        btree_each_column_u32_u64_u64::insert(loc);
     }
 }
 
 #[spacetimedb(reducer)]
-pub fn insert_bulk_unique_person(people: Vec<UniquePerson>) {
-    for person in people {
-        UniquePerson::insert(person).unwrap();
+pub fn insert_bulk_unique_0_u32_u64_str(people: Vec<unique_0_u32_u64_str>) {
+    for u32_u64_str in people {
+        unique_0_u32_u64_str::insert(u32_u64_str).unwrap();
     }
 }
 
 #[spacetimedb(reducer)]
-pub fn insert_bulk_non_unique_person(people: Vec<NonUniquePerson>) {
-    for person in people {
-        NonUniquePerson::insert(person);
+pub fn insert_bulk_no_index_u32_u64_str(people: Vec<no_index_u32_u64_str>) {
+    for u32_u64_str in people {
+        no_index_u32_u64_str::insert(u32_u64_str);
     }
 }
 
 #[spacetimedb(reducer)]
-pub fn insert_bulk_multi_index_person(people: Vec<MultiIndexPerson>) {
-    for person in people {
-        MultiIndexPerson::insert(person);
+pub fn insert_bulk_btree_each_column_u32_u64_str(people: Vec<btree_each_column_u32_u64_str>) {
+    for u32_u64_str in people {
+        btree_each_column_u32_u64_str::insert(u32_u64_str);
     }
 }
 
 // ---------- update ----------
 
 #[spacetimedb(reducer)]
-pub fn update_bulk_unique_location(row_count: u32) {
+pub fn update_bulk_unique_0_u32_u64_u64(row_count: u32) {
     let mut hit: u32 = 0;
-    for loc in UniqueLocation::iter().take(row_count as usize) {
+    for loc in unique_0_u32_u64_u64::iter().take(row_count as usize) {
         hit += 1;
         assert!(
-            UniqueLocation::update_by_id(
+            unique_0_u32_u64_u64::update_by_id(
                 &loc.id,
-                UniqueLocation {
+                unique_0_u32_u64_u64 {
                     id: loc.id,
                     x: loc.x.wrapping_add(1),
                     y: loc.y,
                 },
             ),
-            "failed to update location"
+            "failed to update u32_u64_u64"
         );
     }
     assert_eq!(hit, row_count, "not enough rows to perform requested amount of updates");
 }
 
 #[spacetimedb(reducer)]
-pub fn update_bulk_unique_person(row_count: u32) {
+pub fn update_bulk_unique_0_u32_u64_str(row_count: u32) {
     let mut hit: u32 = 0;
-    for person in UniquePerson::iter().take(row_count as usize) {
+    for u32_u64_str in unique_0_u32_u64_str::iter().take(row_count as usize) {
         hit += 1;
         assert!(
-            UniquePerson::update_by_id(
-                &person.id,
-                UniquePerson {
-                    id: person.id,
-                    name: person.name,
-                    age: person.age.wrapping_add(1),
+            unique_0_u32_u64_str::update_by_id(
+                &u32_u64_str.id,
+                unique_0_u32_u64_str {
+                    id: u32_u64_str.id,
+                    name: u32_u64_str.name,
+                    age: u32_u64_str.age.wrapping_add(1),
                 },
             ),
-            "failed to update person"
+            "failed to update u32_u64_str"
         );
     }
     assert_eq!(hit, row_count, "not enough rows to perform requested amount of updates");
@@ -204,121 +204,121 @@ pub fn update_bulk_unique_person(row_count: u32) {
 // ---------- iterate ----------
 
 #[spacetimedb(reducer)]
-pub fn iterate_unique_person() {
-    for person in UniquePerson::iter() {
-        black_box(person);
+pub fn iterate_unique_0_u32_u64_str() {
+    for u32_u64_str in unique_0_u32_u64_str::iter() {
+        black_box(u32_u64_str);
     }
 }
 #[spacetimedb(reducer)]
-pub fn iterate_unique_location() {
-    for location in UniqueLocation::iter() {
-        black_box(location);
+pub fn iterate_unique_0_u32_u64_u64() {
+    for u32_u64_u64 in unique_0_u32_u64_u64::iter() {
+        black_box(u32_u64_u64);
     }
 }
 
 // ---------- filtering ----------
 
 #[spacetimedb(reducer)]
-pub fn filter_unique_person_by_id(id: u32) {
-    if let Some(p) = UniquePerson::filter_by_id(&id) {
+pub fn filter_unique_0_u32_u64_str_by_id(id: u32) {
+    if let Some(p) = unique_0_u32_u64_str::filter_by_id(&id) {
         black_box(p);
     }
 }
 
 #[spacetimedb(reducer)]
-pub fn filter_non_unique_person_by_id(id: u32) {
-    for p in NonUniquePerson::filter_by_id(&id) {
+pub fn filter_no_index_u32_u64_str_by_id(id: u32) {
+    for p in no_index_u32_u64_str::filter_by_id(&id) {
         black_box(p);
     }
 }
 
 #[spacetimedb(reducer)]
-pub fn filter_multi_index_person_by_id(id: u32) {
-    for p in MultiIndexPerson::filter_by_id(&id) {
+pub fn filter_btree_each_column_u32_u64_str_by_id(id: u32) {
+    for p in btree_each_column_u32_u64_str::filter_by_id(&id) {
         black_box(p);
     }
 }
 
 #[spacetimedb(reducer)]
-pub fn filter_unique_person_by_name(name: String) {
-    for p in UniquePerson::filter_by_name(&name) {
+pub fn filter_unique_0_u32_u64_str_by_name(name: String) {
+    for p in unique_0_u32_u64_str::filter_by_name(&name) {
         black_box(p);
     }
 }
 
 #[spacetimedb(reducer)]
-pub fn filter_non_unique_person_by_name(name: String) {
-    for p in NonUniquePerson::filter_by_name(&name) {
+pub fn filter_no_index_u32_u64_str_by_name(name: String) {
+    for p in no_index_u32_u64_str::filter_by_name(&name) {
         black_box(p);
     }
 }
 
 #[spacetimedb(reducer)]
-pub fn filter_multi_index_person_by_name(name: String) {
-    for p in MultiIndexPerson::filter_by_name(&name) {
+pub fn filter_btree_each_column_u32_u64_str_by_name(name: String) {
+    for p in btree_each_column_u32_u64_str::filter_by_name(&name) {
         black_box(p);
     }
 }
 
 #[spacetimedb(reducer)]
-pub fn filter_unique_location_by_id(id: u32) {
-    if let Some(loc) = UniqueLocation::filter_by_id(&id) {
+pub fn filter_unique_0_u32_u64_u64_by_id(id: u32) {
+    if let Some(loc) = unique_0_u32_u64_u64::filter_by_id(&id) {
         black_box(loc);
     }
 }
 
 #[spacetimedb(reducer)]
-pub fn filter_non_unique_location_by_id(id: u32) {
-    for loc in NonUniqueLocation::filter_by_id(&id) {
+pub fn filter_no_index_u32_u64_u64_by_id(id: u32) {
+    for loc in no_index_u32_u64_u64::filter_by_id(&id) {
         black_box(loc);
     }
 }
 
 #[spacetimedb(reducer)]
-pub fn filter_multi_index_location_by_id(id: u32) {
-    for loc in MultiIndexLocation::filter_by_id(&id) {
+pub fn filter_btree_each_column_u32_u64_u64_by_id(id: u32) {
+    for loc in btree_each_column_u32_u64_u64::filter_by_id(&id) {
         black_box(loc);
     }
 }
 
 #[spacetimedb(reducer)]
-pub fn filter_unique_location_by_x(x: u64) {
-    for loc in UniqueLocation::filter_by_x(&x) {
+pub fn filter_unique_0_u32_u64_u64_by_x(x: u64) {
+    for loc in unique_0_u32_u64_u64::filter_by_x(&x) {
         black_box(loc);
     }
 }
 
 #[spacetimedb(reducer)]
-pub fn filter_non_unique_location_by_x(x: u64) {
-    for loc in NonUniqueLocation::filter_by_x(&x) {
+pub fn filter_no_index_u32_u64_u64_by_x(x: u64) {
+    for loc in no_index_u32_u64_u64::filter_by_x(&x) {
         black_box(loc);
     }
 }
 
 #[spacetimedb(reducer)]
-pub fn filter_multi_index_location_by_x(x: u64) {
-    for loc in MultiIndexLocation::filter_by_x(&x) {
+pub fn filter_btree_each_column_u32_u64_u64_by_x(x: u64) {
+    for loc in btree_each_column_u32_u64_u64::filter_by_x(&x) {
         black_box(loc);
     }
 }
 
 #[spacetimedb(reducer)]
-pub fn filter_unique_location_by_y(x: u64) {
-    for loc in UniqueLocation::filter_by_y(&x) {
+pub fn filter_unique_0_u32_u64_u64_by_y(x: u64) {
+    for loc in unique_0_u32_u64_u64::filter_by_y(&x) {
         black_box(loc);
     }
 }
 
 #[spacetimedb(reducer)]
-pub fn filter_non_unique_location_by_y(x: u64) {
-    for loc in NonUniqueLocation::filter_by_y(&x) {
+pub fn filter_no_index_u32_u64_u64_by_y(x: u64) {
+    for loc in no_index_u32_u64_u64::filter_by_y(&x) {
         black_box(loc);
     }
 }
 
 #[spacetimedb(reducer)]
-pub fn filter_multi_index_location_by_y(x: u64) {
-    for loc in MultiIndexLocation::filter_by_y(&x) {
+pub fn filter_btree_each_column_u32_u64_u64_by_y(x: u64) {
+    for loc in btree_each_column_u32_u64_u64::filter_by_y(&x) {
         black_box(loc);
     }
 }
@@ -328,43 +328,43 @@ pub fn filter_multi_index_location_by_y(x: u64) {
 // FIXME: current nonunique delete interface is UNUSABLE!!!!
 
 #[spacetimedb(reducer)]
-pub fn delete_unique_person_by_id(id: u32) {
-    UniquePerson::delete_by_id(&id);
+pub fn delete_unique_0_u32_u64_str_by_id(id: u32) {
+    unique_0_u32_u64_str::delete_by_id(&id);
 }
 
 #[spacetimedb(reducer)]
-pub fn delete_unique_location_by_id(id: u32) {
-    UniqueLocation::delete_by_id(&id);
+pub fn delete_unique_0_u32_u64_u64_by_id(id: u32) {
+    unique_0_u32_u64_u64::delete_by_id(&id);
 }
 
 // ---------- clear table ----------
 #[spacetimedb(reducer)]
-pub fn clear_table_unique_person() {
+pub fn clear_table_unique_0_u32_u64_str() {
     unimplemented!("Modules currently have no interface to clear a table");
 }
 
 #[spacetimedb(reducer)]
-pub fn clear_table_non_unique_person() {
+pub fn clear_table_no_index_u32_u64_str() {
     unimplemented!("Modules currently have no interface to clear a table");
 }
 
 #[spacetimedb(reducer)]
-pub fn clear_table_multi_index_person() {
+pub fn clear_table_btree_each_column_u32_u64_str() {
     unimplemented!("Modules currently have no interface to clear a table");
 }
 
 #[spacetimedb(reducer)]
-pub fn clear_table_unique_location() {
+pub fn clear_table_unique_0_u32_u64_u64() {
     unimplemented!("Modules currently have no interface to clear a table");
 }
 
 #[spacetimedb(reducer)]
-pub fn clear_table_non_unique_location() {
+pub fn clear_table_no_index_u32_u64_u64() {
     unimplemented!("Modules currently have no interface to clear a table");
 }
 
 #[spacetimedb(reducer)]
-pub fn clear_table_multi_index_location() {
+pub fn clear_table_btree_each_column_u32_u64_u64() {
     unimplemented!("Modules currently have no interface to clear a table");
 }
 // ---------- count ----------
@@ -372,33 +372,33 @@ pub fn clear_table_multi_index_location() {
 // You need to inspect the module outputs to actually read the result from these.
 
 #[spacetimedb(reducer)]
-pub fn count_unique_person() {
-    println!("COUNT: {}", UniquePerson::iter().count());
+pub fn count_unique_0_u32_u64_str() {
+    println!("COUNT: {}", unique_0_u32_u64_str::iter().count());
 }
 
 #[spacetimedb(reducer)]
-pub fn count_non_unique_person() {
-    println!("COUNT: {}", NonUniquePerson::iter().count());
+pub fn count_no_index_u32_u64_str() {
+    println!("COUNT: {}", no_index_u32_u64_str::iter().count());
 }
 
 #[spacetimedb(reducer)]
-pub fn count_multi_index_person() {
-    println!("COUNT: {}", MultiIndexPerson::iter().count());
+pub fn count_btree_each_column_u32_u64_str() {
+    println!("COUNT: {}", btree_each_column_u32_u64_str::iter().count());
 }
 
 #[spacetimedb(reducer)]
-pub fn count_unique_location() {
-    println!("COUNT: {}", UniqueLocation::iter().count());
+pub fn count_unique_0_u32_u64_u64() {
+    println!("COUNT: {}", unique_0_u32_u64_u64::iter().count());
 }
 
 #[spacetimedb(reducer)]
-pub fn count_non_unique_location() {
-    println!("COUNT: {}", NonUniqueLocation::iter().count());
+pub fn count_no_index_u32_u64_u64() {
+    println!("COUNT: {}", no_index_u32_u64_u64::iter().count());
 }
 
 #[spacetimedb(reducer)]
-pub fn count_multi_index_location() {
-    println!("COUNT: {}", MultiIndexLocation::iter().count());
+pub fn count_btree_each_column_u32_u64_u64() {
+    println!("COUNT: {}", btree_each_column_u32_u64_u64::iter().count());
 }
 // ---------- module-specific stuff ----------
 

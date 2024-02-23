@@ -2,6 +2,7 @@ on:
   push:
     branches:
       - master
+      - kazimuth/bench_cleanup
 
   workflow_dispatch:
     inputs:
@@ -96,36 +97,24 @@ jobs:
           if [[ $PR_NUMBER ]]; then
             BASELINE_NAME=branch
             RESULTS_NAME=pr-$PR_NUMBER
-            BENCH_FILTER='(special|stdb_module|stdb_raw)'
+            BENCH_FILTER='stdb_raw'
             echo "Running benchmarks without sqlite"
           else
             BASELINE_NAME=master
             RESULTS_NAME=$GITHUB_SHA
-            BENCH_FILTER='.*'
+            BENCH_FILTER='(stdb_raw|sqlite)'
             echo "Running benchmarks with sqlite"
           fi
           pushd crates/bench
-          cargo bench --bench generic --bench special -- --save-baseline "$BASELINE_NAME" "$BENCH_FILTER"
+          cargo bench --bench generic -- --save-baseline "$BASELINE_NAME" "$BENCH_FILTER"
+          # sticker price benchmark
+          cargo bench --bench generic -- --save-baseline "$BASELINE_NAME" 'stdb_module/disk/update_bulk'
+          cargo bench --bench special -- --save-baseline "$BASELINE_NAME"
           cargo run --bin summarize pack "$BASELINE_NAME"
           popd
           mkdir criterion-results
           [[ ! $PR_NUMBER ]] && cp target/criterion/$BASELINE_NAME.json criterion-results/
           cp target/criterion/$BASELINE_NAME.json criterion-results/$RESULTS_NAME.json
-
-      # TODO: can we optionally download if it only might fail?
-      #- name: PR; download bench results for compare
-      #  if: env.PR_NUMBER
-      #  uses: actions/github-script@v6  
-      #  with:
-      #    github-token: ${{secrets.GITHUB_TOKEN}}
-      #    script: |
-      #      try {
-      #        let artifact = github.rest.actions.getArtifact({
-      #          owner: "clockwork",
-      #          repo: "SpacetimeDB",
-      #          
-      #        })
-      #      }
 
       # this will work for both PR and master
       - name: Upload criterion results to DO spaces
@@ -147,6 +136,7 @@ jobs:
             OLD=$(git rev-parse HEAD~1)
             NEW=$GITHUB_SHA
           fi
+          echo "fetching https://benchmarks.spacetimedb.com/compare/$OLD/$NEW"
           curl -sS https://benchmarks.spacetimedb.com/compare/$OLD/$NEW > report.md
 
       - name: Post comment
@@ -314,6 +304,7 @@ jobs:
             OLD=$(git rev-parse HEAD~1)
             NEW=$GITHUB_SHA
           fi
+          echo "fetching https://benchmarks.spacetimedb.com/compare/$OLD/$NEW"
           curl -sS https://benchmarks.spacetimedb.com/compare_callgrind/$OLD/$NEW > report.md
 
       - name: Post comment

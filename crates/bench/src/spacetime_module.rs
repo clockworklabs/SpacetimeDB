@@ -10,7 +10,7 @@ use tokio::runtime::Runtime;
 
 use crate::{
     database::BenchDatabase,
-    schemas::{snake_case_table_name, table_name, BenchTable},
+    schemas::{table_name, BenchTable},
     ResultBench,
 };
 
@@ -98,7 +98,7 @@ impl BenchDatabase for SpacetimeModule {
         // Noop. All tables are built into the "benchmarks" module.
         Ok(TableId {
             pascal_case: table_name::<T>(table_style),
-            snake_case: snake_case_table_name::<T>(table_style),
+            snake_case: table_name::<T>(table_style),
         })
     }
 
@@ -145,19 +145,6 @@ impl BenchDatabase for SpacetimeModule {
 
         runtime.block_on(async move {
             module.call_reducer_binary("empty", [].into()).await?;
-            Ok(())
-        })
-    }
-
-    fn insert<T: BenchTable>(&mut self, table_id: &Self::TableId, row: T) -> ResultBench<()> {
-        let SpacetimeModule { runtime, module } = self;
-        let module = module.as_mut().unwrap();
-        let reducer_name = format!("insert_{}", table_id.snake_case);
-
-        runtime.block_on(async move {
-            module
-                .call_reducer_binary(&reducer_name, row.into_product_value())
-                .await?;
             Ok(())
         })
     }
