@@ -312,53 +312,5 @@ fn filter<DB: BenchDatabase, T: BenchTable + RandomTable>(
     Ok(())
 }
 
-#[inline(never)]
-fn find<DB: BenchDatabase, T: BenchTable + RandomTable>(
-    g: &mut Group,
-    db: &mut DB,
-    table_id: &DB::TableId,
-    index_strategy: &IndexStrategy,
-    column_id: u32,
-    load: u32,
-    buckets: u32,
-) -> ResultBench<()> {
-    assert_eq!(
-        *index_strategy,
-        IndexStrategy::Unique0,
-        "find benchmarks require unique key"
-    );
-    let id = format!("find_unique/u32/load={load}");
-
-    let data = create_sequential::<T>(0xdeadbeef, load, buckets as u64);
-
-    db.insert_bulk(table_id, data.clone())?;
-
-    // Each iteration performs a single transaction.
-    g.throughput(criterion::Throughput::Elements(1));
-
-    // We loop through all buckets found in the sample data.
-    // This mildly increases variance on the benchmark, but makes "mean_result_count" more accurate.
-    // Note that all benchmarks use exactly the same sample data.
-    let mut i = 0;
-
-    g.bench_function(&id, |b| {
-        bench_harness(
-            b,
-            db,
-            |_| {
-                let value = data[i].clone().into_product_value().elements[column_id as usize].clone();
-                i = (i + 1) % load as usize;
-                Ok(value)
-            },
-            |db, value| {
-                db.filter::<T>(table_id, column_id, value)?;
-                Ok(())
-            },
-        )
-    });
-    db.clear_table(table_id)?;
-    Ok(())
-}
-
 criterion_group!(benches, criterion_benchmark);
 criterion_main!(benches);
