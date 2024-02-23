@@ -307,8 +307,8 @@ pub fn nth_name(n: u64) -> String {
 mod tests {
     use super::{create_partly_identical, nth_name, XorShiftLite};
 
-    #[test]
-    fn test_nth_name() {
+    #[tokio::test]
+    async fn test_nth_name() {
         let mut rng = XorShiftLite(0xdeadbeef);
         for n in 0..1000 {
             let name = nth_name(n);
@@ -331,7 +331,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[tokio::test]
     fn test_partly_identical() {
         use crate::schemas::u32_u64_str;
 

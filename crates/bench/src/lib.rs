@@ -92,7 +92,7 @@ mod tests {
         Ok(())
     }
 
-    #[test]
+    #[tokio::test]
     fn test_basic_invariants_sqlite() {
         basic_invariants::<SQLite, u32_u64_str>(IndexStrategy::Unique0, true).unwrap();
         basic_invariants::<SQLite, u32_u64_u64>(IndexStrategy::Unique0, true).unwrap();
@@ -100,7 +100,7 @@ mod tests {
         basic_invariants::<SQLite, u32_u64_u64>(IndexStrategy::BTreeEachColumn, true).unwrap();
     }
 
-    #[test]
+    #[tokio::test]
     fn test_basic_invariants_spacetime_raw() {
         basic_invariants::<SpacetimeRaw, u32_u64_str>(IndexStrategy::Unique0, true).unwrap();
         basic_invariants::<SpacetimeRaw, u32_u64_u64>(IndexStrategy::Unique0, true).unwrap();
@@ -108,8 +108,8 @@ mod tests {
         basic_invariants::<SpacetimeRaw, u32_u64_u64>(IndexStrategy::BTreeEachColumn, true).unwrap();
     }
 
-    #[test]
-    fn test_basic_invariants_spacetime_module() {
+    #[tokio::test]
+    async fn test_basic_invariants_spacetime_module() {
         // note: there can only be one #[test] invoking spacetime module stuff.
         // #[test]s run concurrently and they fight over lockfiles.
         // so, run the sub-tests here in sequence.
