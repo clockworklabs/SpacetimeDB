@@ -91,8 +91,8 @@ mod tests {
         RocksDBObjectDB::open(tmp_dir.path())
     }
 
-    #[test]
-    fn test_add_and_get() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_add_and_get() -> ResultTest<()> {
         let mut db = setup()?;
 
         let hash1 = db.add(TEST_DATA1.to_vec());
@@ -106,8 +106,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_flush() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_flush() -> ResultTest<()> {
         let mut db = setup()?;
 
         db.add(TEST_DATA1.to_vec());
@@ -117,8 +117,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_flush_sync_all() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_flush_sync_all() -> ResultTest<()> {
         let mut db = setup()?;
 
         db.add(TEST_DATA1.to_vec());
@@ -128,8 +128,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_miss() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_miss() -> ResultTest<()> {
         let mut db = setup()?;
 
         let _hash2 = db.add(TEST_DATA2.to_vec());

@@ -516,8 +516,8 @@ mod test {
         assert!(visitor.next().is_none());
     }
 
-    #[test]
-    fn visit_var_len_in_u32_string_u8() {
+    #[tokio::test]
+    async fn visit_var_len_in_u32_string_u8() {
         let ty = row_type([AlgebraicType::U32, AlgebraicType::String, AlgebraicType::U8]);
         assert_eq!(ty.size(), Size(12));
 
@@ -529,8 +529,8 @@ mod test {
         check_addrs(&row_type_visitor(&ty), row, [4]);
     }
 
-    #[test]
-    fn visit_var_len_nested_product() {
+    #[tokio::test]
+    async fn visit_var_len_nested_product() {
         let ty = row_type([
             AlgebraicType::U32,
             AlgebraicType::String,
@@ -548,8 +548,8 @@ mod test {
         check_addrs(&row_type_visitor(&ty), row, [4, 16]);
     }
 
-    #[test]
-    fn visit_var_len_bare_enum() {
+    #[tokio::test]
+    async fn visit_var_len_bare_enum() {
         let ty = row_type([AlgebraicType::option(
             AlgebraicType::String, // tag 0
         )]);
@@ -572,8 +572,8 @@ mod test {
         check_addrs(&program, row, []);
     }
 
-    #[test]
-    fn visit_var_len_nested_enum() {
+    #[tokio::test]
+    async fn visit_var_len_nested_enum() {
         // Tables are always product types.
         let ty = row_type([AlgebraicType::sum([
             AlgebraicType::U32,                                                  // tag 0, size 4, align 4

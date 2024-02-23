@@ -242,8 +242,144 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_select() {
+    #[tokio::test]
+    async fn test_optimize_values() {
+        let p = &mut Program::new(AuthCtx::for_testing());
+        let zero = scalar(0);
+
+        let x = value(zero);
+        let ast = optimize(p, x);
+        assert!(ast.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_eval_scalar() {
+        let p = &mut Program::new(AuthCtx::for_testing());
+        let zero = scalar(0);
+        assert_eq!(run_ast(p, zero.clone().into()), Code::Value(zero));
+    }
+
+    #[tokio::test]
+    async fn test_optimize_ops() {
+        let p = &mut Program::new(AuthCtx::for_testing());
+
+        let zero = scalar(0);
+        let one = scalar(1);
+
+        let plus = bin_op(OpMath::Add, zero, one);
+
+        let ast = optimize(p, plus);
+        assert!(ast.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_math() {
+        let p = &mut Program::new(AuthCtx::for_testing());
+        let one = scalar(1);
+        let two = scalar(2);
+
+        let result = run_bin_op(p, OpMath::Add, one.clone(), two.clone());
+        assert_eq!(result, Code::Value(scalar(3)), "+");
+
+        let result = run_bin_op(p, OpMath::Minus, one.clone(), two.clone());
+        assert_eq!(result, Code::Value(scalar(-1)), "-");
+
+        let result = run_bin_op(p, OpMath::Mul, one.clone(), two.clone());
+        assert_eq!(result, Code::Value(scalar(2)), "*");
+
+        let result = run_bin_op(p, OpMath::Div, one, two);
+        assert_eq!(result, Code::Value(scalar(0)), "/ Int");
+
+        let result = run_bin_op(p, OpMath::Div, scalar(1.0), scalar(2.0));
+        assert_eq!(result, Code::Value(scalar(0.5)), "/ Float");
+
+        // Checking a vectorized ops: 0 + 1 + 2...
+        let nums = prefix_op(OpMath::Add, (0..9i64).map(value));
+        let result = run_ast(p, nums);
+
+        let total = (0..9i64).reduce(|a, b| a + b).unwrap();
+        assert_eq!(result, Code::Value(scalar(total)), "+ range");
+    }
+
+    #[tokio::test]
+    async fn test_logic() {
+        let p = &mut Program::new(AuthCtx::for_testing());
+
+        let a = scalar(true);
+        let b = scalar(false);
+
+        let result = run_bin_op(p, OpCmp::Eq, a.clone(), b.clone());
+        assert_eq!(result, Code::Value(scalar(false)), "Eq");
+
+        let result = run_bin_op(p, OpCmp::NotEq, a.clone(), b.clone());
+        assert_eq!(result, Code::Value(scalar(true)), "NotEq");
+
+        let result = run_bin_op(p, OpCmp::Lt, a.clone(), b.clone());
+        assert_eq!(result, Code::Value(scalar(false)), "Less");
+
+        let result = run_bin_op(p, OpCmp::LtEq, a.clone(), b.clone());
+        assert_eq!(result, Code::Value(scalar(false)), "LessThan");
+
+        let result = run_bin_op(p, OpCmp::Gt, a.clone(), b.clone());
+        assert_eq!(result, Code::Value(scalar(true)), "Greater");
+
+        let result = run_bin_op(p, OpCmp::GtEq, a.clone(), b.clone());
+        assert_eq!(result, Code::Value(scalar(true)), "GreaterThan");
+
+        let result = run_bin_op(p, OpLogic::And, a.clone(), b.clone());
+        assert_eq!(result, Code::Value(scalar(false)), "And");
+
+        let result = run_bin_op(p, OpUnary::Not, a.clone(), b.clone());
+        assert_eq!(result, Code::Value(scalar(true)), "Not");
+
+        let result = run_bin_op(p, OpLogic::Or, a, b);
+        assert_eq!(result, Code::Value(scalar(true)), "Or");
+    }
+
+    #[tokio::test]
+    async fn test_eval_if() {
+        let p = &mut Program::new(AuthCtx::for_testing());
+
+        let a = scalar(1);
+        let b = scalar(2);
+
+        let check = if_(bin_op(OpCmp::Eq, scalar(false), scalar(false)), a.clone(), b);
+        let result = run_ast(p, check);
+        assert_eq!(result, Code::Value(a), "if false = false then 1 else 2");
+    }
+
+    #[tokio::test]
+    async fn test_fun() {
+        let p = &mut Program::new(AuthCtx::for_testing());
+        let ty = AlgebraicType::U64;
+        let f = Function::new(
+            "sum",
+            &[Param::new("a", ty.clone()), Param::new("b", ty.clone())],
+            ty,
+            &[bin_op(OpMath::Add, var("a"), var("b"))],
+        );
+
+        let f = Expr::Fun(f);
+
+        let check = Expr::Block(vec![f, call_fn("sum", &[("a", scalar(1u64)), ("b", scalar(2u64))])]);
+        let result = run_ast(p, check);
+        let a = scalar(3u64);
+        assert_eq!(result, Code::Value(a), "Sum");
+    }
+
+    #[tokio::test]
+    async fn test_fibonacci() {
+        let p = &mut Program::new(AuthCtx::for_testing());
+        let input = 2;
+        let check = fibo(input);
+        let result = run_ast(p, check);
+        let a = scalar(fib(input));
+
+        assert_eq!(result, Code::Value(a), "Fib");
+    }
+
+    #[tokio::test]
+    async fn test_select() {
         let p = &mut Program::new(AuthCtx::for_testing());
         let input = MemTable::from_value(scalar(1));
         let field = input.get_field_pos(0).unwrap().clone();
@@ -261,8 +397,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_project() {
+    #[tokio::test]
+    async fn test_project() {
         let p = &mut Program::new(AuthCtx::for_testing());
         let input = scalar(1);
         let table = MemTable::from_value(scalar(1));
@@ -291,8 +427,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_join_inner() {
+    #[tokio::test]
+    async fn test_join_inner() {
         let p = &mut Program::new(AuthCtx::for_testing());
         let table = MemTable::from_value(scalar(1));
         let field = table.get_field_pos(0).unwrap().clone();
@@ -314,8 +450,8 @@ mod tests {
         assert_eq!(result.as_without_table_name(), input.as_without_table_name(), "Project");
     }
 
-    #[test]
-    fn test_query_logic() {
+    #[tokio::test]
+    async fn test_query_logic() {
         let p = &mut Program::new(AuthCtx::for_testing());
 
         let inv = ProductType::from([("id", AlgebraicType::U64), ("name", AlgebraicType::String)]);

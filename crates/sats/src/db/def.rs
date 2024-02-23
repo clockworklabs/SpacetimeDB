@@ -1244,8 +1244,8 @@ mod tests {
     }
 
     // Verify we generate indexes from constraints
-    #[test]
-    fn test_idx_generated() {
+    #[tokio::test]
+    async fn test_idx_generated() {
         let t = table_def()
             .with_column_constraint(Constraints::unique(), ColId(0))
             .with_column_constraint(Constraints::unique(), col_list![0, 1])
@@ -1270,8 +1270,8 @@ mod tests {
     }
 
     // Verify we generate sequences from constraints
-    #[test]
-    fn test_seq_generated() {
+    #[tokio::test]
+    async fn test_seq_generated() {
         let t = table_def()
             .with_column_constraint(Constraints::identity(), ColId(0))
             .with_column_constraint(Constraints::primary_key_identity(), ColId(1));
@@ -1296,8 +1296,8 @@ mod tests {
     }
 
     // Verify we generate constraints from indexes
-    #[test]
-    fn test_ct_generated() {
+    #[tokio::test]
+    async fn test_ct_generated() {
         let t = table_def()
             .with_column_index(ColId(0), true)
             .with_column_index(ColId(1), false)
@@ -1327,8 +1327,8 @@ mod tests {
     }
 
     // Verify that if we add a Constraint + Index for the same column, we get at the end the correct definitions
-    #[test]
-    fn test_idx_ct_clash() {
+    #[tokio::test]
+    async fn test_idx_ct_clash() {
         // The `Constraint::unset()` should be removed
         let t = table_def().with_column_index(ColId(0), true).with_constraints(
             table_def()
@@ -1386,8 +1386,8 @@ mod tests {
     }
 
     // Not empty names
-    #[test]
-    fn test_validate_empty() {
+    #[tokio::test]
+    async fn test_validate_empty() {
         let t = table_def();
 
         // Empty names
@@ -1459,8 +1459,8 @@ mod tests {
     }
 
     // Verify only one PK
-    #[test]
-    fn test_pkey() {
+    #[tokio::test]
+    async fn test_pkey() {
         let t = table_def()
             .with_column_constraint(Constraints::primary_key(), ColId(0))
             .with_column_constraint(Constraints::primary_key_auto(), ColId(1))
@@ -1476,8 +1476,8 @@ mod tests {
     }
 
     // All columns must exist
-    #[test]
-    fn test_column_exist() {
+    #[tokio::test]
+    async fn test_column_exist() {
         let t = table_def()
             .with_column_sequence(ColId(1001))
             .with_column_constraint(Constraints::unique(), ColId(1002))
@@ -1539,8 +1539,8 @@ mod tests {
     }
 
     // Only one auto_inc
-    #[test]
-    fn test_validate_auto_inc() {
+    #[tokio::test]
+    async fn test_validate_auto_inc() {
         let t = table_def()
             .with_column_sequence(ColId(0))
             .with_column_sequence(ColId(0));
@@ -1555,8 +1555,8 @@ mod tests {
     }
 
     // Only BTree indexes
-    #[test]
-    fn test_validate_btree() {
+    #[tokio::test]
+    async fn test_validate_btree() {
         let t = table_def().with_indexes(vec![IndexDef {
             index_name: "bad".to_string(),
             is_unique: false,

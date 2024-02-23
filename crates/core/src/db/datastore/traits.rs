@@ -403,8 +403,8 @@ mod tests {
 
     use super::{ColumnDef, IndexDef, TableDef};
 
-    #[test]
-    fn test_tabledef_from_lib_tabledef() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn test_tabledef_from_lib_tabledef() -> anyhow::Result<()> {
         let mut expected_schema = TableDef::new(
             "Person".into(),
             vec![

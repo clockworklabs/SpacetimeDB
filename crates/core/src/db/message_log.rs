@@ -615,8 +615,8 @@ mod tests {
     use spacetimedb_lib::error::ResultTest;
     use tempfile::{self, TempDir};
 
-    #[test]
-    fn test_message_log() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_message_log() -> ResultTest<()> {
         let tmp_dir = TempDir::with_prefix("message_log_test")?;
         let path = tmp_dir.path();
         let mut message_log = MessageLog::open(path)?;
@@ -638,8 +638,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_message_log_reopen() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_message_log_reopen() -> ResultTest<()> {
         let tmp_dir = TempDir::with_prefix("message_log_test")?;
         let path = tmp_dir.path();
         let mut message_log = MessageLog::open(path)?;
@@ -667,8 +667,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_segments_iter() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_segments_iter() -> ResultTest<()> {
         let tmp = TempDir::with_prefix("message_log_test")?;
 
         const SEGMENTS: usize = 3;
@@ -697,8 +697,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_segment_iter() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_segment_iter() -> ResultTest<()> {
         let tmp = TempDir::with_prefix("message_log_test")?;
 
         const MESSAGE: &[u8] = b"fee fi fo fum";
@@ -718,8 +718,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_truncate() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_truncate() -> ResultTest<()> {
         let tmp = TempDir::with_prefix("message_log_test")?;
 
         const MESSAGE: &[u8] = b"bleep bloop bleep";

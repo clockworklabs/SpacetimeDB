@@ -891,8 +891,8 @@ mod test {
         Table::new(schema, SquashedOffset::COMMITTED_STATE)
     }
 
-    #[test]
-    fn unique_violation_error() {
+    #[tokio::test]
+    async fn unique_violation_error() {
         let index_name = "my_unique_constraint";
         // Build a table for (I32, I32) with a unique index on the 0th column.
         let table_def = TableDef::new(
@@ -965,15 +965,15 @@ mod test {
         Ok(())
     }
 
-    #[test]
-    fn repro_serialize_bsatn_empty_array() {
+    #[tokio::test]
+    async fn repro_serialize_bsatn_empty_array() {
         let ty = AlgebraicType::array(AlgebraicType::U64);
         let arr = ArrayValue::from(Vec::<u64>::new());
         insert_retrieve_body(ty, AlgebraicValue::from(arr)).unwrap();
     }
 
-    #[test]
-    fn repro_serialize_bsatn_debug_assert() {
+    #[tokio::test]
+    async fn repro_serialize_bsatn_debug_assert() {
         let ty = AlgebraicType::array(AlgebraicType::U64);
         let arr = ArrayValue::from((0..130u64).collect::<Vec<_>>());
         insert_retrieve_body(ty, AlgebraicValue::from(arr)).unwrap();
@@ -1036,8 +1036,8 @@ mod test {
     }
 
     // Compare `scan_rows` against a simpler implementation.
-    #[test]
-    fn table_scan_iter_eq_flatmap() {
+    #[tokio::test]
+    async fn table_scan_iter_eq_flatmap() {
         let mut blob_store = HashMapBlobStore::default();
         let mut table = table(AlgebraicType::U64.into());
         for v in 0..2u64.pow(14) {

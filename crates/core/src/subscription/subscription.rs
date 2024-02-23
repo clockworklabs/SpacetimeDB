@@ -741,7 +741,8 @@ mod tests {
     use spacetimedb_vm::expr::{CrudExpr, IndexJoin, Query, SourceExpr};
     use spacetimedb_vm::relation::Table;
 
-    #[test]
+    #[tokio::test]
+async
     // Compile an index join after replacing the index side with a virtual table.
     // The original index and probe sides should be swapped after introducing the delta table.
     fn compile_incremental_index_join_index_side() -> ResultTest<()> {
@@ -835,7 +836,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
+    #[tokio::test]
+async
     // Compile an index join after replacing the probe side with a virtual table.
     // The original index and probe sides should remain after introducing the virtual table.
     fn compile_incremental_index_join_probe_side() -> ResultTest<()> {

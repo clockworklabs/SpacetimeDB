@@ -590,7 +590,8 @@ mod test {
     }
 
     proptest! {
-        #[test]
+        #[tokio::test]
+async
         fn granule_header_bitbashing(len in generate_len(), next in generate_var_len_offset(), len2 in generate_len(), next2 in generate_var_len_offset()) {
             let header = VarLenGranuleHeader::new(len, next);
             prop_assert_eq!(len, header.len());

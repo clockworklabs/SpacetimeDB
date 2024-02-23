@@ -153,8 +153,8 @@ pub(crate) mod tests {
         Ok((db, mem_table(head, rows), tmp_dir))
     }
 
-    #[test]
-    fn test_select_star() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_select_star() -> ResultTest<()> {
         let (db, input, _tmp_dir) = create_data(1)?;
 
         let result = run_for_testing(&db, "SELECT * FROM inventory")?;
@@ -170,8 +170,8 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_select_star_table() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_select_star_table() -> ResultTest<()> {
         let (db, input, _tmp_dir) = create_data(1)?;
 
         let result = run_for_testing(&db, "SELECT inventory.* FROM inventory")?;
@@ -204,8 +204,8 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_select_scalar() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_select_scalar() -> ResultTest<()> {
         let (db, _, _tmp_dir) = create_data(1)?;
 
         let result = run_for_testing(&db, "SELECT 1 FROM inventory")?;
@@ -220,8 +220,8 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_select_multiple() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_select_multiple() -> ResultTest<()> {
         let (db, input, _tmp_dir) = create_data(1)?;
 
         let result = run_for_testing(&db, "SELECT * FROM inventory;\nSELECT * FROM inventory")?;
@@ -234,8 +234,8 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_select_catalog() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_select_catalog() -> ResultTest<()> {
         let (db, _, _tmp_dir) = create_data(1)?;
         let tx = db.begin_tx();
         let schema = db.schema_for_table(&tx, ST_TABLES_ID).unwrap().into_owned();
@@ -263,8 +263,8 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_select_column() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_select_column() -> ResultTest<()> {
         let (db, table, _tmp_dir) = create_data(1)?;
 
         let result = run_for_testing(&db, "SELECT inventory_id FROM inventory")?;
@@ -286,8 +286,8 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_where() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_where() -> ResultTest<()> {
         let (db, table, _tmp_dir) = create_data(1)?;
 
         let result = run_for_testing(&db, "SELECT inventory_id FROM inventory WHERE inventory_id = 1")?;
@@ -310,8 +310,8 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_or() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_or() -> ResultTest<()> {
         let (db, table, _tmp_dir) = create_data(2)?;
 
         let result = run_for_testing(
@@ -336,8 +336,8 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_nested() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_nested() -> ResultTest<()> {
         let (db, table, _tmp_dir) = create_data(2)?;
 
         let result = run_for_testing(
@@ -362,8 +362,8 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_inner_join() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_inner_join() -> ResultTest<()> {
         let data = create_game_data();
 
         let (db, _tmp_dir) = make_test_db()?;
@@ -420,8 +420,8 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_insert() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_insert() -> ResultTest<()> {
         let (db, mut input, _tmp_dir) = create_data(1)?;
         let result = run_for_testing(&db, "INSERT INTO inventory (inventory_id, name) VALUES (2, 'test')")?;
 
@@ -446,8 +446,8 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_delete() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_delete() -> ResultTest<()> {
         let (db, _input, _tmp_dir) = create_data(1)?;
 
         run_for_testing(&db, "INSERT INTO inventory (inventory_id, name) VALUES (2, 't2')")?;
@@ -481,8 +481,8 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_update() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_update() -> ResultTest<()> {
         let (db, input, _tmp_dir) = create_data(1)?;
 
         run_for_testing(&db, "INSERT INTO inventory (inventory_id, name) VALUES (2, 't2')")?;
@@ -523,8 +523,8 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_create_table() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_create_table() -> ResultTest<()> {
         let (db, _, _tmp_dir) = create_data(1)?;
         run_for_testing(&db, "CREATE TABLE inventory2 (inventory_id BIGINT UNSIGNED, name TEXT)")?;
         run_for_testing(
@@ -543,8 +543,8 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_drop_table() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_drop_table() -> ResultTest<()> {
         let (db, _, _tmp_dir) = create_data(1)?;
         run_for_testing(&db, "CREATE TABLE inventory2 (inventory_id BIGINT UNSIGNED, name TEXT)")?;
 
@@ -565,8 +565,8 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_column_constraints() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_column_constraints() -> ResultTest<()> {
         let (db, _, _tmp_dir) = create_data(0)?;
 
         fn check_column(
@@ -636,8 +636,8 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_big_sql() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_big_sql() -> ResultTest<()> {
         let (db, _input, _tmp_dir) = create_data(1)?;
 
         let result = run_for_testing(

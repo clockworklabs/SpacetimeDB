@@ -498,7 +498,8 @@ mod test {
     }
 
     proptest! {
-        #[test]
+        #[tokio::test]
+async
         fn remove_nonexistent_noop(((ty, cols, pv), is_unique) in (gen_row_and_cols(), any::<bool>())) {
             let mut index = new_index(&ty, &cols, is_unique);
             let mut table = table(ty);
@@ -509,7 +510,8 @@ mod test {
             prop_assert!(index.idx.is_empty());
         }
 
-        #[test]
+        #[tokio::test]
+async
         fn insert_delete_noop(((ty, cols, pv), is_unique) in (gen_row_and_cols(), any::<bool>())) {
             let mut index = new_index(&ty, &cols, is_unique);
             let mut table = table(ty);
@@ -534,7 +536,8 @@ mod test {
             prop_assert_eq!(index.contains_any(&value), false);
         }
 
-        #[test]
+        #[tokio::test]
+async
         fn insert_again_violates_unique_constraint((ty, cols, pv) in gen_row_and_cols()) {
             let mut index = new_index(&ty, &cols, true);
             let mut table = table(ty);
@@ -563,7 +566,8 @@ mod test {
             );
         }
 
-        #[test]
+        #[tokio::test]
+async
         fn seek_various_ranges(needle in 1..u64::MAX) {
             use AlgebraicValue::U64 as V;
 

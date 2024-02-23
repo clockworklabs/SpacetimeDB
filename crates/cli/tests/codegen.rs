@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-#[test]
+#[tokio::test]
+async
 fn test_codegen_output() {
     let path = Path::new(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -22,7 +23,8 @@ fn test_codegen_output() {
     });
 }
 
-#[test]
+#[tokio::test]
+async
 fn test_typescript_codegen_output() {
     let path = Path::new(concat!(
         env!("CARGO_MANIFEST_DIR"),

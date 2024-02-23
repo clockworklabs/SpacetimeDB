@@ -18,104 +18,124 @@ macro_rules! declare_tests_with_suffix {
                     .build()
             }
 
-            #[test]
+            #[tokio::test]
+async
             fn insert_primitive() {
                 make_test("insert_primitive").run();
             }
 
-            #[test]
+            #[tokio::test]
+async
             fn delete_primitive() {
                 make_test("delete_primitive").run();
             }
 
-            #[test]
+            #[tokio::test]
+async
             fn update_primitive() {
                 make_test("update_primitive").run();
             }
 
-            #[test]
+            #[tokio::test]
+async
             fn insert_identity() {
                 make_test("insert_identity").run();
             }
 
-            #[test]
+            #[tokio::test]
+async
             fn delete_identity() {
                 make_test("delete_identity").run();
             }
 
-            #[test]
+            #[tokio::test]
+async
             fn update_identity() {
                 make_test("delete_identity").run();
             }
 
-            #[test]
+            #[tokio::test]
+async
             fn insert_address() {
                 make_test("insert_address").run();
             }
 
-            #[test]
+            #[tokio::test]
+async
             fn delete_address() {
                 make_test("delete_address").run();
             }
 
-            #[test]
+            #[tokio::test]
+async
             fn update_address() {
                 make_test("delete_address").run();
             }
 
-            #[test]
+            #[tokio::test]
+async
             fn on_reducer() {
                 make_test("on_reducer").run();
             }
 
-            #[test]
+            #[tokio::test]
+async
             fn fail_reducer() {
                 make_test("fail_reducer").run();
             }
 
-            #[test]
+            #[tokio::test]
+async
             fn insert_vec() {
                 make_test("insert_vec").run();
             }
 
-            #[test]
+            #[tokio::test]
+async
             fn insert_simple_enum() {
                 make_test("insert_simple_enum").run();
             }
 
-            #[test]
+            #[tokio::test]
+async
             fn insert_enum_with_payload() {
                 make_test("insert_enum_with_payload").run();
             }
 
-            #[test]
+            #[tokio::test]
+async
             fn insert_long_table() {
                 make_test("insert_long_table").run();
             }
 
-            #[test]
+            #[tokio::test]
+async
             fn resubscribe() {
                 make_test("resubscribe").run();
             }
 
-            #[test]
+            #[tokio::test]
+async
             #[should_panic]
             fn should_fail() {
                 make_test("should_fail").run();
             }
 
-            #[test]
+            #[tokio::test]
+async
             fn reauth() {
                 make_test("reauth_part_1").run();
                 make_test("reauth_part_2").run();
             }
 
-            #[test]
+            #[tokio::test]
+async
             fn reconnect_same_address() {
                 make_test("reconnect_same_address").run();
             }
 
-            #[test]
+            #[tokio::test]
+async
             fn connect_disconnect_callbacks() {
                 Test::builder()
                     .with_name(concat!("connect_disconnect_callback_", stringify!($lang)))

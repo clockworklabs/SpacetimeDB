@@ -182,8 +182,8 @@ impl<'de> serde::Deserialize<'de> for Address {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_bsatn_roundtrip() {
+    #[tokio::test]
+    async fn test_bsatn_roundtrip() {
         let addr = Address::from_u128(rand::random());
         let ser = sats::bsatn::to_vec(&addr).unwrap();
         let de = sats::bsatn::from_slice(&ser).unwrap();

@@ -71,8 +71,8 @@ mod tests {
         SledObjectDB::open(tmp_dir.path())
     }
 
-    #[test]
-    fn test_add_and_get() {
+    #[tokio::test]
+    async fn test_add_and_get() {
         let mut db = setup().unwrap();
 
         let hash1 = db.add(TEST_DATA1.to_vec());
@@ -85,8 +85,8 @@ mod tests {
         assert_eq!(TEST_DATA2, result.to_vec().as_slice());
     }
 
-    #[test]
-    fn test_flush() {
+    #[tokio::test]
+    async fn test_flush() {
         let mut db = setup().unwrap();
 
         db.add(TEST_DATA1.to_vec());
@@ -95,8 +95,8 @@ mod tests {
         assert!(db.flush().is_ok());
     }
 
-    #[test]
-    fn test_flush_sync_all() {
+    #[tokio::test]
+    async fn test_flush_sync_all() {
         let mut db = setup().unwrap();
 
         db.add(TEST_DATA1.to_vec());
@@ -105,8 +105,8 @@ mod tests {
         assert!(db.sync_all().is_ok());
     }
 
-    #[test]
-    fn test_miss() {
+    #[tokio::test]
+    async fn test_miss() {
         let mut db = setup().unwrap();
 
         let _hash2 = db.add(TEST_DATA2.to_vec());

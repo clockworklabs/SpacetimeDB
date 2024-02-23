@@ -484,8 +484,8 @@ mod tests {
         )
     }
 
-    #[test]
-    fn test_project() {
+    #[tokio::test]
+    async fn test_project() {
         let head = head("t1", ("a", "b"), 0);
         let new = head.project(&[] as &[FieldName]).unwrap();
 
@@ -519,8 +519,8 @@ mod tests {
         assert_eq!(second, new);
     }
 
-    #[test]
-    fn test_extend() {
+    #[tokio::test]
+    async fn test_extend() {
         let head_lhs = head("t1", ("a", "b"), 0);
         let head_rhs = head("t2", ("c", "d"), 0);
 

@@ -993,8 +993,8 @@ mod tests {
             .collect()
     }
 
-    #[test]
-    fn test_bootstrapping_sets_up_tables() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_bootstrapping_sets_up_tables() -> ResultTest<()> {
         let datastore = get_datastore()?;
         let tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
@@ -1130,8 +1130,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_create_table_pre_commit() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_create_table_pre_commit() -> ResultTest<()> {
         let (_, tx, table_id) = setup_table()?;
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
@@ -1147,8 +1147,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_create_table_post_commit() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_create_table_post_commit() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx_for_test(tx)?;
         let tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
@@ -1167,8 +1167,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_create_table_post_rollback() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_create_table_post_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.rollback_mut_tx_for_test(tx);
         let tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
@@ -1186,8 +1186,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_schema_for_table_pre_commit() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_schema_for_table_pre_commit() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         let schema = &*datastore.schema_for_table_mut_tx(&tx, table_id)?;
         #[rustfmt::skip]
@@ -1195,8 +1195,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_schema_for_table_post_commit() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_schema_for_table_post_commit() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx_for_test(tx)?;
         let tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
@@ -1206,8 +1206,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_schema_for_table_alter_indexes() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_schema_for_table_alter_indexes() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx_for_test(tx)?;
 
@@ -1263,8 +1263,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_schema_for_table_rollback() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_schema_for_table_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.rollback_mut_tx_for_test(tx);
         let tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
@@ -1273,8 +1273,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_insert_pre_commit() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_insert_pre_commit() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
@@ -1283,8 +1283,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_insert_wrong_schema_pre_commit() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_insert_wrong_schema_pre_commit() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = product!(0, "Foo");
         assert!(datastore.insert_mut_tx(&mut tx, table_id, row).is_err());
@@ -1293,8 +1293,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_insert_post_commit() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_insert_post_commit() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, u32_str_u32(0, "Foo", 18))?;
@@ -1305,8 +1305,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_insert_post_rollback() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_insert_post_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         let row = u32_str_u32(15, "Foo", 18); // 15 is ignored.
         datastore.commit_mut_tx_for_test(tx)?;
@@ -1319,8 +1319,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_insert_commit_delete_insert() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_insert_commit_delete_insert() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
@@ -1337,8 +1337,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_insert_delete_insert_delete_insert() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_insert_delete_insert_delete_insert() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(1, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
@@ -1368,8 +1368,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_unique_constraint_pre_commit() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_unique_constraint_pre_commit() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
@@ -1388,8 +1388,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_unique_constraint_post_commit() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_unique_constraint_post_commit() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
@@ -1410,8 +1410,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_unique_constraint_post_rollback() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_unique_constraint_post_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx_for_test(tx)?;
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
@@ -1425,8 +1425,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_create_index_pre_commit() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_create_index_pre_commit() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx_for_test(tx)?;
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
@@ -1468,8 +1468,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_create_index_post_commit() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_create_index_post_commit() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
@@ -1511,8 +1511,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_create_index_post_rollback() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_create_index_post_rollback() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
@@ -1547,8 +1547,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_update_reinsert() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_update_reinsert() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
 
         // Insert a row and commit the tx.
@@ -1598,10 +1598,10 @@ mod tests {
         Ok(())
     }
 
-    #[test]
+    #[tokio::test]
     /// Test that two read-only TXes can operate concurrently without deadlock or blocking,
     /// and that both observe correct results for a simple table scan.
-    fn test_read_only_tx_shared_lock() -> ResultTest<()> {
+    async fn test_read_only_tx_shared_lock() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row1 = u32_str_u32(1, "Foo", 18);
         datastore.insert_mut_tx(&mut tx, table_id, row1.clone())?;

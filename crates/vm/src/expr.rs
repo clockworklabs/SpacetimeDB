@@ -1794,8 +1794,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_index_to_inner_join() {
+    #[tokio::test]
+    async fn test_index_to_inner_join() {
         let index_side = mem_table(
             "index",
             &[("a", AlgebraicType::U8, false), ("b", AlgebraicType::U8, true)],
@@ -1852,43 +1852,43 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_auth_table() {
+    #[tokio::test]
+    async fn test_auth_table() {
         tables().iter().for_each(assert_owner_private)
     }
 
-    #[test]
-    fn test_auth_query_code() {
+    #[tokio::test]
+    async fn test_auth_query_code() {
         for code in query_codes() {
             assert_owner_private(&code)
         }
     }
 
-    #[test]
-    fn test_auth_query() {
+    #[tokio::test]
+    async fn test_auth_query() {
         for query in queries() {
             assert_owner_private(&query);
         }
     }
 
-    #[test]
-    fn test_auth_crud_code_query() {
+    #[tokio::test]
+    async fn test_auth_crud_code_query() {
         for query in query_codes() {
             let crud = CrudCode::Query(query);
             assert_owner_private(&crud);
         }
     }
 
-    #[test]
-    fn test_auth_crud_code_insert() {
+    #[tokio::test]
+    async fn test_auth_crud_code_insert() {
         for table in tables() {
             let crud = CrudCode::Insert { table, rows: vec![] };
             assert_owner_required(crud);
         }
     }
 
-    #[test]
-    fn test_auth_crud_code_update() {
+    #[tokio::test]
+    async fn test_auth_crud_code_update() {
         for qc in query_codes() {
             let crud = CrudCode::Update {
                 delete: qc,
@@ -1898,16 +1898,16 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_auth_crud_code_delete() {
+    #[tokio::test]
+    async fn test_auth_crud_code_delete() {
         for query in query_codes() {
             let crud = CrudCode::Delete { query };
             assert_owner_required(crud);
         }
     }
 
-    #[test]
-    fn test_auth_crud_code_create_table() {
+    #[tokio::test]
+    async fn test_auth_crud_code_create_table() {
         let table = TableDef::new("etcpasswd".into(), vec![])
             .with_access(StAccess::Public)
             .with_type(StTableType::System); // hah!
@@ -1916,8 +1916,8 @@ mod tests {
         assert_owner_required(crud);
     }
 
-    #[test]
-    fn test_auth_crud_code_drop() {
+    #[tokio::test]
+    async fn test_auth_crud_code_drop() {
         let crud = CrudCode::Drop {
             name: "etcpasswd".into(),
             kind: DbType::Table,

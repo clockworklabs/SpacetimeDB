@@ -360,7 +360,8 @@ mod test {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(2048))]
 
-        #[test]
+        #[tokio::test]
+async
         /// Test that `AlgebraicValue::read_column` returns expected values.
         ///
         /// That is, test that, for any row type and any row value,
@@ -380,7 +381,8 @@ mod test {
             }
         }
 
-        #[test]
+        #[tokio::test]
+async
         /// Test that trying to read a column at a type more specific than `AlgebraicValue`
         /// which does not match the actual column type
         /// returns an appropriate error.
@@ -410,7 +412,8 @@ mod test {
             }
         }
 
-        #[test]
+        #[tokio::test]
+async
         /// Test that trying to read a column which does not exist,
         /// i.e. with an out-of-bounds index,
         /// returns an appropriate error.
@@ -472,7 +475,8 @@ mod test {
     /// and asserts that the extracted value is as expected.
     macro_rules! test_read_column_primitive {
         ($name:ident { $algebraic_type:expr => $rust_type:ty = $val:expr }) => {
-            #[test]
+            #[tokio::test]
+async
             fn $name() {
                 let mut blob_store = HashMapBlobStore::default();
                 let mut table = table(ProductType::from_iter([$algebraic_type]));

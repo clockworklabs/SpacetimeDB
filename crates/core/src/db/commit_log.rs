@@ -717,8 +717,8 @@ mod tests {
     use crate::db::ostorage::memory_object_db::MemoryObjectDB;
     use spacetimedb_sats::data_key::InlineData;
 
-    #[test]
-    fn test_iter_commits() {
+    #[tokio::test]
+    async fn test_iter_commits() {
         let tmp = TempDir::with_prefix("commit_log_test").unwrap();
 
         let data_key = DataKey::Data(InlineData::from_bytes(b"asdf").unwrap());

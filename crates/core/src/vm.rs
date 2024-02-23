@@ -612,14 +612,14 @@ pub(crate) mod tests {
         }
     }
 
-    #[test]
+    #[tokio::test]
     /// Inventory
     /// | inventory_id: u64 | name : String |
     /// Player
     /// | entity_id: u64 | inventory_id : u64 |
     /// Location
     /// | entity_id: u64 | x : f32 | z : f32 |
-    fn test_db_query() -> ResultTest<()> {
+    async fn test_db_query() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
@@ -668,8 +668,8 @@ pub(crate) mod tests {
         assert_eq!(result, Code::Table(input), "{}", name);
     }
 
-    #[test]
-    fn test_query_catalog_tables() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_query_catalog_tables() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
@@ -701,8 +701,8 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_query_catalog_columns() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_query_catalog_columns() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
@@ -740,8 +740,8 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_query_catalog_indexes() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_query_catalog_indexes() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
 
         let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
@@ -784,8 +784,8 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_query_catalog_sequences() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_query_catalog_sequences() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
 
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);

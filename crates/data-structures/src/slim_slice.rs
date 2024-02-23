@@ -1649,24 +1649,24 @@ mod tests {
         assert_eq!(&**s1, TEST_STR.to_uppercase());
     }
 
-    #[test]
-    fn str_mut_call() {
+    #[tokio::test]
+    async fn str_mut_call() {
         let [mut s1, mut s2] = test_strings();
         let s1 = &mut from_str_mut(s1.as_mut_str());
         let s2 = &mut from_str_mut(s2.as_mut_str());
         assert_str_mut_properties(s1, s2);
     }
 
-    #[test]
-    fn str_mut_try_into() {
+    #[tokio::test]
+    async fn str_mut_try_into() {
         let [mut s1, mut s2] = test_strings();
         let s1: &mut SlimStrMut = &mut s1.as_mut().try_into().unwrap();
         let s2: &mut SlimStrMut = &mut s2.as_mut().try_into().unwrap();
         assert_str_mut_properties(s1, s2);
     }
 
-    #[test]
-    fn str_mut_exclusive_ref_various() {
+    #[tokio::test]
+    async fn str_mut_exclusive_ref_various() {
         for [mut a, mut b] in various_boxed_strs() {
             assert_str_mut_properties(a.exclusive_ref(), b.exclusive_ref())
         }
@@ -1687,22 +1687,22 @@ mod tests {
         display_properties(a, b, TEST_STR, TEST_STR2);
     }
 
-    #[test]
-    fn str_call() {
+    #[tokio::test]
+    async fn str_call() {
         let [s1, s2] = test_strings();
         assert_str_properties(&from_str(&s1), &from_str(&s2));
     }
 
-    #[test]
-    fn str_try_into() {
+    #[tokio::test]
+    async fn str_try_into() {
         let [s1, s2] = test_strings();
         let s1: &SlimStr = &mut s1.deref().try_into().unwrap();
         let s2: &SlimStr = &mut s2.deref().try_into().unwrap();
         assert_str_properties(s1, s2);
     }
 
-    #[test]
-    fn str_shared_ref_various() {
+    #[tokio::test]
+    async fn str_shared_ref_various() {
         for [a, b] in various_boxed_strs() {
             assert_str_properties(a.shared_ref(), b.shared_ref())
         }
@@ -1729,24 +1729,24 @@ mod tests {
         assert_eq!(&**s1, upper);
     }
 
-    #[test]
-    fn slice_mut_call() {
+    #[tokio::test]
+    async fn slice_mut_call() {
         let [mut s1, mut s2] = test_slices();
         let s1 = &mut from_slice_mut(s1.as_mut());
         let s2 = &mut from_slice_mut(s2.as_mut());
         assert_slice_mut_properties(s1, s2);
     }
 
-    #[test]
-    fn slice_mut_try_into() {
+    #[tokio::test]
+    async fn slice_mut_try_into() {
         let [mut s1, mut s2] = test_slices();
         let s1: &mut SlimSliceMut<u8> = &mut s1.deref_mut().try_into().unwrap();
         let s2: &mut SlimSliceMut<u8> = &mut s2.deref_mut().try_into().unwrap();
         assert_slice_mut_properties(s1, s2);
     }
 
-    #[test]
-    fn slice_mut_exclusive_ref_various() {
+    #[tokio::test]
+    async fn slice_mut_exclusive_ref_various() {
         for [mut a, mut b] in various_boxed_slices() {
             assert_slice_mut_properties(a.exclusive_ref(), b.exclusive_ref());
         }
@@ -1765,22 +1765,22 @@ mod tests {
         general_properties(a, b, TEST_SLICE, TEST_SLICE2);
     }
 
-    #[test]
-    fn slice_call() {
+    #[tokio::test]
+    async fn slice_call() {
         let [s1, s2] = test_slices();
         assert_slice_properties(&from_slice(&s1), &from_slice(&s2));
     }
 
-    #[test]
-    fn slice_try_into() {
+    #[tokio::test]
+    async fn slice_try_into() {
         let [s1, s2] = test_slices();
         let s1: &SlimSlice<u8> = &s1.deref().try_into().unwrap();
         let s2: &SlimSlice<u8> = &s2.deref().try_into().unwrap();
         assert_slice_properties(s1, s2);
     }
 
-    #[test]
-    fn slice_shared_ref_various() {
+    #[tokio::test]
+    async fn slice_shared_ref_various() {
         for [a, b] in various_boxed_slices() {
             assert_slice_properties(a.shared_ref(), b.shared_ref())
         }

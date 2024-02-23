@@ -306,8 +306,8 @@ impl<'de, I: AsRef<[u8]>> BufReader<'de> for &'de Cursor<I> {
 mod tests {
     use crate::buffer::{BufReader, BufWriter};
 
-    #[test]
-    fn test_simple_encode_decode() {
+    #[tokio::test]
+    async fn test_simple_encode_decode() {
         let mut writer: Vec<u8> = vec![];
         writer.put_u8(5);
         writer.put_u32(6);

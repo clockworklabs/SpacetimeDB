@@ -305,16 +305,16 @@ mod tests {
         WithTypespace::new(ts, ty).with_value(val)
     }
 
-    #[test]
-    fn unit() {
+    #[tokio::test]
+    async fn unit() {
         let val = AlgebraicValue::unit();
         let unit = AlgebraicType::unit();
         let typespace = Typespace::new(vec![]);
         assert_eq!(in_space(&typespace, &unit, &val).to_satn(), "()");
     }
 
-    #[test]
-    fn product_value() {
+    #[tokio::test]
+    async fn product_value() {
         let product_type = AlgebraicType::product([("foo", AlgebraicType::I32)]);
         let typespace = Typespace::new(vec![]);
         let product_value = AlgebraicValue::product([AlgebraicValue::I32(42)].into());
@@ -324,48 +324,48 @@ mod tests {
         );
     }
 
-    #[test]
-    fn option_some() {
+    #[tokio::test]
+    async fn option_some() {
         let option = AlgebraicType::option(AlgebraicType::never());
         let sum_value = AlgebraicValue::OptionNone();
         let typespace = Typespace::new(vec![]);
         assert_eq!("(none = ())", in_space(&typespace, &option, &sum_value).to_satn(),);
     }
 
-    #[test]
-    fn primitive() {
+    #[tokio::test]
+    async fn primitive() {
         let u8 = AlgebraicType::U8;
         let value = AlgebraicValue::U8(255);
         let typespace = Typespace::new(vec![]);
         assert_eq!(in_space(&typespace, &u8, &value).to_satn(), "255");
     }
 
-    #[test]
-    fn array() {
+    #[tokio::test]
+    async fn array() {
         let array = AlgebraicType::array(AlgebraicType::U8);
         let value = AlgebraicValue::Array(ArrayValue::Sum(Vec::new()));
         let typespace = Typespace::new(vec![]);
         assert_eq!(in_space(&typespace, &array, &value).to_satn(), "[]");
     }
 
-    #[test]
-    fn array_of_values() {
+    #[tokio::test]
+    async fn array_of_values() {
         let array = AlgebraicType::array(AlgebraicType::U8);
         let value = AlgebraicValue::Array([3u8].into());
         let typespace = Typespace::new(vec![]);
         assert_eq!(in_space(&typespace, &array, &value).to_satn(), "0x03");
     }
 
-    #[test]
-    fn map() {
+    #[tokio::test]
+    async fn map() {
         let map = AlgebraicType::map(AlgebraicType::U8, AlgebraicType::U8);
         let value = AlgebraicValue::map(BTreeMap::new());
         let typespace = Typespace::new(vec![]);
         assert_eq!(in_space(&typespace, &map, &value).to_satn(), "[:]");
     }
 
-    #[test]
-    fn map_of_values() {
+    #[tokio::test]
+    async fn map_of_values() {
         let map = AlgebraicType::map(AlgebraicType::U8, AlgebraicType::U8);
         let mut val = BTreeMap::<AlgebraicValue, AlgebraicValue>::new();
         val.insert(AlgebraicValue::U8(2), AlgebraicValue::U8(3));

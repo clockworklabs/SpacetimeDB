@@ -1738,8 +1738,8 @@ mod tests {
         PageOffset::PAGE_END.idx() - (VarLenGranule::SIZE * n).len()
     }
 
-    #[test]
-    fn insert_one_u64() {
+    #[tokio::test]
+    async fn insert_one_u64() {
         let mut page = Page::new(u64_row_size());
 
         let val: u64 = 0xa5a5_a5a5_a5a5_a5a5;
@@ -1767,8 +1767,8 @@ mod tests {
         next_val
     }
 
-    #[test]
-    fn fill_then_iter_fixed_len_u64() {
+    #[tokio::test]
+    async fn fill_then_iter_fixed_len_u64() {
         let mut page = Page::new(u64_row_size());
 
         let last_val = insert_while(&mut page, 0, u64_row_size(), 0, insert_u64_drop);
@@ -1784,8 +1784,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn fill_delete_iter_fixed_len_u64() {
+    #[tokio::test]
+    async fn fill_delete_iter_fixed_len_u64() {
         let mut page = Page::new(u64_row_size());
 
         let mut odds: Vec<PageOffset> = Vec::new();
@@ -1851,8 +1851,8 @@ mod tests {
         *unsafe { get_ref(&page.row_data, offset) }
     }
 
-    #[test]
-    fn insert_empty_str() {
+    #[tokio::test]
+    async fn insert_empty_str() {
         let mut page = Page::new(STR_ROW_SIZE);
 
         let offset = insert_str(&mut page, &[]);
@@ -1905,8 +1905,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn reuse_var_len_space_no_fragmentation_concerns() {
+    #[tokio::test]
+    async fn reuse_var_len_space_no_fragmentation_concerns() {
         let data_0 = b"Hello, world!";
         let data_1 = b"How goes life?";
         let data_2 = b"Glad to hear it.";
@@ -1943,8 +1943,8 @@ mod tests {
         assert_eq!(var_len_2.first_granule.idx(), var_len_0.first_granule.idx());
     }
 
-    #[test]
-    fn free_var_len_obj_multiple_granules() {
+    #[tokio::test]
+    async fn free_var_len_obj_multiple_granules() {
         let mut page = Page::new(STR_ROW_SIZE);
 
         // Allocate a 4-granule var-len object.
@@ -1990,8 +1990,8 @@ mod tests {
         assert_eq!(page.header.var.first.idx(), data_sub_n_vlg(4));
     }
 
-    #[test]
-    fn reuse_var_len_space_avoid_fragmentation() {
+    #[tokio::test]
+    async fn reuse_var_len_space_avoid_fragmentation() {
         let data_0 = &[0xa5u8];
         let data_1 = &[0xffu8];
         let data_2 = [0x11u8].repeat(VarLenGranule::DATA_SIZE + 1);
@@ -2039,8 +2039,8 @@ mod tests {
         assert_eq!(val, expected_val);
     }
 
-    #[test]
-    fn fill_then_iter_var_len_str() {
+    #[tokio::test]
+    async fn fill_then_iter_var_len_str() {
         let mut page = Page::new(STR_ROW_SIZE);
 
         let last_val = insert_while(&mut page, 0, STR_ROW_SIZE, 1, |page, val| {
@@ -2056,8 +2056,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn fill_delete_iter_var_len_str() {
+    #[tokio::test]
+    async fn fill_delete_iter_var_len_str() {
         let mut page = Page::new(STR_ROW_SIZE);
 
         let mut odds = Vec::new();

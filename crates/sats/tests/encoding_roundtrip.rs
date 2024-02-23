@@ -103,8 +103,8 @@ fn round_trip(value: AlgebraicValue) -> Result<(ProductValue, ProductValue), Dec
 }
 
 proptest! {
-    #[test]
-    fn parses_all_builtin_value(enc in leaf_values()) {
+    #[tokio::test]
+    async fn parses_all_builtin_value(enc in leaf_values()) {
         let parsed = round_trip(enc);
         prop_assert!(parsed.is_ok());
         let (parsed, original) = parsed.unwrap();

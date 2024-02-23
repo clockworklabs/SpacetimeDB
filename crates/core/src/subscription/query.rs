@@ -397,8 +397,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_eval_incr_maintains_row_ids() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_eval_incr_maintains_row_ids() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
 
@@ -437,8 +437,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_eval_incr_for_index_scan() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_eval_incr_for_index_scan() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
 
         // Create table [test] with index on [b]
@@ -497,8 +497,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_eval_incr_for_index_join() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_eval_incr_for_index_join() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
         run_eval_incr_for_index_join(db)?;
 
@@ -778,8 +778,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_subscribe() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_subscribe() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
 
@@ -799,8 +799,8 @@ mod tests {
     }
 
     // Check that the `owner` can access private tables (that start with `_`) and that it fails if the `caller` is different
-    #[test]
-    fn test_subscribe_private() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_subscribe_private() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
 
@@ -880,8 +880,8 @@ mod tests {
     //SELECT * FROM table WHERE id=1
     //```
     // return just one row for both incr & direct subscriptions
-    #[test]
-    fn test_subscribe_dedup() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_subscribe_dedup() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
 
@@ -931,8 +931,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_subscribe_sql() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_subscribe_sql() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
 
         // Create table [MobileEntityState]
@@ -997,8 +997,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_subscribe_all() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_subscribe_all() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
 
@@ -1046,8 +1046,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_classify() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_classify() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
 
         // Create table [plain]

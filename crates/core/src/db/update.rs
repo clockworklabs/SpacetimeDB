@@ -174,8 +174,8 @@ mod tests {
     use spacetimedb_sats::db::def::{ColumnDef, ColumnSchema, IndexSchema, IndexType};
     use spacetimedb_sats::AlgebraicType;
 
-    #[test]
-    fn test_updates_new_table() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn test_updates_new_table() -> anyhow::Result<()> {
         let current = vec![Cow::Owned(TableSchema::new(
             TableId(42),
             "Person".into(),
@@ -219,8 +219,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_updates_schema_mismatch() {
+    #[tokio::test]
+    async fn test_updates_schema_mismatch() {
         let current = vec![Cow::Owned(
             TableDef::new(
                 "Person".into(),
@@ -255,8 +255,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_updates_orphaned_table() {
+    #[tokio::test]
+    async fn test_updates_orphaned_table() {
         let current = vec![Cow::Owned(
             TableDef::new(
                 "Person".into(),
@@ -284,8 +284,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_updates_add_index() {
+    #[tokio::test]
+    async fn test_updates_add_index() {
         let current: Vec<Cow<TableSchema>> = vec![Cow::Owned(
             TableDef::new(
                 "Person".into(),
@@ -314,8 +314,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_updates_drop_index() {
+    #[tokio::test]
+    async fn test_updates_drop_index() {
         let current = vec![Cow::Owned(TableSchema::new(
             TableId(42),
             "Person".into(),
@@ -355,8 +355,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_updates_add_constraint() {
+    #[tokio::test]
+    async fn test_updates_add_constraint() {
         let current: Vec<Cow<TableSchema>> = vec![Cow::Owned(
             TableDef::new(
                 "Person".into(),
@@ -385,8 +385,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_updates_drop_constraint() {
+    #[tokio::test]
+    async fn test_updates_drop_constraint() {
         let current: Vec<Cow<TableSchema>> = vec![Cow::Owned(
             TableDef::new(
                 "Person".into(),

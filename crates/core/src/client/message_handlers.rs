@@ -232,8 +232,8 @@ impl ServerMessage for MessageExecutionError {
 mod tests {
     use super::RawJsonMessage;
 
-    #[test]
-    fn parse_one_off_query() {
+    #[tokio::test]
+    async fn parse_one_off_query() {
         let message = r#"{ "one_off_query": { "message_id": "ywS3WFquDECZQ0UdLZN1IA==", "query_string": "SELECT * FROM User WHERE name != 'bananas'" } }"#;
         let parsed = serde_json::from_str::<RawJsonMessage>(message).unwrap();
 

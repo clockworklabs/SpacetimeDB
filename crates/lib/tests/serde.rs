@@ -29,7 +29,8 @@ struct Sample {
     identity: Identity,
 }
 
-#[test]
+#[tokio::test]
+async
 fn test_roundtrip() {
     let original = Sample {
         identity: Identity::__dummy(),
@@ -44,7 +45,8 @@ fn test_roundtrip() {
     assert_eq!(&original, &result);
 }
 
-#[test]
+#[tokio::test]
+async
 fn test_json_mappings() {
     let schema = tuple([
         ("foo", AlgebraicType::U32),

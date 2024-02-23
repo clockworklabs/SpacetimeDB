@@ -67,19 +67,22 @@ fn test_calling_a_reducer_in_module(module_name: &'static str) {
     );
 }
 
-#[test]
+#[tokio::test]
+async
 #[serial]
 fn test_calling_a_reducer() {
     test_calling_a_reducer_in_module("spacetimedb-quickstart");
 }
 
-#[test]
+#[tokio::test]
+async
 #[serial]
 fn test_calling_a_reducer_csharp() {
     test_calling_a_reducer_in_module("spacetimedb-quickstart-cs");
 }
 
-#[test]
+#[tokio::test]
+async
 #[serial]
 fn test_calling_a_reducer_with_private_table() {
     init();
@@ -100,7 +103,8 @@ fn test_calling_a_reducer_with_private_table() {
     );
 }
 
-#[test]
+#[tokio::test]
+async
 #[serial]
 fn test_call_query_macro() {
     CompiledModule::compile("rust-wasm-test", CompilationMode::Debug).with_module_async(

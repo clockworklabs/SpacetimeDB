@@ -322,8 +322,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn compile_eq() -> ResultTest<()> {
+    #[tokio::test]
+    async fn compile_eq() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
 
         // Create table [test] without any indexes
@@ -351,8 +351,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn compile_index_eq() -> ResultTest<()> {
+    #[tokio::test]
+    async fn compile_index_eq() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
 
         // Create table [test] with index on [a]
@@ -383,8 +383,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn compile_eq_and_eq() -> ResultTest<()> {
+    #[tokio::test]
+    async fn compile_eq_and_eq() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
 
         // Create table [test] with index on [b]
@@ -413,8 +413,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn compile_index_eq_and_eq() -> ResultTest<()> {
+    #[tokio::test]
+    async fn compile_index_eq_and_eq() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
 
         // Create table [test] with index on [b]
@@ -446,8 +446,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn compile_eq_or_eq() -> ResultTest<()> {
+    #[tokio::test]
+    async fn compile_eq_or_eq() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
 
         // Create table [test] with indexes on [a] and [b]
@@ -474,8 +474,8 @@ mod tests {
         };
         Ok(())
     }
-    #[test]
-    fn compile_index_range_open() -> ResultTest<()> {
+    #[tokio::test]
+    async fn compile_index_range_open() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
 
         // Create table [test] with indexes on [b]
@@ -506,8 +506,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn compile_index_range_closed() -> ResultTest<()> {
+    #[tokio::test]
+    async fn compile_index_range_closed() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
 
         // Create table [test] with indexes on [b]
@@ -538,8 +538,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn compile_index_eq_select_range() -> ResultTest<()> {
+    #[tokio::test]
+    async fn compile_index_eq_select_range() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
 
         // Create table [test] with indexes on [a] and [b]
@@ -575,8 +575,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn compile_join_lhs_push_down() -> ResultTest<()> {
+    #[tokio::test]
+    async fn compile_join_lhs_push_down() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
 
         // Create table [lhs] with index on [a]
@@ -646,8 +646,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn compile_join_lhs_push_down_no_index() -> ResultTest<()> {
+    #[tokio::test]
+    async fn compile_join_lhs_push_down_no_index() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
 
         // Create table [lhs] with no indexes
@@ -727,8 +727,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn compile_join_rhs_push_down_no_index() -> ResultTest<()> {
+    #[tokio::test]
+    async fn compile_join_rhs_push_down_no_index() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
 
         // Create table [lhs] with no indexes
@@ -807,8 +807,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn compile_join_lhs_and_rhs_push_down() -> ResultTest<()> {
+    #[tokio::test]
+    async fn compile_join_lhs_and_rhs_push_down() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
 
         // Create table [lhs] with index on [a]
@@ -891,8 +891,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn compile_index_join() -> ResultTest<()> {
+    #[tokio::test]
+    async fn compile_index_join() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
 
         // Create table [lhs] with index on [b]

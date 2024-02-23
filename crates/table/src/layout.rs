@@ -617,8 +617,8 @@ mod test {
     use proptest::collection::vec;
     use proptest::prelude::*;
 
-    #[test]
-    fn align_to_expected() {
+    #[tokio::test]
+    async fn align_to_expected() {
         fn assert_alignment(offset: usize, alignment: usize, expected: usize) {
             assert_eq!(
                 align_to(offset, alignment),
@@ -649,8 +649,8 @@ mod test {
         assert_eq!(layout.align(), align);
     }
 
-    #[test]
-    fn known_product_expected_size_align() {
+    #[tokio::test]
+    async fn known_product_expected_size_align() {
         for (ty, size, align) in [
             (AlgebraicType::product::<[AlgebraicType; 0]>([]), 0, 1),
             (AlgebraicType::product([AlgebraicType::U8]), 1, 1),
@@ -721,8 +721,8 @@ mod test {
         }
     }
 
-    #[test]
-    fn known_sum_expected_size_align() {
+    #[tokio::test]
+    async fn known_sum_expected_size_align() {
         for (ty, size, align) in [
             (AlgebraicType::sum([AlgebraicType::U8]), 2, 1),
             (AlgebraicType::sum([AlgebraicType::I8]), 2, 1),

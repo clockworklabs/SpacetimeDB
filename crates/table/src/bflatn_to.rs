@@ -452,7 +452,8 @@ pub mod test {
 
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(2048))]
-        #[test]
+        #[tokio::test]
+async
         fn av_serde_round_trip_through_page((ty, val) in generate_typed_row()) {
             let ty: RowTypeLayout = ty.into();
             let mut page = Page::new(ty.size());

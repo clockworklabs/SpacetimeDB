@@ -262,8 +262,8 @@ mod tests {
     use super::*;
     use crate::energy::EnergyQuanta;
 
-    #[test]
-    fn test_fuel() {
+    #[tokio::test]
+    async fn test_fuel() {
         let mut store = wasmtime::Store::new(
             &wasmtime::Engine::new(wasmtime::Config::new().consume_fuel(true)).unwrap(),
             (),

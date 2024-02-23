@@ -853,8 +853,8 @@ mod tests {
         )
     }
 
-    #[test]
-    fn test() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
@@ -864,8 +864,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_open_twice() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_open_twice() -> ResultTest<()> {
         let (stdb, tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
@@ -896,8 +896,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_table_name() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_table_name() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
@@ -907,8 +907,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_column_name() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_column_name() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
@@ -920,8 +920,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_create_table_pre_commit() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_create_table_pre_commit() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
@@ -967,8 +967,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_pre_commit() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_pre_commit() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let table_id = stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
@@ -978,8 +978,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_post_commit() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_post_commit() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
@@ -994,8 +994,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_filter_range_pre_commit() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_filter_range_pre_commit() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
@@ -1006,8 +1006,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_filter_range_post_commit() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_filter_range_post_commit() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
@@ -1022,8 +1022,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_create_table_rollback() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_create_table_rollback() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
@@ -1048,8 +1048,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_rollback() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_rollback() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
@@ -1071,8 +1071,8 @@ mod tests {
         my_table(AlgebraicType::I64).with_column_constraint(Constraints::primary_key_auto(), 0)
     }
 
-    #[test]
-    fn test_auto_inc() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_auto_inc() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
@@ -1089,8 +1089,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_auto_inc_disable() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_auto_inc_disable() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
@@ -1111,8 +1111,8 @@ mod tests {
         my_table(AlgebraicType::I64).with_indexes(vec![IndexDef::btree("MyTable_my_col_idx".to_string(), 0, is_unique)])
     }
 
-    #[test]
-    fn test_auto_inc_reload() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_auto_inc_reload() -> ResultTest<()> {
         let (stdb, tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
@@ -1140,8 +1140,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_indexed() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_indexed() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
@@ -1160,8 +1160,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_unique() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_unique() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
@@ -1196,8 +1196,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_identity() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_identity() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
@@ -1220,8 +1220,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_cascade_drop_table() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_cascade_drop_table() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
@@ -1301,8 +1301,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_rename_table() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_rename_table() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
@@ -1326,8 +1326,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_multi_column_index() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_multi_column_index() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let columns = ["a", "b", "c"].map(|n| column(n, AlgebraicType::U64)).into();
@@ -1380,8 +1380,8 @@ mod tests {
     //     Ok(())
     // }
 
-    #[test]
-    fn test_replay_corrupted_log() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_replay_corrupted_log() -> ResultTest<()> {
         let tmp = TempDir::with_prefix("stdb_test")?;
         let mlog_path = tmp.path().join("mlog");
 
@@ -1556,10 +1556,10 @@ mod tests {
         Ok(())
     }
 
-    #[test]
+    #[tokio::test]
     /// Test that iteration yields each row only once
     /// in the edge case where a row is committed and has been deleted and re-inserted within the iterating TX.
-    fn test_insert_delete_insert_iter() {
+    async fn test_insert_delete_insert_iter() {
         let (stdb, _tmp_dir) = make_test_db().expect("make_test_db failed");
         let ctx = ExecutionContext::default();
 

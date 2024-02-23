@@ -406,7 +406,8 @@ mod tests {
     }
 
     proptest! {
-        #[test]
+        #[tokio::test]
+async
         fn insert_same_twice_idempotence(
             (hash, ptrs) in (
                 any::<RowHash>(),
@@ -451,7 +452,8 @@ mod tests {
             prop_assert!(map.emptied_collider_slots.is_empty());
         }
 
-        #[test]
+        #[tokio::test]
+async
         fn insert_same_ptr_under_diff_hash(
             (hashes, ptr) in (vec(any::<RowHash>(), 2..10), gen_row_pointer())
         ) {
@@ -480,7 +482,8 @@ mod tests {
             prop_assert!(map.emptied_collider_slots.is_empty());
         }
 
-        #[test]
+        #[tokio::test]
+async
         fn insert_different_for_same_hash_handles_collision(
             (hash, ptrs) in (any::<RowHash>(), vec(gen_row_pointer(), 3..10))
         ) {
@@ -551,13 +554,15 @@ mod tests {
             prop_assert!(map.emptied_collider_slots.is_empty());
         }
 
-        #[test]
+        #[tokio::test]
+async
         fn remove_non_existing_fails((hash, ptr) in (any::<RowHash>(), gen_row_pointer())) {
             let mut map = PointerMap::default();
             prop_assert_eq!(map.remove(hash, ptr), false);
         }
 
-        #[test]
+        #[tokio::test]
+async
         fn remove_uncollided_hash_works((hash, ptr) in (any::<RowHash>(), gen_row_pointer())) {
             let mut map = PointerMap::default();
 
@@ -573,7 +578,8 @@ mod tests {
             prop_assert!(map.emptied_collider_slots.is_empty());
         }
 
-        #[test]
+        #[tokio::test]
+async
         fn remove_same_hash_wrong_ptr_fails(
             (hash, ptr_a, ptr_b) in (
                 any::<RowHash>(),
@@ -597,7 +603,8 @@ mod tests {
             prop_assert!(map.emptied_collider_slots.is_empty());
         }
 
-        #[test]
+        #[tokio::test]
+async
         fn remove_collided_hash_wrong_ptr_fails(
             (hash, ptrs) in (any::<RowHash>(), vec(gen_row_pointer(), 3..10))
         ) {
@@ -621,7 +628,8 @@ mod tests {
             prop_assert!(map.emptied_collider_slots.is_empty());
         }
 
-        #[test]
+        #[tokio::test]
+async
         fn remove_collided_hash_reduction_works(
             (hash, mut ptr_a, mut ptr_b, pick_b) in (
                 any::<RowHash>(),
@@ -648,7 +656,8 @@ mod tests {
             prop_assert_eq!(map.emptied_collider_slots, [ColliderSlotIndex(0)]);
         }
 
-        #[test]
+        #[tokio::test]
+async
         fn remove_collided_hash_works(
             (hash, mut ptrs, pick_remove_idx) in (
                 any::<RowHash>(),
