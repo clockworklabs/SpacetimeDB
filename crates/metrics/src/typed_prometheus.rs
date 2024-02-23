@@ -82,7 +82,26 @@ macro_rules! metrics_histogram_vec {
                 use $crate::typed_prometheus::AsPrometheusLabel as _;
                 self.0.with_label_values(&[ $($labels.as_prometheus_str().as_ref()),+ ])
             }
+
+            pub fn with_label_values_async<F>(&self, $($labels: &$labelty),+, op: F)
+            where
+                F: FnOnce(
+                        <$vecty as $crate::typed_prometheus::ExtractMetricVecT>::M,
+                    ) + Send + 'static,
+            {
+                use $crate::typed_prometheus::AsPrometheusLabel as _;
+                let this = self.clone();
+                $(
+                    let $labels = $labels.to_owned();
+                )+
+
+                tokio::spawn(async move {
+                    let res = this.0.with_label_values(&[ $((&$labels).as_prometheus_str().as_ref()),+ ]);
+                    op(res);
+                });
+            }
         }
+
 
         impl prometheus::core::Collector for $name {
             fn desc(&self) -> Vec<&prometheus::core::Desc> {
@@ -110,6 +129,23 @@ macro_rules! metrics_vec {
             pub fn with_label_values(&self, $($labels: &$labelty),+) -> <$vecty as $crate::typed_prometheus::ExtractMetricVecT>::M {
                 use $crate::typed_prometheus::AsPrometheusLabel as _;
                 self.0.with_label_values(&[ $($labels.as_prometheus_str().as_ref()),+ ])
+            }
+
+        pub fn with_label_values_async<F>(&self, $($labels: &$labelty),+, op: F)
+            where
+                F: FnOnce(
+                        <$vecty as $crate::typed_prometheus::ExtractMetricVecT>::M,
+                    ) + Send + 'static,
+            {
+                use $crate::typed_prometheus::AsPrometheusLabel as _;
+                let this = self.clone();
+                $(
+                    let $labels = $labels.to_owned();
+                )+
+                tokio::spawn(async move {
+                    let res = this.0.with_label_values(&[ $((&$labels).as_prometheus_str().as_ref()),+ ]);
+                    op(res);
+                });
             }
         }
 
@@ -175,8 +211,8 @@ impl<T: MetricVecBuilder> ExtractMetricVecT for MetricVec<T> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_arraystring_fmt() {
+    #[tokio::test]
+    async fn test_arraystring_fmt() {
         macro_rules! tst {
             ($($ty:ident),*) => {
                 $(
