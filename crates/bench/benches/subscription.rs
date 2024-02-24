@@ -5,7 +5,7 @@ use spacetimedb::execution_context::ExecutionContext;
 use spacetimedb::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp};
 use spacetimedb::subscription::query::compile_read_only_query;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_primitives::TableId;
+use spacetimedb_primitives::{col_list, TableId};
 use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductValue, ToDataKey};
 use tempdir::TempDir;
 
@@ -17,8 +17,25 @@ fn create_table_location(db: &RelationalDB) -> Result<TableId, DBError> {
         ("z", AlgebraicType::I32),
         ("dimension", AlgebraicType::U32),
     ];
-    let indexes = &[(0.into(), "entity_id"), (1.into(), "chunk_index"), (2.into(), "x")];
+    let indexes = &[
+        (0.into(), "entity_id"),
+        (1.into(), "chunk_index"),
+        (2.into(), "x"),
+        (3.into(), "z"),
+        (4.into(), "dimension"),
+    ];
     db.create_table_for_test("location", schema, indexes)
+}
+
+fn create_table_location_multi_column(db: &RelationalDB) -> Result<TableId, DBError> {
+    let schema = &[
+        ("entity_id", AlgebraicType::U64),
+        ("chunk_index", AlgebraicType::U64),
+        ("x", AlgebraicType::I32),
+        ("z", AlgebraicType::I32),
+        ("dimension", AlgebraicType::U32),
+    ];
+    db.create_table_for_test_multi_column("location_multi", schema, col_list![2, 3, 4])
 }
 
 fn create_table_footprint(db: &RelationalDB) -> Result<TableId, DBError> {
@@ -56,6 +73,7 @@ fn eval(c: &mut Criterion) {
 
     let lhs = create_table_footprint(&db).unwrap();
     let rhs = create_table_location(&db).unwrap();
+    let multi = create_table_location_multi_column(&db).unwrap();
 
     let _ = db.with_auto_commit(&ExecutionContext::default(), |tx| -> Result<(), DBError> {
         // 1M rows
@@ -74,10 +92,25 @@ fn eval(c: &mut Criterion) {
             for i in 0u64..1200 {
                 let entity_id = chunk_index * 1200 + i;
                 let x = 0i32;
-                let z = 0i32;
+                let z = entity_id as i32;
                 let dimension = 0u32;
                 let row = product!(entity_id, chunk_index, x, z, dimension);
                 let _ = db.insert(tx, rhs, row)?;
+            }
+        }
+        Ok(())
+    });
+
+    let _ = db.with_auto_commit(&ExecutionContext::default(), |tx| -> Result<(), DBError> {
+        // 1000 chunks, 1200 rows per chunk = 1.2M rows
+        for chunk_index in 0u64..1_000 {
+            for i in 0u64..1200 {
+                let entity_id = chunk_index * 1200 + i;
+                let x = 0i32;
+                let z = entity_id as i32;
+                let dimension = 0u32;
+                let row = product!(entity_id, chunk_index, x, z, dimension);
+                let _ = db.insert(tx, multi, row)?;
             }
         }
         Ok(())
@@ -174,6 +207,36 @@ fn eval(c: &mut Criterion) {
 
         b.iter(|| {
             let out = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing()).unwrap();
+            black_box(out);
+        })
+    });
+
+    // To profile this benchmark for 30s
+    // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- query-indexes-many --exact --profile-time=30
+    c.bench_function("query-indexes-many", |b| {
+        // Iterate 1M rows.
+        let scan = "select * from location WHERE x = 0 AND z = 10000 AND dimension = 0";
+        let auth = AuthCtx::for_testing();
+        let tx = db.begin_tx();
+        let query = compile_read_only_query(&db, &tx, &auth, scan).unwrap();
+
+        b.iter(|| {
+            let out = query.eval(&db, &tx, auth).unwrap();
+            black_box(out);
+        })
+    });
+
+    // To profile this benchmark for 30s
+    // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- query-indexes-multi --exact --profile-time=30
+    c.bench_function("query-indexes-multi", |b| {
+        // Iterate 1M rows.
+        let scan = "select * from location_multi WHERE x = 0 AND z = 10000 AND dimension = 0";
+        let auth = AuthCtx::for_testing();
+        let tx = db.begin_tx();
+        let query = compile_read_only_query(&db, &tx, &auth, scan).unwrap();
+
+        b.iter(|| {
+            let out = query.eval(&db, &tx, auth).unwrap();
             black_box(out);
         })
     });

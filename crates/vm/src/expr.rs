@@ -2369,7 +2369,7 @@ mod tests {
                 idx(
                     OpCmp::Eq,
                     &[&col_b, &col_c],
-                    &product![val_b.clone(), val_c.clone()].into()
+                    &product![val_b.clone(), val_c.clone()].into(),
                 ),
                 idx(OpCmp::GtEq, &[&col_a], &val_a),
             ]
