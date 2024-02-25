@@ -61,8 +61,8 @@ impl HostThreadpool {
         let inner = rayon_core::ThreadPoolBuilder::new()
             .thread_name(|_idx| "rayon-worker".to_string())
             .spawn_handler(thread_spawn_handler(tokio::runtime::Handle::current()))
-            // TODO(perf, pgoldman 2024-02-22): This seems like an obviously bad choice for the number of threads,
-            // as in the case where we have many modules running many reducers,
+            // TODO(perf, pgoldman 2024-02-22):
+            // in the case where we have many modules running many reducers,
             // we'll wind up with Rayon threads competing with each other and with Tokio threads
             // for CPU time.
             //
@@ -72,7 +72,7 @@ impl HostThreadpool {
             // and Rayon threads to the other.
             // Then we should give Tokio and Rayon each a number of worker threads
             // equal to the size of their pool.
-            .num_threads(std::thread::available_parallelism().unwrap().get() * 2)
+            .num_threads(std::thread::available_parallelism().unwrap().get())
             .build()
             .unwrap();
         Self { inner }
