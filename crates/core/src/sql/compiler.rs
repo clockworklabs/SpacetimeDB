@@ -323,6 +323,11 @@ mod tests {
         }
     }
 
+    fn assert_one_eq_index_scan(op: Query, cols: impl Into<ColList>, val: AlgebraicValue) -> TableId {
+        let val = Bound::Included(val);
+        assert_index_scan(op, cols, val.clone(), val)
+    }
+
     #[test]
     fn compile_eq() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
@@ -364,23 +369,11 @@ mod tests {
         let tx = db.begin_tx();
         //Compile query
         let sql = "select * from test where a = 1";
-        let CrudExpr::Query(QueryExpr {
-            source: _,
-            query: mut ops,
-        }) = compile_sql(&db, &tx, sql)?.remove(0)
-        else {
+        let CrudExpr::Query(QueryExpr { source: _, mut query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");
         };
-
-        assert_eq!(1, ops.len());
-
-        // Assert index scan.
-        assert_index_scan(
-            ops.swap_remove(0),
-            0,
-            Bound::Included(1u64.into()),
-            Bound::Included(1u64.into()),
-        );
+        assert_eq!(1, query.len());
+        assert_one_eq_index_scan(query.remove(0), 0, 1u64.into());
         Ok(())
     }
 
@@ -394,23 +387,14 @@ mod tests {
         db.create_table_for_test("test", schema, indexes)?;
 
         let tx = db.begin_tx();
-        // Note, order matters - the sargable predicate occurs last which means
-        // no index scan will be generated.
+        // Note, order does not matter matter.
+        // The sargable predicate occurs last but we can still generate an index scan.
         let sql = "select * from test where a = 1 and b = 2";
-        let CrudExpr::Query(QueryExpr {
-            source: _,
-            query: mut ops,
-        }) = compile_sql(&db, &tx, sql)?.remove(0)
-        else {
+        let CrudExpr::Query(QueryExpr { source: _, mut query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");
         };
-
-        assert_eq!(1, ops.len());
-
-        // Assert no index scan
-        let Query::Select(_) = ops.remove(0) else {
-            panic!("Expected Select");
-        };
+        assert_eq!(2, query.len());
+        assert_one_eq_index_scan(query.remove(0), 1, 2u64.into());
         Ok(())
     }
 
@@ -424,26 +408,14 @@ mod tests {
         db.create_table_for_test("test", schema, indexes)?;
 
         let tx = db.begin_tx();
-        // Note, order matters - the sargable predicate occurs first which
-        // means an index scan will be generated.
+        // Note, order does not matters.
+        // The sargable predicate occurs first adn we can generate an index scan.
         let sql = "select * from test where b = 2 and a = 1";
-        let CrudExpr::Query(QueryExpr {
-            source: _,
-            query: mut ops,
-        }) = compile_sql(&db, &tx, sql)?.remove(0)
-        else {
+        let CrudExpr::Query(QueryExpr { source: _, mut query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");
         };
-
-        assert_eq!(2, ops.len());
-
-        // Assert index scan.
-        assert_index_scan(
-            ops.swap_remove(0),
-            1,
-            Bound::Included(2u64.into()),
-            Bound::Included(2u64.into()),
-        );
+        assert_eq!(2, query.len());
+        assert_one_eq_index_scan(query.remove(0), 1, 2u64.into());
         Ok(())
     }
 
@@ -462,22 +434,11 @@ mod tests {
 
         let tx = db.begin_mut_tx(IsolationLevel::Serializable);
         let sql = "select * from test where b = 2 and a = 1";
-        let CrudExpr::Query(QueryExpr {
-            source: _,
-            query: mut ops,
-        }) = compile_sql(&db, &tx, sql)?.remove(0)
-        else {
+        let CrudExpr::Query(QueryExpr { source: _, mut query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");
         };
-        assert_eq!(1, ops.len());
-
-        // Assert index scan.
-        assert_index_scan(
-            ops.swap_remove(0),
-            col_list![0, 1],
-            Bound::Included(product![2u64, 1u64].into()),
-            Bound::Included(product![2u64, 1u64].into()),
-        );
+        assert_eq!(1, query.len());
+        assert_one_eq_index_scan(query.remove(0), col_list![0, 1], product![1u64, 2u64].into());
         Ok(())
     }
 
@@ -585,28 +546,16 @@ mod tests {
 
         let tx = db.begin_tx();
         // Note, order matters - the equality condition occurs first which
-        // means an index scan will be generated it rather than the range
-        // condition.
+        // means an index scan will be generated rather than the range condition.
         let sql = "select * from test where a = 3 and b > 2 and b < 5";
-        let CrudExpr::Query(QueryExpr {
-            source: _,
-            query: mut ops,
-        }) = compile_sql(&db, &tx, sql)?.remove(0)
-        else {
+        let CrudExpr::Query(QueryExpr { source: _, mut query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");
         };
-        assert_eq!(2, ops.len());
-
-        assert_index_scan(
-            ops.remove(0),
-            0,
-            Bound::Included(AlgebraicValue::U64(3)),
-            Bound::Included(AlgebraicValue::U64(3)),
-        );
-
-        let Query::Select(_) = ops.remove(0) else {
+        assert_eq!(2, query.len());
+        let Query::Select(_) = query[1] else {
             panic!("Expected Select");
         };
+        assert_one_eq_index_scan(query.remove(0), 0, 3u64.into());
         Ok(())
     }
 
@@ -642,12 +591,7 @@ mod tests {
         assert_eq!(query.len(), 2);
 
         // First operation in the pipeline should be an index scan
-        let table_id = assert_index_scan(
-            query[0].clone(),
-            0,
-            Bound::Included(AlgebraicValue::U64(3)),
-            Bound::Included(AlgebraicValue::U64(3)),
-        );
+        let table_id = assert_one_eq_index_scan(query[0].clone(), 0, 3u64.into());
 
         assert_eq!(table_id, lhs_id);
 
@@ -874,12 +818,7 @@ mod tests {
         assert_eq!(query.len(), 2);
 
         // First operation in the pipeline should be an index scan
-        let table_id = assert_index_scan(
-            query[0].clone(),
-            0,
-            Bound::Included(AlgebraicValue::U64(3)),
-            Bound::Included(AlgebraicValue::U64(3)),
-        );
+        let table_id = assert_one_eq_index_scan(query[0].clone(), 0, 3u64.into());
 
         assert_eq!(table_id, lhs_id);
 
@@ -1089,12 +1028,7 @@ mod tests {
         assert_eq!(2, rhs.len());
 
         // The probe side of the join should be an index scan
-        let table_id = assert_index_scan(
-            rhs[0].clone(),
-            col_list![0, 1],
-            Bound::Included(product![2u64, 4u64].into()),
-            Bound::Included(product![2u64, 4u64].into()),
-        );
+        let table_id = assert_one_eq_index_scan(rhs[0].clone(), col_list![0, 1], product![4u64, 2u64].into());
 
         assert_eq!(table_id, rhs_id);
 

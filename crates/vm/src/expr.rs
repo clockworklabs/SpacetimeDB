@@ -2,7 +2,6 @@ use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
 use crate::operator::{OpCmp, OpLogic, OpQuery};
 use crate::relation::{MemTable, RelValue, Table};
 use derive_more::From;
-use itertools::Itertools;
 use smallvec::SmallVec;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::*;
@@ -14,8 +13,10 @@ use spacetimedb_sats::db::error::AuthError;
 use spacetimedb_sats::relation::{Column, DbTable, FieldExpr, FieldName, Header, Relation, RowCount};
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
-use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::borrow::Cow;
+use std::cmp::{Ordering, Reverse};
+use std::collections::btree_map::Entry;
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::Bound;
@@ -38,6 +39,7 @@ pub enum ColumnOp {
 }
 
 type ColumnOpFlat = SmallVec<[ColumnOp; 1]>;
+type ColumnOpRefFlat<'a> = SmallVec<[&'a ColumnOp; 1]>;
 
 impl ColumnOp {
     pub fn new(op: OpQuery, lhs: ColumnOp, rhs: ColumnOp) -> Self {
@@ -154,8 +156,8 @@ impl ColumnOp {
     /// This helps with splitting the kinds of `queries`,
     /// that *could* be answered by a `index`,
     /// from the ones that need to be executed with a `scan`.
-    pub fn flatten_ands_ref(&self) -> ColumnOpFlat {
-        fn fill_vec(buf: &mut ColumnOpFlat, op: &ColumnOp) {
+    pub fn flatten_ands_ref(&self) -> ColumnOpRefFlat<'_> {
+        fn fill_vec<'a>(buf: &mut ColumnOpRefFlat<'a>, op: &'a ColumnOp) {
             match op {
                 ColumnOp::Cmp {
                     op: OpQuery::Logic(OpLogic::And),
@@ -165,7 +167,7 @@ impl ColumnOp {
                     fill_vec(buf, lhs);
                     fill_vec(buf, rhs);
                 }
-                op => buf.push(op.clone()),
+                op => buf.push(op),
             }
         }
         let mut buf = SmallVec::new();
@@ -834,7 +836,7 @@ fn make_index(idxs: Vec<ScanIndex>) -> Vec<IndexColumnOp> {
             }
             ScanIndex::Scan { cmp, field, value } => IndexColumnOp::Scan(ColumnOp::Cmp {
                 op: OpQuery::Cmp(cmp),
-                lhs: Box::new(ColumnOp::Field(FieldExpr::Name(field))),
+                lhs: Box::new(ColumnOp::Field(FieldExpr::Name(field.clone()))),
                 rhs: Box::new(ColumnOp::Field(FieldExpr::Value(value))),
             }),
         };
@@ -859,7 +861,7 @@ impl<'a> FieldValue<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ScanIndex {
+pub enum ScanIndex<'a> {
     Index {
         cmp: OpCmp,
         columns: ColList,
@@ -867,7 +869,7 @@ pub enum ScanIndex {
     },
     Scan {
         cmp: OpCmp,
-        field: FieldName,
+        field: &'a FieldName,
         value: AlgebraicValue,
     },
 }
@@ -913,70 +915,94 @@ pub enum ScanIndex {
 /// - We only check up to 4 fields, to keep the permutation small. After that we will miss indexes.
 pub fn select_best_index<'a>(
     header: &'a Header,
-    fields: &[FieldValue<'a>],
-) -> (Vec<ScanIndex>, HashSet<(FieldName, OpCmp)>) {
-    let total = std::cmp::min(4, fields.len());
-    let mut found = Vec::with_capacity(total);
-    let mut done = HashSet::with_capacity(total);
-    let mut fields_indexed = HashSet::with_capacity(total);
+    fields: Vec<FieldValue<'a>>,
+) -> (Vec<ScanIndex<'a>>, HashSet<(&'a FieldName, OpCmp)>) {
+    let mut found = Vec::with_capacity(fields.len());
+    let mut fields_indexed = HashSet::new();
 
-    let index = Constraints::indexed();
-    for fields in (1..=total).rev().flat_map(|len| fields.iter().permutations(len)) {
-        // Check if these fields are already matched by an index...
-        if fields.iter().any(|x| done.contains(&(x.field, &x.cmp))) {
-            continue;
+    // Collect and sort indices by their lengths, with longest first.
+    // TODO(Centril): This could be computed when `Header` is constructed.
+    let mut indices = header
+        .constraints
+        .iter()
+        .filter(|(_, c)| c.has_indexed())
+        .map(|(cl, _)| cl)
+        .collect::<SmallVec<[_; 1]>>();
+    indices.sort_unstable_by_key(|cl| Reverse(cl.len()));
+
+    // Collect fields into a multi-map `(col_id, cmp) -> [field]`.
+    // This gives us `log(N)` seek + deletion.
+    // TODO(Centril): Consider https://docs.rs/small-map/0.1.3/small_map/enum.SmallMap.html
+    let mut fields_map = BTreeMap::<_, SmallVec<[_; 1]>>::new();
+    for field in fields {
+        fields_map
+            .entry((field.field.col_id, field.cmp))
+            .or_default()
+            .push(field);
+    }
+
+    // Go through each operator and index,
+    // consuming all field constraints that can be served by an index.
+    for (col_list, cmp) in [OpCmp::Eq, OpCmp::NotEq, OpCmp::Lt, OpCmp::LtEq, OpCmp::Gt, OpCmp::GtEq]
+        .into_iter()
+        .flat_map(|cmp| indices.iter().map(move |cl| (*cl, cmp)))
+    {
+        // (1) No fields left? We're done.
+        if fields_map.is_empty() {
+            break;
         }
 
-        let columns = ColListBuilder::from_iter(fields.iter().map(|x| x.field.col_id))
-            .build()
-            .unwrap();
-
-        let single_field = (fields.len() == 1).then(|| fields[0]);
-
-        // Check if the list of fields match exactly one of the `indexed` constraint...
-        if header
-            .constraints
+        if col_list.is_singleton() {
+            // For a single column index,
+            // we want to avoid the `ProductValue` indirection of below.
+            for FieldValue { cmp, value, field } in fields_map.remove(&(col_list.head(), cmp)).into_iter().flatten() {
+                let columns = col_list.clone();
+                let value = value.clone();
+                found.push(ScanIndex::Index { cmp, columns, value });
+                fields_indexed.insert((&field.field, cmp));
+            }
+        } else if col_list
             .iter()
-            .any(|(col, ct)| col == &columns && ct.contains(&index))
+            // (2) Ensure that every col has a field.
+            .all(|col| fields_map.get(&(col, cmp)).filter(|fs| !fs.is_empty()).is_some())
         {
-            // Generate an `ScanIndex` operation
-            if let Some(field) = single_field {
-                done.extend(fields.iter().map(|x| (x.field, &x.cmp)));
-                fields_indexed.extend(fields.iter().map(|x| (x.field, &x.cmp)));
+            // We've ensured `col_list ⊆ columns_of(field_map(cmp))`.
+            // Construct the value to compare against.
+            let mut elems = Vec::with_capacity(col_list.len() as usize);
+            for col in col_list.iter() {
+                // Retrieve the field for this (col, cmp) key.
+                // Remove the map entry if the list is empty now.
+                let Entry::Occupied(mut entry) = fields_map.entry((col, cmp)) else {
+                    // We ensured in (2) that the map is occupied for `(col, cmp)`.
+                    unreachable!()
+                };
+                let fields = entry.get_mut();
+                // We ensured in (2) that `fields` is non-empty.
+                let field = fields.pop().unwrap();
+                if fields.is_empty() {
+                    // Remove the entry so that (1) works.
+                    entry.remove();
+                }
 
-                let cmp = field.cmp;
-                let value = field.value.clone();
-                found.push(ScanIndex::Index { cmp, columns, value });
-            // This check for indexes that could work for reversible ops, ie: `>`, `<`
-            } else if fields.iter().all(|x| x.cmp == x.cmp.reverse()) {
-                done.extend(fields.iter().map(|x| (x.field, &x.cmp)));
-                fields_indexed.extend(fields.iter().map(|x| (x.field, &x.cmp)));
-
-                let cmp = fields[0].cmp;
-                let value = ProductValue::from_iter(fields.into_iter().map(|x| x.value.clone())).into();
-                found.push(ScanIndex::Index { cmp, columns, value });
+                // Add the field value to the product value.
+                elems.push(field.value.clone());
+                fields_indexed.insert((&field.field.field, cmp));
             }
-        } else if let Some(field) = single_field {
-            // So, this field have not an index, generate a `Scan` instead...
-            if !done.contains(&(field.field, &field.cmp)) {
-                done.insert((field.field, &field.cmp));
+            let value = AlgebraicValue::product(elems);
 
-                found.push(ScanIndex::Scan {
-                    cmp: field.cmp,
-                    field: field.field.field.clone(),
-                    value: field.value.clone(),
-                });
-            }
+            let columns = col_list.clone();
+            found.push(ScanIndex::Index { cmp, columns, value });
         }
     }
 
-    // Generate the list of `OpCmp`, `Column` that was found to have an index...
-    let done: HashSet<_> = fields_indexed
-        .iter()
-        .map(|(col, cmp)| (col.field.clone(), **cmp))
-        .collect();
+    // The remaining constraints must be served by a scan.
+    found.extend(fields_map.into_iter().flat_map(|(_, fs)| fs).map(|f| ScanIndex::Scan {
+        cmp: f.cmp,
+        field: &f.field.field,
+        value: f.value.clone(),
+    }));
 
-    (found, done)
+    (found, fields_indexed)
 }
 
 /// Extracts a list of `field = val` constraints and other `ColumnOp`s.
@@ -985,7 +1011,7 @@ pub fn select_best_index<'a>(
 ///
 /// - A list of [FieldValue] that *could* be answered by a `index`.
 /// - A list of [ColumnOp] otherwise
-pub fn extract_fields<'a>(ops: &'a [ColumnOp], table: &'a SourceExpr) -> (Vec<FieldValue<'a>>, Vec<ColumnOp>) {
+pub fn extract_fields<'a>(ops: &[&'a ColumnOp], table: &'a SourceExpr) -> (Vec<FieldValue<'a>>, Vec<&'a ColumnOp>) {
     let mut expr = Vec::new();
     let mut fields = Vec::new();
     let mut add_field = |op, field, val| fields.push(FieldValue::new(op, field, val));
@@ -1024,7 +1050,7 @@ pub fn extract_fields<'a>(ops: &'a [ColumnOp], table: &'a SourceExpr) -> (Vec<Fi
             | ColumnOp::Field(_) => {}
         }
 
-        expr.push(op.clone());
+        expr.push(*op);
     }
 
     (fields, expr)
@@ -1034,20 +1060,20 @@ pub fn extract_fields<'a>(ops: &'a [ColumnOp], table: &'a SourceExpr) -> (Vec<Fi
 // A sargable predicate is one that can be answered using an index.
 fn is_sargable<'a>(
     table: &'a SourceExpr,
-    op: &ColumnOp,
-) -> (&'a SourceExpr, Vec<IndexColumnOp>, HashSet<(FieldName, OpCmp)>) {
+    op: &'a ColumnOp,
+) -> (&'a SourceExpr, Vec<IndexColumnOp>, HashSet<(&'a FieldName, OpCmp)>) {
     let mut result = Vec::new();
     let mut fields_found = HashSet::new();
 
-    let mut many = |result: &mut Vec<_>, ops: &[ColumnOp]| {
+    let mut many = |result: &mut Vec<_>, ops: &[&'a ColumnOp]| {
         let (fields, expr) = extract_fields(ops, table);
-        let (idxs, done) = select_best_index(table.head(), &fields);
+        let (idxs, done) = select_best_index(table.head(), fields);
 
-        // Mark which fields have been matched by a `index`.
+        // Mark which fields have been matched by an `index`.
         fields_found.extend(done);
 
         result.extend(make_index(idxs));
-        result.extend(expr.into_iter().map(IndexColumnOp::Scan))
+        result.extend(expr.into_iter().cloned().map(IndexColumnOp::Scan))
     };
 
     let mut ops_flat = op.flatten_ands_ref();
@@ -1055,7 +1081,7 @@ fn is_sargable<'a>(
     if ops_flat.len() == 1 {
         match ops_flat.swap_remove(0) {
             // Special case; fast path for a single field.
-            op @ ColumnOp::Field(_) => result.push(IndexColumnOp::Scan(op)),
+            op @ ColumnOp::Field(_) => result.push(IndexColumnOp::Scan(op.clone())),
             op => many(&mut result, &[op]),
         }
     } else {
@@ -1612,7 +1638,7 @@ impl QueryExpr {
         let mut fields_found = HashSet::new();
 
         for (schema, ops, fields_on_idx) in tables.iter().map(|x| is_sargable(x, &op)) {
-            fields_found.extend(fields_on_idx);
+            fields_found.extend(fields_on_idx.into_iter().map(|(f, op)| (Cow::Borrowed(f), op)));
             for op in ops {
                 match &op {
                     IndexColumnOp::Index(_) => (),
@@ -1622,10 +1648,10 @@ impl QueryExpr {
                             // like `[ScanIndex::Index(a = 1), ScanIndex::Index(a = 1), ScanIndex::Scan(a = 1)]`
                             if let ColumnOp::Field(FieldExpr::Name(col)) = lhs.as_ref() {
                                 if let OpQuery::Cmp(cmp) = op {
-                                    if fields_found.contains(&(col.clone(), *cmp)) {
+                                    if fields_found.contains(&(Cow::Borrowed(col), *cmp)) {
                                         continue;
                                     } else {
-                                        fields_found.insert((col.clone(), *cmp));
+                                        fields_found.insert((Cow::Owned(col.clone()), *cmp));
                                     }
                                 }
                             }
@@ -2173,7 +2199,7 @@ mod tests {
                 (b.into(), Constraints::indexed()),
                 //Index b + c
                 (col_list![b, c], Constraints::unique()),
-                //Index a+ b + c + d
+                //Index a + b + c + d
                 (col_list![a, b, c, d], Constraints::indexed()),
             ],
         );
@@ -2190,11 +2216,13 @@ mod tests {
         let [val_a, val_b, val_c, val_d, val_e] = vals;
 
         let fv_eq = |field, value| FieldValue::new(OpCmp::Eq, field, value);
-        let scan_eq = |col: &Column, val: &AlgebraicValue| ScanIndex::Scan {
-            cmp: OpCmp::Eq,
-            field: col.field.clone(),
-            value: val.clone(),
-        };
+        fn scan_eq<'a>(col: &'a Column, val: &AlgebraicValue) -> ScanIndex<'a> {
+            ScanIndex::Scan {
+                cmp: OpCmp::Eq,
+                field: &col.field,
+                value: val.clone(),
+            }
+        }
         let idx_eq = |columns, value| ScanIndex::Index {
             cmp: OpCmp::Eq,
             columns,
@@ -2203,23 +2231,23 @@ mod tests {
 
         // Check for simple scan
         assert_eq!(
-            select_best_index(&head1, &[fv_eq(&col_d, &val_e)]).0,
+            select_best_index(&head1, vec![fv_eq(&col_d, &val_e)]).0,
             [scan_eq(&col_d, &val_e)],
         );
 
         assert_eq!(
-            select_best_index(&head1, &[fv_eq(&col_a, &val_a)]).0,
+            select_best_index(&head1, vec![fv_eq(&col_a, &val_a)]).0,
             [idx_eq(col_a.col_id.into(), val_a.clone())],
         );
 
         assert_eq!(
-            select_best_index(&head1, &[fv_eq(&col_b, &val_b)]).0,
+            select_best_index(&head1, vec![fv_eq(&col_b, &val_b)]).0,
             [idx_eq(col_b.col_id.into(), val_b.clone())],
         );
 
         // Check for permutation
         assert_eq!(
-            select_best_index(&head1, &[fv_eq(&col_b, &val_b), fv_eq(&col_c, &val_c)]).0,
+            select_best_index(&head1, vec![fv_eq(&col_b, &val_b), fv_eq(&col_c, &val_c)]).0,
             [idx_eq(
                 col_list![col_b.col_id, col_c.col_id],
                 product![val_b.clone(), val_c.clone()].into()
@@ -2227,10 +2255,10 @@ mod tests {
         );
 
         assert_eq!(
-            select_best_index(&head1, &[fv_eq(&col_c, &val_c), fv_eq(&col_b, &val_b)]).0,
+            select_best_index(&head1, vec![fv_eq(&col_c, &val_c), fv_eq(&col_b, &val_b)]).0,
             [idx_eq(
-                col_list![col_c.col_id, col_b.col_id],
-                product![val_c.clone(), val_b.clone()].into()
+                col_list![col_b.col_id, col_c.col_id],
+                product![val_b.clone(), val_c.clone()].into()
             )],
         );
 
@@ -2238,7 +2266,7 @@ mod tests {
         assert_eq!(
             select_best_index(
                 &head1,
-                &[
+                vec![
                     fv_eq(&col_a, &val_a),
                     fv_eq(&col_b, &val_b),
                     fv_eq(&col_c, &val_c),
@@ -2255,7 +2283,7 @@ mod tests {
         assert_eq!(
             select_best_index(
                 &head1,
-                &[
+                vec![
                     fv_eq(&col_b, &val_b),
                     fv_eq(&col_a, &val_a),
                     fv_eq(&col_d, &val_d),
@@ -2264,8 +2292,8 @@ mod tests {
             )
             .0,
             [idx_eq(
-                col_list![col_b.col_id, col_a.col_id, col_d.col_id, col_c.col_id],
-                product![val_b.clone(), val_a.clone(), val_d.clone(), val_c.clone()].into(),
+                col_list![col_a.col_id, col_b.col_id, col_c.col_id, col_d.col_id],
+                product![val_a.clone(), val_b.clone(), val_c.clone(), val_d.clone()].into(),
             )]
         );
 
@@ -2273,7 +2301,7 @@ mod tests {
         assert_eq!(
             select_best_index(
                 &head1,
-                &[
+                vec![
                     fv_eq(&col_b, &val_b),
                     fv_eq(&col_a, &val_a),
                     fv_eq(&col_e, &val_e),
@@ -2282,17 +2310,17 @@ mod tests {
             )
             .0,
             [
-                idx_eq(col_b.col_id.into(), val_b.clone()),
                 idx_eq(col_a.col_id.into(), val_a.clone()),
-                scan_eq(&col_e, &val_e),
+                idx_eq(col_b.col_id.into(), val_b.clone()),
                 scan_eq(&col_d, &val_d),
+                scan_eq(&col_e, &val_e),
             ]
         );
 
         assert_eq!(
             select_best_index(
                 &head1,
-                &[fv_eq(&col_b, &val_b), fv_eq(&col_c, &val_c), fv_eq(&col_d, &val_d),],
+                vec![fv_eq(&col_b, &val_b), fv_eq(&col_c, &val_c), fv_eq(&col_d, &val_d)],
             )
             .0,
             [
@@ -2311,11 +2339,13 @@ mod tests {
         let [col_a, col_b, col_c, col_d, _] = fields;
         let [val_a, val_b, val_c, val_d, _] = vals;
 
-        let scan = |cmp, col: &Column, val: &AlgebraicValue| ScanIndex::Scan {
-            cmp,
-            field: col.field.clone(),
-            value: val.clone(),
-        };
+        fn scan<'a>(cmp: OpCmp, col: &'a Column, val: &AlgebraicValue) -> ScanIndex<'a> {
+            ScanIndex::Scan {
+                cmp,
+                field: &col.field,
+                value: val.clone(),
+            }
+        }
         let idx = |cmp, cols: &[&Column], val: &AlgebraicValue| {
             let value = val.clone();
             let columns = cols
@@ -2331,34 +2361,34 @@ mod tests {
         assert_eq!(
             select_best_index(
                 &head1,
-                &[
+                vec![
                     FieldValue::new(OpCmp::Gt, &col_a, &val_a),
-                    FieldValue::new(OpCmp::Lt, &col_a, &val_b)
+                    FieldValue::new(OpCmp::Lt, &col_a, &val_b),
                 ],
             )
             .0,
-            [idx(OpCmp::Gt, &[&col_a], &val_a), idx(OpCmp::Lt, &[&col_a], &val_b)]
+            [idx(OpCmp::Lt, &[&col_a], &val_b), idx(OpCmp::Gt, &[&col_a], &val_a),]
         );
 
         // Same field scan
         assert_eq!(
             select_best_index(
                 &head1,
-                &[
+                vec![
                     FieldValue::new(OpCmp::Gt, &col_d, &val_d),
-                    FieldValue::new(OpCmp::Lt, &col_d, &val_b)
+                    FieldValue::new(OpCmp::Lt, &col_d, &val_b),
                 ],
             )
             .0,
-            [scan(OpCmp::Gt, &col_d, &val_d), scan(OpCmp::Lt, &col_d, &val_b)]
+            [scan(OpCmp::Lt, &col_d, &val_b), scan(OpCmp::Gt, &col_d, &val_d)]
         );
         // One indexed other scan
         assert_eq!(
             select_best_index(
                 &head1,
-                &[
+                vec![
                     FieldValue::new(OpCmp::Gt, &col_b, &val_b),
-                    FieldValue::new(OpCmp::Lt, &col_c, &val_c)
+                    FieldValue::new(OpCmp::Lt, &col_c, &val_c),
                 ],
             )
             .0,
@@ -2369,10 +2399,10 @@ mod tests {
         assert_eq!(
             select_best_index(
                 &head1,
-                &[
+                vec![
                     FieldValue::new(OpCmp::Eq, &col_b, &val_b),
                     FieldValue::new(OpCmp::GtEq, &col_a, &val_a),
-                    FieldValue::new(OpCmp::Eq, &col_c, &val_c)
+                    FieldValue::new(OpCmp::Eq, &col_c, &val_c),
                 ],
             )
             .0,
@@ -2390,16 +2420,16 @@ mod tests {
         assert_eq!(
             select_best_index(
                 &head1,
-                &[
+                vec![
                     FieldValue::new(OpCmp::Gt, &col_b, &val_b),
                     FieldValue::new(OpCmp::Eq, &col_a, &val_a),
-                    FieldValue::new(OpCmp::Lt, &col_c, &val_c)
+                    FieldValue::new(OpCmp::Lt, &col_c, &val_c),
                 ],
             )
             .0,
             [
-                idx(OpCmp::Gt, &[&col_b], &val_b),
                 idx(OpCmp::Eq, &[&col_a], &val_a),
+                idx(OpCmp::Gt, &[&col_b], &val_b),
                 scan(OpCmp::Lt, &col_c, &val_c),
             ]
         );
