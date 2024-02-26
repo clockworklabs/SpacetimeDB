@@ -501,12 +501,11 @@ impl ModuleHost {
     }
 
     pub async fn disconnect_client(&self, client_id: ClientActorId) {
-        tokio::join!(
-            async { self.subscriptions().remove_subscriber(client_id) },
-            self.call_identity_connected_disconnected(client_id.identity, client_id.address, false)
-                // ignore NoSuchModule; if the module's already closed, that's fine
-                .map(drop)
-        );
+        self.subscriptions().remove_subscriber(client_id);
+        // ignore NoSuchModule; if the module's already closed, that's fine
+        let _ = self
+            .call_identity_connected_disconnected(client_id.identity, client_id.address, false)
+            .await;
     }
 
     pub async fn call_identity_connected_disconnected(
