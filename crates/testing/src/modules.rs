@@ -2,6 +2,7 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::OnceLock;
+use std::time::Instant;
 
 use tokio::runtime::{Builder, Runtime};
 
@@ -64,7 +65,8 @@ impl ModuleHandle {
     }
 
     pub async fn send(&self, message: impl Into<DataMessage>) -> anyhow::Result<()> {
-        self.client.handle_message(message).await.map_err(Into::into)
+        let timer = Instant::now();
+        self.client.handle_message(message, timer).await.map_err(Into::into)
     }
 
     pub async fn read_log(&self, size: Option<u32>) -> String {

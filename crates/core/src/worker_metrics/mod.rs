@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::Mutex};
 
+use crate::execution_context::WorkloadType;
 use crate::hash::Hash;
 use once_cell::sync::Lazy;
 use prometheus::{GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
@@ -91,6 +92,11 @@ metrics_group!(
         #[help = "The number of active subscription queries"]
         #[labels(database_address: Address)]
         pub subscription_queries: IntGaugeVec,
+
+        #[name = spacetime_request_round_trip_time]
+        #[help = "The total time it takes for request to complete"]
+        #[labels(txn_type: WorkloadType, database_address: Address, reducer_symbol: str)]
+        pub request_round_trip: HistogramVec,
     }
 );
 
