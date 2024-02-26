@@ -393,8 +393,8 @@ mod tests {
         db.create_table_for_test("test", schema, indexes)?;
 
         let tx = db.begin_tx();
-        // Note, order matters - the sargable predicate occurs last which means
-        // no index scan will be generated.
+        // Note, order does not matter.
+        // The sargable predicate occurs last and we can generate an index scan.
         let sql = "select * from test where a = 1 and b = 2";
         let CrudExpr::Query(QueryExpr {
             source: _,
@@ -403,10 +403,12 @@ mod tests {
         else {
             panic!("Expected QueryExpr");
         };
+        assert_eq!(2, ops.len());
 
-        assert_eq!(1, ops.len());
-
-        // Assert no index scan
+        // Assert  index scan
+        let Query::IndexScan(_) = ops.remove(0) else {
+            panic!("Expected IndexScan");
+        };
         let Query::Select(_) = ops.remove(0) else {
             panic!("Expected Select");
         };
@@ -474,8 +476,8 @@ mod tests {
         assert_index_scan(
             ops.swap_remove(0),
             col_list![0, 1],
-            Bound::Included(product![2u64, 1u64].into()),
-            Bound::Included(product![2u64, 1u64].into()),
+            Bound::Included(product![1u64, 2u64].into()),
+            Bound::Included(product![1u64, 2u64].into()),
         );
         Ok(())
     }
@@ -1091,8 +1093,8 @@ mod tests {
         let table_id = assert_index_scan(
             rhs[0].clone(),
             col_list![0, 1],
-            Bound::Included(product![2u64, 4u64].into()),
-            Bound::Included(product![2u64, 4u64].into()),
+            Bound::Included(product![4u64, 2u64].into()),
+            Bound::Included(product![4u64, 2u64].into()),
         );
 
         assert_eq!(table_id, rhs_id);
