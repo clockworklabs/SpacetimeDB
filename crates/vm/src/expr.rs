@@ -917,6 +917,7 @@ pub fn select_best_index<'a>(
 
     let index = Constraints::indexed();
     for fields in (1..=total).rev().flat_map(|len| fields.iter().permutations(len)) {
+        // Check if these fields are already matched by an index...
         if fields.iter().any(|x| done.contains(&(x.field, &x.cmp))) {
             continue;
         }
@@ -927,11 +928,13 @@ pub fn select_best_index<'a>(
 
         let single_field = (fields.len() == 1).then(|| fields[0]);
 
+        // Check if the list of fields match exactly one of the `indexed` constraint...
         if header
             .constraints
             .iter()
             .any(|(col, ct)| col == &columns && ct.contains(&index))
         {
+            // Generate an `ScanIndex` operation
             if let Some(field) = single_field {
                 done.extend(fields.iter().map(|x| (x.field, &x.cmp)));
                 fields_indexed.extend(fields.iter().map(|x| (x.field, &x.cmp)));
@@ -939,6 +942,7 @@ pub fn select_best_index<'a>(
                 let cmp = field.cmp;
                 let value = field.value.clone();
                 found.push(ScanIndex::Index { cmp, columns, value });
+            // This check for indexes that could work for reversible ops, ie: `>`, `<`
             } else if fields.iter().all(|x| x.cmp == x.cmp.reverse()) {
                 done.extend(fields.iter().map(|x| (x.field, &x.cmp)));
                 fields_indexed.extend(fields.iter().map(|x| (x.field, &x.cmp)));
@@ -948,6 +952,7 @@ pub fn select_best_index<'a>(
                 found.push(ScanIndex::Index { cmp, columns, value });
             }
         } else if let Some(field) = single_field {
+            // So, this field have not an index, generate a `Scan` instead...
             if !done.contains(&(field.field, &field.cmp)) {
                 done.insert((field.field, &field.cmp));
 
@@ -960,6 +965,7 @@ pub fn select_best_index<'a>(
         }
     }
 
+    // Generate the list of `OpCmp`, `Column` that was found to have an index...
     let done: HashSet<_> = fields_indexed
         .iter()
         .map(|(col, cmp)| (col.field.clone(), **cmp))
