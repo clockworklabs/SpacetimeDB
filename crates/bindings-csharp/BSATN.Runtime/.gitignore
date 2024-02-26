@@ -1,2 +1,2 @@
-*.meta
-!src/*.meta
+/bin.meta
+/obj.meta
