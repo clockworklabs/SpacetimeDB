@@ -2227,17 +2227,17 @@ mod tests {
         let table = SourceExpr::MemTable(MemTable::new(head1, StAccess::Public, vec![]));
         // Check for simple scan
         assert_eq!(
-            select_best_index(&table, build_op(&[(OpCmp::Eq, &col_d, &val_e)])),
+            select_best_index(&table, build_op(&[(OpCmp::Eq, &col_d, &val_e)])).0,
             [scan_eq(&col_d, &val_e)],
         );
 
         assert_eq!(
-            select_best_index(&table, build_op(&[(OpCmp::Eq, &col_a, &val_a)])),
+            select_best_index(&table, build_op(&[(OpCmp::Eq, &col_a, &val_a)])).0,
             [idx_eq(col_a.col_id.into(), val_a.clone())],
         );
 
         assert_eq!(
-            select_best_index(&table, build_op(&[(OpCmp::Eq, &col_b, &val_b)])),
+            select_best_index(&table, build_op(&[(OpCmp::Eq, &col_b, &val_b)])).0,
             [idx_eq(col_b.col_id.into(), val_b.clone())],
         );
         // Check for permutation
@@ -2245,7 +2245,8 @@ mod tests {
             select_best_index(
                 &table,
                 build_op(&[(OpCmp::Eq, &col_b, &val_b), (OpCmp::Eq, &col_c, &val_c)])
-            ),
+            )
+            .0,
             [idx_eq(
                 col_list![col_b.col_id, col_c.col_id],
                 product![val_b.clone(), val_c.clone()].into()
@@ -2255,7 +2256,8 @@ mod tests {
             select_best_index(
                 &table,
                 build_op(&[(OpCmp::Eq, &col_c, &val_c), (OpCmp::Eq, &col_b, &val_b)])
-            ),
+            )
+            .0,
             [idx_eq(
                 col_list![col_b.col_id, col_c.col_id],
                 product![val_b.clone(), val_c.clone()].into()
@@ -2271,7 +2273,8 @@ mod tests {
                     (OpCmp::Eq, &col_c, &val_c),
                     (OpCmp::Eq, &col_d, &val_d)
                 ])
-            ),
+            )
+            .0,
             [idx_eq(
                 col_list![col_a.col_id, col_b.col_id, col_c.col_id, col_d.col_id],
                 product![val_a.clone(), val_b.clone(), val_c.clone(), val_d.clone()].into(),
@@ -2286,7 +2289,8 @@ mod tests {
                     (OpCmp::Eq, &col_d, &val_d),
                     (OpCmp::Eq, &col_c, &val_c)
                 ])
-            ),
+            )
+            .0,
             [idx_eq(
                 col_list![col_a.col_id, col_b.col_id, col_c.col_id, col_d.col_id],
                 product![val_a.clone(), val_b.clone(), val_c.clone(), val_d.clone()].into(),
@@ -2303,7 +2307,8 @@ mod tests {
                     (OpCmp::Eq, &col_e, &val_e),
                     (OpCmp::Eq, &col_d, &val_d)
                 ])
-            ),
+            )
+            .0,
             [
                 idx_eq(col_b.col_id.into(), val_b.clone()),
                 idx_eq(col_a.col_id.into(), val_a.clone()),
@@ -2319,7 +2324,8 @@ mod tests {
                     (OpCmp::Eq, &col_c, &val_c),
                     (OpCmp::Eq, &col_d, &val_d)
                 ])
-            ),
+            )
+            .0,
             [
                 idx_eq(
                     col_list![col_b.col_id, col_c.col_id],
@@ -2359,7 +2365,8 @@ mod tests {
             select_best_index(
                 &table,
                 build_op(&[(OpCmp::Gt, &col_a, &val_a), (OpCmp::Lt, &col_a, &val_b)])
-            ),
+            )
+            .0,
             [idx(OpCmp::Lt, &[&col_a], &val_b), idx(OpCmp::Gt, &[&col_a], &val_a)]
         );
 
@@ -2368,7 +2375,8 @@ mod tests {
             select_best_index(
                 &table,
                 build_op(&[(OpCmp::Gt, &col_d, &val_d), (OpCmp::Lt, &col_d, &val_b)])
-            ),
+            )
+            .0,
             [scan(OpCmp::Gt, &col_d, &val_d), scan(OpCmp::Lt, &col_d, &val_b)]
         );
         // One indexed other scan
@@ -2376,7 +2384,8 @@ mod tests {
             select_best_index(
                 &table,
                 build_op(&[(OpCmp::Gt, &col_b, &val_b), (OpCmp::Lt, &col_c, &val_c)])
-            ),
+            )
+            .0,
             [idx(OpCmp::Gt, &[&col_b], &val_b), scan(OpCmp::Lt, &col_c, &val_c)]
         );
 
@@ -2389,7 +2398,8 @@ mod tests {
                     (OpCmp::GtEq, &col_a, &val_a),
                     (OpCmp::Eq, &col_c, &val_c)
                 ])
-            ),
+            )
+            .0,
             [
                 idx(
                     OpCmp::Eq,
@@ -2409,7 +2419,8 @@ mod tests {
                     (OpCmp::Eq, &col_a, &val_a),
                     (OpCmp::Lt, &col_c, &val_c)
                 ])
-            ),
+            )
+            .0,
             [
                 idx(OpCmp::Eq, &[&col_a], &val_a),
                 idx(OpCmp::Gt, &[&col_b], &val_b),
