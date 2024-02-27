@@ -1,11 +1,18 @@
 # Description of Changes
 
-Please describe your change, mention any related tickets, and so on here.
+*Please describe your change. Mention any related issues, other PRs, and so on here.*
 
-# API and ABI breaking changes
+# Breaking changes
 
-If this is an API or ABI breaking change, please apply the
-corresponding GitHub label.
+*Does this change break API or ABI compatibility, or break the Rust library
+interface?*
+
+This PR includes **non-backwards-compatible** changes to these interfaces:
+- [ ] API
+- [ ] ABI
+- [ ] Rust library users
+
+_**If applicable, please apply the corresponding GitHub label.**_
 
 # Expected complexity level and risk
 
