@@ -1,11 +1,9 @@
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
 use crate::sql::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
-use spacetimedb_primitives::*;
 use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::db::def::{TableDef, TableSchema};
 use spacetimedb_sats::relation::{self, DbTable, FieldExpr, FieldName, Header};
-use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_vm::dsl::{db_table, db_table_raw, query};
 use spacetimedb_vm::expr::{ColumnOp, CrudExpr, DbType, Expr, QueryExpr, SourceExpr};
 use spacetimedb_vm::operator::OpCmp;
@@ -78,25 +76,6 @@ fn compile_where(mut q: QueryExpr, table: &From, filter: Selection) -> Result<Qu
         q = q.with_select(op);
     }
     Ok(q)
-}
-
-// IndexArgument represents an equality or range predicate that can be answered
-// using an index.
-pub enum IndexArgument {
-    Eq {
-        columns: ColList,
-        value: AlgebraicValue,
-    },
-    LowerBound {
-        columns: ColList,
-        value: AlgebraicValue,
-        inclusive: bool,
-    },
-    UpperBound {
-        columns: ColList,
-        value: AlgebraicValue,
-        inclusive: bool,
-    },
 }
 
 /// Compiles a `SELECT ...` clause
@@ -295,8 +274,8 @@ mod tests {
     use crate::db::relational_db::tests_utils::make_test_db;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::operator::OpQuery;
-    use spacetimedb_primitives::TableId;
-    use spacetimedb_sats::{product, AlgebraicType};
+    use spacetimedb_primitives::{col_list, ColList, TableId};
+    use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue};
     use spacetimedb_vm::expr::{IndexJoin, IndexScan, JoinExpr, Query};
     use spacetimedb_vm::relation::Table;
     use std::ops::Bound;

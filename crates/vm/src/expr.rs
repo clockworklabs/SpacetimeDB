@@ -746,7 +746,7 @@ impl Query {
 // IndexArgument represents an equality or range predicate that can be answered
 // using an index.
 #[derive(Debug, PartialEq, Clone)]
-pub enum IndexArgument {
+enum IndexArgument {
     Eq {
         columns: ColList,
         value: AlgebraicValue,
@@ -764,7 +764,7 @@ pub enum IndexArgument {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum IndexColumnOp {
+enum IndexColumnOp {
     Index(IndexArgument),
     Scan(ColumnOp),
 }
@@ -840,7 +840,7 @@ fn make_index(soi: ScanOrIndex<'_>) -> IndexColumnOp {
 }
 
 #[derive(Debug)]
-pub struct FieldValue<'a> {
+struct FieldValue<'a> {
     cmp: OpCmp,
     field: &'a Column,
     value: &'a AlgebraicValue,
@@ -853,7 +853,7 @@ impl<'a> FieldValue<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ScanOrIndex<'a> {
+enum ScanOrIndex<'a> {
     Index {
         cmp: OpCmp,
         columns: ColList,
@@ -908,7 +908,7 @@ pub enum ScanOrIndex<'a> {
 /// -`ScanOrIndex::Index([c, b] = [1, 2])`
 /// -`ScanOrIndex::Index(a = 1)`
 /// -`ScanOrIndex::Scan(c = 2)`
-pub fn select_best_index<'a>(
+fn select_best_index<'a>(
     header: &'a Header,
     fields: Vec<FieldValue<'a>>,
 ) -> (Vec<ScanOrIndex<'a>>, HashSet<(&'a FieldName, OpCmp)>) {
@@ -1012,7 +1012,7 @@ pub fn select_best_index<'a>(
 ///
 /// - A list of [FieldValue] that *could* be answered by a `index`.
 /// - A list of [ColumnOp] otherwise
-pub fn extract_fields<'a>(ops: &[&'a ColumnOp], table: &'a SourceExpr) -> (Vec<FieldValue<'a>>, Vec<&'a ColumnOp>) {
+fn extract_fields<'a>(ops: &[&'a ColumnOp], table: &'a SourceExpr) -> (Vec<FieldValue<'a>>, Vec<&'a ColumnOp>) {
     let mut expr = Vec::new();
     let mut fields = Vec::new();
     let mut add_field = |op, field, val| fields.push(FieldValue::new(op, field, val));

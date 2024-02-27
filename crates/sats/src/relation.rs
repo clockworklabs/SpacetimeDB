@@ -296,16 +296,6 @@ impl Header {
             .collect()
     }
 
-    pub fn resolve_constraints(&self) -> impl Iterator<Item = (Vec<&Column>, &Constraints)> {
-        self.constraints.iter().map(|(cols, ct)| {
-            let cols: Vec<_> = cols
-                .iter()
-                .map(|col_id| self.fields.iter().find(|x| x.col_id == col_id).unwrap())
-                .collect();
-
-            (cols, ct)
-        })
-    }
     pub fn has_constraint(&self, field: &FieldName, constraint: Constraints) -> bool {
         self.column_pos(field)
             .map(|find| {
