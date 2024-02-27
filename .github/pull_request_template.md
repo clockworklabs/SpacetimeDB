@@ -22,3 +22,6 @@ and what other components it interacts with in potentially concerning ways.*
 
 *Describe any testing you've done, and any testing you'd like your reviewers to do,
 so that you're confident that all the changes work as expected!*
+
+- [x] *Write a test you've completed here.*
+- [ ] *Write a test you want a reviewer to do here, so they can check it off when they're satisfied.*
