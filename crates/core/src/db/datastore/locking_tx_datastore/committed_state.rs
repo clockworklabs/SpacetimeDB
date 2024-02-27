@@ -111,10 +111,10 @@ impl CommittedState {
 
         // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
         // and therefore has performance implications and must not be disabled.
-        let with_label_values = |table_id: TableId, table_name: &str| {
+        let with_label_values_inc = |table_id: TableId, table_name: &str| {
             DB_METRICS
                 .rdb_num_table_rows
-                .with_label_values(&database_address, &table_id.0, table_name)
+                .with_label_values_async(&database_address, &table_id.0, table_name, |met| met.inc())
         };
 
         // Insert the table row into st_tables, creating st_tables if it's missing
@@ -123,7 +123,7 @@ impl CommittedState {
         for schema in system_tables() {
             let table_id = schema.table_id;
             // Metric for this system table.
-            with_label_values(table_id, &schema.table_name).set(0);
+            with_label_values_inc(table_id, &schema.table_name);
 
             let row = StTableRow {
                 table_id,
@@ -153,7 +153,7 @@ impl CommittedState {
             // If the row is already there, no-op.
             ignore_duplicate_insert_error(st_columns.insert(blob_store, &row))?;
             // Increment row count for st_columns.
-            with_label_values(ST_COLUMNS_ID, ST_COLUMNS_NAME).inc();
+            with_label_values_inc(ST_COLUMNS_ID, ST_COLUMNS_NAME);
         }
 
         // Insert the FK sorted by table/column so it show together when queried.
@@ -179,7 +179,7 @@ impl CommittedState {
             // If the row is already there, no-op.
             ignore_duplicate_insert_error(st_constraints.insert(blob_store, &row))?;
             // Increment row count for st_constraints.
-            with_label_values(ST_CONSTRAINTS_ID, ST_CONSTRAINTS_NAME).inc();
+            with_label_values_inc(ST_CONSTRAINTS_ID, ST_CONSTRAINTS_NAME);
 
             *sequences_start.entry(ST_CONSTRAINTS_ID).or_default() += 1;
         }
@@ -205,7 +205,7 @@ impl CommittedState {
             // If the row is already there, no-op.
             ignore_duplicate_insert_error(st_indexes.insert(blob_store, &row))?;
             // Increment row count for st_indexes.
-            with_label_values(ST_INDEXES_ID, ST_INDEXES_NAME).inc();
+            with_label_values_inc(ST_INDEXES_ID, ST_INDEXES_NAME);
 
             *sequences_start.entry(ST_INDEXES_ID).or_default() += 1;
         }
@@ -239,7 +239,7 @@ impl CommittedState {
             // If the row is already there, no-op.
             ignore_duplicate_insert_error(st_sequences.insert(blob_store, &row))?;
             // Increment row count for st_sequences
-            with_label_values(ST_SEQUENCES_ID, ST_SEQUENCES_NAME).inc();
+            with_label_values_inc(ST_SEQUENCES_ID, ST_SEQUENCES_NAME);
         }
 
         // Re-read the schema with the correct ids...
@@ -579,16 +579,24 @@ impl Drop for CommittedIndexIter<'_> {
             .map(|table| table.table_name.as_str())
             .unwrap_or_default();
 
-        DB_METRICS
-            .rdb_num_index_seeks
-            .with_label_values(workload, db, reducer_name, table_id, table_name)
-            .inc();
-
+        DB_METRICS.rdb_num_index_seeks.with_label_values_async(
+            workload,
+            db,
+            reducer_name,
+            table_id,
+            table_name,
+            move |met| met.inc(),
+        );
+        let com_rows_num = self.committed_rows.num_pointers_yielded();
         // Increment number of index keys scanned
-        DB_METRICS
-            .rdb_num_keys_scanned
-            .with_label_values(workload, db, reducer_name, table_id, table_name)
-            .inc_by(self.committed_rows.num_pointers_yielded());
+        DB_METRICS.rdb_num_keys_scanned.with_label_values_async(
+            workload,
+            db,
+            reducer_name,
+            table_id,
+            table_name,
+            move |met| met.inc_by(com_rows_num),
+        );
 
         // Increment number of rows fetched
         let n = self.num_committed_rows_fetched;

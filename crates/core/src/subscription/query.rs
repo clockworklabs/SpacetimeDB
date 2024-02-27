@@ -146,8 +146,7 @@ fn record_query_compilation_metrics(workload: WorkloadType, db: &Address, query:
 
     DB_METRICS
         .rdb_query_compile_time_sec
-        .with_label_values(&workload, db)
-        .observe(compile_duration);
+        .with_label_values_async(&workload, db, move |met| met.observe(compile_duration));
 
     let max_compile_duration = *MAX_QUERY_COMPILE_TIME
         .lock()
@@ -162,8 +161,7 @@ fn record_query_compilation_metrics(workload: WorkloadType, db: &Address, query:
 
     DB_METRICS
         .rdb_query_compile_time_sec_max
-        .with_label_values(&workload, db)
-        .set(max_compile_duration);
+        .with_label_values_async(&workload, db, move |met| met.set(max_compile_duration));
 }
 
 /// The kind of [`QueryExpr`] currently supported for incremental evaluation.

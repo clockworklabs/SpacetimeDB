@@ -67,16 +67,14 @@ impl ModuleSubscriptions {
                 subscriptions.push(Subscription::new(queries, sender));
                 WORKER_METRICS
                     .subscription_queries
-                    .with_label_values(&self.relational_db.address())
-                    .add(n as i64);
+                    .with_label_values_async(&self.relational_db.address(), move |met| met.add(n as i64));
                 subscriptions.last_mut().unwrap()
             }
         };
 
         WORKER_METRICS
             .initial_subscription_evals
-            .with_label_values(&self.relational_db.address())
-            .inc();
+            .with_label_values_async(&self.relational_db.address(), move |met| met.inc());
 
         let sender = subscription.subscribers().last().unwrap().clone();
         drop(subscriptions);
@@ -97,11 +95,11 @@ impl ModuleSubscriptions {
     fn _remove_subscriber(&self, client_id: ClientActorId, subscriptions: &mut Vec<Subscription>) {
         subscriptions.retain_mut(|subscription| {
             subscription.remove_subscriber(client_id);
+            let subs_len = subscription.queries.len();
             if subscription.subscribers().is_empty() {
                 WORKER_METRICS
                     .subscription_queries
-                    .with_label_values(&self.relational_db.address())
-                    .sub(subscription.queries.len() as i64);
+                    .with_label_values_async(&self.relational_db.address(), move |met| met.sub(subs_len as i64));
             }
             !subscription.subscribers().is_empty()
         })

@@ -287,12 +287,10 @@ impl SchedulerActor {
         // This does not account for any time the executing thread spends blocked by the os.
         WORKER_METRICS
             .scheduled_reducer_delay_sec
-            .with_label_values(&db, &scheduled.reducer)
-            .observe(delay);
+            .with_label_values_async(&db, &scheduled.reducer, move |met| met.observe(delay));
         WORKER_METRICS
             .scheduled_reducer_delay_sec_max
-            .with_label_values(&db, &scheduled.reducer)
-            .set(max_reducer_delay);
+            .with_label_values_async(&db, &scheduled.reducer, move |met| met.set(max_reducer_delay));
         drop(guard);
 
         let db = self.db.clone();

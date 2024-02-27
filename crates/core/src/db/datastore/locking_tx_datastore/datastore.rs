@@ -190,10 +190,12 @@ impl Locking {
                         });
                     // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
                     // and therefore has performance implications and must not be disabled.
-                    DB_METRICS
-                        .rdb_num_table_rows
-                        .with_label_values(&self.database_address, &table_id.into(), &table_name)
-                        .dec();
+                    DB_METRICS.rdb_num_table_rows.with_label_values_async(
+                        &self.database_address,
+                        &table_id.into(),
+                        &table_name,
+                        move |met| met.dec(),
+                    );
                 }
                 Operation::Insert => {
                     committed_state
@@ -206,10 +208,12 @@ impl Locking {
                         });
                     // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
                     // and therefore has performance implications and must not be disabled.
-                    DB_METRICS
-                        .rdb_num_table_rows
-                        .with_label_values(&self.database_address, &table_id.into(), &table_name)
-                        .inc();
+                    DB_METRICS.rdb_num_table_rows.with_label_values_async(
+                        &self.database_address,
+                        &table_id.into(),
+                        &table_name,
+                        move |met| met.inc(),
+                    );
                 }
             }
         }

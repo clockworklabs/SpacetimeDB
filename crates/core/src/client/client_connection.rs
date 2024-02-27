@@ -45,12 +45,13 @@ impl ClientConnectionSender {
 
         self.sendtx.send(message).await.map_err(|_| ClientClosed)?;
 
-        WORKER_METRICS.websocket_sent.with_label_values(&self.id.identity).inc();
+        WORKER_METRICS
+            .websocket_sent
+            .with_label_values_async(&self.id.identity, |met| met.inc());
 
         WORKER_METRICS
             .websocket_sent_msg_size
-            .with_label_values(&self.id.identity)
-            .observe(bytes_len as f64);
+            .with_label_values_async(&self.id.identity, move |met| met.observe(bytes_len as f64));
 
         Ok(())
     }

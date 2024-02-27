@@ -37,15 +37,16 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
         DataMessage::Binary(_) => "binary",
     };
 
-    WORKER_METRICS
-        .websocket_request_msg_size
-        .with_label_values(&client.database_instance_id, message_kind)
-        .observe(message.len() as f64);
+    let message_len = message.len();
+    WORKER_METRICS.websocket_request_msg_size.with_label_values_async(
+        &client.database_instance_id,
+        message_kind,
+        move |met| met.observe(message_len as f64),
+    );
 
     WORKER_METRICS
         .websocket_requests
-        .with_label_values(&client.database_instance_id, message_kind)
-        .inc();
+        .with_label_values_async(&client.database_instance_id, message_kind, move |met| met.inc());
 
     match message {
         DataMessage::Text(message) => handle_text(client, message, timer).await,
@@ -146,18 +147,22 @@ impl DecodedMessage<'_> {
         let res = match self {
             DecodedMessage::Call { reducer, args } => {
                 let res = client.call_reducer(reducer, args).await;
-                WORKER_METRICS
-                    .request_round_trip
-                    .with_label_values(&WorkloadType::Reducer, &address, reducer)
-                    .observe(timer.elapsed().as_secs_f64());
+                WORKER_METRICS.request_round_trip.with_label_values_async(
+                    &WorkloadType::Reducer,
+                    &address,
+                    reducer,
+                    move |met| met.observe(timer.elapsed().as_secs_f64()),
+                );
                 res.map(drop).map_err(|e| (Some(reducer), e.into()))
             }
             DecodedMessage::Subscribe(subscription) => {
                 let res = client.subscribe(subscription).await;
-                WORKER_METRICS
-                    .request_round_trip
-                    .with_label_values(&WorkloadType::Subscribe, &address, "")
-                    .observe(timer.elapsed().as_secs_f64());
+                WORKER_METRICS.request_round_trip.with_label_values_async(
+                    &WorkloadType::Subscribe,
+                    &address,
+                    "",
+                    move |met| met.observe(timer.elapsed().as_secs_f64()),
+                );
                 res.map_err(|e| (None, e.into()))
             }
             DecodedMessage::OneOffQuery {
@@ -165,10 +170,12 @@ impl DecodedMessage<'_> {
                 message_id,
             } => {
                 let res = client.one_off_query(query, message_id).await;
-                WORKER_METRICS
-                    .request_round_trip
-                    .with_label_values(&WorkloadType::Sql, &address, "")
-                    .observe(timer.elapsed().as_secs_f64());
+                WORKER_METRICS.request_round_trip.with_label_values_async(
+                    &WorkloadType::Sql,
+                    &address,
+                    "",
+                    move |met| met.observe(timer.elapsed().as_secs_f64()),
+                );
                 res.map_err(|err| (None, err))
             }
         };

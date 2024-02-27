@@ -344,20 +344,28 @@ impl Drop for IndexSeekIterMutTxId<'_> {
             .unwrap_or_default();
 
         // Increment number of index seeks
-        DB_METRICS
-            .rdb_num_index_seeks
-            .with_label_values(workload, db, reducer_name, table_id, table_name)
-            .inc();
+        DB_METRICS.rdb_num_index_seeks.with_label_values_async(
+            workload,
+            db,
+            reducer_name,
+            table_id,
+            table_name,
+            move |met| met.inc(),
+        );
 
+        let num_keys = self
+            .committed_rows
+            .as_ref()
+            .map_or(0, |iter| iter.num_pointers_yielded());
         // Increment number of index keys scanned
-        DB_METRICS
-            .rdb_num_keys_scanned
-            .with_label_values(workload, db, reducer_name, table_id, table_name)
-            .inc_by(
-                self.committed_rows
-                    .as_ref()
-                    .map_or(0, |iter| iter.num_pointers_yielded()),
-            );
+        DB_METRICS.rdb_num_keys_scanned.with_label_values_async(
+            workload,
+            db,
+            reducer_name,
+            table_id,
+            table_name,
+            move |met| met.inc_by(num_keys),
+        );
 
         // Increment number of rows fetched
         let n = self.num_committed_rows_fetched;

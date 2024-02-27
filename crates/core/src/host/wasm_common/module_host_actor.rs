@@ -495,8 +495,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let reducer_name = &*self.info.reducers[reducer_id].name;
         WORKER_METRICS
             .reducer_count
-            .with_label_values(&address, reducer_name)
-            .inc();
+            .with_label_values_async(&address, reducer_name, move |met| met.inc());
 
         let _outer_span = tracing::trace_span!("call_reducer",
             reducer_name,
@@ -561,8 +560,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
         WORKER_METRICS
             .reducer_compute_time
-            .with_label_values(&address, reducer_name)
-            .observe(timings.total_duration.as_secs_f64());
+            .with_label_values_async(&address, reducer_name, move |met| {
+                met.observe(timings.total_duration.as_secs_f64())
+            });
 
         // Take a lock on our subscriptions now. Otherwise, we could have a race condition where we commit
         // the tx, someone adds a subscription and receives this tx as an initial update, and then receives the
@@ -576,10 +576,13 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
                 T::log_traceback("reducer", reducer_name, &err);
 
-                WORKER_METRICS
-                    .wasm_instance_errors
-                    .with_label_values(&caller_identity, &self.info.module_hash, &caller_address, reducer_name)
-                    .inc();
+                WORKER_METRICS.wasm_instance_errors.with_label_values_async(
+                    &caller_identity,
+                    &self.info.module_hash,
+                    &caller_address,
+                    reducer_name,
+                    move |met| met.inc(),
+                );
 
                 // discard this instance
                 self.trapped = true;
@@ -605,8 +608,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                     if let Some(bytes_written) = bytes_written {
                         WORKER_METRICS
                             .reducer_write_size
-                            .with_label_values(&address, reducer_name)
-                            .observe(bytes_written as f64);
+                            .with_label_values_async(&address, reducer_name, move |met| {
+                                met.observe(bytes_written as f64)
+                            });
                     }
                     EventStatus::Committed(DatabaseUpdate::from_writes(stdb, &tx_data))
                 } else {

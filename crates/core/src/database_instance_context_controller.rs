@@ -122,23 +122,21 @@ impl DatabaseInstanceContextController {
     pub fn update_metrics(&self) {
         for (cell, _) in self.contexts.lock().unwrap().values() {
             if let Some((db, _)) = cell.get() {
+                let msg_log_size = db.message_log_size_on_disk();
                 DB_METRICS
                     .message_log_size
-                    .with_label_values(&db.address)
-                    .set(db.message_log_size_on_disk() as i64);
+                    .with_label_values_async(&db.address, move |met| met.set(msg_log_size as i64));
                 // Use the previous gauge value if there is an issue getting the file size.
                 if let Ok(num_bytes) = db.object_db_size_on_disk() {
                     DB_METRICS
                         .object_db_disk_usage
-                        .with_label_values(&db.address)
-                        .set(num_bytes as i64);
+                        .with_label_values_async(&db.address, move |met| met.set(num_bytes as i64));
                 }
                 // Use the previous gauge value if there is an issue getting the file size.
                 if let Ok(num_bytes) = db.log_file_size() {
                     DB_METRICS
                         .module_log_file_size
-                        .with_label_values(&db.address)
-                        .set(num_bytes as i64);
+                        .with_label_values_async(&db.address, move |met| met.set(num_bytes as i64));
                 }
             }
         }

@@ -462,10 +462,12 @@ impl RelationalDB {
             .map(|name| name.to_string())
             .unwrap_or_default();
         self.inner.drop_table_mut_tx(tx, table_id).map(|_| {
-            DB_METRICS
-                .rdb_num_table_rows
-                .with_label_values(&self.address, &table_id.into(), &table_name)
-                .set(0)
+            DB_METRICS.rdb_num_table_rows.with_label_values_async(
+                &self.address,
+                &table_id.into(),
+                &table_name,
+                move |met| met.set(0),
+            );
         })
     }
 

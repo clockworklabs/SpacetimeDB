@@ -398,29 +398,35 @@ impl CommitLogMut {
                 TxOp::Insert(_) => {
                     // Increment rows inserted metric
                     #[cfg(feature = "metrics")]
-                    DB_METRICS
-                        .rdb_num_rows_inserted
-                        .with_label_values(workload, db, reducer, &table_id, table_name)
-                        .inc();
+                    DB_METRICS.rdb_num_rows_inserted.with_label_values_async(
+                        workload,
+                        db,
+                        reducer,
+                        &table_id,
+                        table_name,
+                        move |met| met.inc(),
+                    );
                     // Increment table rows gauge
                     DB_METRICS
                         .rdb_num_table_rows
-                        .with_label_values(db, &table_id, table_name)
-                        .inc();
+                        .with_label_values_async(db, &table_id, table_name, move |met| met.inc());
                     Operation::Insert
                 }
                 TxOp::Delete => {
                     // Increment rows deleted metric
                     #[cfg(feature = "metrics")]
-                    DB_METRICS
-                        .rdb_num_rows_deleted
-                        .with_label_values(workload, db, reducer, &table_id, table_name)
-                        .inc();
+                    DB_METRICS.rdb_num_rows_deleted.with_label_values_async(
+                        workload,
+                        db,
+                        reducer,
+                        &table_id,
+                        table_name,
+                        move |met| met.inc(),
+                    );
                     // Decrement table rows gauge
                     DB_METRICS
                         .rdb_num_table_rows
-                        .with_label_values(db, &table_id, table_name)
-                        .dec();
+                        .with_label_values_async(db, &table_id, table_name, move |met| met.dec());
                     Operation::Delete
                 }
             };

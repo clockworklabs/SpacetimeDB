@@ -392,8 +392,7 @@ fn record_query_duration_metrics(workload: WorkloadType, db: &Address, start: In
 
     DB_METRICS
         .rdb_query_cpu_time_sec
-        .with_label_values(&workload, db)
-        .observe(query_duration);
+        .with_label_values_async(&workload, db, move |met| met.observe(query_duration));
 
     let max_query_duration = *MAX_QUERY_CPU_TIME
         .lock()
@@ -408,8 +407,7 @@ fn record_query_duration_metrics(workload: WorkloadType, db: &Address, start: In
 
     DB_METRICS
         .rdb_query_cpu_time_sec_max
-        .with_label_values(&workload, db)
-        .set(max_query_duration);
+        .with_label_values_async(&workload, db, move |met| met.set(max_query_duration));
 }
 
 /// Helper to retain [`PrimaryKey`] before converting to [`TableOp`].
