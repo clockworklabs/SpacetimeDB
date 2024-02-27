@@ -10,7 +10,6 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::oneshot;
 
 use super::module_host::{Catalog, EntityDef, EventStatus, ModuleHost, NoSuchModule, UpdateDatabaseResult};
 use super::scheduler::SchedulerStarter;
@@ -81,17 +80,6 @@ impl HostThreadpool {
 
     pub fn spawn(&self, f: impl FnOnce() + Send + 'static) {
         self.inner.spawn(f)
-    }
-
-    pub async fn spawn_task<R: Send + 'static>(&self, f: impl FnOnce() -> R + Send + 'static) -> R {
-        let (tx, rx) = oneshot::channel();
-        self.inner.spawn(|| {
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
-            if let Err(Err(_panic)) = tx.send(result) {
-                tracing::warn!("uncaught panic on threadpool")
-            }
-        });
-        rx.await.unwrap().unwrap_or_else(|err| std::panic::resume_unwind(err))
     }
 }
 
