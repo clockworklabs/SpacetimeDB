@@ -19,6 +19,7 @@ use spacetimedb_vm::iterators::RelIter;
 use spacetimedb_vm::program::ProgramVm;
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::{MemTable, RelValue, Table};
+use std::sync::Arc;
 
 pub enum TxMode<'a> {
     MutTx(&'a mut MutTx),
@@ -155,7 +156,7 @@ fn join_inner<'a>(
     let header = if semi {
         col_lhs_header.clone()
     } else {
-        col_lhs_header.extend(&col_rhs_header)
+        Arc::new(col_lhs_header.extend(&col_rhs_header))
     };
 
     lhs.join_inner(
@@ -221,7 +222,7 @@ pub struct IndexSemiJoin<'a, Rhs: RelOps<'a>> {
     // The field whose value will be used to probe the index.
     pub probe_field: FieldName,
     // The header for the index side of the join.
-    pub index_header: Header,
+    pub index_header: Arc<Header>,
     // An optional predicate to evaluate over the matching rows of the index.
     pub index_select: Option<ColumnOp>,
     // The table id on which the index is defined.
@@ -261,7 +262,7 @@ impl<'a, Rhs: RelOps<'a>> IndexSemiJoin<'a, Rhs> {
 }
 
 impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoin<'a, Rhs> {
-    fn head(&self) -> &Header {
+    fn head(&self) -> &Arc<Header> {
         if self.return_index_rows {
             &self.index_header
         } else {
@@ -502,7 +503,7 @@ impl ProgramVm for DbProgram<'_, '_> {
 }
 
 impl<'a> RelOps<'a> for TableCursor<'a> {
-    fn head(&self) -> &Header {
+    fn head(&self) -> &Arc<Header> {
         &self.table.head
     }
 
@@ -516,7 +517,7 @@ impl<'a> RelOps<'a> for TableCursor<'a> {
 }
 
 impl<'a, R: RangeBounds<AlgebraicValue>> RelOps<'a> for IndexCursor<'a, R> {
-    fn head(&self) -> &Header {
+    fn head(&self) -> &Arc<Header> {
         &self.table.head
     }
 
@@ -533,7 +534,7 @@ impl<'a, I> RelOps<'a> for CatalogCursor<I>
 where
     I: Iterator<Item = ProductValue>,
 {
-    fn head(&self) -> &Header {
+    fn head(&self) -> &Arc<Header> {
         &self.table.head
     }
 
@@ -663,7 +664,7 @@ pub(crate) mod tests {
         let result = run_ast(p, q.into());
 
         //The expected result
-        let input = mem_table(schema.head, vec![row]);
+        let input = mem_table(schema.head.clone_for_error(), vec![row]);
 
         assert_eq!(result, Code::Table(input), "{}", name);
     }

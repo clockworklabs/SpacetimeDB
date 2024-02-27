@@ -205,7 +205,7 @@ impl ServerMessage for OneOffQueryResponseMessage {
                 .results
                 .into_iter()
                 .map(|table| OneOffTableJson {
-                    table_name: table.head.table_name,
+                    table_name: table.head.table_name.clone(),
                     rows: table.data,
                 })
                 .collect(),
@@ -221,7 +221,7 @@ impl ServerMessage for OneOffQueryResponseMessage {
                     .results
                     .into_iter()
                     .map(|table| OneOffTable {
-                        table_name: table.head.table_name,
+                        table_name: table.head.table_name.clone(),
                         row: table
                             .data
                             .into_iter()

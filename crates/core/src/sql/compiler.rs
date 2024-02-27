@@ -10,6 +10,7 @@ use spacetimedb_vm::dsl::{db_table, db_table_raw, query};
 use spacetimedb_vm::expr::{ColumnOp, CrudExpr, DbType, Expr, QueryExpr, SourceExpr};
 use spacetimedb_vm::operator::OpCmp;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use super::ast::TableSchemaView;
 
@@ -182,7 +183,7 @@ fn compile_columns(table: &TableSchema, columns: Vec<FieldName>) -> DbTable {
         }
     }
     DbTable::new(
-        Header::new(table.table_name.clone(), new, table.get_constraints()),
+        Arc::new(Header::new(table.table_name.clone(), new, table.get_constraints())),
         table.table_id,
         table.table_type,
         table.table_access,

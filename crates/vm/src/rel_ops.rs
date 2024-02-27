@@ -3,6 +3,7 @@ use crate::relation::RelValue;
 use spacetimedb_sats::product_value::ProductValue;
 use spacetimedb_sats::relation::{FieldExpr, Header, RowCount};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 pub(crate) trait ResultExt<T> {
     fn unpack_fold(self) -> Result<T, ErrorVm>;
@@ -10,7 +11,7 @@ pub(crate) trait ResultExt<T> {
 
 /// A trait for dealing with fallible iterators for the database.
 pub trait RelOps<'a> {
-    fn head(&self) -> &Header;
+    fn head(&self) -> &Arc<Header>;
     fn row_count(&self) -> RowCount;
     /// Advances the `iterator` and returns the next [RelValue].
     fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm>;
@@ -67,7 +68,7 @@ pub trait RelOps<'a> {
     {
         let count = self.row_count();
         let head = self.head().project(&cols)?;
-        Ok(Project::new(self, count, head, cols, extractor))
+        Ok(Project::new(self, count, Arc::new(head), cols, extractor))
     }
 
     /// Intersection between the left and the right, both (non-sorted) `iterators`.
@@ -84,7 +85,7 @@ pub trait RelOps<'a> {
     fn join_inner<Pred, Proj, KeyLhs, KeyRhs, Rhs>(
         self,
         with: Rhs,
-        head: Header,
+        head: Arc<Header>,
         key_lhs: KeyLhs,
         key_rhs: KeyRhs,
         predicate: Pred,
@@ -120,7 +121,7 @@ pub trait RelOps<'a> {
 }
 
 impl<'a, I: RelOps<'a> + ?Sized> RelOps<'a> for Box<I> {
-    fn head(&self) -> &Header {
+    fn head(&self) -> &Arc<Header> {
         (**self).head()
     }
 
@@ -135,14 +136,14 @@ impl<'a, I: RelOps<'a> + ?Sized> RelOps<'a> for Box<I> {
 
 #[derive(Clone, Debug)]
 pub struct Select<I, P> {
-    pub(crate) head: Header,
+    pub(crate) head: Arc<Header>,
     pub(crate) count: RowCount,
     pub(crate) iter: I,
     pub(crate) predicate: P,
 }
 
 impl<I, P> Select<I, P> {
-    pub fn new(iter: I, count: RowCount, head: Header, predicate: P) -> Select<I, P> {
+    pub fn new(iter: I, count: RowCount, head: Arc<Header>, predicate: P) -> Select<I, P> {
         Select {
             iter,
             count,
@@ -157,7 +158,7 @@ where
     I: RelOps<'a>,
     P: FnMut(&RelValue<'a>) -> Result<bool, ErrorVm>,
 {
-    fn head(&self) -> &Header {
+    fn head(&self) -> &Arc<Header> {
         &self.head
     }
 
@@ -178,7 +179,7 @@ where
 
 #[derive(Clone, Debug)]
 pub struct Project<I, P> {
-    pub(crate) head: Header,
+    pub(crate) head: Arc<Header>,
     pub(crate) count: RowCount,
     pub(crate) cols: Vec<FieldExpr>,
     pub(crate) iter: I,
@@ -186,7 +187,7 @@ pub struct Project<I, P> {
 }
 
 impl<I, P> Project<I, P> {
-    pub fn new(iter: I, count: RowCount, head: Header, cols: Vec<FieldExpr>, extractor: P) -> Project<I, P> {
+    pub fn new(iter: I, count: RowCount, head: Arc<Header>, cols: Vec<FieldExpr>, extractor: P) -> Project<I, P> {
         Project {
             iter,
             count,
@@ -202,7 +203,7 @@ where
     I: RelOps<'a>,
     P: FnMut(&[FieldExpr], RelValue<'a>) -> Result<RelValue<'a>, ErrorVm>,
 {
-    fn head(&self) -> &Header {
+    fn head(&self) -> &Arc<Header> {
         &self.head
     }
 
@@ -221,7 +222,7 @@ where
 
 #[derive(Clone, Debug)]
 pub struct JoinInner<'a, Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> {
-    pub(crate) head: Header,
+    pub(crate) head: Arc<Header>,
     pub(crate) count: RowCount,
     pub(crate) lhs: Lhs,
     pub(crate) rhs: Rhs,
@@ -236,7 +237,7 @@ pub struct JoinInner<'a, Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> {
 
 impl<'a, Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> JoinInner<'a, Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> {
     pub fn new(
-        head: Header,
+        head: Arc<Header>,
         lhs: Lhs,
         rhs: Rhs,
         key_lhs: KeyLhs,
@@ -270,7 +271,7 @@ where
     Pred: FnMut(&RelValue<'a>, &RelValue<'a>) -> Result<bool, ErrorVm>,
     Proj: FnMut(RelValue<'a>, RelValue<'a>) -> RelValue<'a>,
 {
-    fn head(&self) -> &Header {
+    fn head(&self) -> &Arc<Header> {
         &self.head
     }
 

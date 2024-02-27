@@ -9,6 +9,7 @@ use spacetimedb_table::table::RowRef;
 use std::borrow::Cow;
 use std::hash::{Hash, Hasher};
 use std::mem;
+use std::sync::Arc;
 
 /// RelValue represents either a reference to a row in a table,
 /// or an ephemeral row constructed during query execution.
@@ -116,15 +117,16 @@ pub struct MemTableWithoutTableName<'a> {
 }
 
 /// An in-memory table
+// TODO(perf): Remove `Clone` impl.
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct MemTable {
-    pub head: Header,
+    pub head: Arc<Header>,
     pub data: Vec<ProductValue>,
     pub table_access: StAccess,
 }
 
 impl MemTable {
-    pub fn new(head: Header, table_access: StAccess, data: Vec<ProductValue>) -> Self {
+    pub fn new(head: Arc<Header>, table_access: StAccess, data: Vec<ProductValue>) -> Self {
         assert_eq!(
             head.fields.len(),
             data.first()
@@ -141,10 +143,10 @@ impl MemTable {
 
     pub fn from_value(of: AlgebraicValue) -> Self {
         let head = Header::for_mem_table(of.type_of().into());
-        Self::new(head, StAccess::Public, [of.into()].into())
+        Self::new(Arc::new(head), StAccess::Public, [of.into()].into())
     }
 
-    pub fn from_iter(head: Header, data: impl Iterator<Item = ProductValue>) -> Self {
+    pub fn from_iter(head: Arc<Header>, data: impl Iterator<Item = ProductValue>) -> Self {
         Self {
             head,
             data: data.collect(),
@@ -169,7 +171,7 @@ impl MemTable {
 }
 
 impl Relation for MemTable {
-    fn head(&self) -> &Header {
+    fn head(&self) -> &Arc<Header> {
         &self.head
     }
 
@@ -234,7 +236,7 @@ impl Table {
 }
 
 impl Relation for Table {
-    fn head(&self) -> &Header {
+    fn head(&self) -> &Arc<Header> {
         match self {
             Table::MemTable(x) => x.head(),
             Table::DbTable(x) => x.head(),
