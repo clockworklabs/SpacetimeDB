@@ -13,7 +13,6 @@ use spacetimedb_sats::db::error::AuthError;
 use spacetimedb_sats::relation::{Column, DbTable, FieldExpr, FieldName, Header, Relation, RowCount};
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
-use std::borrow::Cow;
 use std::cmp::{Ordering, Reverse};
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
@@ -1602,7 +1601,7 @@ impl QueryExpr {
         let mut fields_found = HashSet::new();
 
         for (schema, (ops, fields_on_idx)) in tables.iter().map(|x| (x, is_sargable(x, &op))) {
-            fields_found.extend(fields_on_idx.into_iter().map(|(f, op)| (Cow::Borrowed(f), op)));
+            fields_found.extend(fields_on_idx);
             for op in ops {
                 match &op {
                     IndexColumnOp::Index(_) => (),
@@ -1612,10 +1611,10 @@ impl QueryExpr {
                             // like `[ScanOrIndex::Index(a = 1), ScanOrIndex::Index(a = 1), ScanOrIndex::Scan(a = 1)]`
                             if let ColumnOp::Field(FieldExpr::Name(col)) = lhs.as_ref() {
                                 if let OpQuery::Cmp(cmp) = op {
-                                    if fields_found.contains(&(Cow::Borrowed(col), *cmp)) {
+                                    if fields_found.contains(&(col, *cmp)) {
                                         continue;
                                     } else {
-                                        fields_found.insert((Cow::Owned(col.clone()), *cmp));
+                                        fields_found.insert((col, *cmp));
                                     }
                                 }
                             }
