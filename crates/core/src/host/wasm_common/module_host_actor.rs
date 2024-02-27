@@ -15,7 +15,6 @@ use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::traits::IsolationLevel;
 use crate::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
 use crate::execution_context::ExecutionContext;
-use crate::hash::Hash;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_host::{
     CallReducerParams, DatabaseUpdate, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo,
@@ -24,6 +23,7 @@ use crate::host::module_host::{
 use crate::host::{ArgsTuple, EntityDef, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler, Timestamp};
 use crate::identity::Identity;
 use crate::messages::control_db::Database;
+use crate::module_host_context::ModuleCreationContext;
 use crate::sql;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::util::const_unwrap;
@@ -123,13 +123,14 @@ pub enum DescribeError {
 }
 
 impl<T: WasmModule> WasmModuleHostActor<T> {
-    pub fn new(
-        database_instance_context: Arc<DatabaseInstanceContext>,
-        module_hash: Hash,
-        module: T,
-        scheduler: Scheduler,
-        energy_monitor: Arc<dyn EnergyMonitor>,
-    ) -> Result<Self, InitializationError> {
+    pub fn new(mcc: ModuleCreationContext, module: T) -> Result<Self, InitializationError> {
+        let ModuleCreationContext {
+            dbic: database_instance_context,
+            scheduler,
+            program_bytes: _,
+            program_hash: module_hash,
+            energy_monitor,
+        } = mcc;
         log::trace!(
             "Making new module host actor for database {}",
             database_instance_context.address

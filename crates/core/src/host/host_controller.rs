@@ -2,7 +2,7 @@ use crate::energy::{EnergyMonitor, EnergyQuanta, NullEnergyMonitor};
 use crate::hash::hash_bytes;
 use crate::host;
 use crate::messages::control_db::HostType;
-use crate::module_host_context::ModuleHostContext;
+use crate::module_host_context::{ModuleCreationContext, ModuleHostContext};
 use crate::util::spawn_rayon;
 use anyhow::Context;
 use parking_lot::Mutex;
@@ -13,7 +13,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use super::module_host::{Catalog, EntityDef, EventStatus, ModuleHost, NoSuchModule, UpdateDatabaseResult};
-use super::scheduler::SchedulerStarter;
 use super::ReducerArgs;
 
 pub struct HostController {
@@ -170,43 +169,38 @@ impl HostController {
     /// impact the logic of applications. The idea being that if SpacetimeDB is a distributed operating
     /// system, the applications will expect to be called when they are scheduled to be called regardless
     /// of whether the OS has been restarted.
-    pub async fn spawn_module_host(&self, module_host_context: ModuleHostContext) -> Result<ModuleHost, anyhow::Error> {
-        let key = module_host_context.dbic.database_instance_id;
+    pub async fn spawn_module_host(&self, mhc: ModuleHostContext) -> Result<ModuleHost, anyhow::Error> {
+        let key = mhc.dbic.database_instance_id;
 
-        let energy_monitor = self.energy_monitor.clone();
-        let (module_host, start_scheduler) =
-            spawn_rayon(|| Self::make_module_host(module_host_context, energy_monitor)).await?;
+        let mcc = ModuleCreationContext {
+            dbic: mhc.dbic,
+            scheduler: mhc.scheduler,
+            program_hash: hash_bytes(&mhc.program_bytes),
+            program_bytes: mhc.program_bytes,
+            energy_monitor: self.energy_monitor.clone(),
+        };
+        let module_host = spawn_rayon(move || Self::make_module_host(mhc.host_type, mcc)).await?;
 
         let old_module = self.modules.lock().insert(key, module_host.clone());
         if let Some(old_module) = old_module {
             old_module.exit().await
         }
         module_host.start();
-        start_scheduler.start(&module_host)?;
+        mhc.scheduler_starter.start(&module_host)?;
 
         Ok(module_host)
     }
 
-    fn make_module_host(
-        mhc: ModuleHostContext,
-        energy_monitor: Arc<dyn EnergyMonitor>,
-    ) -> anyhow::Result<(ModuleHost, SchedulerStarter)> {
-        let module_hash = hash_bytes(&mhc.program_bytes);
-        let module_host = match mhc.host_type {
+    fn make_module_host(host_type: HostType, mcc: ModuleCreationContext) -> anyhow::Result<ModuleHost> {
+        let module_host = match host_type {
             HostType::Wasm => {
                 let start = Instant::now();
-                let actor = host::wasmtime::make_actor(
-                    mhc.dbic,
-                    module_hash,
-                    &mhc.program_bytes,
-                    mhc.scheduler,
-                    energy_monitor,
-                )?;
+                let actor = host::wasmtime::make_actor(mcc)?;
                 log::trace!("wasmtime::make_actor blocked for {:?}", start.elapsed());
                 ModuleHost::new(actor)
             }
         };
-        Ok((module_host, mhc.scheduler_starter))
+        Ok(module_host)
     }
 
     /// Determine if the module host described by [`ModuleHostContext`] is
