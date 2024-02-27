@@ -1,15 +1,3 @@
-# Summary of Changes
-
-These change(s) include:
-- Interface changes
-    - [ ] API/ABI changes
-    - [ ] Changes to the Rust library interface
-    - [ ] Command-Line interface (CLI)
-- [ ] Bugfixes
-- [ ] Performance improvements
-- [ ] Refactoring
-- [ ] Other (briefly describe)
-
 # Description of Changes
 
 *Please describe your change. Mention any related issues, other PRs, and so on here.*
@@ -19,7 +7,12 @@ These change(s) include:
 *Does this change break API or ABI compatibility, or break the Rust library
 interface?*
 
-_**If so, please apply the corresponding GitHub label.**_
+This PR includes **non-backwards-compatible** changes to these interfaces:
+- [ ] API
+- [ ] ABI
+- [ ] Rust library users
+
+_**If applicable, please apply the corresponding GitHub label.**_
 
 # Expected complexity level and risk
 
@@ -32,10 +25,7 @@ but also to its interactions with existing and future code.*
 *If you answered more than a 2, explain what is complex about the PR,
 and what other components it interacts with in potentially concerning ways.*
 
-# Testing procedure
+# Testing
 
-*Describe why you're confident that all the changes work as expected, including
-any automated tests or manual testing process.*
-
-*Reviewers should be able to follow this procedure and confirm for themselves
-that this works as expected!*
+*Describe any testing you've done, and any testing you'd like your reviewers to do,
+so that you're confident that all the changes work as expected!*
