@@ -850,6 +850,7 @@ impl<'a> FieldValue<'a> {
 }
 
 type IndexColumnOpSink<'a> = SmallVec<[IndexColumnOp<'a>; 1]>;
+type FieldsIndexed<'a> = HashSet<(&'a FieldName, OpCmp)>;
 
 /// Pick the best indices that can serve the constraints in `fields`
 /// where the indices are taken from `header`.
@@ -894,12 +895,11 @@ type IndexColumnOpSink<'a> = SmallVec<[IndexColumnOp<'a>; 1]>;
 /// -`ScanOrIndex::Index(a = 1)`
 /// -`ScanOrIndex::Scan(c = 2)`
 fn select_best_index<'a>(
+    fields_indexed: &mut FieldsIndexed<'a>,
     found: &mut IndexColumnOpSink<'a>,
     header: &'a Header,
     fields: Vec<FieldValue<'a>>,
-) -> HashSet<(&'a FieldName, OpCmp)> {
-    let mut fields_indexed = HashSet::new();
-
+) {
     // Collect and sort indices by their lengths, with longest first.
     // We do this so that multi-col indices are used first, as they are more efficient.
     // TODO(Centril): This could be computed when `Header` is constructed.
@@ -980,8 +980,6 @@ fn select_best_index<'a>(
             .flat_map(|(_, fs)| fs)
             .map(|f| IndexColumnOp::Scan(f.parent)),
     );
-
-    fields_indexed
 }
 
 /// Extracts a list of `field = val` constraints that *could* be answered by an index.
@@ -1034,23 +1032,23 @@ fn extract_fields<'a>(
     (fields, expr)
 }
 
-// Sargable stands for Search ARGument ABLE.
-// A sargable predicate is one that can be answered using an index.
-fn is_sargable<'a>(
+/// Sargable stands for Search ARGument ABLE.
+/// A sargable predicate is one that can be answered using an index.
+fn find_sargable_ops<'a>(
+    fields_indexed: &mut FieldsIndexed<'a>,
     table: &'a SourceExpr,
     op: &'a ColumnOp,
-) -> (SmallVec<[IndexColumnOp<'a>; 1]>, HashSet<(&'a FieldName, OpCmp)>) {
-    let many = |ops: &[&'a ColumnOp]| {
+) -> SmallVec<[IndexColumnOp<'a>; 1]> {
+    let mut many = |ops: &[&'a ColumnOp]| {
         let (fields, mut result) = extract_fields(ops, table);
-        let done = select_best_index(&mut result, table.head(), fields);
-        (result, done)
+        select_best_index(fields_indexed, &mut result, table.head(), fields);
+        result
     };
-
     let mut ops_flat = op.flatten_ands_ref();
     if ops_flat.len() == 1 {
         match ops_flat.swap_remove(0) {
             // Special case; fast path for a single field.
-            op @ ColumnOp::Field(_) => (smallvec![IndexColumnOp::Scan(op)], <_>::default()),
+            op @ ColumnOp::Field(_) => smallvec![IndexColumnOp::Scan(op)],
             op => many(&[op]),
         }
     } else {
@@ -1603,29 +1601,22 @@ impl QueryExpr {
         // Go through each table schema referenced in the query.
         // Find the first sargable condition and short-circuit.
         let mut fields_found = HashSet::new();
-
-        for (schema, (ops, fields_on_idx)) in tables.iter().map(|x| (x, is_sargable(x, &op))) {
-            fields_found.extend(fields_on_idx);
-            for op in ops {
+        for schema in tables {
+            for op in find_sargable_ops(&mut fields_found, schema, &op) {
                 match &op {
-                    IndexColumnOp::Index(_) => (),
-                    IndexColumnOp::Scan(x) => match x {
-                        ColumnOp::Cmp { op, lhs, rhs: _ } => {
-                            // Remove a duplicated/redundant operation on the same `field` and `op`
-                            // like `[ScanOrIndex::Index(a = 1), ScanOrIndex::Index(a = 1), ScanOrIndex::Scan(a = 1)]`
-                            if let ColumnOp::Field(FieldExpr::Name(col)) = lhs.as_ref() {
-                                if let OpQuery::Cmp(cmp) = op {
-                                    if fields_found.contains(&(col, *cmp)) {
-                                        continue;
-                                    } else {
-                                        fields_found.insert((col, *cmp));
-                                    }
-                                }
+                    IndexColumnOp::Index(_) | IndexColumnOp::Scan(ColumnOp::Field(_)) => {}
+                    // Remove a duplicated/redundant operation on the same `field` and `op`
+                    // like `[ScanOrIndex::Index(a = 1), ScanOrIndex::Index(a = 1), ScanOrIndex::Scan(a = 1)]`
+                    IndexColumnOp::Scan(ColumnOp::Cmp { op, lhs, rhs: _ }) => {
+                        if let (ColumnOp::Field(FieldExpr::Name(col)), OpQuery::Cmp(cmp)) = (&**lhs, op) {
+                            if fields_found.contains(&(col, *cmp)) {
+                                continue;
+                            } else {
+                                fields_found.insert((col, *cmp));
                             }
                         }
-                        ColumnOp::Field(_) => (),
-                    },
-                };
+                    }
+                }
 
                 match op {
                     // found sargable equality condition for one of the table schemas
@@ -2211,7 +2202,7 @@ mod tests {
                 .map(|(col, val)| make_field_value(&arena, (OpCmp::Eq, col, val)))
                 .collect();
             let mut result = <_>::default();
-            select_best_index(&mut result, &head1, fields);
+            select_best_index(&mut <_>::default(), &mut result, &head1, fields);
             result
         };
 
@@ -2308,7 +2299,7 @@ mod tests {
         let select_best_index = |fields: &[_]| {
             let fields = fields.iter().map(|x| make_field_value(&arena, *x)).collect();
             let mut result = <_>::default();
-            select_best_index(&mut result, &head1, fields);
+            select_best_index(&mut <_>::default(), &mut result, &head1, fields);
             result
         };
 
