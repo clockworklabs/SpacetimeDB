@@ -797,54 +797,46 @@ fn ext_cmp_field_val<'a>(
     }
 }
 
-fn make_index(idxs: Vec<ScanOrIndex>) -> SmallVec<[IndexColumnOp; 1]> {
-    let mut result = SmallVec::with_capacity(idxs.len());
-
-    for idx in idxs {
-        let r = match idx {
-            ScanOrIndex::Index { cmp, columns, value } => {
-                match cmp {
-                    OpCmp::Eq => IndexColumnOp::Index(IndexArgument::Eq { columns, value }),
-                    // a < 5 => exclusive upper bound
-                    OpCmp::Lt => IndexColumnOp::Index(IndexArgument::UpperBound {
-                        columns,
-                        value,
-                        inclusive: false,
-                    }),
-                    // a > 5 => exclusive lower bound
-                    OpCmp::Gt => IndexColumnOp::Index(IndexArgument::LowerBound {
-                        columns,
-                        value,
-                        inclusive: false,
-                    }),
-                    // a <= 5 => inclusive upper bound
-                    OpCmp::LtEq => IndexColumnOp::Index(IndexArgument::UpperBound {
-                        columns,
-                        value,
-                        inclusive: true,
-                    }),
-                    // a >= 5 => inclusive lower bound
-                    OpCmp::GtEq => IndexColumnOp::Index(IndexArgument::LowerBound {
-                        columns,
-                        value,
-                        inclusive: true,
-                    }),
-                    OpCmp::NotEq => {
-                        todo!("Need to implement `NotEq`")
-                    }
+fn make_index(soi: ScanOrIndex<'_>) -> IndexColumnOp {
+    match soi {
+        ScanOrIndex::Index { cmp, columns, value } => {
+            match cmp {
+                OpCmp::Eq => IndexColumnOp::Index(IndexArgument::Eq { columns, value }),
+                // a < 5 => exclusive upper bound
+                OpCmp::Lt => IndexColumnOp::Index(IndexArgument::UpperBound {
+                    columns,
+                    value,
+                    inclusive: false,
+                }),
+                // a > 5 => exclusive lower bound
+                OpCmp::Gt => IndexColumnOp::Index(IndexArgument::LowerBound {
+                    columns,
+                    value,
+                    inclusive: false,
+                }),
+                // a <= 5 => inclusive upper bound
+                OpCmp::LtEq => IndexColumnOp::Index(IndexArgument::UpperBound {
+                    columns,
+                    value,
+                    inclusive: true,
+                }),
+                // a >= 5 => inclusive lower bound
+                OpCmp::GtEq => IndexColumnOp::Index(IndexArgument::LowerBound {
+                    columns,
+                    value,
+                    inclusive: true,
+                }),
+                OpCmp::NotEq => {
+                    todo!("Need to implement `NotEq`")
                 }
             }
-            ScanOrIndex::Scan { cmp, field, value } => IndexColumnOp::Scan(ColumnOp::Cmp {
-                op: OpQuery::Cmp(cmp),
-                lhs: Box::new(ColumnOp::Field(FieldExpr::Name(field.clone()))),
-                rhs: Box::new(ColumnOp::Field(FieldExpr::Value(value))),
-            }),
-        };
-
-        result.push(r);
+        }
+        ScanOrIndex::Scan { cmp, field, value } => IndexColumnOp::Scan(ColumnOp::Cmp {
+            op: OpQuery::Cmp(cmp),
+            lhs: Box::new(ColumnOp::Field(FieldExpr::Name(field.clone()))),
+            rhs: Box::new(ColumnOp::Field(FieldExpr::Value(value))),
+        }),
     }
-
-    result
 }
 
 #[derive(Debug)]
@@ -1075,7 +1067,8 @@ fn is_sargable<'a>(
         let (fields, expr) = extract_fields(ops, table);
         let (idxs, done) = select_best_index(table.head(), fields);
 
-        let mut result = make_index(idxs);
+        let mut result = SmallVec::with_capacity(idxs.len());
+        result.extend(idxs.into_iter().map(make_index));
         result.extend(expr.into_iter().cloned().map(IndexColumnOp::Scan));
 
         (result, done)
