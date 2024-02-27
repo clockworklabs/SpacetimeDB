@@ -746,18 +746,18 @@ impl Query {
 // IndexArgument represents an equality or range predicate that can be answered
 // using an index.
 #[derive(Debug, PartialEq, Clone)]
-enum IndexArgument {
+enum IndexArgument<'a> {
     Eq {
-        columns: ColList,
+        columns: &'a ColList,
         value: AlgebraicValue,
     },
     LowerBound {
-        columns: ColList,
+        columns: &'a ColList,
         value: AlgebraicValue,
         inclusive: bool,
     },
     UpperBound {
-        columns: ColList,
+        columns: &'a ColList,
         value: AlgebraicValue,
         inclusive: bool,
     },
@@ -765,7 +765,7 @@ enum IndexArgument {
 
 #[derive(Debug, PartialEq, Clone)]
 enum IndexColumnOp<'a> {
-    Index(IndexArgument),
+    Index(IndexArgument<'a>),
     Scan(&'a ColumnOp),
 }
 
@@ -797,7 +797,7 @@ fn ext_cmp_field_val<'a>(
     }
 }
 
-fn make_index_arg<'a>(cmp: OpCmp, columns: ColList, value: AlgebraicValue) -> IndexColumnOp<'a> {
+fn make_index_arg(cmp: OpCmp, columns: &ColList, value: AlgebraicValue) -> IndexColumnOp<'_> {
     let arg = match cmp {
         OpCmp::Eq => IndexArgument::Eq { columns, value },
         // a < 5 => exclusive upper bound
@@ -937,9 +937,7 @@ fn select_best_index<'a>(
             // we want to avoid the `ProductValue` indirection of below.
             for FieldValue { cmp, value, field, .. } in fields_map.remove(&(col_list.head(), cmp)).into_iter().flatten()
             {
-                let columns = col_list.clone();
-                let value = value.clone();
-                found.push(make_index_arg(cmp, columns, value));
+                found.push(make_index_arg(cmp, col_list, value.clone()));
                 fields_indexed.insert((&field.field, cmp));
             }
         } else if col_list
@@ -970,9 +968,7 @@ fn select_best_index<'a>(
                 fields_indexed.insert((&field.field.field, cmp));
             }
             let value = AlgebraicValue::product(elems);
-
-            let columns = col_list.clone();
-            found.push(make_index_arg(cmp, columns, value));
+            found.push(make_index_arg(cmp, col_list, value));
         }
     }
 
@@ -987,13 +983,9 @@ fn select_best_index<'a>(
     (found, fields_indexed)
 }
 
-/// Extracts a list of `field = val` constraints and other `ColumnOp`s.
-///
-/// # Returns
-///
-/// - A list of [FieldValue] that *could* be answered by a `index`.
-/// - A list of [ColumnOp] otherwise
-fn extract_fields<'a>(ops: &[&'a ColumnOp], table: &'a SourceExpr) -> (Vec<FieldValue<'a>>, Vec<&'a ColumnOp>) {
+/// Extracts a list of `field = val` constraints that *could* be answered by an index.
+/// The [`ColumnOp`]s that don't fit `field = val` are made into [`IndexColumnOp::Scan`]s immediately.
+fn extract_fields<'a>(ops: &[&'a ColumnOp], table: &'a SourceExpr) -> (Vec<FieldValue<'a>>, Vec<IndexColumnOp<'a>>) {
     let mut expr = Vec::new();
     let mut fields = Vec::new();
     let mut add_field = |parent, op, field, val| fields.push(FieldValue::new(parent, op, field, val));
@@ -1032,7 +1024,7 @@ fn extract_fields<'a>(ops: &[&'a ColumnOp], table: &'a SourceExpr) -> (Vec<Field
             | ColumnOp::Field(_) => {}
         }
 
-        expr.push(*op);
+        expr.push(IndexColumnOp::Scan(op));
     }
 
     (fields, expr)
@@ -1045,9 +1037,9 @@ fn is_sargable<'a>(
     op: &'a ColumnOp,
 ) -> (SmallVec<[IndexColumnOp<'a>; 1]>, HashSet<(&'a FieldName, OpCmp)>) {
     let many = |ops: &[&'a ColumnOp]| {
-        let (fields, expr) = extract_fields(ops, table);
+        let (fields, other_scans) = extract_fields(ops, table);
         let (mut result, done) = select_best_index(table.head(), fields);
-        result.extend(expr.into_iter().map(IndexColumnOp::Scan));
+        result.extend(other_scans);
         (result, done)
     };
 
@@ -1636,21 +1628,21 @@ impl QueryExpr {
                     // found sargable equality condition for one of the table schemas
                     IndexColumnOp::Index(idx) => match idx {
                         IndexArgument::Eq { columns, value } => {
-                            q = q.with_index_eq(schema.into(), columns, value);
+                            q = q.with_index_eq(schema.into(), columns.clone(), value);
                         }
                         IndexArgument::LowerBound {
                             columns,
                             value,
                             inclusive,
                         } => {
-                            q = q.with_index_lower_bound(schema.into(), columns, value, inclusive);
+                            q = q.with_index_lower_bound(schema.into(), columns.clone(), value, inclusive);
                         }
                         IndexArgument::UpperBound {
                             columns,
                             value,
                             inclusive,
                         } => {
-                            q = q.with_index_upper_bound(schema.into(), columns, value, inclusive);
+                            q = q.with_index_upper_bound(schema.into(), columns.clone(), value, inclusive);
                         }
                     },
                     // Filter condition cannot be answered using an index.
@@ -2217,7 +2209,9 @@ mod tests {
                 .collect();
             select_best_index(&head1, fields).0
         };
-        let idx_eq = |cols, val| make_index_arg(OpCmp::Eq, cols, val);
+
+        let col_list_arena = Arena::new();
+        let idx_eq = |cols, val| make_index_arg(OpCmp::Eq, col_list_arena.alloc(cols), val);
 
         // Check for simple scan
         assert_eq!(
@@ -2310,6 +2304,8 @@ mod tests {
             let fields = fields.iter().map(|x| make_field_value(&arena, *x)).collect();
             select_best_index(&head1, fields).0
         };
+
+        let col_list_arena = Arena::new();
         let idx = |cmp, cols: &[&Column], val: &AlgebraicValue| {
             let columns = cols
                 .iter()
@@ -2317,6 +2313,7 @@ mod tests {
                 .collect::<ColListBuilder>()
                 .build()
                 .unwrap();
+            let columns = col_list_arena.alloc(columns);
             make_index_arg(cmp, columns, val.clone())
         };
 
