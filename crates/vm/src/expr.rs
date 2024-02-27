@@ -764,9 +764,9 @@ enum IndexArgument {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-enum IndexColumnOp {
+enum IndexColumnOp<'a> {
     Index(IndexArgument),
-    Scan(ColumnOp),
+    Scan(&'a ColumnOp),
 }
 
 /// Extracts `name = val` when `lhs` is a field that exists and `rhs` is a value.
@@ -797,7 +797,7 @@ fn ext_cmp_field_val<'a>(
     }
 }
 
-fn make_index_arg(cmp: OpCmp, columns: ColList, value: AlgebraicValue) -> IndexColumnOp {
+fn make_index_arg<'a>(cmp: OpCmp, columns: ColList, value: AlgebraicValue) -> IndexColumnOp<'a> {
     let arg = match cmp {
         OpCmp::Eq => IndexArgument::Eq { columns, value },
         // a < 5 => exclusive upper bound
@@ -831,25 +831,22 @@ fn make_index_arg(cmp: OpCmp, columns: ColList, value: AlgebraicValue) -> IndexC
     IndexColumnOp::Index(arg)
 }
 
-fn make_scan_arg(cmp: OpCmp, field: &FieldName, value: AlgebraicValue) -> IndexColumnOp {
-    let from_expr = |expr| Box::new(ColumnOp::Field(expr));
-    IndexColumnOp::Scan(ColumnOp::Cmp {
-        op: OpQuery::Cmp(cmp),
-        lhs: from_expr(FieldExpr::Name(field.clone())),
-        rhs: from_expr(FieldExpr::Value(value)),
-    })
-}
-
 #[derive(Debug)]
 struct FieldValue<'a> {
+    parent: &'a ColumnOp,
     cmp: OpCmp,
     field: &'a Column,
     value: &'a AlgebraicValue,
 }
 
 impl<'a> FieldValue<'a> {
-    pub fn new(cmp: OpCmp, field: &'a Column, value: &'a AlgebraicValue) -> Self {
-        Self { cmp, field, value }
+    pub fn new(parent: &'a ColumnOp, cmp: OpCmp, field: &'a Column, value: &'a AlgebraicValue) -> Self {
+        Self {
+            parent,
+            cmp,
+            field,
+            value,
+        }
     }
 }
 
@@ -898,7 +895,7 @@ impl<'a> FieldValue<'a> {
 fn select_best_index<'a>(
     header: &'a Header,
     fields: Vec<FieldValue<'a>>,
-) -> (SmallVec<[IndexColumnOp; 1]>, HashSet<(&'a FieldName, OpCmp)>) {
+) -> (SmallVec<[IndexColumnOp<'a>; 1]>, HashSet<(&'a FieldName, OpCmp)>) {
     let mut found = SmallVec::with_capacity(fields.len());
     let mut fields_indexed = HashSet::new();
 
@@ -938,7 +935,8 @@ fn select_best_index<'a>(
         if col_list.is_singleton() {
             // For a single column index,
             // we want to avoid the `ProductValue` indirection of below.
-            for FieldValue { cmp, value, field } in fields_map.remove(&(col_list.head(), cmp)).into_iter().flatten() {
+            for FieldValue { cmp, value, field, .. } in fields_map.remove(&(col_list.head(), cmp)).into_iter().flatten()
+            {
                 let columns = col_list.clone();
                 let value = value.clone();
                 found.push(make_index_arg(cmp, columns, value));
@@ -983,7 +981,7 @@ fn select_best_index<'a>(
         fields_map
             .into_iter()
             .flat_map(|(_, fs)| fs)
-            .map(|f| make_scan_arg(f.cmp, &f.field.field, f.value.clone())),
+            .map(|f| IndexColumnOp::Scan(f.parent)),
     );
 
     (found, fields_indexed)
@@ -998,7 +996,7 @@ fn select_best_index<'a>(
 fn extract_fields<'a>(ops: &[&'a ColumnOp], table: &'a SourceExpr) -> (Vec<FieldValue<'a>>, Vec<&'a ColumnOp>) {
     let mut expr = Vec::new();
     let mut fields = Vec::new();
-    let mut add_field = |op, field, val| fields.push(FieldValue::new(op, field, val));
+    let mut add_field = |parent, op, field, val| fields.push(FieldValue::new(parent, op, field, val));
 
     for op in ops {
         match op {
@@ -1009,7 +1007,7 @@ fn extract_fields<'a>(ops: &[&'a ColumnOp], table: &'a SourceExpr) -> (Vec<Field
             } => {
                 if let Some((field, val)) = ext_field_val(table, lhs, rhs) {
                     // `lhs` must be a field that exists and `rhs` must be a value.
-                    add_field(*cmp, field, val);
+                    add_field(op, *cmp, field, val);
                     continue;
                 }
             }
@@ -1021,8 +1019,8 @@ fn extract_fields<'a>(ops: &[&'a ColumnOp], table: &'a SourceExpr) -> (Vec<Field
                 if let Some((op_lhs, col_lhs, val_lhs)) = ext_cmp_field_val(table, lhs) {
                     if let Some((op_rhs, col_rhs, val_rhs)) = ext_cmp_field_val(table, rhs) {
                         // Both lhs and rhs columns must exist.
-                        add_field(*op_lhs, col_lhs, val_lhs);
-                        add_field(*op_rhs, col_rhs, val_rhs);
+                        add_field(op, *op_lhs, col_lhs, val_lhs);
+                        add_field(op, *op_rhs, col_rhs, val_rhs);
                         continue;
                     }
                 }
@@ -1045,11 +1043,11 @@ fn extract_fields<'a>(ops: &[&'a ColumnOp], table: &'a SourceExpr) -> (Vec<Field
 fn is_sargable<'a>(
     table: &'a SourceExpr,
     op: &'a ColumnOp,
-) -> (SmallVec<[IndexColumnOp; 1]>, HashSet<(&'a FieldName, OpCmp)>) {
+) -> (SmallVec<[IndexColumnOp<'a>; 1]>, HashSet<(&'a FieldName, OpCmp)>) {
     let many = |ops: &[&'a ColumnOp]| {
         let (fields, expr) = extract_fields(ops, table);
         let (mut result, done) = select_best_index(table.head(), fields);
-        result.extend(expr.into_iter().cloned().map(IndexColumnOp::Scan));
+        result.extend(expr.into_iter().map(IndexColumnOp::Scan));
         (result, done)
     };
 
@@ -1057,7 +1055,7 @@ fn is_sargable<'a>(
     if ops_flat.len() == 1 {
         match ops_flat.swap_remove(0) {
             // Special case; fast path for a single field.
-            op @ ColumnOp::Field(_) => (smallvec![IndexColumnOp::Scan(op.clone())], <_>::default()),
+            op @ ColumnOp::Field(_) => (smallvec![IndexColumnOp::Scan(op)], <_>::default()),
             op => many(&[op]),
         }
     } else {
@@ -1655,10 +1653,8 @@ impl QueryExpr {
                             q = q.with_index_upper_bound(schema.into(), columns, value, inclusive);
                         }
                     },
-                    IndexColumnOp::Scan(scan) => {
-                        // filter condition cannot be answered using an index
-                        q = q.with_select(scan);
-                    }
+                    // Filter condition cannot be answered using an index.
+                    IndexColumnOp::Scan(scan) => q = q.with_select(scan.clone()),
                 }
             }
         }
@@ -1969,6 +1965,7 @@ mod tests {
     use super::*;
     use crate::relation::{MemTable, Table};
     use spacetimedb_sats::product;
+    use typed_arena::Arena;
 
     const ALICE: Identity = Identity::from_byte_array([1; 32]);
     const BOB: Identity = Identity::from_byte_array([2; 32]);
@@ -2183,35 +2180,64 @@ mod tests {
         (head1, fields, vals)
     }
 
+    fn make_field_value<'a>(
+        arena: &'a Arena<ColumnOp>,
+        (cmp, col, value): (OpCmp, &'a Column, &'a AlgebraicValue),
+    ) -> FieldValue<'a> {
+        let from_expr = |expr| Box::new(ColumnOp::Field(expr));
+        let op = ColumnOp::Cmp {
+            op: OpQuery::Cmp(cmp),
+            lhs: from_expr(FieldExpr::Name(col.field.clone())),
+            rhs: from_expr(FieldExpr::Value(value.clone())),
+        };
+        let parent = arena.alloc(op);
+        FieldValue::new(parent, cmp, col, value)
+    }
+
+    fn scan_eq<'a>(arena: &'a Arena<ColumnOp>, col: &'a Column, val: &'a AlgebraicValue) -> IndexColumnOp<'a> {
+        scan(arena, OpCmp::Eq, col, val)
+    }
+
+    fn scan<'a>(arena: &'a Arena<ColumnOp>, cmp: OpCmp, col: &'a Column, val: &'a AlgebraicValue) -> IndexColumnOp<'a> {
+        IndexColumnOp::Scan(make_field_value(arena, (cmp, col, val)).parent)
+    }
+
     #[test]
     fn best_index() {
         let (head1, fields, vals) = setup_best_index();
         let [col_a, col_b, col_c, col_d, col_e] = fields;
         let [val_a, val_b, val_c, val_d, val_e] = vals;
 
-        let fv_eq = |field, value| FieldValue::new(OpCmp::Eq, field, value);
-        let scan_eq = |col: &Column, val: &AlgebraicValue| make_scan_arg(OpCmp::Eq, &col.field, val.clone());
+        let arena = Arena::new();
+        let select_best_index = |fields: &[_]| {
+            let fields = fields
+                .iter()
+                .copied()
+                .map(|(col, val)| make_field_value(&arena, (OpCmp::Eq, col, val)))
+                .collect();
+            select_best_index(&head1, fields).0
+        };
         let idx_eq = |cols, val| make_index_arg(OpCmp::Eq, cols, val);
 
         // Check for simple scan
         assert_eq!(
-            select_best_index(&head1, vec![fv_eq(&col_d, &val_e)]).0,
-            [scan_eq(&col_d, &val_e)].into(),
+            select_best_index(&[(&col_d, &val_e)]),
+            [scan_eq(&arena, &col_d, &val_e)].into(),
         );
 
         assert_eq!(
-            select_best_index(&head1, vec![fv_eq(&col_a, &val_a)]).0,
+            select_best_index(&[(&col_a, &val_a)]),
             [idx_eq(col_a.col_id.into(), val_a.clone())].into(),
         );
 
         assert_eq!(
-            select_best_index(&head1, vec![fv_eq(&col_b, &val_b)]).0,
+            select_best_index(&[(&col_b, &val_b)]),
             [idx_eq(col_b.col_id.into(), val_b.clone())].into(),
         );
 
         // Check for permutation
         assert_eq!(
-            select_best_index(&head1, vec![fv_eq(&col_b, &val_b), fv_eq(&col_c, &val_c)]).0,
+            select_best_index(&[(&col_b, &val_b), (&col_c, &val_c)]),
             [idx_eq(
                 col_list![col_b.col_id, col_c.col_id],
                 product![val_b.clone(), val_c.clone()].into()
@@ -2220,7 +2246,7 @@ mod tests {
         );
 
         assert_eq!(
-            select_best_index(&head1, vec![fv_eq(&col_c, &val_c), fv_eq(&col_b, &val_b)]).0,
+            select_best_index(&[(&col_c, &val_c), (&col_b, &val_b)]),
             [idx_eq(
                 col_list![col_b.col_id, col_c.col_id],
                 product![val_b.clone(), val_c.clone()].into()
@@ -2230,16 +2256,7 @@ mod tests {
 
         // Check for permutation
         assert_eq!(
-            select_best_index(
-                &head1,
-                vec![
-                    fv_eq(&col_a, &val_a),
-                    fv_eq(&col_b, &val_b),
-                    fv_eq(&col_c, &val_c),
-                    fv_eq(&col_d, &val_d),
-                ]
-            )
-            .0,
+            select_best_index(&[(&col_a, &val_a), (&col_b, &val_b), (&col_c, &val_c), (&col_d, &val_d)]),
             [idx_eq(
                 col_list![col_a.col_id, col_b.col_id, col_c.col_id, col_d.col_id],
                 product![val_a.clone(), val_b.clone(), val_c.clone(), val_d.clone()].into(),
@@ -2248,16 +2265,7 @@ mod tests {
         );
 
         assert_eq!(
-            select_best_index(
-                &head1,
-                vec![
-                    fv_eq(&col_b, &val_b),
-                    fv_eq(&col_a, &val_a),
-                    fv_eq(&col_d, &val_d),
-                    fv_eq(&col_c, &val_c),
-                ],
-            )
-            .0,
+            select_best_index(&[(&col_b, &val_b), (&col_a, &val_a), (&col_d, &val_d), (&col_c, &val_c)]),
             [idx_eq(
                 col_list![col_a.col_id, col_b.col_id, col_c.col_id, col_d.col_id],
                 product![val_a.clone(), val_b.clone(), val_c.clone(), val_d.clone()].into(),
@@ -2267,37 +2275,24 @@ mod tests {
 
         // Check mix scan + index
         assert_eq!(
-            select_best_index(
-                &head1,
-                vec![
-                    fv_eq(&col_b, &val_b),
-                    fv_eq(&col_a, &val_a),
-                    fv_eq(&col_e, &val_e),
-                    fv_eq(&col_d, &val_d),
-                ],
-            )
-            .0,
+            select_best_index(&[(&col_b, &val_b), (&col_a, &val_a), (&col_e, &val_e), (&col_d, &val_d)]),
             [
                 idx_eq(col_a.col_id.into(), val_a.clone()),
                 idx_eq(col_b.col_id.into(), val_b.clone()),
-                scan_eq(&col_d, &val_d),
-                scan_eq(&col_e, &val_e),
+                scan_eq(&arena, &col_d, &val_d),
+                scan_eq(&arena, &col_e, &val_e),
             ]
             .into()
         );
 
         assert_eq!(
-            select_best_index(
-                &head1,
-                vec![fv_eq(&col_b, &val_b), fv_eq(&col_c, &val_c), fv_eq(&col_d, &val_d)],
-            )
-            .0,
+            select_best_index(&[(&col_b, &val_b), (&col_c, &val_c), (&col_d, &val_d)]),
             [
                 idx_eq(
                     col_list![col_b.col_id, col_c.col_id],
                     product![val_b.clone(), val_c.clone()].into(),
                 ),
-                scan_eq(&col_d, &val_d),
+                scan_eq(&arena, &col_d, &val_d),
             ]
             .into()
         );
@@ -2305,11 +2300,16 @@ mod tests {
 
     #[test]
     fn best_index_range() {
+        let arena = Arena::new();
+
         let (head1, fields, vals) = setup_best_index();
         let [col_a, col_b, col_c, col_d, _] = fields;
         let [val_a, val_b, val_c, val_d, _] = vals;
 
-        let scan = |cmp: OpCmp, col: &Column, val: &AlgebraicValue| make_scan_arg(cmp, &col.field, val.clone());
+        let select_best_index = |fields: &[_]| {
+            let fields = fields.iter().map(|x| make_field_value(&arena, *x)).collect();
+            select_best_index(&head1, fields).0
+        };
         let idx = |cmp, cols: &[&Column], val: &AlgebraicValue| {
             let columns = cols
                 .iter()
@@ -2322,53 +2322,36 @@ mod tests {
 
         // Same field indexed
         assert_eq!(
-            select_best_index(
-                &head1,
-                vec![
-                    FieldValue::new(OpCmp::Gt, &col_a, &val_a),
-                    FieldValue::new(OpCmp::Lt, &col_a, &val_b),
-                ],
-            )
-            .0,
+            select_best_index(&[(OpCmp::Gt, &col_a, &val_a), (OpCmp::Lt, &col_a, &val_b)]),
             [idx(OpCmp::Lt, &[&col_a], &val_b), idx(OpCmp::Gt, &[&col_a], &val_a)].into()
         );
 
         // Same field scan
         assert_eq!(
-            select_best_index(
-                &head1,
-                vec![
-                    FieldValue::new(OpCmp::Gt, &col_d, &val_d),
-                    FieldValue::new(OpCmp::Lt, &col_d, &val_b),
-                ],
-            )
-            .0,
-            [scan(OpCmp::Lt, &col_d, &val_b), scan(OpCmp::Gt, &col_d, &val_d)].into()
+            select_best_index(&[(OpCmp::Gt, &col_d, &val_d), (OpCmp::Lt, &col_d, &val_b)]),
+            [
+                scan(&arena, OpCmp::Lt, &col_d, &val_b),
+                scan(&arena, OpCmp::Gt, &col_d, &val_d)
+            ]
+            .into()
         );
         // One indexed other scan
         assert_eq!(
-            select_best_index(
-                &head1,
-                vec![
-                    FieldValue::new(OpCmp::Gt, &col_b, &val_b),
-                    FieldValue::new(OpCmp::Lt, &col_c, &val_c),
-                ],
-            )
-            .0,
-            [idx(OpCmp::Gt, &[&col_b], &val_b), scan(OpCmp::Lt, &col_c, &val_c)].into()
+            select_best_index(&[(OpCmp::Gt, &col_b, &val_b), (OpCmp::Lt, &col_c, &val_c)]),
+            [
+                idx(OpCmp::Gt, &[&col_b], &val_b),
+                scan(&arena, OpCmp::Lt, &col_c, &val_c)
+            ]
+            .into()
         );
 
         // 1 multi-indexed 1 index
         assert_eq!(
-            select_best_index(
-                &head1,
-                vec![
-                    FieldValue::new(OpCmp::Eq, &col_b, &val_b),
-                    FieldValue::new(OpCmp::GtEq, &col_a, &val_a),
-                    FieldValue::new(OpCmp::Eq, &col_c, &val_c),
-                ],
-            )
-            .0,
+            select_best_index(&[
+                (OpCmp::Eq, &col_b, &val_b),
+                (OpCmp::GtEq, &col_a, &val_a),
+                (OpCmp::Eq, &col_c, &val_c),
+            ]),
             [
                 idx(
                     OpCmp::Eq,
@@ -2382,19 +2365,15 @@ mod tests {
 
         // 1 indexed 2 scan
         assert_eq!(
-            select_best_index(
-                &head1,
-                vec![
-                    FieldValue::new(OpCmp::Gt, &col_b, &val_b),
-                    FieldValue::new(OpCmp::Eq, &col_a, &val_a),
-                    FieldValue::new(OpCmp::Lt, &col_c, &val_c),
-                ],
-            )
-            .0,
+            select_best_index(&[
+                (OpCmp::Gt, &col_b, &val_b),
+                (OpCmp::Eq, &col_a, &val_a),
+                (OpCmp::Lt, &col_c, &val_c),
+            ]),
             [
                 idx(OpCmp::Eq, &[&col_a], &val_a),
                 idx(OpCmp::Gt, &[&col_b], &val_b),
-                scan(OpCmp::Lt, &col_c, &val_c),
+                scan(&arena, OpCmp::Lt, &col_c, &val_c),
             ]
             .into()
         );
