@@ -185,16 +185,17 @@ pub struct Iter<'a> {
 #[cfg(feature = "metrics")]
 impl Drop for Iter<'_> {
     fn drop(&mut self) {
-        DB_METRICS
-            .rdb_num_rows_fetched
-            .with_label_values(
-                &self.ctx.workload(),
-                &self.ctx.database(),
-                self.ctx.reducer_name(),
-                &self.table_id.into(),
-                self.table_name,
-            )
-            .inc_by(self.num_committed_rows_fetched);
+        let n = self.num_committed_rows_fetched;
+        DB_METRICS.rdb_num_rows_fetched.with_label_values_async(
+            &self.ctx.workload(),
+            &self.ctx.database(),
+            self.ctx.reducer_name(),
+            &self.table_id.into(),
+            self.table_name,
+            move |met| {
+                met.inc_by(n);
+            },
+        );
     }
 }
 
@@ -359,10 +360,17 @@ impl Drop for IndexSeekIterMutTxId<'_> {
             );
 
         // Increment number of rows fetched
-        DB_METRICS
-            .rdb_num_rows_fetched
-            .with_label_values(workload, db, reducer_name, table_id, table_name)
-            .inc_by(self.num_committed_rows_fetched);
+        let n = self.num_committed_rows_fetched;
+        DB_METRICS.rdb_num_rows_fetched.with_label_values_async(
+            workload,
+            db,
+            reducer_name,
+            table_id,
+            table_name,
+            move |met| {
+                met.inc_by(n);
+            },
+        );
     }
 }
 

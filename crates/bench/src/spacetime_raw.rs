@@ -8,12 +8,15 @@ use spacetimedb::execution_context::ExecutionContext;
 use spacetimedb_lib::sats::AlgebraicValue;
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::db::def::{IndexDef, TableDef};
+use spacetimedb_testing::modules::start_runtime;
 use std::hint::black_box;
 use tempdir::TempDir;
+use tokio::runtime::Runtime;
 
 pub type DbResult = (RelationalDB, TempDir, u32);
 
 pub struct SpacetimeRaw {
+    runtime: Runtime,
     db: RelationalDB,
     _temp_dir: TempDir,
 }
@@ -28,10 +31,12 @@ impl BenchDatabase for SpacetimeRaw {
     where
         Self: Sized,
     {
+        let runtime = start_runtime();
         let temp_dir = TempDir::new("stdb_test")?;
-        let db = open_db(temp_dir.path(), in_memory, fsync)?;
+        let db = runtime.block_on(async { open_db(temp_dir.path(), in_memory, fsync).unwrap() });
 
         Ok(SpacetimeRaw {
+            runtime: start_runtime(),
             db,
             _temp_dir: temp_dir,
         })
@@ -39,35 +44,38 @@ impl BenchDatabase for SpacetimeRaw {
 
     fn create_table<T: BenchTable>(&mut self, index_strategy: IndexStrategy) -> ResultBench<Self::TableId> {
         let name = table_name::<T>(index_strategy);
-        self.db.with_auto_commit(&ExecutionContext::default(), |tx| {
-            let table_def = TableDef::from_product(&name, T::product_type());
-            let table_id = self.db.create_table(tx, table_def)?;
-            self.db.rename_table(tx, table_id, &name)?;
-            match index_strategy {
-                IndexStrategy::Unique0 => {
-                    self.db
-                        .create_index(tx, table_id, IndexDef::btree("id".into(), ColId(0), true))?;
-                }
-                IndexStrategy::NoIndex => (),
-                IndexStrategy::BTreeEachColumn => {
-                    for (i, column) in T::product_type().elements.iter().enumerate() {
-                        self.db.create_index(
-                            tx,
-                            table_id,
-                            IndexDef::btree(column.name.clone().unwrap(), ColId(i as u32), false),
-                        )?;
+        self.runtime.block_on(async {
+            self.db.with_auto_commit(&ExecutionContext::default(), |tx| {
+                let table_def = TableDef::from_product(&name, T::product_type());
+                let table_id = self.db.create_table(tx, table_def)?;
+                self.db.rename_table(tx, table_id, &name)?;
+                match index_strategy {
+                    IndexStrategy::Unique0 => {
+                        self.db
+                            .create_index(tx, table_id, IndexDef::btree("id".into(), ColId(0), true))?;
+                    }
+                    IndexStrategy::NoIndex => (),
+                    IndexStrategy::BTreeEachColumn => {
+                        for (i, column) in T::product_type().elements.iter().enumerate() {
+                            self.db.create_index(
+                                tx,
+                                table_id,
+                                IndexDef::btree(column.name.clone().unwrap(), ColId(i as u32), false),
+                            )?;
+                        }
                     }
                 }
-            }
-
-            Ok(table_id)
+                Ok(table_id)
+            })
         })
     }
 
     fn clear_table(&mut self, table_id: &Self::TableId) -> ResultBench<()> {
-        self.db.with_auto_commit(&ExecutionContext::default(), |tx| {
-            self.db.clear_table(tx, *table_id)?;
-            Ok(())
+        self.runtime.block_on(async {
+            self.db.with_auto_commit(&ExecutionContext::default(), |tx| {
+                self.db.clear_table(tx, *table_id)?;
+                Ok(())
+            })
         })
     }
 
