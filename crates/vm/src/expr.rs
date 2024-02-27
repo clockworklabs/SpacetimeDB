@@ -424,8 +424,12 @@ impl IndexJoin {
         // during construction of the index join.
         let probe_column = self.probe_side.source.head().column(&self.probe_field).unwrap().col_id;
         match self.index_side {
-            // If the size of the indexed table is sufficiently large, do not reorder.
-            Table::DbTable(DbTable { table_id, ref head, .. }) if row_count(table_id, &head.table_name) > 1000 => self,
+            // If the size of the indexed table is sufficiently large,
+            // do not reorder.
+            //
+            // TODO: This determination is quite arbitrary.
+            // Ultimately we should be using cardinality estimation.
+            Table::DbTable(DbTable { table_id, ref head, .. }) if row_count(table_id, &head.table_name) > 3000 => self,
             // If this is a delta table, we must reorder.
             // If this is a sufficiently small physical table, we should reorder.
             table => {
