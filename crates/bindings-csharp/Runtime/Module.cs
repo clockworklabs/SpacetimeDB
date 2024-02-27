@@ -300,14 +300,6 @@ public static class FFI
         }
     }
 
-    private static byte[] Consume(this RawBindings.Buffer buffer)
-    {
-        var len = RawBindings._buffer_len(buffer);
-        var result = new byte[len];
-        RawBindings._buffer_consume(buffer, result, len);
-        return result;
-    }
-
     // [UnmanagedCallersOnly(EntryPoint = "__call_reducer__")]
     public static RawBindings.Buffer __call_reducer__(
         uint id,
