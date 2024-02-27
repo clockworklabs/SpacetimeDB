@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use derive_more::Display;
-use parking_lot::{Mutex};
+use parking_lot::Mutex;
 use spacetimedb_lib::Address;
 use spacetimedb_primitives::TableId;
 
@@ -18,7 +18,7 @@ pub struct RecordMetrics {
 /// Represents the context under which a database runtime method is executed.
 /// In particular it provides details about the currently executing txn to runtime operations.
 /// More generally it acts as a container for information that database operations may require to function correctly.
-#[derive(Default, Clone)]
+#[derive(Default)]
 pub struct ExecutionContext<'a> {
     /// The database on which a transaction is being executed.
     database: Address,
@@ -127,37 +127,43 @@ impl Drop for ExecutionContext<'_> {
         let metric = self.metrics.clone();
         log::info!("dropping execution context");
         tokio::task::spawn_blocking(move || {
-            let mut tables = 0;
             let metrics = metric.lock();
-            if !metrics.rdb_num_index_seeks.is_empty() {
-                metrics.rdb_num_index_seeks.iter().for_each(|(table_id, count)| {
-                    DB_METRICS
-                        .rdb_num_index_seeks
-                        .with_label_values(&workload, &database, &reducer, &table_id.0, &metrics.cache_table_name[&table_id])
-                        .inc_by(*count);
-                    tables+=1;
-                });
-            }
-            if !metrics.rdb_num_keys_scanned.is_empty() {
-                metrics.rdb_num_index_seeks.iter().for_each(|(table_id, count)| {
-                    DB_METRICS
-                        .rdb_num_index_seeks
-                        .with_label_values(&workload, &database, &reducer, &table_id.0, &metrics.cache_table_name[&table_id])
-                        .inc_by(*count);
-                    tables+=1;
-                });
-            }
-            if !metrics.rdb_num_rows_fetched.is_empty() {
-                metrics.rdb_num_index_seeks.iter().for_each(|(table_id, count)| {
-                    DB_METRICS
-                        .rdb_num_index_seeks
-                        .with_label_values(&workload, &database, &reducer, &table_id.0, &metrics.cache_table_name[&table_id])
-                        .inc_by(*count);
-                    tables+=1;
-                });
-
-                log::info!("dropping tables execution context {:?}", tables);
-            }
+            metrics.rdb_num_index_seeks.iter().for_each(|(table_id, count)| {
+                DB_METRICS
+                    .rdb_num_index_seeks
+                    .with_label_values(
+                        &workload,
+                        &database,
+                        &reducer,
+                        &table_id.0,
+                        &metrics.cache_table_name[&table_id],
+                    )
+                    .inc_by(*count);
+            });
+            metrics.rdb_num_keys_scanned.iter().for_each(|(table_id, count)| {
+                DB_METRICS
+                    .rdb_num_keys_scanned
+                    .with_label_values(
+                        &workload,
+                        &database,
+                        &reducer,
+                        &table_id.0,
+                        &metrics.cache_table_name[&table_id],
+                    )
+                    .inc_by(*count);
+            });
+            metrics.rdb_num_rows_fetched.iter().for_each(|(table_id, count)| {
+                DB_METRICS
+                    .rdb_num_rows_fetched
+                    .with_label_values(
+                        &workload,
+                        &database,
+                        &reducer,
+                        &table_id.0,
+                        &metrics.cache_table_name[&table_id],
+                    )
+                    .inc_by(*count);
+            });
         });
     }
 }
