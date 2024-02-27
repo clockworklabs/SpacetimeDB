@@ -1,13 +1,13 @@
-use crate::dsl::mem_table;
+use std::sync::Arc;
+
 use crate::errors::ErrorVm;
 use crate::expr::{Code, CrudCode, CrudExpr, QueryCode, QueryExpr, SourceExpr};
 use crate::expr::{Expr, Query};
 use crate::iterators::RelIter;
 use crate::program::ProgramVm;
 use crate::rel_ops::RelOps;
-use crate::relation::{MemTable, RelValue, Table};
+use crate::relation::{RelValue, Table};
 use spacetimedb_sats::relation::{FieldExpr, Relation};
-use spacetimedb_sats::{product, AlgebraicType, ProductType};
 
 fn compile_query(q: QueryExpr) -> QueryCode {
     match q.source {
@@ -113,7 +113,7 @@ pub fn build_query<'a>(mut result: Box<IterRows<'a>>, query: Vec<Query>) -> Resu
 
                 let iter = lhs.join_inner(
                     rhs,
-                    col_lhs_header.extend(&col_rhs_header),
+                    Arc::new(col_lhs_header.extend(&col_rhs_header)),
                     move |row| Ok(row.get(&key_lhs, &key_lhs_header)?.into_owned().into()),
                     move |row| Ok(row.get(&key_rhs, &key_rhs_header)?.into_owned().into()),
                     move |l, r| {
@@ -189,44 +189,49 @@ pub fn run_ast<P: ProgramVm>(p: &mut P, ast: Expr) -> Code {
     eval(p, code)
 }
 
-// Used internally for testing SQL JOINS
+/// Used internally for testing SQL JOINS.
 #[doc(hidden)]
-pub struct GameData {
-    pub location: MemTable,
-    pub inv: MemTable,
-    pub player: MemTable,
-}
-// Used internally for testing  SQL JOINS
-#[doc(hidden)]
-pub fn create_game_data() -> GameData {
-    let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
-    let row = product!(1u64, "health");
-    let inv = mem_table(head, [row]);
+pub mod test_data {
+    use crate::{dsl::mem_table, relation::MemTable};
+    use spacetimedb_sats::{product, AlgebraicType, ProductType};
 
-    let head = ProductType::from([("entity_id", AlgebraicType::U64), ("inventory_id", AlgebraicType::U64)]);
-    let row1 = product!(100u64, 1u64);
-    let row2 = product!(200u64, 1u64);
-    let row3 = product!(300u64, 1u64);
-    let player = mem_table(head, [row1, row2, row3]);
+    pub struct GameData {
+        pub location: MemTable,
+        pub inv: MemTable,
+        pub player: MemTable,
+    }
 
-    let head = ProductType::from([
-        ("entity_id", AlgebraicType::U64),
-        ("x", AlgebraicType::F32),
-        ("z", AlgebraicType::F32),
-    ]);
-    let row1 = product!(100u64, 0.0f32, 32.0f32);
-    let row2 = product!(100u64, 1.0f32, 31.0f32);
-    let location = mem_table(head, [row1, row2]);
+    pub fn create_game_data() -> GameData {
+        let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
+        let row = product!(1u64, "health");
+        let inv = mem_table(head, [row]);
 
-    GameData { location, inv, player }
+        let head = ProductType::from([("entity_id", AlgebraicType::U64), ("inventory_id", AlgebraicType::U64)]);
+        let row1 = product!(100u64, 1u64);
+        let row2 = product!(200u64, 1u64);
+        let row3 = product!(300u64, 1u64);
+        let player = mem_table(head, [row1, row2, row3]);
+
+        let head = ProductType::from([
+            ("entity_id", AlgebraicType::U64),
+            ("x", AlgebraicType::F32),
+            ("z", AlgebraicType::F32),
+        ]);
+        let row1 = product!(100u64, 0.0f32, 32.0f32);
+        let row2 = product!(100u64, 1.0f32, 31.0f32);
+        let location = mem_table(head, [row1, row2]);
+
+        GameData { location, inv, player }
+    }
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     #![allow(clippy::disallowed_macros)]
 
+    use super::test_data::*;
     use super::*;
-    use crate::dsl::{query, scalar};
+    use crate::dsl::{mem_table, query, scalar};
     use crate::program::Program;
     use crate::relation::MemTable;
     use spacetimedb_lib::identity::AuthCtx;
@@ -234,6 +239,7 @@ mod tests {
     use spacetimedb_sats::db::auth::StAccess;
     use spacetimedb_sats::db::error::RelationError;
     use spacetimedb_sats::relation::FieldName;
+    use spacetimedb_sats::{product, AlgebraicType, ProductType};
 
     fn run_query(p: &mut Program, ast: Expr) -> MemTable {
         match run_ast(p, ast) {
@@ -286,7 +292,7 @@ mod tests {
         let result = run_ast(p, q.into());
         assert_eq!(
             result,
-            Code::Halt(RelationError::FieldNotFound(head, field).into()),
+            Code::Halt(RelationError::FieldNotFound(head.clone_for_error(), field).into()),
             "Bad Project"
         );
     }

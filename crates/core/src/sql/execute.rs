@@ -133,7 +133,7 @@ pub(crate) mod tests {
     use spacetimedb_sats::relation::Header;
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
     use spacetimedb_vm::dsl::{mem_table, scalar};
-    use spacetimedb_vm::eval::create_game_data;
+    use spacetimedb_vm::eval::test_data::create_game_data;
     use tempfile::TempDir;
 
     /// Short-cut for simplify test execution
@@ -369,9 +369,27 @@ pub(crate) mod tests {
         let (db, _tmp_dir) = make_test_db()?;
 
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
-        create_table_with_rows(&db, &mut tx, "Inventory", data.inv.head.into(), &data.inv.data)?;
-        create_table_with_rows(&db, &mut tx, "Player", data.player.head.into(), &data.player.data)?;
-        create_table_with_rows(&db, &mut tx, "Location", data.location.head.into(), &data.location.data)?;
+        create_table_with_rows(
+            &db,
+            &mut tx,
+            "Inventory",
+            data.inv.head.to_product_type(),
+            &data.inv.data,
+        )?;
+        create_table_with_rows(
+            &db,
+            &mut tx,
+            "Player",
+            data.player.head.to_product_type(),
+            &data.player.data,
+        )?;
+        create_table_with_rows(
+            &db,
+            &mut tx,
+            "Location",
+            data.location.head.to_product_type(),
+            &data.location.data,
+        )?;
         db.commit_tx(&ExecutionContext::default(), tx)?;
 
         let result = &run_for_testing(

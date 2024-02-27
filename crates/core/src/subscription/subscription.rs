@@ -27,6 +27,7 @@ use anyhow::Context;
 use derive_more::{Deref, DerefMut, From, IntoIterator};
 use std::collections::{btree_set, BTreeSet, HashMap, HashSet};
 use std::ops::Deref;
+use std::sync::Arc;
 use std::time::Instant;
 
 use crate::db::db_metrics::{DB_METRICS, MAX_QUERY_CPU_TIME};
@@ -681,7 +682,7 @@ impl<'a> IncrementalJoin<'a> {
 /// Replace an [IndexJoin]'s scan or fetch operation with a delta table.
 /// A delta table consists purely of updates or changes to the base table.
 fn with_delta_table(mut join: IndexJoin, index_side: bool, delta: DatabaseTableUpdate) -> IndexJoin {
-    fn to_mem_table(head: Header, table_access: StAccess, delta: DatabaseTableUpdate) -> MemTable {
+    fn to_mem_table(head: Arc<Header>, table_access: StAccess, delta: DatabaseTableUpdate) -> MemTable {
         MemTable::new(
             head,
             table_access,

@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Instant;
 
 use crate::db::db_metrics::{DB_METRICS, MAX_QUERY_COMPILE_TIME};
@@ -32,7 +33,7 @@ pub const OP_TYPE_FIELD_NAME: &str = "__op_type";
 /// Create a virtual table from a sequence of table updates.
 /// Add a special column __op_type to distinguish inserts and deletes.
 #[tracing::instrument(skip_all)]
-pub fn to_mem_table_with_op_type(head: Header, table_access: StAccess, data: &DatabaseTableUpdate) -> MemTable {
+pub fn to_mem_table_with_op_type(head: Arc<Header>, table_access: StAccess, data: &DatabaseTableUpdate) -> MemTable {
     let mut t = MemTable::new(head, table_access, vec![]);
 
     if let Some(pos) = t.head.find_pos_by_name(OP_TYPE_FIELD_NAME) {
@@ -42,11 +43,14 @@ pub fn to_mem_table_with_op_type(head: Header, table_access: StAccess, data: &Da
             new
         }));
     } else {
-        t.head.fields.push(Column::new(
+        // TODO(perf): Eliminate this `clone_for_error` call, as we're not in an error path.
+        let mut head = t.head.clone_for_error();
+        head.fields.push(Column::new(
             FieldName::named(&t.head.table_name, OP_TYPE_FIELD_NAME),
             AlgebraicType::U8,
             t.head.fields.len().into(),
         ));
+        t.head = Arc::new(head);
         for row in &data.ops {
             let mut new = row.row.clone();
             new.elements.push(row.op_type.into());
