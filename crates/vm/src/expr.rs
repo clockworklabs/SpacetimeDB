@@ -849,6 +849,8 @@ impl<'a> FieldValue<'a> {
     }
 }
 
+type IndexColumnOpSink<'a> = SmallVec<[IndexColumnOp<'a>; 1]>;
+
 /// Pick the best indices that can serve the constraints in `fields`
 /// where the indices are taken from `header`.
 ///
@@ -892,10 +894,10 @@ impl<'a> FieldValue<'a> {
 /// -`ScanOrIndex::Index(a = 1)`
 /// -`ScanOrIndex::Scan(c = 2)`
 fn select_best_index<'a>(
+    found: &mut IndexColumnOpSink<'a>,
     header: &'a Header,
     fields: Vec<FieldValue<'a>>,
-) -> (SmallVec<[IndexColumnOp<'a>; 1]>, HashSet<(&'a FieldName, OpCmp)>) {
-    let mut found = SmallVec::with_capacity(fields.len());
+) -> HashSet<(&'a FieldName, OpCmp)> {
     let mut fields_indexed = HashSet::new();
 
     // Collect and sort indices by their lengths, with longest first.
@@ -979,13 +981,16 @@ fn select_best_index<'a>(
             .map(|f| IndexColumnOp::Scan(f.parent)),
     );
 
-    (found, fields_indexed)
+    fields_indexed
 }
 
 /// Extracts a list of `field = val` constraints that *could* be answered by an index.
 /// The [`ColumnOp`]s that don't fit `field = val` are made into [`IndexColumnOp::Scan`]s immediately.
-fn extract_fields<'a>(ops: &[&'a ColumnOp], table: &'a SourceExpr) -> (Vec<FieldValue<'a>>, Vec<IndexColumnOp<'a>>) {
-    let mut expr = Vec::new();
+fn extract_fields<'a>(
+    ops: &[&'a ColumnOp],
+    table: &'a SourceExpr,
+) -> (Vec<FieldValue<'a>>, SmallVec<[IndexColumnOp<'a>; 1]>) {
+    let mut expr = SmallVec::new();
     let mut fields = Vec::new();
     let mut add_field = |parent, op, field, val| fields.push(FieldValue::new(parent, op, field, val));
 
@@ -1036,9 +1041,8 @@ fn is_sargable<'a>(
     op: &'a ColumnOp,
 ) -> (SmallVec<[IndexColumnOp<'a>; 1]>, HashSet<(&'a FieldName, OpCmp)>) {
     let many = |ops: &[&'a ColumnOp]| {
-        let (fields, other_scans) = extract_fields(ops, table);
-        let (mut result, done) = select_best_index(table.head(), fields);
-        result.extend(other_scans);
+        let (fields, mut result) = extract_fields(ops, table);
+        let done = select_best_index(&mut result, table.head(), fields);
         (result, done)
     };
 
@@ -2206,7 +2210,9 @@ mod tests {
                 .copied()
                 .map(|(col, val)| make_field_value(&arena, (OpCmp::Eq, col, val)))
                 .collect();
-            select_best_index(&head1, fields).0
+            let mut result = <_>::default();
+            select_best_index(&mut result, &head1, fields);
+            result
         };
 
         let col_list_arena = Arena::new();
@@ -2301,7 +2307,9 @@ mod tests {
 
         let select_best_index = |fields: &[_]| {
             let fields = fields.iter().map(|x| make_field_value(&arena, *x)).collect();
-            select_best_index(&head1, fields).0
+            let mut result = <_>::default();
+            select_best_index(&mut result, &head1, fields);
+            result
         };
 
         let col_list_arena = Arena::new();
