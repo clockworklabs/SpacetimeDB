@@ -2,7 +2,7 @@ use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
 use crate::operator::{OpCmp, OpLogic, OpQuery};
 use crate::relation::{MemTable, RelValue, Table};
 use derive_more::From;
-use smallvec::SmallVec;
+use smallvec::{smallvec, SmallVec};
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_type::AlgebraicType;
@@ -797,8 +797,8 @@ fn ext_cmp_field_val<'a>(
     }
 }
 
-fn make_index(idxs: Vec<ScanOrIndex>) -> Vec<IndexColumnOp> {
-    let mut result = Vec::with_capacity(idxs.len());
+fn make_index(idxs: Vec<ScanOrIndex>) -> SmallVec<[IndexColumnOp; 1]> {
+    let mut result = SmallVec::with_capacity(idxs.len());
 
     for idx in idxs {
         let r = match idx {
@@ -1070,34 +1070,27 @@ pub fn extract_fields<'a>(ops: &[&'a ColumnOp], table: &'a SourceExpr) -> (Vec<F
 fn is_sargable<'a>(
     table: &'a SourceExpr,
     op: &'a ColumnOp,
-) -> (&'a SourceExpr, Vec<IndexColumnOp>, HashSet<(&'a FieldName, OpCmp)>) {
-    let mut result = Vec::new();
-    let mut fields_found = HashSet::new();
-
-    let mut many = |result: &mut Vec<_>, ops: &[&'a ColumnOp]| {
+) -> (SmallVec<[IndexColumnOp; 1]>, HashSet<(&'a FieldName, OpCmp)>) {
+    let many = |ops: &[&'a ColumnOp]| {
         let (fields, expr) = extract_fields(ops, table);
         let (idxs, done) = select_best_index(table.head(), fields);
 
-        // Mark which fields have been matched by an `index`.
-        fields_found.extend(done);
+        let mut result = make_index(idxs);
+        result.extend(expr.into_iter().cloned().map(IndexColumnOp::Scan));
 
-        result.extend(make_index(idxs));
-        result.extend(expr.into_iter().cloned().map(IndexColumnOp::Scan))
+        (result, done)
     };
 
     let mut ops_flat = op.flatten_ands_ref();
-
     if ops_flat.len() == 1 {
         match ops_flat.swap_remove(0) {
             // Special case; fast path for a single field.
-            op @ ColumnOp::Field(_) => result.push(IndexColumnOp::Scan(op.clone())),
-            op => many(&mut result, &[op]),
+            op @ ColumnOp::Field(_) => (smallvec![IndexColumnOp::Scan(op.clone())], <_>::default()),
+            op => many(&[op]),
         }
     } else {
-        many(&mut result, &ops_flat);
+        many(&ops_flat)
     }
-
-    (table, result, fields_found)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -1646,7 +1639,7 @@ impl QueryExpr {
         // Find the first sargable condition and short-circuit.
         let mut fields_found = HashSet::new();
 
-        for (schema, ops, fields_on_idx) in tables.iter().map(|x| is_sargable(x, &op)) {
+        for (schema, (ops, fields_on_idx)) in tables.iter().map(|x| (x, is_sargable(x, &op))) {
             fields_found.extend(fields_on_idx.into_iter().map(|(f, op)| (Cow::Borrowed(f), op)));
             for op in ops {
                 match &op {
