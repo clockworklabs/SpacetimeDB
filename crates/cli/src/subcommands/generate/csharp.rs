@@ -260,9 +260,17 @@ fn autogen_csharp_product_table_common(
     schema: Option<TableSchema>,
     namespace: &str,
 ) -> String {
-    let mut output = autogen_csharp_header(namespace, &["System.Collections.Generic", "System.Linq"]);
+    let mut output = autogen_csharp_header(
+        namespace,
+        &[
+            "System.Collections.Generic",
+            "System.Linq",
+            "System.Runtime.Serialization",
+        ],
+    );
 
     writeln!(output, "[SpacetimeDB.Type]").unwrap();
+    writeln!(output, "[DataContract]").unwrap();
     write!(output, "public partial class {name}").unwrap();
     if let Some(schema) = &schema {
         write!(
@@ -288,6 +296,7 @@ fn autogen_csharp_product_table_common(
                 .expect("autogen'd tuples should have field names")
                 .replace("r#", "");
 
+            writeln!(output, "[DataMember(Name = \"{field_name}\")]").unwrap();
             writeln!(
                 output,
                 "public {} {};",
