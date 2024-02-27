@@ -6,6 +6,7 @@ use std::time::Duration;
 use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
 use futures::{Future, FutureExt};
 use indexmap::IndexMap;
+use tokio::sync::oneshot;
 
 use super::host_controller::HostThreadpool;
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
@@ -325,7 +326,6 @@ trait DynModuleHost: Send + Sync + 'static {
     fn start(&self);
     fn exit(&self) -> Closed<'_>;
     fn exited(&self) -> Closed<'_>;
-    fn threadpool(&self) -> &HostThreadpool;
 }
 
 struct HostControllerActor<T: Module> {
@@ -413,10 +413,6 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
     fn exited(&self) -> Closed<'_> {
         self.instance_pool.closed()
     }
-
-    fn threadpool(&self) -> &HostThreadpool {
-        &self.threadpool
-    }
 }
 
 pub struct WeakModuleHost {
@@ -490,10 +486,6 @@ impl ModuleHost {
         &self.info.subscriptions
     }
 
-    pub fn threadpool(&self) -> &HostThreadpool {
-        self.inner.threadpool()
-    }
-
     async fn call<F, R>(&self, _reducer_name: &str, f: F) -> Result<R, NoSuchModule>
     where
         F: FnOnce(&mut dyn ModuleInstance) -> R + Send + 'static,
@@ -501,8 +493,11 @@ impl ModuleHost {
     {
         let (threadpool, mut inst) = self.inner.get_instance(self.info.address).await?;
 
-        let result = threadpool.spawn_task(move || f(&mut *inst)).await;
-        Ok(result)
+        let (tx, rx) = oneshot::channel();
+        threadpool.spawn(move || {
+            let _ = tx.send(f(&mut *inst));
+        });
+        Ok(rx.await.expect("instance panicked"))
     }
 
     pub async fn disconnect_client(&self, client_id: ClientActorId) {
