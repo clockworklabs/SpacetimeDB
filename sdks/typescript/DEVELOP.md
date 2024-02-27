@@ -16,3 +16,16 @@ protoc --plugin=/absolute/path/to/spacetimedb-typescript-sdk/node_modules/.bin/p
 
 Note that `protoc` cannot understand paths that start with `~`;
 you must write the absolute path starting from `/`.
+
+For reasons that escape me, `protoc-gen-ts` emits an incorrect import for `Long`.
+After generating, you may have to manually edit `client_api.ts` by replacing:
+
+```ts
+import Long = require("long");
+```
+
+with:
+
+```ts
+import Long from "long";
+```
