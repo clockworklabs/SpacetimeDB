@@ -25,15 +25,15 @@
 
 use anyhow::Context;
 use derive_more::{Deref, DerefMut, From, IntoIterator};
-use std::collections::{btree_set, BTreeSet, HashMap, HashSet};
+use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use spacetimedb_primitives::TableId;
+use std::collections::{btree_set, BTreeSet, HashMap, HashSet, LinkedList};
 use std::ops::Deref;
 use std::sync::Arc;
-use std::time::Instant;
 
-use crate::db::db_metrics::{DB_METRICS, MAX_QUERY_CPU_TIME};
 use crate::db::relational_db::Tx;
 use crate::error::{DBError, SubscriptionError};
-use crate::execution_context::{ExecutionContext, WorkloadType};
+use crate::execution_context::ExecutionContext;
 use crate::subscription::query::{run_query, to_mem_table_with_op_type, OP_TYPE_FIELD_NAME};
 use crate::{
     client::{ClientActorId, ClientConnectionSender},
@@ -41,7 +41,7 @@ use crate::{
     host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp},
 };
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::{Address, PrimaryKey};
+use spacetimedb_lib::PrimaryKey;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::relation::{DbTable, Header, Relation};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
@@ -150,6 +150,15 @@ impl<'a> IntoIterator for &'a QuerySet {
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.iter()
+    }
+}
+
+impl<'a> IntoParallelIterator for &'a QuerySet {
+    type Item = &'a SupportedQuery;
+    type Iter = rayon::collections::btree_set::Iter<'a, SupportedQuery>;
+
+    fn into_par_iter(self) -> Self::Iter {
+        self.0.par_iter()
     }
 }
 
@@ -275,7 +284,6 @@ impl QuerySet {
         let eval = evaluator_for_primary_updates(db, auth);
         for SupportedQuery { kind, expr, .. } in self {
             use query::Supported::*;
-            let start = Instant::now();
             match kind {
                 Scan => {
                     let source = expr
@@ -321,8 +329,6 @@ impl QuerySet {
                     }
                 }
             }
-            #[cfg(feature = "metrics")]
-            record_query_duration_metrics(WorkloadType::Update, &db.address(), start);
         }
         for (table_id, (table_name, ops)) in table_ops.into_iter().filter(|(_, (_, ops))| !ops.is_empty()) {
             output.tables.push(DatabaseTableUpdate {
@@ -343,74 +349,75 @@ impl QuerySet {
     /// This is a *major* difference with normal query execution, where is expected to return the full result set for each query.
     #[tracing::instrument(skip_all)]
     pub fn eval(&self, db: &RelationalDB, tx: &Tx, auth: AuthCtx) -> Result<DatabaseUpdate, DBError> {
-        let mut database_update: DatabaseUpdate = DatabaseUpdate { tables: vec![] };
-        let mut table_ops = HashMap::new();
+        // evaluate each of the queries in this QuerySet in parallel
+        let span = tracing::Span::current();
+        #[allow(clippy::needless_borrowed_reference)] // false positive
+        let eval_query = |&SupportedQuery { ref expr, .. }| {
+            let _entered = span.enter();
+            let t = expr.source.get_db_table()?;
+
+            let tables = run_query(&ExecutionContext::subscribe(db.address()), db, tx, expr, auth);
+            Some(tables.map(|tables| (t, tables)))
+        };
+        let ops = self
+            .par_iter()
+            .filter_map(eval_query)
+            .try_fold(Vec::new, |mut v, item| {
+                item.map(|item| {
+                    v.push(item);
+                    v
+                })
+            })
+            .map(|r| r.map(|v| LinkedList::from([v])))
+            .reduce(
+                || Ok(LinkedList::new()),
+                |l, r| {
+                    // l? is run before r? so the leftmost error gets returned
+                    let (mut l, mut r) = (l?, r?);
+                    l.append(&mut r);
+                    Ok(l)
+                },
+            )?
+            .into_iter()
+            .flatten();
+        // single threaded version for debugging; uncomment if you need it
+        // let ops = self.iter().filter_map(eval_query).collect::<Result<Vec<_>, _>>()?;
+
+        let mut tables = Vec::with_capacity(self.len());
+        // a map from TableId to the corresponding index in `tables`
+        let mut tables_map = HashMap::<TableId, usize>::new();
         let mut seen = HashSet::new();
 
-        for SupportedQuery { expr, .. } in self {
-            if let Some(t) = expr.source.get_db_table() {
-                let start = Instant::now();
-                // Get the TableOps for this table
-                let (_, table_row_operations) = table_ops
-                    .entry(t.table_id)
-                    .or_insert_with(|| (t.head.table_name.clone(), vec![]));
-                for table in run_query(&ExecutionContext::subscribe(db.address()), db, tx, expr, auth)? {
-                    for row in table.data {
-                        let row_pk = RelationalDB::pk_for_row(&row);
-
-                        //Skip rows that are already resolved in a previous subscription...
-                        if seen.contains(&(t.table_id, row_pk)) {
-                            continue;
-                        }
-                        seen.insert((t.table_id, row_pk));
-
-                        let row_pk = row_pk.to_bytes();
-                        table_row_operations.push(TableOp {
-                            op_type: 1, // Insert
-                            row_pk,
-                            row,
-                        });
-                    }
-                }
-                #[cfg(feature = "metrics")]
-                record_query_duration_metrics(WorkloadType::Subscribe, &db.address(), start);
-            }
-        }
-        for (table_id, (table_name, ops)) in table_ops.into_iter().filter(|(_, (_, ops))| !ops.is_empty()) {
-            database_update.tables.push(DatabaseTableUpdate {
-                table_id,
-                table_name,
-                ops,
+        // coalesce the results of each query (and filter out duplicates) serially
+        for (t, evaled_tables) in ops {
+            let idx = *tables_map.entry(t.table_id).or_insert_with(|| {
+                let i = tables.len();
+                tables.push(DatabaseTableUpdate {
+                    table_id: t.table_id,
+                    table_name: t.head.table_name.clone(),
+                    ops: Vec::new(),
+                });
+                i
             });
+            let table_row_ops = &mut tables[idx].ops;
+            let ops = evaled_tables
+                .into_iter()
+                .flat_map(|table| table.data)
+                .filter_map(|row| {
+                    let row_pk = RelationalDB::pk_for_row(&row);
+                    seen.insert((t.table_id, row_pk)).then(|| TableOp {
+                        op_type: 1,
+                        row_pk: row_pk.to_bytes(),
+                        row,
+                    })
+                });
+            table_row_ops.extend(ops);
         }
-        Ok(database_update)
+
+        tables.retain(|upd| !upd.ops.is_empty());
+
+        Ok(DatabaseUpdate { tables })
     }
-}
-
-#[cfg(feature = "metrics")]
-fn record_query_duration_metrics(workload: WorkloadType, db: &Address, start: Instant) {
-    let query_duration = start.elapsed().as_secs_f64();
-
-    DB_METRICS
-        .rdb_query_cpu_time_sec
-        .with_label_values(&workload, db)
-        .observe(query_duration);
-
-    let max_query_duration = *MAX_QUERY_CPU_TIME
-        .lock()
-        .unwrap()
-        .entry((*db, workload))
-        .and_modify(|max| {
-            if query_duration > *max {
-                *max = query_duration;
-            }
-        })
-        .or_insert_with(|| query_duration);
-
-    DB_METRICS
-        .rdb_query_cpu_time_sec_max
-        .with_label_values(&workload, db)
-        .set(max_query_duration);
 }
 
 /// Helper to retain [`PrimaryKey`] before converting to [`TableOp`].

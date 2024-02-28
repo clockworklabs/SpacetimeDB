@@ -222,7 +222,7 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
         set_env_with_warning("SPACETIMEDB_TRACY", "1");
     }
 
-    startup::configure_tracing();
+    startup::StartupOptions::default().configure();
 
     let ctx = StandaloneEnv::init(config).await?;
 

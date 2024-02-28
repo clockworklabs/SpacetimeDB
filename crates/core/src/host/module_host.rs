@@ -6,9 +6,7 @@ use std::time::Duration;
 use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
 use futures::{Future, FutureExt};
 use indexmap::IndexMap;
-use tokio::sync::oneshot;
 
-use super::host_controller::HostThreadpool;
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
 use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_logger::LogLevel;
@@ -315,7 +313,7 @@ impl fmt::Debug for ModuleHost {
 
 #[async_trait::async_trait]
 trait DynModuleHost: Send + Sync + 'static {
-    async fn get_instance(&self, db: Address) -> Result<(&HostThreadpool, Box<dyn ModuleInstance>), NoSuchModule>;
+    async fn get_instance(&self, db: Address) -> Result<Box<dyn ModuleInstance>, NoSuchModule>;
     fn inject_logs(&self, log_level: LogLevel, message: &str);
     fn one_off_query(
         &self,
@@ -330,7 +328,6 @@ trait DynModuleHost: Send + Sync + 'static {
 
 struct HostControllerActor<T: Module> {
     module: Arc<T>,
-    threadpool: Arc<HostThreadpool>,
     instance_pool: LendingPool<T::Instance>,
     start: NotifyOnce,
 }
@@ -338,7 +335,7 @@ struct HostControllerActor<T: Module> {
 impl<T: Module> HostControllerActor<T> {
     fn spinup_new_instance(&self) {
         let (module, instance_pool) = (self.module.clone(), self.instance_pool.clone());
-        self.threadpool.spawn(move || {
+        rayon::spawn(move || {
             let instance = module.create_instance();
             match instance_pool.add(instance) {
                 Ok(()) => {}
@@ -361,7 +358,7 @@ async fn select_first<A: Future, B: Future<Output = ()>>(fut_a: A, fut_b: B) -> 
 
 #[async_trait::async_trait]
 impl<T: Module> DynModuleHost for HostControllerActor<T> {
-    async fn get_instance(&self, db: Address) -> Result<(&HostThreadpool, Box<dyn ModuleInstance>), NoSuchModule> {
+    async fn get_instance(&self, db: Address) -> Result<Box<dyn ModuleInstance>, NoSuchModule> {
         self.start.notified().await;
         // in the future we should do something like in the else branch here -- add more instances based on load.
         // we need to do write-skew retries first - right now there's only ever once instance per module.
@@ -379,11 +376,10 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
             .await
             .map_err(|_| NoSuchModule)?
         };
-        let inst = AutoReplacingModuleInstance {
+        Ok(Box::new(AutoReplacingModuleInstance {
             inst,
             module: self.module.clone(),
-        };
-        Ok((&self.threadpool, Box::new(inst)))
+        }))
     }
 
     fn inject_logs(&self, log_level: LogLevel, message: &str) {
@@ -459,13 +455,12 @@ pub enum InitDatabaseError {
 }
 
 impl ModuleHost {
-    pub fn new(threadpool: Arc<HostThreadpool>, mut module: impl Module) -> Self {
+    pub fn new(mut module: impl Module) -> Self {
         let info = module.info();
         let instance_pool = LendingPool::new();
         instance_pool.add_multiple(module.initial_instances()).unwrap();
         let inner = Arc::new(HostControllerActor {
             module: Arc::new(module),
-            threadpool,
             instance_pool,
             start: NotifyOnce::new(),
         });
@@ -491,13 +486,12 @@ impl ModuleHost {
         F: FnOnce(&mut dyn ModuleInstance) -> R + Send + 'static,
         R: Send + 'static,
     {
-        let (threadpool, mut inst) = self.inner.get_instance(self.info.address).await?;
+        let mut inst = self.inner.get_instance(self.info.address).await?;
 
-        let (tx, rx) = oneshot::channel();
-        threadpool.spawn(move || {
-            let _ = tx.send(f(&mut *inst));
-        });
-        Ok(rx.await.expect("instance panicked"))
+        let result = tokio::task::spawn_blocking(move || f(&mut *inst))
+            .await
+            .unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic()));
+        Ok(result)
     }
 
     pub async fn disconnect_client(&self, client_id: ClientActorId) {
