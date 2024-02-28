@@ -2,7 +2,7 @@ on:
   push:
     branches:
       - master
-      - kazimuth/bench_cleanup
+      - jgilles/fix-callgrind
 
   workflow_dispatch:
     inputs:
@@ -22,7 +22,7 @@ env:
 
 jobs:
   benchmark:
-    name: run benchmarks
+    name: run criterion benchmarks
     runs-on: benchmarks-runner
     # filter for a comment containing 'benchmarks please'
     if: ${{ github.event_name != 'issue_comment' || (github.event.issue.pull_request && contains(github.event.comment.body, 'benchmarks please')) }}
@@ -141,7 +141,7 @@ jobs:
 
       - name: Post comment
         run: |
-          BODY="<details><summary>Benchmark results</summary>
+          BODY="<details><summary>Criterion benchmark results</summary>
 
           $(cat report.md)
 
@@ -172,8 +172,8 @@ jobs:
     container:
       image: rust:1.72
       options: --privileged
-    # filter for a comment containing 'callgrind please' (chosen to not interfere with the other benchmarks)
-    if: ${{ github.event_name != 'issue_comment' || (github.event.issue.pull_request && contains(github.event.comment.body, 'callgrind please')) }}
+    # filter for a comment containing 'benchmarks please'
+    if: ${{ github.event_name != 'issue_comment' || (github.event.issue.pull_request && contains(github.event.comment.body, 'benchmarks please')) }}
     env:
       PR_NUMBER: ${{ github.event.inputs.pr_number || github.event.issue.number || null }}
     steps:
@@ -304,13 +304,13 @@ jobs:
             OLD=$(git rev-parse HEAD~1)
             NEW=$GITHUB_SHA
           fi
-          echo "fetching https://benchmarks.spacetimedb.com/compare/$OLD/$NEW"
+          echo "fetching https://benchmarks.spacetimedb.com/compare_callgrind/$OLD/$NEW"
           curl -sS https://benchmarks.spacetimedb.com/compare_callgrind/$OLD/$NEW > report.md
 
       - name: Post comment
         shell: bash
         run: |
-          BODY="<details><summary>Benchmark results</summary>
+          BODY="<details><summary>Callgrind benchmark results</summary>
           $(cat report.md)
           </details>"
           gh api "$COMMENT_UPDATE_URL" -X PATCH -f body="$BODY"
