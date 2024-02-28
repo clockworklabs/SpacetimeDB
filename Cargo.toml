@@ -45,6 +45,14 @@ incremental = false
 codegen-units = 16
 rpath = false
 
+# Optimize for the native CPU to leverage all available features
+# rustflags = ["-C", "target-cpu=native", "-C", "target-feature=+avx2", "-C", "target-feature=+avx512f", "-C", "target-feature=+avx512cd", "-C", "target-feature=+avx512dq", "-C", "target-feature=+avx512bw", "-C", "target-feature=+avx512vl"]
+# Consider enabling Link Time Optimization for further optimization
+# lto = true
+
+# If your application is memory-bound, you might experiment with codegen units for potential improvements
+#codegen-units = 1  # This is the default in release profile
+
 [profile.release-fast]
 inherits = "release"
 lto = "thin"
@@ -204,7 +212,7 @@ tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
 tokio-util = { version = "0.7.4", features = ["time"] }
 toml = "0.8"
 tower-http = { version = "0.5", features = ["cors"] }
-tracing = { version = "0.1.37", features = ["release_max_level_off"] }
+tracing = { version = "0.1.37" }
 tracing-appender = "0.2.2"
 tracing-core = "0.1.31"
 tracing-flame = "0.2.0"

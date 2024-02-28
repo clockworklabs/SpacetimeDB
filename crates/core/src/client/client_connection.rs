@@ -112,8 +112,8 @@ impl ClientConnection {
             .call_identity_connected_disconnected(id.identity, id.address, true)
             .await?;
 
-        // Buffer up to 64 client messages
-        let (sendtx, sendrx) = mpsc::channel::<DataMessage>(64);
+        // Buffer up to 16384 client messages
+        let (sendtx, sendrx) = mpsc::channel::<DataMessage>(16384);
 
         let db = module.info().address;
 
