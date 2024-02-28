@@ -413,7 +413,6 @@ impl CommittedState {
                     let data_key = pv.to_data_key();
                     tx_data.records.push(TxRecord {
                         op: TxOp::Delete,
-                        table_name: table.schema.table_name.clone(),
                         table_id,
                         key: data_key,
                         product_value: pv,
@@ -475,7 +474,6 @@ impl CommittedState {
                     op: TxOp::Insert(Arc::new(bytes)),
                     product_value: pv,
                     key: data_key,
-                    table_name: commit_table.schema.table_name.clone(),
                     table_id,
                 });
             }

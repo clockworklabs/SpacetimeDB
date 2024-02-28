@@ -8,7 +8,6 @@ use super::{
 use crate::{
     db::{
         datastore::traits::TxOp,
-        db_metrics::DB_METRICS,
         messages::{
             transaction::Transaction,
             write::{Operation, Write},
@@ -373,7 +372,7 @@ impl CommitLogMut {
 
     fn generate_commit(
         &self,
-        ctx: &ExecutionContext,
+        _ctx: &ExecutionContext,
         unwritten_commit: &mut MutexGuard<'_, Commit>,
         tx_data: &TxData,
     ) -> Option<Vec<u8>> {
