@@ -21,7 +21,7 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
 
 type Subscriptions = Arc<RwLock<Vec<Subscription>>>;
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ModuleSubscriptions {
     relational_db: Arc<RelationalDB>,
     pub subscriptions: Subscriptions,
