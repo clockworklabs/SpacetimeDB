@@ -21,7 +21,8 @@
 //! - `btree_each_column`: one index for each column.
 //!
 //! Obviously more could be added...
-
+#![allow(non_camel_case_types)]
+#![allow(clippy::too_many_arguments)]
 use spacetimedb::{println, spacetimedb};
 use std::hint::black_box;
 
