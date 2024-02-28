@@ -19,9 +19,7 @@ use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
 use fs2::FileExt;
 use itertools::Itertools;
-use spacetimedb_lib::PrimaryKey;
 use spacetimedb_primitives::*;
-use spacetimedb_sats::data_key::ToDataKey;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{ColumnDef, IndexDef, SequenceDef, TableDef, TableSchema};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
@@ -183,12 +181,6 @@ impl RelationalDB {
     pub fn object_db_size_on_disk(&self) -> std::result::Result<u64, DBError> {
         self.commit_log()
             .map_or(Ok(0), |commit_log| commit_log.object_db_size_on_disk())
-    }
-
-    pub fn pk_for_row(row: &ProductValue) -> PrimaryKey {
-        PrimaryKey {
-            data_key: row.to_data_key(),
-        }
     }
 
     #[tracing::instrument(skip_all)]
@@ -589,7 +581,6 @@ impl RelationalDB {
     /// where the column data identified by `cols` matches `value`.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
-    #[tracing::instrument(skip_all)]
     pub fn iter_by_col_eq_mut<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
@@ -601,7 +592,6 @@ impl RelationalDB {
         self.inner.iter_by_col_eq_mut_tx(ctx, tx, table_id.into(), cols, value)
     }
 
-    #[tracing::instrument(skip_all)]
     pub fn iter_by_col_eq<'a>(
         &'a self,
         ctx: &'a ExecutionContext,

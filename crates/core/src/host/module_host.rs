@@ -50,7 +50,6 @@ impl DatabaseUpdate {
                     TxOp::Delete => 0,
                     TxOp::Insert(_) => 1,
                 },
-                row_pk: record.key.to_bytes(),
                 row: record.product_value.clone(),
             });
         }
@@ -136,7 +135,6 @@ pub struct DatabaseTableUpdate {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableOp {
     pub op_type: u8,
-    pub row_pk: Vec<u8>,
     pub row: ProductValue,
 }
 

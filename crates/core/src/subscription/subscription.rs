@@ -41,7 +41,6 @@ use crate::{
     host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp},
 };
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::PrimaryKey;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::relation::{Header, Relation};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
@@ -139,8 +138,7 @@ fn evaluator_for_secondary_updates(
         let op_type = if inserts { 1 } else { 0 };
         for MemTable { data, .. } in run_query(&ctx, db, tx, query, auth)? {
             for row in data {
-                let row_pk = RelationalDB::pk_for_row(&row);
-                out.push(Op { op_type, row_pk, row });
+                out.push(Op { op_type, row });
             }
         }
         Ok(out)
@@ -175,8 +173,7 @@ fn evaluator_for_primary_updates(
                 } else {
                     panic!("Failed to extract `{OP_TYPE_FIELD_NAME}` from `{}`", head.table_name);
                 };
-                let row_pk = RelationalDB::pk_for_row(&row);
-                out.push(Op { op_type, row_pk, row });
+                out.push(Op { op_type, row });
             }
         }
         Ok(out)
@@ -189,7 +186,6 @@ fn evaluator_for_primary_updates(
 #[derive(Debug, PartialEq, Eq, Hash)]
 struct Op {
     op_type: u8,
-    row_pk: PrimaryKey,
     row: ProductValue,
 }
 
@@ -197,7 +193,6 @@ impl From<Op> for TableOp {
     fn from(op: Op) -> Self {
         Self {
             op_type: op.op_type,
-            row_pk: op.row_pk.to_bytes(),
             row: op.row,
         }
     }
@@ -380,10 +375,7 @@ impl<'a> IncrementalJoin<'a> {
             // {A join B+}
             let b = eval(&join_b, !self.join.return_index_rows)?;
             // {A+ join B} U {A join B+}
-            let mut set = HashMap::new();
-            set.extend(a.into_iter().map(|op| (op.row_pk, op)));
-            set.extend(b.into_iter().map(|op| (op.row_pk, op)));
-            set
+            itertools::chain!(a, b).map(|op| op.row).collect::<HashSet<_>>()
         };
         let mut deletes = {
             // A query evaluator for deletes
@@ -417,22 +409,16 @@ impl<'a> IncrementalJoin<'a> {
             // {A- join B-}
             let c = eval(&join_c, true)?;
             // {A- join B} U {A join B-} U {A- join B-}
-            itertools::chain![a, b, c]
-                .map(|op| (op.row_pk, op))
-                .collect::<HashMap<_, _>>()
+            itertools::chain![a, b, c].map(|op| op.row).collect::<HashSet<_>>()
         };
 
-        let symmetric_difference = inserts
-            .keys()
-            .filter(|k| !deletes.contains_key(k))
-            .chain(deletes.keys().filter(|k| !inserts.contains_key(k)))
-            .copied()
-            .collect::<HashSet<PrimaryKey>>();
-        inserts.retain(|k, _| symmetric_difference.contains(k));
-        deletes.retain(|k, _| symmetric_difference.contains(k));
+        deletes.retain(|row| !inserts.remove(row));
 
         // Deletes need to come first, as UPDATE = [DELETE, INSERT]
-        Ok(deletes.into_values().chain(inserts.into_values()))
+        Ok(deletes
+            .into_iter()
+            .map(|row| Op { op_type: 0, row })
+            .chain(inserts.into_iter().map(|row| Op { op_type: 1, row })))
     }
 }
 
@@ -495,14 +481,12 @@ struct ExecutionUnit {
 }
 
 impl ExecutionUnit {
+    #[tracing::instrument(skip_all)]
     fn eval(&self, db: &RelationalDB, tx: &Tx, auth: AuthCtx) -> Result<Option<DatabaseTableUpdate>, DBError> {
         let ctx = ExecutionContext::subscribe(db.address());
 
         let op_type = 1;
-        let row_to_op = |row| {
-            let row_pk = RelationalDB::pk_for_row(&row);
-            Op { op_type, row_pk, row }
-        };
+        let row_to_op = |row| Op { op_type, row };
         let ops = match &self.queries[..] {
             // special-case single query - we don't have to deduplicate
             [query] => run_query(&ctx, db, tx, &query.expr, auth)?
@@ -533,6 +517,7 @@ impl ExecutionUnit {
         }))
     }
 
+    #[tracing::instrument(skip_all)]
     fn eval_incr(
         &self,
         db: &RelationalDB,
@@ -621,22 +606,20 @@ pub struct ExecutionSet {
 }
 
 impl ExecutionSet {
+    #[tracing::instrument(skip_all)]
     pub fn eval(&self, db: &RelationalDB, tx: &Tx, auth: AuthCtx) -> Result<DatabaseUpdate, DBError> {
         // evaluate each of the execution units in this ExecutionSet in parallel
-        let span = tracing::Span::current();
         let tables = self
             .exec_units
             // if you need eval to run single-threaded for debugging, change this to .iter()
             .par_iter()
-            .filter_map(|unit| {
-                let _entered = span.enter();
-                unit.eval(db, tx, auth).transpose()
-            })
+            .filter_map(|unit| unit.eval(db, tx, auth).transpose())
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(DatabaseUpdate { tables })
     }
 
+    #[tracing::instrument(skip_all)]
     pub fn eval_incr(
         &self,
         db: &RelationalDB,
@@ -728,7 +711,6 @@ mod tests {
     use crate::host::module_host::TableOp;
     use crate::sql::compiler::compile_sql;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_sats::data_key::ToDataKey;
     use spacetimedb_sats::relation::{DbTable, FieldName};
     use spacetimedb_sats::{product, AlgebraicType};
     use spacetimedb_vm::expr::{CrudExpr, IndexJoin, Query, SourceExpr};
@@ -774,11 +756,7 @@ mod tests {
 
         // Create an insert for an incremental update.
         let row = product!(0u64, 0u64);
-        let insert = TableOp {
-            op_type: 1,
-            row_pk: row.to_data_key().to_bytes(),
-            row,
-        };
+        let insert = TableOp { op_type: 1, row };
         let delta = DatabaseTableUpdate {
             table_id: lhs_id,
             table_name: String::from("lhs"),
@@ -868,11 +846,7 @@ mod tests {
 
         // Create an insert for an incremental update.
         let row = product!(0u64, 0u64, 0u64);
-        let insert = TableOp {
-            op_type: 1,
-            row_pk: row.to_data_key().to_bytes(),
-            row,
-        };
+        let insert = TableOp { op_type: 1, row };
         let delta = DatabaseTableUpdate {
             table_id: rhs_id,
             table_name: String::from("rhs"),

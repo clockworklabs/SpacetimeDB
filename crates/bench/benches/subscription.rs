@@ -7,7 +7,7 @@ use spacetimedb::subscription::query::compile_read_only_query;
 use spacetimedb::subscription::subscription::ExecutionSet;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_primitives::TableId;
-use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductValue, ToDataKey};
+use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductValue};
 use tempdir::TempDir;
 
 fn create_table_location(db: &RelationalDB) -> Result<TableId, DBError> {
@@ -39,15 +39,10 @@ fn create_table_footprint(db: &RelationalDB) -> Result<TableId, DBError> {
 }
 
 fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
-    let row_pk = row.to_data_key().to_bytes();
     DatabaseTableUpdate {
         table_id,
         table_name: table_name.to_string(),
-        ops: vec![TableOp {
-            op_type: 1,
-            row,
-            row_pk,
-        }],
+        ops: vec![TableOp { op_type: 1, row }],
     }
 }
 
