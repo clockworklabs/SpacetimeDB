@@ -3,7 +3,6 @@ use std::fmt;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
-use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
 use futures::{Future, FutureExt};
 use indexmap::IndexMap;
 
@@ -90,7 +89,6 @@ impl DatabaseUpdate {
                                 } else {
                                     table_row_operation::OperationType::Delete.into()
                                 },
-                                row_pk: op.row_pk,
                                 row: row_bytes,
                             }
                         })
@@ -113,17 +111,13 @@ impl DatabaseUpdate {
                     table_row_operations: table
                         .ops
                         .into_iter()
-                        .map(|op| {
-                            let row_pk = BASE_64_STD.encode(&op.row_pk);
-                            TableRowOperationJson {
-                                op: if op.op_type == 1 {
-                                    "insert".into()
-                                } else {
-                                    "delete".into()
-                                },
-                                row_pk,
-                                row: op.row.elements,
-                            }
+                        .map(|op| TableRowOperationJson {
+                            op: if op.op_type == 1 {
+                                "insert".into()
+                            } else {
+                                "delete".into()
+                            },
+                            row: op.row.elements,
                         })
                         .collect(),
                 })
