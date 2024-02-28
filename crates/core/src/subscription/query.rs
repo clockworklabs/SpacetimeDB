@@ -821,24 +821,14 @@ mod tests {
         let tx = db.begin_tx();
         check_query(&db, &table, &tx, &q, &data)?;
 
-        //SELECT * FROM inventory
-        let q_all = QueryExpr::new(db_table(&schema, schema.table_id));
         //SELECT * FROM inventory WHERE inventory_id = 1
-        let q_id =
-            q_all
-                .clone()
-                .with_select_cmp(OpCmp::Eq, FieldName::named("_inventory", "inventory_id"), scalar(1u64));
+        let q_id = QueryExpr::new(db_table(&schema, schema.table_id)).with_select_cmp(
+            OpCmp::Eq,
+            FieldName::named("_inventory", "inventory_id"),
+            scalar(1u64),
+        );
 
-        let s = [q_all, q_id]
-            .into_iter()
-            .map(TryFrom::try_from)
-            .collect::<Result<ExecutionSet, _>>()?;
-
-        let row1 = TableOp {
-            op_type: 0,
-            row_pk: row.to_data_key().to_bytes(),
-            row: row.clone(),
-        };
+        let s = ExecutionSet::from_iter([q_id.try_into()?]);
 
         let row2 = TableOp {
             op_type: 1,
@@ -849,7 +839,7 @@ mod tests {
         let data = DatabaseTableUpdate {
             table_id: schema.table_id,
             table_name: "_inventory".to_string(),
-            ops: vec![row1, row2],
+            ops: vec![row2],
         };
 
         let update = DatabaseUpdate {
@@ -878,64 +868,6 @@ mod tests {
                 }
             }
         }
-
-        Ok(())
-    }
-
-    //Check that
-    //```
-    //SELECT * FROM table
-    //SELECT * FROM table WHERE id=1
-    //```
-    // return just one row for both incr & direct subscriptions
-    #[test]
-    fn test_subscribe_dedup() -> ResultTest<()> {
-        let (db, _tmp_dir) = make_test_db()?;
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
-
-        let (schema, _table, _data, _q) = make_inv(&db, &mut tx, StAccess::Private)?;
-
-        //SELECT * FROM inventory
-        let q_all = QueryExpr::new(db_table(&schema, schema.table_id));
-        //SELECT * FROM inventory WHERE inventory_id = 1
-        let q_id =
-            q_all
-                .clone()
-                .with_select_cmp(OpCmp::Eq, FieldName::named("_inventory", "inventory_id"), scalar(1u64));
-
-        let s = [q_all, q_id]
-            .into_iter()
-            .map(TryFrom::try_from)
-            .collect::<Result<ExecutionSet, _>>()?;
-
-        db.commit_tx(&ExecutionContext::default(), tx)?;
-
-        let tx = db.begin_tx();
-        check_query_eval(&db, &tx, &s, 1, &[product!(1u64, "health")])?;
-
-        let row = product!(1u64, "health");
-
-        let row1 = TableOp {
-            op_type: 0,
-            row_pk: row.to_data_key().to_bytes(),
-            row: row.clone(),
-        };
-
-        let row2 = TableOp {
-            op_type: 1,
-            row_pk: row.to_data_key().to_bytes(),
-            row: row.clone(),
-        };
-
-        let data = DatabaseTableUpdate {
-            table_id: schema.table_id,
-            table_name: "inventory".to_string(),
-            ops: vec![row1, row2],
-        };
-
-        let update = DatabaseUpdate { tables: vec![data] };
-
-        check_query_incr(&db, &tx, &s, &update, 1, &[row])?;
 
         Ok(())
     }

@@ -511,18 +511,13 @@ impl ExecutionUnit {
                 .map(row_to_op)
                 .map_into()
                 .collect(),
+            // this is a case we don't fully support atm
             queries => {
                 let mut ops = Vec::new();
-                let mut dup = HashSet::new();
 
                 for SupportedQuery { kind: _, expr } in queries {
                     for table in run_query(&ctx, db, tx, expr, auth)? {
-                        let row_ops = table
-                            .data
-                            .into_iter()
-                            .map(row_to_op)
-                            .filter(|op| dup.insert(op.row_pk))
-                            .map_into();
+                        let row_ops = table.data.into_iter().map(row_to_op).map_into();
                         ops.extend(row_ops);
                     }
                 }
@@ -575,10 +570,9 @@ impl ExecutionUnit {
                     }
                 }
             }
+            // this is a case we don't fully support atm
             queries => {
                 let mut ops = Vec::new();
-                let mut dup = HashSet::new();
-                let mut is_unique = |op: &Op| dup.insert(op.row_pk);
 
                 for query in queries {
                     match query.kind {
@@ -592,7 +586,7 @@ impl ExecutionUnit {
                                 let plan = query::to_mem_table(query.expr.clone(), rows);
                                 let eval = evaluator_for_primary_updates(db, auth);
                                 // Evaluate the new plan and capture the new row operations
-                                ops.extend(eval(tx, &plan)?.into_iter().filter(&mut is_unique).map_into());
+                                ops.extend(eval(tx, &plan)?.into_iter().map_into());
                             }
                         }
                         Semijoin => {
@@ -601,7 +595,7 @@ impl ExecutionUnit {
                             }) {
                                 if let Some(plan) = IncrementalJoin::new(&query.expr, [rows])? {
                                     // Evaluate the plan and capture the new row operations
-                                    ops.extend(plan.eval(db, tx, &auth)?.filter(&mut is_unique).map_into());
+                                    ops.extend(plan.eval(db, tx, &auth)?.map_into());
                                 }
                             }
                         }
