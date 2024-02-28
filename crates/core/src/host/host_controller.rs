@@ -1,14 +1,18 @@
+use crate::db::update::UpdateDatabaseError;
 use crate::energy::{EnergyMonitor, EnergyQuanta, NullEnergyMonitor};
+use crate::execution_context::ExecutionContext;
 use crate::hash::hash_bytes;
 use crate::host;
 use crate::messages::control_db::HostType;
 use crate::module_host_context::{ModuleCreationContext, ModuleHostContext};
 use crate::util::spawn_rayon;
-use anyhow::Context;
+use anyhow::{ensure, Context};
+use futures::TryFutureExt;
 use parking_lot::Mutex;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt;
+use std::future::Future;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -91,11 +95,6 @@ impl From<&EventStatus> for ReducerOutcome {
     }
 }
 
-pub struct UpdateOutcome {
-    pub module_host: ModuleHost,
-    pub update_result: UpdateDatabaseResult,
-}
-
 impl HostController {
     pub fn new(energy_monitor: Arc<impl EnergyMonitor>) -> Self {
         Self {
@@ -109,15 +108,17 @@ impl HostController {
         fence: u128,
         module_host_context: ModuleHostContext,
     ) -> Result<ModuleHost, anyhow::Error> {
-        let module_host = self.spawn_module_host(module_host_context).await?;
-        // TODO(cloutiertyler): Hook this up again
-        // let identity = &module_host.info().identity;
-        // let max_spend = worker_budget::max_tx_spend(identity);
+        self.setup_module_host(module_host_context, |module_host| async {
+            // TODO(cloutiertyler): Hook this up again
+            // let identity = &module_host.info().identity;
+            // let max_spend = worker_budget::max_tx_spend(identity);
+            let rcr = module_host.init_database(fence, ReducerArgs::Nullary).await?;
+            // worker_budget::record_tx_spend(identity, rcr.energy_quanta_used);
+            rcr.outcome.into_result().context("init reducer failed")?;
 
-        let rcr = module_host.init_database(fence, ReducerArgs::Nullary).await?;
-        // worker_budget::record_tx_spend(identity, rcr.energy_quanta_used);
-        rcr.outcome.into_result().context("init reducer failed")?;
-        Ok(module_host)
+            Ok(module_host)
+        })
+        .await
     }
 
     pub async fn delete_module_host(
@@ -142,21 +143,18 @@ impl HostController {
         &self,
         fence: u128,
         module_host_context: ModuleHostContext,
-    ) -> Result<UpdateOutcome, anyhow::Error> {
-        let module_host = self.spawn_module_host(module_host_context).await?;
-        // TODO: see init_module_host
-        let update_result = module_host.update_database(fence).await?;
-
-        Ok(UpdateOutcome {
-            module_host,
-            update_result,
+    ) -> Result<UpdateDatabaseResult, anyhow::Error> {
+        self.setup_module_host(module_host_context, |module_host| async move {
+            let update_result = module_host.update_database(fence).await?;
+            // Turn UpdateDatabaseError into anyhow::Error, so the module gets
+            // discarded.
+            update_result.map_err(Into::into)
         })
-    }
-
-    pub async fn add_module_host(&self, module_host_context: ModuleHostContext) -> Result<ModuleHost, anyhow::Error> {
-        let module_host = self.spawn_module_host(module_host_context).await?;
-        // module_host.init_function(); ??
-        Ok(module_host)
+        .await
+        // Extract UpdateDatabaseError again, so we can return Ok(Err(..)), and
+        // Err for any other error.
+        .map(Ok)
+        .or_else(|e| e.downcast::<UpdateDatabaseError>().map(Err))
     }
 
     /// NOTE: Currently repeating reducers are only restarted when the [ModuleHost] is spawned.
@@ -170,27 +168,88 @@ impl HostController {
     /// system, the applications will expect to be called when they are scheduled to be called regardless
     /// of whether the OS has been restarted.
     pub async fn spawn_module_host(&self, mhc: ModuleHostContext) -> Result<ModuleHost, anyhow::Error> {
+        self.setup_module_host(mhc, |mh| async { Ok(mh) }).await
+    }
+
+    /// Set up the [`ModuleHost`] described by the provided [`ModuleHostContext`],
+    /// and run the closure `f` over it.
+    ///
+    /// If `F` returns an `Ok` result, the module host is registered with this
+    /// controller (i.e. [`Self::has_module_host`] returns true), and its
+    /// reducer scheduler is started.
+    ///
+    /// Otherwise, if `F` returns an `Err` result, the module is discarded.
+    async fn setup_module_host<F, Fut, T>(&self, mhc: ModuleHostContext, f: F) -> anyhow::Result<T>
+    where
+        F: FnOnce(ModuleHost) -> Fut,
+        Fut: Future<Output = anyhow::Result<T>>,
+    {
         let key = mhc.dbic.database_instance_id;
 
+        let program_hash = hash_bytes(&mhc.program_bytes);
         let mcc = ModuleCreationContext {
-            dbic: mhc.dbic,
+            dbic: mhc.dbic.clone(),
             scheduler: mhc.scheduler,
-            program_hash: hash_bytes(&mhc.program_bytes),
+            program_hash,
             program_bytes: mhc.program_bytes,
             energy_monitor: self.energy_monitor.clone(),
         };
         let module_host = spawn_rayon(move || Self::make_module_host(mhc.host_type, mcc)).await?;
-
-        let old_module = self.modules.lock().insert(key, module_host.clone());
-        if let Some(old_module) = old_module {
-            old_module.exit().await
-        }
         module_host.start();
+
+        let res = f(module_host.clone())
+            .or_else(|e| async {
+                module_host.exit().await;
+                Err(e)
+            })
+            .await?;
+
+        let guard_program_hash = || {
+            let db = &mhc.dbic.relational_db;
+            let db_program_hash = db.with_read_only(&ExecutionContext::default(), |tx| db.program_hash(tx))?;
+            ensure!(
+                Some(program_hash) == db_program_hash,
+                "supplied program {} does not match database program {:?}",
+                program_hash,
+                db_program_hash,
+            );
+
+            Ok(())
+        };
+        let old_module = {
+            let mut modules = self.modules.lock();
+            // At this point, the supplied program must be the program stored in
+            // the running database. Assert that this is the case.
+            //
+            // It is unfortunate that [`Self::spawn_module_host`] is both public
+            // and takes the module's program bytes in its argument. Because it
+            // can be called concurrently to [`Self::init_module_host`] or
+            // [`Self::update_module_host`], we may end up with the wrong module
+            // version here.
+            //
+            // We should instead store the current program bytes verbatim in the
+            // database, such that `spawn_module_host` operates on the committed
+            // state only.
+            if let Err(e) = guard_program_hash() {
+                drop(modules);
+                module_host.exit().await;
+                return Err(e);
+            }
+
+            modules.insert(key, module_host.clone())
+        };
+        if let Some(old_module) = old_module {
+            old_module.exit().await;
+        }
         mhc.scheduler_starter.start(&module_host)?;
 
-        Ok(module_host)
+        Ok(res)
     }
 
+    /// Set up the actual module host.
+    ///
+    /// This is a fairly expensive operation and should not be run on the async
+    /// task threadpool.
     fn make_module_host(host_type: HostType, mcc: ModuleCreationContext) -> anyhow::Result<ModuleHost> {
         let module_host = match host_type {
             HostType::Wasm => {
