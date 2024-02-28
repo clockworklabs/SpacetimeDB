@@ -390,12 +390,8 @@ impl CommitLogMut {
             let table_id: u32 = record.table_id.into();
 
             let operation = match record.op {
-                TxOp::Insert(_) => {
-                    Operation::Insert
-                }
-                TxOp::Delete => {
-                    Operation::Delete
-                }
+                TxOp::Insert(_) => Operation::Insert,
+                TxOp::Delete => Operation::Delete,
             };
 
             writes.push(Write {

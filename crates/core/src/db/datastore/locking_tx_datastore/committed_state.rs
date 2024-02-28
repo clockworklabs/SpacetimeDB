@@ -393,7 +393,12 @@ impl CommittedState {
         tx_data
     }
 
-    fn merge_apply_deletes(&mut self, tx_data: &mut TxData, delete_tables: BTreeMap<TableId, BTreeSet<RowPointer>>, ctx: &ExecutionContext) {
+    fn merge_apply_deletes(
+        &mut self,
+        tx_data: &mut TxData,
+        delete_tables: BTreeMap<TableId, BTreeSet<RowPointer>>,
+        ctx: &ExecutionContext,
+    ) {
         for (table_id, row_ptrs) in delete_tables {
             if let Some((table, blob_store)) = self.get_table_and_blob_store(table_id) {
                 // Note: we maintain the invariant that the delete_tables
@@ -434,7 +439,6 @@ impl CommittedState {
             } else if !row_ptrs.is_empty() {
                 panic!("Deletion for non-existent table {:?}... huh?", table_id);
             }
-
         }
     }
 
@@ -509,8 +513,6 @@ impl CommittedState {
             // None of the above operations will inspect the schema.
             commit_table.schema = tx_table.schema;
         }
-
-
     }
 
     pub fn get_table(&self, table_id: TableId) -> Option<&Table> {
