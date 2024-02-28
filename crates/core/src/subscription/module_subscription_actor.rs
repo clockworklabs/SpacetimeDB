@@ -21,7 +21,7 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
 
 type Subscriptions = Arc<RwLock<Vec<Subscription>>>;
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ModuleSubscriptions {
     relational_db: Arc<RelationalDB>,
     pub subscriptions: Subscriptions,
@@ -91,8 +91,11 @@ impl ModuleSubscriptions {
     }
 
     pub fn remove_subscriber(&self, client_id: ClientActorId) {
-        let mut subscriptions = self.subscriptions.write();
-        self._remove_subscriber(client_id, &mut subscriptions);
+        let this = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut subscriptions = this.subscriptions.write();
+            this._remove_subscriber(client_id, &mut subscriptions);
+        });
     }
 
     fn _remove_subscriber(&self, client_id: ClientActorId, subscriptions: &mut Vec<Subscription>) {
