@@ -683,13 +683,13 @@ impl MutTxId {
         })
     }
 
-    pub fn commit(self) -> TxData {
+    pub fn commit(self, ctx: &ExecutionContext) -> TxData {
         let Self {
             mut committed_state_write_lock,
             tx_state,
             ..
         } = self;
-        committed_state_write_lock.merge(tx_state)
+        committed_state_write_lock.merge(tx_state, ctx)
     }
 
     pub fn rollback(self) {

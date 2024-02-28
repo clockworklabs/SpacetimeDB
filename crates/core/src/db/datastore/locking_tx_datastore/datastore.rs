@@ -552,7 +552,7 @@ impl MutTx for Locking {
     fn commit_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) -> Result<Option<TxData>> {
         #[cfg(feature = "metrics")]
         record_metrics(ctx, tx.timer, tx.lock_wait_time, true);
-        Ok(Some(tx.commit()))
+        Ok(Some(tx.commit(ctx)))
     }
 
     #[cfg(test)]
