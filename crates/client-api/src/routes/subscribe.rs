@@ -176,6 +176,9 @@ async fn ws_client_actor(client: ClientConnection, mut ws: WebSocketStream, mut 
     // TODO: do we want this to have a fixed capacity? or should it be unbounded
     let mut handle_queue = pin!(future_queue(|(message, timer)| client.handle_message(message, timer)));
 
+    let mut flush_interval = tokio::time::interval(Duration::from_millis(10));
+    flush_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
     let mut closed = false;
     loop {
         enum Item {
@@ -212,7 +215,7 @@ async fn ws_client_actor(client: ClientConnection, mut ws: WebSocketStream, mut 
                     log::info!("dropping message due to ws already being closed: {message:?}");
                 } else {
                     // TODO: I think we can be smarter about feeding messages here?
-                    if let Err(error) = ws.send(datamsg_to_wsmsg(message)).await {
+                    if let Err(error) = ws.feed(datamsg_to_wsmsg(message)).await {
                         log::warn!("Websocket send error: {error}")
                     }
                 }
@@ -227,6 +230,14 @@ async fn ws_client_actor(client: ClientConnection, mut ws: WebSocketStream, mut 
                 closed = true;
                 continue;
             }
+
+            // If it's time to flush outgoing messages...
+            _ = flush_interval.tick() => {
+                if let Err(error) = ws.flush().await {
+                    log::warn!("Websocket flush error: {error}")
+                }
+                continue;
+            },
 
             // If it's time to send a ping...
             _ = liveness_check_interval.tick() => {
