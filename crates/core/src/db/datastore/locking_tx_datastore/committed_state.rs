@@ -401,6 +401,10 @@ impl CommittedState {
     ) {
         for (table_id, row_ptrs) in delete_tables {
             if let Some((table, blob_store)) = self.get_table_and_blob_store(table_id) {
+                let workload = &ctx.workload();
+                let db = &ctx.database();
+                let reducer = ctx.reducer_name();
+
                 // Note: we maintain the invariant that the delete_tables
                 // holds only committed rows which should be deleted,
                 // i.e. `RowPointer`s with `SquashedOffset::COMMITTED_STATE`,
@@ -417,24 +421,20 @@ impl CommittedState {
                         key: data_key,
                         product_value: pv,
                     });
-                }
 
-                let workload = &ctx.workload();
-                let db = &ctx.database();
-                let reducer = ctx.reducer_name();
-                let table_id: u32 = table_id.into();
-                let table_name = table.get_schema().table_name.as_str();
-                // Increment rows deleted metric
-                #[cfg(feature = "metrics")]
-                DB_METRICS
-                    .rdb_num_rows_deleted
-                    .with_label_values(workload, db, reducer, &table_id, table_name)
-                    .inc();
-                // Decrement table rows gauge
-                DB_METRICS
-                    .rdb_num_table_rows
-                    .with_label_values(db, &table_id, table_name)
-                    .dec();
+                    let table_name = table.get_schema().table_name.as_str();
+                    // Increment rows deleted metric
+                    #[cfg(feature = "metrics")]
+                    DB_METRICS
+                        .rdb_num_rows_deleted
+                        .with_label_values(workload, db, reducer, &table_id.into(), table_name)
+                        .inc();
+                    // Decrement table rows gauge
+                    DB_METRICS
+                        .rdb_num_table_rows
+                        .with_label_values(db, &table_id.into(), table_name)
+                        .dec();
+                }
             } else if !row_ptrs.is_empty() {
                 panic!("Deletion for non-existent table {:?}... huh?", table_id);
             }
@@ -462,6 +462,14 @@ impl CommittedState {
                 // TODO(perf): avoid cloning here.
                 *tx_table.schema.clone(),
             );
+
+            // NOTE: if there is a schema change the table id will not change
+            // and that is what is important here so it doesn't matter if we
+            // do this before or after the schema update below.
+            let workload = &ctx.workload();
+            let db = &ctx.database();
+            let reducer = ctx.reducer_name();
+
             // For each newly-inserted row, insert it into the committed state.
             for row_ref in tx_table.scan_rows(&tx_blob_store) {
                 let pv = row_ref.to_product_value();
@@ -476,6 +484,19 @@ impl CommittedState {
                     key: data_key,
                     table_id,
                 });
+
+                let table_name = commit_table.get_schema().table_name.as_str();
+                // Increment rows inserted metric
+                #[cfg(feature = "metrics")]
+                DB_METRICS
+                    .rdb_num_rows_inserted
+                    .with_label_values(workload, db, reducer, &table_id.into(), table_name)
+                    .inc();
+                // Increment table rows gauge
+                DB_METRICS
+                    .rdb_num_table_rows
+                    .with_label_values(db, &table_id.into(), table_name)
+                    .inc();
             }
 
             // Add all newly created indexes to the committed state.
@@ -485,26 +506,6 @@ impl CommittedState {
                     commit_table.insert_index(commit_blob_store, cols, index);
                 }
             }
-
-            // NOTE: if there is a schema change the table id will not change
-            // and that is what is important here so it doesn't matter if we
-            // do this before or after the schema update below.
-            let workload = &ctx.workload();
-            let db = &ctx.database();
-            let reducer = ctx.reducer_name();
-            let table_id: u32 = table_id.into();
-            let table_name = commit_table.get_schema().table_name.as_str();
-            // Increment rows inserted metric
-            #[cfg(feature = "metrics")]
-            DB_METRICS
-                .rdb_num_rows_inserted
-                .with_label_values(workload, db, reducer, &table_id, table_name)
-                .inc();
-            // Increment table rows gauge
-            DB_METRICS
-                .rdb_num_table_rows
-                .with_label_values(db, &table_id, table_name)
-                .inc();
 
             // The schema may have been modified in the transaction.
             // Update this last to placate borrowck and avoid a clone.
