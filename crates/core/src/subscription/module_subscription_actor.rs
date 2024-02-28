@@ -38,6 +38,7 @@ impl ModuleSubscriptions {
     }
 
     /// Add a subscriber to the module. NOTE: this function is blocking.
+    #[tracing::instrument(skip_all)]
     pub fn add_subscriber(&self, sender: ClientConnectionSender, subscription: Subscribe) -> Result<(), DBError> {
         let tx = &mut *scopeguard::guard(self.relational_db.begin_tx(), |tx| {
             let ctx = ExecutionContext::subscribe(self.relational_db.address());
