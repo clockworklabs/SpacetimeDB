@@ -1,6 +1,6 @@
 /* eslint-disable */
+import * as _m0 from "protobufjs/minimal";
 import Long from "long";
-import _m0 from "protobufjs/minimal";
 
 export const protobufPackage = "client_api";
 
@@ -223,15 +223,10 @@ export interface TableUpdate {
  * / - `op` of `INSERT` means that the row in question has been either newly inserted or
  * /                    updated, and is resident in the table.
  * /
- * / - `row_pk` is a hash of the row computed by the database. As of 2023-06-13, even for
- * /            tables with a `#[primarykey]` annotation on one column, the `row_pk` is not
- * /            that primary key.
- * /
  * / - `row` is the row itself, encoded as BSATN.
  */
 export interface TableRowOperation {
   op: TableRowOperation_OperationType;
-  rowPk: Uint8Array;
   row: Uint8Array;
 }
 
@@ -1198,7 +1193,7 @@ export const TableUpdate = {
 };
 
 function createBaseTableRowOperation(): TableRowOperation {
-  return { op: 0, rowPk: new Uint8Array(0), row: new Uint8Array(0) };
+  return { op: 0, row: new Uint8Array(0) };
 }
 
 export const TableRowOperation = {
@@ -1208,9 +1203,6 @@ export const TableRowOperation = {
   ): _m0.Writer {
     if (message.op !== 0) {
       writer.uint32(8).int32(message.op);
-    }
-    if (message.rowPk.length !== 0) {
-      writer.uint32(18).bytes(message.rowPk);
     }
     if (message.row.length !== 0) {
       writer.uint32(26).bytes(message.row);
@@ -1233,13 +1225,6 @@ export const TableRowOperation = {
 
           message.op = reader.int32() as any;
           continue;
-        case 2:
-          if (tag !== 18) {
-            break;
-          }
-
-          message.rowPk = reader.bytes();
-          continue;
         case 3:
           if (tag !== 26) {
             break;
@@ -1261,9 +1246,6 @@ export const TableRowOperation = {
       op: isSet(object.op)
         ? tableRowOperation_OperationTypeFromJSON(object.op)
         : 0,
-      rowPk: isSet(object.rowPk)
-        ? bytesFromBase64(object.rowPk)
-        : new Uint8Array(0),
       row: isSet(object.row) ? bytesFromBase64(object.row) : new Uint8Array(0),
     };
   },
@@ -1272,9 +1254,6 @@ export const TableRowOperation = {
     const obj: any = {};
     if (message.op !== 0) {
       obj.op = tableRowOperation_OperationTypeToJSON(message.op);
-    }
-    if (message.rowPk.length !== 0) {
-      obj.rowPk = base64FromBytes(message.rowPk);
     }
     if (message.row.length !== 0) {
       obj.row = base64FromBytes(message.row);
@@ -1292,7 +1271,6 @@ export const TableRowOperation = {
   ): TableRowOperation {
     const message = createBaseTableRowOperation();
     message.op = object.op ?? 0;
-    message.rowPk = object.rowPk ?? new Uint8Array(0);
     message.row = object.row ?? new Uint8Array(0);
     return message;
   },
