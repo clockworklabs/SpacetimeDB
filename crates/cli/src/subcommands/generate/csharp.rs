@@ -297,12 +297,6 @@ fn autogen_csharp_product_table_common(
                 .replace("r#", "");
 
             writeln!(output, "[DataMember(Name = \"{field_name}\")]").unwrap();
-            match &field.algebraic_type {
-                AlgebraicType::Sum(sum) if sum.as_option().is_some() => {
-                    writeln!(output, "[OptionalField]").unwrap();
-                }
-                _ => {}
-            }
             writeln!(
                 output,
                 "public {} {};",
