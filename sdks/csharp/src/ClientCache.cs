@@ -127,31 +127,33 @@ namespace SpacetimeDB
             }
 
             /// <summary>
-            /// Inserts the value into the table. There can be no existing value with the provided pk.
+            /// Inserts the value into the table. There can be no existing value with the provided BSATN bytes.
             /// </summary>
+            /// <param name="rowBytes">The BSATN encoded bytes of the row to retrieve.</param>
+            /// <param name="value">The parsed AlgebraicValue of the row encoded by the <paramref>rowBytes</paramref>.</param>
             /// <returns>True if the row was inserted, false if the row wasn't inserted because it was a duplicate.</returns>
-            public bool InsertEntry(byte[] rowPk, AlgebraicValue value)
+            public bool InsertEntry(byte[] rowBytes, AlgebraicValue value)
             {
-                if (entries.ContainsKey(rowPk))
+                if (entries.ContainsKey(rowBytes))
                 {
                     return false;
                 }
                
                 // Insert the row into our table
-                entries[rowPk] = (value, decoderFunc(value));
+                entries[rowBytes] = (value, decoderFunc(value));
                 return true;
             }
 
             /// <summary>
             /// Deletes a value from the table.
             /// </summary>
-            /// <param name="rowPk">The primary key that uniquely identifies this row</param>
-            /// <returns></returns>
-            public bool DeleteEntry(byte[] rowPk)
+            /// <param name="rowBytes">The BSATN encoded bytes of the row to remove.</param>
+            /// <returns>True if and only if the value was previously resident and has been deleted.</returns>
+            public bool DeleteEntry(byte[] rowBytes)
             {
-                if (entries.TryGetValue(rowPk, out var value))
+                if (entries.TryGetValue(rowBytes, out var value))
                 {
-                    entries.Remove(rowPk);
+                    entries.Remove(rowBytes);
                     return true;
                 }
 
@@ -162,11 +164,12 @@ namespace SpacetimeDB
             /// <summary>
             /// Gets a value from the table
             /// </summary>
-            /// <param name="rowPk">The primary key that uniquely identifies this row</param>
-            /// <returns></returns>
-            public bool TryGetValue(byte[] rowPk, out object value)
+            /// <param name="rowBytes">The BSATN encoded bytes of the row to retrieve.</param>
+            /// <param name="value">Output: the parsed domain type corresponding to the <paramref>rowBytes</paramref>, or <c>null</c> if the row was not present in the cache.</param>
+            /// <returns>True if and only if the value is resident and was stored in <paramref>value</paramref>.</returns>
+            public bool TryGetValue(byte[] rowBytes, out object value)
             {
-                if (entries.TryGetValue(rowPk, out var v))
+                if (entries.TryGetValue(rowBytes, out var v))
                 {
                     value = v.Item2;
                     return true;

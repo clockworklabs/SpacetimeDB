@@ -48,18 +48,17 @@ namespace ClientApi {
             "ZGF0ZRItCgx0YWJsZVVwZGF0ZXMYASADKAsyFy5jbGllbnRfYXBpLlRhYmxl",
             "VXBkYXRlImwKC1RhYmxlVXBkYXRlEg8KB3RhYmxlSWQYASABKA0SEQoJdGFi",
             "bGVOYW1lGAIgASgJEjkKEnRhYmxlUm93T3BlcmF0aW9ucxgDIAMoCzIdLmNs",
-            "aWVudF9hcGkuVGFibGVSb3dPcGVyYXRpb24ikgEKEVRhYmxlUm93T3BlcmF0",
+            "aWVudF9hcGkuVGFibGVSb3dPcGVyYXRpb24iggEKEVRhYmxlUm93T3BlcmF0",
             "aW9uEjcKAm9wGAEgASgOMisuY2xpZW50X2FwaS5UYWJsZVJvd09wZXJhdGlv",
-            "bi5PcGVyYXRpb25UeXBlEg4KBnJvd19waxgCIAEoDBILCgNyb3cYAyABKAwi",
-            "JwoNT3BlcmF0aW9uVHlwZRIKCgZERUxFVEUQABIKCgZJTlNFUlQQASJxChFU",
-            "cmFuc2FjdGlvblVwZGF0ZRIgCgVldmVudBgBIAEoCzIRLmNsaWVudF9hcGku",
-            "RXZlbnQSOgoSc3Vic2NyaXB0aW9uVXBkYXRlGAIgASgLMh4uY2xpZW50X2Fw",
-            "aS5TdWJzY3JpcHRpb25VcGRhdGUiNQoLT25lT2ZmUXVlcnkSEQoJbWVzc2Fn",
-            "ZUlkGAEgASgMEhMKC3F1ZXJ5U3RyaW5nGAIgASgJImAKE09uZU9mZlF1ZXJ5",
-            "UmVzcG9uc2USEQoJbWVzc2FnZUlkGAEgASgMEg0KBWVycm9yGAIgASgJEicK",
-            "BnRhYmxlcxgDIAMoCzIXLmNsaWVudF9hcGkuT25lT2ZmVGFibGUiLQoLT25l",
-            "T2ZmVGFibGUSEQoJdGFibGVOYW1lGAIgASgJEgsKA3JvdxgEIAMoDGIGcHJv",
-            "dG8z"));
+            "bi5PcGVyYXRpb25UeXBlEgsKA3JvdxgDIAEoDCInCg1PcGVyYXRpb25UeXBl",
+            "EgoKBkRFTEVURRAAEgoKBklOU0VSVBABInEKEVRyYW5zYWN0aW9uVXBkYXRl",
+            "EiAKBWV2ZW50GAEgASgLMhEuY2xpZW50X2FwaS5FdmVudBI6ChJzdWJzY3Jp",
+            "cHRpb25VcGRhdGUYAiABKAsyHi5jbGllbnRfYXBpLlN1YnNjcmlwdGlvblVw",
+            "ZGF0ZSI1CgtPbmVPZmZRdWVyeRIRCgltZXNzYWdlSWQYASABKAwSEwoLcXVl",
+            "cnlTdHJpbmcYAiABKAkiYAoTT25lT2ZmUXVlcnlSZXNwb25zZRIRCgltZXNz",
+            "YWdlSWQYASABKAwSDQoFZXJyb3IYAiABKAkSJwoGdGFibGVzGAMgAygLMhcu",
+            "Y2xpZW50X2FwaS5PbmVPZmZUYWJsZSItCgtPbmVPZmZUYWJsZRIRCgl0YWJs",
+            "ZU5hbWUYAiABKAkSCwoDcm93GAQgAygMYgZwcm90bzM="));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
           new pbr::FileDescriptor[] { },
           new pbr::GeneratedClrTypeInfo(null, null, new pbr::GeneratedClrTypeInfo[] {
@@ -70,7 +69,7 @@ namespace ClientApi {
             new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.Event), global::ClientApi.Event.Parser, new[]{ "Timestamp", "CallerIdentity", "FunctionCall", "Status", "Message", "EnergyQuantaUsed", "HostExecutionDurationMicros", "CallerAddress" }, null, new[]{ typeof(global::ClientApi.Event.Types.Status) }, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.SubscriptionUpdate), global::ClientApi.SubscriptionUpdate.Parser, new[]{ "TableUpdates" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.TableUpdate), global::ClientApi.TableUpdate.Parser, new[]{ "TableId", "TableName", "TableRowOperations" }, null, null, null, null),
-            new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.TableRowOperation), global::ClientApi.TableRowOperation.Parser, new[]{ "Op", "RowPk", "Row" }, null, new[]{ typeof(global::ClientApi.TableRowOperation.Types.OperationType) }, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.TableRowOperation), global::ClientApi.TableRowOperation.Parser, new[]{ "Op", "Row" }, null, new[]{ typeof(global::ClientApi.TableRowOperation.Types.OperationType) }, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.TransactionUpdate), global::ClientApi.TransactionUpdate.Parser, new[]{ "Event", "SubscriptionUpdate" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.OneOffQuery), global::ClientApi.OneOffQuery.Parser, new[]{ "MessageId", "QueryString" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.OneOffQueryResponse), global::ClientApi.OneOffQueryResponse.Parser, new[]{ "MessageId", "Error", "Tables" }, null, null, null, null),
@@ -2401,10 +2400,6 @@ namespace ClientApi {
   //// - `op` of `INSERT` means that the row in question has been either newly inserted or
   ////                    updated, and is resident in the table.
   ////
-  //// - `row_pk` is a hash of the row computed by the database. As of 2023-06-13, even for
-  ////            tables with a `#[primarykey]` annotation on one column, the `row_pk` is not
-  ////            that primary key.
-  ////
   //// - `row` is the row itself, encoded as BSATN.
   /// </summary>
   public sealed partial class TableRowOperation : pb::IMessage<TableRowOperation>
@@ -2442,7 +2437,6 @@ namespace ClientApi {
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public TableRowOperation(TableRowOperation other) : this() {
       op_ = other.op_;
-      rowPk_ = other.rowPk_;
       row_ = other.row_;
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
@@ -2462,18 +2456,6 @@ namespace ClientApi {
       get { return op_; }
       set {
         op_ = value;
-      }
-    }
-
-    /// <summary>Field number for the "row_pk" field.</summary>
-    public const int RowPkFieldNumber = 2;
-    private pb::ByteString rowPk_ = pb::ByteString.Empty;
-    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
-    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public pb::ByteString RowPk {
-      get { return rowPk_; }
-      set {
-        rowPk_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
       }
     }
 
@@ -2505,7 +2487,6 @@ namespace ClientApi {
         return true;
       }
       if (Op != other.Op) return false;
-      if (RowPk != other.RowPk) return false;
       if (Row != other.Row) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
@@ -2515,7 +2496,6 @@ namespace ClientApi {
     public override int GetHashCode() {
       int hash = 1;
       if (Op != global::ClientApi.TableRowOperation.Types.OperationType.Delete) hash ^= Op.GetHashCode();
-      if (RowPk.Length != 0) hash ^= RowPk.GetHashCode();
       if (Row.Length != 0) hash ^= Row.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
@@ -2539,10 +2519,6 @@ namespace ClientApi {
         output.WriteRawTag(8);
         output.WriteEnum((int) Op);
       }
-      if (RowPk.Length != 0) {
-        output.WriteRawTag(18);
-        output.WriteBytes(RowPk);
-      }
       if (Row.Length != 0) {
         output.WriteRawTag(26);
         output.WriteBytes(Row);
@@ -2561,10 +2537,6 @@ namespace ClientApi {
         output.WriteRawTag(8);
         output.WriteEnum((int) Op);
       }
-      if (RowPk.Length != 0) {
-        output.WriteRawTag(18);
-        output.WriteBytes(RowPk);
-      }
       if (Row.Length != 0) {
         output.WriteRawTag(26);
         output.WriteBytes(Row);
@@ -2581,9 +2553,6 @@ namespace ClientApi {
       int size = 0;
       if (Op != global::ClientApi.TableRowOperation.Types.OperationType.Delete) {
         size += 1 + pb::CodedOutputStream.ComputeEnumSize((int) Op);
-      }
-      if (RowPk.Length != 0) {
-        size += 1 + pb::CodedOutputStream.ComputeBytesSize(RowPk);
       }
       if (Row.Length != 0) {
         size += 1 + pb::CodedOutputStream.ComputeBytesSize(Row);
@@ -2602,9 +2571,6 @@ namespace ClientApi {
       }
       if (other.Op != global::ClientApi.TableRowOperation.Types.OperationType.Delete) {
         Op = other.Op;
-      }
-      if (other.RowPk.Length != 0) {
-        RowPk = other.RowPk;
       }
       if (other.Row.Length != 0) {
         Row = other.Row;
@@ -2628,10 +2594,6 @@ namespace ClientApi {
             Op = (global::ClientApi.TableRowOperation.Types.OperationType) input.ReadEnum();
             break;
           }
-          case 18: {
-            RowPk = input.ReadBytes();
-            break;
-          }
           case 26: {
             Row = input.ReadBytes();
             break;
@@ -2653,10 +2615,6 @@ namespace ClientApi {
             break;
           case 8: {
             Op = (global::ClientApi.TableRowOperation.Types.OperationType) input.ReadEnum();
-            break;
-          }
-          case 18: {
-            RowPk = input.ReadBytes();
             break;
           }
           case 26: {
