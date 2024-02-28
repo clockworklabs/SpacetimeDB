@@ -39,7 +39,7 @@ impl ModuleSubscriptions {
 
     /// Add a subscriber to the module. NOTE: this function is blocking.
     pub fn add_subscriber(&self, sender: ClientConnectionSender, subscription: Subscribe) -> Result<(), DBError> {
-        let tx = &mut *scopeguard::guard(self.relational_db.begin_tx(), |tx| {
+        let tx = scopeguard::guard(self.relational_db.begin_tx(), |tx| {
             let ctx = ExecutionContext::subscribe(self.relational_db.address());
             self.relational_db.release_tx(&ctx, tx);
         });
@@ -47,15 +47,16 @@ impl ModuleSubscriptions {
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
         let mut queries = QuerySet::new();
         for sql in subscription.query_strings {
-            let qset = compile_read_only_query(&self.relational_db, tx, &auth, &sql)?;
+            let qset = compile_read_only_query(&self.relational_db, &tx, &auth, &sql)?;
             queries.extend(qset);
         }
 
-        let database_update = tokio::task::block_in_place(|| queries.eval(&self.relational_db, tx, auth))?;
+        let database_update = queries.eval(&self.relational_db, &tx, auth)?;
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
         // but that should not pose an issue.
         let mut subscriptions = self.subscriptions.write();
+        drop(tx);
         self._remove_subscriber(sender.id, &mut subscriptions);
         let subscription = match subscriptions.iter_mut().find(|s| s.queries == queries) {
             Some(sub) => {
