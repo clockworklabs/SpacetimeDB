@@ -419,7 +419,7 @@ impl From<AlgebraicType> for Header {
 }
 
 /// An estimate for the range of rows in the [Relation]
-#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct RowCount {
     pub min: usize,
     pub max: Option<usize>,

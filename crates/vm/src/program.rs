@@ -25,7 +25,7 @@ pub trait ProgramVm {
 
     /// Allows to execute the query with the state carried by the implementation of this
     /// trait
-    fn eval_query(&mut self, query: CrudCode) -> Result<Code, ErrorVm>;
+    fn eval_query(&mut self, query: CrudCode, sources: &mut [Option<Table>]) -> Result<Code, ErrorVm>;
 }
 
 pub struct ProgramStore<P> {
@@ -64,20 +64,26 @@ impl ProgramVm for Program {
     }
 
     #[tracing::instrument(skip_all)]
-    fn eval_query(&mut self, query: CrudCode) -> Result<Code, ErrorVm> {
+    fn eval_query(&mut self, query: CrudCode, sources: &mut [Option<Table>]) -> Result<Code, ErrorVm> {
         match query {
             CrudCode::Query(query) => {
                 let head = query.head().clone();
                 let row_count = query.row_count();
                 let table_access = query.table.table_access();
-                let result = match query.table {
-                    Table::MemTable(x) => Box::new(RelIter::new(head, row_count, x)) as Box<IterRows<'_>>,
-                    Table::DbTable(_) => {
-                        panic!("DB not set")
-                    }
+                let result = if query.table.is_mem_table() {
+                    let source_idx = query.table.source_idx();
+                    let Some(result_table) = sources[source_idx].take() else {
+                        panic!("Query plan refers to source {source_idx} multiple times");
+                    };
+                    let Table::MemTable(result_table) = result_table else {
+                        panic!("Query plan specifies a `MemTable` for source {source_idx}, but found a `DbTable`");
+                    };
+                    Box::new(RelIter::new(head, row_count, result_table)) as Box<IterRows<'_>>
+                } else {
+                    panic!("DB not set")
                 };
 
-                let result = build_query(result, query.query)?;
+                let result = build_query(result, query.query, sources)?;
 
                 let head = result.head().clone();
                 let rows: Vec<_> = result.collect_vec(|row| row.into_product_value())?;

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::errors::ErrorVm;
-use crate::expr::{Code, CrudCode, CrudExpr, QueryCode, QueryExpr, SourceExpr};
+use crate::expr::{Code, CrudCode, CrudExpr, QueryCode, QueryExpr};
 use crate::expr::{Expr, Query};
 use crate::iterators::RelIter;
 use crate::program::ProgramVm;
@@ -10,15 +10,9 @@ use crate::relation::{RelValue, Table};
 use spacetimedb_sats::relation::{FieldExpr, Relation};
 
 fn compile_query(q: QueryExpr) -> QueryCode {
-    match q.source {
-        SourceExpr::MemTable(x) => QueryCode {
-            table: Table::MemTable(x),
-            query: q.query.clone(),
-        },
-        SourceExpr::DbTable(x) => QueryCode {
-            table: Table::DbTable(x),
-            query: q.query.clone(),
-        },
+    QueryCode {
+        table: q.source,
+        query: q.query,
     }
 }
 
@@ -26,16 +20,7 @@ fn compile_query_expr(q: CrudExpr) -> Code {
     match q {
         CrudExpr::Query(q) => Code::Crud(CrudCode::Query(compile_query(q))),
         CrudExpr::Insert { source, rows } => {
-            let q = match source {
-                SourceExpr::MemTable(x) => CrudCode::Insert {
-                    table: Table::MemTable(x),
-                    rows,
-                },
-                SourceExpr::DbTable(x) => CrudCode::Insert {
-                    table: Table::DbTable(x),
-                    rows,
-                },
-            };
+            let q = CrudCode::Insert { table: source, rows };
             Code::Crud(q)
         }
         CrudExpr::Update { delete, assignments } => {
@@ -61,8 +46,17 @@ fn compile_query_expr(q: CrudExpr) -> Code {
 
 pub type IterRows<'a> = dyn RelOps<'a> + 'a;
 
+/// `sources` should be a `Vec`
+/// where the `idx`th element is the table referred to in the `query` as `SourceId(idx)`.
+/// While constructing the query, the `sources` will be destructively modified with `Option::take`
+/// to extract the sources,
+/// so the `query` cannot refer to the same `SourceId` multiple times.
 #[tracing::instrument(skip_all)]
-pub fn build_query<'a>(mut result: Box<IterRows<'a>>, query: Vec<Query>) -> Result<Box<IterRows<'a>>, ErrorVm> {
+pub fn build_query<'a>(
+    mut result: Box<IterRows<'a>>,
+    query: Vec<Query>,
+    sources: &mut [Option<Table>],
+) -> Result<Box<IterRows<'a>>, ErrorVm> {
     for q in query {
         result = match q {
             Query::IndexScan(_) => {
@@ -96,14 +90,20 @@ pub fn build_query<'a>(mut result: Box<IterRows<'a>>, query: Vec<Query>) -> Resu
                 let row_rhs = q.rhs.source.row_count();
 
                 let head = q.rhs.source.head().clone();
-                let rhs = match q.rhs.source {
-                    SourceExpr::MemTable(x) => Box::new(RelIter::new(head, row_rhs, x)) as Box<IterRows<'_>>,
-                    SourceExpr::DbTable(_) => {
-                        todo!("How pass the db iter?")
-                    }
+                let rhs = if q.rhs.source.is_mem_table() {
+                    let rhs_source_idx = q.rhs.source.source_idx();
+                    let Some(rhs_table) = sources[rhs_source_idx].take() else {
+                        panic!("Query plan re-uses source {rhs_source_idx}");
+                    };
+                    let Table::MemTable(rhs_table) = rhs_table else {
+                        panic!("Query plan specifies a `MemTable`, but source is a `DbTable`");
+                    };
+                    Box::new(RelIter::new(head, row_rhs, rhs_table)) as Box<IterRows<'_>>
+                } else {
+                    todo!("How pass the db iter?")
                 };
 
-                let rhs = build_query(rhs, q.rhs.query)?;
+                let rhs = build_query(rhs, q.rhs.query, sources)?;
 
                 let lhs = result;
                 let key_lhs_header = lhs.head().clone();
@@ -138,13 +138,13 @@ fn build_ast(ast: CrudExpr) -> Code {
 
 /// Execute the code
 #[tracing::instrument(skip_all)]
-fn eval<P: ProgramVm>(p: &mut P, code: Code) -> Code {
+fn eval<P: ProgramVm>(p: &mut P, code: Code, sources: &mut [Option<Table>]) -> Code {
     match code {
         Code::Value(_) => code.clone(),
         Code::Block(lines) => {
             let mut result = Vec::with_capacity(lines.len());
             for x in lines {
-                let r = eval(p, x);
+                let r = eval(p, x, sources);
                 if r != Code::Pass {
                     result.push(r);
                 }
@@ -156,7 +156,7 @@ fn eval<P: ProgramVm>(p: &mut P, code: Code) -> Code {
                 _ => Code::Block(result),
             }
         }
-        Code::Crud(q) => p.eval_query(q).unwrap_or_else(|err| Code::Halt(err.into())),
+        Code::Crud(q) => p.eval_query(q, sources).unwrap_or_else(|err| Code::Halt(err.into())),
         Code::Pass => Code::Pass,
         Code::Halt(_) => code,
         Code::Table(_) => code,
@@ -178,7 +178,7 @@ fn to_vec(of: Vec<Expr>) -> Code {
 
 /// Optimize, compile & run the [Expr]
 #[tracing::instrument(skip_all)]
-pub fn run_ast<P: ProgramVm>(p: &mut P, ast: Expr) -> Code {
+pub fn run_ast<P: ProgramVm>(p: &mut P, ast: Expr, sources: &mut [Option<Table>]) -> Code {
     let code = match ast {
         Expr::Block(x) => to_vec(x),
         Expr::Crud(x) => build_ast(*x),
@@ -186,7 +186,7 @@ pub fn run_ast<P: ProgramVm>(p: &mut P, ast: Expr) -> Code {
         Expr::Halt(err) => Code::Halt(err),
         Expr::Ident(x) => Code::Halt(ErrorVm::Unsupported(format!("Ident {x}")).into()),
     };
-    eval(p, code)
+    eval(p, code, sources)
 }
 
 /// Used internally for testing SQL JOINS.
@@ -232,6 +232,7 @@ pub mod tests {
     use super::test_data::*;
     use super::*;
     use crate::dsl::{mem_table, query, scalar};
+    use crate::expr::{SourceExpr, SourceId};
     use crate::program::Program;
     use crate::relation::MemTable;
     use spacetimedb_lib::identity::AuthCtx;
@@ -241,8 +242,8 @@ pub mod tests {
     use spacetimedb_sats::relation::FieldName;
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
 
-    fn run_query(p: &mut Program, ast: Expr) -> MemTable {
-        match run_ast(p, ast) {
+    fn run_query(p: &mut Program, ast: Expr, sources: &mut [Option<Table>]) -> MemTable {
+        match run_ast(p, ast, sources) {
             Code::Table(x) => x,
             x => panic!("Unexpected result on query: {x}"),
         }
@@ -253,12 +254,14 @@ pub mod tests {
         let p = &mut Program::new(AuthCtx::for_testing());
         let input = MemTable::from_value(scalar(1));
         let field = input.get_field_pos(0).unwrap().clone();
+        let source_expr = SourceExpr::from_mem_table(&input, SourceId(0));
+        let mut sources = [Some(Table::MemTable(input))];
 
-        let q = query(input).with_select_cmp(OpCmp::Eq, field, scalar(1));
+        let q = query(source_expr).with_select_cmp(OpCmp::Eq, field, scalar(1));
 
         let head = q.source.head().clone();
 
-        let result = run_ast(p, q.into());
+        let result = run_ast(p, q.into(), &mut sources);
         let row = scalar(1).into();
         assert_eq!(
             result,
@@ -273,12 +276,14 @@ pub mod tests {
         let input = scalar(1);
         let table = MemTable::from_value(scalar(1));
         let field = table.get_field_pos(0).unwrap().clone();
+        let source_expr = SourceExpr::from_mem_table(&table, SourceId(0));
+        let mut sources = [Some(Table::MemTable(table.clone()))];
 
-        let source = query(table.clone());
+        let source = query(source_expr);
         let q = source.clone().with_project(&[field.into()], None);
         let head = q.source.head().clone();
 
-        let result = run_ast(p, q.into());
+        let result = run_ast(p, q.into(), &mut sources);
         let row = input.into();
         assert_eq!(
             result,
@@ -289,7 +294,8 @@ pub mod tests {
         let field = FieldName::positional(&table.head.table_name, 1);
         let q = source.with_project(&[field.clone().into()], None);
 
-        let result = run_ast(p, q.into());
+        let mut sources = [Some(Table::MemTable(table))];
+        let result = run_ast(p, q.into(), &mut sources);
         assert_eq!(
             result,
             Code::Halt(RelationError::FieldNotFound(head.clone_for_error(), field).into()),
@@ -302,9 +308,12 @@ pub mod tests {
         let p = &mut Program::new(AuthCtx::for_testing());
         let table = MemTable::from_value(scalar(1));
         let field = table.get_field_pos(0).unwrap().clone();
+        let source_expr = SourceExpr::from_mem_table(&table, SourceId(0));
+        let second_source_expr = SourceExpr::from_mem_table(&table, SourceId(1));
+        let mut sources = [Some(Table::MemTable(table.clone())), Some(Table::MemTable(table))];
 
-        let q = query(table.clone()).with_join_inner(table, field.clone(), field);
-        let result = match run_ast(p, q.into()) {
+        let q = query(source_expr).with_join_inner(second_source_expr, field.clone(), field);
+        let result = match run_ast(p, q.into(), &mut sources) {
             Code::Table(x) => x,
             x => panic!("Invalid result {x}"),
         };
@@ -330,16 +339,20 @@ pub mod tests {
 
         let input = mem_table(inv, vec![row]);
         let inv = input.clone();
+        let source_expr = SourceExpr::from_mem_table(&input, SourceId(0));
+        let mut sources = [Some(Table::MemTable(input.clone()))];
 
-        let q = query(input.clone()).with_select_cmp(OpLogic::And, scalar(true), scalar(true));
+        let q = query(source_expr.clone()).with_select_cmp(OpLogic::And, scalar(true), scalar(true));
 
-        let result = run_ast(p, q.into());
+        let result = run_ast(p, q.into(), &mut sources);
 
         assert_eq!(result, Code::Table(inv.clone()), "Query And");
 
-        let q = query(input).with_select_cmp(OpLogic::Or, scalar(true), scalar(false));
+        let mut sources = [Some(Table::MemTable(input.clone()))];
 
-        let result = run_ast(p, q.into());
+        let q = query(source_expr).with_select_cmp(OpLogic::Or, scalar(true), scalar(false));
+
+        let result = run_ast(p, q.into(), &mut sources);
 
         assert_eq!(result, Code::Table(inv), "Query Or");
     }
@@ -356,10 +369,13 @@ pub mod tests {
 
         let input = mem_table(inv, vec![row]);
         let field = input.get_field_pos(0).unwrap().clone();
+        let source_expr = SourceExpr::from_mem_table(&input, SourceId(0));
+        let second_source_expr = SourceExpr::from_mem_table(&input, SourceId(1));
+        let mut sources = [Some(Table::MemTable(input.clone())), Some(Table::MemTable(input))];
 
-        let q = query(input.clone()).with_join_inner(input, field.clone(), field);
+        let q = query(source_expr).with_join_inner(second_source_expr, field.clone(), field);
 
-        let result = match run_ast(p, q.into()) {
+        let result = match run_ast(p, q.into(), &mut sources) {
             Code::Table(x) => x,
             x => panic!("Invalid result {x}"),
         };
@@ -396,6 +412,13 @@ pub mod tests {
         let location_x = data.location.get_field_named("x").unwrap().clone();
         let location_z = data.location.get_field_named("z").unwrap().clone();
 
+        let player_source_expr = SourceExpr::from_mem_table(&data.player, SourceId(0));
+        let location_source_expr = SourceExpr::from_mem_table(&data.location, SourceId(1));
+        let mut sources = [
+            Some(Table::MemTable(data.player.clone())),
+            Some(Table::MemTable(data.location.clone())),
+        ];
+
         // SELECT
         // Player.*
         //     FROM
@@ -403,9 +426,9 @@ pub mod tests {
         // JOIN Location
         // ON Location.entity_id = Player.entity_id
         // WHERE x > 0 AND x <= 32 AND z > 0 AND z <= 32
-        let q = query(data.player.clone())
+        let q = query(player_source_expr)
             .with_join_inner(
-                data.location.clone(),
+                location_source_expr,
                 player_entity_id.clone(),
                 location_entity_id.clone(),
             )
@@ -418,13 +441,22 @@ pub mod tests {
                 None,
             );
 
-        let result = run_query(p, q.into());
+        let result = run_query(p, q.into(), &mut sources);
 
         let head = ProductType::from([("entity_id", AlgebraicType::U64), ("inventory_id", AlgebraicType::U64)]);
         let row1 = product!(100u64, 1u64);
         let input = mem_table(head, [row1]);
 
         assert_eq!(result.as_without_table_name(), input.as_without_table_name(), "Player");
+
+        let player_source_expr = SourceExpr::from_mem_table(&data.player, SourceId(0));
+        let location_source_expr = SourceExpr::from_mem_table(&data.location, SourceId(1));
+        let inventory_source_expr = SourceExpr::from_mem_table(&data.inv, SourceId(2));
+        let mut sources = [
+            Some(Table::MemTable(data.player.clone())),
+            Some(Table::MemTable(data.location.clone())),
+            Some(Table::MemTable(data.inv.clone())),
+        ];
 
         // SELECT
         // Inventory.*
@@ -435,16 +467,16 @@ pub mod tests {
         // JOIN Location
         // ON Player.entity_id = Location.entity_id
         // WHERE x > 0 AND x <= 32 AND z > 0 AND z <= 32
-        let q = query(data.inv)
-            .with_join_inner(data.player, inv_inventory_id.clone(), player_inventory_id)
-            .with_join_inner(data.location, player_entity_id, location_entity_id)
+        let q = query(inventory_source_expr)
+            .with_join_inner(player_source_expr, inv_inventory_id.clone(), player_inventory_id)
+            .with_join_inner(location_source_expr, player_entity_id, location_entity_id)
             .with_select_cmp(OpCmp::Gt, location_x.clone(), scalar(0.0f32))
             .with_select_cmp(OpCmp::LtEq, location_x, scalar(32.0f32))
             .with_select_cmp(OpCmp::Gt, location_z.clone(), scalar(0.0f32))
             .with_select_cmp(OpCmp::LtEq, location_z, scalar(32.0f32))
             .with_project(&[inv_inventory_id.into(), inv_name.into()], None);
 
-        let result = run_query(p, q.into());
+        let result = run_query(p, q.into(), &mut sources);
 
         let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row1 = product!(1u64, "health");
