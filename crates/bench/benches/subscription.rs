@@ -4,6 +4,7 @@ use spacetimedb::error::DBError;
 use spacetimedb::execution_context::ExecutionContext;
 use spacetimedb::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp};
 use spacetimedb::subscription::query::compile_read_only_query;
+use spacetimedb::subscription::subscription::ExecutionSet;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductValue, ToDataKey};
@@ -110,6 +111,7 @@ fn eval(c: &mut Criterion) {
         let auth = AuthCtx::for_testing();
         let tx = db.begin_tx();
         let query = compile_read_only_query(&db, &tx, &auth, scan).unwrap();
+        let query: ExecutionSet = query.into();
 
         b.iter(|| {
             let out = query.eval(&db, &tx, auth).unwrap();
@@ -131,6 +133,7 @@ fn eval(c: &mut Criterion) {
         let auth = AuthCtx::for_testing();
         let tx = db.begin_tx();
         let query = compile_read_only_query(&db, &tx, &auth, &join).unwrap();
+        let query: ExecutionSet = query.into();
 
         b.iter(|| {
             let out = query.eval(&db, &tx, AuthCtx::for_testing()).unwrap();
@@ -148,9 +151,7 @@ fn eval(c: &mut Criterion) {
         let tx = db.begin_tx();
         let query_lhs = compile_read_only_query(&db, &tx, &auth, select_lhs).unwrap();
         let query_rhs = compile_read_only_query(&db, &tx, &auth, select_rhs).unwrap();
-
-        let mut query = query_lhs;
-        query.extend(query_rhs);
+        let query = ExecutionSet::from_iter(query_lhs.into_iter().chain(query_rhs));
 
         b.iter(|| {
             let out = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing()).unwrap();
@@ -171,6 +172,7 @@ fn eval(c: &mut Criterion) {
         let auth = AuthCtx::for_testing();
         let tx = db.begin_tx();
         let query = compile_read_only_query(&db, &tx, &auth, &join).unwrap();
+        let query: ExecutionSet = query.into();
 
         b.iter(|| {
             let out = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing()).unwrap();
