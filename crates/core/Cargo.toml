@@ -102,7 +102,7 @@ metrics = []
 # Optional storage engines.
 odb_rocksdb = ["dep:rocksdb"]
 odb_sled = []
-default = ["odb_sled", "metrics"]
+default = ["odb_sled"]
 
 [dev-dependencies]
 spacetimedb-lib = { path = "../lib", features = ["proptest"] }
