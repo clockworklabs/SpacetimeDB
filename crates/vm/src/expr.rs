@@ -241,6 +241,30 @@ impl From<Query> for Option<ColumnOp> {
     }
 }
 
+/// A convenient interface for allocating `SourceId`s and managing `SourceExpr`s.
+#[derive(Default)]
+pub struct SourceBuilder {
+    next_id: usize,
+    sources: Vec<Table>,
+}
+
+impl SourceBuilder {
+    pub fn add_mem_table(&mut self, table: MemTable) -> SourceExpr {
+        let source_id = SourceId(self.next_id);
+        self.next_id += 1;
+        let expr = SourceExpr::from_mem_table(&table, source_id);
+        debug_assert_eq!(self.sources.len(), source_id.0);
+        self.sources.push(Table::MemTable(table));
+        expr
+    }
+
+    /// Convert `self` into a `Vec<Option<Table>>`
+    /// suitable for the `sources` argument of e.g. [`crate::eval::build_query`].
+    pub fn into_sources(self) -> Vec<Option<Table>> {
+        self.sources.into_iter().map(Some).collect()
+    }
+}
+
 /// An identifier for a data source (i.e. a table) in a query plan.
 ///
 /// When compiling a query plan, rather than embedding the inputs in the plan,

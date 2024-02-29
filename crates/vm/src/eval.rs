@@ -232,7 +232,7 @@ pub mod tests {
     use super::test_data::*;
     use super::*;
     use crate::dsl::{mem_table, query, scalar};
-    use crate::expr::{SourceExpr, SourceId};
+    use crate::expr::SourceBuilder;
     use crate::program::Program;
     use crate::relation::MemTable;
     use spacetimedb_lib::identity::AuthCtx;
@@ -254,8 +254,9 @@ pub mod tests {
         let p = &mut Program::new(AuthCtx::for_testing());
         let input = MemTable::from_value(scalar(1));
         let field = input.get_field_pos(0).unwrap().clone();
-        let source_expr = SourceExpr::from_mem_table(&input, SourceId(0));
-        let mut sources = [Some(Table::MemTable(input))];
+        let mut sources = SourceBuilder::default();
+        let source_expr = sources.add_mem_table(input);
+        let mut sources = sources.into_sources();
 
         let q = query(source_expr).with_select_cmp(OpCmp::Eq, field, scalar(1));
 
@@ -275,11 +276,13 @@ pub mod tests {
         let p = &mut Program::new(AuthCtx::for_testing());
         let input = scalar(1);
         let table = MemTable::from_value(scalar(1));
-        let field = table.get_field_pos(0).unwrap().clone();
-        let source_expr = SourceExpr::from_mem_table(&table, SourceId(0));
-        let mut sources = [Some(Table::MemTable(table.clone()))];
+
+        let mut sources = SourceBuilder::default();
+        let source_expr = sources.add_mem_table(table.clone());
+        let mut sources = sources.into_sources();
 
         let source = query(source_expr);
+        let field = table.get_field_pos(0).unwrap().clone();
         let q = source.clone().with_project(&[field.into()], None);
         let head = q.source.head().clone();
 
@@ -291,10 +294,13 @@ pub mod tests {
             "Project"
         );
 
+        let mut sources = SourceBuilder::default();
+        let source_expr = sources.add_mem_table(table.clone());
+        let mut sources = sources.into_sources();
+        let source = query(source_expr);
         let field = FieldName::positional(&table.head.table_name, 1);
         let q = source.with_project(&[field.clone().into()], None);
 
-        let mut sources = [Some(Table::MemTable(table))];
         let result = run_ast(p, q.into(), &mut sources);
         assert_eq!(
             result,
@@ -308,9 +314,11 @@ pub mod tests {
         let p = &mut Program::new(AuthCtx::for_testing());
         let table = MemTable::from_value(scalar(1));
         let field = table.get_field_pos(0).unwrap().clone();
-        let source_expr = SourceExpr::from_mem_table(&table, SourceId(0));
-        let second_source_expr = SourceExpr::from_mem_table(&table, SourceId(1));
-        let mut sources = [Some(Table::MemTable(table.clone())), Some(Table::MemTable(table))];
+
+        let mut sources = SourceBuilder::default();
+        let source_expr = sources.add_mem_table(table.clone());
+        let second_source_expr = sources.add_mem_table(table);
+        let mut sources = sources.into_sources();
 
         let q = query(source_expr).with_join_inner(second_source_expr, field.clone(), field);
         let result = match run_ast(p, q.into(), &mut sources) {
@@ -339,8 +347,10 @@ pub mod tests {
 
         let input = mem_table(inv, vec![row]);
         let inv = input.clone();
-        let source_expr = SourceExpr::from_mem_table(&input, SourceId(0));
-        let mut sources = [Some(Table::MemTable(input.clone()))];
+
+        let mut sources = SourceBuilder::default();
+        let source_expr = sources.add_mem_table(input.clone());
+        let mut sources = sources.into_sources();
 
         let q = query(source_expr.clone()).with_select_cmp(OpLogic::And, scalar(true), scalar(true));
 
@@ -348,7 +358,9 @@ pub mod tests {
 
         assert_eq!(result, Code::Table(inv.clone()), "Query And");
 
-        let mut sources = [Some(Table::MemTable(input.clone()))];
+        let mut sources = SourceBuilder::default();
+        let source_expr = sources.add_mem_table(input);
+        let mut sources = sources.into_sources();
 
         let q = query(source_expr).with_select_cmp(OpLogic::Or, scalar(true), scalar(false));
 
@@ -369,9 +381,11 @@ pub mod tests {
 
         let input = mem_table(inv, vec![row]);
         let field = input.get_field_pos(0).unwrap().clone();
-        let source_expr = SourceExpr::from_mem_table(&input, SourceId(0));
-        let second_source_expr = SourceExpr::from_mem_table(&input, SourceId(1));
-        let mut sources = [Some(Table::MemTable(input.clone())), Some(Table::MemTable(input))];
+
+        let mut sources = SourceBuilder::default();
+        let source_expr = sources.add_mem_table(input.clone());
+        let second_source_expr = sources.add_mem_table(input);
+        let mut sources = sources.into_sources();
 
         let q = query(source_expr).with_join_inner(second_source_expr, field.clone(), field);
 
@@ -412,12 +426,10 @@ pub mod tests {
         let location_x = data.location.get_field_named("x").unwrap().clone();
         let location_z = data.location.get_field_named("z").unwrap().clone();
 
-        let player_source_expr = SourceExpr::from_mem_table(&data.player, SourceId(0));
-        let location_source_expr = SourceExpr::from_mem_table(&data.location, SourceId(1));
-        let mut sources = [
-            Some(Table::MemTable(data.player.clone())),
-            Some(Table::MemTable(data.location.clone())),
-        ];
+        let mut sources = SourceBuilder::default();
+        let player_source_expr = sources.add_mem_table(data.player.clone());
+        let location_source_expr = sources.add_mem_table(data.location.clone());
+        let mut sources = sources.into_sources();
 
         // SELECT
         // Player.*
@@ -449,14 +461,11 @@ pub mod tests {
 
         assert_eq!(result.as_without_table_name(), input.as_without_table_name(), "Player");
 
-        let player_source_expr = SourceExpr::from_mem_table(&data.player, SourceId(0));
-        let location_source_expr = SourceExpr::from_mem_table(&data.location, SourceId(1));
-        let inventory_source_expr = SourceExpr::from_mem_table(&data.inv, SourceId(2));
-        let mut sources = [
-            Some(Table::MemTable(data.player.clone())),
-            Some(Table::MemTable(data.location.clone())),
-            Some(Table::MemTable(data.inv.clone())),
-        ];
+        let mut sources = SourceBuilder::default();
+        let player_source_expr = sources.add_mem_table(data.player);
+        let location_source_expr = sources.add_mem_table(data.location);
+        let inventory_source_expr = sources.add_mem_table(data.inv);
+        let mut sources = sources.into_sources();
 
         // SELECT
         // Inventory.*
