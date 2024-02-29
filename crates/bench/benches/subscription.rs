@@ -131,43 +131,34 @@ fn eval(c: &mut Criterion) {
         ],
     };
 
+    let bench_eval = |c: &mut Criterion, name, sql| {
+        c.bench_function(name, |b| {
+            let auth = AuthCtx::for_testing();
+            let tx = db.begin_tx();
+            let query = compile_read_only_query(&db, &tx, &auth, sql).unwrap();
+            let query: ExecutionSet = query.into();
+
+            b.iter(|| drop(black_box(query.eval(&db, &tx, auth).unwrap())))
+        });
+    };
+
     // To profile this benchmark for 30s
     // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- full-scan --exact --profile-time=30
-    c.bench_function("full-scan", |b| {
-        // Iterate 1M rows.
-        let scan = "select * from footprint";
-        let auth = AuthCtx::for_testing();
-        let tx = db.begin_tx();
-        let query = compile_read_only_query(&db, &tx, &auth, scan).unwrap();
-        let query: ExecutionSet = query.into();
-
-        b.iter(|| {
-            let out = query.eval(&db, &tx, auth).unwrap();
-            black_box(out);
-        })
-    });
+    // Iterate 1M rows.
+    bench_eval(c, "full-scan", "select * from footprint");
 
     // To profile this benchmark for 30s
     // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- full-join --exact --profile-time=30
-    c.bench_function("full-join", |b| {
-        // Join 1M rows on the left with 12K rows on the right.
-        // Note, this should use an index join so as not to read the entire lhs table.
-        let join = format!(
-            "\
-            select footprint.* \
-            from footprint join location on footprint.entity_id = location.entity_id \
-            where location.chunk_index = {chunk_index}"
-        );
-        let auth = AuthCtx::for_testing();
-        let tx = db.begin_tx();
-        let query = compile_read_only_query(&db, &tx, &auth, &join).unwrap();
-        let query: ExecutionSet = query.into();
-
-        b.iter(|| {
-            let out = query.eval(&db, &tx, AuthCtx::for_testing()).unwrap();
-            black_box(out);
-        })
-    });
+    // Join 1M rows on the left with 12K rows on the right.
+    // Note, this should use an index join so as not to read the entire lhs table.
+    let name = format!(
+        r#"
+        select footprint.*
+        from footprint join location on footprint.entity_id = location.entity_id
+        where location.chunk_index = {chunk_index}
+        "#
+    );
+    bench_eval(c, "full-join", &name);
 
     // To profile this benchmark for 30s
     // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- incr-select --exact --profile-time=30
@@ -210,35 +201,21 @@ fn eval(c: &mut Criterion) {
 
     // To profile this benchmark for 30s
     // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- query-indexes-many --exact --profile-time=30
-    c.bench_function("query-indexes-many", |b| {
-        // Iterate 1M rows.
-        let scan = "select * from location WHERE x = 0 AND z = 10000 AND dimension = 0";
-        let auth = AuthCtx::for_testing();
-        let tx = db.begin_tx();
-        let query = compile_read_only_query(&db, &tx, &auth, scan).unwrap();
-        let query: ExecutionSet = query.into();
-
-        b.iter(|| {
-            let out = query.eval(&db, &tx, auth).unwrap();
-            black_box(out);
-        })
-    });
+    // Iterate 1M rows.
+    bench_eval(
+        c,
+        "query-indexes-many",
+        "select * from location WHERE x = 0 AND z = 10000 AND dimension = 0",
+    );
 
     // To profile this benchmark for 30s
     // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- query-indexes-multi --exact --profile-time=30
-    c.bench_function("query-indexes-multi", |b| {
-        // Iterate 1M rows.
-        let scan = "select * from location_multi WHERE x = 0 AND z = 10000 AND dimension = 0";
-        let auth = AuthCtx::for_testing();
-        let tx = db.begin_tx();
-        let query = compile_read_only_query(&db, &tx, &auth, scan).unwrap();
-        let query: ExecutionSet = query.into();
-
-        b.iter(|| {
-            let out = query.eval(&db, &tx, auth).unwrap();
-            black_box(out);
-        })
-    });
+    // Iterate 1M rows.
+    bench_eval(
+        c,
+        "query-indexes-multi",
+        "select * from location_multi WHERE x = 0 AND z = 10000 AND dimension = 0",
+    );
 }
 
 criterion_group!(benches, eval);
