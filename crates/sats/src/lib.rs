@@ -10,6 +10,7 @@ pub mod convert;
 pub mod data_key;
 pub mod db;
 pub mod de;
+pub mod energy;
 pub mod hash;
 pub mod hex;
 pub mod map_type;

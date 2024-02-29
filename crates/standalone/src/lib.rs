@@ -641,6 +641,7 @@ impl StandaloneEnv {
                     let dbic = DatabaseInstanceContext::from_database(
                         self.config,
                         database,
+                        self.db_inst_ctx_controller.energy_monitor.clone(),
                         instance_id,
                         root_db_path.clone(),
                     )?;

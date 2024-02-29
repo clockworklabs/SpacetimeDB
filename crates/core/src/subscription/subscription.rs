@@ -40,6 +40,7 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
+use spacetimedb_sats::energy::{QueryTimer, Timed};
 use spacetimedb_sats::relation::DbTable;
 use spacetimedb_vm::expr::{self, IndexJoin, Query, QueryExpr, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
@@ -614,14 +615,16 @@ impl ExecutionSet {
         db: &RelationalDB,
         tx: &Tx,
         database_update: &DatabaseUpdate,
-    ) -> Result<DatabaseUpdate, DBError> {
+    ) -> Result<Timed<DatabaseUpdate>, DBError> {
+        let mut timer = QueryTimer::default();
         let mut tables = Vec::new();
         for unit in &self.exec_units {
             if let Some(table) = unit.eval_incr(db, tx, database_update.tables.iter())? {
                 tables.push(table);
             }
         }
-        Ok(DatabaseUpdate { tables })
+        timer.finish_execution();
+        Ok(Timed::new(timer, DatabaseUpdate { tables }))
     }
 }
 

@@ -33,7 +33,7 @@ type Context = Arc<OnceCell<(Arc<DatabaseInstanceContext>, Scheduler)>>;
 #[derive(Clone)]
 pub struct DatabaseInstanceContextController {
     contexts: Arc<Mutex<HashMap<u64, (Context, TotalDiskUsage)>>>,
-    energy_monitor: Arc<dyn EnergyMonitor>,
+    pub energy_monitor: Arc<dyn EnergyMonitor>,
 }
 
 impl DatabaseInstanceContextController {

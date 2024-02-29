@@ -6,6 +6,7 @@ use crate::execution_context::ExecutionContext;
 use crate::vm::{DbProgram, TxMode};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{ProductType, ProductValue};
+use spacetimedb_sats::energy::QueryTimer;
 use spacetimedb_vm::eval::run_ast;
 use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr, SourceSet};
 use spacetimedb_vm::relation::MemTable;
@@ -23,12 +24,21 @@ pub struct StmtResult {
 pub fn execute(
     db_inst_ctx_controller: &DatabaseInstanceContextController,
     database_instance_id: u64,
+    timer: &mut QueryTimer,
     sql_text: String,
     auth: AuthCtx,
 ) -> Result<Vec<MemTable>, DBError> {
     info!(sql = sql_text);
     if let Some((database_instance_context, _)) = db_inst_ctx_controller.get(database_instance_id) {
-        run(&database_instance_context.relational_db, &sql_text, auth)
+        let result = run(&database_instance_context.relational_db, timer, &sql_text, auth);
+
+        db_inst_ctx_controller.energy_monitor.record_query_energy(
+            &database_instance_context.database,
+            database_instance_context.database_instance_id,
+            timer.total(),
+        );
+
+        result
     } else {
         Err(DatabaseError::NotFound(database_instance_id).into())
     }
@@ -70,7 +80,12 @@ pub fn execute_single_sql(
 /// Run the compiled `SQL` expression inside the `vm` created by [DbProgram]
 ///
 /// Evaluates `ast` and accordingly triggers mutable or read tx to execute
-pub fn execute_sql(db: &RelationalDB, ast: Vec<CrudExpr>, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
+pub fn execute_sql(
+    db: &RelationalDB,
+    timer: &mut QueryTimer,
+    ast: Vec<CrudExpr>,
+    auth: AuthCtx,
+) -> Result<Vec<MemTable>, DBError> {
     let total = ast.len();
     let ctx = ExecutionContext::sql(db.address());
     let mut result = Vec::with_capacity(total);
@@ -90,15 +105,18 @@ pub fn execute_sql(db: &RelationalDB, ast: Vec<CrudExpr>, auth: AuthCtx) -> Resu
             collect_result(&mut result, run_ast(p, q, SourceSet::default()).into())
         }),
     }?;
+    timer.finish_execution();
 
     Ok(result)
 }
 
 /// Run the `SQL` string using the `auth` credentials
-pub fn run(db: &RelationalDB, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
+pub fn run(db: &RelationalDB, timer: &mut QueryTimer, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
     let ctx = &ExecutionContext::sql(db.address());
     let ast = db.with_read_only(ctx, |tx| compile_sql(db, tx, sql_text))?;
-    execute_sql(db, ast, auth)
+    let result = execute_sql(db, timer, ast, auth)?;
+    timer.finish_execution();
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -118,8 +136,9 @@ pub(crate) mod tests {
     use tempfile::TempDir;
 
     /// Short-cut for simplify test execution
-    fn run_for_testing(db: &RelationalDB, sql_text: &str) -> Result<Vec<MemTable>, DBError> {
-        run(db, sql_text, AuthCtx::for_testing())
+    pub fn run_for_testing(db: &RelationalDB, sql_text: &str) -> Result<Vec<MemTable>, DBError> {
+        let mut timer = QueryTimer::default();
+        run(db, &mut timer, sql_text, AuthCtx::for_testing())
     }
 
     fn create_data(total_rows: u64) -> ResultTest<(RelationalDB, MemTable, TempDir)> {

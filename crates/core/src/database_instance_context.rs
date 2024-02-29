@@ -5,6 +5,7 @@ use crate::db::ostorage::sled_object_db::SledObjectDB;
 use crate::db::ostorage::ObjectDB;
 use crate::db::relational_db::RelationalDB;
 use crate::db::{Config, FsyncPolicy, Storage};
+use crate::energy::EnergyMonitor;
 use crate::error::DBError;
 use crate::messages::control_db::Database;
 use std::ops::Deref;
@@ -19,10 +20,17 @@ pub struct DatabaseInstanceContext {
     pub database_instance_id: u64,
     pub logger: Arc<DatabaseLogger>,
     pub relational_db: Arc<RelationalDB>,
+    pub energy_monitor: Arc<dyn EnergyMonitor>,
 }
 
 impl DatabaseInstanceContext {
-    pub fn from_database(config: Config, database: Database, instance_id: u64, root_db_path: PathBuf) -> Result<Self> {
+    pub fn from_database(
+        config: Config,
+        database: Database,
+        energy_monitor: Arc<dyn EnergyMonitor>,
+        instance_id: u64,
+        root_db_path: PathBuf,
+    ) -> Result<Self> {
         let mut db_path = root_db_path;
         db_path.extend([&*database.address.to_hex(), &*instance_id.to_string()]);
         db_path.push("database");
@@ -58,6 +66,7 @@ impl DatabaseInstanceContext {
             database_instance_id: instance_id,
             logger: Arc::new(DatabaseLogger::open(log_path)),
             relational_db: Arc::new(relational_db),
+            energy_monitor,
         })
     }
 

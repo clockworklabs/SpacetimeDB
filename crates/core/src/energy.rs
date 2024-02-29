@@ -15,6 +15,7 @@ pub struct EnergyQuanta(u128);
 
 impl EnergyQuanta {
     pub const ZERO: Self = EnergyQuanta(0);
+    pub const CPU_NANO_SECONDS: u128 = 1000; //Cost of eV per nanosecond of CPU execution
 
     #[inline]
     pub fn new(v: u128) -> Self {
@@ -34,6 +35,12 @@ impl EnergyQuanta {
         // enough values, so instead we expand the multiplication to (b * trunc(dur) + b * frac(dur)),
         // in a way that preserves integer precision despite a division
         let energy = bytes_stored * sec + (bytes_stored * nsec) / 1_000_000_000;
+        Self(energy)
+    }
+
+    pub fn from_query_timer(cpu_time: Duration) -> Self {
+        let ns = cpu_time.as_nanos();
+        let energy = (ns * Self::CPU_NANO_SECONDS) / 1_000_000_000;
         Self(energy)
     }
 }
@@ -172,6 +179,7 @@ pub trait EnergyMonitor: Send + Sync + 'static {
         execution_duration: Duration,
     );
     fn record_disk_usage(&self, database: &Database, instance_id: u64, disk_usage: u64, period: Duration);
+    fn record_query_energy(&self, database: &Database, instance_id: u64, cpu_usage: Duration);
 }
 
 #[derive(Default)]
@@ -191,4 +199,6 @@ impl EnergyMonitor for NullEnergyMonitor {
     }
 
     fn record_disk_usage(&self, _database: &Database, _instance_id: u64, _disk_usage: u64, _period: Duration) {}
+
+    fn record_query_energy(&self, _database: &Database, _instance_id: u64, _cpu_usage: Duration) {}
 }
