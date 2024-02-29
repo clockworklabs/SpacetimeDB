@@ -349,9 +349,7 @@ pub mod errnos {
 pub fn err_to_errno(err: &NodesError) -> Option<u16> {
     match err {
         NodesError::TableNotFound => Some(errnos::NO_SUCH_TABLE),
-        NodesError::PrimaryKeyNotFound(_) | NodesError::ColumnValueNotFound | NodesError::RangeNotFound => {
-            Some(errnos::LOOKUP_NOT_FOUND)
-        }
+        NodesError::ColumnValueNotFound | NodesError::RangeNotFound => Some(errnos::LOOKUP_NOT_FOUND),
         NodesError::AlreadyExists(_) => Some(errnos::UNIQUE_ALREADY_EXISTS),
         NodesError::Internal(internal) => match **internal {
             DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {

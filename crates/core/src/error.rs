@@ -12,7 +12,7 @@ use thiserror::Error;
 use crate::client::ClientActorId;
 use crate::db::datastore::system_tables::SystemTable;
 use spacetimedb_lib::buffer::DecodeError;
-use spacetimedb_lib::{PrimaryKey, ProductValue};
+use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::def::IndexDef;
 use spacetimedb_sats::db::error::{LibError, RelationError, SchemaErrors};
@@ -313,8 +313,6 @@ pub enum NodesError {
     DecodeFilter(#[source] DecodeError),
     #[error("table with provided name or id doesn't exist")]
     TableNotFound,
-    #[error("Primary key {0:?} not found")]
-    PrimaryKeyNotFound(PrimaryKey),
     #[error("row with column of given value not found")]
     ColumnValueNotFound,
     #[error("range of rows not found")]

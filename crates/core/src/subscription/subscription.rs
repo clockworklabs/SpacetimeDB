@@ -319,8 +319,7 @@ impl<'a> IncrementalJoin<'a> {
     ///   right table joins with at most one row from the left table.
     /// * The rows in the [`DatabaseTableUpdate`]s on either side of the join
     ///   are already committed to the underlying "physical" tables.
-    /// * We maintain set semantics, i.e. no two rows with the same
-    ///   [`PrimaryKey`] can appear in the result.
+    /// * We maintain set semantics, i.e. no two rows with the same value can appear in the result.
     ///
     /// Based on this, we evaluate the join as:
     ///
