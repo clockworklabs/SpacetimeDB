@@ -179,6 +179,9 @@ impl HostController {
     /// reducer scheduler is started.
     ///
     /// Otherwise, if `F` returns an `Err` result, the module is discarded.
+    ///
+    /// In the `Err` case, `F` **MUST** roll back any modifications it has made
+    /// to the database passed in the [`ModuleHostContext`].
     async fn setup_module_host<F, Fut, T>(&self, mhc: ModuleHostContext, f: F) -> anyhow::Result<T>
     where
         F: FnOnce(ModuleHost) -> Fut,
@@ -250,6 +253,9 @@ impl HostController {
     ///
     /// This is a fairly expensive operation and should not be run on the async
     /// task threadpool.
+    ///
+    /// Note that this function **MUST NOT** make any modifications to the
+    /// database passed in as part of the [`ModuleCreationContext`].
     fn make_module_host(host_type: HostType, mcc: ModuleCreationContext) -> anyhow::Result<ModuleHost> {
         let module_host = match host_type {
             HostType::Wasm => {
