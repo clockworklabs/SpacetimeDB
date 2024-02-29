@@ -36,10 +36,12 @@ impl ClientConnectionSender {
         Self { id, protocol, sendtx }
     }
 
+    #[tracing::instrument(skip_all)]
     pub fn send_message(&self, message: impl ServerMessage) -> impl Future<Output = Result<(), ClientClosed>> + '_ {
         self.send(message.serialize(self.protocol))
     }
 
+    #[tracing::instrument(skip_all)]
     pub async fn send(&self, message: DataMessage) -> Result<(), ClientClosed> {
         let bytes_len = message.len();
 

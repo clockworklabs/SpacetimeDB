@@ -212,6 +212,7 @@ async fn ws_client_actor(client: ClientConnection, mut ws: WebSocketStream, mut 
                     log::info!("dropping message due to ws already being closed: {message:?}");
                 } else {
                     // TODO: I think we can be smarter about feeding messages here?
+                    let _ = tracing::trace_span!("ws send").entered();
                     if let Err(error) = ws.send(datamsg_to_wsmsg(message)).await {
                         log::warn!("Websocket send error: {error}")
                     }

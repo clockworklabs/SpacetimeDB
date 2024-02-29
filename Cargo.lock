@@ -4537,6 +4537,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-tungstenite",
+ "tracing",
 ]
 
 [[package]]

@@ -35,7 +35,7 @@ use crate::{
 };
 use anyhow::Context;
 use itertools::Either;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::TableId;
@@ -43,7 +43,7 @@ use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::relation::{Header, Relation};
 use spacetimedb_vm::expr::{self, IndexJoin, QueryExpr};
 use spacetimedb_vm::relation::MemTable;
-use std::collections::{hash_map, HashMap, HashSet};
+use std::collections::HashSet;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -577,10 +577,12 @@ impl ExecutionSet {
     #[tracing::instrument(skip_all)]
     pub fn eval(&self, db: &RelationalDB, tx: &Tx, auth: AuthCtx) -> Result<DatabaseUpdate, DBError> {
         // evaluate each of the execution units in this ExecutionSet in parallel
+        let min = self.exec_units.len() / 8;
         let tables = self
             .exec_units
             // if you need eval to run single-threaded for debugging, change this to .iter()
             .par_iter()
+            .with_min_len(min)
             .filter_map(|unit| unit.eval(db, tx, auth).transpose())
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -611,30 +613,15 @@ impl ExecutionSet {
 impl FromIterator<SupportedQuery> for ExecutionSet {
     fn from_iter<T: IntoIterator<Item = SupportedQuery>>(iter: T) -> Self {
         let mut exec_units = Vec::new();
-        // a map from the table id of each execution unit to its index in the vector
-        let mut exec_units_map = HashMap::new();
         for query in iter {
-            let Some(db_table) = query.expr.source.get_db_table() else {
-                continue;
-            };
-            match exec_units_map.entry(db_table.table_id) {
-                hash_map::Entry::Vacant(v) => {
-                    v.insert(exec_units.len());
-                    exec_units.push(ExecutionUnit {
-                        table_id: db_table.table_id,
-                        table_name: db_table.head.table_name.clone(),
-                        queries: vec![query],
-                    });
-                }
-                hash_map::Entry::Occupied(o) => exec_units[*o.get()].queries.push(query),
+            if let Some(db_table) = query.expr.source.get_db_table() {
+                exec_units.push(ExecutionUnit {
+                    table_id: db_table.table_id,
+                    table_name: db_table.head.table_name.clone(),
+                    queries: vec![query],
+                });
             }
         }
-
-        for exec_unit in &mut exec_units {
-            exec_unit.queries.sort();
-        }
-        exec_units.sort();
-
         ExecutionSet { exec_units }
     }
 }

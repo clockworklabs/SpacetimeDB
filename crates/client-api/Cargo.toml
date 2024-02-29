@@ -34,5 +34,6 @@ futures = "0.3"
 bytes = "1"
 bytestring = "1"
 tokio-tungstenite.workspace = true
+tracing.workspace = true
 itoa = "1.0.9"
 derive_more = "0.99.17"
