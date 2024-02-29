@@ -70,7 +70,6 @@ pub struct TableUpdateJson {
 #[derive(Debug, Clone, Serialize)]
 pub struct TableRowOperationJson {
     pub op: String,
-    pub row_pk: String,
     #[serde_as(as = "Vec<Sats>")]
     pub row: Vec<AlgebraicValue>,
 }
