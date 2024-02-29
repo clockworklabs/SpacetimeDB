@@ -40,6 +40,7 @@ use spacetimedb_lib::{Identity, ProductValue};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::error::AuthError;
+use spacetimedb_sats::energy::{QueryTimer, Timed};
 use spacetimedb_sats::relation::DbTable;
 use spacetimedb_vm::expr::{self, AuthAccess, IndexJoin, Query, QueryExpr, SourceExpr, SourceProvider, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
@@ -571,7 +572,9 @@ impl ExecutionSet {
         tx: &'a TxMode<'a>,
         database_update: &'a [&'a DatabaseTableUpdate],
         slow_query_threshold: Option<Duration>,
-    ) -> DatabaseUpdateRelValue<'a> {
+    ) -> Timed<DatabaseUpdateRelValue<'a>> {
+        let mut timer = QueryTimer::default();
+
         let mut tables = Vec::new();
         for unit in &self.exec_units {
             if let Some(table) = unit.eval_incr(
@@ -585,7 +588,9 @@ impl ExecutionSet {
                 tables.push(table);
             }
         }
-        DatabaseUpdateRelValue { tables }
+        timer.finish_execution();
+
+        Timed::new(timer, DatabaseUpdateRelValue { tables })
     }
 
     /// The estimated number of rows returned by this execution set.

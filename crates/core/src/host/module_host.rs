@@ -463,6 +463,12 @@ pub struct ModuleHost {
     on_panic: Arc<dyn Fn() + Send + Sync + 'static>,
 }
 
+impl ModuleHost {
+    pub fn database_instance(&self) -> &DatabaseInstanceContext {
+        self.inner.dbic()
+    }
+}
+
 impl fmt::Debug for ModuleHost {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ModuleHost")

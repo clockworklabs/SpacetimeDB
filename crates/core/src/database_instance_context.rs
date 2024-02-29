@@ -3,6 +3,7 @@ use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
 use crate::messages::control_db::Database;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
+use spacetimedb_sats::energy::QueryTimer;
 use std::io;
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -48,6 +49,12 @@ impl DatabaseInstanceContext {
             durability: self.durability_size_on_disk().ok(),
             logs: self.log_file_size().ok(),
         }
+    }
+
+    pub fn record_query_energy(&self, timer: QueryTimer) {
+        self.subscriptions
+            .energy_monitor
+            .record_query_energy(&self.database, self.database_instance_id, timer.total());
     }
 }
 

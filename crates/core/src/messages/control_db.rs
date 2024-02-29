@@ -22,7 +22,7 @@ pub struct EnergyBalance {
 }
 
 /// Description of a database.
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Database {
     /// Internal id of the database, assigned by the control database.
     pub id: u64,
@@ -44,6 +44,19 @@ pub struct Database {
     /// The meaning of this value is unspecified if the `owner_identity` is
     /// changed after creation of the database.
     pub publisher_address: Option<Address>,
+}
+
+impl Database {
+    pub fn for_testing() -> Self {
+        Self {
+            id: 0,
+            address: Default::default(),
+            owner_identity: Default::default(),
+            host_type: HostType::Wasm,
+            initial_program: Hash::ZERO,
+            publisher_address: None,
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]

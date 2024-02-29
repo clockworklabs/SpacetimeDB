@@ -40,6 +40,11 @@ impl EnergyMonitor for StandaloneEnergyMonitor {
         let amount = EnergyQuanta::from_disk_usage(disk_usage, period);
         self.withdraw_energy(database.owner_identity, amount)
     }
+
+    fn record_query_energy(&self, database: &Database, _instance_id: u64, cpu_time: Duration) {
+        let amount = EnergyQuanta::from_query_timer(cpu_time);
+        self.withdraw_energy(database.owner_identity, amount)
+    }
 }
 
 impl StandaloneEnergyMonitor {
