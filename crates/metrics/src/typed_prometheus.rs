@@ -1,3 +1,6 @@
+use std::fmt::Display;
+
+use arrayvec::ArrayString;
 use prometheus::core::{Metric, MetricVec, MetricVecBuilder};
 
 #[macro_export]
@@ -95,17 +98,17 @@ macro_rules! metrics_histogram_vec {
                 F: FnOnce(
                         <$vecty as $crate::typed_prometheus::ExtractMetricVecT>::M,
                     ) + Send + 'static,
-            {
-                use $crate::typed_prometheus::AsPrometheusLabel as _;
-                let this = self.clone();
-                $(
-                    let $labels = $labels.to_owned();
-                )+
-                let _ = self.1.send(Box::new(move || {
-                    let res = this.0.with_label_values(&[ $((&$labels).as_prometheus_str().as_ref()),+ ]);
-                    op(res);
-                }));
-            }
+                {
+                    use $crate::typed_prometheus::AsPrometheusLabel as _;
+                    let this = self.0.clone();
+                    $(
+                        let $labels = ($labels).as_prometheus_str();
+                    )+
+                    let _ = self.1.send(Box::new(move || {
+                        let res = this.with_label_values(&[ $(($labels).as_ref()),+ ]);
+                        op(res);
+                    }));
+                }
         }
 
         impl prometheus::core::Collector for $name {
@@ -143,12 +146,12 @@ macro_rules! metrics_vec {
                     ) + Send + 'static,
             {
                 use $crate::typed_prometheus::AsPrometheusLabel as _;
-                let this = self.clone();
+                let this = self.0.clone();
                 $(
-                    let $labels = $labels.to_owned();
+                    let $labels = ($labels).as_prometheus_str();
                 )+
                 let _ = self.1.send(Box::new(move || {
-                    let res = this.0.with_label_values(&[ $((&$labels).as_prometheus_str().as_ref()),+ ]);
+                    let res = this.with_label_values(&[ $(($labels).as_ref()),+ ]);
                     op(res);
                 }));
             }
@@ -169,32 +172,37 @@ macro_rules! metrics_vec {
 pub use metrics_vec;
 
 pub trait AsPrometheusLabel {
-    fn as_prometheus_str(&self) -> impl AsRef<str> + '_;
+    fn as_prometheus_str(&self) -> ArrayString<32>;
 }
-impl<T: AsRef<str> + ?Sized> AsPrometheusLabel for &T {
-    fn as_prometheus_str(&self) -> impl AsRef<str> + '_ {
-        self
+impl<T: Display + ?Sized> AsPrometheusLabel for &T {
+    fn as_prometheus_str(&self) -> ArrayString<32> {
+        use std::fmt::Write;
+        // max # of chars = log10 of MAX, rounded up (std ilog10 rounds down),
+        // + 1 if signed (for the `-`)
+        let mut buf = arrayvec::ArrayString::<32>::new();
+        write!(buf, "{self}").unwrap();
+        buf
     }
 }
 
-impl AsPrometheusLabel for bool {
-    fn as_prometheus_str(&self) -> impl AsRef<str> + '_ {
-        match *self {
-            true => "true",
-            false => "false",
-        }
-    }
-}
+// impl AsPrometheusLabel for bool {
+//     fn as_prometheus_str(&self) -> ArrayString<32> {
+//         match *self {
+//             true => "true",
+//             false => "false",
+//         }
+//     }
+// }
 
 macro_rules! impl_prometheusvalue_itoa {
     ($($ty:ident),*) => {
         $(impl $crate::typed_prometheus::AsPrometheusLabel for $ty {
-            fn as_prometheus_str(&self) -> impl AsRef<str> + '_ {
+            fn as_prometheus_str(&self) -> ArrayString<32> {
                 use std::fmt::Write;
                 // max # of chars = log10 of MAX, rounded up (std ilog10 rounds down),
                 // + 1 if signed (for the `-`)
-                const CAP: usize = ($ty::MAX.ilog10() as usize + 1) + ($ty::MIN != 0) as usize;
-                let mut buf = arrayvec::ArrayString::<CAP>::new();
+                //const CAP: usize = ($ty::MAX.ilog10() as usize + 1) + ($ty::MIN != 0) as usize;
+                let mut buf = arrayvec::ArrayString::<32>::new();
                 write!(buf, "{self}").unwrap();
                 buf
             }
@@ -202,7 +210,7 @@ macro_rules! impl_prometheusvalue_itoa {
     }
 }
 
-impl_prometheusvalue_itoa!(u8, u16, u32, u64, i8, i16, i32, i64);
+impl_prometheusvalue_itoa!(u8, u16, u32, u64, i8, i16, i32, i64, bool);
 
 #[doc(hidden)]
 pub trait ExtractMetricVecT {

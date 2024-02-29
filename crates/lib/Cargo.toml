@@ -45,6 +45,7 @@ tracing.workspace = true
 # For the 'proptest' feature.
 proptest = { workspace = true, optional = true }
 proptest-derive = { workspace = true, optional = true }
+arrayvec.workspace = true
 
 [dev-dependencies]
 rand.workspace = true

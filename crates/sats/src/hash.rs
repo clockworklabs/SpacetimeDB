@@ -17,8 +17,13 @@ impl_serialize!([] Hash, (self, ser) => self.data.serialize(ser));
 impl_deserialize!([] Hash, de => Ok(Self { data: <_>::deserialize(de)? }));
 
 impl AsPrometheusLabel for Hash {
-    fn as_prometheus_str(&self) -> impl AsRef<str> + '_ {
-        self.to_hex()
+    fn as_prometheus_str(&self) -> arrayvec::ArrayString<32> {
+        use std::fmt::Write;
+        // max # of chars = log10 of MAX, rounded up (std ilog10 rounds down),
+        // + 1 if signed (for the `-`)
+        let mut buf = arrayvec::ArrayString::<32>::new();
+        write!(buf, "{}", self.to_hex()).unwrap();
+        buf
     }
 }
 
