@@ -44,14 +44,11 @@ impl DatabaseUpdate {
         let mut map: HashMap<TableId, Vec<TableOp>> = HashMap::new();
         for record in tx_data.records.iter() {
             let vec = map.entry(record.table_id).or_default();
-
-            vec.push(TableOp {
-                op_type: match record.op {
-                    TxOp::Delete => 0,
-                    TxOp::Insert(_) => 1,
-                },
-                row: record.product_value.clone(),
-            });
+            let op_type = match record.op {
+                TxOp::Delete => 0,
+                TxOp::Insert(_) => 1,
+            };
+            vec.push(TableOp::new(op_type, record.product_value.clone()));
         }
 
         let ctx = ExecutionContext::internal(stdb.address());
@@ -136,6 +133,12 @@ pub struct DatabaseTableUpdate {
 pub struct TableOp {
     pub op_type: u8,
     pub row: ProductValue,
+}
+
+impl TableOp {
+    pub fn new(op_type: u8, row: ProductValue) -> Self {
+        Self { op_type, row }
+    }
 }
 
 #[derive(Debug, Clone)]

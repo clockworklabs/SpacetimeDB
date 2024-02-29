@@ -225,7 +225,7 @@ mod tests {
         DatabaseTableUpdate {
             table_id,
             table_name: table_name.to_string(),
-            ops: vec![TableOp { op_type: 1, row }],
+            ops: vec![TableOp::new(1, row)],
         }
     }
 
@@ -233,7 +233,7 @@ mod tests {
         DatabaseTableUpdate {
             table_id,
             table_name: table_name.to_string(),
-            ops: vec![TableOp { op_type: 0, row }],
+            ops: vec![TableOp::new(0, row)],
         }
     }
 
@@ -258,10 +258,7 @@ mod tests {
 
         let schema = db.schema_for_table_mut(tx, table_id).unwrap().into_owned();
 
-        let op = TableOp {
-            op_type: 1,
-            row: row.clone(),
-        };
+        let op = TableOp::new(1, row.clone());
 
         let data = DatabaseTableUpdate {
             table_id,
@@ -408,7 +405,7 @@ mod tests {
             db.insert(&mut tx, table_id, row)?;
 
             let row = product!(i + 10, i);
-            ops.push(TableOp { op_type: 0, row })
+            ops.push(TableOp::new(0, row))
         }
 
         let update = DatabaseUpdate {
@@ -772,10 +769,7 @@ mod tests {
 
         let s = ExecutionSet::from_iter([q_id.try_into()?]);
 
-        let row2 = TableOp {
-            op_type: 1,
-            row: row.clone(),
-        };
+        let row2 = TableOp::new(1, row.clone());
 
         let data = DatabaseTableUpdate {
             table_id: schema.table_id,
@@ -893,9 +887,8 @@ mod tests {
         let s = compile_read_only_query(&db, &tx, &AuthCtx::for_testing(), SUBSCRIBE_TO_ALL_QUERY)?.into();
         check_query_eval(&db, &tx, &s, 2, &[row_1.clone(), row_2.clone()])?;
 
-        let row1 = TableOp { op_type: 0, row: row_1 };
-
-        let row2 = TableOp { op_type: 1, row: row_2 };
+        let row1 = TableOp::new(0, row_1);
+        let row2 = TableOp::new(1, row_2);
 
         let data1 = DatabaseTableUpdate {
             table_id: schema_1.table_id,

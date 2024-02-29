@@ -42,7 +42,7 @@ fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> Database
     DatabaseTableUpdate {
         table_id,
         table_name: table_name.to_string(),
-        ops: vec![TableOp { op_type: 1, row }],
+        ops: vec![TableOp::new(1, row)],
     }
 }
 
