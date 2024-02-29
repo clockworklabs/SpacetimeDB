@@ -216,6 +216,7 @@ fn eval(c: &mut Criterion) {
         let auth = AuthCtx::for_testing();
         let tx = db.begin_tx();
         let query = compile_read_only_query(&db, &tx, &auth, scan).unwrap();
+        let query: ExecutionSet = query.into();
 
         b.iter(|| {
             let out = query.eval(&db, &tx, auth).unwrap();
@@ -231,6 +232,7 @@ fn eval(c: &mut Criterion) {
         let auth = AuthCtx::for_testing();
         let tx = db.begin_tx();
         let query = compile_read_only_query(&db, &tx, &auth, scan).unwrap();
+        let query: ExecutionSet = query.into();
 
         b.iter(|| {
             let out = query.eval(&db, &tx, auth).unwrap();
