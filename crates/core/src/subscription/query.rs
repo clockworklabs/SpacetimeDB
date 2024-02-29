@@ -225,7 +225,7 @@ mod tests {
         DatabaseTableUpdate {
             table_id,
             table_name: table_name.to_string(),
-            ops: vec![TableOp::new(1, row)],
+            ops: vec![TableOp::insert(row)],
         }
     }
 
@@ -233,7 +233,7 @@ mod tests {
         DatabaseTableUpdate {
             table_id,
             table_name: table_name.to_string(),
-            ops: vec![TableOp::new(0, row)],
+            ops: vec![TableOp::delete(row)],
         }
     }
 
@@ -256,16 +256,13 @@ mod tests {
         let table = mem_table(head.clone(), [row.clone()]);
         let table_id = create_table_with_rows(db, tx, table_name, head.clone(), &[row.clone()])?;
 
-        let schema = db.schema_for_table_mut(tx, table_id).unwrap().into_owned();
-
-        let op = TableOp::new(1, row.clone());
-
         let data = DatabaseTableUpdate {
             table_id,
             table_name: table_name.to_string(),
-            ops: vec![op],
+            ops: vec![TableOp::insert(row.clone())],
         };
 
+        let schema = db.schema_for_table_mut(tx, table_id).unwrap().into_owned();
         let q = QueryExpr::new(db_table(&schema, table_id));
 
         Ok((schema, table, data, q))
@@ -405,7 +402,7 @@ mod tests {
             db.insert(&mut tx, table_id, row)?;
 
             let row = product!(i + 10, i);
-            ops.push(TableOp::new(0, row))
+            ops.push(TableOp::delete(row))
         }
 
         let update = DatabaseUpdate {
@@ -769,7 +766,7 @@ mod tests {
 
         let s = ExecutionSet::from_iter([q_id.try_into()?]);
 
-        let row2 = TableOp::new(1, row.clone());
+        let row2 = TableOp::insert(row.clone());
 
         let data = DatabaseTableUpdate {
             table_id: schema.table_id,
@@ -887,19 +884,16 @@ mod tests {
         let s = compile_read_only_query(&db, &tx, &AuthCtx::for_testing(), SUBSCRIBE_TO_ALL_QUERY)?.into();
         check_query_eval(&db, &tx, &s, 2, &[row_1.clone(), row_2.clone()])?;
 
-        let row1 = TableOp::new(0, row_1);
-        let row2 = TableOp::new(1, row_2);
-
         let data1 = DatabaseTableUpdate {
             table_id: schema_1.table_id,
             table_name: "inventory".to_string(),
-            ops: vec![row1],
+            ops: vec![TableOp::delete(row_1)],
         };
 
         let data2 = DatabaseTableUpdate {
             table_id: schema_2.table_id,
             table_name: "player".to_string(),
-            ops: vec![row2],
+            ops: vec![TableOp::insert(row_2)],
         };
 
         let update = DatabaseUpdate {

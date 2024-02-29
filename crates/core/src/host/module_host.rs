@@ -43,12 +43,11 @@ impl DatabaseUpdate {
     pub fn from_writes(stdb: &RelationalDB, tx_data: &TxData) -> Self {
         let mut map: HashMap<TableId, Vec<TableOp>> = HashMap::new();
         for record in tx_data.records.iter() {
-            let vec = map.entry(record.table_id).or_default();
-            let op_type = match record.op {
-                TxOp::Delete => 0,
-                TxOp::Insert(_) => 1,
-            };
-            vec.push(TableOp::new(op_type, record.product_value.clone()));
+            let pv = record.product_value.clone();
+            map.entry(record.table_id).or_default().push(match record.op {
+                TxOp::Delete => TableOp::delete(pv),
+                TxOp::Insert(_) => TableOp::insert(pv),
+            });
         }
 
         let ctx = ExecutionContext::internal(stdb.address());
@@ -136,8 +135,19 @@ pub struct TableOp {
 }
 
 impl TableOp {
+    #[inline]
     pub fn new(op_type: u8, row: ProductValue) -> Self {
         Self { op_type, row }
+    }
+
+    #[inline]
+    pub fn insert(row: ProductValue) -> Self {
+        Self::new(1, row)
+    }
+
+    #[inline]
+    pub fn delete(row: ProductValue) -> Self {
+        Self::new(0, row)
     }
 }
 

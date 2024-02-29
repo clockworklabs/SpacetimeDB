@@ -390,8 +390,8 @@ impl<'a> IncrementalJoin<'a> {
         // Deletes need to come first, as UPDATE = [DELETE, INSERT]
         Ok(deletes
             .into_iter()
-            .map(|row| TableOp::new(0, row))
-            .chain(inserts.into_iter().map(|row| TableOp::new(1, row))))
+            .map(TableOp::delete)
+            .chain(inserts.into_iter().map(TableOp::insert)))
     }
 }
 
@@ -457,14 +457,12 @@ impl ExecutionUnit {
     #[tracing::instrument(skip_all)]
     fn eval(&self, db: &RelationalDB, tx: &Tx, auth: AuthCtx) -> Result<Option<DatabaseTableUpdate>, DBError> {
         let ctx = ExecutionContext::subscribe(db.address());
-
-        let row_to_op = |row| TableOp::new(1, row);
         let ops = match &self.queries[..] {
             // special-case single query - we don't have to deduplicate
             [query] => run_query(&ctx, db, tx, &query.expr, auth)?
                 .into_iter()
                 .flat_map(|table| table.data)
-                .map(row_to_op)
+                .map(TableOp::insert)
                 .collect(),
             // this is a case we don't fully support atm
             queries => {
@@ -472,7 +470,7 @@ impl ExecutionUnit {
 
                 for SupportedQuery { kind: _, expr } in queries {
                     for table in run_query(&ctx, db, tx, expr, auth)? {
-                        ops.extend(table.data.into_iter().map(row_to_op));
+                        ops.extend(table.data.into_iter().map(TableOp::insert));
                     }
                 }
 
@@ -728,7 +726,7 @@ mod tests {
         let delta = DatabaseTableUpdate {
             table_id: lhs_id,
             table_name: String::from("lhs"),
-            ops: vec![TableOp::new(1, product!(0u64, 0u64))],
+            ops: vec![TableOp::insert(product![0u64, 0u64])],
         };
 
         // Optimize the query plan for the incremental update.
@@ -816,7 +814,7 @@ mod tests {
         let delta = DatabaseTableUpdate {
             table_id: rhs_id,
             table_name: String::from("rhs"),
-            ops: vec![TableOp::new(1, product!(0u64, 0u64, 0u64))],
+            ops: vec![TableOp::insert(product![0u64, 0u64, 0u64])],
         };
 
         // Optimize the query plan for the incremental update.
