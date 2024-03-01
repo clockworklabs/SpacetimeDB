@@ -25,7 +25,7 @@ fn traversal() {
 
     assert_eq!(
         total_txs,
-        log.transactions_from(0, payload::ArrayDecoder)
+        log.transactions_from(0, &payload::ArrayDecoder)
             .map(Result::unwrap)
             .count()
     );
@@ -53,7 +53,7 @@ fn reopen() {
     assert_eq!(
         total_txs,
         open_log::<[u8; 32]>(repo.clone())
-            .transactions_from(0, payload::ArrayDecoder)
+            .transactions_from(0, &payload::ArrayDecoder)
             .map(Result::unwrap)
             .count()
     );
@@ -69,7 +69,7 @@ fn reopen() {
         assert_eq!(
             meta.tx_range.start,
             open_log::<[u8; 32]>(repo.clone())
-                .transactions_from(0, payload::ArrayDecoder)
+                .transactions_from(0, &payload::ArrayDecoder)
                 .map(Result::unwrap)
                 .count() as u64
         );
@@ -124,7 +124,7 @@ fn overwrite_reopen() {
     // Log should be contiguous, but missing one corrupted commit.
     assert_eq!(
         total_txs - txs_per_commit,
-        log.transactions_from(0, payload::ArrayDecoder)
+        log.transactions_from(0, &payload::ArrayDecoder)
             .map(Result::unwrap)
             .count()
     );
@@ -132,7 +132,7 @@ fn overwrite_reopen() {
     assert_eq!(
         total_txs - txs_per_commit,
         open_log::<[u8; 32]>(repo)
-            .transactions_from(0, payload::ArrayDecoder)
+            .transactions_from(0, &payload::ArrayDecoder)
             .map(Result::unwrap)
             .count()
     );

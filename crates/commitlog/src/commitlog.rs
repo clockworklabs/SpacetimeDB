@@ -1,7 +1,7 @@
 use std::{io, marker::PhantomData, mem, vec};
 
 use itertools::Itertools;
-use log::{debug, info, warn};
+use log::{debug, info, trace, warn};
 
 use crate::{
     error,
@@ -213,34 +213,58 @@ impl<R: Repo, T: Encode> Generic<R, T> {
         self.head.append(record)
     }
 
-    pub fn transactions_from<D: Decoder<Record = T>>(
+    pub fn transactions_from<'a, D>(
         &self,
         offset: u64,
-        decoder: D,
-    ) -> impl Iterator<Item = Result<Transaction<T>, error::Traversal>> {
+        deserializer: &'a D,
+    ) -> impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a
+    where
+        D: Decoder<Record = T>,
+        D::Error: From<error::Traversal>,
+        R: 'a,
+        T: 'a,
+    {
         self.commits_from(offset)
             .with_log_format_version()
-            .map_ok(move |(version, commit)| {
-                let buf = &mut commit.records.as_slice();
-                // TODO: Unroll iterator, so we can decode incrementally.
-                let records = (0..commit.n)
-                    .map(|n| {
-                        decoder
-                            .decode_record(version, buf)
-                            .map_err(|e| error::Traversal::Decode {
-                                offset: commit.min_tx_offset + n as u64,
-                                source: e,
-                            })
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                let transactions = (commit.min_tx_offset..)
-                    .zip(records)
-                    .skip_while(move |(ofs, _)| ofs < &offset)
-                    .map(move |(offset, txdata)| Transaction { offset, txdata });
-                Ok::<_, error::Traversal>(transactions)
-            })
+            .map(|x| x.map_err(Into::into))
+            .map_ok(move |(version, commit)| commit.into_transactions(version, deserializer))
             .flatten_ok()
             .flatten_ok()
+            .skip_while(move |x| x.as_ref().map(|tx| tx.offset < offset).unwrap_or(false))
+    }
+
+    pub fn fold_transactions_from<D>(&self, offset: u64, decoder: D) -> Result<(), D::Error>
+    where
+        D: Decoder,
+        D::Error: From<error::Traversal>,
+    {
+        let mut iter = self.commits_from(offset).with_log_format_version();
+        while let Some(commit) = iter.next() {
+            let (version, commit) = match commit {
+                Ok(version_and_commit) => version_and_commit,
+                Err(e) => {
+                    // Ignore it if the very last commit in the log is broken.
+                    // The next `append` will fix the log, but the `decoder`
+                    // has no way to tell whether we're at the end or not.
+                    // This is unlike the consumer of an iterator, which can
+                    // perform below check itself.
+                    if iter.next().is_none() {
+                        return Ok(());
+                    }
+
+                    return Err(e.into());
+                }
+            };
+            trace!("commit {} n={} version={}", commit.min_tx_offset, commit.n, version);
+
+            let records = &mut commit.records.as_slice();
+            for n in 0..commit.n {
+                let tx_offset = commit.min_tx_offset + n as u64;
+                decoder.decode_record(version, tx_offset, records)?;
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -446,7 +470,7 @@ mod tests {
         let mut log = mem_log::<[u8; 32]>(32);
         let total_txs = fill_log(&mut log, 10, (1..=3).cycle()) as u64;
 
-        for (i, tx) in (0..total_txs).zip(log.transactions_from(0, ArrayDecoder)) {
+        for (i, tx) in (0..total_txs).zip(log.transactions_from(0, &ArrayDecoder)) {
             assert_eq!(i, tx.unwrap().offset);
         }
     }
@@ -457,13 +481,13 @@ mod tests {
         let total_txs = fill_log(&mut log, 10, (1..=3).cycle()) as u64;
 
         for offset in 0..total_txs {
-            let mut iter = log.transactions_from(offset, ArrayDecoder);
+            let mut iter = log.transactions_from(offset, &ArrayDecoder);
             assert_eq!(offset, iter.next().expect("at least one tx expected").unwrap().offset);
             for tx in iter {
                 assert!(tx.unwrap().offset >= offset);
             }
         }
-        assert_eq!(0, log.transactions_from(total_txs, ArrayDecoder).count());
+        assert_eq!(0, log.transactions_from(total_txs, &ArrayDecoder).count());
     }
 
     #[test]
@@ -472,8 +496,8 @@ mod tests {
 
         assert_eq!(0, log.commits_from(0).count());
         assert_eq!(0, log.commits_from(42).count());
-        assert_eq!(0, log.transactions_from(0, ArrayDecoder).count());
-        assert_eq!(0, log.transactions_from(42, ArrayDecoder).count());
+        assert_eq!(0, log.transactions_from(0, &ArrayDecoder).count());
+        assert_eq!(0, log.transactions_from(42, &ArrayDecoder).count());
     }
 
     #[test]
@@ -482,7 +506,7 @@ mod tests {
         fill_log(&mut log, 50, (1..=10).cycle());
 
         log = log.reset().unwrap();
-        assert_eq!(0, log.transactions_from(0, ArrayDecoder).count());
+        assert_eq!(0, log.transactions_from(0, &ArrayDecoder).count());
     }
 
     #[test]
@@ -494,7 +518,7 @@ mod tests {
             log = log.reset_to(offset).unwrap();
             assert_eq!(
                 offset,
-                log.transactions_from(0, ArrayDecoder)
+                log.transactions_from(0, &ArrayDecoder)
                     .map(Result::unwrap)
                     .last()
                     .unwrap()
@@ -503,7 +527,7 @@ mod tests {
             // We're counting from zero, so offset + 1 is the # of txs.
             assert_eq!(
                 offset + 1,
-                log.transactions_from(0, ArrayDecoder).map(Result::unwrap).count() as u64
+                log.transactions_from(0, &ArrayDecoder).map(Result::unwrap).count() as u64
             );
         }
     }
@@ -515,7 +539,7 @@ mod tests {
 
         // No op.
         log = log.reset_to(total_txs).unwrap();
-        assert_eq!(total_txs, log.transactions_from(0, ArrayDecoder).count() as u64);
+        assert_eq!(total_txs, log.transactions_from(0, &ArrayDecoder).count() as u64);
 
         let middle_commit = log.commits_from(0).nth(25).unwrap().unwrap();
 
@@ -523,23 +547,23 @@ mod tests {
         log = log.reset_to(middle_commit.min_tx_offset + 1).unwrap();
         assert_eq!(
             middle_commit.tx_range().end,
-            log.transactions_from(0, ArrayDecoder).count() as u64
+            log.transactions_from(0, &ArrayDecoder).count() as u64
         );
         log = log.reset_to(middle_commit.min_tx_offset).unwrap();
         assert_eq!(
             middle_commit.tx_range().end,
-            log.transactions_from(0, ArrayDecoder).count() as u64
+            log.transactions_from(0, &ArrayDecoder).count() as u64
         );
 
         // Offset falls into 2nd commit.
         // 1st commit (1 tx) + 2nd commit (2 txs) = 3
         log = log.reset_to(1).unwrap();
-        assert_eq!(3, log.transactions_from(0, ArrayDecoder).count() as u64);
+        assert_eq!(3, log.transactions_from(0, &ArrayDecoder).count() as u64);
 
         // Offset falls into 1st commit.
         // 1st commit (1 tx) = 1
         log = log.reset_to(0).unwrap();
-        assert_eq!(1, log.transactions_from(0, ArrayDecoder).count() as u64);
+        assert_eq!(1, log.transactions_from(0, &ArrayDecoder).count() as u64);
     }
 
     #[test]
@@ -548,7 +572,7 @@ mod tests {
         let mut total_txs = fill_log(&mut log, 100, (1..=10).cycle());
         assert_eq!(
             total_txs,
-            log.transactions_from(0, ArrayDecoder).map(Result::unwrap).count()
+            log.transactions_from(0, &ArrayDecoder).map(Result::unwrap).count()
         );
 
         let mut log = Generic::<_, [u8; 32]>::open(
@@ -563,7 +587,7 @@ mod tests {
 
         assert_eq!(
             total_txs,
-            log.transactions_from(0, ArrayDecoder).map(Result::unwrap).count()
+            log.transactions_from(0, &ArrayDecoder).map(Result::unwrap).count()
         );
     }
 }

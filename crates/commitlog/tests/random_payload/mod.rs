@@ -34,7 +34,7 @@ fn smoke() {
     assert_eq!(n_txs - 1, committed_offset.unwrap() as usize);
     assert_eq!(
         n_txs,
-        clog.transactions(payload::ArrayDecoder).map(Result::unwrap).count()
+        clog.transactions(&payload::ArrayDecoder).map(Result::unwrap).count()
     );
     // We set max_records_in_commit to 1, so n_commits == n_txs
     assert_eq!(n_txs, clog.commits().map(Result::unwrap).count());
@@ -63,7 +63,7 @@ fn resets() {
         clog = clog.reset_to(offset).unwrap();
         assert_eq!(
             offset,
-            clog.transactions(payload::ArrayDecoder)
+            clog.transactions(&payload::ArrayDecoder)
                 .map(Result::unwrap)
                 .last()
                 .unwrap()
@@ -72,7 +72,7 @@ fn resets() {
         // We're counting from zero, so offset + 1 is the # of txs.
         assert_eq!(
             offset + 1,
-            clog.transactions(payload::ArrayDecoder).map(Result::unwrap).count() as u64
+            clog.transactions(&payload::ArrayDecoder).map(Result::unwrap).count() as u64
         );
     }
 }

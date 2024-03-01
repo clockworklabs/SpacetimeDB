@@ -58,15 +58,15 @@ fn traversal() {
     }
 
     let first_err = log
-        .transactions_from(0, payload::ArrayDecoder)
+        .transactions_from(0, &payload::ArrayDecoder)
         .find_map(Result::err)
         .expect("unexpected success");
     let unexpected = match first_err {
-        error::Traversal::OutOfOrder {
+        payload::ArrayDecodeError::Traversal(error::Traversal::OutOfOrder {
             prev_error: Some(prev_error),
             ..
-        } if matches!(*prev_error, error::Traversal::Checksum { .. }) => None,
-        error::Traversal::Checksum { .. } => None,
+        }) if matches!(*prev_error, error::Traversal::Checksum { .. }) => None,
+        payload::ArrayDecodeError::Traversal(error::Traversal::Checksum { .. }) => None,
         e => Some(e),
     };
     assert!(unexpected.is_none(), "unexpected error: {unexpected:?}");

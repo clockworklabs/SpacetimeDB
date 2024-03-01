@@ -13,9 +13,6 @@ use crate::{
     payload::Encode,
 };
 
-#[cfg(test)]
-use crate::payload::Decoder;
-
 pub const MAGIC: [u8; 6] = [b'(', b'd', b's', b')', b'^', b'2'];
 
 pub const DEFAULT_LOG_FORMAT_VERSION: u8 = 0;
@@ -217,22 +214,18 @@ impl<R: io::Read> Reader<R> {
     }
 
     #[cfg(test)]
-    pub fn transactions<D: Decoder>(self, decoder: D) -> impl Iterator<Item = io::Result<Transaction<D::Record>>> {
+    pub fn transactions<'a, D>(self, de: &'a D) -> impl Iterator<Item = Result<Transaction<D::Record>, D::Error>> + 'a
+    where
+        D: crate::Decoder,
+        D::Error: From<io::Error>,
+        R: 'a,
+    {
         use itertools::Itertools as _;
 
         self.commits()
             .with_log_format_version()
-            .map_ok(move |(version, commit)| {
-                let buf = &mut commit.records.as_slice();
-                let records = (0..commit.n)
-                    .map(|_| decoder.decode_record(version, buf))
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-                let transactions = (commit.min_tx_offset..)
-                    .zip(records)
-                    .map(move |(offset, txdata)| Transaction { offset, txdata });
-                Ok::<_, io::Error>(transactions)
-            })
+            .map(|x| x.map_err(Into::into))
+            .map_ok(move |(version, commit)| commit.into_transactions(version, de))
             .flatten_ok()
             .flatten_ok()
     }
@@ -482,7 +475,7 @@ mod tests {
 
         let reader = repo::open_segment_reader(&repo, DEFAULT_LOG_FORMAT_VERSION, 0).unwrap();
         let txs = reader
-            .transactions(ArrayDecoder)
+            .transactions(&ArrayDecoder)
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
         assert_eq!(
