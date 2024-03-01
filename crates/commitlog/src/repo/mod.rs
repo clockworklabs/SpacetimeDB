@@ -9,9 +9,11 @@ use crate::{
     Options,
 };
 
+mod fs;
 #[cfg(test)]
 pub mod mem;
 
+pub use fs::Fs;
 #[cfg(test)]
 pub use mem::Memory;
 
