@@ -9,7 +9,7 @@ use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{TableDef, TableSchema};
 use spacetimedb_sats::db::error::AuthError;
-use spacetimedb_sats::relation::{Column, FieldExpr, FieldName, Header, Relation, RowCount};
+use spacetimedb_sats::relation::{Column, DbTable, FieldExpr, FieldName, Header, Relation, RowCount};
 use spacetimedb_sats::ProductValue;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
@@ -244,24 +244,158 @@ impl From<Query> for Option<ColumnOp> {
 /// A convenient interface for allocating `SourceId`s and managing `SourceExpr`s.
 #[derive(Default)]
 pub struct SourceBuilder {
-    next_id: usize,
     sources: Vec<Table>,
 }
 
 impl SourceBuilder {
+    fn next_id(&self) -> SourceId {
+        SourceId(self.sources.len())
+    }
     pub fn add_mem_table(&mut self, table: MemTable) -> SourceExpr {
-        let source_id = SourceId(self.next_id);
-        self.next_id += 1;
+        let source_id = self.next_id();
         let expr = SourceExpr::from_mem_table(&table, source_id);
-        debug_assert_eq!(self.sources.len(), source_id.0);
         self.sources.push(Table::MemTable(table));
+        expr
+    }
+
+    pub fn add_table_schema(&mut self, schema: &TableSchema) -> SourceExpr {
+        let source_id = self.next_id();
+        let expr = SourceExpr::from_table_schema(schema, source_id);
+        self.sources.push(Table::DbTable(schema.into()));
+        expr
+    }
+
+    pub fn add_permuted_table(
+        &mut self,
+        header: Arc<Header>,
+        table_id: TableId,
+        table_type: StTableType,
+        table_access: StAccess,
+    ) -> SourceExpr {
+        let source_id = self.next_id();
+        let expr = SourceExpr {
+            source_id,
+            header: header.clone(),
+            table_type,
+            table_access,
+            row_count: RowCount::unknown(),
+            table_id: Some(table_id),
+        };
+        self.sources
+            .push(Table::DbTable(DbTable::new(header, table_id, table_type, table_access)));
         expr
     }
 
     /// Convert `self` into a `Vec<Option<Table>>`
     /// suitable for the `sources` argument of e.g. [`crate::eval::build_query`].
-    pub fn into_sources(self) -> Vec<Option<Table>> {
-        self.sources.into_iter().map(Some).collect()
+    pub fn into_source_set(self) -> Box<SourceSet> {
+        SourceSet::from_box(
+            self.sources
+                .into_iter()
+                .map(Some)
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+        )
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct SourceSet([Option<Table>]);
+
+impl SourceSet {
+    #[allow(unused)]
+    fn from_slice_mut(sources: &mut [Option<Table>]) -> &mut SourceSet {
+        // Safety: `SourceSet` is `repr(transparent)` to `[Option<Table]`,
+        // so `&mut SourceSet` has the same repr as `&mut [Option<Table>]`.
+        unsafe { &mut *(sources as *mut [Option<Table>] as *mut SourceSet) }
+    }
+
+    fn from_box(sources: Box<[Option<Table>]>) -> Box<SourceSet> {
+        // Safety: `SourceSet` is `repr(transparent)` to `[Option<Table]`,
+        // so `Box<SourceSet>` has the same repr as `Box<[Option<Table>]>`.
+        unsafe { Box::from_raw(Box::into_raw(sources) as *mut SourceSet) }
+    }
+
+    #[allow(unused)]
+    fn into_box(self: Box<SourceSet>) -> Box<[Option<Table>]> {
+        // Safety: `SourceSet` is `repr(transparent)` to `[Option<Table]`,
+        // so `Box<SourceSet>` has the same repr as `Box<[Option<Table>]>`.
+        unsafe { Box::from_raw(Box::into_raw(self) as *mut [Option<Table>]) }
+    }
+
+    pub fn clone_box(&self) -> Box<Self> {
+        Self::from_box(self.0.to_vec().into_boxed_slice())
+    }
+
+    pub fn replace_source(&mut self, id: SourceId, new_source: MemTable) -> Option<SourceExpr> {
+        let expr = SourceExpr::from_mem_table(&new_source, id);
+        let place = self.0.get_mut(id.0)?;
+
+        *place = Some(Table::MemTable(new_source));
+        Some(expr)
+    }
+
+    pub fn get_mem_table(&self, id: SourceId) -> Option<&MemTable> {
+        let tbl = self.0.get(id.0)?.as_ref()?;
+        match tbl {
+            Table::DbTable(_) => None,
+            Table::MemTable(tbl) => Some(tbl),
+        }
+    }
+
+    pub fn get_mem_table_mut(&mut self, id: SourceId) -> Option<&mut MemTable> {
+        let tbl = self.0.get_mut(id.0)?.as_mut()?;
+        match tbl {
+            Table::DbTable(_) => None,
+            Table::MemTable(tbl) => Some(tbl),
+        }
+    }
+
+    pub fn take_mem_table(&mut self, id: SourceId) -> Option<MemTable> {
+        let tbl = self.0.get_mut(id.0)?.take()?;
+        match tbl {
+            Table::DbTable(_) => None,
+            Table::MemTable(tbl) => Some(tbl),
+        }
+    }
+
+    pub fn get_db_table(&self, id: SourceId) -> Option<&DbTable> {
+        let tbl = self.0.get(id.0)?.as_ref()?;
+        match tbl {
+            Table::DbTable(tbl) => Some(tbl),
+            Table::MemTable(_) => None,
+        }
+    }
+
+    pub fn get_db_table_mut(&mut self, id: SourceId) -> Option<&mut DbTable> {
+        let tbl = self.0.get_mut(id.0)?.as_mut()?;
+        match tbl {
+            Table::DbTable(tbl) => Some(tbl),
+            Table::MemTable(_) => None,
+        }
+    }
+
+    pub fn take_db_table(&mut self, id: SourceId) -> Option<DbTable> {
+        let tbl = self.0.get_mut(id.0)?.take()?;
+        match tbl {
+            Table::DbTable(tbl) => Some(tbl),
+            Table::MemTable(_) => None,
+        }
+    }
+}
+
+impl std::ops::Index<SourceId> for SourceSet {
+    type Output = Option<Table>;
+
+    fn index(&self, idx: SourceId) -> &Option<Table> {
+        &self.0[idx.0]
+    }
+}
+
+impl std::ops::IndexMut<SourceId> for SourceSet {
+    fn index_mut(&mut self, idx: SourceId) -> &mut Option<Table> {
+        &mut self.0[idx.0]
     }
 }
 
@@ -291,6 +425,10 @@ pub struct SourceExpr {
 }
 
 impl SourceExpr {
+    pub fn source_id(&self) -> SourceId {
+        self.source_id
+    }
+
     pub fn source_idx(&self) -> usize {
         self.source_id.0
     }
@@ -346,6 +484,10 @@ impl SourceExpr {
             row_count: RowCount::exact(mem_table.data.len()),
             table_id: None,
         }
+    }
+
+    pub fn table_id(&self) -> Option<TableId> {
+        self.table_id
     }
 }
 
@@ -453,7 +595,7 @@ impl IndexJoin {
                 // Push any selections on the index side to the probe side.
                 let probe_side = if let Some(predicate) = self.index_select {
                     QueryExpr {
-                        source: table.into(),
+                        source: table,
                         query: vec![predicate.into()],
                     }
                 } else {
@@ -466,7 +608,7 @@ impl IndexJoin {
                     // The new probe field is the previous index field.
                     probe_field: index_field,
                     // The original probe table is now the table that is being probed.
-                    index_side: self.probe_side.source.into(),
+                    index_side: self.probe_side.source,
                     // Any selections from the original probe side are pulled above the index lookup.
                     index_select: predicate,
                     // The new index field is the previous probe field.
@@ -499,7 +641,7 @@ impl IndexJoin {
                 .collect();
 
             let table = self.index_side.table_id;
-            let source = self.index_side.into();
+            let source = self.index_side;
             let inner_join = Query::JoinInner(JoinExpr::new(rhs, col_lhs, col_rhs));
             let project = Query::Project(fields, table);
             let query = if let Some(predicate) = self.index_select {
@@ -600,8 +742,8 @@ impl CrudExpr {
         }
     }
 
-    pub fn is_reads(exprs: &[CrudExpr]) -> bool {
-        exprs.iter().all(|expr| matches!(expr, CrudExpr::Query(_)))
+    pub fn is_reads<'a>(exprs: impl IntoIterator<Item = &'a CrudExpr>) -> bool {
+        exprs.into_iter().all(|expr| matches!(expr, CrudExpr::Query(_)))
     }
 }
 
@@ -642,7 +784,7 @@ impl Query {
     pub fn sources(&self) -> QuerySources {
         match self {
             Self::Select(..) | Self::Project(..) => QuerySources::None,
-            Self::IndexScan(scan) => QuerySources::One(Some(scan.table.clone().into())),
+            Self::IndexScan(scan) => QuerySources::One(Some(scan.table.clone())),
             Self::IndexJoin(join) => QuerySources::Expr(join.probe_side.sources()),
             Self::JoinInner(join) => QuerySources::Expr(join.rhs.sources()),
         }
@@ -1457,6 +1599,12 @@ impl fmt::Display for Query {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+// TODO(bikeshedding): Refactor this struct so that `IndexJoin`s replace the `table`,
+// rather than appearing as the first element of the `query`.
+//
+// `IndexJoin`s do not behave like filters; in fact they behave more like data sources.
+// A query conceptually starts with either a single table or an `IndexJoin`,
+// and then stacks a set of filters on top of that.
 pub struct QueryCode {
     pub table: SourceExpr,
     pub query: Vec<Query>,

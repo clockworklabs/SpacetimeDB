@@ -46,12 +46,28 @@ pub fn build_query<'a>(
     stdb: &'a RelationalDB,
     tx: &'a TxMode,
     query: QueryCode,
+    sources: &mut SourceSet,
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {
-    let db_table = matches!(&query.table, Table::DbTable(_));
-    let mut result = get_table(ctx, stdb, tx, query.table.into())?;
+    let db_table = query.table.is_db_table();
+
+    // We're incrementally building a query iterator by applying each operation in the `query.query`.
+    // Most such operations will modify their parent, but certain operations (i.e. `IndexJoin`s)
+    // are only valid as the first operation in the list,
+    // and construct a new base query.
+    //
+    // Branches which use `result` will do `unwrap_or_else(|| get_table(ctx, stdb, tx, &query.table, sources))`
+    // to get an `IterRows` defaulting to the `query.table`.
+    //
+    // Branches which do not use the `result` will assert that it is `None`,
+    // i.e. that they are the first operator.
+    //
+    // TODO(bikeshedding): Avoid duplication of the ugly `result.take().map(...).unwrap_or_else(...)?` expr?
+    // TODO(bikeshedding): Refactor `QueryCode` to separate `IndexJoin` from other `Query` variants,
+    //   removing the need for this convoluted logic?
+    let mut result = None;
 
     for op in query.query {
-        result = match op {
+        result = Some(match op {
             Query::IndexScan(IndexScan {
                 table,
                 columns,
@@ -60,9 +76,17 @@ pub fn build_query<'a>(
             }) if db_table => {
                 assert_eq!(columns.len(), 1, "Only support single column IndexScan");
                 let col_id = columns.head();
+                let source_id = table.source_id();
+                let Some(table) = sources.get_db_table(source_id).cloned() else {
+                    panic!("Unable to take `DbTable` for query source {source_id:?}");
+                };
                 iter_by_col_range(ctx, stdb, tx, table, col_id, (lower_bound, upper_bound))?
             }
             Query::IndexScan(index_scan) => {
+                let result = result
+                    .take()
+                    .map(Ok)
+                    .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.table, sources))?;
                 let header = result.head().clone();
                 let cmp: ColumnOp = index_scan.into();
                 let iter = result.select(move |row| cmp.compare(row, &header));
@@ -75,46 +99,61 @@ pub fn build_query<'a>(
             //
             // TODO: This logic should be entirely encapsulated within the query planner.
             // It should not be possible for the planner to produce an invalid plan.
-            Query::IndexJoin(
-                join @ IndexJoin {
-                    index_side: Table::MemTable(_),
-                    ..
-                },
-            ) => build_query(ctx, stdb, tx, join.to_inner_join().into())?,
+            Query::IndexJoin(join @ IndexJoin { .. }) if join.index_side.is_mem_table() => {
+                if result.is_some() {
+                    return Err(anyhow::anyhow!("Invalid query: `IndexJoin` must be the first operator").into());
+                }
+                build_query(ctx, stdb, tx, join.to_inner_join().into(), sources)?
+            }
             Query::IndexJoin(IndexJoin {
                 probe_side,
                 probe_field,
-                index_side:
-                    Table::DbTable(DbTable {
-                        head: index_header,
-                        table_id: index_table,
-                        ..
-                    }),
+                index_side,
                 index_select,
                 index_col,
                 return_index_rows,
-            }) => {
-                let probe_side = build_query(ctx, stdb, tx, probe_side.into())?;
+            }) if index_side.is_db_table() => {
+                if result.is_some() {
+                    return Err(anyhow::anyhow!("Invalid query: `IndexJoin` must be the first operator").into());
+                }
+                let probe_side = build_query(ctx, stdb, tx, probe_side.into(), sources)?;
+                let index_source_id = index_side.source_id();
+                let Some(index_table) = sources.get_db_table(index_source_id) else {
+                    panic!("Unable to take `DbTable` for query source {index_source_id:?}");
+                };
+                let index_table_id = index_table.table_id;
+                debug_assert_eq!(Some(index_table_id), index_side.table_id());
                 Box::new(IndexSemiJoin {
                     ctx,
                     db: stdb,
                     tx,
                     probe_side,
                     probe_field,
-                    index_header,
+                    index_header: index_side.head().clone(),
                     index_select,
-                    index_table,
+                    index_table: index_table_id,
                     index_col,
                     index_iter: None,
                     return_index_rows,
                 })
             }
+            Query::IndexJoin(_) => {
+                unreachable!("is_db_table and is_mem_table form a disjoint, exhaustive partition of all tables")
+            }
             Query::Select(cmp) => {
+                let result = result
+                    .take()
+                    .map(Ok)
+                    .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.table, sources))?;
                 let header = result.head().clone();
                 let iter = result.select(move |row| cmp.compare(row, &header));
                 Box::new(iter)
             }
             Query::Project(cols, _) => {
+                let result = result
+                    .take()
+                    .map(Ok)
+                    .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.table, sources))?;
                 if cols.is_empty() {
                     result
                 } else {
@@ -126,12 +165,19 @@ pub fn build_query<'a>(
                 }
             }
             Query::JoinInner(join) => {
-                let iter = join_inner(ctx, stdb, tx, result, join, false)?;
+                let result = result
+                    .take()
+                    .map(Ok)
+                    .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.table, sources))?;
+                let iter = join_inner(ctx, stdb, tx, result, join, false, sources)?;
                 Box::new(iter)
             }
-        }
+        })
     }
-    Ok(result)
+
+    result
+        .map(Ok)
+        .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.table, sources))
 }
 
 fn join_inner<'a>(
@@ -141,13 +187,14 @@ fn join_inner<'a>(
     lhs: impl RelOps<'a> + 'a,
     rhs: JoinExpr,
     semi: bool,
+    sources: &mut SourceSet,
 ) -> Result<impl RelOps<'a> + 'a, ErrorVm> {
     let col_lhs = FieldExpr::Name(rhs.col_lhs);
     let col_rhs = FieldExpr::Name(rhs.col_rhs);
     let key_lhs = [col_lhs.clone()];
     let key_rhs = [col_rhs.clone()];
 
-    let rhs = build_query(ctx, db, tx, rhs.rhs.into())?;
+    let rhs = build_query(ctx, db, tx, rhs.rhs.into(), sources)?;
     let key_lhs_header = lhs.head().clone();
     let key_rhs_header = rhs.head().clone();
     let col_lhs_header = lhs.head().clone();
@@ -179,23 +226,53 @@ fn join_inner<'a>(
     )
 }
 
+/// Resolve `query` to a table iterator, either an [`IterRows`] or a [`TableCursor`],
+/// by reading the corresponding [`MemTable`] or [`DbTable`] from `sources`.
+///
+/// # Footgun warning:
+///
+/// If the `query` refers to a `MemTable` in `sources`,
+/// `sources` is destructively modified by `Option::take`ing the `MemTable`,
+/// leaving a `None`.
+/// This means that a query cannot refer to a `MemTable` multiple times,
+/// nor can a `SourceSet` which contains a `MemTable` be reused.
+/// This is because [`IterRows`] takes ownership of the `MemTable`.
+///
+/// On the other hand, if the `query` refers to a `DbTable` in `sources`,
+/// we do an inexpensive `DbTable::clone`, leaving the `SourceSet` unmodified.
+/// This difference in behavior is necessary
+/// because queries can and do use the same `DbTable` multiple times.
+/// E.g. a delete will first query the table to determine which rows to delete,
+/// then delete those rows from the same table.
 fn get_table<'a>(
     ctx: &'a ExecutionContext,
     stdb: &'a RelationalDB,
     tx: &'a TxMode,
-    query: SourceExpr,
+    query: &SourceExpr,
+    sources: &mut SourceSet,
 ) -> Result<Box<dyn RelOps<'a> + 'a>, ErrorVm> {
     let head = query.head().clone();
     let row_count = query.row_count();
-    Ok(match query {
-        SourceExpr::MemTable(x) => Box::new(RelIter::new(head, row_count, x)) as Box<IterRows<'_>>,
-        SourceExpr::DbTable(x) => {
-            let iter = match tx {
-                TxMode::MutTx(tx) => stdb.iter_mut(ctx, tx, x.table_id)?,
-                TxMode::Tx(tx) => stdb.iter(ctx, tx, x.table_id)?,
-            };
-            Box::new(TableCursor::new(x, iter)?) as Box<IterRows<'_>>
-        }
+    Ok(if query.is_mem_table() {
+        Box::new(RelIter::new(
+            head,
+            row_count,
+            sources
+                .take_mem_table(query.source_id())
+                .expect("Unable to get MemTable"),
+        )) as Box<IterRows<'_>>
+    } else {
+        debug_assert!(query.is_db_table());
+        let db_table = sources
+            .get_db_table(query.source_id())
+            .cloned()
+            .expect("Unable to get DbTable");
+        debug_assert_eq!(Some(db_table.table_id), query.table_id());
+        let iter = match tx {
+            TxMode::MutTx(tx) => stdb.iter_mut(ctx, tx, db_table.table_id)?,
+            TxMode::Tx(tx) => stdb.iter(ctx, tx, db_table.table_id)?,
+        };
+        Box::new(TableCursor::new(db_table, iter)?) as Box<IterRows<'_>>
     })
 }
 
@@ -325,11 +402,11 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
     }
 
     #[tracing::instrument(skip_all)]
-    fn _eval_query(&mut self, query: QueryCode) -> Result<Code, ErrorVm> {
+    fn _eval_query(&mut self, query: QueryCode, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
         let table_access = query.table.table_access();
         tracing::trace!(table = query.table.table_name());
 
-        let result = build_query(self.ctx, self.db, self.tx, query)?;
+        let result = build_query(self.ctx, self.db, self.tx, query, sources)?;
         let head = result.head().clone();
         let rows = result.collect_vec(|row| row.into_product_value())?;
 
@@ -366,12 +443,14 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         }
     }
 
-    fn _delete_query(&mut self, query: QueryCode) -> Result<Code, ErrorVm> {
+    fn _delete_query(&mut self, query: QueryCode, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
         let table = query.table.clone();
-        let result = self._eval_query(query)?;
+        let result = self._eval_query(query, sources)?;
+
+        let table = sources[table.source_id()].as_ref().unwrap();
 
         match result {
-            Code::Table(result) => self._execute_delete(&table, result.data),
+            Code::Table(result) => self._execute_delete(table, result.data),
             _ => Ok(result),
         }
     }
@@ -432,23 +511,27 @@ impl ProgramVm for DbProgram<'_, '_> {
     }
 
     // Safety: For DbProgram with tx = TxMode::Tx variant, all queries must match to CrudCode::Query and no other branch.
-    fn eval_query(&mut self, query: CrudCode) -> Result<Code, ErrorVm> {
+    fn eval_query(&mut self, query: CrudCode, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
         query.check_auth(self.auth.owner, self.auth.caller)?;
 
         match query {
-            CrudCode::Query(query) => self._eval_query(query),
-            CrudCode::Insert { table, rows } => self._execute_insert(&table, rows),
+            CrudCode::Query(query) => self._eval_query(query, sources),
+            CrudCode::Insert { table, rows } => {
+                let src = sources[table.source_id()].as_ref().unwrap();
+                self._execute_insert(src, rows)
+            }
             CrudCode::Update {
                 delete,
                 mut assignments,
             } => {
                 let table = delete.table.clone();
-                let result = self._eval_query(delete)?;
+                let result = self._eval_query(delete, sources)?;
 
                 let Code::Table(deleted) = result else {
                     return Ok(result);
                 };
-                self._execute_delete(&table, deleted.data.clone())?;
+                let table = sources[table.source_id()].as_ref().unwrap();
+                self._execute_delete(table, deleted.data.clone())?;
 
                 // Replace the columns in the matched rows with the assigned
                 // values. No typechecking is performed here, nor that all
@@ -480,10 +563,10 @@ impl ProgramVm for DbProgram<'_, '_> {
                     })
                     .collect_vec();
 
-                self._execute_insert(&table, insert_rows)
+                self._execute_insert(table, insert_rows)
             }
             CrudCode::Delete { query } => {
-                let result = self._delete_query(query)?;
+                let result = self._delete_query(query, sources)?;
                 Ok(result)
             }
             CrudCode::CreateTable { table } => {
@@ -632,14 +715,20 @@ pub(crate) mod tests {
         let row = product!(1u64, "health");
         let table_id = create_table_from_program(p, "inventory", head.clone(), &[row])?;
 
-        let inv = db_table(head, table_id);
+        let schema = TableDef::from_product("test", head).into_schema(table_id);
+
+        let mut source_builder = SourceBuilder::default();
+        let lhs_source_expr = source_builder.add_table_schema(&schema);
 
         let data = MemTable::from_value(scalar(1u64));
         let rhs = data.get_field_pos(0).unwrap().clone();
 
-        let q = query(inv).with_join_inner(data, FieldName::positional("inventory", 0), rhs);
+        let rhs_source_expr = source_builder.add_mem_table(data);
 
-        let result = match run_ast(p, q.into()) {
+        let q = query(lhs_source_expr).with_join_inner(rhs_source_expr, FieldName::positional("inventory", 0), rhs);
+
+        let mut sources = source_builder.into_source_set();
+        let result = match run_ast(p, q.into(), &mut sources) {
             Code::Table(x) => x,
             x => panic!("invalid result {x}"),
         };
@@ -660,8 +749,15 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    fn check_catalog(p: &mut DbProgram, name: &str, row: ProductValue, q: QueryExpr, schema: DbTable) {
-        let result = run_ast(p, q.into());
+    fn check_catalog(
+        p: &mut DbProgram,
+        name: &str,
+        row: ProductValue,
+        q: QueryExpr,
+        schema: DbTable,
+        sources: &mut SourceSet,
+    ) {
+        let result = run_ast(p, q.into(), sources);
 
         //The expected result
         let input = mem_table(schema.head.clone_for_error(), vec![row]);
@@ -678,7 +774,10 @@ pub(crate) mod tests {
         let tx_mode = &mut TxMode::MutTx(&mut tx);
         let p = &mut DbProgram::new(&ctx, &stdb, tx_mode, AuthCtx::for_testing());
 
-        let q = query(&st_table_schema()).with_select_cmp(
+        let mut source_builder = SourceBuilder::default();
+        let source_expr = source_builder.add_table_schema(&st_table_schema());
+
+        let q = query(source_expr).with_select_cmp(
             OpCmp::Eq,
             FieldName::named(ST_TABLES_NAME, StTableFields::TableName.name()),
             scalar(ST_TABLES_NAME),
@@ -695,6 +794,7 @@ pub(crate) mod tests {
             .into(),
             q,
             DbTable::from(&st_table_schema()),
+            &mut source_builder.into_source_set(),
         );
 
         stdb.rollback_mut_tx(&ctx, tx);
@@ -711,7 +811,10 @@ pub(crate) mod tests {
         let tx_mode = &mut TxMode::MutTx(&mut tx);
         let p = &mut DbProgram::new(&ctx, &stdb, tx_mode, AuthCtx::for_testing());
 
-        let q = query(&st_columns_schema())
+        let mut source_builder = SourceBuilder::default();
+        let source_expr = source_builder.add_table_schema(&st_columns_schema());
+
+        let q = query(source_expr)
             .with_select_cmp(
                 OpCmp::Eq,
                 FieldName::named(ST_COLUMNS_NAME, StColumnFields::TableId.name()),
@@ -734,6 +837,7 @@ pub(crate) mod tests {
             .into(),
             q,
             (&st_columns_schema()).into(),
+            &mut source_builder.into_source_set(),
         );
 
         stdb.rollback_mut_tx(&ctx, tx);
@@ -759,7 +863,10 @@ pub(crate) mod tests {
         let tx_mode = &mut TxMode::MutTx(&mut tx);
         let p = &mut DbProgram::new(&ctx, &db, tx_mode, AuthCtx::for_testing());
 
-        let q = query(&st_indexes_schema()).with_select_cmp(
+        let mut source_builder = SourceBuilder::default();
+        let source_expr = source_builder.add_table_schema(&st_indexes_schema());
+
+        let q = query(source_expr).with_select_cmp(
             OpCmp::Eq,
             FieldName::named(ST_INDEXES_NAME, StIndexFields::IndexName.name()),
             scalar("idx_1"),
@@ -778,6 +885,7 @@ pub(crate) mod tests {
             .into(),
             q,
             (&st_indexes_schema()).into(),
+            &mut source_builder.into_source_set(),
         );
 
         db.rollback_mut_tx(&ctx, tx);
@@ -794,7 +902,10 @@ pub(crate) mod tests {
         let tx_mode = &mut TxMode::MutTx(&mut tx);
         let p = &mut DbProgram::new(&ctx, &db, tx_mode, AuthCtx::for_testing());
 
-        let q = query(&st_sequences_schema()).with_select_cmp(
+        let mut source_builder = SourceBuilder::default();
+        let source_expr = source_builder.add_table_schema(&st_sequences_schema());
+
+        let q = query(source_expr).with_select_cmp(
             OpCmp::Eq,
             FieldName::named(ST_SEQUENCES_NAME, StSequenceFields::TableId.name()),
             scalar(ST_SEQUENCES_ID),
@@ -816,6 +927,7 @@ pub(crate) mod tests {
             .into(),
             q,
             (&st_sequences_schema()).into(),
+            &mut source_builder.into_source_set(),
         );
 
         db.rollback_mut_tx(&ctx, tx);

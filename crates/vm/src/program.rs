@@ -4,10 +4,10 @@
 
 use crate::errors::ErrorVm;
 use crate::eval::{build_query, IterRows};
-use crate::expr::{Code, CrudCode};
+use crate::expr::{Code, CrudCode, SourceSet};
 use crate::iterators::RelIter;
 use crate::rel_ops::RelOps;
-use crate::relation::{MemTable, Table};
+use crate::relation::MemTable;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Address;
 use spacetimedb_sats::relation::Relation;
@@ -25,7 +25,7 @@ pub trait ProgramVm {
 
     /// Allows to execute the query with the state carried by the implementation of this
     /// trait
-    fn eval_query(&mut self, query: CrudCode, sources: &mut [Option<Table>]) -> Result<Code, ErrorVm>;
+    fn eval_query(&mut self, query: CrudCode, sources: &mut SourceSet) -> Result<Code, ErrorVm>;
 }
 
 pub struct ProgramStore<P> {
@@ -64,19 +64,16 @@ impl ProgramVm for Program {
     }
 
     #[tracing::instrument(skip_all)]
-    fn eval_query(&mut self, query: CrudCode, sources: &mut [Option<Table>]) -> Result<Code, ErrorVm> {
+    fn eval_query(&mut self, query: CrudCode, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
         match query {
             CrudCode::Query(query) => {
                 let head = query.head().clone();
                 let row_count = query.row_count();
                 let table_access = query.table.table_access();
                 let result = if query.table.is_mem_table() {
-                    let source_idx = query.table.source_idx();
-                    let Some(result_table) = sources[source_idx].take() else {
-                        panic!("Query plan refers to source {source_idx} multiple times");
-                    };
-                    let Table::MemTable(result_table) = result_table else {
-                        panic!("Query plan specifies a `MemTable` for source {source_idx}, but found a `DbTable`");
+                    let source_id = query.table.source_id();
+                    let Some(result_table) = sources.take_mem_table(source_id) else {
+                        panic!("Query plan specifies a `MemTable` for {source_id:?}, but found a `DbTable` or nothing");
                     };
                     Box::new(RelIter::new(head, row_count, result_table)) as Box<IterRows<'_>>
                 } else {

@@ -6,7 +6,7 @@ use std::time::Duration;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{bsatn, Address, ModuleDef, TableDesc};
-use spacetimedb_vm::expr::CrudExpr;
+use spacetimedb_vm::expr::{CrudExpr, SourceSet};
 
 use super::instrumentation::CallTimes;
 use crate::database_instance_context::DatabaseInstanceContext;
@@ -268,8 +268,9 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         let auth = AuthCtx::new(self.database_instance_context.identity, caller_identity);
         log::debug!("One-off query: {query}");
         let ctx = &ExecutionContext::sql(db.address());
-        let compiled = db.with_read_only(ctx, |tx| {
-            sql::compiler::compile_sql(db, tx, &query)?
+        let (compiled, mut sources): (Vec<_>, Box<SourceSet>) = db.with_read_only(ctx, |tx| {
+            let (ast, sources) = sql::compiler::compile_sql_merge_sources(db, tx, &query)?;
+            let compiled = ast
                 .into_iter()
                 .map(|expr| {
                     if matches!(expr, CrudExpr::Query { .. }) {
@@ -278,10 +279,11 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
                         Err(anyhow!("One-off queries are not allowed to modify the database"))
                     }
                 })
-                .collect::<Result<_, _>>()
+                .collect::<Result<_, _>>()?;
+            Ok::<_, DBError>((compiled, sources))
         })?;
 
-        sql::execute::execute_sql(db, compiled, auth)
+        sql::execute::execute_sql(db, compiled, auth, &mut sources)
     }
 
     fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error> {

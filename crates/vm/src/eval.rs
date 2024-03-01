@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use crate::errors::ErrorVm;
-use crate::expr::{Code, CrudCode, CrudExpr, QueryCode, QueryExpr};
+use crate::expr::{Code, CrudCode, CrudExpr, QueryCode, QueryExpr, SourceSet};
 use crate::expr::{Expr, Query};
 use crate::iterators::RelIter;
 use crate::program::ProgramVm;
 use crate::rel_ops::RelOps;
-use crate::relation::{RelValue, Table};
+use crate::relation::RelValue;
 use spacetimedb_sats::relation::{FieldExpr, Relation};
 
 fn compile_query(q: QueryExpr) -> QueryCode {
@@ -55,7 +55,7 @@ pub type IterRows<'a> = dyn RelOps<'a> + 'a;
 pub fn build_query<'a>(
     mut result: Box<IterRows<'a>>,
     query: Vec<Query>,
-    sources: &mut [Option<Table>],
+    sources: &mut SourceSet,
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {
     for q in query {
         result = match q {
@@ -91,12 +91,11 @@ pub fn build_query<'a>(
 
                 let head = q.rhs.source.head().clone();
                 let rhs = if q.rhs.source.is_mem_table() {
-                    let rhs_source_idx = q.rhs.source.source_idx();
-                    let Some(rhs_table) = sources[rhs_source_idx].take() else {
-                        panic!("Query plan re-uses source {rhs_source_idx}");
-                    };
-                    let Table::MemTable(rhs_table) = rhs_table else {
-                        panic!("Query plan specifies a `MemTable`, but source is a `DbTable`");
+                    let rhs_source_id = q.rhs.source.source_id();
+                    let Some(rhs_table) = sources.take_mem_table(rhs_source_id) else {
+                        panic!(
+                            "Query plan specifies a `MemTable` for {rhs_source_id:?}, but found a `DbTable` or nothing"
+                        );
                     };
                     Box::new(RelIter::new(head, row_rhs, rhs_table)) as Box<IterRows<'_>>
                 } else {
@@ -138,7 +137,7 @@ fn build_ast(ast: CrudExpr) -> Code {
 
 /// Execute the code
 #[tracing::instrument(skip_all)]
-fn eval<P: ProgramVm>(p: &mut P, code: Code, sources: &mut [Option<Table>]) -> Code {
+fn eval<P: ProgramVm>(p: &mut P, code: Code, sources: &mut SourceSet) -> Code {
     match code {
         Code::Value(_) => code.clone(),
         Code::Block(lines) => {
@@ -178,7 +177,7 @@ fn to_vec(of: Vec<Expr>) -> Code {
 
 /// Optimize, compile & run the [Expr]
 #[tracing::instrument(skip_all)]
-pub fn run_ast<P: ProgramVm>(p: &mut P, ast: Expr, sources: &mut [Option<Table>]) -> Code {
+pub fn run_ast<P: ProgramVm>(p: &mut P, ast: Expr, sources: &mut SourceSet) -> Code {
     let code = match ast {
         Expr::Block(x) => to_vec(x),
         Expr::Crud(x) => build_ast(*x),
@@ -232,7 +231,7 @@ pub mod tests {
     use super::test_data::*;
     use super::*;
     use crate::dsl::{mem_table, query, scalar};
-    use crate::expr::SourceBuilder;
+    use crate::expr::{SourceBuilder, SourceSet};
     use crate::program::Program;
     use crate::relation::MemTable;
     use spacetimedb_lib::identity::AuthCtx;
@@ -242,7 +241,7 @@ pub mod tests {
     use spacetimedb_sats::relation::FieldName;
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
 
-    fn run_query(p: &mut Program, ast: Expr, sources: &mut [Option<Table>]) -> MemTable {
+    fn run_query(p: &mut Program, ast: Expr, sources: &mut SourceSet) -> MemTable {
         match run_ast(p, ast, sources) {
             Code::Table(x) => x,
             x => panic!("Unexpected result on query: {x}"),
@@ -256,7 +255,7 @@ pub mod tests {
         let field = input.get_field_pos(0).unwrap().clone();
         let mut sources = SourceBuilder::default();
         let source_expr = sources.add_mem_table(input);
-        let mut sources = sources.into_sources();
+        let mut sources = sources.into_source_set();
 
         let q = query(source_expr).with_select_cmp(OpCmp::Eq, field, scalar(1));
 
@@ -279,7 +278,7 @@ pub mod tests {
 
         let mut sources = SourceBuilder::default();
         let source_expr = sources.add_mem_table(table.clone());
-        let mut sources = sources.into_sources();
+        let mut sources = sources.into_source_set();
 
         let source = query(source_expr);
         let field = table.get_field_pos(0).unwrap().clone();
@@ -296,7 +295,7 @@ pub mod tests {
 
         let mut sources = SourceBuilder::default();
         let source_expr = sources.add_mem_table(table.clone());
-        let mut sources = sources.into_sources();
+        let mut sources = sources.into_source_set();
         let source = query(source_expr);
         let field = FieldName::positional(&table.head.table_name, 1);
         let q = source.with_project(&[field.clone().into()], None);
@@ -318,7 +317,7 @@ pub mod tests {
         let mut sources = SourceBuilder::default();
         let source_expr = sources.add_mem_table(table.clone());
         let second_source_expr = sources.add_mem_table(table);
-        let mut sources = sources.into_sources();
+        let mut sources = sources.into_source_set();
 
         let q = query(source_expr).with_join_inner(second_source_expr, field.clone(), field);
         let result = match run_ast(p, q.into(), &mut sources) {
@@ -350,7 +349,7 @@ pub mod tests {
 
         let mut sources = SourceBuilder::default();
         let source_expr = sources.add_mem_table(input.clone());
-        let mut sources = sources.into_sources();
+        let mut sources = sources.into_source_set();
 
         let q = query(source_expr.clone()).with_select_cmp(OpLogic::And, scalar(true), scalar(true));
 
@@ -360,7 +359,7 @@ pub mod tests {
 
         let mut sources = SourceBuilder::default();
         let source_expr = sources.add_mem_table(input);
-        let mut sources = sources.into_sources();
+        let mut sources = sources.into_source_set();
 
         let q = query(source_expr).with_select_cmp(OpLogic::Or, scalar(true), scalar(false));
 
@@ -385,7 +384,7 @@ pub mod tests {
         let mut sources = SourceBuilder::default();
         let source_expr = sources.add_mem_table(input.clone());
         let second_source_expr = sources.add_mem_table(input);
-        let mut sources = sources.into_sources();
+        let mut sources = sources.into_source_set();
 
         let q = query(source_expr).with_join_inner(second_source_expr, field.clone(), field);
 
@@ -429,7 +428,7 @@ pub mod tests {
         let mut sources = SourceBuilder::default();
         let player_source_expr = sources.add_mem_table(data.player.clone());
         let location_source_expr = sources.add_mem_table(data.location.clone());
-        let mut sources = sources.into_sources();
+        let mut sources = sources.into_source_set();
 
         // SELECT
         // Player.*
@@ -465,7 +464,7 @@ pub mod tests {
         let player_source_expr = sources.add_mem_table(data.player);
         let location_source_expr = sources.add_mem_table(data.location);
         let inventory_source_expr = sources.add_mem_table(data.inv);
-        let mut sources = sources.into_sources();
+        let mut sources = sources.into_source_set();
 
         // SELECT
         // Inventory.*
