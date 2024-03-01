@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use super::{
     query::compile_read_only_query,
-    subscription::{QuerySet, Subscription},
+    subscription::{ExecutionSet, Subscription},
 };
 use crate::client::{
     messages::{CachedMessage, SubscriptionUpdateMessage, TransactionUpdateMessage},
@@ -15,6 +15,7 @@ use crate::host::module_host::{EventStatus, ModuleEvent};
 use crate::protobuf::client_api::Subscribe;
 use crate::worker_metrics::WORKER_METRICS;
 use futures::Future;
+use itertools::Itertools;
 use parking_lot::RwLock;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_lib::identity::AuthCtx;
@@ -38,24 +39,29 @@ impl ModuleSubscriptions {
     }
 
     /// Add a subscriber to the module. NOTE: this function is blocking.
+    #[tracing::instrument(skip_all)]
     pub fn add_subscriber(&self, sender: ClientConnectionSender, subscription: Subscribe) -> Result<(), DBError> {
-        let tx = &mut *scopeguard::guard(self.relational_db.begin_tx(), |tx| {
+        let tx = scopeguard::guard(self.relational_db.begin_tx(), |tx| {
             let ctx = ExecutionContext::subscribe(self.relational_db.address());
             self.relational_db.release_tx(&ctx, tx);
         });
 
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
-        let mut queries = QuerySet::new();
-        for sql in subscription.query_strings {
-            let qset = compile_read_only_query(&self.relational_db, tx, &auth, &sql)?;
-            queries.extend(qset);
-        }
+        let mut n_queries = 0;
+        let queries = subscription
+            .query_strings
+            .iter()
+            .map(|sql| compile_read_only_query(&self.relational_db, &tx, &auth, sql))
+            .flatten_ok()
+            .inspect(|_| n_queries += 1)
+            .collect::<Result<ExecutionSet, _>>()?;
 
-        let database_update = tokio::task::block_in_place(|| queries.eval(&self.relational_db, tx, auth))?;
+        let database_update = queries.eval(&self.relational_db, &tx, auth)?;
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
         // but that should not pose an issue.
         let mut subscriptions = self.subscriptions.write();
+        drop(tx);
         self._remove_subscriber(sender.id, &mut subscriptions);
         let subscription = match subscriptions.iter_mut().find(|s| s.queries == queries) {
             Some(sub) => {
@@ -63,12 +69,11 @@ impl ModuleSubscriptions {
                 sub
             }
             None => {
-                let n = queries.len();
                 subscriptions.push(Subscription::new(queries, sender));
                 WORKER_METRICS
                     .subscription_queries
                     .with_label_values(&self.relational_db.address())
-                    .add(n as i64);
+                    .add(n_queries as i64);
                 subscriptions.last_mut().unwrap()
             }
         };
@@ -101,7 +106,7 @@ impl ModuleSubscriptions {
                 WORKER_METRICS
                     .subscription_queries
                     .with_label_values(&self.relational_db.address())
-                    .sub(subscription.queries.len() as i64);
+                    .sub(subscription.queries.num_queries() as i64);
             }
             !subscription.subscribers().is_empty()
         })

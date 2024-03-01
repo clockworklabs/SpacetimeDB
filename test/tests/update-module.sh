@@ -48,7 +48,7 @@ run_test cargo run logs "$IDENT" 100
 [ ' Hello, Robert!' == "$(grep 'Robert' "$TEST_OUT" | tail -n 4 | cut -d: -f6-)" ]
 [ ' Hello, World!' == "$(grep 'World' "$TEST_OUT" | tail -n 4 | cut -d: -f6-)" ]
 
-: Unchanged module is ok
+# Unchanged module is ok
 run_test cargo run publish --skip_clippy --project-path "$PROJECT_PATH" "$IDENT"
 [ "1" == "$(grep -c "Updated database" "$TEST_OUT")" ]
 
@@ -68,8 +68,10 @@ EOF
 
 run_test cargo run publish --skip_clippy --project-path "$PROJECT_PATH" "$IDENT" || true
 [ "1" == "$(grep -c "Error: Database update rejected" "$TEST_OUT")" ]
+# Check that the old module is still running by calling say_hello
+run_test cargo run call "$IDENT" say_hello
 
-: Adding a table is ok, and invokes update
+# Adding a table is ok, and invokes update
 cat > "${PROJECT_PATH}/src/lib.rs" <<EOF
 use spacetimedb::{println, spacetimedb};
 

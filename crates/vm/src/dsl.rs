@@ -7,6 +7,7 @@ use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::product_value::ProductValue;
 use spacetimedb_sats::relation::{DbTable, Header};
+use std::sync::Arc;
 
 pub fn scalar<T: Into<AlgebraicValue>>(of: T) -> AlgebraicValue {
     of.into()
@@ -23,7 +24,7 @@ where
     I: IntoIterator<Item = T>,
     T: Into<ProductValue>,
 {
-    MemTable::from_iter(head.into(), iter.into_iter().map(Into::into))
+    MemTable::from_iter(Arc::new(head.into()), iter.into_iter().map(Into::into))
 }
 
 pub fn db_table_raw<T: Into<Header>>(
@@ -32,7 +33,7 @@ pub fn db_table_raw<T: Into<Header>>(
     table_type: StTableType,
     table_access: StAccess,
 ) -> DbTable {
-    DbTable::new(head.into(), table_id, table_type, table_access)
+    DbTable::new(Arc::new(head.into()), table_id, table_type, table_access)
 }
 
 /// Create a [DbTable] of type [StTableType::User] and derive `StAccess::for_name(name)`.

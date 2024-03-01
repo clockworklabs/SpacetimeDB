@@ -159,6 +159,7 @@ fn print_auto_generated_file_comment(output: &mut Indenter) {
 }
 
 const ALLOW_UNUSED: &str = "#[allow(unused)]";
+const ALLOW_UNUSED_IMPORTS: &str = "#![allow(unused_imports)]";
 
 const SPACETIMEDB_IMPORTS: &[&str] = &[
     "use spacetimedb_sdk::{",
@@ -180,6 +181,7 @@ fn print_spacetimedb_imports(output: &mut Indenter) {
 
 fn print_file_header(output: &mut Indenter) {
     print_auto_generated_file_comment(output);
+    write!(output, "{}", ALLOW_UNUSED_IMPORTS).unwrap();
     print_spacetimedb_imports(output);
 }
 
@@ -378,9 +380,7 @@ fn print_struct_derives(output: &mut Indenter) {
 }
 
 fn begin_rust_struct_def_shared(ctx: &GenCtx, out: &mut Indenter, name: &str, elements: &[ProductTypeElement]) {
-    print_auto_generated_file_comment(out);
-
-    print_spacetimedb_imports(out);
+    print_file_header(out);
 
     // Pass this file into `gen_and_print_imports` to avoid recursively importing self
     // for recursive types.
@@ -730,14 +730,7 @@ pub fn autogen_rust_globals(ctx: &GenCtx, items: &[GenItem]) -> Vec<Vec<(String,
     let mut output = CodeIndenter::new(String::new());
     let out = &mut output;
 
-    // Warn people not to edit the file by hand.
-    print_auto_generated_file_comment(out);
-
-    // allow unused imports, for the whole module tree
-    print_lines(out, &["#![allow(unused_imports)]", ""]);
-
-    // Import everything all the other files import.
-    print_spacetimedb_imports(out);
+    print_file_header(out);
 
     // Import some extra stuff, just for the root module.
     print_dispatch_imports(out);

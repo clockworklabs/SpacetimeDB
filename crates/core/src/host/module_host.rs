@@ -3,12 +3,9 @@ use std::fmt;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
-use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
 use futures::{Future, FutureExt};
 use indexmap::IndexMap;
-use tokio::sync::oneshot;
 
-use super::host_controller::HostThreadpool;
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
 use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_logger::LogLevel;
@@ -46,15 +43,10 @@ impl DatabaseUpdate {
     pub fn from_writes(stdb: &RelationalDB, tx_data: &TxData) -> Self {
         let mut map: HashMap<TableId, Vec<TableOp>> = HashMap::new();
         for record in tx_data.records.iter() {
-            let vec = map.entry(record.table_id).or_default();
-
-            vec.push(TableOp {
-                op_type: match record.op {
-                    TxOp::Delete => 0,
-                    TxOp::Insert(_) => 1,
-                },
-                row_pk: record.key.to_bytes(),
-                row: record.product_value.clone(),
+            let pv = record.product_value.clone();
+            map.entry(record.table_id).or_default().push(match record.op {
+                TxOp::Delete => TableOp::delete(pv),
+                TxOp::Insert(_) => TableOp::insert(pv),
             });
         }
 
@@ -92,7 +84,6 @@ impl DatabaseUpdate {
                                 } else {
                                     table_row_operation::OperationType::Delete.into()
                                 },
-                                row_pk: op.row_pk,
                                 row: row_bytes,
                             }
                         })
@@ -115,17 +106,13 @@ impl DatabaseUpdate {
                     table_row_operations: table
                         .ops
                         .into_iter()
-                        .map(|op| {
-                            let row_pk = BASE_64_STD.encode(&op.row_pk);
-                            TableRowOperationJson {
-                                op: if op.op_type == 1 {
-                                    "insert".into()
-                                } else {
-                                    "delete".into()
-                                },
-                                row_pk,
-                                row: op.row.elements,
-                            }
+                        .map(|op| TableRowOperationJson {
+                            op: if op.op_type == 1 {
+                                "insert".into()
+                            } else {
+                                "delete".into()
+                            },
+                            row: op.row.elements,
                         })
                         .collect(),
                 })
@@ -144,8 +131,24 @@ pub struct DatabaseTableUpdate {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableOp {
     pub op_type: u8,
-    pub row_pk: Vec<u8>,
     pub row: ProductValue,
+}
+
+impl TableOp {
+    #[inline]
+    pub fn new(op_type: u8, row: ProductValue) -> Self {
+        Self { op_type, row }
+    }
+
+    #[inline]
+    pub fn insert(row: ProductValue) -> Self {
+        Self::new(1, row)
+    }
+
+    #[inline]
+    pub fn delete(row: ProductValue) -> Self {
+        Self::new(0, row)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -315,7 +318,7 @@ impl fmt::Debug for ModuleHost {
 
 #[async_trait::async_trait]
 trait DynModuleHost: Send + Sync + 'static {
-    async fn get_instance(&self, db: Address) -> Result<(&HostThreadpool, Box<dyn ModuleInstance>), NoSuchModule>;
+    async fn get_instance(&self, db: Address) -> Result<Box<dyn ModuleInstance>, NoSuchModule>;
     fn inject_logs(&self, log_level: LogLevel, message: &str);
     fn one_off_query(
         &self,
@@ -330,7 +333,6 @@ trait DynModuleHost: Send + Sync + 'static {
 
 struct HostControllerActor<T: Module> {
     module: Arc<T>,
-    threadpool: Arc<HostThreadpool>,
     instance_pool: LendingPool<T::Instance>,
     start: NotifyOnce,
 }
@@ -338,7 +340,7 @@ struct HostControllerActor<T: Module> {
 impl<T: Module> HostControllerActor<T> {
     fn spinup_new_instance(&self) {
         let (module, instance_pool) = (self.module.clone(), self.instance_pool.clone());
-        self.threadpool.spawn(move || {
+        rayon::spawn(move || {
             let instance = module.create_instance();
             match instance_pool.add(instance) {
                 Ok(()) => {}
@@ -361,7 +363,7 @@ async fn select_first<A: Future, B: Future<Output = ()>>(fut_a: A, fut_b: B) -> 
 
 #[async_trait::async_trait]
 impl<T: Module> DynModuleHost for HostControllerActor<T> {
-    async fn get_instance(&self, db: Address) -> Result<(&HostThreadpool, Box<dyn ModuleInstance>), NoSuchModule> {
+    async fn get_instance(&self, db: Address) -> Result<Box<dyn ModuleInstance>, NoSuchModule> {
         self.start.notified().await;
         // in the future we should do something like in the else branch here -- add more instances based on load.
         // we need to do write-skew retries first - right now there's only ever once instance per module.
@@ -379,11 +381,10 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
             .await
             .map_err(|_| NoSuchModule)?
         };
-        let inst = AutoReplacingModuleInstance {
+        Ok(Box::new(AutoReplacingModuleInstance {
             inst,
             module: self.module.clone(),
-        };
-        Ok((&self.threadpool, Box::new(inst)))
+        }))
     }
 
     fn inject_logs(&self, log_level: LogLevel, message: &str) {
@@ -459,13 +460,12 @@ pub enum InitDatabaseError {
 }
 
 impl ModuleHost {
-    pub fn new(threadpool: Arc<HostThreadpool>, mut module: impl Module) -> Self {
+    pub fn new(mut module: impl Module) -> Self {
         let info = module.info();
         let instance_pool = LendingPool::new();
         instance_pool.add_multiple(module.initial_instances()).unwrap();
         let inner = Arc::new(HostControllerActor {
             module: Arc::new(module),
-            threadpool,
             instance_pool,
             start: NotifyOnce::new(),
         });
@@ -491,22 +491,24 @@ impl ModuleHost {
         F: FnOnce(&mut dyn ModuleInstance) -> R + Send + 'static,
         R: Send + 'static,
     {
-        let (threadpool, mut inst) = self.inner.get_instance(self.info.address).await?;
+        let mut inst = self.inner.get_instance(self.info.address).await?;
 
-        let (tx, rx) = oneshot::channel();
-        threadpool.spawn(move || {
-            let _ = tx.send(f(&mut *inst));
-        });
-        Ok(rx.await.expect("instance panicked"))
+        let result = tokio::task::spawn_blocking(move || f(&mut *inst))
+            .await
+            .unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic()));
+        Ok(result)
     }
 
     pub async fn disconnect_client(&self, client_id: ClientActorId) {
-        tokio::join!(
-            async { self.subscriptions().remove_subscriber(client_id) },
-            self.call_identity_connected_disconnected(client_id.identity, client_id.address, false)
-                // ignore NoSuchModule; if the module's already closed, that's fine
-                .map(drop)
-        );
+        let this = self.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            this.subscriptions().remove_subscriber(client_id);
+        })
+        .await;
+        // ignore NoSuchModule; if the module's already closed, that's fine
+        let _ = self
+            .call_identity_connected_disconnected(client_id.identity, client_id.address, false)
+            .await;
     }
 
     pub async fn call_identity_connected_disconnected(

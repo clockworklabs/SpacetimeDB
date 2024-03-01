@@ -2,7 +2,6 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused_imports)]
-
 use spacetimedb_sdk::callbacks::{DbCallbacks, ReducerCallbacks};
 use spacetimedb_sdk::client_api_messages::{Event, TableUpdate};
 use spacetimedb_sdk::client_cache::{ClientCache, RowCallbackReminders};

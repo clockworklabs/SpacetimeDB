@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Instant;
 
 use crate::db::db_metrics::{DB_METRICS, MAX_QUERY_COMPILE_TIME};
@@ -7,7 +8,7 @@ use crate::execution_context::{ExecutionContext, WorkloadType};
 use crate::host::module_host::DatabaseTableUpdate;
 use crate::sql::compiler::compile_sql;
 use crate::sql::execute::execute_single_sql;
-use crate::subscription::subscription::{QuerySet, SupportedQuery};
+use crate::subscription::subscription::SupportedQuery;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use spacetimedb_lib::identity::AuthCtx;
@@ -18,6 +19,8 @@ use spacetimedb_sats::AlgebraicType;
 use spacetimedb_vm::expr;
 use spacetimedb_vm::expr::{Crud, CrudExpr, DbType, QueryExpr};
 use spacetimedb_vm::relation::MemTable;
+
+use super::subscription::get_all;
 
 static WHITESPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap());
 pub const SUBSCRIBE_TO_ALL_QUERY: &str = "SELECT * FROM *";
@@ -32,7 +35,7 @@ pub const OP_TYPE_FIELD_NAME: &str = "__op_type";
 /// Create a virtual table from a sequence of table updates.
 /// Add a special column __op_type to distinguish inserts and deletes.
 #[tracing::instrument(skip_all)]
-pub fn to_mem_table_with_op_type(head: Header, table_access: StAccess, data: &DatabaseTableUpdate) -> MemTable {
+pub fn to_mem_table_with_op_type(head: Arc<Header>, table_access: StAccess, data: &DatabaseTableUpdate) -> MemTable {
     let mut t = MemTable::new(head, table_access, vec![]);
 
     if let Some(pos) = t.head.find_pos_by_name(OP_TYPE_FIELD_NAME) {
@@ -42,11 +45,14 @@ pub fn to_mem_table_with_op_type(head: Header, table_access: StAccess, data: &Da
             new
         }));
     } else {
-        t.head.fields.push(Column::new(
+        // TODO(perf): Eliminate this `clone_for_error` call, as we're not in an error path.
+        let mut head = t.head.clone_for_error();
+        head.fields.push(Column::new(
             FieldName::named(&t.head.table_name, OP_TYPE_FIELD_NAME),
             AlgebraicType::U8,
             t.head.fields.len().into(),
         ));
+        t.head = Arc::new(head);
         for row in &data.ops {
             let mut new = row.row.clone();
             new.elements.push(row.op_type.into());
@@ -100,7 +106,7 @@ pub fn compile_read_only_query(
     tx: &Tx,
     auth: &AuthCtx,
     input: &str,
-) -> Result<QuerySet, DBError> {
+) -> Result<Vec<SupportedQuery>, DBError> {
     let input = input.trim();
     if input.is_empty() {
         return Err(SubscriptionError::Empty.into());
@@ -109,7 +115,7 @@ pub fn compile_read_only_query(
     // Remove redundant whitespace, and in particular newlines, for debug info.
     let input = WHITESPACE.replace_all(input, " ");
     if input == SUBSCRIBE_TO_ALL_QUERY {
-        return QuerySet::get_all(relational_db, tx, auth);
+        return get_all(relational_db, tx, auth);
     }
 
     let compiled = compile_sql(relational_db, tx, &input)?;
@@ -202,12 +208,12 @@ mod tests {
     use crate::db::relational_db::MutTx;
     use crate::host::module_host::{DatabaseUpdate, TableOp};
     use crate::sql::execute::run;
+    use crate::subscription::subscription::ExecutionSet;
     use crate::vm::tests::create_table_with_rows;
     use itertools::Itertools;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::Identity;
     use spacetimedb_primitives::{ColId, TableId};
-    use spacetimedb_sats::data_key::ToDataKey;
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::db::def::*;
     use spacetimedb_sats::relation::FieldName;
@@ -216,28 +222,18 @@ mod tests {
     use spacetimedb_vm::operator::OpCmp;
 
     fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
-        let row_pk = row.to_data_key().to_bytes();
         DatabaseTableUpdate {
             table_id,
             table_name: table_name.to_string(),
-            ops: vec![TableOp {
-                op_type: 1,
-                row,
-                row_pk,
-            }],
+            ops: vec![TableOp::insert(row)],
         }
     }
 
     fn delete_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
-        let row_pk = row.to_data_key().to_bytes();
         DatabaseTableUpdate {
             table_id,
             table_name: table_name.to_string(),
-            ops: vec![TableOp {
-                op_type: 0,
-                row,
-                row_pk,
-            }],
+            ops: vec![TableOp::delete(row)],
         }
     }
 
@@ -260,20 +256,13 @@ mod tests {
         let table = mem_table(head.clone(), [row.clone()]);
         let table_id = create_table_with_rows(db, tx, table_name, head.clone(), &[row.clone()])?;
 
-        let schema = db.schema_for_table_mut(tx, table_id).unwrap().into_owned();
-
-        let op = TableOp {
-            op_type: 1,
-            row_pk: row.to_data_key().to_bytes(),
-            row: row.clone(),
-        };
-
         let data = DatabaseTableUpdate {
             table_id,
             table_name: table_name.to_string(),
-            ops: vec![op],
+            ops: vec![TableOp::insert(row.clone())],
         };
 
+        let schema = db.schema_for_table_mut(tx, table_id).unwrap().into_owned();
         let q = QueryExpr::new(db_table(&schema, table_id));
 
         Ok((schema, table, data, q))
@@ -357,7 +346,7 @@ mod tests {
     fn check_query_incr(
         db: &RelationalDB,
         tx: &Tx,
-        s: &QuerySet,
+        s: &ExecutionSet,
         update: &DatabaseUpdate,
         total_tables: usize,
         rows: &[ProductValue],
@@ -379,7 +368,7 @@ mod tests {
     fn check_query_eval(
         db: &RelationalDB,
         tx: &Tx,
-        s: &QuerySet,
+        s: &ExecutionSet,
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
@@ -394,46 +383,6 @@ mod tests {
 
         assert_eq!(result, rows, "Must return the correct row(s)");
 
-        Ok(())
-    }
-
-    #[test]
-    fn test_eval_incr_maintains_row_ids() -> ResultTest<()> {
-        let (db, _) = make_test_db()?;
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
-
-        let schema = ProductType::from([("u8", AlgebraicType::U8)]);
-        let row = product!(1u8);
-
-        // generate row id from row
-        let id1 = &row.to_data_key().to_bytes();
-
-        // create table empty table "test"
-        let table_id = create_table_with_rows(&db, &mut tx, "test", schema.clone(), &[])?;
-
-        // select * from test
-        let query: QuerySet = QueryExpr::new(db_table(schema.clone(), table_id)).try_into()?;
-
-        let op = TableOp {
-            op_type: 0,
-            row_pk: id1.clone(),
-            row: row.clone(),
-        };
-
-        let update = DatabaseTableUpdate {
-            table_id,
-            table_name: "test".into(),
-            ops: vec![op],
-        };
-
-        let update = DatabaseUpdate { tables: vec![update] };
-        db.rollback_mut_tx(&ExecutionContext::default(), tx);
-        let tx = db.begin_tx();
-        let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
-        let id2 = &result.tables[0].ops[0].row_pk;
-
-        // check that both row ids are the same
-        assert_eq!(id1, id2);
         Ok(())
     }
 
@@ -453,12 +402,7 @@ mod tests {
             db.insert(&mut tx, table_id, row)?;
 
             let row = product!(i + 10, i);
-            let row_pk = row.to_data_key().to_bytes();
-            ops.push(TableOp {
-                op_type: 0,
-                row_pk,
-                row,
-            })
+            ops.push(TableOp::delete(row))
         }
 
         let update = DatabaseUpdate {
@@ -479,7 +423,7 @@ mod tests {
             panic!("unexpected query {:#?}", exp[0]);
         };
 
-        let query = QuerySet::try_from(query)?;
+        let query: ExecutionSet = query.try_into()?;
 
         let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
 
@@ -493,7 +437,6 @@ mod tests {
 
         assert_eq!(op.op_type, 0);
         assert_eq!(op.row, product!(13u64, 3u64));
-        assert_eq!(op.row_pk, product!(13u64, 3u64).to_data_key().to_bytes());
         Ok(())
     }
 
@@ -544,7 +487,8 @@ mod tests {
             panic!("unexpected query {:#?}", exp[0]);
         };
 
-        let query = QuerySet::try_from(query)?;
+        let query: ExecutionSet = query.try_into()?;
+
         db.release_tx(&ExecutionContext::default(), tx);
 
         fn case_env(
@@ -813,35 +757,21 @@ mod tests {
         let tx = db.begin_tx();
         check_query(&db, &table, &tx, &q, &data)?;
 
-        //SELECT * FROM inventory
-        let q_all = QueryExpr::new(db_table(&schema, schema.table_id));
         //SELECT * FROM inventory WHERE inventory_id = 1
-        let q_id =
-            q_all
-                .clone()
-                .with_select_cmp(OpCmp::Eq, FieldName::named("_inventory", "inventory_id"), scalar(1u64));
+        let q_id = QueryExpr::new(db_table(&schema, schema.table_id)).with_select_cmp(
+            OpCmp::Eq,
+            FieldName::named("_inventory", "inventory_id"),
+            scalar(1u64),
+        );
 
-        let s = [q_all, q_id]
-            .into_iter()
-            .map(TryFrom::try_from)
-            .collect::<Result<QuerySet, _>>()?;
+        let s = ExecutionSet::from_iter([q_id.try_into()?]);
 
-        let row1 = TableOp {
-            op_type: 0,
-            row_pk: row.to_data_key().to_bytes(),
-            row: row.clone(),
-        };
-
-        let row2 = TableOp {
-            op_type: 1,
-            row_pk: row.to_data_key().to_bytes(),
-            row: row.clone(),
-        };
+        let row2 = TableOp::insert(row.clone());
 
         let data = DatabaseTableUpdate {
             table_id: schema.table_id,
             table_name: "_inventory".to_string(),
-            ops: vec![row1, row2],
+            ops: vec![row2],
         };
 
         let update = DatabaseUpdate {
@@ -870,63 +800,6 @@ mod tests {
                 }
             }
         }
-
-        Ok(())
-    }
-
-    //Check that
-    //```
-    //SELECT * FROM table
-    //SELECT * FROM table WHERE id=1
-    //```
-    // return just one row for both incr & direct subscriptions
-    #[test]
-    fn test_subscribe_dedup() -> ResultTest<()> {
-        let (db, _tmp_dir) = make_test_db()?;
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
-
-        let (schema, _table, _data, _q) = make_inv(&db, &mut tx, StAccess::Private)?;
-
-        //SELECT * FROM inventory
-        let q_all = QueryExpr::new(db_table(&schema, schema.table_id));
-        //SELECT * FROM inventory WHERE inventory_id = 1
-        let q_id =
-            q_all
-                .clone()
-                .with_select_cmp(OpCmp::Eq, FieldName::named("_inventory", "inventory_id"), scalar(1u64));
-
-        let s = [q_all, q_id]
-            .into_iter()
-            .map(TryFrom::try_from)
-            .collect::<Result<QuerySet, _>>()?;
-        db.commit_tx(&ExecutionContext::default(), tx)?;
-
-        let tx = db.begin_tx();
-        check_query_eval(&db, &tx, &s, 1, &[product!(1u64, "health")])?;
-
-        let row = product!(1u64, "health");
-
-        let row1 = TableOp {
-            op_type: 0,
-            row_pk: row.to_data_key().to_bytes(),
-            row: row.clone(),
-        };
-
-        let row2 = TableOp {
-            op_type: 1,
-            row_pk: row.to_data_key().to_bytes(),
-            row: row.clone(),
-        };
-
-        let data = DatabaseTableUpdate {
-            table_id: schema.table_id,
-            table_name: "inventory".to_string(),
-            ops: vec![row1, row2],
-        };
-
-        let update = DatabaseUpdate { tables: vec![data] };
-
-        check_query_incr(&db, &tx, &s, &update, 1, &[row])?;
 
         Ok(())
     }
@@ -1008,31 +881,19 @@ mod tests {
         let row_1 = product!(1u64, "health");
         let row_2 = product!(2u64, "jhon doe");
         let tx = db.begin_tx();
-        let s = compile_read_only_query(&db, &tx, &AuthCtx::for_testing(), SUBSCRIBE_TO_ALL_QUERY)?;
+        let s = compile_read_only_query(&db, &tx, &AuthCtx::for_testing(), SUBSCRIBE_TO_ALL_QUERY)?.into();
         check_query_eval(&db, &tx, &s, 2, &[row_1.clone(), row_2.clone()])?;
-
-        let row1 = TableOp {
-            op_type: 0,
-            row_pk: row_1.to_data_key().to_bytes(),
-            row: row_1,
-        };
-
-        let row2 = TableOp {
-            op_type: 1,
-            row_pk: row_2.to_data_key().to_bytes(),
-            row: row_2,
-        };
 
         let data1 = DatabaseTableUpdate {
             table_id: schema_1.table_id,
             table_name: "inventory".to_string(),
-            ops: vec![row1],
+            ops: vec![TableOp::delete(row_1)],
         };
 
         let data2 = DatabaseTableUpdate {
             table_id: schema_2.table_id,
             table_name: "player".to_string(),
-            ops: vec![row2],
+            ops: vec![TableOp::insert(row_2)],
         };
 
         let update = DatabaseUpdate {
@@ -1077,14 +938,14 @@ mod tests {
             "SELECT * FROM lhs WHERE id > 5",
         ];
         for scan in scans {
-            let expr = compile_read_only_query(&db, &tx, &auth, scan)?.pop_first().unwrap();
+            let expr = compile_read_only_query(&db, &tx, &auth, scan)?.pop().unwrap();
             assert_eq!(expr.kind(), Supported::Scan, "{scan}\n{expr:#?}");
         }
 
         // Only index semijoins are supported
         let joins = ["SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE rhs.y < 10"];
         for join in joins {
-            let expr = compile_read_only_query(&db, &tx, &auth, join)?.pop_first().unwrap();
+            let expr = compile_read_only_query(&db, &tx, &auth, join)?.pop().unwrap();
             assert_eq!(expr.kind(), Supported::Semijoin, "{join}\n{expr:#?}");
         }
 

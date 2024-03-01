@@ -17,6 +17,7 @@ use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::Bound;
+use std::sync::Arc;
 
 /// Trait for checking if the `caller` have access to `Self`
 pub trait AuthAccess {
@@ -297,7 +298,7 @@ impl SourceExpr {
         }
     }
 
-    pub fn head(&self) -> &Header {
+    pub fn head(&self) -> &Arc<Header> {
         match self {
             SourceExpr::MemTable(x) => &x.head,
             SourceExpr::DbTable(x) => &x.head,
@@ -313,7 +314,7 @@ impl SourceExpr {
 }
 
 impl Relation for SourceExpr {
-    fn head(&self) -> &Header {
+    fn head(&self) -> &Arc<Header> {
         match self {
             SourceExpr::MemTable(x) => x.head(),
             SourceExpr::DbTable(x) => x.head(),
@@ -349,7 +350,7 @@ impl From<SourceExpr> for Table {
 impl From<&TableSchema> for SourceExpr {
     fn from(value: &TableSchema) -> Self {
         SourceExpr::DbTable(DbTable::new(
-            value.into(),
+            Arc::new(value.into()),
             value.table_id,
             value.table_type,
             value.table_access,
@@ -424,8 +425,12 @@ impl IndexJoin {
         // during construction of the index join.
         let probe_column = self.probe_side.source.head().column(&self.probe_field).unwrap().col_id;
         match self.index_side {
-            // If the size of the indexed table is sufficiently large, do not reorder.
-            Table::DbTable(DbTable { table_id, ref head, .. }) if row_count(table_id, &head.table_name) > 1000 => self,
+            // If the size of the indexed table is sufficiently large,
+            // do not reorder.
+            //
+            // TODO: This determination is quite arbitrary.
+            // Ultimately we should be using cardinality estimation.
+            Table::DbTable(DbTable { table_id, ref head, .. }) if row_count(table_id, &head.table_name) > 3000 => self,
             // If this is a delta table, we must reorder.
             // If this is a sufficiently small physical table, we should reorder.
             table => {
@@ -1561,7 +1566,7 @@ impl AuthAccess for QueryCode {
 }
 
 impl Relation for QueryCode {
-    fn head(&self) -> &Header {
+    fn head(&self) -> &Arc<Header> {
         self.table.head()
     }
 
@@ -1677,20 +1682,20 @@ mod tests {
     fn tables() -> [Table; 2] {
         [
             Table::MemTable(MemTable {
-                head: Header {
+                head: Arc::new(Header {
                     table_name: "foo".into(),
                     fields: vec![],
                     constraints: Default::default(),
-                },
+                }),
                 data: vec![],
                 table_access: StAccess::Private,
             }),
             Table::DbTable(DbTable {
-                head: Header {
+                head: Arc::new(Header {
                     table_name: "foo".into(),
                     fields: vec![],
                     constraints: vec![(ColId(42).into(), Constraints::indexed())],
-                },
+                }),
                 table_id: 42.into(),
                 table_type: StTableType::User,
                 table_access: StAccess::Private,
@@ -1718,11 +1723,11 @@ mod tests {
                     field: "bar".into(),
                 },
                 index_side: Table::DbTable(DbTable {
-                    head: Header {
+                    head: Arc::new(Header {
                         table_name: "bar".into(),
                         fields: vec![],
                         constraints: Default::default(),
-                    },
+                    }),
                     table_id: 42.into(),
                     table_type: StTableType::User,
                     table_access: StAccess::Public,
@@ -1788,7 +1793,7 @@ mod tests {
                 .collect(),
         );
         MemTable {
-            head,
+            head: Arc::new(head),
             data,
             table_access,
         }

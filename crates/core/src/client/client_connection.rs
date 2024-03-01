@@ -1,4 +1,5 @@
 use std::ops::Deref;
+use std::time::Instant;
 
 use crate::error::DBError;
 use crate::host::{ModuleHost, ReducerArgs, ReducerCallError, ReducerCallResult};
@@ -146,8 +147,9 @@ impl ClientConnection {
     pub fn handle_message(
         &self,
         message: impl Into<DataMessage>,
+        timer: Instant,
     ) -> impl Future<Output = Result<(), MessageHandleError>> + '_ {
-        message_handlers::handle(self, message.into())
+        message_handlers::handle(self, message.into(), timer)
     }
 
     pub async fn call_reducer(&self, reducer: &str, args: ReducerArgs) -> Result<ReducerCallResult, ReducerCallError> {

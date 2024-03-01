@@ -1,6 +1,7 @@
 use derive_more::Display;
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use crate::db::auth::{StAccess, StTableType};
 use crate::db::error::{DefType, SchemaError};
@@ -938,7 +939,12 @@ impl From<&TableSchema> for ProductType {
 
 impl From<&TableSchema> for DbTable {
     fn from(value: &TableSchema) -> Self {
-        DbTable::new(value.into(), value.table_id, value.table_type, value.table_access)
+        DbTable::new(
+            Arc::new(value.into()),
+            value.table_id,
+            value.table_type,
+            value.table_access,
+        )
     }
 }
 

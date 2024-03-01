@@ -2,6 +2,7 @@ on:
   push:
     branches:
       - master
+      - jgilles/fix-callgrind
 
   workflow_dispatch:
     inputs:
@@ -21,7 +22,7 @@ env:
 
 jobs:
   benchmark:
-    name: run benchmarks
+    name: run criterion benchmarks
     runs-on: benchmarks-runner
     # filter for a comment containing 'benchmarks please'
     if: ${{ github.event_name != 'issue_comment' || (github.event.issue.pull_request && contains(github.event.comment.body, 'benchmarks please')) }}
@@ -96,36 +97,24 @@ jobs:
           if [[ $PR_NUMBER ]]; then
             BASELINE_NAME=branch
             RESULTS_NAME=pr-$PR_NUMBER
-            BENCH_FILTER='(special|stdb_module|stdb_raw)'
+            BENCH_FILTER='stdb_raw'
             echo "Running benchmarks without sqlite"
           else
             BASELINE_NAME=master
             RESULTS_NAME=$GITHUB_SHA
-            BENCH_FILTER='.*'
+            BENCH_FILTER='(stdb_raw|sqlite)'
             echo "Running benchmarks with sqlite"
           fi
           pushd crates/bench
-          cargo bench --bench generic --bench special -- --save-baseline "$BASELINE_NAME" "$BENCH_FILTER"
+          cargo bench --bench generic -- --save-baseline "$BASELINE_NAME" "$BENCH_FILTER"
+          # sticker price benchmark
+          cargo bench --bench generic -- --save-baseline "$BASELINE_NAME" 'stdb_module/disk/update_bulk'
+          cargo bench --bench special -- --save-baseline "$BASELINE_NAME"
           cargo run --bin summarize pack "$BASELINE_NAME"
           popd
           mkdir criterion-results
           [[ ! $PR_NUMBER ]] && cp target/criterion/$BASELINE_NAME.json criterion-results/
           cp target/criterion/$BASELINE_NAME.json criterion-results/$RESULTS_NAME.json
-
-      # TODO: can we optionally download if it only might fail?
-      #- name: PR; download bench results for compare
-      #  if: env.PR_NUMBER
-      #  uses: actions/github-script@v6  
-      #  with:
-      #    github-token: ${{secrets.GITHUB_TOKEN}}
-      #    script: |
-      #      try {
-      #        let artifact = github.rest.actions.getArtifact({
-      #          owner: "clockwork",
-      #          repo: "SpacetimeDB",
-      #          
-      #        })
-      #      }
 
       # this will work for both PR and master
       - name: Upload criterion results to DO spaces
@@ -147,11 +136,12 @@ jobs:
             OLD=$(git rev-parse HEAD~1)
             NEW=$GITHUB_SHA
           fi
+          echo "fetching https://benchmarks.spacetimedb.com/compare/$OLD/$NEW"
           curl -sS https://benchmarks.spacetimedb.com/compare/$OLD/$NEW > report.md
 
       - name: Post comment
         run: |
-          BODY="<details><summary>Benchmark results</summary>
+          BODY="<details><summary>Criterion benchmark results</summary>
 
           $(cat report.md)
 
@@ -182,8 +172,8 @@ jobs:
     container:
       image: rust:1.72
       options: --privileged
-    # filter for a comment containing 'callgrind please' (chosen to not interfere with the other benchmarks)
-    if: ${{ github.event_name != 'issue_comment' || (github.event.issue.pull_request && contains(github.event.comment.body, 'callgrind please')) }}
+    # filter for a comment containing 'benchmarks please'
+    if: ${{ github.event_name != 'issue_comment' || (github.event.issue.pull_request && contains(github.event.comment.body, 'benchmarks please')) }}
     env:
       PR_NUMBER: ${{ github.event.inputs.pr_number || github.event.issue.number || null }}
     steps:
@@ -314,12 +304,13 @@ jobs:
             OLD=$(git rev-parse HEAD~1)
             NEW=$GITHUB_SHA
           fi
+          echo "fetching https://benchmarks.spacetimedb.com/compare_callgrind/$OLD/$NEW"
           curl -sS https://benchmarks.spacetimedb.com/compare_callgrind/$OLD/$NEW > report.md
 
       - name: Post comment
         shell: bash
         run: |
-          BODY="<details><summary>Benchmark results</summary>
+          BODY="<details><summary>Callgrind benchmark results</summary>
           $(cat report.md)
           </details>"
           gh api "$COMMENT_UPDATE_URL" -X PATCH -f body="$BODY"

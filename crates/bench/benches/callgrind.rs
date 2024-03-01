@@ -22,7 +22,7 @@ mod callgrind_benches {
 
     use spacetimedb_bench::{
         database::BenchDatabase,
-        schemas::{create_partly_identical, create_sequential, BenchTable, IndexStrategy, Person, RandomTable},
+        schemas::{create_partly_identical, create_sequential, u32_u64_str, BenchTable, IndexStrategy, RandomTable},
         spacetime_raw::SpacetimeRaw,
         sqlite::SQLite,
     };
@@ -46,8 +46,8 @@ mod callgrind_benches {
         bench: String,
         db: String,
         in_memory: bool,
-        table_name: String,
-        index_strategy: IndexStrategy,
+        schema: String,
+        indices: IndexStrategy,
         preload: u32,
         count: u32,
         #[serde(skip)]
@@ -58,15 +58,11 @@ mod callgrind_benches {
         fn run_benchmark(self) {
             assert_eq!(self.bench, "insert bulk", "provided metadata has incorrect bench name");
             assert_eq!(self.db, DB::name(), "provided metadata has incorrect db name");
-            assert_eq!(
-                self.table_name,
-                T::name_snake_case(),
-                "provided metadata has incorrect db name"
-            );
+            assert_eq!(self.schema, T::name(), "provided metadata has incorrect db name");
 
             let mut db = DB::build(self.in_memory, false).unwrap();
 
-            let table_id = db.create_table::<T>(self.index_strategy).unwrap();
+            let table_id = db.create_table::<T>(self.indices).unwrap();
             let mut data = create_sequential::<T>(0xdeadbeef, self.count + self.preload, 64);
             let to_preload = data.split_off(self.count as usize);
 
@@ -88,66 +84,28 @@ mod callgrind_benches {
     }
 
     #[library_benchmark]
-    #[bench::mem_unique_1(r#"{"bench":"insert bulk", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 1}"#)]
-    #[bench::mem_unique_4(r#"{"bench":"insert bulk", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 4}"#)]
-    #[bench::mem_unique_16(r#"{"bench":"insert bulk", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 16}"#)]
-    #[bench::mem_unique_64(r#"{"bench":"insert bulk", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 64}"#)]
-    #[bench::mem_multi_index_1(r#"{"bench":"insert bulk", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "multi_index", "preload": 128, "count": 1}"#)]
-    #[bench::mem_multi_index_4(r#"{"bench":"insert bulk", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "multi_index", "preload": 128, "count": 4}"#)]
-    #[bench::mem_multi_index_16(r#"{"bench":"insert bulk", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "multi_index", "preload": 128, "count": 16}"#)]
-    #[bench::mem_multi_index_64(r#"{"bench":"insert bulk", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "multi_index", "preload": 128, "count": 64}"#)]
-    #[bench::disk_unique_1(r#"{"bench":"insert bulk", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 1}"#)]
-    #[bench::disk_unique_4(r#"{"bench":"insert bulk", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 4}"#)]
-    #[bench::disk_unique_16(r#"{"bench":"insert bulk", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 16}"#)]
-    #[bench::disk_unique_64(r#"{"bench":"insert bulk", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 64}"#)]
-    #[bench::disk_multi_index_1(r#"{"bench":"insert bulk", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "multi_index", "preload": 128, "count": 1}"#)]
-    #[bench::disk_multi_index_4(r#"{"bench":"insert bulk", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "multi_index", "preload": 128, "count": 4}"#)]
-    #[bench::disk_multi_index_16(r#"{"bench":"insert bulk", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "multi_index", "preload": 128, "count": 16}"#)]
-    #[bench::disk_multi_index_64(r#"{"bench":"insert bulk", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "multi_index", "preload": 128, "count": 64}"#)]
-    fn insert_bulk_raw_person(metadata: &str) {
-        let bench: InsertBulkBenchmark<SpacetimeRaw, Person> = serde_json::from_str(metadata).unwrap();
+    #[bench::mem_unique_64(r#"{"bench":"insert bulk", "db": "stdb_raw", "in_memory": true, "schema": "u32_u64_str", "indices": "unique_0", "preload": 128, "count": 64}"#)]
+    #[bench::mem_btree_each_column_64(r#"{"bench":"insert bulk", "db": "stdb_raw", "in_memory": true, "schema": "u32_u64_str", "indices": "btree_each_column", "preload": 128, "count": 64}"#)]
+    #[bench::disk_unique_64(r#"{"bench":"insert bulk", "db": "stdb_raw", "in_memory": false, "schema": "u32_u64_str", "indices": "unique_0", "preload": 128, "count": 64}"#)]
+    #[bench::disk_btree_each_column_64(r#"{"bench":"insert bulk", "db": "stdb_raw", "in_memory": false, "schema": "u32_u64_str", "indices": "btree_each_column", "preload": 128, "count": 64}"#)]
+    fn insert_bulk_raw_u32_u64_str(metadata: &str) {
+        let bench: InsertBulkBenchmark<SpacetimeRaw, u32_u64_str> = serde_json::from_str(metadata).unwrap();
         bench.run_benchmark();
     }
 
-    /*
     #[library_benchmark]
-    #[bench::b1(r#"{"bench": "insert bulk", "db": "stdb_module", "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 1}"#)]
-    #[bench::b2(r#"{"bench": "insert bulk", "db": "stdb_module", "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 4}"#)]
-    #[bench::b3(r#"{"bench": "insert bulk", "db": "stdb_module", "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 16}"#)]
-    #[bench::b4(
-        r#"{"bench": "insert bulk", "db": "stdb_module", "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 64}"#
-    )]
-    fn insert_bulk_module_person(metadata: &str) {
-        let bench: InsertBulkBenchmark<SpacetimeModule, Person> = serde_json::from_str(metadata).unwrap();
-        bench.run_benchmark();
-    }
-    */
-
-    #[library_benchmark]
-    #[bench::mem_unique_1(r#"{"bench":"insert bulk", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 1}"#)]
-    #[bench::mem_unique_4(r#"{"bench":"insert bulk", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 4}"#)]
-    #[bench::mem_unique_16(r#"{"bench":"insert bulk", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 16}"#)]
-    #[bench::mem_unique_64(r#"{"bench":"insert bulk", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 64}"#)]
-    #[bench::mem_multi_index_1(r#"{"bench":"insert bulk", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "multi_index", "preload": 128, "count": 1}"#)]
-    #[bench::mem_multi_index_4(r#"{"bench":"insert bulk", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "multi_index", "preload": 128, "count": 4}"#)]
-    #[bench::mem_multi_index_16(r#"{"bench":"insert bulk", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "multi_index", "preload": 128, "count": 16}"#)]
-    #[bench::mem_multi_index_64(r#"{"bench":"insert bulk", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "multi_index", "preload": 128, "count": 64}"#)]
-    #[bench::disk_unique_1(r#"{"bench":"insert bulk", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 1}"#)]
-    #[bench::disk_unique_4(r#"{"bench":"insert bulk", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 4}"#)]
-    #[bench::disk_unique_16(r#"{"bench":"insert bulk", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 16}"#)]
-    #[bench::disk_unique_64(r#"{"bench":"insert bulk", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 64}"#)]
-    #[bench::disk_multi_index_1(r#"{"bench":"insert bulk", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "multi_index", "preload": 128, "count": 1}"#)]
-    #[bench::disk_multi_index_4(r#"{"bench":"insert bulk", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "multi_index", "preload": 128, "count": 4}"#)]
-    #[bench::disk_multi_index_16(r#"{"bench":"insert bulk", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "multi_index", "preload": 128, "count": 16}"#)]
-    #[bench::disk_multi_index_64(r#"{"bench":"insert bulk", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "multi_index", "preload": 128, "count": 64}"#)]
-    fn insert_bulk_sqlite_person(metadata: &str) {
-        let bench: InsertBulkBenchmark<SQLite, Person> = serde_json::from_str(metadata).unwrap();
+    #[bench::mem_unique_64(r#"{"bench":"insert bulk", "db": "sqlite", "in_memory": true, "schema": "u32_u64_str", "indices": "unique_0", "preload": 128, "count": 64}"#)]
+    #[bench::mem_btree_each_column_64(r#"{"bench":"insert bulk", "db": "sqlite", "in_memory": true, "schema": "u32_u64_str", "indices": "btree_each_column", "preload": 128, "count": 64}"#)]
+    #[bench::disk_unique_64(r#"{"bench":"insert bulk", "db": "sqlite", "in_memory": false, "schema": "u32_u64_str", "indices": "unique_0", "preload": 128, "count": 64}"#)]
+    #[bench::disk_btree_each_column_64(r#"{"bench":"insert bulk", "db": "sqlite", "in_memory": false, "schema": "u32_u64_str", "indices": "btree_each_column", "preload": 128, "count": 64}"#)]
+    fn insert_bulk_sqlite_u32_u64_str(metadata: &str) {
+        let bench: InsertBulkBenchmark<SQLite, u32_u64_str> = serde_json::from_str(metadata).unwrap();
         bench.run_benchmark();
     }
 
     library_benchmark_group!(
         name = insert_bulk_group;
-        benchmarks = insert_bulk_raw_person, /*insert_bulk_module_person,*/ insert_bulk_sqlite_person
+        benchmarks = insert_bulk_raw_u32_u64_str, /*insert_bulk_module_u32_u64_str,*/ insert_bulk_sqlite_u32_u64_str
     );
 
     // ========================= UPDATE BULK =========================
@@ -157,8 +115,8 @@ mod callgrind_benches {
         bench: String,
         db: String,
         in_memory: bool,
-        table_name: String,
-        index_strategy: IndexStrategy,
+        schema: String,
+        indices: IndexStrategy,
         preload: u32,
         count: u32,
         #[serde(skip)]
@@ -169,20 +127,16 @@ mod callgrind_benches {
         fn run_benchmark(self) {
             assert_eq!(self.bench, "update bulk", "provided metadata has incorrect bench name");
             assert_eq!(self.db, DB::name(), "provided metadata has incorrect db name");
+            assert_eq!(self.schema, T::name(), "provided metadata has incorrect db name");
             assert_eq!(
-                self.table_name,
-                T::name_snake_case(),
-                "provided metadata has incorrect db name"
-            );
-            assert_eq!(
-                self.index_strategy,
-                IndexStrategy::Unique,
+                self.indices,
+                IndexStrategy::Unique0,
                 "provided metadata has incorrect index strategy"
             );
 
             let mut db = DB::build(self.in_memory, false).unwrap();
 
-            let table_id = db.create_table::<T>(self.index_strategy).unwrap();
+            let table_id = db.create_table::<T>(self.indices).unwrap();
             let data = create_sequential::<T>(0xdeadbeef, self.preload, 64);
 
             // warm up
@@ -200,40 +154,28 @@ mod callgrind_benches {
     }
 
     #[library_benchmark]
-    #[bench::mem_unique_1(r#"{"bench":"update bulk", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 1}"#)]
-    #[bench::mem_unique_4(r#"{"bench":"update bulk", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 4}"#)]
-    #[bench::mem_unique_16(r#"{"bench":"update bulk", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 16}"#)]
-    #[bench::mem_unique_64(r#"{"bench":"update bulk", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 64}"#)]
-    #[bench::mem_unique_1024(r#"{"bench":"update bulk", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "unique", "preload": 1024, "count": 1024}"#)]
-    #[bench::disk_unique_1(r#"{"bench":"update bulk", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 1}"#)]
-    #[bench::disk_unique_4(r#"{"bench":"update bulk", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 4}"#)]
-    #[bench::disk_unique_16(r#"{"bench":"update bulk", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 16}"#)]
-    #[bench::disk_unique_64(r#"{"bench":"update bulk", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 64}"#)]
-    #[bench::disk_unique_1024(r#"{"bench":"update bulk", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "unique", "preload": 1024, "count": 1024}"#)]
-    fn update_bulk_raw_person(metadata: &str) {
-        let bench: UpdateBulkBenchmark<SpacetimeRaw, Person> = serde_json::from_str(metadata).unwrap();
+    #[bench::mem_64(r#"{"bench":"update bulk", "db": "stdb_raw", "in_memory": true, "schema": "u32_u64_str", "indices": "unique_0", "preload": 128, "count": 64}"#)]
+    #[bench::mem_1024(r#"{"bench":"update bulk", "db": "stdb_raw", "in_memory": true, "schema": "u32_u64_str", "indices": "unique_0", "preload": 1024, "count": 1024}"#)]
+    #[bench::disk_64(r#"{"bench":"update bulk", "db": "stdb_raw", "in_memory": false, "schema": "u32_u64_str", "indices": "unique_0", "preload": 128, "count": 64}"#)]
+    #[bench::disk_1024(r#"{"bench":"update bulk", "db": "stdb_raw", "in_memory": false, "schema": "u32_u64_str", "indices": "unique_0", "preload": 1024, "count": 1024}"#)]
+    fn update_bulk_raw_u32_u64_str(metadata: &str) {
+        let bench: UpdateBulkBenchmark<SpacetimeRaw, u32_u64_str> = serde_json::from_str(metadata).unwrap();
         bench.run_benchmark();
     }
 
     #[library_benchmark]
-    #[bench::mem_unique_1(r#"{"bench":"update bulk", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 1}"#)]
-    #[bench::mem_unique_4(r#"{"bench":"update bulk", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 4}"#)]
-    #[bench::mem_unique_16(r#"{"bench":"update bulk", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 16}"#)]
-    #[bench::mem_unique_64(r#"{"bench":"update bulk", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 64}"#)]
-    #[bench::mem_unique_1024(r#"{"bench":"update bulk", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "unique", "preload": 1024, "count": 1024}"#)]
-    #[bench::disk_unique_1(r#"{"bench":"update bulk", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 1}"#)]
-    #[bench::disk_unique_4(r#"{"bench":"update bulk", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 4}"#)]
-    #[bench::disk_unique_16(r#"{"bench":"update bulk", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 16}"#)]
-    #[bench::disk_unique_64(r#"{"bench":"update bulk", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "unique", "preload": 128, "count": 64}"#)]
-    #[bench::disk_unique_1024(r#"{"bench":"update bulk", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "unique", "preload": 1024, "count": 1024}"#)]
-    fn update_bulk_sqlite_person(metadata: &str) {
-        let bench: UpdateBulkBenchmark<SQLite, Person> = serde_json::from_str(metadata).unwrap();
+    #[bench::mem_64(r#"{"bench":"update bulk", "db": "sqlite", "in_memory": true, "schema": "u32_u64_str", "indices": "unique_0", "preload": 128, "count": 64}"#)]
+    #[bench::mem_1024(r#"{"bench":"update bulk", "db": "sqlite", "in_memory": true, "schema": "u32_u64_str", "indices": "unique_0", "preload": 1024, "count": 1024}"#)]
+    #[bench::disk_64(r#"{"bench":"update bulk", "db": "sqlite", "in_memory": false, "schema": "u32_u64_str", "indices": "unique_0", "preload": 128, "count": 64}"#)]
+    #[bench::disk_1024(r#"{"bench":"update bulk", "db": "sqlite", "in_memory": false, "schema": "u32_u64_str", "indices": "unique_0", "preload": 1024, "count": 1024}"#)]
+    fn update_bulk_sqlite_u32_u64_str(metadata: &str) {
+        let bench: UpdateBulkBenchmark<SQLite, u32_u64_str> = serde_json::from_str(metadata).unwrap();
         bench.run_benchmark();
     }
 
     library_benchmark_group!(
         name = update_bulk_group;
-        benchmarks = update_bulk_raw_person, /*update_bulk_module_person,*/ update_bulk_sqlite_person
+        benchmarks = update_bulk_raw_u32_u64_str, /*update_bulk_module_u32_u64_str,*/ update_bulk_sqlite_u32_u64_str
     );
 
     // ========================= ITERATE =========================
@@ -243,8 +185,8 @@ mod callgrind_benches {
         bench: String,
         db: String,
         in_memory: bool,
-        table_name: String,
-        index_strategy: IndexStrategy,
+        schema: String,
+        indices: IndexStrategy,
         count: u32,
         #[serde(skip)]
         _marker: std::marker::PhantomData<(DB, T)>,
@@ -254,15 +196,11 @@ mod callgrind_benches {
         fn run_benchmark(self) {
             assert_eq!(self.bench, "iterate", "provided metadata has incorrect bench name");
             assert_eq!(self.db, DB::name(), "provided metadata has incorrect db name");
-            assert_eq!(
-                self.table_name,
-                T::name_snake_case(),
-                "provided metadata has incorrect db name"
-            );
+            assert_eq!(self.schema, T::name(), "provided metadata has incorrect db name");
 
             let mut db = DB::build(self.in_memory, false).unwrap();
 
-            let table_id = db.create_table::<T>(self.index_strategy).unwrap();
+            let table_id = db.create_table::<T>(self.indices).unwrap();
             let data = create_sequential::<T>(0xdeadbeef, self.count, 64);
 
             // warm up
@@ -280,76 +218,44 @@ mod callgrind_benches {
     }
 
     #[library_benchmark]
-    #[bench::person_1_mem(
-    r#"{"bench": "iterate", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "unique", "count": 1}"#
-)]
-    #[bench::person_4_mem(
-    r#"{"bench": "iterate", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "unique", "count": 4}"#
-)]
-    #[bench::person_16_mem(
-    r#"{"bench": "iterate", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "unique", "count": 16}"#
-)]
-    #[bench::person_64_mem(
-    r#"{"bench": "iterate", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "unique", "count": 64}"#
-)]
-    #[bench::person_1_disk(
-    r#"{"bench": "iterate", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "unique", "count": 1}"#
-)]
-    #[bench::person_4_disk(
-    r#"{"bench": "iterate", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "unique", "count": 4}"#
-)]
-    #[bench::person_16_disk(
-    r#"{"bench": "iterate", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "unique", "count": 16}"#
-)]
-    #[bench::person_64_disk(
-    r#"{"bench": "iterate", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "unique", "count": 64}"#
-)]
-    fn iterate_raw_person(metadata: &str) {
-        let bench: IterateBenchmark<SpacetimeRaw, Person> = serde_json::from_str(metadata).unwrap();
+    #[bench::mem_64(
+        r#"{"bench": "iterate", "db": "stdb_raw", "in_memory": true, "schema": "u32_u64_str", "indices": "unique_0", "count": 64}"#
+    )]
+    #[bench::mem_1024(
+        r#"{"bench": "iterate", "db": "stdb_raw", "in_memory": true, "schema": "u32_u64_str", "indices": "unique_0", "count": 1024}"#
+    )]
+    #[bench::disk_64(
+        r#"{"bench": "iterate", "db": "stdb_raw", "in_memory": false, "schema": "u32_u64_str", "indices": "unique_0", "count": 64}"#
+    )]
+    #[bench::disk_1024(
+        r#"{"bench": "iterate", "db": "stdb_raw", "in_memory": false, "schema": "u32_u64_str", "indices": "unique_0", "count": 1024}"#
+    )]
+    fn iterate_raw_u32_u64_str(metadata: &str) {
+        let bench: IterateBenchmark<SpacetimeRaw, u32_u64_str> = serde_json::from_str(metadata).unwrap();
         bench.run_benchmark();
     }
 
-    /*
     #[library_benchmark]
-    #[bench::b1(
-        r#"{"bench": "iterate", "db": "stdb_module", "table_name": "person", "index_strategy": "unique", "count": 1}"#
+    #[bench::mem_64(
+        r#"{"bench": "iterate", "db": "sqlite", "in_memory": true, "schema": "u32_u64_str", "indices": "unique_0", "count": 64}"#
     )]
-    #[bench::b2(
-        r#"{"bench": "iterate", "db": "stdb_module", "table_name": "person", "index_strategy": "unique", "count": 4}"#
+    #[bench::mem_1024(
+        r#"{"bench": "iterate", "db": "sqlite", "in_memory": true, "schema": "u32_u64_str", "indices": "unique_0", "count": 1024}"#
     )]
-    #[bench::b3(
-        r#"{"bench": "iterate", "db": "stdb_module", "table_name": "person", "index_strategy": "unique", "count": 16}"#
+    #[bench::disk_64(
+        r#"{"bench": "iterate", "db": "sqlite", "in_memory": false, "schema": "u32_u64_str", "indices": "unique_0", "count": 64}"#
     )]
-    #[bench::b4(
-        r#"{"bench": "iterate", "db": "stdb_module", "table_name": "person", "index_strategy": "unique", "count": 64}"#
+    #[bench::disk_1024(
+        r#"{"bench": "iterate", "db": "sqlite", "in_memory": false, "schema": "u32_u64_str", "indices": "unique_0", "count": 1024}"#
     )]
-    fn iterate_module_person(metadata: &str) {
-        let bench: IterateBenchmark<SpacetimeModule, Person> = serde_json::from_str(metadata).unwrap();
-        bench.run_benchmark();
-    }
-    */
-
-    #[library_benchmark]
-    #[bench::sqlite_mem_iter_1(r#"{"bench": "iterate", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "unique", "count": 1}"#)]
-    #[bench::sqlite_mem_iter_4(r#"{"bench": "iterate", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "unique", "count": 4}"#)]
-    #[bench::sqlite_mem_iter_16(r#"{"bench": "iterate", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "unique", "count": 16}"#)]
-    #[bench::sqlite_mem_iter_64(
-    r#"{"bench": "iterate", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "unique", "count": 64}"#
-)]
-    #[bench::sqlite_disk_iter_1(r#"{"bench": "iterate", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "unique", "count": 1}"#)]
-    #[bench::sqlite_disk_iter_4(r#"{"bench": "iterate", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "unique", "count": 4}"#)]
-    #[bench::sqlite_disk_iter_16(r#"{"bench": "iterate", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "unique", "count": 16}"#)]
-    #[bench::sqlite_disk_iter_64(
-    r#"{"bench": "iterate", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "unique", "count": 64}"#
-)]
-    fn iterate_sqlite_person(metadata: &str) {
-        let bench: IterateBenchmark<SQLite, Person> = serde_json::from_str(metadata).unwrap();
+    fn iterate_sqlite_u32_u64_str(metadata: &str) {
+        let bench: IterateBenchmark<SQLite, u32_u64_str> = serde_json::from_str(metadata).unwrap();
         bench.run_benchmark();
     }
 
     library_benchmark_group!(
         name = iterate_group;
-        benchmarks = iterate_raw_person, /*iterate_module_person,*/ iterate_sqlite_person
+        benchmarks = iterate_raw_u32_u64_str, /*iterate_module_u32_u64_str,*/ iterate_sqlite_u32_u64_str
     );
 
     // ========================= FILTER =========================
@@ -359,8 +265,8 @@ mod callgrind_benches {
         bench: String,
         db: String,
         in_memory: bool,
-        table_name: String,
-        index_strategy: IndexStrategy,
+        schema: String,
+        indices: IndexStrategy,
         count: u32,
         preload: u32,
         // Underscore here cause it's an implementation detail.
@@ -375,11 +281,7 @@ mod callgrind_benches {
         fn run_benchmark(self) {
             assert_eq!(self.bench, "filter", "provided metadata has incorrect bench name");
             assert_eq!(self.db, DB::name(), "provided metadata has incorrect db name");
-            assert_eq!(
-                self.table_name,
-                T::name_snake_case(),
-                "provided metadata has incorrect db name"
-            );
+            assert_eq!(self.schema, T::name(), "provided metadata has incorrect db name");
 
             let filter_column_type = match T::product_type().elements[self._column as usize].algebraic_type {
                 AlgebraicType::String => "string",
@@ -394,7 +296,7 @@ mod callgrind_benches {
 
             let mut db = DB::build(self.in_memory, false).unwrap();
 
-            let table_id = db.create_table::<T>(self.index_strategy).unwrap();
+            let table_id = db.create_table::<T>(self.indices).unwrap();
             let data = create_partly_identical::<T>(0xdeadbeef, self.count as u64, self.preload as u64);
 
             // create_partly_identical guarantees that the first `count` elements will be identical
@@ -415,353 +317,92 @@ mod callgrind_benches {
     }
 
     #[library_benchmark]
-    // string, no index
-    // FIXME(jgilles): s/multi_index/btree_all; needs to touch criterion benches as well
-    #[bench::string_mem_no_index_1_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "non_unique",
-        "count": 1, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
-    #[bench::string_mem_no_index_4_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "non_unique",
-        "count": 4, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
-    #[bench::string_mem_no_index_16_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "non_unique",
-        "count": 16, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
     #[bench::string_mem_no_index_64_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "non_unique",
+        r#"{"bench": "filter", "db": "stdb_raw", "in_memory": true, "schema": "u32_u64_str", "indices": "no_index",
         "count": 64, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
-    // string, btree index
-    #[bench::string_mem_btree_1_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "multi_index",
-        "count": 1, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
-    #[bench::string_mem_btree_4_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "multi_index",
-        "count": 4, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
-    #[bench::string_mem_btree_16_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "multi_index",
-        "count": 16, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
+    )]
     #[bench::string_mem_btree_64_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "multi_index",
+        r#"{"bench": "filter", "db": "stdb_raw", "in_memory": true, "schema": "u32_u64_str", "indices": "btree_each_column",
         "count": 64, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
-    // u64, no index
-    #[bench::u64_mem_no_index_1_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "non_unique",
-        "count": 1, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
-    #[bench::u64_mem_no_index_4_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "non_unique",
-        "count": 4, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
-    #[bench::u64_mem_no_index_16_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "non_unique",
-        "count": 16, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
+    )]
     #[bench::u64_mem_no_index_64_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "non_unique",
+        r#"{"bench": "filter", "db": "stdb_raw", "in_memory": true, "schema": "u32_u64_str", "indices": "no_index",
         "count": 64, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
-    // u64, btree index
-    #[bench::u64_mem_btree_1_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "multi_index",
-        "count": 1, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
-    #[bench::u64_mem_btree_4_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "multi_index",
-        "count": 4, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
-    #[bench::u64_mem_btree_16_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "multi_index",
-        "count": 16, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
+    )]
     #[bench::u64_mem_btree_64_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": true, "table_name": "person", "index_strategy": "multi_index",
+        r#"{"bench": "filter", "db": "stdb_raw", "in_memory": true, "schema": "u32_u64_str", "indices": "btree_each_column",
         "count": 64, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
-    // string, no index
-    #[bench::string_disk_no_index_1_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "non_unique",
-        "count": 1, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
-    #[bench::string_disk_no_index_4_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "non_unique",
-        "count": 4, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
-    #[bench::string_disk_no_index_16_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "non_unique",
-        "count": 16, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
+    )]
     #[bench::string_disk_no_index_64_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "non_unique",
+        r#"{"bench": "filter", "db": "stdb_raw", "in_memory": false, "schema": "u32_u64_str", "indices": "no_index",
         "count": 64, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
-    // string, btree index
-    #[bench::string_disk_btree_1_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "multi_index",
-        "count": 1, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
-    #[bench::string_disk_btree_4_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "multi_index",
-        "count": 4, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
-    #[bench::string_disk_btree_16_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "multi_index",
-        "count": 16, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
+    )]
     #[bench::string_disk_btree_64_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "multi_index",
+    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": false, "schema": "u32_u64_str", "indices": "btree_each_column",
         "count": 64, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
-    // u64, no index
-    #[bench::u64_disk_no_index_1_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "non_unique",
-        "count": 1, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
-    #[bench::u64_disk_no_index_4_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "non_unique",
-        "count": 4, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
-    #[bench::u64_disk_no_index_16_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "non_unique",
-        "count": 16, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
+    )]
     #[bench::u64_disk_no_index_64_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "non_unique",
+        r#"{"bench": "filter", "db": "stdb_raw", "in_memory": false, "schema": "u32_u64_str", "indices": "no_index",
         "count": 64, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
-    // u64, btree index
-    #[bench::u64_disk_btree_1_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "multi_index",
-        "count": 1, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
-    #[bench::u64_disk_btree_4_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "multi_index",
-        "count": 4, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
-    #[bench::u64_disk_btree_16_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "multi_index",
-        "count": 16, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
+    )]
     #[bench::u64_disk_btree_64_from_128(
-    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": false, "table_name": "person", "index_strategy": "multi_index",
+    r#"{"bench": "filter", "db": "stdb_raw", "in_memory": false, "schema": "u32_u64_str", "indices": "btree_each_column",
         "count": 64, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
-    fn filter_raw_person(metadata: &str) {
-        let bench: FilterBenchmark<SpacetimeRaw, Person> = serde_json::from_str(metadata).unwrap();
+    )]
+    fn filter_raw_u32_u64_str(metadata: &str) {
+        let bench: FilterBenchmark<SpacetimeRaw, u32_u64_str> = serde_json::from_str(metadata).unwrap();
         bench.run_benchmark();
     }
 
-    /*
     #[library_benchmark]
     // string, btree index
-    #[bench::string_btree_1(
-        r#"{"bench": "filter", "db": "stdb_module", "table_name": "person", "index_strategy": "multi_index",
-            "count": 1, "preload": 128, "_column": 1, "data_type": "string"}"#
-    )]
-    #[bench::string_btree_4(
-        r#"{"bench": "filter", "db": "stdb_module", "table_name": "person", "index_strategy": "multi_index",
-            "count": 4, "preload": 128, "_column": 1, "data_type": "string"}"#
-    )]
-    #[bench::string_btree_16(
-        r#"{"bench": "filter", "db": "stdb_module", "table_name": "person", "index_strategy": "multi_index",
-            "count": 16, "preload": 128, "_column": 1, "data_type": "string"}"#
-    )]
-    #[bench::string_btree_64(
-        r#"{"bench": "filter", "db": "stdb_module", "table_name": "person", "index_strategy": "multi_index",
-            "count": 64, "preload": 128, "_column": 1, "data_type": "string"}"#
-    )]
-    // u64, no index
-    #[bench::u64_no_index_1(
-        r#"{"bench": "filter", "db": "stdb_module", "table_name": "person", "index_strategy": "non_unique",
-            "count": 1, "preload": 128, "_column": 2, "data_type": "u64"}"#
-    )]
-    #[bench::u64_no_index_4(
-        r#"{"bench": "filter", "db": "stdb_module", "table_name": "person", "index_strategy": "non_unique",
-            "count": 4, "preload": 128, "_column": 2, "data_type": "u64"}"#
-    )]
-    #[bench::u64_no_index_16(
-        r#"{"bench": "filter", "db": "stdb_module", "table_name": "person", "index_strategy": "non_unique",
-            "count": 16, "preload": 128, "_column": 2, "data_type": "u64"}"#
-    )]
-    #[bench::u64_no_index_64(
-        r#"{"bench": "filter", "db": "stdb_module", "table_name": "person", "index_strategy": "non_unique",
-            "count": 64, "preload": 128, "_column": 2, "data_type": "u64"}"#
-    )]
-    // u64, btree index
-    // FIXME(jgilles): s/non_unique/btree
-    #[bench::u64_btree_1(
-        r#"{"bench": "filter", "db": "stdb_module", "table_name": "person", "index_strategy": "multi_index",
-            "count": 1, "preload": 128, "_column": 2, "data_type": "u64"}"#
-    )]
-    #[bench::u64_btree_4(
-        r#"{"bench": "filter", "db": "stdb_module", "table_name": "person", "index_strategy": "multi_index",
-            "count": 4, "preload": 128, "_column": 2, "data_type": "u64"}"#
-    )]
-    #[bench::u64_btree_16(
-        r#"{"bench": "filter", "db": "stdb_module", "table_name": "person", "index_strategy": "multi_index",
-            "count": 16, "preload": 128, "_column": 2, "data_type": "u64"}"#
-    )]
-    #[bench::u64_btree_64(
-        r#"{"bench": "filter", "db": "stdb_module", "table_name": "person", "index_strategy": "multi_index",
-            "count": 64, "preload": 128, "_column": 2, "data_type": "u64"}"#
-    )]
-    fn filter_module_person(metadata: &str) {
-        let bench: FilterBenchmark<SpacetimeModule, Person> = serde_json::from_str(metadata).unwrap();
-        bench.run_benchmark();
-    }
-    */
-
-    #[library_benchmark]
-    // string, btree index
-    #[bench::string_mem_no_index_1_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "non_unique",
-        "count": 1, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
-    #[bench::string_mem_no_index_4_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "non_unique",
-        "count": 4, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
-    #[bench::string_mem_no_index_16_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "non_unique",
-        "count": 16, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
     #[bench::string_mem_no_index_64_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "non_unique",
+        r#"{"bench": "filter", "db": "sqlite", "in_memory": true, "schema": "u32_u64_str", "indices": "no_index",
         "count": 64, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
+    )]
     // string, btree index
-    #[bench::string_mem_btree_1_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "multi_index",
-        "count": 1, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
-    #[bench::string_mem_btree_4_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "multi_index",
-        "count": 4, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
-    #[bench::string_mem_btree_16_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "multi_index",
-        "count": 16, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
     #[bench::string_mem_btree_64_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "multi_index",
+        r#"{"bench": "filter", "db": "sqlite", "in_memory": true, "schema": "u32_u64_str", "indices": "btree_each_column",
         "count": 64, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
+    )]
     // u64, no index
-    #[bench::u64_mem_no_index_1_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "non_unique",
-        "count": 1, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
-    #[bench::u64_mem_no_index_4_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "non_unique",
-        "count": 4, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
-    #[bench::u64_mem_no_index_16_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "non_unique",
-        "count": 16, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
     #[bench::u64_mem_no_index_64_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "non_unique",
+        r#"{"bench": "filter", "db": "sqlite", "in_memory": true, "schema": "u32_u64_str", "indices": "no_index",
         "count": 64, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
+    )]
     // u64, btree index
-    #[bench::u64_mem_btree_1_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "multi_index",
-        "count": 1, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
-    #[bench::u64_mem_btree_4_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "multi_index",
-        "count": 4, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
-    #[bench::u64_mem_btree_16_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "multi_index",
-        "count": 16, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
     #[bench::u64_mem_btree_64_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": true, "table_name": "person", "index_strategy": "multi_index",
+        r#"{"bench": "filter", "db": "sqlite", "in_memory": true, "schema": "u32_u64_str", "indices": "btree_each_column",
         "count": 64, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
+    )]
     // string, no index
-    #[bench::string_disk_no_index_1_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "non_unique",
-        "count": 1, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
-    #[bench::string_disk_no_index_4_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "non_unique",
-        "count": 4, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
-    #[bench::string_disk_no_index_16_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "non_unique",
-        "count": 16, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
     #[bench::string_disk_no_index_64_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "non_unique",
+        r#"{"bench": "filter", "db": "sqlite", "in_memory": false, "schema": "u32_u64_str", "indices": "no_index",
         "count": 64, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
+    )]
     // string, btree index
-    #[bench::string_disk_btree_1_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "multi_index",
-        "count": 1, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
-    #[bench::string_disk_btree_4_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "multi_index",
-        "count": 4, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
-    #[bench::string_disk_btree_16_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "multi_index",
-        "count": 16, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
     #[bench::string_disk_btree_64_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "multi_index",
+        r#"{"bench": "filter", "db": "sqlite", "in_memory": false, "schema": "u32_u64_str", "indices": "btree_each_column",
         "count": 64, "preload": 128, "_column": 2, "data_type": "string"}"#
-)]
+    )]
     // u64, no index
-    #[bench::u64_disk_no_index_1_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "non_unique",
-        "count": 1, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
-    #[bench::u64_disk_no_index_4_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "non_unique",
-        "count": 4, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
-    #[bench::u64_disk_no_index_16_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "non_unique",
-        "count": 16, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
     #[bench::u64_disk_no_index_64_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "non_unique",
+        r#"{"bench": "filter", "db": "sqlite", "in_memory": false, "schema": "u32_u64_str", "indices": "no_index",
         "count": 64, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
+    )]
     // u64, btree index
-    #[bench::u64_disk_btree_1_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "multi_index",
-        "count": 1, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
-    #[bench::u64_disk_btree_4_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "multi_index",
-        "count": 4, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
-    #[bench::u64_disk_btree_16_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "multi_index",
-        "count": 16, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
     #[bench::u64_disk_btree_64_from_128(
-    r#"{"bench": "filter", "db": "sqlite", "in_memory": false, "table_name": "person", "index_strategy": "multi_index",
+        r#"{"bench": "filter", "db": "sqlite", "in_memory": false, "schema": "u32_u64_str", "indices": "btree_each_column",
         "count": 64, "preload": 128, "_column": 1, "data_type": "u64"}"#
-)]
-    fn filter_sqlite_person(metadata: &str) {
-        let bench: FilterBenchmark<SQLite, Person> = serde_json::from_str(metadata).unwrap();
+    )]
+    fn filter_sqlite_u32_u64_str(metadata: &str) {
+        let bench: FilterBenchmark<SQLite, u32_u64_str> = serde_json::from_str(metadata).unwrap();
         bench.run_benchmark();
     }
 
     library_benchmark_group!(
         name = filter_group;
-        benchmarks = filter_raw_person, /*filter_module_person,*/ filter_sqlite_person
+        benchmarks = filter_raw_u32_u64_str, /*filter_module_u32_u64_str,*/ filter_sqlite_u32_u64_str
     );
 
     // ========================= FIND =========================
@@ -770,8 +411,8 @@ mod callgrind_benches {
     struct FindBenchmark<DB: BenchDatabase, T: BenchTable + RandomTable> {
         bench: String,
         db: String,
-        table_name: String,
-        index_strategy: IndexStrategy,
+        schema: String,
+        indices: IndexStrategy,
         preload: u32,
         #[serde(skip)]
         _marker: std::marker::PhantomData<(DB, T)>,
@@ -781,11 +422,7 @@ mod callgrind_benches {
         fn run_benchmark(self) {
             assert_eq!(self.bench, "find", "provided metadata has incorrect bench name");
             assert_eq!(self.db, DB::name(), "provided metadata has incorrect db name");
-            assert_eq!(
-                self.table_name,
-                T::name_snake_case(),
-                "provided metadata has incorrect db name"
-            );
+            assert_eq!(self.schema, T::name(), "provided metadata has incorrect db name");
             assert_eq!(
                 T::product_type().elements[0].algebraic_type,
                 AlgebraicType::U32,
@@ -794,7 +431,7 @@ mod callgrind_benches {
 
             let mut db = DB::build(false, false).unwrap();
 
-            let table_id = db.create_table::<T>(self.index_strategy).unwrap();
+            let table_id = db.create_table::<T>(self.indices).unwrap();
 
             let data = create_sequential::<T>(0xdeadbeef, self.preload, 64);
 
@@ -891,7 +528,7 @@ mod callgrind_benches {
             assert_eq!(self.format, "bsatn", "provided metadata has incorrect format");
 
             let buckets = 64;
-            let data = create_sequential::<Person>(0xdeadbeef, self.count, buckets);
+            let data = create_sequential::<u32_u64_str>(0xdeadbeef, self.count, buckets);
             let data = ProductValue {
                 elements: data
                     .into_iter()
@@ -930,7 +567,7 @@ mod callgrind_benches {
             assert_eq!(self.format, "json", "provided metadata has incorrect format");
 
             let buckets = 64;
-            let data = create_sequential::<Person>(0xdeadbeef, self.count, buckets);
+            let data = create_sequential::<u32_u64_str>(0xdeadbeef, self.count, buckets);
             let data = ProductValue {
                 elements: data
                     .into_iter()

@@ -1,5 +1,7 @@
 use derive_more::From;
+use futures::{Future, FutureExt};
 use std::borrow::Cow;
+use tokio::sync::oneshot;
 
 pub mod prometheus_handle;
 
@@ -51,4 +53,18 @@ pub const fn const_unwrap<T: Copy>(o: Option<T>) -> T {
         Some(x) => x,
         None => panic!("called `const_unwrap()` on a `None` value"),
     }
+}
+
+#[tracing::instrument(skip_all)]
+pub fn spawn_rayon<R: Send + 'static>(f: impl FnOnce() -> R + Send + 'static) -> impl Future<Output = R> {
+    let span = tracing::Span::current();
+    let (tx, rx) = oneshot::channel();
+    rayon::spawn(|| {
+        let _entered = span.entered();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+        if let Err(Err(_panic)) = tx.send(result) {
+            tracing::warn!("uncaught panic on threadpool")
+        }
+    });
+    rx.map(|res| res.unwrap().unwrap_or_else(|err| std::panic::resume_unwind(err)))
 }

@@ -15,7 +15,7 @@ public static class Runtime
         Hash,
     }
 
-    private static byte[] Consume(this RawBindings.Buffer buffer)
+    internal static byte[] Consume(this RawBindings.Buffer buffer)
     {
         var len = RawBindings._buffer_len(buffer);
         var result = new byte[len];

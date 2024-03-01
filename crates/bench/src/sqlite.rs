@@ -67,7 +67,7 @@ impl BenchDatabase for SQLite {
                 AlgebraicType::String => "TEXT",
                 _ => unimplemented!(),
             };
-            let extra = if index_strategy == IndexStrategy::Unique && i == 0 {
+            let extra = if index_strategy == IndexStrategy::Unique0 && i == 0 {
                 " PRIMARY KEY"
             } else {
                 ""
@@ -77,7 +77,7 @@ impl BenchDatabase for SQLite {
         }
         writeln!(&mut statement, ");")?;
 
-        if index_strategy == IndexStrategy::MultiIndex {
+        if index_strategy == IndexStrategy::BTreeEachColumn {
             for column in T::product_type().elements.iter() {
                 let column_name = column.name.clone().unwrap();
 
@@ -111,21 +111,6 @@ impl BenchDatabase for SQLite {
         let mut commit = self.db.prepare_cached(COMMIT_TRANSACTION)?;
 
         begin.execute(())?;
-        commit.execute(())?;
-        Ok(())
-    }
-
-    fn insert<T: BenchTable>(&mut self, table_id: &Self::TableId, row: T) -> ResultBench<()> {
-        let statement = memo_query(BenchName::Insert, table_id, || {
-            insert_template(table_id, T::product_type())
-        });
-
-        let mut begin = self.db.prepare_cached(BEGIN_TRANSACTION)?;
-        let mut stmt = self.db.prepare_cached(&statement)?;
-        let mut commit = self.db.prepare_cached(COMMIT_TRANSACTION)?;
-
-        begin.execute(())?;
-        stmt.execute(row.into_sqlite_params())?;
         commit.execute(())?;
         Ok(())
     }
@@ -238,7 +223,6 @@ const COMMIT_TRANSACTION: &str = "COMMIT";
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 enum BenchName {
-    Insert,
     InsertBulk,
     Filter,
 }
