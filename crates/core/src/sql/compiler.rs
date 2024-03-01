@@ -33,7 +33,7 @@ pub fn compile_sql<T: TableSchemaView>(db: &RelationalDB, tx: &T, sql_text: &str
 fn expr_for_projection(table: &From, of: Expr) -> Result<FieldExpr, PlanError> {
     match of {
         Expr::Ident(x) => {
-            let f = table.resolve_field(&x)?;
+            let f = table.find_field(&x)?;
 
             Ok(FieldExpr::Name(f.into()))
         }
@@ -44,7 +44,7 @@ fn expr_for_projection(table: &From, of: Expr) -> Result<FieldExpr, PlanError> {
 
 fn check_field(table: &From, field: &FieldExpr) -> Result<(), PlanError> {
     if let FieldExpr::Name(field) = field {
-        table.resolve_field(&field.to_string())?;
+        table.find_field(&field.to_string())?;
     }
     Ok(())
 }
@@ -1031,6 +1031,48 @@ mod tests {
         let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **value else {
             panic!("unexpected right hand side {:#?}", value);
         };
+        Ok(())
+    }
+
+    #[test]
+    fn compile_check_ambiguous_field() -> ResultTest<()> {
+        let (db, _tmp) = make_test_db()?;
+
+        // Create table [lhs] with index on [a]
+        let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
+        let indexes = &[(0.into(), "a")];
+        db.create_table_for_test("lhs", schema, indexes)?;
+
+        // Create table [rhs] with no indexes
+        let schema = &[("b", AlgebraicType::U64), ("c", AlgebraicType::U64)];
+        let indexes = &[];
+        db.create_table_for_test("rhs", schema, indexes)?;
+
+        let tx = db.begin_tx();
+        // Should work with any qualified field
+        let sql = "select * from lhs join rhs on lhs.b = rhs.b where lhs.b = 3";
+        assert!(compile_sql(&db, &tx, sql).is_ok());
+        let sql = "select * from lhs join rhs on lhs.b = rhs.b where lhs.a = 3";
+        assert!(compile_sql(&db, &tx, sql).is_ok());
+        // Should work with any unqualified but unique field
+        let sql = "select * from lhs join rhs on lhs.b = rhs.b where a = 3";
+        assert!(compile_sql(&db, &tx, sql).is_ok());
+        let sql = "select * from lhs join rhs on lhs.b = rhs.b where c = 3";
+        assert!(compile_sql(&db, &tx, sql).is_ok());
+        // ... and fail on ambiguous
+        let sql = "select * from lhs join rhs on lhs.b = rhs.b where b = 3";
+        match compile_sql(&db, &tx, sql) {
+            Err(DBError::Plan {
+                error: PlanError::AmbiguousField { field, found },
+                ..
+            }) => {
+                assert_eq!(field, "b");
+                assert_eq!(found, vec![FieldName::named("lhs", "b"), FieldName::named("rhs", "b")]);
+            }
+            _ => {
+                panic!("Unexpected")
+            }
+        }
         Ok(())
     }
 }

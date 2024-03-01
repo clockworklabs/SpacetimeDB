@@ -24,7 +24,7 @@ use spacetimedb::db::db_metrics;
 use spacetimedb::db::{db_metrics::DB_METRICS, Config};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
 use spacetimedb::execution_context::ExecutionContext;
-use spacetimedb::host::{HostController, Scheduler, UpdateDatabaseResult, UpdateOutcome};
+use spacetimedb::host::{HostController, Scheduler, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType, IdentityEmail, Node};
 use spacetimedb::module_host_context::ModuleHostContext;
@@ -587,10 +587,7 @@ impl StandaloneEnv {
                     }
                     Some(hash) => {
                         log::info!("Updating database from {} to {}", hash, database.program_bytes_address);
-                        let UpdateOutcome {
-                            module_host: _,
-                            update_result,
-                        } = self
+                        let update_result = self
                             .host_controller
                             .update_module_host(lock.token() as u128, ctx)
                             .await?;
