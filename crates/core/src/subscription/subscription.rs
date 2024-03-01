@@ -23,16 +23,12 @@
 //!
 #![doc = include_str!("../../../../docs/incremental-joins.md")]
 
-use super::query;
-use crate::db::relational_db::Tx;
-use crate::error::{DBError, SubscriptionError};
+use super::query::{self, Kind, SupportedQuery};
+use crate::db::relational_db::{RelationalDB, Tx};
+use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
+use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp};
 use crate::subscription::query::{run_query, to_mem_table_with_op_type, OP_TYPE_FIELD_NAME};
-use crate::{
-    client::{ClientActorId, ClientConnectionSender},
-    db::relational_db::RelationalDB,
-    host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp},
-};
 use anyhow::Context;
 use itertools::Either;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
@@ -43,81 +39,10 @@ use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::relation::{Header, Relation};
 use spacetimedb_vm::expr::{self, IndexJoin, QueryExpr};
 use spacetimedb_vm::relation::MemTable;
-use std::collections::{hash_map, HashMap, HashSet};
+use std::collections::HashSet;
+use std::hash::Hash;
 use std::ops::Deref;
 use std::sync::Arc;
-
-/// A subscription is an [`ExecutionSet`], along with a set of subscribers all
-/// interested in the same set of queries.
-#[derive(Debug)]
-pub struct Subscription {
-    pub queries: ExecutionSet,
-    subscribers: Vec<ClientConnectionSender>,
-}
-
-impl Subscription {
-    pub fn new(queries: impl Into<ExecutionSet>, subscriber: ClientConnectionSender) -> Self {
-        Self {
-            queries: queries.into(),
-            subscribers: vec![subscriber],
-        }
-    }
-
-    pub fn subscribers(&self) -> &[ClientConnectionSender] {
-        &self.subscribers
-    }
-
-    pub fn remove_subscriber(&mut self, client_id: ClientActorId) -> Option<ClientConnectionSender> {
-        let i = self.subscribers.iter().position(|sub| sub.id == client_id)?;
-        Some(self.subscribers.swap_remove(i))
-    }
-
-    pub fn add_subscriber(&mut self, sender: ClientConnectionSender) {
-        if !self.subscribers.iter().any(|s| s.id == sender.id) {
-            self.subscribers.push(sender);
-        }
-    }
-}
-
-/// A [`QueryExpr`] tagged with [`query::Supported`].
-///
-/// Constructed via `TryFrom`, which rejects unsupported queries.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct SupportedQuery {
-    kind: query::Supported,
-    expr: QueryExpr,
-}
-
-impl SupportedQuery {
-    pub fn new(expr: QueryExpr, text: String) -> Result<Self, DBError> {
-        let kind = query::classify(&expr).ok_or(SubscriptionError::Unsupported(text))?;
-        Ok(Self { kind, expr })
-    }
-
-    pub fn kind(&self) -> query::Supported {
-        self.kind
-    }
-
-    pub fn as_expr(&self) -> &QueryExpr {
-        self.as_ref()
-    }
-}
-
-#[cfg(test)]
-impl TryFrom<QueryExpr> for SupportedQuery {
-    type Error = DBError;
-
-    fn try_from(expr: QueryExpr) -> Result<Self, Self::Error> {
-        let kind = query::classify(&expr).context("Unsupported query expression")?;
-        Ok(Self { kind, expr })
-    }
-}
-
-impl AsRef<QueryExpr> for SupportedQuery {
-    fn as_ref(&self) -> &QueryExpr {
-        &self.expr
-    }
-}
 
 /// Evaluates `query` and returns all the updates to secondary tables only.
 ///
@@ -445,132 +370,126 @@ fn with_delta_table(mut join: IndexJoin, index_side: bool, delta: DatabaseTableU
     join
 }
 
-/// The atomic unit of execution within a subscription set.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct ExecutionUnit {
-    table_id: TableId,
-    table_name: String,
-    queries: Vec<SupportedQuery>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct QueryHash {
+    data: [u8; 32],
+}
+
+impl QueryHash {
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        Self {
+            data: blake3::hash(bytes).into(),
+        }
+    }
+
+    pub fn from_str(str: &str) -> Self {
+        Self::from_bytes(str.as_bytes())
+    }
+}
+
+#[derive(Debug)]
+pub struct ExecutionUnit {
+    hash: QueryHash,
+    plan: SupportedQuery,
+}
+
+impl Eq for ExecutionUnit {}
+
+impl PartialEq for ExecutionUnit {
+    fn eq(&self, other: &Self) -> bool {
+        self.hash == other.hash
+    }
+}
+
+impl Hash for ExecutionUnit {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.hash.hash(state);
+    }
 }
 
 impl ExecutionUnit {
+    pub fn new(plan: SupportedQuery, hash: QueryHash) -> Self {
+        ExecutionUnit { hash, plan }
+    }
+
+    pub fn kind(&self) -> Kind {
+        self.plan.kind
+    }
+
+    pub fn hash(&self) -> QueryHash {
+        self.hash
+    }
+
+    pub fn return_table(&self) -> TableId {
+        self.plan.return_table()
+    }
+
+    pub fn return_name(&self) -> String {
+        self.plan.return_name()
+    }
+
+    pub fn filter_table(&self) -> TableId {
+        self.plan.filter_table()
+    }
+
+    pub fn for_query(&self, hash: QueryHash) -> bool {
+        self.hash == hash
+    }
+
     #[tracing::instrument(skip_all)]
-    fn eval(&self, db: &RelationalDB, tx: &Tx, auth: AuthCtx) -> Result<Option<DatabaseTableUpdate>, DBError> {
+    pub fn eval(&self, db: &RelationalDB, tx: &Tx, auth: AuthCtx) -> Result<Option<DatabaseTableUpdate>, DBError> {
         let ctx = ExecutionContext::subscribe(db.address());
-        let ops = match &self.queries[..] {
-            // special-case single query - we don't have to deduplicate
-            [query] => run_query(&ctx, db, tx, &query.expr, auth)?
-                .into_iter()
-                .flat_map(|table| table.data)
-                .map(TableOp::insert)
-                .collect(),
-            // this is a case we don't fully support atm
-            queries => {
-                let mut ops = Vec::new();
-
-                for SupportedQuery { kind: _, expr } in queries {
-                    for table in run_query(&ctx, db, tx, expr, auth)? {
-                        ops.extend(table.data.into_iter().map(TableOp::insert));
-                    }
-                }
-
-                ops
-            }
-        };
-
+        let mut ops = vec![];
+        for table in run_query(&ctx, db, tx, &self.plan.expr, auth)? {
+            ops.extend(table.data.into_iter().map(TableOp::insert));
+        }
         Ok((!ops.is_empty()).then(|| DatabaseTableUpdate {
-            table_id: self.table_id,
-            table_name: self.table_name.clone(),
+            table_id: self.return_table(),
+            table_name: self.return_name(),
             ops,
         }))
     }
 
     #[tracing::instrument(skip_all)]
-    fn eval_incr(
-        &self,
+    pub fn eval_incr<'a>(
+        &'a self,
         db: &RelationalDB,
         tx: &Tx,
-        database_update: &DatabaseUpdate,
+        tables: impl Iterator<Item = &'a DatabaseTableUpdate>,
         auth: AuthCtx,
     ) -> Result<Option<DatabaseTableUpdate>, DBError> {
-        use query::Supported::*;
-        let ops = match &self.queries[..] {
-            // special-case single query - we don't have to deduplicate
-            [query] => {
-                match query.kind {
-                    Scan => {
-                        if let Some(rows) = database_update
-                            .tables
-                            .iter()
-                            .find(|update| update.table_id == self.table_id)
-                        {
-                            // Replace table reference in original query plan with virtual MemTable
-                            let plan = query::to_mem_table(query.expr.clone(), rows);
-                            // Evaluate the new plan and capture the new row operations.
-                            eval_primary_updates(db, auth, tx, &plan)?
-                                .map(|r| TableOp::new(r.0, r.1))
-                                .collect()
-                        } else {
-                            vec![]
-                        }
-                    }
-                    Semijoin => {
-                        if let Some(plan) = IncrementalJoin::new(&query.expr, &database_update.tables)? {
-                            // Evaluate the plan and capture the new row operations
-                            plan.eval(db, tx, &auth)?.collect()
-                        } else {
-                            vec![]
-                        }
-                    }
-                }
-            }
-            // this is a case we don't fully support atm
-            queries => {
+        let ops = match self.plan.kind {
+            Kind::Select => {
                 let mut ops = Vec::new();
-
-                for query in queries {
-                    match query.kind {
-                        Scan => {
-                            if let Some(rows) = database_update
-                                .tables
-                                .iter()
-                                .find(|update| update.table_id == self.table_id)
-                            {
-                                // Replace table reference in original query plan with virtual MemTable
-                                let plan = query::to_mem_table(query.expr.clone(), rows);
-                                // Evaluate the new plan and capture the new row operations.
-                                ops.extend(eval_primary_updates(db, auth, tx, &plan)?.map(|r| TableOp::new(r.0, r.1)));
-                            }
-                        }
-                        Semijoin => {
-                            for rows in database_update.tables.iter().filter(|table| {
-                                table.table_id == self.table_id || query.expr.reads_from_table(&table.table_id)
-                            }) {
-                                if let Some(plan) = IncrementalJoin::new(&query.expr, [rows])? {
-                                    // Evaluate the plan and capture the new row operations
-                                    ops.extend(plan.eval(db, tx, &auth)?);
-                                }
-                            }
-                        }
-                    }
+                for table in tables {
+                    // Replace table reference in original query plan with virtual MemTable
+                    let plan = query::to_mem_table(self.plan.expr.clone(), table);
+                    // Evaluate the new plan and capture the new row operations.
+                    ops.extend(eval_primary_updates(db, auth, tx, &plan)?.map(|r| TableOp::new(r.0, r.1)));
                 }
-
                 ops
             }
+            Kind::Semijoin => {
+                if let Some(plan) = IncrementalJoin::new(&self.plan.expr, tables.into_iter())? {
+                    // Evaluate the plan and capture the new row operations
+                    plan.eval(db, tx, &auth)?.collect()
+                } else {
+                    vec![]
+                }
+            }
         };
-
         Ok((!ops.is_empty()).then(|| DatabaseTableUpdate {
-            table_id: self.table_id,
-            table_name: self.table_name.clone(),
+            table_id: self.return_table(),
+            table_name: self.return_name(),
             ops,
         }))
     }
 }
 
 /// A set of independent single or multi-query execution units.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct ExecutionSet {
-    exec_units: Vec<ExecutionUnit>,
+    exec_units: Vec<Arc<ExecutionUnit>>,
 }
 
 impl ExecutionSet {
@@ -587,70 +506,31 @@ impl ExecutionSet {
         Ok(DatabaseUpdate { tables })
     }
 
-    #[tracing::instrument(skip_all)]
-    pub fn eval_incr(
-        &self,
-        db: &RelationalDB,
-        tx: &Tx,
-        database_update: &DatabaseUpdate,
-        auth: AuthCtx,
-    ) -> Result<DatabaseUpdate, DBError> {
-        let tables = self
-            .exec_units
-            .iter()
-            .filter_map(|unit| unit.eval_incr(db, tx, database_update, auth).transpose())
-            .collect::<Result<_, _>>()?;
-        Ok(DatabaseUpdate { tables })
-    }
-
     pub fn num_queries(&self) -> usize {
-        self.exec_units.iter().map(|unit| unit.queries.len()).sum()
+        self.exec_units.len()
     }
 }
 
-impl FromIterator<SupportedQuery> for ExecutionSet {
-    fn from_iter<T: IntoIterator<Item = SupportedQuery>>(iter: T) -> Self {
-        let mut exec_units = Vec::new();
-        // a map from the table id of each execution unit to its index in the vector
-        let mut exec_units_map = HashMap::new();
-        for query in iter {
-            let Some(db_table) = query.expr.source.get_db_table() else {
-                continue;
-            };
-            match exec_units_map.entry(db_table.table_id) {
-                hash_map::Entry::Vacant(v) => {
-                    v.insert(exec_units.len());
-                    exec_units.push(ExecutionUnit {
-                        table_id: db_table.table_id,
-                        table_name: db_table.head.table_name.clone(),
-                        queries: vec![query],
-                    });
-                }
-                hash_map::Entry::Occupied(o) => exec_units[*o.get()].queries.push(query),
-            }
-        }
+impl IntoIterator for ExecutionSet {
+    type Item = Arc<ExecutionUnit>;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
 
-        for exec_unit in &mut exec_units {
-            exec_unit.queries.sort();
-        }
-        exec_units.sort();
-
-        ExecutionSet { exec_units }
+    fn into_iter(self) -> Self::IntoIter {
+        self.exec_units.into_iter()
     }
 }
 
-impl From<Vec<SupportedQuery>> for ExecutionSet {
-    fn from(value: Vec<SupportedQuery>) -> Self {
+impl FromIterator<Arc<ExecutionUnit>> for ExecutionSet {
+    fn from_iter<T: IntoIterator<Item = Arc<ExecutionUnit>>>(iter: T) -> Self {
+        ExecutionSet {
+            exec_units: iter.into_iter().collect(),
+        }
+    }
+}
+
+impl From<Vec<Arc<ExecutionUnit>>> for ExecutionSet {
+    fn from(value: Vec<Arc<ExecutionUnit>>) -> Self {
         ExecutionSet::from_iter(value)
-    }
-}
-
-#[cfg(test)]
-impl TryFrom<QueryExpr> for ExecutionSet {
-    type Error = DBError;
-
-    fn try_from(expr: QueryExpr) -> Result<Self, Self::Error> {
-        Ok(ExecutionSet::from_iter(vec![SupportedQuery::try_from(expr)?]))
     }
 }
 
@@ -666,7 +546,7 @@ pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> 
             t.table_type == StTableType::User && (auth.owner == auth.caller || t.table_access == StAccess::Public)
         })
         .map(|src| SupportedQuery {
-            kind: query::Supported::Scan,
+            kind: Kind::Select,
             expr: QueryExpr::new(src),
         })
         .collect())

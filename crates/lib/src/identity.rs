@@ -27,7 +27,7 @@ impl AuthCtx {
     }
 }
 
-#[derive(Eq, PartialEq, PartialOrd, Ord, Clone, Copy, Hash, Serialize, Deserialize)]
+#[derive(Default, Eq, PartialEq, PartialOrd, Ord, Clone, Copy, Hash, Serialize, Deserialize)]
 pub struct Identity {
     __identity_bytes: [u8; 32],
 }

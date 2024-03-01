@@ -32,6 +32,20 @@ pub struct DatabaseUpdate {
     pub tables: Vec<DatabaseTableUpdate>,
 }
 
+impl FromIterator<DatabaseTableUpdate> for DatabaseUpdate {
+    fn from_iter<T: IntoIterator<Item = DatabaseTableUpdate>>(iter: T) -> Self {
+        DatabaseUpdate {
+            tables: iter.into_iter().collect(),
+        }
+    }
+}
+
+impl From<Vec<DatabaseTableUpdate>> for DatabaseUpdate {
+    fn from(value: Vec<DatabaseTableUpdate>) -> Self {
+        DatabaseUpdate::from_iter(value.into_iter())
+    }
+}
+
 impl DatabaseUpdate {
     pub fn is_empty(&self) -> bool {
         if self.tables.len() == 0 {
