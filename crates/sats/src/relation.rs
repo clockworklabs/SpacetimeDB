@@ -485,9 +485,8 @@ impl Relation for DbTable {
 
 #[cfg(test)]
 mod tests {
-    use spacetimedb_primitives::col_list;
-
     use super::*;
+    use spacetimedb_primitives::col_list;
 
     /// Build a [Header] using the initial `start_pos` as the column position for the [Constraints]
     fn head(table: &str, fields: (&str, &str), start_pos: u32) -> Header {
