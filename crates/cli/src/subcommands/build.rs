@@ -10,8 +10,6 @@ pub fn cli() -> clap::Command {
             Arg::new("project_path")
                 .value_parser(clap::value_parser!(PathBuf))
                 .default_value(".")
-                .long("project-path")
-                .short('p')
                 .help("The system path (absolute or relative) to the project you would like to build")
         )
         .arg(
