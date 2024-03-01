@@ -214,7 +214,6 @@ mod tests {
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::Identity;
     use spacetimedb_primitives::{ColId, TableId};
-    use spacetimedb_sats::data_key::ToDataKey;
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::db::def::*;
     use spacetimedb_sats::relation::FieldName;
@@ -224,28 +223,18 @@ mod tests {
     use spacetimedb_vm::operator::OpCmp;
 
     fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
-        let row_pk = row.to_data_key().to_bytes();
         DatabaseTableUpdate {
             table_id,
             table_name: table_name.to_string(),
-            ops: vec![TableOp {
-                op_type: 1,
-                row,
-                row_pk,
-            }],
+            ops: vec![TableOp::insert(row)],
         }
     }
 
     fn delete_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
-        let row_pk = row.to_data_key().to_bytes();
         DatabaseTableUpdate {
             table_id,
             table_name: table_name.to_string(),
-            ops: vec![TableOp {
-                op_type: 0,
-                row,
-                row_pk,
-            }],
+            ops: vec![TableOp::delete(row)],
         }
     }
 
@@ -268,21 +257,14 @@ mod tests {
         let table = mem_table(head.clone(), [row.clone()]);
         let table_id = create_table_with_rows(db, tx, table_name, head.clone(), &[row.clone()])?;
 
-        let schema = db.schema_for_table_mut(tx, table_id).unwrap().into_owned();
-
-        let op = TableOp {
-            op_type: 1,
-            row_pk: row.to_data_key().to_bytes(),
-            row: row.clone(),
-        };
-
         let data = DatabaseTableUpdate {
             table_id,
             table_name: table_name.to_string(),
-            ops: vec![op],
+            ops: vec![TableOp::insert(row.clone())],
         };
 
         let mut source_builder = SourceBuilder::default();
+        let schema = db.schema_for_table_mut(tx, table_id).unwrap().into_owned();
         let source_expr = source_builder.add_table_schema(&schema);
 
         let q = QueryExpr::new(source_expr);
@@ -421,50 +403,6 @@ mod tests {
     }
 
     #[test]
-    fn test_eval_incr_maintains_row_ids() -> ResultTest<()> {
-        let (db, _) = make_test_db()?;
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
-
-        let schema = ProductType::from([("u8", AlgebraicType::U8)]);
-        let row = product!(1u8);
-
-        // generate row id from row
-        let id1 = &row.to_data_key().to_bytes();
-
-        // create table empty table "test"
-        let table_id = create_table_with_rows(&db, &mut tx, "test", schema.clone(), &[])?;
-
-        let mut source_builder = SourceBuilder::default();
-        let schema = TableDef::from_product("test", schema).into_schema(table_id);
-        let source_expr = source_builder.add_table_schema(&schema);
-        // select * from test
-        let query: ExecutionSet =
-            singleton_execution_set(QueryExpr::new(source_expr), source_builder.into_source_set())?;
-
-        let op = TableOp {
-            op_type: 0,
-            row_pk: id1.clone(),
-            row: row.clone(),
-        };
-
-        let update = DatabaseTableUpdate {
-            table_id,
-            table_name: "test".into(),
-            ops: vec![op],
-        };
-
-        let update = DatabaseUpdate { tables: vec![update] };
-        db.rollback_mut_tx(&ExecutionContext::default(), tx);
-        let tx = db.begin_tx();
-        let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
-        let id2 = &result.tables[0].ops[0].row_pk;
-
-        // check that both row ids are the same
-        assert_eq!(id1, id2);
-        Ok(())
-    }
-
-    #[test]
     fn test_eval_incr_for_index_scan() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
 
@@ -480,12 +418,7 @@ mod tests {
             db.insert(&mut tx, table_id, row)?;
 
             let row = product!(i + 10, i);
-            let row_pk = row.to_data_key().to_bytes();
-            ops.push(TableOp {
-                op_type: 0,
-                row_pk,
-                row,
-            })
+            ops.push(TableOp::delete(row))
         }
 
         let update = DatabaseUpdate {
@@ -520,7 +453,6 @@ mod tests {
 
         assert_eq!(op.op_type, 0);
         assert_eq!(op.row, product!(13u64, 3u64));
-        assert_eq!(op.row_pk, product!(13u64, 3u64).to_data_key().to_bytes());
         Ok(())
     }
 
@@ -853,11 +785,7 @@ mod tests {
 
         let s = singleton_execution_set(q_id, source_builder.into_source_set())?;
 
-        let row2 = TableOp {
-            op_type: 1,
-            row_pk: row.to_data_key().to_bytes(),
-            row: row.clone(),
-        };
+        let row2 = TableOp::insert(row.clone());
 
         let data = DatabaseTableUpdate {
             table_id: schema.table_id,
@@ -980,28 +908,16 @@ mod tests {
         let s = compile_read_only_query(&db, &tx, &AuthCtx::for_testing(), SUBSCRIBE_TO_ALL_QUERY)?.into();
         check_query_eval(&db, &tx, &s, 2, &[row_1.clone(), row_2.clone()])?;
 
-        let row1 = TableOp {
-            op_type: 0,
-            row_pk: row_1.to_data_key().to_bytes(),
-            row: row_1,
-        };
-
-        let row2 = TableOp {
-            op_type: 1,
-            row_pk: row_2.to_data_key().to_bytes(),
-            row: row_2,
-        };
-
         let data1 = DatabaseTableUpdate {
             table_id: schema_1.table_id,
             table_name: "inventory".to_string(),
-            ops: vec![row1],
+            ops: vec![TableOp::delete(row_1)],
         };
 
         let data2 = DatabaseTableUpdate {
             table_id: schema_2.table_id,
             table_name: "player".to_string(),
-            ops: vec![row2],
+            ops: vec![TableOp::insert(row_2)],
         };
 
         let update = DatabaseUpdate {

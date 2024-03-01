@@ -1913,7 +1913,7 @@ mod tests {
         let join = IndexJoin {
             probe_side: probe_side.clone().into(),
             probe_field,
-            index_side: index_side.clone().into(),
+            index_side: index_side.clone(),
             index_select: Some(index_select.clone()),
             index_col: 1.into(),
             return_index_rows: false,
