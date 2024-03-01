@@ -32,7 +32,7 @@ pub fn cli() -> clap::Command {
                 .help("When publishing a new module to an existing address, also delete all tables associated with the database"),
         )
         .arg(
-            Arg::new("path_to_project")
+            Arg::new("project_path")
                 .value_parser(clap::value_parser!(PathBuf))
                 .default_value(".")
                 .long("project-path")
@@ -44,6 +44,7 @@ pub fn cli() -> clap::Command {
                 .value_parser(clap::value_parser!(PathBuf))
                 .long("wasm-file")
                 .short('w')
+                .conflicts_with("project_path")
                 .help("The system path (absolute or relative) to the wasm file we should publish, instead of building the project."),
         )
         .arg(
@@ -107,7 +108,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let server = args.get_one::<String>("server").map(|s| s.as_str());
     let identity = args.get_one::<String>("identity").map(String::as_str);
     let name_or_address = args.get_one::<String>("name|address");
-    let path_to_project = args.get_one::<PathBuf>("path_to_project").unwrap();
+    let project_path = args.get_one::<PathBuf>("project_path").unwrap();
     let host_type = args.get_one::<String>("host_type").unwrap();
     let clear_database = args.get_flag("clear_database");
     let trace_log = args.get_flag("trace_log");
@@ -130,10 +131,10 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         query_params.push(("name_or_address", name_or_address.as_str()));
     }
 
-    if !path_to_project.exists() {
+    if !project_path.exists() {
         return Err(anyhow::anyhow!(
             "Project path does not exist: {}",
-            path_to_project.display()
+            project_path.display()
         ));
     }
 
@@ -146,15 +147,15 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
 
     let path_to_wasm;
-    if !path_to_project.is_dir() && path_to_project.extension().map_or(false, |ext| ext == "wasm") {
+    if !project_path.is_dir() && project_path.extension().map_or(false, |ext| ext == "wasm") {
         println!("Note: Using --project-path to provide a wasm file is deprecated, and will be");
         println!("removed in a future release. Please use --wasm-file instead.");
-        path_to_wasm = path_to_project.clone();
+        path_to_wasm = project_path.clone();
     } else if let Some(path) = wasm_file {
         println!("Skipping build. Instead we are publishing {}", path.display());
         path_to_wasm = path.clone();
     } else {
-        path_to_wasm = crate::tasks::build(path_to_project, skip_clippy, build_debug)?;
+        path_to_wasm = crate::tasks::build(project_path, skip_clippy, build_debug)?;
     };
     let program_bytes = fs::read(path_to_wasm)?;
     println!(

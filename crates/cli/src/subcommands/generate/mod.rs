@@ -34,11 +34,10 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("project_path")
                 .value_parser(clap::value_parser!(PathBuf))
+                .default_value(".")
                 .long("project-path")
                 .short('p')
-                .default_value(".")
-                .conflicts_with("wasm_file")
-                .help("The path to the wasm project"),
+                .help("The system path (absolute or relative) to the project you would like to inspect")
         )
         .arg(
             Arg::new("out_dir")
@@ -107,26 +106,22 @@ pub fn exec(args: &clap::ArgMatches) -> anyhow::Result<()> {
     let delete_files = args.get_flag("delete_files");
     let force = args.get_flag("force");
 
-    let wasm_file = match wasm_file {
-        Some(x) => x,
-        None => match crate::tasks::build(project_path, skip_clippy, build_debug) {
-            Ok(wasm_file) => wasm_file,
-            Err(e) => {
-                return Err(anyhow::anyhow!(
-                    "{:?}
-
-Failed to compile module {:?}. See cargo errors above for more details.",
-                    e,
-                    project_path,
-                ));
-            }
-        },
+    let path_to_wasm;
+    if !project_path.is_dir() && project_path.extension().map_or(false, |ext| ext == "wasm") {
+        println!("Note: Using --project-path to provide a wasm file is deprecated, and will be");
+        println!("removed in a future release. Please use --wasm-file instead.");
+        path_to_wasm = project_path.clone();
+    } else if let Some(path) = wasm_file {
+        println!("Skipping build. Instead we are inspecting {}", path.display());
+        path_to_wasm = path.clone();
+    } else {
+        path_to_wasm = crate::tasks::build(project_path, skip_clippy, build_debug)?;
     };
 
     fs::create_dir_all(out_dir)?;
 
     let mut paths = vec![];
-    for (fname, code) in generate(&wasm_file, lang, namespace.as_str())?.into_iter() {
+    for (fname, code) in generate(&path_to_wasm, lang, namespace.as_str())?.into_iter() {
         let path = out_dir.join(fname);
         paths.push(path.clone());
         fs::write(path, code)?;
