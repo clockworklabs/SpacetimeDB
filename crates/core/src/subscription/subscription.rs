@@ -24,21 +24,23 @@
 #![doc = include_str!("../../../../docs/incremental-joins.md")]
 
 use super::query;
-use crate::client::{ClientActorId, ClientConnectionSender};
-use crate::db::relational_db::{RelationalDB, Tx};
+use crate::db::relational_db::Tx;
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
-use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp};
 use crate::subscription::query::{run_query, to_mem_table_with_op_type, OP_TYPE_FIELD_NAME};
+use crate::{
+    client::{ClientActorId, ClientConnectionSender},
+    db::relational_db::RelationalDB,
+    host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp},
+};
 use anyhow::Context;
 use itertools::Either;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
-use spacetimedb_sats::relation::Header;
-use spacetimedb_sats::relation::Relation;
-use spacetimedb_sats::ProductValue;
+use spacetimedb_sats::relation::{Header, Relation};
 use spacetimedb_vm::expr::{self, IndexJoin, QueryExpr};
 use spacetimedb_vm::relation::MemTable;
 use std::collections::{hash_map, HashMap, HashSet};

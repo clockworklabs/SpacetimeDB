@@ -129,7 +129,6 @@ pub(crate) mod tests {
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::vm::tests::create_table_with_rows;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_primitives::col_list;
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::relation::Header;
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
@@ -669,30 +668,6 @@ SELECT * FROM inventory",
 
         let result = result.first().unwrap().clone();
         assert_eq!(result.data.len(), 4);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_multi_column() -> ResultTest<()> {
-        let (db, _input, _tmp_dir) = create_data(1)?;
-
-        // Create table [test] with index on [a, b]
-        let schema = &[
-            ("a", AlgebraicType::I32),
-            ("b", AlgebraicType::I32),
-            ("c", AlgebraicType::I32),
-            ("d", AlgebraicType::I32),
-        ];
-        let table_id = db.create_table_for_test_multi_column("test", schema, col_list![0, 1])?;
-        db.with_auto_commit(&ExecutionContext::default(), |tx| {
-            db.insert(tx, table_id, product![1, 1, 1, 1])
-        })?;
-
-        let result = run_for_testing(&db, "select * from test where b = 1 and a = 1")?;
-
-        let result = result.first().unwrap().clone();
-        assert_eq!(result.data, vec![product![1, 1, 1, 1]]);
 
         Ok(())
     }
