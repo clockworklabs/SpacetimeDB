@@ -17,11 +17,14 @@ mod commit;
 mod commitlog;
 mod repo;
 mod segment;
+mod varchar;
+mod varint;
 
 pub use crate::{
     commit::Commit,
     payload::{Decoder, Encode},
     segment::{Transaction, DEFAULT_LOG_FORMAT_VERSION},
+    varchar::Varchar,
 };
 pub mod error;
 pub mod payload;
@@ -267,11 +270,21 @@ impl<T: Encode> Commitlog<T> {
     /// generally visible to the iterator. Upon encountering [`io::ErrorKind::UnexpectedEof`],
     /// however, a new iterator should be created using [`Self::transactions_from`]
     /// with the last transaction offset yielded.
-    pub fn transactions<D: Decoder<Record = T>>(
-        &self,
-        decoder: D,
-    ) -> impl Iterator<Item = Result<Transaction<T>, error::Traversal>> {
-        self.transactions_from(0, decoder)
+    ///
+    /// Note that the very last [`Commit`] in a commitlog may be corrupt (e.g.
+    /// due to a partial write to disk), but a subsequent `append` will bring
+    /// the log into a consistent state.
+    ///
+    /// This means that, when this iterator yields an `Err` value, the consumer
+    /// may want to check if the iterator is exhausted (by calling `next()`)
+    /// before treating the `Err` value as an application error.
+    pub fn transactions<'a, D>(&self, de: &'a D) -> impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a
+    where
+        D: Decoder<Record = T>,
+        D::Error: From<error::Traversal>,
+        T: 'a,
+    {
+        self.transactions_from(0, de)
     }
 
     /// Obtain an iterator starting from transaction offset `offset`, yielding
@@ -280,12 +293,57 @@ impl<T: Encode> Commitlog<T> {
     /// Similar to [`Self::transactions`] but will skip until the provided
     /// `offset`, i.e. the first [`Transaction`] yielded will be the transaction
     /// with offset `offset`.
-    pub fn transactions_from<D: Decoder<Record = T>>(
+    pub fn transactions_from<'a, D>(
         &self,
         offset: u64,
-        decoder: D,
-    ) -> impl Iterator<Item = Result<Transaction<T>, error::Traversal>> {
-        self.inner.read().unwrap().transactions_from(offset, decoder)
+        de: &'a D,
+    ) -> impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a
+    where
+        D: Decoder<Record = T>,
+        D::Error: From<error::Traversal>,
+        T: 'a,
+    {
+        self.inner.read().unwrap().transactions_from(offset, de)
+    }
+
+    /// Traverse the log from the start and "fold" its transactions into the
+    /// provided [`Decoder`].
+    ///
+    /// A [`Decoder`] is a stateful object due to the requirement to store
+    /// schema information in the log itself. That is, a [`Decoder`] may need to
+    /// be able to resolve transaction schema information dynamically while
+    /// traversing the log.
+    ///
+    /// This is equivalent to "replaying" a log into a database state. In this
+    /// scenario, it is not interesting to consume the [`Transaction`] payload
+    /// as an iterator.
+    ///
+    /// This method allows the use of a [`Decoder`] which returns zero-sized
+    /// data (e.g. `Decoder<Record = ()>`), as it will not allocate the commit
+    /// payload into a struct.
+    ///
+    /// Note that, unlike [`Self::transaction`], this method will ignore a
+    /// corrupt commit at the very end of the traversed log.
+    pub fn fold_transactions<D>(&self, de: D) -> Result<(), D::Error>
+    where
+        D: Decoder,
+        D::Error: From<error::Traversal>,
+    {
+        self.fold_transactions_from(0, de)
+    }
+
+    /// Traverse the log from the given transaction offset and "fold" its
+    /// transactions into the provided [`Decoder`].
+    ///
+    /// Similar to [`Self::fold_transactions`] but will skip until the provided
+    /// `offset`, i.e. the first `tx_offset` passed to [`Decoder::decode_record`]
+    /// will be equal to `offset`.
+    pub fn fold_transactions_from<D>(&self, offset: u64, de: D) -> Result<(), D::Error>
+    where
+        D: Decoder,
+        D::Error: From<error::Traversal>,
+    {
+        self.inner.read().unwrap().fold_transactions_from(offset, de)
     }
 }
 
