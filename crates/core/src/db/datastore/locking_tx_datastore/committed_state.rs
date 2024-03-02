@@ -569,32 +569,53 @@ impl<'a> CommittedIndexIter<'a> {
 #[cfg(feature = "metrics")]
 impl Drop for CommittedIndexIter<'_> {
     fn drop(&mut self) {
-        let workload = &self.ctx.workload();
-        let db = &self.ctx.database();
-        let reducer_name = self.ctx.reducer_name();
-        let table_id = &self.table_id.0;
         let table_name = self
             .committed_state
             .get_schema(&self.table_id)
             .map(|table| table.table_name.as_str())
             .unwrap_or_default();
 
-        DB_METRICS
+        // DB_METRICS
+        //     .rdb_num_index_seeks
+        //     .with_label_values(workload, db, reducer_name, table_id, table_name)
+        //     .inc();
+
+        // // Increment number of index keys scanned
+        // DB_METRICS
+        //     .rdb_num_keys_scanned
+        //     .with_label_values(workload, db, reducer_name, table_id, table_name)
+        //     .inc_by(self.committed_rows.num_pointers_yielded());
+
+        // // Increment number of rows fetched
+        // DB_METRICS
+        //     .rdb_num_rows_fetched
+        //     .with_label_values(workload, db, reducer_name, table_id, table_name)
+        //     .inc_by(self.num_committed_rows_fetched);
+        let mut metrics = self.ctx.metrics.lock();
+        metrics
             .rdb_num_index_seeks
-            .with_label_values(workload, db, reducer_name, table_id, table_name)
-            .inc();
+            .entry(self.table_id)
+            .and_modify(|x| *x += 1)
+            .or_insert(0);
 
-        // Increment number of index keys scanned
-        DB_METRICS
+        metrics
             .rdb_num_keys_scanned
-            .with_label_values(workload, db, reducer_name, table_id, table_name)
-            .inc_by(self.committed_rows.num_pointers_yielded());
+            .entry(self.table_id)
+            .and_modify(|x| *x += self.committed_rows.num_pointers_yielded())
+            .or_insert(0);
 
-        // Increment number of rows fetched
-        DB_METRICS
+        metrics
             .rdb_num_rows_fetched
-            .with_label_values(workload, db, reducer_name, table_id, table_name)
-            .inc_by(self.num_committed_rows_fetched);
+            .entry(self.table_id)
+            .and_modify(|x| *x += self.num_committed_rows_fetched)
+            .or_insert(0);
+
+            metrics
+            .cache_table_name
+            .entry(self.table_id)
+            .or_insert(table_name.to_string());
+
+
     }
 }
 

@@ -582,7 +582,7 @@ impl WasmInstanceEnv {
             let data = env
                 .instance_env
                 .iter_by_col_eq(&ctx, table_id.into(), col_id.into(), value)?;
-
+            drop(ctx);
             // Insert the encoded + concatenated rows into a new buffer and return its id.
             Ok(env.buffers.insert(data.into()))
         })
@@ -606,7 +606,7 @@ impl WasmInstanceEnv {
             let ctx = env.reducer_context();
             // Collect the iterator chunks.
             let chunks = env.instance_env.iter_chunks(&ctx, table_id.into())?;
-
+            drop(ctx);
             // Register the iterator and get back the index to write to `out`.
             // Calls to the iterator are done through dynamic dispatch.
             Ok(env.iters.insert(chunks.into_iter()))
@@ -647,7 +647,7 @@ impl WasmInstanceEnv {
 
             // Construct the iterator.
             let chunks = env.instance_env.iter_filtered_chunks(&ctx, table_id.into(), filter)?;
-
+            drop(ctx);
             // Register the iterator and get back the index to write to `out`.
             // Calls to the iterator are done through dynamic dispatch.
             Ok(env.iters.insert(chunks.into_iter()))
