@@ -44,12 +44,10 @@ impl SubscriptionManager {
         self.clients.insert(id, client);
         for unit in queries {
             let hash = unit.hash();
-            if !self.queries.contains_key(&hash) {
-                self.tables.entry(unit.return_table()).or_default().insert(hash);
-                self.tables.entry(unit.filter_table()).or_default().insert(hash);
-                self.subscribers.entry(hash).or_default().insert(id);
-                self.queries.insert(hash, unit);
-            }
+            self.tables.entry(unit.return_table()).or_default().insert(hash);
+            self.tables.entry(unit.filter_table()).or_default().insert(hash);
+            self.subscribers.entry(hash).or_default().insert(id);
+            self.queries.insert(hash, unit);
         }
     }
 
