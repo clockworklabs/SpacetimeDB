@@ -1,6 +1,7 @@
+use super::execution_unit::{IncrementalUnit, QueryHash};
 use super::module_subscription_manager::SubscriptionManager;
 use super::query::compile_read_only_query;
-use super::subscription::{ExecutionSet, ExecutionUnit, QueryHash};
+use super::subscription::ExecutionSet;
 use crate::client::messages::{SubscriptionUpdateMessage, TransactionUpdateMessage};
 use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::db::relational_db::RelationalDB;
@@ -53,7 +54,7 @@ impl ModuleSubscriptions {
                 queries.extend(
                     compile_read_only_query(&self.relational_db, &tx, &auth, &sql)?
                         .into_iter()
-                        .map(|plan| Arc::new(ExecutionUnit::new(plan, hash))),
+                        .map(|plan| Arc::new(IncrementalUnit::new(plan, hash))),
                 )
             }
         }

@@ -23,6 +23,7 @@
 //!
 #![doc = include_str!("../../../../docs/incremental-joins.md")]
 
+use super::execution_unit::IncrementalUnit;
 use super::query::{self, Kind, SupportedQuery};
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::DBError;
@@ -48,7 +49,7 @@ use std::sync::Arc;
 ///
 /// A secondary table is one whose rows are not directly returned by the query.
 /// An example is the right table of a left semijoin.
-fn eval_secondary_updates<'a>(
+pub fn eval_secondary_updates<'a>(
     db: &RelationalDB,
     auth: AuthCtx,
     tx: &Tx,
@@ -64,7 +65,7 @@ fn eval_secondary_updates<'a>(
 ///
 /// The primary table is the one whose rows are returned by the query.
 /// An example is the left table of a left semijoin.
-fn eval_primary_updates<'a>(
+pub fn eval_primary_updates<'a>(
     db: &RelationalDB,
     auth: AuthCtx,
     tx: &Tx,
@@ -116,7 +117,7 @@ fn eval_updates<'a>(
 }
 
 /// Helper for evaluating a [`query::Supported::Semijoin`].
-struct IncrementalJoin<'a> {
+pub struct IncrementalJoin<'a> {
     join: &'a IndexJoin,
     index_side: JoinSide,
     probe_side: JoinSide,
@@ -489,7 +490,7 @@ impl ExecutionUnit {
 /// A set of independent single or multi-query execution units.
 #[derive(Debug)]
 pub struct ExecutionSet {
-    exec_units: Vec<Arc<ExecutionUnit>>,
+    exec_units: Vec<Arc<IncrementalUnit>>,
 }
 
 impl ExecutionSet {
@@ -512,7 +513,7 @@ impl ExecutionSet {
 }
 
 impl IntoIterator for ExecutionSet {
-    type Item = Arc<ExecutionUnit>;
+    type Item = Arc<IncrementalUnit>;
     type IntoIter = std::vec::IntoIter<Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -520,16 +521,16 @@ impl IntoIterator for ExecutionSet {
     }
 }
 
-impl FromIterator<Arc<ExecutionUnit>> for ExecutionSet {
-    fn from_iter<T: IntoIterator<Item = Arc<ExecutionUnit>>>(iter: T) -> Self {
+impl FromIterator<Arc<IncrementalUnit>> for ExecutionSet {
+    fn from_iter<T: IntoIterator<Item = Arc<IncrementalUnit>>>(iter: T) -> Self {
         ExecutionSet {
             exec_units: iter.into_iter().collect(),
         }
     }
 }
 
-impl From<Vec<Arc<ExecutionUnit>>> for ExecutionSet {
-    fn from(value: Vec<Arc<ExecutionUnit>>) -> Self {
+impl From<Vec<Arc<IncrementalUnit>>> for ExecutionSet {
+    fn from(value: Vec<Arc<IncrementalUnit>>) -> Self {
         ExecutionSet::from_iter(value)
     }
 }

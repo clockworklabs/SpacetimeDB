@@ -1,4 +1,4 @@
-use super::subscription::{ExecutionUnit, QueryHash};
+use super::execution_unit::{IncrementalUnit, QueryHash};
 use crate::client::messages::{CachedMessage, TransactionUpdateMessage};
 use crate::client::{ClientConnectionSender, DataMessage, Protocol};
 use crate::db::relational_db::RelationalDB;
@@ -13,7 +13,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 type Id = Identity;
-type Query = Arc<ExecutionUnit>;
+type Query = Arc<IncrementalUnit>;
 type Client = Arc<ClientConnectionSender>;
 
 /// Responsible for the efficient evaluation of subscriptions.
@@ -48,6 +48,15 @@ impl SubscriptionManager {
             self.tables.entry(unit.filter_table()).or_default().insert(hash);
             self.subscribers.entry(hash).or_default().insert(id);
             self.queries.insert(hash, unit);
+        }
+        println!("===================");
+        // 22 PlayerState
+        // 79 MobileEntityState
+        if let Some(hashes) = self.tables.get(&TableId(22)) {
+            for hash in hashes {
+                println!("subscribers: {:#?}", self.subscribers.get(hash));
+                println!("query: {:#?}", self.queries.get(hash));
+            }
         }
     }
 
@@ -100,6 +109,9 @@ impl SubscriptionManager {
 
         let mut database_updates = HashMap::new();
         for ((id, _), table) in delta_tables {
+            if table.ops.is_empty() {
+                println!("table {} is empty", table.table_name);
+            }
             if let Some(DatabaseUpdate { tables }) = database_updates.get_mut(id) {
                 tables.push(table);
             } else {

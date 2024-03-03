@@ -1,3 +1,4 @@
+pub mod execution_unit;
 pub mod module_subscription_actor;
 pub mod module_subscription_manager;
 pub mod query;
