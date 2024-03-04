@@ -88,6 +88,13 @@ impl<T> Commitlog<T> {
         })
     }
 
+    /// Determine the maximum transaction offset considered durable.
+    ///
+    /// The offset is `None` if the log hasn't been flushed to disk yet.
+    pub fn max_committed_offset(&self) -> Option<u64> {
+        self.inner.read().unwrap().max_committed_offset()
+    }
+
     /// Sync all OS-buffered writes to disk.
     ///
     /// Note that this does **not** write outstanding records to disk.
