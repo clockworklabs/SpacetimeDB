@@ -243,13 +243,27 @@ impl From<Query> for Option<ColumnOp> {
 
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
 #[repr(transparent)]
+/// A set of [`MemTable`]s referenced by a query plan by their [`SourceId`].
+///
+/// Rather than embedding [`MemTable`]s in query plans, we store a `SourceExpr::MemTable`,
+/// which contains the information necessary for optimization along with a [`SourceId`].
+/// Query execution then executes the plan, and when it encounters a `SourceExpr::MemTable`,
+/// retrieves the [`MemTable`] from the corresponding `SourceSet`.
+/// This allows query plans to be re-used, though each execution requires a new `SourceSet`.
+///
+/// Internally, the `SourceSet` stores an `Option<MemTable>` for each planned [`SourceId`].
+/// During execution, the VM will [`Option::take`] the [`MemTable`] to consume them.
+/// This means that a query plan may not include multiple references to the same [`SourceId`].
 pub struct SourceSet(Vec<Option<MemTable>>);
 
 impl SourceSet {
+    /// Get a fresh `SourceId` which can be used as the id for a new entry.
     fn next_id(&self) -> SourceId {
         SourceId(self.0.len())
     }
 
+    /// Insert a [`MemTable`] into this `SourceSet` so it can be used in a query plan,
+    /// and return a [`SourceExpr`] which can be embedded in that plan.
     pub fn add_mem_table(&mut self, table: MemTable) -> SourceExpr {
         let source_id = self.next_id();
         let expr = SourceExpr::from_mem_table(&table, source_id);
@@ -257,26 +271,22 @@ impl SourceSet {
         expr
     }
 
-    pub fn replace_source(&mut self, id: SourceId, new_source: MemTable) -> Option<SourceExpr> {
-        let expr = SourceExpr::from_mem_table(&new_source, id);
-        let place = self.0.get_mut(id.0)?;
-
-        *place = Some(new_source);
-        Some(expr)
-    }
-
-    pub fn get_mem_table(&self, id: SourceId) -> Option<&MemTable> {
-        self.0.get(id.0)?.as_ref()
-    }
-
-    pub fn get_mem_table_mut(&mut self, id: SourceId) -> Option<&mut MemTable> {
-        self.0.get_mut(id.0)?.as_mut()
-    }
-
+    /// Extract the [`MemTable`] referred to by `id` from this `SourceSet`,
+    /// leaving a "gap" in its place.
+    ///
+    /// Subsequent calls to `take_mem_table` on the same `id` will return `None`.
     pub fn take_mem_table(&mut self, id: SourceId) -> Option<MemTable> {
         self.0.get_mut(id.0)?.take()
     }
 
+    /// Resolve `source` to a `Table` for use in query execution.
+    ///
+    /// If the `source` is a [`SourceExpr::DbTable`], this simply clones the [`DbTable`] and returns it.
+    /// ([`DbTable::clone`] is inexpensive.)
+    /// In this case, `self` is not modified.
+    ///
+    /// If the `source` is a [`SourceExpr::MemTable`], this behaves like [`Self::take_mem_table`].
+    /// Subsequent calls to `take_table` or `take_mem_table` with the same `source` will fail.
     pub fn take_table(&mut self, source: &SourceExpr) -> Option<Table> {
         match source {
             SourceExpr::DbTable(db_table) => Some(Table::DbTable(db_table.clone())),
@@ -313,7 +323,16 @@ impl std::ops::IndexMut<SourceId> for SourceSet {
 pub struct SourceId(pub usize);
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+/// A reference to a table within a query plan,
+/// used as the source for selections, scans, filters and joins.
 pub enum SourceExpr {
+    /// A plan for a "virtual" or projected table.
+    ///
+    /// The actual [`MemTable`] is not stored within the query plan;
+    /// rather, the `source_id` is an index with a corresponding [`SourceSet`]
+    /// which contains the [`MemTable`].
+    ///
+    /// This allows query plans to be reused by supplying a new [`SourceSet`].
     MemTable {
         source_id: SourceId,
         header: Arc<Header>,
@@ -321,10 +340,16 @@ pub enum SourceExpr {
         table_access: StAccess,
         row_count: RowCount,
     },
+    /// A plan for a database table. Because [`DbTable`] is small and efficiently cloneable,
+    /// no indirection into a [`SourceSet`] is required.
     DbTable(DbTable),
 }
 
 impl SourceExpr {
+    /// If `self` refers to a [`MemTable`], returns the [`SourceId`] for its location in the plan's [`SourceSet`].
+    ///
+    /// Returns `None` if `self` refers to a [`DbTable`], as [`DbTable`]s are stored directly in the `SourceExpr`,
+    /// rather than indirected through the [`SourceSet`].
     pub fn source_id(&self) -> Option<SourceId> {
         if let SourceExpr::MemTable { source_id, .. } = self {
             Some(*source_id)
@@ -391,6 +416,11 @@ impl SourceExpr {
         }
     }
 
+    /// If `self` refers to a [`DbTable`], get a reference to it.
+    ///
+    /// Returns `None` if `self` refers to a [`MemTable`].
+    /// In that case, retrieving the [`MemTable`] requires inspecting the plan's corresponding [`SourceSet`]
+    /// via [`SourceSet::take_mem_table`] or [`SourceSet::take_table`].
     pub fn get_db_table(&self) -> Option<&DbTable> {
         if let SourceExpr::DbTable(db_table) = self {
             Some(db_table)
@@ -796,38 +826,11 @@ pub struct QueryExpr {
     pub query: Vec<Query>,
 }
 
-// impl From<MemTable> for QueryExpr {
-//     fn from(value: MemTable) -> Self {
-//         QueryExpr {
-//             source: value.into(),
-//             query: vec![],
-//         }
-//     }
-// }
-
-// impl From<DbTable> for QueryExpr {
-//     fn from(value: DbTable) -> Self {
-//         QueryExpr {
-//             source: value.into(),
-//             query: vec![],
-//         }
-//     }
-// }
-
 impl From<SourceExpr> for QueryExpr {
     fn from(source: SourceExpr) -> Self {
         QueryExpr { source, query: vec![] }
     }
 }
-
-// impl From<Table> for QueryExpr {
-//     fn from(value: Table) -> Self {
-//         QueryExpr {
-//             source: value.into(),
-//             query: vec![],
-//         }
-//     }
-// }
 
 /// Iterator created by the [`Query::sources`] method.
 #[must_use = "iterators are lazy and do nothing unless consumed"]
@@ -1332,6 +1335,8 @@ impl QueryExpr {
                 match is_sargable(schema, op) {
                     // found sargable equality condition for one of the table schemas
                     Some(IndexArgument::Eq { col_id, value }) => {
+                        // `unwrap`  here is infallible because `is_sargable(schema, op)` implies `schema.is_db_table`
+                        // for any `op`.
                         q = q.with_index_eq(schema.get_db_table().unwrap().clone(), col_id.into(), value);
                         continue 'outer;
                     }
@@ -1342,6 +1347,8 @@ impl QueryExpr {
                         inclusive,
                     }) => {
                         q = q.with_index_lower_bound(
+                            // `unwrap`  here is infallible because `is_sargable(schema, op)` implies `schema.is_db_table`
+                            // for any `op`.
                             schema.get_db_table().unwrap().clone(),
                             col_id.into(),
                             value,
@@ -1356,6 +1363,8 @@ impl QueryExpr {
                         inclusive,
                     }) => {
                         q = q.with_index_upper_bound(
+                            // `unwrap`  here is infallible because `is_sargable(schema, op)` implies `schema.is_db_table`
+                            // for any `op`.
                             schema.get_db_table().unwrap().clone(),
                             col_id.into(),
                             value,

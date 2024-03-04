@@ -20,14 +20,14 @@ pub fn compile_sql<T: TableSchemaView>(db: &RelationalDB, tx: &T, sql_text: &str
     tracing::trace!(sql = sql_text);
     let ast = compile_to_ast(db, tx, sql_text)?;
 
+    // TODO(perf, bikeshedding): SmallVec?
     let mut results = Vec::with_capacity(ast.len());
 
     for sql in ast {
-        let stmt = compile_statement(db, sql).map_err(|error| DBError::Plan {
+        results.push(compile_statement(db, sql).map_err(|error| DBError::Plan {
             sql: sql_text.to_string(),
             error,
-        })?;
-        results.push(stmt);
+        })?);
     }
 
     Ok(results)
