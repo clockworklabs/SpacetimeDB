@@ -47,11 +47,11 @@ impl ColumnOp {
         }
     }
 
-    pub fn cmp(field: FieldName, op: OpCmp, value: AlgebraicValue) -> Self {
+    pub fn cmp(field: impl Into<FieldName>, op: OpCmp, value: impl Into<AlgebraicValue>) -> Self {
         Self::new(
             OpQuery::Cmp(op),
-            ColumnOp::Field(FieldExpr::Name(field)),
-            ColumnOp::Field(FieldExpr::Value(value)),
+            ColumnOp::Field(FieldExpr::Name(field.into())),
+            ColumnOp::Field(FieldExpr::Value(value.into())),
         )
     }
 
@@ -221,32 +221,16 @@ impl From<IndexScan> for ColumnOp {
         let table = value.table;
         let columns = value.columns;
 
-        let field = table.head().fields[usize::from(columns.head())].field.clone();
+        let field = table.head().fields[columns.head().idx()].field.clone();
         match (value.lower_bound, value.upper_bound) {
             // Inclusive lower bound => field >= value
-            (Bound::Included(value), Bound::Unbounded) => ColumnOp::Cmp {
-                op: OpQuery::Cmp(OpCmp::GtEq),
-                lhs: field.into(),
-                rhs: value.into(),
-            },
+            (Bound::Included(value), Bound::Unbounded) => ColumnOp::cmp(field, OpCmp::GtEq, value),
             // Exclusive lower bound => field > value
-            (Bound::Excluded(value), Bound::Unbounded) => ColumnOp::Cmp {
-                op: OpQuery::Cmp(OpCmp::Gt),
-                lhs: field.into(),
-                rhs: value.into(),
-            },
+            (Bound::Excluded(value), Bound::Unbounded) => ColumnOp::cmp(field, OpCmp::Gt, value),
             // Inclusive upper bound => field <= value
-            (Bound::Unbounded, Bound::Included(value)) => ColumnOp::Cmp {
-                op: OpQuery::Cmp(OpCmp::LtEq),
-                lhs: field.into(),
-                rhs: value.into(),
-            },
+            (Bound::Unbounded, Bound::Included(value)) => ColumnOp::cmp(field, OpCmp::LtEq, value),
             // Exclusive upper bound => field < value
-            (Bound::Unbounded, Bound::Excluded(value)) => ColumnOp::Cmp {
-                op: OpQuery::Cmp(OpCmp::Lt),
-                lhs: field.into(),
-                rhs: value.into(),
-            },
+            (Bound::Unbounded, Bound::Excluded(value)) => ColumnOp::cmp(field, OpCmp::Lt, value),
             (Bound::Unbounded, Bound::Unbounded) => unreachable!(),
             (lower_bound, upper_bound) => {
                 let lhs = IndexScan {
@@ -834,6 +818,9 @@ fn ext_cmp_field_val<'a>(
 fn make_index_arg(cmp: OpCmp, columns: &ColList, value: AlgebraicValue) -> IndexColumnOp<'_> {
     let arg = match cmp {
         OpCmp::Eq => IndexArgument::Eq { columns, value },
+        OpCmp::NotEq => {
+            todo!("Need to implement `NotEq`")
+        }
         // a < 5 => exclusive upper bound
         OpCmp::Lt => IndexArgument::UpperBound {
             columns,
@@ -858,9 +845,6 @@ fn make_index_arg(cmp: OpCmp, columns: &ColList, value: AlgebraicValue) -> Index
             value,
             inclusive: true,
         },
-        OpCmp::NotEq => {
-            todo!("Need to implement `NotEq`")
-        }
     };
     IndexColumnOp::Index(arg)
 }
@@ -2118,7 +2102,7 @@ mod tests {
             table: "index".into(),
             field: "a".into(),
         };
-        let index_select = ColumnOp::cmp(select_field, OpCmp::Eq, 0.into());
+        let index_select = ColumnOp::cmp(select_field, OpCmp::Eq, 0u8);
         let join = IndexJoin {
             probe_side: probe_side.clone().into(),
             probe_field,
