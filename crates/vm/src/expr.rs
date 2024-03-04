@@ -401,13 +401,6 @@ impl SourceExpr {
         }
     }
 
-    /// Check if the `name` of the [FieldName] exist on this [SourceExpr]
-    ///
-    /// Warning: It ignores the `table_name`
-    pub fn get_column_by_field<'a>(&'a self, field: &'a FieldName) -> Option<&Column> {
-        self.head().column(field)
-    }
-
     pub fn is_mem_table(&self) -> bool {
         matches!(self, SourceExpr::MemTable { .. })
     }
@@ -786,28 +779,24 @@ enum IndexColumnOp<'a> {
 
 /// Extracts `name = val` when `lhs` is a field that exists and `rhs` is a value.
 fn ext_field_val<'a>(
-    table: &'a SourceExpr,
+    header: &'a Header,
     lhs: &'a ColumnOp,
     rhs: &'a ColumnOp,
 ) -> Option<(&'a Column, &'a AlgebraicValue)> {
     if let (ColumnOp::Field(FieldExpr::Name(name)), ColumnOp::Field(FieldExpr::Value(val))) = (lhs, rhs) {
-        let column = table.get_column_by_field(name)?;
-        return Some((column, val));
+        return header.column(name).map(|c| (c, val));
     }
     None
 }
 
 /// Extracts `name = val` when `op` is `name = val` and `name` exists.
-fn ext_cmp_field_val<'a>(
-    table: &'a SourceExpr,
-    op: &'a ColumnOp,
-) -> Option<(&'a OpCmp, &'a Column, &'a AlgebraicValue)> {
+fn ext_cmp_field_val<'a>(header: &'a Header, op: &'a ColumnOp) -> Option<(&'a OpCmp, &'a Column, &'a AlgebraicValue)> {
     match op {
         ColumnOp::Cmp {
             op: OpQuery::Cmp(op),
             lhs,
             rhs,
-        } => ext_field_val(table, lhs, rhs).map(|(f, v)| (op, f, v)),
+        } => ext_field_val(header, lhs, rhs).map(|(f, v)| (op, f, v)),
         _ => None,
     }
 }
@@ -912,10 +901,9 @@ type FieldsIndexed<'a> = HashSet<(&'a FieldName, OpCmp)>;
 /// -`ScanOrIndex::Scan(c = 2)`
 fn select_best_index<'a>(
     fields_indexed: &mut FieldsIndexed<'a>,
-    found: &mut IndexColumnOpSink<'a>,
     header: &'a Header,
-    fields: Vec<FieldValue<'a>>,
-) {
+    ops: &[&'a ColumnOp],
+) -> IndexColumnOpSink<'a> {
     // Collect and sort indices by their lengths, with longest first.
     // We do this so that multi-col indices are used first, as they are more efficient.
     // TODO(Centril): This could be computed when `Header` is constructed.
@@ -927,16 +915,13 @@ fn select_best_index<'a>(
         .collect::<SmallVec<[_; 1]>>();
     indices.sort_unstable_by_key(|cl| Reverse(cl.len()));
 
+    let mut found: IndexColumnOpSink = IndexColumnOpSink::new();
+
     // Collect fields into a multi-map `(col_id, cmp) -> [field]`.
     // This gives us `log(N)` seek + deletion.
     // TODO(Centril): Consider https://docs.rs/small-map/0.1.3/small_map/enum.SmallMap.html
     let mut fields_map = BTreeMap::<_, SmallVec<[_; 1]>>::new();
-    for field in fields {
-        fields_map
-            .entry((field.field.col_id, field.cmp))
-            .or_default()
-            .push(field);
-    }
+    extract_fields(ops, header, &mut fields_map, &mut found);
 
     // Go through each operator and index,
     // consuming all field constraints that can be served by an index.
@@ -996,17 +981,24 @@ fn select_best_index<'a>(
             .flat_map(|(_, fs)| fs)
             .map(|f| IndexColumnOp::Scan(f.parent)),
     );
+
+    found
 }
 
-/// Extracts a list of `field = val` constraints that *could* be answered by an index.
-/// The [`ColumnOp`]s that don't fit `field = val` are made into [`IndexColumnOp::Scan`]s immediately.
+/// Extracts a list of `field = val` constraints that *could* be answered by an index
+/// and populates those into `fields_map`.
+/// The [`ColumnOp`]s that don't fit `field = val`
+/// are made into [`IndexColumnOp::Scan`]s immediately which are added to `found`.
 fn extract_fields<'a>(
     ops: &[&'a ColumnOp],
-    table: &'a SourceExpr,
-) -> (Vec<FieldValue<'a>>, SmallVec<[IndexColumnOp<'a>; 1]>) {
-    let mut expr = SmallVec::new();
-    let mut fields = Vec::new();
-    let mut add_field = |parent, op, field, val| fields.push(FieldValue::new(parent, op, field, val));
+    header: &'a Header,
+    fields_map: &mut BTreeMap<(ColId, OpCmp), SmallVec<[FieldValue<'a>; 1]>>,
+    found: &mut IndexColumnOpSink<'a>,
+) {
+    let mut add_field = |parent, op, field, val| {
+        let fv = FieldValue::new(parent, op, field, val);
+        fields_map.entry((fv.field.col_id, op)).or_default().push(fv);
+    };
 
     for op in ops {
         match op {
@@ -1015,7 +1007,7 @@ fn extract_fields<'a>(
                 lhs,
                 rhs,
             } => {
-                if let Some((field, val)) = ext_field_val(table, lhs, rhs) {
+                if let Some((field, val)) = ext_field_val(header, lhs, rhs) {
                     // `lhs` must be a field that exists and `rhs` must be a value.
                     add_field(op, *cmp, field, val);
                     continue;
@@ -1026,8 +1018,8 @@ fn extract_fields<'a>(
                 lhs,
                 rhs,
             } => {
-                if let Some((op_lhs, col_lhs, val_lhs)) = ext_cmp_field_val(table, lhs) {
-                    if let Some((op_rhs, col_rhs, val_rhs)) = ext_cmp_field_val(table, rhs) {
+                if let Some((op_lhs, col_lhs, val_lhs)) = ext_cmp_field_val(header, lhs) {
+                    if let Some((op_rhs, col_rhs, val_rhs)) = ext_cmp_field_val(header, rhs) {
                         // Both lhs and rhs columns must exist.
                         add_field(op, *op_lhs, col_lhs, val_lhs);
                         add_field(op, *op_rhs, col_rhs, val_rhs);
@@ -1042,33 +1034,26 @@ fn extract_fields<'a>(
             | ColumnOp::Field(_) => {}
         }
 
-        expr.push(IndexColumnOp::Scan(op));
+        found.push(IndexColumnOp::Scan(op));
     }
-
-    (fields, expr)
 }
 
 /// Sargable stands for Search ARGument ABLE.
 /// A sargable predicate is one that can be answered using an index.
 fn find_sargable_ops<'a>(
     fields_indexed: &mut FieldsIndexed<'a>,
-    table: &'a SourceExpr,
+    header: &'a Header,
     op: &'a ColumnOp,
 ) -> SmallVec<[IndexColumnOp<'a>; 1]> {
-    let mut many = |ops: &[&'a ColumnOp]| {
-        let (fields, mut result) = extract_fields(ops, table);
-        select_best_index(fields_indexed, &mut result, table.head(), fields);
-        result
-    };
     let mut ops_flat = op.flatten_ands_ref();
     if ops_flat.len() == 1 {
         match ops_flat.swap_remove(0) {
             // Special case; fast path for a single field.
             op @ ColumnOp::Field(_) => smallvec![IndexColumnOp::Scan(op)],
-            op => many(&[op]),
+            op => select_best_index(fields_indexed, header, &[op]),
         }
     } else {
-        many(&ops_flat)
+        select_best_index(fields_indexed, header, &ops_flat)
     }
 }
 
@@ -1524,7 +1509,7 @@ impl QueryExpr {
         // Find the first sargable condition and short-circuit.
         let mut fields_found = HashSet::new();
         for schema in tables {
-            for op in find_sargable_ops(&mut fields_found, schema, &op) {
+            for op in find_sargable_ops(&mut fields_found, schema.head(), &op) {
                 match &op {
                     IndexColumnOp::Index(_) | IndexColumnOp::Scan(ColumnOp::Field(_)) => {}
                     // Remove a duplicated/redundant operation on the same `field` and `op`
@@ -2142,11 +2127,9 @@ mod tests {
             let fields = fields
                 .iter()
                 .copied()
-                .map(|(col, val)| make_field_value(&arena, (OpCmp::Eq, col, val)))
-                .collect();
-            let mut result = <_>::default();
-            select_best_index(&mut <_>::default(), &mut result, &head1, fields);
-            result
+                .map(|(col, val)| make_field_value(&arena, (OpCmp::Eq, col, val)).parent)
+                .collect::<Vec<_>>();
+            select_best_index(&mut <_>::default(), &head1, &fields)
         };
 
         let col_list_arena = Arena::new();
@@ -2240,10 +2223,11 @@ mod tests {
         let [val_a, val_b, val_c, val_d, _] = vals;
 
         let select_best_index = |fields: &[_]| {
-            let fields = fields.iter().map(|x| make_field_value(&arena, *x)).collect();
-            let mut result = <_>::default();
-            select_best_index(&mut <_>::default(), &mut result, &head1, fields);
-            result
+            let fields = fields
+                .iter()
+                .map(|x| make_field_value(&arena, *x).parent)
+                .collect::<Vec<_>>();
+            select_best_index(&mut <_>::default(), &head1, &fields)
         };
 
         let col_list_arena = Arena::new();
