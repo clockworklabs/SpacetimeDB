@@ -288,16 +288,10 @@ mod tests {
         low_bound: Bound<AlgebraicValue>,
         up_bound: Bound<AlgebraicValue>,
     ) -> TableId {
-        if let Query::IndexScan(IndexScan {
-            table,
-            columns,
-            lower_bound,
-            upper_bound,
-        }) = op
-        {
+        if let Query::IndexScan(IndexScan { table, columns, bounds }) = op {
             assert_eq!(columns, cols.into(), "Columns don't match");
-            assert_eq!(lower_bound, low_bound, "Lower bound don't match");
-            assert_eq!(upper_bound, up_bound, "Upper bound don't match");
+            assert_eq!(bounds.0, low_bound, "Lower bound don't match");
+            assert_eq!(bounds.1, up_bound, "Upper bound don't match");
             table.table_id
         } else {
             panic!("Expected IndexScan, got {op}");

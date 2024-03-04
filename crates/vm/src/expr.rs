@@ -222,7 +222,7 @@ impl From<IndexScan> for ColumnOp {
         let columns = value.columns;
 
         let field = table.head().fields[columns.head().idx()].field.clone();
-        match (value.lower_bound, value.upper_bound) {
+        match value.bounds {
             // Inclusive lower bound => field >= value
             (Bound::Included(value), Bound::Unbounded) => ColumnOp::cmp(field, OpCmp::GtEq, value),
             // Exclusive lower bound => field > value
@@ -236,14 +236,12 @@ impl From<IndexScan> for ColumnOp {
                 let lhs = IndexScan {
                     table: table.clone(),
                     columns: columns.clone(),
-                    lower_bound,
-                    upper_bound: Bound::Unbounded,
+                    bounds: (lower_bound, Bound::Unbounded),
                 };
                 let rhs = IndexScan {
                     table,
                     columns,
-                    lower_bound: Bound::Unbounded,
-                    upper_bound,
+                    bounds: (Bound::Unbounded, upper_bound),
                 };
                 ColumnOp::new(OpQuery::Logic(OpLogic::And), lhs.into(), rhs.into())
             }
@@ -721,8 +719,7 @@ impl CrudExpr {
 pub struct IndexScan {
     pub table: DbTable,
     pub columns: ColList,
-    pub lower_bound: Bound<AlgebraicValue>,
-    pub upper_bound: Bound<AlgebraicValue>,
+    pub bounds: (Bound<AlgebraicValue>, Bound<AlgebraicValue>),
 }
 
 // An individual operation in a query.
@@ -1142,14 +1139,12 @@ impl QueryExpr {
     // Otherwise generate a select.
     // TODO: Replace these methods with a proper query optimization pass.
     pub fn with_index_eq(mut self, table: DbTable, columns: ColList, value: AlgebraicValue) -> Self {
+        let point = |v: AlgebraicValue| (Bound::Included(v.clone()), Bound::Included(v));
+
         // if this is the first operator in the list, generate index scan
         let Some(query) = self.query.pop() else {
-            self.query.push(Query::IndexScan(IndexScan {
-                table,
-                columns,
-                lower_bound: Bound::Included(value.clone()),
-                upper_bound: Bound::Included(value),
-            }));
+            let bounds = point(value);
+            self.query.push(Query::IndexScan(IndexScan { table, columns, bounds }));
             return self;
         };
         match query {
@@ -1177,31 +1172,20 @@ impl QueryExpr {
             }
             // merge with a preceding select
             Query::Select(filter) => {
+                let bounds = point(value);
                 self.query.push(Query::Select(ColumnOp::new(
                     OpQuery::Logic(OpLogic::And),
                     filter,
-                    IndexScan {
-                        table,
-                        columns,
-                        lower_bound: Bound::Included(value.clone()),
-                        upper_bound: Bound::Included(value),
-                    }
-                    .into(),
+                    IndexScan { table, columns, bounds }.into(),
                 )));
                 self
             }
             // else generate a new select
             query => {
                 self.query.push(query);
-                self.query.push(Query::Select(
-                    IndexScan {
-                        table,
-                        columns,
-                        lower_bound: Bound::Included(value.clone()),
-                        upper_bound: Bound::Included(value),
-                    }
-                    .into(),
-                ));
+                let bounds = point(value);
+                self.query
+                    .push(Query::Select(IndexScan { table, columns, bounds }.into()));
                 self
             }
         }
@@ -1219,12 +1203,8 @@ impl QueryExpr {
     ) -> Self {
         // if this is the first operator in the list, generate an index scan
         let Some(query) = self.query.pop() else {
-            self.query.push(Query::IndexScan(IndexScan {
-                table,
-                columns,
-                lower_bound: Self::bound(value, inclusive),
-                upper_bound: Bound::Unbounded,
-            }));
+            let bounds = (Self::bound(value, inclusive), Bound::Unbounded);
+            self.query.push(Query::IndexScan(IndexScan { table, columns, bounds }));
             return self;
         };
         match query {
@@ -1253,60 +1233,39 @@ impl QueryExpr {
             // merge with a preceding upper bounded index scan (inclusive)
             Query::IndexScan(IndexScan {
                 columns: lhs_col_id,
-                lower_bound: Bound::Unbounded,
-                upper_bound: Bound::Included(upper),
+                bounds: (Bound::Unbounded, Bound::Included(upper)),
                 ..
             }) if columns == lhs_col_id => {
-                self.query.push(Query::IndexScan(IndexScan {
-                    table,
-                    columns,
-                    lower_bound: Self::bound(value, inclusive),
-                    upper_bound: Bound::Included(upper),
-                }));
+                let bounds = (Self::bound(value, inclusive), Bound::Included(upper));
+                self.query.push(Query::IndexScan(IndexScan { table, columns, bounds }));
                 self
             }
             // merge with a preceding upper bounded index scan (exclusive)
             Query::IndexScan(IndexScan {
                 columns: lhs_col_id,
-                lower_bound: Bound::Unbounded,
-                upper_bound: Bound::Excluded(upper),
+                bounds: (Bound::Unbounded, Bound::Excluded(upper)),
                 ..
             }) if columns == lhs_col_id => {
-                self.query.push(Query::IndexScan(IndexScan {
-                    table,
-                    columns,
-                    lower_bound: Self::bound(value, inclusive),
-                    upper_bound: Bound::Excluded(upper),
-                }));
+                let bounds = (Self::bound(value, inclusive), Bound::Excluded(upper));
+                self.query.push(Query::IndexScan(IndexScan { table, columns, bounds }));
                 self
             }
             // merge with a preceding select
             Query::Select(filter) => {
+                let bounds = (Self::bound(value, inclusive), Bound::Unbounded);
                 self.query.push(Query::Select(ColumnOp::new(
                     OpQuery::Logic(OpLogic::And),
                     filter,
-                    IndexScan {
-                        table,
-                        columns,
-                        lower_bound: Self::bound(value, inclusive),
-                        upper_bound: Bound::Unbounded,
-                    }
-                    .into(),
+                    IndexScan { table, columns, bounds }.into(),
                 )));
                 self
             }
             // else generate a new select
             query => {
                 self.query.push(query);
-                self.query.push(Query::Select(
-                    IndexScan {
-                        table,
-                        columns,
-                        lower_bound: Self::bound(value, inclusive),
-                        upper_bound: Bound::Unbounded,
-                    }
-                    .into(),
-                ));
+                let bounds = (Self::bound(value, inclusive), Bound::Unbounded);
+                self.query
+                    .push(Query::Select(IndexScan { table, columns, bounds }.into()));
                 self
             }
         }
@@ -1327,8 +1286,7 @@ impl QueryExpr {
             self.query.push(Query::IndexScan(IndexScan {
                 table,
                 columns,
-                lower_bound: Bound::Unbounded,
-                upper_bound: Self::bound(value, inclusive),
+                bounds: (Bound::Unbounded, Self::bound(value, inclusive)),
             }));
             return self;
         };
@@ -1358,60 +1316,39 @@ impl QueryExpr {
             // merge with a preceding lower bounded index scan (inclusive)
             Query::IndexScan(IndexScan {
                 columns: lhs_col_id,
-                lower_bound: Bound::Included(lower),
-                upper_bound: Bound::Unbounded,
+                bounds: (Bound::Included(lower), Bound::Unbounded),
                 ..
             }) if columns == lhs_col_id => {
-                self.query.push(Query::IndexScan(IndexScan {
-                    table,
-                    columns,
-                    lower_bound: Bound::Included(lower),
-                    upper_bound: Self::bound(value, inclusive),
-                }));
+                let bounds = (Bound::Included(lower), Self::bound(value, inclusive));
+                self.query.push(Query::IndexScan(IndexScan { table, columns, bounds }));
                 self
             }
             // merge with a preceding lower bounded index scan (inclusive)
             Query::IndexScan(IndexScan {
                 columns: lhs_col_id,
-                lower_bound: Bound::Excluded(lower),
-                upper_bound: Bound::Unbounded,
+                bounds: (Bound::Excluded(lower), Bound::Unbounded),
                 ..
             }) if columns == lhs_col_id => {
-                self.query.push(Query::IndexScan(IndexScan {
-                    table,
-                    columns,
-                    lower_bound: Bound::Excluded(lower),
-                    upper_bound: Self::bound(value, inclusive),
-                }));
+                let bounds = (Bound::Excluded(lower), Self::bound(value, inclusive));
+                self.query.push(Query::IndexScan(IndexScan { table, columns, bounds }));
                 self
             }
             // merge with a preceding select
             Query::Select(filter) => {
+                let bounds = (Bound::Unbounded, Self::bound(value, inclusive));
                 self.query.push(Query::Select(ColumnOp::new(
                     OpQuery::Logic(OpLogic::And),
                     filter,
-                    IndexScan {
-                        table,
-                        columns,
-                        lower_bound: Bound::Unbounded,
-                        upper_bound: Self::bound(value, inclusive),
-                    }
-                    .into(),
+                    IndexScan { table, columns, bounds }.into(),
                 )));
                 self
             }
             // else generate a new select
             query => {
                 self.query.push(query);
-                self.query.push(Query::Select(
-                    IndexScan {
-                        table,
-                        columns,
-                        lower_bound: Bound::Unbounded,
-                        upper_bound: Self::bound(value, inclusive),
-                    }
-                    .into(),
-                ));
+                let bounds = (Bound::Unbounded, Self::bound(value, inclusive));
+                self.query
+                    .push(Query::Select(IndexScan { table, columns, bounds }.into()));
                 self
             }
         }
@@ -2002,8 +1939,7 @@ mod tests {
             Query::IndexScan(IndexScan {
                 table: db_table.get_db_table().unwrap().clone(),
                 columns: ColList::new(42.into()),
-                lower_bound: Bound::Included(22.into()),
-                upper_bound: Bound::Unbounded,
+                bounds: (Bound::Included(22.into()), Bound::Unbounded),
             }),
             Query::IndexJoin(IndexJoin {
                 probe_side: mem_table.clone().into(),

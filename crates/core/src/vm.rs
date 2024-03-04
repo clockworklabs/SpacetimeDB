@@ -68,12 +68,9 @@ pub fn build_query<'a>(
 
     for op in query.query {
         result = Some(match op {
-            Query::IndexScan(IndexScan {
-                table,
-                columns,
-                lower_bound,
-                upper_bound,
-            }) if db_table => iter_by_col_range(ctx, stdb, tx, table, columns, (lower_bound, upper_bound))?,
+            Query::IndexScan(IndexScan { table, columns, bounds }) if db_table => {
+                iter_by_col_range(ctx, stdb, tx, table, columns, bounds)?
+            }
             Query::IndexScan(index_scan) => {
                 let result = result
                     .take()
