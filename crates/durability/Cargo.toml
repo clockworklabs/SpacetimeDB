@@ -1,0 +1,16 @@
+[package]
+name = "spacetimedb-durability"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file = "LICENSE"
+
+description = "Traits and single-node implementation of durability for SpacetimeDB."
+
+[dependencies]
+anyhow.workspace = true
+log.workspace = true
+spacetimedb-commitlog.workspace = true
+spacetimedb-sats.workspace = true
+tokio.workspace = true
+tracing.workspace = true
