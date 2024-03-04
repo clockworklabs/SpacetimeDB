@@ -804,7 +804,7 @@ fn ext_cmp_field_val<'a>(header: &'a Header, op: &'a ColumnOp) -> Option<(&'a Op
 fn make_index_arg(cmp: OpCmp, columns: &ColList, value: AlgebraicValue) -> IndexColumnOp<'_> {
     let arg = match cmp {
         OpCmp::Eq => IndexArgument::Eq { columns, value },
-        OpCmp::NotEq => unreachable!("using a non-indexed scan for NotEq instead"),
+        OpCmp::NotEq => unreachable!("No IndexArgument for NotEq, caller should've filtered out"),
         // a < 5 => exclusive upper bound
         OpCmp::Lt => IndexArgument::UpperBound {
             columns,
