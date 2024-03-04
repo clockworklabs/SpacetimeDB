@@ -145,6 +145,8 @@ impl<I, P> Select<I, P> {
     pub fn new(iter: I, head: Arc<Header>, predicate: P) -> Select<I, P> {
         Select {
             iter,
+            // NOTE: We could have propagated the upper bound,
+            // but this would likely cause over-allocation in `Vec::with_capacity`.
             count: RowCount::unknown(),
             predicate,
             head,
