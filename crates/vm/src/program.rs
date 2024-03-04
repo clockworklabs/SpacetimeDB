@@ -70,8 +70,7 @@ impl ProgramVm for Program {
                 let head = query.head().clone();
                 let row_count = query.row_count();
                 let table_access = query.table.table_access();
-                let result = if query.table.is_mem_table() {
-                    let source_id = query.table.source_id();
+                let result = if let Some(source_id) = query.table.source_id() {
                     let Some(result_table) = sources.take_mem_table(source_id) else {
                         panic!("Query plan specifies a `MemTable` for {source_id:?}, but found a `DbTable` or nothing");
                     };

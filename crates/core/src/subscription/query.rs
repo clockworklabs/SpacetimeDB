@@ -3,7 +3,7 @@ use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::{ExecutionContext, WorkloadType};
 use crate::host::module_host::DatabaseTableUpdate;
-use crate::sql::compiler::compile_sql_separate_sources;
+use crate::sql::compiler::compile_sql;
 use crate::sql::execute::execute_single_sql;
 use crate::subscription::subscription::SupportedQuery;
 use once_cell::sync::Lazy;
@@ -65,13 +65,12 @@ pub fn to_mem_table_with_op_type(head: Arc<Header>, table_access: StAccess, data
 ///
 /// To be able to reify the `op_type` of the individual operations in the update,
 /// each virtual row is extended with a column [`OP_TYPE_FIELD_NAME`].
-pub fn to_mem_table(mut of: QueryExpr, data: &DatabaseTableUpdate, sources: &mut SourceSet) -> QueryExpr {
+pub fn to_mem_table(mut of: QueryExpr, data: &DatabaseTableUpdate) -> (QueryExpr, SourceSet) {
     let mem_table = to_mem_table_with_op_type(of.source.head().clone(), of.source.table_access(), data);
-    let source_expr = sources
-        .replace_source(of.source.source_id(), mem_table)
-        .expect("QueryExpr contains out-of-bounds SourceId");
+    let mut sources = SourceSet::default();
+    let source_expr = sources.add_mem_table(mem_table);
     of.source = source_expr;
-    of
+    (of, sources)
 }
 
 /// Runs a query that evaluates if the changes made should be reported to the [ModuleSubscriptionManager]
@@ -82,11 +81,9 @@ pub(crate) fn run_query(
     tx: &Tx,
     query: &QueryExpr,
     auth: AuthCtx,
-    sources: &SourceSet,
+    sources: SourceSet,
 ) -> Result<Vec<MemTable>, DBError> {
-    // TODO(perf): Avoid cloning here.
-    let mut sources = sources.clone_box();
-    execute_single_sql(cx, db, tx, CrudExpr::Query(query.clone()), auth, &mut sources)
+    execute_single_sql(cx, db, tx, CrudExpr::Query(query.clone()), auth, sources)
 }
 
 // TODO: It's semantically wrong to `SUBSCRIBE_TO_ALL_QUERY`
@@ -105,7 +102,7 @@ pub fn compile_read_only_query(
     tx: &Tx,
     auth: &AuthCtx,
     input: &str,
-) -> Result<Vec<(SupportedQuery, Box<SourceSet>)>, DBError> {
+) -> Result<Vec<SupportedQuery>, DBError> {
     let input = input.trim();
     if input.is_empty() {
         return Err(SubscriptionError::Empty.into());
@@ -117,11 +114,11 @@ pub fn compile_read_only_query(
         return get_all(relational_db, tx, auth);
     }
 
-    let compiled = compile_sql_separate_sources(relational_db, tx, &input)?;
+    let compiled = compile_sql(relational_db, tx, &input)?;
     let mut queries = Vec::with_capacity(compiled.len());
-    for (q, sources) in compiled {
+    for q in compiled {
         match q {
-            CrudExpr::Query(x) => queries.push((x, sources)),
+            CrudExpr::Query(x) => queries.push(x),
             CrudExpr::Insert { .. } => {
                 return Err(SubscriptionError::SideEffect(Crud::Insert).into());
             }
@@ -135,11 +132,10 @@ pub fn compile_read_only_query(
     }
 
     if !queries.is_empty() {
-        let queries = queries
+        Ok(queries
             .into_iter()
-            .map(|(query, sources)| Ok::<_, DBError>((SupportedQuery::new(query, input.to_string())?, sources)))
-            .collect::<Result<_, _>>()?;
-        Ok(queries)
+            .map(|query| SupportedQuery::new(query, input.to_string()))
+            .collect::<Result<_, _>>()?)
     } else {
         Err(SubscriptionError::Empty.into())
     }
@@ -219,7 +215,6 @@ mod tests {
     use spacetimedb_sats::relation::FieldName;
     use spacetimedb_sats::{product, ProductType, ProductValue};
     use spacetimedb_vm::dsl::{mem_table, scalar};
-    use spacetimedb_vm::expr::SourceBuilder;
     use spacetimedb_vm::operator::OpCmp;
 
     fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
@@ -253,7 +248,7 @@ mod tests {
         table_name: &str,
         head: &ProductType,
         row: &ProductValue,
-    ) -> ResultTest<(TableSchema, MemTable, DatabaseTableUpdate, QueryExpr, Box<SourceSet>)> {
+    ) -> ResultTest<(TableSchema, MemTable, DatabaseTableUpdate, QueryExpr)> {
         let table = mem_table(head.clone(), [row.clone()]);
         let table_id = create_table_with_rows(db, tx, table_name, head.clone(), &[row.clone()])?;
 
@@ -263,20 +258,18 @@ mod tests {
             ops: vec![TableOp::insert(row.clone())],
         };
 
-        let mut source_builder = SourceBuilder::default();
         let schema = db.schema_for_table_mut(tx, table_id).unwrap().into_owned();
-        let source_expr = source_builder.add_table_schema(&schema);
 
-        let q = QueryExpr::new(source_expr);
+        let q = QueryExpr::new(&schema);
 
-        Ok((schema, table, data, q, source_builder.into_source_set()))
+        Ok((schema, table, data, q))
     }
 
     fn make_inv(
         db: &RelationalDB,
         tx: &mut MutTx,
         access: StAccess,
-    ) -> ResultTest<(TableSchema, MemTable, DatabaseTableUpdate, QueryExpr, Box<SourceSet>)> {
+    ) -> ResultTest<(TableSchema, MemTable, DatabaseTableUpdate, QueryExpr)> {
         let table_name = if access == StAccess::Public {
             "inventory"
         } else {
@@ -286,7 +279,7 @@ mod tests {
         let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row = product!(1u64, "health");
 
-        let (schema, table, data, q, sources) = make_data(db, tx, table_name, &head, &row)?;
+        let (schema, table, data, q) = make_data(db, tx, table_name, &head, &row)?;
 
         // For filtering out the hidden field `OP_TYPE_FIELD_NAME`
         let fields = &[
@@ -296,18 +289,18 @@ mod tests {
 
         let q = q.with_project(fields, None);
 
-        Ok((schema, table, data, q, sources))
+        Ok((schema, table, data, q))
     }
 
     fn make_player(
         db: &RelationalDB,
         tx: &mut MutTx,
-    ) -> ResultTest<(TableSchema, MemTable, DatabaseTableUpdate, QueryExpr, Box<SourceSet>)> {
+    ) -> ResultTest<(TableSchema, MemTable, DatabaseTableUpdate, QueryExpr)> {
         let table_name = "player";
         let head = ProductType::from([("player_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row = product!(2u64, "jhon doe");
 
-        let (schema, table, data, q, sources) = make_data(db, tx, table_name, &head, &row)?;
+        let (schema, table, data, q) = make_data(db, tx, table_name, &head, &row)?;
 
         // For filtering out the hidden field `OP_TYPE_FIELD_NAME`
         let fields = &[
@@ -317,7 +310,7 @@ mod tests {
 
         let q = q.with_project(fields, None);
 
-        Ok((schema, table, data, q, sources))
+        Ok((schema, table, data, q))
     }
 
     fn check_query(
@@ -326,9 +319,8 @@ mod tests {
         tx: &Tx,
         q: &QueryExpr,
         data: &DatabaseTableUpdate,
-        sources: &mut SourceSet,
     ) -> ResultTest<()> {
-        let q = to_mem_table(q.clone(), data, sources);
+        let (q, sources) = to_mem_table(q.clone(), data);
         let result = run_query(
             &ExecutionContext::default(),
             db,
@@ -398,8 +390,8 @@ mod tests {
         Ok(())
     }
 
-    fn singleton_execution_set(expr: QueryExpr, sources: Box<SourceSet>) -> ResultTest<ExecutionSet> {
-        Ok(ExecutionSet::from_iter([(SupportedQuery::try_from(expr)?, sources)]))
+    fn singleton_execution_set(expr: QueryExpr) -> ResultTest<ExecutionSet> {
+        Ok(ExecutionSet::from_iter([SupportedQuery::try_from(expr)?]))
     }
 
     #[test]
@@ -433,13 +425,13 @@ mod tests {
         let tx = db.begin_tx();
 
         let sql = "select * from test where b = 3";
-        let mut exp = compile_sql_separate_sources(&db, &tx, sql)?;
+        let mut exp = compile_sql(&db, &tx, sql)?;
 
-        let Some((CrudExpr::Query(query), sources)) = exp.pop() else {
+        let Some(CrudExpr::Query(query)) = exp.pop() else {
             panic!("unexpected query {:#?}", exp[0]);
         };
 
-        let query: ExecutionSet = singleton_execution_set(query, sources)?;
+        let query: ExecutionSet = singleton_execution_set(query)?;
 
         let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
 
@@ -497,13 +489,13 @@ mod tests {
         let tx = db.begin_tx();
         // Should be answered using an index semijion
         let sql = "select lhs.* from lhs join rhs on lhs.id = rhs.id where rhs.y >= 2 and rhs.y <= 4";
-        let mut exp = compile_sql_separate_sources(&db, &tx, sql)?;
+        let mut exp = compile_sql(&db, &tx, sql)?;
 
-        let Some((CrudExpr::Query(query), sources)) = exp.pop() else {
+        let Some(CrudExpr::Query(query)) = exp.pop() else {
             panic!("unexpected query {:#?}", exp[0]);
         };
 
-        let query: ExecutionSet = singleton_execution_set(query, sources)?;
+        let query: ExecutionSet = singleton_execution_set(query)?;
 
         db.release_tx(&ExecutionContext::default(), tx);
 
@@ -743,18 +735,17 @@ mod tests {
         let (db, _tmp_dir) = make_test_db()?;
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
 
-        let (schema, table, data, q, mut sources) = make_inv(&db, &mut tx, StAccess::Public)?;
+        let (schema, table, data, q) = make_inv(&db, &mut tx, StAccess::Public)?;
         db.commit_tx(&ExecutionContext::default(), tx)?;
         assert_eq!(schema.table_type, StTableType::User);
         assert_eq!(schema.table_access, StAccess::Public);
 
         let tx = db.begin_tx();
         let q_1 = q.clone();
-        let mut sources_1 = sources.clone_box();
-        check_query(&db, &table, &tx, &q_1, &data, &mut sources_1)?;
+        check_query(&db, &table, &tx, &q_1, &data)?;
 
         let q_2 = q.with_select_cmp(OpCmp::Eq, FieldName::named("inventory", "inventory_id"), scalar(1u64));
-        check_query(&db, &table, &tx, &q_2, &data, &mut sources)?;
+        check_query(&db, &table, &tx, &q_2, &data)?;
 
         Ok(())
     }
@@ -765,25 +756,23 @@ mod tests {
         let (db, _tmp_dir) = make_test_db()?;
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
 
-        let (schema, table, data, q, mut sources) = make_inv(&db, &mut tx, StAccess::Private)?;
+        let (schema, table, data, q) = make_inv(&db, &mut tx, StAccess::Private)?;
         db.commit_tx(&ExecutionContext::default(), tx)?;
         assert_eq!(schema.table_type, StTableType::User);
         assert_eq!(schema.table_access, StAccess::Private);
 
         let row = product!(1u64, "health");
         let tx = db.begin_tx();
-        check_query(&db, &table, &tx, &q, &data, &mut sources)?;
+        check_query(&db, &table, &tx, &q, &data)?;
 
         //SELECT * FROM inventory WHERE inventory_id = 1
-        let mut source_builder = SourceBuilder::default();
-        let source_expr = source_builder.add_table_schema(&schema);
-        let q_id = QueryExpr::new(source_expr).with_select_cmp(
+        let q_id = QueryExpr::new(&schema).with_select_cmp(
             OpCmp::Eq,
             FieldName::named("_inventory", "inventory_id"),
             scalar(1u64),
         );
 
-        let s = singleton_execution_set(q_id, source_builder.into_source_set())?;
+        let s = singleton_execution_set(q_id)?;
 
         let row2 = TableOp::insert(row.clone());
 
@@ -799,12 +788,9 @@ mod tests {
 
         check_query_incr(&db, &tx, &s, &update, 1, &[row])?;
 
-        let mut source_builder = SourceBuilder::default();
-        let source_expr = source_builder.add_table_schema(&schema);
-        let q = QueryExpr::new(source_expr);
+        let q = QueryExpr::new(&schema);
 
-        let mut sources = source_builder.into_source_set();
-        let q = to_mem_table(q, &data, &mut sources);
+        let (q, sources) = to_mem_table(q, &data);
         //Try access the private table
         match run_query(
             &ExecutionContext::default(),
@@ -812,7 +798,7 @@ mod tests {
             &tx,
             &q,
             AuthCtx::new(Identity::__dummy(), Identity::from_byte_array([1u8; 32])),
-            &sources,
+            sources,
         ) {
             Ok(_) => {
                 panic!("it allows to execute against private table")
@@ -879,14 +865,14 @@ mod tests {
         let tx = db.begin_tx();
         let qset = compile_read_only_query(&db, &tx, &AuthCtx::for_testing(), sql_query)?;
 
-        for (q, sources) in qset {
+        for q in qset {
             let result = run_query(
                 &ExecutionContext::default(),
                 &db,
                 &tx,
                 q.as_expr(),
                 AuthCtx::for_testing(),
-                &sources,
+                SourceSet::default(),
             )?;
             assert_eq!(result.len(), 1, "Join query did not return any rows");
         }
@@ -899,8 +885,8 @@ mod tests {
         let (db, _tmp_dir) = make_test_db()?;
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
 
-        let (schema_1, _, _, _, _) = make_inv(&db, &mut tx, StAccess::Public)?;
-        let (schema_2, _, _, _, _) = make_player(&db, &mut tx)?;
+        let (schema_1, _, _, _) = make_inv(&db, &mut tx, StAccess::Public)?;
+        let (schema_2, _, _, _) = make_player(&db, &mut tx)?;
         db.commit_tx(&ExecutionContext::default(), tx)?;
         let row_1 = product!(1u64, "health");
         let row_2 = product!(2u64, "jhon doe");
@@ -962,14 +948,14 @@ mod tests {
             "SELECT * FROM lhs WHERE id > 5",
         ];
         for scan in scans {
-            let (expr, _) = compile_read_only_query(&db, &tx, &auth, scan)?.pop().unwrap();
+            let expr = compile_read_only_query(&db, &tx, &auth, scan)?.pop().unwrap();
             assert_eq!(expr.kind(), Supported::Scan, "{scan}\n{expr:#?}");
         }
 
         // Only index semijoins are supported
         let joins = ["SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE rhs.y < 10"];
         for join in joins {
-            let (expr, _) = compile_read_only_query(&db, &tx, &auth, join)?.pop().unwrap();
+            let expr = compile_read_only_query(&db, &tx, &auth, join)?.pop().unwrap();
             assert_eq!(expr.kind(), Supported::Semijoin, "{join}\n{expr:#?}");
         }
 

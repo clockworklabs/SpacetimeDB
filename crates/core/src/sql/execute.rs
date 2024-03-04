@@ -1,4 +1,4 @@
-use super::compiler::compile_sql_merge_sources;
+use super::compiler::compile_sql;
 use crate::database_instance_context_controller::DatabaseInstanceContextController;
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::{DBError, DatabaseError};
@@ -58,7 +58,7 @@ pub fn execute_single_sql(
     tx: &Tx,
     ast: CrudExpr,
     auth: AuthCtx,
-    sources: &mut SourceSet,
+    sources: SourceSet,
 ) -> Result<Vec<MemTable>, DBError> {
     let mut tx: TxMode = tx.into();
     let p = &mut DbProgram::new(cx, db, &mut tx, auth);
@@ -75,7 +75,7 @@ pub fn execute_sql_mut_tx(
     tx: &mut MutTx,
     ast: Vec<CrudExpr>,
     auth: AuthCtx,
-    sources: &mut SourceSet,
+    sources: SourceSet,
 ) -> Result<Vec<MemTable>, DBError> {
     let total = ast.len();
     let mut tx: TxMode = tx.into();
@@ -92,12 +92,7 @@ pub fn execute_sql_mut_tx(
 ///
 /// Evaluates `ast` and accordingly triggers mutable or read tx to execute
 #[tracing::instrument(skip_all)]
-pub fn execute_sql(
-    db: &RelationalDB,
-    ast: Vec<CrudExpr>,
-    auth: AuthCtx,
-    sources: &mut SourceSet,
-) -> Result<Vec<MemTable>, DBError> {
+pub fn execute_sql(db: &RelationalDB, ast: Vec<CrudExpr>, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
     let total = ast.len();
     let ctx = ExecutionContext::sql(db.address());
     let mut result = Vec::with_capacity(total);
@@ -106,13 +101,15 @@ pub fn execute_sql(
             let mut tx: TxMode = mut_tx.into();
             let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
             let p = &mut DbProgram::new(&ctx, db, &mut tx, auth);
-            collect_result(&mut result, run_ast(p, q, sources).into())
+            // SQL queries can never reference `MemTable`s, so pass an empty `SourceSet`.
+            collect_result(&mut result, run_ast(p, q, SourceSet::default()).into())
         }),
         true => db.with_read_only(&ctx, |tx| {
             let mut tx = TxMode::Tx(tx);
             let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
             let p = &mut DbProgram::new(&ctx, db, &mut tx, auth);
-            collect_result(&mut result, run_ast(p, q, sources).into())
+            // SQL queries can never reference `MemTable`s, so pass an empty `SourceSet`.
+            collect_result(&mut result, run_ast(p, q, SourceSet::default()).into())
         }),
     }?;
 
@@ -123,8 +120,8 @@ pub fn execute_sql(
 #[tracing::instrument(skip_all)]
 pub fn run(db: &RelationalDB, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
     let ctx = &ExecutionContext::sql(db.address());
-    let (ast, mut sources) = db.with_read_only(ctx, |tx| compile_sql_merge_sources(db, tx, sql_text))?;
-    execute_sql(db, ast, auth, &mut sources)
+    let ast = db.with_read_only(ctx, |tx| compile_sql(db, tx, sql_text))?;
+    execute_sql(db, ast, auth)
 }
 
 #[cfg(test)]

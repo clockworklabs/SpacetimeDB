@@ -21,7 +21,7 @@ use spacetimedb_sats::buffer::BufWriter;
 use spacetimedb_sats::db::def::{IndexDef, IndexType};
 use spacetimedb_sats::relation::{FieldExpr, FieldName};
 use spacetimedb_sats::{ProductType, Typespace};
-use spacetimedb_vm::expr::{Code, ColumnOp, SourceBuilder};
+use spacetimedb_vm::expr::{Code, ColumnOp, SourceSet};
 
 #[derive(Clone)]
 pub struct InstanceEnv {
@@ -369,15 +369,13 @@ impl InstanceEnv {
         )
         .map_err(NodesError::DecodeFilter)?;
 
-        let mut sources = SourceBuilder::default();
-        let source_expr = sources.add_table_schema(&schema);
-        let mut sources = sources.into_source_set();
-
-        let q = spacetimedb_vm::dsl::query(source_expr).with_select(filter_to_column_op(&schema.table_name, filter));
+        let q =
+            spacetimedb_vm::dsl::query(schema.as_ref()).with_select(filter_to_column_op(&schema.table_name, filter));
         //TODO: How pass the `caller` here?
         let mut tx: TxMode = tx.into();
         let p = &mut DbProgram::new(ctx, stdb, &mut tx, AuthCtx::for_current(self.dbic.identity));
-        let results = match spacetimedb_vm::eval::run_ast(p, q.into(), &mut sources) {
+        // SQL queries can never reference `MemTable`s, so pass in an empty `SourceSet`.
+        let results = match spacetimedb_vm::eval::run_ast(p, q.into(), SourceSet::default()) {
             Code::Table(table) => table,
             _ => unreachable!("query should always return a table"),
         };
