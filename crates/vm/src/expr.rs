@@ -10,12 +10,9 @@ use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{TableDef, TableSchema};
 use spacetimedb_sats::db::error::AuthError;
 use spacetimedb_sats::relation::{Column, DbTable, FieldExpr, FieldName, Header, Relation, RowCount};
-use spacetimedb_sats::satn::Satn;
-use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
-use std::cmp::Ordering;
+use spacetimedb_sats::ProductValue;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
-use std::hash::{Hash, Hasher};
 use std::ops::Bound;
 use std::sync::Arc;
 
@@ -184,7 +181,7 @@ impl From<IndexScan> for ColumnOp {
         let columns = value.columns;
         assert_eq!(columns.len(), 1, "multi-column predicates are not yet supported");
 
-        let field = table.head.fields[usize::from(columns.head())].field.clone();
+        let field = table.head().fields[usize::from(columns.head())].field.clone();
         match (value.lower_bound, value.upper_bound) {
             // Inclusive lower bound => field >= value
             (Bound::Included(value), Bound::Unbounded) => ColumnOp::Cmp {
@@ -244,64 +241,145 @@ impl From<Query> for Option<ColumnOp> {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, From)]
-pub enum SourceExpr {
-    MemTable(MemTable),
-    DbTable(DbTable),
-}
+#[derive(Debug, PartialEq, Eq, Clone, Default)]
+#[repr(transparent)]
+/// A set of [`MemTable`]s referenced by a query plan by their [`SourceId`].
+///
+/// Rather than embedding [`MemTable`]s in query plans, we store a `SourceExpr::MemTable`,
+/// which contains the information necessary for optimization along with a [`SourceId`].
+/// Query execution then executes the plan, and when it encounters a `SourceExpr::MemTable`,
+/// retrieves the [`MemTable`] from the corresponding `SourceSet`.
+/// This allows query plans to be re-used, though each execution requires a new `SourceSet`.
+///
+/// Internally, the `SourceSet` stores an `Option<MemTable>` for each planned [`SourceId`].
+/// During execution, the VM will [`Option::take`] the [`MemTable`] to consume them.
+/// This means that a query plan may not include multiple references to the same [`SourceId`].
+pub struct SourceSet(Vec<Option<MemTable>>);
 
-impl Hash for SourceExpr {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        // IMPORTANT: Required for hashing query plans.
-        // In general a query plan will only contain static data.
-        // However, currently it is possible to inline a virtual table.
-        // Such plans though are hybrids and should not be hashed,
-        // Since they contain raw data values.
-        // Therefore we explicitly disallow it here.
-        match self {
-            SourceExpr::DbTable(t) => {
-                t.hash(state);
-            }
-            SourceExpr::MemTable(_) => {
-                panic!("Cannot hash a virtual table");
-            }
+impl SourceSet {
+    /// Get a fresh `SourceId` which can be used as the id for a new entry.
+    fn next_id(&self) -> SourceId {
+        SourceId(self.0.len())
+    }
+
+    /// Insert a [`MemTable`] into this `SourceSet` so it can be used in a query plan,
+    /// and return a [`SourceExpr`] which can be embedded in that plan.
+    pub fn add_mem_table(&mut self, table: MemTable) -> SourceExpr {
+        let source_id = self.next_id();
+        let expr = SourceExpr::from_mem_table(&table, source_id);
+        self.0.push(Some(table));
+        expr
+    }
+
+    /// Extract the [`MemTable`] referred to by `id` from this `SourceSet`,
+    /// leaving a "gap" in its place.
+    ///
+    /// Subsequent calls to `take_mem_table` on the same `id` will return `None`.
+    pub fn take_mem_table(&mut self, id: SourceId) -> Option<MemTable> {
+        self.0.get_mut(id.0)?.take()
+    }
+
+    /// Resolve `source` to a `Table` for use in query execution.
+    ///
+    /// If the `source` is a [`SourceExpr::DbTable`], this simply clones the [`DbTable`] and returns it.
+    /// ([`DbTable::clone`] is inexpensive.)
+    /// In this case, `self` is not modified.
+    ///
+    /// If the `source` is a [`SourceExpr::MemTable`], this behaves like [`Self::take_mem_table`].
+    /// Subsequent calls to `take_table` or `take_mem_table` with the same `source` will fail.
+    pub fn take_table(&mut self, source: &SourceExpr) -> Option<Table> {
+        match source {
+            SourceExpr::DbTable(db_table) => Some(Table::DbTable(db_table.clone())),
+            SourceExpr::MemTable { source_id, .. } => self.take_mem_table(*source_id).map(Table::MemTable),
         }
     }
 }
 
+impl std::ops::Index<SourceId> for SourceSet {
+    type Output = Option<MemTable>;
+
+    fn index(&self, idx: SourceId) -> &Option<MemTable> {
+        &self.0[idx.0]
+    }
+}
+
+impl std::ops::IndexMut<SourceId> for SourceSet {
+    fn index_mut(&mut self, idx: SourceId) -> &mut Option<MemTable> {
+        &mut self.0[idx.0]
+    }
+}
+
+/// An identifier for a data source (i.e. a table) in a query plan.
+///
+/// When compiling a query plan, rather than embedding the inputs in the plan,
+/// we annotate each input with a `SourceId`, and the compiled plan refers to its inputs by id.
+/// This allows the plan to be re-used with distinct inputs,
+/// assuming the inputs obey the same schema.
+///
+/// Note that re-using a query plan is only a good idea
+/// if the new inputs are similar to those used for compilation
+/// in terms of cardinality and distribution.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, From, Hash)]
+pub struct SourceId(pub usize);
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+/// A reference to a table within a query plan,
+/// used as the source for selections, scans, filters and joins.
+pub enum SourceExpr {
+    /// A plan for a "virtual" or projected table.
+    ///
+    /// The actual [`MemTable`] is not stored within the query plan;
+    /// rather, the `source_id` is an index with a corresponding [`SourceSet`]
+    /// which contains the [`MemTable`].
+    ///
+    /// This allows query plans to be reused by supplying a new [`SourceSet`].
+    MemTable {
+        source_id: SourceId,
+        header: Arc<Header>,
+        table_type: StTableType,
+        table_access: StAccess,
+        row_count: RowCount,
+    },
+    /// A plan for a database table. Because [`DbTable`] is small and efficiently cloneable,
+    /// no indirection into a [`SourceSet`] is required.
+    DbTable(DbTable),
+}
+
 impl SourceExpr {
-    pub fn get_db_table(&self) -> Option<&DbTable> {
-        match self {
-            SourceExpr::DbTable(x) => Some(x),
-            _ => None,
+    /// If `self` refers to a [`MemTable`], returns the [`SourceId`] for its location in the plan's [`SourceSet`].
+    ///
+    /// Returns `None` if `self` refers to a [`DbTable`], as [`DbTable`]s are stored directly in the `SourceExpr`,
+    /// rather than indirected through the [`SourceSet`].
+    pub fn source_id(&self) -> Option<SourceId> {
+        if let SourceExpr::MemTable { source_id, .. } = self {
+            Some(*source_id)
+        } else {
+            None
         }
     }
 
     pub fn table_name(&self) -> &str {
-        match self {
-            SourceExpr::MemTable(x) => &x.head.table_name,
-            SourceExpr::DbTable(x) => &x.head.table_name,
-        }
+        &self.head().table_name
     }
 
     pub fn table_type(&self) -> StTableType {
         match self {
-            SourceExpr::MemTable(_) => StTableType::User,
-            SourceExpr::DbTable(x) => x.table_type,
+            SourceExpr::MemTable { table_type, .. } => *table_type,
+            SourceExpr::DbTable(db_table) => db_table.table_type,
         }
     }
 
     pub fn table_access(&self) -> StAccess {
         match self {
-            SourceExpr::MemTable(x) => x.table_access,
-            SourceExpr::DbTable(x) => x.table_access,
+            SourceExpr::MemTable { table_access, .. } => *table_access,
+            SourceExpr::DbTable(db_table) => db_table.table_access,
         }
     }
 
     pub fn head(&self) -> &Arc<Header> {
         match self {
-            SourceExpr::MemTable(x) => &x.head,
-            SourceExpr::DbTable(x) => &x.head,
+            SourceExpr::MemTable { header, .. } => header,
+            SourceExpr::DbTable(db_table) => &db_table.head,
         }
     }
 
@@ -311,38 +389,56 @@ impl SourceExpr {
     pub fn get_column_by_field<'a>(&'a self, field: &'a FieldName) -> Option<&Column> {
         self.head().column(field)
     }
+
+    pub fn is_mem_table(&self) -> bool {
+        matches!(self, SourceExpr::MemTable { .. })
+    }
+
+    pub fn is_db_table(&self) -> bool {
+        matches!(self, SourceExpr::DbTable(_))
+    }
+
+    pub fn from_mem_table(mem_table: &MemTable, id: SourceId) -> Self {
+        SourceExpr::MemTable {
+            source_id: id,
+            header: mem_table.head.clone(),
+            table_type: StTableType::User,
+            table_access: mem_table.table_access,
+            row_count: RowCount::exact(mem_table.data.len()),
+        }
+    }
+
+    pub fn table_id(&self) -> Option<TableId> {
+        if let SourceExpr::DbTable(db_table) = self {
+            Some(db_table.table_id)
+        } else {
+            None
+        }
+    }
+
+    /// If `self` refers to a [`DbTable`], get a reference to it.
+    ///
+    /// Returns `None` if `self` refers to a [`MemTable`].
+    /// In that case, retrieving the [`MemTable`] requires inspecting the plan's corresponding [`SourceSet`]
+    /// via [`SourceSet::take_mem_table`] or [`SourceSet::take_table`].
+    pub fn get_db_table(&self) -> Option<&DbTable> {
+        if let SourceExpr::DbTable(db_table) = self {
+            Some(db_table)
+        } else {
+            None
+        }
+    }
 }
 
 impl Relation for SourceExpr {
     fn head(&self) -> &Arc<Header> {
-        match self {
-            SourceExpr::MemTable(x) => x.head(),
-            SourceExpr::DbTable(x) => x.head(),
-        }
+        self.head()
     }
 
     fn row_count(&self) -> RowCount {
         match self {
-            SourceExpr::MemTable(x) => x.row_count(),
-            SourceExpr::DbTable(x) => x.row_count(),
-        }
-    }
-}
-
-impl From<Table> for SourceExpr {
-    fn from(value: Table) -> Self {
-        match value {
-            Table::MemTable(t) => SourceExpr::MemTable(t),
-            Table::DbTable(t) => SourceExpr::DbTable(t),
-        }
-    }
-}
-
-impl From<SourceExpr> for Table {
-    fn from(value: SourceExpr) -> Self {
-        match value {
-            SourceExpr::MemTable(t) => Table::MemTable(t),
-            SourceExpr::DbTable(t) => Table::DbTable(t),
+            SourceExpr::MemTable { row_count, .. } => *row_count,
+            SourceExpr::DbTable(_) => RowCount::unknown(),
         }
     }
 }
@@ -358,22 +454,13 @@ impl From<&TableSchema> for SourceExpr {
     }
 }
 
-impl From<&SourceExpr> for DbTable {
-    fn from(value: &SourceExpr) -> Self {
-        match value {
-            SourceExpr::MemTable(_) => unreachable!(),
-            SourceExpr::DbTable(t) => t.clone(),
-        }
-    }
-}
-
 // A descriptor for an index join operation.
 // The semantics are those of a semijoin with rows from the index or the probe side being returned.
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct IndexJoin {
     pub probe_side: QueryExpr,
     pub probe_field: FieldName,
-    pub index_side: Table,
+    pub index_side: SourceExpr,
     pub index_select: Option<ColumnOp>,
     pub index_col: ColId,
     pub return_index_rows: bool,
@@ -382,7 +469,7 @@ pub struct IndexJoin {
 impl From<IndexJoin> for QueryExpr {
     fn from(join: IndexJoin) -> Self {
         let source: SourceExpr = if join.return_index_rows {
-            join.index_side.clone().into()
+            join.index_side.clone()
         } else {
             join.probe_side.source.clone()
         };
@@ -399,7 +486,7 @@ impl IndexJoin {
     // A delta table is a virtual table consisting of changes or updates to a physical table.
     pub fn reorder(self, row_count: impl Fn(TableId, &str) -> i64) -> Self {
         // The probe table must be a physical table.
-        if matches!(self.probe_side.source, SourceExpr::MemTable(_)) {
+        if self.probe_side.source.is_mem_table() {
             return self;
         }
         // It must have an index defined on the join field.
@@ -424,18 +511,19 @@ impl IndexJoin {
         // The existence of this column has already been verified,
         // during construction of the index join.
         let probe_column = self.probe_side.source.head().column(&self.probe_field).unwrap().col_id;
-        match self.index_side {
+        match self.index_side.get_db_table() {
             // If the size of the indexed table is sufficiently large,
             // do not reorder.
             //
             // TODO: This determination is quite arbitrary.
             // Ultimately we should be using cardinality estimation.
-            Table::DbTable(DbTable { table_id, ref head, .. }) if row_count(table_id, &head.table_name) > 3000 => self,
+            Some(DbTable { head, table_id, .. }) if row_count(*table_id, &head.table_name) > 3000 => self,
             // If this is a delta table, we must reorder.
             // If this is a sufficiently small physical table, we should reorder.
-            table => {
+            _ => {
                 // For the same reason the compiler also ensures this unwrap is safe.
-                let index_field = table
+                let index_field = self
+                    .index_side
                     .head()
                     .fields
                     .iter()
@@ -457,11 +545,11 @@ impl IndexJoin {
                 // Push any selections on the index side to the probe side.
                 let probe_side = if let Some(predicate) = self.index_select {
                     QueryExpr {
-                        source: table.into(),
+                        source: self.index_side,
                         query: vec![predicate.into()],
                     }
                 } else {
-                    table.into()
+                    self.index_side.into()
                 };
                 IndexJoin {
                     // The new probe side consists of the updated rows.
@@ -470,7 +558,7 @@ impl IndexJoin {
                     // The new probe field is the previous index field.
                     probe_field: index_field,
                     // The original probe table is now the table that is being probed.
-                    index_side: self.probe_side.source.into(),
+                    index_side: self.probe_side.source,
                     // Any selections from the original probe side are pulled above the index lookup.
                     index_select: predicate,
                     // The new index field is the previous probe field.
@@ -502,8 +590,8 @@ impl IndexJoin {
                 .map(|Column { field, .. }| field.into())
                 .collect();
 
-            let table = self.index_side.get_db_table().map(|t| t.table_id);
-            let source = self.index_side.into();
+            let table = self.index_side.table_id();
+            let source = self.index_side;
             let inner_join = Query::JoinInner(JoinExpr::new(rhs, col_lhs, col_rhs));
             let project = Query::Project(fields, table);
             let query = if let Some(predicate) = self.index_select {
@@ -531,7 +619,7 @@ impl IndexJoin {
                 .map(|Column { field, .. }| field.into())
                 .collect();
 
-            let table = self.probe_side.source.get_db_table().map(|t| t.table_id);
+            let table = self.probe_side.source.table_id();
             let source = self.probe_side.source;
             let inner_join = Query::JoinInner(JoinExpr::new(rhs, col_lhs, col_rhs));
             let project = Query::Project(fields, table);
@@ -541,7 +629,7 @@ impl IndexJoin {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct JoinExpr {
     pub rhs: QueryExpr,
     pub col_lhs: FieldName,
@@ -554,7 +642,7 @@ impl JoinExpr {
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum DbType {
     Table,
     Index,
@@ -562,7 +650,7 @@ pub enum DbType {
     Constraint,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum Crud {
     Query,
     Insert,
@@ -604,8 +692,8 @@ impl CrudExpr {
         }
     }
 
-    pub fn is_reads(exprs: &[CrudExpr]) -> bool {
-        exprs.iter().all(|expr| matches!(expr, CrudExpr::Query(_)))
+    pub fn is_reads<'a>(exprs: impl IntoIterator<Item = &'a CrudExpr>) -> bool {
+        exprs.into_iter().all(|expr| matches!(expr, CrudExpr::Query(_)))
     }
 }
 
@@ -617,65 +705,8 @@ pub struct IndexScan {
     pub upper_bound: Bound<AlgebraicValue>,
 }
 
-impl PartialOrd for IndexScan {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for IndexScan {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        #[derive(Eq, PartialEq)]
-        struct RangeBound<'a, T: Ord>(&'a Bound<T>);
-
-        impl<'a, T: Ord> PartialOrd for RangeBound<'a, T> {
-            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-                Some(self.cmp(other))
-            }
-        }
-
-        impl<'a, T: Ord> Ord for RangeBound<'a, T> {
-            fn cmp(&self, other: &Self) -> Ordering {
-                match (&self.0, &other.0) {
-                    (Bound::Included(ref l), Bound::Included(ref r))
-                    | (Bound::Excluded(ref l), Bound::Excluded(ref r)) => l.cmp(r),
-                    (Bound::Included(ref l), Bound::Excluded(ref r)) => match l.cmp(r) {
-                        Ordering::Equal => Ordering::Less,
-                        ord => ord,
-                    },
-                    (Bound::Excluded(ref l), Bound::Included(ref r)) => match l.cmp(r) {
-                        Ordering::Equal => Ordering::Greater,
-                        ord => ord,
-                    },
-                    (Bound::Unbounded, Bound::Unbounded) => Ordering::Equal,
-                    (Bound::Unbounded, _) => Ordering::Less,
-                    (_, Bound::Unbounded) => Ordering::Greater,
-                }
-            }
-        }
-
-        let order = self.table.cmp(&other.table);
-        let Ordering::Equal = order else {
-            return order;
-        };
-
-        let order = self.columns.cmp(&other.columns);
-        let Ordering::Equal = order else {
-            return order;
-        };
-
-        match (
-            RangeBound(&self.lower_bound).cmp(&RangeBound(&other.lower_bound)),
-            RangeBound(&self.upper_bound).cmp(&RangeBound(&other.upper_bound)),
-        ) {
-            (Ordering::Equal, ord) => ord,
-            (ord, _) => ord,
-        }
-    }
-}
-
 // An individual operation in a query.
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, From, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, From, Hash)]
 pub enum Query {
     // Fetching rows via an index.
     IndexScan(IndexScan),
@@ -703,7 +734,7 @@ impl Query {
     pub fn sources(&self) -> QuerySources {
         match self {
             Self::Select(..) | Self::Project(..) => QuerySources::None,
-            Self::IndexScan(scan) => QuerySources::One(Some(scan.table.clone().into())),
+            Self::IndexScan(scan) => QuerySources::One(Some(SourceExpr::DbTable(scan.table.clone()))),
             Self::IndexJoin(join) => QuerySources::Expr(join.probe_side.sources()),
             Self::JoinInner(join) => QuerySources::Expr(join.rhs.sources()),
         }
@@ -789,36 +820,15 @@ fn is_sargable(table: &SourceExpr, op: &ColumnOp) -> Option<IndexArgument> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct QueryExpr {
     pub source: SourceExpr,
     pub query: Vec<Query>,
 }
 
-impl From<MemTable> for QueryExpr {
-    fn from(value: MemTable) -> Self {
-        QueryExpr {
-            source: value.into(),
-            query: vec![],
-        }
-    }
-}
-
-impl From<DbTable> for QueryExpr {
-    fn from(value: DbTable) -> Self {
-        QueryExpr {
-            source: value.into(),
-            query: vec![],
-        }
-    }
-}
-
-impl From<Table> for QueryExpr {
-    fn from(value: Table) -> Self {
-        QueryExpr {
-            source: value.into(),
-            query: vec![],
-        }
+impl From<SourceExpr> for QueryExpr {
+    fn from(source: SourceExpr) -> Self {
+        QueryExpr { source, query: vec![] }
     }
 }
 
@@ -862,18 +872,13 @@ impl QueryExpr {
 
     /// Does this query read from a given table?
     pub fn reads_from_table(&self, id: &TableId) -> bool {
-        self.source
-            .get_db_table()
-            .is_some_and(|DbTable { table_id, .. }| table_id == id)
+        self.source.table_id() == Some(*id)
             || self.query.iter().any(|q| match q {
                 Query::Select(_) | Query::Project(_, _) => false,
                 Query::IndexScan(scan) => scan.table.table_id == *id,
                 Query::JoinInner(join) => join.rhs.reads_from_table(id),
                 Query::IndexJoin(join) => {
-                    join.index_side
-                        .get_db_table()
-                        .is_some_and(|DbTable { table_id, .. }| table_id == id)
-                        || join.probe_side.reads_from_table(id)
+                    join.index_side.table_id() == Some(*id) || join.probe_side.reads_from_table(id)
                 }
             })
     }
@@ -897,15 +902,12 @@ impl QueryExpr {
             Query::JoinInner(JoinExpr {
                 rhs:
                     QueryExpr {
-                        source:
-                            SourceExpr::DbTable(DbTable {
-                                table_id: rhs_table_id, ..
-                            }),
+                        source: SourceExpr::DbTable(ref db_table),
                         ..
                     },
                 ..
-            }) if table.table_id != rhs_table_id => {
-                self = self.with_index_eq(table, columns, value);
+            }) if table.table_id != db_table.table_id => {
+                self = self.with_index_eq(db_table.clone(), columns, value);
                 self.query.push(query);
                 self
             }
@@ -975,14 +977,11 @@ impl QueryExpr {
             Query::JoinInner(JoinExpr {
                 rhs:
                     QueryExpr {
-                        source:
-                            SourceExpr::DbTable(DbTable {
-                                table_id: rhs_table_id, ..
-                            }),
+                        source: SourceExpr::DbTable(ref db_table),
                         ..
                     },
                 ..
-            }) if table.table_id != rhs_table_id => {
+            }) if table.table_id != db_table.table_id => {
                 self = self.with_index_lower_bound(table, columns, value, inclusive);
                 self.query.push(query);
                 self
@@ -1083,14 +1082,11 @@ impl QueryExpr {
             Query::JoinInner(JoinExpr {
                 rhs:
                     QueryExpr {
-                        source:
-                            SourceExpr::DbTable(DbTable {
-                                table_id: rhs_table_id, ..
-                            }),
+                        source: SourceExpr::DbTable(ref db_table),
                         ..
                     },
                 ..
-            }) if table.table_id != rhs_table_id => {
+            }) if table.table_id != db_table.table_id => {
                 self = self.with_index_upper_bound(table, columns, value, inclusive);
                 self.query.push(query);
                 self
@@ -1270,10 +1266,11 @@ impl QueryExpr {
             return query;
         }
 
-        let Some(table) = query.source.get_db_table().cloned() else {
+        // If the source is a `MemTable`, it doesn't have any indexes,
+        // so we can't plan an index join.
+        let Some(source_table_id) = query.source.table_id() else {
             return query;
         };
-
         let source = query.source;
         let second = query.query.pop().unwrap();
         let first = query.query.pop().unwrap();
@@ -1292,15 +1289,15 @@ impl QueryExpr {
                 col_lhs: index_field,
                 col_rhs: probe_field,
             }) => {
-                if !probe_side.query.is_empty() && wildcard_table_id == table.table_id {
+                if !probe_side.query.is_empty() && wildcard_table_id == source_table_id {
                     // An applicable join must have an index defined on the correct field.
-                    if let Some(col) = table.head.column(&index_field) {
+                    if let Some(col) = source.head().column(&index_field) {
                         let index_col = col.col_id;
-                        if table.head().has_constraint(&index_field, Constraints::indexed()) {
+                        if source.head().has_constraint(&index_field, Constraints::indexed()) {
                             let index_join = IndexJoin {
                                 probe_side,
                                 probe_field,
-                                index_side: table.into(),
+                                index_side: source.clone(),
                                 index_select: None,
                                 index_col,
                                 return_index_rows: true,
@@ -1338,7 +1335,9 @@ impl QueryExpr {
                 match is_sargable(schema, op) {
                     // found sargable equality condition for one of the table schemas
                     Some(IndexArgument::Eq { col_id, value }) => {
-                        q = q.with_index_eq(schema.into(), col_id.into(), value);
+                        // `unwrap`  here is infallible because `is_sargable(schema, op)` implies `schema.is_db_table`
+                        // for any `op`.
+                        q = q.with_index_eq(schema.get_db_table().unwrap().clone(), col_id.into(), value);
                         continue 'outer;
                     }
                     // found sargable range condition for one of the table schemas
@@ -1347,7 +1346,14 @@ impl QueryExpr {
                         value,
                         inclusive,
                     }) => {
-                        q = q.with_index_lower_bound(schema.into(), col_id.into(), value, inclusive);
+                        q = q.with_index_lower_bound(
+                            // `unwrap`  here is infallible because `is_sargable(schema, op)` implies `schema.is_db_table`
+                            // for any `op`.
+                            schema.get_db_table().unwrap().clone(),
+                            col_id.into(),
+                            value,
+                            inclusive,
+                        );
                         continue 'outer;
                     }
                     // found sargable range condition for one of the table schemas
@@ -1356,7 +1362,14 @@ impl QueryExpr {
                         value,
                         inclusive,
                     }) => {
-                        q = q.with_index_upper_bound(schema.into(), col_id.into(), value, inclusive);
+                        q = q.with_index_upper_bound(
+                            // `unwrap`  here is infallible because `is_sargable(schema, op)` implies `schema.is_db_table`
+                            // for any `op`.
+                            schema.get_db_table().unwrap().clone(),
+                            col_id.into(),
+                            value,
+                            inclusive,
+                        );
                         continue 'outer;
                     }
                     None => {}
@@ -1469,21 +1482,12 @@ impl From<QueryExpr> for Expr {
     }
 }
 
-pub(crate) fn fmt_value(ty: &AlgebraicType, val: &AlgebraicValue) -> String {
-    let ts = Typespace::new(vec![]);
-    WithTypespace::new(&ts, ty).with_value(val).to_satn()
-}
-
 impl fmt::Display for SourceExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SourceExpr::MemTable(x) => {
-                let ty = &AlgebraicType::Product(x.head().ty());
-                for row in &x.data {
-                    let x = fmt_value(ty, &row.clone().into());
-                    write!(f, "{x}")?;
-                }
-                Ok(())
+            SourceExpr::MemTable { header, source_id, .. } => {
+                let ty = AlgebraicType::Product(header.ty());
+                write!(f, "SourceExpr({source_id:?} => virtual {ty:?})")
             }
             SourceExpr::DbTable(x) => {
                 write!(f, "DbTable({})", x.table_id)
@@ -1525,17 +1529,35 @@ impl fmt::Display for Query {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+// TODO(bikeshedding): Refactor this struct so that `IndexJoin`s replace the `table`,
+// rather than appearing as the first element of the `query`.
+//
+// `IndexJoin`s do not behave like filters; in fact they behave more like data sources.
+// A query conceptually starts with either a single table or an `IndexJoin`,
+// and then stacks a set of filters on top of that.
 pub struct QueryCode {
-    pub table: Table,
+    pub table: SourceExpr,
     pub query: Vec<Query>,
 }
 
 impl From<QueryExpr> for QueryCode {
     fn from(value: QueryExpr) -> Self {
         QueryCode {
-            table: value.source.into(),
+            table: value.source,
             query: value.query,
         }
+    }
+}
+
+impl AuthAccess for SourceExpr {
+    fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
+        if owner == caller || self.table_access() == StAccess::Public {
+            return Ok(());
+        }
+
+        Err(AuthError::TablePrivate {
+            named: self.table_name().to_string(),
+        })
     }
 }
 
@@ -1579,7 +1601,7 @@ impl Relation for QueryCode {
 pub enum CrudCode {
     Query(QueryCode),
     Insert {
-        table: Table,
+        table: SourceExpr,
         rows: Vec<ProductValue>,
     },
     Update {
@@ -1669,8 +1691,6 @@ impl From<Code> for CodeResult {
 
 #[cfg(test)]
 mod tests {
-    use crate::relation::{MemTable, Table};
-
     use super::*;
 
     const ALICE: Identity = Identity::from_byte_array([1; 32]);
@@ -1679,18 +1699,20 @@ mod tests {
     // TODO(kim): Should better do property testing here, but writing generators
     // on recursive types (ie. `Query` and friends) is tricky.
 
-    fn tables() -> [Table; 2] {
+    fn tables() -> [SourceExpr; 2] {
         [
-            Table::MemTable(MemTable {
-                head: Arc::new(Header {
+            SourceExpr::MemTable {
+                source_id: SourceId(0),
+                header: Arc::new(Header {
                     table_name: "foo".into(),
                     fields: vec![],
                     constraints: Default::default(),
                 }),
-                data: vec![],
+                row_count: RowCount::unknown(),
+                table_type: StTableType::User,
                 table_access: StAccess::Private,
-            }),
-            Table::DbTable(DbTable {
+            },
+            SourceExpr::DbTable(DbTable {
                 head: Arc::new(Header {
                     table_name: "foo".into(),
                     fields: vec![],
@@ -1704,14 +1726,12 @@ mod tests {
     }
 
     fn queries() -> impl IntoIterator<Item = Query> {
-        let [Table::MemTable(mem_table), Table::DbTable(db_table)] = tables() else {
-            unreachable!()
-        };
+        let [mem_table, db_table] = tables();
         // Skip `Query::Select` and `QueryProject` -- they don't have table
         // information
         [
             Query::IndexScan(IndexScan {
-                table: db_table,
+                table: db_table.get_db_table().unwrap().clone(),
                 columns: ColList::new(42.into()),
                 lower_bound: Bound::Included(22.into()),
                 upper_bound: Bound::Unbounded,
@@ -1722,7 +1742,7 @@ mod tests {
                     table: "foo".into(),
                     field: "bar".into(),
                 },
-                index_side: Table::DbTable(DbTable {
+                index_side: SourceExpr::DbTable(DbTable {
                     head: Arc::new(Header {
                         table_name: "bar".into(),
                         fields: vec![],
@@ -1752,10 +1772,7 @@ mod tests {
 
     fn query_codes() -> impl IntoIterator<Item = QueryCode> {
         tables().map(|table| {
-            let expr = match table {
-                Table::DbTable(table) => QueryExpr::from(table),
-                Table::MemTable(table) => QueryExpr::from(table),
-            };
+            let expr = QueryExpr::from(table);
             let mut code = QueryCode::from(expr);
             code.query = queries().into_iter().collect();
             code
@@ -1775,9 +1792,8 @@ mod tests {
         assert!(matches!(auth.check_auth(ALICE, BOB), Err(AuthError::OwnerRequired)));
     }
 
-    fn mem_table(name: &str, fields: &[(&str, AlgebraicType, bool)]) -> MemTable {
+    fn mem_table(name: &str, fields: &[(&str, AlgebraicType, bool)]) -> SourceExpr {
         let table_access = StAccess::Public;
-        let data = Vec::new();
         let head = Header::new(
             name.into(),
             fields
@@ -1792,10 +1808,12 @@ mod tests {
                 .map(|(i, _)| (ColId(i as u32).into(), Constraints::indexed()))
                 .collect(),
         );
-        MemTable {
-            head: Arc::new(head),
-            data,
+        SourceExpr::MemTable {
+            source_id: SourceId(0),
+            header: Arc::new(head),
+            row_count: RowCount::unknown(),
             table_access,
+            table_type: StTableType::User,
         }
     }
 
@@ -1810,7 +1828,7 @@ mod tests {
             &[("c", AlgebraicType::U8, false), ("b", AlgebraicType::U8, true)],
         );
 
-        let probe_field = probe_side.head.fields[1].field.clone();
+        let probe_field = probe_side.head().fields[1].field.clone();
         let select_field = FieldName::Name {
             table: "index".into(),
             field: "a".into(),
@@ -1819,7 +1837,7 @@ mod tests {
         let join = IndexJoin {
             probe_side: probe_side.clone().into(),
             probe_field,
-            index_side: index_side.clone().into(),
+            index_side: index_side.clone(),
             index_select: Some(index_select.clone()),
             index_col: 1.into(),
             return_index_rows: false,
@@ -1827,7 +1845,7 @@ mod tests {
 
         let expr = join.to_inner_join();
 
-        assert_eq!(expr.source, SourceExpr::MemTable(probe_side));
+        assert_eq!(expr.source, probe_side);
         assert_eq!(expr.query.len(), 2);
 
         let Query::JoinInner(ref join) = expr.query[0] else {
@@ -1839,7 +1857,7 @@ mod tests {
         assert_eq!(
             join.rhs,
             QueryExpr {
-                source: SourceExpr::MemTable(index_side),
+                source: index_side,
                 query: vec![index_select.into()]
             }
         );

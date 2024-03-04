@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use super::{
     query::compile_read_only_query,
     subscription::{ExecutionSet, Subscription},
@@ -20,6 +18,7 @@ use parking_lot::RwLock;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
+use std::sync::Arc;
 
 type Subscriptions = Arc<RwLock<Vec<Subscription>>>;
 #[derive(Debug)]
