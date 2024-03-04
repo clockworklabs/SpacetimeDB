@@ -333,6 +333,23 @@ mod tests {
     }
 
     #[test]
+    fn compile_not_eq() -> ResultTest<()> {
+        let (db, _tmp) = make_test_db()?;
+
+        // Create table [test] with cols [a, b] and index on [b].
+        db.create_table_for_test(
+            "test",
+            &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)],
+            &[(1.into(), "b")],
+        )?;
+
+        let tx = db.begin_tx();
+        // Should work with any qualified field.
+        assert!(compile_sql(&db, &tx, "select * from test where test.b <> 3").is_ok());
+        Ok(())
+    }
+
+    #[test]
     fn compile_index_eq() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
 

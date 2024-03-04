@@ -804,9 +804,7 @@ fn ext_cmp_field_val<'a>(header: &'a Header, op: &'a ColumnOp) -> Option<(&'a Op
 fn make_index_arg(cmp: OpCmp, columns: &ColList, value: AlgebraicValue) -> IndexColumnOp<'_> {
     let arg = match cmp {
         OpCmp::Eq => IndexArgument::Eq { columns, value },
-        OpCmp::NotEq => {
-            todo!("Need to implement `NotEq`")
-        }
+        OpCmp::NotEq => unreachable!("using a non-indexed scan for NotEq instead"),
         // a < 5 => exclusive upper bound
         OpCmp::Lt => IndexArgument::UpperBound {
             columns,
@@ -925,7 +923,15 @@ fn select_best_index<'a>(
 
     // Go through each operator and index,
     // consuming all field constraints that can be served by an index.
-    for (col_list, cmp) in [OpCmp::Eq, OpCmp::NotEq, OpCmp::Lt, OpCmp::LtEq, OpCmp::Gt, OpCmp::GtEq]
+    //
+    // NOTE: We do not consider `OpCmp::NotEq` at the moment.
+    // To provide such an index scan efficiently, we'd need to use two chained index scans
+    // `before.chain(after)` for
+    // `before = index.range((Unbounded, Excluded(v))` and
+    // `after = index.range((Excluded(v), Unbounded))`.
+    // This would require a dedicated `iter_by_col_not_eq`, essentially.
+    // This is doable but currently not a priority.
+    for (col_list, cmp) in [OpCmp::Eq, OpCmp::Lt, OpCmp::LtEq, OpCmp::Gt, OpCmp::GtEq]
         .into_iter()
         .flat_map(|cmp| indices.iter().map(move |cl| (*cl, cmp)))
     {
