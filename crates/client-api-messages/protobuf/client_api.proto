@@ -51,7 +51,7 @@ message IdentityToken {
 ///
 /// - `argBytes` is the arguments to the reducer, encoded as BSATN.
 ///
-/// - `messageId` is a identifier for client request.
+/// - `requestId` is a identifier for client request.
 /// SpacetimeDB models reducers as taking a single `AlgebraicValue` as an argument, which
 /// generally will be a `ProductValue` containing all of the args (except the
 /// `ReducerContext`, which is injected by the host, not provided in this API).
@@ -59,7 +59,7 @@ message FunctionCall {
     // TODO: Maybe this should be replaced with an int identifier for performance?
     string reducer = 1;
     bytes argBytes = 2;
-    bytes messageId = 3;
+    bytes requestId = 3;
 }
 
 /// Sent by client to database to register a set of queries, about which the client will
@@ -80,7 +80,7 @@ message FunctionCall {
 /// already in `A`.
 message Subscribe {
     repeated string query_strings = 1;
-    bytes messageId = 2;
+    bytes requestId = 2;
 }
 
 /// Part of a `TransactionUpdate` received by client from database upon a reducer run.
@@ -153,16 +153,14 @@ message Event {
 ///
 /// A single `SubscriptionUpdate` may contain `TableUpdate` messages for multiple
 /// tables.
-/// - `messageId` is identifier sent by the client in requests, Host should ensure to
-///               to include the same messageId in the response.
+/// - `requestId` is identifier sent by the client in requests, Host should ensure to
+///               to include the same requestId in the response.
 ///
 /// - `total_host_execution_duration_micros` its the overall time between Host recevived a request
 ///                                          and sent a `TransactionUpdate` or `SubscriptionUpdate`.
 message SubscriptionUpdate {
     repeated TableUpdate tableUpdates = 1;
-
-    bytes messageId = 2;
-
+    bytes requestId = 2;
     uint64 total_host_execution_duration_micros = 3;
 }
 
@@ -220,11 +218,11 @@ message TransactionUpdate {
 /// Query should be a "SELECT * FROM Table WHERE ...". Other types of queries will be rejected.
 /// Multiple such semicolon-delimited queries are allowed.
 ///
-/// One-off queries are identified by a client-generated messageID.
+/// One-off queries are identified by a client-generated requestId.
 /// To avoid data leaks, the server will NOT cache responses to messages based on UUID!
 /// It also will not check for duplicate IDs. They are just a way to match responses to messages. 
 message OneOffQuery {
-    bytes messageId = 1;
+    bytes requestId = 1;
     string queryString = 2;
 }
 
@@ -232,9 +230,9 @@ message OneOffQuery {
 /// Will contain either one error or multiple response rows.
 /// At most one of these messages will be sent in reply to any query.
 ///
-/// The messageId will be identical to the one sent in the original query.
+/// The requestId will be identical to the one sent in the original query.
 message OneOffQueryResponse {
-    bytes messageId = 1;
+    bytes requestId = 1;
     string error = 2;
     repeated OneOffTable tables = 3;
     uint64 total_host_execution_duration_micros = 4;
