@@ -1,7 +1,7 @@
 //! The [DbProgram] that execute arbitrary queries & code against the database.
 
 use crate::db::cursor::{CatalogCursor, IndexCursor, TableCursor};
-use crate::db::datastore::locking_tx_datastore::IterByColEq;
+use crate::db::datastore::locking_tx_datastore::IterByColRange;
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::execution_context::ExecutionContext;
 use core::ops::RangeBounds;
@@ -273,31 +273,31 @@ fn iter_by_col_range<'a>(
     Ok(Box::new(IndexCursor::new(table, iter)?) as Box<IterRows<'_>>)
 }
 
-// An index join operator that returns matching rows from the index side.
+/// An index join operator that returns matching rows from the index side.
 pub struct IndexSemiJoin<'a, Rhs: RelOps<'a>> {
-    // An iterator for the probe side.
-    // The values returned will be used to probe the index.
+    /// An iterator for the probe side.
+    /// The values returned will be used to probe the index.
     pub probe_side: Rhs,
-    // The field whose value will be used to probe the index.
+    /// The field whose value will be used to probe the index.
     pub probe_field: FieldName,
-    // The header for the index side of the join.
+    /// The header for the index side of the join.
     pub index_header: Arc<Header>,
-    // An optional predicate to evaluate over the matching rows of the index.
+    /// An optional predicate to evaluate over the matching rows of the index.
     pub index_select: Option<ColumnOp>,
-    // The table id on which the index is defined.
+    /// The table id on which the index is defined.
     pub index_table: TableId,
-    // The column id for which the index is defined.
+    /// The column id for which the index is defined.
     pub index_col: ColId,
-    // Is this a left or right semijion?
+    /// Is this a left or right semijion?
     pub return_index_rows: bool,
-    // An iterator for the index side.
-    // A new iterator will be instantiated for each row on the probe side.
-    pub index_iter: Option<IterByColEq<'a>>,
-    // A reference to the database.
+    /// An iterator for the index side.
+    /// A new iterator will be instantiated for each row on the probe side.
+    pub index_iter: Option<IterByColRange<'a, AlgebraicValue>>,
+    /// A reference to the database.
     pub db: &'a RelationalDB,
-    // A reference to the current transaction.
+    /// A reference to the current transaction.
     pub tx: &'a TxMode<'a>,
-    // The execution context for the current transaction.
+    /// The execution context for the current transaction.
     ctx: &'a ExecutionContext<'a>,
 }
 
@@ -350,10 +350,12 @@ impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoin<'a, Rhs> {
                 if let Some(value) = row.read_column(pos.idx()) {
                     let table_id = self.index_table;
                     let col_id = self.index_col;
+
                     let value = value.into_owned();
+
                     let mut index_iter = match self.tx {
-                        TxMode::MutTx(tx) => self.db.iter_by_col_eq_mut(self.ctx, tx, table_id, col_id, value)?,
-                        TxMode::Tx(tx) => self.db.iter_by_col_eq(self.ctx, tx, table_id, col_id, value)?,
+                        TxMode::MutTx(tx) => self.db.iter_by_col_range_mut(self.ctx, tx, table_id, col_id, value)?,
+                        TxMode::Tx(tx) => self.db.iter_by_col_range(self.ctx, tx, table_id, col_id, value)?,
                     };
                     while let Some(value) = index_iter.next() {
                         let value = RelValue::Row(value);

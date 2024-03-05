@@ -161,7 +161,7 @@ impl InstanceEnv {
         let tx = &mut *self.get_tx()?;
 
         // Interpret the `value` using the schema of the column.
-        let eq_value = stdb.decode_column(tx, table_id, col_id, value)?;
+        let eq_value = &stdb.decode_column(tx, table_id, col_id, value)?;
 
         // Find all rows in the table where the column data equates to `value`.
         let rows_to_delete = stdb
@@ -283,7 +283,7 @@ impl InstanceEnv {
         let tx = &mut *self.get_tx()?;
 
         // Interpret the `value` using the schema of the column.
-        let value = stdb.decode_column(tx, table_id, col_id, value)?;
+        let value = &stdb.decode_column(tx, table_id, col_id, value)?;
 
         // Find all rows in the table where the column data matches `value`.
         // Concatenate and return these rows using bsatn encoding.

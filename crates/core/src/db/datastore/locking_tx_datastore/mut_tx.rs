@@ -59,7 +59,7 @@ impl MutTxId {
         &mut self,
         table_id: TableId,
         col_pos: ColId,
-        value: AlgebraicValue,
+        value: &AlgebraicValue,
         database_address: Address,
     ) -> Result<()> {
         let ctx = ExecutionContext::internal(database_address);
@@ -217,13 +217,13 @@ impl MutTxId {
         self.drop_col_eq(
             ST_TABLES_ID,
             StTableFields::TableId.col_id(),
-            table_id.into(),
+            &table_id.into(),
             database_address,
         )?;
         self.drop_col_eq(
             ST_COLUMNS_ID,
             StColumnFields::TableId.col_id(),
-            table_id.into(),
+            &table_id.into(),
             database_address,
         )?;
 
@@ -244,7 +244,7 @@ impl MutTxId {
                 &ctx,
                 &ST_TABLES_ID,
                 StTableFields::TableId.col_id().into(),
-                table_id.into(),
+                &table_id.into(),
             )?
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, table_id.into()))?;
@@ -260,7 +260,7 @@ impl MutTxId {
 
     pub fn table_id_from_name(&self, table_name: &str, database_address: Address) -> Result<Option<TableId>> {
         let ctx = ExecutionContext::internal(database_address);
-        let table_name = table_name.to_owned().into();
+        let table_name = &table_name.to_owned().into();
         let row = self
             .iter_by_col_eq(&ctx, &ST_TABLES_ID, StTableFields::TableName.into(), table_name)?
             .next();
@@ -268,7 +268,7 @@ impl MutTxId {
     }
 
     pub fn table_name_from_id<'a>(&'a self, ctx: &'a ExecutionContext, table_id: TableId) -> Result<Option<String>> {
-        self.iter_by_col_eq(ctx, &ST_TABLES_ID, StTableFields::TableId.into(), table_id.into())
+        self.iter_by_col_eq(ctx, &ST_TABLES_ID, StTableFields::TableId.into(), &table_id.into())
             .map(|mut iter| iter.next().map(|row| row.read_col(StTableFields::TableName).unwrap()))
     }
 
@@ -370,7 +370,7 @@ impl MutTxId {
                 &ctx,
                 &ST_INDEXES_ID,
                 StIndexFields::IndexId.col_id().into(),
-                index_id.into(),
+                &index_id.into(),
             )?
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_indexes, index_id.into()))?;
@@ -407,7 +407,7 @@ impl MutTxId {
 
     pub fn index_id_from_name(&self, index_name: &str, database_address: Address) -> Result<Option<IndexId>> {
         let ctx = ExecutionContext::internal(database_address);
-        let name = index_name.to_owned().into();
+        let name = &index_name.to_owned().into();
         self.iter_by_col_eq(&ctx, &ST_INDEXES_ID, StIndexFields::IndexName.into(), name)
             .map(|mut iter| iter.next().map(|row| row.read_col(StIndexFields::IndexId).unwrap()))
     }
@@ -432,7 +432,7 @@ impl MutTxId {
                 &ctx,
                 &ST_SEQUENCES_ID,
                 StSequenceFields::SequenceId.into(),
-                seq_id.into(),
+                &seq_id.into(),
             )?
             .last()
             .unwrap();
@@ -509,7 +509,7 @@ impl MutTxId {
                 &ctx,
                 &ST_SEQUENCES_ID,
                 StSequenceFields::SequenceId.col_id().into(),
-                sequence_id.into(),
+                &sequence_id.into(),
             )?
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_sequence, sequence_id.into()))?;
@@ -530,7 +530,7 @@ impl MutTxId {
 
     pub fn sequence_id_from_name(&self, seq_name: &str, database_address: Address) -> Result<Option<SequenceId>> {
         let ctx = ExecutionContext::internal(database_address);
-        let name = seq_name.to_owned().into();
+        let name = &seq_name.to_owned().into();
         self.iter_by_col_eq(&ctx, &ST_SEQUENCES_ID, StSequenceFields::SequenceName.into(), name)
             .map(|mut iter| {
                 iter.next()
@@ -604,7 +604,7 @@ impl MutTxId {
                 &ctx,
                 &ST_CONSTRAINTS_ID,
                 StConstraintFields::ConstraintId.col_id().into(),
-                constraint_id.into(),
+                &constraint_id.into(),
             )?
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_constraints, constraint_id.into()))?;
@@ -629,7 +629,7 @@ impl MutTxId {
             &ExecutionContext::internal(database_address),
             &ST_CONSTRAINTS_ID,
             StConstraintFields::ConstraintName.into(),
-            constraint_name.to_owned().into(),
+            &constraint_name.to_owned().into(),
         )
         .map(|mut iter| {
             iter.next()
@@ -738,7 +738,7 @@ impl MutTxId {
                 &ctx,
                 &ST_SEQUENCES_ID,
                 StSequenceFields::TableId.into(),
-                table_id.into(),
+                &table_id.into(),
             )? {
                 let seq_col_pos: ColId = seq_row.read_col(StSequenceFields::ColPos)?;
                 if seq_col_pos == seq.col_pos {
