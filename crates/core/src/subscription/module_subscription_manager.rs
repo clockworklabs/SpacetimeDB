@@ -5,7 +5,7 @@ use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, ModuleEvent};
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use smallvec::SmallVec;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
@@ -119,8 +119,7 @@ impl SubscriptionManager {
         // Put the main work on a rayon compute thread.
         let tasks = rayon::scope(|_| {
             // Collect the delta tables for each query.
-            // For selects this is just a single table.
-            // For joins it's two tables.
+            // Selects have one table, joins have two.
             let mut units: HashMap<_, SmallVec<[_; 2]>> = HashMap::new();
             for table @ DatabaseTableUpdate { table_id, .. } in tables {
                 if let Some(hashes) = self.tables.get(table_id) {
@@ -131,30 +130,39 @@ impl SubscriptionManager {
             }
 
             units
-                .into_par_iter()
+                .into_iter()
                 .filter_map(|(hash, tables)| self.queries.get(hash).map(|unit| (hash, tables, unit)))
-                .filter_map(|(hash, tables, unit)| {
-                    match unit.eval_incr(db, &tx, tables.into_iter(), auth) {
-                        Ok(None) => None,
-                        Ok(Some(table)) => Some((hash, table)),
-                        Err(err) => {
-                            // TODO: log an id for the subscription somehow as well
-                            tracing::error!(err = &err as &dyn std::error::Error, "subscription eval_incr failed");
-                            None
-                        }
-                    }
-                })
-                // If N clients are subscribed to a query,
-                // we copy the DatabaseTableUpdate N times,
-                // which involves cloning product values.
-                // TODO(perf): In order to reduce heap allocations,
-                // we should serialize and memcpy bsatn directly.
-                .flat_map_iter(|(hash, delta)| {
-                    self.subscribers
-                        .get(hash)
+                .collect::<Vec<_>>()
+                .into_par_iter()
+                .chunks(100)
+                .flat_map_iter(|chunk| {
+                    chunk
                         .into_iter()
-                        .flatten()
-                        .map(move |id| (id, delta.table_id, delta.clone()))
+                        .filter_map(
+                            |(hash, tables, unit)| match unit.eval_incr(db, &tx, tables.into_iter(), auth) {
+                                Ok(None) => None,
+                                Ok(Some(table)) => Some((hash, table)),
+                                Err(err) => {
+                                    tracing::error!(
+                                        err = &err as &dyn std::error::Error,
+                                        "subscription eval_incr failed"
+                                    );
+                                    None
+                                }
+                            },
+                        )
+                        // If N clients are subscribed to a query,
+                        // we copy the result N times,
+                        // which involves cloning product values.
+                        // TODO(perf): In order to reduce heap allocations,
+                        // we should serialize and memcpy bsatn directly.
+                        .flat_map(|(hash, delta)| {
+                            self.subscribers
+                                .get(hash)
+                                .into_iter()
+                                .flatten()
+                                .map(move |id| (id, delta.table_id, delta.clone()))
+                        })
                 })
                 .collect::<Vec<_>>()
                 .into_iter()
@@ -172,7 +180,7 @@ impl SubscriptionManager {
                 .into_iter()
                 // Each client receives a single DatabaseUpdate per transaction.
                 // So before sending an update to each client,
-                // we must stitch together the DatabaseTableUpdates into a final DatabaseUpdate.
+                // we must combine the individual query results into a DatabaseUpdate.
                 .fold(HashMap::new(), |mut updates, ((id, _), delta)| {
                     if let Some(DatabaseUpdate { tables }) = updates.get_mut(id) {
                         tables.push(delta);
@@ -185,8 +193,9 @@ impl SubscriptionManager {
                 .map(|(id, update)| {
                     let client = self.client(id);
                     let event = event.clone();
+                    let message = serialize_updates(update, &event, client.protocol);
                     tokio_handle.spawn(async move {
-                        let _ = client.send(serialize_updates(update, &event, client.protocol)).await;
+                        let _ = client.send(message).await;
                     })
                 })
                 .collect::<Vec<_>>()
@@ -201,7 +210,6 @@ impl SubscriptionManager {
     }
 }
 
-#[tracing::instrument(skip_all)]
 fn serialize_updates(database_update: DatabaseUpdate, event: &ModuleEvent, protocol: Protocol) -> DataMessage {
     let message = TransactionUpdateMessage { event, database_update };
     let mut cached = CachedMessage::new(message);
