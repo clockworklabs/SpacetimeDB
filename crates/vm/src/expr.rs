@@ -294,10 +294,16 @@ impl SourceSet {
         }
     }
 
+    /// Returns the number of slots for [`MemTable`]s in this set.
+    ///
+    /// Calling `self.take_mem_table(...)` or `self.take_table(...)` won't affect this number.
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
+    /// Returns whether this set has any slots for [`MemTable`]s.
+    ///
+    /// Calling `self.take_mem_table(...)` or `self.take_table(...)` won't affect whether the set is empty.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
