@@ -25,15 +25,12 @@
 
 use super::execution_unit::ExecutionUnit;
 use super::query;
-use crate::db::relational_db::Tx;
+use crate::client::{ClientActorId, ClientConnectionSender};
+use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
+use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp};
 use crate::subscription::query::{run_query, to_mem_table_with_op_type, OP_TYPE_FIELD_NAME};
-use crate::{
-    client::{ClientActorId, ClientConnectionSender},
-    db::relational_db::RelationalDB,
-    host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp},
-};
 use anyhow::Context;
 use itertools::Either;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
