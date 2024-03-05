@@ -97,14 +97,13 @@ impl ModuleSubscriptions {
         // thread it's possible for messages to get sent to the client out of order. If you do
         // spawn in another thread messages will need to be buffered until the state is sent out
         // on the wire
-        let fut = sender.send_message(SubscriptionUpdateMessage {
+        let _ = sender.send_message(SubscriptionUpdateMessage {
             subscription_update: SubscriptionUpdate {
                 database_update,
                 request_id: Some(request_id),
                 timer: Some(timer),
             },
         });
-        let _ = tokio::runtime::Handle::current().block_on(fut);
         Ok(())
     }
 
@@ -130,12 +129,7 @@ impl ModuleSubscriptions {
     ) {
         match event.status {
             EventStatus::Committed(_) => {
-                if let Err(err) =
-                    tokio::task::block_in_place(|| self.broadcast_commit_event(subscriptions, event)).await
-                {
-                    // TODO: log an id for the subscription somehow as well
-                    tracing::error!(err = &err as &dyn std::error::Error, "subscription eval_incr failed");
-                }
+                tokio::task::block_in_place(|| self.broadcast_commit_event(subscriptions, event))
             }
             EventStatus::Failed(_) => {
                 if let Some(client) = client {
@@ -143,7 +137,7 @@ impl ModuleSubscriptions {
                         event: &event,
                         database_update: Default::default(),
                     };
-                    let _ = client.send_message(message).await;
+                    let _ = client.send_message(message);
                 } else {
                     log::trace!("Reducer failed but there is no client to send the failure to!")
                 }
@@ -168,12 +162,8 @@ impl ModuleSubscriptions {
     /// once all updates have been successfully added to the subscribers' send queues (i.e. after
     /// it resolves, it's guaranteed that if you call `subscriber.send(x)` the client will receive
     /// x after they receive this subscription update).
-    async fn broadcast_commit_event(
-        &self,
-        subscriptions: &SubscriptionManager,
-        event: Arc<ModuleEvent>,
-    ) -> Result<(), DBError> {
+    fn broadcast_commit_event(&self, subscriptions: &SubscriptionManager, event: Arc<ModuleEvent>) {
         let auth = AuthCtx::new(self.owner_identity, event.caller_identity);
-        subscriptions.eval_updates(&self.relational_db, auth, event).await
+        subscriptions.eval_updates(&self.relational_db, auth, &event)
     }
 }
