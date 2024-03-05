@@ -581,25 +581,25 @@ impl RelationalDB {
     /// where the column data identified by `cols` matches `value`.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
-    pub fn iter_by_col_eq_mut<'a>(
+    pub fn iter_by_col_eq_mut<'a, 'r>(
         &'a self,
         ctx: &'a ExecutionContext,
         tx: &'a MutTx,
         table_id: impl Into<TableId>,
         cols: impl Into<ColList>,
-        value: AlgebraicValue,
-    ) -> Result<IterByColEq<'a>, DBError> {
+        value: &'r AlgebraicValue,
+    ) -> Result<IterByColEq<'a, 'r>, DBError> {
         self.inner.iter_by_col_eq_mut_tx(ctx, tx, table_id.into(), cols, value)
     }
 
-    pub fn iter_by_col_eq<'a>(
+    pub fn iter_by_col_eq<'a, 'r>(
         &'a self,
         ctx: &'a ExecutionContext,
         tx: &'a Tx,
         table_id: impl Into<TableId>,
         cols: impl Into<ColList>,
-        value: AlgebraicValue,
-    ) -> Result<IterByColEq<'a>, DBError> {
+        value: &'r AlgebraicValue,
+    ) -> Result<IterByColEq<'a, 'r>, DBError> {
         self.inner.iter_by_col_eq_tx(ctx, tx, table_id.into(), cols, value)
     }
 
@@ -1333,11 +1333,11 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![1u64, 2u64, 2u64])?;
 
         let cols = col_list![0, 1];
-        let value: AlgebraicValue = product![0u64, 1u64].into();
+        let value = product![0u64, 1u64].into();
 
         let ctx = ExecutionContext::default();
 
-        let IterByColEq::Index(mut iter) = stdb.iter_by_col_eq_mut(&ctx, &tx, table_id, cols, value)? else {
+        let IterByColEq::Index(mut iter) = stdb.iter_by_col_eq_mut(&ctx, &tx, table_id, cols, &value)? else {
             panic!("expected index iterator");
         };
 
