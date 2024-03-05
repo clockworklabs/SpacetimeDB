@@ -16,7 +16,7 @@ use futures::Future;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use spacetimedb_lib::identity::{AuthCtx};
+use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
 use std::{sync::Arc, time::Instant};
 
