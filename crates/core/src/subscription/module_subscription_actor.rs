@@ -37,7 +37,7 @@ impl ModuleSubscriptions {
     #[tracing::instrument(skip_all)]
     pub fn add_subscriber(
         &self,
-        sender: ClientConnectionSender,
+        sender: Arc<ClientConnectionSender>,
         subscription: Subscribe,
         timer: Instant,
     ) -> Result<(), DBError> {
@@ -81,7 +81,6 @@ impl ModuleSubscriptions {
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
         // but that should not pose an issue.
-        let sender = Arc::new(sender);
         let mut subscriptions = self.subscriptions.write();
         drop(tx);
         subscriptions.remove_subscription(&sender.id.identity);

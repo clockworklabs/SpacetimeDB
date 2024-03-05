@@ -1,4 +1,5 @@
 use std::ops::Deref;
+use std::sync::Arc;
 use std::time::Instant;
 
 use super::messages::{OneOffQueryResponseMessage, ServerMessage};
@@ -19,7 +20,7 @@ pub enum Protocol {
     Binary,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct ClientConnectionSender {
     pub id: ClientActorId,
     pub protocol: Protocol,
@@ -59,7 +60,7 @@ impl ClientConnectionSender {
 #[derive(Clone)]
 #[non_exhaustive]
 pub struct ClientConnection {
-    sender: ClientConnectionSender,
+    sender: Arc<ClientConnectionSender>,
     pub database_instance_id: u64,
     pub module: ModuleHost,
 }
@@ -117,7 +118,7 @@ impl ClientConnection {
 
         let db = module.info().address;
 
-        let sender = ClientConnectionSender { id, protocol, sendtx };
+        let sender = Arc::new(ClientConnectionSender { id, protocol, sendtx });
         let this = Self {
             sender,
             database_instance_id,
@@ -133,13 +134,13 @@ impl ClientConnection {
 
     pub fn dummy(id: ClientActorId, protocol: Protocol, database_instance_id: u64, module: ModuleHost) -> Self {
         Self {
-            sender: ClientConnectionSender::dummy(id, protocol),
+            sender: Arc::new(ClientConnectionSender::dummy(id, protocol)),
             database_instance_id,
             module,
         }
     }
 
-    pub fn sender(&self) -> ClientConnectionSender {
+    pub fn sender(&self) -> Arc<ClientConnectionSender> {
         self.sender.clone()
     }
 
