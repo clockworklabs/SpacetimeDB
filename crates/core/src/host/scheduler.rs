@@ -308,6 +308,7 @@ impl SchedulerActor {
                     None,
                     None,
                     None,
+                    None,
                     &scheduled.reducer,
                     ReducerArgs::Bsatn(scheduled.bsatn_args.into()),
                 )

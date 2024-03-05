@@ -40,7 +40,12 @@ impl ModuleSubscriptions {
 
     /// Add a subscriber to the module. NOTE: this function is blocking.
     #[tracing::instrument(skip_all)]
-    pub fn add_subscriber(&self, sender: ClientConnectionSender, subscription: Subscribe, timer: Instant) -> Result<(), DBError> {
+    pub fn add_subscriber(
+        &self,
+        sender: ClientConnectionSender,
+        subscription: Subscribe,
+        timer: Instant,
+    ) -> Result<(), DBError> {
         let tx = scopeguard::guard(self.relational_db.begin_tx(), |tx| {
             let ctx = ExecutionContext::subscribe(self.relational_db.address());
             self.relational_db.release_tx(&ctx, tx);
@@ -90,12 +95,13 @@ impl ModuleSubscriptions {
         // thread it's possible for messages to get sent to the client out of order. If you do
         // spawn in another thread messages will need to be buffered until the state is sent out
         // on the wire
-        let fut = sender.send_message(SubscriptionUpdateMessage {subscription_update: SubscriptionUpdate {
-            database_update,
-            request_id,
-            total_host_execution_duration_micros: timer.elapsed().as_micros() as u64,
-
-        }});
+        let fut = sender.send_message(SubscriptionUpdateMessage {
+            subscription_update: SubscriptionUpdate {
+                database_update,
+                request_id,
+                timer: Some(timer),
+            },
+        });
         let _ = tokio::runtime::Handle::current().block_on(fut);
         Ok(())
     }
@@ -171,7 +177,7 @@ impl ModuleSubscriptions {
     ) -> impl Future<Output = ()> + '_ {
         let database_update = event.status.database_update().unwrap();
         let request_id = event.request_id.clone();
-        let total_host_execution_duration_micros = 0 as u64;
+        let timer = event.timer;
         let auth = AuthCtx::new(self.owner_identity, event.caller_identity);
 
         let tokio_handle = &tokio::runtime::Handle::current();
@@ -201,7 +207,7 @@ impl ModuleSubscriptions {
                 let database_update = SubscriptionUpdate {
                     database_update,
                     request_id: request_id.clone().unwrap_or(RequestId::default()),
-                    total_host_execution_duration_micros
+                    timer,
                 };
                 let message = TransactionUpdateMessage { event, database_update };
                 let mut message = CachedMessage::new(message);

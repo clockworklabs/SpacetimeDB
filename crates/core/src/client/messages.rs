@@ -1,10 +1,12 @@
 use base64::Engine;
 use prost::Message as _;
+use std::time::Instant;
 
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
 use crate::identity::Identity;
 use crate::json::client_api::{
-    EventJson, FunctionCallJson, IdentityTokenJson, MessageJson, OneOffQueryResponseJson, OneOffTableJson, SubscriptionUpdateJson, TransactionUpdateJson
+    EventJson, FunctionCallJson, IdentityTokenJson, MessageJson, OneOffQueryResponseJson, OneOffTableJson,
+    SubscriptionUpdateJson, TransactionUpdateJson,
 };
 use crate::protobuf::client_api::{event, message, Event, FunctionCall, IdentityToken, Message, TransactionUpdate};
 use spacetimedb_client_api_messages::client_api::{OneOffQueryResponse, OneOffTable};
@@ -160,7 +162,7 @@ impl ServerMessage for SubscriptionUpdateMessage {
 pub struct SubscriptionUpdate {
     pub database_update: DatabaseUpdate,
     pub request_id: Vec<u8>,
-    pub total_host_execution_duration_micros: u64,
+    pub timer: Option<Instant>,
 }
 
 impl SubscriptionUpdate {
@@ -172,7 +174,7 @@ impl SubscriptionUpdate {
         spacetimedb_client_api_messages::client_api::SubscriptionUpdate {
             table_updates: self.database_update.into_protobuf(),
             request_id: self.request_id,
-            total_host_execution_duration_micros: self.total_host_execution_duration_micros,
+            total_host_execution_duration_micros: self.timer.map_or(0, |t| t.elapsed().as_micros() as u64),
         }
     }
 }

@@ -1,6 +1,8 @@
 use std::ops::Deref;
 use std::time::Instant;
 
+use super::messages::{OneOffQueryResponseMessage, ServerMessage};
+use super::{message_handlers, ClientActorId, MessageHandleError};
 use crate::error::DBError;
 use crate::host::{ModuleHost, ReducerArgs, ReducerCallError, ReducerCallResult};
 use crate::protobuf::client_api::Subscribe;
@@ -10,8 +12,6 @@ use derive_more::From;
 use futures::prelude::*;
 use spacetimedb_lib::identity::RequestId;
 use tokio::sync::mpsc;
-use super::messages::{OneOffQueryResponseMessage, ServerMessage};
-use super::{message_handlers, ClientActorId, MessageHandleError};
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
 pub enum Protocol {
@@ -152,13 +152,20 @@ impl ClientConnection {
         message_handlers::handle(self, message.into(), timer)
     }
 
-    pub async fn call_reducer(&self, reducer: &str, args: ReducerArgs, request_id: RequestId) -> Result<ReducerCallResult, ReducerCallError> {
+    pub async fn call_reducer(
+        &self,
+        reducer: &str,
+        args: ReducerArgs,
+        request_id: RequestId,
+        timer: Instant,
+    ) -> Result<ReducerCallResult, ReducerCallError> {
         self.module
             .call_reducer(
                 self.id.identity,
                 Some(self.id.address),
                 Some(self.sender()),
                 Some(request_id),
+                Some(timer),
                 reducer,
                 args,
             )

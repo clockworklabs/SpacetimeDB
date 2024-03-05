@@ -61,9 +61,17 @@ async fn handle_binary(
 ) -> Result<(), MessageHandleError> {
     let message = Message::decode(Bytes::from(message_buf))?;
     let message = match message.r#type {
-        Some(message::Type::FunctionCall(FunctionCall { ref reducer, arg_bytes, request_id })) => {
+        Some(message::Type::FunctionCall(FunctionCall {
+            ref reducer,
+            arg_bytes,
+            request_id,
+        })) => {
             let args = ReducerArgs::Bsatn(arg_bytes.into());
-            DecodedMessage::Call { reducer, args, request_id }
+            DecodedMessage::Call {
+                reducer,
+                args,
+                request_id,
+            }
         }
         Some(message::Type::Subscribe(subscription)) => DecodedMessage::Subscribe(subscription),
         Some(message::Type::OneOffQuery(ref oneoff)) => DecodedMessage::OneOffQuery {
@@ -106,10 +114,17 @@ async fn handle_text(client: &ClientConnection, message: String, timer: Instant)
     let msg = match msg {
         RawJsonMessage::Call { ref func, args } => {
             let args = ReducerArgs::Json(message.slice_ref(args.get()));
-            DecodedMessage::Call { reducer: func, args, request_id: message_id_ }
+            DecodedMessage::Call {
+                reducer: func,
+                args,
+                request_id: message_id_,
+            }
         }
         // Todo: fix empty request_id
-        RawJsonMessage::Subscribe { query_strings } => DecodedMessage::Subscribe(Subscribe { query_strings, request_id: vec![] }),
+        RawJsonMessage::Subscribe { query_strings } => DecodedMessage::Subscribe(Subscribe {
+            query_strings,
+            request_id: vec![],
+        }),
         RawJsonMessage::OneOffQuery {
             query_string: ref query,
             message_id,
@@ -147,8 +162,12 @@ impl DecodedMessage<'_> {
     async fn handle(self, client: &ClientConnection, timer: Instant) -> Result<(), MessageExecutionError> {
         let address = client.module.info().address;
         let res = match self {
-            DecodedMessage::Call { reducer, args, request_id } => {
-                let res = client.call_reducer(reducer, args, request_id).await;
+            DecodedMessage::Call {
+                reducer,
+                args,
+                request_id,
+            } => {
+                let res = client.call_reducer(reducer, args, request_id, timer).await;
                 WORKER_METRICS
                     .request_round_trip
                     .with_label_values(&WorkloadType::Reducer, &address, reducer)
@@ -209,6 +228,7 @@ impl MessageExecutionError {
             energy_quanta_used: EnergyQuanta::ZERO,
             host_execution_duration: Duration::ZERO,
             request_id: Some(RequestId::default()),
+            timer: None,
         }
     }
 }
