@@ -39,7 +39,28 @@ pub fn to_mem_table_with_op_type(head: Arc<Header>, table_access: StAccess, data
     if let Some(pos) = t.head.find_pos_by_name(OP_TYPE_FIELD_NAME) {
         t.data.extend(data.ops.iter().map(|row| {
             let mut new = row.row.clone();
-            new.elements[pos.idx()] = row.op_type.into();
+
+            match new.elements.len().cmp(&pos.idx()) {
+                std::cmp::Ordering::Equal => {
+                    // When we enter through `ExecutionUnit::eval_incr`,
+                    // we will have a `head` computed by a previous call to `to_mem_table`,
+                    // and therefore will have an op_type column,
+                    // but the `data` will be fresh for a newly committed transaction,
+                    // and therefore the rows will not include the op_type column.
+                    // In that case, push the op_type onto the end of each row.
+                    new.elements.push(row.op_type.into());
+                }
+                std::cmp::Ordering::Greater => {
+                    new.elements[pos.idx()] = row.op_type.into();
+                }
+                std::cmp::Ordering::Less => {
+                    panic!(
+                        "Expected {} either in-bounds or as the last column, but found at position {} in {:?}",
+                        OP_TYPE_FIELD_NAME, pos, t.head,
+                    );
+                }
+            }
+
             new
         }));
     } else {
