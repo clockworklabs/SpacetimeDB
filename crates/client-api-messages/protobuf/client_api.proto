@@ -158,6 +158,7 @@ message Event {
 ///
 /// - `total_host_execution_duration_micros` its the overall time between Host recevived a request
 ///                                          and sent a `TransactionUpdate` or `SubscriptionUpdate`.
+///                                          '0' is default value.
 message SubscriptionUpdate {
     repeated TableUpdate tableUpdates = 1;
     bytes requestId = 2;

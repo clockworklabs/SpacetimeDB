@@ -268,9 +268,9 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         let auth = AuthCtx::new(self.database_instance_context.identity, caller_identity);
         log::debug!("One-off query: {query}");
         let ctx = &ExecutionContext::sql(db.address());
-        let compiled = db.with_read_only(ctx, |tx| {
-            sql::compiler::compile_sql(db, tx, &query)?
-                .into_iter()
+        let compiled: Vec<_> = db.with_read_only(ctx, |tx| {
+            let ast = sql::compiler::compile_sql(db, tx, &query)?;
+            ast.into_iter()
                 .map(|expr| {
                     if matches!(expr, CrudExpr::Query { .. }) {
                         Ok(expr)

@@ -14,12 +14,13 @@ use std::sync::Arc;
 
 use super::ast::TableSchemaView;
 
-/// Compile the `SQL` expression into a `ast`
+/// Compile the `SQL` expression into an `ast`
 #[tracing::instrument(skip_all)]
 pub fn compile_sql<T: TableSchemaView>(db: &RelationalDB, tx: &T, sql_text: &str) -> Result<Vec<CrudExpr>, DBError> {
     tracing::trace!(sql = sql_text);
     let ast = compile_to_ast(db, tx, sql_text)?;
 
+    // TODO(perf, bikeshedding): SmallVec?
     let mut results = Vec::with_capacity(ast.len());
 
     for sql in ast {
@@ -133,23 +134,25 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
         });
     }
 
-    let mut q = query(db_table_raw(
+    let source_expr = SourceExpr::DbTable(db_table_raw(
         &table.root,
         table.root.table_id,
         table.root.table_type,
         table.root.table_access,
     ));
 
+    let mut q = query(source_expr);
+
     if let Some(ref joins) = table.join {
         for join in joins {
             match join {
                 Join::Inner { rhs, on } => {
-                    let t = db_table(rhs, rhs.table_id);
+                    let rhs_source_expr = SourceExpr::DbTable(db_table(rhs, rhs.table_id));
                     match on.op {
                         OpCmp::Eq => {}
                         x => unreachable!("Unsupported operator `{x}` for joins"),
                     }
-                    q = q.with_join_inner(t, on.lhs.clone(), on.rhs.clone());
+                    q = q.with_join_inner(rhs_source_expr, on.lhs.clone(), on.rhs.clone());
                 }
             }
         }
@@ -196,7 +199,7 @@ fn compile_insert(
     columns: Vec<FieldName>,
     values: Vec<Vec<FieldExpr>>,
 ) -> Result<CrudExpr, PlanError> {
-    let db_table = compile_columns(&table, columns);
+    let source_expr = SourceExpr::DbTable(compile_columns(&table, columns));
 
     let mut rows = Vec::with_capacity(values.len());
     for x in values {
@@ -215,7 +218,7 @@ fn compile_insert(
     }
 
     Ok(CrudExpr::Insert {
-        source: SourceExpr::DbTable(db_table),
+        source: source_expr,
         rows,
     })
 }
@@ -299,7 +302,6 @@ mod tests {
     use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::AlgebraicType;
     use spacetimedb_vm::expr::{IndexJoin, IndexScan, JoinExpr, Query};
-    use spacetimedb_vm::relation::Table;
 
     fn assert_index_scan(
         op: Query,
@@ -939,7 +941,7 @@ mod tests {
                     table: ref probe_table,
                     field: ref probe_field,
                 },
-            index_side: Table::DbTable(DbTable {
+            index_side: SourceExpr::DbTable(DbTable {
                 table_id: index_table, ..
             }),
             index_col,

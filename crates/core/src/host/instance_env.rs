@@ -21,7 +21,7 @@ use spacetimedb_sats::buffer::BufWriter;
 use spacetimedb_sats::db::def::{IndexDef, IndexType};
 use spacetimedb_sats::relation::{FieldExpr, FieldName};
 use spacetimedb_sats::{ProductType, Typespace};
-use spacetimedb_vm::expr::{Code, ColumnOp};
+use spacetimedb_vm::expr::{Code, ColumnOp, SourceSet};
 
 #[derive(Clone)]
 pub struct InstanceEnv {
@@ -161,7 +161,7 @@ impl InstanceEnv {
         let tx = &mut *self.get_tx()?;
 
         // Interpret the `value` using the schema of the column.
-        let eq_value = stdb.decode_column(tx, table_id, col_id, value)?;
+        let eq_value = &stdb.decode_column(tx, table_id, col_id, value)?;
 
         // Find all rows in the table where the column data equates to `value`.
         let rows_to_delete = stdb
@@ -283,7 +283,7 @@ impl InstanceEnv {
         let tx = &mut *self.get_tx()?;
 
         // Interpret the `value` using the schema of the column.
-        let value = stdb.decode_column(tx, table_id, col_id, value)?;
+        let value = &stdb.decode_column(tx, table_id, col_id, value)?;
 
         // Find all rows in the table where the column data matches `value`.
         // Concatenate and return these rows using bsatn encoding.
@@ -368,11 +368,14 @@ impl InstanceEnv {
             filter,
         )
         .map_err(NodesError::DecodeFilter)?;
-        let q = spacetimedb_vm::dsl::query(&*schema).with_select(filter_to_column_op(&schema.table_name, filter));
+
+        let q =
+            spacetimedb_vm::dsl::query(schema.as_ref()).with_select(filter_to_column_op(&schema.table_name, filter));
         //TODO: How pass the `caller` here?
         let mut tx: TxMode = tx.into();
         let p = &mut DbProgram::new(ctx, stdb, &mut tx, AuthCtx::for_current(self.dbic.identity));
-        let results = match spacetimedb_vm::eval::run_ast(p, q.into()) {
+        // SQL queries can never reference `MemTable`s, so pass in an empty `SourceSet`.
+        let results = match spacetimedb_vm::eval::run_ast(p, q.into(), SourceSet::default()) {
             Code::Table(table) => table,
             _ => unreachable!("query should always return a table"),
         };
