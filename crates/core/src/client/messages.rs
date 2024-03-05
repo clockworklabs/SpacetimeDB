@@ -191,15 +191,16 @@ where
 }
 
 pub struct OneOffQueryResponseMessage {
-    pub message_id: Vec<u8>,
+    pub request_id: Vec<u8>,
     pub error: Option<String>,
     pub results: Vec<MemTable>,
+    pub total_host_execution_duration: u64,
 }
 
 impl ServerMessage for OneOffQueryResponseMessage {
     fn serialize_text(self) -> MessageJson {
         MessageJson::OneOffQueryResponse(OneOffQueryResponseJson {
-            message_id_base64: base64::engine::general_purpose::STANDARD.encode(self.message_id),
+            message_id_base64: base64::engine::general_purpose::STANDARD.encode(self.request_id),
             error: self.error,
             result: self
                 .results
@@ -215,7 +216,7 @@ impl ServerMessage for OneOffQueryResponseMessage {
     fn serialize_binary(self) -> Message {
         Message {
             r#type: Some(message::Type::OneOffQueryResponse(OneOffQueryResponse {
-                message_id: self.message_id,
+                request_id: self.request_id,
                 error: self.error.unwrap_or_default(),
                 tables: self
                     .results
@@ -233,6 +234,7 @@ impl ServerMessage for OneOffQueryResponseMessage {
                             .collect(),
                     })
                     .collect(),
+                total_host_execution_duration_micros: self.total_host_execution_duration,
             })),
         }
     }
