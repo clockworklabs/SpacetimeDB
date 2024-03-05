@@ -8,8 +8,8 @@ use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
 use derive_more::From;
 use futures::prelude::*;
+use spacetimedb_lib::identity::RequestId;
 use tokio::sync::mpsc;
-
 use super::messages::{OneOffQueryResponseMessage, ServerMessage};
 use super::{message_handlers, ClientActorId, MessageHandleError};
 
@@ -152,12 +152,13 @@ impl ClientConnection {
         message_handlers::handle(self, message.into(), timer)
     }
 
-    pub async fn call_reducer(&self, reducer: &str, args: ReducerArgs) -> Result<ReducerCallResult, ReducerCallError> {
+    pub async fn call_reducer(&self, reducer: &str, args: ReducerArgs, request_id: RequestId) -> Result<ReducerCallResult, ReducerCallError> {
         self.module
             .call_reducer(
                 self.id.identity,
                 Some(self.id.address),
                 Some(self.sender()),
+                Some(request_id),
                 reducer,
                 args,
             )

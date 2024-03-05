@@ -4,7 +4,9 @@ use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
 use futures::{Future, FutureExt};
+use hyper::Request;
 use indexmap::IndexMap;
+use spacetimedb_lib::identity::RequestId;
 
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
 use crate::client::{ClientActorId, ClientConnectionSender};
@@ -179,6 +181,7 @@ pub struct ModuleEvent {
     pub status: EventStatus,
     pub energy_quanta_used: EnergyQuanta,
     pub host_execution_duration: Duration,
+    pub request_id: Option<RequestId>,
 }
 
 #[derive(Debug)]
@@ -258,6 +261,7 @@ pub struct CallReducerParams {
     pub caller_identity: Identity,
     pub caller_address: Address,
     pub client: Option<ClientConnectionSender>,
+    pub request_id: Option<RequestId>,
     pub reducer_id: ReducerId,
     pub args: ArgsTuple,
 }
@@ -519,6 +523,7 @@ impl ModuleHost {
                 caller_identity,
                 Some(caller_address),
                 None,
+                None,
                 if connected {
                     "__identity_connected__"
                 } else {
@@ -538,6 +543,7 @@ impl ModuleHost {
         caller_identity: Identity,
         caller_address: Option<Address>,
         client: Option<ClientConnectionSender>,
+        request_id: Option<RequestId>,
         reducer_name: &str,
         args: ReducerArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
@@ -556,6 +562,7 @@ impl ModuleHost {
                 caller_identity,
                 caller_address,
                 client,
+                request_id,
                 reducer_id,
                 args,
             })
@@ -569,11 +576,12 @@ impl ModuleHost {
         caller_identity: Identity,
         caller_address: Option<Address>,
         client: Option<ClientConnectionSender>,
+        request_id: Option<RequestId>,
         reducer_name: &str,
         args: ReducerArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
         let res = self
-            .call_reducer_inner(caller_identity, caller_address, client, reducer_name, args)
+            .call_reducer_inner(caller_identity, caller_address, client, request_id, reducer_name, args)
             .await;
 
         let log_message = match &res {

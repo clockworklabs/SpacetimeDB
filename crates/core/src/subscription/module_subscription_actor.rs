@@ -18,7 +18,7 @@ use futures::Future;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::Identity;
 
 type Subscriptions = Arc<RwLock<Vec<Subscription>>>;
@@ -170,7 +170,7 @@ impl ModuleSubscriptions {
         event: &ModuleEvent,
     ) -> impl Future<Output = ()> + '_ {
         let database_update = event.status.database_update().unwrap();
-        let request_id = vec![];
+        let request_id = event.request_id.clone();
         let total_host_execution_duration_micros = 0 as u64;
         let auth = AuthCtx::new(self.owner_identity, event.caller_identity);
 
@@ -200,7 +200,7 @@ impl ModuleSubscriptions {
             .flat_map_iter(|(subscription, database_update)| {
                 let database_update = SubscriptionUpdate {
                     database_update,
-                    request_id: request_id.clone(),
+                    request_id: request_id.clone().unwrap_or(RequestId::default()),
                     total_host_execution_duration_micros
                 };
                 let message = TransactionUpdateMessage { event, database_update };

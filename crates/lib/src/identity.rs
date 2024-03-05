@@ -4,6 +4,8 @@ use spacetimedb_sats::hex::HexString;
 use spacetimedb_sats::{hash, impl_st, AlgebraicType};
 use std::{fmt, str::FromStr};
 
+pub type RequestId = Vec<u8>;
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AuthCtx {
     pub owner: Identity,

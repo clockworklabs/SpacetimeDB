@@ -11,6 +11,7 @@ use base64::Engine;
 use bytes::Bytes;
 use bytestring::ByteString;
 use prost::Message as _;
+use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::Address;
 
 use super::messages::{ServerMessage, TransactionUpdateMessage};
@@ -62,7 +63,7 @@ async fn handle_binary(
     let message = match message.r#type {
         Some(message::Type::FunctionCall(FunctionCall { ref reducer, arg_bytes, request_id })) => {
             let args = ReducerArgs::Bsatn(arg_bytes.into());
-            DecodedMessage::Call { reducer, args }
+            DecodedMessage::Call { reducer, args, request_id }
         }
         Some(message::Type::Subscribe(subscription)) => DecodedMessage::Subscribe(subscription),
         Some(message::Type::OneOffQuery(ref oneoff)) => DecodedMessage::OneOffQuery {
@@ -105,7 +106,7 @@ async fn handle_text(client: &ClientConnection, message: String, timer: Instant)
     let msg = match msg {
         RawJsonMessage::Call { ref func, args } => {
             let args = ReducerArgs::Json(message.slice_ref(args.get()));
-            DecodedMessage::Call { reducer: func, args }
+            DecodedMessage::Call { reducer: func, args, request_id: message_id_ }
         }
         // Todo: fix empty request_id
         RawJsonMessage::Subscribe { query_strings } => DecodedMessage::Subscribe(Subscribe { query_strings, request_id: vec![] }),
@@ -133,6 +134,7 @@ enum DecodedMessage<'a> {
     Call {
         reducer: &'a str,
         args: ReducerArgs,
+        request_id: RequestId,
     },
     Subscribe(Subscribe),
     OneOffQuery {
@@ -145,8 +147,8 @@ impl DecodedMessage<'_> {
     async fn handle(self, client: &ClientConnection, timer: Instant) -> Result<(), MessageExecutionError> {
         let address = client.module.info().address;
         let res = match self {
-            DecodedMessage::Call { reducer, args } => {
-                let res = client.call_reducer(reducer, args).await;
+            DecodedMessage::Call { reducer, args, request_id } => {
+                let res = client.call_reducer(reducer, args, request_id).await;
                 WORKER_METRICS
                     .request_round_trip
                     .with_label_values(&WorkloadType::Reducer, &address, reducer)
@@ -206,6 +208,7 @@ impl MessageExecutionError {
             status: EventStatus::Failed(format!("{:#}", self.err)),
             energy_quanta_used: EnergyQuanta::ZERO,
             host_execution_duration: Duration::ZERO,
+            request_id: Some(RequestId::default()),
         }
     }
 }

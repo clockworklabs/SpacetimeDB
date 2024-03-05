@@ -384,6 +384,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                         caller_identity,
                         caller_address: caller_address.unwrap_or(Address::__DUMMY),
                         client,
+                        request_id: None,
                         reducer_id,
                         args,
                     },
@@ -441,6 +442,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                         caller_identity,
                         caller_address: caller_address.unwrap_or(Address::__DUMMY),
                         client: None,
+                        request_id: None,
                         reducer_id,
                         args: ArgsTuple::nullary(),
                     },
@@ -485,6 +487,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             caller_identity,
             caller_address,
             client,
+            request_id,
             reducer_id,
             args,
         } = params;
@@ -631,6 +634,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             status,
             energy_quanta_used: energy.used,
             host_execution_duration: timings.total_duration,
+            request_id,
         };
         self.info
             .subscriptions
