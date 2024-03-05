@@ -117,13 +117,13 @@ async fn handle_text(client: &ClientConnection, message: String, timer: Instant)
             DecodedMessage::Call {
                 reducer: func,
                 args,
-                request_id: message_id_,
+                request_id: RequestId::default(),
             }
         }
         // Todo: fix empty request_id
         RawJsonMessage::Subscribe { query_strings } => DecodedMessage::Subscribe(Subscribe {
             query_strings,
-            request_id: vec![],
+            request_id: RequestId::default(),
         }),
         RawJsonMessage::OneOffQuery {
             query_string: ref query,

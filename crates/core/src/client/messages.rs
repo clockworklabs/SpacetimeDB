@@ -1,5 +1,6 @@
 use base64::Engine;
 use prost::Message as _;
+use spacetimedb_lib::identity::RequestId;
 use std::time::Instant;
 
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
@@ -102,7 +103,7 @@ impl ServerMessage for TransactionUpdateMessage<'_> {
             function_call: Some(FunctionCall {
                 reducer: event.function_call.reducer.to_owned(),
                 arg_bytes: event.function_call.args.get_bsatn().clone().into(),
-                request_id: vec![],
+                request_id: database_update.request_id.unwrap_or(0),
             }),
             message: errmsg,
             energy_quanta_used: event.energy_quanta_used.get() as i64,
@@ -161,7 +162,7 @@ impl ServerMessage for SubscriptionUpdateMessage {
 #[derive(Debug, Default, Clone)]
 pub struct SubscriptionUpdate {
     pub database_update: DatabaseUpdate,
-    pub request_id: Vec<u8>,
+    pub request_id: Option<RequestId>,
     pub timer: Option<Instant>,
 }
 
@@ -173,7 +174,7 @@ impl SubscriptionUpdate {
     fn into_protobuf(self) -> spacetimedb_client_api_messages::client_api::SubscriptionUpdate {
         spacetimedb_client_api_messages::client_api::SubscriptionUpdate {
             table_updates: self.database_update.into_protobuf(),
-            request_id: self.request_id,
+            request_id: self.request_id.unwrap_or(0),
             total_host_execution_duration_micros: self.timer.map_or(0, |t| t.elapsed().as_micros() as u64),
         }
     }

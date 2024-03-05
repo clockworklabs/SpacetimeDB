@@ -59,7 +59,7 @@ message FunctionCall {
     // TODO: Maybe this should be replaced with an int identifier for performance?
     string reducer = 1;
     bytes argBytes = 2;
-    bytes requestId = 3;
+    uint32 requestId = 3;
 }
 
 /// Sent by client to database to register a set of queries, about which the client will
@@ -80,7 +80,7 @@ message FunctionCall {
 /// already in `A`.
 message Subscribe {
     repeated string query_strings = 1;
-    bytes requestId = 2;
+    uint32 requestId = 2;
 }
 
 /// Part of a `TransactionUpdate` received by client from database upon a reducer run.
@@ -161,7 +161,7 @@ message Event {
 ///                                          '0' is default value.
 message SubscriptionUpdate {
     repeated TableUpdate tableUpdates = 1;
-    bytes requestId = 2;
+    uint32 requestId = 2;
     uint64 total_host_execution_duration_micros = 3;
 }
 

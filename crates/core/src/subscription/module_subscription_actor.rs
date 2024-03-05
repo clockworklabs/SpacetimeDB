@@ -16,7 +16,7 @@ use futures::Future;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use spacetimedb_lib::identity::{AuthCtx, RequestId};
+use spacetimedb_lib::identity::{AuthCtx};
 use spacetimedb_lib::Identity;
 use std::{sync::Arc, time::Instant};
 
@@ -97,7 +97,7 @@ impl ModuleSubscriptions {
         let fut = sender.send_message(SubscriptionUpdateMessage {
             subscription_update: SubscriptionUpdate {
                 database_update,
-                request_id,
+                request_id: Some(request_id),
                 timer: Some(timer),
             },
         });
@@ -175,7 +175,7 @@ impl ModuleSubscriptions {
         event: &ModuleEvent,
     ) -> impl Future<Output = ()> + '_ {
         let database_update = event.status.database_update().unwrap();
-        let request_id = event.request_id.clone();
+        let request_id = event.request_id;
         let timer = event.timer;
         let auth = AuthCtx::new(self.owner_identity, event.caller_identity);
 
@@ -205,7 +205,7 @@ impl ModuleSubscriptions {
             .flat_map_iter(|(subscription, database_update)| {
                 let database_update = SubscriptionUpdate {
                     database_update,
-                    request_id: request_id.clone().unwrap_or(RequestId::default()),
+                    request_id,
                     timer,
                 };
                 let message = TransactionUpdateMessage { event, database_update };
