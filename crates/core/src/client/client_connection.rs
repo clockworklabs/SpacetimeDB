@@ -164,9 +164,9 @@ impl ClientConnection {
             .await
     }
 
-    pub async fn subscribe(&self, subscription: Subscribe) -> Result<(), DBError> {
+    pub async fn subscribe(&self, subscription: Subscribe, timer: Instant) -> Result<(), DBError> {
         let me = self.clone();
-        tokio::task::spawn_blocking(move || me.module.subscriptions().add_subscriber(me.sender, subscription))
+        tokio::task::spawn_blocking(move || me.module.subscriptions().add_subscriber(me.sender, subscription, timer))
             .await
             .unwrap()
     }

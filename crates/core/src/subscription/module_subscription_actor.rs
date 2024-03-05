@@ -1,11 +1,11 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use super::{
     query::compile_read_only_query,
     subscription::{ExecutionSet, Subscription},
 };
 use crate::client::{
-    messages::{CachedMessage, SubscriptionUpdateMessage, TransactionUpdateMessage},
+    messages::{CachedMessage, SubscriptionUpdate, SubscriptionUpdateMessage, TransactionUpdateMessage},
     ClientActorId, ClientConnectionSender,
 };
 use crate::db::relational_db::RelationalDB;
@@ -40,12 +40,13 @@ impl ModuleSubscriptions {
 
     /// Add a subscriber to the module. NOTE: this function is blocking.
     #[tracing::instrument(skip_all)]
-    pub fn add_subscriber(&self, sender: ClientConnectionSender, subscription: Subscribe) -> Result<(), DBError> {
+    pub fn add_subscriber(&self, sender: ClientConnectionSender, subscription: Subscribe, timer: Instant) -> Result<(), DBError> {
         let tx = scopeguard::guard(self.relational_db.begin_tx(), |tx| {
             let ctx = ExecutionContext::subscribe(self.relational_db.address());
             self.relational_db.release_tx(&ctx, tx);
         });
-
+        // check for backward comp.
+        let request_id = subscription.request_id;
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
         let mut n_queries = 0;
         let queries = subscription
@@ -89,7 +90,12 @@ impl ModuleSubscriptions {
         // thread it's possible for messages to get sent to the client out of order. If you do
         // spawn in another thread messages will need to be buffered until the state is sent out
         // on the wire
-        let fut = sender.send_message(SubscriptionUpdateMessage { database_update });
+        let fut = sender.send_message(SubscriptionUpdateMessage {subscription_update: SubscriptionUpdate {
+            database_update,
+            request_id,
+            total_host_execution_duration_micros: timer.elapsed().as_micros() as u64,
+
+        }});
         let _ = tokio::runtime::Handle::current().block_on(fut);
         Ok(())
     }
@@ -164,7 +170,8 @@ impl ModuleSubscriptions {
         event: &ModuleEvent,
     ) -> impl Future<Output = ()> + '_ {
         let database_update = event.status.database_update().unwrap();
-
+        let request_id = vec![];
+        let total_host_execution_duration_micros = 0 as u64;
         let auth = AuthCtx::new(self.owner_identity, event.caller_identity);
 
         let tokio_handle = &tokio::runtime::Handle::current();
@@ -191,6 +198,11 @@ impl ModuleSubscriptions {
                 }
             })
             .flat_map_iter(|(subscription, database_update)| {
+                let database_update = SubscriptionUpdate {
+                    database_update,
+                    request_id: request_id.clone(),
+                    total_host_execution_duration_micros
+                };
                 let message = TransactionUpdateMessage { event, database_update };
                 let mut message = CachedMessage::new(message);
 

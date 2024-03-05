@@ -4,8 +4,7 @@ use prost::Message as _;
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
 use crate::identity::Identity;
 use crate::json::client_api::{
-    EventJson, FunctionCallJson, IdentityTokenJson, MessageJson, OneOffQueryResponseJson, OneOffTableJson,
-    TransactionUpdateJson,
+    EventJson, FunctionCallJson, IdentityTokenJson, MessageJson, OneOffQueryResponseJson, OneOffTableJson, SubscriptionUpdateJson, TransactionUpdateJson
 };
 use crate::protobuf::client_api::{event, message, Event, FunctionCall, IdentityToken, Message, TransactionUpdate};
 use spacetimedb_client_api_messages::client_api::{OneOffQueryResponse, OneOffTable};
@@ -54,7 +53,7 @@ impl ServerMessage for IdentityTokenMessage {
 
 pub struct TransactionUpdateMessage<'a> {
     pub event: &'a ModuleEvent,
-    pub database_update: DatabaseUpdate,
+    pub database_update: SubscriptionUpdate,
 }
 
 impl ServerMessage for TransactionUpdateMessage<'_> {
@@ -101,6 +100,7 @@ impl ServerMessage for TransactionUpdateMessage<'_> {
             function_call: Some(FunctionCall {
                 reducer: event.function_call.reducer.to_owned(),
                 arg_bytes: event.function_call.args.get_bsatn().clone().into(),
+                request_id: vec![],
             }),
             message: errmsg,
             energy_quanta_used: event.energy_quanta_used.get() as i64,
@@ -139,17 +139,40 @@ impl ServerMessage for &mut TransactionUpdateMessage<'_> {
 }
 
 pub struct SubscriptionUpdateMessage {
-    pub database_update: DatabaseUpdate,
+    pub subscription_update: SubscriptionUpdate,
 }
 
 impl ServerMessage for SubscriptionUpdateMessage {
     fn serialize_text(self) -> MessageJson {
-        MessageJson::SubscriptionUpdate(self.database_update.into_json())
+        MessageJson::SubscriptionUpdate(self.subscription_update.into_json())
     }
 
     fn serialize_binary(self) -> Message {
         Message {
-            r#type: Some(message::Type::SubscriptionUpdate(self.database_update.into_protobuf())),
+            r#type: Some(message::Type::SubscriptionUpdate(
+                self.subscription_update.into_protobuf(),
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct SubscriptionUpdate {
+    pub database_update: DatabaseUpdate,
+    pub request_id: Vec<u8>,
+    pub total_host_execution_duration_micros: u64,
+}
+
+impl SubscriptionUpdate {
+    fn into_json(self) -> SubscriptionUpdateJson {
+        self.database_update.into_json()
+    }
+
+    fn into_protobuf(self) -> spacetimedb_client_api_messages::client_api::SubscriptionUpdate {
+        spacetimedb_client_api_messages::client_api::SubscriptionUpdate {
+            table_updates: self.database_update.into_protobuf(),
+            request_id: self.request_id,
+            total_host_execution_duration_micros: self.total_host_execution_duration_micros,
         }
     }
 }

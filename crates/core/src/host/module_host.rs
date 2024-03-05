@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Weak};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures::{Future, FutureExt};
 use indexmap::IndexMap;
@@ -64,9 +64,8 @@ impl DatabaseUpdate {
         DatabaseUpdate { tables: table_updates }
     }
 
-    pub fn into_protobuf(self) -> SubscriptionUpdate {
-        SubscriptionUpdate {
-            table_updates: self
+    pub fn into_protobuf(self) -> Vec<TableUpdate> {
+            self
                 .tables
                 .into_iter()
                 .map(|table| TableUpdate {
@@ -88,10 +87,8 @@ impl DatabaseUpdate {
                             }
                         })
                         .collect(),
-                })
-                .collect(),
-        }
-    }
+                }).collect()
+            }
 
     pub fn into_json(self) -> SubscriptionUpdateJson {
         // For all tables, push all state

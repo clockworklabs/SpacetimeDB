@@ -60,7 +60,7 @@ async fn handle_binary(
 ) -> Result<(), MessageHandleError> {
     let message = Message::decode(Bytes::from(message_buf))?;
     let message = match message.r#type {
-        Some(message::Type::FunctionCall(FunctionCall { ref reducer, arg_bytes })) => {
+        Some(message::Type::FunctionCall(FunctionCall { ref reducer, arg_bytes, request_id })) => {
             let args = ReducerArgs::Bsatn(arg_bytes.into());
             DecodedMessage::Call { reducer, args }
         }
@@ -107,7 +107,8 @@ async fn handle_text(client: &ClientConnection, message: String, timer: Instant)
             let args = ReducerArgs::Json(message.slice_ref(args.get()));
             DecodedMessage::Call { reducer: func, args }
         }
-        RawJsonMessage::Subscribe { query_strings } => DecodedMessage::Subscribe(Subscribe { query_strings }),
+        // Todo: fix empty request_id
+        RawJsonMessage::Subscribe { query_strings } => DecodedMessage::Subscribe(Subscribe { query_strings, request_id: vec![] }),
         RawJsonMessage::OneOffQuery {
             query_string: ref query,
             message_id,
@@ -153,7 +154,7 @@ impl DecodedMessage<'_> {
                 res.map(drop).map_err(|e| (Some(reducer), e.into()))
             }
             DecodedMessage::Subscribe(subscription) => {
-                let res = client.subscribe(subscription).await;
+                let res = client.subscribe(subscription, timer).await;
                 WORKER_METRICS
                     .request_round_trip
                     .with_label_values(&WorkloadType::Subscribe, &address, "")
