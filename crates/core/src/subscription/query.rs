@@ -172,7 +172,7 @@ fn record_query_compilation_metrics(workload: WorkloadType, db: &Address, query:
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
 pub enum Supported {
     /// A scan or [`QueryExpr::Select`] of a single table.
-    Scan,
+    Select,
     /// A semijoin of two tables, restricted to [`QueryExpr::IndexJoin`]s.
     ///
     /// See [`crate::sql::compiler::try_index_join`].
@@ -191,7 +191,7 @@ pub fn classify(expr: &QueryExpr) -> Option<Supported> {
             return None;
         }
     }
-    Some(Supported::Scan)
+    Some(Supported::Select)
 }
 
 #[cfg(test)]
@@ -949,7 +949,7 @@ mod tests {
         ];
         for scan in scans {
             let expr = compile_read_only_query(&db, &tx, &auth, scan)?.pop().unwrap();
-            assert_eq!(expr.kind(), Supported::Scan, "{scan}\n{expr:#?}");
+            assert_eq!(expr.kind(), Supported::Select, "{scan}\n{expr:#?}");
         }
 
         // Only index semijoins are supported
