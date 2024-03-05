@@ -283,13 +283,13 @@ mod tests {
     use std::ops::Bound;
 
     fn assert_index_scan(
-        op: Query,
+        op: &Query,
         cols: impl Into<ColList>,
         low_bound: Bound<AlgebraicValue>,
         up_bound: Bound<AlgebraicValue>,
     ) -> TableId {
         if let Query::IndexScan(IndexScan { table, columns, bounds }) = op {
-            assert_eq!(columns, cols.into(), "Columns don't match");
+            assert_eq!(columns, &cols.into(), "Columns don't match");
             assert_eq!(bounds.0, low_bound, "Lower bound don't match");
             assert_eq!(bounds.1, up_bound, "Upper bound don't match");
             table.table_id
@@ -298,9 +298,13 @@ mod tests {
         }
     }
 
-    fn assert_one_eq_index_scan(op: Query, cols: impl Into<ColList>, val: AlgebraicValue) -> TableId {
+    fn assert_one_eq_index_scan(op: &Query, cols: impl Into<ColList>, val: AlgebraicValue) -> TableId {
         let val = Bound::Included(val);
         assert_index_scan(op, cols, val.clone(), val)
+    }
+
+    fn assert_select(op: &Query) {
+        assert!(matches!(op, Query::Select(_)));
     }
 
     #[test]
@@ -315,20 +319,11 @@ mod tests {
         let tx = db.begin_tx();
         // Compile query
         let sql = "select * from test where a = 1";
-        let CrudExpr::Query(QueryExpr {
-            source: _,
-            query: mut ops,
-        }) = compile_sql(&db, &tx, sql)?.remove(0)
-        else {
+        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");
         };
-
-        assert_eq!(1, ops.len());
-
-        // Assert no index scan
-        let Query::Select(_) = ops.remove(0) else {
-            panic!("Expected Select");
-        };
+        assert_eq!(1, query.len());
+        assert_select(&query[0]);
         Ok(())
     }
 
@@ -340,12 +335,18 @@ mod tests {
         db.create_table_for_test(
             "test",
             &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)],
-            &[(1.into(), "b")],
+            &[(1.into(), "b"), (0.into(), "a")],
         )?;
 
         let tx = db.begin_tx();
         // Should work with any qualified field.
-        assert!(compile_sql(&db, &tx, "select * from test where test.b <> 3").is_ok());
+        let sql = "select * from test where a = 1 and b <> 3";
+        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
+            panic!("Expected QueryExpr");
+        };
+        assert_eq!(2, query.len());
+        assert_one_eq_index_scan(&query[0], 0, 1u64.into());
+        assert_select(&query[1]);
         Ok(())
     }
 
@@ -361,11 +362,11 @@ mod tests {
         let tx = db.begin_tx();
         //Compile query
         let sql = "select * from test where a = 1";
-        let CrudExpr::Query(QueryExpr { source: _, mut query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
+        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");
         };
         assert_eq!(1, query.len());
-        assert_one_eq_index_scan(query.remove(0), 0, 1u64.into());
+        assert_one_eq_index_scan(&query[0], 0, 1u64.into());
         Ok(())
     }
 
@@ -382,11 +383,12 @@ mod tests {
         // Note, order does not matter matter.
         // The sargable predicate occurs last but we can still generate an index scan.
         let sql = "select * from test where a = 1 and b = 2";
-        let CrudExpr::Query(QueryExpr { source: _, mut query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
+        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");
         };
         assert_eq!(2, query.len());
-        assert_one_eq_index_scan(query.remove(0), 1, 2u64.into());
+        assert_one_eq_index_scan(&query[0], 1, 2u64.into());
+        assert_select(&query[1]);
         Ok(())
     }
 
@@ -403,11 +405,12 @@ mod tests {
         // Note, order does not matters.
         // The sargable predicate occurs first adn we can generate an index scan.
         let sql = "select * from test where b = 2 and a = 1";
-        let CrudExpr::Query(QueryExpr { source: _, mut query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
+        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");
         };
         assert_eq!(2, query.len());
-        assert_one_eq_index_scan(query.remove(0), 1, 2u64.into());
+        assert_one_eq_index_scan(&query[0], 1, 2u64.into());
+        assert_select(&query[1]);
         Ok(())
     }
 
@@ -426,11 +429,11 @@ mod tests {
 
         let tx = db.begin_mut_tx(IsolationLevel::Serializable);
         let sql = "select * from test where b = 2 and a = 1";
-        let CrudExpr::Query(QueryExpr { source: _, mut query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
+        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");
         };
         assert_eq!(1, query.len());
-        assert_one_eq_index_scan(query.remove(0), col_list![0, 1], product![1u64, 2u64].into());
+        assert_one_eq_index_scan(&query[0], col_list![0, 1], product![1u64, 2u64].into());
         Ok(())
     }
 
@@ -446,20 +449,12 @@ mod tests {
         let tx = db.begin_tx();
         // Compile query
         let sql = "select * from test where a = 1 or b = 2";
-        let CrudExpr::Query(QueryExpr {
-            source: _,
-            query: mut ops,
-        }) = compile_sql(&db, &tx, sql)?.remove(0)
-        else {
+        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");
         };
-
-        assert_eq!(1, ops.len());
-
-        // Assert no index scan because OR is not sargable
-        let Query::Select(_) = ops.remove(0) else {
-            panic!("Expected Select");
-        };
+        assert_eq!(1, query.len());
+        // Assert no index scan because OR is not sargable.
+        assert_select(&query[0]);
         Ok(())
     }
 
@@ -475,22 +470,11 @@ mod tests {
         let tx = db.begin_tx();
         // Compile query
         let sql = "select * from test where b > 2";
-        let CrudExpr::Query(QueryExpr {
-            source: _,
-            query: mut ops,
-        }) = compile_sql(&db, &tx, sql)?.remove(0)
-        else {
+        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");
         };
-
-        assert_eq!(1, ops.len());
-
-        assert_index_scan(
-            ops.remove(0),
-            1,
-            Bound::Excluded(AlgebraicValue::U64(2)),
-            Bound::Unbounded,
-        );
+        assert_eq!(1, query.len());
+        assert_index_scan(&query[0], 1, Bound::Excluded(AlgebraicValue::U64(2)), Bound::Unbounded);
 
         Ok(())
     }
@@ -507,18 +491,12 @@ mod tests {
         let tx = db.begin_tx();
         // Compile query
         let sql = "select * from test where b > 2 and b < 5";
-        let CrudExpr::Query(QueryExpr {
-            source: _,
-            query: mut ops,
-        }) = compile_sql(&db, &tx, sql)?.remove(0)
-        else {
+        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");
         };
-
-        assert_eq!(1, ops.len());
-
+        assert_eq!(1, query.len());
         assert_index_scan(
-            ops.remove(0),
+            &query[0],
             1,
             Bound::Excluded(AlgebraicValue::U64(2)),
             Bound::Excluded(AlgebraicValue::U64(5)),
@@ -540,14 +518,12 @@ mod tests {
         // Note, order matters - the equality condition occurs first which
         // means an index scan will be generated rather than the range condition.
         let sql = "select * from test where a = 3 and b > 2 and b < 5";
-        let CrudExpr::Query(QueryExpr { source: _, mut query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
+        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");
         };
         assert_eq!(2, query.len());
-        let Query::Select(_) = query[1] else {
-            panic!("Expected Select");
-        };
-        assert_one_eq_index_scan(query.remove(0), 0, 3u64.into());
+        assert_one_eq_index_scan(&query[0], 0, 3u64.into());
+        assert_select(&query[1]);
         Ok(())
     }
 
@@ -583,7 +559,7 @@ mod tests {
         assert_eq!(query.len(), 2);
 
         // First operation in the pipeline should be an index scan
-        let table_id = assert_one_eq_index_scan(query[0].clone(), 0, 3u64.into());
+        let table_id = assert_one_eq_index_scan(&query[0], 0, 3u64.into());
 
         assert_eq!(table_id, lhs_id);
 
@@ -810,7 +786,7 @@ mod tests {
         assert_eq!(query.len(), 2);
 
         // First operation in the pipeline should be an index scan
-        let table_id = assert_one_eq_index_scan(query[0].clone(), 0, 3u64.into());
+        let table_id = assert_one_eq_index_scan(&query[0], 0, 3u64.into());
 
         assert_eq!(table_id, lhs_id);
 
@@ -845,12 +821,7 @@ mod tests {
         assert_eq!(1, rhs.len());
 
         // The right side of the join should be an index scan
-        let table_id = assert_index_scan(
-            rhs[0].clone(),
-            1,
-            Bound::Unbounded,
-            Bound::Excluded(AlgebraicValue::U64(4)),
-        );
+        let table_id = assert_index_scan(&rhs[0], 1, Bound::Unbounded, Bound::Excluded(AlgebraicValue::U64(4)));
 
         assert_eq!(table_id, rhs_id);
         Ok(())
@@ -923,7 +894,7 @@ mod tests {
 
         // The probe side of the join should be an index scan
         let table_id = assert_index_scan(
-            rhs[0].clone(),
+            &rhs[0],
             1,
             Bound::Excluded(AlgebraicValue::U64(2)),
             Bound::Excluded(AlgebraicValue::U64(4)),
@@ -1020,7 +991,7 @@ mod tests {
         assert_eq!(2, rhs.len());
 
         // The probe side of the join should be an index scan
-        let table_id = assert_one_eq_index_scan(rhs[0].clone(), col_list![0, 1], product![4u64, 2u64].into());
+        let table_id = assert_one_eq_index_scan(&rhs[0], col_list![0, 1], product![4u64, 2u64].into());
 
         assert_eq!(table_id, rhs_id);
 

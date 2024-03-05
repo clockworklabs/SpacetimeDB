@@ -924,13 +924,8 @@ fn select_best_index<'a>(
     // Go through each operator and index,
     // consuming all field constraints that can be served by an index.
     //
-    // NOTE: We do not consider `OpCmp::NotEq` at the moment.
-    // To provide such an index scan efficiently, we'd need to use two chained index scans
-    // `before.chain(after)` for
-    // `before = index.range((Unbounded, Excluded(v))` and
-    // `after = index.range((Excluded(v), Unbounded))`.
-    // This would require a dedicated `iter_by_col_not_eq`, essentially.
-    // This is doable but currently not a priority.
+    // NOTE: We do not consider `OpCmp::NotEq` at the moment
+    // since those are typically not answered using an index.
     for (col_list, cmp) in [OpCmp::Eq, OpCmp::Lt, OpCmp::LtEq, OpCmp::Gt, OpCmp::GtEq]
         .into_iter()
         .flat_map(|cmp| indices.iter().map(move |cl| (*cl, cmp)))
