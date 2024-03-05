@@ -179,19 +179,19 @@ impl ClientConnection {
             .unwrap()
     }
 
-    pub async fn one_off_query(&self, query: &str, request_id: &[u8], timer: Instant) -> Result<(), anyhow::Error> {
+    pub async fn one_off_query(&self, query: &str, message_id: &[u8], timer: Instant) -> Result<(), anyhow::Error> {
         let result = self.module.one_off_query(self.id.identity, query.to_owned()).await;
-        let request_id = request_id.to_owned();
+        let message_id = message_id.to_owned();
         let total_host_execution_duration = timer.elapsed().as_micros() as u64;
         let response = match result {
             Ok(results) => OneOffQueryResponseMessage {
-                request_id,
+                message_id,
                 error: None,
                 results,
                 total_host_execution_duration,
             },
             Err(err) => OneOffQueryResponseMessage {
-                request_id,
+                message_id,
                 error: Some(format!("{}", err)),
                 results: Vec::new(),
                 total_host_execution_duration,

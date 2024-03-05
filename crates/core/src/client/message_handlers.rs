@@ -76,7 +76,7 @@ async fn handle_binary(
         Some(message::Type::Subscribe(subscription)) => DecodedMessage::Subscribe(subscription),
         Some(message::Type::OneOffQuery(ref oneoff)) => DecodedMessage::OneOffQuery {
             query_string: &oneoff.query_string[..],
-            request_id: &oneoff.request_id[..],
+            message_id: &oneoff.message_id[..],
         },
         _ => return Err(MessageHandleError::InvalidMessage),
     };
@@ -135,7 +135,7 @@ async fn handle_text(client: &ClientConnection, message: String, timer: Instant)
             );
             DecodedMessage::OneOffQuery {
                 query_string: &query[..],
-                request_id: &message_id_[..],
+                message_id: &message_id_[..],
             }
         }
     };
@@ -154,7 +154,7 @@ enum DecodedMessage<'a> {
     Subscribe(Subscribe),
     OneOffQuery {
         query_string: &'a str,
-        request_id: &'a [u8],
+        message_id: &'a [u8],
     },
 }
 
@@ -184,9 +184,9 @@ impl DecodedMessage<'_> {
             }
             DecodedMessage::OneOffQuery {
                 query_string: query,
-                request_id,
+                message_id,
             } => {
-                let res = client.one_off_query(query, request_id, timer).await;
+                let res = client.one_off_query(query, message_id, timer).await;
                 WORKER_METRICS
                     .request_round_trip
                     .with_label_values(&WorkloadType::Sql, &address, "")
