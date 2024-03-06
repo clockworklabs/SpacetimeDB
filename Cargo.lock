@@ -4770,6 +4770,7 @@ dependencies = [
  "scopeguard",
  "serde_json",
  "sled",
+ "socket2",
  "spacetimedb-client-api",
  "spacetimedb-core",
  "spacetimedb-lib",
