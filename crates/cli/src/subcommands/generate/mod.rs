@@ -232,7 +232,7 @@ pub fn generate<'a>(wasm_file: &'a Path, lang: Language, namespace: &'a str) -> 
 
 fn generate_globals(ctx: &GenCtx, lang: Language, namespace: &str, items: &[GenItem]) -> Vec<Vec<(String, String)>> {
     match lang {
-        Language::Csharp => csharp::autogen_csharp_globals(items, namespace),
+        Language::Csharp => csharp::autogen_csharp_globals(namespace),
         Language::TypeScript => typescript::autogen_typescript_globals(ctx, items),
         Language::Python => python::autogen_python_globals(ctx, items),
         Language::Rust => rust::autogen_rust_globals(ctx, items),
