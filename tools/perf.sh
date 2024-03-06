@@ -85,7 +85,7 @@ if [[ -z "$DATAFILE" ]]; then
     DATAFILE=perf.data
 fi
 if [[ -z "$SPACETIME_PID" ]]; then
-    SPACETIMES="$(ps -a -e -f | grep 'spacetime start')"
+    SPACETIMES="$(ps -a -e -f | grep 'spacetime start' | grep -v 'grep')"
     if [[ $(echo "$SPACETIMES" | wc -l) < 1 ]] ; then
         echo "spacetime PID not found, is it running?"
 	exit 1
