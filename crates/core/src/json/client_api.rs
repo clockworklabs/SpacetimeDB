@@ -57,6 +57,7 @@ pub struct IdentityTokenJson {
 pub struct FunctionCallJson {
     pub reducer: String,
     pub args: ByteString,
+    pub request_id: u32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -77,6 +78,8 @@ pub struct TableRowOperationJson {
 #[derive(Debug, Clone, Serialize)]
 pub struct SubscriptionUpdateJson {
     pub table_updates: Vec<TableUpdateJson>,
+    pub request_id: u32,
+    pub total_host_execution_duration_micros: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]

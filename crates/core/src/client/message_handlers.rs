@@ -93,9 +93,13 @@ enum RawJsonMessage<'a> {
         #[serde(borrow, rename = "fn")]
         func: std::borrow::Cow<'a, str>,
         args: &'a serde_json::value::RawValue,
+        request_id: u32,
     },
     #[serde(rename = "subscribe")]
-    Subscribe { query_strings: Vec<String> },
+    Subscribe {
+        query_strings: Vec<String>,
+        request_id: u32,
+    },
     #[serde(rename = "one_off_query")]
     OneOffQuery {
         #[serde(borrow)]
@@ -112,18 +116,18 @@ async fn handle_text(client: &ClientConnection, message: String, timer: Instant)
     let msg = serde_json::from_str::<RawJsonMessage>(&message)?;
     let mut message_id_ = Vec::new();
     let msg = match msg {
-        RawJsonMessage::Call { ref func, args } => {
+        RawJsonMessage::Call { ref func, args, request_id } => {
             let args = ReducerArgs::Json(message.slice_ref(args.get()));
             DecodedMessage::Call {
                 reducer: func,
                 args,
-                request_id: RequestId::default(),
+                request_id,
             }
         }
-        // Todo: fix empty request_id
-        RawJsonMessage::Subscribe { query_strings } => DecodedMessage::Subscribe(Subscribe {
+
+        RawJsonMessage::Subscribe { query_strings, request_id } => DecodedMessage::Subscribe(Subscribe {
             query_strings,
-            request_id: RequestId::default(),
+            request_id,
         }),
         RawJsonMessage::OneOffQuery {
             query_string: ref query,
@@ -253,6 +257,8 @@ impl ServerMessage for MessageExecutionError {
 
 #[cfg(test)]
 mod tests {
+    use std::env::Args;
+
     use super::RawJsonMessage;
 
     #[test]
@@ -267,6 +273,24 @@ mod tests {
         {
             assert_eq!(query, "SELECT * FROM User WHERE name != 'bananas'");
             assert_eq!(message_id, "ywS3WFquDECZQ0UdLZN1IA==");
+        } else {
+            panic!("wrong variant")
+        }
+    }
+
+    #[test]
+    fn parse_function_call() {
+        let message = r#"{ "call": { "fn": "reducer_name", "request_id": 2, "args": "{}" } }"#;
+        let parsed = serde_json::from_str::<RawJsonMessage>(message).unwrap();
+
+        if let RawJsonMessage::Call {
+            request_id,
+            func,
+            args: _,
+        } = parsed
+        {
+            assert_eq!(request_id, 2);
+            assert_eq!(func, "reducer_name");
         } else {
             panic!("wrong variant")
         }

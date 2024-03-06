@@ -91,31 +91,28 @@ impl DatabaseUpdate {
             .collect()
     }
 
-    pub fn into_json(self) -> SubscriptionUpdateJson {
+    pub fn into_json(self) -> Vec<TableUpdateJson> {
         // For all tables, push all state
         // TODO: We need some way to namespace tables so we don't send all the internal tables and stuff
-        SubscriptionUpdateJson {
-            table_updates: self
-                .tables
-                .into_iter()
-                .map(|table| TableUpdateJson {
-                    table_id: table.table_id.into(),
-                    table_name: table.table_name,
-                    table_row_operations: table
-                        .ops
-                        .into_iter()
-                        .map(|op| TableRowOperationJson {
-                            op: if op.op_type == 1 {
-                                "insert".into()
-                            } else {
-                                "delete".into()
-                            },
-                            row: op.row.elements,
-                        })
-                        .collect(),
-                })
-                .collect(),
-        }
+        self.tables
+            .into_iter()
+            .map(|table| TableUpdateJson {
+                table_id: table.table_id.into(),
+                table_name: table.table_name,
+                table_row_operations: table
+                    .ops
+                    .into_iter()
+                    .map(|op| TableRowOperationJson {
+                        op: if op.op_type == 1 {
+                            "insert".into()
+                        } else {
+                            "delete".into()
+                        },
+                        row: op.row.elements,
+                    })
+                    .collect(),
+            })
+            .collect()
     }
 }
 

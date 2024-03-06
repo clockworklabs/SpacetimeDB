@@ -75,6 +75,7 @@ impl ServerMessage for TransactionUpdateMessage<'_> {
             function_call: FunctionCallJson {
                 reducer: event.function_call.reducer.to_owned(),
                 args: event.function_call.args.get_json().clone(),
+                request_id: database_update.request_id.unwrap_or(0),
             },
             energy_quanta_used: event.energy_quanta_used.get(),
             message: errmsg,
@@ -168,7 +169,11 @@ pub struct SubscriptionUpdate {
 
 impl SubscriptionUpdate {
     fn into_json(self) -> SubscriptionUpdateJson {
-        self.database_update.into_json()
+        SubscriptionUpdateJson {
+            table_updates: self.database_update.into_json(),
+            request_id: self.request_id.unwrap_or(0),
+            total_host_execution_duration_micros: self.timer.map_or(0, |t| t.elapsed().as_micros() as u64),
+        }
     }
 
     fn into_protobuf(self) -> spacetimedb_client_api_messages::client_api::SubscriptionUpdate {
