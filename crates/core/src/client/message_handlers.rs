@@ -116,7 +116,11 @@ async fn handle_text(client: &ClientConnection, message: String, timer: Instant)
     let msg = serde_json::from_str::<RawJsonMessage>(&message)?;
     let mut message_id_ = Vec::new();
     let msg = match msg {
-        RawJsonMessage::Call { ref func, args, request_id } => {
+        RawJsonMessage::Call {
+            ref func,
+            args,
+            request_id,
+        } => {
             let args = ReducerArgs::Json(message.slice_ref(args.get()));
             DecodedMessage::Call {
                 reducer: func,
@@ -125,7 +129,10 @@ async fn handle_text(client: &ClientConnection, message: String, timer: Instant)
             }
         }
 
-        RawJsonMessage::Subscribe { query_strings, request_id } => DecodedMessage::Subscribe(Subscribe {
+        RawJsonMessage::Subscribe {
+            query_strings,
+            request_id,
+        } => DecodedMessage::Subscribe(Subscribe {
             query_strings,
             request_id,
         }),
@@ -257,8 +264,6 @@ impl ServerMessage for MessageExecutionError {
 
 #[cfg(test)]
 mod tests {
-    use std::env::Args;
-
     use super::RawJsonMessage;
 
     #[test]

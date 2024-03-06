@@ -18,7 +18,7 @@ use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
 use crate::identity::Identity;
-use crate::json::client_api::{SubscriptionUpdateJson, TableRowOperationJson, TableUpdateJson};
+use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
 use crate::protobuf::client_api::{table_row_operation, TableRowOperation, TableUpdate};
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
