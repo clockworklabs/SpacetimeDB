@@ -1,6 +1,11 @@
 use itertools::Itertools;
+use opentelemetry_otlp::WithExportConfig;
+use std::fs;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::time::Duration;
+use tokio::fs::File;
+use tonic::transport::{Certificate, Channel, Endpoint, Uri};
 use tracing_appender::rolling;
 use tracing_flame::FlameLayer;
 use tracing_subscriber::fmt::writer::BoxMakeWriter;
@@ -26,9 +31,9 @@ impl Default for StartupOptions {
 }
 
 impl StartupOptions {
-    pub fn configure(self) {
+    pub async fn configure(self) {
         if self.tracing {
-            configure_tracing()
+            configure_tracing().await
         }
         if self.rayon {
             configure_rayon()
@@ -36,7 +41,48 @@ impl StartupOptions {
     }
 }
 
-fn configure_tracing() {
+use opentelemetry::trace::{Tracer, TracerProvider as _};
+use opentelemetry_sdk::trace::TracerProvider;
+use tonic::metadata::MetadataValue;
+use tonic::transport::channel::ClientTlsConfig;
+use tracing::{error, span};
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::Registry;
+
+async fn configure_tracing() {
+    let mut metadata = tonic::metadata::MetadataMap::new();
+    let honeycomb_api_key = std::env::var("HONEYCOMB_API_KEY").unwrap();
+    metadata.insert("x-honeycomb-team", MetadataValue::from_str(&honeycomb_api_key).unwrap());
+    let pem = fs::read_to_string("honeycomb_ca.pem").expect("Could not read honeycomb cert");
+    let certificate = Certificate::from_pem(pem.as_bytes());
+    let tls_config = ClientTlsConfig::default()
+        .domain_name("api.honeycomb.io")
+        .ca_certificate(certificate)
+        .assume_http2(false);
+    let channel = Channel::builder(Uri::from_static("https://api.honeycomb.io:443"))
+        .tls_config(tls_config)
+        .expect("Could not set up TLS for telemetry GRPC")
+        .tls_assume_http2(false)
+        .connect()
+        .await
+        .expect("Could not connect");
+    let exporter = opentelemetry_otlp::new_exporter()
+        .tonic()
+        .with_metadata(metadata)
+        .with_channel(channel);
+    let provider = TracerProvider::builder().build();
+    let tracer = opentelemetry_otlp::new_pipeline()
+        .tracing()
+        .with_exporter(exporter)
+        .install_batch(opentelemetry_sdk::runtime::Tokio)
+        .expect("Couldn't set up tracer");
+
+    let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+
+    // global::set_tracer_provider(provider);
+
+    // tracing_subscriber::registry().with(telemetry).try_init()?;
+
     // Use this to change log levels at runtime.
     // This means you can change the default log level to trace
     // if you are trying to debug an issue and need more logs on then turn it off
@@ -89,7 +135,8 @@ fn configure_tracing() {
     let subscriber = tracing_subscriber::Registry::default()
         .with(tracy_layer)
         .with(fmt_layer)
-        .with(flame_layer);
+        .with(flame_layer)
+        .with(telemetry_layer);
 
     if cfg!(debug_assertions) {
         let (reload_layer, reload_handle) = tracing_subscriber::reload::Layer::new(env_filter_layer);

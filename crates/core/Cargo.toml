@@ -18,7 +18,19 @@ bench = false
 name = "odb_flavor_bench"
 harness = false
 
+# [patch.crates-io]
+# tonic = { git = "https://github.com/hyperium/tonic.git", features = ["tls", "tls-roots-common"] }
+
+[dependencies.tonic]
+features = ["tls", "tls-roots-common"]
+version = "0.11.0"
+
 [dependencies]
+opentelemetry = "0.22"
+tracing-opentelemetry = "0.23"
+opentelemetry_sdk = { version = "0.22", features = ["tokio", "rt-tokio"] }
+opentelemetry-otlp = { version = "0.15", features = ["grpc-tonic", "tokio"] }
+
 spacetimedb-lib = { workspace = true, features = ["serde"] }
 spacetimedb-client-api-messages.workspace = true
 spacetimedb-metrics.workspace = true
