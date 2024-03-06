@@ -3,6 +3,8 @@ use crate::util::{create_dir_or_err, create_file_with_contents};
 use crate::StandaloneEnv;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
+use opentelemetry::global;
+use opentelemetry_otlp::WithExportConfig;
 use spacetimedb::config::{FilesGlobal, FilesLocal, SpacetimeDbFiles};
 use spacetimedb::db::{Config, FsyncPolicy, Storage};
 use spacetimedb::startup;
@@ -222,7 +224,7 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
         set_env_with_warning("SPACETIMEDB_TRACY", "1");
     }
 
-    startup::StartupOptions::default().configure();
+    startup::StartupOptions::default().configure().await;
 
     let ctx = StandaloneEnv::init(config).await?;
 
@@ -232,6 +234,9 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     socket2::SockRef::from(&tcp).set_nodelay(true)?;
     log::debug!("Starting SpacetimeDB listening on {}", tcp.local_addr().unwrap());
     axum::serve(tcp, service).await?;
+
+    global::shutdown_tracer_provider();
+
     Ok(())
 }
 

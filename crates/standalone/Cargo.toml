@@ -21,6 +21,14 @@ spacetimedb-core.workspace = true
 spacetimedb-lib = { workspace = true, features = ["cli"] }
 spacetimedb-client-api.workspace = true
 
+opentelemetry = "0.22"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+tracing-opentelemetry = "0.23"
+opentelemetry_sdk = { version = "0.22", features = ["tokio", "rt-tokio"] }
+opentelemetry-otlp = { version = "0.15", features = ["grpc-tonic", "tokio"] }
+tonic = "0.11"
+
 anyhow.workspace = true
 async-trait.workspace = true
 axum.workspace = true

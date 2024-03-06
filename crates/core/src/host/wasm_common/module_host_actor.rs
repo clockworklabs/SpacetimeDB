@@ -2,6 +2,7 @@ use anyhow::{anyhow, Context};
 use bytes::Bytes;
 use std::sync::Arc;
 use std::time::Duration;
+use tracing::{info_span, span};
 
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
@@ -507,7 +508,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             .with_label_values(&address, reducer_name)
             .inc();
 
-        let _outer_span = tracing::trace_span!("call_reducer",
+        let _outer_span = tracing::info_span!("call_reducer",
             reducer_name,
             %caller_identity,
             caller_address = caller_address_opt.map(tracing::field::debug),
@@ -534,7 +535,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable));
         let tx_slot = self.instance.instance_env().tx.clone();
 
-        let reducer_span = tracing::trace_span!(
+        let reducer_span = tracing::info_span!(
             "run_reducer",
             timings.total_duration = tracing::field::Empty,
             energy.budget = budget.get(),
