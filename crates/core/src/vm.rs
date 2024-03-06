@@ -68,15 +68,8 @@ pub fn build_query<'a>(
 
     for op in query.query {
         result = Some(match op {
-            Query::IndexScan(IndexScan {
-                table,
-                columns,
-                lower_bound,
-                upper_bound,
-            }) if db_table => {
-                assert_eq!(columns.len(), 1, "Only support single column IndexScan");
-                let col_id = columns.head();
-                iter_by_col_range(ctx, stdb, tx, table, col_id, (lower_bound, upper_bound))?
+            Query::IndexScan(IndexScan { table, columns, bounds }) if db_table => {
+                iter_by_col_range(ctx, stdb, tx, table, columns, bounds)?
             }
             Query::IndexScan(index_scan) => {
                 let result = result
@@ -263,12 +256,12 @@ fn iter_by_col_range<'a>(
     db: &'a RelationalDB,
     tx: &'a TxMode,
     table: DbTable,
-    col_id: ColId,
+    columns: ColList,
     range: impl RangeBounds<AlgebraicValue> + 'a,
 ) -> Result<Box<dyn RelOps<'a> + 'a>, ErrorVm> {
     let iter = match tx {
-        TxMode::MutTx(tx) => db.iter_by_col_range_mut(ctx, tx, table.table_id, col_id, range)?,
-        TxMode::Tx(tx) => db.iter_by_col_range(ctx, tx, table.table_id, col_id, range)?,
+        TxMode::MutTx(tx) => db.iter_by_col_range_mut(ctx, tx, table.table_id, columns, range)?,
+        TxMode::Tx(tx) => db.iter_by_col_range(ctx, tx, table.table_id, columns, range)?,
     };
     Ok(Box::new(IndexCursor::new(table, iter)?) as Box<IterRows<'_>>)
 }

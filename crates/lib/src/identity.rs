@@ -29,7 +29,7 @@ impl AuthCtx {
     }
 }
 
-#[derive(Eq, PartialEq, PartialOrd, Ord, Clone, Copy, Hash, Serialize, Deserialize)]
+#[derive(Default, Eq, PartialEq, PartialOrd, Ord, Clone, Copy, Hash, Serialize, Deserialize)]
 pub struct Identity {
     __identity_bytes: [u8; 32],
 }
@@ -43,6 +43,10 @@ impl AsPrometheusLabel for Identity {
 }
 
 impl Identity {
+    pub const ZERO: Self = Self {
+        __identity_bytes: [0; 32],
+    };
+
     /// Returns an `Identity` defined as the given `bytes` byte array.
     pub const fn from_byte_array(bytes: [u8; 32]) -> Self {
         Self {

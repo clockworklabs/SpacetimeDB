@@ -5,7 +5,7 @@ use std::time::Duration;
 use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
 use axum_extra::TypedHeader;
-use futures::{SinkExt, StreamExt};
+use futures::{FutureExt, SinkExt, StreamExt};
 use http::{HeaderValue, StatusCode};
 use serde::Deserialize;
 use spacetimedb::client::messages::{IdentityTokenMessage, ServerMessage};
@@ -177,7 +177,9 @@ async fn ws_client_actor(client: ClientConnection, mut ws: WebSocketStream, mut 
     let mut handle_queue = pin!(future_queue(|(message, timer)| client.handle_message(message, timer)));
 
     let mut closed = false;
+    let mut rx_buf = Vec::new();
     loop {
+        rx_buf.clear();
         enum Item {
             Message(ClientMessage),
             HandleResult(Result<(), MessageHandleError>),
@@ -204,16 +206,28 @@ async fn ws_client_actor(client: ClientConnection, mut ws: WebSocketStream, mut 
 
             // If we have an outgoing message to send, send it off.
             // No incoming `message` to handle, so `continue`.
-            Some(message) = sendrx.recv() => {
+            Some(n) = sendrx.recv_many(&mut rx_buf, 32).map(|n| (n != 0).then_some(n)) => {
                 if closed {
                     // TODO: this isn't great. when we receive a close request from the peer,
                     //       tungstenite doesn't let us send any new messages on the socket,
                     //       even though the websocket RFC allows it. should we fork tungstenite?
-                    log::info!("dropping message due to ws already being closed: {message:?}");
+                    log::info!("dropping messages due to ws already being closed: {:?}", &rx_buf[..n]);
                 } else {
-                    // TODO: I think we can be smarter about feeding messages here?
-                    if let Err(error) = ws.send(datamsg_to_wsmsg(message)).await {
+                    let send_all = async {
+                        for msg in rx_buf.drain(..n).map(datamsg_to_wsmsg) {
+                            // feed() buffers the message, but does not necessarily send it
+                            ws.feed(msg).await?;
+                        }
+                        // now we flush all the messages to the socket
+                        ws.flush().await
+                    };
+                    let t1 = Instant::now();
+                    if let Err(error) = send_all.await {
                         log::warn!("Websocket send error: {error}")
+                    }
+                    let time = t1.elapsed();
+                    if time > Duration::from_millis(50) {
+                        tracing::warn!(?time, "send_all took a very long time");
                     }
                 }
                 continue;

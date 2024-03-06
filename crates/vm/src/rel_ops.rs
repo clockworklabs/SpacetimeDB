@@ -46,8 +46,7 @@ pub trait RelOps<'a> {
         P: FnMut(&RelValue<'_>) -> Result<bool, ErrorVm>,
         Self: Sized,
     {
-        let head = self.head().clone();
-        Select::new(self, head, predicate)
+        Select::new(self, predicate)
     }
 
     /// Creates an `Iterator` which uses a closure that projects to a new [RelValue] extracted from the current.
@@ -135,21 +134,19 @@ impl<'a, I: RelOps<'a> + ?Sized> RelOps<'a> for Box<I> {
 
 #[derive(Clone, Debug)]
 pub struct Select<I, P> {
-    pub(crate) head: Arc<Header>,
     pub(crate) count: RowCount,
     pub(crate) iter: I,
     pub(crate) predicate: P,
 }
 
 impl<I, P> Select<I, P> {
-    pub fn new(iter: I, head: Arc<Header>, predicate: P) -> Select<I, P> {
+    pub fn new(iter: I, predicate: P) -> Select<I, P> {
         Select {
             iter,
             // NOTE: We could have propagated the upper bound,
             // but this would likely cause over-allocation in `Vec::with_capacity`.
             count: RowCount::unknown(),
             predicate,
-            head,
         }
     }
 }
@@ -160,7 +157,7 @@ where
     P: FnMut(&RelValue<'a>) -> Result<bool, ErrorVm>,
 {
     fn head(&self) -> &Arc<Header> {
-        &self.head
+        self.iter.head()
     }
 
     fn row_count(&self) -> RowCount {
