@@ -1,6 +1,8 @@
 use std::ops::Deref;
 use std::time::Instant;
 
+use super::messages::{OneOffQueryResponseMessage, ServerMessage};
+use super::{message_handlers, ClientActorId, MessageHandleError};
 use crate::error::DBError;
 use crate::host::{ModuleHost, ReducerArgs, ReducerCallError, ReducerCallResult};
 use crate::protobuf::client_api::Subscribe;
@@ -8,10 +10,8 @@ use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
 use derive_more::From;
 use futures::prelude::*;
+use spacetimedb_lib::identity::RequestId;
 use tokio::sync::mpsc;
-
-use super::messages::{OneOffQueryResponseMessage, ServerMessage};
-use super::{message_handlers, ClientActorId, MessageHandleError};
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
 pub enum Protocol {
@@ -152,38 +152,49 @@ impl ClientConnection {
         message_handlers::handle(self, message.into(), timer)
     }
 
-    pub async fn call_reducer(&self, reducer: &str, args: ReducerArgs) -> Result<ReducerCallResult, ReducerCallError> {
+    pub async fn call_reducer(
+        &self,
+        reducer: &str,
+        args: ReducerArgs,
+        request_id: RequestId,
+        timer: Instant,
+    ) -> Result<ReducerCallResult, ReducerCallError> {
         self.module
             .call_reducer(
                 self.id.identity,
                 Some(self.id.address),
                 Some(self.sender()),
+                Some(request_id),
+                Some(timer),
                 reducer,
                 args,
             )
             .await
     }
 
-    pub async fn subscribe(&self, subscription: Subscribe) -> Result<(), DBError> {
+    pub async fn subscribe(&self, subscription: Subscribe, timer: Instant) -> Result<(), DBError> {
         let me = self.clone();
-        tokio::task::spawn_blocking(move || me.module.subscriptions().add_subscriber(me.sender, subscription))
+        tokio::task::spawn_blocking(move || me.module.subscriptions().add_subscriber(me.sender, subscription, timer))
             .await
             .unwrap()
     }
 
-    pub async fn one_off_query(&self, query: &str, message_id: &[u8]) -> Result<(), anyhow::Error> {
+    pub async fn one_off_query(&self, query: &str, message_id: &[u8], timer: Instant) -> Result<(), anyhow::Error> {
         let result = self.module.one_off_query(self.id.identity, query.to_owned()).await;
         let message_id = message_id.to_owned();
+        let total_host_execution_duration = timer.elapsed().as_micros() as u64;
         let response = match result {
             Ok(results) => OneOffQueryResponseMessage {
                 message_id,
                 error: None,
                 results,
+                total_host_execution_duration,
             },
             Err(err) => OneOffQueryResponseMessage {
                 message_id,
                 error: Some(format!("{}", err)),
                 results: Vec::new(),
+                total_host_execution_duration,
             },
         };
         self.send_message(response).await?;

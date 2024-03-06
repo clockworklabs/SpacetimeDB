@@ -1,5 +1,5 @@
 use super::execution_unit::{ExecutionUnit, QueryHash};
-use crate::client::messages::{CachedMessage, TransactionUpdateMessage};
+use crate::client::messages::{CachedMessage, SubscriptionUpdate, TransactionUpdateMessage};
 use crate::client::{ClientConnectionSender, DataMessage, Protocol};
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
@@ -203,7 +203,14 @@ impl SubscriptionManager {
 
 #[tracing::instrument(skip_all)]
 fn serialize_updates(database_update: DatabaseUpdate, event: &ModuleEvent, protocol: Protocol) -> DataMessage {
-    let message = TransactionUpdateMessage { event, database_update };
+    let message = TransactionUpdateMessage {
+        event,
+        database_update: SubscriptionUpdate {
+            database_update,
+            request_id: event.request_id,
+            timer: event.timer,
+        },
+    };
     let mut cached = CachedMessage::new(message);
     cached.serialize(protocol)
 }

@@ -2,7 +2,7 @@ use super::execution_unit::{ExecutionUnit, QueryHash};
 use super::module_subscription_manager::SubscriptionManager;
 use super::query::compile_read_only_query;
 use super::subscription::ExecutionSet;
-use crate::client::messages::{SubscriptionUpdateMessage, TransactionUpdateMessage};
+use crate::client::messages::{SubscriptionUpdate, SubscriptionUpdateMessage, TransactionUpdateMessage};
 use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, SubscriptionError};
@@ -13,7 +13,7 @@ use crate::worker_metrics::WORKER_METRICS;
 use parking_lot::RwLock;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 type Subscriptions = Arc<RwLock<SubscriptionManager>>;
 
@@ -35,12 +35,18 @@ impl ModuleSubscriptions {
 
     /// Add a subscriber to the module. NOTE: this function is blocking.
     #[tracing::instrument(skip_all)]
-    pub fn add_subscriber(&self, sender: ClientConnectionSender, subscription: Subscribe) -> Result<(), DBError> {
+    pub fn add_subscriber(
+        &self,
+        sender: ClientConnectionSender,
+        subscription: Subscribe,
+        timer: Instant,
+    ) -> Result<(), DBError> {
         let tx = scopeguard::guard(self.relational_db.begin_tx(), |tx| {
             let ctx = ExecutionContext::subscribe(self.relational_db.address());
             self.relational_db.release_tx(&ctx, tx);
         });
-
+        // check for backward comp.
+        let request_id = subscription.request_id;
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
         let mut queries = vec![];
 
@@ -92,7 +98,13 @@ impl ModuleSubscriptions {
         // thread it's possible for messages to get sent to the client out of order. If you do
         // spawn in another thread messages will need to be buffered until the state is sent out
         // on the wire
-        let fut = sender.send_message(SubscriptionUpdateMessage { database_update });
+        let fut = sender.send_message(SubscriptionUpdateMessage {
+            subscription_update: SubscriptionUpdate {
+                database_update,
+                request_id: Some(request_id),
+                timer: Some(timer),
+            },
+        });
         let _ = tokio::runtime::Handle::current().block_on(fut);
         Ok(())
     }
