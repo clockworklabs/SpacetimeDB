@@ -77,6 +77,10 @@ where
         me.job_queue.clear();
         me.running_job.set(Fuse::terminated());
     }
+
+    pub fn queue_len(&self) -> usize {
+        self.job_queue.len()
+    }
 }
 
 impl<Job, StartFn, Fut> Stream for FutureQueue<Job, StartFn, Fut>

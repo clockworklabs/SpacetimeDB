@@ -292,6 +292,7 @@ async fn ws_client_actor_inner(
                 handle_queue.as_mut().push((message, timer))
             }
             Item::HandleResult(res) => {
+                tracing::warn!(msgqueue.len = handle_queue.queue_len(), %client.id);
                 if let Err(e) = res {
                     if let MessageHandleError::Execution(err) = e {
                         log::error!("{err:#}");
