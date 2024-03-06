@@ -306,7 +306,6 @@ impl CommitLogMut {
     ///
     /// Returns the number of bytes written, or `None` if it was an empty
     /// transaction (i.e. one which did not modify any rows).
-    #[tracing::instrument(skip_all)]
     pub fn append_tx<D>(
         &self,
         ctx: &ExecutionContext,

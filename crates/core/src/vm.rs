@@ -40,7 +40,6 @@ impl<'a> From<&'a Tx> for TxMode<'a> {
 
 //TODO: This is partially duplicated from the `vm` crate to avoid borrow checker issues
 //and pull all that crate in core. Will be revisited after trait refactor
-#[tracing::instrument(skip_all)]
 pub fn build_query<'a>(
     ctx: &'a ExecutionContext,
     stdb: &'a RelationalDB,
@@ -378,7 +377,6 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         Self { ctx, db, tx, auth }
     }
 
-    #[tracing::instrument(skip_all)]
     fn _eval_query(&mut self, query: QueryCode, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
         let table_access = query.table.table_access();
         tracing::trace!(table = query.table.table_name());

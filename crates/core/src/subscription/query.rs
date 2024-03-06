@@ -56,7 +56,6 @@ fn find_op_type_col_pos(header: &Header) -> Option<ColId> {
 
 /// Create a virtual table from a sequence of table updates.
 /// Add a special column __op_type to distinguish inserts and deletes.
-#[tracing::instrument(skip_all)]
 pub fn to_mem_table_with_op_type(head: Arc<Header>, table_access: StAccess, data: &DatabaseTableUpdate) -> MemTable {
     let mut t = MemTable::new(head, table_access, vec![]);
 
@@ -119,7 +118,6 @@ pub fn to_mem_table(mut of: QueryExpr, data: &DatabaseTableUpdate) -> (QueryExpr
 }
 
 /// Runs a query that evaluates if the changes made should be reported to the [ModuleSubscriptionManager]
-#[tracing::instrument(skip_all)]
 pub(crate) fn run_query(
     cx: &ExecutionContext,
     db: &RelationalDB,
@@ -141,7 +139,6 @@ pub(crate) fn run_query(
 ///
 /// This is necessary when merging multiple SQL queries into a single query set,
 /// as in [`crate::subscription::module_subscription_actor::ModuleSubscriptions::add_subscriber`].
-#[tracing::instrument(skip(relational_db, auth, tx))]
 pub fn compile_read_only_query(
     relational_db: &RelationalDB,
     tx: &Tx,
