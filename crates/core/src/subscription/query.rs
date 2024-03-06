@@ -10,6 +10,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Address;
+use spacetimedb_primitives::ColId;
 use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::relation::{Column, FieldName, Header};
 use spacetimedb_sats::AlgebraicType;
@@ -30,13 +31,36 @@ pub enum QueryDef {
 
 pub const OP_TYPE_FIELD_NAME: &str = "__op_type";
 
+/// Locate the `__op_type` column in the table described by `header`,
+/// if it exists.
+///
+/// The current version of this function depends on the fact that
+/// the `__op_type` column is always the final column in the schema.
+/// This is true because the `__op_type` column is added by [`to_mem_table_with_op_type`] at the end,
+/// and never originates anywhere else.
+///
+/// If we ever change to having the `__op_type` column in any other position,
+/// e.g. by projecting together two `MemTables` from [`to_mem_table_with_op_type`],
+/// this function may need to change, possibly to:
+/// ```ignore
+/// header.find_pos_by_name(OP_TYPE_FIELD_NAME)
+/// ```
+fn find_op_type_col_pos(header: &Header) -> Option<ColId> {
+    if let Some(last_col) = header.fields.last() {
+        if last_col.field.field_name() == Some(OP_TYPE_FIELD_NAME) {
+            return Some(ColId((header.fields.len() - 1) as u32));
+        }
+    }
+    None
+}
+
 /// Create a virtual table from a sequence of table updates.
 /// Add a special column __op_type to distinguish inserts and deletes.
 #[tracing::instrument(skip_all)]
 pub fn to_mem_table_with_op_type(head: Arc<Header>, table_access: StAccess, data: &DatabaseTableUpdate) -> MemTable {
     let mut t = MemTable::new(head, table_access, vec![]);
 
-    if let Some(pos) = t.head.find_pos_by_name(OP_TYPE_FIELD_NAME) {
+    if let Some(pos) = find_op_type_col_pos(&t.head) {
         t.data.extend(data.ops.iter().map(|row| {
             let mut new = row.row.clone();
 
