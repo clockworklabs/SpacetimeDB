@@ -376,7 +376,7 @@ mod tests {
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
-        let result = s.eval_incr(db, tx, update, AuthCtx::for_testing())?;
+        let result = s.eval_incr(db, tx, update)?;
         assert_eq!(
             result.tables.len(),
             total_tables,
@@ -397,7 +397,7 @@ mod tests {
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
-        let result = s.eval(db, tx, AuthCtx::for_testing())?;
+        let result = s.eval(db, tx)?;
         assert_eq!(
             result.tables.len(),
             total_tables,
@@ -454,7 +454,7 @@ mod tests {
 
         let query: ExecutionSet = singleton_execution_set(query)?;
 
-        let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
+        let result = query.eval_incr(&db, &tx, &update)?;
 
         assert_eq!(result.tables.len(), 1);
 
@@ -545,7 +545,7 @@ mod tests {
             ];
             let tx = db.begin_tx();
             let update = DatabaseUpdate { tables: updates };
-            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
+            let result = query.eval_incr(&db, &tx, &update)?;
             db.release_tx(&ExecutionContext::default(), tx);
 
             // No updates to report
@@ -569,7 +569,7 @@ mod tests {
 
             let update = DatabaseUpdate { tables: updates };
             let tx = db.begin_tx();
-            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
+            let result = query.eval_incr(&db, &tx, &update)?;
             db.release_tx(&ExecutionContext::default(), tx);
 
             // No updates to report
@@ -593,7 +593,7 @@ mod tests {
 
             let update = DatabaseUpdate { tables: updates };
             let tx = db.begin_tx();
-            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
+            let result = query.eval_incr(&db, &tx, &update)?;
             db.release_tx(&ExecutionContext::default(), tx);
 
             // A single delete from lhs
@@ -618,7 +618,7 @@ mod tests {
 
             let update = DatabaseUpdate { tables: updates };
             let tx = db.begin_tx();
-            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
+            let result = query.eval_incr(&db, &tx, &update)?;
             db.release_tx(&ExecutionContext::default(), tx);
 
             // A single insert into lhs
@@ -645,7 +645,7 @@ mod tests {
 
             let update = DatabaseUpdate { tables: updates };
             let tx = db.begin_tx();
-            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
+            let result = query.eval_incr(&db, &tx, &update)?;
             db.release_tx(&ExecutionContext::default(), tx);
 
             // A single insert into lhs
@@ -676,7 +676,7 @@ mod tests {
 
             let update = DatabaseUpdate { tables: updates };
             let tx = db.begin_tx();
-            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
+            let result = query.eval_incr(&db, &tx, &update)?;
             db.release_tx(&ExecutionContext::default(), tx);
 
             // No updates to report
@@ -705,7 +705,7 @@ mod tests {
 
             let update = DatabaseUpdate { tables: updates };
             let tx = db.begin_tx();
-            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
+            let result = query.eval_incr(&db, &tx, &update)?;
             db.release_tx(&ExecutionContext::default(), tx);
 
             // A single delete from lhs
@@ -735,7 +735,7 @@ mod tests {
 
             let update = DatabaseUpdate { tables: updates };
             let tx = db.begin_tx();
-            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
+            let result = query.eval_incr(&db, &tx, &update)?;
             db.release_tx(&ExecutionContext::default(), tx);
 
             // No updates to report

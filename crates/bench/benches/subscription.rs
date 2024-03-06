@@ -104,7 +104,7 @@ fn eval(c: &mut Criterion) {
             let query = compile_read_only_query(&db, &tx, &auth, sql).unwrap();
             let query: ExecutionSet = query.into();
 
-            b.iter(|| drop(black_box(query.eval(&db, &tx, auth).unwrap())))
+            b.iter(|| drop(black_box(query.eval(&db, &tx).unwrap())))
         });
     };
 
@@ -139,7 +139,7 @@ fn eval(c: &mut Criterion) {
         let query = ExecutionSet::from_iter(query_lhs.into_iter().chain(query_rhs));
 
         b.iter(|| {
-            let out = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing()).unwrap();
+            let out = query.eval_incr(&db, &tx, &update).unwrap();
             black_box(out);
         })
     });
@@ -160,7 +160,7 @@ fn eval(c: &mut Criterion) {
         let query: ExecutionSet = query.into();
 
         b.iter(|| {
-            let out = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing()).unwrap();
+            let out = query.eval_incr(&db, &tx, &update).unwrap();
             black_box(out);
         })
     });

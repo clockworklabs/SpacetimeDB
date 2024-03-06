@@ -7,7 +7,6 @@ use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, ModuleEvent};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use smallvec::SmallVec;
-use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::TableId;
 use std::collections::{HashMap, HashSet};
@@ -111,7 +110,7 @@ impl SubscriptionManager {
     /// evaluates only the necessary queries for those delta tables,
     /// and then sends the results to each client.
     #[tracing::instrument(skip_all)]
-    pub async fn eval_updates(&self, db: &RelationalDB, auth: AuthCtx, event: Arc<ModuleEvent>) -> Result<(), DBError> {
+    pub async fn eval_updates(&self, db: &RelationalDB, event: Arc<ModuleEvent>) -> Result<(), DBError> {
         let tokio_handle = &tokio::runtime::Handle::current();
         let tables = &event.status.database_update().unwrap().tables;
         let tx = db.begin_tx();
@@ -134,7 +133,7 @@ impl SubscriptionManager {
                 .into_par_iter()
                 .filter_map(|(hash, tables)| self.queries.get(hash).map(|unit| (hash, tables, unit)))
                 .filter_map(|(hash, tables, unit)| {
-                    match unit.eval_incr(db, &tx, tables.into_iter(), auth) {
+                    match unit.eval_incr(db, &tx, tables.into_iter()) {
                         Ok(None) => None,
                         Ok(Some(table)) => Some((hash, table)),
                         Err(err) => {
@@ -250,7 +249,7 @@ mod tests {
             };
             let plan = SupportedQuery::new(query, sql.to_owned())?;
             let hash = QueryHash::from_string(sql);
-            Ok(Arc::new(ExecutionUnit::new(plan, hash)))
+            Ok(Arc::new(ExecutionUnit::new(plan, hash)?))
         })
     }
 
