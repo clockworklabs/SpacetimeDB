@@ -85,12 +85,16 @@ if [[ -z "$DATAFILE" ]]; then
     DATAFILE=perf.data
 fi
 if [[ -z "$SPACETIME_PID" ]]; then
-    if [[ $(ps -a | grep spacetime | wc -l) != 1 ]] ; then
+    SPACETIMES="$(ps -a -e | grep 'spacetime')"
+    if [[ $(echo "$SPACETIMES" | wc -l) < 1 ]] ; then
         echo "spacetime PID not found, is it running?"
+	exit 1
+    elif [[ $(echo "$SPACETIMES" | wc -l) > 1 ]] ; then
+        echo "Multiple spacetime PIDs. Specify with -z"
 	exit 1
     fi
 
-    SPACETIME_PID=$(ps -a | grep spacetime | awk '{print $1}')
+    SPACETIME_PID=$(echo "$SPACETIMES" | awk '{print $2}')
 fi
 if ! [[ $SPACETIME_PID =~ ^[0-9]+$ ]]; then
     >&2 echo "Refusing to instrument suspicious-looking PID: $SPACETIME_PID"
