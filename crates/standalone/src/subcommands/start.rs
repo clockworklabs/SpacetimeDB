@@ -229,6 +229,7 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     let service = router().with_state(ctx);
 
     let tcp = TcpListener::bind(listen_addr).await?;
+    socket2::SockRef::from(&tcp).set_nodelay(true)?;
     log::debug!("Starting SpacetimeDB listening on {}", tcp.local_addr().unwrap());
     axum::serve(tcp, service).await?;
     Ok(())

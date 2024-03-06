@@ -7,9 +7,10 @@ use axum::response::IntoResponse;
 use axum_extra::TypedHeader;
 use futures::{FutureExt, SinkExt, StreamExt};
 use http::{HeaderValue, StatusCode};
+use scopeguard::ScopeGuard;
 use serde::Deserialize;
 use spacetimedb::client::messages::{IdentityTokenMessage, ServerMessage};
-use spacetimedb::client::{ClientActorId, ClientClosed, ClientConnection, DataMessage, MessageHandleError, Protocol};
+use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, MessageHandleError, Protocol};
 use spacetimedb::util::future_queue;
 use spacetimedb_lib::address::AddressForUrl;
 use spacetimedb_lib::Address;
@@ -153,8 +154,8 @@ where
             identity_token,
             address: client_address,
         };
-        if let Err(ClientClosed) = client.send_message(message).await {
-            log::warn!("client closed before identity token was sent")
+        if let Err(e) = client.send_message(message) {
+            log::warn!("{e}, before identity token was sent")
         }
     });
 
@@ -167,12 +168,33 @@ where
 
 const LIVELINESS_TIMEOUT: Duration = Duration::from_secs(60);
 
-async fn ws_client_actor(client: ClientConnection, mut ws: WebSocketStream, mut sendrx: mpsc::Receiver<DataMessage>) {
+async fn ws_client_actor(client: ClientConnection, ws: WebSocketStream, sendrx: mpsc::Receiver<DataMessage>) {
+    // ensure that even if this task gets cancelled, we always cleanup the connection
+    let client = scopeguard::guard(client, |client| {
+        tokio::spawn(client.disconnect());
+    });
+
+    ws_client_actor_inner(&client, ws, sendrx).await;
+
+    ScopeGuard::into_inner(client).disconnect().await;
+}
+
+async fn ws_client_actor_inner(
+    client: &ClientConnection,
+    mut ws: WebSocketStream,
+    mut sendrx: mpsc::Receiver<DataMessage>,
+) {
     let mut liveness_check_interval = tokio::time::interval(LIVELINESS_TIMEOUT);
     let mut got_pong = true;
 
-    // Build a queue of incoming messages to handle,
-    // to be processed one at a time, in the order they're received.
+    // Build a queue of incoming messages to handle, to be processed one at a time,
+    // in the order they're received.
+    //
+    // N.B. if you're refactoring this code: you must ensure the handle_queue is dropped before
+    // client.disconnect() is called. Otherwise, we can be left with a stale future that's never
+    // awaited, which can lead to bugs like:
+    // https://rust-lang.github.io/wg-async/vision/submitted_stories/status_quo/aws_engineer/solving_a_deadlock.html
+    //
     // TODO: do we want this to have a fixed capacity? or should it be unbounded
     let mut handle_queue = pin!(future_queue(|(message, timer)| client.handle_message(message, timer)));
 
@@ -317,14 +339,6 @@ async fn ws_client_actor(client: ClientConnection, mut ws: WebSocketStream, mut 
     }
     log::debug!("Client connection ended");
     sendrx.close();
-
-    // Clear the incoming message queue before we go to clean up.
-    // Otherwise, we can be left with a stale future which never gets awaited,
-    // which can lead to bugs like:
-    // https://rust-lang.github.io/wg-async/vision/submitted_stories/status_quo/aws_engineer/solving_a_deadlock.html
-    handle_queue.clear();
-
-    client.module.disconnect_client(client.id).await;
 }
 
 enum ClientMessage {

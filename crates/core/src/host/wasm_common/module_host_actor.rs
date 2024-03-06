@@ -642,7 +642,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         };
         self.info
             .subscriptions
-            .blocking_broadcast_event(client.as_ref(), &subscriptions, Arc::new(event));
+            .blocking_broadcast_event(client.as_deref(), &subscriptions, Arc::new(event));
 
         ReducerCallResult {
             outcome,
