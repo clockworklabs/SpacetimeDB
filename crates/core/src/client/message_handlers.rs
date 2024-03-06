@@ -93,11 +93,13 @@ enum RawJsonMessage<'a> {
         #[serde(borrow, rename = "fn")]
         func: std::borrow::Cow<'a, str>,
         args: &'a serde_json::value::RawValue,
+        #[serde(default)]
         request_id: u32,
     },
     #[serde(rename = "subscribe")]
     Subscribe {
         query_strings: Vec<String>,
+        #[serde(default)]
         request_id: u32,
     },
     #[serde(rename = "one_off_query")]

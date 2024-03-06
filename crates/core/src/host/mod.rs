@@ -11,6 +11,7 @@ use spacetimedb_lib::{ProductValue, ReducerDef};
 use spacetimedb_sats::WithTypespace;
 
 mod host_controller;
+#[allow(clippy::too_many_arguments)]
 pub mod module_host;
 pub mod scheduler;
 mod wasmtime;
