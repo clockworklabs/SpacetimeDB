@@ -44,7 +44,7 @@ pub const OP_TYPE_FIELD_NAME: &str = "__op_type";
 /// ```ignore
 /// header.find_pos_by_name(OP_TYPE_FIELD_NAME)
 /// ```
-fn find_op_type_col_pos(header: &Header) -> Option<ColId> {
+pub fn find_op_type_col_pos(header: &Header) -> Option<ColId> {
     if let Some(last_col) = header.fields.last() {
         if last_col.field.field_name() == Some(OP_TYPE_FIELD_NAME) {
             return Some(ColId((header.fields.len() - 1) as u32));
@@ -56,10 +56,10 @@ fn find_op_type_col_pos(header: &Header) -> Option<ColId> {
 /// Create a virtual table from a sequence of table updates.
 /// Add a special column __op_type to distinguish inserts and deletes.
 pub fn to_mem_table_with_op_type(head: Arc<Header>, table_access: StAccess, data: &DatabaseTableUpdate) -> MemTable {
-    let mut t = MemTable::new(head, table_access, vec![]);
+    let mut t = MemTable::new(head, table_access, Vec::with_capacity(data.ops.len()));
 
     if let Some(pos) = find_op_type_col_pos(&t.head) {
-        t.data.extend(data.ops.iter().map(|row| {
+        for op in data.ops.iter().map(|row| {
             let mut new = row.row.clone();
 
             match new.elements.len().cmp(&pos.idx()) {
@@ -84,7 +84,9 @@ pub fn to_mem_table_with_op_type(head: Arc<Header>, table_access: StAccess, data
             }
 
             new
-        }));
+        }) {
+            t.data.push(op);
+        }
     } else {
         // TODO(perf): Eliminate this `clone_for_error` call, as we're not in an error path.
         let mut head = t.head.clone_for_error();
