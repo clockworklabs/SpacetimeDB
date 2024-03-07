@@ -248,7 +248,7 @@ mod tests {
     use spacetimedb_vm::operator::OpCmp;
 
     /// Runs a query that evaluates if the changes made should be reported to the [ModuleSubscriptionManager]
-    pub fn run_query(
+    fn run_query(
         cx: &ExecutionContext,
         db: &RelationalDB,
         tx: &Tx,
