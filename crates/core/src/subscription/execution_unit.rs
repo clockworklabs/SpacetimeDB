@@ -1,4 +1,4 @@
-use super::query::{self, Supported, OP_TYPE_FIELD_NAME};
+use super::query::{self, find_op_type_col_pos, Supported, OP_TYPE_FIELD_NAME};
 use super::subscription::{IncrementalJoin, SupportedQuery};
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::DBError;
@@ -303,7 +303,7 @@ impl ExecutionUnit {
         mut query: Box<IterRows<'_>>,
         header: &Header,
     ) -> Result<(), DBError> {
-        let pos_op_type = header.find_pos_by_name(OP_TYPE_FIELD_NAME).unwrap_or_else(|| {
+        let pos_op_type = find_op_type_col_pos(header).unwrap_or_else(|| {
             panic!(
                 "Failed to locate `{OP_TYPE_FIELD_NAME}` in `{}`, fields: {:?}",
                 header.table_name,

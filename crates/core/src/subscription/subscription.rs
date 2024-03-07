@@ -547,11 +547,12 @@ impl ExecutionSet {
         tx: &Tx,
         database_update: &DatabaseUpdate,
     ) -> Result<DatabaseUpdate, DBError> {
-        let tables = self
-            .exec_units
-            .iter()
-            .filter_map(|unit| unit.eval_incr(db, tx, database_update.tables.iter()).transpose())
-            .collect::<Result<_, _>>()?;
+        let mut tables = Vec::new();
+        for unit in &self.exec_units {
+            if let Some(table) = unit.eval_incr(db, tx, database_update.tables.iter())? {
+                tables.push(table);
+            }
+        }
         Ok(DatabaseUpdate { tables })
     }
 }
