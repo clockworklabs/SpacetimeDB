@@ -64,14 +64,14 @@ impl ModuleSubscriptions {
                             .into(),
                     );
                 }
-                queries.push(Arc::new(ExecutionUnit::new(compiled.remove(0), hash)));
+                queries.push(Arc::new(ExecutionUnit::new(compiled.remove(0), hash)?));
             }
         }
 
         drop(guard);
 
         let execution_set: ExecutionSet = queries.into();
-        let database_update = execution_set.eval(&self.relational_db, &tx, auth)?;
+        let database_update = execution_set.eval(&self.relational_db, &tx)?;
 
         WORKER_METRICS
             .initial_subscription_evals
@@ -163,7 +163,6 @@ impl ModuleSubscriptions {
     /// it resolves, it's guaranteed that if you call `subscriber.send(x)` the client will receive
     /// x after they receive this subscription update).
     fn broadcast_commit_event(&self, subscriptions: &SubscriptionManager, event: Arc<ModuleEvent>) {
-        let auth = AuthCtx::new(self.owner_identity, event.caller_identity);
-        subscriptions.eval_updates(&self.relational_db, auth, &event)
+        subscriptions.eval_updates(&self.relational_db, &event)
     }
 }

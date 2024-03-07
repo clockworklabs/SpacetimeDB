@@ -1,10 +1,9 @@
 use crate::db::db_metrics::{DB_METRICS, MAX_QUERY_COMPILE_TIME};
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
-use crate::execution_context::{ExecutionContext, WorkloadType};
+use crate::execution_context::WorkloadType;
 use crate::host::module_host::DatabaseTableUpdate;
 use crate::sql::compiler::compile_sql;
-use crate::sql::execute::execute_single_sql;
 use crate::subscription::subscription::SupportedQuery;
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -115,18 +114,6 @@ pub fn to_mem_table(mut of: QueryExpr, data: &DatabaseTableUpdate) -> (QueryExpr
     let source_expr = sources.add_mem_table(mem_table);
     of.source = source_expr;
     (of, sources)
-}
-
-/// Runs a query that evaluates if the changes made should be reported to the [ModuleSubscriptionManager]
-pub(crate) fn run_query(
-    cx: &ExecutionContext,
-    db: &RelationalDB,
-    tx: &Tx,
-    query: &QueryExpr,
-    auth: AuthCtx,
-    sources: SourceSet,
-) -> Result<Vec<MemTable>, DBError> {
-    execute_single_sql(cx, db, tx, CrudExpr::Query(query.clone()), auth, sources)
 }
 
 // TODO: It's semantically wrong to `SUBSCRIBE_TO_ALL_QUERY`
@@ -244,6 +231,7 @@ mod tests {
     use crate::db::datastore::traits::IsolationLevel;
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::db::relational_db::MutTx;
+    use crate::execution_context::ExecutionContext;
     use crate::host::module_host::{DatabaseUpdate, TableOp};
     use crate::sql::execute::run;
     use crate::subscription::subscription::ExecutionSet;
@@ -258,6 +246,18 @@ mod tests {
     use spacetimedb_sats::{product, ProductType, ProductValue};
     use spacetimedb_vm::dsl::{mem_table, scalar};
     use spacetimedb_vm::operator::OpCmp;
+
+    /// Runs a query that evaluates if the changes made should be reported to the [ModuleSubscriptionManager]
+    fn run_query(
+        cx: &ExecutionContext,
+        db: &RelationalDB,
+        tx: &Tx,
+        query: &QueryExpr,
+        auth: AuthCtx,
+        sources: SourceSet,
+    ) -> Result<Vec<MemTable>, DBError> {
+        crate::sql::execute::execute_single_sql(cx, db, tx, CrudExpr::Query(query.clone()), auth, sources)
+    }
 
     fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
         DatabaseTableUpdate {
@@ -397,7 +397,7 @@ mod tests {
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
-        let result = s.eval_incr(db, tx, update, AuthCtx::for_testing())?;
+        let result = s.eval_incr(db, tx, update)?;
         assert_eq!(
             result.tables.len(),
             total_tables,
@@ -418,7 +418,7 @@ mod tests {
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
-        let result = s.eval(db, tx, AuthCtx::for_testing())?;
+        let result = s.eval(db, tx)?;
         assert_eq!(
             result.tables.len(),
             total_tables,
@@ -475,7 +475,7 @@ mod tests {
 
         let query: ExecutionSet = singleton_execution_set(query)?;
 
-        let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
+        let result = query.eval_incr(&db, &tx, &update)?;
 
         assert_eq!(result.tables.len(), 1);
 
@@ -566,7 +566,7 @@ mod tests {
             ];
             let tx = db.begin_tx();
             let update = DatabaseUpdate { tables: updates };
-            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
+            let result = query.eval_incr(&db, &tx, &update)?;
             db.release_tx(&ExecutionContext::default(), tx);
 
             // No updates to report
@@ -590,7 +590,7 @@ mod tests {
 
             let update = DatabaseUpdate { tables: updates };
             let tx = db.begin_tx();
-            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
+            let result = query.eval_incr(&db, &tx, &update)?;
             db.release_tx(&ExecutionContext::default(), tx);
 
             // No updates to report
@@ -614,7 +614,7 @@ mod tests {
 
             let update = DatabaseUpdate { tables: updates };
             let tx = db.begin_tx();
-            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
+            let result = query.eval_incr(&db, &tx, &update)?;
             db.release_tx(&ExecutionContext::default(), tx);
 
             // A single delete from lhs
@@ -639,7 +639,7 @@ mod tests {
 
             let update = DatabaseUpdate { tables: updates };
             let tx = db.begin_tx();
-            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
+            let result = query.eval_incr(&db, &tx, &update)?;
             db.release_tx(&ExecutionContext::default(), tx);
 
             // A single insert into lhs
@@ -666,7 +666,7 @@ mod tests {
 
             let update = DatabaseUpdate { tables: updates };
             let tx = db.begin_tx();
-            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
+            let result = query.eval_incr(&db, &tx, &update)?;
             db.release_tx(&ExecutionContext::default(), tx);
 
             // A single insert into lhs
@@ -697,7 +697,7 @@ mod tests {
 
             let update = DatabaseUpdate { tables: updates };
             let tx = db.begin_tx();
-            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
+            let result = query.eval_incr(&db, &tx, &update)?;
             db.release_tx(&ExecutionContext::default(), tx);
 
             // No updates to report
@@ -726,7 +726,7 @@ mod tests {
 
             let update = DatabaseUpdate { tables: updates };
             let tx = db.begin_tx();
-            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
+            let result = query.eval_incr(&db, &tx, &update)?;
             db.release_tx(&ExecutionContext::default(), tx);
 
             // A single delete from lhs
@@ -756,7 +756,7 @@ mod tests {
 
             let update = DatabaseUpdate { tables: updates };
             let tx = db.begin_tx();
-            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
+            let result = query.eval_incr(&db, &tx, &update)?;
             db.release_tx(&ExecutionContext::default(), tx);
 
             // No updates to report
