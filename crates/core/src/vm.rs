@@ -356,7 +356,7 @@ impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoin<'a, '_, Rhs> {
 
         // Otherwise probe the index with a row from the probe side.
         while let Some(row) = self.probe_side.next()? {
-            if let Some(pos) = self.probe_side.head().column_pos(self.probe_field) {
+            if let Some(pos) = self.probe_side.head().col_id_by_field(self.probe_field) {
                 if let Some(value) = row.read_column(pos.idx()) {
                     let table_id = self.index_table;
                     let col_id = self.index_col;
@@ -530,7 +530,7 @@ impl ProgramVm for DbProgram<'_, '_> {
                 // assignments are consumed.
                 let exprs: Vec<Option<FieldExpr>> = table
                     .head()
-                    .fields
+                    .fields()
                     .iter()
                     .map(|col| assignments.remove(&col.field))
                     .collect();

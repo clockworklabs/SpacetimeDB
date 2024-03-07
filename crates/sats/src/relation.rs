@@ -6,9 +6,13 @@ use crate::{algebraic_type, AlgebraicType, ProductType, ProductTypeElement, Type
 use derive_more::From;
 use spacetimedb_primitives::{ColId, ColList, ColListBuilder, Constraints, TableId};
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::ops::Index;
+use std::slice::Iter;
 use std::sync::Arc;
+use std::vec::IntoIter;
 
 pub fn calculate_hash<T: Hash>(t: &T) -> u64 {
     let mut s = DefaultHasher::new();
@@ -95,9 +99,9 @@ impl FieldName {
         }
     }
 
-    pub fn into_field_name(self) -> Option<String> {
+    pub fn to_field_name(&self) -> Option<String> {
         match self {
-            FieldName::Name { field, .. } => Some(field),
+            FieldName::Name { field, .. } => Some(field.clone()),
             FieldName::Pos { .. } => None,
         }
     }
@@ -164,7 +168,7 @@ pub struct ColumnOnlyField<'a> {
 // TODO(perf): Remove `Clone` derivation.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Column {
-    pub field: FieldName,
+    pub field: Arc<FieldName>,
     pub algebraic_type: AlgebraicType,
     pub col_id: ColId,
 }
@@ -172,7 +176,7 @@ pub struct Column {
 impl Column {
     pub fn new(field: FieldName, algebraic_type: AlgebraicType, col_id: ColId) -> Self {
         Self {
-            field,
+            field: field.into(),
             algebraic_type,
             col_id,
         }
@@ -192,18 +196,145 @@ pub struct HeaderOnlyField<'a> {
     pub fields: Vec<ColumnOnlyField<'a>>,
 }
 
+/// Represents a collection of `fields` metadata made of [Column].
+///
+/// The `fields` need to be preserved by the order specified by the user.
+#[derive(Debug, Clone, Eq)]
+pub struct Fields {
+    columns: Vec<Column>,
+    /// Keeps an index to quickly look up the position
+    idx: HashMap<Arc<FieldName>, usize>,
+}
+
+impl Fields {
+    /// Creates a new instance of `Fields` with the given columns, and build an internal map of `FieldName` to their positions.
+    pub fn new(columns: Vec<Column>) -> Self {
+        let idx = columns
+            .iter()
+            .enumerate()
+            .map(|(pos, x)| (x.field.clone(), pos))
+            .collect();
+        Self { columns, idx }
+    }
+
+    /// Returns the number of columns in the `Fields`.
+    pub fn len(&self) -> usize {
+        self.columns.len()
+    }
+
+    /// Returns true if the `Fields` contains no columns.
+    pub fn is_empty(&self) -> bool {
+        self.columns.is_empty()
+    }
+
+    /// Adds a new column to the `Fields`.
+    pub fn add_field(&mut self, column: Column) {
+        let idx = self.columns.len();
+        self.idx.insert(column.field.clone(), idx);
+        self.columns.push(column);
+    }
+
+    /// Removes all columns from the `Fields`.
+    pub fn clear(&mut self) {
+        self.columns.clear();
+        self.idx.clear();
+    }
+
+    /// Removes and returns the last column in the `Fields`, or None if it is empty.
+    pub fn pop(&mut self) -> Option<Column> {
+        if let Some(col) = self.columns.pop() {
+            self.idx.remove(&col.field);
+            return Some(col);
+        }
+        None
+    }
+
+    /// Removes and returns the column at the specified index.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `index` is out of bounds.
+    pub fn remove(&mut self, index: usize) -> Column {
+        let col = self.columns.remove(index);
+        self.idx.remove(&col.field);
+        col
+    }
+
+    /// Returns the index of the column with the specified [FieldName].
+    pub fn get_field_index(&self, field_name: &FieldName) -> Option<&usize> {
+        self.idx.get(field_name)
+    }
+
+    /// Returns a reference to the [Column] with the specified [FieldName].
+    pub fn get_field(&self, field_name: &FieldName) -> Option<&Column> {
+        self.get_field_index(field_name).and_then(|pos| self.columns.get(*pos))
+    }
+
+    /// Returns a reference to the [Column] at the specified index.
+    pub fn column_by_pos(&self, idx: usize) -> Option<&Column> {
+        self.columns.get(idx)
+    }
+
+    /// Returns an iterator over the columns in the `Fields`.
+    pub fn iter(&self) -> Iter<'_, Column> {
+        self.columns.iter()
+    }
+
+    /// Returns an iterator that consumes the `Fields` and returns owned columns.
+    #[allow(clippy::should_implement_trait)]
+    pub fn into_iter(self) -> IntoIter<Column> {
+        self.columns.into_iter()
+    }
+
+    /// Reserves capacity for at least `additional` more elements to be inserted in the `Fields`.
+    pub fn reserve(&mut self, additional: usize) {
+        self.columns.reserve(additional);
+    }
+}
+
+impl PartialEq for Fields {
+    // We must not take in account `self.idx` because the positions change on different schemas but the `columns` stay the same.
+    fn eq(&self, other: &Self) -> bool {
+        self.columns == other.columns
+    }
+}
+
+impl Hash for Fields {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.columns.hash(state);
+    }
+}
+
+impl Index<usize> for Fields {
+    type Output = Column;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.columns[index]
+    }
+}
+
+impl From<Vec<Column>> for Fields {
+    fn from(value: Vec<Column>) -> Self {
+        Self::new(value)
+    }
+}
+
+/// Represents a table header with column information and constraints.
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Header {
     pub table_name: String,
-    pub fields: Vec<Column>,
+    // Do not expose `fields` because we need to maintain their `idx`.
+    fields: Fields,
+    /// The list of constraints associated with the table's columns.
     pub constraints: Vec<(ColList, Constraints)>,
 }
 
 impl Header {
-    pub fn new(table_name: String, fields: Vec<Column>, constraints: Vec<(ColList, Constraints)>) -> Self {
+    /// Creates a new instance of `Header` with the given table name, fields, and constraints.
+    pub fn new<F: Into<Fields>>(table_name: String, fields: F, constraints: Vec<(ColList, Constraints)>) -> Self {
         Self {
             table_name,
-            fields,
+            fields: fields.into(),
             constraints,
         }
     }
@@ -222,8 +353,9 @@ impl Header {
         }
     }
 
+    /// Creates a new [Header] from a [ProductType].
     pub fn from_product_type(table_name: String, fields: ProductType) -> Self {
-        let cols = fields
+        let cols: Vec<Column> = fields
             .elements
             .into_iter()
             .enumerate()
@@ -245,6 +377,7 @@ impl Header {
         Self::new(table_name, cols, Default::default())
     }
 
+    /// Converts the [Header] into a [ProductType].
     pub fn to_product_type(&self) -> ProductType {
         ProductType::from_iter(
             self.fields.iter().map(|x| {
@@ -253,11 +386,13 @@ impl Header {
         )
     }
 
+    /// Creates a [Header] for a [MemTable].
     pub fn for_mem_table(fields: ProductType) -> Self {
         let table_name = format!("mem#{:x}", calculate_hash(&fields));
         Self::from_product_type(table_name, fields)
     }
 
+    /// Returns a new [Header] containing only the fields names.
     pub fn as_without_table_name(&self) -> HeaderOnlyField {
         HeaderOnlyField {
             fields: self.fields.iter().map(|x| x.as_without_table()).collect(),
@@ -272,34 +407,77 @@ impl Header {
         )
     }
 
-    pub fn find_by_name(&self, field_name: &str) -> Option<&Column> {
-        self.fields.iter().find(|x| x.field.field_name() == Some(field_name))
+    /// Returns a slice of columns in the `Header`.
+    pub fn fields(&self) -> &[Column] {
+        &self.fields.columns
     }
 
-    pub fn column_pos<'a>(&'a self, col: &'a FieldName) -> Option<ColId> {
+    /// Returns the [Column] at the specified position.
+    pub fn column_by_pos(&self, pos: usize) -> &Column {
+        &self.fields[pos]
+    }
+
+    /// Returns the [FieldName] at the specified position.
+    pub fn field_by_pos(&self, pos: usize) -> Option<&FieldName> {
+        self.fields.column_by_pos(pos).map(|x| x.field.as_ref())
+    }
+
+    /// Returns the [Column] with the specified [FieldName].
+    pub fn column(&self, col: &FieldName) -> Option<&Column> {
         match col {
-            FieldName::Name { .. } => self.fields.iter().position(|f| &f.field == col),
-            FieldName::Pos { field, .. } => self
-                .fields
-                .iter()
-                .enumerate()
-                .position(|(pos, f)| &f.field == col || *field == pos),
+            FieldName::Name { .. } => self.fields.get_field(col),
+            FieldName::Pos { field, .. } => self.fields.column_by_pos(*field),
         }
-        .map(Into::into)
     }
 
-    pub fn column_pos_or_err<'a>(&'a self, col: &'a FieldName) -> Result<ColId, RelationError> {
-        self.column_pos(col)
+    /// Returns the [Column] with the specified `field_name`.
+    pub fn column_by_name(&self, field_name: &str) -> Option<&Column> {
+        self.column(&FieldName::named(&self.table_name, field_name))
+    }
+
+    /// Returns the [FieldName] with the specified `field_name`.
+    pub fn field_by_name(&self, field_name: &str) -> Option<&FieldName> {
+        self.column_by_name(field_name).map(|x| x.field.as_ref())
+    }
+
+    /// Returns the [Column] with the specified [ColId].
+    pub fn column_by_id(&self, col_id: ColId) -> Option<&Column> {
+        self.fields.iter().find(|x| x.col_id == col_id)
+    }
+
+    /// Returns the [FieldName] with the specified [ColId].
+    pub fn field_by_id(&self, col_id: ColId) -> Option<&FieldName> {
+        self.column_by_id(col_id).map(|x| x.field.as_ref())
+    }
+
+    /// Returns the [ColId] of the specified [FieldName].
+    pub fn col_id_by_field<'a>(&'a self, col: &'a FieldName) -> Option<ColId> {
+        self.column(col).map(|x| x.col_id)
+    }
+
+    /// Returns the [ColId] of the specified [FieldName] or [RelationError::FieldNotFound].
+    pub fn col_id_by_field_or_err<'a>(&'a self, col: &'a FieldName) -> Result<ColId, RelationError> {
+        self.col_id_by_field(col)
             .ok_or_else(|| RelationError::FieldNotFound(self.clone_for_error(), col.clone()))
     }
 
-    /// Finds the position of a field with `name`.
-    pub fn find_pos_by_name(&self, name: &str) -> Option<ColId> {
-        self.column_pos(&FieldName::named(&self.table_name, name))
+    /// Finds the [ColId] of a field with `name`.
+    pub fn find_col_id_by_name(&self, name: &str) -> Option<ColId> {
+        self.col_id_by_field(&FieldName::named(&self.table_name, name))
     }
 
-    pub fn column<'a>(&'a self, col: &'a FieldName) -> Option<&Column> {
-        self.fields.iter().find(|f| &f.field == col)
+    /// Converts the fields, cloning into [FieldExpr].
+    pub fn fields_to_expr(&self) -> Vec<FieldExpr> {
+        self.fields
+            .iter()
+            .cloned()
+            .map(|Column { field, .. }| field.as_ref().clone().into())
+            .collect()
+    }
+
+    /// Adds a [Column] to the [Header].
+    pub fn add(&mut self, column: Column) {
+        self.fields.add_field(column)
     }
 
     /// Copy the [Constraints] that are referenced in the list of `for_columns`
@@ -314,7 +492,7 @@ impl Header {
     }
 
     pub fn has_constraint(&self, field: &FieldName, constraint: Constraints) -> bool {
-        self.column_pos(field)
+        self.col_id_by_field(field)
             .map(|find| {
                 self.constraints
                     .iter()
@@ -331,7 +509,7 @@ impl Header {
         for (pos, col) in cols.iter().enumerate() {
             match col.clone().into() {
                 FieldExpr::Name(col) => {
-                    let pos = self.column_pos_or_err(&col)?;
+                    let pos = self.col_id_by_field_or_err(&col)?;
                     to_keep.push(pos);
                     p.push(self.fields[pos.idx()].clone());
                 }
@@ -376,17 +554,19 @@ impl Header {
 
         let mut cont = 0;
         //Avoid duplicated field names...
-        for mut f in right.fields.iter().cloned() {
-            if f.field.table() == self.table_name && self.column_pos(&f.field).is_some() {
+        for (pos, mut f) in right.fields.iter().cloned().enumerate() {
+            if f.field.table() == self.table_name && self.col_id_by_field(&f.field).is_some() {
                 let name = format!("{}_{}", f.field.field(), cont);
                 f.field = FieldName::Name {
                     table: f.field.table().into(),
                     field: name,
-                };
+                }
+                .into();
 
                 cont += 1;
             }
-            fields.push(f);
+            f.col_id = ColId(len_lhs + pos as u32);
+            fields.add_field(f);
         }
 
         Self::new(self.table_name.clone(), fields, constraints)
@@ -399,7 +579,7 @@ impl From<Header> for ProductType {
             value
                 .fields
                 .into_iter()
-                .map(|x| ProductTypeElement::new(x.algebraic_type, x.field.into_field_name())),
+                .map(|x| ProductTypeElement::new(x.algebraic_type, x.field.to_field_name())),
         )
     }
 }
@@ -520,8 +700,8 @@ mod tests {
         Header::new(
             table.into(),
             vec![
-                Column::new(FieldName::named(table, fields.0), AlgebraicType::I8, 0.into()),
-                Column::new(FieldName::named(table, fields.1), AlgebraicType::I8, 0.into()),
+                Column::new(FieldName::named(table, fields.0), AlgebraicType::I8, pos_lhs.into()),
+                Column::new(FieldName::named(table, fields.1), AlgebraicType::I8, pos_rhs.into()),
             ],
             ct,
         )

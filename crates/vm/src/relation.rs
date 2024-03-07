@@ -72,7 +72,7 @@ impl<'a> RelValue<'a> {
     ) -> Result<Cow<'a, AlgebraicValue>, RelationError> {
         let val = match col {
             FieldExprRef::Name(col) => {
-                let pos = header.column_pos_or_err(col)?.idx();
+                let pos = header.col_id_by_field_or_err(col)?.idx();
                 self.read_column(pos)
                     .ok_or_else(|| RelationError::FieldNotFoundAtPos(pos, col.clone()))?
             }
@@ -108,7 +108,7 @@ impl<'a> RelValue<'a> {
         for col in cols {
             let val = match col {
                 FieldExpr::Name(col) => {
-                    let pos = header.column_pos_or_err(col)?.idx();
+                    let pos = header.col_id_by_field_or_err(col)?.idx();
                     self.read_or_take_column(pos)
                         .ok_or_else(|| RelationError::FieldNotFoundAtPos(pos, col.clone()))?
                 }
@@ -139,10 +139,10 @@ pub struct MemTable {
 impl MemTable {
     pub fn new(head: Arc<Header>, table_access: StAccess, data: Vec<ProductValue>) -> Self {
         assert_eq!(
-            head.fields.len(),
+            head.fields().len(),
             data.first()
                 .map(|pv| pv.elements.len())
-                .unwrap_or_else(|| head.fields.len()),
+                .unwrap_or_else(|| head.fields().len()),
             "number of columns in `header.len() != data.len()`"
         );
         Self {
@@ -173,11 +173,11 @@ impl MemTable {
     }
 
     pub fn get_field_pos(&self, pos: usize) -> Option<&FieldName> {
-        self.head.fields.get(pos).map(|x| &x.field)
+        self.head.field_by_pos(pos)
     }
 
     pub fn get_field_named(&self, name: &str) -> Option<&FieldName> {
-        self.head.find_by_name(name).map(|x| &x.field)
+        self.head.field_by_name(name)
     }
 }
 

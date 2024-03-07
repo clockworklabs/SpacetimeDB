@@ -951,7 +951,7 @@ impl From<&TableSchema> for DbTable {
 impl From<&TableSchema> for Header {
     fn from(value: &TableSchema) -> Self {
         let constraints = value.get_constraints();
-        let fields = value
+        let fields: Vec<Column> = value
             .columns
             .iter()
             .enumerate()

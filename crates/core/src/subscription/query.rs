@@ -45,9 +45,9 @@ pub const OP_TYPE_FIELD_NAME: &str = "__op_type";
 /// header.find_pos_by_name(OP_TYPE_FIELD_NAME)
 /// ```
 pub fn find_op_type_col_pos(header: &Header) -> Option<ColId> {
-    if let Some(last_col) = header.fields.last() {
+    if let Some(last_col) = header.fields().last() {
         if last_col.field.field_name() == Some(OP_TYPE_FIELD_NAME) {
-            return Some(ColId((header.fields.len() - 1) as u32));
+            return Some(ColId((header.fields().len() - 1) as u32));
         }
     }
     None
@@ -90,10 +90,10 @@ pub fn to_mem_table_with_op_type(head: Arc<Header>, table_access: StAccess, data
     } else {
         // TODO(perf): Eliminate this `clone_for_error` call, as we're not in an error path.
         let mut head = t.head.clone_for_error();
-        head.fields.push(Column::new(
+        head.add(Column::new(
             FieldName::named(&t.head.table_name, OP_TYPE_FIELD_NAME),
             AlgebraicType::U8,
-            t.head.fields.len().into(),
+            t.head.fields().len().into(),
         ));
         t.head = Arc::new(head);
         for row in &data.ops {

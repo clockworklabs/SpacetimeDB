@@ -110,7 +110,7 @@ impl AsyncDB for SpaceDb {
         }
         let r = r.into_iter().next().unwrap();
 
-        let header = r.head.fields.iter().map(|x| Kind(x.algebraic_type.clone())).collect();
+        let header = r.head.fields().iter().map(|x| Kind(x.algebraic_type.clone())).collect();
 
         let output: Vec<Vec<_>> = r
             .data
