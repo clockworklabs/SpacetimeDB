@@ -259,6 +259,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         self.scheduler.close()
     }
 
+    #[tracing::instrument(skip_all)]
     fn one_off_query(
         &self,
         caller_identity: Identity,
@@ -642,7 +643,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         };
         self.info
             .subscriptions
-            .blocking_broadcast_event(client.as_ref(), &subscriptions, Arc::new(event));
+            .blocking_broadcast_event(client.as_deref(), &subscriptions, Arc::new(event));
 
         ReducerCallResult {
             outcome,

@@ -431,7 +431,7 @@ fn compile_where(table: &From, filter: Option<SqlExpr>) -> Result<Option<Selecti
     }
 }
 
-pub(crate) trait TableSchemaView {
+pub trait TableSchemaView {
     fn find_table(&self, db: &RelationalDB, t: Table) -> Result<Cow<'_, TableSchema>, PlanError>;
 }
 

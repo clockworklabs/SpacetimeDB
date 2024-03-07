@@ -1,15 +1,15 @@
 use crate::db::db_metrics::{DB_METRICS, MAX_QUERY_COMPILE_TIME};
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
-use crate::execution_context::{ExecutionContext, WorkloadType};
+use crate::execution_context::WorkloadType;
 use crate::host::module_host::DatabaseTableUpdate;
 use crate::sql::compiler::compile_sql;
-use crate::sql::execute::execute_single_sql;
 use crate::subscription::subscription::SupportedQuery;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Address;
+use spacetimedb_primitives::ColId;
 use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::relation::{Column, FieldName, Header};
 use spacetimedb_sats::AlgebraicType;
@@ -30,13 +30,35 @@ pub enum QueryDef {
 
 pub const OP_TYPE_FIELD_NAME: &str = "__op_type";
 
+/// Locate the `__op_type` column in the table described by `header`,
+/// if it exists.
+///
+/// The current version of this function depends on the fact that
+/// the `__op_type` column is always the final column in the schema.
+/// This is true because the `__op_type` column is added by [`to_mem_table_with_op_type`] at the end,
+/// and never originates anywhere else.
+///
+/// If we ever change to having the `__op_type` column in any other position,
+/// e.g. by projecting together two `MemTables` from [`to_mem_table_with_op_type`],
+/// this function may need to change, possibly to:
+/// ```ignore
+/// header.find_pos_by_name(OP_TYPE_FIELD_NAME)
+/// ```
+fn find_op_type_col_pos(header: &Header) -> Option<ColId> {
+    if let Some(last_col) = header.fields.last() {
+        if last_col.field.field_name() == Some(OP_TYPE_FIELD_NAME) {
+            return Some(ColId((header.fields.len() - 1) as u32));
+        }
+    }
+    None
+}
+
 /// Create a virtual table from a sequence of table updates.
 /// Add a special column __op_type to distinguish inserts and deletes.
-#[tracing::instrument(skip_all)]
 pub fn to_mem_table_with_op_type(head: Arc<Header>, table_access: StAccess, data: &DatabaseTableUpdate) -> MemTable {
     let mut t = MemTable::new(head, table_access, vec![]);
 
-    if let Some(pos) = t.head.find_pos_by_name(OP_TYPE_FIELD_NAME) {
+    if let Some(pos) = find_op_type_col_pos(&t.head) {
         t.data.extend(data.ops.iter().map(|row| {
             let mut new = row.row.clone();
 
@@ -94,19 +116,6 @@ pub fn to_mem_table(mut of: QueryExpr, data: &DatabaseTableUpdate) -> (QueryExpr
     (of, sources)
 }
 
-/// Runs a query that evaluates if the changes made should be reported to the [ModuleSubscriptionManager]
-#[tracing::instrument(skip_all)]
-pub(crate) fn run_query(
-    cx: &ExecutionContext,
-    db: &RelationalDB,
-    tx: &Tx,
-    query: &QueryExpr,
-    auth: AuthCtx,
-    sources: SourceSet,
-) -> Result<Vec<MemTable>, DBError> {
-    execute_single_sql(cx, db, tx, CrudExpr::Query(query.clone()), auth, sources)
-}
-
 // TODO: It's semantically wrong to `SUBSCRIBE_TO_ALL_QUERY`
 // as it can only return back the changes valid for the tables in scope *right now*
 // instead of **continuously updating** the db changes
@@ -117,7 +126,6 @@ pub(crate) fn run_query(
 ///
 /// This is necessary when merging multiple SQL queries into a single query set,
 /// as in [`crate::subscription::module_subscription_actor::ModuleSubscriptions::add_subscriber`].
-#[tracing::instrument(skip(relational_db, auth, tx))]
 pub fn compile_read_only_query(
     relational_db: &RelationalDB,
     tx: &Tx,
@@ -223,6 +231,7 @@ mod tests {
     use crate::db::datastore::traits::IsolationLevel;
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::db::relational_db::MutTx;
+    use crate::execution_context::ExecutionContext;
     use crate::host::module_host::{DatabaseUpdate, TableOp};
     use crate::sql::execute::run;
     use crate::subscription::subscription::ExecutionSet;
@@ -237,6 +246,18 @@ mod tests {
     use spacetimedb_sats::{product, ProductType, ProductValue};
     use spacetimedb_vm::dsl::{mem_table, scalar};
     use spacetimedb_vm::operator::OpCmp;
+
+    /// Runs a query that evaluates if the changes made should be reported to the [ModuleSubscriptionManager]
+    pub fn run_query(
+        cx: &ExecutionContext,
+        db: &RelationalDB,
+        tx: &Tx,
+        query: &QueryExpr,
+        auth: AuthCtx,
+        sources: SourceSet,
+    ) -> Result<Vec<MemTable>, DBError> {
+        crate::sql::execute::execute_single_sql(cx, db, tx, CrudExpr::Query(query.clone()), auth, sources)
+    }
 
     fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
         DatabaseTableUpdate {

@@ -37,3 +37,4 @@ bytestring = "1"
 tokio-tungstenite.workspace = true
 itoa = "1.0.9"
 derive_more = "0.99.17"
+scopeguard.workspace = true

@@ -13,7 +13,6 @@ use std::sync::Arc;
 use super::ast::TableSchemaView;
 
 /// Compile the `SQL` expression into an `ast`
-#[tracing::instrument(skip_all)]
 pub fn compile_sql<T: TableSchemaView>(db: &RelationalDB, tx: &T, sql_text: &str) -> Result<Vec<CrudExpr>, DBError> {
     tracing::trace!(sql = sql_text);
     let ast = compile_to_ast(db, tx, sql_text)?;
