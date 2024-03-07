@@ -53,6 +53,3 @@ criterion-perf-events.workspace = true
 proptest.workspace = true
 proptest-derive.workspace = true
 rand.workspace = true
-
-[target.'cfg(all(target_os = "linux", target_arch = "x86_64"))'.dev-dependencies]
-perfcnt = "0.8"
