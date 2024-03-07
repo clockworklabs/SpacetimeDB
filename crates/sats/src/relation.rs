@@ -175,7 +175,7 @@ pub struct HeaderOnlyField<'a> {
     pub fields: Vec<ColumnOnlyField<'a>>,
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Header {
     pub table_name: String,
     pub fields: Vec<Column>,
@@ -454,7 +454,7 @@ pub trait Relation {
 }
 
 /// A stored table from [RelationalDB]
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct DbTable {
     pub head: Arc<Header>,
     pub table_id: TableId,
