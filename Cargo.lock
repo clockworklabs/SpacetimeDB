@@ -4794,7 +4794,6 @@ dependencies = [
  "enum-as-inner",
  "itertools 0.12.0",
  "nohash-hasher",
- "perfcnt",
  "proptest",
  "proptest-derive",
  "rand 0.8.5",
