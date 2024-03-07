@@ -40,7 +40,7 @@ use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::relation::{DbTable, Header};
-use spacetimedb_vm::expr::{self, IndexJoin, Query, QueryCode, QueryExpr, SourceSet};
+use spacetimedb_vm::expr::{self, IndexJoin, Query, QueryCode, QueryExpr, SourceId, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::MemTable;
 use std::collections::HashSet;
@@ -270,8 +270,29 @@ fn eval_updates<'a>(
 /// For a more in-depth discussion, see the [module-level documentation](./index.html).
 #[derive(Debug)]
 pub struct IncrementalJoin {
+    /// The [`DbTable`] which, in the source query, is listed as the index table.
+    ///
+    /// This will not necessarily be the result table,
+    /// nor will it be used as the index table for every query evaluated during [`IncrementalJoin::eval_incr`].
+    /// We refer to it as the "index table" simply because we need distinct names for the two tables.
     index_table: DbTable,
+
+    /// A [`Header`] derived from the `index_table`, augmented with an `__op_type` field,
+    /// as by [`query::to_mem_table_with_op_type`].
+    index_memtable: Arc<Header>,
+
+    /// The [`DbTable`] which, in the source query, is listed as the probe table.
+    ///
+    /// This will not necessarily be the filter table,
+    /// nor will it be used as the probe table for every query evaluated during [`IncrementalJoin::eval_incr`].
+    /// We refer to it as the "probe table" simply because we need distinct names for the two tables.
     probe_table: DbTable,
+
+    /// A [`Header`] derived from the `probe_table`, augmented with an `__op_type` field,
+    /// as by [`query::to_mem_table_with_op_type`].
+    probe_memtable: Arc<Header>,
+
+    /// If true, return rows from the index table. If false, return rows from the probe table.
     return_index_rows: bool,
 
     /// A(+/-) join B
@@ -362,14 +383,16 @@ impl IncrementalJoin {
             .context("expected a physical database table")?
             .clone();
 
-        let (index_modifications_probe_committed, _sources) =
+        let (index_modifications_probe_committed, mut sources) =
             with_delta_table(join.clone(), Some(Self::dummy_table_update(&index_table)), None);
-        debug_assert_eq!(_sources.len(), 1);
+        debug_assert_eq!(sources.len(), 1);
+        let index_memtable = sources.take_mem_table(SourceId(0)).unwrap().head;
         let index_modifications_probe_committed = Self::optimize_query(index_modifications_probe_committed);
 
-        let (index_committed_probe_modifications, _sources) =
+        let (index_committed_probe_modifications, mut sources) =
             with_delta_table(join.clone(), None, Some(Self::dummy_table_update(&probe_table)));
-        debug_assert_eq!(_sources.len(), 1);
+        debug_assert_eq!(sources.len(), 1);
+        let probe_memtable = sources.take_mem_table(SourceId(0)).unwrap().head;
         let index_committed_probe_modifications = Self::optimize_query(index_committed_probe_modifications);
 
         let (index_deletes_probe_deletes, _sources) = with_delta_table(
@@ -382,7 +405,9 @@ impl IncrementalJoin {
 
         Ok(Self {
             index_table,
+            index_memtable,
             probe_table,
+            probe_memtable,
             return_index_rows: join.return_index_rows,
 
             index_modifications_probe_committed,
@@ -451,7 +476,7 @@ impl IncrementalJoin {
             // {A+ join B}
             let index_inserts = index_side.inserts();
             let index_inserts = to_mem_table_with_op_type(
-                self.index_table.head.clone(),
+                self.index_memtable.clone(),
                 self.index_table.table_access,
                 &index_inserts,
             );
@@ -468,7 +493,7 @@ impl IncrementalJoin {
             // {A join B+}
             let probe_inserts = probe_side.inserts();
             let probe_inserts = to_mem_table_with_op_type(
-                self.probe_table.head.clone(),
+                self.probe_memtable.clone(),
                 self.probe_table.table_access,
                 &probe_inserts,
             );
@@ -489,7 +514,7 @@ impl IncrementalJoin {
             // {A- join B}
             let index_deletes = index_side.deletes();
             let index_deletes = to_mem_table_with_op_type(
-                self.index_table.head.clone(),
+                self.index_memtable.clone(),
                 self.index_table.table_access,
                 &index_deletes,
             );
@@ -506,7 +531,7 @@ impl IncrementalJoin {
             // {A join B-}
             let probe_deletes = probe_side.deletes();
             let probe_deletes = to_mem_table_with_op_type(
-                self.probe_table.head.clone(),
+                self.probe_memtable.clone(),
                 self.probe_table.table_access,
                 &probe_deletes,
             );
@@ -523,13 +548,13 @@ impl IncrementalJoin {
             // {A- join B-}
             let index_deletes = index_side.deletes();
             let index_deletes = to_mem_table_with_op_type(
-                self.index_table.head.clone(),
+                self.index_memtable.clone(),
                 self.index_table.table_access,
                 &index_deletes,
             );
             let probe_deletes = probe_side.deletes();
             let probe_deletes = to_mem_table_with_op_type(
-                self.probe_table.head.clone(),
+                self.probe_memtable.clone(),
                 self.probe_table.table_access,
                 &probe_deletes,
             );
