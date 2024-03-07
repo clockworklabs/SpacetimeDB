@@ -259,6 +259,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         self.scheduler.close()
     }
 
+    #[tracing::instrument(skip_all)]
     fn one_off_query(
         &self,
         caller_identity: Identity,

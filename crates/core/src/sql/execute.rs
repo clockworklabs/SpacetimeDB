@@ -20,7 +20,6 @@ pub struct StmtResult {
 // we always generate a plan, but it may contain errors
 
 /// Run a `SQL` query/statement in the specified `database_instance_id`.
-#[tracing::instrument(skip_all)]
 pub fn execute(
     db_inst_ctx_controller: &DatabaseInstanceContextController,
     database_instance_id: u64,
@@ -51,7 +50,6 @@ fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Result<(), DBErr
     Ok(())
 }
 
-#[tracing::instrument(skip_all)]
 pub fn execute_single_sql(
     cx: &ExecutionContext,
     db: &RelationalDB,
@@ -69,7 +67,6 @@ pub fn execute_single_sql(
     Ok(result)
 }
 
-#[tracing::instrument(skip_all)]
 pub fn execute_sql_mut_tx(
     db: &RelationalDB,
     tx: &mut MutTx,
@@ -91,7 +88,6 @@ pub fn execute_sql_mut_tx(
 /// Run the compiled `SQL` expression inside the `vm` created by [DbProgram]
 ///
 /// Evaluates `ast` and accordingly triggers mutable or read tx to execute
-#[tracing::instrument(skip_all)]
 pub fn execute_sql(db: &RelationalDB, ast: Vec<CrudExpr>, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
     let total = ast.len();
     let ctx = ExecutionContext::sql(db.address());
@@ -117,7 +113,6 @@ pub fn execute_sql(db: &RelationalDB, ast: Vec<CrudExpr>, auth: AuthCtx) -> Resu
 }
 
 /// Run the `SQL` string using the `auth` credentials
-#[tracing::instrument(skip_all)]
 pub fn run(db: &RelationalDB, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
     let ctx = &ExecutionContext::sql(db.address());
     let ast = db.with_read_only(ctx, |tx| compile_sql(db, tx, sql_text))?;
