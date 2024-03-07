@@ -8,6 +8,7 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use smallvec::SmallVec;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::TableId;
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -159,12 +160,11 @@ impl SubscriptionManager {
                 .collect::<Vec<_>>()
                 .into_iter()
                 .fold(
-                    HashMap::new(),
-                    |mut tables: HashMap<(&Identity, TableId), DatabaseTableUpdate>, (id, table_id, delta)| {
-                        if let Some(table) = tables.get_mut(&(id, table_id)) {
-                            table.ops.extend(delta.ops);
-                        } else {
-                            tables.insert((id, table_id), delta);
+                    HashMap::<_, DatabaseTableUpdate>::new(),
+                    |mut tables, (id, table_id, delta)| {
+                        match tables.entry((id, table_id)) {
+                            Entry::Occupied(mut entry) => entry.get_mut().ops.extend(delta.ops),
+                            Entry::Vacant(entry) => drop(entry.insert(delta)),
                         }
                         tables
                     },
@@ -173,12 +173,8 @@ impl SubscriptionManager {
                 // Each client receives a single DatabaseUpdate per transaction.
                 // So before sending an update to each client,
                 // we must stitch together the DatabaseTableUpdates into a final DatabaseUpdate.
-                .fold(HashMap::new(), |mut updates, ((id, _), delta)| {
-                    if let Some(DatabaseUpdate { tables }) = updates.get_mut(id) {
-                        tables.push(delta);
-                    } else {
-                        updates.insert(id, vec![delta].into());
-                    }
+                .fold(HashMap::<_, DatabaseUpdate>::new(), |mut updates, ((id, _), delta)| {
+                    updates.entry(id).or_default().tables.push(delta);
                     updates
                 })
                 .into_iter()
