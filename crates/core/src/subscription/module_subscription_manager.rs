@@ -81,25 +81,24 @@ impl SubscriptionManager {
     /// it is removed from the index along with its table ids.
     #[tracing::instrument(skip_all)]
     pub fn remove_subscription(&mut self, client: &Identity) {
+        // Remove `hash` from the set of queries for `table_id`.
+        // When the table has no queries, cleanup the map entry altogether.
+        let mut remove_table_query = |table_id: TableId, hash: &QueryHash| {
+            if let Entry::Occupied(mut entry) = self.tables.entry(table_id) {
+                let hashes = entry.get_mut();
+                if hashes.remove(hash) && hashes.is_empty() {
+                    entry.remove();
+                }
+            }
+        };
+
         self.clients.remove(client);
         self.subscribers.retain(|hash, ids| {
             ids.remove(client);
             if ids.is_empty() {
                 if let Some(query) = self.queries.remove(hash) {
-                    if self
-                        .tables
-                        .get_mut(&query.return_table())
-                        .is_some_and(|hashes| hashes.remove(hash) && hashes.is_empty())
-                    {
-                        self.tables.remove(&query.return_table());
-                    }
-                    if self
-                        .tables
-                        .get_mut(&query.filter_table())
-                        .is_some_and(|hashes| hashes.remove(hash) && hashes.is_empty())
-                    {
-                        self.tables.remove(&query.filter_table());
-                    }
+                    remove_table_query(query.return_table(), hash);
+                    remove_table_query(query.filter_table(), hash);
                 }
             }
             !ids.is_empty()
@@ -180,14 +179,12 @@ impl SubscriptionManager {
                 .into_iter()
                 .for_each(|(id, database_update)| {
                     let client = self.client(id);
-                    let message = TransactionUpdateMessage {
-                        event,
-                        database_update: SubscriptionUpdate {
-                            database_update,
-                            request_id: event.request_id,
-                            timer: event.timer,
-                        },
+                    let database_update = SubscriptionUpdate {
+                        database_update,
+                        request_id: event.request_id,
+                        timer: event.timer,
                     };
+                    let message = TransactionUpdateMessage { event, database_update };
                     if let Err(e) = client.send_message(message) {
                         tracing::warn!(%client.id, "failed to send update message to client: {e}")
                     }
