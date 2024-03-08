@@ -1,15 +1,16 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use spacetimedb::client::Protocol;
-use spacetimedb::db::relational_db::{open_db, RelationalDB};
+use spacetimedb::db::relational_db::RelationalDB;
 use spacetimedb::error::DBError;
 use spacetimedb::execution_context::ExecutionContext;
 use spacetimedb::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp};
 use spacetimedb::subscription::query::compile_read_only_query;
 use spacetimedb::subscription::subscription::ExecutionSet;
+use spacetimedb_bench::database::BenchDatabase as _;
+use spacetimedb_bench::spacetime_raw::SpacetimeRaw;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_primitives::{col_list, TableId};
 use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductValue};
-use tempdir::TempDir;
 
 fn create_table_location(db: &RelationalDB) -> Result<TableId, DBError> {
     let schema = &[
@@ -50,37 +51,40 @@ fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> Database
 }
 
 fn eval(c: &mut Criterion) {
-    let tmp_dir = TempDir::new("stdb_test").unwrap();
-    let db = open_db(&tmp_dir, false, false).unwrap();
+    let raw = SpacetimeRaw::build(false, false).unwrap();
 
-    let lhs = create_table_footprint(&db).unwrap();
-    let rhs = create_table_location(&db).unwrap();
+    let lhs = create_table_footprint(&raw.db).unwrap();
+    let rhs = create_table_location(&raw.db).unwrap();
 
-    let _ = db.with_auto_commit(&ExecutionContext::default(), |tx| -> Result<(), DBError> {
-        // 1M rows
-        for entity_id in 0u64..1_000_000 {
-            let owner = entity_id % 1_000;
-            let footprint = AlgebraicValue::sum(entity_id as u8 % 4, AlgebraicValue::unit());
-            let row = product!(entity_id, footprint, owner);
-            let _ = db.insert(tx, lhs, row)?;
-        }
-        Ok(())
-    });
-
-    let _ = db.with_auto_commit(&ExecutionContext::default(), |tx| -> Result<(), DBError> {
-        // 1000 chunks, 1200 rows per chunk = 1.2M rows
-        for chunk_index in 0u64..1_000 {
-            for i in 0u64..1200 {
-                let entity_id = chunk_index * 1200 + i;
-                let x = 0i32;
-                let z = entity_id as i32;
-                let dimension = 0u32;
-                let row = product!(entity_id, chunk_index, x, z, dimension);
-                let _ = db.insert(tx, rhs, row)?;
+    let _ = raw
+        .db
+        .with_auto_commit(&ExecutionContext::default(), |tx| -> Result<(), DBError> {
+            // 1M rows
+            for entity_id in 0u64..1_000_000 {
+                let owner = entity_id % 1_000;
+                let footprint = AlgebraicValue::sum(entity_id as u8 % 4, AlgebraicValue::unit());
+                let row = product!(entity_id, footprint, owner);
+                let _ = raw.db.insert(tx, lhs, row)?;
             }
-        }
-        Ok(())
-    });
+            Ok(())
+        });
+
+    let _ = raw
+        .db
+        .with_auto_commit(&ExecutionContext::default(), |tx| -> Result<(), DBError> {
+            // 1000 chunks, 1200 rows per chunk = 1.2M rows
+            for chunk_index in 0u64..1_000 {
+                for i in 0u64..1200 {
+                    let entity_id = chunk_index * 1200 + i;
+                    let x = 0i32;
+                    let z = entity_id as i32;
+                    let dimension = 0u32;
+                    let row = product!(entity_id, chunk_index, x, z, dimension);
+                    let _ = raw.db.insert(tx, rhs, row)?;
+                }
+            }
+            Ok(())
+        });
 
     let entity_id = 1_200_000u64;
     let chunk_index = 5u64;
@@ -104,11 +108,11 @@ fn eval(c: &mut Criterion) {
     let bench_eval = |c: &mut Criterion, name, sql| {
         c.bench_function(name, |b| {
             let auth = AuthCtx::for_testing();
-            let tx = db.begin_tx();
-            let query = compile_read_only_query(&db, &tx, &auth, sql).unwrap();
+            let tx = raw.db.begin_tx();
+            let query = compile_read_only_query(&raw.db, &tx, &auth, sql).unwrap();
             let query: ExecutionSet = query.into();
 
-            b.iter(|| drop(black_box(query.eval(Protocol::Binary, &db, &tx).unwrap())))
+            b.iter(|| drop(black_box(query.eval(Protocol::Binary, &raw.db, &tx).unwrap())))
         });
     };
 
@@ -137,13 +141,13 @@ fn eval(c: &mut Criterion) {
         let select_lhs = "select * from footprint";
         let select_rhs = "select * from location";
         let auth = AuthCtx::for_testing();
-        let tx = db.begin_tx();
-        let query_lhs = compile_read_only_query(&db, &tx, &auth, select_lhs).unwrap();
-        let query_rhs = compile_read_only_query(&db, &tx, &auth, select_rhs).unwrap();
+        let tx = raw.db.begin_tx();
+        let query_lhs = compile_read_only_query(&raw.db, &tx, &auth, select_lhs).unwrap();
+        let query_rhs = compile_read_only_query(&raw.db, &tx, &auth, select_rhs).unwrap();
         let query = ExecutionSet::from_iter(query_lhs.into_iter().chain(query_rhs));
 
         b.iter(|| {
-            let out = query.eval_incr(&db, &tx, &update).unwrap();
+            let out = query.eval_incr(&raw.db, &tx, &update).unwrap();
             black_box(out);
         })
     });
@@ -159,12 +163,12 @@ fn eval(c: &mut Criterion) {
             where location.chunk_index = {chunk_index}"
         );
         let auth = AuthCtx::for_testing();
-        let tx = db.begin_tx();
-        let query = compile_read_only_query(&db, &tx, &auth, &join).unwrap();
+        let tx = raw.db.begin_tx();
+        let query = compile_read_only_query(&raw.db, &tx, &auth, &join).unwrap();
         let query: ExecutionSet = query.into();
 
         b.iter(|| {
-            let out = query.eval_incr(&db, &tx, &update).unwrap();
+            let out = query.eval_incr(&raw.db, &tx, &update).unwrap();
             black_box(out);
         })
     });

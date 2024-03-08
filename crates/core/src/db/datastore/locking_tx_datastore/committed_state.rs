@@ -30,7 +30,7 @@ use spacetimedb_sats::{
         auth::{StAccess, StTableType},
         def::TableSchema,
     },
-    AlgebraicValue, DataKey, ProductValue, ToDataKey,
+    AlgebraicValue, ProductValue,
 };
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
@@ -405,12 +405,10 @@ impl CommittedState {
 
                     // TODO: re-write `TxRecord` to remove `product_value`, or at least `key`.
                     let pv = table.delete(blob_store, row_ptr).expect("Delete for non-existent row!");
-                    let data_key = pv.to_data_key();
                     tx_data.records.push(TxRecord {
                         op: TxOp::Delete,
                         table_name: table.schema.table_name.clone(),
                         table_id,
-                        key: data_key,
                         product_value: pv,
                     });
                 }
@@ -447,11 +445,9 @@ impl CommittedState {
                     .insert(commit_blob_store, &pv)
                     .expect("Failed to insert when merging commit");
                 let bytes = bsatn::to_vec(&pv).expect("Failed to BSATN-serialize ProductValue");
-                let data_key = DataKey::from_data(&bytes);
                 tx_data.records.push(TxRecord {
                     op: TxOp::Insert(Arc::new(bytes)),
                     product_value: pv,
-                    key: data_key,
                     table_name: commit_table.schema.table_name.clone(),
                     table_id,
                 });
