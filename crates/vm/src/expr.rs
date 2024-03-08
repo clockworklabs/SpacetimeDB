@@ -542,7 +542,7 @@ impl IndexJoin {
             //
             // TODO: This determination is quite arbitrary.
             // Ultimately we should be using cardinality estimation.
-            Some(DbTable { head, table_id, .. }) if row_count(*table_id, &head.table_name) > 3000 => self,
+            Some(DbTable { head, table_id, .. }) if row_count(*table_id, &head.table_name) > 500 => self,
             // If this is a delta table, we must reorder.
             // If this is a sufficiently small physical table, we should reorder.
             _ => {
