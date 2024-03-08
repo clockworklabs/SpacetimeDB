@@ -12,7 +12,7 @@ use prost::Message;
 use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, Protocol};
 use spacetimedb::config::{FilesLocal, SpacetimeDbFiles};
 use spacetimedb::database_logger::DatabaseLogger;
-use spacetimedb::db::{Config, FsyncPolicy, Storage};
+use spacetimedb::db::{Config, Storage};
 use spacetimedb::protobuf::client_api;
 use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, DatabaseDef, NodeDelegate};
 use spacetimedb_lib::sats;
@@ -192,16 +192,10 @@ impl CompiledModule {
 
 /// For testing, persist to disk by default, as many tests
 /// exercise functionality like restarting the database.
-pub static DEFAULT_CONFIG: Config = Config {
-    storage: Storage::Disk,
-    fsync: FsyncPolicy::Never,
-};
+pub static DEFAULT_CONFIG: Config = Config { storage: Storage::Disk };
 
 /// For performance tests, do not persist to disk.
-pub static IN_MEMORY_CONFIG: Config = Config {
-    storage: Storage::Disk,
-    fsync: FsyncPolicy::Never,
-};
+pub static IN_MEMORY_CONFIG: Config = Config { storage: Storage::Disk };
 
 /// Used to parse output from module logs.
 ///

@@ -26,7 +26,6 @@ fn custom_module_benchmarks(c: &mut Criterion) {
 
     let config = Config {
         storage: Storage::Memory,
-        fsync: spacetimedb::db::FsyncPolicy::Never,
     };
     let module = runtime.block_on(async { BENCHMARKS_MODULE.load_module(config, None).await });
 

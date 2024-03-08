@@ -603,16 +603,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 EventStatus::Failed(errmsg.into())
             }
             Ok(Ok(())) => {
-                if let Some((tx_data, bytes_written)) = stdb.commit_tx(&ctx, tx).unwrap() {
-                    // TODO(cloutiertyler): This tracking doesn't really belong here if we want to write transactions to disk
-                    // in batches. This is because it's possible for a tiny reducer call to trigger a whole commit to be written to disk.
-                    // We should track the commit sizes instead internally to the CommitLog probably.
-                    if let Some(bytes_written) = bytes_written {
-                        WORKER_METRICS
-                            .reducer_write_size
-                            .with_label_values(&address, reducer_name)
-                            .observe(bytes_written as f64);
-                    }
+                if let Some(tx_data) = stdb.commit_tx(&ctx, tx).unwrap() {
                     EventStatus::Committed(DatabaseUpdate::from_writes(stdb, &tx_data))
                 } else {
                     todo!("Write skew, you need to implement retries my man, T-dawg.");
