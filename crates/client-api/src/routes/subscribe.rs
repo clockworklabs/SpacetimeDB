@@ -238,18 +238,24 @@ async fn ws_client_actor_inner(
                     let send_all = async {
                         for msg in rx_buf.drain(..n).map(datamsg_to_wsmsg) {
                             // feed() buffers the message, but does not necessarily send it
+                            let t2 = Instant::now();
                             ws.feed(msg).await?;
+                            let time = t2.elapsed();
+                            if time > Duration::from_millis(50) {
+                                tracing::warn!(?time, "ws.feed() took a very long time");
+                            }
                         }
+                        let t1 = Instant::now();
                         // now we flush all the messages to the socket
-                        ws.flush().await
+                        let result = ws.flush().await;
+                        let time = t1.elapsed();
+                        if time > Duration::from_millis(50) {
+                            tracing::warn!(?time, "ws.flush() took a very long time");
+                        }
+                        result
                     };
-                    let t1 = Instant::now();
                     if let Err(error) = send_all.await {
                         log::warn!("Websocket send error: {error}")
-                    }
-                    let time = t1.elapsed();
-                    if time > Duration::from_millis(50) {
-                        tracing::warn!(?time, "send_all took a very long time");
                     }
                 }
                 continue;
@@ -347,6 +353,7 @@ enum ClientMessage {
     Pong(Vec<u8>),
     Close(Option<CloseFrame<'static>>),
 }
+
 impl ClientMessage {
     fn from_message(msg: WsMessage) -> Self {
         match msg {
