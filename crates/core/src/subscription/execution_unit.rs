@@ -217,7 +217,6 @@ impl ExecutionUnit {
     }
 
     /// Evaluate this execution unit against the database.
-    #[tracing::instrument(skip_all)]
     pub fn eval(&self, db: &RelationalDB, tx: &Tx) -> Result<Option<DatabaseTableUpdate>, DBError> {
         let ops = Self::eval_query_code(db, tx, &self.eval_plan)?;
         Ok((!ops.is_empty()).then(|| DatabaseTableUpdate {
@@ -237,7 +236,6 @@ impl ExecutionUnit {
     }
 
     /// Evaluate this execution unit against the given delta tables.
-    #[tracing::instrument(skip_all)]
     pub fn eval_incr<'a>(
         &'a self,
         db: &RelationalDB,
