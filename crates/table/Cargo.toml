@@ -49,7 +49,6 @@ proptest-derive = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion.workspace = true
-criterion-perf-events.workspace = true
 proptest.workspace = true
 proptest-derive.workspace = true
 rand.workspace = true
