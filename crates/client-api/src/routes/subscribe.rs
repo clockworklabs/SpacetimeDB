@@ -196,7 +196,7 @@ async fn ws_client_actor_inner(
     // https://rust-lang.github.io/wg-async/vision/submitted_stories/status_quo/aws_engineer/solving_a_deadlock.html
     //
     // NOTE: never let this go unpolled while you're awaiting something; otherwise, it's possible
-    //       to deadlock or delay for a long time. see usage of `also_poll()` the branches of the
+    //       to deadlock or delay for a long time. see usage of `also_poll()` in the branches of the
     //       `select!` for examples of how to do this.
     //
     // TODO: do we want this to have a fixed capacity? or should it be unbounded
@@ -247,6 +247,8 @@ async fn ws_client_actor_inner(
                         // now we flush all the messages to the socket
                         ws.flush().await
                     };
+                    // Flush the websocket while continuing to poll the `handle_queue`,
+                    // to avoid deadlocks or delays due to enqueued futures holding resources.
                     let send_all = also_poll(send_all, handle_queue.make_progress());
                     let t1 = Instant::now();
                     if let Err(error) = send_all.await {
@@ -262,6 +264,8 @@ async fn ws_client_actor_inner(
 
             // If the module has exited, close the websocket.
             () = client.module.exited(), if !closed => {
+                // Send a close frame while continuing to poll the `handle_queue`,
+                // to avoid deadlocks or delays due to enqueued futures holding resources.
                 let close = also_poll(
                     ws.close(Some(CloseFrame { code: CloseCode::Away, reason: "module exited".into() })),
                     handle_queue.make_progress(),
@@ -277,6 +281,8 @@ async fn ws_client_actor_inner(
             _ = liveness_check_interval.tick() => {
                 // If we received a pong at some point, send a fresh ping.
                 if mem::take(&mut got_pong) {
+                    // Send a ping message while continuing to poll the `handle_queue`,
+                    // to avoid deadlocks or delays due to enqueued futures holding resources.
                     if let Err(e) = also_poll(ws.send(WsMessage::Ping(Vec::new())), handle_queue.make_progress()).await {
                         log::warn!("error sending ping: {e:#}");
                     }
