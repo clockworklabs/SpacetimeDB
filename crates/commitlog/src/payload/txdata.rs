@@ -5,6 +5,7 @@ use spacetimedb_sats::buffer::{BufReader, BufWriter, DecodeError};
 use thiserror::Error;
 
 use crate::{
+    error,
     varint::{decode_varint, encode_varint},
     Encode, Varchar,
 };
@@ -350,6 +351,8 @@ pub enum DecoderError<V> {
     Decode(#[from] DecodeError),
     #[error(transparent)]
     Visitor(V),
+    #[error(transparent)]
+    Traverse(#[from] error::Traversal),
 }
 
 /// A free standing implementation of [`crate::Decoder::decode_record`], which
