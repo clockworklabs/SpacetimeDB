@@ -11,7 +11,7 @@ use scopeguard::ScopeGuard;
 use serde::Deserialize;
 use spacetimedb::client::messages::{IdentityTokenMessage, ServerMessage};
 use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, MessageHandleError, Protocol};
-use spacetimedb::util::future_queue;
+use spacetimedb::util::{also_poll, future_queue};
 use spacetimedb_lib::address::AddressForUrl;
 use spacetimedb_lib::Address;
 use std::time::Instant;
@@ -195,6 +195,10 @@ async fn ws_client_actor_inner(
     // awaited, which can lead to bugs like:
     // https://rust-lang.github.io/wg-async/vision/submitted_stories/status_quo/aws_engineer/solving_a_deadlock.html
     //
+    // NOTE: never let this go unpolled while you're awaiting something; otherwise, it's possible
+    //       to deadlock or delay for a long time. see usage of `also_poll()` the branches of the
+    //       `select!` for examples of how to do this.
+    //
     // TODO: do we want this to have a fixed capacity? or should it be unbounded
     let mut handle_queue = pin!(future_queue(|(message, timer)| client.handle_message(message, timer)));
 
@@ -243,6 +247,7 @@ async fn ws_client_actor_inner(
                         // now we flush all the messages to the socket
                         ws.flush().await
                     };
+                    let send_all = also_poll(send_all, handle_queue.make_progress());
                     let t1 = Instant::now();
                     if let Err(error) = send_all.await {
                         log::warn!("Websocket send error: {error}")
@@ -257,7 +262,11 @@ async fn ws_client_actor_inner(
 
             // If the module has exited, close the websocket.
             () = client.module.exited(), if !closed => {
-                if let Err(e) = ws.close(Some(CloseFrame { code: CloseCode::Away, reason: "module exited".into() })).await {
+                let close = also_poll(
+                    ws.close(Some(CloseFrame { code: CloseCode::Away, reason: "module exited".into() })),
+                    handle_queue.make_progress(),
+                );
+                if let Err(e) = close.await {
                     log::warn!("error closing: {e:#}")
                 }
                 closed = true;
@@ -268,7 +277,7 @@ async fn ws_client_actor_inner(
             _ = liveness_check_interval.tick() => {
                 // If we received a pong at some point, send a fresh ping.
                 if mem::take(&mut got_pong) {
-                    if let Err(e) = ws.send(WsMessage::Ping(Vec::new())).await {
+                    if let Err(e) = also_poll(ws.send(WsMessage::Ping(Vec::new())), handle_queue.make_progress()).await {
                         log::warn!("error sending ping: {e:#}");
                     }
                     continue;
