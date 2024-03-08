@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{cell::RefCell, collections::HashMap, sync::Arc};
 
 use derive_more::Display;
 use parking_lot::Mutex;
@@ -7,12 +7,106 @@ use spacetimedb_primitives::TableId;
 
 use crate::db::db_metrics::DB_METRICS;
 
+pub enum MetricType {
+    RdbNumIndexSeeks,
+    RdbNumKeysScanned,
+    RdbNumRowsFetched,
+}
 #[derive(Default)]
-pub struct RecordMetrics {
-    pub rdb_num_index_seeks: HashMap<TableId, u64>,
-    pub rdb_num_keys_scanned: HashMap<TableId, u64>,
-    pub rdb_num_rows_fetched: HashMap<TableId, u64>,
-    pub cache_table_name: HashMap<TableId, String>,
+struct BufferMetric {
+    pub table_id: TableId,
+    pub rdb_num_index_seeks: u64,
+    pub rdb_num_keys_scanned: u64,
+    pub rdb_num_rows_fetched: u64,
+    pub cache_table_name: String,
+}
+
+impl BufferMetric {
+    pub fn inc_by(&mut self, ty: MetricType, val: u64) {
+        match ty {
+            MetricType::RdbNumIndexSeeks => {
+                self.rdb_num_index_seeks += val;
+            }
+            MetricType::RdbNumKeysScanned => {
+                self.rdb_num_keys_scanned += val;
+            }
+            MetricType::RdbNumRowsFetched => {
+                self.rdb_num_rows_fetched += val;
+            }
+        }
+    }
+}
+
+impl BufferMetric {
+    pub fn new(table_id: TableId, table_name: &str) -> Self {
+        Self {
+            table_id,
+            rdb_num_index_seeks: 0,
+            rdb_num_keys_scanned: 0,
+            rdb_num_rows_fetched: 0,
+            cache_table_name: table_name.to_string(),
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct Metrics(Vec<BufferMetric>);
+impl Metrics {
+    pub fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    pub fn add_metric(&mut self, table_id: TableId, table_name: &str) {
+        self.0.push(BufferMetric::new(table_id, table_name));
+    }
+
+    pub fn inc_by(&mut self, table_id: TableId, ty: MetricType, val: u64) {
+        if let Some(metric) = self.0.iter_mut().find(|x| x.table_id == table_id) {
+            metric.inc_by(ty, val);
+        }
+    }
+
+    pub fn table_exists(&self, table_id: TableId) -> bool {
+        self.0.iter().any(|x| x.table_id == table_id)
+    }
+
+    fn flush(&mut self, workload: &WorkloadType, database: &Address, reducer: &str) {
+            self.0.iter().for_each(|metric| {
+                DB_METRICS
+                    .rdb_num_index_seeks
+                    .with_label_values(
+                        workload,
+                        database,
+                        &reducer,
+                        &metric.table_id.0,
+                        &metric.cache_table_name,
+                    )
+                    .inc_by(metric.rdb_num_index_seeks);
+
+                DB_METRICS
+                    .rdb_num_keys_scanned
+                    .with_label_values(
+                        &workload,
+                        &database,
+                        &reducer,
+                        &metric.table_id.0,
+                        &metric.cache_table_name,
+                    )
+                    .inc_by(metric.rdb_num_keys_scanned);
+
+                DB_METRICS
+                    .rdb_num_rows_fetched
+                    .with_label_values(
+                        &workload,
+                        &database,
+                        &reducer,
+                        &metric.table_id.0,
+                        &metric.cache_table_name,
+                    )
+                    .inc_by(metric.rdb_num_keys_scanned);
+            });
+
+    }
 }
 
 /// Represents the context under which a database runtime method is executed.
@@ -27,7 +121,7 @@ pub struct ExecutionContext<'a> {
     /// The type of workload that is being executed.
     workload: WorkloadType,
     /// The Metrics to be reported for this transaction.
-    pub metrics: Arc<Mutex<RecordMetrics>>,
+    pub metrics: RefCell<Metrics>,
 }
 
 /// Classifies a transaction according to its workload.
@@ -56,7 +150,7 @@ impl<'a> ExecutionContext<'a> {
             database,
             reducer: Some(name),
             workload: WorkloadType::Reducer,
-            metrics: Arc::new(Mutex::new(RecordMetrics::default())),
+            metrics: RefCell::new(Metrics::default()),
         }
     }
 
@@ -66,7 +160,7 @@ impl<'a> ExecutionContext<'a> {
             database,
             reducer: None,
             workload: WorkloadType::Sql,
-            metrics: Arc::new(Mutex::new(RecordMetrics::default())),
+            metrics: RefCell::new(Metrics::default()),
         }
     }
 
@@ -76,7 +170,7 @@ impl<'a> ExecutionContext<'a> {
             database,
             reducer: None,
             workload: WorkloadType::Subscribe,
-            metrics: Arc::new(Mutex::new(RecordMetrics::default())),
+            metrics: RefCell::new(Metrics::default()),
         }
     }
 
@@ -86,7 +180,7 @@ impl<'a> ExecutionContext<'a> {
             database,
             reducer: None,
             workload: WorkloadType::Update,
-            metrics: Arc::new(Mutex::new(RecordMetrics::default())),
+            metrics: RefCell::new(Metrics::default()),
         }
     }
 
@@ -96,7 +190,7 @@ impl<'a> ExecutionContext<'a> {
             database,
             reducer: None,
             workload: WorkloadType::Internal,
-            metrics: Arc::new(Mutex::new(RecordMetrics::default())),
+            metrics: RefCell::new(Metrics::default()),
         }
     }
 
@@ -123,47 +217,7 @@ impl Drop for ExecutionContext<'_> {
     fn drop(&mut self) {
         let workload = self.workload;
         let database = self.database;
-        let reducer = self.reducer.unwrap_or_default().to_string();
-        let metric = self.metrics.clone();
-        log::info!("dropping execution context");
-        tokio::task::spawn_blocking(move || {
-            let metrics = metric.lock();
-            metrics.rdb_num_index_seeks.iter().for_each(|(table_id, count)| {
-                DB_METRICS
-                    .rdb_num_index_seeks
-                    .with_label_values(
-                        &workload,
-                        &database,
-                        &reducer,
-                        &table_id.0,
-                        &metrics.cache_table_name[&table_id],
-                    )
-                    .inc_by(*count);
-            });
-            metrics.rdb_num_keys_scanned.iter().for_each(|(table_id, count)| {
-                DB_METRICS
-                    .rdb_num_keys_scanned
-                    .with_label_values(
-                        &workload,
-                        &database,
-                        &reducer,
-                        &table_id.0,
-                        &metrics.cache_table_name[&table_id],
-                    )
-                    .inc_by(*count);
-            });
-            metrics.rdb_num_rows_fetched.iter().for_each(|(table_id, count)| {
-                DB_METRICS
-                    .rdb_num_rows_fetched
-                    .with_label_values(
-                        &workload,
-                        &database,
-                        &reducer,
-                        &table_id.0,
-                        &metrics.cache_table_name[&table_id],
-                    )
-                    .inc_by(*count);
-            });
-        });
+        let reducer = self.reducer.unwrap_or_default();
+        self.metrics.borrow_mut().flush(&workload, &database, &reducer);
     }
 }

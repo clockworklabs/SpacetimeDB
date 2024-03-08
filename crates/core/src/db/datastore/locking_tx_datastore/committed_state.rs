@@ -19,7 +19,7 @@ use crate::{
         db_metrics::DB_METRICS,
     },
     error::TableError,
-    execution_context::ExecutionContext,
+    execution_context::{ExecutionContext, MetricType},
 };
 use anyhow::anyhow;
 use itertools::Itertools;
@@ -569,36 +569,21 @@ impl<'a> CommittedIndexIter<'a> {
 #[cfg(feature = "metrics")]
 impl Drop for CommittedIndexIter<'_> {
     fn drop(&mut self) {
-        let table_name = self
+
+        let mut metrics = self.ctx.metrics.borrow_mut();
+        if !metrics.table_exists(self.table_id) {
+            let table_name = self
             .committed_state
             .get_schema(&self.table_id)
             .map(|table| table.table_name.as_str())
             .unwrap_or_default();
-
-        let mut metrics = self.ctx.metrics.lock();
-        metrics
-            .rdb_num_index_seeks
-            .entry(self.table_id)
-            .and_modify(|x| *x += 1)
-            .or_insert(0);
+            metrics.add_metric(self.table_id, table_name);
+        }
+        metrics.inc_by(self.table_id, MetricType::RdbNumIndexSeeks, 1);
         // Increment number of index keys scanned
-        metrics
-            .rdb_num_keys_scanned
-            .entry(self.table_id)
-            .and_modify(|x| *x += self.committed_rows.num_pointers_yielded())
-            .or_insert(0);
+        metrics.inc_by(self.table_id, MetricType::RdbNumKeysScanned, self.committed_rows.num_pointers_yielded());
         // Increment number of rows fetched
-        metrics
-            .rdb_num_rows_fetched
-            .entry(self.table_id)
-            .and_modify(|x| *x += self.num_committed_rows_fetched)
-            .or_insert(0);
-
-            metrics
-            .cache_table_name
-            .entry(self.table_id)
-            .or_insert(table_name.to_string());
-
+        metrics.inc_by(self.table_id, MetricType::RdbNumRowsFetched, self.num_committed_rows_fetched);
 
     }
 }
