@@ -174,7 +174,7 @@ impl ExecutionUnit {
 
     fn return_db_table(&self) -> &DbTable {
         self.eval_plan
-            .table
+            .source
             .get_db_table()
             .expect("ExecutionUnit eval_plan should have DbTable source, but found MemTable")
     }
@@ -273,7 +273,7 @@ impl ExecutionUnit {
             ref header,
             table_access,
             ..
-        } = eval_incr_plan.table
+        } = eval_incr_plan.source
         else {
             panic!("Expected MemTable in `eval_incr_plan`, but found `DbTable`");
         };

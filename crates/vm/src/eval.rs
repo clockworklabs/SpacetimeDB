@@ -12,7 +12,7 @@ use spacetimedb_sats::relation::{FieldExpr, Relation};
 /// Compile a [`QueryExpr`] into a [`QueryCode`], its most-compiled form.
 pub fn compile_query(q: QueryExpr) -> QueryCode {
     QueryCode {
-        table: q.source,
+        source: q.source,
         query: q.query,
     }
 }
