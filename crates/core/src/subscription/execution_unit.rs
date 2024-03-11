@@ -8,7 +8,7 @@ use crate::vm::{build_query, TxMode};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::relation::{DbTable, Header};
 use spacetimedb_vm::eval::IterRows;
-use spacetimedb_vm::expr::{Query, QueryCode, QueryExpr, SourceExpr, SourceSet};
+use spacetimedb_vm::expr::{Query, QueryExpr, SourceExpr, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
 use std::hash::Hash;
 
@@ -55,7 +55,7 @@ enum EvalIncrPlan {
 
     /// For single-table selects, store only one version of the plan,
     /// which has a single source, a [`MemTable`] produced by [`query::to_mem_table_with_op_type`].
-    Select(QueryCode),
+    Select(QueryExpr),
 }
 
 /// An atomic unit of execution within a subscription set.
@@ -70,7 +70,7 @@ pub struct ExecutionUnit {
     /// whose source is a [`DbTable`].
     ///
     /// This is a direct compilation of the source query.
-    eval_plan: QueryCode,
+    eval_plan: QueryExpr,
     /// A version of the plan optimized for `eval_incr`,
     /// whose source is a [`MemTable`], as if by [`query::to_mem_table`].
     eval_incr_plan: EvalIncrPlan,
@@ -95,14 +95,10 @@ impl From<SupportedQuery> for ExecutionUnit {
 }
 
 impl ExecutionUnit {
-    fn compile_query_expr_to_query_code(expr: QueryExpr) -> QueryCode {
-        spacetimedb_vm::eval::compile_query(expr)
-    }
-
     /// Pre-compute a plan for `eval_incr` which reads from a `MemTable`
     /// whose rows are augmented with an `__op_type` column,
     /// rather than re-planning on every incremental update.
-    fn compile_select_eval_incr(expr: &QueryExpr) -> QueryCode {
+    fn compile_select_eval_incr(expr: &QueryExpr) -> QueryExpr {
         let source = expr
             .source
             .get_db_table()
@@ -129,11 +125,7 @@ impl ExecutionUnit {
         let (eval_incr_plan, _source_set) = query::to_mem_table(expr.clone(), &table_update);
         debug_assert_eq!(_source_set.len(), 1);
 
-        Self::compile_query_expr_to_query_code(eval_incr_plan)
-    }
-
-    fn compile_eval(expr: QueryExpr) -> QueryCode {
-        Self::compile_query_expr_to_query_code(expr)
+        eval_incr_plan
     }
 
     pub fn new(eval_plan: SupportedQuery, hash: QueryHash) -> Result<Self, DBError> {
@@ -151,7 +143,7 @@ impl ExecutionUnit {
                 expr,
             } => EvalIncrPlan::Semijoin(IncrementalJoin::new(expr)?),
         };
-        let eval_plan = Self::compile_eval(eval_plan.expr);
+        let eval_plan = eval_plan.expr;
         Ok(ExecutionUnit {
             hash,
             eval_plan,
@@ -226,7 +218,7 @@ impl ExecutionUnit {
         }))
     }
 
-    fn eval_query_code(db: &RelationalDB, tx: &Tx, eval_plan: &QueryCode) -> Result<Vec<TableOp>, DBError> {
+    fn eval_query_code(db: &RelationalDB, tx: &Tx, eval_plan: &QueryExpr) -> Result<Vec<TableOp>, DBError> {
         let ctx = ExecutionContext::subscribe(db.address());
         let tx: TxMode = tx.into();
         // TODO(perf, 833): avoid clone.
@@ -262,7 +254,7 @@ impl ExecutionUnit {
         db: &RelationalDB,
         tx: &Tx,
         tables: impl Iterator<Item = &'a DatabaseTableUpdate>,
-        eval_incr_plan: &QueryCode,
+        eval_incr_plan: &QueryExpr,
         return_table: TableId,
     ) -> Result<Vec<TableOp>, DBError> {
         let ctx = ExecutionContext::incremental_update(db.address());

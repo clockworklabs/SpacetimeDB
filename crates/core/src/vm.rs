@@ -44,7 +44,7 @@ pub fn build_query<'a>(
     ctx: &'a ExecutionContext,
     stdb: &'a RelationalDB,
     tx: &'a TxMode,
-    query: QueryCode,
+    query: QueryExpr,
     sources: &mut SourceSet,
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {
     let db_table = query.source.is_db_table();
@@ -61,7 +61,7 @@ pub fn build_query<'a>(
     // i.e. that they are the first operator.
     //
     // TODO(bikeshedding): Avoid duplication of the ugly `result.take().map(...).unwrap_or_else(...)?` expr?
-    // TODO(bikeshedding): Refactor `QueryCode` to separate `IndexJoin` from other `Query` variants,
+    // TODO(bikeshedding): Refactor `QueryExpr` to separate `IndexJoin` from other `Query` variants,
     //   removing the need for this convoluted logic?
     let mut result = None;
 
@@ -95,7 +95,7 @@ pub fn build_query<'a>(
                 // and therefore this unwrap is always safe.
                 let index_table = index_side.table_id().unwrap();
                 let index_header = index_side.head().clone();
-                let probe_side = build_query(ctx, stdb, tx, probe_side.into(), sources)?;
+                let probe_side = build_query(ctx, stdb, tx, probe_side, sources)?;
                 Box::new(IndexSemiJoin {
                     ctx,
                     db: stdb,
@@ -164,7 +164,7 @@ fn join_inner<'a>(
     let key_lhs = [col_lhs.clone()];
     let key_rhs = [col_rhs.clone()];
 
-    let rhs = build_query(ctx, db, tx, rhs.rhs.into(), sources)?;
+    let rhs = build_query(ctx, db, tx, rhs.rhs, sources)?;
     let key_lhs_header = lhs.head().clone();
     let key_rhs_header = rhs.head().clone();
     let col_lhs_header = lhs.head().clone();
@@ -358,7 +358,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         Self { ctx, db, tx, auth }
     }
 
-    fn _eval_query(&mut self, query: QueryCode, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
+    fn _eval_query(&mut self, query: QueryExpr, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
         let table_access = query.source.table_access();
         tracing::trace!(table = query.source.table_name());
 
@@ -399,7 +399,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         }
     }
 
-    fn _delete_query(&mut self, query: QueryCode, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
+    fn _delete_query(&mut self, query: QueryExpr, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
         let table = sources
             .take_table(&query.source)
             .expect("Cannot delete from a `MemTable`");
