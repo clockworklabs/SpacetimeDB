@@ -14,7 +14,7 @@ use crate::{
                 StTableRow, SystemTable, ST_COLUMNS_ID, ST_COLUMNS_NAME, ST_CONSTRAINTS_ID, ST_CONSTRAINTS_NAME,
                 ST_INDEXES_ID, ST_INDEXES_NAME, ST_MODULE_ID, ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID,
             },
-            traits::{TxData, TxOp, TxRecord},
+            traits::TxData,
         },
         db_metrics::DB_METRICS,
     },
@@ -40,7 +40,6 @@ use spacetimedb_table::{
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     ops::RangeBounds,
-    sync::Arc,
 };
 
 #[derive(Default)]
@@ -376,8 +375,7 @@ impl CommittedState {
     }
 
     pub fn merge(&mut self, tx_state: TxState, ctx: &ExecutionContext) -> TxData {
-        // TODO(perf): pre-allocate `Vec::with_capacity`?
-        let mut tx_data = TxData { records: vec![] };
+        let mut tx_data = TxData::default();
 
         self.next_tx_offset += 1;
 
@@ -404,6 +402,8 @@ impl CommittedState {
                 let db = &ctx.database();
                 let reducer = ctx.reducer_name();
 
+                let mut deletes = Vec::with_capacity(row_ptrs.len());
+
                 // Note: we maintain the invariant that the delete_tables
                 // holds only committed rows which should be deleted,
                 // i.e. `RowPointer`s with `SquashedOffset::COMMITTED_STATE`,
@@ -411,14 +411,8 @@ impl CommittedState {
                 for row_ptr in row_ptrs.iter().copied() {
                     debug_assert!(row_ptr.squashed_offset().is_committed_state());
 
-                    // TODO: re-write `TxRecord` to remove `product_value`, or at least `key`.
+                    // TODO: re-write `TxData` to remove `ProductValue`s
                     let pv = table.delete(blob_store, row_ptr).expect("Delete for non-existent row!");
-                    tx_data.records.push(TxRecord {
-                        op: TxOp::Delete,
-                        table_id,
-                        product_value: pv,
-                    });
-
                     let table_name = table.get_schema().table_name.as_str();
                     // Increment rows deleted metric
                     #[cfg(feature = "metrics")]
@@ -431,6 +425,10 @@ impl CommittedState {
                         .rdb_num_table_rows
                         .with_label_values(db, &table_id.into(), table_name)
                         .dec();
+                    deletes.push(pv);
+                }
+                if !deletes.is_empty() {
+                    tx_data.set_deletes_for_table(table_id, &table.get_schema().table_name, deletes.into());
                 }
             } else if !row_ptrs.is_empty() {
                 panic!("Deletion for non-existent table {:?}... huh?", table_id);
@@ -467,22 +465,14 @@ impl CommittedState {
             let db = &ctx.database();
             let reducer = ctx.reducer_name();
 
+            // TODO(perf): Allocate with capacity?
+            let mut inserts = vec![];
             // For each newly-inserted row, insert it into the committed state.
             for row_ref in tx_table.scan_rows(&tx_blob_store) {
                 let pv = row_ref.to_product_value();
                 commit_table
                     .insert(commit_blob_store, &pv)
                     .expect("Failed to insert when merging commit");
-
-                // Serialize the `row_ref` rather than the `pv`
-                // so we can take advantage of the BFLATN -> BSATN fast path for fixed-sized rows.
-                // TODO(perf): Remove `DataKey` from `TxRecord` and avoid this entirely.
-                let bytes = row_ref.to_bsatn_vec().expect("Failed to BSATN-serialize RowRef");
-                tx_data.records.push(TxRecord {
-                    op: TxOp::Insert(Arc::new(bytes)),
-                    product_value: pv,
-                    table_id,
-                });
 
                 let table_name = commit_table.get_schema().table_name.as_str();
                 // Increment rows inserted metric
@@ -496,6 +486,11 @@ impl CommittedState {
                     .rdb_num_table_rows
                     .with_label_values(db, &table_id.into(), table_name)
                     .inc();
+
+                inserts.push(pv);
+            }
+            if !inserts.is_empty() {
+                tx_data.set_inserts_for_table(table_id, &commit_table.schema.table_name, inserts.into());
             }
 
             // Add all newly created indexes to the committed state.

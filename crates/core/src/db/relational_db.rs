@@ -1,16 +1,15 @@
 use super::datastore::traits::{
-    IsolationLevel, MutProgrammable, MutTx as _, MutTxDatastore, Programmable, Tx as _, TxData, TxDatastore,
+    IsolationLevel, MutProgrammable, MutTx as _, MutTxDatastore, Programmable, Tx as _, TxDatastore,
 };
 use super::datastore::{
     locking_tx_datastore::{
         datastore::Locking,
         state_view::{Iter, IterByColEq, IterByColRange},
     },
-    traits::TxRecord,
+    traits::TxData,
 };
 use super::relational_operators::Relation;
 use crate::address::Address;
-use crate::db::datastore::traits::TxOp;
 use crate::db::db_metrics::DB_METRICS;
 use crate::error::{DBError, DatabaseError, TableError};
 use crate::execution_context::ExecutionContext;
@@ -24,7 +23,6 @@ use spacetimedb_sats::db::def::{ColumnDef, IndexDef, SequenceDef, TableDef, Tabl
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_table::indexes::RowPointer;
 use std::borrow::Cow;
-use std::collections::BTreeMap;
 use std::fs::{create_dir_all, File};
 use std::ops::RangeBounds;
 use std::path::Path;
@@ -276,56 +274,40 @@ impl RelationalDB {
 
         log::trace!("COMMIT MUT TX");
 
-        fn fold_ops(
-            records: &[TxRecord],
-        ) -> (
-            BTreeMap<TableId, Vec<ProductValue>>,
-            BTreeMap<TableId, Vec<ProductValue>>,
-        ) {
-            records.iter().fold(
-                (BTreeMap::new(), BTreeMap::new()),
-                |(mut inserts, mut deletes), record| {
-                    let rows = match record.op {
-                        TxOp::Insert(_) => inserts.entry(record.table_id).or_default(),
-                        TxOp::Delete => deletes.entry(record.table_id).or_default(),
-                    };
-                    // TODO: Avoid clone
-                    rows.push(record.product_value.clone());
-                    (inserts, deletes)
-                },
-            )
-        }
+        let Some(tx_data) = self.inner.commit_mut_tx(ctx, tx)? else {
+            return Ok(None);
+        };
 
-        fn into_ops(m: BTreeMap<TableId, Vec<ProductValue>>) -> Box<[Ops<ProductValue>]> {
-            m.into_iter()
+        if let Some(durability) = &self.durability {
+            let inserts = tx_data
+                .inserts()
                 .map(|(table_id, rowdata)| Ops {
-                    table_id,
-                    rowdata: rowdata.into(),
+                    table_id: *table_id,
+                    rowdata: rowdata.clone(),
                 })
-                .collect()
+                .collect();
+            let deletes = tx_data
+                .deletes()
+                .map(|(table_id, rowdata)| Ops {
+                    table_id: *table_id,
+                    rowdata: rowdata.clone(),
+                })
+                .collect();
+
+            let txdata = Txdata {
+                inputs: None,
+                outputs: None,
+                mutations: Some(Mutations {
+                    inserts,
+                    deletes,
+                    truncates: Box::new([]),
+                }),
+            };
+            log::trace!("append {txdata:?}");
+            durability.append_tx(txdata);
         }
 
-        if let Some(tx_data) = self.inner.commit_mut_tx(ctx, tx)? {
-            if let Some(durability) = self.durability.as_ref() {
-                let (inserts, deletes) = fold_ops(&tx_data.records);
-
-                let txdata = Txdata {
-                    inputs: None,
-                    outputs: None,
-                    mutations: Some(Mutations {
-                        inserts: into_ops(inserts),
-                        deletes: into_ops(deletes),
-                        truncates: Box::new([]),
-                    }),
-                };
-                log::trace!("append {txdata:?}");
-                durability.append_tx(txdata);
-            }
-
-            return Ok(Some(tx_data));
-        }
-
-        Ok(None)
+        Ok(Some(tx_data))
     }
 
     /// Run a fallible function in a transaction.

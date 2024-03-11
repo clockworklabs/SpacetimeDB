@@ -182,8 +182,8 @@ mod tests {
         DatabaseTableUpdate {
             table_id,
             table_name: table_name.to_string(),
-            deletes: vec![],
-            inserts: vec![row],
+            deletes: [].into(),
+            inserts: [row].into(),
         }
     }
 
@@ -191,8 +191,8 @@ mod tests {
         DatabaseTableUpdate {
             table_id,
             table_name: table_name.to_string(),
-            deletes: vec![row],
-            inserts: vec![],
+            deletes: [row].into(),
+            inserts: [].into(),
         }
     }
 
@@ -218,8 +218,8 @@ mod tests {
         let data = DatabaseTableUpdate {
             table_id,
             table_name: table_name.to_string(),
-            deletes: vec![],
-            inserts: vec![row.clone()],
+            deletes: [].into(),
+            inserts: [row.clone()].into(),
         };
 
         let schema = db.schema_for_table_mut(tx, table_id).unwrap().into_owned();
@@ -395,8 +395,8 @@ mod tests {
             tables: vec![DatabaseTableUpdate {
                 table_id,
                 table_name: "test".into(),
-                deletes,
-                inserts: vec![],
+                deletes: deletes.into(),
+                inserts: [].into(),
             }],
         };
 
@@ -478,8 +478,8 @@ mod tests {
         let data = DatabaseTableUpdate {
             table_id: schema.table_id,
             table_name: "_inventory".to_string(),
-            deletes: vec![],
-            inserts: vec![row.clone()],
+            deletes: [].into(),
+            inserts: [row.clone()].into(),
         };
 
         let update = DatabaseUpdate {
@@ -598,15 +598,15 @@ mod tests {
         let data1 = DatabaseTableUpdate {
             table_id: schema_1.table_id,
             table_name: "inventory".to_string(),
-            deletes: vec![row_1],
-            inserts: vec![],
+            deletes: [row_1].into(),
+            inserts: [].into(),
         };
 
         let data2 = DatabaseTableUpdate {
             table_id: schema_2.table_id,
             table_name: "player".to_string(),
-            deletes: vec![],
-            inserts: vec![row_2],
+            deletes: [].into(),
+            inserts: [row_2].into(),
         };
 
         let update = DatabaseUpdate {
@@ -1060,14 +1060,14 @@ mod tests {
                 DatabaseTableUpdate {
                     table_id: lhs_id,
                     table_name: "lhs".to_string(),
-                    deletes: vec![lhs_old.clone()],
-                    inserts: vec![lhs_new.clone()],
+                    deletes: [lhs_old.clone()].into(),
+                    inserts: [lhs_new.clone()].into(),
                 },
                 DatabaseTableUpdate {
                     table_id: rhs_id,
                     table_name: "rhs".to_string(),
-                    deletes: vec![rhs_old.clone()],
-                    inserts: vec![rhs_new.clone()],
+                    deletes: [rhs_old.clone()].into(),
+                    inserts: [rhs_new.clone()].into(),
                 },
             ],
         )?;
@@ -1079,8 +1079,8 @@ mod tests {
             DatabaseTableUpdate {
                 table_id: lhs_id,
                 table_name: "lhs".to_string(),
-                deletes: vec![lhs_old],
-                inserts: vec![lhs_new],
+                deletes: [lhs_old].into(),
+                inserts: [lhs_new].into(),
             },
         );
         Ok(())
