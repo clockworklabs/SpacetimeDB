@@ -14,7 +14,7 @@ use crate::{
                 StTableRow, SystemTable, ST_COLUMNS_ID, ST_COLUMNS_NAME, ST_CONSTRAINTS_ID, ST_CONSTRAINTS_NAME,
                 ST_INDEXES_ID, ST_INDEXES_NAME, ST_MODULE_ID, ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID,
             },
-            traits::{TxData, TxOp, TxRecord},
+            traits::TxData,
         },
         db_metrics::DB_METRICS,
     },
@@ -25,7 +25,6 @@ use anyhow::anyhow;
 use itertools::Itertools;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::{
-    bsatn,
     db::{
         auth::{StAccess, StTableType},
         def::TableSchema,
@@ -41,7 +40,6 @@ use spacetimedb_table::{
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     ops::RangeBounds,
-    sync::Arc,
 };
 
 #[derive(Default)]
@@ -377,8 +375,7 @@ impl CommittedState {
     }
 
     pub fn merge(&mut self, tx_state: TxState) -> TxData {
-        // TODO(perf): pre-allocate `Vec::with_capacity`?
-        let mut tx_data = TxData { records: vec![] };
+        let mut tx_data = TxData::default();
 
         self.next_tx_offset += 1;
 
@@ -396,6 +393,7 @@ impl CommittedState {
     fn merge_apply_deletes(&mut self, tx_data: &mut TxData, delete_tables: BTreeMap<TableId, BTreeSet<RowPointer>>) {
         for (table_id, row_ptrs) in delete_tables {
             if let Some((table, blob_store)) = self.get_table_and_blob_store(table_id) {
+                let mut deletes = Vec::with_capacity(row_ptrs.len());
                 // Note: we maintain the invariant that the delete_tables
                 // holds only committed rows which should be deleted,
                 // i.e. `RowPointer`s with `SquashedOffset::COMMITTED_STATE`,
@@ -403,14 +401,12 @@ impl CommittedState {
                 for row_ptr in row_ptrs.iter().copied() {
                     debug_assert!(row_ptr.squashed_offset().is_committed_state());
 
-                    // TODO: re-write `TxRecord` to remove `product_value`, or at least `key`.
+                    // TODO: re-write `TxData` to remove `ProductValue`s
                     let pv = table.delete(blob_store, row_ptr).expect("Delete for non-existent row!");
-                    tx_data.records.push(TxRecord {
-                        op: TxOp::Delete,
-                        table_name: table.schema.table_name.clone(),
-                        table_id,
-                        product_value: pv,
-                    });
+                    deletes.push(pv);
+                }
+                if !deletes.is_empty() {
+                    tx_data.set_deletes_for_table(table_id, &table.schema.table_name, deletes.into());
                 }
             } else if !row_ptrs.is_empty() {
                 panic!("Deletion for non-existent table {:?}... huh?", table_id);
@@ -438,19 +434,18 @@ impl CommittedState {
                 // TODO(perf): avoid cloning here.
                 *tx_table.schema.clone(),
             );
+            // TODO(perf): Allocate with capacity?
+            let mut inserts = vec![];
             // For each newly-inserted row, insert it into the committed state.
             for row_ref in tx_table.scan_rows(&tx_blob_store) {
                 let pv = row_ref.to_product_value();
                 commit_table
                     .insert(commit_blob_store, &pv)
                     .expect("Failed to insert when merging commit");
-                let bytes = bsatn::to_vec(&pv).expect("Failed to BSATN-serialize ProductValue");
-                tx_data.records.push(TxRecord {
-                    op: TxOp::Insert(Arc::new(bytes)),
-                    product_value: pv,
-                    table_name: commit_table.schema.table_name.clone(),
-                    table_id,
-                });
+                inserts.push(pv);
+            }
+            if !inserts.is_empty() {
+                tx_data.set_inserts_for_table(table_id, &commit_table.schema.table_name, inserts.into());
             }
 
             // Add all newly created indexes to the committed state.

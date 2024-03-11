@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::{ops::RangeBounds, sync::Arc};
 
 use super::Result;
@@ -158,29 +159,49 @@ pub enum IsolationLevel {
     Serializable,
 }
 
-/// Operations in a transaction are either Inserts or Deletes.
-/// Inserts report the byte objects they inserted, to be persisted
-/// later in an object store.
-pub enum TxOp {
-    Insert(Arc<Vec<u8>>),
-    Delete,
-}
-
-/// A record of a single operation within a transaction.
-pub struct TxRecord {
-    /// Whether the operation was an insert or a delete.
-    pub(crate) op: TxOp,
-    /// The value of the modified row.
-    pub(crate) product_value: ProductValue,
-    /// The table that was modified.
-    pub(crate) table_id: TableId,
-    /// The table that was modified.
-    pub(crate) table_name: String,
-}
-
 /// A record of all the operations within a transaction.
+#[derive(Default)]
 pub struct TxData {
-    pub(crate) records: Vec<TxRecord>,
+    /// The inserted rows per table.
+    inserts: BTreeMap<TableId, Arc<[ProductValue]>>,
+    /// The deleted rows per table.
+    deletes: BTreeMap<TableId, Arc<[ProductValue]>>,
+    /// Map of all `TableId`s in both `inserts` and `deletes` to their
+    /// corresponding table name.
+    tables: BTreeMap<TableId, String>,
+    // TODO: Store an `Arc<String>` or equivalent instead.
+}
+
+impl TxData {
+    pub fn set_inserts_for_table(&mut self, table_id: TableId, table_name: &str, rows: Arc<[ProductValue]>) {
+        self.inserts.insert(table_id, rows);
+        self.tables.entry(table_id).or_insert_with(|| table_name.to_owned());
+    }
+
+    pub fn set_deletes_for_table(&mut self, table_id: TableId, table_name: &str, rows: Arc<[ProductValue]>) {
+        self.deletes.insert(table_id, rows);
+        self.tables.entry(table_id).or_insert_with(|| table_name.to_owned());
+    }
+
+    pub fn inserts(&self) -> impl Iterator<Item = (&TableId, &str, &Arc<[ProductValue]>)> + '_ {
+        self.inserts.iter().map(|(table_id, rows)| {
+            let table_name = self
+                .tables
+                .get(table_id)
+                .expect("invalid `TxData`: partial table name mapping");
+            (table_id, table_name.as_str(), rows)
+        })
+    }
+
+    pub fn deletes(&self) -> impl Iterator<Item = (&TableId, &str, &Arc<[ProductValue]>)> + '_ {
+        self.deletes.iter().map(|(table_id, rows)| {
+            let table_name = self
+                .tables
+                .get(table_id)
+                .expect("invalid `TxData`: partial table name mapping");
+            (table_id, table_name.as_str(), rows)
+        })
+    }
 }
 
 pub trait Data: Into<ProductValue> {

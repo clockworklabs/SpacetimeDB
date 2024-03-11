@@ -6,12 +6,14 @@ use super::{
     tx_state::TxState,
     SharedMutexGuard, SharedWriteGuard,
 };
-use crate::db::datastore::traits::TxData;
 use crate::db::{
-    datastore::system_tables::{
-        table_name_is_system, StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StIndexFields,
-        StIndexRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMNS_ID,
-        ST_CONSTRAINTS_ID, ST_INDEXES_ID, ST_SEQUENCES_ID, ST_TABLES_ID,
+    datastore::{
+        system_tables::{
+            table_name_is_system, StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StIndexFields,
+            StIndexRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMNS_ID,
+            ST_CONSTRAINTS_ID, ST_INDEXES_ID, ST_SEQUENCES_ID, ST_TABLES_ID,
+        },
+        traits::TxData,
     },
     db_metrics::table_num_rows,
 };
