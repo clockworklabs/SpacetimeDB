@@ -1,11 +1,14 @@
 use super::execution_unit::{ExecutionUnit, QueryHash};
 use crate::client::messages::{SubscriptionUpdate, TransactionUpdateMessage};
-use crate::client::ClientConnectionSender;
+use crate::client::{ClientConnectionSender, Protocol};
 use crate::db::relational_db::RelationalDB;
 use crate::execution_context::ExecutionContext;
-use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, ModuleEvent};
+use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, ProtocolDatabaseUpdate};
+use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
+use itertools::{Either, Itertools as _};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use smallvec::SmallVec;
+use spacetimedb_client_api_messages::client_api::{TableRowOperation, TableUpdate};
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::TableId;
 use std::collections::hash_map::Entry;
@@ -150,20 +153,51 @@ impl SubscriptionManager {
                 // TODO(perf): In order to reduce heap allocations,
                 // we should serialize and memcpy bsatn directly.
                 .flat_map_iter(|(hash, delta)| {
-                    self.subscribers
-                        .get(hash)
-                        .into_iter()
-                        .flatten()
-                        .map(move |id| (id, delta.table_id, delta.clone()))
+                    let table_id = delta.table_id;
+                    let table_name = delta.table_name;
+                    let ops = delta.ops;
+                    let mut ops_bin: Option<Vec<TableRowOperation>> = None;
+                    let mut ops_json: Option<Vec<TableRowOperationJson>> = None;
+                    self.subscribers.get(hash).into_iter().flatten().map(move |id| {
+                        let ops = match self.clients[id].protocol {
+                            Protocol::Binary => {
+                                Either::Left(ops_bin.get_or_insert_with(|| ops.iter().map_into().collect()).clone())
+                            }
+                            Protocol::Text => Either::Right(
+                                ops_json
+                                    .get_or_insert_with(|| ops.iter().cloned().map_into().collect())
+                                    .clone(),
+                            ),
+                        };
+                        (id, table_id, table_name.clone(), ops)
+                    })
                 })
                 .collect::<Vec<_>>()
                 .into_iter()
                 .fold(
-                    HashMap::<_, DatabaseTableUpdate>::new(),
-                    |mut tables, (id, table_id, delta)| {
+                    HashMap::<_, Either<TableUpdate, TableUpdateJson>>::new(),
+                    |mut tables, (id, table_id, table_name, ops)| {
                         match tables.entry((id, table_id)) {
-                            Entry::Occupied(mut entry) => entry.get_mut().ops.extend(delta.ops),
-                            Entry::Vacant(entry) => drop(entry.insert(delta)),
+                            Entry::Occupied(mut entry) => match ops {
+                                Either::Left(ops) => {
+                                    entry.get_mut().as_mut().unwrap_left().table_row_operations.extend(ops)
+                                }
+                                Either::Right(ops) => {
+                                    entry.get_mut().as_mut().unwrap_right().table_row_operations.extend(ops)
+                                }
+                            },
+                            Entry::Vacant(entry) => drop(entry.insert(match ops {
+                                Either::Left(ops) => Either::Left(TableUpdate {
+                                    table_id: table_id.into(),
+                                    table_name,
+                                    table_row_operations: ops,
+                                }),
+                                Either::Right(ops) => Either::Right(TableUpdateJson {
+                                    table_id: table_id.into(),
+                                    table_name,
+                                    table_row_operations: ops,
+                                }),
+                            })),
                         }
                         tables
                     },
@@ -172,15 +206,31 @@ impl SubscriptionManager {
                 // Each client receives a single DatabaseUpdate per transaction.
                 // So before sending an update to each client,
                 // we must stitch together the DatabaseTableUpdates into a final DatabaseUpdate.
-                .fold(HashMap::<_, DatabaseUpdate>::new(), |mut updates, ((id, _), delta)| {
-                    updates.entry(id).or_default().tables.push(delta);
-                    updates
-                })
+                .fold(
+                    HashMap::<_, Either<Vec<_>, Vec<_>>>::new(),
+                    |mut updates, ((id, _), update)| {
+                        let entry = updates.entry(id);
+                        match update {
+                            Either::Left(update) => entry
+                                .or_insert_with(|| Either::Left(Vec::new()))
+                                .as_mut()
+                                .unwrap_left()
+                                .push(update),
+
+                            Either::Right(update) => entry
+                                .or_insert_with(|| Either::Right(Vec::new()))
+                                .as_mut()
+                                .unwrap_right()
+                                .push(update),
+                        }
+                        updates
+                    },
+                )
                 .into_iter()
-                .for_each(|(id, database_update)| {
+                .for_each(|(id, tables)| {
                     let client = self.client(id);
                     let database_update = SubscriptionUpdate {
-                        database_update,
+                        database_update: ProtocolDatabaseUpdate { tables },
                         request_id: event.request_id,
                         timer: event.timer,
                     };

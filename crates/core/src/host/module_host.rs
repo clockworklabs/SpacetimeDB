@@ -5,6 +5,9 @@ use std::time::{Duration, Instant};
 
 use futures::{Future, FutureExt};
 use indexmap::IndexMap;
+use itertools::{Either, Itertools};
+use spacetimedb_client_api_messages::client_api::table_row_operation::OperationType;
+use spacetimedb_lib::bsatn::to_vec;
 use spacetimedb_lib::identity::RequestId;
 
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
@@ -19,16 +22,34 @@ use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
 use crate::identity::Identity;
 use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
-use crate::protobuf::client_api::{table_row_operation, TableRowOperation, TableUpdate};
+use crate::protobuf::client_api::{TableRowOperation, TableUpdate};
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
 use crate::util::notify_once::NotifyOnce;
+use derive_more::{From, Into};
 use spacetimedb_lib::{Address, ReducerDef, TableDesc};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
 use spacetimedb_vm::relation::MemTable;
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone, From, Into)]
+pub struct ProtocolDatabaseUpdate {
+    pub tables: Either<Vec<TableUpdate>, Vec<TableUpdateJson>>,
+}
+
+impl From<ProtocolDatabaseUpdate> for Vec<TableUpdate> {
+    fn from(update: ProtocolDatabaseUpdate) -> Self {
+        update.tables.unwrap_left()
+    }
+}
+
+impl From<ProtocolDatabaseUpdate> for Vec<TableUpdateJson> {
+    fn from(update: ProtocolDatabaseUpdate) -> Self {
+        update.tables.unwrap_right()
+    }
+}
+
+#[derive(Debug, Default, Clone, From)]
 pub struct DatabaseUpdate {
     pub tables: Vec<DatabaseTableUpdate>,
 }
@@ -38,12 +59,6 @@ impl FromIterator<DatabaseTableUpdate> for DatabaseUpdate {
         DatabaseUpdate {
             tables: iter.into_iter().collect(),
         }
-    }
-}
-
-impl From<Vec<DatabaseTableUpdate>> for DatabaseUpdate {
-    fn from(value: Vec<DatabaseTableUpdate>) -> Self {
-        DatabaseUpdate::from_iter(value)
     }
 }
 
@@ -78,55 +93,19 @@ impl DatabaseUpdate {
 
         DatabaseUpdate { tables: table_updates }
     }
+}
 
-    pub fn into_protobuf(self) -> Vec<TableUpdate> {
-        self.tables
-            .into_iter()
-            .map(|table| TableUpdate {
-                table_id: table.table_id.into(),
-                table_name: table.table_name,
-                table_row_operations: table
-                    .ops
-                    .into_iter()
-                    .map(|op| {
-                        let mut row_bytes = Vec::new();
-                        op.row.encode(&mut row_bytes);
-                        TableRowOperation {
-                            op: if op.op_type == 1 {
-                                table_row_operation::OperationType::Insert.into()
-                            } else {
-                                table_row_operation::OperationType::Delete.into()
-                            },
-                            row: row_bytes,
-                        }
-                    })
-                    .collect(),
-            })
-            .collect()
+impl From<DatabaseUpdate> for Vec<TableUpdate> {
+    fn from(update: DatabaseUpdate) -> Self {
+        update.tables.into_iter().map_into().collect()
     }
+}
 
-    pub fn into_json(self) -> Vec<TableUpdateJson> {
+impl From<DatabaseUpdate> for Vec<TableUpdateJson> {
+    fn from(update: DatabaseUpdate) -> Self {
         // For all tables, push all state
         // TODO: We need some way to namespace tables so we don't send all the internal tables and stuff
-        self.tables
-            .into_iter()
-            .map(|table| TableUpdateJson {
-                table_id: table.table_id.into(),
-                table_name: table.table_name,
-                table_row_operations: table
-                    .ops
-                    .into_iter()
-                    .map(|op| TableRowOperationJson {
-                        op: if op.op_type == 1 {
-                            "insert".into()
-                        } else {
-                            "delete".into()
-                        },
-                        row: op.row.elements,
-                    })
-                    .collect(),
-            })
-            .collect()
+        update.tables.into_iter().map_into().collect()
     }
 }
 
@@ -135,6 +114,26 @@ pub struct DatabaseTableUpdate {
     pub table_id: TableId,
     pub table_name: String,
     pub ops: Vec<TableOp>,
+}
+
+impl From<DatabaseTableUpdate> for TableUpdate {
+    fn from(table: DatabaseTableUpdate) -> Self {
+        Self {
+            table_id: table.table_id.into(),
+            table_name: table.table_name,
+            table_row_operations: table.ops.iter().map_into().collect(),
+        }
+    }
+}
+
+impl From<DatabaseTableUpdate> for TableUpdateJson {
+    fn from(table: DatabaseTableUpdate) -> Self {
+        Self {
+            table_id: table.table_id.into(),
+            table_name: table.table_name,
+            table_row_operations: table.ops.into_iter().map_into().collect(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -157,6 +156,26 @@ impl TableOp {
     #[inline]
     pub fn delete(row: ProductValue) -> Self {
         Self::new(0, row)
+    }
+}
+
+impl From<&TableOp> for TableRowOperation {
+    fn from(top: &TableOp) -> Self {
+        let row = to_vec(&top.row).unwrap();
+        let op = if top.op_type == 1 {
+            OperationType::Insert.into()
+        } else {
+            OperationType::Delete.into()
+        };
+        Self { op, row }
+    }
+}
+
+impl From<TableOp> for TableRowOperationJson {
+    fn from(top: TableOp) -> Self {
+        let row = top.row.elements;
+        let op = if top.op_type == 1 { "insert" } else { "delete" }.into();
+        Self { op, row }
     }
 }
 

@@ -7,7 +7,7 @@ use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
-use crate::host::module_host::{EventStatus, ModuleEvent};
+use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
 use crate::protobuf::client_api::Subscribe;
 use crate::worker_metrics::WORKER_METRICS;
 use parking_lot::RwLock;
@@ -133,9 +133,9 @@ impl ModuleSubscriptions {
             }
             EventStatus::Failed(_) => {
                 if let Some(client) = client {
-                    let message = TransactionUpdateMessage {
+                    let message = TransactionUpdateMessage::<DatabaseUpdate> {
                         event: &event,
-                        database_update: Default::default(),
+                        database_update: <_>::default(),
                     };
                     let _ = client.send_message(message);
                 } else {
