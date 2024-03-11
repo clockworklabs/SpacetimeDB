@@ -1740,14 +1740,14 @@ impl fmt::Display for Query {
 // A query conceptually starts with either a single table or an `IndexJoin`,
 // and then stacks a set of filters on top of that.
 pub struct QueryCode {
-    pub table: SourceExpr,
+    pub source: SourceExpr,
     pub query: Vec<Query>,
 }
 
 impl From<QueryExpr> for QueryCode {
     fn from(value: QueryExpr) -> Self {
         QueryCode {
-            table: value.source,
+            source: value.source,
             query: value.query,
         }
     }
@@ -1782,7 +1782,7 @@ impl AuthAccess for QueryCode {
         if owner == caller {
             return Ok(());
         }
-        self.table.check_auth(owner, caller)?;
+        self.source.check_auth(owner, caller)?;
         for q in &self.query {
             q.check_auth(owner, caller)?;
         }
@@ -1793,11 +1793,11 @@ impl AuthAccess for QueryCode {
 
 impl Relation for QueryCode {
     fn head(&self) -> &Arc<Header> {
-        self.table.head()
+        self.source.head()
     }
 
     fn row_count(&self) -> RowCount {
-        self.table.row_count()
+        self.source.row_count()
     }
 }
 

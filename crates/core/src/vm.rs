@@ -47,7 +47,7 @@ pub fn build_query<'a>(
     query: QueryCode,
     sources: &mut SourceSet,
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {
-    let db_table = query.table.is_db_table();
+    let db_table = query.source.is_db_table();
 
     // We're incrementally building a query iterator by applying each operation in the `query.query`.
     // Most such operations will modify their parent, but certain operations (i.e. `IndexJoin`s)
@@ -74,7 +74,7 @@ pub fn build_query<'a>(
                 let result = result
                     .take()
                     .map(Ok)
-                    .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.table, sources))?;
+                    .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))?;
                 let header = result.head().clone();
                 let cmp: ColumnOp = index_scan.into();
                 let iter = result.select(move |row| cmp.compare(row, &header));
@@ -114,7 +114,7 @@ pub fn build_query<'a>(
                 let result = result
                     .take()
                     .map(Ok)
-                    .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.table, sources))?;
+                    .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))?;
                 let header = result.head().clone();
                 let iter = result.select(move |row| cmp.compare(row, &header));
                 Box::new(iter)
@@ -123,7 +123,7 @@ pub fn build_query<'a>(
                 let result = result
                     .take()
                     .map(Ok)
-                    .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.table, sources))?;
+                    .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))?;
                 if cols.is_empty() {
                     result
                 } else {
@@ -138,7 +138,7 @@ pub fn build_query<'a>(
                 let result = result
                     .take()
                     .map(Ok)
-                    .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.table, sources))?;
+                    .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))?;
                 let iter = join_inner(ctx, stdb, tx, result, join, false, sources)?;
                 Box::new(iter)
             }
@@ -147,7 +147,7 @@ pub fn build_query<'a>(
 
     result
         .map(Ok)
-        .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.table, sources))
+        .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))
 }
 
 fn join_inner<'a>(
@@ -359,8 +359,8 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
     }
 
     fn _eval_query(&mut self, query: QueryCode, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
-        let table_access = query.table.table_access();
-        tracing::trace!(table = query.table.table_name());
+        let table_access = query.source.table_access();
+        tracing::trace!(table = query.source.table_name());
 
         let result = build_query(self.ctx, self.db, self.tx, query, sources)?;
         let head = result.head().clone();
@@ -401,7 +401,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
 
     fn _delete_query(&mut self, query: QueryCode, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
         let table = sources
-            .take_table(&query.table)
+            .take_table(&query.source)
             .expect("Cannot delete from a `MemTable`");
         let result = self._eval_query(query, sources)?;
 
@@ -480,7 +480,7 @@ impl ProgramVm for DbProgram<'_, '_> {
                 delete,
                 mut assignments,
             } => {
-                let table = delete.table.clone();
+                let table = delete.source.clone();
                 let result = self._eval_query(delete, sources)?;
 
                 let Code::Table(deleted) = result else {
