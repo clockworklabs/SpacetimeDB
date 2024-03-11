@@ -378,21 +378,21 @@ impl IncrementalJoin {
         let mut lhs_deletes = updates
             .clone()
             .filter(|u| u.table_id == self.lhs.table_id)
-            .flat_map(|u| &u.deletes)
+            .flat_map(|u| u.deletes.iter())
             .peekable();
         let mut lhs_inserts = updates
             .clone()
             .filter(|u| u.table_id == self.lhs.table_id)
-            .flat_map(|u| &u.inserts)
+            .flat_map(|u| u.inserts.iter())
             .peekable();
         let mut rhs_deletes = updates
             .clone()
             .filter(|u| u.table_id == self.rhs.table_id)
-            .flat_map(|u| &u.deletes)
+            .flat_map(|u| u.deletes.iter())
             .peekable();
         let mut rhs_inserts = updates
             .filter(|u| u.table_id == self.rhs.table_id)
-            .flat_map(|u| &u.inserts)
+            .flat_map(|u| u.inserts.iter())
             .peekable();
 
         // No updates at all? Return `None`.
