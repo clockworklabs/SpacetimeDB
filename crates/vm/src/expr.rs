@@ -1073,6 +1073,12 @@ fn find_sargable_ops<'a>(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+// TODO(bikeshedding): Refactor this struct so that `IndexJoin`s replace the `table`,
+// rather than appearing as the first element of the `query`.
+//
+// `IndexJoin`s do not behave like filters; in fact they behave more like data sources.
+// A query conceptually starts with either a single table or an `IndexJoin`,
+// and then stacks a set of filters on top of that.
 pub struct QueryExpr {
     pub source: SourceExpr,
     pub query: Vec<Query>,
@@ -1732,27 +1738,6 @@ impl fmt::Display for Query {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-// TODO(bikeshedding): Refactor this struct so that `IndexJoin`s replace the `table`,
-// rather than appearing as the first element of the `query`.
-//
-// `IndexJoin`s do not behave like filters; in fact they behave more like data sources.
-// A query conceptually starts with either a single table or an `IndexJoin`,
-// and then stacks a set of filters on top of that.
-pub struct QueryCode {
-    pub source: SourceExpr,
-    pub query: Vec<Query>,
-}
-
-impl From<QueryExpr> for QueryCode {
-    fn from(value: QueryExpr) -> Self {
-        QueryCode {
-            source: value.source,
-            query: value.query,
-        }
-    }
-}
-
 impl AuthAccess for SourceExpr {
     fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
         if owner == caller || self.table_access() == StAccess::Public {
@@ -1777,7 +1762,7 @@ impl AuthAccess for Table {
     }
 }
 
-impl AuthAccess for QueryCode {
+impl AuthAccess for QueryExpr {
     fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
         if owner == caller {
             return Ok(());
@@ -1791,7 +1776,7 @@ impl AuthAccess for QueryCode {
     }
 }
 
-impl Relation for QueryCode {
+impl Relation for QueryExpr {
     fn head(&self) -> &Arc<Header> {
         self.source.head()
     }
@@ -1803,17 +1788,17 @@ impl Relation for QueryCode {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CrudCode {
-    Query(QueryCode),
+    Query(QueryExpr),
     Insert {
         table: SourceExpr,
         rows: Vec<ProductValue>,
     },
     Update {
-        delete: QueryCode,
+        delete: QueryExpr,
         assignments: HashMap<FieldName, FieldExpr>,
     },
     Delete {
-        query: QueryCode,
+        query: QueryExpr,
     },
     CreateTable {
         table: TableDef,
@@ -1975,12 +1960,11 @@ mod tests {
         ]
     }
 
-    fn query_codes() -> impl IntoIterator<Item = QueryCode> {
+    fn query_exprs() -> impl IntoIterator<Item = QueryExpr> {
         tables().map(|table| {
-            let expr = QueryExpr::from(table);
-            let mut code = QueryCode::from(expr);
-            code.query = queries().into_iter().collect();
-            code
+            let mut expr = QueryExpr::from(table);
+            expr.query = queries().into_iter().collect();
+            expr
         })
     }
 
@@ -2323,7 +2307,7 @@ mod tests {
 
     #[test]
     fn test_auth_query_code() {
-        for code in query_codes() {
+        for code in query_exprs() {
             assert_owner_private(&code)
         }
     }
@@ -2337,7 +2321,7 @@ mod tests {
 
     #[test]
     fn test_auth_crud_code_query() {
-        for query in query_codes() {
+        for query in query_exprs() {
             let crud = CrudCode::Query(query);
             assert_owner_private(&crud);
         }
@@ -2353,7 +2337,7 @@ mod tests {
 
     #[test]
     fn test_auth_crud_code_update() {
-        for qc in query_codes() {
+        for qc in query_exprs() {
             let crud = CrudCode::Update {
                 delete: qc,
                 assignments: Default::default(),
@@ -2364,7 +2348,7 @@ mod tests {
 
     #[test]
     fn test_auth_crud_code_delete() {
-        for query in query_codes() {
+        for query in query_exprs() {
             let crud = CrudCode::Delete { query };
             assert_owner_required(crud);
         }

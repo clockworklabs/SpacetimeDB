@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::errors::ErrorVm;
-use crate::expr::{Code, CrudCode, CrudExpr, QueryCode, QueryExpr, SourceSet};
+use crate::expr::{Code, CrudCode, CrudExpr, SourceSet};
 use crate::expr::{Expr, Query};
 use crate::iterators::RelIter;
 use crate::program::ProgramVm;
@@ -9,29 +9,15 @@ use crate::rel_ops::RelOps;
 use crate::relation::RelValue;
 use spacetimedb_sats::relation::{FieldExpr, Relation};
 
-/// Compile a [`QueryExpr`] into a [`QueryCode`], its most-compiled form.
-pub fn compile_query(q: QueryExpr) -> QueryCode {
-    QueryCode {
-        source: q.source,
-        query: q.query,
-    }
-}
-
 fn compile_query_expr(q: CrudExpr) -> Code {
     match q {
-        CrudExpr::Query(q) => Code::Crud(CrudCode::Query(compile_query(q))),
+        CrudExpr::Query(q) => Code::Crud(CrudCode::Query(q)),
         CrudExpr::Insert { source, rows } => {
             let q = CrudCode::Insert { table: source, rows };
             Code::Crud(q)
         }
-        CrudExpr::Update { delete, assignments } => {
-            let delete = compile_query(delete);
-            Code::Crud(CrudCode::Update { delete, assignments })
-        }
-        CrudExpr::Delete { query } => {
-            let query = compile_query(query);
-            Code::Crud(CrudCode::Delete { query })
-        }
+        CrudExpr::Update { delete, assignments } => Code::Crud(CrudCode::Update { delete, assignments }),
+        CrudExpr::Delete { query } => Code::Crud(CrudCode::Delete { query }),
         CrudExpr::CreateTable { table } => Code::Crud(CrudCode::CreateTable { table }),
         CrudExpr::Drop {
             name,
