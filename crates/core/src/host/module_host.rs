@@ -13,12 +13,10 @@ use spacetimedb_lib::identity::RequestId;
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
 use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_logger::LogLevel;
-use crate::db::datastore::traits::{TxData, TxOp};
-use crate::db::relational_db::RelationalDB;
+use crate::db::datastore::traits::{TxData, TxOp, TxRecord};
 use crate::db::update::UpdateDatabaseError;
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
-use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
 use crate::identity::Identity;
 use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
@@ -70,28 +68,34 @@ impl DatabaseUpdate {
         false
     }
 
-    pub fn from_writes(stdb: &RelationalDB, tx_data: &TxData) -> Self {
-        let mut map: HashMap<TableId, Vec<TableOp>> = HashMap::new();
-        for record in tx_data.records.iter() {
-            let pv = record.product_value.clone();
-            map.entry(record.table_id).or_default().push(match record.op {
-                TxOp::Delete => TableOp::delete(pv),
-                TxOp::Insert(_) => TableOp::insert(pv),
+    pub fn from_writes(tx_data: TxData) -> Self {
+        let mut tables = Vec::new();
+        let mut tables_map: HashMap<TableId, usize> = HashMap::new();
+
+        for TxRecord {
+            op,
+            product_value,
+            table_id,
+            table_name,
+            ..
+        } in tx_data.records
+        {
+            let idx = *tables_map.entry(table_id).or_insert_with(|| {
+                let idx = tables.len();
+                tables.push(DatabaseTableUpdate {
+                    table_id,
+                    table_name,
+                    ops: Vec::new(),
+                });
+                idx
+            });
+            tables[idx].ops.push(match op {
+                TxOp::Delete => TableOp::delete(product_value),
+                TxOp::Insert(_) => TableOp::insert(product_value),
             });
         }
 
-        let ctx = ExecutionContext::internal(stdb.address());
-        let table_updates = stdb.with_read_only(&ctx, |tx| {
-            map.into_iter()
-                .map(|(table_id, ops)| DatabaseTableUpdate {
-                    table_id,
-                    table_name: stdb.table_name_from_id(tx, table_id).unwrap().unwrap().into_owned(),
-                    ops,
-                })
-                .collect()
-        });
-
-        DatabaseUpdate { tables: table_updates }
+        DatabaseUpdate { tables }
     }
 }
 
@@ -104,6 +108,12 @@ impl From<DatabaseUpdate> for Vec<TableUpdate> {
 impl From<DatabaseUpdate> for Vec<TableUpdateJson> {
     fn from(update: DatabaseUpdate) -> Self {
         update.tables.into_iter().map_into().collect()
+    }
+}
+
+impl From<TxData> for DatabaseUpdate {
+    fn from(tx_data: TxData) -> Self {
+        DatabaseUpdate::from_writes(tx_data)
     }
 }
 

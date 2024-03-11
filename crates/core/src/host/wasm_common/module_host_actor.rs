@@ -17,8 +17,8 @@ use crate::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerpri
 use crate::execution_context::ExecutionContext;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_host::{
-    CallReducerParams, DatabaseUpdate, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo,
-    ModuleInstance, ReducersMap, UpdateDatabaseResult, UpdateDatabaseSuccess,
+    CallReducerParams, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo, ModuleInstance, ReducersMap,
+    UpdateDatabaseResult, UpdateDatabaseSuccess,
 };
 use crate::host::{ArgsTuple, EntityDef, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler, Timestamp};
 use crate::identity::Identity;
@@ -619,7 +619,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                             .with_label_values(&address, reducer_name)
                             .observe(bytes_written as f64);
                     }
-                    EventStatus::Committed(DatabaseUpdate::from_writes(stdb, &tx_data))
+                    EventStatus::Committed(tx_data.into())
                 } else {
                     todo!("Write skew, you need to implement retries my man, T-dawg.");
                 }
