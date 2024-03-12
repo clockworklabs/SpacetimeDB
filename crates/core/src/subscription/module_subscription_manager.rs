@@ -149,13 +149,17 @@ impl SubscriptionManager {
                 })
                 // If N clients are subscribed to a query,
                 // we copy the DatabaseTableUpdate N times,
-                // which involves cloning product values.
-                // TODO(perf): In order to reduce heap allocations,
-                // we should serialize and memcpy bsatn directly.
+                // which involves cloning BSATN (binary) or product values (json).
                 .flat_map_iter(|(hash, delta)| {
                     let table_id = delta.table_id;
                     let table_name = delta.table_name;
                     let ops = delta.ops;
+                    // Store at most one copy of the serialization to BSATN
+                    // and ditto for the "serialization" for JSON.
+                    // Each subscriber gets to pick which of these they want,
+                    // but we only fill `ops_bin` and `ops_json` at most once.
+                    // The former will be `Some(_)` if some subscriber uses `Protocol::Binary`
+                    // and the latter `Some(_)` if some subscriber uses `Protocol::Text`.
                     let mut ops_bin: Option<Vec<TableRowOperation>> = None;
                     let mut ops_json: Option<Vec<TableRowOperationJson>> = None;
                     self.subscribers.get(hash).into_iter().flatten().map(move |id| {
@@ -174,8 +178,13 @@ impl SubscriptionManager {
                 })
                 .collect::<Vec<_>>()
                 .into_iter()
+                // For each subscriber, aggregate all the updates for the same table.
+                // That is, we build a map `(subscriber_id, table_id) -> updates`.
+                // A particular subscriber uses only one protocol,
+                // so we'll have either `TableUpdate` (`Protocol::Binary`)
+                // or `TableUpdateJson` (`Protocol::Text`).
                 .fold(
-                    HashMap::<_, Either<TableUpdate, TableUpdateJson>>::new(),
+                    HashMap::<(&Identity, TableId), Either<TableUpdate, TableUpdateJson>>::new(),
                     |mut tables, (id, table_id, table_name, ops)| {
                         match tables.entry((id, table_id)) {
                             Entry::Occupied(mut entry) => match ops {
@@ -203,11 +212,11 @@ impl SubscriptionManager {
                     },
                 )
                 .into_iter()
-                // Each client receives a single DatabaseUpdate per transaction.
-                // So before sending an update to each client,
-                // we must stitch together the DatabaseTableUpdates into a final DatabaseUpdate.
+                // Each client receives a single list of updates per transaction.
+                // So before sending the updates to each client,
+                // we must stitch together the `TableUpdate*`s into an aggregated list.
                 .fold(
-                    HashMap::<_, Either<Vec<_>, Vec<_>>>::new(),
+                    HashMap::<&Identity, Either<Vec<TableUpdate>, Vec<TableUpdateJson>>>::new(),
                     |mut updates, ((id, _), update)| {
                         let entry = updates.entry(id);
                         match update {
