@@ -110,7 +110,7 @@ impl ColumnOp {
 
     fn reduce(&self, row: &RelValue<'_>, value: &ColumnOp, header: &Header) -> Result<AlgebraicValue, ErrorLang> {
         match value {
-            ColumnOp::Field(field) => Ok(row.get(field, header)?.into_owned()),
+            ColumnOp::Field(field) => Ok(row.get(field.borrowed(), header)?.into_owned()),
             ColumnOp::Cmp { op, lhs, rhs } => Ok(self.compare_bin_op(row, *op, lhs, rhs, header)?.into()),
         }
     }
@@ -118,7 +118,7 @@ impl ColumnOp {
     fn reduce_bool(&self, row: &RelValue<'_>, value: &ColumnOp, header: &Header) -> Result<bool, ErrorLang> {
         match value {
             ColumnOp::Field(field) => {
-                let field = row.get(field, header)?;
+                let field = row.get(field.borrowed(), header)?;
 
                 match field.as_bool() {
                     Some(b) => Ok(*b),
@@ -166,7 +166,7 @@ impl ColumnOp {
     pub fn compare(&self, row: &RelValue<'_>, header: &Header) -> Result<bool, ErrorVm> {
         match self {
             ColumnOp::Field(field) => {
-                let lhs = row.get(field, header)?;
+                let lhs = row.get(field.borrowed(), header)?;
                 Ok(*lhs.as_bool().unwrap())
             }
             ColumnOp::Cmp { op, lhs, rhs } => self.compare_bin_op(row, *op, lhs, rhs, header),
@@ -613,7 +613,7 @@ impl IndexJoin {
     // In other words, when an index join has two delta tables.
     pub fn to_inner_join(self) -> QueryExpr {
         if self.return_index_rows {
-            let col_lhs = self.index_side.head().fields[usize::from(self.index_col)].field.clone();
+            let col_lhs = self.index_side.head().fields[self.index_col.idx()].field.clone();
             let col_rhs = self.probe_field;
             let rhs = self.probe_side;
 
@@ -637,7 +637,7 @@ impl IndexJoin {
             };
             QueryExpr { source, query }
         } else {
-            let col_rhs = self.index_side.head().fields[usize::from(self.index_col)].field.clone();
+            let col_rhs = self.index_side.head().fields[self.index_col.idx()].field.clone();
             let col_lhs = self.probe_field;
             let mut rhs: QueryExpr = self.index_side.into();
 
@@ -696,7 +696,7 @@ pub enum Crud {
     Drop(DbType),
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum CrudExpr {
     Query(QueryExpr),
     Insert {
@@ -1502,14 +1502,13 @@ impl QueryExpr {
                 if !probe_side.query.is_empty() && wildcard_table_id == source_table_id {
                     // An applicable join must have an index defined on the correct field.
                     if let Some(col) = source.head().column(&index_field) {
-                        let index_col = col.col_id;
                         if source.head().has_constraint(&index_field, Constraints::indexed()) {
                             let index_join = IndexJoin {
                                 probe_side,
                                 probe_field,
                                 index_side: source.clone(),
                                 index_select: None,
-                                index_col,
+                                index_col: col.col_id,
                                 return_index_rows: true,
                             };
                             return QueryExpr {
@@ -1688,7 +1687,7 @@ impl AuthAccess for Query {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, From)]
+#[derive(Debug, Eq, PartialEq, From)]
 pub enum Expr {
     #[from]
     Value(AlgebraicValue),
@@ -1813,7 +1812,7 @@ impl AuthAccess for CrudExpr {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum Code {
     Value(AlgebraicValue),
     Table(MemTable),

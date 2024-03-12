@@ -110,6 +110,16 @@ pub enum FieldExpr {
     Value(AlgebraicValue),
 }
 
+impl FieldExpr {
+    /// Returns a borrowed version of `FieldExpr`.
+    pub fn borrowed(&self) -> FieldExprRef<'_> {
+        match self {
+            Self::Name(x) => FieldExprRef::Name(x),
+            Self::Value(x) => FieldExprRef::Value(x),
+        }
+    }
+}
+
 impl fmt::Display for FieldName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -136,6 +146,13 @@ impl fmt::Display for FieldExpr {
             }
         }
     }
+}
+
+/// A borrowed version of `FieldExpr`.
+#[derive(Clone, Copy)]
+pub enum FieldExprRef<'a> {
+    Name(&'a FieldName),
+    Value(&'a AlgebraicValue),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]

@@ -170,8 +170,8 @@ pub fn st_table_schema() -> TableSchema {
         ],
     )
     .with_type(StTableType::System)
-    .with_column_constraint(Constraints::primary_key_auto(), StTableFields::TableId.col_id())
-    .with_column_index(StTableFields::TableName.col_id(), true)
+    .with_column_constraint(Constraints::primary_key_auto(), StTableFields::TableId)
+    .with_column_index(StTableFields::TableName, true)
     .into_schema(ST_TABLES_ID)
 }
 
@@ -218,7 +218,7 @@ pub fn st_indexes_schema() -> TableSchema {
     )
     .with_type(StTableType::System)
     // TODO: Unique constraint on index name?
-    .with_column_constraint(Constraints::primary_key_auto(), StIndexFields::IndexId.col_id())
+    .with_column_constraint(Constraints::primary_key_auto(), StIndexFields::IndexId)
     .into_schema(ST_INDEXES_ID)
 }
 
@@ -244,7 +244,7 @@ pub(crate) fn st_sequences_schema() -> TableSchema {
     )
     .with_type(StTableType::System)
     // TODO: Unique constraint on sequence name?
-    .with_column_constraint(Constraints::primary_key_auto(), StSequenceFields::SequenceId.col_id())
+    .with_column_constraint(Constraints::primary_key_auto(), StSequenceFields::SequenceId)
     .into_schema(ST_SEQUENCES_ID)
 }
 
@@ -268,10 +268,7 @@ pub(crate) fn st_constraints_schema() -> TableSchema {
         ],
     )
     .with_type(StTableType::System)
-    .with_column_constraint(
-        Constraints::primary_key_auto(),
-        StConstraintFields::ConstraintId.col_id(),
-    )
+    .with_column_constraint(Constraints::primary_key_auto(), StConstraintFields::ConstraintId)
     .into_schema(ST_CONSTRAINTS_ID)
 }
 
@@ -552,11 +549,7 @@ impl TryFrom<RowRef<'_>> for StConstraintRow<String> {
     fn try_from(row: RowRef<'_>) -> Result<StConstraintRow<String>, DBError> {
         let constraints = row.read_col::<u8>(StConstraintFields::Constraints)?;
         let constraints = Constraints::try_from(constraints).expect("Fail to decode Constraints");
-        let columns = to_cols(
-            row,
-            StConstraintFields::Columns.col_id(),
-            StConstraintFields::Columns.name(),
-        )?;
+        let columns = to_cols(row, StConstraintFields::Columns, StConstraintFields::Columns.name())?;
         Ok(StConstraintRow {
             table_id: row.read_col(StConstraintFields::TableId)?,
             constraint_id: row.read_col(StConstraintFields::ConstraintId)?,
