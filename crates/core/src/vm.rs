@@ -467,16 +467,16 @@ impl ProgramVm for DbProgram<'_, '_> {
     }
 
     // Safety: For DbProgram with tx = TxMode::Tx variant, all queries must match to CrudCode::Query and no other branch.
-    fn eval_query(&mut self, query: CrudCode, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
+    fn eval_query(&mut self, query: CrudExpr, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
         query.check_auth(self.auth.owner, self.auth.caller)?;
 
         match query {
-            CrudCode::Query(query) => self._eval_query(query, sources),
-            CrudCode::Insert { table, rows } => {
+            CrudExpr::Query(query) => self._eval_query(query, sources),
+            CrudExpr::Insert { source: table, rows } => {
                 let src = sources.take_table(&table).unwrap();
                 self._execute_insert(&src, rows)
             }
-            CrudCode::Update {
+            CrudExpr::Update {
                 delete,
                 mut assignments,
             } => {
@@ -521,22 +521,9 @@ impl ProgramVm for DbProgram<'_, '_> {
 
                 self._execute_insert(&table, insert_rows)
             }
-            CrudCode::Delete { query } => {
-                let result = self._delete_query(query, sources)?;
-                Ok(result)
-            }
-            CrudCode::CreateTable { table } => {
-                let result = self._create_table(table)?;
-                Ok(result)
-            }
-            CrudCode::Drop {
-                name,
-                kind,
-                table_access: _,
-            } => {
-                let result = self._drop(&name, kind)?;
-                Ok(result)
-            }
+            CrudExpr::Delete { query } => self._delete_query(query, sources),
+            CrudExpr::CreateTable { table } => self._create_table(table),
+            CrudExpr::Drop { name, kind, .. } => self._drop(&name, kind),
         }
     }
 }
