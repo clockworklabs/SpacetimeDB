@@ -569,10 +569,7 @@ where
     }
 
     fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
-        if let Some(row) = self.iter.next() {
-            return Ok(Some(RelValue::Projection(row)));
-        };
-        Ok(None)
+        Ok(self.iter.next().map(RelValue::Projection))
     }
 }
 

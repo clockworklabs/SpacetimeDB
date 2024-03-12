@@ -67,24 +67,6 @@ pub fn execute_single_sql(
     Ok(result)
 }
 
-pub fn execute_sql_mut_tx(
-    db: &RelationalDB,
-    tx: &mut MutTx,
-    ast: Vec<CrudExpr>,
-    auth: AuthCtx,
-    sources: SourceSet,
-) -> Result<Vec<MemTable>, DBError> {
-    let total = ast.len();
-    let mut tx: TxMode = tx.into();
-    let ctx = ExecutionContext::sql(db.address());
-    let p = &mut DbProgram::new(&ctx, db, &mut tx, auth);
-    let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
-
-    let mut result = Vec::with_capacity(total);
-    collect_result(&mut result, run_ast(p, q, sources).into())?;
-    Ok(result)
-}
-
 /// Run the compiled `SQL` expression inside the `vm` created by [DbProgram]
 ///
 /// Evaluates `ast` and accordingly triggers mutable or read tx to execute
