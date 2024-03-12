@@ -5,7 +5,7 @@ use spacetimedb_sats::product_value::ProductValue;
 use spacetimedb_sats::relation::{
     DbTable, FieldExpr, FieldExprRef, FieldName, Header, HeaderOnlyField, Relation, RowCount,
 };
-use spacetimedb_sats::AlgebraicValue;
+use spacetimedb_sats::{impl_serialize, AlgebraicValue};
 use spacetimedb_table::read_column::ReadColumn;
 use spacetimedb_table::table::RowRef;
 use std::borrow::Cow;
@@ -22,6 +22,11 @@ pub enum RelValue<'a> {
     Row(RowRef<'a>),
     Projection(ProductValue),
 }
+
+impl_serialize!(['a] RelValue<'a>, (self, ser) => match self {
+    Self::Row(row) => row.serialize(ser),
+    Self::Projection(row) => row.serialize(ser),
+});
 
 impl<'a> RelValue<'a> {
     /// Converts `self` into a `ProductValue`

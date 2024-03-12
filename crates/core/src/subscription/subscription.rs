@@ -25,15 +25,17 @@
 
 use super::execution_unit::ExecutionUnit;
 use super::query;
-use crate::client::{ClientActorId, ClientConnectionSender};
+use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
-use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp};
+use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, ProtocolDatabaseUpdate, TableOp};
+use crate::json::client_api::TableUpdateJson;
 use crate::vm::{build_query, TxMode};
 use anyhow::Context;
 use itertools::{Either, Itertools};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use spacetimedb_client_api_messages::client_api::TableUpdate;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::TableId;
@@ -634,17 +636,32 @@ pub struct ExecutionSet {
 }
 
 impl ExecutionSet {
+    pub fn eval(&self, protocol: Protocol, db: &RelationalDB, tx: &Tx) -> Result<ProtocolDatabaseUpdate, DBError> {
+        let tables = match protocol {
+            Protocol::Binary => Either::Left(self.eval_binary(db, tx)?),
+            Protocol::Text => Either::Right(self.eval_json(db, tx)?),
+        };
+        Ok(ProtocolDatabaseUpdate { tables })
+    }
+
     #[tracing::instrument(skip_all)]
-    pub fn eval(&self, db: &RelationalDB, tx: &Tx) -> Result<DatabaseUpdate, DBError> {
+    fn eval_json(&self, db: &RelationalDB, tx: &Tx) -> Result<Vec<TableUpdateJson>, DBError> {
         // evaluate each of the execution units in this ExecutionSet in parallel
-        let tables = self
-            .exec_units
+        self.exec_units
             // if you need eval to run single-threaded for debugging, change this to .iter()
             .par_iter()
-            .filter_map(|unit| unit.eval(db, tx).transpose())
-            .collect::<Result<Vec<_>, _>>()?;
+            .filter_map(|unit| unit.eval_json(db, tx).transpose())
+            .collect::<Result<Vec<_>, _>>()
+    }
 
-        Ok(DatabaseUpdate { tables })
+    #[tracing::instrument(skip_all)]
+    fn eval_binary(&self, db: &RelationalDB, tx: &Tx) -> Result<Vec<TableUpdate>, DBError> {
+        // evaluate each of the execution units in this ExecutionSet in parallel
+        self.exec_units
+            // if you need eval to run single-threaded for debugging, change this to .iter()
+            .par_iter()
+            .filter_map(|unit| unit.eval_binary(db, tx).transpose())
+            .collect::<Result<Vec<_>, _>>()
     }
 
     #[tracing::instrument(skip_all)]

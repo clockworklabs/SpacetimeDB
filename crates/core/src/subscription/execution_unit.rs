@@ -4,12 +4,16 @@ use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseTableUpdate, TableOp};
+use crate::json::client_api::TableUpdateJson;
 use crate::vm::{build_query, TxMode};
+use spacetimedb_client_api_messages::client_api::{TableRowOperation, TableUpdate};
+use spacetimedb_lib::bsatn::to_writer;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::relation::{DbTable, Header};
 use spacetimedb_vm::eval::IterRows;
 use spacetimedb_vm::expr::{Query, QueryExpr, SourceExpr, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
+use spacetimedb_vm::relation::RelValue;
 use std::hash::Hash;
 
 /// A hash for uniquely identifying query execution units,
@@ -208,21 +212,46 @@ impl ExecutionUnit {
             .unwrap_or(return_table)
     }
 
-    /// Evaluate this execution unit against the database.
-    pub fn eval(&self, db: &RelationalDB, tx: &Tx) -> Result<Option<DatabaseTableUpdate>, DBError> {
-        let ops = Self::eval_query_code(db, tx, &self.eval_plan)?;
-        Ok((!ops.is_empty()).then(|| DatabaseTableUpdate {
-            table_id: self.return_table(),
+    /// Evaluate this execution unit against the database using the json format.
+    #[tracing::instrument(skip_all)]
+    pub fn eval_json(&self, db: &RelationalDB, tx: &Tx) -> Result<Option<TableUpdateJson>, DBError> {
+        let table_row_operations = Self::eval_query_expr(db, tx, &self.eval_plan, |row| {
+            TableOp::insert(row.into_product_value()).into()
+        })?;
+        Ok((!table_row_operations.is_empty()).then(|| TableUpdateJson {
+            table_id: self.return_table().into(),
             table_name: self.return_name(),
-            ops,
+            table_row_operations,
         }))
     }
 
-    fn eval_query_code(db: &RelationalDB, tx: &Tx, eval_plan: &QueryExpr) -> Result<Vec<TableOp>, DBError> {
+    /// Evaluate this execution unit against the database using the binary format.
+    #[tracing::instrument(skip_all)]
+    pub fn eval_binary(&self, db: &RelationalDB, tx: &Tx) -> Result<Option<TableUpdate>, DBError> {
+        let mut buf = Vec::new();
+        let table_row_operations = Self::eval_query_expr(db, tx, &self.eval_plan, |row| {
+            to_writer(&mut buf, &row).unwrap();
+            let row = buf.clone();
+            buf.clear();
+            TableRowOperation { op: 1, row }
+        })?;
+        Ok((!table_row_operations.is_empty()).then(|| TableUpdate {
+            table_id: self.return_table().into(),
+            table_name: self.return_name(),
+            table_row_operations,
+        }))
+    }
+
+    fn eval_query_expr<T>(
+        db: &RelationalDB,
+        tx: &Tx,
+        eval_plan: &QueryExpr,
+        convert: impl FnMut(RelValue<'_>) -> T,
+    ) -> Result<Vec<T>, DBError> {
         let ctx = ExecutionContext::subscribe(db.address());
         let tx: TxMode = tx.into();
         let query = build_query(&ctx, db, &tx, eval_plan, &mut SourceSet::default())?;
-        let ops = query.collect_vec(|row_ref| TableOp::insert(row_ref.into_product_value()))?;
+        let ops = query.collect_vec(convert)?;
         Ok(ops)
     }
 
@@ -235,7 +264,7 @@ impl ExecutionUnit {
     ) -> Result<Option<DatabaseTableUpdate>, DBError> {
         let ops = match &self.eval_incr_plan {
             EvalIncrPlan::Select(eval_incr_plan) => {
-                Self::eval_incr_query_code(db, tx, tables, eval_incr_plan, self.return_table())?
+                Self::eval_incr_query_expr(db, tx, tables, eval_incr_plan, self.return_table())?
             }
             EvalIncrPlan::Semijoin(eval_incr_plan) => eval_incr_plan.eval(db, tx, tables)?.unwrap_or_default(),
         };
@@ -246,7 +275,7 @@ impl ExecutionUnit {
         }))
     }
 
-    fn eval_incr_query_code<'a>(
+    fn eval_incr_query_expr<'a>(
         db: &RelationalDB,
         tx: &Tx,
         tables: impl Iterator<Item = &'a DatabaseTableUpdate>,

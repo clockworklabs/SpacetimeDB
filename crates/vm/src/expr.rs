@@ -2309,7 +2309,10 @@ mod tests {
     #[test]
     fn test_auth_crud_code_insert() {
         for table in tables() {
-            let crud = CrudExpr::Insert { source: table, rows: vec![] };
+            let crud = CrudExpr::Insert {
+                source: table,
+                rows: vec![],
+            };
             assert_owner_required(crud);
         }
     }

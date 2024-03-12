@@ -3,7 +3,7 @@ use prost::Message as _;
 use spacetimedb_lib::identity::RequestId;
 use std::time::Instant;
 
-use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
+use crate::host::module_host::{EventStatus, ModuleEvent, ProtocolDatabaseUpdate};
 use crate::identity::Identity;
 use crate::json::client_api::{
     EventJson, FunctionCallJson, IdentityTokenJson, MessageJson, OneOffQueryResponseJson, OneOffTableJson,
@@ -143,7 +143,7 @@ impl<U: Clone + Into<Vec<TableUpdate>> + Into<Vec<TableUpdateJson>>> ServerMessa
 }
 
 pub struct SubscriptionUpdateMessage {
-    pub subscription_update: SubscriptionUpdate<DatabaseUpdate>,
+    pub subscription_update: SubscriptionUpdate<ProtocolDatabaseUpdate>,
 }
 
 impl ServerMessage for SubscriptionUpdateMessage {
