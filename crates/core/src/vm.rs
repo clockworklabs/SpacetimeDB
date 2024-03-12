@@ -43,7 +43,7 @@ impl<'a> From<&'a Tx> for TxMode<'a> {
 pub fn build_query<'a>(
     ctx: &'a ExecutionContext,
     stdb: &'a RelationalDB,
-    tx: &'a TxMode,
+    tx: &'a TxMode<'a>,
     query: &'a QueryExpr,
     sources: &mut SourceSet,
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {

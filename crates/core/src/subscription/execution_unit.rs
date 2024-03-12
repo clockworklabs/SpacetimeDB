@@ -237,10 +237,7 @@ impl ExecutionUnit {
             EvalIncrPlan::Select(eval_incr_plan) => {
                 Self::eval_incr_query_code(db, tx, tables, eval_incr_plan, self.return_table())?
             }
-            EvalIncrPlan::Semijoin(eval_incr_plan) => eval_incr_plan
-                .eval(db, tx, tables)?
-                .map(<Vec<_>>::from_iter)
-                .unwrap_or(vec![]),
+            EvalIncrPlan::Semijoin(eval_incr_plan) => eval_incr_plan.eval(db, tx, tables)?.unwrap_or_default(),
         };
         Ok((!ops.is_empty()).then(|| DatabaseTableUpdate {
             table_id: self.return_table(),

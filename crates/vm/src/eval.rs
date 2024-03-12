@@ -90,7 +90,7 @@ pub fn build_query<'a>(
 }
 
 /// Execute the code
-pub fn eval<P: ProgramVm>(p: &mut P, code: Code, sources: &mut SourceSet) -> Code {
+fn eval<P: ProgramVm>(p: &mut P, code: Code, sources: &mut SourceSet) -> Code {
     match code {
         c @ (Code::Value(_) | Code::Halt(_) | Code::Table(_)) => c,
         Code::Block(lines) => {

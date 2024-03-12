@@ -1,5 +1,6 @@
 use crate::errors::ErrorVm;
 use crate::relation::RelValue;
+use core::iter;
 use spacetimedb_sats::product_value::ProductValue;
 use spacetimedb_sats::relation::{FieldExpr, Header, RowCount};
 use std::collections::HashMap;
@@ -115,6 +116,18 @@ pub trait RelOps<'a> {
         }
 
         Ok(result)
+    }
+
+    /// Converts this `RelOps` into an `Iterator` over results.
+    #[inline]
+    fn into_iter(mut self) -> (usize, impl Iterator<Item = Result<RelValue<'a>, ErrorVm>>)
+    where
+        Self: Sized,
+    {
+        let count = self.row_count();
+        let estimate = count.max.unwrap_or(count.min);
+        let iter = iter::from_fn(move || self.next().transpose());
+        (estimate, iter)
     }
 }
 

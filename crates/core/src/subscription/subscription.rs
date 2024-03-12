@@ -32,16 +32,19 @@ use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp};
 use crate::vm::{build_query, TxMode};
 use anyhow::Context;
+use itertools::{Either, Itertools};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::relation::{DbTable, Header};
+use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::expr::{self, IndexJoin, Query, QueryExpr, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::MemTable;
 use std::collections::HashSet;
+use std::iter;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -151,18 +154,19 @@ impl AsRef<QueryExpr> for SupportedQuery {
     }
 }
 
+type ResPV = Result<ProductValue, ErrorVm>;
+
 /// Evaluates `query` and returns all the updates.
-fn eval_updates(
-    db: &RelationalDB,
-    tx: &Tx,
-    query: &QueryExpr,
+fn eval_updates<'a>(
+    ctx: &'a ExecutionContext,
+    db: &'a RelationalDB,
+    tx: &'a TxMode,
+    query: &'a QueryExpr,
     mut sources: SourceSet,
-) -> Result<impl Iterator<Item = ProductValue>, DBError> {
-    let ctx = ExecutionContext::incremental_update(db.address());
-    let tx: TxMode = tx.into();
-    let query = build_query(&ctx, db, &tx, query, &mut sources)?;
-    // TODO(perf): avoid collecting into a vec.
-    Ok(query.collect_vec(|row_ref| row_ref.into_product_value())?.into_iter())
+) -> Result<(usize, impl 'a + Iterator<Item = ResPV>), DBError> {
+    let (estimate, iter) = build_query(ctx, db, tx, query, &mut sources)?.into_iter();
+    let iter = iter.map_ok(|row_ref| row_ref.into_product_value());
+    Ok((estimate, iter))
 }
 
 /// A [`query::Supported::Semijoin`] compiled for incremental evaluations.
@@ -390,46 +394,49 @@ impl IncrementalJoin {
     }
 
     /// Evaluate join plan for lhs updates.
-    fn eval_lhs(
-        &self,
-        db: &RelationalDB,
-        tx: &Tx,
+    fn eval_lhs<'a>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        db: &'a RelationalDB,
+        tx: &'a TxMode<'a>,
         lhs: DatabaseTableUpdate,
-    ) -> Result<impl Iterator<Item = ProductValue>, DBError> {
+    ) -> Result<(usize, impl 'a + Iterator<Item = ResPV>), DBError> {
         let lhs = to_mem_table(self.lhs.head.clone(), self.lhs.table_access, lhs);
         let mut sources = SourceSet::default();
         sources.add_mem_table(lhs);
-        eval_updates(db, tx, self.plan_for_delta_lhs(), sources)
+        eval_updates(ctx, db, tx, self.plan_for_delta_lhs(), sources)
     }
 
     /// Evaluate join plan for rhs updates.
-    fn eval_rhs(
-        &self,
-        db: &RelationalDB,
-        tx: &Tx,
+    fn eval_rhs<'a>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        db: &'a RelationalDB,
+        tx: &'a TxMode<'a>,
         rhs: DatabaseTableUpdate,
-    ) -> Result<impl Iterator<Item = ProductValue>, DBError> {
+    ) -> Result<(usize, impl 'a + Iterator<Item = ResPV>), DBError> {
         let rhs = to_mem_table(self.rhs.head.clone(), self.rhs.table_access, rhs);
         let mut sources = SourceSet::default();
         sources.add_mem_table(rhs);
-        eval_updates(db, tx, self.plan_for_delta_rhs(), sources)
+        eval_updates(ctx, db, tx, self.plan_for_delta_rhs(), sources)
     }
 
     /// Evaluate join plan for both lhs and rhs updates.
-    fn eval_all(
-        &self,
-        db: &RelationalDB,
-        tx: &Tx,
+    fn eval_all<'a>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        db: &'a RelationalDB,
+        tx: &'a TxMode<'a>,
         lhs: DatabaseTableUpdate,
         rhs: DatabaseTableUpdate,
-    ) -> Result<impl Iterator<Item = ProductValue>, DBError> {
+    ) -> Result<(usize, impl 'a + Iterator<Item = ResPV>), DBError> {
         let lhs = to_mem_table(self.lhs.head.clone(), self.lhs.table_access, lhs);
         let rhs = to_mem_table(self.rhs.head.clone(), self.rhs.table_access, rhs);
         let mut sources = SourceSet::default();
         let (index_side, probe_side) = if self.return_index_rows { (lhs, rhs) } else { (rhs, lhs) };
         sources.add_mem_table(index_side);
         sources.add_mem_table(probe_side);
-        eval_updates(db, tx, &self.virtual_plan, sources)
+        eval_updates(ctx, db, tx, &self.virtual_plan, sources)
     }
 
     /// Evaluate this [`IncrementalJoin`] over the row updates of a transaction t.
@@ -489,82 +496,96 @@ impl IncrementalJoin {
         db: &RelationalDB,
         tx: &Tx,
         updates: impl IntoIterator<Item = &'a DatabaseTableUpdate>,
-    ) -> Result<Option<impl Iterator<Item = TableOp>>, DBError> {
+    ) -> Result<Option<Vec<TableOp>>, DBError> {
         let Some((lhs, rhs)) = self.find_updates(updates) else {
             return Ok(None);
         };
+
+        let ctx = &ExecutionContext::incremental_update(db.address());
+        let tx = &tx.into();
+
+        fn collect_set<I: Iterator<Item = ResPV>>(
+            produce_if: bool,
+            producer: impl FnOnce() -> Result<(usize, I), DBError>,
+        ) -> Result<HashSet<ProductValue>, DBError> {
+            Ok(if produce_if {
+                let (estimate, iter) = producer()?;
+                let mut set = HashSet::with_capacity(estimate);
+                for x in iter {
+                    set.insert(x?);
+                }
+                set
+            } else {
+                HashSet::with_capacity(0)
+            })
+        }
+
+        fn make_iter<I: Iterator<Item = ResPV>>(
+            produce_if: bool,
+            producer: impl FnOnce() -> Result<(usize, I), DBError>,
+        ) -> Result<(usize, impl Iterator<Item = ResPV>), DBError> {
+            Ok(if produce_if {
+                let (estimate, iter) = producer()?;
+                (estimate, Either::Left(iter))
+            } else {
+                (0, Either::Right(iter::empty()))
+            })
+        }
+
         // (1) A+ x B(t)
-        let join_1 = if lhs.has_inserts() {
-            self.eval_lhs(db, tx, lhs.inserts())?.collect()
-        } else {
-            Vec::with_capacity(0)
-        };
+        let (join_1_estimate, join_1) = make_iter(lhs.has_inserts(), || self.eval_lhs(ctx, db, tx, lhs.inserts()))?;
         // (2) A- x B(t)
-        let mut join_2 = if lhs.has_deletes() {
-            self.eval_lhs(db, tx, lhs.deletes())?.collect()
-        } else {
-            HashSet::with_capacity(0)
-        };
+        let mut join_2 = collect_set(lhs.has_deletes(), || self.eval_lhs(ctx, db, tx, lhs.deletes()))?;
         // (3) A- x B+
-        let join_3 = if lhs.has_deletes() && rhs.has_inserts() {
-            self.eval_all(db, tx, lhs.deletes(), rhs.inserts())?.collect()
-        } else {
-            Vec::with_capacity(0)
-        };
+        let (_, join_3) = make_iter(lhs.has_deletes() && rhs.has_inserts(), || {
+            self.eval_all(ctx, db, tx, lhs.deletes(), rhs.inserts())
+        })?;
         // (4) A- x B-
-        let join_4 = if lhs.has_deletes() && rhs.has_deletes() {
-            self.eval_all(db, tx, lhs.deletes(), rhs.deletes())?.collect()
-        } else {
-            Vec::with_capacity(0)
-        };
+        let (join_4_estimate, join_4) = make_iter(lhs.has_deletes() && rhs.has_deletes(), || {
+            self.eval_all(ctx, db, tx, lhs.deletes(), rhs.deletes())
+        })?;
         // (5) A(t) x B+
-        let mut join_5 = if rhs.has_inserts() {
-            self.eval_rhs(db, tx, rhs.inserts())?.collect()
-        } else {
-            HashSet::with_capacity(0)
-        };
+        let mut join_5 = collect_set(rhs.has_inserts(), || self.eval_rhs(ctx, db, tx, rhs.inserts()))?;
         // (6) A(t) x B-
-        let mut join_6 = if rhs.has_deletes() {
-            self.eval_rhs(db, tx, rhs.deletes())?.collect()
-        } else {
-            HashSet::with_capacity(0)
-        };
+        let mut join_6 = collect_set(rhs.has_deletes(), || self.eval_rhs(ctx, db, tx, rhs.deletes()))?;
         // (7) A+ x B+
-        let join_7 = if lhs.has_inserts() && rhs.has_inserts() {
-            self.eval_all(db, tx, lhs.inserts(), rhs.inserts())?.collect()
-        } else {
-            Vec::with_capacity(0)
-        };
+        let (_, join_7) = make_iter(lhs.has_inserts() && rhs.has_inserts(), || {
+            self.eval_all(ctx, db, tx, lhs.inserts(), rhs.inserts())
+        })?;
         // (8) A+ x B-
-        let join_8 = if lhs.has_inserts() && rhs.has_deletes() {
-            self.eval_all(db, tx, lhs.inserts(), rhs.deletes())?.collect()
-        } else {
-            Vec::with_capacity(0)
-        };
+        let (_, join_8) = make_iter(lhs.has_inserts() && rhs.has_deletes(), || {
+            self.eval_all(ctx, db, tx, lhs.inserts(), rhs.deletes())
+        })?;
 
         // A- x B(s) = A- x B(t) \ A- x B+
         for row in join_3 {
-            join_2.remove(&row);
+            join_2.remove(&row?);
         }
         // A(s) x B+ = A(t) x B+ \ A+ x B+
         for row in join_7 {
-            join_5.remove(&row);
+            join_5.remove(&row?);
         }
         // A(s) x B- = A(t) x B- \ A+ x B-
         for row in join_8 {
-            join_6.remove(&row);
+            join_6.remove(&row?);
         }
 
         join_5.retain(|row| !join_6.remove(row));
 
-        Ok(Some(
-            join_2
-                .into_iter()
-                .chain(join_4)
-                .chain(join_6)
-                .map(TableOp::delete)
-                .chain(join_1.into_iter().chain(join_5).map(TableOp::insert)),
-        ))
+        let mut updates =
+            Vec::with_capacity(join_2.len() + join_4_estimate + join_6.len() + join_1_estimate + join_5.len());
+        // Add deletes first:
+        updates.extend(join_2.into_iter().map(TableOp::delete));
+        for x in join_4 {
+            updates.push(TableOp::delete(x?));
+        }
+        updates.extend(join_6.into_iter().map(TableOp::delete));
+        // And then inserts:
+        for x in join_1 {
+            updates.push(TableOp::insert(x?));
+        }
+        updates.extend(join_5.into_iter().map(TableOp::insert));
+        Ok(Some(updates))
     }
 }
 
