@@ -177,60 +177,32 @@ fn eval_updates(
 ///   are already committed to the underlying "physical" tables.
 /// * We maintain set semantics, i.e. no two rows with the same value can appear in the result.
 ///
-/// Based on this, we evaluate the join as:
+/// See [IncrementalJoin::eval] for a detailed algorithmic explanation.
+/// However note that there are at most three distinct plans that we must evaluate.
+/// They are:
 ///
-/// ```text
-///     let inserts = {A+ join B} U {A join B+}
-///     let deletes = {A- join B} U {A join B-} U {A- join B-}
+/// 1. A(+|-) x B
+/// 2. A x B(+|-)
+/// 3. A(+|-) x B(+|-)
 ///
-///     (deletes \ inserts) || (inserts \ deletes)
-/// ```
-///
-/// Where:
-///
-/// * `A`:  Committed table to the LHS of the join.
-/// * `B`:  Committed table to the RHS of the join.
-/// * `+`:  Virtual table of only the insert operations against the annotated table.
-/// * `-`:  Virtual table of only the delete operations against the annotated table.
-/// * `U`:  Set union.
-/// * `\`:  Set difference.
-/// * `||`: Concatenation.
-///
-/// This gives us 5 different queries to evaluate:
-///
-/// 1. A+ join B
-/// 2. A join B+
-/// 3. A- join B
-/// 4. A join B-
-/// 5. A- join B-
-///
-/// Among these 5 queries, there are 3 unique plans, as A+ and A- have the same schema, as do B+ and B-.
+/// All three of these plans are compiled ahead of time,
+/// before the evaluation of any row updates.
 ///
 /// For a more in-depth discussion, see the [module-level documentation](./index.html).
 #[derive(Debug)]
 pub struct IncrementalJoin {
-    /// The [`DbTable`] which, in the source query, is listed as the index table.
-    ///
-    /// This will not necessarily be the result table,
-    /// nor will it be used as the index table for every query evaluated during [`IncrementalJoin::eval_incr`].
-    /// We refer to it as the "index table" simply because we need distinct names for the two tables.
-    index_table: DbTable,
-
-    /// The [`DbTable`] which, in the source query, is listed as the probe table.
-    ///
-    /// This will not necessarily be the filter table,
-    /// nor will it be used as the probe table for every query evaluated during [`IncrementalJoin::eval_incr`].
-    /// We refer to it as the "probe table" simply because we need distinct names for the two tables.
-    probe_table: DbTable,
-
-    /// A(+/-) join B
-    index_modifications_probe_committed: QueryCode,
-
-    /// A join B(+/-)
-    index_committed_probe_modifications: QueryCode,
-
-    /// A- join B-
-    index_deletes_probe_deletes: QueryCode,
+    /// The lhs table which may be the index side or the probe side.
+    lhs: DbTable,
+    /// The rhs table which may be the index side or the probe side.
+    rhs: DbTable,
+    /// This determines which side is the index side and which is the probe side.
+    return_index_rows: bool,
+    /// A(+|-) join B
+    virtual_index_plan: QueryCode,
+    /// A join B(+|-)
+    virtual_probe_plan: QueryCode,
+    /// A(+|-) join B(+|-)
+    virtual_plan: QueryCode,
 }
 
 /// One side of an [`IncrementalJoin`].
@@ -238,28 +210,39 @@ pub struct IncrementalJoin {
 /// Holds the "physical" [`DbTable`] this side of the join operates on, as well
 /// as the [`DatabaseTableUpdate`]s pertaining that table.
 struct JoinSide {
-    updates: DatabaseTableUpdate,
+    table_id: TableId,
+    table_name: String,
+    inserts: Vec<TableOp>,
+    deletes: Vec<TableOp>,
 }
 
 impl JoinSide {
     /// Return a [`DatabaseTableUpdate`] consisting of only insert operations.
     pub fn inserts(&self) -> DatabaseTableUpdate {
-        let ops = self.updates.ops.iter().filter(|op| op.op_type == 1).cloned().collect();
         DatabaseTableUpdate {
-            table_id: self.updates.table_id,
-            table_name: self.updates.table_name.clone(),
-            ops,
+            table_id: self.table_id,
+            table_name: self.table_name.clone(),
+            ops: self.inserts.to_vec(),
         }
     }
 
     /// Return a [`DatabaseTableUpdate`] with only delete operations.
     pub fn deletes(&self) -> DatabaseTableUpdate {
-        let ops = self.updates.ops.iter().filter(|op| op.op_type == 0).cloned().collect();
         DatabaseTableUpdate {
-            table_id: self.updates.table_id,
-            table_name: self.updates.table_name.clone(),
-            ops,
+            table_id: self.table_id,
+            table_name: self.table_name.clone(),
+            ops: self.deletes.to_vec(),
         }
+    }
+
+    /// Does this table update include inserts?
+    pub fn has_inserts(&self) -> bool {
+        !self.inserts.is_empty()
+    }
+
+    /// Does this table update include deletes?
+    pub fn has_deletes(&self) -> bool {
+        !self.deletes.is_empty()
     }
 }
 
@@ -287,6 +270,24 @@ impl IncrementalJoin {
         spacetimedb_vm::eval::compile_query(expr)
     }
 
+    /// Return the query plan where the lhs is a delta table.
+    fn plan_for_delta_lhs(&self) -> &QueryCode {
+        if self.return_index_rows {
+            &self.virtual_index_plan
+        } else {
+            &self.virtual_probe_plan
+        }
+    }
+
+    /// Return the query plan where the rhs is a delta table.
+    fn plan_for_delta_rhs(&self) -> &QueryCode {
+        if self.return_index_rows {
+            &self.virtual_probe_plan
+        } else {
+            &self.virtual_index_plan
+        }
+    }
+
     /// Construct an [`IncrementalJoin`] from a [`QueryExpr`].
     ///
     ///
@@ -311,31 +312,39 @@ impl IncrementalJoin {
             .context("expected a physical database table")?
             .clone();
 
-        let (index_modifications_probe_committed, _sources) =
+        let (virtual_index_plan, _sources) =
             with_delta_table(join.clone(), Some(Self::dummy_table_update(&index_table)), None);
         debug_assert_eq!(_sources.len(), 1);
-        let index_modifications_probe_committed = Self::optimize_query(index_modifications_probe_committed);
+        let virtual_index_plan = Self::optimize_query(virtual_index_plan);
 
-        let (index_committed_probe_modifications, _sources) =
+        let (virtual_probe_plan, _sources) =
             with_delta_table(join.clone(), None, Some(Self::dummy_table_update(&probe_table)));
         debug_assert_eq!(_sources.len(), 1);
-        let index_committed_probe_modifications = Self::optimize_query(index_committed_probe_modifications);
+        let virtual_probe_plan = Self::optimize_query(virtual_probe_plan);
 
-        let (index_deletes_probe_deletes, _sources) = with_delta_table(
+        let (virtual_plan, _sources) = with_delta_table(
             join.clone(),
             Some(Self::dummy_table_update(&index_table)),
             Some(Self::dummy_table_update(&probe_table)),
         );
         debug_assert_eq!(_sources.len(), 2);
-        let index_deletes_probe_deletes = Self::optimize_query(index_deletes_probe_deletes);
+        let virtual_plan = Self::optimize_query(virtual_plan);
+
+        let return_index_rows = join.return_index_rows;
+
+        let (lhs, rhs) = if return_index_rows {
+            (index_table, probe_table)
+        } else {
+            (probe_table, index_table)
+        };
 
         Ok(Self {
-            index_table,
-            probe_table,
-
-            index_modifications_probe_committed,
-            index_committed_probe_modifications,
-            index_deletes_probe_deletes,
+            lhs,
+            rhs,
+            return_index_rows,
+            virtual_index_plan,
+            virtual_probe_plan,
+            virtual_plan,
         })
     }
 
@@ -350,134 +359,213 @@ impl IncrementalJoin {
         &self,
         updates: impl IntoIterator<Item = &'a DatabaseTableUpdate>,
     ) -> Option<(JoinSide, JoinSide)> {
-        let mut index_side_updates = Vec::new();
-        let mut probe_side_updates = Vec::new();
+        let mut lhs_ops = Vec::new();
+        let mut rhs_ops = Vec::new();
 
         for update in updates {
-            if update.table_id == self.index_table.table_id {
-                index_side_updates.extend(update.ops.iter().cloned());
-            } else if update.table_id == self.probe_table.table_id {
-                probe_side_updates.extend(update.ops.iter().cloned());
+            if update.table_id == self.lhs.table_id {
+                lhs_ops.extend(update.ops.iter().cloned());
+            } else if update.table_id == self.rhs.table_id {
+                rhs_ops.extend(update.ops.iter().cloned());
             }
         }
 
-        if index_side_updates.is_empty() && probe_side_updates.is_empty() {
+        if lhs_ops.is_empty() && rhs_ops.is_empty() {
             return None;
         }
 
-        let index_side = JoinSide {
-            updates: DatabaseTableUpdate {
-                table_id: self.index_table.table_id,
-                table_name: self.index_table.head.table_name.clone(),
-                ops: index_side_updates,
-            },
+        let lhs = JoinSide {
+            table_id: self.lhs.table_id,
+            table_name: self.lhs.head.table_name.clone(),
+            inserts: lhs_ops.iter().filter(|op| op.op_type == 1).cloned().collect(),
+            deletes: lhs_ops.iter().filter(|op| op.op_type == 0).cloned().collect(),
         };
 
-        let probe_side = JoinSide {
-            updates: DatabaseTableUpdate {
-                table_id: self.probe_table.table_id,
-                table_name: self.probe_table.head.table_name.clone(),
-                ops: probe_side_updates,
-            },
+        let rhs = JoinSide {
+            table_id: self.rhs.table_id,
+            table_name: self.rhs.head.table_name.clone(),
+            inserts: rhs_ops.iter().filter(|op| op.op_type == 1).cloned().collect(),
+            deletes: rhs_ops.iter().filter(|op| op.op_type == 0).cloned().collect(),
         };
 
-        Some((index_side, probe_side))
+        Some((lhs, rhs))
     }
 
-    /// Evaluate this [`IncrementalJoin`].
+    /// Evaluate join plan for lhs updates.
+    fn eval_lhs(
+        &self,
+        db: &RelationalDB,
+        tx: &Tx,
+        lhs: DatabaseTableUpdate,
+    ) -> Result<impl Iterator<Item = ProductValue>, DBError> {
+        let lhs = to_mem_table(self.lhs.head.clone(), self.lhs.table_access, lhs);
+        let mut sources = SourceSet::default();
+        sources.add_mem_table(lhs);
+        eval_updates(db, tx, self.plan_for_delta_lhs(), sources)
+    }
 
+    /// Evaluate join plan for rhs updates.
+    fn eval_rhs(
+        &self,
+        db: &RelationalDB,
+        tx: &Tx,
+        rhs: DatabaseTableUpdate,
+    ) -> Result<impl Iterator<Item = ProductValue>, DBError> {
+        let rhs = to_mem_table(self.rhs.head.clone(), self.rhs.table_access, rhs);
+        let mut sources = SourceSet::default();
+        sources.add_mem_table(rhs);
+        eval_updates(db, tx, self.plan_for_delta_rhs(), sources)
+    }
+
+    /// Evaluate join plan for both lhs and rhs updates.
+    fn eval_all(
+        &self,
+        db: &RelationalDB,
+        tx: &Tx,
+        lhs: DatabaseTableUpdate,
+        rhs: DatabaseTableUpdate,
+    ) -> Result<impl Iterator<Item = ProductValue>, DBError> {
+        let lhs = to_mem_table(self.lhs.head.clone(), self.lhs.table_access, lhs);
+        let rhs = to_mem_table(self.rhs.head.clone(), self.rhs.table_access, rhs);
+        let mut sources = SourceSet::default();
+        let (index_side, probe_side) = if self.return_index_rows { (lhs, rhs) } else { (rhs, lhs) };
+        sources.add_mem_table(index_side);
+        sources.add_mem_table(probe_side);
+        eval_updates(db, tx, &self.virtual_plan, sources)
+    }
+
+    /// Evaluate this [`IncrementalJoin`] over the row updates of a transaction t.
+    ///
+    /// In the comments that follow,
+    /// B(t) refers to the state of table B as of transaction t.
+    /// In particular, B(t) includes all of the changes from t.
+    /// B(s) refers to the state of table B as of transaction s,
+    /// where s is the transaction immediately preceeding t.
+    ///
+    /// Now we may ask,
+    /// given a set of updates to tables A and/or B,
+    /// how to efficiently compute the semijoin A(t) x B(t)?
+    ///
+    /// First consider newly inserted rows of A.
+    /// We want to know if they join with any newly inserted rows of B,
+    /// or if they join with any previously existing rows of B.
+    /// That is:
+    ///
+    /// A+ x B(t)
+    ///
+    /// Note that we don't need to consider deleted rows from B.
+    /// Because they have no bearing on newly inserted rows of A.
+    ///
+    /// Now consider rows that were deleted from A.
+    /// Similary we want to know if they join with any deleted rows of B,
+    /// or if they join with any previously existing rows of B.
+    /// That is:
+    ///
+    /// A- x B(s) U A- x B- = A- x B(t) \ A- x B+ U A- x B-
+    ///
+    /// Note that we don't necessarily care about newly inserted rows of B in this case.
+    /// Because even if they join with deleted rows of A,
+    /// they were never included in the results to begin with.
+    /// However, during this evaluation, we no longer have direct access to B(s).
+    /// Hence we must derive it by subtracting A- x B+ from A- x B(t).
+    ///
+    /// Finally we must consider previously existing rows of A.
+    /// That is:
+    ///
+    /// A(s) x B+ = A(t) x B+ \ A+ x B+
+    /// A(s) x B- = A(t) x B- \ A+ x B-
+    ///
+    /// In total we must consider 8 distinct joins.
+    /// They are:
+    ///
+    /// (1) A+ x B(t)
+    /// (2) A- x B(t)
+    /// (3) A- x B+
+    /// (4) A- x B-
+    /// (5) A(t) x B+
+    /// (6) A(t) x B-
+    /// (7) A+ x B+
+    /// (8) A+ x B-
     pub fn eval<'a>(
         &self,
         db: &RelationalDB,
         tx: &Tx,
         updates: impl IntoIterator<Item = &'a DatabaseTableUpdate>,
     ) -> Result<Option<impl Iterator<Item = TableOp>>, DBError> {
-        let Some((index_side, probe_side)) = self.find_updates(updates) else {
+        let Some((lhs, rhs)) = self.find_updates(updates) else {
             return Ok(None);
         };
-        let mut inserts = {
-            // {A+ join B}
-            let index_inserts = index_side.inserts();
-            let index_inserts = to_mem_table(
-                self.index_table.head.clone(),
-                self.index_table.table_access,
-                index_inserts,
-            );
-            let mut index_inserts_sources = SourceSet::default();
-            index_inserts_sources.add_mem_table(index_inserts);
-            let index_insert_results =
-                eval_updates(db, tx, &self.index_modifications_probe_committed, index_inserts_sources)?;
-
-            // {A join B+}
-            let probe_inserts = probe_side.inserts();
-            let probe_inserts = to_mem_table(
-                self.probe_table.head.clone(),
-                self.probe_table.table_access,
-                probe_inserts,
-            );
-            let mut probe_inserts_sources = SourceSet::default();
-            probe_inserts_sources.add_mem_table(probe_inserts);
-            let probe_insert_results =
-                eval_updates(db, tx, &self.index_committed_probe_modifications, probe_inserts_sources)?;
-
-            // {A+ join B} U {A join B+}
-            itertools::chain![index_insert_results, probe_insert_results].collect::<HashSet<_>>()
+        // (1) A+ x B(t)
+        let join_1 = if lhs.has_inserts() {
+            self.eval_lhs(db, tx, lhs.inserts())?.collect()
+        } else {
+            Vec::with_capacity(0)
         };
-        let mut deletes = {
-            // {A- join B}
-            let index_deletes = index_side.deletes();
-            let index_deletes = to_mem_table(
-                self.index_table.head.clone(),
-                self.index_table.table_access,
-                index_deletes,
-            );
-            let mut index_deletes_sources = SourceSet::default();
-            index_deletes_sources.add_mem_table(index_deletes);
-            let index_deletes_results =
-                eval_updates(db, tx, &self.index_modifications_probe_committed, index_deletes_sources)?;
-
-            // {A join B-}
-            let probe_deletes = probe_side.deletes();
-            let probe_deletes = to_mem_table(
-                self.probe_table.head.clone(),
-                self.probe_table.table_access,
-                probe_deletes,
-            );
-            let mut probe_deletes_sources = SourceSet::default();
-            probe_deletes_sources.add_mem_table(probe_deletes);
-            let probe_delete_results =
-                eval_updates(db, tx, &self.index_committed_probe_modifications, probe_deletes_sources)?;
-
-            // {A- join B-}
-            let index_deletes = index_side.deletes();
-            let index_deletes = to_mem_table(
-                self.index_table.head.clone(),
-                self.index_table.table_access,
-                index_deletes,
-            );
-            let probe_deletes = probe_side.deletes();
-            let probe_deletes = to_mem_table(
-                self.probe_table.head.clone(),
-                self.probe_table.table_access,
-                probe_deletes,
-            );
-            let mut both_deletes_sources = SourceSet::default();
-            both_deletes_sources.add_mem_table(index_deletes);
-            both_deletes_sources.add_mem_table(probe_deletes);
-            let both_delete_results = eval_updates(db, tx, &self.index_deletes_probe_deletes, both_deletes_sources)?;
-
-            // {A- join B} U {A join B-} U {A- join B-}
-            itertools::chain![index_deletes_results, probe_delete_results, both_delete_results].collect::<HashSet<_>>()
+        // (2) A- x B(t)
+        let mut join_2 = if lhs.has_deletes() {
+            self.eval_lhs(db, tx, lhs.deletes())?.collect()
+        } else {
+            HashSet::with_capacity(0)
+        };
+        // (3) A- x B+
+        let join_3 = if lhs.has_deletes() && rhs.has_inserts() {
+            self.eval_all(db, tx, lhs.deletes(), rhs.inserts())?.collect()
+        } else {
+            Vec::with_capacity(0)
+        };
+        // (4) A- x B-
+        let join_4 = if lhs.has_deletes() && rhs.has_deletes() {
+            self.eval_all(db, tx, lhs.deletes(), rhs.deletes())?.collect()
+        } else {
+            Vec::with_capacity(0)
+        };
+        // (5) A(t) x B+
+        let mut join_5 = if rhs.has_inserts() {
+            self.eval_rhs(db, tx, rhs.inserts())?.collect()
+        } else {
+            HashSet::with_capacity(0)
+        };
+        // (6) A(t) x B-
+        let mut join_6 = if rhs.has_deletes() {
+            self.eval_rhs(db, tx, rhs.deletes())?.collect()
+        } else {
+            HashSet::with_capacity(0)
+        };
+        // (7) A+ x B+
+        let join_7 = if lhs.has_inserts() && rhs.has_inserts() {
+            self.eval_all(db, tx, lhs.inserts(), rhs.inserts())?.collect()
+        } else {
+            Vec::with_capacity(0)
+        };
+        // (8) A+ x B-
+        let join_8 = if lhs.has_inserts() && rhs.has_deletes() {
+            self.eval_all(db, tx, lhs.inserts(), rhs.deletes())?.collect()
+        } else {
+            Vec::with_capacity(0)
         };
 
-        deletes.retain(|row| !inserts.remove(row));
+        // A- x B(s) = A- x B(t) \ A- x B+
+        for row in join_3 {
+            join_2.remove(&row);
+        }
+        // A(s) x B+ = A(t) x B+ \ A+ x B+
+        for row in join_7 {
+            join_5.remove(&row);
+        }
+        // A(s) x B- = A(t) x B- \ A+ x B-
+        for row in join_8 {
+            join_6.remove(&row);
+        }
 
-        // Deletes need to come first, as UPDATE = [DELETE, INSERT]
+        join_5.retain(|row| !join_6.remove(row));
+
         Ok(Some(
-            deletes
+            join_2
                 .into_iter()
+                .chain(join_4)
+                .chain(join_6)
                 .map(TableOp::delete)
-                .chain(inserts.into_iter().map(TableOp::insert)),
+                .chain(join_1.into_iter().chain(join_5).map(TableOp::insert)),
         ))
     }
 }
