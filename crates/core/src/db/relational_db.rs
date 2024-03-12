@@ -601,7 +601,7 @@ impl RelationalDB {
         ctx: &'a ExecutionContext,
         tx: &'a MutTx,
         table_id: impl Into<TableId>,
-        cols: impl Into<ColList>,
+        cols: &'r ColList,
         value: &'r AlgebraicValue,
     ) -> Result<IterByColEq<'a, 'r>, DBError> {
         self.inner.iter_by_col_eq_mut_tx(ctx, tx, table_id.into(), cols, value)
@@ -612,7 +612,7 @@ impl RelationalDB {
         ctx: &'a ExecutionContext,
         tx: &'a Tx,
         table_id: impl Into<TableId>,
-        cols: impl Into<ColList>,
+        cols: &'r ColList,
         value: &'r AlgebraicValue,
     ) -> Result<IterByColEq<'a, 'r>, DBError> {
         self.inner.iter_by_col_eq_tx(ctx, tx, table_id.into(), cols, value)
@@ -623,14 +623,14 @@ impl RelationalDB {
     /// where the column data identified by `cols` matches what is within `range`.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
-    pub fn iter_by_col_range_mut<'a, R: RangeBounds<AlgebraicValue>>(
+    pub fn iter_by_col_range_mut<'a, 'c, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         ctx: &'a ExecutionContext,
         tx: &'a MutTx,
         table_id: impl Into<TableId>,
-        cols: impl Into<ColList>,
+        cols: &'c ColList,
         range: R,
-    ) -> Result<IterByColRange<'a, R>, DBError> {
+    ) -> Result<IterByColRange<'a, 'c, R>, DBError> {
         self.inner
             .iter_by_col_range_mut_tx(ctx, tx, table_id.into(), cols, range)
     }
@@ -640,14 +640,14 @@ impl RelationalDB {
     /// where the column data identified by `cols` matches what is within `range`.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
-    pub fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
+    pub fn iter_by_col_range<'a, 'c, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         ctx: &'a ExecutionContext,
         tx: &'a Tx,
         table_id: impl Into<TableId>,
-        cols: impl Into<ColList>,
+        cols: &'c ColList,
         range: R,
-    ) -> Result<IterByColRange<'a, R>, DBError> {
+    ) -> Result<IterByColRange<'a, 'c, R>, DBError> {
         self.inner.iter_by_col_range_tx(ctx, tx, table_id.into(), cols, range)
     }
 
@@ -950,7 +950,7 @@ mod tests {
     ) -> ResultTest<Vec<T>> {
         let from: AlgebraicValue = from.into();
         let mut rows = stdb
-            .iter_by_col_range_mut(&ExecutionContext::default(), tx, table_id, 0, from..)?
+            .iter_by_col_range_mut(&ExecutionContext::default(), tx, table_id, &0.into(), from..)?
             .map(read_first_col)
             .collect::<Vec<T>>();
         rows.sort();
@@ -1344,7 +1344,7 @@ mod tests {
 
         let ctx = ExecutionContext::default();
 
-        let IterByColEq::Index(mut iter) = stdb.iter_by_col_eq_mut(&ctx, &tx, table_id, cols, &value)? else {
+        let IterByColEq::Index(mut iter) = stdb.iter_by_col_eq_mut(&ctx, &tx, table_id, &cols, &value)? else {
             panic!("expected index iterator");
         };
 

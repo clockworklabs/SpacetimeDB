@@ -249,21 +249,21 @@ impl Tx for Locking {
 
 impl TxDatastore for Locking {
     type Iter<'a> = Iter<'a> where Self: 'a;
-    type IterByColEq<'a, 'r> = IterByColRange<'a, &'r AlgebraicValue> where Self: 'a;
-    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterByColRange<'a, R> where Self: 'a;
+    type IterByColEq<'a, 'r> = IterByColRange<'a, 'r, &'r AlgebraicValue> where Self: 'a;
+    type IterByColRange<'a, 'c, R: RangeBounds<AlgebraicValue>> = IterByColRange<'a, 'c, R> where Self: 'a;
 
     fn iter_tx<'a>(&'a self, ctx: &'a ExecutionContext, tx: &'a Self::Tx, table_id: TableId) -> Result<Self::Iter<'a>> {
         tx.iter(ctx, &table_id)
     }
 
-    fn iter_by_col_range_tx<'a, R: RangeBounds<AlgebraicValue>>(
+    fn iter_by_col_range_tx<'a, 'c, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         ctx: &'a ExecutionContext,
         tx: &'a Self::Tx,
         table_id: TableId,
-        cols: impl Into<ColList>,
+        cols: &'c ColList,
         range: R,
-    ) -> Result<Self::IterByColRange<'a, R>> {
+    ) -> Result<Self::IterByColRange<'a, 'c, R>> {
         tx.iter_by_col_range(ctx, &table_id, cols.into(), range)
     }
 
@@ -272,7 +272,7 @@ impl TxDatastore for Locking {
         ctx: &'a ExecutionContext,
         tx: &'a Self::Tx,
         table_id: TableId,
-        cols: impl Into<ColList>,
+        cols: &'r ColList,
         value: &'r AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a, 'r>> {
         tx.iter_by_col_eq(ctx, &table_id, cols.into(), value)
@@ -402,15 +402,15 @@ impl MutTxDatastore for Locking {
         tx.iter(ctx, &table_id)
     }
 
-    fn iter_by_col_range_mut_tx<'a, R: RangeBounds<AlgebraicValue>>(
+    fn iter_by_col_range_mut_tx<'a, 'c, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         ctx: &'a ExecutionContext,
         tx: &'a Self::MutTx,
         table_id: TableId,
-        cols: impl Into<ColList>,
+        cols: &'c ColList,
         range: R,
-    ) -> Result<Self::IterByColRange<'a, R>> {
-        tx.iter_by_col_range(ctx, &table_id, cols.into(), range)
+    ) -> Result<Self::IterByColRange<'a, 'c, R>> {
+        tx.iter_by_col_range(ctx, &table_id, cols, range)
     }
 
     fn iter_by_col_eq_mut_tx<'a, 'r>(
@@ -418,10 +418,10 @@ impl MutTxDatastore for Locking {
         ctx: &'a ExecutionContext,
         tx: &'a Self::MutTx,
         table_id: TableId,
-        cols: impl Into<ColList>,
+        cols: &'r ColList,
         value: &'r AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a, 'r>> {
-        tx.iter_by_col_eq(ctx, &table_id, cols.into(), value)
+        tx.iter_by_col_eq(ctx, &table_id, cols, value)
     }
 
     fn get_mut_tx<'a>(
@@ -673,7 +673,7 @@ mod tests {
         ) -> Result<Vec<StTableRow<String>>> {
             Ok(self
                 .db
-                .iter_by_col_eq(self.ctx, &ST_TABLES_ID, cols.into(), value)?
+                .iter_by_col_eq(self.ctx, &ST_TABLES_ID, &cols.into(), value)?
                 .map(|row| StTableRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.table_id)
                 .collect::<Vec<_>>())
@@ -695,7 +695,7 @@ mod tests {
         ) -> Result<Vec<StColumnRow<String>>> {
             Ok(self
                 .db
-                .iter_by_col_eq(self.ctx, &ST_COLUMNS_ID, cols.into(), value)?
+                .iter_by_col_eq(self.ctx, &ST_COLUMNS_ID, &cols.into(), value)?
                 .map(|row| StColumnRow::try_from(row).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.col_pos))
                 .collect::<Vec<_>>())
@@ -1564,7 +1564,7 @@ mod tests {
                     &ExecutionContext::default(),
                     tx,
                     table_id,
-                    ColId(0),
+                    &0.into(),
                     &AlgebraicValue::U32(1),
                 )
                 .unwrap()

@@ -63,7 +63,8 @@ impl MutTxId {
         database_address: Address,
     ) -> Result<()> {
         let ctx = ExecutionContext::internal(database_address);
-        let rows = self.iter_by_col_eq(&ctx, &table_id, col_pos.into(), value)?;
+        let cols = col_pos.into();
+        let rows = self.iter_by_col_eq(&ctx, &table_id, &cols, value)?;
         let ptrs_to_delete = rows.map(|row_ref| row_ref.pointer()).collect::<Vec<_>>();
         if ptrs_to_delete.is_empty() {
             return Err(TableError::IdNotFound(SystemTable::st_columns, col_pos.0).into());
@@ -243,7 +244,7 @@ impl MutTxId {
             .iter_by_col_eq(
                 &ctx,
                 &ST_TABLES_ID,
-                StTableFields::TableId.col_id().into(),
+                &StTableFields::TableId.col_id().into(),
                 &table_id.into(),
             )?
             .next()
@@ -262,13 +263,13 @@ impl MutTxId {
         let ctx = ExecutionContext::internal(database_address);
         let table_name = &table_name.to_owned().into();
         let row = self
-            .iter_by_col_eq(&ctx, &ST_TABLES_ID, StTableFields::TableName.into(), table_name)?
+            .iter_by_col_eq(&ctx, &ST_TABLES_ID, &StTableFields::TableName.into(), table_name)?
             .next();
         Ok(row.map(|row| row.read_col(StTableFields::TableId).unwrap()))
     }
 
     pub fn table_name_from_id<'a>(&'a self, ctx: &'a ExecutionContext, table_id: TableId) -> Result<Option<String>> {
-        self.iter_by_col_eq(ctx, &ST_TABLES_ID, StTableFields::TableId.into(), &table_id.into())
+        self.iter_by_col_eq(ctx, &ST_TABLES_ID, &StTableFields::TableId.into(), &table_id.into())
             .map(|mut iter| iter.next().map(|row| row.read_col(StTableFields::TableName).unwrap()))
     }
 
@@ -369,7 +370,7 @@ impl MutTxId {
             .iter_by_col_eq(
                 &ctx,
                 &ST_INDEXES_ID,
-                StIndexFields::IndexId.col_id().into(),
+                &StIndexFields::IndexId.col_id().into(),
                 &index_id.into(),
             )?
             .next()
@@ -408,7 +409,7 @@ impl MutTxId {
     pub fn index_id_from_name(&self, index_name: &str, database_address: Address) -> Result<Option<IndexId>> {
         let ctx = ExecutionContext::internal(database_address);
         let name = &index_name.to_owned().into();
-        self.iter_by_col_eq(&ctx, &ST_INDEXES_ID, StIndexFields::IndexName.into(), name)
+        self.iter_by_col_eq(&ctx, &ST_INDEXES_ID, &StIndexFields::IndexName.into(), name)
             .map(|mut iter| iter.next().map(|row| row.read_col(StIndexFields::IndexId).unwrap()))
     }
 
@@ -431,7 +432,7 @@ impl MutTxId {
             .iter_by_col_eq(
                 &ctx,
                 &ST_SEQUENCES_ID,
-                StSequenceFields::SequenceId.into(),
+                &StSequenceFields::SequenceId.into(),
                 &seq_id.into(),
             )?
             .last()
@@ -508,7 +509,7 @@ impl MutTxId {
             .iter_by_col_eq(
                 &ctx,
                 &ST_SEQUENCES_ID,
-                StSequenceFields::SequenceId.col_id().into(),
+                &StSequenceFields::SequenceId.col_id().into(),
                 &sequence_id.into(),
             )?
             .next()
@@ -531,7 +532,7 @@ impl MutTxId {
     pub fn sequence_id_from_name(&self, seq_name: &str, database_address: Address) -> Result<Option<SequenceId>> {
         let ctx = ExecutionContext::internal(database_address);
         let name = &seq_name.to_owned().into();
-        self.iter_by_col_eq(&ctx, &ST_SEQUENCES_ID, StSequenceFields::SequenceName.into(), name)
+        self.iter_by_col_eq(&ctx, &ST_SEQUENCES_ID, &StSequenceFields::SequenceName.into(), name)
             .map(|mut iter| {
                 iter.next()
                     .map(|row| row.read_col(StSequenceFields::SequenceId).unwrap())
@@ -603,7 +604,7 @@ impl MutTxId {
             .iter_by_col_eq(
                 &ctx,
                 &ST_CONSTRAINTS_ID,
-                StConstraintFields::ConstraintId.col_id().into(),
+                &StConstraintFields::ConstraintId.col_id().into(),
                 &constraint_id.into(),
             )?
             .next()
@@ -628,7 +629,7 @@ impl MutTxId {
         self.iter_by_col_eq(
             &ExecutionContext::internal(database_address),
             &ST_CONSTRAINTS_ID,
-            StConstraintFields::ConstraintName.into(),
+            &StConstraintFields::ConstraintName.into(),
             &constraint_name.to_owned().into(),
         )
         .map(|mut iter| {
@@ -734,12 +735,8 @@ impl MutTxId {
             .iter()
             .filter(|seq| row.elements[usize::from(seq.col_pos)].is_numeric_zero())
         {
-            for seq_row in self.iter_by_col_eq(
-                &ctx,
-                &ST_SEQUENCES_ID,
-                StSequenceFields::TableId.into(),
-                &table_id.into(),
-            )? {
+            let cols = &StSequenceFields::TableId.into();
+            for seq_row in self.iter_by_col_eq(&ctx, &ST_SEQUENCES_ID, cols, &table_id.into())? {
                 let seq_col_pos: ColId = seq_row.read_col(StSequenceFields::ColPos)?;
                 if seq_col_pos == seq.col_pos {
                     let seq_id = seq_row.read_col(StSequenceFields::SequenceId)?;
@@ -1003,13 +1000,13 @@ impl StateView for MutTxId {
         }
     }
 
-    fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
+    fn iter_by_col_range<'a, 'c, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         ctx: &'a ExecutionContext,
         table_id: &TableId,
-        cols: ColList,
+        cols: &'c ColList,
         range: R,
-    ) -> Result<IterByColRange<'a, R>> {
+    ) -> Result<IterByColRange<'a, 'c, R>> {
         // We have to index_seek in both the committed state and the current tx state.
         // First, we will check modifications in the current tx. It may be that the table
         // has not been modified yet in the current tx, in which case we will only search

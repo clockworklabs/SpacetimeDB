@@ -165,7 +165,7 @@ impl InstanceEnv {
 
         // Find all rows in the table where the column data equates to `value`.
         let rows_to_delete = stdb
-            .iter_by_col_eq_mut(ctx, tx, table_id, col_id, eq_value)?
+            .iter_by_col_eq_mut(ctx, tx, table_id, &col_id.into(), eq_value)?
             .map(|row_ref| row_ref.pointer())
             // `delete_by_field` only cares about 1 element,
             // so optimize for that.
@@ -287,7 +287,8 @@ impl InstanceEnv {
 
         // Find all rows in the table where the column data matches `value`.
         // Concatenate and return these rows using bsatn encoding.
-        let results = stdb.iter_by_col_eq_mut(ctx, tx, table_id, col_id, value)?;
+        let cols = col_id.into();
+        let results = stdb.iter_by_col_eq_mut(ctx, tx, table_id, &cols, value)?;
         let mut bytes = Vec::new();
         for result in results {
             // Pre-allocate the capacity needed to write `result`.

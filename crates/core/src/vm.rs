@@ -68,7 +68,7 @@ pub fn build_query<'a>(
     for op in query.query {
         result = Some(match op {
             Query::IndexScan(IndexScan { table, columns, bounds }) if db_table => {
-                iter_by_col_range(ctx, stdb, tx, table, columns, bounds)?
+                iter_by_col_range(ctx, stdb, tx, table, &columns, bounds)?
             }
             Query::IndexScan(index_scan) => {
                 let result = result
@@ -105,7 +105,7 @@ pub fn build_query<'a>(
                     index_header,
                     index_select,
                     index_table,
-                    index_col,
+                    index_cols: index_col.into(),
                     index_iter: None,
                     return_index_rows,
                 })
@@ -236,9 +236,9 @@ fn iter_by_col_range<'a>(
     db: &'a RelationalDB,
     tx: &'a TxMode,
     table: DbTable,
-    columns: ColList,
+    columns: &'a ColList,
     range: impl RangeBounds<AlgebraicValue> + 'a,
-) -> Result<Box<dyn RelOps<'a> + 'a>, ErrorVm> {
+) -> Result<Box<IterRows<'a>>, ErrorVm> {
     let iter = match tx {
         TxMode::MutTx(tx) => db.iter_by_col_range_mut(ctx, tx, table.table_id, columns, range)?,
         TxMode::Tx(tx) => db.iter_by_col_range(ctx, tx, table.table_id, columns, range)?,
@@ -247,7 +247,7 @@ fn iter_by_col_range<'a>(
 }
 
 /// An index join operator that returns matching rows from the index side.
-pub struct IndexSemiJoin<'a, Rhs: RelOps<'a>> {
+pub struct IndexSemiJoin<'a, 'c, Rhs: RelOps<'a>> {
     /// An iterator for the probe side.
     /// The values returned will be used to probe the index.
     pub probe_side: Rhs,
@@ -259,13 +259,13 @@ pub struct IndexSemiJoin<'a, Rhs: RelOps<'a>> {
     pub index_select: Option<ColumnOp>,
     /// The table id on which the index is defined.
     pub index_table: TableId,
-    /// The column id for which the index is defined.
-    pub index_col: ColId,
+    /// The column ids for which the index is defined.
+    pub index_cols: &'c ColList,
     /// Is this a left or right semijion?
     pub return_index_rows: bool,
     /// An iterator for the index side.
     /// A new iterator will be instantiated for each row on the probe side.
-    pub index_iter: Option<IterByColRange<'a, AlgebraicValue>>,
+    pub index_iter: Option<IterByColRange<'a, 'c, AlgebraicValue>>,
     /// A reference to the database.
     pub db: &'a RelationalDB,
     /// A reference to the current transaction.
@@ -274,7 +274,7 @@ pub struct IndexSemiJoin<'a, Rhs: RelOps<'a>> {
     ctx: &'a ExecutionContext<'a>,
 }
 
-impl<'a, Rhs: RelOps<'a>> IndexSemiJoin<'a, Rhs> {
+impl<'a, Rhs: RelOps<'a>> IndexSemiJoin<'a, '_, Rhs> {
     fn filter(&self, index_row: &RelValue<'_>) -> Result<bool, ErrorVm> {
         Ok(if let Some(op) = &self.index_select {
             op.compare(index_row, &self.index_header)?
@@ -293,7 +293,7 @@ impl<'a, Rhs: RelOps<'a>> IndexSemiJoin<'a, Rhs> {
     }
 }
 
-impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoin<'a, Rhs> {
+impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoin<'a, '_, Rhs> {
     fn head(&self) -> &Arc<Header> {
         if self.return_index_rows {
             &self.index_header
@@ -322,13 +322,12 @@ impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoin<'a, Rhs> {
             if let Some(pos) = self.probe_side.head().column_pos(&self.probe_field) {
                 if let Some(value) = row.read_column(pos.idx()) {
                     let table_id = self.index_table;
-                    let col_id = self.index_col;
-
+                    let cols = &self.index_cols;
                     let value = value.into_owned();
 
                     let mut index_iter = match self.tx {
-                        TxMode::MutTx(tx) => self.db.iter_by_col_range_mut(self.ctx, tx, table_id, col_id, value)?,
-                        TxMode::Tx(tx) => self.db.iter_by_col_range(self.ctx, tx, table_id, col_id, value)?,
+                        TxMode::MutTx(tx) => self.db.iter_by_col_range_mut(self.ctx, tx, table_id, cols, value)?,
+                        TxMode::Tx(tx) => self.db.iter_by_col_range(self.ctx, tx, table_id, cols, value)?,
                     };
                     while let Some(value) = index_iter.next() {
                         let value = RelValue::Row(value);
@@ -555,7 +554,7 @@ impl<'a> RelOps<'a> for TableCursor<'a> {
     }
 }
 
-impl<'a, R: RangeBounds<AlgebraicValue>> RelOps<'a> for IndexCursor<'a, R> {
+impl<'a, R: RangeBounds<AlgebraicValue>> RelOps<'a> for IndexCursor<'a, '_, R> {
     fn head(&self) -> &Arc<Header> {
         &self.table.head
     }

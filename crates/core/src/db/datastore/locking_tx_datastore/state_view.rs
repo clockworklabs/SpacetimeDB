@@ -30,9 +30,8 @@ pub(crate) trait StateView {
     fn table_id_from_name(&self, table_name: &str, database_address: Address) -> Result<Option<TableId>> {
         let ctx = ExecutionContext::internal(database_address);
         let name = &table_name.to_owned().into();
-        let row = self
-            .iter_by_col_eq(&ctx, &ST_TABLES_ID, StTableFields::TableName.col_id().into(), name)?
-            .next();
+        let cols = &StTableFields::TableName.col_id().into();
+        let row = self.iter_by_col_eq(&ctx, &ST_TABLES_ID, cols, name)?.next();
         Ok(row.map(|row| row.read_col(StTableFields::TableId).unwrap()))
     }
 
@@ -44,19 +43,19 @@ pub(crate) trait StateView {
     /// Returns an iterator,
     /// yielding every row in the table identified by `table_id`,
     /// where the values of `cols` are contained in `range`.
-    fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
+    fn iter_by_col_range<'a, 'c, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         ctx: &'a ExecutionContext,
         table_id: &TableId,
-        cols: ColList,
+        cols: &'c ColList,
         range: R,
-    ) -> Result<IterByColRange<'a, R>>;
+    ) -> Result<IterByColRange<'a, 'c, R>>;
 
     fn iter_by_col_eq<'a, 'r>(
         &'a self,
         ctx: &'a ExecutionContext,
         table_id: &TableId,
-        cols: ColList,
+        cols: &'r ColList,
         value: &'r AlgebraicValue,
     ) -> Result<IterByColEq<'a, 'r>> {
         self.iter_by_col_range(ctx, table_id, cols, value)
@@ -65,7 +64,7 @@ pub(crate) trait StateView {
     /// Reads the schema information for the specified `table_id` directly from the database.
     fn schema_for_table_raw(&self, ctx: &ExecutionContext, table_id: TableId) -> Result<TableSchema> {
         // Look up the table_name for the table in question.
-        let st_table_table_id_col = StTableFields::TableId.col_id().into();
+        let st_table_table_id_col = &StTableFields::TableId.col_id().into();
         let value_eq = &table_id.into();
         let row = self
             .iter_by_col_eq(ctx, &ST_TABLES_ID, st_table_table_id_col, value_eq)?
@@ -78,7 +77,7 @@ pub(crate) trait StateView {
         let table_access = row.table_access;
 
         // Look up the columns for the table in question.
-        let st_columns_table_id_col = StColumnFields::TableId.col_id().into();
+        let st_columns_table_id_col = &StColumnFields::TableId.col_id().into();
         let mut columns = self
             .iter_by_col_eq(ctx, &ST_COLUMNS_ID, st_columns_table_id_col, value_eq)?
             .map(|row| {
@@ -94,7 +93,7 @@ pub(crate) trait StateView {
         columns.sort_by_key(|col| col.col_pos);
 
         // Look up the constraints for the table in question.
-        let st_constraints_table_id = StConstraintFields::TableId.col_id().into();
+        let st_constraints_table_id = &StConstraintFields::TableId.col_id().into();
         let constraints = self
             .iter_by_col_eq(ctx, &ST_CONSTRAINTS_ID, st_constraints_table_id, value_eq)?
             .map(|row| {
@@ -110,7 +109,7 @@ pub(crate) trait StateView {
             .collect::<Result<Vec<_>>>()?;
 
         // Look up the sequences for the table in question.
-        let st_seq_table_id = StSequenceFields::TableId.col_id().into();
+        let st_seq_table_id = &StSequenceFields::TableId.col_id().into();
         let sequences = self
             .iter_by_col_eq(ctx, &ST_SEQUENCES_ID, st_seq_table_id, value_eq)?
             .map(|row| {
@@ -130,7 +129,7 @@ pub(crate) trait StateView {
             .collect::<Result<Vec<_>>>()?;
 
         // Look up the indexes for the table in question.
-        let st_idx_table_id = StIndexFields::TableId.col_id().into();
+        let st_idx_table_id = &StIndexFields::TableId.col_id().into();
         let indexes = self
             .iter_by_col_eq(ctx, &ST_INDEXES_ID, st_idx_table_id, value_eq)?
             .map(|row| {
@@ -410,12 +409,12 @@ impl<'a> Iterator for IndexSeekIterMutTxId<'a> {
 }
 
 /// An [IterByColRange] for an individual column value.
-pub type IterByColEq<'a, 'r> = IterByColRange<'a, &'r AlgebraicValue>;
+pub type IterByColEq<'a, 'r> = IterByColRange<'a, 'r, &'r AlgebraicValue>;
 
 /// An iterator for a range of values in a column.
-pub enum IterByColRange<'a, R: RangeBounds<AlgebraicValue>> {
+pub enum IterByColRange<'a, 'c, R: RangeBounds<AlgebraicValue>> {
     /// When the column in question does not have an index.
-    Scan(ScanIterByColRange<'a, R>),
+    Scan(ScanIterByColRange<'a, 'c, R>),
 
     /// When the column has an index, and the table
     /// has been modified this transaction.
@@ -426,7 +425,7 @@ pub enum IterByColRange<'a, R: RangeBounds<AlgebraicValue>> {
     CommittedIndex(CommittedIndexIter<'a>),
 }
 
-impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for IterByColRange<'a, R> {
+impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for IterByColRange<'a, '_, R> {
     type Item = RowRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -438,19 +437,19 @@ impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for IterByColRange<'a, R> {
     }
 }
 
-pub struct ScanIterByColRange<'a, R: RangeBounds<AlgebraicValue>> {
+pub struct ScanIterByColRange<'a, 'c, R: RangeBounds<AlgebraicValue>> {
     scan_iter: Iter<'a>,
-    cols: ColList,
+    cols: &'c ColList,
     range: R,
 }
 
-impl<'a, R: RangeBounds<AlgebraicValue>> ScanIterByColRange<'a, R> {
-    pub(crate) fn new(scan_iter: Iter<'a>, cols: ColList, range: R) -> Self {
+impl<'a, 'c, R: RangeBounds<AlgebraicValue>> ScanIterByColRange<'a, 'c, R> {
+    pub(crate) fn new(scan_iter: Iter<'a>, cols: &'c ColList, range: R) -> Self {
         Self { scan_iter, cols, range }
     }
 }
 
-impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for ScanIterByColRange<'a, R> {
+impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for ScanIterByColRange<'a, '_, R> {
     type Item = RowRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {

@@ -71,13 +71,13 @@ impl StateView for CommittedState {
     /// Returns an iterator,
     /// yielding every row in the table identified by `table_id`,
     /// where the values of `cols` are contained in `range`.
-    fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
+    fn iter_by_col_range<'a, 'c, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         ctx: &'a ExecutionContext,
         table_id: &TableId,
-        cols: ColList,
+        cols: &'c ColList,
         range: R,
-    ) -> Result<IterByColRange<'a, R>> {
+    ) -> Result<IterByColRange<'a, 'c, R>> {
         // TODO: Why does this unconditionally return a `Scan` iter,
         // instead of trying to return a `CommittedIndex` iter?
         Ok(IterByColRange::Scan(ScanIterByColRange::new(
@@ -518,13 +518,13 @@ impl CommittedState {
     }
 
     #[allow(unused)]
-    pub fn iter_by_col_range_maybe_index<'a, R: RangeBounds<AlgebraicValue>>(
+    pub fn iter_by_col_range_maybe_index<'a, 'c, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         ctx: &'a ExecutionContext,
         table_id: &TableId,
-        cols: ColList,
+        cols: &'c ColList,
         range: R,
-    ) -> Result<IterByColRange<'a, R>> {
+    ) -> Result<IterByColRange<'a, 'c, R>> {
         match self.index_seek(*table_id, &cols, &range) {
             Some(committed_rows) => Ok(IterByColRange::CommittedIndex(CommittedIndexIter::new(
                 ctx,

@@ -226,7 +226,7 @@ pub trait TxDatastore: DataRow + Tx {
     where
         Self: 'a;
 
-    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>>: Iterator<Item = Self::RowRef<'a>>
+    type IterByColRange<'a, 'c, R: RangeBounds<AlgebraicValue>>: Iterator<Item = Self::RowRef<'a>>
     where
         Self: 'a;
 
@@ -236,21 +236,21 @@ pub trait TxDatastore: DataRow + Tx {
 
     fn iter_tx<'a>(&'a self, ctx: &'a ExecutionContext, tx: &'a Self::Tx, table_id: TableId) -> Result<Self::Iter<'a>>;
 
-    fn iter_by_col_range_tx<'a, R: RangeBounds<AlgebraicValue>>(
+    fn iter_by_col_range_tx<'a, 'c, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         ctx: &'a ExecutionContext,
         tx: &'a Self::Tx,
         table_id: TableId,
-        cols: impl Into<ColList>,
+        cols: &'c ColList,
         range: R,
-    ) -> Result<Self::IterByColRange<'a, R>>;
+    ) -> Result<Self::IterByColRange<'a, 'c, R>>;
 
     fn iter_by_col_eq_tx<'a, 'r>(
         &'a self,
         ctx: &'a ExecutionContext,
         tx: &'a Self::Tx,
         table_id: TableId,
-        cols: impl Into<ColList>,
+        cols: &'r ColList,
         value: &'r AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a, 'r>>;
 
@@ -324,20 +324,20 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         tx: &'a Self::MutTx,
         table_id: TableId,
     ) -> Result<Self::Iter<'a>>;
-    fn iter_by_col_range_mut_tx<'a, R: RangeBounds<AlgebraicValue>>(
+    fn iter_by_col_range_mut_tx<'a, 'c, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         ctx: &'a ExecutionContext,
         tx: &'a Self::MutTx,
         table_id: TableId,
-        cols: impl Into<ColList>,
+        cols: &'c ColList,
         range: R,
-    ) -> Result<Self::IterByColRange<'a, R>>;
+    ) -> Result<Self::IterByColRange<'a, 'c, R>>;
     fn iter_by_col_eq_mut_tx<'a, 'r>(
         &'a self,
         ctx: &'a ExecutionContext,
         tx: &'a Self::MutTx,
         table_id: TableId,
-        cols: impl Into<ColList>,
+        cols: &'r ColList,
         value: &'r AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a, 'r>>;
     fn get_mut_tx<'a>(
