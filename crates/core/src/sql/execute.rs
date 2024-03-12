@@ -1,6 +1,6 @@
 use super::compiler::compile_sql;
 use crate::database_instance_context_controller::DatabaseInstanceContextController;
-use crate::db::relational_db::{MutTx, RelationalDB, Tx};
+use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, DatabaseError};
 use crate::execution_context::ExecutionContext;
 use crate::vm::{DbProgram, TxMode};
