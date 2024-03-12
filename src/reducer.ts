@@ -1,7 +1,11 @@
 import { SpacetimeDBClient } from "./spacetimedb";
 
-export type ReducerClass = { new (...args: any[]): Reducer };
+export type ReducerClass = {
+  new (...args: any[]): Reducer;
+  reducerName: string;
+};
 export class Reducer {
+  public static reducerName: string;
   public call(..._args: any[]): void {
     throw "not implemented";
   }
