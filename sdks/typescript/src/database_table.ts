@@ -1,5 +1,6 @@
+import { ClientDB } from "./client_db";
 import { ReducerEvent } from "./reducer_event";
-import { ClientDB, SpacetimeDBClient } from "./spacetimedb";
+import { SpacetimeDBClient } from "./spacetimedb";
 import { _tableProxy } from "./utils";
 
 export type DatabaseTableClass = {

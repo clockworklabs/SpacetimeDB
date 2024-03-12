@@ -29,10 +29,20 @@ import { ReducerEvent } from "./reducer_event";
 import * as Proto from "./client_api";
 import * as JsonApi from "./json_api";
 import BinaryReader from "./binary_reader";
-import { Table, TableUpdate, TableOperation } from "./table";
-import { _tableProxy } from "./utils";
+import { TableUpdate, TableOperation } from "./table";
+import { _tableProxy, toPascalCase } from "./utils";
 import { DatabaseTable, DatabaseTableClass } from "./database_table";
 import { Reducer, ReducerClass } from "./reducer";
+import { ClientDB } from "./client_db";
+import {
+  IdentityTokenMessage,
+  Message,
+  SubscriptionUpdateMessage,
+  TransactionUpdateEvent,
+  TransactionUpdateMessage,
+} from "./message_types";
+import { SpacetimeDBGlobals } from "./global";
+import { stdbLogger } from "./logger";
 
 export {
   ProductValue,
@@ -55,134 +65,10 @@ export type { ValueAdapter, ReducerArgsAdapter, Serializer };
 
 const g = (typeof window === "undefined" ? global : window)!;
 
-type SpacetimeDBGlobals = {
-  clientDB: ClientDB;
-  spacetimeDBClient: SpacetimeDBClient | undefined;
-};
-
-declare global {
-  interface Window {
-    __SPACETIMEDB__: SpacetimeDBGlobals;
-  }
-  var __SPACETIMEDB__: SpacetimeDBGlobals;
-}
-
-export class ClientDB {
-  /**
-   * The tables in the database.
-   */
-  tables: Map<string, Table>;
-
-  constructor() {
-    this.tables = new Map();
-  }
-
-  /**
-   * Returns the table with the given name.
-   * @param name The name of the table.
-   * @returns The table
-   */
-  getTable(name: string): Table {
-    const table = this.tables.get(name);
-
-    // ! This should not happen as the table should be available but an exception is thrown just in case.
-    if (!table) {
-      throw new Error(`Table ${name} does not exist`);
-    }
-
-    return table;
-  }
-
-  getOrCreateTable(
-    tableName: string,
-    pkCol: number | undefined,
-    entityClass: DatabaseTableClass
-  ) {
-    let table: Table;
-    if (!this.tables.has(tableName)) {
-      table = new Table(tableName, pkCol, entityClass);
-      this.tables.set(tableName, table);
-    } else {
-      table = this.tables.get(tableName)!;
-    }
-    return table;
-  }
-}
-
-class SubscriptionUpdateMessage {
-  public tableUpdates: TableUpdate[];
-
-  constructor(tableUpdates: TableUpdate[]) {
-    this.tableUpdates = tableUpdates;
-  }
-}
-
-class TransactionUpdateEvent {
-  public identity: Identity;
-  public address: Address | null;
-  public originalReducerName: string;
-  public reducerName: string;
-  public args: any[] | Uint8Array;
-  public status: string;
-  public message: string;
-
-  constructor(
-    identity: Identity,
-    address: Address | null,
-    originalReducerName: string,
-    reducerName: string,
-    args: any[] | Uint8Array,
-    status: string,
-    message: string
-  ) {
-    this.identity = identity;
-    this.address = address;
-    this.originalReducerName = originalReducerName;
-    this.reducerName = reducerName;
-    this.args = args;
-    this.status = status;
-    this.message = message;
-  }
-}
-
-class TransactionUpdateMessage {
-  public tableUpdates: TableUpdate[];
-  public event: TransactionUpdateEvent;
-
-  constructor(tableUpdates: TableUpdate[], event: TransactionUpdateEvent) {
-    this.tableUpdates = tableUpdates;
-    this.event = event;
-  }
-}
-
-class IdentityTokenMessage {
-  public identity: Identity;
-  public token: string;
-  public address: Address;
-
-  constructor(identity: Identity, token: string, address: Address) {
-    this.identity = identity;
-    this.token = token;
-    this.address = address;
-  }
-}
-type Message =
-  | SubscriptionUpdateMessage
-  | TransactionUpdateMessage
-  | IdentityTokenMessage;
-
 type CreateWSFnType = (
   url: string,
   protocol: string
 ) => WebSocket | WebsocketTestAdapter;
-
-let toPascalCase = function (s: string): string {
-  const str = s.replace(/([-_][a-z])/gi, ($1) => {
-    return $1.toUpperCase().replace("-", "").replace("_", "");
-  });
-
-  return str.charAt(0).toUpperCase() + str.slice(1);
-};
 
 /**
  * The database client connection to a SpacetimeDB server.
@@ -238,7 +124,8 @@ export class SpacetimeDBClient {
     const reducerName = `${name}Reducer`;
     const reducerClass = this.reducerClasses.get(reducerName);
     if (!reducerClass) {
-      console.warn(
+      stdbLogger(
+        "warn",
         `Could not find class \"${name}\", you need to register it with SpacetimeDBClient.registerReducer() first`
       );
       return;
@@ -290,6 +177,13 @@ export class SpacetimeDBClient {
     // for (const [_name, reducer] of SpacetimeDBClient.reducerClasses) {
     //   this.registerReducer(reducer);
     // }
+
+    if (SpacetimeDBClient.tableClasses.size === 0) {
+      stdbLogger(
+        "warn",
+        "No tables were automatically registered globally, if you want to automatically register tables, you need to register them with SpacetimeDBClient.registerTable() first"
+      );
+    }
 
     for (const [_name, table] of SpacetimeDBClient.tableClasses) {
       this.registerTable(table);
@@ -347,7 +241,7 @@ export class SpacetimeDBClient {
    * @param event CloseEvent object.
    */
   private handleOnClose(event: CloseEvent) {
-    console.error("Closed: ", event);
+    stdbLogger("warn", "Closed: " + event);
     this.emitter.emit("disconnected");
     this.emitter.emit("client_error", event);
   }
@@ -357,7 +251,7 @@ export class SpacetimeDBClient {
    * @param event ErrorEvent object.
    */
   private handleOnError(event: ErrorEvent) {
-    console.error("Error: ", event);
+    stdbLogger("warn", "WS Error: " + event);
     this.emitter.emit("disconnected");
     this.emitter.emit("client_error", event);
   }
@@ -561,7 +455,7 @@ export class SpacetimeDBClient {
       return;
     }
 
-    console.info("Connecting to SpacetimeDB WS...");
+    stdbLogger("info", "Connecting to SpacetimeDB WS...");
 
     if (host) {
       this.runtime.host = host;
@@ -816,13 +710,16 @@ export class SpacetimeDBClient {
   /**
    * Register a component to be used with any SpacetimeDB client. The component will be automatically registered to any
    * new clients
-   *
-   * @param component Component to be registered
+   * @param table Component to be registered
    */
   public static registerTable(table: DatabaseTableClass) {
     this.tableClasses.set(table.name, table);
   }
 
+  /**
+   *  Register a list of components to be used with any SpacetimeDB client. The components will be automatically registered to any new clients
+   * @param tables A list of tables to register globally with SpacetimeDBClient
+   */
   public static registerTables(...tables: DatabaseTableClass[]) {
     for (const table of tables) {
       this.tableClasses.set(table.name, table);
@@ -832,13 +729,16 @@ export class SpacetimeDBClient {
   /**
    * Register a reducer to be used with any SpacetimeDB client. The reducer will be automatically registered to any
    * new clients
-   *
    * @param reducer Reducer to be registered
    */
   public static registerReducer(reducer: ReducerClass) {
     this.reducerClasses.set(reducer.name, reducer);
   }
 
+  /**
+   * Register a list of reducers to be used with any SpacetimeDB client. The reducers will be automatically registered to any new clients
+   * @param reducers A list of reducers to register globally with SpacetimeDBClient
+   */
   public static registerReducers(...reducers: ReducerClass[]) {
     for (const reducer of reducers) {
       this.reducerClasses.set(reducer.name, reducer);
@@ -949,7 +849,7 @@ export class SpacetimeDBClient {
    *
    * ```ts
    * spacetimeDBClient.onError((...args: any[]) => {
-   *  console.error("ERROR", args);
+   *  stdbLogger("warn","ERROR", args);
    * });
    * ```
    */

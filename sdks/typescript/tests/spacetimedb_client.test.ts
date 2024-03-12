@@ -1,4 +1,4 @@
-import { SpacetimeDBClient, ReducerEvent, ClientDB } from "../src/spacetimedb";
+import { SpacetimeDBClient, ReducerEvent } from "../src/spacetimedb";
 import { Identity } from "../src/identity";
 import WebsocketTestAdapter from "../src/websocket_test_adapter";
 import Player from "./types/player";
@@ -6,6 +6,7 @@ import User from "./types/user";
 import Point from "./types/point";
 import CreatePlayerReducer from "./types/create_player_reducer";
 import { __SPACETIMEDB__ } from "../src/spacetimedb";
+import { ClientDB } from "../src/client_db";
 
 SpacetimeDBClient.registerTables(Player, User);
 SpacetimeDBClient.registerReducers(CreatePlayerReducer);
