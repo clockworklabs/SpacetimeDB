@@ -58,7 +58,6 @@ fn custom_db_benchmarks(c: &mut Criterion) {
 
     let config = Config {
         storage: Storage::Memory,
-        fsync: spacetimedb::db::FsyncPolicy::Never,
     };
     let module = runtime.block_on(async { BENCHMARKS_MODULE.load_module(config, None).await });
     let mut group = c.benchmark_group("special");

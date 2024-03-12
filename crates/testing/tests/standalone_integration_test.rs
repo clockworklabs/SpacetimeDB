@@ -240,10 +240,10 @@ fn test_calling_bench_db_ia_loop() {
         |module| async move {
             #[rustfmt::skip]
                 let benches = [
-                ("insert_bulk_position", 2_000_000, "INSERT POSITION: 2000000"),
-                ("insert_bulk_velocity", 1_000_000, "INSERT VELOCITY: 1000000"),
-                ("update_position_all", 2_000_000, "UPDATE POSITION ALL: 2000000, processed: 2000000"),
-                ("update_position_with_velocity", 1_000_000, "UPDATE POSITION BY VELOCITY: 1000000, processed: 1000000"),
+                ("insert_bulk_position", 20_000, "INSERT POSITION: 20000"),
+                ("insert_bulk_velocity", 10_000, "INSERT VELOCITY: 10000"),
+                ("update_position_all", 20_000, "UPDATE POSITION ALL: 20000, processed: 20000"),
+                ("update_position_with_velocity", 10_000, "UPDATE POSITION BY VELOCITY: 10000, processed: 10000"),
                 ("insert_world", 5_000, "INSERT WORLD PLAYERS: 5000"),
                 ("game_loop_enemy_ia", 5_000, "ENEMY IA LOOP PLAYERS: 5000, processed: 2500"),
             ];

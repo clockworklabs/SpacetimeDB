@@ -3,8 +3,8 @@
 #![allow(clippy::too_many_arguments, unused_variables)]
 
 use crate::Load;
-use spacetimedb::spacetimedb_lib::relation::calculate_hash;
 use spacetimedb::{log, spacetimedb, SpacetimeType, Timestamp};
+use std::hash::{Hash, Hasher};
 
 #[spacetimedb(table)]
 pub struct Velocity {
@@ -128,6 +128,12 @@ pub struct GameHerdCache {
     pub max_population: i32,
     pub spawn_eagerness: f32,
     pub roaming_distance: i32,
+}
+
+fn calculate_hash<T: Hash>(t: &T) -> u64 {
+    let mut s = std::collections::hash_map::DefaultHasher::new();
+    t.hash(&mut s);
+    s.finish()
 }
 
 // ---------- insert bulk ----------
