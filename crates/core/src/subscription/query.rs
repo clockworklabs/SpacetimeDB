@@ -812,6 +812,10 @@ mod tests {
         // Delete row from lhs,
         // Delete matching row outside the region of rhs.
         run_eval_incr_test(index_join_case_8)?;
+        // Case 9:
+        // Update row from lhs,
+        // Update matching row inside the region of rhs.
+        run_eval_incr_test(index_join_case_9)?;
         Ok(())
     }
 
@@ -1090,6 +1094,60 @@ mod tests {
 
         // No updates to report
         assert_eq!(result.tables.len(), 0);
+        Ok(())
+    }
+
+    // Case 9:
+    // Update row from lhs,
+    // Update matching row inside the region of rhs.
+    fn index_join_case_9(db: RelationalDB) -> ResultTest<()> {
+        let lhs_id = create_lhs_table_for_eval_incr(&db)?;
+        let rhs_id = create_rhs_table_for_eval_incr(&db)?;
+        let query = compile_query(&db)?;
+
+        let lhs_old = product!(1, 6);
+        let lhs_new = product!(1, 7);
+        let rhs_old = product!(11, 1, 3);
+        let rhs_new = product!(11, 1, 4);
+
+        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+            delete_row(&db, tx, lhs_id, lhs_old.clone());
+            delete_row(&db, tx, rhs_id, rhs_old.clone());
+            insert_row(&db, tx, lhs_id, lhs_new.clone())?;
+            insert_row(&db, tx, rhs_id, rhs_new.clone())
+        })?;
+
+        let result = db.with_read_only(&ExecutionContext::default(), |tx| {
+            query.eval_incr(
+                &db,
+                tx,
+                &DatabaseUpdate {
+                    tables: vec![
+                        DatabaseTableUpdate {
+                            table_id: lhs_id,
+                            table_name: "lhs".to_string(),
+                            ops: vec![TableOp::delete(lhs_old.clone()), TableOp::insert(lhs_new.clone())],
+                        },
+                        DatabaseTableUpdate {
+                            table_id: rhs_id,
+                            table_name: "rhs".to_string(),
+                            ops: vec![TableOp::delete(rhs_old.clone()), TableOp::insert(rhs_new.clone())],
+                        },
+                    ],
+                },
+            )
+        })?;
+
+        // A delete and an insert into lhs
+        assert_eq!(result.tables.len(), 1);
+        assert_eq!(
+            result.tables[0],
+            DatabaseTableUpdate {
+                table_id: lhs_id,
+                table_name: "lhs".to_string(),
+                ops: vec![TableOp::delete(lhs_old), TableOp::insert(lhs_new)],
+            },
+        );
         Ok(())
     }
 }
