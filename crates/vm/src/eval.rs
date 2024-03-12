@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::errors::ErrorVm;
 use crate::expr::{Code, CrudCode, CrudExpr, SourceSet};
 use crate::expr::{Expr, Query};
@@ -7,28 +5,26 @@ use crate::iterators::RelIter;
 use crate::program::ProgramVm;
 use crate::rel_ops::RelOps;
 use crate::relation::RelValue;
-use spacetimedb_sats::relation::{FieldExpr, Relation};
+use spacetimedb_sats::relation::{FieldExprRef, Relation};
+use std::sync::Arc;
 
 fn compile_query_expr(q: CrudExpr) -> Code {
-    match q {
-        CrudExpr::Query(q) => Code::Crud(CrudCode::Query(q)),
-        CrudExpr::Insert { source, rows } => {
-            let q = CrudCode::Insert { table: source, rows };
-            Code::Crud(q)
-        }
-        CrudExpr::Update { delete, assignments } => Code::Crud(CrudCode::Update { delete, assignments }),
-        CrudExpr::Delete { query } => Code::Crud(CrudCode::Delete { query }),
-        CrudExpr::CreateTable { table } => Code::Crud(CrudCode::CreateTable { table }),
+    Code::Crud(match q {
+        CrudExpr::Query(q) => CrudCode::Query(q),
+        CrudExpr::Insert { source, rows } => CrudCode::Insert { table: source, rows },
+        CrudExpr::Update { delete, assignments } => CrudCode::Update { delete, assignments },
+        CrudExpr::Delete { query } => CrudCode::Delete { query },
+        CrudExpr::CreateTable { table } => CrudCode::CreateTable { table },
         CrudExpr::Drop {
             name,
             kind,
             table_access,
-        } => Code::Crud(CrudCode::Drop {
+        } => CrudCode::Drop {
             name,
             kind,
             table_access,
-        }),
-    }
+        },
+    })
 }
 
 pub type IterRows<'a> = dyn RelOps<'a> + 'a;
@@ -40,7 +36,7 @@ pub type IterRows<'a> = dyn RelOps<'a> + 'a;
 /// so the `query` cannot refer to the same `SourceId` multiple times.
 pub fn build_query<'a>(
     mut result: Box<IterRows<'a>>,
-    query: Vec<Query>,
+    query: &'a [Query],
     sources: &mut SourceSet,
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {
     for q in query {
@@ -69,10 +65,8 @@ pub fn build_query<'a>(
             }
             Query::JoinInner(q) => {
                 //Pick the smaller set to be at the left
-                let col_lhs = FieldExpr::Name(q.col_lhs);
-                let col_rhs = FieldExpr::Name(q.col_rhs);
-                let key_lhs = col_lhs.clone();
-                let key_rhs = col_rhs.clone();
+                let col_lhs = FieldExprRef::Name(&q.col_lhs);
+                let col_rhs = FieldExprRef::Name(&q.col_rhs);
                 let row_rhs = q.rhs.source.row_count();
 
                 let head = q.rhs.source.head().clone();
@@ -87,7 +81,7 @@ pub fn build_query<'a>(
                     todo!("How pass the db iter?")
                 };
 
-                let rhs = build_query(rhs, q.rhs.query, sources)?;
+                let rhs = build_query(rhs, &q.rhs.query, sources)?;
 
                 let lhs = result;
                 let key_lhs_header = lhs.head().clone();
@@ -98,11 +92,11 @@ pub fn build_query<'a>(
                 let iter = lhs.join_inner(
                     rhs,
                     Arc::new(col_lhs_header.extend(&col_rhs_header)),
-                    move |row| Ok(row.get(&key_lhs, &key_lhs_header)?.into_owned().into()),
-                    move |row| Ok(row.get(&key_rhs, &key_rhs_header)?.into_owned().into()),
+                    move |row| Ok(row.get(col_lhs, &key_lhs_header)?.into_owned().into()),
+                    move |row| Ok(row.get(col_rhs, &key_rhs_header)?.into_owned().into()),
                     move |l, r| {
-                        let l = l.get(&col_lhs, &col_lhs_header)?;
-                        let r = r.get(&col_rhs, &col_rhs_header)?;
+                        let l = l.get(col_lhs, &col_lhs_header)?;
+                        let r = r.get(col_rhs, &col_rhs_header)?;
                         Ok(l == r)
                     },
                     move |l, r| l.extend(r),
@@ -122,7 +116,7 @@ pub fn build_ast(ast: CrudExpr) -> Code {
 /// Execute the code
 pub fn eval<P: ProgramVm>(p: &mut P, code: Code, sources: &mut SourceSet) -> Code {
     match code {
-        Code::Value(_) => code.clone(),
+        c @ (Code::Value(_) | Code::Halt(_) | Code::Table(_)) => c,
         Code::Block(lines) => {
             let mut result = Vec::with_capacity(lines.len());
             for x in lines {
@@ -140,8 +134,6 @@ pub fn eval<P: ProgramVm>(p: &mut P, code: Code, sources: &mut SourceSet) -> Cod
         }
         Code::Crud(q) => p.eval_query(q, sources).unwrap_or_else(|err| Code::Halt(err.into())),
         Code::Pass => Code::Pass,
-        Code::Halt(_) => code,
-        Code::Table(_) => code,
     }
 }
 

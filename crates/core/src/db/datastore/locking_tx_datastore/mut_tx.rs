@@ -1018,21 +1018,21 @@ impl StateView for MutTxId {
         // TODO(george): It's unclear that we truly support dynamically creating an index
         // yet. In particular, I don't know if creating an index in a transaction and
         // rolling it back will leave the index in place.
-        if let Some(inserted_rows) = self.tx_state.index_seek(*table_id, &cols, &range) {
+        if let Some(inserted_rows) = self.tx_state.index_seek(*table_id, cols, &range) {
             // The current transaction has modified this table, and the table is indexed.
             Ok(IterByColRange::Index(IndexSeekIterMutTxId {
                 ctx,
                 table_id: *table_id,
                 tx_state: &self.tx_state,
                 inserted_rows,
-                committed_rows: self.committed_state_write_lock.index_seek(*table_id, &cols, &range),
+                committed_rows: self.committed_state_write_lock.index_seek(*table_id, cols, &range),
                 committed_state: &self.committed_state_write_lock,
                 num_committed_rows_fetched: 0,
             }))
         } else {
             // Either the current transaction has not modified this table, or the table is not
             // indexed.
-            match self.committed_state_write_lock.index_seek(*table_id, &cols, &range) {
+            match self.committed_state_write_lock.index_seek(*table_id, cols, &range) {
                 Some(committed_rows) => Ok(IterByColRange::CommittedIndex(CommittedIndexIter::new(
                     ctx,
                     *table_id,

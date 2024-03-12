@@ -525,7 +525,7 @@ impl CommittedState {
         cols: &'c ColList,
         range: R,
     ) -> Result<IterByColRange<'a, 'c, R>> {
-        match self.index_seek(*table_id, &cols, &range) {
+        match self.index_seek(*table_id, cols, &range) {
             Some(committed_rows) => Ok(IterByColRange::CommittedIndex(CommittedIndexIter::new(
                 ctx,
                 *table_id,

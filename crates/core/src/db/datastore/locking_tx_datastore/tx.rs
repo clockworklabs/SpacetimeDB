@@ -43,7 +43,7 @@ impl StateView for TxId {
         cols: &'c ColList,
         range: R,
     ) -> Result<IterByColRange<'a, 'c, R>> {
-        match self.committed_state_shared_lock.index_seek(*table_id, &cols, &range) {
+        match self.committed_state_shared_lock.index_seek(*table_id, cols, &range) {
             Some(committed_rows) => Ok(IterByColRange::CommittedIndex(CommittedIndexIter::new(
                 ctx,
                 *table_id,

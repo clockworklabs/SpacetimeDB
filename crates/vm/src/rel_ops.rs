@@ -59,13 +59,13 @@ pub trait RelOps<'a> {
     ///
     /// It is the equivalent of a `SELECT` clause on SQL.
     #[inline]
-    fn project<P>(self, cols: Vec<FieldExpr>, extractor: P) -> Result<Project<Self, P>, ErrorVm>
+    fn project<P>(self, cols: &[FieldExpr], extractor: P) -> Result<Project<Self, P>, ErrorVm>
     where
         P: for<'b> FnMut(&[FieldExpr], RelValue<'b>) -> Result<RelValue<'b>, ErrorVm>,
         Self: Sized,
     {
         let count = self.row_count();
-        let head = self.head().project(&cols)?;
+        let head = self.head().project(cols)?;
         Ok(Project::new(self, count, Arc::new(head), cols, extractor))
     }
 
@@ -177,16 +177,16 @@ where
 }
 
 #[derive(Clone, Debug)]
-pub struct Project<I, P> {
+pub struct Project<'a, I, P> {
     pub(crate) head: Arc<Header>,
     pub(crate) count: RowCount,
-    pub(crate) cols: Vec<FieldExpr>,
+    pub(crate) cols: &'a [FieldExpr],
     pub(crate) iter: I,
     pub(crate) extractor: P,
 }
 
-impl<I, P> Project<I, P> {
-    pub fn new(iter: I, count: RowCount, head: Arc<Header>, cols: Vec<FieldExpr>, extractor: P) -> Project<I, P> {
+impl<'a, I, P> Project<'a, I, P> {
+    pub fn new(iter: I, count: RowCount, head: Arc<Header>, cols: &'a [FieldExpr], extractor: P) -> Project<'a, I, P> {
         Project {
             iter,
             count,
@@ -197,7 +197,7 @@ impl<I, P> Project<I, P> {
     }
 }
 
-impl<'a, I, P> RelOps<'a> for Project<I, P>
+impl<'a, I, P> RelOps<'a> for Project<'_, I, P>
 where
     I: RelOps<'a>,
     P: FnMut(&[FieldExpr], RelValue<'a>) -> Result<RelValue<'a>, ErrorVm>,
@@ -213,7 +213,7 @@ where
     fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
         let extract = &mut self.extractor;
         if let Some(v) = self.iter.next()? {
-            return Ok(Some(extract(&self.cols, v)?));
+            return Ok(Some(extract(self.cols, v)?));
         }
         Ok(None)
     }

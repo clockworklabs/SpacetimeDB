@@ -108,7 +108,7 @@ impl BenchDatabase for SpacetimeRaw {
                 // (update_by_{field} -> spacetimedb::query::update_by_field -> (delete_by_col_eq; insert))
                 let id = self
                     .db
-                    .iter_by_col_eq_mut(&ctx, tx, *table_id, ColId(0), &row.elements[0])?
+                    .iter_by_col_eq_mut(&ctx, tx, *table_id, &0.into(), &row.elements[0])?
                     .next()
                     .expect("failed to find row during update!")
                     .pointer();
@@ -148,7 +148,7 @@ impl BenchDatabase for SpacetimeRaw {
         column_index: u32,
         value: AlgebraicValue,
     ) -> ResultBench<()> {
-        let col: ColId = column_index.into();
+        let col = &column_index.into();
         let ctx = ExecutionContext::default();
         self.db.with_auto_commit(&ctx, |tx| {
             for row in self.db.iter_by_col_eq_mut(&ctx, tx, *table_id, col, &value)? {

@@ -10,7 +10,7 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Address;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::def::TableDef;
-use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldName, Header, Relation, RowCount};
+use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldExprRef, FieldName, Header, Relation, RowCount};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::eval::IterRows;
@@ -44,7 +44,7 @@ pub fn build_query<'a>(
     ctx: &'a ExecutionContext,
     stdb: &'a RelationalDB,
     tx: &'a TxMode,
-    query: QueryExpr,
+    query: &'a QueryExpr,
     sources: &mut SourceSet,
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {
     let db_table = query.source.is_db_table();
@@ -65,10 +65,11 @@ pub fn build_query<'a>(
     //   removing the need for this convoluted logic?
     let mut result = None;
 
-    for op in query.query {
+    for op in &query.query {
         result = Some(match op {
             Query::IndexScan(IndexScan { table, columns, bounds }) if db_table => {
-                iter_by_col_range(ctx, stdb, tx, table, &columns, bounds)?
+                let bounds = (bounds.start_bound(), bounds.end_bound());
+                iter_by_col_range(ctx, stdb, tx, table, columns, bounds)?
             }
             Query::IndexScan(index_scan) => {
                 let result = result
@@ -76,7 +77,7 @@ pub fn build_query<'a>(
                     .map(Ok)
                     .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))?;
                 let header = result.head().clone();
-                let cmp: ColumnOp = index_scan.into();
+                let cmp: ColumnOp = index_scan.clone().into();
                 let iter = result.select(move |row| cmp.compare(row, &header));
                 Box::new(iter)
             }
@@ -85,7 +86,7 @@ pub fn build_query<'a>(
                 probe_field,
                 index_side,
                 index_select,
-                index_col,
+                index_cols,
                 return_index_rows,
             }) => {
                 if result.is_some() {
@@ -94,7 +95,7 @@ pub fn build_query<'a>(
                 // The compiler guarantees that the index side is a db table,
                 // and therefore this unwrap is always safe.
                 let index_table = index_side.table_id().unwrap();
-                let index_header = index_side.head().clone();
+                let index_header = index_side.head();
                 let probe_side = build_query(ctx, stdb, tx, probe_side, sources)?;
                 Box::new(IndexSemiJoin {
                     ctx,
@@ -105,9 +106,9 @@ pub fn build_query<'a>(
                     index_header,
                     index_select,
                     index_table,
-                    index_cols: index_col.into(),
+                    index_cols,
                     index_iter: None,
-                    return_index_rows,
+                    return_index_rows: *return_index_rows,
                 })
             }
             Query::Select(cmp) => {
@@ -150,21 +151,22 @@ pub fn build_query<'a>(
         .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn join_inner<'a>(
     ctx: &'a ExecutionContext,
     db: &'a RelationalDB,
     tx: &'a TxMode,
     lhs: impl RelOps<'a> + 'a,
-    rhs: JoinExpr,
+    rhs: &'a JoinExpr,
     semi: bool,
     sources: &mut SourceSet,
 ) -> Result<impl RelOps<'a> + 'a, ErrorVm> {
-    let col_lhs = FieldExpr::Name(rhs.col_lhs);
-    let col_rhs = FieldExpr::Name(rhs.col_rhs);
-    let key_lhs = [col_lhs.clone()];
-    let key_rhs = [col_rhs.clone()];
+    let col_lhs = FieldExprRef::Name(&rhs.col_lhs);
+    let col_rhs = FieldExprRef::Name(&rhs.col_rhs);
+    let key_lhs = [col_lhs];
+    let key_rhs = [col_rhs];
 
-    let rhs = build_query(ctx, db, tx, rhs.rhs, sources)?;
+    let rhs = build_query(ctx, db, tx, &rhs.rhs, sources)?;
     let key_lhs_header = lhs.head().clone();
     let key_rhs_header = rhs.head().clone();
     let col_lhs_header = lhs.head().clone();
@@ -182,8 +184,8 @@ fn join_inner<'a>(
         move |row| Ok(row.project(&key_lhs, &key_lhs_header)?),
         move |row| Ok(row.project(&key_rhs, &key_rhs_header)?),
         move |l, r| {
-            let l = l.get(&col_lhs, &col_lhs_header)?;
-            let r = r.get(&col_rhs, &col_rhs_header)?;
+            let l = l.get(col_lhs, &col_lhs_header)?;
+            let r = r.get(col_rhs, &col_rhs_header)?;
             Ok(l == r)
         },
         move |l, r| {
@@ -235,7 +237,7 @@ fn iter_by_col_range<'a>(
     ctx: &'a ExecutionContext,
     db: &'a RelationalDB,
     tx: &'a TxMode,
-    table: DbTable,
+    table: &'a DbTable,
     columns: &'a ColList,
     range: impl RangeBounds<AlgebraicValue> + 'a,
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {
@@ -252,11 +254,11 @@ pub struct IndexSemiJoin<'a, 'c, Rhs: RelOps<'a>> {
     /// The values returned will be used to probe the index.
     pub probe_side: Rhs,
     /// The field whose value will be used to probe the index.
-    pub probe_field: FieldName,
+    pub probe_field: &'c FieldName,
     /// The header for the index side of the join.
-    pub index_header: Arc<Header>,
+    pub index_header: &'c Arc<Header>,
     /// An optional predicate to evaluate over the matching rows of the index.
-    pub index_select: Option<ColumnOp>,
+    pub index_select: &'c Option<ColumnOp>,
     /// The table id on which the index is defined.
     pub index_table: TableId,
     /// The column ids for which the index is defined.
@@ -277,7 +279,7 @@ pub struct IndexSemiJoin<'a, 'c, Rhs: RelOps<'a>> {
 impl<'a, Rhs: RelOps<'a>> IndexSemiJoin<'a, '_, Rhs> {
     fn filter(&self, index_row: &RelValue<'_>) -> Result<bool, ErrorVm> {
         Ok(if let Some(op) = &self.index_select {
-            op.compare(index_row, &self.index_header)?
+            op.compare(index_row, self.index_header)?
         } else {
             true
         })
@@ -296,7 +298,7 @@ impl<'a, Rhs: RelOps<'a>> IndexSemiJoin<'a, '_, Rhs> {
 impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoin<'a, '_, Rhs> {
     fn head(&self) -> &Arc<Header> {
         if self.return_index_rows {
-            &self.index_header
+            self.index_header
         } else {
             self.probe_side.head()
         }
@@ -319,7 +321,7 @@ impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoin<'a, '_, Rhs> {
 
         // Otherwise probe the index with a row from the probe side.
         while let Some(row) = self.probe_side.next()? {
-            if let Some(pos) = self.probe_side.head().column_pos(&self.probe_field) {
+            if let Some(pos) = self.probe_side.head().column_pos(self.probe_field) {
                 if let Some(value) = row.read_column(pos.idx()) {
                     let table_id = self.index_table;
                     let cols = &self.index_cols;
@@ -357,7 +359,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         Self { ctx, db, tx, auth }
     }
 
-    fn _eval_query(&mut self, query: QueryExpr, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
+    fn _eval_query(&mut self, query: &QueryExpr, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
         let table_access = query.source.table_access();
         tracing::trace!(table = query.source.table_name());
 
@@ -398,7 +400,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         }
     }
 
-    fn _delete_query(&mut self, query: QueryExpr, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
+    fn _delete_query(&mut self, query: &QueryExpr, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
         let table = sources
             .take_table(&query.source)
             .expect("Cannot delete from a `MemTable`");
@@ -470,7 +472,7 @@ impl ProgramVm for DbProgram<'_, '_> {
         query.check_auth(self.auth.owner, self.auth.caller)?;
 
         match query {
-            CrudCode::Query(query) => self._eval_query(query, sources),
+            CrudCode::Query(query) => self._eval_query(&query, sources),
             CrudCode::Insert { table, rows } => {
                 let src = sources.take_table(&table).unwrap();
                 self._execute_insert(&src, rows)
@@ -479,13 +481,12 @@ impl ProgramVm for DbProgram<'_, '_> {
                 delete,
                 mut assignments,
             } => {
-                let table = delete.source.clone();
-                let result = self._eval_query(delete, sources)?;
+                let result = self._eval_query(&delete, sources)?;
 
                 let Code::Table(deleted) = result else {
                     return Ok(result);
                 };
-                let table = sources.take_table(&table).unwrap();
+                let table = sources.take_table(&delete.source).unwrap();
                 self._execute_delete(&table, deleted.data.clone())?;
 
                 // Replace the columns in the matched rows with the assigned
@@ -520,22 +521,9 @@ impl ProgramVm for DbProgram<'_, '_> {
 
                 self._execute_insert(&table, insert_rows)
             }
-            CrudCode::Delete { query } => {
-                let result = self._delete_query(query, sources)?;
-                Ok(result)
-            }
-            CrudCode::CreateTable { table } => {
-                let result = self._create_table(table)?;
-                Ok(result)
-            }
-            CrudCode::Drop {
-                name,
-                kind,
-                table_access: _,
-            } => {
-                let result = self._drop(&name, kind)?;
-                Ok(result)
-            }
+            CrudCode::Delete { query } => self._delete_query(&query, sources),
+            CrudCode::CreateTable { table } => self._create_table(table),
+            CrudCode::Drop { name, kind, .. } => self._drop(&name, kind),
         }
     }
 }

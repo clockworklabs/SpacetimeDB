@@ -454,7 +454,7 @@ impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for ScanIterByColRange<'a, '_,
 
     fn next(&mut self) -> Option<Self::Item> {
         for row_ref in &mut self.scan_iter {
-            let value = row_ref.project_not_empty(&self.cols).unwrap();
+            let value = row_ref.project_not_empty(self.cols).unwrap();
             if self.range.contains(&value) {
                 return Some(row_ref);
             }

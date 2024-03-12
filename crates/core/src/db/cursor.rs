@@ -29,12 +29,12 @@ impl<'a> TableCursor<'a> {
 /// A relational iterator wrapping a storage level index iterator.
 /// A relational iterator returns [RelValue]s whereas storage iterators return [DataRef]s.
 pub struct IndexCursor<'a, 'c, R: RangeBounds<AlgebraicValue>> {
-    pub table: DbTable,
+    pub table: &'c DbTable,
     pub iter: IterByColRange<'a, 'c, R>,
 }
 
 impl<'a, 'c, R: RangeBounds<AlgebraicValue>> IndexCursor<'a, 'c, R> {
-    pub fn new(table: DbTable, iter: IterByColRange<'a, 'c, R>) -> Result<Self, DBError> {
+    pub fn new(table: &'c DbTable, iter: IterByColRange<'a, 'c, R>) -> Result<Self, DBError> {
         Ok(Self { table, iter })
     }
 }

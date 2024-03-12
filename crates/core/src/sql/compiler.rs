@@ -866,26 +866,26 @@ mod tests {
             probe_side:
                 QueryExpr {
                     source: SourceExpr::DbTable(DbTable { table_id, .. }),
-                    query: ref rhs,
+                    query: rhs,
                 },
             probe_field:
                 FieldName::Name {
-                    table: ref probe_table,
-                    field: ref probe_field,
+                    table: probe_table,
+                    field: probe_field,
                 },
             index_side: SourceExpr::DbTable(DbTable {
                 table_id: index_table, ..
             }),
-            index_col,
+            index_cols,
             ..
-        }) = query[0]
+        }) = &query[0]
         else {
             panic!("unexpected operator {:#?}", query[0]);
         };
 
-        assert_eq!(table_id, rhs_id);
-        assert_eq!(index_table, lhs_id);
-        assert_eq!(index_col, 1.into());
+        assert_eq!(*table_id, rhs_id);
+        assert_eq!(*index_table, lhs_id);
+        assert_eq!(index_cols, &1.into());
         assert_eq!(probe_field, "b");
         assert_eq!(probe_table, "rhs");
 
@@ -964,26 +964,26 @@ mod tests {
             probe_side:
                 QueryExpr {
                     source: SourceExpr::DbTable(DbTable { table_id, .. }),
-                    query: ref rhs,
+                    query: rhs,
                 },
             probe_field:
                 FieldName::Name {
-                    table: ref probe_table,
-                    field: ref probe_field,
+                    table: probe_table,
+                    field: probe_field,
                 },
             index_side: SourceExpr::DbTable(DbTable {
                 table_id: index_table, ..
             }),
-            index_col,
+            index_cols,
             ..
-        }) = query[0]
+        }) = &query[0]
         else {
             panic!("unexpected operator {:#?}", query[0]);
         };
 
-        assert_eq!(table_id, rhs_id);
-        assert_eq!(index_table, lhs_id);
-        assert_eq!(index_col, 1.into());
+        assert_eq!(*table_id, rhs_id);
+        assert_eq!(*index_table, lhs_id);
+        assert_eq!(index_cols, &1.into());
         assert_eq!(probe_field, "b");
         assert_eq!(probe_table, "rhs");
 

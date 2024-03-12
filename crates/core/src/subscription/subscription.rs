@@ -160,8 +160,7 @@ fn eval_updates(
 ) -> Result<impl Iterator<Item = ProductValue>, DBError> {
     let ctx = ExecutionContext::incremental_update(db.address());
     let tx: TxMode = tx.into();
-    // TODO(perf, 833): avoid clone.
-    let query = build_query(&ctx, db, &tx, query.clone(), &mut sources)?;
+    let query = build_query(&ctx, db, &tx, query, &mut sources)?;
     // TODO(perf): avoid collecting into a vec.
     Ok(query.collect_vec(|row_ref| row_ref.into_product_value())?.into_iter())
 }
@@ -782,7 +781,7 @@ mod tests {
                 table_id: index_table, ..
             }),
             index_select: Some(_),
-            index_col,
+            index_cols,
             return_index_rows: false,
         } = join
         else {
@@ -793,7 +792,7 @@ mod tests {
 
         // Assert that original index and probe tables have been swapped.
         assert_eq!(index_table, rhs_id);
-        assert_eq!(index_col, 0.into());
+        assert_eq!(index_cols, 0.into());
         assert_eq!(probe_field, "b");
         assert_eq!(probe_table, "lhs");
         Ok(())
@@ -873,7 +872,7 @@ mod tests {
                 table_id: index_table, ..
             }),
             index_select: None,
-            index_col,
+            index_cols,
             return_index_rows: true,
         } = join
         else {
@@ -884,7 +883,7 @@ mod tests {
 
         // Assert that original index and probe tables have not been swapped.
         assert_eq!(index_table, lhs_id);
-        assert_eq!(index_col, 1.into());
+        assert_eq!(index_cols, 1.into());
         assert_eq!(probe_field, "b");
         assert_eq!(probe_table, "rhs");
         Ok(())

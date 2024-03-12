@@ -4508,6 +4508,7 @@ dependencies = [
  "tracing-log 0.1.4",
  "tracing-subscriber",
  "tracing-tracy",
+ "typed-arena",
  "url",
  "urlencoding",
  "uuid",

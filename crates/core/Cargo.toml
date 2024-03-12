@@ -90,6 +90,7 @@ tracing-log.workspace = true
 tracing-subscriber.workspace = true
 tracing-tracy.workspace = true
 tracing.workspace = true
+typed-arena.workspace = true
 url.workspace = true
 urlencoding.workspace = true
 uuid.workspace = true
