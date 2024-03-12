@@ -1,5 +1,6 @@
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
+use spacetimedb_lib::bsatn::to_writer;
 use spacetimedb_table::table::UniqueConstraintViolation;
 use std::ops::DerefMut;
 use std::sync::Arc;
@@ -11,9 +12,8 @@ use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::error::{IndexError, NodesError};
 use crate::execution_context::ExecutionContext;
-use crate::vm::{DbProgram, TxMode};
+use crate::vm::{build_query, TxMode};
 use spacetimedb_lib::filter::CmpArgs;
-use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::operator::OpQuery;
 use spacetimedb_lib::{bsatn, ProductValue};
 use spacetimedb_primitives::{ColId, ColListBuilder, TableId};
@@ -21,7 +21,7 @@ use spacetimedb_sats::buffer::BufWriter;
 use spacetimedb_sats::db::def::{IndexDef, IndexType};
 use spacetimedb_sats::relation::{FieldExpr, FieldName};
 use spacetimedb_sats::{ProductType, Typespace};
-use spacetimedb_vm::expr::{Code, ColumnOp, SourceSet};
+use spacetimedb_vm::expr::{ColumnOp, SourceSet};
 
 #[derive(Clone)]
 pub struct InstanceEnv {
@@ -369,25 +369,20 @@ impl InstanceEnv {
         )
         .map_err(NodesError::DecodeFilter)?;
 
-        let q =
+        // TODO(Centril): consider caching from `filter: &[u8] -> query: QueryExpr`.
+        let query =
             spacetimedb_vm::dsl::query(schema.as_ref()).with_select(filter_to_column_op(&schema.table_name, filter));
-        //TODO: How pass the `caller` here?
-        let mut tx: TxMode = tx.into();
-        let p = &mut DbProgram::new(ctx, stdb, &mut tx, AuthCtx::for_current(self.dbic.identity));
+
+        let tx: TxMode = tx.into();
         // SQL queries can never reference `MemTable`s, so pass in an empty `SourceSet`.
-        let results = match spacetimedb_vm::eval::run_ast(p, q.into(), SourceSet::default()) {
-            Code::Table(table) => table,
-            _ => unreachable!("query should always return a table"),
-        };
+        let mut query = build_query(ctx, stdb, &tx, query, &mut SourceSet::default())?;
 
+        // write all rows and flush at row boundaries.
         let mut chunked_writer = ChunkedWriter::default();
-
-        // write all rows and flush at row boundaries
-        for row in results.data {
-            row.encode(&mut chunked_writer);
+        while let Some(row) = query.next()? {
+            to_writer(&mut chunked_writer, &row).unwrap();
             chunked_writer.flush();
         }
-
         Ok(chunked_writer.into_chunks())
     }
 }
