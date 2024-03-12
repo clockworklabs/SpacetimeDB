@@ -159,6 +159,11 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
             .await?
             .context("failed to sync commitlog")
     }
+
+    /// Get the size on disk of the underlying [`Commitlog`].
+    pub fn size_on_disk(&self) -> io::Result<u64> {
+        self.clog.size_on_disk()
+    }
 }
 
 struct PersisterTask<T> {

@@ -24,6 +24,7 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue}
 use spacetimedb_table::indexes::RowPointer;
 use std::borrow::Cow;
 use std::fs::{create_dir_all, File};
+use std::io;
 use std::ops::RangeBounds;
 use std::path::Path;
 use std::sync::Arc;
@@ -33,6 +34,15 @@ pub type Tx = <Locking as super::datastore::traits::Tx>::Tx;
 
 type RowCountFn = Arc<dyn Fn(TableId, &str) -> i64 + Send + Sync>;
 
+/// A function to determine the size on disk of the durable state of the
+/// local database instance. This is used for metrics and energy accounting
+/// purposes.
+///
+/// It is not part of the [`Durability`] trait because it must report disk
+/// usage of the local instance only, even if exclusively remote durability is
+/// configured or the database is in follower state.
+type DiskSizeFn = Arc<dyn Fn() -> io::Result<u64> + Send + Sync>;
+
 pub type Txdata = commitlog::payload::Txdata<ProductValue>;
 
 #[derive(Clone)]
@@ -41,7 +51,11 @@ pub struct RelationalDB {
     pub(crate) inner: Locking,
     durability: Option<Arc<dyn Durability<TxData = Txdata>>>,
     address: Address,
+
     row_count_fn: RowCountFn,
+    /// Function to determine the durable size on disk. `Some` if `durability`
+    /// is `Some`, `None` otherwise.
+    disk_size_fn: Option<DiskSizeFn>,
 
     // Release file lock last when dropping.
     _lock: Arc<File>,
@@ -80,8 +94,12 @@ impl RelationalDB {
             },
         )
         .map(Arc::new)?;
+        let disk_size_fn = Arc::new({
+            let durability = durability.clone();
+            move || durability.size_on_disk()
+        });
 
-        Self::open(root, address, Some(durability.clone()))?.apply(durability)
+        Self::open(root, address, Some((durability.clone(), disk_size_fn)))?.apply(durability)
     }
 
     /// Open a database with root directory `root` and the provided [`Durability`]
@@ -92,7 +110,7 @@ impl RelationalDB {
     pub fn open(
         root: impl AsRef<Path>,
         address: Address,
-        durability: Option<Arc<dyn Durability<TxData = Txdata>>>,
+        durability: Option<(Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn)>,
     ) -> Result<Self, DBError> {
         create_dir_all(&root)?;
 
@@ -100,6 +118,7 @@ impl RelationalDB {
         lock.try_lock_exclusive()
             .map_err(|e| DatabaseError::DatabasedOpened(root.as_ref().to_path_buf(), e.into()))?;
 
+        let (durability, disk_size_fn) = durability.map(|(a, b)| (Some(a), Some(b))).unwrap_or_default();
         let inner = Locking::bootstrap(address)?;
         let row_count_fn: RowCountFn = Arc::new(move |table_id, table_name| {
             DB_METRICS
@@ -111,9 +130,12 @@ impl RelationalDB {
         Ok(Self {
             inner,
             durability,
-            _lock: Arc::new(lock),
             address,
+
             row_count_fn,
+            disk_size_fn,
+
+            _lock: Arc::new(lock),
         })
     }
 
@@ -157,9 +179,11 @@ impl RelationalDB {
         self.address
     }
 
-    /// The number of bytes on disk occupied by the [MessageLog].
-    pub fn message_log_size_on_disk(&self) -> u64 {
-        unimplemented!()
+    /// The number of bytes on disk occupied by the durability layer.
+    ///
+    /// If this is an in-memory instance, `Ok(0)` is returned.
+    pub fn size_on_disk(&self) -> io::Result<u64> {
+        self.disk_size_fn.as_ref().map_or(Ok(0), |f| f())
     }
 
     pub fn encode_row(row: &ProductValue, bytes: &mut Vec<u8>) {
@@ -924,8 +948,12 @@ pub mod tests_utils {
                 },
             )
             .map(Arc::new)?;
+            let disk_size_fn = Arc::new({
+                let handle = handle.clone();
+                move || handle.size_on_disk()
+            });
 
-            let rdb = RelationalDB::open(root, Self::ADDRESS, Some(handle.clone()))?
+            let rdb = RelationalDB::open(root, Self::ADDRESS, Some((handle.clone(), disk_size_fn)))?
                 .apply(handle.clone())?
                 .with_row_count(Self::row_count_fn());
 
