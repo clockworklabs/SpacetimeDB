@@ -1789,37 +1789,13 @@ impl Relation for QueryExpr {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CrudCode {
-    Query(QueryExpr),
-    Insert {
-        table: SourceExpr,
-        rows: Vec<ProductValue>,
-    },
-    Update {
-        delete: QueryExpr,
-        assignments: HashMap<FieldName, FieldExpr>,
-    },
-    Delete {
-        query: QueryExpr,
-    },
-    CreateTable {
-        table: TableDef,
-    },
-    Drop {
-        name: String,
-        kind: DbType,
-        table_access: StAccess,
-    },
-}
-
-impl AuthAccess for CrudCode {
+impl AuthAccess for CrudExpr {
     fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
         if owner == caller {
             return Ok(());
         }
         // Anyone may query, so as long as the tables involved are public.
-        if let CrudCode::Query(q) = self {
+        if let CrudExpr::Query(q) = self {
             return q.check_auth(owner, caller);
         }
 
@@ -1828,13 +1804,13 @@ impl AuthAccess for CrudCode {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum Code {
     Value(AlgebraicValue),
     Table(MemTable),
     Halt(ErrorLang),
     Block(Vec<Code>),
-    Crud(CrudCode),
+    Crud(CrudExpr),
     Pass,
 }
 
@@ -1850,7 +1826,7 @@ impl fmt::Display for Code {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum CodeResult {
     Value(AlgebraicValue),
     Table(MemTable),
@@ -2325,7 +2301,7 @@ mod tests {
     #[test]
     fn test_auth_crud_code_query() {
         for query in query_exprs() {
-            let crud = CrudCode::Query(query);
+            let crud = CrudExpr::Query(query);
             assert_owner_private(&crud);
         }
     }
@@ -2333,7 +2309,7 @@ mod tests {
     #[test]
     fn test_auth_crud_code_insert() {
         for table in tables() {
-            let crud = CrudCode::Insert { table, rows: vec![] };
+            let crud = CrudExpr::Insert { source: table, rows: vec![] };
             assert_owner_required(crud);
         }
     }
@@ -2341,7 +2317,7 @@ mod tests {
     #[test]
     fn test_auth_crud_code_update() {
         for qc in query_exprs() {
-            let crud = CrudCode::Update {
+            let crud = CrudExpr::Update {
                 delete: qc,
                 assignments: Default::default(),
             };
@@ -2352,7 +2328,7 @@ mod tests {
     #[test]
     fn test_auth_crud_code_delete() {
         for query in query_exprs() {
-            let crud = CrudCode::Delete { query };
+            let crud = CrudExpr::Delete { query };
             assert_owner_required(crud);
         }
     }
@@ -2363,13 +2339,13 @@ mod tests {
             .with_access(StAccess::Public)
             .with_type(StTableType::System); // hah!
 
-        let crud = CrudCode::CreateTable { table };
+        let crud = CrudExpr::CreateTable { table };
         assert_owner_required(crud);
     }
 
     #[test]
     fn test_auth_crud_code_drop() {
-        let crud = CrudCode::Drop {
+        let crud = CrudExpr::Drop {
             name: "etcpasswd".into(),
             kind: DbType::Table,
             table_access: StAccess::Public,
