@@ -328,7 +328,7 @@ impl IncrementalJoin {
             Some(Self::dummy_table_update(&probe_table)),
         );
         debug_assert_eq!(_sources.len(), 2);
-        let virtual_plan = Self::optimize_query(virtual_plan);
+        let virtual_plan = spacetimedb_vm::eval::compile_query(virtual_plan.to_inner_join());
 
         let return_index_rows = join.return_index_rows;
 
