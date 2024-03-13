@@ -687,8 +687,16 @@ fn autogen_typescript_product_table_common(
     {
         indent_scope!(output);
 
-        writeln!(output, "public static override db: ClientDB = __SPACETIMEDB__.clientDB;").unwrap();
-        writeln!(output, "public static override tableName = \"{struct_name_pascal_case}\";").unwrap();
+        writeln!(
+            output,
+            "public static override db: ClientDB = __SPACETIMEDB__.clientDB;"
+        )
+        .unwrap();
+        writeln!(
+            output,
+            "public static override tableName = \"{struct_name_pascal_case}\";"
+        )
+        .unwrap();
 
         let mut constructor_signature = Vec::new();
         let mut constructor_assignments = Vec::new();
