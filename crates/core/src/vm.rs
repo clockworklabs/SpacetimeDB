@@ -139,7 +139,7 @@ pub fn build_query<'a>(
                     .take()
                     .map(Ok)
                     .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.table, sources))?;
-                let iter = join_inner(ctx, stdb, tx, result, join, false, sources)?;
+                let iter = join_inner(ctx, stdb, tx, result, join, sources)?;
                 Box::new(iter)
             }
         })
@@ -156,9 +156,10 @@ fn join_inner<'a>(
     tx: &'a TxMode,
     lhs: impl RelOps<'a> + 'a,
     rhs: JoinExpr,
-    semi: bool,
     sources: &mut SourceSet,
 ) -> Result<impl RelOps<'a> + 'a, ErrorVm> {
+    let semi = rhs.semi;
+
     let col_lhs = FieldExpr::Name(rhs.col_lhs);
     let col_rhs = FieldExpr::Name(rhs.col_rhs);
     let key_lhs = [col_lhs.clone()];
@@ -659,7 +660,7 @@ pub(crate) mod tests {
     /// | entity_id: u64 | inventory_id : u64 |
     /// Location
     /// | entity_id: u64 | x : f32 | z : f32 |
-    fn test_db_query() -> ResultTest<()> {
+    fn test_db_query_inner_join() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
@@ -679,7 +680,7 @@ pub(crate) mod tests {
         let mut sources = SourceSet::default();
         let rhs_source_expr = sources.add_mem_table(data);
 
-        let q = query(&schema).with_join_inner(rhs_source_expr, FieldName::positional("inventory", 0), rhs);
+        let q = query(&schema).with_join_inner(rhs_source_expr, FieldName::positional("inventory", 0), rhs, false);
 
         let result = match run_ast(p, q.into(), sources) {
             Code::Table(x) => x,
@@ -693,6 +694,55 @@ pub(crate) mod tests {
             (None, AlgebraicType::U64),
         ]);
         let row = product!(scalar(1u64), scalar("health"), scalar(1u64));
+        let input = mem_table(inv, vec![row]);
+
+        assert_eq!(result.data, input.data, "Inventory");
+
+        stdb.rollback_mut_tx(&ctx, tx);
+
+        Ok(())
+    }
+
+    #[test]
+    /// Inventory
+    /// | inventory_id: u64 | name : String |
+    /// Player
+    /// | entity_id: u64 | inventory_id : u64 |
+    /// Location
+    /// | entity_id: u64 | x : f32 | z : f32 |
+    fn test_db_query_semijoin() -> ResultTest<()> {
+        let (stdb, _tmp_dir) = make_test_db()?;
+
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let ctx = ExecutionContext::default();
+        let tx_mode = &mut TxMode::MutTx(&mut tx);
+        let p = &mut DbProgram::new(&ctx, &stdb, tx_mode, AuthCtx::for_testing());
+
+        let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
+        let row = product!(1u64, "health");
+        let table_id = create_table_from_program(p, "inventory", head.clone(), &[row])?;
+
+        let schema = TableDef::from_product("test", head).into_schema(table_id);
+
+        let data = MemTable::from_value(scalar(1u64));
+        let rhs = data.get_field_pos(0).unwrap().clone();
+
+        let mut sources = SourceSet::default();
+        let rhs_source_expr = sources.add_mem_table(data);
+
+        let q = query(&schema).with_join_inner(rhs_source_expr, FieldName::positional("inventory", 0), rhs, true);
+
+        let result = match run_ast(p, q.into(), sources) {
+            Code::Table(x) => x,
+            x => panic!("invalid result {x}"),
+        };
+
+        //The expected result
+        let inv = ProductType::from([
+            (Some("inventory_id"), AlgebraicType::U64),
+            (Some("name"), AlgebraicType::String),
+        ]);
+        let row = product!(scalar(1u64), scalar("health"));
         let input = mem_table(inv, vec![row]);
 
         assert_eq!(result.data, input.data, "Inventory");
