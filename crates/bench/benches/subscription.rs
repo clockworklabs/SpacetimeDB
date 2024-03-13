@@ -18,7 +18,10 @@ fn create_table_location(db: &RelationalDB) -> Result<TableId, DBError> {
         ("z", AlgebraicType::I32),
         ("dimension", AlgebraicType::U32),
     ];
-    db.create_table_for_test_multi_column("location", schema, col_list![2, 3, 4])
+    let indexes = &[(0.into(), "entity_id"), (1.into(), "chunk_index")];
+
+    // Is necessary to test for both single & multi-column indexes...
+    db.create_table_for_test_mix_indexes("location", schema, indexes, col_list![2, 3, 4])
 }
 
 fn create_table_footprint(db: &RelationalDB) -> Result<TableId, DBError> {
