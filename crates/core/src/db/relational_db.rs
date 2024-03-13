@@ -450,6 +450,28 @@ impl RelationalDB {
         self.with_auto_commit(&ExecutionContext::default(), |tx| self.create_table(tx, schema))
     }
 
+    pub fn create_table_for_test_mix_indexes(
+        &self,
+        name: &str,
+        schema: &[(&str, AlgebraicType)],
+        idx_cols_single: &[(ColId, &str)],
+        idx_cols_multi: ColList,
+    ) -> Result<TableId, DBError> {
+        let idx_cols_single = idx_cols_single
+            .iter()
+            .copied()
+            .map(|(col_id, index_name)| IndexDef::btree(index_name.into(), col_id, false))
+            .collect();
+
+        let schema = TableDef::new(name.into(), Self::col_def_for_test(schema))
+            .with_indexes(idx_cols_single)
+            .with_column_index(idx_cols_multi, false)
+            .with_type(StTableType::User)
+            .with_access(StAccess::Public);
+
+        self.with_auto_commit(&ExecutionContext::default(), |tx| self.create_table(tx, schema))
+    }
+
     pub fn drop_table(&self, ctx: &ExecutionContext, tx: &mut MutTx, table_id: TableId) -> Result<(), DBError> {
         #[cfg(feature = "metrics")]
         let _guard = DB_METRICS
