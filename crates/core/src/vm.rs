@@ -19,6 +19,7 @@ use spacetimedb_vm::iterators::RelIter;
 use spacetimedb_vm::program::ProgramVm;
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::{MemTable, RelValue, Table};
+use std::ops::Bound;
 use std::sync::Arc;
 
 pub enum TxMode<'a> {
@@ -75,10 +76,45 @@ pub fn build_query<'a>(
                     .take()
                     .map(Ok)
                     .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))?;
-                let header = result.head().clone();
-                let cmp: ColumnOp = index_scan.into();
-                let iter = result.select(move |row| cmp.compare(row, &header));
-                Box::new(iter)
+
+                let cols = &index_scan.columns;
+                let bounds = index_scan.bounds;
+                if cols.is_singleton() {
+                    // For singleton constraints, we compare the column directly against `bounds`.
+                    let head = cols.head().idx();
+                    let iter = result.select(move |row| Ok(bounds.contains(&*row.read_column(head).unwrap())));
+                    Box::new(iter) as Box<IterRows<'a>>
+                } else {
+                    // For multi-col constraints, these are stored as bounds of product values,
+                    // so we need to project these into single-col bounds and compare against the column.
+                    // TODO: replace with `bound.map(...)` once stable.
+                    fn map<T, U, F: FnOnce(T) -> U>(bound: Bound<T>, f: F) -> Bound<U> {
+                        match bound {
+                            Bound::Unbounded => Bound::Unbounded,
+                            Bound::Included(x) => Bound::Included(f(x)),
+                            Bound::Excluded(x) => Bound::Excluded(f(x)),
+                        }
+                    }
+                    // Project start/end `Bound<AV>`s to `Bound<Vec<AV>>`s.
+                    let start_bound = map(bounds.0, |av| av.into_product().unwrap().elements);
+                    let end_bound = map(bounds.1, |av| av.into_product().unwrap().elements);
+                    let cols = cols.clone();
+                    // Construct the query:
+                    let iter = result.select(move |row| {
+                        // Go through each column position,
+                        // project to a `Bound<AV>` for the position,
+                        // and compare against the column in the row.
+                        // All columns must match to include the row,
+                        // which is essentially the same as a big `AND` of `ColumnOp`s.
+                        Ok(cols.iter().enumerate().all(|(idx, col)| {
+                            let start_bound = map(start_bound.as_ref(), |pv| &pv[idx]);
+                            let end_bound = map(end_bound.as_ref(), |pv| &pv[idx]);
+                            let read_col = row.read_column(col.idx()).unwrap();
+                            (start_bound, end_bound).contains(&*read_col)
+                        }))
+                    });
+                    Box::new(iter)
+                }
             }
             Query::IndexJoin(IndexJoin {
                 probe_side,

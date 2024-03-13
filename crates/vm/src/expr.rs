@@ -55,6 +55,59 @@ impl ColumnOp {
         )
     }
 
+    /// Returns a new op where `lhs` and `rhs` are logically AND-ed together.
+    fn and(lhs: ColumnOp, rhs: ColumnOp) -> Self {
+        Self::new(OpQuery::Logic(OpLogic::And), lhs, rhs)
+    }
+
+    /// Returns an op where `col_i op value_i` are all `AND`ed together.
+    fn and_cmp(op: OpCmp, head: &Header, cols: &ColList, value: AlgebraicValue) -> Self {
+        let eq = |(col, value): (ColId, _)| {
+            let field = head.fields[col.idx()].field.clone();
+            Self::cmp(field, op, value)
+        };
+
+        // For singleton constraints, the `value` must be used directly.
+        if cols.is_singleton() {
+            return eq((cols.head(), value));
+        }
+
+        // Otherwise, pair column ids and product fields together.
+        cols.iter()
+            .zip(value.into_product().unwrap().elements)
+            .map(eq)
+            .reduce(Self::and)
+            .unwrap()
+    }
+
+    /// Returns an op where `cols` must be within bounds.
+    /// This handles both the case of single-col bounds and multi-col bounds.
+    fn from_op_col_bounds(
+        head: &Header,
+        cols: &ColList,
+        bounds: (Bound<AlgebraicValue>, Bound<AlgebraicValue>),
+    ) -> Self {
+        let (cmp, value) = match bounds {
+            // Equality; field <= value && field >= value <=> field = value
+            (Bound::Included(a), Bound::Included(b)) if a == b => (OpCmp::Eq, a),
+            // Inclusive lower bound => field >= value
+            (Bound::Included(value), Bound::Unbounded) => (OpCmp::GtEq, value),
+            // Exclusive lower bound => field > value
+            (Bound::Excluded(value), Bound::Unbounded) => (OpCmp::Gt, value),
+            // Inclusive upper bound => field <= value
+            (Bound::Unbounded, Bound::Included(value)) => (OpCmp::LtEq, value),
+            // Exclusive upper bound => field < value
+            (Bound::Unbounded, Bound::Excluded(value)) => (OpCmp::Lt, value),
+            (Bound::Unbounded, Bound::Unbounded) => unreachable!(),
+            (lower_bound, upper_bound) => {
+                let lhs = Self::from_op_col_bounds(head, cols, (lower_bound, Bound::Unbounded));
+                let rhs = Self::from_op_col_bounds(head, cols, (Bound::Unbounded, upper_bound));
+                return ColumnOp::and(lhs, rhs);
+            }
+        };
+        ColumnOp::and_cmp(cmp, head, cols, value)
+    }
+
     fn reduce(&self, row: &RelValue<'_>, value: &ColumnOp, header: &Header) -> Result<AlgebraicValue, ErrorLang> {
         match value {
             ColumnOp::Field(field) => Ok(row.get(field, header)?.into_owned()),
@@ -210,49 +263,10 @@ impl From<AlgebraicValue> for Box<ColumnOp> {
     }
 }
 
-impl From<IndexScan> for Box<ColumnOp> {
-    fn from(value: IndexScan) -> Self {
-        Box::new(value.into())
-    }
-}
-
-impl From<IndexScan> for ColumnOp {
-    fn from(value: IndexScan) -> Self {
-        let table = value.table;
-        let columns = value.columns;
-
-        let field = table.head().fields[columns.head().idx()].field.clone();
-        match value.bounds {
-            // Inclusive lower bound => field >= value
-            (Bound::Included(value), Bound::Unbounded) => ColumnOp::cmp(field, OpCmp::GtEq, value),
-            // Exclusive lower bound => field > value
-            (Bound::Excluded(value), Bound::Unbounded) => ColumnOp::cmp(field, OpCmp::Gt, value),
-            // Inclusive upper bound => field <= value
-            (Bound::Unbounded, Bound::Included(value)) => ColumnOp::cmp(field, OpCmp::LtEq, value),
-            // Exclusive upper bound => field < value
-            (Bound::Unbounded, Bound::Excluded(value)) => ColumnOp::cmp(field, OpCmp::Lt, value),
-            (Bound::Unbounded, Bound::Unbounded) => unreachable!(),
-            (lower_bound, upper_bound) => {
-                let lhs = IndexScan {
-                    table: table.clone(),
-                    columns: columns.clone(),
-                    bounds: (lower_bound, Bound::Unbounded),
-                };
-                let rhs = IndexScan {
-                    table,
-                    columns,
-                    bounds: (Bound::Unbounded, upper_bound),
-                };
-                ColumnOp::new(OpQuery::Logic(OpLogic::And), lhs.into(), rhs.into())
-            }
-        }
-    }
-}
-
 impl From<Query> for Option<ColumnOp> {
     fn from(value: Query) -> Self {
         match value {
-            Query::IndexScan(op) => Some(op.into()),
+            Query::IndexScan(op) => Some(ColumnOp::from_op_col_bounds(&op.table.head, &op.columns, op.bounds)),
             Query::Select(op) => Some(op),
             _ => None,
         }
@@ -558,15 +572,12 @@ impl IndexJoin {
                     .clone();
                 // Merge all selections from the original probe side into a single predicate.
                 // This includes an index scan if present.
-                let predicate = self.probe_side.query.into_iter().fold(None, |acc, op| {
-                    <Query as Into<Option<ColumnOp>>>::into(op).map(|op| {
-                        if let Some(predicate) = acc {
-                            ColumnOp::new(OpQuery::Logic(OpLogic::And), predicate, op)
-                        } else {
-                            op
-                        }
-                    })
-                });
+                let predicate = self
+                    .probe_side
+                    .query
+                    .into_iter()
+                    .filter_map(<Query as Into<Option<ColumnOp>>>::into)
+                    .reduce(ColumnOp::and);
                 // Push any selections on the index side to the probe side.
                 let probe_side = if let Some(predicate) = self.index_select {
                     QueryExpr {
@@ -911,6 +922,19 @@ type FieldsIndexed<'a> = HashSet<(&'a FieldName, OpCmp)>;
 /// -`ScanOrIndex::Index([c, b] = [1, 2])`
 /// -`ScanOrIndex::Index(a = 1)`
 /// -`ScanOrIndex::Scan(c = 2)`
+///
+/// # Note
+///
+/// NOTE: For a query like `SELECT * FROM students WHERE age > 18 AND height < 180`
+/// we cannot serve this with a single `IndexScan`,
+/// but rather, `select_best_index`
+/// would give us two separate `IndexScan`s.
+/// However, the upper layers of `QueryExpr` building will convert both of those into `Select`s.
+/// In the case of `SELECT * FROM students WHERE age > 18 AND height > 180`
+/// we would generate a single `IndexScan((age, height) > (18, 180))`.
+/// However, and depending on the table data, this might not be efficient,
+/// whereas `age = 18 AND height > 180` might.
+/// TODO: Revisit this to see if we want to restrict this or use statistics.
 fn select_best_index<'a>(
     fields_indexed: &mut FieldsIndexed<'a>,
     header: &'a Header,
@@ -1178,20 +1202,15 @@ impl QueryExpr {
             }
             // merge with a preceding select
             Query::Select(filter) => {
-                let bounds = point(value);
-                self.query.push(Query::Select(ColumnOp::new(
-                    OpQuery::Logic(OpLogic::And),
-                    filter,
-                    IndexScan { table, columns, bounds }.into(),
-                )));
+                let op = ColumnOp::and_cmp(OpCmp::Eq, &table.head, &columns, value);
+                self.query.push(Query::Select(ColumnOp::and(filter, op)));
                 self
             }
             // else generate a new select
             query => {
                 self.query.push(query);
-                let bounds = point(value);
-                self.query
-                    .push(Query::Select(IndexScan { table, columns, bounds }.into()));
+                let op = ColumnOp::and_cmp(OpCmp::Eq, &table.head, &columns, value);
+                self.query.push(Query::Select(op));
                 self
             }
         }
@@ -1259,19 +1278,16 @@ impl QueryExpr {
             // merge with a preceding select
             Query::Select(filter) => {
                 let bounds = (Self::bound(value, inclusive), Bound::Unbounded);
-                self.query.push(Query::Select(ColumnOp::new(
-                    OpQuery::Logic(OpLogic::And),
-                    filter,
-                    IndexScan { table, columns, bounds }.into(),
-                )));
+                let op = ColumnOp::from_op_col_bounds(&table.head, &columns, bounds);
+                self.query.push(Query::Select(ColumnOp::and(filter, op)));
                 self
             }
             // else generate a new select
             query => {
                 self.query.push(query);
                 let bounds = (Self::bound(value, inclusive), Bound::Unbounded);
-                self.query
-                    .push(Query::Select(IndexScan { table, columns, bounds }.into()));
+                let op = ColumnOp::from_op_col_bounds(&table.head, &columns, bounds);
+                self.query.push(Query::Select(op));
                 self
             }
         }
@@ -1342,19 +1358,16 @@ impl QueryExpr {
             // merge with a preceding select
             Query::Select(filter) => {
                 let bounds = (Bound::Unbounded, Self::bound(value, inclusive));
-                self.query.push(Query::Select(ColumnOp::new(
-                    OpQuery::Logic(OpLogic::And),
-                    filter,
-                    IndexScan { table, columns, bounds }.into(),
-                )));
+                let op = ColumnOp::from_op_col_bounds(&table.head, &columns, bounds);
+                self.query.push(Query::Select(ColumnOp::and(filter, op)));
                 self
             }
             // else generate a new select
             query => {
                 self.query.push(query);
                 let bounds = (Bound::Unbounded, Self::bound(value, inclusive));
-                self.query
-                    .push(Query::Select(IndexScan { table, columns, bounds }.into()));
+                let op = ColumnOp::from_op_col_bounds(&table.head, &columns, bounds);
+                self.query.push(Query::Select(op));
                 self
             }
         }
@@ -1404,8 +1417,7 @@ impl QueryExpr {
                 }
             },
             (Query::Select(filter), op) => {
-                self.query
-                    .push(Query::Select(ColumnOp::new(OpQuery::Logic(OpLogic::And), filter, op)));
+                self.query.push(Query::Select(ColumnOp::and(filter, op)));
                 self
             }
             (query, op) => {
