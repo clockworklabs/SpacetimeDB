@@ -12,18 +12,21 @@ import sys
 import tempfile
 import unittest
 
+# miscellaneous file paths
 TEST_DIR = Path(__file__).parent
 STDB_DIR = TEST_DIR.parent
 SPACETIME_BIN = STDB_DIR / "target/debug/spacetime"
 TEMPLATE_TARGET_DIR = STDB_DIR / "target/_stdbsmoketests"
 STDB_CONFIG = TEST_DIR / "config.toml"
 
+# the contents of files for the base smoketest project template
 TEMPLATE_LIB_RS = open(STDB_DIR / "crates/cli/src/subcommands/project/rust/lib._rs").read()
 TEMPLATE_CARGO_TOML = open(STDB_DIR / "crates/cli/src/subcommands/project/rust/Cargo._toml").read()
 bindings_path = (STDB_DIR / "crates/bindings").absolute()
 TEMPLATE_CARGO_TOML = (re.compile(r"^spacetimedb\s*=.*$", re.M) \
     .sub(f'spacetimedb = {{ path = "{bindings_path}" }}', TEMPLATE_CARGO_TOML))
 
+# this is set to true when the --docker flag is passed to the cli
 HAVE_DOCKER = False
 
 
