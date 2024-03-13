@@ -9,7 +9,8 @@ use crate::rel_ops::RelOps;
 use crate::relation::RelValue;
 use spacetimedb_sats::relation::{FieldExpr, Relation};
 
-fn compile_query(q: QueryExpr) -> QueryCode {
+/// Compile a [`QueryExpr`] into a [`QueryCode`], its most-compiled form.
+pub fn compile_query(q: QueryExpr) -> QueryCode {
     QueryCode {
         table: q.source,
         query: q.query,
@@ -51,7 +52,6 @@ pub type IterRows<'a> = dyn RelOps<'a> + 'a;
 /// While constructing the query, the `sources` will be destructively modified with `Option::take`
 /// to extract the sources,
 /// so the `query` cannot refer to the same `SourceId` multiple times.
-#[tracing::instrument(skip_all)]
 pub fn build_query<'a>(
     mut result: Box<IterRows<'a>>,
     query: Vec<Query>,
@@ -129,14 +129,12 @@ pub fn build_query<'a>(
 }
 
 /// Optimize & compile the [CrudExpr] for late execution
-#[tracing::instrument(skip_all)]
-fn build_ast(ast: CrudExpr) -> Code {
+pub fn build_ast(ast: CrudExpr) -> Code {
     compile_query_expr(ast)
 }
 
 /// Execute the code
-#[tracing::instrument(skip_all)]
-fn eval<P: ProgramVm>(p: &mut P, code: Code, sources: &mut SourceSet) -> Code {
+pub fn eval<P: ProgramVm>(p: &mut P, code: Code, sources: &mut SourceSet) -> Code {
     match code {
         Code::Value(_) => code.clone(),
         Code::Block(lines) => {
@@ -175,7 +173,6 @@ fn to_vec(of: Vec<Expr>) -> Code {
 }
 
 /// Optimize, compile & run the [Expr]
-#[tracing::instrument(skip_all)]
 pub fn run_ast<P: ProgramVm>(p: &mut P, ast: Expr, mut sources: SourceSet) -> Code {
     let code = match ast {
         Expr::Block(x) => to_vec(x),

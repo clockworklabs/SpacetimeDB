@@ -118,7 +118,7 @@ pub struct MemTableWithoutTableName<'a> {
 
 /// An in-memory table
 // TODO(perf): Remove `Clone` impl.
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MemTable {
     pub head: Arc<Header>,
     pub data: Vec<ProductValue>,
@@ -180,7 +180,7 @@ impl Relation for MemTable {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, From, PartialOrd, Ord)]
+#[derive(Debug, Clone, Eq, PartialEq, From)]
 pub enum Table {
     MemTable(MemTable),
     DbTable(DbTable),

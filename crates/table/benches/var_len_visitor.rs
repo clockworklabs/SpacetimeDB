@@ -92,18 +92,7 @@ fn visit_var_len_sum(c: &mut C) {
     });
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod measurement {
-    use criterion_perf_events::Perf;
-    use perfcnt::linux::HardwareEventType as Hardware;
-    use perfcnt::linux::PerfCounterBuilderLinux as Builder;
-
-    pub type Measurement = Perf;
-    pub fn get() -> Measurement {
-        Perf::new(Builder::from_hardware_event(Hardware::Instructions))
-    }
-}
-#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+// TODO: bring back perfcnt once cargo allows per-target-OS dev dependencies (it broke on mac)
 mod measurement {
     use criterion::measurement::WallTime;
     pub type Measurement = WallTime;

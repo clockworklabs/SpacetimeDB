@@ -7,10 +7,11 @@ use axum::response::IntoResponse;
 use axum_extra::TypedHeader;
 use futures::{FutureExt, SinkExt, StreamExt};
 use http::{HeaderValue, StatusCode};
+use scopeguard::ScopeGuard;
 use serde::Deserialize;
 use spacetimedb::client::messages::{IdentityTokenMessage, ServerMessage};
-use spacetimedb::client::{ClientActorId, ClientClosed, ClientConnection, DataMessage, MessageHandleError, Protocol};
-use spacetimedb::util::future_queue;
+use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, MessageHandleError, Protocol};
+use spacetimedb::util::{also_poll, future_queue};
 use spacetimedb_lib::address::AddressForUrl;
 use spacetimedb_lib::Address;
 use std::time::Instant;
@@ -153,8 +154,8 @@ where
             identity_token,
             address: client_address,
         };
-        if let Err(ClientClosed) = client.send_message(message).await {
-            log::warn!("client closed before identity token was sent")
+        if let Err(e) = client.send_message(message) {
+            log::warn!("{e}, before identity token was sent")
         }
     });
 
@@ -167,12 +168,37 @@ where
 
 const LIVELINESS_TIMEOUT: Duration = Duration::from_secs(60);
 
-async fn ws_client_actor(client: ClientConnection, mut ws: WebSocketStream, mut sendrx: mpsc::Receiver<DataMessage>) {
+async fn ws_client_actor(client: ClientConnection, ws: WebSocketStream, sendrx: mpsc::Receiver<DataMessage>) {
+    // ensure that even if this task gets cancelled, we always cleanup the connection
+    let client = scopeguard::guard(client, |client| {
+        tokio::spawn(client.disconnect());
+    });
+
+    ws_client_actor_inner(&client, ws, sendrx).await;
+
+    ScopeGuard::into_inner(client).disconnect().await;
+}
+
+async fn ws_client_actor_inner(
+    client: &ClientConnection,
+    mut ws: WebSocketStream,
+    mut sendrx: mpsc::Receiver<DataMessage>,
+) {
     let mut liveness_check_interval = tokio::time::interval(LIVELINESS_TIMEOUT);
     let mut got_pong = true;
 
-    // Build a queue of incoming messages to handle,
-    // to be processed one at a time, in the order they're received.
+    // Build a queue of incoming messages to handle, to be processed one at a time,
+    // in the order they're received.
+    //
+    // N.B. if you're refactoring this code: you must ensure the handle_queue is dropped before
+    // client.disconnect() is called. Otherwise, we can be left with a stale future that's never
+    // awaited, which can lead to bugs like:
+    // https://rust-lang.github.io/wg-async/vision/submitted_stories/status_quo/aws_engineer/solving_a_deadlock.html
+    //
+    // NOTE: never let this go unpolled while you're awaiting something; otherwise, it's possible
+    //       to deadlock or delay for a long time. see usage of `also_poll()` in the branches of the
+    //       `select!` for examples of how to do this.
+    //
     // TODO: do we want this to have a fixed capacity? or should it be unbounded
     let mut handle_queue = pin!(future_queue(|(message, timer)| client.handle_message(message, timer)));
 
@@ -221,6 +247,9 @@ async fn ws_client_actor(client: ClientConnection, mut ws: WebSocketStream, mut 
                         // now we flush all the messages to the socket
                         ws.flush().await
                     };
+                    // Flush the websocket while continuing to poll the `handle_queue`,
+                    // to avoid deadlocks or delays due to enqueued futures holding resources.
+                    let send_all = also_poll(send_all, handle_queue.make_progress());
                     let t1 = Instant::now();
                     if let Err(error) = send_all.await {
                         log::warn!("Websocket send error: {error}")
@@ -235,7 +264,13 @@ async fn ws_client_actor(client: ClientConnection, mut ws: WebSocketStream, mut 
 
             // If the module has exited, close the websocket.
             () = client.module.exited(), if !closed => {
-                if let Err(e) = ws.close(Some(CloseFrame { code: CloseCode::Away, reason: "module exited".into() })).await {
+                // Send a close frame while continuing to poll the `handle_queue`,
+                // to avoid deadlocks or delays due to enqueued futures holding resources.
+                let close = also_poll(
+                    ws.close(Some(CloseFrame { code: CloseCode::Away, reason: "module exited".into() })),
+                    handle_queue.make_progress(),
+                );
+                if let Err(e) = close.await {
                     log::warn!("error closing: {e:#}")
                 }
                 closed = true;
@@ -246,7 +281,9 @@ async fn ws_client_actor(client: ClientConnection, mut ws: WebSocketStream, mut 
             _ = liveness_check_interval.tick() => {
                 // If we received a pong at some point, send a fresh ping.
                 if mem::take(&mut got_pong) {
-                    if let Err(e) = ws.send(WsMessage::Ping(Vec::new())).await {
+                    // Send a ping message while continuing to poll the `handle_queue`,
+                    // to avoid deadlocks or delays due to enqueued futures holding resources.
+                    if let Err(e) = also_poll(ws.send(WsMessage::Ping(Vec::new())), handle_queue.make_progress()).await {
                         log::warn!("error sending ping: {e:#}");
                     }
                     continue;
@@ -317,14 +354,6 @@ async fn ws_client_actor(client: ClientConnection, mut ws: WebSocketStream, mut 
     }
     log::debug!("Client connection ended");
     sendrx.close();
-
-    // Clear the incoming message queue before we go to clean up.
-    // Otherwise, we can be left with a stale future which never gets awaited,
-    // which can lead to bugs like:
-    // https://rust-lang.github.io/wg-async/vision/submitted_stories/status_quo/aws_engineer/solving_a_deadlock.html
-    handle_queue.clear();
-
-    client.module.disconnect_client(client.id).await;
 }
 
 enum ClientMessage {

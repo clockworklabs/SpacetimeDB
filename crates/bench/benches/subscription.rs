@@ -18,7 +18,10 @@ fn create_table_location(db: &RelationalDB) -> Result<TableId, DBError> {
         ("z", AlgebraicType::I32),
         ("dimension", AlgebraicType::U32),
     ];
-    db.create_table_for_test_multi_column("location", schema, col_list![2, 3, 4])
+    let indexes = &[(0.into(), "entity_id"), (1.into(), "chunk_index")];
+
+    // Is necessary to test for both single & multi-column indexes...
+    db.create_table_for_test_mix_indexes("location", schema, indexes, col_list![2, 3, 4])
 }
 
 fn create_table_footprint(db: &RelationalDB) -> Result<TableId, DBError> {
@@ -104,7 +107,7 @@ fn eval(c: &mut Criterion) {
             let query = compile_read_only_query(&db, &tx, &auth, sql).unwrap();
             let query: ExecutionSet = query.into();
 
-            b.iter(|| drop(black_box(query.eval(&db, &tx, auth).unwrap())))
+            b.iter(|| drop(black_box(query.eval(&db, &tx).unwrap())))
         });
     };
 
@@ -139,7 +142,7 @@ fn eval(c: &mut Criterion) {
         let query = ExecutionSet::from_iter(query_lhs.into_iter().chain(query_rhs));
 
         b.iter(|| {
-            let out = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing()).unwrap();
+            let out = query.eval_incr(&db, &tx, &update).unwrap();
             black_box(out);
         })
     });
@@ -160,7 +163,7 @@ fn eval(c: &mut Criterion) {
         let query: ExecutionSet = query.into();
 
         b.iter(|| {
-            let out = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing()).unwrap();
+            let out = query.eval_incr(&db, &tx, &update).unwrap();
             black_box(out);
         })
     });

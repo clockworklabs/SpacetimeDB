@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Weak};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures::{Future, FutureExt};
 use indexmap::IndexMap;
+use spacetimedb_lib::identity::RequestId;
 
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
 use crate::client::{ClientActorId, ClientConnectionSender};
@@ -17,8 +18,8 @@ use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
 use crate::identity::Identity;
-use crate::json::client_api::{SubscriptionUpdateJson, TableRowOperationJson, TableUpdateJson};
-use crate::protobuf::client_api::{table_row_operation, SubscriptionUpdate, TableRowOperation, TableUpdate};
+use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
+use crate::protobuf::client_api::{table_row_operation, TableRowOperation, TableUpdate};
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
 use crate::util::notify_once::NotifyOnce;
@@ -78,60 +79,54 @@ impl DatabaseUpdate {
         DatabaseUpdate { tables: table_updates }
     }
 
-    pub fn into_protobuf(self) -> SubscriptionUpdate {
-        SubscriptionUpdate {
-            table_updates: self
-                .tables
-                .into_iter()
-                .map(|table| TableUpdate {
-                    table_id: table.table_id.into(),
-                    table_name: table.table_name,
-                    table_row_operations: table
-                        .ops
-                        .into_iter()
-                        .map(|op| {
-                            let mut row_bytes = Vec::new();
-                            op.row.encode(&mut row_bytes);
-                            TableRowOperation {
-                                op: if op.op_type == 1 {
-                                    table_row_operation::OperationType::Insert.into()
-                                } else {
-                                    table_row_operation::OperationType::Delete.into()
-                                },
-                                row: row_bytes,
-                            }
-                        })
-                        .collect(),
-                })
-                .collect(),
-        }
+    pub fn into_protobuf(self) -> Vec<TableUpdate> {
+        self.tables
+            .into_iter()
+            .map(|table| TableUpdate {
+                table_id: table.table_id.into(),
+                table_name: table.table_name,
+                table_row_operations: table
+                    .ops
+                    .into_iter()
+                    .map(|op| {
+                        let mut row_bytes = Vec::new();
+                        op.row.encode(&mut row_bytes);
+                        TableRowOperation {
+                            op: if op.op_type == 1 {
+                                table_row_operation::OperationType::Insert.into()
+                            } else {
+                                table_row_operation::OperationType::Delete.into()
+                            },
+                            row: row_bytes,
+                        }
+                    })
+                    .collect(),
+            })
+            .collect()
     }
 
-    pub fn into_json(self) -> SubscriptionUpdateJson {
+    pub fn into_json(self) -> Vec<TableUpdateJson> {
         // For all tables, push all state
         // TODO: We need some way to namespace tables so we don't send all the internal tables and stuff
-        SubscriptionUpdateJson {
-            table_updates: self
-                .tables
-                .into_iter()
-                .map(|table| TableUpdateJson {
-                    table_id: table.table_id.into(),
-                    table_name: table.table_name,
-                    table_row_operations: table
-                        .ops
-                        .into_iter()
-                        .map(|op| TableRowOperationJson {
-                            op: if op.op_type == 1 {
-                                "insert".into()
-                            } else {
-                                "delete".into()
-                            },
-                            row: op.row.elements,
-                        })
-                        .collect(),
-                })
-                .collect(),
-        }
+        self.tables
+            .into_iter()
+            .map(|table| TableUpdateJson {
+                table_id: table.table_id.into(),
+                table_name: table.table_name,
+                table_row_operations: table
+                    .ops
+                    .into_iter()
+                    .map(|op| TableRowOperationJson {
+                        op: if op.op_type == 1 {
+                            "insert".into()
+                        } else {
+                            "delete".into()
+                        },
+                        row: op.row.elements,
+                    })
+                    .collect(),
+            })
+            .collect()
     }
 }
 
@@ -196,6 +191,8 @@ pub struct ModuleEvent {
     pub status: EventStatus,
     pub energy_quanta_used: EnergyQuanta,
     pub host_execution_duration: Duration,
+    pub request_id: Option<RequestId>,
+    pub timer: Option<Instant>,
 }
 
 #[derive(Debug)]
@@ -274,7 +271,9 @@ pub struct CallReducerParams {
     pub timestamp: Timestamp,
     pub caller_identity: Identity,
     pub caller_address: Address,
-    pub client: Option<ClientConnectionSender>,
+    pub client: Option<Arc<ClientConnectionSender>>,
+    pub request_id: Option<RequestId>,
+    pub timer: Option<Instant>,
     pub reducer_id: ReducerId,
     pub args: ArgsTuple,
 }
@@ -536,6 +535,8 @@ impl ModuleHost {
                 caller_identity,
                 Some(caller_address),
                 None,
+                None,
+                None,
                 if connected {
                     "__identity_connected__"
                 } else {
@@ -554,7 +555,9 @@ impl ModuleHost {
         &self,
         caller_identity: Identity,
         caller_address: Option<Address>,
-        client: Option<ClientConnectionSender>,
+        client: Option<Arc<ClientConnectionSender>>,
+        request_id: Option<RequestId>,
+        timer: Option<Instant>,
         reducer_name: &str,
         args: ReducerArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
@@ -573,6 +576,8 @@ impl ModuleHost {
                 caller_identity,
                 caller_address,
                 client,
+                request_id,
+                timer,
                 reducer_id,
                 args,
             })
@@ -585,12 +590,22 @@ impl ModuleHost {
         &self,
         caller_identity: Identity,
         caller_address: Option<Address>,
-        client: Option<ClientConnectionSender>,
+        client: Option<Arc<ClientConnectionSender>>,
+        request_id: Option<RequestId>,
+        timer: Option<Instant>,
         reducer_name: &str,
         args: ReducerArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
         let res = self
-            .call_reducer_inner(caller_identity, caller_address, client, reducer_name, args)
+            .call_reducer_inner(
+                caller_identity,
+                caller_address,
+                client,
+                request_id,
+                timer,
+                reducer_name,
+                args,
+            )
             .await;
 
         let log_message = match &res {

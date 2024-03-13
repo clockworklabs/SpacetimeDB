@@ -311,6 +311,20 @@ impl SourceSet {
             SourceExpr::MemTable { source_id, .. } => self.take_mem_table(*source_id).map(Table::MemTable),
         }
     }
+
+    /// Returns the number of slots for [`MemTable`]s in this set.
+    ///
+    /// Calling `self.take_mem_table(...)` or `self.take_table(...)` won't affect this number.
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Returns whether this set has any slots for [`MemTable`]s.
+    ///
+    /// Calling `self.take_mem_table(...)` or `self.take_table(...)` won't affect whether the set is empty.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 impl std::ops::Index<SourceId> for SourceSet {
@@ -528,7 +542,7 @@ impl IndexJoin {
             //
             // TODO: This determination is quite arbitrary.
             // Ultimately we should be using cardinality estimation.
-            Some(DbTable { head, table_id, .. }) if row_count(*table_id, &head.table_name) > 3000 => self,
+            Some(DbTable { head, table_id, .. }) if row_count(*table_id, &head.table_name) > 500 => self,
             // If this is a delta table, we must reorder.
             // If this is a sufficiently small physical table, we should reorder.
             _ => {

@@ -626,7 +626,7 @@ impl WasmInstanceEnv {
     /// - a table with the provided `table_id` doesn't exist
     /// - `(filter, filter_len)` doesn't decode to a filter expression
     /// - `filter + filter_len` overflows a 64-bit integer
-    // #[tracing::instrument(skip_all)]
+    #[tracing::instrument(skip_all)]
     pub fn iter_start_filtered(
         caller: Caller<'_, Self>,
         table_id: u32,

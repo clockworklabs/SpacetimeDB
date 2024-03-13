@@ -214,7 +214,6 @@ impl MessageLog {
         OpenOptions::default()
     }
 
-    #[tracing::instrument(skip_all)]
     pub fn append(&mut self, message: impl AsRef<[u8]>) -> io::Result<()> {
         let message = message.as_ref();
         let mess_size = message.len() as u32;
@@ -256,7 +255,6 @@ impl MessageLog {
     // https://www.evanjones.ca/durability-filesystem.html
     // https://stackoverflow.com/questions/42442387/is-write-safe-to-be-called-from-multiple-threads-simultaneously/42442926#42442926
     // https://github.com/facebook/rocksdb/wiki/WAL-Performance
-    #[tracing::instrument]
     pub fn flush(&mut self) -> io::Result<()> {
         self.open_segment_file.flush()?;
         Ok(())
@@ -266,7 +264,6 @@ impl MessageLog {
     // been pushed to the OS. You probably don't need to call this function, unless you need it
     // to be for sure durably written.
     // SEE: https://stackoverflow.com/questions/69819990/whats-the-difference-between-flush-and-sync-all
-    #[tracing::instrument]
     pub fn sync_all(&mut self) -> io::Result<()> {
         log::trace!("fsync log file");
         self.flush()?;

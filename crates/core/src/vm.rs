@@ -40,7 +40,6 @@ impl<'a> From<&'a Tx> for TxMode<'a> {
 
 //TODO: This is partially duplicated from the `vm` crate to avoid borrow checker issues
 //and pull all that crate in core. Will be revisited after trait refactor
-#[tracing::instrument(skip_all)]
 pub fn build_query<'a>(
     ctx: &'a ExecutionContext,
     stdb: &'a RelationalDB,
@@ -81,33 +80,10 @@ pub fn build_query<'a>(
                 let iter = result.select(move |row| cmp.compare(row, &header));
                 Box::new(iter)
             }
-            // This type of index join is invalid and needs to be converted to an inner join.
-            // A virtual table cannot be probed as if it were a physical table with an index.
-            // Note that incremental evaluation can produce such a plan.
-            // Specifically when a transaction produces updates to both base tables.
-            //
-            // TODO: This logic should be entirely encapsulated within the query planner.
-            // It should not be possible for the planner to produce an invalid plan.
-            Query::IndexJoin(
-                join @ IndexJoin {
-                    index_side: SourceExpr::MemTable { .. },
-                    ..
-                },
-            ) => {
-                if result.is_some() {
-                    return Err(anyhow::anyhow!("Invalid query: `IndexJoin` must be the first operator").into());
-                }
-                build_query(ctx, stdb, tx, join.to_inner_join().into(), sources)?
-            }
             Query::IndexJoin(IndexJoin {
                 probe_side,
                 probe_field,
-                index_side:
-                    SourceExpr::DbTable(DbTable {
-                        head: index_header,
-                        table_id: index_table,
-                        ..
-                    }),
+                index_side,
                 index_select,
                 index_col,
                 return_index_rows,
@@ -115,6 +91,10 @@ pub fn build_query<'a>(
                 if result.is_some() {
                     return Err(anyhow::anyhow!("Invalid query: `IndexJoin` must be the first operator").into());
                 }
+                // The compiler guarantees that the index side is a db table,
+                // and therefore this unwrap is always safe.
+                let index_table = index_side.table_id().unwrap();
+                let index_header = index_side.head().clone();
                 let probe_side = build_query(ctx, stdb, tx, probe_side.into(), sources)?;
                 Box::new(IndexSemiJoin {
                     ctx,
@@ -378,7 +358,6 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         Self { ctx, db, tx, auth }
     }
 
-    #[tracing::instrument(skip_all)]
     fn _eval_query(&mut self, query: QueryCode, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
         let table_access = query.table.table_access();
         tracing::trace!(table = query.table.table_name());

@@ -63,7 +63,6 @@ impl ProgramVm for Program {
         &self.auth
     }
 
-    #[tracing::instrument(skip_all)]
     fn eval_query(&mut self, query: CrudCode, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
         match query {
             CrudCode::Query(query) => {

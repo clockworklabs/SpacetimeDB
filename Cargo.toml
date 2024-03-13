@@ -111,7 +111,6 @@ colored = "2.0.0"
 console = { version = "0.15.6" }
 convert_case = "0.6.0"
 criterion = { version = "0.5.1", features = ["async", "async_tokio", "html_reports"] }
-criterion-perf-events = "0.4"
 crossbeam-channel = "0.5"
 cursive = { version = "0.20", default-features = false, features = ["crossterm-backend"] }
 decorum = { version = "0.3.1", default-features = false, features = ["std"] }
@@ -186,6 +185,7 @@ sha3 = "0.10.0"
 slab = "0.4.7"
 sled = "0.34.7"
 smallvec = { version = "1.11", features = ["union", "const_generics"] }
+socket2 = "0.5"
 sqllogictest = "0.17"
 sqllogictest-engines = "0.17"
 sqlparser = "0.38.0"
