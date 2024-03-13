@@ -19,6 +19,7 @@ use spacetimedb_vm::iterators::RelIter;
 use spacetimedb_vm::program::ProgramVm;
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::{MemTable, RelValue, Table};
+use std::ops::Bound;
 use std::sync::Arc;
 
 pub enum TxMode<'a> {
@@ -76,10 +77,34 @@ pub fn build_query<'a>(
                     .take()
                     .map(Ok)
                     .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))?;
-                let header = result.head().clone();
-                let cmp: ColumnOp = index_scan.clone().into();
-                let iter = result.select(move |row| cmp.compare(row, &header));
-                Box::new(iter)
+
+                let cols = &index_scan.columns;
+                let bounds = &index_scan.bounds;
+                if cols.is_singleton() {
+                    let head = cols.head().idx();
+                    let iter = result.select(move |row| Ok(bounds.contains(&*row.read_column(head).unwrap())));
+                    Box::new(iter) as Box<IterRows<'a>>
+                } else {
+                    // TODO: replace with `bound.map(...)` once stable.
+                    fn map<T, U, F: FnOnce(T) -> U>(bound: Bound<T>, f: F) -> Bound<U> {
+                        match bound {
+                            Bound::Unbounded => Bound::Unbounded,
+                            Bound::Included(x) => Bound::Included(f(x)),
+                            Bound::Excluded(x) => Bound::Excluded(f(x)),
+                        }
+                    }
+                    let start_bound = map(bounds.0.as_ref(), |av| &av.as_product().unwrap().elements);
+                    let end_bound = map(bounds.1.as_ref(), |av| &av.as_product().unwrap().elements);
+                    let iter = result.select(move |row| {
+                        Ok(cols.iter().enumerate().all(|(idx, col)| {
+                            let start_bound = map(start_bound, |pv| &pv[idx]);
+                            let end_bound = map(end_bound, |pv| &pv[idx]);
+                            let read_col = row.read_column(col.idx()).unwrap();
+                            (start_bound, end_bound).contains(&*read_col)
+                        }))
+                    });
+                    Box::new(iter)
+                }
             }
             Query::IndexJoin(IndexJoin {
                 probe_side,
