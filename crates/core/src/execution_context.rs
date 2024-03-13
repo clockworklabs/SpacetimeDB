@@ -1,7 +1,6 @@
-use std::{cell::RefCell, collections::HashMap, sync::Arc};
+use std::{cell::RefCell};
 
 use derive_more::Display;
-use parking_lot::{Mutex};
 use spacetimedb_lib::Address;
 use spacetimedb_primitives::TableId;
 
@@ -12,7 +11,7 @@ pub enum MetricType {
     RdbNumKeysScanned,
     RdbNumRowsFetched,
 }
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct BufferMetric {
     pub table_id: TableId,
     pub rdb_num_index_seeks: u64,
@@ -49,7 +48,7 @@ impl BufferMetric {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Metrics(Vec<BufferMetric>);
 impl Metrics {
     pub fn new() -> Self {
