@@ -687,8 +687,8 @@ fn autogen_typescript_product_table_common(
     {
         indent_scope!(output);
 
-        writeln!(output, "public static db: ClientDB = __SPACETIMEDB__.clientDB;").unwrap();
-        writeln!(output, "public static tableName = \"{struct_name_pascal_case}\";").unwrap();
+        writeln!(output, "public static override db: ClientDB = __SPACETIMEDB__.clientDB;").unwrap();
+        writeln!(output, "public static override tableName = \"{struct_name_pascal_case}\";").unwrap();
 
         let mut constructor_signature = Vec::new();
         let mut constructor_assignments = Vec::new();
@@ -1081,10 +1081,10 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
 
         writeln!(
             output,
-            "public static reducerName: string = \"{reducer_name_pascal_case}\";"
+            "public static override reducerName: string = \"{reducer_name_pascal_case}\";"
         )
         .unwrap();
-        writeln!(output, "public static call({}) {{", func_arguments.join(", ")).unwrap();
+        writeln!(output, "public static override call({}) {{", func_arguments.join(", ")).unwrap();
         {
             indent_scope!(output);
 
@@ -1092,7 +1092,7 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
         }
         writeln!(output, "}}\n").unwrap();
 
-        writeln!(output, "public call({}) {{", func_arguments.join(", ")).unwrap();
+        writeln!(output, "public override call({}) {{", func_arguments.join(", ")).unwrap();
         {
             indent_scope!(output);
 
@@ -1177,7 +1177,7 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
         // OnCreatePlayerEvent(dbEvent.Status, Identity.From(dbEvent.CallerIdentity.ToByteArray()), args[0].ToObject<string>());
         writeln!(
             output,
-            "public on(callback: (reducerEvent: ReducerEvent, {}) => void)",
+            "public override on(callback: (reducerEvent: ReducerEvent, {}) => void)",
             func_arguments.join(", ")
         )
         .unwrap();
