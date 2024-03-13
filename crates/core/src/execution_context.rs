@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, sync::Arc};
 
 use derive_more::Display;
-use parking_lot::Mutex;
+use parking_lot::{Mutex};
 use spacetimedb_lib::Address;
 use spacetimedb_primitives::TableId;
 
@@ -112,7 +112,7 @@ impl Metrics {
 /// Represents the context under which a database runtime method is executed.
 /// In particular it provides details about the currently executing txn to runtime operations.
 /// More generally it acts as a container for information that database operations may require to function correctly.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ExecutionContext<'a> {
     /// The database on which a transaction is being executed.
     database: Address,

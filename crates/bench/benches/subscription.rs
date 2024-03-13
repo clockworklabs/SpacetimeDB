@@ -47,46 +47,36 @@ fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> Database
 }
 
 fn eval(c: &mut Criterion) {
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .thread_stack_size(16 * 1024)
-        .worker_threads(4)
-        .max_blocking_threads(2)
-        .build()
-        .unwrap();
-
     let tmp_dir = TempDir::new("stdb_test").unwrap();
-    let db = rt.block_on(async { open_db(&tmp_dir, false, false).unwrap() });
+    let db = open_db(&tmp_dir, false, false).unwrap();
 
-    let lhs = rt.block_on(async { create_table_footprint(&db).unwrap() });
-    let rhs = rt.block_on(async { create_table_location(&db).unwrap() });
+    let lhs = create_table_footprint(&db).unwrap();
+    let rhs = create_table_location(&db).unwrap();
 
-    rt.block_on(async {
-        let _ = db.with_auto_commit(&ExecutionContext::default(), |tx| -> Result<(), DBError> {
-            // 1M rows
-            for entity_id in 0u64..1_000_000 {
-                let owner = entity_id % 1_000;
-                let footprint = AlgebraicValue::sum(entity_id as u8 % 4, AlgebraicValue::unit());
-                let row = product!(entity_id, footprint, owner);
-                let _ = db.insert(tx, lhs, row)?;
+    let _ = db.with_auto_commit(&ExecutionContext::default(), |tx| -> Result<(), DBError> {
+        // 1M rows
+        for entity_id in 0u64..1_000_000 {
+            let owner = entity_id % 1_000;
+            let footprint = AlgebraicValue::sum(entity_id as u8 % 4, AlgebraicValue::unit());
+            let row = product!(entity_id, footprint, owner);
+            let _ = db.insert(tx, lhs, row)?;
+        }
+        Ok(())
+    });
+
+    let _ = db.with_auto_commit(&ExecutionContext::default(), |tx| -> Result<(), DBError> {
+        // 1000 chunks, 1200 rows per chunk = 1.2M rows
+        for chunk_index in 0u64..1_000 {
+            for i in 0u64..1200 {
+                let entity_id = chunk_index * 1200 + i;
+                let x = 0i32;
+                let z = 0i32;
+                let dimension = 0u32;
+                let row = product!(entity_id, chunk_index, x, z, dimension);
+                let _ = db.insert(tx, rhs, row)?;
             }
-            Ok(())
-        });
-
-        let _ = db.with_auto_commit(&ExecutionContext::default(), |tx| -> Result<(), DBError> {
-            // 1000 chunks, 1200 rows per chunk = 1.2M rows
-            for chunk_index in 0u64..1_000 {
-                for i in 0u64..1200 {
-                    let entity_id = chunk_index * 1200 + i;
-                    let x = 0i32;
-                    let z = 0i32;
-                    let dimension = 0u32;
-                    let row = product!(entity_id, chunk_index, x, z, dimension);
-                    let _ = db.insert(tx, rhs, row)?;
-                }
-            }
-            Ok(())
-        });
+        }
+        Ok(())
     });
 
     let entity_id = 1_200_000u64;
@@ -127,24 +117,23 @@ fn eval(c: &mut Criterion) {
     // To profile this benchmark for 30s
     // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- full-join --exact --profile-time=30
     c.bench_function("full-join", |b| {
-        rt.block_on(async {
-            // Join 1M rows on the left with 12K rows on the right.
-            // Note, this should use an index join so as not to read the entire lhs table.
-            let join = format!(
-                "\
-                select footprint.* \
-                from footprint join location on footprint.entity_id = location.entity_id \
-                where location.chunk_index = {chunk_index}"
-            );
-            let auth = AuthCtx::for_testing();
-            let tx = db.begin_tx();
-            let query = compile_read_only_query(&db, &tx, &auth, &join).unwrap();
-            let query: ExecutionSet = query.into();
-            b.iter(|| {
-                let out = query.eval(&db, &tx, AuthCtx::for_testing()).unwrap();
-                black_box(out);
-            });
-        });
+        // Join 1M rows on the left with 12K rows on the right.
+        // Note, this should use an index join so as not to read the entire lhs table.
+        let join = format!(
+            "\
+            select footprint.* \
+            from footprint join location on footprint.entity_id = location.entity_id \
+            where location.chunk_index = {chunk_index}"
+        );
+        let auth = AuthCtx::for_testing();
+        let tx = db.begin_tx();
+        let query = compile_read_only_query(&db, &tx, &auth, &join).unwrap();
+        let query: ExecutionSet = query.into();
+
+        b.iter(|| {
+            let out = query.eval(&db, &tx, AuthCtx::for_testing()).unwrap();
+            black_box(out);
+        })
     });
 
     // To profile this benchmark for 30s
