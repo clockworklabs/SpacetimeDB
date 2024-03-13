@@ -18,7 +18,6 @@ use crate::error::{DBError, DatabaseError, TableError};
 use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
 use fs2::FileExt;
-use itertools::Itertools;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{ColumnDef, IndexDef, SequenceDef, TableDef, TableSchema};
@@ -412,33 +411,47 @@ impl RelationalDB {
         self.inner.create_table_mut_tx(tx, schema.into())
     }
 
+    fn col_def_for_test(schema: &[(&str, AlgebraicType)]) -> Vec<ColumnDef> {
+        schema
+            .iter()
+            .cloned()
+            .map(|(col_name, col_type)| ColumnDef {
+                col_name: col_name.into(),
+                col_type,
+            })
+            .collect()
+    }
+
     pub fn create_table_for_test(
         &self,
         name: &str,
         schema: &[(&str, AlgebraicType)],
         indexes: &[(ColId, &str)],
     ) -> Result<TableId, DBError> {
-        let table_name = name.to_string();
-        let table_type = StTableType::User;
-        let table_access = StAccess::Public;
-
-        let columns = schema
-            .iter()
-            .map(|(col_name, col_type)| ColumnDef {
-                col_name: col_name.to_string(),
-                col_type: col_type.clone(),
-            })
-            .collect_vec();
-
         let indexes = indexes
             .iter()
-            .map(|(col_id, index_name)| IndexDef::btree(index_name.to_string(), *col_id, false))
-            .collect_vec();
+            .copied()
+            .map(|(col_id, index_name)| IndexDef::btree(index_name.into(), col_id, false))
+            .collect();
 
-        let schema = TableDef::new(table_name, columns)
+        let schema = TableDef::new(name.into(), Self::col_def_for_test(schema))
             .with_indexes(indexes)
-            .with_type(table_type)
-            .with_access(table_access);
+            .with_type(StTableType::User)
+            .with_access(StAccess::Public);
+
+        self.with_auto_commit(&ExecutionContext::default(), |tx| self.create_table(tx, schema))
+    }
+
+    pub fn create_table_for_test_multi_column(
+        &self,
+        name: &str,
+        schema: &[(&str, AlgebraicType)],
+        idx_cols: ColList,
+    ) -> Result<TableId, DBError> {
+        let schema = TableDef::new(name.into(), Self::col_def_for_test(schema))
+            .with_column_index(idx_cols, false)
+            .with_type(StTableType::User)
+            .with_access(StAccess::Public);
 
         self.with_auto_commit(&ExecutionContext::default(), |tx| self.create_table(tx, schema))
     }
@@ -548,7 +561,7 @@ impl RelationalDB {
     /// Returns the `index_id`
     ///
     /// NOTE: It loads the data from the table into it before returning
-    #[tracing::instrument(skip(self, tx, index), fields(index=index.index_name))]
+    #[tracing::instrument(skip(self, tx, index), fields(index = index.index_name))]
     pub fn create_index(&self, tx: &mut MutTx, table_id: TableId, index: IndexDef) -> Result<IndexId, DBError> {
         self.inner.create_index_mut_tx(tx, table_id, index)
     }
@@ -581,25 +594,25 @@ impl RelationalDB {
     /// where the column data identified by `cols` matches `value`.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
-    pub fn iter_by_col_eq_mut<'a>(
+    pub fn iter_by_col_eq_mut<'a, 'r>(
         &'a self,
         ctx: &'a ExecutionContext,
         tx: &'a MutTx,
         table_id: impl Into<TableId>,
         cols: impl Into<ColList>,
-        value: AlgebraicValue,
-    ) -> Result<IterByColEq<'a>, DBError> {
+        value: &'r AlgebraicValue,
+    ) -> Result<IterByColEq<'a, 'r>, DBError> {
         self.inner.iter_by_col_eq_mut_tx(ctx, tx, table_id.into(), cols, value)
     }
 
-    pub fn iter_by_col_eq<'a>(
+    pub fn iter_by_col_eq<'a, 'r>(
         &'a self,
         ctx: &'a ExecutionContext,
         tx: &'a Tx,
         table_id: impl Into<TableId>,
         cols: impl Into<ColList>,
-        value: AlgebraicValue,
-    ) -> Result<IterByColEq<'a>, DBError> {
+        value: &'r AlgebraicValue,
+    ) -> Result<IterByColEq<'a, 'r>, DBError> {
         self.inner.iter_by_col_eq_tx(ctx, tx, table_id.into(), cols, value)
     }
 
@@ -691,7 +704,7 @@ impl RelationalDB {
     }
 
     /// Add a [Sequence] into the database instance, generates a stable [SequenceId] for it that will persist on restart.
-    #[tracing::instrument(skip(self, tx, seq), fields(seq=seq.sequence_name))]
+    #[tracing::instrument(skip(self, tx, seq), fields(seq = seq.sequence_name))]
     pub fn create_sequence(
         &mut self,
         tx: &mut MutTx,
@@ -1333,11 +1346,11 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![1u64, 2u64, 2u64])?;
 
         let cols = col_list![0, 1];
-        let value: AlgebraicValue = product![0u64, 1u64].into();
+        let value = product![0u64, 1u64].into();
 
         let ctx = ExecutionContext::default();
 
-        let IterByColEq::Index(mut iter) = stdb.iter_by_col_eq_mut(&ctx, &tx, table_id, cols, value)? else {
+        let IterByColEq::Index(mut iter) = stdb.iter_by_col_eq_mut(&ctx, &tx, table_id, cols, &value)? else {
             panic!("expected index iterator");
         };
 

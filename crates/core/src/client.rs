@@ -18,6 +18,17 @@ pub struct ClientActorId {
     pub name: ClientName,
 }
 
+impl ClientActorId {
+    #[cfg(test)]
+    pub fn for_test(identity: Identity) -> Self {
+        ClientActorId {
+            identity,
+            address: Address::ZERO,
+            name: ClientName(0),
+        }
+    }
+}
+
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
 pub struct ClientName(pub u64);
 

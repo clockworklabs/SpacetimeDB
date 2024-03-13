@@ -419,7 +419,7 @@ impl From<AlgebraicType> for Header {
 }
 
 /// An estimate for the range of rows in the [Relation]
-#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct RowCount {
     pub min: usize,
     pub max: Option<usize>,
@@ -485,9 +485,8 @@ impl Relation for DbTable {
 
 #[cfg(test)]
 mod tests {
-    use spacetimedb_primitives::col_list;
-
     use super::*;
+    use spacetimedb_primitives::col_list;
 
     /// Build a [Header] using the initial `start_pos` as the column position for the [Constraints]
     fn head(table: &str, fields: (&str, &str), start_pos: u32) -> Header {

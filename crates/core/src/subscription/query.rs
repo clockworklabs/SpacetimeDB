@@ -1,6 +1,3 @@
-use std::sync::Arc;
-use std::time::Instant;
-
 use crate::db::db_metrics::{DB_METRICS, MAX_QUERY_COMPILE_TIME};
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
@@ -16,9 +13,10 @@ use spacetimedb_lib::Address;
 use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::relation::{Column, FieldName, Header};
 use spacetimedb_sats::AlgebraicType;
-use spacetimedb_vm::expr;
-use spacetimedb_vm::expr::{Crud, CrudExpr, DbType, QueryExpr};
+use spacetimedb_vm::expr::{self, Crud, CrudExpr, DbType, QueryExpr, SourceSet};
 use spacetimedb_vm::relation::MemTable;
+use std::sync::Arc;
+use std::time::Instant;
 
 use super::subscription::get_all;
 
@@ -67,9 +65,12 @@ pub fn to_mem_table_with_op_type(head: Arc<Header>, table_access: StAccess, data
 ///
 /// To be able to reify the `op_type` of the individual operations in the update,
 /// each virtual row is extended with a column [`OP_TYPE_FIELD_NAME`].
-pub fn to_mem_table(mut of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
-    of.source = to_mem_table_with_op_type(of.source.head().clone(), of.source.table_access(), data).into();
-    of
+pub fn to_mem_table(mut of: QueryExpr, data: &DatabaseTableUpdate) -> (QueryExpr, SourceSet) {
+    let mem_table = to_mem_table_with_op_type(of.source.head().clone(), of.source.table_access(), data);
+    let mut sources = SourceSet::default();
+    let source_expr = sources.add_mem_table(mem_table);
+    of.source = source_expr;
+    (of, sources)
 }
 
 /// Runs a query that evaluates if the changes made should be reported to the [ModuleSubscriptionManager]
@@ -80,26 +81,21 @@ pub(crate) fn run_query(
     tx: &Tx,
     query: &QueryExpr,
     auth: AuthCtx,
+    sources: SourceSet,
 ) -> Result<Vec<MemTable>, DBError> {
-    execute_single_sql(cx, db, tx, CrudExpr::Query(query.clone()), auth)
+    execute_single_sql(cx, db, tx, CrudExpr::Query(query.clone()), auth, sources)
 }
 
 // TODO: It's semantically wrong to `SUBSCRIBE_TO_ALL_QUERY`
 // as it can only return back the changes valid for the tables in scope *right now*
 // instead of **continuously updating** the db changes
 // with system table modifications (add/remove tables, indexes, ...).
-/// Compile from `SQL` into a [`Query`], rejecting empty queries and queries that attempt to modify the data in any way.
+//
+/// Variant of [`compile_read_only_query`] which appends `SourceExpr`s into a given `SourceBuilder`,
+/// rather than returning a new `SourceSet`.
 ///
-/// NOTE: When the `input` query is equal to [`SUBSCRIBE_TO_ALL_QUERY`],
-/// **compilation is bypassed** and the equivalent of the following is done:
-///
-///```rust,ignore
-/// for t in db.user_tables {
-///   query.push(format!("SELECT * FROM {t}"));
-/// }
-/// ```
-///
-/// WARNING: [`SUBSCRIBE_TO_ALL_QUERY`] is only valid for repeated calls as long there is not change on database schema, and the clients must `unsubscribe` before modifying it.
+/// This is necessary when merging multiple SQL queries into a single query set,
+/// as in [`crate::subscription::module_subscription_actor::ModuleSubscriptions::add_subscriber`].
 #[tracing::instrument(skip(relational_db, auth, tx))]
 pub fn compile_read_only_query(
     relational_db: &RelationalDB,
@@ -173,10 +169,10 @@ fn record_query_compilation_metrics(workload: WorkloadType, db: &Address, query:
 }
 
 /// The kind of [`QueryExpr`] currently supported for incremental evaluation.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
 pub enum Supported {
     /// A scan or [`QueryExpr::Select`] of a single table.
-    Scan,
+    Select,
     /// A semijoin of two tables, restricted to [`QueryExpr::IndexJoin`]s.
     ///
     /// See [`crate::sql::compiler::try_index_join`].
@@ -195,7 +191,7 @@ pub fn classify(expr: &QueryExpr) -> Option<Supported> {
             return None;
         }
     }
-    Some(Supported::Scan)
+    Some(Supported::Select)
 }
 
 #[cfg(test)]
@@ -218,7 +214,7 @@ mod tests {
     use spacetimedb_sats::db::def::*;
     use spacetimedb_sats::relation::FieldName;
     use spacetimedb_sats::{product, ProductType, ProductValue};
-    use spacetimedb_vm::dsl::{db_table, mem_table, scalar};
+    use spacetimedb_vm::dsl::{mem_table, scalar};
     use spacetimedb_vm::operator::OpCmp;
 
     fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
@@ -263,7 +259,8 @@ mod tests {
         };
 
         let schema = db.schema_for_table_mut(tx, table_id).unwrap().into_owned();
-        let q = QueryExpr::new(db_table(&schema, table_id));
+
+        let q = QueryExpr::new(&schema);
 
         Ok((schema, table, data, q))
     }
@@ -323,8 +320,15 @@ mod tests {
         q: &QueryExpr,
         data: &DatabaseTableUpdate,
     ) -> ResultTest<()> {
-        let q = to_mem_table(q.clone(), data);
-        let result = run_query(&ExecutionContext::default(), db, tx, &q, AuthCtx::for_testing())?;
+        let (q, sources) = to_mem_table(q.clone(), data);
+        let result = run_query(
+            &ExecutionContext::default(),
+            db,
+            tx,
+            &q,
+            AuthCtx::for_testing(),
+            sources,
+        )?;
 
         assert_eq!(
             Some(table.as_without_table_name()),
@@ -386,6 +390,10 @@ mod tests {
         Ok(())
     }
 
+    fn singleton_execution_set(expr: QueryExpr) -> ResultTest<ExecutionSet> {
+        Ok(ExecutionSet::from_iter([SupportedQuery::try_from(expr)?]))
+    }
+
     #[test]
     fn test_eval_incr_for_index_scan() -> ResultTest<()> {
         let (db, _tmp) = make_test_db()?;
@@ -423,7 +431,7 @@ mod tests {
             panic!("unexpected query {:#?}", exp[0]);
         };
 
-        let query: ExecutionSet = query.try_into()?;
+        let query: ExecutionSet = singleton_execution_set(query)?;
 
         let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
 
@@ -487,7 +495,7 @@ mod tests {
             panic!("unexpected query {:#?}", exp[0]);
         };
 
-        let query: ExecutionSet = query.try_into()?;
+        let query: ExecutionSet = singleton_execution_set(query)?;
 
         db.release_tx(&ExecutionContext::default(), tx);
 
@@ -758,13 +766,13 @@ mod tests {
         check_query(&db, &table, &tx, &q, &data)?;
 
         //SELECT * FROM inventory WHERE inventory_id = 1
-        let q_id = QueryExpr::new(db_table(&schema, schema.table_id)).with_select_cmp(
+        let q_id = QueryExpr::new(&schema).with_select_cmp(
             OpCmp::Eq,
             FieldName::named("_inventory", "inventory_id"),
             scalar(1u64),
         );
 
-        let s = ExecutionSet::from_iter([q_id.try_into()?]);
+        let s = singleton_execution_set(q_id)?;
 
         let row2 = TableOp::insert(row.clone());
 
@@ -780,9 +788,9 @@ mod tests {
 
         check_query_incr(&db, &tx, &s, &update, 1, &[row])?;
 
-        let q = QueryExpr::new(db_table(&schema, schema.table_id));
+        let q = QueryExpr::new(&schema);
 
-        let q = to_mem_table(q, &data);
+        let (q, sources) = to_mem_table(q, &data);
         //Try access the private table
         match run_query(
             &ExecutionContext::default(),
@@ -790,6 +798,7 @@ mod tests {
             &tx,
             &q,
             AuthCtx::new(Identity::__dummy(), Identity::from_byte_array([1u8; 32])),
+            sources,
         ) {
             Ok(_) => {
                 panic!("it allows to execute against private table")
@@ -863,6 +872,7 @@ mod tests {
                 &tx,
                 q.as_expr(),
                 AuthCtx::for_testing(),
+                SourceSet::default(),
             )?;
             assert_eq!(result.len(), 1, "Join query did not return any rows");
         }
@@ -939,7 +949,7 @@ mod tests {
         ];
         for scan in scans {
             let expr = compile_read_only_query(&db, &tx, &auth, scan)?.pop().unwrap();
-            assert_eq!(expr.kind(), Supported::Scan, "{scan}\n{expr:#?}");
+            assert_eq!(expr.kind(), Supported::Select, "{scan}\n{expr:#?}");
         }
 
         // Only index semijoins are supported

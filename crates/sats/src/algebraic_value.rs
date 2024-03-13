@@ -283,8 +283,17 @@ impl<T: Into<AlgebraicValue>> From<Option<T>> for AlgebraicValue {
     }
 }
 
-// An AlgebraicValue can be interpreted as a range containing a only the value itself.
-// This is useful for BTrees where single key scans are still viewed range scans.
+/// An AlgebraicValue can be interpreted as a range containing a only the value itself.
+/// This is useful for BTrees where single key scans are still viewed range scans.
+impl RangeBounds<AlgebraicValue> for &AlgebraicValue {
+    fn start_bound(&self) -> Bound<&AlgebraicValue> {
+        Bound::Included(self)
+    }
+    fn end_bound(&self) -> Bound<&AlgebraicValue> {
+        Bound::Included(self)
+    }
+}
+
 impl RangeBounds<AlgebraicValue> for AlgebraicValue {
     fn start_bound(&self) -> Bound<&AlgebraicValue> {
         Bound::Included(self)

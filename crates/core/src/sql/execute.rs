@@ -1,16 +1,15 @@
-use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::{ProductType, ProductValue};
-use spacetimedb_vm::eval::run_ast;
-use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
-use spacetimedb_vm::relation::MemTable;
-use tracing::info;
-
+use super::compiler::compile_sql;
 use crate::database_instance_context_controller::DatabaseInstanceContextController;
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::{DBError, DatabaseError};
 use crate::execution_context::ExecutionContext;
-use crate::sql::compiler::compile_sql;
 use crate::vm::{DbProgram, TxMode};
+use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::{ProductType, ProductValue};
+use spacetimedb_vm::eval::run_ast;
+use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr, SourceSet};
+use spacetimedb_vm::relation::MemTable;
+use tracing::info;
 
 pub struct StmtResult {
     pub schema: ProductType,
@@ -59,13 +58,14 @@ pub fn execute_single_sql(
     tx: &Tx,
     ast: CrudExpr,
     auth: AuthCtx,
+    sources: SourceSet,
 ) -> Result<Vec<MemTable>, DBError> {
     let mut tx: TxMode = tx.into();
     let p = &mut DbProgram::new(cx, db, &mut tx, auth);
     let q = Expr::Crud(Box::new(ast));
 
     let mut result = Vec::with_capacity(1);
-    collect_result(&mut result, run_ast(p, q).into())?;
+    collect_result(&mut result, run_ast(p, q, sources).into())?;
     Ok(result)
 }
 
@@ -75,6 +75,7 @@ pub fn execute_sql_mut_tx(
     tx: &mut MutTx,
     ast: Vec<CrudExpr>,
     auth: AuthCtx,
+    sources: SourceSet,
 ) -> Result<Vec<MemTable>, DBError> {
     let total = ast.len();
     let mut tx: TxMode = tx.into();
@@ -83,7 +84,7 @@ pub fn execute_sql_mut_tx(
     let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
 
     let mut result = Vec::with_capacity(total);
-    collect_result(&mut result, run_ast(p, q).into())?;
+    collect_result(&mut result, run_ast(p, q, sources).into())?;
     Ok(result)
 }
 
@@ -100,13 +101,15 @@ pub fn execute_sql(db: &RelationalDB, ast: Vec<CrudExpr>, auth: AuthCtx) -> Resu
             let mut tx: TxMode = mut_tx.into();
             let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
             let p = &mut DbProgram::new(&ctx, db, &mut tx, auth);
-            collect_result(&mut result, run_ast(p, q).into())
+            // SQL queries can never reference `MemTable`s, so pass an empty `SourceSet`.
+            collect_result(&mut result, run_ast(p, q, SourceSet::default()).into())
         }),
         true => db.with_read_only(&ctx, |tx| {
             let mut tx = TxMode::Tx(tx);
             let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
             let p = &mut DbProgram::new(&ctx, db, &mut tx, auth);
-            collect_result(&mut result, run_ast(p, q).into())
+            // SQL queries can never reference `MemTable`s, so pass an empty `SourceSet`.
+            collect_result(&mut result, run_ast(p, q, SourceSet::default()).into())
         }),
     }?;
 
@@ -129,6 +132,7 @@ pub(crate) mod tests {
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::vm::tests::create_table_with_rows;
     use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_primitives::col_list;
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::relation::Header;
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
@@ -668,6 +672,30 @@ SELECT * FROM inventory",
 
         let result = result.first().unwrap().clone();
         assert_eq!(result.data.len(), 4);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_multi_column() -> ResultTest<()> {
+        let (db, _input, _tmp_dir) = create_data(1)?;
+
+        // Create table [test] with index on [a, b]
+        let schema = &[
+            ("a", AlgebraicType::I32),
+            ("b", AlgebraicType::I32),
+            ("c", AlgebraicType::I32),
+            ("d", AlgebraicType::I32),
+        ];
+        let table_id = db.create_table_for_test_multi_column("test", schema, col_list![0, 1])?;
+        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+            db.insert(tx, table_id, product![1, 1, 1, 1])
+        })?;
+
+        let result = run_for_testing(&db, "select * from test where b = 1 and a = 1")?;
+
+        let result = result.first().unwrap().clone();
+        assert_eq!(result.data, vec![product![1, 1, 1, 1]]);
 
         Ok(())
     }
