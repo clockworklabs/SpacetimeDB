@@ -129,7 +129,7 @@ impl ExecutionUnit {
         let (eval_incr_plan, _source_set) = query::to_mem_table(expr.clone(), &table_update);
         debug_assert_eq!(_source_set.len(), 1);
 
-        Self::compile_query_expr_to_query_code(eval_incr_plan)
+        Self::compile_query_expr_to_query_code(eval_incr_plan.optimize(&|_, _| 0))
     }
 
     fn compile_eval(expr: QueryExpr) -> QueryCode {

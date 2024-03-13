@@ -47,8 +47,6 @@ pub fn build_query<'a>(
     query: QueryCode,
     sources: &mut SourceSet,
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {
-    let db_table = query.table.is_db_table();
-
     // We're incrementally building a query iterator by applying each operation in the `query.query`.
     // Most such operations will modify their parent, but certain operations (i.e. `IndexJoin`s)
     // are only valid as the first operation in the list,
@@ -67,18 +65,8 @@ pub fn build_query<'a>(
 
     for op in query.query {
         result = Some(match op {
-            Query::IndexScan(IndexScan { table, columns, bounds }) if db_table => {
+            Query::IndexScan(IndexScan { table, columns, bounds }) => {
                 iter_by_col_range(ctx, stdb, tx, table, columns, bounds)?
-            }
-            Query::IndexScan(index_scan) => {
-                let result = result
-                    .take()
-                    .map(Ok)
-                    .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.table, sources))?;
-                let header = result.head().clone();
-                let cmp: ColumnOp = index_scan.into();
-                let iter = result.select(move |row| cmp.compare(row, &header));
-                Box::new(iter)
             }
             Query::IndexJoin(IndexJoin {
                 probe_side,

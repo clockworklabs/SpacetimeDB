@@ -1617,9 +1617,18 @@ impl QueryExpr {
             };
         }
 
-        let q = q.try_index_join();
+        let mut q = q.try_index_join();
         if q.query.len() == 1 && matches!(q.query[0], Query::IndexJoin(_)) {
             return q.optimize(row_count);
+        }
+
+        if matches!(q.source, SourceExpr::MemTable { .. })
+            && !q.query.is_empty()
+            && matches!(q.query[0], Query::IndexScan(_))
+        {
+            if let Query::IndexScan(scan) = q.query.remove(0) {
+                q.query.insert(0, Query::Select(scan.into()));
+            }
         }
         q
     }
