@@ -108,7 +108,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let server = args.get_one::<String>("server").map(|s| s.as_str());
     let identity = args.get_one::<String>("identity").map(String::as_str);
     let name_or_address = args.get_one::<String>("name|address");
-    let project_path = args.get_one::<PathBuf>("project_path").unwrap();
+    let path_to_project = args.get_one::<PathBuf>("project_path").unwrap();
     let host_type = args.get_one::<String>("host_type").unwrap();
     let clear_database = args.get_flag("clear_database");
     let trace_log = args.get_flag("trace_log");
@@ -131,10 +131,10 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         query_params.push(("name_or_address", name_or_address.as_str()));
     }
 
-    if !project_path.exists() {
+    if !path_to_project.exists() {
         return Err(anyhow::anyhow!(
             "Project path does not exist: {}",
-            project_path.display()
+            path_to_project.display()
         ));
     }
 
@@ -146,16 +146,15 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         query_params.push(("trace_log", "true"));
     }
 
-    let path_to_wasm;
-    if !project_path.is_dir() && project_path.extension().map_or(false, |ext| ext == "wasm") {
+    let path_to_wasm = if !path_to_project.is_dir() && path_to_project.extension().map_or(false, |ext| ext == "wasm") {
         println!("Note: Using --project-path to provide a wasm file is deprecated, and will be");
         println!("removed in a future release. Please use --wasm-file instead.");
-        path_to_wasm = project_path.clone();
+        path_to_project.clone()
     } else if let Some(path) = wasm_file {
         println!("Skipping build. Instead we are publishing {}", path.display());
-        path_to_wasm = path.clone();
+        path.clone()
     } else {
-        path_to_wasm = crate::tasks::build(project_path, skip_clippy, build_debug)?;
+        crate::tasks::build(path_to_project, skip_clippy, build_debug)?
     };
     let program_bytes = fs::read(path_to_wasm)?;
     println!(
