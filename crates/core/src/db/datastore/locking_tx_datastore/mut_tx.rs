@@ -6,12 +6,15 @@ use super::{
     tx_state::TxState,
     SharedMutexGuard, SharedWriteGuard,
 };
-use crate::db::datastore::system_tables::{
-    table_name_is_system, StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StIndexFields, StIndexRow,
-    StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMNS_ID, ST_CONSTRAINTS_ID,
-    ST_INDEXES_ID, ST_SEQUENCES_ID, ST_TABLES_ID,
-};
 use crate::db::datastore::traits::TxData;
+use crate::db::{
+    datastore::system_tables::{
+        table_name_is_system, StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StIndexFields,
+        StIndexRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMNS_ID,
+        ST_CONSTRAINTS_ID, ST_INDEXES_ID, ST_SEQUENCES_ID, ST_TABLES_ID,
+    },
+    db_metrics::table_num_rows,
+};
 use crate::{
     address::Address,
     error::{DBError, IndexError, SequenceError, TableError},
@@ -1050,14 +1053,22 @@ impl StateView for MutTxId {
                             "iter_by_col_range on unindexed column, but got error from `schema_for_table` during diagnostics: {e:?}",
                         ),
                         Ok(schema) => {
+                            const TOO_MANY_ROWS_FOR_SCAN: u64 = 1000;
+
                             let table_name = &schema.table_name;
-                            let col_names = cols.iter()
-                                .map(|col_id| schema.columns()
-                                     .get(col_id.idx())
-                                     .map(|col| &col.col_name[..])
-                                     .unwrap_or("[unknown column]"))
-                                .collect::<Vec<_>>();
-                            log::warn!("iter_by_col_range without index: table {table_name}, columns {col_names:?}");
+                            let num_rows = table_num_rows(ctx.database(), *table_id, table_name);
+
+                            if num_rows >= TOO_MANY_ROWS_FOR_SCAN {
+                                let col_names = cols.iter()
+                                    .map(|col_id| schema.columns()
+                                         .get(col_id.idx())
+                                         .map(|col| &col.col_name[..])
+                                         .unwrap_or("[unknown column]"))
+                                    .collect::<Vec<_>>();
+                                log::warn!(
+                                    "iter_by_col_range without index: table {table_name} has {num_rows} rows; scanning columns {col_names:?}",
+                                );
+                            }
                         },
                     }
 
