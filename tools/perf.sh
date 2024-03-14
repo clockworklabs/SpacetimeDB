@@ -85,13 +85,15 @@ if [[ -z "$DATAFILE" ]]; then
     DATAFILE=perf.data
 fi
 if [[ -z "$SPACETIME_PID" ]]; then
-    SPACETIMES="$(ps -a -e -f | grep 'spacetime start' | grep -v 'grep')"
-    if [[ $(echo "$SPACETIMES" | wc -l) < 1 ]] ; then
+    SPACETIMES="$(ps -a -e -f | grep 'spacetime start' | grep -v '\<grep\>')"
+    LINES="$(echo "$SPACETIMES" | wc -l)"
+    if [[ $LINES < 1 ]] ; then
         echo "spacetime PID not found, is it running?"
-	exit 1
-    elif [[ $(echo "$SPACETIMES" | wc -l) > 1 ]] ; then
-        echo "Multiple spacetime PIDs. Specify with -z"
-	exit 1
+        exit 1
+    elif [[ $LINES > 1 ]] ; then
+        echo "Multiple spacetime PIDs. Specify one with -z"
+        echo "$SPACETIMES"
+        exit 1
     fi
 
     SPACETIME_PID=$(echo "$SPACETIMES" | awk '{print $2}')
