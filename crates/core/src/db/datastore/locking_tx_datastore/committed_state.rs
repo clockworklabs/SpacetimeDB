@@ -569,22 +569,28 @@ impl<'a> CommittedIndexIter<'a> {
 #[cfg(feature = "metrics")]
 impl Drop for CommittedIndexIter<'_> {
     fn drop(&mut self) {
-
         let mut metrics = self.ctx.metrics.borrow_mut();
         if !metrics.table_exists(self.table_id) {
             let table_name = self
-            .committed_state
-            .get_schema(&self.table_id)
-            .map(|table| table.table_name.as_str())
-            .unwrap_or_default();
+                .committed_state
+                .get_schema(&self.table_id)
+                .map(|table| table.table_name.as_str())
+                .unwrap_or_default();
             metrics.add_metric(self.table_id, table_name);
         }
         metrics.inc_by(self.table_id, MetricType::RdbNumIndexSeeks, 1);
         // Increment number of index keys scanned
-        metrics.inc_by(self.table_id, MetricType::RdbNumKeysScanned, self.committed_rows.num_pointers_yielded());
+        metrics.inc_by(
+            self.table_id,
+            MetricType::RdbNumKeysScanned,
+            self.committed_rows.num_pointers_yielded(),
+        );
         // Increment number of rows fetched
-        metrics.inc_by(self.table_id, MetricType::RdbNumRowsFetched, self.num_committed_rows_fetched);
-
+        metrics.inc_by(
+            self.table_id,
+            MetricType::RdbNumRowsFetched,
+            self.num_committed_rows_fetched,
+        );
     }
 }
 

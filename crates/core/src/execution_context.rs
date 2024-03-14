@@ -1,4 +1,4 @@
-use std::{cell::RefCell};
+use std::cell::RefCell;
 
 use derive_more::Display;
 use spacetimedb_lib::Address;
@@ -70,41 +70,40 @@ impl Metrics {
     }
 
     fn flush(&mut self, workload: &WorkloadType, database: &Address, reducer: &str) {
-            self.0.iter().for_each(|metric| {
-                DB_METRICS
-                    .rdb_num_index_seeks
-                    .with_label_values(
-                        workload,
-                        database,
-                        &reducer,
-                        &metric.table_id.0,
-                        &metric.cache_table_name,
-                    )
-                    .inc_by(metric.rdb_num_index_seeks);
+        self.0.iter().for_each(|metric| {
+            DB_METRICS
+                .rdb_num_index_seeks
+                .with_label_values(
+                    workload,
+                    database,
+                    reducer,
+                    &metric.table_id.0,
+                    &metric.cache_table_name,
+                )
+                .inc_by(metric.rdb_num_index_seeks);
 
-                DB_METRICS
-                    .rdb_num_keys_scanned
-                    .with_label_values(
-                        &workload,
-                        &database,
-                        &reducer,
-                        &metric.table_id.0,
-                        &metric.cache_table_name,
-                    )
-                    .inc_by(metric.rdb_num_keys_scanned);
+            DB_METRICS
+                .rdb_num_keys_scanned
+                .with_label_values(
+                    workload,
+                    database,
+                    reducer,
+                    &metric.table_id.0,
+                    &metric.cache_table_name,
+                )
+                .inc_by(metric.rdb_num_keys_scanned);
 
-                DB_METRICS
-                    .rdb_num_rows_fetched
-                    .with_label_values(
-                        &workload,
-                        &database,
-                        &reducer,
-                        &metric.table_id.0,
-                        &metric.cache_table_name,
-                    )
-                    .inc_by(metric.rdb_num_keys_scanned);
-            });
-
+            DB_METRICS
+                .rdb_num_rows_fetched
+                .with_label_values(
+                    workload,
+                    database,
+                    reducer,
+                    &metric.table_id.0,
+                    &metric.cache_table_name,
+                )
+                .inc_by(metric.rdb_num_keys_scanned);
+        });
     }
 }
 
@@ -217,6 +216,6 @@ impl Drop for ExecutionContext<'_> {
         let workload = self.workload;
         let database = self.database;
         let reducer = self.reducer.unwrap_or_default();
-        self.metrics.borrow_mut().flush(&workload, &database, &reducer);
+        self.metrics.borrow_mut().flush(&workload, &database, reducer);
     }
 }
