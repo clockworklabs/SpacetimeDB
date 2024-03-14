@@ -1047,6 +1047,7 @@ impl StateView for MutTxId {
                     committed_rows,
                 ))),
                 None => {
+                    #[cfg(feature = "unindexed_iter_by_col_range_warn")]
                     match self.schema_for_table(ctx, *table_id) {
                         // TODO(ux): log these warnings to the module logs rather than host logs.
                         Err(e) => log::error!(
