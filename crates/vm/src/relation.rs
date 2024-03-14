@@ -3,7 +3,7 @@ use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::error::RelationError;
 use spacetimedb_sats::product_value::ProductValue;
 use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldName, Header, HeaderOnlyField, Relation, RowCount};
-use spacetimedb_sats::AlgebraicValue;
+use spacetimedb_sats::{impl_serialize, AlgebraicValue};
 use spacetimedb_table::read_column::ReadColumn;
 use spacetimedb_table::table::RowRef;
 use std::borrow::Cow;
@@ -20,6 +20,11 @@ pub enum RelValue<'a> {
     Row(RowRef<'a>),
     Projection(ProductValue),
 }
+
+impl_serialize!(['a] RelValue<'a>, (self, ser) => match self {
+    Self::Row(row) => row.serialize(ser),
+    Self::Projection(row) => row.serialize(ser),
+});
 
 impl<'a> RelValue<'a> {
     /// Converts `self` into a `ProductValue`
@@ -118,7 +123,7 @@ pub struct MemTableWithoutTableName<'a> {
 
 /// An in-memory table
 // TODO(perf): Remove `Clone` impl.
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MemTable {
     pub head: Arc<Header>,
     pub data: Vec<ProductValue>,
@@ -180,7 +185,7 @@ impl Relation for MemTable {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, From, PartialOrd, Ord)]
+#[derive(Debug, Clone, Eq, PartialEq, From)]
 pub enum Table {
     MemTable(MemTable),
     DbTable(DbTable),

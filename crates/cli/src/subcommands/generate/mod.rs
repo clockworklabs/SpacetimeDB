@@ -52,7 +52,7 @@ pub fn cli() -> clap::Command {
                 .default_value("SpacetimeDB.Types")
                 .long("namespace")
                 .short('n')
-                .help("The namespace that should be used (default is 'SpacetimeDB.Types')"),
+                .help("The namespace that should be used"),
         )
         .arg(
             Arg::new("lang")

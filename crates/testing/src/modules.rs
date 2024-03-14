@@ -59,6 +59,7 @@ impl ModuleHandle {
             r#type: Some(client_api::message::Type::FunctionCall(client_api::FunctionCall {
                 reducer: reducer.to_string(),
                 arg_bytes: sats::bsatn::to_vec(&args)?,
+                request_id: 0,
             })),
         };
         self.send(message.encode_to_vec()).await

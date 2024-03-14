@@ -32,7 +32,9 @@ mime = "0.3.17"
 tokio-stream = { version = "0.1.12", features = ["sync"] }
 futures = "0.3"
 bytes = "1"
+tracing.workspace = true
 bytestring = "1"
 tokio-tungstenite.workspace = true
 itoa = "1.0.9"
 derive_more = "0.99.17"
+scopeguard.workspace = true

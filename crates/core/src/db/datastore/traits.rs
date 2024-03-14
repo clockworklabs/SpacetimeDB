@@ -230,7 +230,7 @@ pub trait TxDatastore: DataRow + Tx {
     where
         Self: 'a;
 
-    type IterByColEq<'a>: Iterator<Item = Self::RowRef<'a>>
+    type IterByColEq<'a, 'r>: Iterator<Item = Self::RowRef<'a>>
     where
         Self: 'a;
 
@@ -245,14 +245,14 @@ pub trait TxDatastore: DataRow + Tx {
         range: R,
     ) -> Result<Self::IterByColRange<'a, R>>;
 
-    fn iter_by_col_eq_tx<'a>(
+    fn iter_by_col_eq_tx<'a, 'r>(
         &'a self,
         ctx: &'a ExecutionContext,
         tx: &'a Self::Tx,
         table_id: TableId,
         cols: impl Into<ColList>,
-        value: AlgebraicValue,
-    ) -> Result<Self::IterByColEq<'a>>;
+        value: &'r AlgebraicValue,
+    ) -> Result<Self::IterByColEq<'a, 'r>>;
 
     fn table_id_exists_tx(&self, tx: &Self::Tx, table_id: &TableId) -> bool;
     fn table_id_from_name_tx(&self, tx: &Self::Tx, table_name: &str) -> Result<Option<TableId>>;
@@ -332,14 +332,14 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         cols: impl Into<ColList>,
         range: R,
     ) -> Result<Self::IterByColRange<'a, R>>;
-    fn iter_by_col_eq_mut_tx<'a>(
+    fn iter_by_col_eq_mut_tx<'a, 'r>(
         &'a self,
         ctx: &'a ExecutionContext,
         tx: &'a Self::MutTx,
         table_id: TableId,
         cols: impl Into<ColList>,
-        value: AlgebraicValue,
-    ) -> Result<Self::IterByColEq<'a>>;
+        value: &'r AlgebraicValue,
+    ) -> Result<Self::IterByColEq<'a, 'r>>;
     fn get_mut_tx<'a>(
         &self,
         tx: &'a Self::MutTx,
