@@ -85,14 +85,16 @@ if [[ -z "$DATAFILE" ]]; then
     DATAFILE=perf.data
 fi
 if [[ -z "$SPACETIME_PID" ]]; then
+    # -f allows us to get the args
+    # -e lets us see all users
     SPACETIMES="$(ps -a -e -f | grep '\<spacetime\>.*\<start\>' | grep -v '\<grep\>')"
     LINES="$(echo "$SPACETIMES" | wc -l)"
     if [[ $LINES < 1 ]] ; then
-        echo "spacetime PID not found, is it running?"
+        >&2 echo "spacetime PID not found, is it running?"
         exit 1
     elif [[ $LINES > 1 ]] ; then
-        echo "Multiple spacetime PIDs. Specify one with -z"
-        echo "$SPACETIMES"
+        >&2 echo "Multiple spacetime PIDs. Specify one with -z"
+        >&2 echo "$SPACETIMES"
         exit 1
     fi
 
