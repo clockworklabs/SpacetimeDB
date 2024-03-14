@@ -11,6 +11,7 @@ use spacetimedb_lib::{ProductValue, ReducerDef};
 use spacetimedb_sats::WithTypespace;
 
 mod host_controller;
+#[allow(clippy::too_many_arguments)]
 pub mod module_host;
 pub mod scheduler;
 mod wasmtime;
@@ -19,7 +20,7 @@ pub mod instance_env;
 mod timestamp;
 mod wasm_common;
 
-pub use host_controller::{DescribedEntityType, HostController, ReducerCallResult, ReducerOutcome, UpdateOutcome};
+pub use host_controller::{DescribedEntityType, HostController, ReducerCallResult, ReducerOutcome};
 pub use module_host::{
     EntityDef, ModuleHost, NoSuchModule, ReducerCallError, UpdateDatabaseResult, UpdateDatabaseSuccess,
 };

@@ -1,14 +1,12 @@
 use std::borrow::Cow;
-use std::sync::Arc;
 
 use anyhow::Context;
 use once_cell::sync::Lazy;
 use wasmtime::{Engine, Linker, Module, StoreContext, StoreContextMut};
 
-use crate::database_instance_context::DatabaseInstanceContext;
-use crate::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget};
+use crate::energy::{EnergyQuanta, ReducerBudget};
 use crate::error::NodesError;
-use crate::hash::Hash;
+use crate::module_host_context::ModuleCreationContext;
 use crate::stdb_path;
 
 mod wasm_instance_env;
@@ -20,7 +18,6 @@ use self::wasm_instance_env::WasmInstanceEnv;
 
 use super::wasm_common::module_host_actor::InitializationError;
 use super::wasm_common::{abi, module_host_actor::WasmModuleHostActor, ModuleCreationError};
-use super::Scheduler;
 
 static ENGINE: Lazy<Engine> = Lazy::new(|| {
     let mut config = wasmtime::Config::new();
@@ -56,14 +53,8 @@ static LINKER: Lazy<Linker<WasmInstanceEnv>> = Lazy::new(|| {
     linker
 });
 
-pub fn make_actor(
-    dbic: Arc<DatabaseInstanceContext>,
-    module_hash: Hash,
-    program_bytes: &[u8],
-    scheduler: Scheduler,
-    energy_monitor: Arc<dyn EnergyMonitor>,
-) -> Result<impl super::module_host::Module, ModuleCreationError> {
-    let module = Module::new(&ENGINE, program_bytes).map_err(ModuleCreationError::WasmCompileError)?;
+pub fn make_actor(mcc: ModuleCreationContext) -> Result<impl super::module_host::Module, ModuleCreationError> {
+    let module = Module::new(&ENGINE, &mcc.program_bytes).map_err(ModuleCreationError::WasmCompileError)?;
 
     let func_imports = module
         .imports()
@@ -78,7 +69,7 @@ pub fn make_actor(
 
     let module = WasmtimeModule::new(module);
 
-    WasmModuleHostActor::new(dbic, module_hash, module, scheduler, energy_monitor).map_err(Into::into)
+    WasmModuleHostActor::new(mcc, module).map_err(Into::into)
 }
 
 #[derive(Debug, derive_more::From)]

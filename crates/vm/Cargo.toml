@@ -13,8 +13,11 @@ spacetimedb-table.workspace = true
 
 anyhow.workspace = true
 derive_more.workspace = true
+itertools.workspace = true
+smallvec.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+typed-arena.workspace = true

@@ -4,9 +4,10 @@ use spacetimedb::error::DBError;
 use spacetimedb::execution_context::ExecutionContext;
 use spacetimedb::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp};
 use spacetimedb::subscription::query::compile_read_only_query;
+use spacetimedb::subscription::subscription::ExecutionSet;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_primitives::TableId;
-use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductValue, ToDataKey};
+use spacetimedb_primitives::{col_list, TableId};
+use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductValue};
 use tempdir::TempDir;
 
 fn create_table_location(db: &RelationalDB) -> Result<TableId, DBError> {
@@ -17,8 +18,10 @@ fn create_table_location(db: &RelationalDB) -> Result<TableId, DBError> {
         ("z", AlgebraicType::I32),
         ("dimension", AlgebraicType::U32),
     ];
-    let indexes = &[(0.into(), "entity_id"), (1.into(), "chunk_index"), (2.into(), "x")];
-    db.create_table_for_test("location", schema, indexes)
+    let indexes = &[(0.into(), "entity_id"), (1.into(), "chunk_index")];
+
+    // Is necessary to test for both single & multi-column indexes...
+    db.create_table_for_test_mix_indexes("location", schema, indexes, col_list![2, 3, 4])
 }
 
 fn create_table_footprint(db: &RelationalDB) -> Result<TableId, DBError> {
@@ -38,15 +41,10 @@ fn create_table_footprint(db: &RelationalDB) -> Result<TableId, DBError> {
 }
 
 fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
-    let row_pk = row.to_data_key().to_bytes();
     DatabaseTableUpdate {
         table_id,
         table_name: table_name.to_string(),
-        ops: vec![TableOp {
-            op_type: 1,
-            row,
-            row_pk,
-        }],
+        ops: vec![TableOp::insert(row)],
     }
 }
 
@@ -74,7 +72,7 @@ fn eval(c: &mut Criterion) {
             for i in 0u64..1200 {
                 let entity_id = chunk_index * 1200 + i;
                 let x = 0i32;
-                let z = 0i32;
+                let z = entity_id as i32;
                 let dimension = 0u32;
                 let row = product!(entity_id, chunk_index, x, z, dimension);
                 let _ = db.insert(tx, rhs, row)?;
@@ -102,41 +100,34 @@ fn eval(c: &mut Criterion) {
         ],
     };
 
+    let bench_eval = |c: &mut Criterion, name, sql| {
+        c.bench_function(name, |b| {
+            let auth = AuthCtx::for_testing();
+            let tx = db.begin_tx();
+            let query = compile_read_only_query(&db, &tx, &auth, sql).unwrap();
+            let query: ExecutionSet = query.into();
+
+            b.iter(|| drop(black_box(query.eval(&db, &tx).unwrap())))
+        });
+    };
+
     // To profile this benchmark for 30s
     // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- full-scan --exact --profile-time=30
-    c.bench_function("full-scan", |b| {
-        // Iterate 1M rows.
-        let scan = "select * from footprint";
-        let auth = AuthCtx::for_testing();
-        let tx = db.begin_tx();
-        let query = compile_read_only_query(&db, &tx, &auth, scan).unwrap();
-
-        b.iter(|| {
-            let out = query.eval(&db, &tx, auth).unwrap();
-            black_box(out);
-        })
-    });
+    // Iterate 1M rows.
+    bench_eval(c, "full-scan", "select * from footprint");
 
     // To profile this benchmark for 30s
     // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- full-join --exact --profile-time=30
-    c.bench_function("full-join", |b| {
-        // Join 1M rows on the left with 12K rows on the right.
-        // Note, this should use an index join so as not to read the entire lhs table.
-        let join = format!(
-            "\
-            select footprint.* \
-            from footprint join location on footprint.entity_id = location.entity_id \
-            where location.chunk_index = {chunk_index}"
-        );
-        let auth = AuthCtx::for_testing();
-        let tx = db.begin_tx();
-        let query = compile_read_only_query(&db, &tx, &auth, &join).unwrap();
-
-        b.iter(|| {
-            let out = query.eval(&db, &tx, AuthCtx::for_testing()).unwrap();
-            black_box(out);
-        })
-    });
+    // Join 1M rows on the left with 12K rows on the right.
+    // Note, this should use an index join so as not to read the entire lhs table.
+    let name = format!(
+        r#"
+        select footprint.*
+        from footprint join location on footprint.entity_id = location.entity_id
+        where location.chunk_index = {chunk_index}
+        "#
+    );
+    bench_eval(c, "full-join", &name);
 
     // To profile this benchmark for 30s
     // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- incr-select --exact --profile-time=30
@@ -148,12 +139,10 @@ fn eval(c: &mut Criterion) {
         let tx = db.begin_tx();
         let query_lhs = compile_read_only_query(&db, &tx, &auth, select_lhs).unwrap();
         let query_rhs = compile_read_only_query(&db, &tx, &auth, select_rhs).unwrap();
-
-        let mut query = query_lhs;
-        query.extend(query_rhs);
+        let query = ExecutionSet::from_iter(query_lhs.into_iter().chain(query_rhs));
 
         b.iter(|| {
-            let out = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing()).unwrap();
+            let out = query.eval_incr(&db, &tx, &update).unwrap();
             black_box(out);
         })
     });
@@ -171,12 +160,22 @@ fn eval(c: &mut Criterion) {
         let auth = AuthCtx::for_testing();
         let tx = db.begin_tx();
         let query = compile_read_only_query(&db, &tx, &auth, &join).unwrap();
+        let query: ExecutionSet = query.into();
 
         b.iter(|| {
-            let out = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing()).unwrap();
+            let out = query.eval_incr(&db, &tx, &update).unwrap();
             black_box(out);
         })
     });
+
+    // To profile this benchmark for 30s
+    // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- query-indexes-multi --exact --profile-time=30
+    // Iterate 1M rows.
+    bench_eval(
+        c,
+        "query-indexes-multi",
+        "select * from location WHERE x = 0 AND z = 10000 AND dimension = 0",
+    );
 }
 
 criterion_group!(benches, eval);

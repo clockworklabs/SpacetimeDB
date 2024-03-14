@@ -29,7 +29,7 @@ pub(crate) trait StateView {
 
     fn table_id_from_name(&self, table_name: &str, database_address: Address) -> Result<Option<TableId>> {
         let ctx = ExecutionContext::internal(database_address);
-        let name = table_name.to_owned().into();
+        let name = &table_name.to_owned().into();
         let row = self
             .iter_by_col_eq(&ctx, &ST_TABLES_ID, StTableFields::TableName.col_id().into(), name)?
             .next();
@@ -52,13 +52,13 @@ pub(crate) trait StateView {
         range: R,
     ) -> Result<IterByColRange<'a, R>>;
 
-    fn iter_by_col_eq<'a>(
+    fn iter_by_col_eq<'a, 'r>(
         &'a self,
         ctx: &'a ExecutionContext,
         table_id: &TableId,
         cols: ColList,
-        value: AlgebraicValue,
-    ) -> Result<IterByColEq<'_>> {
+        value: &'r AlgebraicValue,
+    ) -> Result<IterByColEq<'a, 'r>> {
         self.iter_by_col_range(ctx, table_id, cols, value)
     }
 
@@ -66,9 +66,9 @@ pub(crate) trait StateView {
     fn schema_for_table_raw(&self, ctx: &ExecutionContext, table_id: TableId) -> Result<TableSchema> {
         // Look up the table_name for the table in question.
         let st_table_table_id_col = StTableFields::TableId.col_id().into();
-        let value: AlgebraicValue = table_id.into();
+        let value_eq = &table_id.into();
         let row = self
-            .iter_by_col_eq(ctx, &ST_TABLES_ID, st_table_table_id_col, table_id.into())?
+            .iter_by_col_eq(ctx, &ST_TABLES_ID, st_table_table_id_col, value_eq)?
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, table_id.into()))?;
         let row = StTableRow::try_from(row)?;
@@ -80,7 +80,7 @@ pub(crate) trait StateView {
         // Look up the columns for the table in question.
         let st_columns_table_id_col = StColumnFields::TableId.col_id().into();
         let mut columns = self
-            .iter_by_col_eq(ctx, &ST_COLUMNS_ID, st_columns_table_id_col, value)?
+            .iter_by_col_eq(ctx, &ST_COLUMNS_ID, st_columns_table_id_col, value_eq)?
             .map(|row| {
                 let row = StColumnRow::try_from(row)?;
                 Ok(ColumnSchema {
@@ -96,7 +96,7 @@ pub(crate) trait StateView {
         // Look up the constraints for the table in question.
         let st_constraints_table_id = StConstraintFields::TableId.col_id().into();
         let constraints = self
-            .iter_by_col_eq(ctx, &ST_CONSTRAINTS_ID, st_constraints_table_id, table_id.into())?
+            .iter_by_col_eq(ctx, &ST_CONSTRAINTS_ID, st_constraints_table_id, value_eq)?
             .map(|row| {
                 let row = StConstraintRow::try_from(row)?;
                 Ok(ConstraintSchema {
@@ -112,7 +112,7 @@ pub(crate) trait StateView {
         // Look up the sequences for the table in question.
         let st_seq_table_id = StSequenceFields::TableId.col_id().into();
         let sequences = self
-            .iter_by_col_eq(ctx, &ST_SEQUENCES_ID, st_seq_table_id, table_id.into())?
+            .iter_by_col_eq(ctx, &ST_SEQUENCES_ID, st_seq_table_id, value_eq)?
             .map(|row| {
                 let row = StSequenceRow::try_from(row)?;
                 Ok(SequenceSchema {
@@ -132,7 +132,7 @@ pub(crate) trait StateView {
         // Look up the indexes for the table in question.
         let st_idx_table_id = StIndexFields::TableId.col_id().into();
         let indexes = self
-            .iter_by_col_eq(ctx, &ST_INDEXES_ID, st_idx_table_id, table_id.into())?
+            .iter_by_col_eq(ctx, &ST_INDEXES_ID, st_idx_table_id, value_eq)?
             .map(|row| {
                 let row = StIndexRow::try_from(row)?;
                 Ok(IndexSchema {
@@ -410,7 +410,7 @@ impl<'a> Iterator for IndexSeekIterMutTxId<'a> {
 }
 
 /// An [IterByColRange] for an individual column value.
-pub type IterByColEq<'a> = IterByColRange<'a, AlgebraicValue>;
+pub type IterByColEq<'a, 'r> = IterByColRange<'a, &'r AlgebraicValue>;
 
 /// An iterator for a range of values in a column.
 pub enum IterByColRange<'a, R: RangeBounds<AlgebraicValue>> {

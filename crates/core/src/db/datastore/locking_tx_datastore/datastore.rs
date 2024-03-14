@@ -249,7 +249,7 @@ impl Tx for Locking {
 
 impl TxDatastore for Locking {
     type Iter<'a> = Iter<'a> where Self: 'a;
-    type IterByColEq<'a> = IterByColRange<'a, AlgebraicValue> where Self: 'a;
+    type IterByColEq<'a, 'r> = IterByColRange<'a, &'r AlgebraicValue> where Self: 'a;
     type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterByColRange<'a, R> where Self: 'a;
 
     fn iter_tx<'a>(&'a self, ctx: &'a ExecutionContext, tx: &'a Self::Tx, table_id: TableId) -> Result<Self::Iter<'a>> {
@@ -267,14 +267,14 @@ impl TxDatastore for Locking {
         tx.iter_by_col_range(ctx, &table_id, cols.into(), range)
     }
 
-    fn iter_by_col_eq_tx<'a>(
+    fn iter_by_col_eq_tx<'a, 'r>(
         &'a self,
         ctx: &'a ExecutionContext,
         tx: &'a Self::Tx,
         table_id: TableId,
         cols: impl Into<ColList>,
-        value: AlgebraicValue,
-    ) -> Result<Self::IterByColEq<'a>> {
+        value: &'r AlgebraicValue,
+    ) -> Result<Self::IterByColEq<'a, 'r>> {
         tx.iter_by_col_eq(ctx, &table_id, cols.into(), value)
     }
 
@@ -413,14 +413,14 @@ impl MutTxDatastore for Locking {
         tx.iter_by_col_range(ctx, &table_id, cols.into(), range)
     }
 
-    fn iter_by_col_eq_mut_tx<'a>(
+    fn iter_by_col_eq_mut_tx<'a, 'r>(
         &'a self,
         ctx: &'a ExecutionContext,
         tx: &'a Self::MutTx,
         table_id: TableId,
         cols: impl Into<ColList>,
-        value: AlgebraicValue,
-    ) -> Result<Self::IterByColEq<'a>> {
+        value: &'r AlgebraicValue,
+    ) -> Result<Self::IterByColEq<'a, 'r>> {
         tx.iter_by_col_eq(ctx, &table_id, cols.into(), value)
     }
 
@@ -669,7 +669,7 @@ mod tests {
         pub fn scan_st_tables_by_col(
             &self,
             cols: impl Into<ColList>,
-            value: AlgebraicValue,
+            value: &AlgebraicValue,
         ) -> Result<Vec<StTableRow<String>>> {
             Ok(self
                 .db
@@ -691,7 +691,7 @@ mod tests {
         pub fn scan_st_columns_by_col(
             &self,
             cols: impl Into<ColList>,
-            value: AlgebraicValue,
+            value: &AlgebraicValue,
         ) -> Result<Vec<StColumnRow<String>>> {
             Ok(self
                 .db
@@ -1136,12 +1136,12 @@ mod tests {
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
 
-        let table_rows = query.scan_st_tables_by_col(ColId(0), table_id.into())?;
+        let table_rows = query.scan_st_tables_by_col(ColId(0), &table_id.into())?;
         #[rustfmt::skip]
         assert_eq!(table_rows, map_array([
             TableRow { id: 6, name: "Foo", ty: StTableType::User, access: StAccess::Public }
         ]));
-        let column_rows = query.scan_st_columns_by_col(ColId(0), table_id.into())?;
+        let column_rows = query.scan_st_columns_by_col(ColId(0), &table_id.into())?;
         #[rustfmt::skip]
         assert_eq!(column_rows, map_array(basic_table_schema_cols()));
         Ok(())
@@ -1155,12 +1155,12 @@ mod tests {
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
 
-        let table_rows = query.scan_st_tables_by_col(ColId(0), table_id.into())?;
+        let table_rows = query.scan_st_tables_by_col(ColId(0), &table_id.into())?;
         #[rustfmt::skip]
         assert_eq!(table_rows, map_array([
             TableRow { id: 6, name: "Foo", ty: StTableType::User, access: StAccess::Public }
         ]));
-        let column_rows = query.scan_st_columns_by_col(ColId(0), table_id.into())?;
+        let column_rows = query.scan_st_columns_by_col(ColId(0), &table_id.into())?;
         #[rustfmt::skip]
         assert_eq!(column_rows, map_array(basic_table_schema_cols()));
 
@@ -1179,9 +1179,9 @@ mod tests {
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
 
-        let table_rows = query.scan_st_tables_by_col(ColId(0), table_id.into())?;
+        let table_rows = query.scan_st_tables_by_col(ColId(0), &table_id.into())?;
         assert_eq!(table_rows, []);
-        let column_rows = query.scan_st_columns_by_col(ColId(0), table_id.into())?;
+        let column_rows = query.scan_st_columns_by_col(ColId(0), &table_id.into())?;
         assert_eq!(column_rows, []);
         Ok(())
     }
@@ -1565,7 +1565,7 @@ mod tests {
                     tx,
                     table_id,
                     ColId(0),
-                    AlgebraicValue::U32(1),
+                    &AlgebraicValue::U32(1),
                 )
                 .unwrap()
                 .map(|row_ref| row_ref.to_product_value())

@@ -7,7 +7,6 @@ pub mod filter;
 pub mod identity;
 pub mod name;
 pub mod operator;
-pub mod primary_key;
 pub mod type_def {
     pub use spacetimedb_sats::{AlgebraicType, ProductType, ProductTypeElement, SumType};
 }
@@ -24,7 +23,6 @@ pub mod version;
 
 pub use address::Address;
 pub use identity::Identity;
-pub use primary_key::PrimaryKey;
 pub use spacetimedb_sats::hash::{self, hash_bytes, Hash};
 pub use spacetimedb_sats::relation;
 pub use spacetimedb_sats::DataKey;

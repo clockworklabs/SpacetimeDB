@@ -10,17 +10,17 @@ pub mod rt;
 pub mod time_span;
 mod timestamp;
 
+use crate::sats::db::attr::ColumnAttribute;
 use crate::sats::db::def::IndexType;
 use spacetimedb_lib::buffer::{BufReader, BufWriter, Cursor, DecodeError};
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, impl_st};
-use spacetimedb_lib::{bsatn, PrimaryKey, ProductType, ProductValue};
+use spacetimedb_lib::{bsatn, ProductType, ProductValue};
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::slice::from_ref;
 use std::{fmt, panic};
 use sys::{Buffer, BufferIter};
 
-use crate::sats::db::attr::ColumnAttribute;
 pub use log;
 pub use sats::SpacetimeType;
 pub use spacetimedb_bindings_macro::{duration, query, spacetimedb, TableType};
@@ -440,11 +440,6 @@ impl<T: TableType> sealed::InsertResult for T {
 /// then so are the values in their serialized representation.
 pub trait FilterableValue: Serialize + Eq {}
 
-/// A trait for types that can be converted into primary keys.
-pub trait UniqueValue: FilterableValue {
-    fn into_primarykey(self) -> PrimaryKey;
-}
-
 #[doc(hidden)]
 pub mod query {
     use super::*;
@@ -470,7 +465,7 @@ pub mod query {
     #[doc(hidden)]
     pub fn filter_by_unique_field<
         Table: TableType + FieldAccess<COL_IDX, Field = T>,
-        T: UniqueValue,
+        T: FilterableValue,
         const COL_IDX: u8,
     >(
         val: &T,
@@ -531,7 +526,7 @@ pub mod query {
     /// **NOTE:** Do not use directly.
     /// This is exposed as `delete_by_{$field_name}` on types with `#[spacetimedb(table)]`
     /// where the field has a unique constraint.
-    pub fn delete_by_unique_field<Table: TableType, T: UniqueValue, const COL_IDX: u8>(val: &T) -> bool {
+    pub fn delete_by_unique_field<Table: TableType, T: FilterableValue, const COL_IDX: u8>(val: &T) -> bool {
         let count = delete_by_field::<Table, T, COL_IDX>(val);
         debug_assert!(count <= 1);
         count > 0
@@ -545,7 +540,7 @@ pub mod query {
     /// **NOTE:** Do not use directly.
     /// This is exposed as `update_by_{$field_name}` on types with `#[spacetimedb(table)]`.
     #[doc(hidden)]
-    pub fn update_by_field<Table: TableType, T: UniqueValue, const COL_IDX: u8>(old: &T, new: Table) -> bool {
+    pub fn update_by_field<Table: TableType, T: FilterableValue, const COL_IDX: u8>(old: &T, new: Table) -> bool {
         // Delete the existing row, if any.
         delete_by_field::<Table, T, COL_IDX>(old);
 

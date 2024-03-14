@@ -1,11 +1,13 @@
 use base64::Engine;
 use prost::Message as _;
+use spacetimedb_lib::identity::RequestId;
+use std::time::Instant;
 
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
 use crate::identity::Identity;
 use crate::json::client_api::{
     EventJson, FunctionCallJson, IdentityTokenJson, MessageJson, OneOffQueryResponseJson, OneOffTableJson,
-    TransactionUpdateJson,
+    SubscriptionUpdateJson, TransactionUpdateJson,
 };
 use crate::protobuf::client_api::{event, message, Event, FunctionCall, IdentityToken, Message, TransactionUpdate};
 use spacetimedb_client_api_messages::client_api::{OneOffQueryResponse, OneOffTable};
@@ -54,7 +56,7 @@ impl ServerMessage for IdentityTokenMessage {
 
 pub struct TransactionUpdateMessage<'a> {
     pub event: &'a ModuleEvent,
-    pub database_update: DatabaseUpdate,
+    pub database_update: SubscriptionUpdate,
 }
 
 impl ServerMessage for TransactionUpdateMessage<'_> {
@@ -73,6 +75,7 @@ impl ServerMessage for TransactionUpdateMessage<'_> {
             function_call: FunctionCallJson {
                 reducer: event.function_call.reducer.to_owned(),
                 args: event.function_call.args.get_json().clone(),
+                request_id: database_update.request_id.unwrap_or(0),
             },
             energy_quanta_used: event.energy_quanta_used.get(),
             message: errmsg,
@@ -101,6 +104,7 @@ impl ServerMessage for TransactionUpdateMessage<'_> {
             function_call: Some(FunctionCall {
                 reducer: event.function_call.reducer.to_owned(),
                 arg_bytes: event.function_call.args.get_bsatn().clone().into(),
+                request_id: database_update.request_id.unwrap_or(0),
             }),
             message: errmsg,
             energy_quanta_used: event.energy_quanta_used.get() as i64,
@@ -139,17 +143,44 @@ impl ServerMessage for &mut TransactionUpdateMessage<'_> {
 }
 
 pub struct SubscriptionUpdateMessage {
-    pub database_update: DatabaseUpdate,
+    pub subscription_update: SubscriptionUpdate,
 }
 
 impl ServerMessage for SubscriptionUpdateMessage {
     fn serialize_text(self) -> MessageJson {
-        MessageJson::SubscriptionUpdate(self.database_update.into_json())
+        MessageJson::SubscriptionUpdate(self.subscription_update.into_json())
     }
 
     fn serialize_binary(self) -> Message {
         Message {
-            r#type: Some(message::Type::SubscriptionUpdate(self.database_update.into_protobuf())),
+            r#type: Some(message::Type::SubscriptionUpdate(
+                self.subscription_update.into_protobuf(),
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct SubscriptionUpdate {
+    pub database_update: DatabaseUpdate,
+    pub request_id: Option<RequestId>,
+    pub timer: Option<Instant>,
+}
+
+impl SubscriptionUpdate {
+    fn into_json(self) -> SubscriptionUpdateJson {
+        SubscriptionUpdateJson {
+            table_updates: self.database_update.into_json(),
+            request_id: self.request_id.unwrap_or(0),
+            total_host_execution_duration_micros: self.timer.map_or(0, |t| t.elapsed().as_micros() as u64),
+        }
+    }
+
+    fn into_protobuf(self) -> spacetimedb_client_api_messages::client_api::SubscriptionUpdate {
+        spacetimedb_client_api_messages::client_api::SubscriptionUpdate {
+            table_updates: self.database_update.into_protobuf(),
+            request_id: self.request_id.unwrap_or(0),
+            total_host_execution_duration_micros: self.timer.map_or(0, |t| t.elapsed().as_micros() as u64),
         }
     }
 }
@@ -194,6 +225,7 @@ pub struct OneOffQueryResponseMessage {
     pub message_id: Vec<u8>,
     pub error: Option<String>,
     pub results: Vec<MemTable>,
+    pub total_host_execution_duration: u64,
 }
 
 impl ServerMessage for OneOffQueryResponseMessage {
@@ -205,7 +237,7 @@ impl ServerMessage for OneOffQueryResponseMessage {
                 .results
                 .into_iter()
                 .map(|table| OneOffTableJson {
-                    table_name: table.head.table_name,
+                    table_name: table.head.table_name.clone(),
                     rows: table.data,
                 })
                 .collect(),
@@ -221,7 +253,7 @@ impl ServerMessage for OneOffQueryResponseMessage {
                     .results
                     .into_iter()
                     .map(|table| OneOffTable {
-                        table_name: table.head.table_name,
+                        table_name: table.head.table_name.clone(),
                         row: table
                             .data
                             .into_iter()
@@ -233,6 +265,7 @@ impl ServerMessage for OneOffQueryResponseMessage {
                             .collect(),
                     })
                     .collect(),
+                total_host_execution_duration_micros: self.total_host_execution_duration,
             })),
         }
     }

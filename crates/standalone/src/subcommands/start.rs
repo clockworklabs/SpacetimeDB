@@ -222,13 +222,14 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
         set_env_with_warning("SPACETIMEDB_TRACY", "1");
     }
 
-    startup::configure_tracing();
+    startup::StartupOptions::default().configure();
 
     let ctx = StandaloneEnv::init(config).await?;
 
     let service = router().with_state(ctx);
 
     let tcp = TcpListener::bind(listen_addr).await?;
+    socket2::SockRef::from(&tcp).set_nodelay(true)?;
     log::debug!("Starting SpacetimeDB listening on {}", tcp.local_addr().unwrap());
     axum::serve(tcp, service).await?;
     Ok(())

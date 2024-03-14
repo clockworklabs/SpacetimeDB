@@ -1,98 +1,27 @@
+use crate::db::update::UpdateDatabaseError;
 use crate::energy::{EnergyMonitor, EnergyQuanta, NullEnergyMonitor};
+use crate::execution_context::ExecutionContext;
 use crate::hash::hash_bytes;
 use crate::host;
 use crate::messages::control_db::HostType;
-use crate::module_host_context::ModuleHostContext;
-use anyhow::Context;
+use crate::module_host_context::{ModuleCreationContext, ModuleHostContext};
+use crate::util::spawn_rayon;
+use anyhow::{ensure, Context};
+use futures::TryFutureExt;
 use parking_lot::Mutex;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt;
+use std::future::Future;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::oneshot;
 
 use super::module_host::{Catalog, EntityDef, EventStatus, ModuleHost, NoSuchModule, UpdateDatabaseResult};
-use super::scheduler::SchedulerStarter;
 use super::ReducerArgs;
 
 pub struct HostController {
     modules: Mutex<HashMap<u64, ModuleHost>>,
-    threadpool: Arc<HostThreadpool>,
     pub energy_monitor: Arc<dyn EnergyMonitor>,
-}
-
-pub struct HostThreadpool {
-    inner: rayon_core::ThreadPool,
-}
-
-/// A Rayon [spawn_handler](https://docs.rs/rustc-rayon-core/latest/rayon_core/struct.ThreadPoolBuilder.html#method.spawn_handler)
-/// which enters the given Tokio runtime at thread startup,
-/// so that the Rayon workers can send along async channels.
-///
-/// Other than entering the `rt`, this spawn handler behaves identitically to the default Rayon spawn handler,
-/// as documented in
-/// https://docs.rs/rustc-rayon-core/0.5.0/rayon_core/struct.ThreadPoolBuilder.html#method.spawn_handler
-///
-/// Having Rayon threads block on async operations is a code smell.
-/// We need to be careful that the Rayon threads never actually block,
-/// i.e. that every async operation they invoke immediately completes.
-/// I (pgoldman 2024-02-22) believe that our Rayon threads only ever send to unbounded channels,
-/// and therefore never wait.
-fn thread_spawn_handler(rt: tokio::runtime::Handle) -> impl FnMut(rayon::ThreadBuilder) -> Result<(), std::io::Error> {
-    move |thread| {
-        let rt = rt.clone();
-        let mut builder = std::thread::Builder::new();
-        if let Some(name) = thread.name() {
-            builder = builder.name(name.to_owned());
-        }
-        if let Some(stack_size) = thread.stack_size() {
-            builder = builder.stack_size(stack_size);
-        }
-        builder.spawn(move || {
-            let _rt_guard = rt.enter();
-            thread.run()
-        })?;
-        Ok(())
-    }
-}
-
-impl HostThreadpool {
-    fn new() -> Self {
-        let inner = rayon_core::ThreadPoolBuilder::new()
-            .thread_name(|_idx| "rayon-worker".to_string())
-            .spawn_handler(thread_spawn_handler(tokio::runtime::Handle::current()))
-            // TODO(perf, pgoldman 2024-02-22):
-            // in the case where we have many modules running many reducers,
-            // we'll wind up with Rayon threads competing with each other and with Tokio threads
-            // for CPU time.
-            //
-            // We should investigate creating two separate CPU pools,
-            // possibly via https://docs.rs/nix/latest/nix/sched/fn.sched_setaffinity.html,
-            // and restricting Tokio threads to one CPU pool
-            // and Rayon threads to the other.
-            // Then we should give Tokio and Rayon each a number of worker threads
-            // equal to the size of their pool.
-            .num_threads(std::thread::available_parallelism().unwrap().get())
-            .build()
-            .unwrap();
-        Self { inner }
-    }
-
-    pub fn spawn(&self, f: impl FnOnce() + Send + 'static) {
-        self.inner.spawn(f)
-    }
-
-    pub async fn spawn_task<R: Send + 'static>(&self, f: impl FnOnce() -> R + Send + 'static) -> R {
-        let (tx, rx) = oneshot::channel();
-        self.inner.spawn(|| {
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
-            if let Err(Err(_panic)) = tx.send(result) {
-                tracing::warn!("uncaught panic on threadpool")
-            }
-        });
-        rx.await.unwrap().unwrap_or_else(|err| std::panic::resume_unwind(err))
-    }
 }
 
 #[derive(PartialEq, Eq, Hash, Copy, Clone, Serialize, Debug)]
@@ -166,16 +95,10 @@ impl From<&EventStatus> for ReducerOutcome {
     }
 }
 
-pub struct UpdateOutcome {
-    pub module_host: ModuleHost,
-    pub update_result: UpdateDatabaseResult,
-}
-
 impl HostController {
     pub fn new(energy_monitor: Arc<impl EnergyMonitor>) -> Self {
         Self {
             modules: Mutex::new(HashMap::new()),
-            threadpool: Arc::new(HostThreadpool::new()),
             energy_monitor,
         }
     }
@@ -185,15 +108,17 @@ impl HostController {
         fence: u128,
         module_host_context: ModuleHostContext,
     ) -> Result<ModuleHost, anyhow::Error> {
-        let module_host = self.spawn_module_host(module_host_context).await?;
-        // TODO(cloutiertyler): Hook this up again
-        // let identity = &module_host.info().identity;
-        // let max_spend = worker_budget::max_tx_spend(identity);
+        self.setup_module_host(module_host_context, |module_host| async {
+            // TODO(cloutiertyler): Hook this up again
+            // let identity = &module_host.info().identity;
+            // let max_spend = worker_budget::max_tx_spend(identity);
+            let rcr = module_host.init_database(fence, ReducerArgs::Nullary).await?;
+            // worker_budget::record_tx_spend(identity, rcr.energy_quanta_used);
+            rcr.outcome.into_result().context("init reducer failed")?;
 
-        let rcr = module_host.init_database(fence, ReducerArgs::Nullary).await?;
-        // worker_budget::record_tx_spend(identity, rcr.energy_quanta_used);
-        rcr.outcome.into_result().context("init reducer failed")?;
-        Ok(module_host)
+            Ok(module_host)
+        })
+        .await
     }
 
     pub async fn delete_module_host(
@@ -218,21 +143,18 @@ impl HostController {
         &self,
         fence: u128,
         module_host_context: ModuleHostContext,
-    ) -> Result<UpdateOutcome, anyhow::Error> {
-        let module_host = self.spawn_module_host(module_host_context).await?;
-        // TODO: see init_module_host
-        let update_result = module_host.update_database(fence).await?;
-
-        Ok(UpdateOutcome {
-            module_host,
-            update_result,
+    ) -> Result<UpdateDatabaseResult, anyhow::Error> {
+        self.setup_module_host(module_host_context, |module_host| async move {
+            let update_result = module_host.update_database(fence).await?;
+            // Turn UpdateDatabaseError into anyhow::Error, so the module gets
+            // discarded.
+            update_result.map_err(Into::into)
         })
-    }
-
-    pub async fn add_module_host(&self, module_host_context: ModuleHostContext) -> Result<ModuleHost, anyhow::Error> {
-        let module_host = self.spawn_module_host(module_host_context).await?;
-        // module_host.init_function(); ??
-        Ok(module_host)
+        .await
+        // Extract UpdateDatabaseError again, so we can return Ok(Err(..)), and
+        // Err for any other error.
+        .map(Ok)
+        .or_else(|e| e.downcast::<UpdateDatabaseError>().map(Err))
     }
 
     /// NOTE: Currently repeating reducers are only restarted when the [ModuleHost] is spawned.
@@ -245,36 +167,105 @@ impl HostController {
     /// impact the logic of applications. The idea being that if SpacetimeDB is a distributed operating
     /// system, the applications will expect to be called when they are scheduled to be called regardless
     /// of whether the OS has been restarted.
-    pub async fn spawn_module_host(&self, module_host_context: ModuleHostContext) -> Result<ModuleHost, anyhow::Error> {
-        let key = module_host_context.dbic.database_instance_id;
-
-        let (module_host, start_scheduler) = self.make_module_host(module_host_context)?;
-
-        let old_module = self.modules.lock().insert(key, module_host.clone());
-        if let Some(old_module) = old_module {
-            old_module.exit().await
-        }
-        module_host.start();
-        start_scheduler.start(&module_host)?;
-
-        Ok(module_host)
+    pub async fn spawn_module_host(&self, mhc: ModuleHostContext) -> Result<ModuleHost, anyhow::Error> {
+        self.setup_module_host(mhc, |mh| async { Ok(mh) }).await
     }
 
-    fn make_module_host(&self, mhc: ModuleHostContext) -> anyhow::Result<(ModuleHost, SchedulerStarter)> {
-        let module_hash = hash_bytes(&mhc.program_bytes);
-        let (threadpool, energy_monitor) = (self.threadpool.clone(), self.energy_monitor.clone());
-        let module_host = match mhc.host_type {
+    /// Set up the [`ModuleHost`] described by the provided [`ModuleHostContext`],
+    /// and run the closure `f` over it.
+    ///
+    /// If `F` returns an `Ok` result, the module host is registered with this
+    /// controller (i.e. [`Self::has_module_host`] returns true), and its
+    /// reducer scheduler is started.
+    ///
+    /// Otherwise, if `F` returns an `Err` result, the module is discarded.
+    ///
+    /// In the `Err` case, `F` **MUST** roll back any modifications it has made
+    /// to the database passed in the [`ModuleHostContext`].
+    async fn setup_module_host<F, Fut, T>(&self, mhc: ModuleHostContext, f: F) -> anyhow::Result<T>
+    where
+        F: FnOnce(ModuleHost) -> Fut,
+        Fut: Future<Output = anyhow::Result<T>>,
+    {
+        let key = mhc.dbic.database_instance_id;
+
+        let program_hash = hash_bytes(&mhc.program_bytes);
+        let mcc = ModuleCreationContext {
+            dbic: mhc.dbic.clone(),
+            scheduler: mhc.scheduler,
+            program_hash,
+            program_bytes: mhc.program_bytes,
+            energy_monitor: self.energy_monitor.clone(),
+        };
+        let module_host = spawn_rayon(move || Self::make_module_host(mhc.host_type, mcc)).await?;
+        module_host.start();
+
+        let res = f(module_host.clone())
+            .or_else(|e| async {
+                module_host.exit().await;
+                Err(e)
+            })
+            .await?;
+
+        let guard_program_hash = || {
+            let db = &mhc.dbic.relational_db;
+            let db_program_hash = db.with_read_only(&ExecutionContext::default(), |tx| db.program_hash(tx))?;
+            ensure!(
+                Some(program_hash) == db_program_hash,
+                "supplied program {} does not match database program {:?}",
+                program_hash,
+                db_program_hash,
+            );
+
+            Ok(())
+        };
+        let old_module = {
+            let mut modules = self.modules.lock();
+            // At this point, the supplied program must be the program stored in
+            // the running database. Assert that this is the case.
+            //
+            // It is unfortunate that [`Self::spawn_module_host`] is both public
+            // and takes the module's program bytes in its argument. Because it
+            // can be called concurrently to [`Self::init_module_host`] or
+            // [`Self::update_module_host`], we may end up with the wrong module
+            // version here.
+            //
+            // We should instead store the current program bytes verbatim in the
+            // database, such that `spawn_module_host` operates on the committed
+            // state only.
+            if let Err(e) = guard_program_hash() {
+                drop(modules);
+                module_host.exit().await;
+                return Err(e);
+            }
+
+            modules.insert(key, module_host.clone())
+        };
+        if let Some(old_module) = old_module {
+            old_module.exit().await;
+        }
+        mhc.scheduler_starter.start(&module_host)?;
+
+        Ok(res)
+    }
+
+    /// Set up the actual module host.
+    ///
+    /// This is a fairly expensive operation and should not be run on the async
+    /// task threadpool.
+    ///
+    /// Note that this function **MUST NOT** make any modifications to the
+    /// database passed in as part of the [`ModuleCreationContext`].
+    fn make_module_host(host_type: HostType, mcc: ModuleCreationContext) -> anyhow::Result<ModuleHost> {
+        let module_host = match host_type {
             HostType::Wasm => {
-                // make_actor with block_in_place since it's going to take some time to compute.
                 let start = Instant::now();
-                let actor = tokio::task::block_in_place(|| {
-                    host::wasmtime::make_actor(mhc.dbic, module_hash, &mhc.program_bytes, mhc.scheduler, energy_monitor)
-                })?;
+                let actor = host::wasmtime::make_actor(mcc)?;
                 log::trace!("wasmtime::make_actor blocked for {:?}", start.elapsed());
-                ModuleHost::new(threadpool, actor)
+                ModuleHost::new(actor)
             }
         };
-        Ok((module_host, mhc.scheduler_starter))
+        Ok(module_host)
     }
 
     /// Determine if the module host described by [`ModuleHostContext`] is

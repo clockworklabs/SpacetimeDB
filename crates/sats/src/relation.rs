@@ -8,6 +8,7 @@ use spacetimedb_primitives::{ColId, ColList, ColListBuilder, Constraints, TableI
 use std::collections::hash_map::DefaultHasher;
 use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 pub fn calculate_hash<T: Hash>(t: &T) -> u64 {
     let mut s = DefaultHasher::new();
@@ -15,7 +16,7 @@ pub fn calculate_hash<T: Hash>(t: &T) -> u64 {
     s.finish()
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub struct TableField<'a> {
     pub table: Option<&'a str>,
     pub field: &'a str,
@@ -34,7 +35,7 @@ pub fn extract_table_field(ident: &str) -> Result<TableField, RelationError> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub enum FieldOnly<'a> {
     Name(&'a str),
     Pos(usize),
@@ -53,6 +54,7 @@ impl fmt::Display for FieldOnly<'_> {
     }
 }
 
+// TODO(perf): Remove `Clone` derivation.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub enum FieldName {
     Name { table: String, field: String },
@@ -101,6 +103,7 @@ impl FieldName {
     }
 }
 
+// TODO(perf): Remove `Clone` derivation.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, From)]
 pub enum FieldExpr {
     Name(FieldName),
@@ -135,12 +138,13 @@ impl fmt::Display for FieldExpr {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct ColumnOnlyField<'a> {
     pub field: FieldOnly<'a>,
     pub algebraic_type: &'a AlgebraicType,
 }
 
+// TODO(perf): Remove `Clone` derivation.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Column {
     pub field: FieldName,
@@ -165,12 +169,13 @@ impl Column {
     }
 }
 
+// TODO(perf): Remove `Clone` impl.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct HeaderOnlyField<'a> {
     pub fields: Vec<ColumnOnlyField<'a>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Header {
     pub table_name: String,
     pub fields: Vec<Column>,
@@ -183,6 +188,20 @@ impl Header {
             table_name,
             fields,
             constraints,
+        }
+    }
+
+    /// Equivalent to what [`Clone::clone`] would do.
+    ///
+    /// `Header` intentionally does not implement `Clone`,
+    /// as we can't afford to clone it in normal execution paths.
+    /// However, we don't care about performance in error paths,
+    /// and we need to embed owned `Header`s in error objects to report useful messages.
+    pub fn clone_for_error(&self) -> Self {
+        Header {
+            table_name: self.table_name.clone(),
+            fields: self.fields.clone(),
+            constraints: self.constraints.clone(),
         }
     }
 
@@ -207,6 +226,14 @@ impl Header {
             .collect();
 
         Self::new(table_name, cols, Default::default())
+    }
+
+    pub fn to_product_type(&self) -> ProductType {
+        ProductType::from_iter(
+            self.fields.iter().map(|x| {
+                ProductTypeElement::new(x.algebraic_type.clone(), x.field.field_name().map(ToString::to_string))
+            }),
+        )
     }
 
     pub fn for_mem_table(fields: ProductType) -> Self {
@@ -246,7 +273,7 @@ impl Header {
 
     pub fn column_pos_or_err<'a>(&'a self, col: &'a FieldName) -> Result<ColId, RelationError> {
         self.column_pos(col)
-            .ok_or_else(|| RelationError::FieldNotFound(self.clone(), col.clone()))
+            .ok_or_else(|| RelationError::FieldNotFound(self.clone_for_error(), col.clone()))
     }
 
     /// Finds the position of a field with `name`.
@@ -392,7 +419,7 @@ impl From<AlgebraicType> for Header {
 }
 
 /// An estimate for the range of rows in the [Relation]
-#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct RowCount {
     pub min: usize,
     pub max: Option<usize>,
@@ -419,7 +446,7 @@ impl RowCount {
 /// A [Relation] is anything that could be represented as a [Header] of `[ColumnName:ColumnType]` that
 /// generates rows/tuples of [AlgebraicValue] that exactly match that [Header].
 pub trait Relation {
-    fn head(&self) -> &Header;
+    fn head(&self) -> &Arc<Header>;
     /// Specify the size in rows of the [Relation].
     ///
     /// Warning: It should at least be precise in the lower-bound estimate.
@@ -427,16 +454,16 @@ pub trait Relation {
 }
 
 /// A stored table from [RelationalDB]
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct DbTable {
-    pub head: Header,
+    pub head: Arc<Header>,
     pub table_id: TableId,
     pub table_type: StTableType,
     pub table_access: StAccess,
 }
 
 impl DbTable {
-    pub fn new(head: Header, table_id: TableId, table_type: StTableType, table_access: StAccess) -> Self {
+    pub fn new(head: Arc<Header>, table_id: TableId, table_type: StTableType, table_access: StAccess) -> Self {
         Self {
             head,
             table_id,
@@ -447,7 +474,7 @@ impl DbTable {
 }
 
 impl Relation for DbTable {
-    fn head(&self) -> &Header {
+    fn head(&self) -> &Arc<Header> {
         &self.head
     }
 
@@ -458,9 +485,8 @@ impl Relation for DbTable {
 
 #[cfg(test)]
 mod tests {
-    use spacetimedb_primitives::col_list;
-
     use super::*;
+    use spacetimedb_primitives::col_list;
 
     /// Build a [Header] using the initial `start_pos` as the column position for the [Constraints]
     fn head(table: &str, fields: (&str, &str), start_pos: u32) -> Header {
@@ -489,20 +515,20 @@ mod tests {
         let head = head("t1", ("a", "b"), 0);
         let new = head.project(&[] as &[FieldName]).unwrap();
 
-        let mut empty = head.clone();
+        let mut empty = head.clone_for_error();
         empty.fields.clear();
         empty.constraints.clear();
 
         assert_eq!(empty, new);
 
-        let all = head.clone();
+        let all = head.clone_for_error();
         let new = head
             .project(&[FieldName::named("t1", "a"), FieldName::named("t1", "b")])
             .unwrap();
 
         assert_eq!(all, new);
 
-        let mut first = head.clone();
+        let mut first = head.clone_for_error();
         first.fields.pop();
         first.constraints = first.retain_constraints(&0.into());
 
@@ -510,7 +536,7 @@ mod tests {
 
         assert_eq!(first, new);
 
-        let mut second = head.clone();
+        let mut second = head.clone_for_error();
         second.fields.remove(0);
         second.constraints = second.retain_constraints(&1.into());
 

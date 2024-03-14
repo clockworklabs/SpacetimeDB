@@ -9,7 +9,34 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{reload, EnvFilter};
 
-pub fn configure_tracing() {
+pub struct StartupOptions {
+    /// Whether or not to configure the global tracing subscriber.
+    pub tracing: bool,
+    /// Whether or not to configure the global rayon threadpool.
+    pub rayon: bool,
+}
+
+impl Default for StartupOptions {
+    fn default() -> Self {
+        Self {
+            tracing: true,
+            rayon: true,
+        }
+    }
+}
+
+impl StartupOptions {
+    pub fn configure(self) {
+        if self.tracing {
+            configure_tracing()
+        }
+        if self.rayon {
+            configure_rayon()
+        }
+    }
+}
+
+fn configure_tracing() {
     // Use this to change log levels at runtime.
     // This means you can change the default log level to trace
     // if you are trying to debug an issue and need more logs on then turn it off
@@ -106,5 +133,56 @@ fn reload_config<S>(conf_file: &Path, reload_handle: &reload::Handle<EnvFilter, 
                 }
             }
         }
+    }
+}
+
+fn configure_rayon() {
+    rayon_core::ThreadPoolBuilder::new()
+        .thread_name(|_idx| "rayon-worker".to_string())
+        .spawn_handler(thread_spawn_handler(tokio::runtime::Handle::current()))
+        // TODO(perf, pgoldman 2024-02-22):
+        // in the case where we have many modules running many reducers,
+        // we'll wind up with Rayon threads competing with each other and with Tokio threads
+        // for CPU time.
+        //
+        // We should investigate creating two separate CPU pools,
+        // possibly via https://docs.rs/nix/latest/nix/sched/fn.sched_setaffinity.html,
+        // and restricting Tokio threads to one CPU pool
+        // and Rayon threads to the other.
+        // Then we should give Tokio and Rayon each a number of worker threads
+        // equal to the size of their pool.
+        .num_threads(std::thread::available_parallelism().unwrap().get() / 2)
+        .build_global()
+        .unwrap()
+}
+
+/// A Rayon [spawn_handler](https://docs.rs/rustc-rayon-core/latest/rayon_core/struct.ThreadPoolBuilder.html#method.spawn_handler)
+/// which enters the given Tokio runtime at thread startup,
+/// so that the Rayon workers can send along async channels.
+///
+/// Other than entering the `rt`, this spawn handler behaves identitically to the default Rayon spawn handler,
+/// as documented in
+/// https://docs.rs/rustc-rayon-core/0.5.0/rayon_core/struct.ThreadPoolBuilder.html#method.spawn_handler
+///
+/// Having Rayon threads block on async operations is a code smell.
+/// We need to be careful that the Rayon threads never actually block,
+/// i.e. that every async operation they invoke immediately completes.
+/// I (pgoldman 2024-02-22) believe that our Rayon threads only ever send to unbounded channels,
+/// and therefore never wait.
+fn thread_spawn_handler(rt: tokio::runtime::Handle) -> impl FnMut(rayon::ThreadBuilder) -> Result<(), std::io::Error> {
+    move |thread| {
+        let rt = rt.clone();
+        let mut builder = std::thread::Builder::new();
+        if let Some(name) = thread.name() {
+            builder = builder.name(name.to_owned());
+        }
+        if let Some(stack_size) = thread.stack_size() {
+            builder = builder.stack_size(stack_size);
+        }
+        builder.spawn(move || {
+            let _rt_guard = rt.enter();
+            thread.run()
+        })?;
+        Ok(())
     }
 }

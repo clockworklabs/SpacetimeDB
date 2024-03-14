@@ -32,7 +32,7 @@ pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bo
     if !skip_clippy {
         let clippy_conf_dir = tempfile::tempdir()?;
         fs::write(clippy_conf_dir.path().join("clippy.toml"), CLIPPY_TOML)?;
-        println!("checking crate with spacetimedb's clippy configuration");
+        eprintln!("checking crate with spacetimedb's clippy configuration");
         let out = cargo_cmd(
             "clippy",
             build_debug,
