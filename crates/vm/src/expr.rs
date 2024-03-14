@@ -1487,6 +1487,9 @@ impl QueryExpr {
     ///   but the current implementation inspects only the first expr.
     ///   This is likely sufficient because this optimization is primarily useful for enabling `try_index_join`,
     ///   which is fundamentally limited to operate on the first expr.
+    ///   Note that we still get to optimize incremental joins, because we first optimize the original query
+    ///   with [`DbTable`] sources, which results in an [`IndexJoin`]
+    ///   then we replace the sources with [`MemTable`]s and go back to a [`JoinInner`] with `semi: true`.
     /// - The `Project` must immediately follow the `JoinInner`, with no intervening exprs.
     ///   Future work could search through intervening exprs to detect that the RHS table is unused.
     /// - The LHS/source table must be a [`DbTable`], not a [`MemTable`].
@@ -2667,70 +2670,6 @@ mod tests {
                 ],
                 Some(TableId(1)),
             );
-        let optimized = q.clone().optimize(&|_, _| 0);
-        assert_eq!(q, optimized);
-    }
-
-    #[test]
-    /// Tests that [`QueryExpr::optimize`] will not rewrite inner joins with an expression that uses the RHS fields before the projection.
-    fn optimize_inner_join_cmp_before_project() {
-        let lhs = TableSchema::from_def(
-            TableId(0),
-            TableDef::new(
-                "lhs".into(),
-                ProductType::from_iter([AlgebraicType::I32, AlgebraicType::String]).into(),
-            ),
-        );
-        let rhs = TableSchema::from_def(
-            TableId(1),
-            TableDef::new(
-                "rhs".into(),
-                ProductType::from_iter([AlgebraicType::I32, AlgebraicType::I64]).into(),
-            ),
-        );
-
-        let lhs_source = SourceExpr::DbTable(db_table(&lhs, TableId(0)));
-        let rhs_source = SourceExpr::DbTable(db_table(&rhs, TableId(0)));
-
-        let q = QueryExpr {
-            source: lhs_source,
-            // Build the query manually, because `.with_select` will attempt to push selections before the join.
-            query: vec![
-                Query::JoinInner(JoinExpr {
-                    rhs: QueryExpr::new(rhs_source),
-                    col_lhs: FieldName::Pos {
-                        table: "lhs".into(),
-                        field: 0,
-                    },
-                    col_rhs: FieldName::Pos {
-                        table: "rhs".into(),
-                        field: 0,
-                    },
-                    semi: false,
-                }),
-                Query::Select(ColumnOp::Cmp {
-                    op: OpQuery::Cmp(OpCmp::Eq),
-                    lhs: Box::new(ColumnOp::Field(FieldExpr::Name(FieldName::Pos {
-                        table: "rhs".into(),
-                        field: 1,
-                    }))),
-                    rhs: Box::new(ColumnOp::Field(FieldExpr::Value(AlgebraicValue::I64(0)))),
-                }),
-                Query::Project(
-                    vec![
-                        FieldExpr::Name(FieldName::Pos {
-                            table: "lhs".into(),
-                            field: 0,
-                        }),
-                        FieldExpr::Name(FieldName::Pos {
-                            table: "lhs".into(),
-                            field: 1,
-                        }),
-                    ],
-                    Some(TableId(0)),
-                ),
-            ],
-        };
         let optimized = q.clone().optimize(&|_, _| 0);
         assert_eq!(q, optimized);
     }

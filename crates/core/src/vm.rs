@@ -155,17 +155,17 @@ fn join_inner<'a>(
     db: &'a RelationalDB,
     tx: &'a TxMode,
     lhs: impl RelOps<'a> + 'a,
-    rhs: JoinExpr,
+    join: JoinExpr,
     sources: &mut SourceSet,
 ) -> Result<impl RelOps<'a> + 'a, ErrorVm> {
-    let semi = rhs.semi;
+    let semi = join.semi;
 
-    let col_lhs = FieldExpr::Name(rhs.col_lhs);
-    let col_rhs = FieldExpr::Name(rhs.col_rhs);
+    let col_lhs = FieldExpr::Name(join.col_lhs);
+    let col_rhs = FieldExpr::Name(join.col_rhs);
     let key_lhs = [col_lhs.clone()];
     let key_rhs = [col_rhs.clone()];
 
-    let rhs = build_query(ctx, db, tx, rhs.rhs.into(), sources)?;
+    let rhs = build_query(ctx, db, tx, join.rhs.into(), sources)?;
     let key_lhs_header = lhs.head().clone();
     let key_rhs_header = rhs.head().clone();
     let col_lhs_header = lhs.head().clone();
