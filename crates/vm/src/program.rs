@@ -4,7 +4,7 @@
 
 use crate::errors::ErrorVm;
 use crate::eval::{build_query, IterRows};
-use crate::expr::{Code, CrudCode, SourceSet};
+use crate::expr::{Code, CrudExpr, SourceSet};
 use crate::iterators::RelIter;
 use crate::rel_ops::RelOps;
 use crate::relation::MemTable;
@@ -25,7 +25,7 @@ pub trait ProgramVm {
 
     /// Allows to execute the query with the state carried by the implementation of this
     /// trait
-    fn eval_query(&mut self, query: CrudCode, sources: &mut SourceSet) -> Result<Code, ErrorVm>;
+    fn eval_query(&mut self, query: CrudExpr, sources: &mut SourceSet) -> Result<Code, ErrorVm>;
 }
 
 pub struct ProgramStore<P> {
@@ -63,13 +63,13 @@ impl ProgramVm for Program {
         &self.auth
     }
 
-    fn eval_query(&mut self, query: CrudCode, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
+    fn eval_query(&mut self, query: CrudExpr, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
         match query {
-            CrudCode::Query(query) => {
+            CrudExpr::Query(query) => {
                 let head = query.head().clone();
                 let row_count = query.row_count();
-                let table_access = query.table.table_access();
-                let result = if let Some(source_id) = query.table.source_id() {
+                let table_access = query.source.table_access();
+                let result = if let Some(source_id) = query.source.source_id() {
                     let Some(result_table) = sources.take_mem_table(source_id) else {
                         panic!("Query plan specifies a `MemTable` for {source_id:?}, but found a `DbTable` or nothing");
                     };
@@ -85,19 +85,19 @@ impl ProgramVm for Program {
 
                 Ok(Code::Table(MemTable::new(head, table_access, rows)))
             }
-            CrudCode::Insert { .. } => {
+            CrudExpr::Insert { .. } => {
                 todo!()
             }
-            CrudCode::Update { .. } => {
+            CrudExpr::Update { .. } => {
                 todo!()
             }
-            CrudCode::Delete { .. } => {
+            CrudExpr::Delete { .. } => {
                 todo!()
             }
-            CrudCode::CreateTable { .. } => {
+            CrudExpr::CreateTable { .. } => {
                 todo!()
             }
-            CrudCode::Drop { .. } => {
+            CrudExpr::Drop { .. } => {
                 todo!()
             }
         }
