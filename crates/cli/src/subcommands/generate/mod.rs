@@ -106,22 +106,21 @@ pub fn exec(args: &clap::ArgMatches) -> anyhow::Result<()> {
     let delete_files = args.get_flag("delete_files");
     let force = args.get_flag("force");
 
-    let path_to_wasm;
-    if !project_path.is_dir() && project_path.extension().map_or(false, |ext| ext == "wasm") {
+    let wasm_file = if !project_path.is_dir() && project_path.extension().map_or(false, |ext| ext == "wasm") {
         println!("Note: Using --project-path to provide a wasm file is deprecated, and will be");
         println!("removed in a future release. Please use --wasm-file instead.");
-        path_to_wasm = project_path.clone();
+        project_path.clone()
     } else if let Some(path) = wasm_file {
         println!("Skipping build. Instead we are inspecting {}", path.display());
-        path_to_wasm = path.clone();
+        path.clone()
     } else {
-        path_to_wasm = crate::tasks::build(project_path, skip_clippy, build_debug)?;
+        crate::tasks::build(project_path, skip_clippy, build_debug)?
     };
 
     fs::create_dir_all(out_dir)?;
 
     let mut paths = vec![];
-    for (fname, code) in generate(&path_to_wasm, lang, namespace.as_str())?.into_iter() {
+    for (fname, code) in generate(&wasm_file, lang, namespace.as_str())?.into_iter() {
         let path = out_dir.join(fname);
         paths.push(path.clone());
         fs::write(path, code)?;
