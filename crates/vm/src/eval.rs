@@ -1,48 +1,13 @@
 use std::sync::Arc;
 
 use crate::errors::ErrorVm;
-use crate::expr::{Code, CrudCode, CrudExpr, QueryCode, QueryExpr, SourceSet};
+use crate::expr::{Code, SourceSet};
 use crate::expr::{Expr, Query};
 use crate::iterators::RelIter;
 use crate::program::ProgramVm;
 use crate::rel_ops::RelOps;
 use crate::relation::RelValue;
 use spacetimedb_sats::relation::{FieldExpr, Relation};
-
-fn compile_query(q: QueryExpr) -> QueryCode {
-    QueryCode {
-        table: q.source,
-        query: q.query,
-    }
-}
-
-fn compile_query_expr(q: CrudExpr) -> Code {
-    match q {
-        CrudExpr::Query(q) => Code::Crud(CrudCode::Query(compile_query(q))),
-        CrudExpr::Insert { source, rows } => {
-            let q = CrudCode::Insert { table: source, rows };
-            Code::Crud(q)
-        }
-        CrudExpr::Update { delete, assignments } => {
-            let delete = compile_query(delete);
-            Code::Crud(CrudCode::Update { delete, assignments })
-        }
-        CrudExpr::Delete { query } => {
-            let query = compile_query(query);
-            Code::Crud(CrudCode::Delete { query })
-        }
-        CrudExpr::CreateTable { table } => Code::Crud(CrudCode::CreateTable { table }),
-        CrudExpr::Drop {
-            name,
-            kind,
-            table_access,
-        } => Code::Crud(CrudCode::Drop {
-            name,
-            kind,
-            table_access,
-        }),
-    }
-}
 
 pub type IterRows<'a> = dyn RelOps<'a> + 'a;
 
@@ -51,7 +16,6 @@ pub type IterRows<'a> = dyn RelOps<'a> + 'a;
 /// While constructing the query, the `sources` will be destructively modified with `Option::take`
 /// to extract the sources,
 /// so the `query` cannot refer to the same `SourceId` multiple times.
-#[tracing::instrument(skip_all)]
 pub fn build_query<'a>(
     mut result: Box<IterRows<'a>>,
     query: Vec<Query>,
@@ -128,15 +92,8 @@ pub fn build_query<'a>(
     Ok(result)
 }
 
-/// Optimize & compile the [CrudExpr] for late execution
-#[tracing::instrument(skip_all)]
-fn build_ast(ast: CrudExpr) -> Code {
-    compile_query_expr(ast)
-}
-
 /// Execute the code
-#[tracing::instrument(skip_all)]
-fn eval<P: ProgramVm>(p: &mut P, code: Code, sources: &mut SourceSet) -> Code {
+pub fn eval<P: ProgramVm>(p: &mut P, code: Code, sources: &mut SourceSet) -> Code {
     match code {
         Code::Value(_) => code.clone(),
         Code::Block(lines) => {
@@ -166,7 +123,7 @@ fn to_vec(of: Vec<Expr>) -> Code {
     for ast in of {
         let code = match ast {
             Expr::Block(x) => to_vec(x),
-            Expr::Crud(x) => build_ast(*x),
+            Expr::Crud(x) => Code::Crud(*x),
             x => Code::Halt(ErrorVm::Unsupported(format!("{x:?}")).into()),
         };
         new.push(code);
@@ -175,11 +132,10 @@ fn to_vec(of: Vec<Expr>) -> Code {
 }
 
 /// Optimize, compile & run the [Expr]
-#[tracing::instrument(skip_all)]
 pub fn run_ast<P: ProgramVm>(p: &mut P, ast: Expr, mut sources: SourceSet) -> Code {
     let code = match ast {
         Expr::Block(x) => to_vec(x),
-        Expr::Crud(x) => build_ast(*x),
+        Expr::Crud(x) => Code::Crud(*x),
         Expr::Value(x) => Code::Value(x),
         Expr::Halt(err) => Code::Halt(err),
         Expr::Ident(x) => Code::Halt(ErrorVm::Unsupported(format!("Ident {x}")).into()),

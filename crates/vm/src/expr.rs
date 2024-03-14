@@ -311,6 +311,20 @@ impl SourceSet {
             SourceExpr::MemTable { source_id, .. } => self.take_mem_table(*source_id).map(Table::MemTable),
         }
     }
+
+    /// Returns the number of slots for [`MemTable`]s in this set.
+    ///
+    /// Calling `self.take_mem_table(...)` or `self.take_table(...)` won't affect this number.
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Returns whether this set has any slots for [`MemTable`]s.
+    ///
+    /// Calling `self.take_mem_table(...)` or `self.take_table(...)` won't affect whether the set is empty.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 impl std::ops::Index<SourceId> for SourceSet {
@@ -528,7 +542,7 @@ impl IndexJoin {
             //
             // TODO: This determination is quite arbitrary.
             // Ultimately we should be using cardinality estimation.
-            Some(DbTable { head, table_id, .. }) if row_count(*table_id, &head.table_name) > 3000 => self,
+            Some(DbTable { head, table_id, .. }) if row_count(*table_id, &head.table_name) > 500 => self,
             // If this is a delta table, we must reorder.
             // If this is a sufficiently small physical table, we should reorder.
             _ => {
@@ -1059,6 +1073,12 @@ fn find_sargable_ops<'a>(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+// TODO(bikeshedding): Refactor this struct so that `IndexJoin`s replace the `table`,
+// rather than appearing as the first element of the `query`.
+//
+// `IndexJoin`s do not behave like filters; in fact they behave more like data sources.
+// A query conceptually starts with either a single table or an `IndexJoin`,
+// and then stacks a set of filters on top of that.
 pub struct QueryExpr {
     pub source: SourceExpr,
     pub query: Vec<Query>,
@@ -1718,27 +1738,6 @@ impl fmt::Display for Query {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-// TODO(bikeshedding): Refactor this struct so that `IndexJoin`s replace the `table`,
-// rather than appearing as the first element of the `query`.
-//
-// `IndexJoin`s do not behave like filters; in fact they behave more like data sources.
-// A query conceptually starts with either a single table or an `IndexJoin`,
-// and then stacks a set of filters on top of that.
-pub struct QueryCode {
-    pub table: SourceExpr,
-    pub query: Vec<Query>,
-}
-
-impl From<QueryExpr> for QueryCode {
-    fn from(value: QueryExpr) -> Self {
-        QueryCode {
-            table: value.source,
-            query: value.query,
-        }
-    }
-}
-
 impl AuthAccess for SourceExpr {
     fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
         if owner == caller || self.table_access() == StAccess::Public {
@@ -1763,12 +1762,12 @@ impl AuthAccess for Table {
     }
 }
 
-impl AuthAccess for QueryCode {
+impl AuthAccess for QueryExpr {
     fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
         if owner == caller {
             return Ok(());
         }
-        self.table.check_auth(owner, caller)?;
+        self.source.check_auth(owner, caller)?;
         for q in &self.query {
             q.check_auth(owner, caller)?;
         }
@@ -1777,47 +1776,23 @@ impl AuthAccess for QueryCode {
     }
 }
 
-impl Relation for QueryCode {
+impl Relation for QueryExpr {
     fn head(&self) -> &Arc<Header> {
-        self.table.head()
+        self.source.head()
     }
 
     fn row_count(&self) -> RowCount {
-        self.table.row_count()
+        self.source.row_count()
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CrudCode {
-    Query(QueryCode),
-    Insert {
-        table: SourceExpr,
-        rows: Vec<ProductValue>,
-    },
-    Update {
-        delete: QueryCode,
-        assignments: HashMap<FieldName, FieldExpr>,
-    },
-    Delete {
-        query: QueryCode,
-    },
-    CreateTable {
-        table: TableDef,
-    },
-    Drop {
-        name: String,
-        kind: DbType,
-        table_access: StAccess,
-    },
-}
-
-impl AuthAccess for CrudCode {
+impl AuthAccess for CrudExpr {
     fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
         if owner == caller {
             return Ok(());
         }
         // Anyone may query, so as long as the tables involved are public.
-        if let CrudCode::Query(q) = self {
+        if let CrudExpr::Query(q) = self {
             return q.check_auth(owner, caller);
         }
 
@@ -1832,7 +1807,7 @@ pub enum Code {
     Table(MemTable),
     Halt(ErrorLang),
     Block(Vec<Code>),
-    Crud(CrudCode),
+    Crud(CrudExpr),
     Pass,
 }
 
@@ -1848,7 +1823,7 @@ impl fmt::Display for Code {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum CodeResult {
     Value(AlgebraicValue),
     Table(MemTable),
@@ -1961,12 +1936,11 @@ mod tests {
         ]
     }
 
-    fn query_codes() -> impl IntoIterator<Item = QueryCode> {
+    fn query_exprs() -> impl IntoIterator<Item = QueryExpr> {
         tables().map(|table| {
-            let expr = QueryExpr::from(table);
-            let mut code = QueryCode::from(expr);
-            code.query = queries().into_iter().collect();
-            code
+            let mut expr = QueryExpr::from(table);
+            expr.query = queries().into_iter().collect();
+            expr
         })
     }
 
@@ -2309,7 +2283,7 @@ mod tests {
 
     #[test]
     fn test_auth_query_code() {
-        for code in query_codes() {
+        for code in query_exprs() {
             assert_owner_private(&code)
         }
     }
@@ -2323,8 +2297,8 @@ mod tests {
 
     #[test]
     fn test_auth_crud_code_query() {
-        for query in query_codes() {
-            let crud = CrudCode::Query(query);
+        for query in query_exprs() {
+            let crud = CrudExpr::Query(query);
             assert_owner_private(&crud);
         }
     }
@@ -2332,15 +2306,18 @@ mod tests {
     #[test]
     fn test_auth_crud_code_insert() {
         for table in tables() {
-            let crud = CrudCode::Insert { table, rows: vec![] };
+            let crud = CrudExpr::Insert {
+                source: table,
+                rows: vec![],
+            };
             assert_owner_required(crud);
         }
     }
 
     #[test]
     fn test_auth_crud_code_update() {
-        for qc in query_codes() {
-            let crud = CrudCode::Update {
+        for qc in query_exprs() {
+            let crud = CrudExpr::Update {
                 delete: qc,
                 assignments: Default::default(),
             };
@@ -2350,8 +2327,8 @@ mod tests {
 
     #[test]
     fn test_auth_crud_code_delete() {
-        for query in query_codes() {
-            let crud = CrudCode::Delete { query };
+        for query in query_exprs() {
+            let crud = CrudExpr::Delete { query };
             assert_owner_required(crud);
         }
     }
@@ -2362,13 +2339,13 @@ mod tests {
             .with_access(StAccess::Public)
             .with_type(StTableType::System); // hah!
 
-        let crud = CrudCode::CreateTable { table };
+        let crud = CrudExpr::CreateTable { table };
         assert_owner_required(crud);
     }
 
     #[test]
     fn test_auth_crud_code_drop() {
-        let crud = CrudCode::Drop {
+        let crud = CrudExpr::Drop {
             name: "etcpasswd".into(),
             kind: DbType::Table,
             table_access: StAccess::Public,

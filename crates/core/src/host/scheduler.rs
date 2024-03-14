@@ -307,6 +307,8 @@ impl SchedulerActor {
                     // Scheduled reducers take `None` as the caller address.
                     None,
                     None,
+                    None,
+                    None,
                     &scheduled.reducer,
                     ReducerArgs::Bsatn(scheduled.bsatn_args.into()),
                 )

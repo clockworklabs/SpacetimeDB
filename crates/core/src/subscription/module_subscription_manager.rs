@@ -1,13 +1,11 @@
 use super::execution_unit::{ExecutionUnit, QueryHash};
-use crate::client::messages::{CachedMessage, TransactionUpdateMessage};
-use crate::client::{ClientConnectionSender, DataMessage, Protocol};
+use crate::client::messages::{SubscriptionUpdate, TransactionUpdateMessage};
+use crate::client::ClientConnectionSender;
 use crate::db::relational_db::RelationalDB;
-use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, ModuleEvent};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use smallvec::SmallVec;
-use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::TableId;
 use std::collections::{HashMap, HashSet};
@@ -111,13 +109,15 @@ impl SubscriptionManager {
     /// evaluates only the necessary queries for those delta tables,
     /// and then sends the results to each client.
     #[tracing::instrument(skip_all)]
-    pub async fn eval_updates(&self, db: &RelationalDB, auth: AuthCtx, event: Arc<ModuleEvent>) -> Result<(), DBError> {
-        let tokio_handle = &tokio::runtime::Handle::current();
+    pub fn eval_updates(&self, db: &RelationalDB, event: &ModuleEvent) {
         let tables = &event.status.database_update().unwrap().tables;
-        let tx = db.begin_tx();
+
+        let tx = scopeguard::guard(db.begin_tx(), |tx| {
+            tx.release(&ExecutionContext::incremental_update(db.address()));
+        });
 
         // Put the main work on a rayon compute thread.
-        let tasks = rayon::scope(|_| {
+        rayon::scope(|_| {
             // Collect the delta tables for each query.
             // For selects this is just a single table.
             // For joins it's two tables.
@@ -134,7 +134,7 @@ impl SubscriptionManager {
                 .into_par_iter()
                 .filter_map(|(hash, tables)| self.queries.get(hash).map(|unit| (hash, tables, unit)))
                 .filter_map(|(hash, tables, unit)| {
-                    match unit.eval_incr(db, &tx, tables.into_iter(), auth) {
+                    match unit.eval_incr(db, &tx, tables.into_iter()) {
                         Ok(None) => None,
                         Ok(Some(table)) => Some((hash, table)),
                         Err(err) => {
@@ -182,30 +182,22 @@ impl SubscriptionManager {
                     updates
                 })
                 .into_iter()
-                .map(|(id, update)| {
+                .for_each(|(id, database_update)| {
                     let client = self.client(id);
-                    let event = event.clone();
-                    tokio_handle.spawn(async move {
-                        let _ = client.send(serialize_updates(update, &event, client.protocol)).await;
-                    })
-                })
-                .collect::<Vec<_>>()
-        });
-
-        tx.release(&ExecutionContext::incremental_update(db.address()));
-
-        for task in tasks {
-            let _ = task.await;
-        }
-        Ok(())
+                    let message = TransactionUpdateMessage {
+                        event,
+                        database_update: SubscriptionUpdate {
+                            database_update,
+                            request_id: event.request_id,
+                            timer: event.timer,
+                        },
+                    };
+                    if let Err(e) = client.send_message(message) {
+                        tracing::warn!(%client.id, "failed to send update message to client: {e}")
+                    }
+                });
+        })
     }
-}
-
-#[tracing::instrument(skip_all)]
-fn serialize_updates(database_update: DatabaseUpdate, event: &ModuleEvent, protocol: Protocol) -> DataMessage {
-    let message = TransactionUpdateMessage { event, database_update };
-    let mut cached = CachedMessage::new(message);
-    cached.serialize(protocol)
 }
 
 #[cfg(test)]
@@ -243,7 +235,7 @@ mod tests {
             };
             let plan = SupportedQuery::new(query, sql.to_owned())?;
             let hash = QueryHash::from_string(sql);
-            Ok(Arc::new(ExecutionUnit::new(plan, hash)))
+            Ok(Arc::new(ExecutionUnit::new(plan, hash)?))
         })
     }
 

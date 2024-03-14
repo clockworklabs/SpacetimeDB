@@ -1,16 +1,16 @@
-use std::hash::Hash;
-
-use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_primitives::TableId;
-use spacetimedb_vm::expr::SourceSet;
-
+use super::query::{self, find_op_type_col_pos, Supported, OP_TYPE_FIELD_NAME};
+use super::subscription::{IncrementalJoin, SupportedQuery};
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseTableUpdate, TableOp};
-
-use super::query::{self, run_query, Supported};
-use super::subscription::{eval_primary_updates, IncrementalJoin, SupportedQuery};
+use crate::vm::{build_query, TxMode};
+use spacetimedb_primitives::TableId;
+use spacetimedb_sats::relation::{DbTable, Header};
+use spacetimedb_vm::eval::IterRows;
+use spacetimedb_vm::expr::{Query, QueryExpr, SourceExpr, SourceSet};
+use spacetimedb_vm::rel_ops::RelOps;
+use std::hash::Hash;
 
 /// A hash for uniquely identifying query execution units,
 /// to avoid recompilation of queries that have an open subscription.
@@ -47,6 +47,17 @@ impl QueryHash {
     }
 }
 
+#[derive(Debug)]
+enum EvalIncrPlan {
+    /// For semijoins, store several versions of the plan,
+    /// for querying all combinations of L_{inserts/deletes/committed} * R_(inserts/deletes/committed).
+    Semijoin(IncrementalJoin),
+
+    /// For single-table selects, store only one version of the plan,
+    /// which has a single source, a [`MemTable`] produced by [`query::to_mem_table_with_op_type`].
+    Select(QueryExpr),
+}
+
 /// An atomic unit of execution within a subscription set.
 /// Currently just a single query plan,
 /// however in the future this could be multiple query plans,
@@ -54,7 +65,15 @@ impl QueryHash {
 #[derive(Debug)]
 pub struct ExecutionUnit {
     hash: QueryHash,
-    plan: SupportedQuery,
+
+    /// A version of the plan optimized for `eval`,
+    /// whose source is a [`DbTable`].
+    ///
+    /// This is a direct compilation of the source query.
+    eval_plan: QueryExpr,
+    /// A version of the plan optimized for `eval_incr`,
+    /// whose source is a [`MemTable`], as if by [`query::to_mem_table`].
+    eval_incr_plan: EvalIncrPlan,
 }
 
 /// An ExecutionUnit is uniquely identified by its QueryHash.
@@ -67,22 +86,77 @@ impl PartialEq for ExecutionUnit {
 }
 
 impl From<SupportedQuery> for ExecutionUnit {
+    // Used in tests and benches.
+    // TODO(bikeshedding): Remove this impl,
+    // in favor of more explcit calls to `ExecutionUnit::new` with `QueryHash::NONE`.
     fn from(plan: SupportedQuery) -> Self {
-        ExecutionUnit {
-            hash: QueryHash::NONE,
-            plan,
-        }
+        Self::new(plan, QueryHash::NONE).unwrap()
     }
 }
 
 impl ExecutionUnit {
-    pub fn new(plan: SupportedQuery, hash: QueryHash) -> Self {
-        ExecutionUnit { hash, plan }
+    /// Pre-compute a plan for `eval_incr` which reads from a `MemTable`
+    /// whose rows are augmented with an `__op_type` column,
+    /// rather than re-planning on every incremental update.
+    fn compile_select_eval_incr(expr: &QueryExpr) -> QueryExpr {
+        let source = expr
+            .source
+            .get_db_table()
+            .expect("The plan passed to `ExecutionUnit::new` must read from `DbTable`s, but found a `MemTable`");
+        let table_id = source.table_id;
+        let table_name = source.head.table_name.clone();
+        let table_update = DatabaseTableUpdate {
+            table_id,
+            table_name,
+            ops: vec![],
+        };
+
+        // NOTE: The `eval_incr_plan` will reference a `SourceExpr::MemTable`
+        // with `row_count: RowCount::exact(0)`.
+        // This is inaccurate; while we cannot predict the exact number of rows,
+        // we know that it will never be 0,
+        // as we wouldn't have a [`DatabaseTableUpdate`] with no changes.
+        //
+        // Our current query planner doesn't use the `row_count` in any meaningful way,
+        // so this is fine.
+        // Some day down the line, when we have a real query planner,
+        // we may need to provide a row count estimation that is, if not accurate,
+        // at least less specifically inaccurate.
+        let (eval_incr_plan, _source_set) = query::to_mem_table(expr.clone(), &table_update);
+        debug_assert_eq!(_source_set.len(), 1);
+
+        eval_incr_plan
+    }
+
+    pub fn new(eval_plan: SupportedQuery, hash: QueryHash) -> Result<Self, DBError> {
+        // Pre-compile the `expr` as fully as possible, twice, for two different paths:
+        // - `eval_incr_plan`, for incremental updates from a `MemTable`.
+        // - `eval_plan`, for initial subscriptions from a `DbTable`.
+
+        let eval_incr_plan = match &eval_plan {
+            SupportedQuery {
+                kind: query::Supported::Select,
+                expr,
+            } => EvalIncrPlan::Select(Self::compile_select_eval_incr(expr)),
+            SupportedQuery {
+                kind: query::Supported::Semijoin,
+                expr,
+            } => EvalIncrPlan::Semijoin(IncrementalJoin::new(expr)?),
+        };
+        let eval_plan = eval_plan.expr;
+        Ok(ExecutionUnit {
+            hash,
+            eval_plan,
+            eval_incr_plan,
+        })
     }
 
     /// Is this a single table select or a semijoin?
     pub fn kind(&self) -> Supported {
-        self.plan.kind
+        match self.eval_incr_plan {
+            EvalIncrPlan::Select(_) => Supported::Select,
+            EvalIncrPlan::Semijoin(_) => Supported::Semijoin,
+        }
     }
 
     /// The unique query hash for this execution unit.
@@ -90,13 +164,20 @@ impl ExecutionUnit {
         self.hash
     }
 
+    fn return_db_table(&self) -> &DbTable {
+        self.eval_plan
+            .source
+            .get_db_table()
+            .expect("ExecutionUnit eval_plan should have DbTable source, but found MemTable")
+    }
+
     /// The table from which this query returns rows.
     pub fn return_table(&self) -> TableId {
-        self.plan.return_table()
+        self.return_db_table().table_id
     }
 
     pub fn return_name(&self) -> String {
-        self.plan.return_name()
+        self.return_db_table().head.table_name.clone()
     }
 
     /// The table on which this query filters rows.
@@ -105,17 +186,31 @@ impl ExecutionUnit {
     /// In the case of a semijoin,
     /// it is the auxiliary table against which we are joining.
     pub fn filter_table(&self) -> TableId {
-        self.plan.filter_table()
+        let return_table = self.return_table();
+        self.eval_plan
+            .query
+            .first()
+            .and_then(|op| {
+                if let Query::IndexJoin(join) = op {
+                    Some(join)
+                } else {
+                    None
+                }
+            })
+            .and_then(|join| {
+                join.index_side
+                    .get_db_table()
+                    .filter(|t| t.table_id != return_table)
+                    .or_else(|| join.probe_side.source.get_db_table())
+                    .filter(|t| t.table_id != return_table)
+                    .map(|t| t.table_id)
+            })
+            .unwrap_or(return_table)
     }
 
     /// Evaluate this execution unit against the database.
-    #[tracing::instrument(skip_all)]
-    pub fn eval(&self, db: &RelationalDB, tx: &Tx, auth: AuthCtx) -> Result<Option<DatabaseTableUpdate>, DBError> {
-        let ctx = ExecutionContext::subscribe(db.address());
-        let mut ops = vec![];
-        for table in run_query(&ctx, db, tx, &self.plan.expr, auth, SourceSet::default())? {
-            ops.extend(table.data.into_iter().map(TableOp::insert));
-        }
+    pub fn eval(&self, db: &RelationalDB, tx: &Tx) -> Result<Option<DatabaseTableUpdate>, DBError> {
+        let ops = Self::eval_query_code(db, tx, &self.eval_plan)?;
         Ok((!ops.is_empty()).then(|| DatabaseTableUpdate {
             table_id: self.return_table(),
             table_name: self.return_name(),
@@ -123,39 +218,97 @@ impl ExecutionUnit {
         }))
     }
 
+    fn eval_query_code(db: &RelationalDB, tx: &Tx, eval_plan: &QueryExpr) -> Result<Vec<TableOp>, DBError> {
+        let ctx = ExecutionContext::subscribe(db.address());
+        let tx: TxMode = tx.into();
+        // TODO(perf, 833): avoid clone.
+        let query = build_query(&ctx, db, &tx, eval_plan.clone(), &mut SourceSet::default())?;
+        let ops = query.collect_vec(|row_ref| TableOp::insert(row_ref.into_product_value()))?;
+        Ok(ops)
+    }
+
     /// Evaluate this execution unit against the given delta tables.
-    #[tracing::instrument(skip_all)]
     pub fn eval_incr<'a>(
         &'a self,
         db: &RelationalDB,
         tx: &Tx,
         tables: impl Iterator<Item = &'a DatabaseTableUpdate>,
-        auth: AuthCtx,
     ) -> Result<Option<DatabaseTableUpdate>, DBError> {
-        let ops = match self.plan.kind {
-            Supported::Select => {
-                let mut ops = Vec::new();
-                for table in tables.filter(|table| table.table_id == self.return_table()) {
-                    // Replace table reference in original query plan with virtual MemTable
-                    let (plan, sources) = query::to_mem_table(self.plan.expr.clone(), table);
-                    // Evaluate the new plan and capture the new row operations.
-                    ops.extend(eval_primary_updates(db, auth, tx, &plan, sources)?.map(|r| TableOp::new(r.0, r.1)));
-                }
-                ops
+        let ops = match &self.eval_incr_plan {
+            EvalIncrPlan::Select(eval_incr_plan) => {
+                Self::eval_incr_query_code(db, tx, tables, eval_incr_plan, self.return_table())?
             }
-            Supported::Semijoin => {
-                if let Some(plan) = IncrementalJoin::new(&self.plan.expr, tables.into_iter())? {
-                    // Evaluate the plan and capture the new row operations
-                    plan.eval(db, tx, &auth)?.collect()
-                } else {
-                    vec![]
-                }
-            }
+            EvalIncrPlan::Semijoin(eval_incr_plan) => eval_incr_plan
+                .eval(db, tx, tables)?
+                .map(<Vec<_>>::from_iter)
+                .unwrap_or(vec![]),
         };
         Ok((!ops.is_empty()).then(|| DatabaseTableUpdate {
             table_id: self.return_table(),
             table_name: self.return_name(),
             ops,
         }))
+    }
+
+    fn eval_incr_query_code<'a>(
+        db: &RelationalDB,
+        tx: &Tx,
+        tables: impl Iterator<Item = &'a DatabaseTableUpdate>,
+        eval_incr_plan: &QueryExpr,
+        return_table: TableId,
+    ) -> Result<Vec<TableOp>, DBError> {
+        let ctx = ExecutionContext::incremental_update(db.address());
+        let tx: TxMode = tx.into();
+
+        let SourceExpr::MemTable {
+            source_id: _source_id,
+            ref header,
+            table_access,
+            ..
+        } = eval_incr_plan.source
+        else {
+            panic!("Expected MemTable in `eval_incr_plan`, but found `DbTable`");
+        };
+        let mut ops = Vec::new();
+
+        for table in tables.filter(|table| table.table_id == return_table) {
+            // Build a `SourceSet` containing the updates from `table`.
+            let mem_table = query::to_mem_table_with_op_type(header.clone(), table_access, table);
+            let mut sources = SourceSet::default();
+            let _source_expr = sources.add_mem_table(mem_table);
+            debug_assert_eq!(_source_expr.source_id(), Some(_source_id));
+            // Evaluate the saved plan against the new `SourceSet`
+            // and capture the new row operations.
+            // TODO(perf, 833): avoid clone.
+            let query = build_query(&ctx, db, &tx, eval_incr_plan.clone(), &mut sources)?;
+            Self::collect_rows_remove_table_ops(&mut ops, query, header)?;
+        }
+        Ok(ops)
+    }
+
+    /// Convert a set of rows annotated with the `__op_type` fields into a set of [`TableOp`]s,
+    /// and collect them into a vec `into`.
+    fn collect_rows_remove_table_ops(
+        into: &mut Vec<TableOp>,
+        mut query: Box<IterRows<'_>>,
+        header: &Header,
+    ) -> Result<(), DBError> {
+        let pos_op_type = find_op_type_col_pos(header).unwrap_or_else(|| {
+            panic!(
+                "Failed to locate `{OP_TYPE_FIELD_NAME}` in `{}`, fields: {:?}",
+                header.table_name,
+                header.fields.iter().map(|x| &x.field).collect::<Vec<_>>()
+            )
+        });
+        let pos_op_type = pos_op_type.idx();
+        while let Some(row_ref) = query.next()? {
+            let mut row = row_ref.into_product_value();
+            let op_type =
+                row.elements.remove(pos_op_type).into_u8().unwrap_or_else(|_| {
+                    panic!("Failed to extract `{OP_TYPE_FIELD_NAME}` from `{}`", header.table_name)
+                });
+            into.push(TableOp::new(op_type, row));
+        }
+        Ok(())
     }
 }

@@ -1,6 +1,7 @@
 use derive_more::From;
 use futures::{Future, FutureExt};
 use std::borrow::Cow;
+use std::pin::pin;
 use tokio::sync::oneshot;
 
 pub mod prometheus_handle;
@@ -67,4 +68,15 @@ pub fn spawn_rayon<R: Send + 'static>(f: impl FnOnce() -> R + Send + 'static) ->
         }
     });
     rx.map(|res| res.unwrap().unwrap_or_else(|err| std::panic::resume_unwind(err)))
+}
+
+/// Await `fut`, while also polling `also`.
+pub async fn also_poll<Fut: Future>(fut: Fut, also: impl Future<Output = ()>) -> Fut::Output {
+    let mut also = pin!(also.fuse());
+    let mut fut = pin!(fut);
+    std::future::poll_fn(|cx| {
+        let _ = also.poll_unpin(cx);
+        fut.poll_unpin(cx)
+    })
+    .await
 }

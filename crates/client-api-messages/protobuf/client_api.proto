@@ -51,6 +51,7 @@ message IdentityToken {
 ///
 /// - `argBytes` is the arguments to the reducer, encoded as BSATN.
 ///
+/// - `requestId` is a identifier for client request.
 /// SpacetimeDB models reducers as taking a single `AlgebraicValue` as an argument, which
 /// generally will be a `ProductValue` containing all of the args (except the
 /// `ReducerContext`, which is injected by the host, not provided in this API).
@@ -58,6 +59,7 @@ message FunctionCall {
     // TODO: Maybe this should be replaced with an int identifier for performance?
     string reducer = 1;
     bytes argBytes = 2;
+    uint32 requestId = 3;
 }
 
 /// Sent by client to database to register a set of queries, about which the client will
@@ -78,6 +80,7 @@ message FunctionCall {
 /// already in `A`.
 message Subscribe {
     repeated string query_strings = 1;
+    uint32 requestId = 2;
 }
 
 /// Part of a `TransactionUpdate` received by client from database upon a reducer run.
@@ -150,8 +153,16 @@ message Event {
 ///
 /// A single `SubscriptionUpdate` may contain `TableUpdate` messages for multiple
 /// tables.
+/// - `requestId` is identifier sent by the client in requests, Host should ensure to
+///               to include the same requestId in the response.
+///
+/// - `total_host_execution_duration_micros` its the overall time between Host recevived a request
+///                                          and sent a `TransactionUpdate` or `SubscriptionUpdate`.
+///                                          '0' is default value.
 message SubscriptionUpdate {
     repeated TableUpdate tableUpdates = 1;
+    uint32 requestId = 2;
+    uint64 total_host_execution_duration_micros = 3;
 }
 
 /// Part of a `SubscriptionUpdate` received by client from database for alterations to a
@@ -225,6 +236,7 @@ message OneOffQueryResponse {
     bytes messageId = 1;
     string error = 2;
     repeated OneOffTable tables = 3;
+    uint64 total_host_execution_duration_micros = 4;
 }
 
 /// A table included as part of a one-off query.
