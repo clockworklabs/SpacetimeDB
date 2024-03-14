@@ -1043,11 +1043,30 @@ impl StateView for MutTxId {
                     &self.committed_state_write_lock,
                     committed_rows,
                 ))),
-                None => Ok(IterByColRange::Scan(ScanIterByColRange::new(
-                    self.iter(ctx, table_id)?,
-                    cols,
-                    range,
-                ))),
+                None => {
+                    match self.schema_for_table(ctx, *table_id) {
+                        // TODO(ux): log these warnings to the module logs rather than host logs.
+                        Err(e) => log::error!(
+                            "iter_by_col_range on unindexed column, but got error from `schema_for_table` during diagnostics: {e:?}",
+                        ),
+                        Ok(schema) => {
+                            let table_name = &schema.table_name;
+                            let col_names = cols.iter()
+                                .map(|col_id| schema.columns()
+                                     .get(col_id.idx())
+                                     .map(|col| &col.col_name[..])
+                                     .unwrap_or("[unknown column]"))
+                                .collect::<Vec<_>>();
+                            log::warn!("iter_by_col_range without index: table {table_name}, columns {col_names:?}");
+                        },
+                    }
+
+                    Ok(IterByColRange::Scan(ScanIterByColRange::new(
+                        self.iter(ctx, table_id)?,
+                        cols,
+                        range,
+                    )))
+                }
             }
         }
     }
