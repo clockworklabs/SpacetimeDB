@@ -1,24 +1,24 @@
-use std::sync::Arc;
-use std::time::Instant;
-
 use crate::db::db_metrics::{DB_METRICS, MAX_QUERY_COMPILE_TIME};
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
-use crate::execution_context::{ExecutionContext, WorkloadType};
+use crate::execution_context::WorkloadType;
 use crate::host::module_host::DatabaseTableUpdate;
 use crate::sql::compiler::compile_sql;
-use crate::sql::execute::execute_single_sql;
-use crate::subscription::subscription::{QuerySet, SupportedQuery};
+use crate::subscription::subscription::SupportedQuery;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Address;
+use spacetimedb_primitives::ColId;
 use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::relation::{Column, FieldName, Header};
 use spacetimedb_sats::AlgebraicType;
-use spacetimedb_vm::expr;
-use spacetimedb_vm::expr::{Crud, CrudExpr, DbType, QueryExpr};
+use spacetimedb_vm::expr::{self, Crud, CrudExpr, DbType, QueryExpr, SourceSet};
 use spacetimedb_vm::relation::MemTable;
+use std::sync::Arc;
+use std::time::Instant;
+
+use super::subscription::get_all;
 
 static WHITESPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap());
 pub const SUBSCRIBE_TO_ALL_QUERY: &str = "SELECT * FROM *";
@@ -30,18 +30,63 @@ pub enum QueryDef {
 
 pub const OP_TYPE_FIELD_NAME: &str = "__op_type";
 
+/// Locate the `__op_type` column in the table described by `header`,
+/// if it exists.
+///
+/// The current version of this function depends on the fact that
+/// the `__op_type` column is always the final column in the schema.
+/// This is true because the `__op_type` column is added by [`to_mem_table_with_op_type`] at the end,
+/// and never originates anywhere else.
+///
+/// If we ever change to having the `__op_type` column in any other position,
+/// e.g. by projecting together two `MemTables` from [`to_mem_table_with_op_type`],
+/// this function may need to change, possibly to:
+/// ```ignore
+/// header.find_pos_by_name(OP_TYPE_FIELD_NAME)
+/// ```
+pub fn find_op_type_col_pos(header: &Header) -> Option<ColId> {
+    if let Some(last_col) = header.fields.last() {
+        if last_col.field.field_name() == Some(OP_TYPE_FIELD_NAME) {
+            return Some(ColId((header.fields.len() - 1) as u32));
+        }
+    }
+    None
+}
+
 /// Create a virtual table from a sequence of table updates.
 /// Add a special column __op_type to distinguish inserts and deletes.
-#[tracing::instrument(skip_all)]
 pub fn to_mem_table_with_op_type(head: Arc<Header>, table_access: StAccess, data: &DatabaseTableUpdate) -> MemTable {
-    let mut t = MemTable::new(head, table_access, vec![]);
+    let mut t = MemTable::new(head, table_access, Vec::with_capacity(data.ops.len()));
 
-    if let Some(pos) = t.head.find_pos_by_name(OP_TYPE_FIELD_NAME) {
-        t.data.extend(data.ops.iter().map(|row| {
+    if let Some(pos) = find_op_type_col_pos(&t.head) {
+        for op in data.ops.iter().map(|row| {
             let mut new = row.row.clone();
-            new.elements[pos.idx()] = row.op_type.into();
+
+            match new.elements.len().cmp(&pos.idx()) {
+                std::cmp::Ordering::Equal => {
+                    // When we enter through `ExecutionUnit::eval_incr`,
+                    // we will have a `head` computed by a previous call to `to_mem_table`,
+                    // and therefore will have an op_type column,
+                    // but the `data` will be fresh for a newly committed transaction,
+                    // and therefore the rows will not include the op_type column.
+                    // In that case, push the op_type onto the end of each row.
+                    new.elements.push(row.op_type.into());
+                }
+                std::cmp::Ordering::Greater => {
+                    new.elements[pos.idx()] = row.op_type.into();
+                }
+                std::cmp::Ordering::Less => {
+                    panic!(
+                        "Expected {} either in-bounds or as the last column, but found at position {} in {:?}",
+                        OP_TYPE_FIELD_NAME, pos, t.head,
+                    );
+                }
+            }
+
             new
-        }));
+        }) {
+            t.data.push(op);
+        }
     } else {
         // TODO(perf): Eliminate this `clone_for_error` call, as we're not in an error path.
         let mut head = t.head.clone_for_error();
@@ -65,46 +110,30 @@ pub fn to_mem_table_with_op_type(head: Arc<Header>, table_access: StAccess, data
 ///
 /// To be able to reify the `op_type` of the individual operations in the update,
 /// each virtual row is extended with a column [`OP_TYPE_FIELD_NAME`].
-pub fn to_mem_table(mut of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
-    of.source = to_mem_table_with_op_type(of.source.head().clone(), of.source.table_access(), data).into();
-    of
-}
-
-/// Runs a query that evaluates if the changes made should be reported to the [ModuleSubscriptionManager]
-#[tracing::instrument(skip_all)]
-pub(crate) fn run_query(
-    cx: &ExecutionContext,
-    db: &RelationalDB,
-    tx: &Tx,
-    query: &QueryExpr,
-    auth: AuthCtx,
-) -> Result<Vec<MemTable>, DBError> {
-    execute_single_sql(cx, db, tx, CrudExpr::Query(query.clone()), auth)
+pub fn to_mem_table(mut of: QueryExpr, data: &DatabaseTableUpdate) -> (QueryExpr, SourceSet) {
+    let mem_table = to_mem_table_with_op_type(of.source.head().clone(), of.source.table_access(), data);
+    let mut sources = SourceSet::default();
+    let source_expr = sources.add_mem_table(mem_table);
+    of.source = source_expr;
+    (of, sources)
 }
 
 // TODO: It's semantically wrong to `SUBSCRIBE_TO_ALL_QUERY`
 // as it can only return back the changes valid for the tables in scope *right now*
 // instead of **continuously updating** the db changes
 // with system table modifications (add/remove tables, indexes, ...).
-/// Compile from `SQL` into a [`Query`], rejecting empty queries and queries that attempt to modify the data in any way.
+//
+/// Variant of [`compile_read_only_query`] which appends `SourceExpr`s into a given `SourceBuilder`,
+/// rather than returning a new `SourceSet`.
 ///
-/// NOTE: When the `input` query is equal to [`SUBSCRIBE_TO_ALL_QUERY`],
-/// **compilation is bypassed** and the equivalent of the following is done:
-///
-///```rust,ignore
-/// for t in db.user_tables {
-///   query.push(format!("SELECT * FROM {t}"));
-/// }
-/// ```
-///
-/// WARNING: [`SUBSCRIBE_TO_ALL_QUERY`] is only valid for repeated calls as long there is not change on database schema, and the clients must `unsubscribe` before modifying it.
-#[tracing::instrument(skip(relational_db, auth, tx))]
+/// This is necessary when merging multiple SQL queries into a single query set,
+/// as in [`crate::subscription::module_subscription_actor::ModuleSubscriptions::add_subscriber`].
 pub fn compile_read_only_query(
     relational_db: &RelationalDB,
     tx: &Tx,
     auth: &AuthCtx,
     input: &str,
-) -> Result<QuerySet, DBError> {
+) -> Result<Vec<SupportedQuery>, DBError> {
     let input = input.trim();
     if input.is_empty() {
         return Err(SubscriptionError::Empty.into());
@@ -113,7 +142,7 @@ pub fn compile_read_only_query(
     // Remove redundant whitespace, and in particular newlines, for debug info.
     let input = WHITESPACE.replace_all(input, " ");
     if input == SUBSCRIBE_TO_ALL_QUERY {
-        return QuerySet::get_all(relational_db, tx, auth);
+        return get_all(relational_db, tx, auth);
     }
 
     let compiled = compile_sql(relational_db, tx, &input)?;
@@ -171,10 +200,10 @@ fn record_query_compilation_metrics(workload: WorkloadType, db: &Address, query:
 }
 
 /// The kind of [`QueryExpr`] currently supported for incremental evaluation.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
 pub enum Supported {
     /// A scan or [`QueryExpr::Select`] of a single table.
-    Scan,
+    Select,
     /// A semijoin of two tables, restricted to [`QueryExpr::IndexJoin`]s.
     ///
     /// See [`crate::sql::compiler::try_index_join`].
@@ -193,7 +222,7 @@ pub fn classify(expr: &QueryExpr) -> Option<Supported> {
             return None;
         }
     }
-    Some(Supported::Scan)
+    Some(Supported::Select)
 }
 
 #[cfg(test)]
@@ -204,44 +233,47 @@ mod tests {
     use crate::db::datastore::traits::IsolationLevel;
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::db::relational_db::MutTx;
+    use crate::execution_context::ExecutionContext;
     use crate::host::module_host::{DatabaseUpdate, TableOp};
     use crate::sql::execute::run;
+    use crate::subscription::subscription::ExecutionSet;
     use crate::vm::tests::create_table_with_rows;
     use itertools::Itertools;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::Identity;
     use spacetimedb_primitives::{ColId, TableId};
-    use spacetimedb_sats::data_key::ToDataKey;
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::db::def::*;
     use spacetimedb_sats::relation::FieldName;
     use spacetimedb_sats::{product, ProductType, ProductValue};
-    use spacetimedb_vm::dsl::{db_table, mem_table, scalar};
+    use spacetimedb_vm::dsl::{mem_table, scalar};
     use spacetimedb_vm::operator::OpCmp;
 
+    /// Runs a query that evaluates if the changes made should be reported to the [ModuleSubscriptionManager]
+    fn run_query(
+        cx: &ExecutionContext,
+        db: &RelationalDB,
+        tx: &Tx,
+        query: &QueryExpr,
+        auth: AuthCtx,
+        sources: SourceSet,
+    ) -> Result<Vec<MemTable>, DBError> {
+        crate::sql::execute::execute_single_sql(cx, db, tx, CrudExpr::Query(query.clone()), auth, sources)
+    }
+
     fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
-        let row_pk = row.to_data_key().to_bytes();
         DatabaseTableUpdate {
             table_id,
             table_name: table_name.to_string(),
-            ops: vec![TableOp {
-                op_type: 1,
-                row,
-                row_pk,
-            }],
+            ops: vec![TableOp::insert(row)],
         }
     }
 
     fn delete_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
-        let row_pk = row.to_data_key().to_bytes();
         DatabaseTableUpdate {
             table_id,
             table_name: table_name.to_string(),
-            ops: vec![TableOp {
-                op_type: 0,
-                row,
-                row_pk,
-            }],
+            ops: vec![TableOp::delete(row)],
         }
     }
 
@@ -264,21 +296,15 @@ mod tests {
         let table = mem_table(head.clone(), [row.clone()]);
         let table_id = create_table_with_rows(db, tx, table_name, head.clone(), &[row.clone()])?;
 
-        let schema = db.schema_for_table_mut(tx, table_id).unwrap().into_owned();
-
-        let op = TableOp {
-            op_type: 1,
-            row_pk: row.to_data_key().to_bytes(),
-            row: row.clone(),
-        };
-
         let data = DatabaseTableUpdate {
             table_id,
             table_name: table_name.to_string(),
-            ops: vec![op],
+            ops: vec![TableOp::insert(row.clone())],
         };
 
-        let q = QueryExpr::new(db_table(&schema, table_id));
+        let schema = db.schema_for_table_mut(tx, table_id).unwrap().into_owned();
+
+        let q = QueryExpr::new(&schema);
 
         Ok((schema, table, data, q))
     }
@@ -338,8 +364,15 @@ mod tests {
         q: &QueryExpr,
         data: &DatabaseTableUpdate,
     ) -> ResultTest<()> {
-        let q = to_mem_table(q.clone(), data);
-        let result = run_query(&ExecutionContext::default(), db, tx, &q, AuthCtx::for_testing())?;
+        let (q, sources) = to_mem_table(q.clone(), data);
+        let result = run_query(
+            &ExecutionContext::default(),
+            db,
+            tx,
+            &q,
+            AuthCtx::for_testing(),
+            sources,
+        )?;
 
         assert_eq!(
             Some(table.as_without_table_name()),
@@ -361,12 +394,12 @@ mod tests {
     fn check_query_incr(
         db: &RelationalDB,
         tx: &Tx,
-        s: &QuerySet,
+        s: &ExecutionSet,
         update: &DatabaseUpdate,
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
-        let result = s.eval_incr(db, tx, update, AuthCtx::for_testing())?;
+        let result = s.eval_incr(db, tx, update)?;
         assert_eq!(
             result.tables.len(),
             total_tables,
@@ -383,11 +416,11 @@ mod tests {
     fn check_query_eval(
         db: &RelationalDB,
         tx: &Tx,
-        s: &QuerySet,
+        s: &ExecutionSet,
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
-        let result = s.eval(db, tx, AuthCtx::for_testing())?;
+        let result = s.eval(db, tx)?;
         assert_eq!(
             result.tables.len(),
             total_tables,
@@ -401,44 +434,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_eval_incr_maintains_row_ids() -> ResultTest<()> {
-        let (db, _) = make_test_db()?;
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
-
-        let schema = ProductType::from([("u8", AlgebraicType::U8)]);
-        let row = product!(1u8);
-
-        // generate row id from row
-        let id1 = &row.to_data_key().to_bytes();
-
-        // create table empty table "test"
-        let table_id = create_table_with_rows(&db, &mut tx, "test", schema.clone(), &[])?;
-
-        // select * from test
-        let query: QuerySet = QueryExpr::new(db_table(schema.clone(), table_id)).try_into()?;
-
-        let op = TableOp {
-            op_type: 0,
-            row_pk: id1.clone(),
-            row: row.clone(),
-        };
-
-        let update = DatabaseTableUpdate {
-            table_id,
-            table_name: "test".into(),
-            ops: vec![op],
-        };
-
-        let update = DatabaseUpdate { tables: vec![update] };
-        db.rollback_mut_tx(&ExecutionContext::default(), tx);
-        let tx = db.begin_tx();
-        let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
-        let id2 = &result.tables[0].ops[0].row_pk;
-
-        // check that both row ids are the same
-        assert_eq!(id1, id2);
-        Ok(())
+    fn singleton_execution_set(expr: QueryExpr) -> ResultTest<ExecutionSet> {
+        Ok(ExecutionSet::from_iter([SupportedQuery::try_from(expr)?]))
     }
 
     #[test]
@@ -457,12 +454,7 @@ mod tests {
             db.insert(&mut tx, table_id, row)?;
 
             let row = product!(i + 10, i);
-            let row_pk = row.to_data_key().to_bytes();
-            ops.push(TableOp {
-                op_type: 0,
-                row_pk,
-                row,
-            })
+            ops.push(TableOp::delete(row))
         }
 
         let update = DatabaseUpdate {
@@ -483,9 +475,9 @@ mod tests {
             panic!("unexpected query {:#?}", exp[0]);
         };
 
-        let query = QuerySet::try_from(query)?;
+        let query: ExecutionSet = singleton_execution_set(query)?;
 
-        let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
+        let result = query.eval_incr(&db, &tx, &update)?;
 
         assert_eq!(result.tables.len(), 1);
 
@@ -497,288 +489,6 @@ mod tests {
 
         assert_eq!(op.op_type, 0);
         assert_eq!(op.row, product!(13u64, 3u64));
-        assert_eq!(op.row_pk, product!(13u64, 3u64).to_data_key().to_bytes());
-        Ok(())
-    }
-
-    #[test]
-    fn test_eval_incr_for_index_join() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
-        run_eval_incr_for_index_join(db)?;
-
-        let (db, _tmp) = make_test_db()?;
-        run_eval_incr_for_index_join(db.with_row_count(Arc::new(|_, _| 5)))?;
-        Ok(())
-    }
-
-    fn run_eval_incr_for_index_join(db: RelationalDB) -> ResultTest<()> {
-        // Create table [lhs] with index on [id]
-        let schema = &[("id", AlgebraicType::I32), ("x", AlgebraicType::I32)];
-        let indexes = &[(0.into(), "id")];
-        let lhs_id = db.create_table_for_test("lhs", schema, indexes)?;
-
-        // Create table [rhs] with index on [id]
-        let schema = &[
-            ("rid", AlgebraicType::I32),
-            ("id", AlgebraicType::I32),
-            ("y", AlgebraicType::I32),
-        ];
-        let indexes = &[(1.into(), "id")];
-        let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
-
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
-
-        // Insert into lhs
-        for i in 0..5 {
-            db.insert(&mut tx, lhs_id, product!(i, i + 5))?;
-        }
-
-        // Insert into rhs
-        for i in 10..20 {
-            db.insert(&mut tx, rhs_id, product!(i, i - 10, i - 8))?;
-        }
-        db.commit_tx(&ExecutionContext::default(), tx)?;
-
-        let tx = db.begin_tx();
-        // Should be answered using an index semijion
-        let sql = "select lhs.* from lhs join rhs on lhs.id = rhs.id where rhs.y >= 2 and rhs.y <= 4";
-        let mut exp = compile_sql(&db, &tx, sql)?;
-
-        let Some(CrudExpr::Query(query)) = exp.pop() else {
-            panic!("unexpected query {:#?}", exp[0]);
-        };
-
-        let query = QuerySet::try_from(query)?;
-        db.release_tx(&ExecutionContext::default(), tx);
-
-        fn case_env(
-            db: &RelationalDB,
-            rhs_id: TableId,
-            del_row: ProductValue,
-            ins_row: ProductValue,
-        ) -> ResultTest<()> {
-            let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
-            delete_row(db, &mut tx, rhs_id, del_row);
-            insert_row(db, &mut tx, rhs_id, ins_row)?;
-            db.commit_tx(&ExecutionContext::default(), tx)?;
-            Ok(())
-        }
-
-        // Case 1: Delete a row inside the region and insert back inside the region
-        {
-            let r1 = product!(10, 0, 2);
-            let r2 = product!(10, 0, 3);
-            case_env(&db, rhs_id, r1.clone(), r2.clone())?;
-
-            let updates = vec![
-                delete_op(rhs_id, "rhs", r1.clone()),
-                insert_op(rhs_id, "rhs", r2.clone()),
-            ];
-            let tx = db.begin_tx();
-            let update = DatabaseUpdate { tables: updates };
-            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
-            db.release_tx(&ExecutionContext::default(), tx);
-
-            // No updates to report
-            assert_eq!(result.tables.len(), 0);
-
-            // Clean up tx
-            case_env(&db, rhs_id, r2.clone(), r1.clone())?;
-        }
-
-        // Case 2: Delete a row outside the region and insert back outside the region
-        {
-            let r1 = product!(13, 3, 5);
-            let r2 = product!(13, 3, 6);
-
-            case_env(&db, rhs_id, r2.clone(), r1.clone())?;
-
-            let updates = vec![
-                delete_op(rhs_id, "rhs", r1.clone()),
-                insert_op(rhs_id, "rhs", r2.clone()),
-            ];
-
-            let update = DatabaseUpdate { tables: updates };
-            let tx = db.begin_tx();
-            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
-            db.release_tx(&ExecutionContext::default(), tx);
-
-            // No updates to report
-            assert_eq!(result.tables.len(), 0);
-
-            // Clean up tx
-            case_env(&db, rhs_id, r1.clone(), r2.clone())?;
-        }
-
-        // Case 3: Delete a row inside the region and insert back outside the region
-        {
-            let r1 = product!(10, 0, 2);
-            let r2 = product!(10, 0, 5);
-
-            case_env(&db, rhs_id, r1.clone(), r2.clone())?;
-
-            let updates = vec![
-                delete_op(rhs_id, "rhs", r1.clone()),
-                insert_op(rhs_id, "rhs", r2.clone()),
-            ];
-
-            let update = DatabaseUpdate { tables: updates };
-            let tx = db.begin_tx();
-            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
-            db.release_tx(&ExecutionContext::default(), tx);
-
-            // A single delete from lhs
-            assert_eq!(result.tables.len(), 1);
-            assert_eq!(result.tables[0], delete_op(lhs_id, "lhs", product!(0, 5)));
-
-            // Clean up tx
-            case_env(&db, rhs_id, r2.clone(), r1.clone())?;
-        }
-
-        // Case 4: Delete a row outside the region and insert back inside the region
-        {
-            let r1 = product!(13, 3, 5);
-            let r2 = product!(13, 3, 4);
-
-            case_env(&db, rhs_id, r1.clone(), r2.clone())?;
-
-            let updates = vec![
-                delete_op(rhs_id, "rhs", r1.clone()),
-                insert_op(rhs_id, "rhs", r2.clone()),
-            ];
-
-            let update = DatabaseUpdate { tables: updates };
-            let tx = db.begin_tx();
-            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
-            db.release_tx(&ExecutionContext::default(), tx);
-
-            // A single insert into lhs
-            assert_eq!(result.tables.len(), 1);
-            assert_eq!(result.tables[0], insert_op(lhs_id, "lhs", product!(3, 8)));
-
-            // Clean up tx
-            case_env(&db, rhs_id, r2.clone(), r1.clone())?;
-        }
-
-        // Case 5: Insert a row into lhs and insert a matching row inside the region of rhs
-        {
-            let lhs_row = product!(5, 10);
-            let rhs_row = product!(20, 5, 3);
-            let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
-            insert_row(&db, &mut tx, lhs_id, lhs_row.clone())?;
-            insert_row(&db, &mut tx, rhs_id, rhs_row.clone())?;
-            db.commit_tx(&ExecutionContext::default(), tx)?;
-
-            let updates = vec![
-                insert_op(lhs_id, "lhs", lhs_row.clone()),
-                insert_op(rhs_id, "rhs", rhs_row.clone()),
-            ];
-
-            let update = DatabaseUpdate { tables: updates };
-            let tx = db.begin_tx();
-            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
-            db.release_tx(&ExecutionContext::default(), tx);
-
-            // A single insert into lhs
-            assert_eq!(result.tables.len(), 1);
-            assert_eq!(result.tables[0], insert_op(lhs_id, "lhs", product!(5, 10)));
-
-            // Clean up tx
-            let mut tx: crate::db::datastore::locking_tx_datastore::MutTxId =
-                db.begin_mut_tx(IsolationLevel::Serializable);
-            delete_row(&db, &mut tx, lhs_id, lhs_row.clone());
-            delete_row(&db, &mut tx, rhs_id, rhs_row.clone());
-            db.commit_tx(&ExecutionContext::default(), tx)?;
-        }
-
-        // Case 6: Insert a row into lhs and insert a matching row outside the region of rhs
-        {
-            let lhs_row = product!(5, 10);
-            let rhs_row = product!(20, 5, 5);
-            let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
-            insert_row(&db, &mut tx, lhs_id, lhs_row.clone())?;
-            insert_row(&db, &mut tx, rhs_id, rhs_row.clone())?;
-            db.commit_tx(&ExecutionContext::default(), tx)?;
-
-            let updates = vec![
-                insert_op(lhs_id, "lhs", lhs_row.clone()),
-                insert_op(rhs_id, "rhs", rhs_row.clone()),
-            ];
-
-            let update = DatabaseUpdate { tables: updates };
-            let tx = db.begin_tx();
-            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
-            db.release_tx(&ExecutionContext::default(), tx);
-
-            // No updates to report
-            assert_eq!(result.tables.len(), 0);
-
-            // Clean up tx
-            let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
-            delete_row(&db, &mut tx, lhs_id, lhs_row.clone());
-            delete_row(&db, &mut tx, rhs_id, rhs_row.clone());
-            db.commit_tx(&ExecutionContext::default(), tx)?;
-        }
-
-        // Case 7: Delete a row from lhs and delete a matching row inside the region of rhs
-        {
-            let lhs_row = product!(0, 5);
-            let rhs_row = product!(10, 0, 2);
-            let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
-            delete_row(&db, &mut tx, lhs_id, lhs_row.clone());
-            delete_row(&db, &mut tx, rhs_id, rhs_row.clone());
-            db.commit_tx(&ExecutionContext::default(), tx)?;
-
-            let updates = vec![
-                delete_op(lhs_id, "lhs", lhs_row.clone()),
-                delete_op(rhs_id, "rhs", rhs_row.clone()),
-            ];
-
-            let update = DatabaseUpdate { tables: updates };
-            let tx = db.begin_tx();
-            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
-            db.release_tx(&ExecutionContext::default(), tx);
-
-            // A single delete from lhs
-            assert_eq!(result.tables.len(), 1);
-            assert_eq!(result.tables[0], delete_op(lhs_id, "lhs", product!(0, 5)));
-
-            // Clean up tx
-            let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
-            insert_row(&db, &mut tx, lhs_id, lhs_row.clone())?;
-            insert_row(&db, &mut tx, rhs_id, rhs_row.clone())?;
-            db.commit_tx(&ExecutionContext::default(), tx)?;
-        }
-
-        // Case 8: Delete a row from lhs and delete a matching row outside the region of rhs
-        {
-            let lhs_row = product!(3, 8);
-            let rhs_row = product!(13, 3, 5);
-            let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
-            delete_row(&db, &mut tx, lhs_id, lhs_row.clone());
-            delete_row(&db, &mut tx, rhs_id, rhs_row.clone());
-            db.commit_tx(&ExecutionContext::default(), tx)?;
-
-            let updates = vec![
-                delete_op(lhs_id, "lhs", lhs_row.clone()),
-                delete_op(rhs_id, "rhs", rhs_row.clone()),
-            ];
-
-            let update = DatabaseUpdate { tables: updates };
-            let tx = db.begin_tx();
-            let result = query.eval_incr(&db, &tx, &update, AuthCtx::for_testing())?;
-            db.release_tx(&ExecutionContext::default(), tx);
-
-            // No updates to report
-            assert_eq!(result.tables.len(), 0);
-
-            // Clean up tx
-            let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
-            insert_row(&db, &mut tx, lhs_id, lhs_row.clone())?;
-            insert_row(&db, &mut tx, rhs_id, rhs_row.clone())?;
-            db.commit_tx(&ExecutionContext::default(), tx)?;
-        }
-
         Ok(())
     }
 
@@ -817,35 +527,21 @@ mod tests {
         let tx = db.begin_tx();
         check_query(&db, &table, &tx, &q, &data)?;
 
-        //SELECT * FROM inventory
-        let q_all = QueryExpr::new(db_table(&schema, schema.table_id));
         //SELECT * FROM inventory WHERE inventory_id = 1
-        let q_id =
-            q_all
-                .clone()
-                .with_select_cmp(OpCmp::Eq, FieldName::named("_inventory", "inventory_id"), scalar(1u64));
+        let q_id = QueryExpr::new(&schema).with_select_cmp(
+            OpCmp::Eq,
+            FieldName::named("_inventory", "inventory_id"),
+            scalar(1u64),
+        );
 
-        let s = [q_all, q_id]
-            .into_iter()
-            .map(TryFrom::try_from)
-            .collect::<Result<QuerySet, _>>()?;
+        let s = singleton_execution_set(q_id)?;
 
-        let row1 = TableOp {
-            op_type: 0,
-            row_pk: row.to_data_key().to_bytes(),
-            row: row.clone(),
-        };
-
-        let row2 = TableOp {
-            op_type: 1,
-            row_pk: row.to_data_key().to_bytes(),
-            row: row.clone(),
-        };
+        let row2 = TableOp::insert(row.clone());
 
         let data = DatabaseTableUpdate {
             table_id: schema.table_id,
             table_name: "_inventory".to_string(),
-            ops: vec![row1, row2],
+            ops: vec![row2],
         };
 
         let update = DatabaseUpdate {
@@ -854,9 +550,9 @@ mod tests {
 
         check_query_incr(&db, &tx, &s, &update, 1, &[row])?;
 
-        let q = QueryExpr::new(db_table(&schema, schema.table_id));
+        let q = QueryExpr::new(&schema);
 
-        let q = to_mem_table(q, &data);
+        let (q, sources) = to_mem_table(q, &data);
         //Try access the private table
         match run_query(
             &ExecutionContext::default(),
@@ -864,6 +560,7 @@ mod tests {
             &tx,
             &q,
             AuthCtx::new(Identity::__dummy(), Identity::from_byte_array([1u8; 32])),
+            sources,
         ) {
             Ok(_) => {
                 panic!("it allows to execute against private table")
@@ -874,63 +571,6 @@ mod tests {
                 }
             }
         }
-
-        Ok(())
-    }
-
-    //Check that
-    //```
-    //SELECT * FROM table
-    //SELECT * FROM table WHERE id=1
-    //```
-    // return just one row for both incr & direct subscriptions
-    #[test]
-    fn test_subscribe_dedup() -> ResultTest<()> {
-        let (db, _tmp_dir) = make_test_db()?;
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
-
-        let (schema, _table, _data, _q) = make_inv(&db, &mut tx, StAccess::Private)?;
-
-        //SELECT * FROM inventory
-        let q_all = QueryExpr::new(db_table(&schema, schema.table_id));
-        //SELECT * FROM inventory WHERE inventory_id = 1
-        let q_id =
-            q_all
-                .clone()
-                .with_select_cmp(OpCmp::Eq, FieldName::named("_inventory", "inventory_id"), scalar(1u64));
-
-        let s = [q_all, q_id]
-            .into_iter()
-            .map(TryFrom::try_from)
-            .collect::<Result<QuerySet, _>>()?;
-        db.commit_tx(&ExecutionContext::default(), tx)?;
-
-        let tx = db.begin_tx();
-        check_query_eval(&db, &tx, &s, 1, &[product!(1u64, "health")])?;
-
-        let row = product!(1u64, "health");
-
-        let row1 = TableOp {
-            op_type: 0,
-            row_pk: row.to_data_key().to_bytes(),
-            row: row.clone(),
-        };
-
-        let row2 = TableOp {
-            op_type: 1,
-            row_pk: row.to_data_key().to_bytes(),
-            row: row.clone(),
-        };
-
-        let data = DatabaseTableUpdate {
-            table_id: schema.table_id,
-            table_name: "inventory".to_string(),
-            ops: vec![row1, row2],
-        };
-
-        let update = DatabaseUpdate { tables: vec![data] };
-
-        check_query_incr(&db, &tx, &s, &update, 1, &[row])?;
 
         Ok(())
     }
@@ -994,6 +634,7 @@ mod tests {
                 &tx,
                 q.as_expr(),
                 AuthCtx::for_testing(),
+                SourceSet::default(),
             )?;
             assert_eq!(result.len(), 1, "Join query did not return any rows");
         }
@@ -1012,31 +653,19 @@ mod tests {
         let row_1 = product!(1u64, "health");
         let row_2 = product!(2u64, "jhon doe");
         let tx = db.begin_tx();
-        let s = compile_read_only_query(&db, &tx, &AuthCtx::for_testing(), SUBSCRIBE_TO_ALL_QUERY)?;
+        let s = compile_read_only_query(&db, &tx, &AuthCtx::for_testing(), SUBSCRIBE_TO_ALL_QUERY)?.into();
         check_query_eval(&db, &tx, &s, 2, &[row_1.clone(), row_2.clone()])?;
-
-        let row1 = TableOp {
-            op_type: 0,
-            row_pk: row_1.to_data_key().to_bytes(),
-            row: row_1,
-        };
-
-        let row2 = TableOp {
-            op_type: 1,
-            row_pk: row_2.to_data_key().to_bytes(),
-            row: row_2,
-        };
 
         let data1 = DatabaseTableUpdate {
             table_id: schema_1.table_id,
             table_name: "inventory".to_string(),
-            ops: vec![row1],
+            ops: vec![TableOp::delete(row_1)],
         };
 
         let data2 = DatabaseTableUpdate {
             table_id: schema_2.table_id,
             table_name: "player".to_string(),
-            ops: vec![row2],
+            ops: vec![TableOp::insert(row_2)],
         };
 
         let update = DatabaseUpdate {
@@ -1081,14 +710,14 @@ mod tests {
             "SELECT * FROM lhs WHERE id > 5",
         ];
         for scan in scans {
-            let expr = compile_read_only_query(&db, &tx, &auth, scan)?.pop_first().unwrap();
-            assert_eq!(expr.kind(), Supported::Scan, "{scan}\n{expr:#?}");
+            let expr = compile_read_only_query(&db, &tx, &auth, scan)?.pop().unwrap();
+            assert_eq!(expr.kind(), Supported::Select, "{scan}\n{expr:#?}");
         }
 
         // Only index semijoins are supported
         let joins = ["SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE rhs.y < 10"];
         for join in joins {
-            let expr = compile_read_only_query(&db, &tx, &auth, join)?.pop_first().unwrap();
+            let expr = compile_read_only_query(&db, &tx, &auth, join)?.pop().unwrap();
             assert_eq!(expr.kind(), Supported::Semijoin, "{join}\n{expr:#?}");
         }
 
@@ -1105,6 +734,420 @@ mod tests {
             }
         }
 
+        Ok(())
+    }
+
+    /// Create table [lhs] with index on [id]
+    fn create_lhs_table_for_eval_incr(db: &RelationalDB) -> ResultTest<TableId> {
+        const I32: AlgebraicType = AlgebraicType::I32;
+        let lhs_id = db.create_table_for_test("lhs", &[("id", I32), ("x", I32)], &[(0.into(), "id")])?;
+        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+            for i in 0..5 {
+                db.insert(tx, lhs_id, product!(i, i + 5))?;
+            }
+            Ok(lhs_id)
+        })
+    }
+
+    /// Create table [rhs] with index on [id]
+    fn create_rhs_table_for_eval_incr(db: &RelationalDB) -> ResultTest<TableId> {
+        const I32: AlgebraicType = AlgebraicType::I32;
+        let rhs_id = db.create_table_for_test("rhs", &[("rid", I32), ("id", I32), ("y", I32)], &[(1.into(), "id")])?;
+        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+            for i in 10..20 {
+                db.insert(tx, rhs_id, product!(i, i - 10, i - 8))?;
+            }
+            Ok(rhs_id)
+        })
+    }
+
+    fn compile_query(db: &RelationalDB) -> ResultTest<ExecutionSet> {
+        db.with_read_only(&ExecutionContext::default(), |tx| {
+            // Should be answered using an index semijion
+            let sql = "select lhs.* from lhs join rhs on lhs.id = rhs.id where rhs.y >= 2 and rhs.y <= 4";
+            let mut exp = compile_sql(db, tx, sql)?;
+            let Some(CrudExpr::Query(query)) = exp.pop() else {
+                panic!("unexpected query {:#?}", exp[0]);
+            };
+            singleton_execution_set(query)
+        })
+    }
+
+    fn run_eval_incr_test<T, F: Fn(RelationalDB) -> ResultTest<T>>(test_fn: F) -> ResultTest<T> {
+        make_test_db().map(|(db, _)| test_fn(db))??;
+        make_test_db().map(|(db, _)| test_fn(db.with_row_count(Arc::new(|_, _| 5))))?
+    }
+
+    #[test]
+    fn test_eval_incr_for_index_join() -> ResultTest<()> {
+        // Case 1:
+        // Delete a row inside the region of rhs,
+        // Insert a row inside the region of rhs.
+        run_eval_incr_test(index_join_case_1)?;
+        // Case 2:
+        // Delete a row outside the region of rhs,
+        // Insert a row outside the region of rhs.
+        run_eval_incr_test(index_join_case_2)?;
+        // Case 3:
+        // Delete a row inside  the region of rhs,
+        // Insert a row outside the region of rhs.
+        run_eval_incr_test(index_join_case_3)?;
+        // Case 4:
+        // Delete a row outside the region of rhs,
+        // Insert a row inside  the region of rhs.
+        run_eval_incr_test(index_join_case_4)?;
+        // Case 5:
+        // Insert row into lhs,
+        // Insert matching row inside the region of rhs.
+        run_eval_incr_test(index_join_case_5)?;
+        // Case 6:
+        // Insert row into lhs,
+        // Insert matching row outside the region of rhs.
+        run_eval_incr_test(index_join_case_6)?;
+        // Case 7:
+        // Delete row from lhs,
+        // Delete matching row inside the region of rhs.
+        run_eval_incr_test(index_join_case_7)?;
+        // Case 8:
+        // Delete row from lhs,
+        // Delete matching row outside the region of rhs.
+        run_eval_incr_test(index_join_case_8)?;
+        // Case 9:
+        // Update row from lhs,
+        // Update matching row inside the region of rhs.
+        run_eval_incr_test(index_join_case_9)?;
+        Ok(())
+    }
+
+    // Case 1:
+    // Delete a row inside the region of rhs,
+    // Insert a row inside the region of rhs.
+    fn index_join_case_1(db: RelationalDB) -> ResultTest<()> {
+        let _ = create_lhs_table_for_eval_incr(&db)?;
+        let rhs_id = create_rhs_table_for_eval_incr(&db)?;
+        let query = compile_query(&db)?;
+
+        let r1 = product!(10, 0, 2);
+        let r2 = product!(10, 0, 3);
+
+        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+            delete_row(&db, tx, rhs_id, r1.clone());
+            insert_row(&db, tx, rhs_id, r2.clone())
+        })?;
+
+        let result = db.with_read_only(&ExecutionContext::default(), |tx| {
+            query.eval_incr(
+                &db,
+                tx,
+                &DatabaseUpdate {
+                    tables: vec![
+                        delete_op(rhs_id, "rhs", r1.clone()),
+                        insert_op(rhs_id, "rhs", r2.clone()),
+                    ],
+                },
+            )
+        })?;
+
+        // No updates to report
+        assert_eq!(result.tables.len(), 0);
+        Ok(())
+    }
+
+    // Case 2:
+    // Delete a row outside the region of rhs,
+    // Insert a row outside the region of rhs.
+    fn index_join_case_2(db: RelationalDB) -> ResultTest<()> {
+        let _ = create_lhs_table_for_eval_incr(&db)?;
+        let rhs_id = create_rhs_table_for_eval_incr(&db)?;
+        let query = compile_query(&db)?;
+
+        let r1 = product!(13, 3, 5);
+        let r2 = product!(13, 3, 6);
+
+        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+            delete_row(&db, tx, rhs_id, r1.clone());
+            insert_row(&db, tx, rhs_id, r2.clone())
+        })?;
+
+        let result = db.with_read_only(&ExecutionContext::default(), |tx| {
+            query.eval_incr(
+                &db,
+                tx,
+                &DatabaseUpdate {
+                    tables: vec![
+                        delete_op(rhs_id, "rhs", r1.clone()),
+                        insert_op(rhs_id, "rhs", r2.clone()),
+                    ],
+                },
+            )
+        })?;
+
+        // No updates to report
+        assert_eq!(result.tables.len(), 0);
+        Ok(())
+    }
+
+    // Case 3:
+    // Delete a row inside  the region of rhs,
+    // Insert a row outside the region of rhs.
+    fn index_join_case_3(db: RelationalDB) -> ResultTest<()> {
+        let lhs_id = create_lhs_table_for_eval_incr(&db)?;
+        let rhs_id = create_rhs_table_for_eval_incr(&db)?;
+        let query = compile_query(&db)?;
+
+        let r1 = product!(10, 0, 2);
+        let r2 = product!(10, 0, 5);
+
+        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+            delete_row(&db, tx, rhs_id, r1.clone());
+            insert_row(&db, tx, rhs_id, r2.clone())
+        })?;
+
+        let result = db.with_read_only(&ExecutionContext::default(), |tx| {
+            query.eval_incr(
+                &db,
+                tx,
+                &DatabaseUpdate {
+                    tables: vec![
+                        delete_op(rhs_id, "rhs", r1.clone()),
+                        insert_op(rhs_id, "rhs", r2.clone()),
+                    ],
+                },
+            )
+        })?;
+
+        // A single delete from lhs
+        assert_eq!(result.tables.len(), 1);
+        assert_eq!(result.tables[0], delete_op(lhs_id, "lhs", product!(0, 5)));
+        Ok(())
+    }
+
+    // Case 4:
+    // Delete a row outside the region of rhs,
+    // Insert a row inside  the region of rhs.
+    fn index_join_case_4(db: RelationalDB) -> ResultTest<()> {
+        let lhs_id = create_lhs_table_for_eval_incr(&db)?;
+        let rhs_id = create_rhs_table_for_eval_incr(&db)?;
+        let query = compile_query(&db)?;
+
+        let r1 = product!(13, 3, 5);
+        let r2 = product!(13, 3, 4);
+
+        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+            delete_row(&db, tx, rhs_id, r1.clone());
+            insert_row(&db, tx, rhs_id, r2.clone())
+        })?;
+
+        let result = db.with_read_only(&ExecutionContext::default(), |tx| {
+            query.eval_incr(
+                &db,
+                tx,
+                &DatabaseUpdate {
+                    tables: vec![
+                        delete_op(rhs_id, "rhs", r1.clone()),
+                        insert_op(rhs_id, "rhs", r2.clone()),
+                    ],
+                },
+            )
+        })?;
+
+        // A single insert into lhs
+        assert_eq!(result.tables.len(), 1);
+        assert_eq!(result.tables[0], insert_op(lhs_id, "lhs", product!(3, 8)));
+        Ok(())
+    }
+
+    // Case 5:
+    // Insert row into lhs,
+    // Insert matching row inside the region of rhs.
+    fn index_join_case_5(db: RelationalDB) -> ResultTest<()> {
+        let lhs_id = create_lhs_table_for_eval_incr(&db)?;
+        let rhs_id = create_rhs_table_for_eval_incr(&db)?;
+        let query = compile_query(&db)?;
+
+        let lhs_row = product!(5, 10);
+        let rhs_row = product!(20, 5, 3);
+
+        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+            insert_row(&db, tx, lhs_id, lhs_row.clone())?;
+            insert_row(&db, tx, rhs_id, rhs_row.clone())
+        })?;
+
+        let result = db.with_read_only(&ExecutionContext::default(), |tx| {
+            query.eval_incr(
+                &db,
+                tx,
+                &DatabaseUpdate {
+                    tables: vec![
+                        insert_op(lhs_id, "lhs", lhs_row.clone()),
+                        insert_op(rhs_id, "rhs", rhs_row.clone()),
+                    ],
+                },
+            )
+        })?;
+
+        // A single insert into lhs
+        assert_eq!(result.tables.len(), 1);
+        assert_eq!(result.tables[0], insert_op(lhs_id, "lhs", product!(5, 10)));
+        Ok(())
+    }
+
+    // Case 6:
+    // Insert row into lhs,
+    // Insert matching row outside the region of rhs.
+    fn index_join_case_6(db: RelationalDB) -> ResultTest<()> {
+        let lhs_id = create_lhs_table_for_eval_incr(&db)?;
+        let rhs_id = create_rhs_table_for_eval_incr(&db)?;
+        let query = compile_query(&db)?;
+
+        let lhs_row = product!(5, 10);
+        let rhs_row = product!(20, 5, 5);
+
+        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+            insert_row(&db, tx, lhs_id, lhs_row.clone())?;
+            insert_row(&db, tx, rhs_id, rhs_row.clone())
+        })?;
+
+        let result = db.with_read_only(&ExecutionContext::default(), |tx| {
+            query.eval_incr(
+                &db,
+                tx,
+                &DatabaseUpdate {
+                    tables: vec![
+                        insert_op(lhs_id, "lhs", lhs_row.clone()),
+                        insert_op(rhs_id, "rhs", rhs_row.clone()),
+                    ],
+                },
+            )
+        })?;
+
+        // No updates to report
+        assert_eq!(result.tables.len(), 0);
+        Ok(())
+    }
+
+    // Case 7:
+    // Delete row from lhs,
+    // Delete matching row inside the region of rhs.
+    fn index_join_case_7(db: RelationalDB) -> ResultTest<()> {
+        let lhs_id = create_lhs_table_for_eval_incr(&db)?;
+        let rhs_id = create_rhs_table_for_eval_incr(&db)?;
+        let query = compile_query(&db)?;
+
+        let lhs_row = product!(0, 5);
+        let rhs_row = product!(10, 0, 2);
+
+        db.with_auto_commit(&ExecutionContext::default(), |tx| -> ResultTest<_> {
+            delete_row(&db, tx, lhs_id, lhs_row.clone());
+            delete_row(&db, tx, rhs_id, rhs_row.clone());
+            Ok(())
+        })?;
+
+        let result = db.with_read_only(&ExecutionContext::default(), |tx| {
+            query.eval_incr(
+                &db,
+                tx,
+                &DatabaseUpdate {
+                    tables: vec![
+                        delete_op(lhs_id, "lhs", lhs_row.clone()),
+                        delete_op(rhs_id, "rhs", rhs_row.clone()),
+                    ],
+                },
+            )
+        })?;
+
+        // A single delete from lhs
+        assert_eq!(result.tables.len(), 1);
+        assert_eq!(result.tables[0], delete_op(lhs_id, "lhs", product!(0, 5)));
+        Ok(())
+    }
+
+    // Case 8:
+    // Delete row from lhs,
+    // Delete matching row outside the region of rhs.
+    fn index_join_case_8(db: RelationalDB) -> ResultTest<()> {
+        let lhs_id = create_lhs_table_for_eval_incr(&db)?;
+        let rhs_id = create_rhs_table_for_eval_incr(&db)?;
+        let query = compile_query(&db)?;
+
+        let lhs_row = product!(3, 8);
+        let rhs_row = product!(13, 3, 5);
+
+        db.with_auto_commit(&ExecutionContext::default(), |tx| -> ResultTest<_> {
+            delete_row(&db, tx, lhs_id, lhs_row.clone());
+            delete_row(&db, tx, rhs_id, rhs_row.clone());
+            Ok(())
+        })?;
+
+        let result = db.with_read_only(&ExecutionContext::default(), |tx| {
+            query.eval_incr(
+                &db,
+                tx,
+                &DatabaseUpdate {
+                    tables: vec![
+                        delete_op(lhs_id, "lhs", lhs_row.clone()),
+                        delete_op(rhs_id, "rhs", rhs_row.clone()),
+                    ],
+                },
+            )
+        })?;
+
+        // No updates to report
+        assert_eq!(result.tables.len(), 0);
+        Ok(())
+    }
+
+    // Case 9:
+    // Update row from lhs,
+    // Update matching row inside the region of rhs.
+    fn index_join_case_9(db: RelationalDB) -> ResultTest<()> {
+        let lhs_id = create_lhs_table_for_eval_incr(&db)?;
+        let rhs_id = create_rhs_table_for_eval_incr(&db)?;
+        let query = compile_query(&db)?;
+
+        let lhs_old = product!(1, 6);
+        let lhs_new = product!(1, 7);
+        let rhs_old = product!(11, 1, 3);
+        let rhs_new = product!(11, 1, 4);
+
+        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+            delete_row(&db, tx, lhs_id, lhs_old.clone());
+            delete_row(&db, tx, rhs_id, rhs_old.clone());
+            insert_row(&db, tx, lhs_id, lhs_new.clone())?;
+            insert_row(&db, tx, rhs_id, rhs_new.clone())
+        })?;
+
+        let result = db.with_read_only(&ExecutionContext::default(), |tx| {
+            query.eval_incr(
+                &db,
+                tx,
+                &DatabaseUpdate {
+                    tables: vec![
+                        DatabaseTableUpdate {
+                            table_id: lhs_id,
+                            table_name: "lhs".to_string(),
+                            ops: vec![TableOp::delete(lhs_old.clone()), TableOp::insert(lhs_new.clone())],
+                        },
+                        DatabaseTableUpdate {
+                            table_id: rhs_id,
+                            table_name: "rhs".to_string(),
+                            ops: vec![TableOp::delete(rhs_old.clone()), TableOp::insert(rhs_new.clone())],
+                        },
+                    ],
+                },
+            )
+        })?;
+
+        // A delete and an insert into lhs
+        assert_eq!(result.tables.len(), 1);
+        assert_eq!(
+            result.tables[0],
+            DatabaseTableUpdate {
+                table_id: lhs_id,
+                table_name: "lhs".to_string(),
+                ops: vec![TableOp::delete(lhs_old), TableOp::insert(lhs_new)],
+            },
+        );
         Ok(())
     }
 }

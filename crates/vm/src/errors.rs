@@ -3,6 +3,8 @@ use spacetimedb_sats::AlgebraicValue;
 use std::fmt;
 use thiserror::Error;
 
+use crate::expr::SourceId;
+
 /// Typing Errors
 #[derive(Error, Debug)]
 pub enum ErrorType {
@@ -25,6 +27,8 @@ pub enum ErrorVm {
     Auth(#[from] AuthError),
     #[error("Unsupported: {0}")]
     Unsupported(String),
+    #[error("No source table with index {0:?}")]
+    NoSuchSource(SourceId),
     #[error("{0}")]
     Other(#[from] anyhow::Error),
 }
@@ -120,6 +124,11 @@ impl From<ErrorVm> for ErrorLang {
             ErrorVm::Unsupported(err) => ErrorLang::new(ErrorKind::Compiler, Some(&err)),
             ErrorVm::Lang(err) => err,
             ErrorVm::Auth(err) => ErrorLang::new(ErrorKind::Unauthorized, Some(&err.to_string())),
+            err @ ErrorVm::NoSuchSource(_) => ErrorLang {
+                kind: ErrorKind::Invalid,
+                msg: Some(format!("{err:?}")),
+                context: None,
+            },
         }
     }
 }

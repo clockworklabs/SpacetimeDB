@@ -7,6 +7,7 @@ use clap::{Arg, ArgAction, ArgMatches};
 use futures::{AsyncBufReadExt, TryStreamExt};
 use is_terminal::IsTerminal;
 use termcolor::{Color, ColorSpec, WriteColor};
+use tokio::io::AsyncWriteExt;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("logs")
@@ -42,6 +43,13 @@ pub fn cli() -> clap::Command {
                 .action(ArgAction::SetTrue)
                 .help("A flag indicating whether or not to follow the logs")
                 .long_help("A flag that causes logs to not stop when end of the log file is reached, but rather to wait for additional data to be appended to the input."),
+        )
+        .arg(
+            Arg::new("json")
+                .long("json")
+                .required(false)
+                .action(ArgAction::SetTrue)
+                .help("Output raw json log records"),
         )
         .after_help("Run `spacetime help logs` for more detailed information.\n")
 }
@@ -93,6 +101,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let num_lines = args.get_one::<u32>("num_lines").copied();
     let database = args.get_one::<String>("database").unwrap();
     let follow = args.get_flag("follow");
+    let json = args.get_flag("json");
 
     let auth_header = get_auth_header_only(&mut config, false, identity, server).await?;
 
@@ -103,7 +112,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let builder = reqwest::Client::new().get(format!("{}/database/logs/{}", config.get_host_url(server)?, address));
     let builder = add_auth_header_opt(builder, &auth_header);
-    let res = builder.query(&query_parms).send().await?;
+    let mut res = builder.query(&query_parms).send().await?;
     let status = res.status();
 
     if status.is_client_error() || status.is_server_error() {
@@ -111,7 +120,15 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         anyhow::bail!(err)
     }
 
-    let term_color = if std::io::stderr().is_terminal() {
+    if json {
+        let mut stdout = tokio::io::stdout();
+        while let Some(chunk) = res.chunk().await? {
+            stdout.write_all(&chunk).await?;
+        }
+        return Ok(());
+    }
+
+    let term_color = if std::io::stdout().is_terminal() {
         termcolor::ColorChoice::Auto
     } else {
         termcolor::ColorChoice::Never

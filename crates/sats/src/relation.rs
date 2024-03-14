@@ -175,7 +175,7 @@ pub struct HeaderOnlyField<'a> {
     pub fields: Vec<ColumnOnlyField<'a>>,
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Header {
     pub table_name: String,
     pub fields: Vec<Column>,
@@ -419,7 +419,7 @@ impl From<AlgebraicType> for Header {
 }
 
 /// An estimate for the range of rows in the [Relation]
-#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct RowCount {
     pub min: usize,
     pub max: Option<usize>,
@@ -454,7 +454,7 @@ pub trait Relation {
 }
 
 /// A stored table from [RelationalDB]
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct DbTable {
     pub head: Arc<Header>,
     pub table_id: TableId,
@@ -485,9 +485,8 @@ impl Relation for DbTable {
 
 #[cfg(test)]
 mod tests {
-    use spacetimedb_primitives::col_list;
-
     use super::*;
+    use spacetimedb_primitives::col_list;
 
     /// Build a [Header] using the initial `start_pos` as the column position for the [Constraints]
     fn head(table: &str, fields: (&str, &str), start_pos: u32) -> Header {

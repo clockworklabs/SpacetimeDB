@@ -23,45 +23,40 @@
 //!
 #![doc = include_str!("../../../../docs/incremental-joins.md")]
 
+use super::execution_unit::ExecutionUnit;
+use super::query;
+use crate::client::{ClientActorId, ClientConnectionSender};
+use crate::db::relational_db::{RelationalDB, Tx};
+use crate::error::{DBError, SubscriptionError};
+use crate::execution_context::ExecutionContext;
+use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp};
+use crate::vm::{build_query, TxMode};
 use anyhow::Context;
-use derive_more::{Deref, DerefMut, From, IntoIterator};
-use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::TableId;
-use std::collections::{btree_set, BTreeSet, HashMap, HashSet, LinkedList};
+use spacetimedb_sats::db::auth::{StAccess, StTableType};
+use spacetimedb_sats::relation::{DbTable, Header};
+use spacetimedb_vm::expr::{self, IndexJoin, Query, QueryExpr, SourceSet};
+use spacetimedb_vm::rel_ops::RelOps;
+use spacetimedb_vm::relation::MemTable;
+use std::collections::HashSet;
 use std::ops::Deref;
 use std::sync::Arc;
 
-use crate::db::relational_db::Tx;
-use crate::error::{DBError, SubscriptionError};
-use crate::execution_context::ExecutionContext;
-use crate::subscription::query::{run_query, to_mem_table_with_op_type, OP_TYPE_FIELD_NAME};
-use crate::{
-    client::{ClientActorId, ClientConnectionSender},
-    db::relational_db::RelationalDB,
-    host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp},
-};
-use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::PrimaryKey;
-use spacetimedb_sats::db::auth::{StAccess, StTableType};
-use spacetimedb_sats::relation::{DbTable, Header, Relation};
-use spacetimedb_sats::{AlgebraicValue, ProductValue};
-use spacetimedb_vm::expr::{self, IndexJoin, QueryExpr};
-use spacetimedb_vm::relation::MemTable;
-
-use super::query;
-
-/// A subscription is a [`QuerySet`], along with a set of subscribers all
+/// A subscription is an [`ExecutionSet`], along with a set of subscribers all
 /// interested in the same set of queries.
 #[derive(Debug)]
 pub struct Subscription {
-    pub queries: QuerySet,
+    pub queries: ExecutionSet,
     subscribers: Vec<ClientConnectionSender>,
 }
 
 impl Subscription {
-    pub fn new(queries: QuerySet, subscriber: ClientConnectionSender) -> Self {
+    pub fn new(queries: impl Into<ExecutionSet>, subscriber: ClientConnectionSender) -> Self {
         Self {
-            queries,
+            queries: queries.into(),
             subscribers: vec![subscriber],
         }
     }
@@ -85,10 +80,10 @@ impl Subscription {
 /// A [`QueryExpr`] tagged with [`query::Supported`].
 ///
 /// Constructed via `TryFrom`, which rejects unsupported queries.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct SupportedQuery {
-    kind: query::Supported,
-    expr: QueryExpr,
+    pub kind: query::Supported,
+    pub expr: QueryExpr,
 }
 
 impl SupportedQuery {
@@ -103,6 +98,40 @@ impl SupportedQuery {
 
     pub fn as_expr(&self) -> &QueryExpr {
         self.as_ref()
+    }
+
+    /// The table whose rows are being returned.
+    pub fn return_table(&self) -> TableId {
+        self.expr.source.get_db_table().unwrap().table_id
+    }
+
+    pub fn return_name(&self) -> String {
+        self.expr.source.table_name().to_owned()
+    }
+
+    /// This is the same as the return table unless this is a join.
+    /// For joins this is the table whose rows are not being returned.
+    pub fn filter_table(&self) -> TableId {
+        let return_table = self.return_table();
+        self.expr
+            .query
+            .first()
+            .and_then(|op| {
+                if let Query::IndexJoin(join) = op {
+                    Some(join)
+                } else {
+                    None
+                }
+            })
+            .and_then(|join| {
+                join.index_side
+                    .get_db_table()
+                    .filter(|t| t.table_id != return_table)
+                    .or_else(|| join.probe_side.source.get_db_table())
+                    .filter(|t| t.table_id != return_table)
+                    .map(|t| t.table_id)
+            })
+            .unwrap_or(return_table)
     }
 }
 
@@ -122,618 +151,552 @@ impl AsRef<QueryExpr> for SupportedQuery {
     }
 }
 
-/// A set of [supported][`SupportedQuery`] [`QueryExpr`]s.
-#[derive(Debug, Deref, DerefMut, PartialEq, From, IntoIterator)]
-pub struct QuerySet(BTreeSet<SupportedQuery>);
-
-impl From<SupportedQuery> for QuerySet {
-    fn from(q: SupportedQuery) -> Self {
-        Self([q].into())
-    }
-}
-
-impl<const N: usize> From<[SupportedQuery; N]> for QuerySet {
-    fn from(qs: [SupportedQuery; N]) -> Self {
-        Self(qs.into())
-    }
-}
-
-impl FromIterator<SupportedQuery> for QuerySet {
-    fn from_iter<T: IntoIterator<Item = SupportedQuery>>(iter: T) -> Self {
-        QuerySet(BTreeSet::from_iter(iter))
-    }
-}
-
-impl<'a> IntoIterator for &'a QuerySet {
-    type Item = &'a SupportedQuery;
-    type IntoIter = btree_set::Iter<'a, SupportedQuery>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.iter()
-    }
-}
-
-impl<'a> IntoParallelIterator for &'a QuerySet {
-    type Item = &'a SupportedQuery;
-    type Iter = rayon::collections::btree_set::Iter<'a, SupportedQuery>;
-
-    fn into_par_iter(self) -> Self::Iter {
-        self.0.par_iter()
-    }
-}
-
-impl Extend<SupportedQuery> for QuerySet {
-    fn extend<T: IntoIterator<Item = SupportedQuery>>(&mut self, iter: T) {
-        self.0.extend(iter)
-    }
-}
-
-#[cfg(test)]
-impl TryFrom<QueryExpr> for QuerySet {
-    type Error = DBError;
-
-    fn try_from(expr: QueryExpr) -> Result<Self, Self::Error> {
-        SupportedQuery::try_from(expr).map(Self::from)
-    }
-}
-
-// Returns a closure for evaluating a query.
-// One that consists of updates to secondary tables only.
-// A secondary table is one whose rows are not directly returned by the query.
-// An example is the right table of a left semijoin.
-fn evaluator_for_secondary_updates(
+/// Evaluates `query` and returns all the updates.
+fn eval_updates(
     db: &RelationalDB,
-    auth: AuthCtx,
-    inserts: bool,
-) -> impl Fn(&Tx, &QueryExpr) -> Result<HashMap<PrimaryKey, Op>, DBError> + '_ {
-    move |tx, query| {
-        let mut out = HashMap::new();
-        // If we are evaluating inserts, the op type should be 1.
-        // Otherwise we are evaluating deletes, and the op type should be 0.
-        let op_type = if inserts { 1 } else { 0 };
-        for MemTable { data, .. } in
-            run_query(&ExecutionContext::incremental_update(db.address()), db, tx, query, auth)?
-        {
-            for row in data {
-                let row_pk = RelationalDB::pk_for_row(&row);
-                out.insert(row_pk, Op { op_type, row_pk, row });
-            }
-        }
-        Ok(out)
-    }
+    tx: &Tx,
+    query: &QueryExpr,
+    mut sources: SourceSet,
+) -> Result<impl Iterator<Item = ProductValue>, DBError> {
+    let ctx = ExecutionContext::incremental_update(db.address());
+    let tx: TxMode = tx.into();
+    // TODO(perf, 833): avoid clone.
+    let query = build_query(&ctx, db, &tx, query.clone(), &mut sources)?;
+    // TODO(perf): avoid collecting into a vec.
+    Ok(query.collect_vec(|row_ref| row_ref.into_product_value())?.into_iter())
 }
 
-// Returns a closure for evaluating a query.
-// One that consists of updates to its primary table.
-// The primary table is the one whose rows are returned by the query.
-// An example is the left table of a left semijoin.
-fn evaluator_for_primary_updates(
-    db: &RelationalDB,
-    auth: AuthCtx,
-) -> impl Fn(&Tx, &QueryExpr) -> Result<HashMap<PrimaryKey, Op>, DBError> + '_ {
-    move |tx, query| {
-        let mut out = HashMap::new();
-        for MemTable { data, head, .. } in
-            run_query(&ExecutionContext::incremental_update(db.address()), db, tx, query, auth)?
-        {
-            // Remove the special __op_type field before computing each row's primary key.
-            let pos_op_type = head.find_pos_by_name(OP_TYPE_FIELD_NAME).unwrap_or_else(|| {
-                panic!(
-                    "Failed to locate `{OP_TYPE_FIELD_NAME}` in `{}`, fields: {:?}",
-                    head.table_name,
-                    head.fields.iter().map(|x| &x.field).collect::<Vec<_>>()
-                )
-            });
-            let pos_op_type = pos_op_type.idx();
-
-            for mut row in data {
-                let op_type = if let AlgebraicValue::U8(op) = row.elements.remove(pos_op_type) {
-                    op
-                } else {
-                    panic!("Failed to extract `{OP_TYPE_FIELD_NAME}` from `{}`", head.table_name);
-                };
-                let row_pk = RelationalDB::pk_for_row(&row);
-                out.insert(row_pk, Op { op_type, row_pk, row });
-            }
-        }
-        Ok(out)
-    }
-}
-
-impl QuerySet {
-    pub const fn new() -> Self {
-        Self(BTreeSet::new())
-    }
-
-    /// Queries all the [`StTableType::User`] tables *right now*
-    /// and turns them into [`QueryExpr`],
-    /// the moral equivalent of `SELECT * FROM table`.
-    pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> Result<Self, DBError> {
-        let tables = relational_db.get_all_tables(tx)?;
-        let same_owner = auth.owner == auth.caller;
-        let exprs = tables
-            .iter()
-            .map(Deref::deref)
-            .filter(|t| t.table_type == StTableType::User && (same_owner || t.table_access == StAccess::Public))
-            .map(|src| SupportedQuery {
-                kind: query::Supported::Scan,
-                expr: QueryExpr::new(src),
-            })
-            .collect();
-
-        Ok(Self(exprs))
-    }
-
-    /// Incremental evaluation of `rows` that matched the [Query] (aka subscriptions)
-    ///
-    /// This is equivalent to run a `trigger` on `INSERT/UPDATE/DELETE`, run the [Query] and see if the `row` is matched.
-    ///
-    /// NOTE: The returned `rows` in [DatabaseUpdate] are **deduplicated** so if 2 queries match the same `row`, only one copy is returned.
-    #[tracing::instrument(skip_all)]
-    pub fn eval_incr(
-        &self,
-        db: &RelationalDB,
-        tx: &Tx,
-        database_update: &DatabaseUpdate,
-        auth: AuthCtx,
-    ) -> Result<DatabaseUpdate, DBError> {
-        let mut output = DatabaseUpdate { tables: vec![] };
-        let mut table_ops = HashMap::new();
-        let mut seen = HashSet::new();
-
-        let eval = evaluator_for_primary_updates(db, auth);
-        for SupportedQuery { kind, expr, .. } in self {
-            use query::Supported::*;
-            match kind {
-                Scan => {
-                    let source = expr
-                        .source
-                        .get_db_table()
-                        .context("expression without physical source table")?;
-                    for table in database_update.tables.iter().filter(|t| t.table_id == source.table_id) {
-                        // Get the TableOps for this table
-                        let (_, table_row_operations) = table_ops
-                            .entry(table.table_id)
-                            .or_insert_with(|| (table.table_name.clone(), vec![]));
-
-                        // Replace table reference in original query plan with virtual MemTable
-                        let plan = query::to_mem_table(expr.clone(), table);
-
-                        // Evaluate the new plan and capture the new row operations
-                        for op in eval(tx, &plan)?
-                            .into_iter()
-                            .filter_map(|(row_pk, op)| seen.insert((table.table_id, row_pk)).then(|| op.into()))
-                        {
-                            table_row_operations.push(op);
-                        }
-                    }
-                }
-                Semijoin => {
-                    if let Some(plan) = IncrementalJoin::new(expr, database_update.tables.iter())? {
-                        let table = plan.left_table();
-                        let table_id = table.table_id;
-                        let header = &table.head;
-
-                        // Get the TableOps for this table
-                        let (_, table_row_operations) = table_ops
-                            .entry(table_id)
-                            .or_insert_with(|| (header.table_name.clone(), vec![]));
-
-                        // Evaluate the plan and capture the new row operations
-                        for op in plan
-                            .eval(db, tx, &auth)?
-                            .filter_map(|op| seen.insert((table_id, op.row_pk)).then(|| op.into()))
-                        {
-                            table_row_operations.push(op);
-                        }
-                    }
-                }
-            }
-        }
-        for (table_id, (table_name, ops)) in table_ops.into_iter().filter(|(_, (_, ops))| !ops.is_empty()) {
-            output.tables.push(DatabaseTableUpdate {
-                table_id,
-                table_name,
-                ops,
-            });
-        }
-        Ok(output)
-    }
-
-    /// Direct execution of [Query] (aka subscriptions)
-    ///
-    /// This is equivalent to run a direct query like `SELECT * FROM table` and get back all the `rows` that match it.
-    ///
-    /// NOTE: The returned `rows` in [DatabaseUpdate] are **deduplicated** so if 2 queries match the same `row`, only one copy is returned.
-    ///
-    /// This is a *major* difference with normal query execution, where is expected to return the full result set for each query.
-    #[tracing::instrument(skip_all)]
-    pub fn eval(&self, db: &RelationalDB, tx: &Tx, auth: AuthCtx) -> Result<DatabaseUpdate, DBError> {
-        // evaluate each of the queries in this QuerySet in parallel
-        let span = tracing::Span::current();
-        #[allow(clippy::needless_borrowed_reference)] // false positive
-        let eval_query = |&SupportedQuery { ref expr, .. }| {
-            let _entered = span.enter();
-            let t = expr.source.get_db_table()?;
-
-            let tables = run_query(&ExecutionContext::subscribe(db.address()), db, tx, expr, auth);
-            Some(tables.map(|tables| (t, tables)))
-        };
-        let ops = self
-            .par_iter()
-            .filter_map(eval_query)
-            .try_fold(Vec::new, |mut v, item| {
-                item.map(|item| {
-                    v.push(item);
-                    v
-                })
-            })
-            .map(|r| r.map(|v| LinkedList::from([v])))
-            .reduce(
-                || Ok(LinkedList::new()),
-                |l, r| {
-                    // l? is run before r? so the leftmost error gets returned
-                    let (mut l, mut r) = (l?, r?);
-                    l.append(&mut r);
-                    Ok(l)
-                },
-            )?
-            .into_iter()
-            .flatten();
-        // single threaded version for debugging; uncomment if you need it
-        // let ops = self.iter().filter_map(eval_query).collect::<Result<Vec<_>, _>>()?;
-
-        let mut tables = Vec::with_capacity(self.len());
-        // a map from TableId to the corresponding index in `tables`
-        let mut tables_map = HashMap::<TableId, usize>::new();
-        let mut seen = HashSet::new();
-
-        // coalesce the results of each query (and filter out duplicates) serially
-        for (t, evaled_tables) in ops {
-            let idx = *tables_map.entry(t.table_id).or_insert_with(|| {
-                let i = tables.len();
-                tables.push(DatabaseTableUpdate {
-                    table_id: t.table_id,
-                    table_name: t.head.table_name.clone(),
-                    ops: Vec::new(),
-                });
-                i
-            });
-            let table_row_ops = &mut tables[idx].ops;
-            let ops = evaled_tables
-                .into_iter()
-                .flat_map(|table| table.data)
-                .filter_map(|row| {
-                    let row_pk = RelationalDB::pk_for_row(&row);
-                    seen.insert((t.table_id, row_pk)).then(|| TableOp {
-                        op_type: 1,
-                        row_pk: row_pk.to_bytes(),
-                        row,
-                    })
-                });
-            table_row_ops.extend(ops);
-        }
-
-        tables.retain(|upd| !upd.ops.is_empty());
-
-        Ok(DatabaseUpdate { tables })
-    }
-}
-
-/// Helper to retain [`PrimaryKey`] before converting to [`TableOp`].
+/// A [`query::Supported::Semijoin`] compiled for incremental evaluations.
 ///
-/// [`PrimaryKey`] is [`Copy`], while [`TableOp`] stores it as a [`Vec<u8>`].
+/// The following assumptions are made for the incremental evaluation to be
+/// correct without maintaining a materialized view:
+///
+/// * The join is a primary foreign key semijoin, i.e. one row from the
+///   right table joins with at most one row from the left table.
+/// * The rows in the [`DatabaseTableUpdate`]s on either side of the join
+///   are already committed to the underlying "physical" tables.
+/// * We maintain set semantics, i.e. no two rows with the same value can appear in the result.
+///
+/// See [IncrementalJoin::eval] for a detailed algorithmic explanation.
+/// However note that there are at most three distinct plans that we must evaluate.
+/// They are:
+///
+/// 1. A(+|-) x B
+/// 2. A x B(+|-)
+/// 3. A(+|-) x B(+|-)
+///
+/// All three of these plans are compiled ahead of time,
+/// before the evaluation of any row updates.
+///
+/// For a more in-depth discussion, see the [module-level documentation](./index.html).
 #[derive(Debug)]
-struct Op {
-    op_type: u8,
-    row_pk: PrimaryKey,
-    row: ProductValue,
-}
-
-impl From<Op> for TableOp {
-    fn from(op: Op) -> Self {
-        Self {
-            op_type: op.op_type,
-            row_pk: op.row_pk.to_bytes(),
-            row: op.row,
-        }
-    }
-}
-
-/// Helper for evaluating a [`query::Supported::Semijoin`].
-struct IncrementalJoin<'a> {
-    join: &'a IndexJoin,
-    index_side: JoinSide<'a>,
-    probe_side: JoinSide<'a>,
+pub struct IncrementalJoin {
+    /// The lhs table which may be the index side or the probe side.
+    lhs: DbTable,
+    /// The rhs table which may be the index side or the probe side.
+    rhs: DbTable,
+    /// This determines which side is the index side and which is the probe side.
+    return_index_rows: bool,
+    /// A(+|-) join B
+    virtual_index_plan: QueryExpr,
+    /// A join B(+|-)
+    virtual_probe_plan: QueryExpr,
+    /// A(+|-) join B(+|-)
+    virtual_plan: QueryExpr,
 }
 
 /// One side of an [`IncrementalJoin`].
 ///
 /// Holds the "physical" [`DbTable`] this side of the join operates on, as well
 /// as the [`DatabaseTableUpdate`]s pertaining that table.
-struct JoinSide<'a> {
-    table: &'a DbTable,
-    updates: DatabaseTableUpdate,
+struct JoinSide {
+    table_id: TableId,
+    table_name: String,
+    inserts: Vec<TableOp>,
+    deletes: Vec<TableOp>,
 }
 
-impl JoinSide<'_> {
+impl JoinSide {
     /// Return a [`DatabaseTableUpdate`] consisting of only insert operations.
     pub fn inserts(&self) -> DatabaseTableUpdate {
-        let ops = self.updates.ops.iter().filter(|op| op.op_type == 1).cloned().collect();
         DatabaseTableUpdate {
-            table_id: self.updates.table_id,
-            table_name: self.updates.table_name.clone(),
-            ops,
+            table_id: self.table_id,
+            table_name: self.table_name.clone(),
+            ops: self.inserts.to_vec(),
         }
     }
 
     /// Return a [`DatabaseTableUpdate`] with only delete operations.
     pub fn deletes(&self) -> DatabaseTableUpdate {
-        let ops = self.updates.ops.iter().filter(|op| op.op_type == 0).cloned().collect();
         DatabaseTableUpdate {
-            table_id: self.updates.table_id,
-            table_name: self.updates.table_name.clone(),
-            ops,
+            table_id: self.table_id,
+            table_name: self.table_name.clone(),
+            ops: self.deletes.to_vec(),
         }
+    }
+
+    /// Does this table update include inserts?
+    pub fn has_inserts(&self) -> bool {
+        !self.inserts.is_empty()
+    }
+
+    /// Does this table update include deletes?
+    pub fn has_deletes(&self) -> bool {
+        !self.deletes.is_empty()
     }
 }
 
-impl<'a> IncrementalJoin<'a> {
-    /// Construct an [`IncrementalJoin`] from a [`QueryExpr`] and a series
-    /// of [`DatabaseTableUpdate`]s.
+impl IncrementalJoin {
+    /// Construct an empty [`DatabaseTableUpdate`] with the schema of `table`
+    /// to use as a source when pre-compiling `eval_incr` queries.
+    fn dummy_table_update(table: &DbTable) -> DatabaseTableUpdate {
+        let table_id = table.table_id;
+        let table_name = table.head.table_name.clone();
+        DatabaseTableUpdate {
+            table_id,
+            table_name,
+            ops: vec![],
+        }
+    }
+
+    fn optimize_query(join: IndexJoin) -> QueryExpr {
+        let expr = QueryExpr::from(join);
+        // Because (at least) one of the two tables will be a `MemTable`,
+        // and therefore not have indexes,
+        // the `row_count` function we pass to `optimize` is useless;
+        // either the `DbTable` must be used as the index side,
+        // or for the `A- join B-` case, the join must be rewritten to not use indexes.
+        expr.optimize(&|_, _| 0)
+    }
+
+    /// Return the query plan where the lhs is a delta table.
+    fn plan_for_delta_lhs(&self) -> &QueryExpr {
+        if self.return_index_rows {
+            &self.virtual_index_plan
+        } else {
+            &self.virtual_probe_plan
+        }
+    }
+
+    /// Return the query plan where the rhs is a delta table.
+    fn plan_for_delta_rhs(&self) -> &QueryExpr {
+        if self.return_index_rows {
+            &self.virtual_probe_plan
+        } else {
+            &self.virtual_index_plan
+        }
+    }
+
+    /// Construct an [`IncrementalJoin`] from a [`QueryExpr`].
     ///
-    /// The query expression is assumed to be classified as a
-    /// [`query::Supported::Semijoin`] already. The supplied updates are assumed
-    /// to be the full set of updates from a single transaction.
-    ///
-    /// If neither side of the join is modified by any of the updates, `None` is
-    /// returned. Otherwise, `Some` [`IncrementalJoin`] is returned with the
-    /// updates partitioned into the respective [`JoinSide`].
     ///
     /// An error is returned if the expression is not well-formed.
-    pub fn new(
-        join: &'a QueryExpr,
-        updates: impl Iterator<Item = &'a DatabaseTableUpdate>,
-    ) -> anyhow::Result<Option<Self>> {
-        if join.query.len() != 1 {
-            return Err(anyhow::anyhow!("expected a single index join, but got {:#?}", join));
+    pub fn new(expr: &QueryExpr) -> anyhow::Result<Self> {
+        if expr.query.len() != 1 {
+            return Err(anyhow::anyhow!("expected a single index join, but got {:#?}", expr));
         }
-        let expr::Query::IndexJoin(ref join) = join.query[0] else {
-            return Err(anyhow::anyhow!("expected a single index join, but got {:#?}", join));
+        let expr::Query::IndexJoin(ref join) = expr.query[0] else {
+            return Err(anyhow::anyhow!("expected a single index join, but got {:#?}", expr));
         };
 
         let index_table = join
             .index_side
             .get_db_table()
-            .context("expected a physical database table")?;
+            .context("expected a physical database table")?
+            .clone();
         let probe_table = join
             .probe_side
             .source
             .get_db_table()
-            .context("expected a physical database table")?;
+            .context("expected a physical database table")?
+            .clone();
 
-        let index_id = index_table.table_id;
-        let probe_id = probe_table.table_id;
+        let (virtual_index_plan, _sources) =
+            with_delta_table(join.clone(), Some(Self::dummy_table_update(&index_table)), None);
+        debug_assert_eq!(_sources.len(), 1);
+        let virtual_index_plan = Self::optimize_query(virtual_index_plan);
 
-        let mut index_side_updates = Vec::new();
-        let mut probe_side_updates = Vec::new();
+        let (virtual_probe_plan, _sources) =
+            with_delta_table(join.clone(), None, Some(Self::dummy_table_update(&probe_table)));
+        debug_assert_eq!(_sources.len(), 1);
+        let virtual_probe_plan = Self::optimize_query(virtual_probe_plan);
+
+        let (virtual_plan, _sources) = with_delta_table(
+            join.clone(),
+            Some(Self::dummy_table_update(&index_table)),
+            Some(Self::dummy_table_update(&probe_table)),
+        );
+        debug_assert_eq!(_sources.len(), 2);
+        let virtual_plan = virtual_plan.to_inner_join();
+
+        let return_index_rows = join.return_index_rows;
+
+        let (lhs, rhs) = if return_index_rows {
+            (index_table, probe_table)
+        } else {
+            (probe_table, index_table)
+        };
+
+        Ok(Self {
+            lhs,
+            rhs,
+            return_index_rows,
+            virtual_index_plan,
+            virtual_probe_plan,
+            virtual_plan,
+        })
+    }
+
+    /// Find any updates to the tables mentioned by `self` and group them into [`JoinSide`]s.
+    ///
+    /// The supplied updates are assumed to be the full set of updates from a single transaction.
+    ///
+    /// If neither side of the join is modified by any of the updates, `None` is returned.
+    /// Otherwise, `Some((index_table, probe_table))` is returned
+    /// with the updates partitioned into the respective [`JoinSide`].
+    fn find_updates<'a>(
+        &self,
+        updates: impl IntoIterator<Item = &'a DatabaseTableUpdate>,
+    ) -> Option<(JoinSide, JoinSide)> {
+        let mut lhs_ops = Vec::new();
+        let mut rhs_ops = Vec::new();
 
         for update in updates {
-            if update.table_id == index_id {
-                index_side_updates.extend(update.ops.iter().cloned());
-            } else if update.table_id == probe_id {
-                probe_side_updates.extend(update.ops.iter().cloned());
+            if update.table_id == self.lhs.table_id {
+                lhs_ops.extend(update.ops.iter().cloned());
+            } else if update.table_id == self.rhs.table_id {
+                rhs_ops.extend(update.ops.iter().cloned());
             }
         }
 
-        if index_side_updates.is_empty() && probe_side_updates.is_empty() {
+        if lhs_ops.is_empty() && rhs_ops.is_empty() {
+            return None;
+        }
+
+        let lhs = JoinSide {
+            table_id: self.lhs.table_id,
+            table_name: self.lhs.head.table_name.clone(),
+            inserts: lhs_ops.iter().filter(|op| op.op_type == 1).cloned().collect(),
+            deletes: lhs_ops.iter().filter(|op| op.op_type == 0).cloned().collect(),
+        };
+
+        let rhs = JoinSide {
+            table_id: self.rhs.table_id,
+            table_name: self.rhs.head.table_name.clone(),
+            inserts: rhs_ops.iter().filter(|op| op.op_type == 1).cloned().collect(),
+            deletes: rhs_ops.iter().filter(|op| op.op_type == 0).cloned().collect(),
+        };
+
+        Some((lhs, rhs))
+    }
+
+    /// Evaluate join plan for lhs updates.
+    fn eval_lhs(
+        &self,
+        db: &RelationalDB,
+        tx: &Tx,
+        lhs: DatabaseTableUpdate,
+    ) -> Result<impl Iterator<Item = ProductValue>, DBError> {
+        let lhs = to_mem_table(self.lhs.head.clone(), self.lhs.table_access, lhs);
+        let mut sources = SourceSet::default();
+        sources.add_mem_table(lhs);
+        eval_updates(db, tx, self.plan_for_delta_lhs(), sources)
+    }
+
+    /// Evaluate join plan for rhs updates.
+    fn eval_rhs(
+        &self,
+        db: &RelationalDB,
+        tx: &Tx,
+        rhs: DatabaseTableUpdate,
+    ) -> Result<impl Iterator<Item = ProductValue>, DBError> {
+        let rhs = to_mem_table(self.rhs.head.clone(), self.rhs.table_access, rhs);
+        let mut sources = SourceSet::default();
+        sources.add_mem_table(rhs);
+        eval_updates(db, tx, self.plan_for_delta_rhs(), sources)
+    }
+
+    /// Evaluate join plan for both lhs and rhs updates.
+    fn eval_all(
+        &self,
+        db: &RelationalDB,
+        tx: &Tx,
+        lhs: DatabaseTableUpdate,
+        rhs: DatabaseTableUpdate,
+    ) -> Result<impl Iterator<Item = ProductValue>, DBError> {
+        let lhs = to_mem_table(self.lhs.head.clone(), self.lhs.table_access, lhs);
+        let rhs = to_mem_table(self.rhs.head.clone(), self.rhs.table_access, rhs);
+        let mut sources = SourceSet::default();
+        let (index_side, probe_side) = if self.return_index_rows { (lhs, rhs) } else { (rhs, lhs) };
+        sources.add_mem_table(index_side);
+        sources.add_mem_table(probe_side);
+        eval_updates(db, tx, &self.virtual_plan, sources)
+    }
+
+    /// Evaluate this [`IncrementalJoin`] over the row updates of a transaction t.
+    ///
+    /// In the comments that follow,
+    /// B(t) refers to the state of table B as of transaction t.
+    /// In particular, B(t) includes all of the changes from t.
+    /// B(s) refers to the state of table B as of transaction s,
+    /// where s is the transaction immediately preceeding t.
+    ///
+    /// Now we may ask,
+    /// given a set of updates to tables A and/or B,
+    /// how to efficiently compute the semijoin A(t) x B(t)?
+    ///
+    /// First consider newly inserted rows of A.
+    /// We want to know if they join with any newly inserted rows of B,
+    /// or if they join with any previously existing rows of B.
+    /// That is:
+    ///
+    /// A+ x B(t)
+    ///
+    /// Note that we don't need to consider deleted rows from B.
+    /// Because they have no bearing on newly inserted rows of A.
+    ///
+    /// Now consider rows that were deleted from A.
+    /// Similary we want to know if they join with any deleted rows of B,
+    /// or if they join with any previously existing rows of B.
+    /// That is:
+    ///
+    /// A- x B(s) U A- x B- = A- x B(t) \ A- x B+ U A- x B-
+    ///
+    /// Note that we don't necessarily care about newly inserted rows of B in this case.
+    /// Because even if they join with deleted rows of A,
+    /// they were never included in the results to begin with.
+    /// However, during this evaluation, we no longer have direct access to B(s).
+    /// Hence we must derive it by subtracting A- x B+ from A- x B(t).
+    ///
+    /// Finally we must consider previously existing rows of A.
+    /// That is:
+    ///
+    /// A(s) x B+ = A(t) x B+ \ A+ x B+
+    /// A(s) x B- = A(t) x B- \ A+ x B-
+    ///
+    /// In total we must consider 8 distinct joins.
+    /// They are:
+    ///
+    /// (1) A+ x B(t)
+    /// (2) A- x B(t)
+    /// (3) A- x B+
+    /// (4) A- x B-
+    /// (5) A(t) x B+
+    /// (6) A(t) x B-
+    /// (7) A+ x B+
+    /// (8) A+ x B-
+    pub fn eval<'a>(
+        &self,
+        db: &RelationalDB,
+        tx: &Tx,
+        updates: impl IntoIterator<Item = &'a DatabaseTableUpdate>,
+    ) -> Result<Option<impl Iterator<Item = TableOp>>, DBError> {
+        let Some((lhs, rhs)) = self.find_updates(updates) else {
             return Ok(None);
-        }
-
-        let table = index_table;
-        let table_id = index_id;
-        let table_name = table.head.table_name.clone();
-        let ops = index_side_updates;
-        let index_side = JoinSide {
-            table,
-            updates: DatabaseTableUpdate {
-                table_id,
-                table_name,
-                ops,
-            },
         };
-
-        let table = probe_table;
-        let table_id = probe_id;
-        let table_name = table.head.table_name.clone();
-        let ops = probe_side_updates;
-        let probe_side = JoinSide {
-            table,
-            updates: DatabaseTableUpdate {
-                table_id,
-                table_name,
-                ops,
-            },
-        };
-
-        Ok(Some(Self {
-            join,
-            index_side,
-            probe_side,
-        }))
-    }
-
-    /// The left table is the primary table.
-    /// The one from which rows will be returned.
-    fn left_table(&self) -> &DbTable {
-        if self.join.return_index_rows {
-            self.index_side.table
+        // (1) A+ x B(t)
+        let join_1 = if lhs.has_inserts() {
+            self.eval_lhs(db, tx, lhs.inserts())?.collect()
         } else {
-            self.probe_side.table
+            Vec::with_capacity(0)
+        };
+        // (2) A- x B(t)
+        let mut join_2 = if lhs.has_deletes() {
+            self.eval_lhs(db, tx, lhs.deletes())?.collect()
+        } else {
+            HashSet::with_capacity(0)
+        };
+        // (3) A- x B+
+        let join_3 = if lhs.has_deletes() && rhs.has_inserts() {
+            self.eval_all(db, tx, lhs.deletes(), rhs.inserts())?.collect()
+        } else {
+            Vec::with_capacity(0)
+        };
+        // (4) A- x B-
+        let join_4 = if lhs.has_deletes() && rhs.has_deletes() {
+            self.eval_all(db, tx, lhs.deletes(), rhs.deletes())?.collect()
+        } else {
+            Vec::with_capacity(0)
+        };
+        // (5) A(t) x B+
+        let mut join_5 = if rhs.has_inserts() {
+            self.eval_rhs(db, tx, rhs.inserts())?.collect()
+        } else {
+            HashSet::with_capacity(0)
+        };
+        // (6) A(t) x B-
+        let mut join_6 = if rhs.has_deletes() {
+            self.eval_rhs(db, tx, rhs.deletes())?.collect()
+        } else {
+            HashSet::with_capacity(0)
+        };
+        // (7) A+ x B+
+        let join_7 = if lhs.has_inserts() && rhs.has_inserts() {
+            self.eval_all(db, tx, lhs.inserts(), rhs.inserts())?.collect()
+        } else {
+            Vec::with_capacity(0)
+        };
+        // (8) A+ x B-
+        let join_8 = if lhs.has_inserts() && rhs.has_deletes() {
+            self.eval_all(db, tx, lhs.inserts(), rhs.deletes())?.collect()
+        } else {
+            Vec::with_capacity(0)
+        };
+
+        // A- x B(s) = A- x B(t) \ A- x B+
+        for row in join_3 {
+            join_2.remove(&row);
         }
+        // A(s) x B+ = A(t) x B+ \ A+ x B+
+        for row in join_7 {
+            join_5.remove(&row);
+        }
+        // A(s) x B- = A(t) x B- \ A+ x B-
+        for row in join_8 {
+            join_6.remove(&row);
+        }
+
+        join_5.retain(|row| !join_6.remove(row));
+
+        Ok(Some(
+            join_2
+                .into_iter()
+                .chain(join_4)
+                .chain(join_6)
+                .map(TableOp::delete)
+                .chain(join_1.into_iter().chain(join_5).map(TableOp::insert)),
+        ))
     }
+}
 
-    /// Evaluate this [`IncrementalJoin`].
-    ///
-    /// The following assumptions are made for the incremental evaluation to be
-    /// correct without maintaining a materialized view:
-    ///
-    /// * The join is a primary foreign key semijoin, i.e. one row from the
-    ///   right table joins with at most one row from the left table.
-    /// * The rows in the [`DatabaseTableUpdate`]s on either side of the join
-    ///   are already committed to the underlying "physical" tables.
-    /// * We maintain set semantics, i.e. no two rows with the same
-    ///   [`PrimaryKey`] can appear in the result.
-    ///
-    /// Based on this, we evaluate the join as:
-    ///
-    /// ```text
-    ///     let inserts = {A+ join B} U {A join B+}
-    ///     let deletes = {A- join B} U {A join B-} U {A- join B-}
-    ///
-    ///     (deletes \ inserts) || (inserts \ deletes)
-    /// ```
-    ///
-    /// Where:
-    ///
-    /// * `A`:  Committed table to the LHS of the join.
-    /// * `B`:  Committed table to the RHS of the join.
-    /// * `+`:  Virtual table of only the insert operations against the annotated table.
-    /// * `-`:  Virtual table of only the delete operations against the annotated table.
-    /// * `U`:  Set union.
-    /// * `\`:  Set difference.
-    /// * `||`: Concatenation.
-    ///
-    /// For a more in-depth discussion, see the [module-level documentation](./index.html).
-    pub fn eval(&self, db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> Result<impl Iterator<Item = Op>, DBError> {
-        let mut inserts = {
-            // A query evaluator for inserts
-            let eval = |query, is_primary| {
-                if is_primary {
-                    evaluator_for_primary_updates(db, *auth)(tx, query)
-                } else {
-                    evaluator_for_secondary_updates(db, *auth, true)(tx, query)
-                }
-            };
-
-            // Replan query after replacing the indexed table with a virtual table,
-            // since join order may need to be reversed.
-            let join_a = with_delta_table(self.join.clone(), true, self.index_side.inserts());
-            let join_a = QueryExpr::from(join_a).optimize(&|table_id, table_name| db.row_count(table_id, table_name));
-
-            // No need to replan after replacing the probe side with a virtual table,
-            // since no new constraints have been added.
-            let join_b = with_delta_table(self.join.clone(), false, self.probe_side.inserts()).into();
-
-            // {A+ join B}
-            let a = eval(&join_a, self.join.return_index_rows)?;
-            // {A join B+}
-            let b = eval(&join_b, !self.join.return_index_rows)?;
-            // {A+ join B} U {A join B+}
-            let mut set = a;
-            set.extend(b);
-            set
-        };
-        let mut deletes = {
-            // A query evaluator for deletes
-            let eval = |query, is_primary| {
-                if is_primary {
-                    evaluator_for_primary_updates(db, *auth)(tx, query)
-                } else {
-                    evaluator_for_secondary_updates(db, *auth, false)(tx, query)
-                }
-            };
-
-            // Replan query after replacing the indexed table with a virtual table,
-            // since join order may need to be reversed.
-            let join_a = with_delta_table(self.join.clone(), true, self.index_side.deletes());
-            let join_a = QueryExpr::from(join_a).optimize(&|table_id, table_name| db.row_count(table_id, table_name));
-
-            // No need to replan after replacing the probe side with a virtual table,
-            // since no new constraints have been added.
-            let join_b = with_delta_table(self.join.clone(), false, self.probe_side.deletes()).into();
-
-            // No need to replan after replacing both sides with a virtual tables,
-            // since there are no indexes available to us.
-            // The only valid plan in this case is that of an inner join.
-            let join_c = with_delta_table(self.join.clone(), true, self.index_side.deletes());
-            let join_c = with_delta_table(join_c, false, self.probe_side.deletes()).into();
-
-            // {A- join B}
-            let a = eval(&join_a, self.join.return_index_rows)?;
-            // {A join B-}
-            let b = eval(&join_b, !self.join.return_index_rows)?;
-            // {A- join B-}
-            let c = eval(&join_c, true)?;
-            // {A- join B} U {A join B-} U {A- join B-}
-            let mut set = a;
-            set.extend(b);
-            set.extend(c);
-            set
-        };
-
-        let symmetric_difference = inserts
-            .keys()
-            .filter(|k| !deletes.contains_key(k))
-            .chain(deletes.keys().filter(|k| !inserts.contains_key(k)))
-            .copied()
-            .collect::<HashSet<PrimaryKey>>();
-        inserts.retain(|k, _| symmetric_difference.contains(k));
-        deletes.retain(|k, _| symmetric_difference.contains(k));
-
-        // Deletes need to come first, as UPDATE = [DELETE, INSERT]
-        Ok(deletes.into_values().chain(inserts.into_values()))
-    }
+/// Construct a [`MemTable`] containing the updates from `delta`,
+/// which must be derived from a table with `head` and `table_access`.
+fn to_mem_table(head: Arc<Header>, table_access: StAccess, delta: DatabaseTableUpdate) -> MemTable {
+    MemTable::new(
+        head,
+        table_access,
+        delta.ops.into_iter().map(|op| op.row).collect::<Vec<_>>(),
+    )
 }
 
 /// Replace an [IndexJoin]'s scan or fetch operation with a delta table.
 /// A delta table consists purely of updates or changes to the base table.
-fn with_delta_table(mut join: IndexJoin, index_side: bool, delta: DatabaseTableUpdate) -> IndexJoin {
-    fn to_mem_table(head: Arc<Header>, table_access: StAccess, delta: DatabaseTableUpdate) -> MemTable {
-        MemTable::new(
-            head,
-            table_access,
-            delta.ops.into_iter().map(|op| op.row).collect::<Vec<_>>(),
-        )
+fn with_delta_table(
+    mut join: IndexJoin,
+    index_side: Option<DatabaseTableUpdate>,
+    probe_side: Option<DatabaseTableUpdate>,
+) -> (IndexJoin, SourceSet) {
+    let mut sources = SourceSet::default();
+
+    if let Some(index_side) = index_side {
+        let head = join.index_side.head().clone();
+        let table_access = join.index_side.table_access();
+        let mem_table = to_mem_table(head, table_access, index_side);
+        let source_expr = sources.add_mem_table(mem_table);
+        join.index_side = source_expr;
     }
 
-    // We are replacing the indexed table,
-    // and the rows of the indexed table are being returned.
-    // Therefore we must add a column with the op type.
-    if index_side && join.return_index_rows {
-        let head = join.index_side.head().clone();
-        let table_access = join.index_side.table_access();
-        join.index_side = to_mem_table_with_op_type(head, table_access, &delta).into();
-        return join;
-    }
-    // We are replacing the indexed table,
-    // but the rows of the indexed table are not being returned.
-    // Therefore we do not need to add a column with the op type.
-    if index_side && !join.return_index_rows {
-        let head = join.index_side.head().clone();
-        let table_access = join.index_side.table_access();
-        join.index_side = to_mem_table(head, table_access, delta).into();
-        return join;
-    }
-    // We are replacing the probe table,
-    // but the rows of the indexed table are being returned.
-    // Therefore we do not need to add a column with the op type.
-    if !index_side && join.return_index_rows {
+    if let Some(probe_side) = probe_side {
         let head = join.probe_side.source.head().clone();
         let table_access = join.probe_side.source.table_access();
-        join.probe_side.source = to_mem_table(head, table_access, delta).into();
-        return join;
+        let mem_table = to_mem_table(head, table_access, probe_side);
+        let source_expr = sources.add_mem_table(mem_table);
+        join.probe_side.source = source_expr;
     }
-    // We are replacing the probe table,
-    // and the rows of the probe table are being returned.
-    // Therefore we must add a column with the op type.
-    if !index_side && !join.return_index_rows {
-        let head = join.probe_side.source.head().clone();
-        let table_access = join.probe_side.source.table_access();
-        join.probe_side.source = to_mem_table_with_op_type(head, table_access, &delta).into();
-        return join;
+
+    (join, sources)
+}
+
+/// A set of independent single or multi-query execution units.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ExecutionSet {
+    exec_units: Vec<Arc<ExecutionUnit>>,
+}
+
+impl ExecutionSet {
+    #[tracing::instrument(skip_all)]
+    pub fn eval(&self, db: &RelationalDB, tx: &Tx) -> Result<DatabaseUpdate, DBError> {
+        // evaluate each of the execution units in this ExecutionSet in parallel
+        let tables = self
+            .exec_units
+            // if you need eval to run single-threaded for debugging, change this to .iter()
+            .par_iter()
+            .filter_map(|unit| unit.eval(db, tx).transpose())
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(DatabaseUpdate { tables })
     }
-    join
+
+    #[tracing::instrument(skip_all)]
+    pub fn eval_incr(
+        &self,
+        db: &RelationalDB,
+        tx: &Tx,
+        database_update: &DatabaseUpdate,
+    ) -> Result<DatabaseUpdate, DBError> {
+        let mut tables = Vec::new();
+        for unit in &self.exec_units {
+            if let Some(table) = unit.eval_incr(db, tx, database_update.tables.iter())? {
+                tables.push(table);
+            }
+        }
+        Ok(DatabaseUpdate { tables })
+    }
+}
+
+impl FromIterator<SupportedQuery> for ExecutionSet {
+    fn from_iter<T: IntoIterator<Item = SupportedQuery>>(iter: T) -> Self {
+        ExecutionSet {
+            exec_units: iter.into_iter().map(|plan| Arc::new(plan.into())).collect(),
+        }
+    }
+}
+
+impl IntoIterator for ExecutionSet {
+    type Item = Arc<ExecutionUnit>;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.exec_units.into_iter()
+    }
+}
+
+impl FromIterator<Arc<ExecutionUnit>> for ExecutionSet {
+    fn from_iter<T: IntoIterator<Item = Arc<ExecutionUnit>>>(iter: T) -> Self {
+        ExecutionSet {
+            exec_units: iter.into_iter().collect(),
+        }
+    }
+}
+
+impl From<Vec<Arc<ExecutionUnit>>> for ExecutionSet {
+    fn from(value: Vec<Arc<ExecutionUnit>>) -> Self {
+        ExecutionSet::from_iter(value)
+    }
+}
+
+impl From<Vec<SupportedQuery>> for ExecutionSet {
+    fn from(value: Vec<SupportedQuery>) -> Self {
+        ExecutionSet::from_iter(value)
+    }
+}
+
+/// Queries all the [`StTableType::User`] tables *right now*
+/// and turns them into [`QueryExpr`],
+/// the moral equivalent of `SELECT * FROM table`.
+pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> Result<Vec<SupportedQuery>, DBError> {
+    Ok(relational_db
+        .get_all_tables(tx)?
+        .iter()
+        .map(Deref::deref)
+        .filter(|t| {
+            t.table_type == StTableType::User && (auth.owner == auth.caller || t.table_access == StAccess::Public)
+        })
+        .map(|src| SupportedQuery {
+            kind: query::Supported::Select,
+            expr: QueryExpr::new(src),
+        })
+        .collect())
 }
 
 #[cfg(test)]
@@ -743,11 +706,9 @@ mod tests {
     use crate::host::module_host::TableOp;
     use crate::sql::compiler::compile_sql;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_sats::data_key::ToDataKey;
-    use spacetimedb_sats::relation::FieldName;
+    use spacetimedb_sats::relation::{DbTable, FieldName};
     use spacetimedb_sats::{product, AlgebraicType};
     use spacetimedb_vm::expr::{CrudExpr, IndexJoin, Query, SourceExpr};
-    use spacetimedb_vm::relation::Table;
 
     #[test]
     // Compile an index join after replacing the index side with a virtual table.
@@ -788,20 +749,15 @@ mod tests {
         };
 
         // Create an insert for an incremental update.
-        let row = product!(0u64, 0u64);
-        let insert = TableOp {
-            op_type: 1,
-            row_pk: row.to_data_key().to_bytes(),
-            row,
-        };
         let delta = DatabaseTableUpdate {
             table_id: lhs_id,
             table_name: String::from("lhs"),
-            ops: vec![insert],
+            ops: vec![TableOp::insert(product![0u64, 0u64])],
         };
 
         // Optimize the query plan for the incremental update.
-        let expr: QueryExpr = with_delta_table(join, true, delta).into();
+        let (expr, _sources) = with_delta_table(join, Some(delta), None);
+        let expr: QueryExpr = expr.into();
         let mut expr = expr.optimize(&|_, _| i64::MAX);
         assert_eq!(expr.source.table_name(), "lhs");
         assert_eq!(expr.query.len(), 1);
@@ -814,7 +770,7 @@ mod tests {
         let IndexJoin {
             probe_side:
                 QueryExpr {
-                    source: SourceExpr::MemTable(_),
+                    source: SourceExpr::MemTable { .. },
                     query: ref lhs,
                 },
             probe_field:
@@ -822,7 +778,7 @@ mod tests {
                     table: ref probe_table,
                     field: ref probe_field,
                 },
-            index_side: Table::DbTable(DbTable {
+            index_side: SourceExpr::DbTable(DbTable {
                 table_id: index_table, ..
             }),
             index_select: Some(_),
@@ -882,24 +838,20 @@ mod tests {
         };
 
         // Create an insert for an incremental update.
-        let row = product!(0u64, 0u64, 0u64);
-        let insert = TableOp {
-            op_type: 1,
-            row_pk: row.to_data_key().to_bytes(),
-            row,
-        };
         let delta = DatabaseTableUpdate {
             table_id: rhs_id,
             table_name: String::from("rhs"),
-            ops: vec![insert],
+            ops: vec![TableOp::insert(product![0u64, 0u64, 0u64])],
         };
 
         // Optimize the query plan for the incremental update.
-        let expr: QueryExpr = with_delta_table(join, false, delta).into();
+        let (expr, _sources) = with_delta_table(join, None, Some(delta));
+        let expr = QueryExpr::from(expr);
         let mut expr = expr.optimize(&|_, _| i64::MAX);
 
         assert_eq!(expr.source.table_name(), "lhs");
         assert_eq!(expr.query.len(), 1);
+        assert!(expr.source.is_db_table());
 
         let join = expr.query.pop().unwrap();
         let Query::IndexJoin(join) = join else {
@@ -909,7 +861,7 @@ mod tests {
         let IndexJoin {
             probe_side:
                 QueryExpr {
-                    source: SourceExpr::MemTable(_),
+                    source: SourceExpr::MemTable { .. },
                     query: ref rhs,
                 },
             probe_field:
@@ -917,7 +869,7 @@ mod tests {
                     table: ref probe_table,
                     field: ref probe_field,
                 },
-            index_side: Table::DbTable(DbTable {
+            index_side: SourceExpr::DbTable(DbTable {
                 table_id: index_table, ..
             }),
             index_select: None,

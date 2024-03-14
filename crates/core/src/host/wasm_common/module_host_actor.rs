@@ -259,6 +259,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         self.scheduler.close()
     }
 
+    #[tracing::instrument(skip_all)]
     fn one_off_query(
         &self,
         caller_identity: Identity,
@@ -268,9 +269,9 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         let auth = AuthCtx::new(self.database_instance_context.identity, caller_identity);
         log::debug!("One-off query: {query}");
         let ctx = &ExecutionContext::sql(db.address());
-        let compiled = db.with_read_only(ctx, |tx| {
-            sql::compiler::compile_sql(db, tx, &query)?
-                .into_iter()
+        let compiled: Vec<_> = db.with_read_only(ctx, |tx| {
+            let ast = sql::compiler::compile_sql(db, tx, &query)?;
+            ast.into_iter()
                 .map(|expr| {
                     if matches!(expr, CrudExpr::Query { .. }) {
                         Ok(expr)
@@ -384,6 +385,8 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                         caller_identity,
                         caller_address: caller_address.unwrap_or(Address::__DUMMY),
                         client,
+                        request_id: None,
+                        timer: None,
                         reducer_id,
                         args,
                     },
@@ -441,6 +444,8 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                         caller_identity,
                         caller_address: caller_address.unwrap_or(Address::__DUMMY),
                         client: None,
+                        request_id: None,
+                        timer: None,
                         reducer_id,
                         args: ArgsTuple::nullary(),
                     },
@@ -485,8 +490,10 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             caller_identity,
             caller_address,
             client,
+            request_id,
             reducer_id,
             args,
+            timer,
         } = params;
         let caller_address_opt = (caller_address != Address::__DUMMY).then_some(caller_address);
 
@@ -631,10 +638,12 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             status,
             energy_quanta_used: energy.used,
             host_execution_duration: timings.total_duration,
+            request_id,
+            timer,
         };
         self.info
             .subscriptions
-            .blocking_broadcast_event(client.as_ref(), &subscriptions, &event);
+            .blocking_broadcast_event(client.as_deref(), &subscriptions, Arc::new(event));
 
         ReducerCallResult {
             outcome,
