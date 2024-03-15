@@ -53,7 +53,7 @@ impl Header {
 }
 
 /// Entry type of a [`crate::Commitlog`].
-#[derive(Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Commit {
     /// The offset of the first record in this commit.
     ///
