@@ -1,6 +1,6 @@
 //! The [DbProgram] that execute arbitrary queries & code against the database.
 
-use crate::db::cursor::{CatalogCursor, IndexCursor, TableCursor};
+use crate::db::cursor::{IndexCursor, TableCursor};
 use crate::db::datastore::locking_tx_datastore::IterByColRange;
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::execution_context::ExecutionContext;
@@ -10,7 +10,7 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Address;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::def::TableDef;
-use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldExprRef, FieldName, Header, Relation, RowCount};
+use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldExprRef, FieldName, Header, Relation};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::eval::IterRows;
@@ -339,10 +339,6 @@ impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoin<'a, '_, Rhs> {
         }
     }
 
-    fn row_count(&self) -> RowCount {
-        RowCount::unknown()
-    }
-
     fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
         // Return a value from the current index iterator, if not exhausted.
         if self.return_index_rows {
@@ -569,10 +565,6 @@ impl<'a> RelOps<'a> for TableCursor<'a> {
         &self.table.head
     }
 
-    fn row_count(&self) -> RowCount {
-        RowCount::unknown()
-    }
-
     fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
         Ok(self.iter.next().map(RelValue::Row))
     }
@@ -583,26 +575,8 @@ impl<'a, R: RangeBounds<AlgebraicValue>> RelOps<'a> for IndexCursor<'a, R> {
         &self.table.head
     }
 
-    fn row_count(&self) -> RowCount {
-        RowCount::unknown()
-    }
-
     fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
         Ok(self.iter.next().map(RelValue::Row))
-    }
-}
-
-impl<'a, I: Iterator<Item = ProductValue>> RelOps<'a> for CatalogCursor<I> {
-    fn head(&self) -> &Arc<Header> {
-        &self.table.head
-    }
-
-    fn row_count(&self) -> RowCount {
-        self.row_count
-    }
-
-    fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
-        Ok(self.iter.next().map(RelValue::Projection))
     }
 }
 

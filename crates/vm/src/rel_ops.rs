@@ -12,7 +12,9 @@ pub(crate) trait ResultExt<T> {
 /// A trait for dealing with fallible iterators for the database.
 pub trait RelOps<'a> {
     fn head(&self) -> &Arc<Header>;
-    fn row_count(&self) -> RowCount;
+    fn row_count(&self) -> RowCount {
+        RowCount::unknown()
+    }
     /// Advances the `iterator` and returns the next [RelValue].
     fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm>;
 
@@ -134,20 +136,13 @@ impl<'a, I: RelOps<'a> + ?Sized> RelOps<'a> for Box<I> {
 
 #[derive(Clone, Debug)]
 pub struct Select<I, P> {
-    pub(crate) count: RowCount,
     pub(crate) iter: I,
     pub(crate) predicate: P,
 }
 
 impl<I, P> Select<I, P> {
     pub fn new(iter: I, predicate: P) -> Select<I, P> {
-        Select {
-            iter,
-            // NOTE: We could have propagated the upper bound,
-            // but this would likely cause over-allocation in `Vec::with_capacity`.
-            count: RowCount::unknown(),
-            predicate,
-        }
+        Select { iter, predicate }
     }
 }
 
@@ -160,15 +155,10 @@ where
         self.iter.head()
     }
 
-    fn row_count(&self) -> RowCount {
-        self.count
-    }
-
     fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
         let filter = &mut self.predicate;
         while let Some(v) = self.iter.next()? {
             if filter(&v)? {
-                self.count.add_exact(1);
                 return Ok(Some(v));
             }
         }
@@ -222,7 +212,6 @@ where
 #[derive(Clone, Debug)]
 pub struct JoinInner<'a, Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> {
     pub(crate) head: Arc<Header>,
-    pub(crate) count: RowCount,
     pub(crate) lhs: Lhs,
     pub(crate) rhs: Rhs,
     pub(crate) key_lhs: KeyLhs,
@@ -246,7 +235,6 @@ impl<'a, Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> JoinInner<'a, Lhs, Rhs, KeyLhs, K
     ) -> Self {
         Self {
             head,
-            count: RowCount::unknown(),
             map: HashMap::new(),
             lhs,
             rhs,
@@ -272,10 +260,6 @@ where
 {
     fn head(&self) -> &Arc<Header> {
         &self.head
-    }
-
-    fn row_count(&self) -> RowCount {
-        self.count
     }
 
     fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
@@ -309,7 +293,6 @@ where
             if let Some(rvv) = self.map.get_mut(&k) {
                 if let Some(rhs) = rvv.pop() {
                     if (self.predicate)(&lhs, &rhs)? {
-                        self.count.add_exact(1);
                         return Ok(Some((self.projection)(lhs, rhs)));
                     }
                 }
