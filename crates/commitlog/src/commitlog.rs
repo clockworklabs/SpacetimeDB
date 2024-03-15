@@ -46,11 +46,12 @@ impl<R: Repo, T> Generic<R, T> {
         })
     }
 
-    /// Write the currently buffered data to disk and rotate segments as
+    /// Write the currently buffered data to storage and rotate segments as
     /// necessary.
     ///
-    /// Note that this does not imply that the data is durable, call
-    /// [`Self::sync`] to flush OS buffers.
+    /// Note that this does not imply that the data is durable, in particular
+    /// when a filesystem storage backend is used. Call [`Self::sync`] to flush
+    /// any OS buffers to stable storage.
     ///
     /// # Errors
     ///
@@ -70,9 +71,7 @@ impl<R: Repo, T> Generic<R, T> {
         // results in a huge segment.
         let should_rotate = !writer.is_empty() && writer.len() + sz as u64 > self.opts.max_segment_size;
         let writer = if should_rotate {
-            if let Err(e) = writer.fsync() {
-                warn!("Failed to fsync segment: {e}");
-            }
+            self.sync();
             self.start_new_segment()?
         } else {
             writer
@@ -80,6 +79,7 @@ impl<R: Repo, T> Generic<R, T> {
 
         if let Err(e) = writer.commit() {
             warn!("Commit failed: {e}");
+            self.sync();
             self.start_new_segment()?;
             Err(e)
         } else {
@@ -87,8 +87,19 @@ impl<R: Repo, T> Generic<R, T> {
         }
     }
 
-    pub fn sync(&self) -> io::Result<()> {
-        self.head.fsync()
+    /// Force the currently active segment to be flushed to storage.
+    ///
+    /// Using a filesystem backend, this means to call `fsync(2)`.
+    ///
+    /// # Panics
+    ///
+    /// As an `fsync` failure leaves a file in a more of less undefined state,
+    /// this method panics in this case, thereby preventing any further writes
+    /// to the log and forcing the user to re-read the state from disk.
+    pub fn sync(&mut self) {
+        if let Err(e) = self.head.fsync() {
+            panic!("Failed to fsync segment: {e}");
+        }
     }
 
     /// The last transaction offset written to disk, or `None` if nothing has
