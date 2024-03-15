@@ -19,7 +19,6 @@ serde = { workspace = true, optional = true }
 spacetimedb-primitives.workspace = true
 spacetimedb-sats.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
 
 [dev-dependencies]
 env_logger.workspace = true

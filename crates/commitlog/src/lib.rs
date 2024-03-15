@@ -1,17 +1,6 @@
-use std::{
-    io,
-    num::NonZeroU16,
-    path::PathBuf,
-    sync::{Arc, RwLock},
-    time::Duration,
-};
+use std::{io, num::NonZeroU16, path::PathBuf, sync::RwLock};
 
 use log::trace;
-use tokio::{
-    sync::watch,
-    task::spawn_blocking,
-    time::{interval, MissedTickBehavior},
-};
 
 mod commit;
 mod commitlog;
@@ -376,37 +365,6 @@ impl<T: Encode> Commitlog<T> {
         D::Error: From<error::Traversal>,
     {
         self.inner.read().unwrap().fold_transactions_from(offset, de)
-    }
-}
-
-impl<T: Send + Sync + 'static> Commitlog<T> {
-    /// Call [`Self::flush_and_sync`] periodically.
-    ///
-    /// Returns a [`watch::Receiver`] yielding the maximum durable transaction
-    /// offset after each invocation of [`Self::flush_and_sync`]. The item type
-    /// is a `Result`, so as to allow the caller to be notified of I/O errors.
-    ///
-    /// The interval loop terminates when all receivers have been dropped.
-    /// Note that this does not happen promptly.
-    pub fn flush_and_sync_every(self: Arc<Self>, period: Duration) -> watch::Receiver<io::Result<Option<u64>>> {
-        let (tx, rx) = watch::channel(Ok(None));
-        let mut interval = interval(period);
-        interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
-
-        tokio::spawn(async move {
-            loop {
-                interval.tick().await;
-                let this = self.clone();
-                let offset = spawn_blocking(move || this.flush_and_sync()).await?;
-                if tx.send(offset).is_err() {
-                    break;
-                }
-            }
-
-            Ok::<(), tokio::task::JoinError>(())
-        });
-
-        rx
     }
 }
 
