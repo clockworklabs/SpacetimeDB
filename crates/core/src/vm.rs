@@ -19,6 +19,7 @@ use spacetimedb_vm::iterators::RelIter;
 use spacetimedb_vm::program::ProgramVm;
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::{MemTable, RelValue, Table};
+use std::ops::Bound;
 use std::sync::Arc;
 
 pub enum TxMode<'a> {
@@ -44,10 +45,10 @@ pub fn build_query<'a>(
     ctx: &'a ExecutionContext,
     stdb: &'a RelationalDB,
     tx: &'a TxMode,
-    query: QueryCode,
+    query: QueryExpr,
     sources: &mut SourceSet,
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {
-    let db_table = query.table.is_db_table();
+    let db_table = query.source.is_db_table();
 
     // We're incrementally building a query iterator by applying each operation in the `query.query`.
     // Most such operations will modify their parent, but certain operations (i.e. `IndexJoin`s)
@@ -61,7 +62,7 @@ pub fn build_query<'a>(
     // i.e. that they are the first operator.
     //
     // TODO(bikeshedding): Avoid duplication of the ugly `result.take().map(...).unwrap_or_else(...)?` expr?
-    // TODO(bikeshedding): Refactor `QueryCode` to separate `IndexJoin` from other `Query` variants,
+    // TODO(bikeshedding): Refactor `QueryExpr` to separate `IndexJoin` from other `Query` variants,
     //   removing the need for this convoluted logic?
     let mut result = None;
 
@@ -74,11 +75,46 @@ pub fn build_query<'a>(
                 let result = result
                     .take()
                     .map(Ok)
-                    .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.table, sources))?;
-                let header = result.head().clone();
-                let cmp: ColumnOp = index_scan.into();
-                let iter = result.select(move |row| cmp.compare(row, &header));
-                Box::new(iter)
+                    .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))?;
+
+                let cols = &index_scan.columns;
+                let bounds = index_scan.bounds;
+                if cols.is_singleton() {
+                    // For singleton constraints, we compare the column directly against `bounds`.
+                    let head = cols.head().idx();
+                    let iter = result.select(move |row| Ok(bounds.contains(&*row.read_column(head).unwrap())));
+                    Box::new(iter) as Box<IterRows<'a>>
+                } else {
+                    // For multi-col constraints, these are stored as bounds of product values,
+                    // so we need to project these into single-col bounds and compare against the column.
+                    // TODO: replace with `bound.map(...)` once stable.
+                    fn map<T, U, F: FnOnce(T) -> U>(bound: Bound<T>, f: F) -> Bound<U> {
+                        match bound {
+                            Bound::Unbounded => Bound::Unbounded,
+                            Bound::Included(x) => Bound::Included(f(x)),
+                            Bound::Excluded(x) => Bound::Excluded(f(x)),
+                        }
+                    }
+                    // Project start/end `Bound<AV>`s to `Bound<Vec<AV>>`s.
+                    let start_bound = map(bounds.0, |av| av.into_product().unwrap().elements);
+                    let end_bound = map(bounds.1, |av| av.into_product().unwrap().elements);
+                    let cols = cols.clone();
+                    // Construct the query:
+                    let iter = result.select(move |row| {
+                        // Go through each column position,
+                        // project to a `Bound<AV>` for the position,
+                        // and compare against the column in the row.
+                        // All columns must match to include the row,
+                        // which is essentially the same as a big `AND` of `ColumnOp`s.
+                        Ok(cols.iter().enumerate().all(|(idx, col)| {
+                            let start_bound = map(start_bound.as_ref(), |pv| &pv[idx]);
+                            let end_bound = map(end_bound.as_ref(), |pv| &pv[idx]);
+                            let read_col = row.read_column(col.idx()).unwrap();
+                            (start_bound, end_bound).contains(&*read_col)
+                        }))
+                    });
+                    Box::new(iter)
+                }
             }
             Query::IndexJoin(IndexJoin {
                 probe_side,
@@ -95,7 +131,7 @@ pub fn build_query<'a>(
                 // and therefore this unwrap is always safe.
                 let index_table = index_side.table_id().unwrap();
                 let index_header = index_side.head().clone();
-                let probe_side = build_query(ctx, stdb, tx, probe_side.into(), sources)?;
+                let probe_side = build_query(ctx, stdb, tx, probe_side, sources)?;
                 Box::new(IndexSemiJoin {
                     ctx,
                     db: stdb,
@@ -114,7 +150,7 @@ pub fn build_query<'a>(
                 let result = result
                     .take()
                     .map(Ok)
-                    .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.table, sources))?;
+                    .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))?;
                 let header = result.head().clone();
                 let iter = result.select(move |row| cmp.compare(row, &header));
                 Box::new(iter)
@@ -123,7 +159,7 @@ pub fn build_query<'a>(
                 let result = result
                     .take()
                     .map(Ok)
-                    .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.table, sources))?;
+                    .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))?;
                 if cols.is_empty() {
                     result
                 } else {
@@ -138,7 +174,7 @@ pub fn build_query<'a>(
                 let result = result
                     .take()
                     .map(Ok)
-                    .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.table, sources))?;
+                    .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))?;
                 let iter = join_inner(ctx, stdb, tx, result, join, sources)?;
                 Box::new(iter)
             }
@@ -147,7 +183,7 @@ pub fn build_query<'a>(
 
     result
         .map(Ok)
-        .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.table, sources))
+        .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))
 }
 
 fn join_inner<'a>(
@@ -165,7 +201,7 @@ fn join_inner<'a>(
     let key_lhs = [col_lhs.clone()];
     let key_rhs = [col_rhs.clone()];
 
-    let rhs = build_query(ctx, db, tx, join.rhs.into(), sources)?;
+    let rhs = build_query(ctx, db, tx, join.rhs, sources)?;
     let key_lhs_header = lhs.head().clone();
     let key_rhs_header = rhs.head().clone();
     let col_lhs_header = lhs.head().clone();
@@ -359,9 +395,9 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         Self { ctx, db, tx, auth }
     }
 
-    fn _eval_query(&mut self, query: QueryCode, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
-        let table_access = query.table.table_access();
-        tracing::trace!(table = query.table.table_name());
+    fn _eval_query(&mut self, query: QueryExpr, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
+        let table_access = query.source.table_access();
+        tracing::trace!(table = query.source.table_name());
 
         let result = build_query(self.ctx, self.db, self.tx, query, sources)?;
         let head = result.head().clone();
@@ -400,9 +436,9 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         }
     }
 
-    fn _delete_query(&mut self, query: QueryCode, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
+    fn _delete_query(&mut self, query: QueryExpr, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
         let table = sources
-            .take_table(&query.table)
+            .take_table(&query.source)
             .expect("Cannot delete from a `MemTable`");
         let result = self._eval_query(query, sources)?;
 
@@ -468,20 +504,20 @@ impl ProgramVm for DbProgram<'_, '_> {
     }
 
     // Safety: For DbProgram with tx = TxMode::Tx variant, all queries must match to CrudCode::Query and no other branch.
-    fn eval_query(&mut self, query: CrudCode, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
+    fn eval_query(&mut self, query: CrudExpr, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
         query.check_auth(self.auth.owner, self.auth.caller)?;
 
         match query {
-            CrudCode::Query(query) => self._eval_query(query, sources),
-            CrudCode::Insert { table, rows } => {
+            CrudExpr::Query(query) => self._eval_query(query, sources),
+            CrudExpr::Insert { source: table, rows } => {
                 let src = sources.take_table(&table).unwrap();
                 self._execute_insert(&src, rows)
             }
-            CrudCode::Update {
+            CrudExpr::Update {
                 delete,
                 mut assignments,
             } => {
-                let table = delete.table.clone();
+                let table = delete.source.clone();
                 let result = self._eval_query(delete, sources)?;
 
                 let Code::Table(deleted) = result else {
@@ -522,22 +558,9 @@ impl ProgramVm for DbProgram<'_, '_> {
 
                 self._execute_insert(&table, insert_rows)
             }
-            CrudCode::Delete { query } => {
-                let result = self._delete_query(query, sources)?;
-                Ok(result)
-            }
-            CrudCode::CreateTable { table } => {
-                let result = self._create_table(table)?;
-                Ok(result)
-            }
-            CrudCode::Drop {
-                name,
-                kind,
-                table_access: _,
-            } => {
-                let result = self._drop(&name, kind)?;
-                Ok(result)
-            }
+            CrudExpr::Delete { query } => self._delete_query(query, sources),
+            CrudExpr::CreateTable { table } => self._create_table(table),
+            CrudExpr::Drop { name, kind, .. } => self._drop(&name, kind),
         }
     }
 }
@@ -570,10 +593,7 @@ impl<'a, R: RangeBounds<AlgebraicValue>> RelOps<'a> for IndexCursor<'a, R> {
     }
 }
 
-impl<'a, I> RelOps<'a> for CatalogCursor<I>
-where
-    I: Iterator<Item = ProductValue>,
-{
+impl<'a, I: Iterator<Item = ProductValue>> RelOps<'a> for CatalogCursor<I> {
     fn head(&self) -> &Arc<Header> {
         &self.table.head
     }
@@ -583,10 +603,7 @@ where
     }
 
     fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
-        if let Some(row) = self.iter.next() {
-            return Ok(Some(RelValue::Projection(row)));
-        };
-        Ok(None)
+        Ok(self.iter.next().map(RelValue::Projection))
     }
 }
 

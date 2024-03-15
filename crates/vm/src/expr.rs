@@ -55,6 +55,59 @@ impl ColumnOp {
         )
     }
 
+    /// Returns a new op where `lhs` and `rhs` are logically AND-ed together.
+    fn and(lhs: ColumnOp, rhs: ColumnOp) -> Self {
+        Self::new(OpQuery::Logic(OpLogic::And), lhs, rhs)
+    }
+
+    /// Returns an op where `col_i op value_i` are all `AND`ed together.
+    fn and_cmp(op: OpCmp, head: &Header, cols: &ColList, value: AlgebraicValue) -> Self {
+        let eq = |(col, value): (ColId, _)| {
+            let field = head.fields[col.idx()].field.clone();
+            Self::cmp(field, op, value)
+        };
+
+        // For singleton constraints, the `value` must be used directly.
+        if cols.is_singleton() {
+            return eq((cols.head(), value));
+        }
+
+        // Otherwise, pair column ids and product fields together.
+        cols.iter()
+            .zip(value.into_product().unwrap().elements)
+            .map(eq)
+            .reduce(Self::and)
+            .unwrap()
+    }
+
+    /// Returns an op where `cols` must be within bounds.
+    /// This handles both the case of single-col bounds and multi-col bounds.
+    fn from_op_col_bounds(
+        head: &Header,
+        cols: &ColList,
+        bounds: (Bound<AlgebraicValue>, Bound<AlgebraicValue>),
+    ) -> Self {
+        let (cmp, value) = match bounds {
+            // Equality; field <= value && field >= value <=> field = value
+            (Bound::Included(a), Bound::Included(b)) if a == b => (OpCmp::Eq, a),
+            // Inclusive lower bound => field >= value
+            (Bound::Included(value), Bound::Unbounded) => (OpCmp::GtEq, value),
+            // Exclusive lower bound => field > value
+            (Bound::Excluded(value), Bound::Unbounded) => (OpCmp::Gt, value),
+            // Inclusive upper bound => field <= value
+            (Bound::Unbounded, Bound::Included(value)) => (OpCmp::LtEq, value),
+            // Exclusive upper bound => field < value
+            (Bound::Unbounded, Bound::Excluded(value)) => (OpCmp::Lt, value),
+            (Bound::Unbounded, Bound::Unbounded) => unreachable!(),
+            (lower_bound, upper_bound) => {
+                let lhs = Self::from_op_col_bounds(head, cols, (lower_bound, Bound::Unbounded));
+                let rhs = Self::from_op_col_bounds(head, cols, (Bound::Unbounded, upper_bound));
+                return ColumnOp::and(lhs, rhs);
+            }
+        };
+        ColumnOp::and_cmp(cmp, head, cols, value)
+    }
+
     fn reduce(&self, row: &RelValue<'_>, value: &ColumnOp, header: &Header) -> Result<AlgebraicValue, ErrorLang> {
         match value {
             ColumnOp::Field(field) => Ok(row.get(field, header)?.into_owned()),
@@ -210,49 +263,10 @@ impl From<AlgebraicValue> for Box<ColumnOp> {
     }
 }
 
-impl From<IndexScan> for Box<ColumnOp> {
-    fn from(value: IndexScan) -> Self {
-        Box::new(value.into())
-    }
-}
-
-impl From<IndexScan> for ColumnOp {
-    fn from(value: IndexScan) -> Self {
-        let table = value.table;
-        let columns = value.columns;
-
-        let field = table.head().fields[columns.head().idx()].field.clone();
-        match value.bounds {
-            // Inclusive lower bound => field >= value
-            (Bound::Included(value), Bound::Unbounded) => ColumnOp::cmp(field, OpCmp::GtEq, value),
-            // Exclusive lower bound => field > value
-            (Bound::Excluded(value), Bound::Unbounded) => ColumnOp::cmp(field, OpCmp::Gt, value),
-            // Inclusive upper bound => field <= value
-            (Bound::Unbounded, Bound::Included(value)) => ColumnOp::cmp(field, OpCmp::LtEq, value),
-            // Exclusive upper bound => field < value
-            (Bound::Unbounded, Bound::Excluded(value)) => ColumnOp::cmp(field, OpCmp::Lt, value),
-            (Bound::Unbounded, Bound::Unbounded) => unreachable!(),
-            (lower_bound, upper_bound) => {
-                let lhs = IndexScan {
-                    table: table.clone(),
-                    columns: columns.clone(),
-                    bounds: (lower_bound, Bound::Unbounded),
-                };
-                let rhs = IndexScan {
-                    table,
-                    columns,
-                    bounds: (Bound::Unbounded, upper_bound),
-                };
-                ColumnOp::new(OpQuery::Logic(OpLogic::And), lhs.into(), rhs.into())
-            }
-        }
-    }
-}
-
 impl From<Query> for Option<ColumnOp> {
     fn from(value: Query) -> Self {
         match value {
-            Query::IndexScan(op) => Some(op.into()),
+            Query::IndexScan(op) => Some(ColumnOp::from_op_col_bounds(&op.table.head, &op.columns, op.bounds)),
             Query::Select(op) => Some(op),
             _ => None,
         }
@@ -561,15 +575,12 @@ impl IndexJoin {
                     .clone();
                 // Merge all selections from the original probe side into a single predicate.
                 // This includes an index scan if present.
-                let predicate = self.probe_side.query.into_iter().fold(None, |acc, op| {
-                    <Query as Into<Option<ColumnOp>>>::into(op).map(|op| {
-                        if let Some(predicate) = acc {
-                            ColumnOp::new(OpQuery::Logic(OpLogic::And), predicate, op)
-                        } else {
-                            op
-                        }
-                    })
-                });
+                let predicate = self
+                    .probe_side
+                    .query
+                    .into_iter()
+                    .filter_map(<Query as Into<Option<ColumnOp>>>::into)
+                    .reduce(ColumnOp::and);
                 // Push any selections on the index side to the probe side.
                 let probe_side = if let Some(predicate) = self.index_select {
                     QueryExpr {
@@ -901,6 +912,19 @@ type FieldsIndexed<'a> = HashSet<(&'a FieldName, OpCmp)>;
 /// -`ScanOrIndex::Index([c, b] = [1, 2])`
 /// -`ScanOrIndex::Index(a = 1)`
 /// -`ScanOrIndex::Scan(c = 2)`
+///
+/// # Note
+///
+/// NOTE: For a query like `SELECT * FROM students WHERE age > 18 AND height < 180`
+/// we cannot serve this with a single `IndexScan`,
+/// but rather, `select_best_index`
+/// would give us two separate `IndexScan`s.
+/// However, the upper layers of `QueryExpr` building will convert both of those into `Select`s.
+/// In the case of `SELECT * FROM students WHERE age > 18 AND height > 180`
+/// we would generate a single `IndexScan((age, height) > (18, 180))`.
+/// However, and depending on the table data, this might not be efficient,
+/// whereas `age = 18 AND height > 180` might.
+/// TODO: Revisit this to see if we want to restrict this or use statistics.
 fn select_best_index<'a>(
     fields_indexed: &mut FieldsIndexed<'a>,
     header: &'a Header,
@@ -1063,6 +1087,12 @@ fn find_sargable_ops<'a>(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+// TODO(bikeshedding): Refactor this struct so that `IndexJoin`s replace the `table`,
+// rather than appearing as the first element of the `query`.
+//
+// `IndexJoin`s do not behave like filters; in fact they behave more like data sources.
+// A query conceptually starts with either a single table or an `IndexJoin`,
+// and then stacks a set of filters on top of that.
 pub struct QueryExpr {
     pub source: SourceExpr,
     pub query: Vec<Query>,
@@ -1168,20 +1198,15 @@ impl QueryExpr {
             }
             // merge with a preceding select
             Query::Select(filter) => {
-                let bounds = point(value);
-                self.query.push(Query::Select(ColumnOp::new(
-                    OpQuery::Logic(OpLogic::And),
-                    filter,
-                    IndexScan { table, columns, bounds }.into(),
-                )));
+                let op = ColumnOp::and_cmp(OpCmp::Eq, &table.head, &columns, value);
+                self.query.push(Query::Select(ColumnOp::and(filter, op)));
                 self
             }
             // else generate a new select
             query => {
                 self.query.push(query);
-                let bounds = point(value);
-                self.query
-                    .push(Query::Select(IndexScan { table, columns, bounds }.into()));
+                let op = ColumnOp::and_cmp(OpCmp::Eq, &table.head, &columns, value);
+                self.query.push(Query::Select(op));
                 self
             }
         }
@@ -1255,19 +1280,16 @@ impl QueryExpr {
             // merge with a preceding select
             Query::Select(filter) => {
                 let bounds = (Self::bound(value, inclusive), Bound::Unbounded);
-                self.query.push(Query::Select(ColumnOp::new(
-                    OpQuery::Logic(OpLogic::And),
-                    filter,
-                    IndexScan { table, columns, bounds }.into(),
-                )));
+                let op = ColumnOp::from_op_col_bounds(&table.head, &columns, bounds);
+                self.query.push(Query::Select(ColumnOp::and(filter, op)));
                 self
             }
             // else generate a new select
             query => {
                 self.query.push(query);
                 let bounds = (Self::bound(value, inclusive), Bound::Unbounded);
-                self.query
-                    .push(Query::Select(IndexScan { table, columns, bounds }.into()));
+                let op = ColumnOp::from_op_col_bounds(&table.head, &columns, bounds);
+                self.query.push(Query::Select(op));
                 self
             }
         }
@@ -1344,19 +1366,16 @@ impl QueryExpr {
             // merge with a preceding select
             Query::Select(filter) => {
                 let bounds = (Bound::Unbounded, Self::bound(value, inclusive));
-                self.query.push(Query::Select(ColumnOp::new(
-                    OpQuery::Logic(OpLogic::And),
-                    filter,
-                    IndexScan { table, columns, bounds }.into(),
-                )));
+                let op = ColumnOp::from_op_col_bounds(&table.head, &columns, bounds);
+                self.query.push(Query::Select(ColumnOp::and(filter, op)));
                 self
             }
             // else generate a new select
             query => {
                 self.query.push(query);
                 let bounds = (Bound::Unbounded, Self::bound(value, inclusive));
-                self.query
-                    .push(Query::Select(IndexScan { table, columns, bounds }.into()));
+                let op = ColumnOp::from_op_col_bounds(&table.head, &columns, bounds);
+                self.query.push(Query::Select(op));
                 self
             }
         }
@@ -1412,8 +1431,7 @@ impl QueryExpr {
                 }
             },
             (Query::Select(filter), op) => {
-                self.query
-                    .push(Query::Select(ColumnOp::new(OpQuery::Logic(OpLogic::And), filter, op)));
+                self.query.push(Query::Select(ColumnOp::and(filter, op)));
                 self
             }
             (query, op) => {
@@ -1867,27 +1885,6 @@ impl fmt::Display for Query {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-// TODO(bikeshedding): Refactor this struct so that `IndexJoin`s replace the `table`,
-// rather than appearing as the first element of the `query`.
-//
-// `IndexJoin`s do not behave like filters; in fact they behave more like data sources.
-// A query conceptually starts with either a single table or an `IndexJoin`,
-// and then stacks a set of filters on top of that.
-pub struct QueryCode {
-    pub table: SourceExpr,
-    pub query: Vec<Query>,
-}
-
-impl From<QueryExpr> for QueryCode {
-    fn from(value: QueryExpr) -> Self {
-        QueryCode {
-            table: value.source,
-            query: value.query,
-        }
-    }
-}
-
 impl AuthAccess for SourceExpr {
     fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
         if owner == caller || self.table_access() == StAccess::Public {
@@ -1912,12 +1909,12 @@ impl AuthAccess for Table {
     }
 }
 
-impl AuthAccess for QueryCode {
+impl AuthAccess for QueryExpr {
     fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
         if owner == caller {
             return Ok(());
         }
-        self.table.check_auth(owner, caller)?;
+        self.source.check_auth(owner, caller)?;
         for q in &self.query {
             q.check_auth(owner, caller)?;
         }
@@ -1926,47 +1923,23 @@ impl AuthAccess for QueryCode {
     }
 }
 
-impl Relation for QueryCode {
+impl Relation for QueryExpr {
     fn head(&self) -> &Arc<Header> {
-        self.table.head()
+        self.source.head()
     }
 
     fn row_count(&self) -> RowCount {
-        self.table.row_count()
+        self.source.row_count()
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CrudCode {
-    Query(QueryCode),
-    Insert {
-        table: SourceExpr,
-        rows: Vec<ProductValue>,
-    },
-    Update {
-        delete: QueryCode,
-        assignments: HashMap<FieldName, FieldExpr>,
-    },
-    Delete {
-        query: QueryCode,
-    },
-    CreateTable {
-        table: TableDef,
-    },
-    Drop {
-        name: String,
-        kind: DbType,
-        table_access: StAccess,
-    },
-}
-
-impl AuthAccess for CrudCode {
+impl AuthAccess for CrudExpr {
     fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
         if owner == caller {
             return Ok(());
         }
         // Anyone may query, so as long as the tables involved are public.
-        if let CrudCode::Query(q) = self {
+        if let CrudExpr::Query(q) = self {
             return q.check_auth(owner, caller);
         }
 
@@ -1981,7 +1954,7 @@ pub enum Code {
     Table(MemTable),
     Halt(ErrorLang),
     Block(Vec<Code>),
-    Crud(CrudCode),
+    Crud(CrudExpr),
     Pass,
 }
 
@@ -1997,7 +1970,7 @@ impl fmt::Display for Code {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum CodeResult {
     Value(AlgebraicValue),
     Table(MemTable),
@@ -2113,12 +2086,11 @@ mod tests {
         ]
     }
 
-    fn query_codes() -> impl IntoIterator<Item = QueryCode> {
+    fn query_exprs() -> impl IntoIterator<Item = QueryExpr> {
         tables().map(|table| {
-            let expr = QueryExpr::from(table);
-            let mut code = QueryCode::from(expr);
-            code.query = queries().into_iter().collect();
-            code
+            let mut expr = QueryExpr::from(table);
+            expr.query = queries().into_iter().collect();
+            expr
         })
     }
 
@@ -2450,7 +2422,7 @@ mod tests {
 
     #[test]
     fn test_auth_query_code() {
-        for code in query_codes() {
+        for code in query_exprs() {
             assert_owner_private(&code)
         }
     }
@@ -2464,8 +2436,8 @@ mod tests {
 
     #[test]
     fn test_auth_crud_code_query() {
-        for query in query_codes() {
-            let crud = CrudCode::Query(query);
+        for query in query_exprs() {
+            let crud = CrudExpr::Query(query);
             assert_owner_private(&crud);
         }
     }
@@ -2473,15 +2445,18 @@ mod tests {
     #[test]
     fn test_auth_crud_code_insert() {
         for table in tables() {
-            let crud = CrudCode::Insert { table, rows: vec![] };
+            let crud = CrudExpr::Insert {
+                source: table,
+                rows: vec![],
+            };
             assert_owner_required(crud);
         }
     }
 
     #[test]
     fn test_auth_crud_code_update() {
-        for qc in query_codes() {
-            let crud = CrudCode::Update {
+        for qc in query_exprs() {
+            let crud = CrudExpr::Update {
                 delete: qc,
                 assignments: Default::default(),
             };
@@ -2491,8 +2466,8 @@ mod tests {
 
     #[test]
     fn test_auth_crud_code_delete() {
-        for query in query_codes() {
-            let crud = CrudCode::Delete { query };
+        for query in query_exprs() {
+            let crud = CrudExpr::Delete { query };
             assert_owner_required(crud);
         }
     }
@@ -2503,13 +2478,13 @@ mod tests {
             .with_access(StAccess::Public)
             .with_type(StTableType::System); // hah!
 
-        let crud = CrudCode::CreateTable { table };
+        let crud = CrudExpr::CreateTable { table };
         assert_owner_required(crud);
     }
 
     #[test]
     fn test_auth_crud_code_drop() {
-        let crud = CrudCode::Drop {
+        let crud = CrudExpr::Drop {
             name: "etcpasswd".into(),
             kind: DbType::Table,
             table_access: StAccess::Public,

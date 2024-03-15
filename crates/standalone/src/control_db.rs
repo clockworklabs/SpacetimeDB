@@ -282,7 +282,7 @@ impl ControlDb {
         for i in tree.iter() {
             let (_, value) = i?;
             let iemail: IdentityEmail = bsatn::from_slice(&value)?;
-            if iemail.email == email {
+            if iemail.email.eq_ignore_ascii_case(email) {
                 result.push(iemail);
             }
         }

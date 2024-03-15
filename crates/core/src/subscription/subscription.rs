@@ -38,7 +38,7 @@ use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::relation::{DbTable, Header};
-use spacetimedb_vm::expr::{self, IndexJoin, Query, QueryCode, QueryExpr, SourceSet};
+use spacetimedb_vm::expr::{self, IndexJoin, Query, QueryExpr, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::MemTable;
 use std::collections::HashSet;
@@ -155,7 +155,7 @@ impl AsRef<QueryExpr> for SupportedQuery {
 fn eval_updates(
     db: &RelationalDB,
     tx: &Tx,
-    query: &QueryCode,
+    query: &QueryExpr,
     mut sources: SourceSet,
 ) -> Result<impl Iterator<Item = ProductValue>, DBError> {
     let ctx = ExecutionContext::incremental_update(db.address());
@@ -198,11 +198,11 @@ pub struct IncrementalJoin {
     /// This determines which side is the index side and which is the probe side.
     return_index_rows: bool,
     /// A(+|-) join B
-    virtual_index_plan: QueryCode,
+    virtual_index_plan: QueryExpr,
     /// A join B(+|-)
-    virtual_probe_plan: QueryCode,
+    virtual_probe_plan: QueryExpr,
     /// A(+|-) join B(+|-)
-    virtual_plan: QueryCode,
+    virtual_plan: QueryExpr,
 }
 
 /// One side of an [`IncrementalJoin`].
@@ -259,19 +259,18 @@ impl IncrementalJoin {
         }
     }
 
-    fn optimize_query(join: IndexJoin) -> QueryCode {
+    fn optimize_query(join: IndexJoin) -> QueryExpr {
         let expr = QueryExpr::from(join);
         // Because (at least) one of the two tables will be a `MemTable`,
         // and therefore not have indexes,
         // the `row_count` function we pass to `optimize` is useless;
         // either the `DbTable` must be used as the index side,
         // or for the `A- join B-` case, the join must be rewritten to not use indexes.
-        let expr = expr.optimize(&|_, _| 0);
-        spacetimedb_vm::eval::compile_query(expr)
+        expr.optimize(&|_, _| 0)
     }
 
     /// Return the query plan where the lhs is a delta table.
-    fn plan_for_delta_lhs(&self) -> &QueryCode {
+    fn plan_for_delta_lhs(&self) -> &QueryExpr {
         if self.return_index_rows {
             &self.virtual_index_plan
         } else {
@@ -280,7 +279,7 @@ impl IncrementalJoin {
     }
 
     /// Return the query plan where the rhs is a delta table.
-    fn plan_for_delta_rhs(&self) -> &QueryCode {
+    fn plan_for_delta_rhs(&self) -> &QueryExpr {
         if self.return_index_rows {
             &self.virtual_probe_plan
         } else {
@@ -328,7 +327,7 @@ impl IncrementalJoin {
             Some(Self::dummy_table_update(&probe_table)),
         );
         debug_assert_eq!(_sources.len(), 2);
-        let virtual_plan = spacetimedb_vm::eval::compile_query(virtual_plan.to_inner_join());
+        let virtual_plan = virtual_plan.to_inner_join();
 
         let return_index_rows = join.return_index_rows;
 
@@ -571,7 +570,7 @@ impl IncrementalJoin {
 }
 
 /// Construct a [`MemTable`] containing the updates from `delta`,
-/// which must be derived from a table with `head` and `table_access`.    
+/// which must be derived from a table with `head` and `table_access`.
 fn to_mem_table(head: Arc<Header>, table_access: StAccess, delta: DatabaseTableUpdate) -> MemTable {
     MemTable::new(
         head,
@@ -938,8 +937,8 @@ mod tests {
 
         let virtual_plan = &incr.virtual_plan;
 
-        assert!(virtual_plan.table.is_mem_table());
-        assert_eq!(virtual_plan.table.head(), expr.source.head());
+        assert!(virtual_plan.source.is_mem_table());
+        assert_eq!(virtual_plan.source.head(), expr.source.head());
         assert_eq!(virtual_plan.query.len(), 1);
         let incr_join = &virtual_plan.query[0];
         let Query::JoinInner(ref incr_join) = incr_join else {
