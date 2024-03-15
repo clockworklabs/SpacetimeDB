@@ -182,6 +182,7 @@ serde_with = { version = "3.3.0", features = ["base64", "hex"] }
 serial_test = "2.0.0"
 sha1 = "0.10.1"
 sha3 = "0.10.0"
+similar = "2.3"
 slab = "0.4.7"
 sled = "0.34.7"
 smallvec = { version = "1.11", features = ["union", "const_generics"] }

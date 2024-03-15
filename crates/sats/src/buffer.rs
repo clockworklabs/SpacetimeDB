@@ -285,7 +285,7 @@ impl<'de, I: AsRef<[u8]>> BufReader<'de> for &'de Cursor<I> {
         // "Read" the slice `buf[pos..size]`.
         let ret = self.buf.as_ref()[self.pos.get()..]
             .get(..size)
-            .ok_or(DecodeError::BufferLength {
+            .ok_or_else(|| DecodeError::BufferLength {
                 for_type: "Cursor".into(),
                 expected: (self.pos.get()..size).len(),
                 given: size,
