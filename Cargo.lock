@@ -4483,6 +4483,7 @@ dependencies = [
  "serde_path_to_error",
  "serde_with",
  "sha1",
+ "similar",
  "slab",
  "sled",
  "smallvec",
