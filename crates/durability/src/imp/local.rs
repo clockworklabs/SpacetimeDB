@@ -18,7 +18,8 @@ use log::{info, trace, warn};
 use spacetimedb_commitlog::{error, payload::Txdata, Commit, Commitlog, Decoder, Encode, Transaction};
 use tokio::{
     sync::mpsc,
-    task::{spawn_blocking, JoinHandle},
+    task::{spawn_blocking, AbortHandle, JoinHandle},
+    time::{interval, MissedTickBehavior},
 };
 use tracing::instrument;
 
@@ -117,6 +118,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
                 clog: clog.clone(),
                 period: opts.sync_interval,
                 offset: offset.clone(),
+                abort: persister_task.abort_handle(),
             }
             .run(),
         );
@@ -244,6 +246,8 @@ struct FlushAndSyncTask<T> {
     clog: Arc<Commitlog<Txdata<T>>>,
     period: Duration,
     offset: Arc<AtomicI64>,
+    /// Handle to abort the [`PersisterTask`] if fsync panics.
+    abort: AbortHandle,
 }
 
 impl<T: Send + Sync + 'static> FlushAndSyncTask<T> {
@@ -251,16 +255,31 @@ impl<T: Send + Sync + 'static> FlushAndSyncTask<T> {
     async fn run(self) {
         info!("starting syncer task");
 
-        let mut watch = self.clog.flush_and_sync_every(self.period);
-        while watch.changed().await.is_ok() {
-            match &*watch.borrow_and_update() {
-                Err(e) => warn!("commit log flush/sync error: {e}"),
-                Ok(Some(new_offset)) => {
+        let mut interval = interval(self.period);
+        interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
+        loop {
+            interval.tick().await;
+            let clog = self.clog.clone();
+            let task = spawn_blocking(move || clog.flush_and_sync()).await;
+            match task {
+                Err(e) => {
+                    if e.is_panic() {
+                        self.abort.abort();
+                        panic::resume_unwind(e.into_panic())
+                    }
+                    break;
+                }
+                Ok(Err(e)) => {
+                    warn!("flush failed: {e}");
+                }
+                Ok(Ok(Some(new_offset))) => {
                     trace!("synced to offset {new_offset}");
                     // NOTE: Overflow will make `durable_tx_offset` return `None`
-                    self.offset.store(*new_offset as i64, Release);
+                    self.offset.store(new_offset as i64, Release);
                 }
-                Ok(None) => {}
+                // No data to flush.
+                Ok(Ok(None)) => {}
             }
         }
 
