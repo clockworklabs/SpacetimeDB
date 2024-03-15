@@ -230,6 +230,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
+    use crate::client::Protocol;
     use crate::db::datastore::traits::IsolationLevel;
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::db::relational_db::MutTx;
@@ -239,6 +240,7 @@ mod tests {
     use crate::subscription::subscription::ExecutionSet;
     use crate::vm::tests::create_table_with_rows;
     use itertools::Itertools;
+    use spacetimedb_lib::bsatn::to_vec;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::Identity;
     use spacetimedb_primitives::{ColId, TableId};
@@ -382,15 +384,6 @@ mod tests {
         Ok(())
     }
 
-    fn get_result(result: DatabaseUpdate) -> Vec<ProductValue> {
-        result
-            .tables
-            .iter()
-            .flat_map(|x| x.ops.iter().map(|x| x.row.clone()))
-            .sorted()
-            .collect::<Vec<_>>()
-    }
-
     fn check_query_incr(
         db: &RelationalDB,
         tx: &Tx,
@@ -406,7 +399,12 @@ mod tests {
             "Must return the correct number of tables: {result:#?}"
         );
 
-        let result = get_result(result);
+        let result = result
+            .tables
+            .into_iter()
+            .flat_map(|x| x.ops.into_iter().map(|x| x.row))
+            .sorted()
+            .collect::<Vec<_>>();
 
         assert_eq!(result, rows, "Must return the correct row(s)");
 
@@ -420,14 +418,20 @@ mod tests {
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
-        let result = s.eval(db, tx)?;
+        let result = s.eval(Protocol::Binary, db, tx)?.tables.unwrap_left();
         assert_eq!(
-            result.tables.len(),
+            result.len(),
             total_tables,
             "Must return the correct number of tables: {result:#?}"
         );
 
-        let result = get_result(result);
+        let result = result
+            .into_iter()
+            .flat_map(|x| x.table_row_operations.into_iter().map(|x| x.row))
+            .sorted()
+            .collect_vec();
+
+        let rows = rows.iter().map(|r| to_vec(r).unwrap()).collect_vec();
 
         assert_eq!(result, rows, "Must return the correct row(s)");
 

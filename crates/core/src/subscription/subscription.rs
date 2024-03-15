@@ -25,14 +25,17 @@
 
 use super::execution_unit::ExecutionUnit;
 use super::query;
-use crate::client::{ClientActorId, ClientConnectionSender};
+use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
-use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp};
+use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, ProtocolDatabaseUpdate, TableOp};
+use crate::json::client_api::TableUpdateJson;
 use crate::vm::{build_query, TxMode};
 use anyhow::Context;
+use itertools::Either;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use spacetimedb_client_api_messages::client_api::TableUpdate;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::TableId;
@@ -160,8 +163,7 @@ fn eval_updates(
 ) -> Result<impl Iterator<Item = ProductValue>, DBError> {
     let ctx = ExecutionContext::incremental_update(db.address());
     let tx: TxMode = tx.into();
-    // TODO(perf, 833): avoid clone.
-    let query = build_query(&ctx, db, &tx, query.clone(), &mut sources)?;
+    let query = build_query(&ctx, db, &tx, query, &mut sources)?;
     // TODO(perf): avoid collecting into a vec.
     Ok(query.collect_vec(|row_ref| row_ref.into_product_value())?.into_iter())
 }
@@ -614,17 +616,32 @@ pub struct ExecutionSet {
 }
 
 impl ExecutionSet {
+    pub fn eval(&self, protocol: Protocol, db: &RelationalDB, tx: &Tx) -> Result<ProtocolDatabaseUpdate, DBError> {
+        let tables = match protocol {
+            Protocol::Binary => Either::Left(self.eval_binary(db, tx)?),
+            Protocol::Text => Either::Right(self.eval_json(db, tx)?),
+        };
+        Ok(ProtocolDatabaseUpdate { tables })
+    }
+
     #[tracing::instrument(skip_all)]
-    pub fn eval(&self, db: &RelationalDB, tx: &Tx) -> Result<DatabaseUpdate, DBError> {
+    fn eval_json(&self, db: &RelationalDB, tx: &Tx) -> Result<Vec<TableUpdateJson>, DBError> {
         // evaluate each of the execution units in this ExecutionSet in parallel
-        let tables = self
-            .exec_units
+        self.exec_units
             // if you need eval to run single-threaded for debugging, change this to .iter()
             .par_iter()
-            .filter_map(|unit| unit.eval(db, tx).transpose())
-            .collect::<Result<Vec<_>, _>>()?;
+            .filter_map(|unit| unit.eval_json(db, tx).transpose())
+            .collect::<Result<Vec<_>, _>>()
+    }
 
-        Ok(DatabaseUpdate { tables })
+    #[tracing::instrument(skip_all)]
+    fn eval_binary(&self, db: &RelationalDB, tx: &Tx) -> Result<Vec<TableUpdate>, DBError> {
+        // evaluate each of the execution units in this ExecutionSet in parallel
+        self.exec_units
+            // if you need eval to run single-threaded for debugging, change this to .iter()
+            .par_iter()
+            .filter_map(|unit| unit.eval_binary(db, tx).transpose())
+            .collect::<Result<Vec<_>, _>>()
     }
 
     #[tracing::instrument(skip_all)]
@@ -888,5 +905,64 @@ mod tests {
         assert_eq!(probe_field, "b");
         assert_eq!(probe_table, "rhs");
         Ok(())
+    }
+
+    #[test]
+    fn compile_incremental_join_unindexed_semi_join() {
+        let (db, _tmp) = make_test_db().expect("Failed to make_test_db");
+
+        // Create table [lhs] with index on [b]
+        let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
+        let indexes = &[(1.into(), "b")];
+        let _lhs_id = db
+            .create_table_for_test("lhs", schema, indexes)
+            .expect("Failed to create_table_for_test lhs");
+
+        // Create table [rhs] with index on [b, c]
+        let schema = &[
+            ("b", AlgebraicType::U64),
+            ("c", AlgebraicType::U64),
+            ("d", AlgebraicType::U64),
+        ];
+        let indexes = &[(0.into(), "b"), (1.into(), "c")];
+        let _rhs_id = db
+            .create_table_for_test("rhs", schema, indexes)
+            .expect("Failed to create_table_for_test rhs");
+
+        let tx = db.begin_tx();
+
+        // Should generate an index join since there is an index on `lhs.b`.
+        // Should push the sargable range condition into the index join's probe side.
+        let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
+        let exp = compile_sql(&db, &tx, sql).expect("Failed to compile_sql").remove(0);
+
+        let CrudExpr::Query(expr) = exp else {
+            panic!("unexpected result from compilation: {:#?}", exp);
+        };
+
+        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(expr.query.len(), 1);
+
+        let src_join = &expr.query[0];
+        assert!(
+            matches!(src_join, Query::IndexJoin(_)),
+            "expected an index join, but got {:#?}",
+            src_join
+        );
+
+        let incr = IncrementalJoin::new(&expr).expect("Failed to construct IncrementalJoin");
+
+        let virtual_plan = &incr.virtual_plan;
+
+        assert!(virtual_plan.source.is_mem_table());
+        assert_eq!(virtual_plan.source.head(), expr.source.head());
+        assert_eq!(virtual_plan.query.len(), 1);
+        let incr_join = &virtual_plan.query[0];
+        let Query::JoinInner(ref incr_join) = incr_join else {
+            panic!("expected an inner semijoin, but got {:#?}", incr_join);
+        };
+        assert!(incr_join.rhs.source.is_mem_table());
+        assert_ne!(incr_join.rhs.source.head(), expr.source.head());
+        assert!(incr_join.semi);
     }
 }

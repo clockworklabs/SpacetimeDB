@@ -10,7 +10,7 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Address;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::def::TableDef;
-use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldName, Header, Relation, RowCount};
+use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldExprRef, FieldName, Header, Relation, RowCount};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::eval::IterRows;
@@ -45,7 +45,7 @@ pub fn build_query<'a>(
     ctx: &'a ExecutionContext,
     stdb: &'a RelationalDB,
     tx: &'a TxMode,
-    query: QueryExpr,
+    query: &'a QueryExpr,
     sources: &mut SourceSet,
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {
     let db_table = query.source.is_db_table();
@@ -66,10 +66,11 @@ pub fn build_query<'a>(
     //   removing the need for this convoluted logic?
     let mut result = None;
 
-    for op in query.query {
+    for op in &query.query {
         result = Some(match op {
             Query::IndexScan(IndexScan { table, columns, bounds }) if db_table => {
-                iter_by_col_range(ctx, stdb, tx, table, columns, bounds)?
+                let bounds = (bounds.start_bound(), bounds.end_bound());
+                iter_by_col_range(ctx, stdb, tx, table, columns.clone(), bounds)?
             }
             Query::IndexScan(index_scan) => {
                 let result = result
@@ -78,7 +79,7 @@ pub fn build_query<'a>(
                     .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))?;
 
                 let cols = &index_scan.columns;
-                let bounds = index_scan.bounds;
+                let bounds = &index_scan.bounds;
                 if cols.is_singleton() {
                     // For singleton constraints, we compare the column directly against `bounds`.
                     let head = cols.head().idx();
@@ -96,9 +97,8 @@ pub fn build_query<'a>(
                         }
                     }
                     // Project start/end `Bound<AV>`s to `Bound<Vec<AV>>`s.
-                    let start_bound = map(bounds.0, |av| av.into_product().unwrap().elements);
-                    let end_bound = map(bounds.1, |av| av.into_product().unwrap().elements);
-                    let cols = cols.clone();
+                    let start_bound = map(bounds.0.as_ref(), |av| &av.as_product().unwrap().elements);
+                    let end_bound = map(bounds.1.as_ref(), |av| &av.as_product().unwrap().elements);
                     // Construct the query:
                     let iter = result.select(move |row| {
                         // Go through each column position,
@@ -107,8 +107,8 @@ pub fn build_query<'a>(
                         // All columns must match to include the row,
                         // which is essentially the same as a big `AND` of `ColumnOp`s.
                         Ok(cols.iter().enumerate().all(|(idx, col)| {
-                            let start_bound = map(start_bound.as_ref(), |pv| &pv[idx]);
-                            let end_bound = map(end_bound.as_ref(), |pv| &pv[idx]);
+                            let start_bound = map(start_bound, |pv| &pv[idx]);
+                            let end_bound = map(end_bound, |pv| &pv[idx]);
                             let read_col = row.read_column(col.idx()).unwrap();
                             (start_bound, end_bound).contains(&*read_col)
                         }))
@@ -130,7 +130,7 @@ pub fn build_query<'a>(
                 // The compiler guarantees that the index side is a db table,
                 // and therefore this unwrap is always safe.
                 let index_table = index_side.table_id().unwrap();
-                let index_header = index_side.head().clone();
+                let index_header = index_side.head();
                 let probe_side = build_query(ctx, stdb, tx, probe_side, sources)?;
                 Box::new(IndexSemiJoin {
                     ctx,
@@ -141,9 +141,9 @@ pub fn build_query<'a>(
                     index_header,
                     index_select,
                     index_table,
-                    index_col,
+                    index_col: *index_col,
                     index_iter: None,
-                    return_index_rows,
+                    return_index_rows: *return_index_rows,
                 })
             }
             Query::Select(cmp) => {
@@ -175,7 +175,7 @@ pub fn build_query<'a>(
                     .take()
                     .map(Ok)
                     .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))?;
-                let iter = join_inner(ctx, stdb, tx, result, join, false, sources)?;
+                let iter = join_inner(ctx, stdb, tx, result, join, sources)?;
                 Box::new(iter)
             }
         })
@@ -191,16 +191,17 @@ fn join_inner<'a>(
     db: &'a RelationalDB,
     tx: &'a TxMode,
     lhs: impl RelOps<'a> + 'a,
-    rhs: JoinExpr,
-    semi: bool,
+    rhs: &'a JoinExpr,
     sources: &mut SourceSet,
 ) -> Result<impl RelOps<'a> + 'a, ErrorVm> {
-    let col_lhs = FieldExpr::Name(rhs.col_lhs);
-    let col_rhs = FieldExpr::Name(rhs.col_rhs);
-    let key_lhs = [col_lhs.clone()];
-    let key_rhs = [col_rhs.clone()];
+    let semi = rhs.semi;
 
-    let rhs = build_query(ctx, db, tx, rhs.rhs, sources)?;
+    let col_lhs = FieldExprRef::Name(&rhs.col_lhs);
+    let col_rhs = FieldExprRef::Name(&rhs.col_rhs);
+    let key_lhs = [col_lhs];
+    let key_rhs = [col_rhs];
+
+    let rhs = build_query(ctx, db, tx, &rhs.rhs, sources)?;
     let key_lhs_header = lhs.head().clone();
     let key_rhs_header = rhs.head().clone();
     let col_lhs_header = lhs.head().clone();
@@ -218,8 +219,8 @@ fn join_inner<'a>(
         move |row| Ok(row.project(&key_lhs, &key_lhs_header)?),
         move |row| Ok(row.project(&key_rhs, &key_rhs_header)?),
         move |l, r| {
-            let l = l.get(&col_lhs, &col_lhs_header)?;
-            let r = r.get(&col_rhs, &col_rhs_header)?;
+            let l = l.get(col_lhs, &col_lhs_header)?;
+            let r = r.get(col_rhs, &col_rhs_header)?;
             Ok(l == r)
         },
         move |l, r| {
@@ -271,7 +272,7 @@ fn iter_by_col_range<'a>(
     ctx: &'a ExecutionContext,
     db: &'a RelationalDB,
     tx: &'a TxMode,
-    table: DbTable,
+    table: &'a DbTable,
     columns: ColList,
     range: impl RangeBounds<AlgebraicValue> + 'a,
 ) -> Result<Box<dyn RelOps<'a> + 'a>, ErrorVm> {
@@ -283,16 +284,16 @@ fn iter_by_col_range<'a>(
 }
 
 /// An index join operator that returns matching rows from the index side.
-pub struct IndexSemiJoin<'a, Rhs: RelOps<'a>> {
+pub struct IndexSemiJoin<'a, 'c, Rhs: RelOps<'a>> {
     /// An iterator for the probe side.
     /// The values returned will be used to probe the index.
     pub probe_side: Rhs,
     /// The field whose value will be used to probe the index.
-    pub probe_field: FieldName,
+    pub probe_field: &'c FieldName,
     /// The header for the index side of the join.
-    pub index_header: Arc<Header>,
+    pub index_header: &'c Arc<Header>,
     /// An optional predicate to evaluate over the matching rows of the index.
-    pub index_select: Option<ColumnOp>,
+    pub index_select: &'c Option<ColumnOp>,
     /// The table id on which the index is defined.
     pub index_table: TableId,
     /// The column id for which the index is defined.
@@ -310,10 +311,10 @@ pub struct IndexSemiJoin<'a, Rhs: RelOps<'a>> {
     ctx: &'a ExecutionContext<'a>,
 }
 
-impl<'a, Rhs: RelOps<'a>> IndexSemiJoin<'a, Rhs> {
+impl<'a, Rhs: RelOps<'a>> IndexSemiJoin<'a, '_, Rhs> {
     fn filter(&self, index_row: &RelValue<'_>) -> Result<bool, ErrorVm> {
         Ok(if let Some(op) = &self.index_select {
-            op.compare(index_row, &self.index_header)?
+            op.compare(index_row, self.index_header)?
         } else {
             true
         })
@@ -329,10 +330,10 @@ impl<'a, Rhs: RelOps<'a>> IndexSemiJoin<'a, Rhs> {
     }
 }
 
-impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoin<'a, Rhs> {
+impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoin<'a, '_, Rhs> {
     fn head(&self) -> &Arc<Header> {
         if self.return_index_rows {
-            &self.index_header
+            self.index_header
         } else {
             self.probe_side.head()
         }
@@ -355,7 +356,7 @@ impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoin<'a, Rhs> {
 
         // Otherwise probe the index with a row from the probe side.
         while let Some(row) = self.probe_side.next()? {
-            if let Some(pos) = self.probe_side.head().column_pos(&self.probe_field) {
+            if let Some(pos) = self.probe_side.head().column_pos(self.probe_field) {
                 if let Some(value) = row.read_column(pos.idx()) {
                     let table_id = self.index_table;
                     let col_id = self.index_col;
@@ -394,7 +395,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         Self { ctx, db, tx, auth }
     }
 
-    fn _eval_query(&mut self, query: QueryExpr, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
+    fn _eval_query(&mut self, query: &QueryExpr, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
         let table_access = query.source.table_access();
         tracing::trace!(table = query.source.table_name());
 
@@ -435,7 +436,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         }
     }
 
-    fn _delete_query(&mut self, query: QueryExpr, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
+    fn _delete_query(&mut self, query: &QueryExpr, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
         let table = sources
             .take_table(&query.source)
             .expect("Cannot delete from a `MemTable`");
@@ -507,22 +508,21 @@ impl ProgramVm for DbProgram<'_, '_> {
         query.check_auth(self.auth.owner, self.auth.caller)?;
 
         match query {
-            CrudExpr::Query(query) => self._eval_query(query, sources),
-            CrudExpr::Insert { source: table, rows } => {
-                let src = sources.take_table(&table).unwrap();
+            CrudExpr::Query(query) => self._eval_query(&query, sources),
+            CrudExpr::Insert { source, rows } => {
+                let src = sources.take_table(&source).unwrap();
                 self._execute_insert(&src, rows)
             }
             CrudExpr::Update {
                 delete,
                 mut assignments,
             } => {
-                let table = delete.source.clone();
-                let result = self._eval_query(delete, sources)?;
+                let result = self._eval_query(&delete, sources)?;
 
                 let Code::Table(deleted) = result else {
                     return Ok(result);
                 };
-                let table = sources.take_table(&table).unwrap();
+                let table = sources.take_table(&delete.source).unwrap();
                 self._execute_delete(&table, deleted.data.clone())?;
 
                 // Replace the columns in the matched rows with the assigned
@@ -557,7 +557,7 @@ impl ProgramVm for DbProgram<'_, '_> {
 
                 self._execute_insert(&table, insert_rows)
             }
-            CrudExpr::Delete { query } => self._delete_query(query, sources),
+            CrudExpr::Delete { query } => self._delete_query(&query, sources),
             CrudExpr::CreateTable { table } => self._create_table(table),
             CrudExpr::Drop { name, kind, .. } => self._drop(&name, kind),
         }
@@ -676,7 +676,7 @@ pub(crate) mod tests {
     /// | entity_id: u64 | inventory_id : u64 |
     /// Location
     /// | entity_id: u64 | x : f32 | z : f32 |
-    fn test_db_query() -> ResultTest<()> {
+    fn test_db_query_inner_join() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
@@ -696,7 +696,7 @@ pub(crate) mod tests {
         let mut sources = SourceSet::default();
         let rhs_source_expr = sources.add_mem_table(data);
 
-        let q = query(&schema).with_join_inner(rhs_source_expr, FieldName::positional("inventory", 0), rhs);
+        let q = query(&schema).with_join_inner(rhs_source_expr, FieldName::positional("inventory", 0), rhs, false);
 
         let result = match run_ast(p, q.into(), sources) {
             Code::Table(x) => x,
@@ -710,6 +710,55 @@ pub(crate) mod tests {
             (None, AlgebraicType::U64),
         ]);
         let row = product!(scalar(1u64), scalar("health"), scalar(1u64));
+        let input = mem_table(inv, vec![row]);
+
+        assert_eq!(result.data, input.data, "Inventory");
+
+        stdb.rollback_mut_tx(&ctx, tx);
+
+        Ok(())
+    }
+
+    #[test]
+    /// Inventory
+    /// | inventory_id: u64 | name : String |
+    /// Player
+    /// | entity_id: u64 | inventory_id : u64 |
+    /// Location
+    /// | entity_id: u64 | x : f32 | z : f32 |
+    fn test_db_query_semijoin() -> ResultTest<()> {
+        let (stdb, _tmp_dir) = make_test_db()?;
+
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let ctx = ExecutionContext::default();
+        let tx_mode = &mut TxMode::MutTx(&mut tx);
+        let p = &mut DbProgram::new(&ctx, &stdb, tx_mode, AuthCtx::for_testing());
+
+        let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
+        let row = product!(1u64, "health");
+        let table_id = create_table_from_program(p, "inventory", head.clone(), &[row])?;
+
+        let schema = TableDef::from_product("test", head).into_schema(table_id);
+
+        let data = MemTable::from_value(scalar(1u64));
+        let rhs = data.get_field_pos(0).unwrap().clone();
+
+        let mut sources = SourceSet::default();
+        let rhs_source_expr = sources.add_mem_table(data);
+
+        let q = query(&schema).with_join_inner(rhs_source_expr, FieldName::positional("inventory", 0), rhs, true);
+
+        let result = match run_ast(p, q.into(), sources) {
+            Code::Table(x) => x,
+            x => panic!("invalid result {x}"),
+        };
+
+        //The expected result
+        let inv = ProductType::from([
+            (Some("inventory_id"), AlgebraicType::U64),
+            (Some("name"), AlgebraicType::String),
+        ]);
+        let row = product!(scalar(1u64), scalar("health"));
         let input = mem_table(inv, vec![row]);
 
         assert_eq!(result.data, input.data, "Inventory");

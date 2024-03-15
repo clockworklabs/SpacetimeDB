@@ -6,6 +6,7 @@ use once_cell::sync::Lazy;
 use prometheus::{GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
 use spacetimedb_lib::Address;
 use spacetimedb_metrics::metrics_group;
+use spacetimedb_primitives::TableId;
 
 metrics_group!(
     #[non_exhaustive]
@@ -147,4 +148,12 @@ pub fn reset_counters() {
     // Reset max query durations
     DB_METRICS.rdb_query_cpu_time_sec_max.0.reset();
     MAX_QUERY_CPU_TIME.lock().unwrap().clear();
+}
+
+/// Returns the number of committed rows in the table named by `table_name` and identified by `table_id` in the database `db_address`.
+pub fn table_num_rows(db_address: Address, table_id: TableId, table_name: &str) -> u64 {
+    DB_METRICS
+        .rdb_num_table_rows
+        .with_label_values(&db_address, &table_id.0, table_name)
+        .get() as _
 }

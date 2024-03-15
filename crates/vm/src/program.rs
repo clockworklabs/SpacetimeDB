@@ -78,7 +78,7 @@ impl ProgramVm for Program {
                     panic!("DB not set")
                 };
 
-                let result = build_query(result, query.query, sources)?;
+                let result = build_query(result, &query.query, sources)?;
 
                 let head = result.head().clone();
                 let rows: Vec<_> = result.collect_vec(|row| row.into_product_value())?;

@@ -149,7 +149,6 @@ impl InstanceEnv {
     /// where the column identified by `cols` equates to `value`.
     ///
     /// Returns an error if no rows were deleted or if the column wasn't found.
-    #[tracing::instrument(skip(self, ctx, value))]
     pub fn delete_by_col_eq(
         &self,
         ctx: &ExecutionContext,
@@ -271,7 +270,6 @@ impl InstanceEnv {
     ///
     /// Matching is defined by decoding of `value` to an `AlgebraicValue`
     /// according to the column's schema and then `Ord for AlgebraicValue`.
-    #[tracing::instrument(skip_all)]
     pub fn iter_by_col_eq(
         &self,
         ctx: &ExecutionContext,
@@ -317,7 +315,6 @@ impl InstanceEnv {
         Ok(chunked_writer.into_chunks())
     }
 
-    #[tracing::instrument(skip_all)]
     pub fn iter_filtered_chunks(
         &self,
         ctx: &ExecutionContext,
@@ -375,7 +372,7 @@ impl InstanceEnv {
 
         let tx: TxMode = tx.into();
         // SQL queries can never reference `MemTable`s, so pass in an empty `SourceSet`.
-        let mut query = build_query(ctx, stdb, &tx, query, &mut SourceSet::default())?;
+        let mut query = build_query(ctx, stdb, &tx, &query, &mut SourceSet::default())?;
 
         // write all rows and flush at row boundaries.
         let mut chunked_writer = ChunkedWriter::default();

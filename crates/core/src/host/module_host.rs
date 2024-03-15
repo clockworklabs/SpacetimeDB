@@ -103,8 +103,6 @@ impl From<DatabaseUpdate> for Vec<TableUpdate> {
 
 impl From<DatabaseUpdate> for Vec<TableUpdateJson> {
     fn from(update: DatabaseUpdate) -> Self {
-        // For all tables, push all state
-        // TODO: We need some way to namespace tables so we don't send all the internal tables and stuff
         update.tables.into_iter().map_into().collect()
     }
 }
