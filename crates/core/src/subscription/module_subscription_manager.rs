@@ -133,7 +133,8 @@ impl SubscriptionManager {
                 }
             }
 
-            units
+            let span = tracing::info_span!("eval_incr").entered();
+            let eval = units
                 .into_par_iter()
                 .filter_map(|(hash, tables)| self.queries.get(hash).map(|unit| (hash, tables, unit)))
                 .filter_map(|(hash, tables, unit)| {
@@ -234,20 +235,22 @@ impl SubscriptionManager {
                         }
                         updates
                     },
-                )
-                .into_iter()
-                .for_each(|(id, tables)| {
-                    let client = self.client(id);
-                    let database_update = SubscriptionUpdate {
-                        database_update: ProtocolDatabaseUpdate { tables },
-                        request_id: event.request_id,
-                        timer: event.timer,
-                    };
-                    let message = TransactionUpdateMessage { event, database_update };
-                    if let Err(e) = client.send_message(message) {
-                        tracing::warn!(%client.id, "failed to send update message to client: {e}")
-                    }
-                });
+                );
+            drop(span);
+
+            let _span = tracing::info_span!("eval_send").entered();
+            eval.into_iter().for_each(|(id, tables)| {
+                let client = self.client(id);
+                let database_update = SubscriptionUpdate {
+                    database_update: ProtocolDatabaseUpdate { tables },
+                    request_id: event.request_id,
+                    timer: event.timer,
+                };
+                let message = TransactionUpdateMessage { event, database_update };
+                if let Err(e) = client.send_message(message) {
+                    tracing::warn!(%client.id, "failed to send update message to client: {e}")
+                }
+            });
         })
     }
 }
