@@ -160,8 +160,7 @@ fn eval_updates(
 ) -> Result<impl Iterator<Item = ProductValue>, DBError> {
     let ctx = ExecutionContext::incremental_update(db.address());
     let tx: TxMode = tx.into();
-    // TODO(perf, 833): avoid clone.
-    let query = build_query(&ctx, db, &tx, query.clone(), &mut sources)?;
+    let query = build_query(&ctx, db, &tx, query, &mut sources)?;
     // TODO(perf): avoid collecting into a vec.
     Ok(query.collect_vec(|row_ref| row_ref.into_product_value())?.into_iter())
 }

@@ -372,7 +372,7 @@ impl InstanceEnv {
 
         let tx: TxMode = tx.into();
         // SQL queries can never reference `MemTable`s, so pass in an empty `SourceSet`.
-        let mut query = build_query(ctx, stdb, &tx, query, &mut SourceSet::default())?;
+        let mut query = build_query(ctx, stdb, &tx, &query, &mut SourceSet::default())?;
 
         // write all rows and flush at row boundaries.
         let mut chunked_writer = ChunkedWriter::default();

@@ -275,7 +275,7 @@ impl TxDatastore for Locking {
         cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a, 'r>> {
-        tx.iter_by_col_eq(ctx, &table_id, cols.into(), value)
+        tx.iter_by_col_eq(ctx, &table_id, cols, value)
     }
 
     fn table_id_exists_tx(&self, tx: &Self::Tx, table_id: &TableId) -> bool {

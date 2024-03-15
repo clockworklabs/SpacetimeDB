@@ -2,7 +2,9 @@ use derive_more::From;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::error::RelationError;
 use spacetimedb_sats::product_value::ProductValue;
-use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldName, Header, HeaderOnlyField, Relation, RowCount};
+use spacetimedb_sats::relation::{
+    DbTable, FieldExpr, FieldExprRef, FieldName, Header, HeaderOnlyField, Relation, RowCount,
+};
 use spacetimedb_sats::{impl_serialize, AlgebraicValue};
 use spacetimedb_table::read_column::ReadColumn;
 use spacetimedb_table::table::RowRef;
@@ -63,23 +65,27 @@ impl<'a> RelValue<'a> {
         }
     }
 
-    pub fn get<'b>(&'a self, col: &'a FieldExpr, header: &'b Header) -> Result<Cow<'a, AlgebraicValue>, RelationError> {
+    pub fn get<'b>(
+        &'a self,
+        col: FieldExprRef<'a>,
+        header: &'b Header,
+    ) -> Result<Cow<'a, AlgebraicValue>, RelationError> {
         let val = match col {
-            FieldExpr::Name(col) => {
+            FieldExprRef::Name(col) => {
                 let pos = header.column_pos_or_err(col)?.idx();
                 self.read_column(pos)
                     .ok_or_else(|| RelationError::FieldNotFoundAtPos(pos, col.clone()))?
             }
-            FieldExpr::Value(x) => Cow::Borrowed(x),
+            FieldExprRef::Value(x) => Cow::Borrowed(x),
         };
 
         Ok(val)
     }
 
-    pub fn project(&self, cols: &[FieldExpr], header: &'a Header) -> Result<ProductValue, RelationError> {
+    pub fn project(&self, cols: &[FieldExprRef<'_>], header: &'a Header) -> Result<ProductValue, RelationError> {
         let mut elements = Vec::with_capacity(cols.len());
         for col in cols {
-            elements.push(self.get(col, header)?.into_owned());
+            elements.push(self.get(*col, header)?.into_owned());
         }
         Ok(elements.into())
     }

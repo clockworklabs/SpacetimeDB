@@ -66,7 +66,7 @@ impl MutTxId {
         database_address: Address,
     ) -> Result<()> {
         let ctx = ExecutionContext::internal(database_address);
-        let rows = self.iter_by_col_eq(&ctx, &table_id, col_pos.into(), value)?;
+        let rows = self.iter_by_col_eq(&ctx, &table_id, col_pos, value)?;
         let ptrs_to_delete = rows.map(|row_ref| row_ref.pointer()).collect::<Vec<_>>();
         if ptrs_to_delete.is_empty() {
             return Err(TableError::IdNotFound(SystemTable::st_columns, col_pos.0).into());
@@ -243,12 +243,7 @@ impl MutTxId {
         let ctx = ExecutionContext::internal(database_address);
 
         let st_table_ref = self
-            .iter_by_col_eq(
-                &ctx,
-                &ST_TABLES_ID,
-                StTableFields::TableId.col_id().into(),
-                &table_id.into(),
-            )?
+            .iter_by_col_eq(&ctx, &ST_TABLES_ID, StTableFields::TableId, &table_id.into())?
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, table_id.into()))?;
         let mut st = StTableRow::try_from(st_table_ref)?;
@@ -265,13 +260,13 @@ impl MutTxId {
         let ctx = ExecutionContext::internal(database_address);
         let table_name = &table_name.to_owned().into();
         let row = self
-            .iter_by_col_eq(&ctx, &ST_TABLES_ID, StTableFields::TableName.into(), table_name)?
+            .iter_by_col_eq(&ctx, &ST_TABLES_ID, StTableFields::TableName, table_name)?
             .next();
         Ok(row.map(|row| row.read_col(StTableFields::TableId).unwrap()))
     }
 
     pub fn table_name_from_id<'a>(&'a self, ctx: &'a ExecutionContext, table_id: TableId) -> Result<Option<String>> {
-        self.iter_by_col_eq(ctx, &ST_TABLES_ID, StTableFields::TableId.into(), &table_id.into())
+        self.iter_by_col_eq(ctx, &ST_TABLES_ID, StTableFields::TableId, &table_id.into())
             .map(|mut iter| iter.next().map(|row| row.read_col(StTableFields::TableName).unwrap()))
     }
 
@@ -369,12 +364,7 @@ impl MutTxId {
         let ctx = ExecutionContext::internal(database_address);
 
         let st_index_ref = self
-            .iter_by_col_eq(
-                &ctx,
-                &ST_INDEXES_ID,
-                StIndexFields::IndexId.col_id().into(),
-                &index_id.into(),
-            )?
+            .iter_by_col_eq(&ctx, &ST_INDEXES_ID, StIndexFields::IndexId, &index_id.into())?
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_indexes, index_id.into()))?;
         let table_id = st_index_ref.read_col(StIndexFields::TableId)?;
@@ -411,7 +401,7 @@ impl MutTxId {
     pub fn index_id_from_name(&self, index_name: &str, database_address: Address) -> Result<Option<IndexId>> {
         let ctx = ExecutionContext::internal(database_address);
         let name = &index_name.to_owned().into();
-        self.iter_by_col_eq(&ctx, &ST_INDEXES_ID, StIndexFields::IndexName.into(), name)
+        self.iter_by_col_eq(&ctx, &ST_INDEXES_ID, StIndexFields::IndexName, name)
             .map(|mut iter| iter.next().map(|row| row.read_col(StIndexFields::IndexId).unwrap()))
     }
 
@@ -431,12 +421,7 @@ impl MutTxId {
         // If we're out of allocations, then update the sequence row in st_sequences to allocate a fresh batch of sequences.
         let ctx = ExecutionContext::internal(database_address);
         let old_seq_row_ref = self
-            .iter_by_col_eq(
-                &ctx,
-                &ST_SEQUENCES_ID,
-                StSequenceFields::SequenceId.into(),
-                &seq_id.into(),
-            )?
+            .iter_by_col_eq(&ctx, &ST_SEQUENCES_ID, StSequenceFields::SequenceId, &seq_id.into())?
             .last()
             .unwrap();
         let old_seq_row_ptr = old_seq_row_ref.pointer();
@@ -511,7 +496,7 @@ impl MutTxId {
             .iter_by_col_eq(
                 &ctx,
                 &ST_SEQUENCES_ID,
-                StSequenceFields::SequenceId.col_id().into(),
+                StSequenceFields::SequenceId,
                 &sequence_id.into(),
             )?
             .next()
@@ -534,7 +519,7 @@ impl MutTxId {
     pub fn sequence_id_from_name(&self, seq_name: &str, database_address: Address) -> Result<Option<SequenceId>> {
         let ctx = ExecutionContext::internal(database_address);
         let name = &seq_name.to_owned().into();
-        self.iter_by_col_eq(&ctx, &ST_SEQUENCES_ID, StSequenceFields::SequenceName.into(), name)
+        self.iter_by_col_eq(&ctx, &ST_SEQUENCES_ID, StSequenceFields::SequenceName, name)
             .map(|mut iter| {
                 iter.next()
                     .map(|row| row.read_col(StSequenceFields::SequenceId).unwrap())
@@ -606,7 +591,7 @@ impl MutTxId {
             .iter_by_col_eq(
                 &ctx,
                 &ST_CONSTRAINTS_ID,
-                StConstraintFields::ConstraintId.col_id().into(),
+                StConstraintFields::ConstraintId,
                 &constraint_id.into(),
             )?
             .next()
@@ -631,7 +616,7 @@ impl MutTxId {
         self.iter_by_col_eq(
             &ExecutionContext::internal(database_address),
             &ST_CONSTRAINTS_ID,
-            StConstraintFields::ConstraintName.into(),
+            StConstraintFields::ConstraintName,
             &constraint_name.to_owned().into(),
         )
         .map(|mut iter| {
@@ -737,12 +722,7 @@ impl MutTxId {
             .iter()
             .filter(|seq| row.elements[usize::from(seq.col_pos)].is_numeric_zero())
         {
-            for seq_row in self.iter_by_col_eq(
-                &ctx,
-                &ST_SEQUENCES_ID,
-                StSequenceFields::TableId.into(),
-                &table_id.into(),
-            )? {
+            for seq_row in self.iter_by_col_eq(&ctx, &ST_SEQUENCES_ID, StSequenceFields::TableId, &table_id.into())? {
                 let seq_col_pos: ColId = seq_row.read_col(StSequenceFields::ColPos)?;
                 if seq_col_pos == seq.col_pos {
                     let seq_id = seq_row.read_col(StSequenceFields::SequenceId)?;

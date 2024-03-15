@@ -221,8 +221,7 @@ impl ExecutionUnit {
     fn eval_query_code(db: &RelationalDB, tx: &Tx, eval_plan: &QueryExpr) -> Result<Vec<TableOp>, DBError> {
         let ctx = ExecutionContext::subscribe(db.address());
         let tx: TxMode = tx.into();
-        // TODO(perf, 833): avoid clone.
-        let query = build_query(&ctx, db, &tx, eval_plan.clone(), &mut SourceSet::default())?;
+        let query = build_query(&ctx, db, &tx, eval_plan, &mut SourceSet::default())?;
         let ops = query.collect_vec(|row_ref| TableOp::insert(row_ref.into_product_value()))?;
         Ok(ops)
     }
@@ -279,8 +278,7 @@ impl ExecutionUnit {
             debug_assert_eq!(_source_expr.source_id(), Some(_source_id));
             // Evaluate the saved plan against the new `SourceSet`
             // and capture the new row operations.
-            // TODO(perf, 833): avoid clone.
-            let query = build_query(&ctx, db, &tx, eval_incr_plan.clone(), &mut sources)?;
+            let query = build_query(&ctx, db, &tx, eval_incr_plan, &mut sources)?;
             Self::collect_rows_remove_table_ops(&mut ops, query, header)?;
         }
         Ok(ops)
