@@ -174,8 +174,13 @@ impl BflatnSerializedRowBuffer<'_> {
 
     /// Write an `val`, an [`AlgebraicValue`], typed at `ty`, to the buffer.
     fn write_value(&mut self, ty: &AlgebraicTypeLayout, val: &AlgebraicValue) -> Result<(), Error> {
-        let ty_alignment = ty.align();
-        self.curr_offset = align_to(self.curr_offset, ty_alignment);
+        debug_assert_eq!(
+            self.curr_offset,
+            align_to(self.curr_offset, ty.align()),
+            "curr_offset {} insufficiently aligned for type {:#?}",
+            self.curr_offset,
+            val,
+        );
 
         match (ty, val) {
             // For sums, select the type based on the sum tag,
@@ -217,8 +222,6 @@ impl BflatnSerializedRowBuffer<'_> {
             (ty, val) => Err(Error::WrongType(ty.algebraic_type(), val.clone()))?,
         }
 
-        self.curr_offset = align_to(self.curr_offset, ty_alignment);
-
         Ok(())
     }
 
@@ -254,7 +257,11 @@ impl BflatnSerializedRowBuffer<'_> {
                 AlgebraicValue::Product(val.clone()),
             ));
         }
+
+        let base_offset = self.curr_offset;
+
         for (elt_ty, elt) in ty.elements.iter().zip(val.elements.iter()) {
+            self.curr_offset = base_offset + elt_ty.offset as usize;
             self.write_value(&elt_ty.ty, elt)?;
         }
         Ok(())
