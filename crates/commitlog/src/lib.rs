@@ -111,12 +111,16 @@ impl<T> Commitlog<T> {
     /// Returns the maximum transaction offset which is considered durable after
     /// this method returns successfully. The offset is `None` if the log hasn't
     /// been flushed to disk yet.
-    pub fn sync(&self) -> io::Result<Option<u64>> {
-        let inner = self.inner.read().unwrap();
+    ///
+    /// # Panics
+    ///
+    /// This method panics if syncing fails irrecoverably.
+    pub fn sync(&self) -> Option<u64> {
+        let mut inner = self.inner.write().unwrap();
         trace!("sync commitlog");
-        inner.sync()?;
+        inner.sync();
 
-        Ok(inner.max_committed_offset())
+        inner.max_committed_offset()
     }
 
     /// Write all outstanding transaction records to disk.
@@ -141,11 +145,19 @@ impl<T> Commitlog<T> {
     ///
     /// Equivalent to calling [`Self::flush`] followed by [`Self::sync`], but
     /// without releasing the write lock in between.
+    ///
+    /// # Errors
+    ///
+    /// An error is returned if writing to disk fails due to an I/O error.
+    ///
+    /// # Panics
+    ///
+    /// This method panics if syncing fails irrecoverably.
     pub fn flush_and_sync(&self) -> io::Result<Option<u64>> {
         let mut inner = self.inner.write().unwrap();
         trace!("flush and sync commitlog");
         inner.commit()?;
-        inner.sync()?;
+        inner.sync();
 
         Ok(inner.max_committed_offset())
     }

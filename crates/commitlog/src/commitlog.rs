@@ -18,6 +18,12 @@ pub struct Generic<R: Repo, T> {
     tail: Vec<u64>,
     opts: Options,
     _record: PhantomData<T>,
+    /// Tracks panics/errors to control what happens on drop.
+    ///
+    /// Set to `true` before any I/O operation, and back to `false` after it
+    /// succeeded. This way, we won't try to perform I/O on drop when it is
+    /// unlikely to succeed, or even has a chance to panic.
+    panicked: bool,
 }
 
 impl<R: Repo, T> Generic<R, T> {
@@ -43,14 +49,16 @@ impl<R: Repo, T> Generic<R, T> {
             tail,
             opts,
             _record: PhantomData,
+            panicked: false,
         })
     }
 
-    /// Write the currently buffered data to disk and rotate segments as
+    /// Write the currently buffered data to storage and rotate segments as
     /// necessary.
     ///
-    /// Note that this does not imply that the data is durable, call
-    /// [`Self::sync`] to flush OS buffers.
+    /// Note that this does not imply that the data is durable, in particular
+    /// when a filesystem storage backend is used. Call [`Self::sync`] to flush
+    /// any OS buffers to stable storage.
     ///
     /// # Errors
     ///
@@ -63,6 +71,7 @@ impl<R: Repo, T> Generic<R, T> {
     /// this means that something is seriously wrong underlying storage, and the
     /// caller should stop writing to the log.
     pub fn commit(&mut self) -> io::Result<usize> {
+        self.panicked = true;
         let writer = &mut self.head;
         let sz = writer.commit.encoded_len();
         // If the segment is empty, but the commit exceeds the max size,
@@ -70,25 +79,40 @@ impl<R: Repo, T> Generic<R, T> {
         // results in a huge segment.
         let should_rotate = !writer.is_empty() && writer.len() + sz as u64 > self.opts.max_segment_size;
         let writer = if should_rotate {
-            if let Err(e) = writer.fsync() {
-                warn!("Failed to fsync segment: {e}");
-            }
+            self.sync();
             self.start_new_segment()?
         } else {
             writer
         };
 
-        if let Err(e) = writer.commit() {
+        let ret = if let Err(e) = writer.commit() {
             warn!("Commit failed: {e}");
+            // Nb.: Don't risk a panic by calling `self.sync()`.
+            // We already gave up on the last commit, and will retry it next time.
             self.start_new_segment()?;
             Err(e)
         } else {
             Ok(sz)
-        }
+        };
+        self.panicked = false;
+        ret
     }
 
-    pub fn sync(&self) -> io::Result<()> {
-        self.head.fsync()
+    /// Force the currently active segment to be flushed to storage.
+    ///
+    /// Using a filesystem backend, this means to call `fsync(2)`.
+    ///
+    /// # Panics
+    ///
+    /// As an `fsync` failure leaves a file in a more of less undefined state,
+    /// this method panics in this case, thereby preventing any further writes
+    /// to the log and forcing the user to re-read the state from disk.
+    pub fn sync(&mut self) {
+        self.panicked = true;
+        if let Err(e) = self.head.fsync() {
+            panic!("Failed to fsync segment: {e}");
+        }
+        self.panicked = false;
     }
 
     /// The last transaction offset written to disk, or `None` if nothing has
@@ -145,11 +169,14 @@ impl<R: Repo, T> Generic<R, T> {
     pub fn reset(mut self) -> io::Result<Self> {
         info!("hard reset");
 
+        self.panicked = true;
         self.tail.reserve(1);
         self.tail.push(self.head.min_tx_offset);
         for segment in self.tail.iter().rev() {
+            debug!("removing segment {segment}");
             self.repo.remove_segment(*segment)?;
         }
+        // Prevent finalizer from running by not updating self.panicked.
 
         Self::open(self.repo.clone(), self.opts)
     }
@@ -157,12 +184,14 @@ impl<R: Repo, T> Generic<R, T> {
     pub fn reset_to(mut self, offset: u64) -> io::Result<Self> {
         info!("reset to {offset}");
 
+        self.panicked = true;
         self.tail.reserve(1);
         self.tail.push(self.head.min_tx_offset);
         for segment in self.tail.iter().rev() {
             let segment = *segment;
             if segment > offset {
                 // Segment is outside the offset, so remove it wholesale.
+                debug!("removing segment {segment}");
                 self.repo.remove_segment(segment)?;
             } else {
                 // Read commit-wise until we find the byte offset.
@@ -170,29 +199,39 @@ impl<R: Repo, T> Generic<R, T> {
                 let commits = reader.commits();
 
                 let mut bytes_read = 0;
-                let mut commits_read = 0;
                 for commit in commits {
                     let commit = commit?;
-                    commits_read += 1;
                     if commit.min_tx_offset > offset {
                         break;
                     }
                     bytes_read += commit.encoded_len() as u64;
                 }
 
-                if commits_read == 0 {
+                if bytes_read == 0 {
                     // Segment is empty, just remove it.
                     self.repo.remove_segment(segment)?;
                 } else {
                     let byte_offset = segment::Header::LEN as u64 + bytes_read;
-                    self.repo.open_segment(segment)?.ftruncate(byte_offset)?;
+                    debug!("truncating segment {segment} to {offset} at {byte_offset}");
+                    let file = self.repo.open_segment(segment)?;
+                    file.ftruncate(byte_offset)?;
+                    // Some filesystems require fsync after ftruncate.
+                    file.fsync()?;
+                    break;
                 }
             }
         }
+        // Prevent finalizer from running by not updating self.panicked.
 
         Self::open(self.repo.clone(), self.opts)
     }
 
+    /// Start a new segment, preserving the current head's `Commit`.
+    ///
+    /// The caller must ensure that the current head is synced to disk as
+    /// appropriate. It is not appropriate to sync after a write error, as that
+    /// is likely to return an error as well: the `Commit` will be written to
+    /// the new segment anyway.
     fn start_new_segment(&mut self) -> io::Result<&mut Writer<R::Segment>> {
         debug!(
             "starting new segment offset={} prev-offset={}",
@@ -242,11 +281,10 @@ impl<R: Repo, T: Encode> Generic<R, T> {
 
 impl<R: Repo, T> Drop for Generic<R, T> {
     fn drop(&mut self) {
-        if let Err(e) = self.commit() {
-            warn!("Failed to commit on drop: {e}");
-        }
-        if let Err(e) = self.head.fsync() {
-            warn!("Failed to fsync on drop: {e}");
+        if !self.panicked {
+            if let Err(e) = self.head.commit() {
+                warn!("failed to commit on drop: {e}");
+            }
         }
     }
 }
@@ -533,6 +571,69 @@ mod tests {
         // Nb.: the head commit is always returned,
         // because we don't know its offset upper bound
         assert_eq!(1, log.commits_from(10).count());
+    }
+
+    #[test]
+    fn traverse_commits_ignores_duplicates() {
+        let mut log = mem_log::<[u8; 32]>(1024);
+
+        log.append([42; 32]).unwrap();
+        let commit1 = log.head.commit.clone();
+        log.commit().unwrap();
+        log.head.commit = commit1.clone();
+        log.commit().unwrap();
+        log.append([43; 32]).unwrap();
+        let commit2 = log.head.commit.clone();
+        log.commit().unwrap();
+
+        assert_eq!(
+            [commit1, commit2].as_slice(),
+            &log.commits_from(0).collect::<Result<Vec<_>, _>>().unwrap()
+        );
+    }
+
+    #[test]
+    fn traverse_commits_errors_when_forked() {
+        let mut log = mem_log::<[u8; 32]>(1024);
+
+        log.append([42; 32]).unwrap();
+        log.commit().unwrap();
+        log.head.commit = Commit {
+            min_tx_offset: 0,
+            n: 1,
+            records: [43; 32].to_vec(),
+        };
+        log.commit().unwrap();
+
+        let res = log.commits_from(0).collect::<Result<Vec<_>, _>>();
+        assert!(
+            matches!(res, Err(error::Traversal::Forked { offset: 0 })),
+            "expected fork error: {res:?}"
+        )
+    }
+
+    #[test]
+    fn traverse_commits_errors_when_offset_not_contiguous() {
+        let mut log = mem_log::<[u8; 32]>(1024);
+
+        log.append([42; 32]).unwrap();
+        log.commit().unwrap();
+        log.head.commit.min_tx_offset = 18;
+        log.append([42; 32]).unwrap();
+        log.commit().unwrap();
+
+        let res = log.commits_from(0).collect::<Result<Vec<_>, _>>();
+        assert!(
+            matches!(
+                res,
+                Err(error::Traversal::OutOfOrder {
+                    expected_offset: 1,
+                    actual_offset: 18,
+                    prev_error: None
+                })
+            ),
+            "expected fork error: {res:?}"
+        )
     }
 
     #[test]
