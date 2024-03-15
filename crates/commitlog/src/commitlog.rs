@@ -1,9 +1,10 @@
-use std::{io, marker::PhantomData, mem, vec};
+use std::{io, marker::PhantomData, mem, ops::Range, vec};
 
 use itertools::Itertools;
 use log::{debug, info, trace, warn};
 
 use crate::{
+    commit::StoredCommit,
     error,
     payload::Decoder,
     repo::{self, Repo},
@@ -11,12 +12,28 @@ use crate::{
     Commit, Encode, Options,
 };
 
+/// A commitlog generic over the storage backend as well as the type of records
+/// its [`Commit`]s contain.
 #[derive(Debug)]
 pub struct Generic<R: Repo, T> {
+    /// The storage backend.
     pub(crate) repo: R,
+    /// The segment currently being written to.
+    ///
+    /// If we squint, all segments in a log are a non-empty linked list, the
+    /// head of which is the segment open for writing.
     pub(crate) head: Writer<R::Segment>,
+    /// The tail of the non-empty list of segments.
+    ///
+    /// We only retain the min transaction offset of each, from which the
+    /// segments can be opened for reading when needed.
+    ///
+    /// This is a `Vec`, not a linked list, so the last element is the newest
+    /// segment (after `head`).
     tail: Vec<u64>,
+    /// Configuration options.
     opts: Options,
+    /// Type of a single record in this log's [`Commit::records`].
     _record: PhantomData<T>,
     /// Tracks panics/errors to control what happens on drop.
     ///
@@ -152,7 +169,7 @@ impl<R: Repo, T> Generic<R, T> {
 
     pub fn commits_from(&self, offset: u64) -> Commits<R> {
         let offsets = self.segment_offsets_from(offset);
-        let last_offset = offsets.first().cloned().unwrap_or(offset);
+        let next_offset = offsets.first().cloned().unwrap_or(offset);
         let segments = Segments {
             offs: offsets.into_iter(),
             repo: self.repo.clone(),
@@ -161,7 +178,7 @@ impl<R: Repo, T> Generic<R, T> {
         Commits {
             inner: None,
             segments,
-            last_offset,
+            last_commit: CommitInfo::Initial { next_offset },
             last_error: None,
         }
     }
@@ -204,7 +221,7 @@ impl<R: Repo, T> Generic<R, T> {
                     if commit.min_tx_offset > offset {
                         break;
                     }
-                    bytes_read += commit.encoded_len() as u64;
+                    bytes_read += Commit::from(commit).encoded_len() as u64;
                 }
 
                 if bytes_read == 0 {
@@ -255,7 +272,7 @@ impl<R: Repo, T: Encode> Generic<R, T> {
     pub fn transactions_from<'a, D>(
         &self,
         offset: u64,
-        deserializer: &'a D,
+        decoder: &'a D,
     ) -> impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a
     where
         D: Decoder<Record = T>,
@@ -263,11 +280,7 @@ impl<R: Repo, T: Encode> Generic<R, T> {
         R: 'a,
         T: 'a,
     {
-        transactions_from_internal(
-            self.commits_from(offset).with_log_format_version(),
-            offset,
-            deserializer,
-        )
+        transactions_from_internal(self.commits_from(offset).with_log_format_version(), offset, decoder)
     }
 
     pub fn fold_transactions_from<D>(&self, offset: u64, decoder: D) -> Result<(), D::Error>
@@ -294,7 +307,7 @@ pub fn commits_from<R: Repo>(repo: R, max_log_format_version: u8, offset: u64) -
     if let Some(pos) = offsets.iter().rposition(|&off| off <= offset) {
         offsets = offsets.split_off(pos);
     }
-    let last_offset = offsets.first().cloned().unwrap_or(offset);
+    let next_offset = offsets.first().cloned().unwrap_or(offset);
     let segments = Segments {
         offs: offsets.into_iter(),
         repo,
@@ -303,7 +316,7 @@ pub fn commits_from<R: Repo>(repo: R, max_log_format_version: u8, offset: u64) -
     Ok(Commits {
         inner: None,
         segments,
-        last_offset,
+        last_commit: CommitInfo::Initial { next_offset },
         last_error: None,
     })
 }
@@ -403,10 +416,55 @@ impl<R: Repo> Iterator for Segments<R> {
     }
 }
 
+/// Helper for the [`Commits`] iterator.
+enum CommitInfo {
+    /// Constructed in [`Generic::commits_from`], specifying the offset the next
+    /// commit should have.
+    Initial { next_offset: u64 },
+    /// The last commit seen by the iterator.
+    ///
+    /// Stores the range of transaction offsets, where `tx_range.end` is the
+    /// offset the next commit is expected to have. Also retains the checksum
+    /// needed to detect duplicate commits.
+    LastSeen { tx_range: Range<u64>, checksum: u32 },
+}
+
+impl CommitInfo {
+    /// `true` if the last seen commit in self and the provided one have the
+    /// same `min_tx_offset`.
+    fn same_offset_as(&self, commit: &StoredCommit) -> bool {
+        let Self::LastSeen { tx_range, .. } = self else {
+            return false;
+        };
+        tx_range.start == commit.min_tx_offset
+    }
+
+    /// `true` if the last seen commit in self and the provided one have the
+    /// same `checksum`.
+    fn same_checksum_as(&self, commit: &StoredCommit) -> bool {
+        let Some(checksum) = self.checksum() else { return false };
+        checksum == &commit.checksum
+    }
+
+    fn checksum(&self) -> Option<&u32> {
+        match self {
+            Self::Initial { .. } => None,
+            Self::LastSeen { checksum, .. } => Some(checksum),
+        }
+    }
+
+    fn expected_offset(&self) -> &u64 {
+        match self {
+            Self::Initial { next_offset } => next_offset,
+            Self::LastSeen { tx_range, .. } => &tx_range.end,
+        }
+    }
+}
+
 pub struct Commits<R: Repo> {
     inner: Option<segment::Commits<R::Segment>>,
     segments: Segments<R>,
-    last_offset: u64,
+    last_commit: CommitInfo,
     last_error: Option<error::Traversal>,
 }
 
@@ -420,6 +478,66 @@ impl<R: Repo> Commits<R> {
     pub fn with_log_format_version(self) -> CommitsWithVersion<R> {
         CommitsWithVersion { inner: self }
     }
+
+    /// Helper to handle a successfully extracted commit in [`Self::next`].
+    ///
+    /// Checks that the offset sequence is contiguous.
+    fn next_commit(&mut self, commit: StoredCommit) -> Option<Result<Commit, error::Traversal>> {
+        // Pop the last error. Either we'll return it below, or it's no longer
+        // interesting.
+        let prev_error = self.last_error.take();
+
+        // Same offset: ignore if duplicate (same crc), else report a "fork".
+        if self.last_commit.same_offset_as(&commit) {
+            if !self.last_commit.same_checksum_as(&commit) {
+                warn!(
+                    "forked: commit={:?} last-error={:?} last-crc={:?}",
+                    commit,
+                    prev_error,
+                    self.last_commit.checksum()
+                );
+                Some(Err(error::Traversal::Forked {
+                    offset: commit.min_tx_offset,
+                }))
+            } else {
+                self.next()
+            }
+        // Not the expected offset: report out-of-order.
+        } else if self.last_commit.expected_offset() != &commit.min_tx_offset {
+            warn!("out-of-order: commit={:?} last-error={:?}", commit, prev_error);
+            Some(Err(error::Traversal::OutOfOrder {
+                expected_offset: *self.last_commit.expected_offset(),
+                actual_offset: commit.min_tx_offset,
+                prev_error: prev_error.map(Box::new),
+            }))
+        // Seems legit, record info.
+        } else {
+            self.last_commit = CommitInfo::LastSeen {
+                tx_range: commit.tx_range(),
+                checksum: commit.checksum,
+            };
+
+            Some(Ok(Commit::from(commit)))
+        }
+    }
+
+    /// Store `e` has the last error for delayed reporting.
+    fn set_last_error(&mut self, e: io::Error) {
+        // Recover a checksum mismatch.
+        let last_error = if e.kind() == io::ErrorKind::InvalidData && e.get_ref().is_some() {
+            e.into_inner()
+                .unwrap()
+                .downcast::<error::ChecksumMismatch>()
+                .map(|source| error::Traversal::Checksum {
+                    offset: *self.last_commit.expected_offset(),
+                    source: *source,
+                })
+                .unwrap_or_else(|e| io::Error::new(io::ErrorKind::InvalidData, e).into())
+        } else {
+            error::Traversal::from(e)
+        };
+        self.last_error = Some(last_error);
+    }
 }
 
 impl<R: Repo> Iterator for Commits<R> {
@@ -429,19 +547,7 @@ impl<R: Repo> Iterator for Commits<R> {
         if let Some(commits) = self.inner.as_mut() {
             if let Some(commit) = commits.next() {
                 match commit {
-                    Ok(commit) => {
-                        let prev_error = self.last_error.take();
-                        if commit.min_tx_offset != self.last_offset {
-                            warn!("out-of-order: commit={:?} last-error={:?}", commit, self.last_error);
-                            return Some(Err(error::Traversal::OutOfOrder {
-                                expected_offset: self.last_offset,
-                                actual_offset: commit.min_tx_offset,
-                                prev_error: prev_error.map(Box::new),
-                            }));
-                        }
-                        self.last_offset = commit.tx_range().end;
-                        return Some(Ok(commit));
-                    }
+                    Ok(commit) => return self.next_commit(commit),
                     Err(e) => {
                         warn!("error reading next commit: {e}");
                         // Fall through to peek at next segment.
@@ -453,19 +559,7 @@ impl<R: Repo> Iterator for Commits<R> {
                         // However, the error here may be more helpful and would
                         // be clobbered by `OutOfOrder`, and so we store it
                         // until we recurse below.
-                        let last_error = if e.kind() == io::ErrorKind::InvalidData && e.get_ref().is_some() {
-                            e.into_inner()
-                                .unwrap()
-                                .downcast::<error::ChecksumMismatch>()
-                                .map(|source| error::Traversal::Checksum {
-                                    offset: self.last_offset,
-                                    source: *source,
-                                })
-                                .unwrap_or_else(|e| io::Error::new(io::ErrorKind::InvalidData, e).into())
-                        } else {
-                            error::Traversal::from(e)
-                        };
-                        self.last_error = Some(last_error);
+                        self.set_last_error(e);
                     }
                 }
             }
