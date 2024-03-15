@@ -71,7 +71,7 @@ impl ModuleSubscriptions {
         drop(guard);
 
         let execution_set: ExecutionSet = queries.into();
-        let database_update = execution_set.eval(&self.relational_db, &tx)?;
+        let database_update = execution_set.eval(sender.protocol, &self.relational_db, &tx)?;
 
         WORKER_METRICS
             .initial_subscription_evals

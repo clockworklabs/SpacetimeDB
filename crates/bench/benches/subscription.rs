@@ -1,4 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use spacetimedb::client::Protocol;
 use spacetimedb::db::relational_db::{open_db, RelationalDB};
 use spacetimedb::error::DBError;
 use spacetimedb::execution_context::ExecutionContext;
@@ -107,7 +108,7 @@ fn eval(c: &mut Criterion) {
             let query = compile_read_only_query(&db, &tx, &auth, sql).unwrap();
             let query: ExecutionSet = query.into();
 
-            b.iter(|| drop(black_box(query.eval(&db, &tx).unwrap())))
+            b.iter(|| drop(black_box(query.eval(Protocol::Binary, &db, &tx).unwrap())))
         });
     };
 
