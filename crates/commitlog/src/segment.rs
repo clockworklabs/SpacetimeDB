@@ -8,7 +8,7 @@ use std::{
 use log::debug;
 
 use crate::{
-    commit::{self, Commit},
+    commit::{self, Commit, StoredCommit},
     error,
     payload::Encode,
 };
@@ -27,7 +27,7 @@ pub struct Header {
 }
 
 impl Header {
-    pub const LEN: usize = MAGIC.len() + 4;
+    pub const LEN: usize = MAGIC.len() + /* log_format_version + checksum_algorithm + reserved + reserved */ 4;
 
     pub fn write<W: io::Write>(&self, mut out: W) -> io::Result<()> {
         out.write_all(&MAGIC)?;
@@ -254,16 +254,16 @@ pub struct Commits<R> {
 }
 
 impl<R: io::Read> Iterator for Commits<R> {
-    type Item = io::Result<Commit>;
+    type Item = io::Result<StoredCommit>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        Commit::decode(&mut self.reader).transpose()
+        StoredCommit::decode(&mut self.reader).transpose()
     }
 }
 
 #[cfg(test)]
 impl<R: io::Read> Commits<R> {
-    pub fn with_log_format_version(self) -> impl Iterator<Item = io::Result<(u8, Commit)>> {
+    pub fn with_log_format_version(self) -> impl Iterator<Item = io::Result<(u8, StoredCommit)>> {
         CommitsWithVersion { inner: self }
     }
 }
@@ -275,12 +275,15 @@ struct CommitsWithVersion<R> {
 
 #[cfg(test)]
 impl<R: io::Read> Iterator for CommitsWithVersion<R> {
-    type Item = io::Result<(u8, Commit)>;
+    type Item = io::Result<(u8, StoredCommit)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.inner.next()?;
         match next {
-            Ok(commit) => Some(Ok((self.inner.header.log_format_version, commit))),
+            Ok(commit) => {
+                let version = self.inner.header.log_format_version;
+                Some(Ok((version, commit)))
+            }
             Err(e) => Some(Err(e)),
         }
     }
@@ -358,6 +361,7 @@ mod tests {
 
     use super::*;
     use crate::{payload::ArrayDecoder, repo, Options};
+    use itertools::Itertools;
     use proptest::prelude::*;
 
     #[test]
@@ -456,7 +460,11 @@ mod tests {
             });
             min_tx_offset += txs.len() as u64;
         }
-        let commits2 = reader.commits().collect::<Result<Vec<_>, _>>().unwrap();
+        let commits2 = reader
+            .commits()
+            .map_ok(Into::into)
+            .collect::<Result<Vec<Commit>, _>>()
+            .unwrap();
         assert_eq!(commits1, commits2);
     }
 

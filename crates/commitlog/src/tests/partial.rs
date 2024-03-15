@@ -12,7 +12,7 @@ use crate::{
     repo::{self, Repo},
     segment::FileLike,
     tests::helpers::enable_logging,
-    Encode, Options, DEFAULT_LOG_FORMAT_VERSION,
+    Commit, Encode, Options, DEFAULT_LOG_FORMAT_VERSION,
 };
 
 #[test]
@@ -88,12 +88,13 @@ fn overwrite_reopen() {
     let mut total_txs = fill_log_enospc(&mut log, num_commits, repeat(txs_per_commit));
 
     let last_segment_offset = repo.existing_offsets().unwrap().last().copied().unwrap();
-    let last_commit = repo::open_segment_reader(&repo, DEFAULT_LOG_FORMAT_VERSION, last_segment_offset)
+    let last_commit: Commit = repo::open_segment_reader(&repo, DEFAULT_LOG_FORMAT_VERSION, last_segment_offset)
         .unwrap()
         .commits()
         .map(Result::unwrap)
         .last()
-        .unwrap();
+        .unwrap()
+        .into();
     debug!("last commit: {last_commit:?}");
     let mut last_segment = repo.open_segment(last_segment_offset).unwrap();
     last_segment
