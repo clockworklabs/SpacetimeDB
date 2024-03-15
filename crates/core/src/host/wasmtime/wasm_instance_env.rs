@@ -418,7 +418,6 @@ impl WasmInstanceEnv {
     ///   according to the `AlgebraicType` that the table's schema specifies for `col_id`.
     /// - `value + value_len` overflows a 64-bit integer
     /// - writing to `out` would overflow a 32-bit integer
-    #[tracing::instrument(skip_all)]
     pub fn delete_by_col_eq(
         caller: Caller<'_, Self>,
         table_id: u32,
@@ -558,7 +557,6 @@ impl WasmInstanceEnv {
     /// - `(val, val_len)` cannot be decoded to an `AlgebraicValue`
     ///   typed at the `AlgebraicType` of the column,
     /// - `val + val_len` overflows a 64-bit integer
-    #[tracing::instrument(skip_all)]
     pub fn iter_by_col_eq(
         caller: Caller<'_, Self>,
         table_id: u32,
@@ -626,7 +624,6 @@ impl WasmInstanceEnv {
     /// - a table with the provided `table_id` doesn't exist
     /// - `(filter, filter_len)` doesn't decode to a filter expression
     /// - `filter + filter_len` overflows a 64-bit integer
-    #[tracing::instrument(skip_all)]
     pub fn iter_start_filtered(
         caller: Caller<'_, Self>,
         table_id: u32,
