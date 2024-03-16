@@ -3,7 +3,7 @@ use prost::Message as _;
 use spacetimedb_lib::identity::RequestId;
 use std::time::Instant;
 
-use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ProtocolDatabaseUpdate};
+use crate::host::module_host::{EventStatus, ModuleEvent, ProtocolDatabaseUpdate};
 use crate::identity::Identity;
 use crate::json::client_api::{
     EventJson, FunctionCallJson, IdentityTokenJson, MessageJson, OneOffQueryResponseJson, OneOffTableJson,
@@ -54,12 +54,12 @@ impl ServerMessage for IdentityTokenMessage {
     }
 }
 
-pub struct TransactionUpdateMessage<'a> {
+pub struct TransactionUpdateMessage<'a, U> {
     pub event: &'a ModuleEvent,
-    pub database_update: SubscriptionUpdate<DatabaseUpdate>,
+    pub database_update: SubscriptionUpdate<U>,
 }
 
-impl ServerMessage for TransactionUpdateMessage<'_> {
+impl<U: Into<Vec<TableUpdate>> + Into<Vec<TableUpdateJson>>> ServerMessage for TransactionUpdateMessage<'_, U> {
     fn serialize_text(self) -> MessageJson {
         let Self { event, database_update } = self;
         let (status_str, errmsg) = match &event.status {
@@ -112,11 +112,9 @@ impl ServerMessage for TransactionUpdateMessage<'_> {
             caller_address: event.caller_address.unwrap_or(Address::zero()).as_slice().to_vec(),
         };
 
-        let subscription_update = database_update.into_protobuf();
-
         let tx_update = TransactionUpdate {
             event: Some(event),
-            subscription_update: Some(subscription_update),
+            subscription_update: Some(database_update.into_protobuf()),
         };
 
         Message {
@@ -125,7 +123,9 @@ impl ServerMessage for TransactionUpdateMessage<'_> {
     }
 }
 
-impl ServerMessage for &mut TransactionUpdateMessage<'_> {
+impl<U: Clone + Into<Vec<TableUpdate>> + Into<Vec<TableUpdateJson>>> ServerMessage
+    for &mut TransactionUpdateMessage<'_, U>
+{
     fn serialize_text(self) -> MessageJson {
         TransactionUpdateMessage {
             event: self.event,
@@ -152,11 +152,9 @@ impl ServerMessage for SubscriptionUpdateMessage {
     }
 
     fn serialize_binary(self) -> Message {
-        Message {
-            r#type: Some(message::Type::SubscriptionUpdate(
-                self.subscription_update.into_protobuf(),
-            )),
-        }
+        let msg = self.subscription_update.into_protobuf();
+        let r#type = Some(message::Type::SubscriptionUpdate(msg));
+        Message { r#type }
     }
 }
 

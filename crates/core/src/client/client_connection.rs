@@ -60,7 +60,7 @@ impl ClientConnectionSender {
         self.send(message.serialize(self.protocol))
     }
 
-    pub fn send(&self, message: DataMessage) -> Result<(), ClientSendError> {
+    fn send(&self, message: DataMessage) -> Result<(), ClientSendError> {
         let bytes_len = message.len();
 
         if self.cancelled.load(Relaxed) {

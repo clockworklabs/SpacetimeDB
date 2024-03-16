@@ -1,13 +1,17 @@
 use super::execution_unit::{ExecutionUnit, QueryHash};
 use crate::client::messages::{SubscriptionUpdate, TransactionUpdateMessage};
-use crate::client::ClientConnectionSender;
+use crate::client::{ClientConnectionSender, Protocol};
 use crate::db::relational_db::RelationalDB;
 use crate::execution_context::ExecutionContext;
-use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, ModuleEvent};
+use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, ProtocolDatabaseUpdate};
+use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
+use itertools::{Either, Itertools as _};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use smallvec::SmallVec;
+use spacetimedb_client_api_messages::client_api::{TableRowOperation, TableUpdate};
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::TableId;
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -80,25 +84,24 @@ impl SubscriptionManager {
     /// it is removed from the index along with its table ids.
     #[tracing::instrument(skip_all)]
     pub fn remove_subscription(&mut self, client: &Identity) {
+        // Remove `hash` from the set of queries for `table_id`.
+        // When the table has no queries, cleanup the map entry altogether.
+        let mut remove_table_query = |table_id: TableId, hash: &QueryHash| {
+            if let Entry::Occupied(mut entry) = self.tables.entry(table_id) {
+                let hashes = entry.get_mut();
+                if hashes.remove(hash) && hashes.is_empty() {
+                    entry.remove();
+                }
+            }
+        };
+
         self.clients.remove(client);
         self.subscribers.retain(|hash, ids| {
             ids.remove(client);
             if ids.is_empty() {
                 if let Some(query) = self.queries.remove(hash) {
-                    if self
-                        .tables
-                        .get_mut(&query.return_table())
-                        .is_some_and(|hashes| hashes.remove(hash) && hashes.is_empty())
-                    {
-                        self.tables.remove(&query.return_table());
-                    }
-                    if self
-                        .tables
-                        .get_mut(&query.filter_table())
-                        .is_some_and(|hashes| hashes.remove(hash) && hashes.is_empty())
-                    {
-                        self.tables.remove(&query.filter_table());
-                    }
+                    remove_table_query(query.return_table(), hash);
+                    remove_table_query(query.filter_table(), hash);
                 }
             }
             !ids.is_empty()
@@ -130,7 +133,8 @@ impl SubscriptionManager {
                 }
             }
 
-            units
+            let span = tracing::info_span!("eval_incr").entered();
+            let eval = units
                 .into_par_iter()
                 .filter_map(|(hash, tables)| self.queries.get(hash).map(|unit| (hash, tables, unit)))
                 .filter_map(|(hash, tables, unit)| {
@@ -146,56 +150,107 @@ impl SubscriptionManager {
                 })
                 // If N clients are subscribed to a query,
                 // we copy the DatabaseTableUpdate N times,
-                // which involves cloning product values.
-                // TODO(perf): In order to reduce heap allocations,
-                // we should serialize and memcpy bsatn directly.
+                // which involves cloning BSATN (binary) or product values (json).
                 .flat_map_iter(|(hash, delta)| {
-                    self.subscribers
-                        .get(hash)
-                        .into_iter()
-                        .flatten()
-                        .map(move |id| (id, delta.table_id, delta.clone()))
+                    let table_id = delta.table_id;
+                    let table_name = delta.table_name;
+                    let ops = delta.ops;
+                    // Store at most one copy of the serialization to BSATN
+                    // and ditto for the "serialization" for JSON.
+                    // Each subscriber gets to pick which of these they want,
+                    // but we only fill `ops_bin` and `ops_json` at most once.
+                    // The former will be `Some(_)` if some subscriber uses `Protocol::Binary`
+                    // and the latter `Some(_)` if some subscriber uses `Protocol::Text`.
+                    let mut ops_bin: Option<Vec<TableRowOperation>> = None;
+                    let mut ops_json: Option<Vec<TableRowOperationJson>> = None;
+                    self.subscribers.get(hash).into_iter().flatten().map(move |id| {
+                        let ops = match self.clients[id].protocol {
+                            Protocol::Binary => {
+                                Either::Left(ops_bin.get_or_insert_with(|| ops.iter().map_into().collect()).clone())
+                            }
+                            Protocol::Text => Either::Right(
+                                ops_json
+                                    .get_or_insert_with(|| ops.iter().cloned().map_into().collect())
+                                    .clone(),
+                            ),
+                        };
+                        (id, table_id, table_name.clone(), ops)
+                    })
                 })
                 .collect::<Vec<_>>()
                 .into_iter()
+                // For each subscriber, aggregate all the updates for the same table.
+                // That is, we build a map `(subscriber_id, table_id) -> updates`.
+                // A particular subscriber uses only one protocol,
+                // so we'll have either `TableUpdate` (`Protocol::Binary`)
+                // or `TableUpdateJson` (`Protocol::Text`).
                 .fold(
-                    HashMap::new(),
-                    |mut tables: HashMap<(&Identity, TableId), DatabaseTableUpdate>, (id, table_id, delta)| {
-                        if let Some(table) = tables.get_mut(&(id, table_id)) {
-                            table.ops.extend(delta.ops);
-                        } else {
-                            tables.insert((id, table_id), delta);
+                    HashMap::<(&Identity, TableId), Either<TableUpdate, TableUpdateJson>>::new(),
+                    |mut tables, (id, table_id, table_name, ops)| {
+                        match tables.entry((id, table_id)) {
+                            Entry::Occupied(mut entry) => match ops {
+                                Either::Left(ops) => {
+                                    entry.get_mut().as_mut().unwrap_left().table_row_operations.extend(ops)
+                                }
+                                Either::Right(ops) => {
+                                    entry.get_mut().as_mut().unwrap_right().table_row_operations.extend(ops)
+                                }
+                            },
+                            Entry::Vacant(entry) => drop(entry.insert(match ops {
+                                Either::Left(ops) => Either::Left(TableUpdate {
+                                    table_id: table_id.into(),
+                                    table_name,
+                                    table_row_operations: ops,
+                                }),
+                                Either::Right(ops) => Either::Right(TableUpdateJson {
+                                    table_id: table_id.into(),
+                                    table_name,
+                                    table_row_operations: ops,
+                                }),
+                            })),
                         }
                         tables
                     },
                 )
                 .into_iter()
-                // Each client receives a single DatabaseUpdate per transaction.
-                // So before sending an update to each client,
-                // we must stitch together the DatabaseTableUpdates into a final DatabaseUpdate.
-                .fold(HashMap::new(), |mut updates, ((id, _), delta)| {
-                    if let Some(DatabaseUpdate { tables }) = updates.get_mut(id) {
-                        tables.push(delta);
-                    } else {
-                        updates.insert(id, vec![delta].into());
-                    }
-                    updates
-                })
-                .into_iter()
-                .for_each(|(id, database_update)| {
-                    let client = self.client(id);
-                    let message = TransactionUpdateMessage {
-                        event,
-                        database_update: SubscriptionUpdate {
-                            database_update,
-                            request_id: event.request_id,
-                            timer: event.timer,
-                        },
-                    };
-                    if let Err(e) = client.send_message(message) {
-                        tracing::warn!(%client.id, "failed to send update message to client: {e}")
-                    }
-                });
+                // Each client receives a single list of updates per transaction.
+                // So before sending the updates to each client,
+                // we must stitch together the `TableUpdate*`s into an aggregated list.
+                .fold(
+                    HashMap::<&Identity, Either<Vec<TableUpdate>, Vec<TableUpdateJson>>>::new(),
+                    |mut updates, ((id, _), update)| {
+                        let entry = updates.entry(id);
+                        match update {
+                            Either::Left(update) => entry
+                                .or_insert_with(|| Either::Left(Vec::new()))
+                                .as_mut()
+                                .unwrap_left()
+                                .push(update),
+
+                            Either::Right(update) => entry
+                                .or_insert_with(|| Either::Right(Vec::new()))
+                                .as_mut()
+                                .unwrap_right()
+                                .push(update),
+                        }
+                        updates
+                    },
+                );
+            drop(span);
+
+            let _span = tracing::info_span!("eval_send").entered();
+            eval.into_iter().for_each(|(id, tables)| {
+                let client = self.client(id);
+                let database_update = SubscriptionUpdate {
+                    database_update: ProtocolDatabaseUpdate { tables },
+                    request_id: event.request_id,
+                    timer: event.timer,
+                };
+                let message = TransactionUpdateMessage { event, database_update };
+                if let Err(e) = client.send_message(message) {
+                    tracing::warn!(%client.id, "failed to send update message to client: {e}")
+                }
+            });
         })
     }
 }
