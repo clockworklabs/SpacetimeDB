@@ -367,8 +367,12 @@ impl InstanceEnv {
         .map_err(NodesError::DecodeFilter)?;
 
         // TODO(Centril): consider caching from `filter: &[u8] -> query: QueryExpr`.
-        let query =
-            spacetimedb_vm::dsl::query(schema.as_ref()).with_select(filter_to_column_op(&schema.table_name, filter));
+        let query = spacetimedb_vm::dsl::query(schema.as_ref())
+            .with_select(filter_to_column_op(&schema.table_name, filter))
+            .optimize(&|table_id, table_name| stdb.row_count(table_id, table_name));
+
+        // TODO(Centril): Conditionally dump the `query` to a file and compare against integration test.
+        // Invent a system where we can make these kinds of "optimization path tests".
 
         let tx: TxMode = tx.into();
         // SQL queries can never reference `MemTable`s, so pass in an empty `SourceSet`.

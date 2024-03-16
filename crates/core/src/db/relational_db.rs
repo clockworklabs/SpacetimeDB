@@ -1126,7 +1126,6 @@ mod tests {
         stdb.commit_tx(&ExecutionContext::default(), tx)?;
         drop(stdb);
 
-        dbg!("reopen...");
         let stdb = open_db(&tmp_dir, false, true)?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);

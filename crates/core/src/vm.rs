@@ -688,7 +688,7 @@ pub(crate) mod tests {
         let row = product!(1u64, "health");
         let table_id = create_table_from_program(p, "inventory", head.clone(), &[row])?;
 
-        let schema = TableDef::from_product("test", head).into_schema(table_id);
+        let schema = TableDef::from_product("inventory", head).into_schema(table_id);
 
         let data = MemTable::from_value(scalar(1u64));
         let rhs = data.get_field_pos(0).unwrap().clone();
