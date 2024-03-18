@@ -11,7 +11,7 @@ use spacetimedb_lib::bsatn::to_writer;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::relation::DbTable;
 use spacetimedb_vm::eval::IterRows;
-use spacetimedb_vm::expr::{Query, QueryExpr, SourceExpr, SourceId, SourceSet};
+use spacetimedb_vm::expr::{Query, QueryExpr, SourceExpr, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::{MemTable, RelValue};
 use std::hash::Hash;
@@ -283,12 +283,10 @@ impl ExecutionUnit {
         tx: &'a TxMode,
         mem_table: MemTable,
         eval_incr_plan: &'a QueryExpr,
-        _replaced_source_id: SourceId,
     ) -> Result<Box<IterRows<'a>>, DBError> {
         // Build a `SourceSet` containing the updates from `table`.
         let mut sources = SourceSet::default();
-        let _source_expr = sources.add_mem_table(mem_table);
-        debug_assert_eq!(_source_expr.source_id(), Some(_replaced_source_id));
+        sources.add_mem_table(mem_table);
         // Evaluate the saved plan against the new `SourceSet`,
         // returning an iterator over the selected rows.
         build_query(ctx, db, tx, eval_incr_plan, &mut sources).map_err(Into::into)
@@ -305,7 +303,6 @@ impl ExecutionUnit {
         let tx: TxMode = tx.into();
 
         let SourceExpr::MemTable {
-            source_id: _source_id,
             ref header,
             table_access,
             ..
@@ -341,12 +338,12 @@ impl ExecutionUnit {
             // restoring the appropriate `op_type`.
             let (inserts, deletes) = partition_updates(table);
             if let Some(inserts) = inserts {
-                let query = Self::eval_query_expr_against_memtable(&ctx, db, &tx, inserts, eval_incr_plan, _source_id)?;
+                let query = Self::eval_query_expr_against_memtable(&ctx, db, &tx, inserts, eval_incr_plan)?;
                 // op_type 1: insert
                 Self::collect_rows_with_table_op(&mut ops, query, 1)?;
             }
             if let Some(deletes) = deletes {
-                let query = Self::eval_query_expr_against_memtable(&ctx, db, &tx, deletes, eval_incr_plan, _source_id)?;
+                let query = Self::eval_query_expr_against_memtable(&ctx, db, &tx, deletes, eval_incr_plan)?;
                 // op_type 0: delete
                 Self::collect_rows_with_table_op(&mut ops, query, 0)?;
             }
