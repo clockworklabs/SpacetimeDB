@@ -421,11 +421,7 @@ fn autogen_csharp_access_funcs_for_struct(
                 .unwrap();
                 writeln!(output, "return r;").unwrap();
             } else {
-                write!(
-                    output,
-                    "return Iter().Where(x => x.{csharp_field_name_pascal} == value)"
-                )
-                .unwrap();
+                write!(output, "return Query(x => x.{csharp_field_name_pascal} == value)").unwrap();
 
                 if is_unique {
                     write!(output, ".SingleOrDefault()").unwrap();
