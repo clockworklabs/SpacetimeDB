@@ -313,6 +313,7 @@ impl ExecutionUnit {
 
         // Partition the `update` into two `MemTable`s, `(inserts, deletes)`,
         // so that we can remember which are which without adding a column to each row.
+        // Previously, we used to add such a column `"__op_type: AlgebraicType::U8"`.
         let partition_updates = |update: &DatabaseTableUpdate| -> (Option<MemTable>, Option<MemTable>) {
             // Pre-allocate with capacity given by an upper bound,
             // because realloc is worse than over-allocing.
