@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace SpacetimeDB.BSATN
@@ -13,9 +14,9 @@ namespace SpacetimeDB.BSATN
         void WriteFields(BinaryWriter writer);
 
         static T Read<T>(BinaryReader reader)
-            where T : IStructuralReadWrite, new()
+            where T : IStructuralReadWrite
         {
-            var result = new T();
+            var result = (T)RuntimeHelpers.GetUninitializedObject(typeof(T));
             result.ReadFields(reader);
             return result;
         }
