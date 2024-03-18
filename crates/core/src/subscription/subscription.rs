@@ -365,9 +365,9 @@ impl IncrementalJoin {
 
         for update in updates {
             if update.table_id == self.lhs.table_id {
-                lhs_ops.extend(update.ops.iter().cloned());
+                lhs_ops.extend(update.ops.iter());
             } else if update.table_id == self.rhs.table_id {
-                rhs_ops.extend(update.ops.iter().cloned());
+                rhs_ops.extend(update.ops.iter());
             }
         }
 
@@ -375,21 +375,16 @@ impl IncrementalJoin {
             return None;
         }
 
-        let lhs = JoinSide {
-            table_id: self.lhs.table_id,
-            table_name: self.lhs.head.table_name.clone(),
-            inserts: lhs_ops.iter().filter(|op| op.op_type == 1).cloned().collect(),
-            deletes: lhs_ops.iter().filter(|op| op.op_type == 0).cloned().collect(),
+        let join_side = |table: &DbTable, ops: Vec<&TableOp>| {
+            let (deletes, inserts) = ops.into_iter().cloned().partition(|op| op.op_type == 0);
+            JoinSide {
+                table_id: table.table_id,
+                table_name: table.head.table_name.clone(),
+                deletes,
+                inserts,
+            }
         };
-
-        let rhs = JoinSide {
-            table_id: self.rhs.table_id,
-            table_name: self.rhs.head.table_name.clone(),
-            inserts: rhs_ops.iter().filter(|op| op.op_type == 1).cloned().collect(),
-            deletes: rhs_ops.iter().filter(|op| op.op_type == 0).cloned().collect(),
-        };
-
-        Some((lhs, rhs))
+        Some((join_side(&self.lhs, lhs_ops), join_side(&self.rhs, rhs_ops)))
     }
 
     /// Evaluate join plan for lhs updates.
