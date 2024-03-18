@@ -17,7 +17,6 @@ use spacetimedb_primitives::{ColId, TableId};
 
 /// Provides a raw set of sys calls which abstractions can be built atop of.
 pub mod raw {
-    use core::mem::ManuallyDrop;
     use spacetimedb_primitives::{ColId, TableId};
 
     // this module identifier determines the abi version that modules built with this crate depend
@@ -85,9 +84,7 @@ pub mod raw {
         /// Matching is defined BSATN-decoding `val` to an `AlgebraicValue`
         /// according to the column's schema and then `Ord for AlgebraicValue`.
         ///
-        /// The rows found are BSATN encoded and then concatenated.
-        /// The resulting byte string from the concatenation is written
-        /// to a fresh buffer with the buffer's identifier written to the WASM pointer `out`.
+        /// On success, the iterator handle is written to the `out` pointer.
         ///
         /// Returns an error if
         /// - a table with the provided `table_id` doesn't exist
@@ -100,7 +97,7 @@ pub mod raw {
             col_id: ColId,
             val: *const u8,
             val_len: usize,
-            out: *mut Buffer,
+            out: *mut RowIter,
         ) -> u16;
 
         /// Inserts a row into the table identified by `table_id`,
@@ -165,12 +162,12 @@ pub mod raw {
 
         /// Start iteration on each row, as bytes, of a table identified by `table_id`.
         ///
-        /// The iterator is registered in the host environment
-        /// under an assigned index which is written to the `out` pointer provided.
+        /// On success, the iterator handle is written to the `out` pointer.
         ///
-        /// Returns an error if
-        /// - a table with the provided `table_id` doesn't exist
-        pub fn _iter_start(table_id: TableId, out: *mut BufferIter) -> u16;
+        /// # Errors
+        ///
+        /// - `NO_SUCH_TABLE`, if a table with the provided `table_id` doesn't exist
+        pub fn _iter_start(table_id: TableId, out: *mut RowIter) -> u16;
 
         /// Like [`_iter_start`], start iteration on each row,
         /// as bytes, of a table identified by `table_id`.
@@ -185,31 +182,26 @@ pub mod raw {
         /// - a table with the provided `table_id` doesn't exist
         /// - `(filter, filter_len)` doesn't decode to a filter expression
         /// - `filter + filter_len` overflows a 64-bit integer
-        pub fn _iter_start_filtered(
-            table_id: TableId,
-            filter: *const u8,
-            filter_len: usize,
-            out: *mut BufferIter,
-        ) -> u16;
+        pub fn _iter_start_filtered(table_id: TableId, filter: *const u8, filter_len: usize, out: *mut RowIter) -> u16;
 
-        /// Advances the registered iterator with the index given by `iter_key`.
+        /// Reads rows from the given iterator.
         ///
-        /// On success, the next element (the row as bytes) is written to a buffer.
-        /// The buffer's index is returned and written to the `out` pointer.
-        /// If there are no elements left, an invalid buffer index is written to `out`.
-        /// On failure however, the error is returned.
+        /// Takes rows from the iterator and stores them in the memory pointed to by `buffer`,
+        /// encoded in BSATN format. `buffer_len` should be a pointer to the capacity of `buffer`,
+        /// and on success it is set to the combined length of the encoded rows. If it is `0`,
+        /// the iterator is exhausted and there are no more rows to read.
         ///
-        /// Returns an error if
-        /// - `iter` does not identify a registered `BufferIter`
-        /// - writing to `out` would overflow a 64-bit integer
-        /// - advancing the iterator resulted in an error
-        pub fn _iter_next(iter: ManuallyDrop<BufferIter>, out: *mut Buffer) -> u16;
+        /// If no rows can fit in the buffer, `BUFFER_TOO_SMALL` is returned and `buffer_len` is
+        /// set to the size of the next row in the iterator. The caller should reallocate the
+        /// buffer to at least that size and try again.
+        ///
+        /// `iter` must be a valid iterator, or the module will trap.
+        pub fn _iter_advance(iter: RowIter, buffer: *mut u8, buffer_len: *mut usize) -> u16;
 
-        /// Drops the entire registered iterator with the index given by `iter_key`.
-        /// The iterator is effectively de-registered.
+        /// Destroys the iterator.
         ///
-        /// Returns an error if the iterator does not exist.
-        pub fn _iter_drop(iter: ManuallyDrop<BufferIter>) -> u16;
+        /// `iter` must be a valid iterator, or the module will trap.
+        pub fn _iter_drop(iter: RowIter);
 
         /// Log at `level` a `message` message occuring in `filename:line_number`
         /// with [`target`] being the module path at the `log!` invocation site.
@@ -268,7 +260,7 @@ pub mod raw {
         /// The `bufh` must have previously been allocating using `_buffer_alloc`.
         ///
         /// Traps if the buffer does not exist.
-        pub fn _buffer_len(bufh: ManuallyDrop<Buffer>) -> usize;
+        pub fn _buffer_len(bufh: Buffer) -> usize;
 
         /// Consumes the `buffer`,
         /// moving its contents to the slice `(dst, dst_len)`.
@@ -338,45 +330,17 @@ pub mod raw {
     /// A handle into a buffer of bytes in the host environment.
     ///
     /// Used for transporting bytes host <-> WASM linear memory.
-    #[repr(transparent)]
-    pub struct Buffer {
-        /// The actual handle. A key into a `ResourceSlab`.
-        raw: u32,
-    }
+    pub type Buffer = u32;
 
-    impl Buffer {
-        /// Returns a "handle" that can be passed across the FFI boundary
-        /// as if it was the Buffer itself, but without consuming it.
-        pub const fn handle(&self) -> ManuallyDrop<Self> {
-            ManuallyDrop::new(Self { raw: self.raw })
-        }
+    /// An invalid buffer handle.
+    ///
+    /// Could happen if too many buffers exist, making the key overflow a `u32`.
+    /// `INVALID_BUFFER` is also used for parts of the protocol
+    /// that are "morally" sending a `None`s in `Option<Box<[u8]>>`s.
+    pub const INVALID_BUFFER: Buffer = u32::MAX;
 
-        /// An invalid buffer handle.
-        ///
-        /// Could happen if too many buffers exist, making the key overflow a `u32`.
-        /// `INVALID` is also used for parts of the protocol
-        /// that are "morally" sending a `None`s in `Option<Box<[u8]>>`s.
-        pub const INVALID: Self = Self { raw: u32::MAX };
-
-        /// Is the buffer handle invalid?
-        pub const fn is_invalid(&self) -> bool {
-            self.raw == Self::INVALID.raw
-        }
-    }
-
-    /// Represents table iterators, with a similar API to [`Buffer`].
-    #[repr(transparent)]
-    pub struct BufferIter {
-        /// The actual handle. A key into a `ResourceSlab`.
-        raw: u32,
-    }
-
-    impl BufferIter {
-        /// Returns a handle usable for non-consuming operations.
-        pub const fn handle(&self) -> ManuallyDrop<Self> {
-            ManuallyDrop::new(Self { raw: self.raw })
-        }
-    }
+    /// Represents table iterators.
+    pub type RowIter = u32;
 
     #[cfg(any())]
     mod module_exports {
@@ -556,8 +520,9 @@ pub fn create_index(index_name: &str, table_id: TableId, index_type: u8, col_ids
 /// - `val` cannot be BSATN-decoded to an `AlgebraicValue`
 ///   typed at the `AlgebraicType` of the column
 #[inline]
-pub fn iter_by_col_eq(table_id: TableId, col_id: ColId, val: &[u8]) -> Result<Buffer, Errno> {
-    unsafe { call(|out| raw::_iter_by_col_eq(table_id, col_id, val.as_ptr(), val.len(), out)) }
+pub fn iter_by_col_eq(table_id: TableId, col_id: ColId, val: &[u8]) -> Result<RowIter, Errno> {
+    let raw = unsafe { call(|out| raw::_iter_by_col_eq(table_id, col_id, val.as_ptr(), val.len(), out)) }?;
+    Ok(RowIter { raw })
 }
 
 /// Inserts a row into the table identified by `table_id`,
@@ -612,25 +577,25 @@ pub fn delete_by_rel(table_id: TableId, relation: &[u8]) -> Result<u32, Errno> {
     unsafe { call(|out| raw::_delete_by_rel(table_id, relation.as_ptr(), relation.len(), out)) }
 }
 
-/// Returns an iterator for each row, as bytes, of a table identified by `table_id`.
-/// The rows can be put through an optional `filter`,
-/// which is encoded in the embedded language defined by `spacetimedb_lib::filter::Expr`.
+/// Returns an iterator of a table identified by `table_id`.
 ///
-/// The actual return value is a handle to an iterator registered with the host environment,
-/// but [`BufferIter`] can be used directly as an `Iterator`.
+/// # Errors
 ///
-/// Returns an error if
+/// - `NO_SUCH_TABLE`, if `table_id` doesn't exist.
+pub fn iter(table_id: TableId) -> Result<RowIter, Errno> {
+    let raw = unsafe { call(|out| raw::_iter_start(table_id, out))? };
+    Ok(RowIter { raw })
+}
+
+/// Iterate through a table, filtering by an encoded `spacetimedb_lib::filter::Expr`.
 ///
-/// - a table with the provided `table_id` doesn't exist
-/// - `Some(filter)` doesn't decode to a filter expression
+/// # Errors
+///
+/// - `NO_SUCH_TABLE`, if `table_id` doesn't exist.
 #[inline]
-pub fn iter(table_id: TableId, filter: Option<&[u8]>) -> Result<BufferIter, Errno> {
-    unsafe {
-        call(|out| match filter {
-            None => raw::_iter_start(table_id, out),
-            Some(filter) => raw::_iter_start_filtered(table_id, filter.as_ptr(), filter.len(), out),
-        })
-    }
+pub fn iter_filtered(table_id: TableId, filter: &[u8]) -> Result<RowIter, Errno> {
+    let raw = unsafe { call(|out| raw::_iter_start_filtered(table_id, filter.as_ptr(), filter.len(), out))? };
+    Ok(RowIter { raw })
 }
 
 /// A log level that can be used in `console_log`.
@@ -706,12 +671,20 @@ pub fn cancel_reducer(id: u64) {
     unsafe { raw::_cancel_reducer(id) }
 }
 
-pub use raw::{Buffer, BufferIter};
+/// A RAII wrapper around [`raw::Buffer`].
+#[repr(transparent)]
+pub struct Buffer {
+    raw: raw::Buffer,
+}
 
 impl Buffer {
+    pub const INVALID: Self = Buffer {
+        raw: raw::INVALID_BUFFER,
+    };
+
     /// Returns the number of bytes of the data stored in the buffer.
     pub fn data_len(&self) -> usize {
-        unsafe { raw::_buffer_len(self.handle()) }
+        unsafe { raw::_buffer_len(self.raw) }
     }
 
     /// Read the contents of the buffer into the provided Vec.
@@ -747,30 +720,45 @@ impl Buffer {
     ///
     /// The module will crash if `buf`'s length doesn't match the buffer.
     pub fn read_uninit(self, buf: &mut [MaybeUninit<u8>]) {
-        unsafe { raw::_buffer_consume(self, buf.as_mut_ptr().cast(), buf.len()) }
+        unsafe { raw::_buffer_consume(self.raw, buf.as_mut_ptr().cast(), buf.len()) }
     }
 
     /// Allocates a buffer with the contents of `data`.
     pub fn alloc(data: &[u8]) -> Self {
-        unsafe { raw::_buffer_alloc(data.as_ptr(), data.len()) }
+        let raw = unsafe { raw::_buffer_alloc(data.as_ptr(), data.len()) };
+        Buffer { raw }
     }
 }
 
-impl Iterator for BufferIter {
-    type Item = Result<Buffer, Errno>;
+pub struct RowIter {
+    raw: raw::RowIter,
+}
 
-    fn next(&mut self) -> Option<Self::Item> {
-        let buf = unsafe { call(|out| raw::_iter_next(self.handle(), out)) };
-        match buf {
-            Ok(buf) if buf.is_invalid() => None,
-            res => Some(res),
+impl RowIter {
+    /// Read some number of bsatn-encoded rows into the provided buffer.
+    ///
+    /// If the iterator is exhausted and did not read anything into buf, 0 is returned. Otherwise,
+    /// it's the number of new bytes that were added to the end of the buffer.
+    pub fn read(&self, buf: &mut Vec<u8>) -> usize {
+        loop {
+            let buf_ptr = buf.spare_capacity_mut();
+            let mut buf_len = buf_ptr.len();
+            match cvt(unsafe { raw::_iter_advance(self.raw, buf_ptr.as_mut_ptr().cast(), &mut buf_len) }) {
+                Ok(()) => {
+                    // SAFETY: iter_advance just wrote `buf_len` bytes into the end of `buf`.
+                    unsafe { buf.set_len(buf.len() + buf_len) };
+                    return buf_len;
+                }
+                Err(Errno::BUFFER_TOO_SMALL) => buf.reserve(buf_len),
+                Err(e) => panic!("unexpected error from _iter_advance: {e}"),
+            }
         }
     }
 }
 
-impl Drop for BufferIter {
+impl Drop for RowIter {
     fn drop(&mut self) {
-        cvt(unsafe { raw::_iter_drop(self.handle()) }).unwrap();
+        unsafe { raw::_iter_drop(self.raw) }
     }
 }
 
