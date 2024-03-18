@@ -73,7 +73,10 @@ unsafe fn serialize_product<S: Serializer>(
     let elems = &ty.elements;
     let mut ser = ser.serialize_named_product(elems.len())?;
 
+    let my_offset = curr_offset.get();
+
     for elem_ty in elems.iter() {
+        curr_offset.set(my_offset + elem_ty.offset as usize);
         // SAFETY: By 1., `value` is valid at `ty`,
         // so it follows that valid and properly aligned sub-`value`s
         // are valid `elem_ty.ty`s.
@@ -184,10 +187,13 @@ pub(crate) unsafe fn serialize_value<S: Serializer>(
     curr_offset: CurrOffset<'_>,
     ty: &AlgebraicTypeLayout,
 ) -> Result<S::Ok, S::Error> {
-    let ty_alignment = ty.align();
-    update(curr_offset, |co| *co = align_to(*co, ty_alignment));
+    debug_assert_eq!(
+        curr_offset.get(),
+        align_to(curr_offset.get(), ty.align()),
+        "curr_offset {curr_offset:?} insufficiently aligned for type {ty:#?}",
+    );
 
-    let res = match ty {
+    match ty {
         AlgebraicTypeLayout::Sum(ty) => {
             // SAFETY: `value` was valid at `ty` and `VarLenRef`s won't be dangling.
             unsafe { serialize_sum(ser, bytes, page, blob_store, curr_offset, ty) }
@@ -245,10 +251,7 @@ pub(crate) unsafe fn serialize_value<S: Serializer>(
             // SAFETY: `value` was valid at `ty` and `VarLenRef`s won't be dangling.
             unsafe { serialize_bsatn(ser, bytes, page, blob_store, curr_offset, ty) }
         }
-    };
-    // TODO(perf,bikeshedding): unncessary work for some cases?
-    update(curr_offset, |co| *co = align_to(*co, ty_alignment));
-    res
+    }
 }
 
 /// Serialize `value = &bytes[range_move(0..::String.size(), *curr_offset)]` into a `ser`,

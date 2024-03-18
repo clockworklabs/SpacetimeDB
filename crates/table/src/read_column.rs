@@ -6,7 +6,7 @@
 use crate::{
     bflatn_from,
     indexes::{PageOffset, Size},
-    layout::{AlgebraicTypeLayout, HasLayout, PrimitiveType, ProductTypeElementLayout, VarLenType},
+    layout::{AlgebraicTypeLayout, PrimitiveType, ProductTypeElementLayout, VarLenType},
     table::RowRef,
     util::slice_assume_init_ref,
 };
@@ -263,7 +263,6 @@ unsafe impl ReadColumn for AlgebraicValue {
             bflatn_from::serialize_value(ValueSerializer, fixed_bytes, page, blob_store, &curr_offset, &layout.ty)
         };
 
-        debug_assert_eq!(curr_offset.get(), layout.offset as usize + layout.ty.size());
         debug_assert!(res.is_ok());
 
         // SAFETY: `ValueSerializer` is infallible.
