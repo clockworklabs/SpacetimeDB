@@ -324,7 +324,7 @@ impl ExecutionUnit {
             panic!(
                 "Failed to locate `{OP_TYPE_FIELD_NAME}` in `{}`, fields: {:?}",
                 header.table_name,
-                header.fields.iter().map(|x| &x.field).collect::<Vec<_>>()
+                header.fields().iter().map(|x| &x.field).collect::<Vec<_>>()
             )
         });
         let pos_op_type = pos_op_type.idx();

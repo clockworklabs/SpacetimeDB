@@ -63,7 +63,7 @@ impl ColumnOp {
     /// Returns an op where `col_i op value_i` are all `AND`ed together.
     fn and_cmp(op: OpCmp, head: &Header, cols: &ColList, value: AlgebraicValue) -> Self {
         let eq = |(col, value): (ColId, _)| {
-            let field = head.fields[col.idx()].field.clone();
+            let field = head.fields()[col.idx()].field.as_ref().clone();
             Self::cmp(field, op, value)
         };
 
@@ -552,7 +552,12 @@ impl IndexJoin {
         // The compiler ensures the following unwrap is safe.
         // The existence of this column has already been verified,
         // during construction of the index join.
-        let probe_column = self.probe_side.source.head().column(&self.probe_field).unwrap().col_id;
+        let probe_column = self
+            .probe_side
+            .source
+            .head()
+            .col_id_by_field(&self.probe_field)
+            .unwrap();
         match self.index_side.get_db_table() {
             // If the size of the indexed table is sufficiently large,
             // do not reorder.
@@ -564,15 +569,7 @@ impl IndexJoin {
             // If this is a sufficiently small physical table, we should reorder.
             _ => {
                 // For the same reason the compiler also ensures this unwrap is safe.
-                let index_field = self
-                    .index_side
-                    .head()
-                    .fields
-                    .iter()
-                    .find(|col| col.col_id == self.index_col)
-                    .unwrap()
-                    .field
-                    .clone();
+                let index_field = self.index_side.head().field_by_id(self.index_col).unwrap().clone();
                 // Merge all selections from the original probe side into a single predicate.
                 // This includes an index scan if present.
                 let predicate = self
@@ -616,7 +613,10 @@ impl IndexJoin {
     // In other words, when an index join has two delta tables.
     pub fn to_inner_join(self) -> QueryExpr {
         if self.return_index_rows {
-            let col_lhs = self.index_side.head().fields[self.index_col.idx()].field.clone();
+            let col_lhs = self.index_side.head().fields()[self.index_col.idx()]
+                .field
+                .as_ref()
+                .clone();
             let col_rhs = self.probe_field;
             let rhs = self.probe_side;
 
@@ -629,7 +629,10 @@ impl IndexJoin {
             };
             QueryExpr { source, query }
         } else {
-            let col_rhs = self.index_side.head().fields[self.index_col.idx()].field.clone();
+            let col_rhs = self.index_side.head().fields()[self.index_col.idx()]
+                .field
+                .as_ref()
+                .clone();
             let col_lhs = self.probe_field;
             let mut rhs: QueryExpr = self.index_side.into();
 
@@ -2018,21 +2021,17 @@ mod tests {
         [
             SourceExpr::MemTable {
                 source_id: SourceId(0),
-                header: Arc::new(Header {
-                    table_name: "foo".into(),
-                    fields: vec![],
-                    constraints: Default::default(),
-                }),
+                header: Arc::new(Header::new("foo".into(), vec![], Default::default())),
                 row_count: RowCount::unknown(),
                 table_type: StTableType::User,
                 table_access: StAccess::Private,
             },
             SourceExpr::DbTable(DbTable {
-                head: Arc::new(Header {
-                    table_name: "foo".into(),
-                    fields: vec![],
-                    constraints: vec![(ColId(42).into(), Constraints::indexed())],
-                }),
+                head: Arc::new(Header::new(
+                    "foo".into(),
+                    vec![],
+                    vec![(ColId(42).into(), Constraints::indexed())],
+                )),
                 table_id: 42.into(),
                 table_type: StTableType::User,
                 table_access: StAccess::Private,
@@ -2057,11 +2056,7 @@ mod tests {
                     field: "bar".into(),
                 },
                 index_side: SourceExpr::DbTable(DbTable {
-                    head: Arc::new(Header {
-                        table_name: "bar".into(),
-                        fields: vec![],
-                        constraints: Default::default(),
-                    }),
+                    head: Arc::new(Header::new("bar".into(), vec![], Default::default())),
                     table_id: 42.into(),
                     table_type: StTableType::User,
                     table_access: StAccess::Public,
@@ -2114,7 +2109,7 @@ mod tests {
                 .iter()
                 .enumerate()
                 .map(|(i, (field, ty, _))| Column::new(FieldName::named(name, field), ty.clone(), i.into()))
-                .collect(),
+                .collect::<Vec<_>>(),
             fields
                 .iter()
                 .enumerate()
@@ -2142,7 +2137,7 @@ mod tests {
             &[("c", AlgebraicType::U8, false), ("b", AlgebraicType::U8, true)],
         );
 
-        let probe_field = probe_side.head().fields[1].field.clone();
+        let probe_field = probe_side.head().fields()[1].field.as_ref().clone();
         let select_field = FieldName::Name {
             table: "index".into(),
             field: "a".into(),
@@ -2214,7 +2209,7 @@ mod tests {
         let from_expr = |expr| Box::new(ColumnOp::Field(expr));
         let op = ColumnOp::Cmp {
             op: OpQuery::Cmp(cmp),
-            lhs: from_expr(FieldExpr::Name(col.field.clone())),
+            lhs: from_expr(FieldExpr::Name(col.field.as_ref().clone())),
             rhs: from_expr(FieldExpr::Value(value.clone())),
         };
         let parent = arena.alloc(op);

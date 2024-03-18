@@ -253,8 +253,8 @@ pub(crate) mod tests {
         assert_eq!(result.len(), 1, "Not return results");
         let result = result.first().unwrap().clone();
         //The expected result
-        let col = table.head.find_by_name("inventory_id").unwrap();
-        let inv = table.head.project(&[col.field.clone()]).unwrap();
+        let col = table.head.column_by_name("inventory_id").unwrap();
+        let inv = table.head.project(&[col.field.as_ref().clone()]).unwrap();
 
         let row = product!(scalar(1u64));
         let input = mem_table(inv, vec![row]);
@@ -277,8 +277,8 @@ pub(crate) mod tests {
         let result = result.first().unwrap().clone();
 
         //The expected result
-        let col = table.head.find_by_name("inventory_id").unwrap();
-        let inv = table.head.project(&[col.field.clone()]).unwrap();
+        let col = table.head.column_by_name("inventory_id").unwrap();
+        let inv = table.head.project(&[col.field.as_ref().clone()]).unwrap();
 
         let row = product!(scalar(1u64));
         let input = mem_table(inv, vec![row]);
@@ -304,8 +304,8 @@ pub(crate) mod tests {
         let mut result = result.first().unwrap().clone();
         result.data.sort();
         //The expected result
-        let col = table.head.find_by_name("inventory_id").unwrap();
-        let inv = table.head.project(&[col.field.clone()]).unwrap();
+        let col = table.head.column_by_name("inventory_id").unwrap();
+        let inv = table.head.project(&[col.field.as_ref().clone()]).unwrap();
 
         let input = mem_table(inv, vec![product!(scalar(1u64)), product!(scalar(2u64))]);
 
@@ -330,8 +330,8 @@ pub(crate) mod tests {
         let mut result = result.first().unwrap().clone();
         result.data.sort();
         //The expected result
-        let col = table.head.find_by_name("inventory_id").unwrap();
-        let inv = table.head.project(&[col.field.clone()]).unwrap();
+        let col = table.head.column_by_name("inventory_id").unwrap();
+        let inv = table.head.project(&[col.field.as_ref().clone()]).unwrap();
 
         let input = mem_table(inv, vec![product!(scalar(1u64)), product!(scalar(2u64))]);
 
