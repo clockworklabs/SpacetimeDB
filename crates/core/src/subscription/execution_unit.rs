@@ -1,4 +1,4 @@
-use super::query::{self, find_op_type_col_pos, Supported, OP_TYPE_FIELD_NAME};
+use super::query::{self, Supported};
 use super::subscription::{IncrementalJoin, SupportedQuery};
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::DBError;
@@ -9,11 +9,11 @@ use crate::vm::{build_query, TxMode};
 use spacetimedb_client_api_messages::client_api::{TableRowOperation, TableUpdate};
 use spacetimedb_lib::bsatn::to_writer;
 use spacetimedb_primitives::TableId;
-use spacetimedb_sats::relation::{DbTable, Header};
+use spacetimedb_sats::relation::DbTable;
 use spacetimedb_vm::eval::IterRows;
-use spacetimedb_vm::expr::{Query, QueryExpr, SourceExpr, SourceSet};
+use spacetimedb_vm::expr::{Query, QueryExpr, SourceExpr, SourceId, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
-use spacetimedb_vm::relation::RelValue;
+use spacetimedb_vm::relation::{MemTable, RelValue};
 use std::hash::Hash;
 
 /// A hash for uniquely identifying query execution units,
@@ -58,7 +58,7 @@ enum EvalIncrPlan {
     Semijoin(IncrementalJoin),
 
     /// For single-table selects, store only one version of the plan,
-    /// which has a single source, a [`MemTable`] produced by [`query::to_mem_table_with_op_type`].
+    /// which has a single source, a [`MemTable`], produced by [`query::query_to_mem_table`].
     Select(QueryExpr),
 }
 
@@ -100,7 +100,6 @@ impl From<SupportedQuery> for ExecutionUnit {
 
 impl ExecutionUnit {
     /// Pre-compute a plan for `eval_incr` which reads from a `MemTable`
-    /// whose rows are augmented with an `__op_type` column,
     /// rather than re-planning on every incremental update.
     fn compile_select_eval_incr(expr: &QueryExpr) -> QueryExpr {
         let source = expr
@@ -126,7 +125,7 @@ impl ExecutionUnit {
         // Some day down the line, when we have a real query planner,
         // we may need to provide a row count estimation that is, if not accurate,
         // at least less specifically inaccurate.
-        let (eval_incr_plan, _source_set) = query::to_mem_table(expr.clone(), &table_update);
+        let (eval_incr_plan, _source_set) = query::query_to_mem_table(expr.clone(), &table_update);
         debug_assert_eq!(_source_set.len(), 1);
 
         eval_incr_plan
@@ -278,6 +277,23 @@ impl ExecutionUnit {
         }))
     }
 
+    fn eval_query_expr_against_memtable<'a>(
+        ctx: &'a ExecutionContext,
+        db: &'a RelationalDB,
+        tx: &'a TxMode,
+        mem_table: MemTable,
+        eval_incr_plan: &'a QueryExpr,
+        _replaced_source_id: SourceId,
+    ) -> Result<Box<IterRows<'a>>, DBError> {
+        // Build a `SourceSet` containing the updates from `table`.
+        let mut sources = SourceSet::default();
+        let _source_expr = sources.add_mem_table(mem_table);
+        debug_assert_eq!(_source_expr.source_id(), Some(_replaced_source_id));
+        // Evaluate the saved plan against the new `SourceSet`,
+        // returning an iterator over the selected rows.
+        build_query(ctx, db, tx, eval_incr_plan, &mut sources).map_err(Into::into)
+    }
+
     fn eval_incr_query_expr<'a>(
         db: &RelationalDB,
         tx: &Tx,
@@ -297,43 +313,56 @@ impl ExecutionUnit {
         else {
             panic!("Expected MemTable in `eval_incr_plan`, but found `DbTable`");
         };
+
+        // Partition the `update` into two `MemTable`s, `(inserts, deletes)`,
+        // so that we can remember which are which without adding a column to each row.
+        let partition_updates = |update: &DatabaseTableUpdate| -> (Option<MemTable>, Option<MemTable>) {
+            // Pre-allocate with capacity given by an upper bound,
+            // because realloc is worse than over-allocing.
+            let mut inserts = Vec::with_capacity(update.ops.len());
+            let mut deletes = Vec::with_capacity(update.ops.len());
+            for op in update.ops.iter() {
+                // 0 = delete, 1 = insert
+                if op.op_type == 0 { &mut deletes } else { &mut inserts }.push(op.row.clone());
+            }
+            (
+                (!inserts.is_empty()).then(|| MemTable::new(header.clone(), table_access, inserts)),
+                (!deletes.is_empty()).then(|| MemTable::new(header.clone(), table_access, deletes)),
+            )
+        };
+
         let mut ops = Vec::new();
 
         for table in tables.filter(|table| table.table_id == return_table) {
-            // Build a `SourceSet` containing the updates from `table`.
-            let mem_table = query::to_mem_table_with_op_type(header.clone(), table_access, table);
-            let mut sources = SourceSet::default();
-            let _source_expr = sources.add_mem_table(mem_table);
-            debug_assert_eq!(_source_expr.source_id(), Some(_source_id));
-            // Evaluate the saved plan against the new `SourceSet`
-            // and capture the new row operations.
-            let query = build_query(&ctx, db, &tx, eval_incr_plan, &mut sources)?;
-            Self::collect_rows_remove_table_ops(&mut ops, query, header)?;
+            // Evaluate the query separately against inserts and deletes,
+            // so that we can pass each row to the query engine unaltered,
+            // without forgetting which are inserts and which are deletes.
+            // Then, collect the rows into the single `ops` vec,
+            // restoring the appropriate `op_type`.
+            let (inserts, deletes) = partition_updates(table);
+            if let Some(inserts) = inserts {
+                let query = Self::eval_query_expr_against_memtable(&ctx, db, &tx, inserts, eval_incr_plan, _source_id)?;
+                // op_type 1: insert
+                Self::collect_rows_with_table_op(&mut ops, query, 1)?;
+            }
+            if let Some(deletes) = deletes {
+                let query = Self::eval_query_expr_against_memtable(&ctx, db, &tx, deletes, eval_incr_plan, _source_id)?;
+                // op_type 0: delete
+                Self::collect_rows_with_table_op(&mut ops, query, 0)?;
+            }
         }
         Ok(ops)
     }
 
-    /// Convert a set of rows annotated with the `__op_type` fields into a set of [`TableOp`]s,
-    /// and collect them into a vec `into`.
-    fn collect_rows_remove_table_ops(
+    /// Collect the results of `query` into a vec `into`,
+    /// annotating each as a `TableOp` with the `op_type`.
+    fn collect_rows_with_table_op(
         into: &mut Vec<TableOp>,
         mut query: Box<IterRows<'_>>,
-        header: &Header,
+        op_type: u8,
     ) -> Result<(), DBError> {
-        let pos_op_type = find_op_type_col_pos(header).unwrap_or_else(|| {
-            panic!(
-                "Failed to locate `{OP_TYPE_FIELD_NAME}` in `{}`, fields: {:?}",
-                header.table_name,
-                header.fields.iter().map(|x| &x.field).collect::<Vec<_>>()
-            )
-        });
-        let pos_op_type = pos_op_type.idx();
         while let Some(row_ref) = query.next()? {
-            let mut row = row_ref.into_product_value();
-            let op_type =
-                row.elements.remove(pos_op_type).into_u8().unwrap_or_else(|_| {
-                    panic!("Failed to extract `{OP_TYPE_FIELD_NAME}` from `{}`", header.table_name)
-                });
+            let row = row_ref.into_product_value();
             into.push(TableOp::new(op_type, row));
         }
         Ok(())
