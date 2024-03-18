@@ -453,11 +453,6 @@ impl RowCount {
     pub fn unknown() -> Self {
         Self { min: 0, max: None }
     }
-
-    pub fn add_exact(&mut self, count: usize) {
-        self.min += count;
-        self.max = Some(self.min);
-    }
 }
 
 /// A [Relation] is anything that could be represented as a [Header] of `[ColumnName:ColumnType]` that
