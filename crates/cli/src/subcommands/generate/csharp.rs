@@ -456,12 +456,26 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
 
     //Args struct
     writeln!(output, "[SpacetimeDB.Type]").unwrap();
-    writeln!(output, "public partial class {func_name_pascal_case}ArgsStruct").unwrap();
+    writeln!(
+        output,
+        "public partial class {func_name_pascal_case}ArgsStruct : IReducerArgs"
+    )
+    .unwrap();
 
     let mut func_params: String = String::new();
     let mut field_inits: String = String::new();
 
     block!(output, {
+        writeln!(
+            output,
+            "ReducerType IReducerArgs.ReducerType => ReducerType.{func_name_pascal_case};"
+        )
+        .unwrap();
+        writeln!(output, "string IReducerArgsBase.ReducerName => \"{func_name}\";").unwrap();
+        writeln!(output, "bool IReducerArgs.InvokeHandler(ReducerEvent reducerEvent) => Reducer.On{func_name_pascal_case}(reducerEvent, this);").unwrap();
+        if !reducer.args.is_empty() {
+            writeln!(output).unwrap();
+        }
         for (arg_i, arg) in reducer.args.iter().enumerate() {
             let name = arg
                 .name
@@ -503,8 +517,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
         block!(output, {
             writeln!(
                 output,
-                "SpacetimeDBClient.instance.InternalCallReducer(\"{reducer_name}\", new {func_name_pascal_case}ArgsStruct {{ {field_inits} }});",
-                reducer_name = reducer.name
+                "SpacetimeDBClient.instance.InternalCallReducer(new {func_name_pascal_case}ArgsStruct {{ {field_inits} }});"
             )
             .unwrap();
         });
@@ -512,12 +525,11 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
 
         writeln!(
             output,
-            "public static bool On{func_name_pascal_case}(ReducerEvent reducerEvent)"
+            "public static bool On{func_name_pascal_case}(ReducerEvent reducerEvent, {func_name_pascal_case}ArgsStruct args)"
         )
         .unwrap();
         block!(output, {
             writeln!(output, "if (On{func_name_pascal_case}Event == null) return false;").unwrap();
-            writeln!(output, "var args = reducerEvent.{func_name_pascal_case}Args;").unwrap();
             writeln!(output, "On{func_name_pascal_case}Event(").unwrap();
             // Write out arguments one per line
             {
@@ -570,38 +582,77 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
     });
     writeln!(output).unwrap();
 
+    writeln!(output, "public interface IReducerArgs : IReducerArgsBase").unwrap();
+    block!(output, {
+        writeln!(output, "ReducerType ReducerType {{ get; }}").unwrap();
+        writeln!(output, "bool InvokeHandler(ReducerEvent reducerEvent);").unwrap();
+    });
+    writeln!(output).unwrap();
+
     writeln!(output, "public partial class ReducerEvent : ReducerEventBase").unwrap();
     block!(output, {
-        writeln!(output, "public ReducerType Reducer {{ get; }}").unwrap();
+        writeln!(output, "public IReducerArgs Args {{ get; }}").unwrap();
+        writeln!(output).unwrap();
+        writeln!(output, "public string ReducerName => Args.ReducerName;").unwrap();
         writeln!(output).unwrap();
         writeln!(
             output,
-            "public ReducerEvent(ReducerType reducer, ClientApi.Event dbEvent, object args) : base(dbEvent, args)"
+            r#"[Obsolete("ReducerType is deprecated, please match directly on type of .Args instead.")]"#
+        )
+        .unwrap();
+        writeln!(output, "public ReducerType Reducer => Args.ReducerType;").unwrap();
+        writeln!(output).unwrap();
+        writeln!(
+            output,
+            "public ReducerEvent(IReducerArgs args) : base() => Args = args;"
+        )
+        .unwrap();
+        writeln!(
+            output,
+            "public ReducerEvent(ClientApi.Event dbEvent, IReducerArgs args) : base(dbEvent) => Args = args;"
+        )
+        .unwrap();
+        writeln!(output).unwrap();
+        writeln!(
+            output,
+            "public static ReducerEvent? FromDbEvent(ClientApi.Event dbEvent)"
         )
         .unwrap();
         block!(output, {
-            writeln!(output, "Reducer = reducer;").unwrap();
+            writeln!(output, "var argBytes = dbEvent.FunctionCall.ArgBytes;").unwrap();
+            writeln!(output, "IReducerArgs? args = dbEvent.FunctionCall.Reducer switch {{").unwrap();
+            {
+                indent_scope!(output);
+                for (reducer, reducer_name) in std::iter::zip(&reducers, &reducer_names) {
+                    let reducer_str_name = &reducer.name;
+                    writeln!(
+                        output,
+                        "\"{reducer_str_name}\" => BSATNHelpers.FromProtoBytes<{reducer_name}ArgsStruct>(argBytes),"
+                    )
+                    .unwrap();
+                }
+                writeln!(output, "_ => null").unwrap();
+            }
+            writeln!(output, "}};").unwrap();
+            writeln!(output, "return args is null ? null : new ReducerEvent(dbEvent, args);").unwrap();
         });
         writeln!(output).unwrap();
         // Properties for reducer args
         for reducer_name in &reducer_names {
-            writeln!(output, "public {reducer_name}ArgsStruct {reducer_name}Args => ({reducer_name}ArgsStruct)Args;").unwrap();
+            writeln!(output, r#"[Obsolete("Accessors that implicitly cast `Args` are deprecated, please match `Args` against the desired type explicitly instead.")]"#).unwrap();
+            writeln!(
+                output,
+                "public {reducer_name}ArgsStruct {reducer_name}Args => ({reducer_name}ArgsStruct)Args;"
+            )
+            .unwrap();
         }
         writeln!(output).unwrap();
         // Event handlers.
-        writeln!(output, "public override bool InvokeHandler() => Reducer switch {{").unwrap();
-        {
-            indent_scope!(output);
-            for reducer_name in &reducer_names {
-                writeln!(
-                    output,
-                    "ReducerType.{reducer_name} => {namespace}.Reducer.On{reducer_name}(this),"
-                )
-                .unwrap();
-            }
-            writeln!(output, "_ => false").unwrap();
-        }
-        writeln!(output, "}};").unwrap();
+        writeln!(
+            output,
+            "public override bool InvokeHandler() => Args.InvokeHandler(this);"
+        )
+        .unwrap();
     });
     writeln!(output).unwrap();
 
@@ -621,16 +672,11 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
                 }
             }
             writeln!(output).unwrap();
-            writeln!(output, "SpacetimeDBClient.SetReducerEventFromDbEvent((dbEvent) => dbEvent.FunctionCall.Reducer switch {{").unwrap();
-            {
-                indent_scope!(output);
-                for (reducer, reducer_name) in std::iter::zip(&reducers, &reducer_names) {
-                    let reducer_str_name = &reducer.name;
-                    writeln!(output, "\"{reducer_str_name}\" => new ReducerEvent(ReducerType.{reducer_name}, dbEvent, BSATNHelpers.FromProtoBytes<{reducer_name}ArgsStruct>(dbEvent.FunctionCall.ArgBytes)),").unwrap();
-                }
-                writeln!(output, "_ => null").unwrap();
-            }
-            writeln!(output, "}});").unwrap();
+            writeln!(
+                output,
+                "SpacetimeDBClient.SetReducerEventFromDbEvent(ReducerEvent.FromDbEvent);"
+            )
+            .unwrap();
         });
     });
 
