@@ -7,43 +7,43 @@ use spacetimedb_primitives::TableId;
 use crate::db::db_metrics::DB_METRICS;
 
 pub enum MetricType {
-    RdbNumIndexSeeks,
-    RdbNumKeysScanned,
-    RdbNumRowsFetched,
+    IndexSeeks,
+    KeysScanned,
+    RowsFetched,
 }
 #[derive(Default, Clone)]
 struct BufferMetric {
     pub table_id: TableId,
-    pub rdb_num_index_seeks: u64,
-    pub rdb_num_keys_scanned: u64,
-    pub rdb_num_rows_fetched: u64,
+    pub index_seeks: u64,
+    pub keys_scanned: u64,
+    pub rows_fetched: u64,
     pub cache_table_name: String,
 }
 
 impl BufferMetric {
     pub fn inc_by(&mut self, ty: MetricType, val: u64) {
         match ty {
-            MetricType::RdbNumIndexSeeks => {
-                self.rdb_num_index_seeks += val;
+            MetricType::IndexSeeks => {
+                self.index_seeks += val;
             }
-            MetricType::RdbNumKeysScanned => {
-                self.rdb_num_keys_scanned += val;
+            MetricType::KeysScanned => {
+                self.keys_scanned += val;
             }
-            MetricType::RdbNumRowsFetched => {
-                self.rdb_num_rows_fetched += val;
+            MetricType::RowsFetched => {
+                self.rows_fetched += val;
             }
         }
     }
 }
 
 impl BufferMetric {
-    pub fn new(table_id: TableId, table_name: &str) -> Self {
+    pub fn new(table_id: TableId, table_name: String) -> Self {
         Self {
             table_id,
-            rdb_num_index_seeks: 0,
-            rdb_num_keys_scanned: 0,
-            rdb_num_rows_fetched: 0,
-            cache_table_name: table_name.to_string(),
+            index_seeks: 0,
+            keys_scanned: 0,
+            rows_fetched: 0,
+            cache_table_name: table_name,
         }
     }
 }
@@ -55,13 +55,14 @@ impl Metrics {
         Self(Vec::new())
     }
 
-    pub fn add_metric(&mut self, table_id: TableId, table_name: &str) {
-        self.0.push(BufferMetric::new(table_id, table_name));
-    }
-
-    pub fn inc_by(&mut self, table_id: TableId, ty: MetricType, val: u64) {
+    pub fn inc_by<F: FnOnce() -> String>(&mut self, table_id: TableId, ty: MetricType, val: u64, get_table_name: F) {
         if let Some(metric) = self.0.iter_mut().find(|x| x.table_id == table_id) {
             metric.inc_by(ty, val);
+        } else {
+            let table_name = get_table_name();
+            let mut metric = BufferMetric::new(table_id, table_name);
+            metric.inc_by(ty, val);
+            self.0.push(metric);
         }
     }
 
@@ -80,7 +81,7 @@ impl Metrics {
                     &metric.table_id.0,
                     &metric.cache_table_name,
                 )
-                .inc_by(metric.rdb_num_index_seeks);
+                .inc_by(metric.index_seeks);
 
             DB_METRICS
                 .rdb_num_keys_scanned
@@ -91,7 +92,7 @@ impl Metrics {
                     &metric.table_id.0,
                     &metric.cache_table_name,
                 )
-                .inc_by(metric.rdb_num_keys_scanned);
+                .inc_by(metric.keys_scanned);
 
             DB_METRICS
                 .rdb_num_rows_fetched
@@ -102,7 +103,7 @@ impl Metrics {
                     &metric.table_id.0,
                     &metric.cache_table_name,
                 )
-                .inc_by(metric.rdb_num_keys_scanned);
+                .inc_by(metric.keys_scanned);
         });
     }
 }
