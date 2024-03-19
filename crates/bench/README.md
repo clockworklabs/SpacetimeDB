@@ -75,9 +75,13 @@ deserialize/
 stdb_module/
     print_bulk/[count]
     large_arguments/64KiB/
+
+db_game/
+    circles/load=[num rows]
+    ia_loop/load=[num rows]
 ```
 
-Typically you don't want to run all benchmarks at once, there are a lot of them and it will take many minutes.
+Typically, you don't want to run all benchmarks at once, there are a lot of them and it will take many minutes.
 You can pass regexes to the bench script to select what slice of benchmarks you'd like. For example,
 
 ```sh
@@ -91,7 +95,43 @@ cargo bench -- 'mem/.*/unique'
 ```
 Will run benchmarks involving unique primary keys against all databases, without writing to disc.
 
-### Adding more
+## Workload Benches
+
+The workload benches within the `db_game` module are designed to simulate realistic workloads commonly found in games. 
+
+Instead of testing for a small set of values, these benches generate a larger number of rows to more effectively stress the database engine. As consequence, they take more time when run inside `criterion`. 
+
+This approach reduces interference caused by noise and provides the potential for better detection of display improvements or regressions in performance.
+
+To run the workload benches directly outside `criterion`, you can use the following commands:
+
+```bash
+cargo test --release --package spacetimedb-testing --test standalone_integration_test test_calling_bench_db_ia_loop -- --exact --nocapture
+cargo test --release --package spacetimedb-testing --test standalone_integration_test test_calling_bench_db_circles -- --exact --nocapture
+```
+
+## Pretty report
+To generate a nicely formatted markdown report, you can use the "summarize" binary.
+This is used on CI (see [`../../.github/workflows/benchmarks.yml`](../../.github/workflows/benchmarks.yml)).
+
+To generate a report without comparisons, use:
+```bash
+cargo bench --bench generic --bench special -- --save-baseline current
+cargo run --bin summarize markdown-report current
+```
+
+To compare to another branch, do:
+```bash
+git checkout master
+cargo bench --bench generic --bench special -- --save-baseline base
+git checkout high-octane-feature-branch
+cargo bench --bench generic --bench special -- --save-baseline current
+cargo run --bin summarize markdown-report current base
+```
+
+Of course, this will take about an hour, so it might be better to let the CI do it for you.
+
+## Adding more
 
 There are two ways to write benchmarks:
 
