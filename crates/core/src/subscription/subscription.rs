@@ -209,8 +209,7 @@ pub struct IncrementalJoin {
 
 /// One side of an [`IncrementalJoin`].
 ///
-/// Holds the "physical" [`DbTable`] this side of the join operates on, as well
-/// as the updates pertaining to that table.
+/// Holds the updates pertaining to a table on one side of the join.
 struct JoinSide {
     inserts: Vec<ProductValue>,
     deletes: Vec<ProductValue>,
@@ -337,14 +336,19 @@ impl IncrementalJoin {
         let mut rhs_inserts = Vec::new();
         let mut rhs_deletes = Vec::new();
 
-        // Partitions deletes of `update` into `ds` and inserts into `is`.
-        let partition_into = |ds: &mut Vec<_>, is: &mut Vec<_>, updates: &DatabaseTableUpdate| {
+        // Partitions `updates` into `deletes` and `inserts`.
+        let partition_into = |deletes: &mut Vec<_>, inserts: &mut Vec<_>, updates: &DatabaseTableUpdate| {
             for update in &updates.ops {
-                if update.op_type == 0 { &mut *ds } else { &mut *is }.push(update.row.clone());
+                if update.op_type == 0 {
+                    &mut *deletes
+                } else {
+                    &mut *inserts
+                }
+                .push(update.row.clone());
             }
         };
 
-        // Partitions all updates into the `l/rhs_insert/delete_ops` above.
+        // Partitions all updates into the `(l|r)hs_(insert|delete)_ops` above.
         for update in updates {
             if update.table_id == self.lhs.table_id {
                 partition_into(&mut lhs_deletes, &mut lhs_inserts, update);
