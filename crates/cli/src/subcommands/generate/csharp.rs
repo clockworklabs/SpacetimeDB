@@ -83,7 +83,7 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
             let name = csharp_typename(ctx, *r);
             match &ctx.typespace.types[r.idx()] {
                 AlgebraicType::Sum(sum_type) => {
-                    if is_enum(sum_type) {
+                    if sum_type.is_simple_enum() {
                         let parts: Vec<&str> = name.split('.').collect();
                         if parts.len() >= 2 {
                             let enum_namespace = parts[0];
@@ -102,6 +102,31 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
             }
         }
     })
+}
+
+fn default_init(ctx: &GenCtx, ty: &AlgebraicType) -> &'static str {
+    match ty {
+        AlgebraicType::Sum(sum_type) => {
+            // Options have a default value of null which is fine for us, and simple enums have their own default.
+            if sum_type.as_option().is_some() || sum_type.is_simple_enum() {
+                ""
+            } else {
+                unimplemented!()
+            }
+        }
+        // For product types, we can just use the default constructor.
+        AlgebraicType::Product(_) => " = new()",
+        AlgebraicType::Builtin(b) => match b {
+            // Strings must have explicit default value of "".
+            BuiltinType::String => r#" = """#,
+            // Byte arrays must be initialized to an empty array.
+            BuiltinType::Array(a) if *a.elem_ty == AlgebraicType::U8 => " = Array.Empty<byte>()",
+            // Lists and Dictionaries must be instantiated with new().
+            BuiltinType::Array(_) | BuiltinType::Map(_) => " = new()",
+            _ => "",
+        },
+        AlgebraicType::Ref(r) => default_init(ctx, &ctx.typespace.types[r.idx()]),
+    }
 }
 
 // can maybe do something fancy with this in the future
@@ -124,21 +149,6 @@ macro_rules! block {
         }
         writeln!($output, "}}").unwrap();
     };
-}
-
-pub fn is_enum(sum_type: &SumType) -> bool {
-    for variant in sum_type.clone().variants {
-        match variant.algebraic_type {
-            AlgebraicType::Product(product) => {
-                if product.elements.is_empty() {
-                    continue;
-                }
-            }
-            _ => return false,
-        }
-    }
-
-    true
 }
 
 fn autogen_csharp_header(namespace: &str, extra_usings: &[&str]) -> CodeIndenter<String> {
@@ -184,7 +194,7 @@ pub fn autogen_csharp_sum(
     sum_type: &SumType,
     namespace: &str,
 ) -> String {
-    if is_enum(sum_type) {
+    if sum_type.is_simple_enum() {
         autogen_csharp_enum(name, sum_type, namespace)
     } else {
         unimplemented!();
@@ -304,9 +314,10 @@ fn autogen_csharp_product_table_common(
             writeln!(output, "[DataMember(Name = \"{field_name}\")]").unwrap();
             writeln!(
                 output,
-                "public {} {};",
+                "public {} {}{};",
                 ty_fmt(ctx, &field.algebraic_type, namespace),
-                field_name.to_case(Case::Pascal)
+                field_name.to_case(Case::Pascal),
+                default_init(ctx, &field.algebraic_type)
             )
             .unwrap();
         }
@@ -485,7 +496,12 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
                 func_params.push_str(", ");
                 field_inits.push_str(", ");
             }
-            writeln!(output, "public {arg_type_str} {field_name};").unwrap();
+            writeln!(
+                output,
+                "public {arg_type_str} {field_name}{};",
+                default_init(ctx, &arg.algebraic_type)
+            )
+            .unwrap();
             write!(func_params, "{arg_type_str} {arg_name}").unwrap();
             write!(field_inits, "{field_name} = {arg_name}").unwrap();
         }

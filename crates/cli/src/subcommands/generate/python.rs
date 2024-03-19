@@ -9,7 +9,7 @@ use spacetimedb_lib::{
 use spacetimedb_primitives::ColList;
 use std::fmt::{self, Write};
 
-use super::{code_indenter::CodeIndenter, csharp::is_enum, GenCtx, GenItem};
+use super::{code_indenter::CodeIndenter, GenCtx, GenItem};
 
 enum MaybePrimitive<'a> {
     Primitive(&'static str),
@@ -89,7 +89,9 @@ fn convert_type<'a>(
             let algebraic_type = &ctx.typespace.types[r.idx()];
             match algebraic_type {
                 // for enums in json this comes over as a dictionary where the key is actually the enum index
-                AlgebraicType::Sum(sum_type) if is_enum(sum_type) => write!(f, "{name}(int(next(iter({value})))+1)"),
+                AlgebraicType::Sum(sum_type) if sum_type.is_simple_enum() => {
+                    write!(f, "{name}(int(next(iter({value})))+1)")
+                }
                 _ => {
                     write!(f, "{name}({value})")
                 }
@@ -395,7 +397,7 @@ fn autogen_python_product_table_common(
                     AlgebraicType::Ref(type_ref) => {
                         let ref_type = &ctx.typespace.types[type_ref.idx()];
                         if let AlgebraicType::Sum(sum_type) = ref_type {
-                            if is_enum(sum_type) {
+                            if sum_type.is_simple_enum() {
                                 reducer_args.push(format!("{{str({}.value): []}}", python_field_name))
                             } else {
                                 unimplemented!()
@@ -423,7 +425,7 @@ fn autogen_python_product_table_common(
 }
 
 pub fn autogen_python_sum(ctx: &GenCtx, name: &str, sum_type: &SumType) -> String {
-    if is_enum(sum_type) {
+    if sum_type.is_simple_enum() {
         autogen_python_enum(ctx, name, sum_type)
     } else {
         unimplemented!()
@@ -516,7 +518,7 @@ pub fn encode_type<'a>(
             let algebraic_type = &ctx.typespace.types[r.idx()];
             match algebraic_type {
                 // for enums in json this comes over as a dictionary where the key is actually the enum index
-                AlgebraicType::Sum(sum_type) if is_enum(sum_type) => write!(f, "{{str({value}.value-1): []}}"),
+                AlgebraicType::Sum(sum_type) if sum_type.is_simple_enum() => write!(f, "{{str({value}.value-1): []}}"),
                 _ => {
                     write!(f, "{value}.encode()")
                 }
