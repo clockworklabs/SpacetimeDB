@@ -40,6 +40,25 @@ pub enum ClientSendError {
 }
 
 impl ClientConnectionSender {
+    pub fn dummy_pull(id: ClientActorId, protocol: Protocol, buffer: usize) -> (Self, mpsc::Receiver<DataMessage>) {
+        let (sendtx, sendrx) = mpsc::channel(buffer);
+        // just make something up, it doesn't need to be attached to a real task
+        let abort_handle = match tokio::runtime::Handle::try_current() {
+            Ok(h) => h.spawn(async {}).abort_handle(),
+            Err(_) => tokio::runtime::Runtime::new().unwrap().spawn(async {}).abort_handle(),
+        };
+        (
+            Self {
+                id,
+                protocol,
+                sendtx,
+                abort_handle,
+                cancelled: AtomicBool::new(false),
+            },
+            sendrx,
+        )
+    }
+
     pub fn dummy(id: ClientActorId, protocol: Protocol) -> Self {
         let (sendtx, _) = mpsc::channel(1);
         // just make something up, it doesn't need to be attached to a real task

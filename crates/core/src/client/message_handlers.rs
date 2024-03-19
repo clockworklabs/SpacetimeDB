@@ -267,6 +267,14 @@ impl ServerMessage for MessageExecutionError {
 #[cfg(test)]
 mod tests {
     use super::RawJsonMessage;
+    use crate::client::messages::{SubscriptionUpdate, SubscriptionUpdateMessage};
+    use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
+    use crate::host::module_host::ProtocolDatabaseUpdate;
+    use itertools::Either;
+    use spacetimedb_client_api_messages::client_api::{TableRowOperation, TableUpdate};
+    use spacetimedb_lib::Identity;
+    use spacetimedb_sats::bsatn::to_vec;
+    use spacetimedb_sats::product;
 
     #[test]
     fn parse_one_off_query() {
@@ -300,6 +308,45 @@ mod tests {
             assert_eq!(func, "reducer_name");
         } else {
             panic!("wrong variant")
+        }
+    }
+
+    #[test]
+    fn send() {
+        let count = 10_000u64;
+        let rows: Vec<_> = (0..count).map(|i| product![i, format!("Row {i}")]).collect();
+
+        let database_update = TableUpdate {
+            table_id: 1,
+            table_name: "sample".to_string(),
+            table_row_operations: rows
+                .into_iter()
+                .map(|x| TableRowOperation {
+                    op: 1,
+                    row: to_vec(&x).unwrap(),
+                })
+                .collect(),
+        };
+
+        let subscription_update = SubscriptionUpdate {
+            database_update: ProtocolDatabaseUpdate {
+                tables: Either::Left(vec![database_update]),
+            },
+            request_id: None,
+            timer: None,
+        };
+
+        let (client, _sendrx) = ClientConnectionSender::dummy_pull(
+            ClientActorId::for_test(Identity::ZERO),
+            Protocol::Binary,
+            count as usize,
+        );
+
+        for _ in 0..count {
+            let subscription_update = subscription_update.clone();
+            client
+                .send_message(SubscriptionUpdateMessage { subscription_update })
+                .unwrap();
         }
     }
 }

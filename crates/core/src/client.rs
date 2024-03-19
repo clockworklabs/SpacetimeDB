@@ -19,7 +19,7 @@ pub struct ClientActorId {
 }
 
 impl ClientActorId {
-    #[cfg(test)]
+    //#[cfg(test)]
     pub fn for_test(identity: Identity) -> Self {
         ClientActorId {
             identity,
