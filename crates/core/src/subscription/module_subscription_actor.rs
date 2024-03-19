@@ -86,7 +86,6 @@ impl ModuleSubscriptions {
         subscriptions.remove_subscription(&sender.id.identity);
         subscriptions.add_subscription(sender.clone(), execution_set.into_iter());
         let num_queries = subscriptions.num_queries();
-        drop(subscriptions);
 
         WORKER_METRICS
             .subscription_queries
