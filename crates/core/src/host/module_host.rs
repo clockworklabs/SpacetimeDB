@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Weak};
@@ -131,6 +132,69 @@ impl From<DatabaseTableUpdate> for TableUpdateJson {
             table_name: table.table_name,
             table_row_operations: table.ops.into_iter().map_into().collect(),
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct DatabaseUpdateCow<'a> {
+    pub tables: Vec<DatabaseTableUpdateCow<'a>>,
+}
+
+#[derive(PartialEq, Debug)]
+pub struct DatabaseTableUpdateCow<'a> {
+    pub table_id: TableId,
+    pub table_name: String,
+    pub ops: Vec<TableOpCow<'a>>,
+}
+
+#[derive(PartialEq, Debug)]
+pub struct TableOpCow<'a> {
+    pub op_type: u8,
+    pub row: Cow<'a, ProductValue>,
+}
+
+impl<'a> TableOpCow<'a> {
+    #[inline]
+    pub fn new(op_type: u8, row: Cow<'a, ProductValue>) -> Self {
+        Self { op_type, row }
+    }
+
+    #[inline]
+    pub fn insert(row: Cow<'a, ProductValue>) -> Self {
+        Self::new(1, row)
+    }
+
+    #[inline]
+    pub fn delete(row: Cow<'a, ProductValue>) -> Self {
+        Self::new(0, row)
+    }
+}
+
+impl From<&TableOpCow<'_>> for TableRowOperation {
+    fn from(top: &TableOpCow<'_>) -> Self {
+        let row = to_vec(&*top.row).unwrap();
+        let op = if top.op_type == 1 {
+            OperationType::Insert.into()
+        } else {
+            OperationType::Delete.into()
+        };
+        Self { op, row }
+    }
+}
+
+impl From<&TableOpCow<'_>> for TableRowOperationJson {
+    fn from(top: &TableOpCow<'_>) -> Self {
+        let row = top.row.elements.clone();
+        let op = if top.op_type == 1 { "insert" } else { "delete" }.into();
+        Self { op, row }
+    }
+}
+
+impl From<TableOpCow<'_>> for TableOp {
+    fn from(top: TableOpCow<'_>) -> Self {
+        let row = top.row.into_owned();
+        let op_type = top.op_type;
+        Self { op_type, row }
     }
 }
 

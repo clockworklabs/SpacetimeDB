@@ -13,6 +13,7 @@ use spacetimedb_lib::Identity;
 use spacetimedb_primitives::TableId;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
+use std::ops::Deref;
 use std::sync::Arc;
 
 type Query = Arc<ExecutionUnit>;
@@ -134,11 +135,13 @@ impl SubscriptionManager {
             }
 
             let span = tracing::info_span!("eval_incr").entered();
+            let ctx = ExecutionContext::incremental_update(db.address());
+            let tx = &tx.deref().into();
             let eval = units
                 .into_par_iter()
                 .filter_map(|(hash, tables)| self.queries.get(hash).map(|unit| (hash, tables, unit)))
                 .filter_map(|(hash, tables, unit)| {
-                    match unit.eval_incr(db, &tx, tables.into_iter()) {
+                    match unit.eval_incr(&ctx, db, tx, tables.into_iter()) {
                         Ok(None) => None,
                         Ok(Some(table)) => Some((hash, table)),
                         Err(err) => {
@@ -168,11 +171,9 @@ impl SubscriptionManager {
                             Protocol::Binary => {
                                 Either::Left(ops_bin.get_or_insert_with(|| ops.iter().map_into().collect()).clone())
                             }
-                            Protocol::Text => Either::Right(
-                                ops_json
-                                    .get_or_insert_with(|| ops.iter().cloned().map_into().collect())
-                                    .clone(),
-                            ),
+                            Protocol::Text => {
+                                Either::Right(ops_json.get_or_insert_with(|| ops.iter().map_into().collect()).clone())
+                            }
                         };
                         (id, table_id, table_name.clone(), ops)
                     })

@@ -7,7 +7,7 @@ use crate::execution_context::ExecutionContext;
 use core::ops::RangeBounds;
 use itertools::Itertools;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::Address;
+use spacetimedb_lib::relation::RowCount;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::def::TableDef;
 use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldExprRef, FieldName, Header, Relation};
@@ -16,7 +16,7 @@ use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::eval::IterRows;
 use spacetimedb_vm::expr::*;
 use spacetimedb_vm::iterators::RelIter;
-use spacetimedb_vm::program::ProgramVm;
+use spacetimedb_vm::program::{ProgramVm, Sources};
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::{MemTable, RelValue, Table};
 use std::sync::Arc;
@@ -40,12 +40,12 @@ impl<'a> From<&'a Tx> for TxMode<'a> {
 
 //TODO: This is partially duplicated from the `vm` crate to avoid borrow checker issues
 //and pull all that crate in core. Will be revisited after trait refactor
-pub fn build_query<'a>(
-    ctx: &'a ExecutionContext,
+pub fn build_query<'a, I: 'a + Iterator<Item = RelValue<'a>>>(
+    ctx: &'a ExecutionContext<'a>,
     stdb: &'a RelationalDB,
-    tx: &'a TxMode,
+    tx: &'a TxMode<'a>,
     query: &'a QueryExpr,
-    sources: &mut SourceSet,
+    sources: &mut impl FnMut(SourceId) -> Option<I>,
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {
     let db_table = query.source.is_db_table();
 
@@ -177,13 +177,13 @@ pub fn build_query<'a>(
         .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))
 }
 
-fn join_inner<'a>(
-    ctx: &'a ExecutionContext,
+fn join_inner<'a, I: 'a + Iterator<Item = RelValue<'a>>>(
+    ctx: &'a ExecutionContext<'a>,
     db: &'a RelationalDB,
-    tx: &'a TxMode,
+    tx: &'a TxMode<'a>,
     lhs: impl RelOps<'a> + 'a,
     rhs: &'a JoinExpr,
-    sources: &mut SourceSet,
+    sources: &mut impl FnMut(SourceId) -> Option<I>,
 ) -> Result<impl RelOps<'a> + 'a, ErrorVm> {
     let semi = rhs.semi;
 
@@ -234,21 +234,20 @@ fn join_inner<'a>(
 ///
 /// On the other hand, if the `query` is a `DbTable`, `sources` is unused
 /// and therefore unmodified.
-fn get_table<'a>(
-    ctx: &'a ExecutionContext,
+fn get_table<'a, I: 'a + Iterator<Item = RelValue<'a>>>(
+    ctx: &'a ExecutionContext<'a>,
     stdb: &'a RelationalDB,
     tx: &'a TxMode,
     query: &SourceExpr,
-    sources: &mut SourceSet,
-) -> Result<Box<dyn RelOps<'a> + 'a>, ErrorVm> {
-    let head = query.head().clone();
-    let row_count = query.row_count();
+    sources: &mut impl FnMut(SourceId) -> Option<I>,
+) -> Result<Box<IterRows<'a>>, ErrorVm> {
     Ok(match query {
-        SourceExpr::MemTable { source_id, .. } => Box::new(RelIter::new(
-            head,
+        SourceExpr::MemTable {
+            source_id,
+            header,
             row_count,
-            sources.take_mem_table(*source_id).expect("Unable to get MemTable"),
-        )) as Box<IterRows<'_>>,
+            ..
+        } => build_source_query(sources, *source_id, header.clone(), *row_count),
         SourceExpr::DbTable(x) => {
             let iter = match tx {
                 TxMode::MutTx(tx) => stdb.iter_mut(ctx, tx, x.table_id)?,
@@ -257,6 +256,18 @@ fn get_table<'a>(
             Box::new(TableCursor::new(x.clone(), iter)?) as Box<IterRows<'_>>
         }
     })
+}
+
+fn build_source_query<'a, I: 'a + Iterator<Item = RelValue<'a>>>(
+    sources: &mut impl FnMut(SourceId) -> Option<I>,
+    source_id: SourceId,
+    head: Arc<Header>,
+    rc: RowCount,
+) -> Box<IterRows<'a>> {
+    let source = sources(source_id).unwrap_or_else(|| {
+        panic!("Query plan specifies in-mem table for {source_id:?}, but found a `DbTable` or nothing")
+    });
+    Box::new(RelIter::new(head, rc, source)) as Box<IterRows<'a>>
 }
 
 fn iter_by_col_range<'a>(
@@ -382,11 +393,13 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         Self { ctx, db, tx, auth }
     }
 
-    fn _eval_query(&mut self, query: &QueryExpr, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
+    fn _eval_query<const N: usize>(&mut self, query: &QueryExpr, sources: Sources<'_, N>) -> Result<Code, ErrorVm> {
         let table_access = query.source.table_access();
         tracing::trace!(table = query.source.table_name());
 
-        let result = build_query(self.ctx, self.db, self.tx, query, sources)?;
+        let result = build_query(self.ctx, self.db, self.tx, query, &mut |id| {
+            sources.take(id).map(|mt| mt.data.into_iter().map(RelValue::Projection))
+        })?;
         let head = result.head().clone();
         let rows = result.collect_vec(|row| row.into_product_value())?;
 
@@ -423,7 +436,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         }
     }
 
-    fn _delete_query(&mut self, query: &QueryExpr, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
+    fn _delete_query<const N: usize>(&mut self, query: &QueryExpr, sources: Sources<'_, N>) -> Result<Code, ErrorVm> {
         let table = sources
             .take_table(&query.source)
             .expect("Cannot delete from a `MemTable`");
@@ -478,20 +491,8 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
 }
 
 impl ProgramVm for DbProgram<'_, '_> {
-    fn address(&self) -> Option<Address> {
-        Some(self.db.address())
-    }
-
-    fn ctx(&self) -> &dyn ProgramVm {
-        self as &dyn ProgramVm
-    }
-
-    fn auth(&self) -> &AuthCtx {
-        &self.auth
-    }
-
     // Safety: For DbProgram with tx = TxMode::Tx variant, all queries must match to CrudCode::Query and no other branch.
-    fn eval_query(&mut self, query: CrudExpr, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
+    fn eval_query<const N: usize>(&mut self, query: CrudExpr, sources: Sources<'_, N>) -> Result<Code, ErrorVm> {
         query.check_auth(self.auth.owner, self.auth.caller)?;
 
         match query {
@@ -658,7 +659,7 @@ pub(crate) mod tests {
         let data = MemTable::from_value(scalar(1u64));
         let rhs = data.get_field_pos(0).unwrap().clone();
 
-        let mut sources = SourceSet::default();
+        let mut sources = SourceSet::<_, 1>::empty();
         let rhs_source_expr = sources.add_mem_table(data);
 
         let q = query(&schema).with_join_inner(rhs_source_expr, FieldName::positional("inventory", 0), rhs, false);
@@ -708,7 +709,7 @@ pub(crate) mod tests {
         let data = MemTable::from_value(scalar(1u64));
         let rhs = data.get_field_pos(0).unwrap().clone();
 
-        let mut sources = SourceSet::default();
+        let mut sources = SourceSet::<_, 1>::empty();
         let rhs_source_expr = sources.add_mem_table(data);
 
         let q = query(&schema).with_join_inner(rhs_source_expr, FieldName::positional("inventory", 0), rhs, true);
@@ -734,7 +735,7 @@ pub(crate) mod tests {
     }
 
     fn check_catalog(p: &mut DbProgram, name: &str, row: ProductValue, q: QueryExpr, schema: DbTable) {
-        let result = run_ast(p, q.into(), SourceSet::default());
+        let result = run_ast(p, q.into(), [].into());
 
         //The expected result
         let input = mem_table(schema.head.clone_for_error(), vec![row]);

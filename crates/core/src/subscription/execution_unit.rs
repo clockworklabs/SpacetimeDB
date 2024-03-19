@@ -3,17 +3,19 @@ use super::subscription::{IncrementalJoin, SupportedQuery};
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
-use crate::host::module_host::{DatabaseTableUpdate, TableOp};
+use crate::host::module_host::{DatabaseTableUpdate, DatabaseTableUpdateCow, TableOp, TableOpCow};
 use crate::json::client_api::TableUpdateJson;
 use crate::vm::{build_query, TxMode};
 use spacetimedb_client_api_messages::client_api::{TableRowOperation, TableUpdate};
+use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::relation::DbTable;
 use spacetimedb_vm::eval::IterRows;
-use spacetimedb_vm::expr::{Query, QueryExpr, SourceExpr, SourceSet};
+use spacetimedb_vm::expr::{Query, QueryExpr, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
-use spacetimedb_vm::relation::{MemTable, RelValue};
+use spacetimedb_vm::relation::RelValue;
 use std::hash::Hash;
+use std::iter;
 
 /// A hash for uniquely identifying query execution units,
 /// to avoid recompilation of queries that have an open subscription.
@@ -248,7 +250,7 @@ impl ExecutionUnit {
     ) -> Result<Vec<T>, DBError> {
         let ctx = ExecutionContext::subscribe(db.address());
         let tx: TxMode = tx.into();
-        let query = build_query(&ctx, db, &tx, eval_plan, &mut SourceSet::default())?;
+        let query = build_query::<iter::Empty<_>>(&ctx, db, &tx, eval_plan, &mut |_| None)?;
         let ops = query.collect_vec(convert)?;
         Ok(ops)
     }
@@ -256,20 +258,21 @@ impl ExecutionUnit {
     /// Evaluate this execution unit against the given delta tables.
     pub fn eval_incr<'a>(
         &'a self,
-        db: &RelationalDB,
-        tx: &Tx,
+        ctx: &'a ExecutionContext<'a>,
+        db: &'a RelationalDB,
+        tx: &'a TxMode<'a>,
         tables: impl Iterator<Item = &'a DatabaseTableUpdate>,
-    ) -> Result<Option<DatabaseTableUpdate>, DBError> {
+    ) -> Result<Option<DatabaseTableUpdateCow<'a>>, DBError> {
         let ops = match &self.eval_incr_plan {
             EvalIncrPlan::Select(eval_incr_plan) => {
-                Self::eval_incr_query_expr(db, tx, tables, eval_incr_plan, self.return_table())?
+                Self::eval_incr_query_expr(ctx, db, tx, tables, eval_incr_plan, self.return_table())?
             }
             EvalIncrPlan::Semijoin(eval_incr_plan) => eval_incr_plan
-                .eval(db, tx, tables)?
-                .map(<Vec<_>>::from_iter)
-                .unwrap_or(vec![]),
+                .eval(ctx, db, tx, tables)?
+                .map(Vec::<_>::from_iter)
+                .unwrap_or_default(),
         };
-        Ok((!ops.is_empty()).then(|| DatabaseTableUpdate {
+        Ok((!ops.is_empty()).then(|| DatabaseTableUpdateCow {
             table_id: self.return_table(),
             table_name: self.return_name(),
             ops,
@@ -280,53 +283,46 @@ impl ExecutionUnit {
         ctx: &'a ExecutionContext,
         db: &'a RelationalDB,
         tx: &'a TxMode,
-        mem_table: MemTable,
+        mem_table: Vec<&'a ProductValue>,
         eval_incr_plan: &'a QueryExpr,
     ) -> Result<Box<IterRows<'a>>, DBError> {
         // Build a `SourceSet` containing the updates from `table`.
-        let mut sources = SourceSet::default();
-        sources.add_mem_table(mem_table);
+        let mut sources: SourceSet<_, 1> = [mem_table.into_iter().map(RelValue::ProjRef)].into();
         // Evaluate the saved plan against the new `SourceSet`,
         // returning an iterator over the selected rows.
-        build_query(ctx, db, tx, eval_incr_plan, &mut sources).map_err(Into::into)
+        build_query(ctx, db, tx, eval_incr_plan, &mut |id| sources.take(id)).map_err(Into::into)
     }
 
     fn eval_incr_query_expr<'a>(
-        db: &RelationalDB,
-        tx: &Tx,
+        ctx: &'a ExecutionContext<'a>,
+        db: &'a RelationalDB,
+        tx: &'a TxMode<'a>,
         tables: impl Iterator<Item = &'a DatabaseTableUpdate>,
-        eval_incr_plan: &QueryExpr,
+        eval_incr_plan: &'a QueryExpr,
         return_table: TableId,
-    ) -> Result<Vec<TableOp>, DBError> {
-        let ctx = ExecutionContext::incremental_update(db.address());
-        let tx: TxMode = tx.into();
-
-        let SourceExpr::MemTable {
-            ref header,
-            table_access,
-            ..
-        } = eval_incr_plan.source
-        else {
-            panic!("Expected MemTable in `eval_incr_plan`, but found `DbTable`");
-        };
+    ) -> Result<Vec<TableOpCow<'a>>, DBError> {
+        assert!(
+            eval_incr_plan.source.is_mem_table(),
+            "Expected MemTable in `eval_incr_plan`, but found `DbTable`"
+        );
 
         // Partition the `update` into two `MemTable`s, `(inserts, deletes)`,
         // so that we can remember which are which without adding a column to each row.
         // Previously, we used to add such a column `"__op_type: AlgebraicType::U8"`.
-        let partition_updates = |update: &DatabaseTableUpdate| -> (Option<MemTable>, Option<MemTable>) {
+        fn partition_updates(update: &DatabaseTableUpdate) -> (Option<Vec<&ProductValue>>, Option<Vec<&ProductValue>>) {
             // Pre-allocate with capacity given by an upper bound,
             // because realloc is worse than over-allocing.
             let mut inserts = Vec::with_capacity(update.ops.len());
             let mut deletes = Vec::with_capacity(update.ops.len());
             for op in update.ops.iter() {
                 // 0 = delete, 1 = insert
-                if op.op_type == 0 { &mut deletes } else { &mut inserts }.push(op.row.clone());
+                if op.op_type == 0 { &mut deletes } else { &mut inserts }.push(&op.row);
             }
             (
-                (!inserts.is_empty()).then(|| MemTable::new(header.clone(), table_access, inserts)),
-                (!deletes.is_empty()).then(|| MemTable::new(header.clone(), table_access, deletes)),
+                (!inserts.is_empty()).then_some(inserts),
+                (!deletes.is_empty()).then_some(deletes),
             )
-        };
+        }
 
         let mut ops = Vec::new();
 
@@ -338,12 +334,12 @@ impl ExecutionUnit {
             // restoring the appropriate `op_type`.
             let (inserts, deletes) = partition_updates(table);
             if let Some(inserts) = inserts {
-                let query = Self::eval_query_expr_against_memtable(&ctx, db, &tx, inserts, eval_incr_plan)?;
+                let query = Self::eval_query_expr_against_memtable(ctx, db, tx, inserts, eval_incr_plan)?;
                 // op_type 1: insert
                 Self::collect_rows_with_table_op(&mut ops, query, 1)?;
             }
             if let Some(deletes) = deletes {
-                let query = Self::eval_query_expr_against_memtable(&ctx, db, &tx, deletes, eval_incr_plan)?;
+                let query = Self::eval_query_expr_against_memtable(ctx, db, tx, deletes, eval_incr_plan)?;
                 // op_type 0: delete
                 Self::collect_rows_with_table_op(&mut ops, query, 0)?;
             }
@@ -353,14 +349,14 @@ impl ExecutionUnit {
 
     /// Collect the results of `query` into a vec `into`,
     /// annotating each as a `TableOp` with the `op_type`.
-    fn collect_rows_with_table_op(
-        into: &mut Vec<TableOp>,
-        mut query: Box<IterRows<'_>>,
+    fn collect_rows_with_table_op<'a>(
+        into: &mut Vec<TableOpCow<'a>>,
+        mut query: Box<IterRows<'a>>,
         op_type: u8,
     ) -> Result<(), DBError> {
-        while let Some(row_ref) = query.next()? {
-            let row = row_ref.into_product_value();
-            into.push(TableOp::new(op_type, row));
+        while let Some(row) = query.next()? {
+            let row = row.into_product_value_cow();
+            into.push(TableOpCow { op_type, row });
         }
         Ok(())
     }

@@ -7,9 +7,7 @@ use crate::eval::{build_query, IterRows};
 use crate::expr::{Code, CrudExpr, SourceSet};
 use crate::iterators::RelIter;
 use crate::rel_ops::RelOps;
-use crate::relation::MemTable;
-use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::Address;
+use crate::relation::{MemTable, RelValue};
 use spacetimedb_sats::relation::Relation;
 
 /// A trait to allow split the execution of `programs` to allow executing
@@ -19,14 +17,12 @@ use spacetimedb_sats::relation::Relation;
 ///
 /// It could also permit run queries backed by different engines, like in `MySql`.
 pub trait ProgramVm {
-    fn address(&self) -> Option<Address>;
-    fn ctx(&self) -> &dyn ProgramVm;
-    fn auth(&self) -> &AuthCtx;
-
     /// Allows to execute the query with the state carried by the implementation of this
     /// trait
-    fn eval_query(&mut self, query: CrudExpr, sources: &mut SourceSet) -> Result<Code, ErrorVm>;
+    fn eval_query<const N: usize>(&mut self, query: CrudExpr, sources: Sources<'_, N>) -> Result<Code, ErrorVm>;
 }
+
+pub type Sources<'a, const N: usize> = &'a mut SourceSet<MemTable, N>;
 
 pub struct ProgramStore<P> {
     pub p: P,
@@ -40,40 +36,21 @@ impl<P> ProgramStore<P> {
 }
 
 /// A default program that run in-memory without a database
-pub struct Program {
-    pub(crate) auth: AuthCtx,
-}
-
-impl Program {
-    pub fn new(auth: AuthCtx) -> Self {
-        Self { auth }
-    }
-}
+pub struct Program;
 
 impl ProgramVm for Program {
-    fn address(&self) -> Option<Address> {
-        None
-    }
-
-    fn ctx(&self) -> &dyn ProgramVm {
-        self as &dyn ProgramVm
-    }
-
-    fn auth(&self) -> &AuthCtx {
-        &self.auth
-    }
-
-    fn eval_query(&mut self, query: CrudExpr, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
+    fn eval_query<const N: usize>(&mut self, query: CrudExpr, sources: Sources<'_, N>) -> Result<Code, ErrorVm> {
         match query {
             CrudExpr::Query(query) => {
                 let head = query.head().clone();
                 let row_count = query.row_count();
                 let table_access = query.source.table_access();
                 let result = if let Some(source_id) = query.source.source_id() {
-                    let Some(result_table) = sources.take_mem_table(source_id) else {
+                    let Some(result_table) = sources.take(source_id) else {
                         panic!("Query plan specifies a `MemTable` for {source_id:?}, but found a `DbTable` or nothing");
                     };
-                    Box::new(RelIter::new(head, row_count, result_table)) as Box<IterRows<'_>>
+                    let iter = result_table.data.into_iter().map(RelValue::Projection);
+                    Box::new(RelIter::new(head, row_count, iter)) as Box<IterRows<'_>>
                 } else {
                     panic!("DB not set")
                 };
