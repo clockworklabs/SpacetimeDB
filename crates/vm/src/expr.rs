@@ -1,6 +1,7 @@
 use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
 use crate::operator::{OpCmp, OpLogic, OpQuery};
 use crate::relation::{MemTable, RelValue, Table};
+use arrayvec::ArrayVec;
 use derive_more::From;
 use smallvec::{smallvec, SmallVec};
 use spacetimedb_lib::Identity;
@@ -15,9 +16,9 @@ use spacetimedb_sats::ProductValue;
 use std::cmp::Reverse;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
-use std::fmt;
 use std::ops::Bound;
 use std::sync::Arc;
+use std::{fmt, mem};
 
 /// Trait for checking if the `caller` have access to `Self`
 pub trait AuthAccess {
@@ -273,57 +274,53 @@ impl From<Query> for Option<ColumnOp> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Default)]
-#[repr(transparent)]
-/// A set of [`MemTable`]s referenced by a query plan by their [`SourceId`].
+/// A set of [`SourceTable`]s referenced by a query plan by their [`SourceId`].
 ///
-/// Rather than embedding [`MemTable`]s in query plans, we store a `SourceExpr::MemTable`,
+/// Rather than embedding tables in query plans, we store a `SourceExpr::MemTable`,
 /// which contains the information necessary for optimization along with a [`SourceId`].
 /// Query execution then executes the plan, and when it encounters a `SourceExpr::MemTable`,
-/// retrieves the [`MemTable`] from the corresponding `SourceSet`.
+/// retrieves the `T` table from the corresponding `SourceSet`.
 /// This allows query plans to be re-used, though each execution requires a new `SourceSet`.
 ///
-/// Internally, the `SourceSet` stores an `Option<MemTable>` for each planned [`SourceId`].
+/// Internally, the `SourceSet` stores an `Option<T>` for each planned [`SourceId`].
 /// During execution, the VM will [`Option::take`] the [`MemTable`] to consume them.
 /// This means that a query plan may not include multiple references to the same [`SourceId`].
-pub struct SourceSet(Vec<Option<MemTable>>);
+#[derive(Debug, PartialEq, Eq, Clone)]
+#[repr(transparent)]
+pub struct SourceSet<T, const N: usize>(ArrayVec<Option<T>, N>);
 
-impl SourceSet {
+impl<T, const N: usize> From<[T; N]> for SourceSet<T, N> {
+    #[inline]
+    fn from(sources: [T; N]) -> Self {
+        Self(sources.map(Some).into())
+    }
+}
+
+impl<T, const N: usize> SourceSet<T, N> {
+    /// Returns an empty source set.
+    pub fn empty() -> Self {
+        Self(ArrayVec::new())
+    }
+
     /// Get a fresh `SourceId` which can be used as the id for a new entry.
     fn next_id(&self) -> SourceId {
         SourceId(self.0.len())
     }
 
-    /// Insert a [`MemTable`] into this `SourceSet` so it can be used in a query plan,
-    /// and return a [`SourceExpr`] which can be embedded in that plan.
-    pub fn add_mem_table(&mut self, table: MemTable) -> SourceExpr {
+    /// Insert an entry into this `SourceSet` so it can be used in a query plan,
+    /// and return a [`SourceId`] which can be embedded in that plan.
+    pub fn add(&mut self, table: T) -> SourceId {
         let source_id = self.next_id();
-        let expr = SourceExpr::from_mem_table(&table, source_id);
         self.0.push(Some(table));
-        expr
+        source_id
     }
 
-    /// Extract the [`MemTable`] referred to by `id` from this `SourceSet`,
+    /// Extract the entry referred to by `id` from this `SourceSet`,
     /// leaving a "gap" in its place.
     ///
     /// Subsequent calls to `take_mem_table` on the same `id` will return `None`.
-    pub fn take_mem_table(&mut self, id: SourceId) -> Option<MemTable> {
-        self.0.get_mut(id.0)?.take()
-    }
-
-    /// Resolve `source` to a `Table` for use in query execution.
-    ///
-    /// If the `source` is a [`SourceExpr::DbTable`], this simply clones the [`DbTable`] and returns it.
-    /// ([`DbTable::clone`] is inexpensive.)
-    /// In this case, `self` is not modified.
-    ///
-    /// If the `source` is a [`SourceExpr::MemTable`], this behaves like [`Self::take_mem_table`].
-    /// Subsequent calls to `take_table` or `take_mem_table` with the same `source` will fail.
-    pub fn take_table(&mut self, source: &SourceExpr) -> Option<Table> {
-        match source {
-            SourceExpr::DbTable(db_table) => Some(Table::DbTable(db_table.clone())),
-            SourceExpr::MemTable { source_id, .. } => self.take_mem_table(*source_id).map(Table::MemTable),
-        }
+    pub fn take(&mut self, id: SourceId) -> Option<T> {
+        self.0.get_mut(id.0).map(mem::take).unwrap_or_default()
     }
 
     /// Returns the number of slots for [`MemTable`]s in this set.
@@ -341,17 +338,44 @@ impl SourceSet {
     }
 }
 
-impl std::ops::Index<SourceId> for SourceSet {
-    type Output = Option<MemTable>;
+impl<T, const N: usize> std::ops::Index<SourceId> for SourceSet<T, N> {
+    type Output = Option<T>;
 
-    fn index(&self, idx: SourceId) -> &Option<MemTable> {
+    fn index(&self, idx: SourceId) -> &Self::Output {
         &self.0[idx.0]
     }
 }
 
-impl std::ops::IndexMut<SourceId> for SourceSet {
-    fn index_mut(&mut self, idx: SourceId) -> &mut Option<MemTable> {
+impl<T, const N: usize> std::ops::IndexMut<SourceId> for SourceSet<T, N> {
+    fn index_mut(&mut self, idx: SourceId) -> &mut Self::Output {
         &mut self.0[idx.0]
+    }
+}
+
+impl<const N: usize> SourceSet<MemTable, N> {
+    /// Insert a [`MemTable`] into this `SourceSet` so it can be used in a query plan,
+    /// and return a [`SourceExpr`] which can be embedded in that plan.
+    pub fn add_mem_table(&mut self, table: MemTable) -> SourceExpr {
+        let head = table.head.clone();
+        let access = table.table_access;
+        let len = table.data.len();
+        let id = self.add(table);
+        SourceExpr::from_mem_table(head, access, len, id)
+    }
+
+    /// Resolve `source` to a `Table` for use in query execution.
+    ///
+    /// If the `source` is a [`SourceExpr::DbTable`], this simply clones the [`DbTable`] and returns it.
+    /// ([`DbTable::clone`] is inexpensive.)
+    /// In this case, `self` is not modified.
+    ///
+    /// If the `source` is a [`SourceExpr::MemTable`], this behaves like [`Self::take_mem_table`].
+    /// Subsequent calls to `take_table` or `take_mem_table` with the same `source` will fail.
+    pub fn take_table(&mut self, source: &SourceExpr) -> Option<Table> {
+        match source {
+            SourceExpr::DbTable(db_table) => Some(Table::DbTable(db_table.clone())),
+            SourceExpr::MemTable { source_id, .. } => self.take(*source_id).map(Into::into),
+        }
     }
 }
 
@@ -437,13 +461,13 @@ impl SourceExpr {
         matches!(self, SourceExpr::DbTable(_))
     }
 
-    pub fn from_mem_table(mem_table: &MemTable, id: SourceId) -> Self {
+    pub fn from_mem_table(header: Arc<Header>, table_access: StAccess, row_count: usize, id: SourceId) -> Self {
         SourceExpr::MemTable {
             source_id: id,
-            header: mem_table.head.clone(),
+            header,
             table_type: StTableType::User,
-            table_access: mem_table.table_access,
-            row_count: RowCount::exact(mem_table.data.len()),
+            table_access,
+            row_count: RowCount::exact(row_count),
         }
     }
 

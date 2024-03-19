@@ -12,6 +12,7 @@ spacetimedb-primitives.workspace = true
 spacetimedb-table.workspace = true
 
 anyhow.workspace = true
+arrayvec.workspace = true
 derive_more.workspace = true
 itertools.workspace = true
 smallvec.workspace = true
