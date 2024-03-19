@@ -325,9 +325,6 @@ fn autogen_csharp_product_table_common(
 
         // If this is a table, we want to generate event accessor and indexes
         if let Some(schema) = &schema {
-            writeln!(output, "protected override {name} GetThis() => this;").unwrap();
-            writeln!(output).unwrap();
-
             let constraints = schema.column_constraints();
             let mut unique_indexes = Vec::new();
             // Declare custom index dictionaries
