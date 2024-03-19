@@ -336,7 +336,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
     }
 
     #[tracing::instrument(skip(self, args), fields(db_id = self.instance.instance_env().dbic.id))]
-    fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<ReducerCallResult> {
+    fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<Option<ReducerCallResult>> {
         let timestamp = Timestamp::now();
         let stdb = &*self.database_instance_context().relational_db;
         let ctx = ExecutionContext::internal(stdb.address());
@@ -360,11 +360,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         let rcr = match self.info.reducers.lookup_id(INIT_DUNDER) {
             None => {
                 stdb.commit_tx(&ctx, tx)?;
-                ReducerCallResult {
-                    outcome: ReducerOutcome::Committed,
-                    energy_used: EnergyQuanta::ZERO,
-                    execution_duration: Duration::ZERO,
-                }
+                None
             }
 
             Some(reducer_id) => {
@@ -378,7 +374,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                     ..
                 } = self.database_instance_context().database;
                 let client = None;
-                self.call_reducer_with_tx(
+                Some(self.call_reducer_with_tx(
                     Some(tx),
                     CallReducerParams {
                         timestamp,
@@ -390,7 +386,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                         reducer_id,
                         args,
                     },
-                )
+                ))
             }
         };
 
