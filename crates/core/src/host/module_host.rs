@@ -72,22 +72,25 @@ impl DatabaseUpdate {
     }
 
     pub fn from_writes(stdb: &RelationalDB, tx_data: &TxData) -> Self {
-        let mut map: HashMap<TableId, Vec<TableOp>> = HashMap::new();
+        let mut map: HashMap<TableId, (Vec<ProductValue>, Vec<ProductValue>)> = HashMap::new();
         for record in tx_data.records.iter() {
             let pv = record.product_value.clone();
-            map.entry(record.table_id).or_default().push(match record.op {
-                TxOp::Delete => TableOp::delete(pv),
-                TxOp::Insert(_) => TableOp::insert(pv),
-            });
+            let table = map.entry(record.table_id).or_default();
+            match record.op {
+                TxOp::Delete => &mut table.0,
+                TxOp::Insert(_) => &mut table.1,
+            }
+            .push(pv);
         }
 
         let ctx = ExecutionContext::internal(stdb.address());
         let table_updates = stdb.with_read_only(&ctx, |tx| {
             map.into_iter()
-                .map(|(table_id, ops)| DatabaseTableUpdate {
+                .map(|(table_id, (deletes, inserts))| DatabaseTableUpdate {
                     table_id,
                     table_name: stdb.table_name_from_id(tx, table_id).unwrap().unwrap().into_owned(),
-                    ops,
+                    deletes,
+                    inserts,
                 })
                 .collect()
         });
@@ -112,25 +115,32 @@ impl From<DatabaseUpdate> for Vec<TableUpdateJson> {
 pub struct DatabaseTableUpdate {
     pub table_id: TableId,
     pub table_name: String,
-    pub ops: Vec<TableOp>,
+    pub inserts: Vec<ProductValue>,
+    pub deletes: Vec<ProductValue>,
 }
 
 impl From<DatabaseTableUpdate> for TableUpdate {
     fn from(table: DatabaseTableUpdate) -> Self {
+        let deletes = table.deletes.into_iter().map(TableOp::delete);
+        let inserts = table.inserts.into_iter().map(TableOp::insert);
+        let table_row_operations = deletes.chain(inserts).map(|x| (&x).into()).collect();
         Self {
             table_id: table.table_id.into(),
             table_name: table.table_name,
-            table_row_operations: table.ops.iter().map_into().collect(),
+            table_row_operations,
         }
     }
 }
 
 impl From<DatabaseTableUpdate> for TableUpdateJson {
     fn from(table: DatabaseTableUpdate) -> Self {
+        let deletes = table.deletes.into_iter().map(TableOp::delete);
+        let inserts = table.inserts.into_iter().map(TableOp::insert);
+        let table_row_operations = deletes.chain(inserts).map_into().collect();
         Self {
             table_id: table.table_id.into(),
             table_name: table.table_name,
-            table_row_operations: table.ops.into_iter().map_into().collect(),
+            table_row_operations,
         }
     }
 }

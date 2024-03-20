@@ -138,7 +138,7 @@ mod tests {
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::db::relational_db::MutTx;
     use crate::execution_context::ExecutionContext;
-    use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp};
+    use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate};
     use crate::sql::execute::collect_result;
     use crate::sql::execute::run;
     use crate::subscription::subscription::ExecutionSet;
@@ -181,7 +181,8 @@ mod tests {
         DatabaseTableUpdate {
             table_id,
             table_name: table_name.to_string(),
-            ops: vec![TableOp::insert(row)],
+            deletes: vec![],
+            inserts: vec![row],
         }
     }
 
@@ -189,7 +190,8 @@ mod tests {
         DatabaseTableUpdate {
             table_id,
             table_name: table_name.to_string(),
-            ops: vec![TableOp::delete(row)],
+            deletes: vec![row],
+            inserts: vec![],
         }
     }
 
@@ -215,7 +217,8 @@ mod tests {
         let data = DatabaseTableUpdate {
             table_id,
             table_name: table_name.to_string(),
-            ops: vec![TableOp::insert(row.clone())],
+            deletes: vec![],
+            inserts: vec![row.clone()],
         };
 
         let schema = db.schema_for_table_mut(tx, table_id).unwrap().into_owned();
@@ -279,7 +282,7 @@ mod tests {
         mut of: QueryExpr,
         data: &DatabaseTableUpdate,
     ) -> (QueryExpr, SourceSet<Vec<ProductValue>, 1>) {
-        let data = data.ops.iter().map(|op| op.row.clone()).collect();
+        let data = data.deletes.iter().chain(data.inserts.iter()).cloned().collect();
         let mem_table = MemTable::new(of.source.head().clone(), of.source.table_access(), data);
         let mut sources = SourceSet::empty();
         of.source = sources.add_mem_table(mem_table);
@@ -381,20 +384,18 @@ mod tests {
         let table_id = db.create_table_for_test("test", schema, indexes)?;
 
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
-        let mut ops = Vec::new();
+        let mut deletes = Vec::new();
         for i in 0u64..9u64 {
-            let row = product!(i, i);
-            db.insert(&mut tx, table_id, row)?;
-
-            let row = product!(i + 10, i);
-            ops.push(TableOp::delete(row))
+            db.insert(&mut tx, table_id, product!(i, i))?;
+            deletes.push(product!(i + 10, i))
         }
 
         let update = DatabaseUpdate {
             tables: vec![DatabaseTableUpdate {
                 table_id,
                 table_name: "test".into(),
-                ops,
+                deletes,
+                inserts: vec![],
             }],
         };
 
@@ -471,12 +472,11 @@ mod tests {
 
         let s = singleton_execution_set(q_id)?;
 
-        let row2 = TableOp::insert(row.clone());
-
         let data = DatabaseTableUpdate {
             table_id: schema.table_id,
             table_name: "_inventory".to_string(),
-            ops: vec![row2],
+            deletes: vec![],
+            inserts: vec![row.clone()],
         };
 
         let update = DatabaseUpdate {
@@ -594,13 +594,15 @@ mod tests {
         let data1 = DatabaseTableUpdate {
             table_id: schema_1.table_id,
             table_name: "inventory".to_string(),
-            ops: vec![TableOp::delete(row_1)],
+            deletes: vec![row_1],
+            inserts: vec![],
         };
 
         let data2 = DatabaseTableUpdate {
             table_id: schema_2.table_id,
             table_name: "player".to_string(),
-            ops: vec![TableOp::insert(row_2)],
+            deletes: vec![],
+            inserts: vec![row_2],
         };
 
         let update = DatabaseUpdate {
@@ -768,11 +770,21 @@ mod tests {
                 .tables
                 .into_iter()
                 .map(|update| {
-                    let ops = update.ops.into_iter().map_into().collect();
+                    let mut deletes = Vec::new();
+                    let mut inserts = Vec::new();
+                    for update in update.ops {
+                        let row = update.row.into_owned();
+                        if update.op_type == 0 {
+                            deletes.push(row);
+                        } else {
+                            inserts.push(row);
+                        }
+                    }
                     DatabaseTableUpdate {
                         table_id: update.table_id,
                         table_name: update.table_name,
-                        ops,
+                        deletes,
+                        inserts,
                     }
                 })
                 .collect();
@@ -1053,12 +1065,14 @@ mod tests {
                 DatabaseTableUpdate {
                     table_id: lhs_id,
                     table_name: "lhs".to_string(),
-                    ops: vec![TableOp::delete(lhs_old.clone()), TableOp::insert(lhs_new.clone())],
+                    deletes: vec![lhs_old.clone()],
+                    inserts: vec![lhs_new.clone()],
                 },
                 DatabaseTableUpdate {
                     table_id: rhs_id,
                     table_name: "rhs".to_string(),
-                    ops: vec![TableOp::delete(rhs_old.clone()), TableOp::insert(rhs_new.clone())],
+                    deletes: vec![rhs_old.clone()],
+                    inserts: vec![rhs_new.clone()],
                 },
             ],
         )?;
@@ -1070,7 +1084,8 @@ mod tests {
             DatabaseTableUpdate {
                 table_id: lhs_id,
                 table_name: "lhs".to_string(),
-                ops: vec![TableOp::delete(lhs_old), TableOp::insert(lhs_new)],
+                deletes: vec![lhs_old],
+                inserts: vec![lhs_new],
             },
         );
         Ok(())
