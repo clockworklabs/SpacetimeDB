@@ -43,11 +43,14 @@ use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::relation::DbTable;
+use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::expr::{self, IndexJoin, Query, QueryExpr, SourceProvider, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::{MemTable, RelValue};
 use std::borrow::Cow;
 use std::collections::HashSet;
+use std::hash::Hash;
+use std::iter;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -157,6 +160,8 @@ impl AsRef<QueryExpr> for SupportedQuery {
     }
 }
 
+type ResCowPV<'a> = Result<Cow<'a, ProductValue>, ErrorVm>;
+
 /// Evaluates `query` and returns all the updates.
 fn eval_updates<'a>(
     ctx: &'a ExecutionContext<'a>,
@@ -164,10 +169,14 @@ fn eval_updates<'a>(
     tx: &'a TxMode<'a>,
     query: &'a QueryExpr,
     mut sources: impl SourceProvider<'a>,
-) -> Result<impl Iterator<Item = Cow<'a, ProductValue>>, DBError> {
-    let query = build_query(ctx, db, tx, query, &mut sources)?;
-    // TODO(perf): avoid collecting into a vec.
-    Ok(query.collect_vec(|rv| rv.into_product_value_cow())?.into_iter())
+) -> Result<impl 'a + Iterator<Item = ResCowPV<'a>>, DBError> {
+    let mut query = build_query(ctx, db, tx, query, &mut sources)?;
+    Ok(iter::from_fn(move || {
+        query
+            .next()
+            .map(|x| x.map(|rv| rv.into_product_value_cow()))
+            .transpose()
+    }))
 }
 
 /// A [`query::Supported::Semijoin`] compiled for incremental evaluations.
@@ -299,7 +308,7 @@ impl IncrementalJoin {
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         lhs: impl 'a + Iterator<Item = &'a ProductValue>,
-    ) -> Result<impl Iterator<Item = Cow<'a, ProductValue>>, DBError> {
+    ) -> Result<impl Iterator<Item = ResCowPV<'a>>, DBError> {
         eval_updates(ctx, db, tx, self.plan_for_delta_lhs(), Some(lhs.map(RelValue::ProjRef)))
     }
 
@@ -310,7 +319,7 @@ impl IncrementalJoin {
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         rhs: impl 'a + Iterator<Item = &'a ProductValue>,
-    ) -> Result<impl Iterator<Item = Cow<'a, ProductValue>>, DBError> {
+    ) -> Result<impl Iterator<Item = ResCowPV<'a>>, DBError> {
         eval_updates(ctx, db, tx, self.plan_for_delta_rhs(), Some(rhs.map(RelValue::ProjRef)))
     }
 
@@ -322,7 +331,7 @@ impl IncrementalJoin {
         tx: &'a TxMode<'a>,
         lhs: impl 'a + Iterator<Item = &'a ProductValue>,
         rhs: impl 'a + Iterator<Item = &'a ProductValue>,
-    ) -> Result<impl Iterator<Item = Cow<'a, ProductValue>>, DBError> {
+    ) -> Result<impl Iterator<Item = ResCowPV<'a>>, DBError> {
         let is = Either::Left(lhs.map(RelValue::ProjRef));
         let ps = Either::Right(rhs.map(RelValue::ProjRef));
         let sources: SourceSet<_, 2> = if self.return_index_rows { [is, ps] } else { [ps, is] }.into();
@@ -387,7 +396,7 @@ impl IncrementalJoin {
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         updates: impl 'a + Clone + Iterator<Item = &'a DatabaseTableUpdate>,
-    ) -> Result<Option<impl Iterator<Item = TableOpCow<'a>>>, DBError> {
+    ) -> Result<Vec<TableOpCow<'a>>, DBError> {
         // Find any updates to the tables mentioned by `self` and group them into [`JoinSide`]s.
         //
         // The supplied updates are assumed to be the full set of updates from a single transaction.
@@ -424,84 +433,104 @@ impl IncrementalJoin {
         let has_rhs_deletes = rhs_deletes.peek().is_some();
         let has_rhs_inserts = rhs_inserts.peek().is_some();
         if !has_lhs_deletes && !has_lhs_inserts && !has_rhs_deletes && !has_rhs_inserts {
-            return Ok(None);
+            return Ok(Vec::new());
         }
 
         // Compute the incremental join
         // =====================================================================
 
+        fn collect_set<T: Hash + Eq, I: Iterator<Item = Result<T, ErrorVm>>>(
+            produce_if: bool,
+            producer: impl FnOnce() -> Result<I, DBError>,
+        ) -> Result<HashSet<T>, DBError> {
+            Ok(if produce_if {
+                let iter = producer()?;
+                let mut set = HashSet::new();
+                for x in iter {
+                    set.insert(x?);
+                }
+                set
+            } else {
+                HashSet::new()
+            })
+        }
+
+        fn make_iter<T, I: Iterator<Item = Result<T, ErrorVm>>>(
+            produce_if: bool,
+            producer: impl FnOnce() -> Result<I, DBError>,
+        ) -> Result<impl Iterator<Item = Result<T, ErrorVm>>, DBError> {
+            Ok(if produce_if {
+                let iter = producer()?;
+                Either::Left(iter)
+            } else {
+                Either::Right(iter::empty())
+            })
+        }
+
         // (1) A+ x B(t)
-        let join_1 = if has_lhs_inserts {
-            self.eval_lhs(ctx, db, tx, lhs_inserts.clone())?.collect()
-        } else {
-            Vec::with_capacity(0)
-        };
+        let j1_lhs_ins = lhs_inserts.clone();
+        let join_1 = make_iter(has_lhs_inserts, || self.eval_lhs(ctx, db, tx, j1_lhs_ins))?;
         // (2) A- x B(t)
-        let mut join_2 = if has_lhs_deletes {
-            self.eval_lhs(ctx, db, tx, lhs_deletes.clone())?.collect()
-        } else {
-            HashSet::with_capacity(0)
-        };
+        let j2_lhs_del = lhs_deletes.clone();
+        let mut join_2 = collect_set(has_lhs_deletes, || self.eval_lhs(ctx, db, tx, j2_lhs_del))?;
         // (3) A- x B+
-        let join_3 = if has_lhs_deletes && has_rhs_inserts {
-            self.eval_all(ctx, db, tx, lhs_deletes.clone(), rhs_inserts.clone())?
-                .collect()
-        } else {
-            Vec::with_capacity(0)
-        };
+        let j3_lhs_del = lhs_deletes.clone();
+        let j3_rhs_ins = rhs_inserts.clone();
+        let join_3 = make_iter(has_lhs_deletes && has_rhs_inserts, || {
+            self.eval_all(ctx, db, tx, j3_lhs_del, j3_rhs_ins)
+        })?;
         // (4) A- x B-
-        let join_4 = if has_lhs_deletes && has_rhs_deletes {
-            self.eval_all(ctx, db, tx, lhs_deletes, rhs_deletes.clone())?.collect()
-        } else {
-            Vec::with_capacity(0)
-        };
+        let j4_rhs_del = rhs_deletes.clone();
+        let join_4 = make_iter(has_lhs_deletes && has_rhs_deletes, || {
+            self.eval_all(ctx, db, tx, lhs_deletes, j4_rhs_del)
+        })?;
         // (5) A(t) x B+
-        let mut join_5 = if has_rhs_inserts {
-            self.eval_rhs(ctx, db, tx, rhs_inserts.clone())?.collect()
-        } else {
-            HashSet::with_capacity(0)
-        };
+        let j5_rhs_ins = rhs_inserts.clone();
+        let mut join_5 = collect_set(has_rhs_inserts, || self.eval_rhs(ctx, db, tx, j5_rhs_ins))?;
         // (6) A(t) x B-
-        let mut join_6 = if has_rhs_deletes {
-            self.eval_rhs(ctx, db, tx, rhs_deletes.clone())?.collect()
-        } else {
-            HashSet::with_capacity(0)
-        };
+        let j6_rhs_del = rhs_deletes.clone();
+        let mut join_6 = collect_set(has_rhs_deletes, || self.eval_rhs(ctx, db, tx, j6_rhs_del))?;
         // (7) A+ x B+
-        let join_7 = if has_lhs_inserts && has_rhs_inserts {
-            self.eval_all(ctx, db, tx, lhs_inserts.clone(), rhs_inserts)?.collect()
-        } else {
-            Vec::with_capacity(0)
-        };
+        let j7_lhs_ins = lhs_inserts.clone();
+        let join_7 = make_iter(has_lhs_inserts && has_rhs_inserts, || {
+            self.eval_all(ctx, db, tx, j7_lhs_ins, rhs_inserts)
+        })?;
         // (8) A+ x B-
-        let join_8 = if has_lhs_inserts && has_rhs_deletes {
-            self.eval_all(ctx, db, tx, lhs_inserts, rhs_deletes)?.collect()
-        } else {
-            Vec::with_capacity(0)
-        };
+        let join_8 = make_iter(has_lhs_inserts && has_rhs_deletes, || {
+            self.eval_all(ctx, db, tx, lhs_inserts, rhs_deletes)
+        })?;
 
         // A- x B(s) = A- x B(t) \ A- x B+
         for row in join_3 {
-            join_2.remove(&row);
+            join_2.remove(&row?);
         }
         // A(s) x B+ = A(t) x B+ \ A+ x B+
         for row in join_7 {
-            join_5.remove(&row);
+            join_5.remove(&row?);
         }
         // A(s) x B- = A(t) x B- \ A+ x B-
         for row in join_8 {
-            join_6.remove(&row);
+            join_6.remove(&row?);
         }
 
         join_5.retain(|row| !join_6.remove(row));
 
-        let iter = join_2
-            .into_iter()
-            .chain(join_4)
-            .chain(join_6)
-            .map(TableOpCow::delete)
-            .chain(join_1.into_iter().chain(join_5).map(TableOpCow::insert));
-        Ok(Some(iter))
+        // Collect all updates:
+        let mut updates = Vec::new();
+
+        // Add deletes first.
+        updates.extend(join_2.into_iter().map(TableOpCow::delete));
+        for row in join_4 {
+            updates.push(TableOpCow::delete(row?));
+        }
+        updates.extend(join_6.into_iter().map(TableOpCow::delete));
+
+        // And then add inserts:
+        for row in join_1 {
+            updates.push(TableOpCow::insert(row?));
+        }
+        updates.extend(join_5.into_iter().map(TableOpCow::insert));
+        Ok(updates)
     }
 }
 

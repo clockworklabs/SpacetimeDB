@@ -255,13 +255,8 @@ impl ExecutionUnit {
         tables: impl 'a + Clone + Iterator<Item = &'a DatabaseTableUpdate>,
     ) -> Result<Option<DatabaseTableUpdateCow<'a>>, DBError> {
         let ops = match &self.eval_incr_plan {
-            EvalIncrPlan::Select(eval_incr_plan) => {
-                Self::eval_incr_query_expr(ctx, db, tx, tables, eval_incr_plan, self.return_table())?
-            }
-            EvalIncrPlan::Semijoin(eval_incr_plan) => eval_incr_plan
-                .eval(ctx, db, tx, tables)?
-                .map(Vec::<_>::from_iter)
-                .unwrap_or_default(),
+            EvalIncrPlan::Select(plan) => Self::eval_incr_query_expr(ctx, db, tx, tables, plan, self.return_table())?,
+            EvalIncrPlan::Semijoin(plan) => plan.eval(ctx, db, tx, tables)?,
         };
         Ok((!ops.is_empty()).then(|| DatabaseTableUpdateCow {
             table_id: self.return_table(),
