@@ -252,7 +252,7 @@ impl ExecutionUnit {
         ctx: &'a ExecutionContext<'a>,
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
-        tables: impl Iterator<Item = &'a DatabaseTableUpdate>,
+        tables: impl 'a + Clone + Iterator<Item = &'a DatabaseTableUpdate>,
     ) -> Result<Option<DatabaseTableUpdateCow<'a>>, DBError> {
         let ops = match &self.eval_incr_plan {
             EvalIncrPlan::Select(eval_incr_plan) => {
@@ -274,11 +274,11 @@ impl ExecutionUnit {
         ctx: &'a ExecutionContext,
         db: &'a RelationalDB,
         tx: &'a TxMode,
-        mem_table: Vec<&'a ProductValue>,
+        mem_table: &'a [ProductValue],
         eval_incr_plan: &'a QueryExpr,
     ) -> Result<Box<IterRows<'a>>, DBError> {
         // Provide the updates from `table`.
-        let sources = &mut Some(mem_table.into_iter().map(RelValue::ProjRef));
+        let sources = &mut Some(mem_table.iter().map(RelValue::ProjRef));
         // Evaluate the saved plan against the new updates,
         // returning an iterator over the selected rows.
         build_query(ctx, db, tx, eval_incr_plan, sources).map_err(Into::into)
@@ -297,40 +297,21 @@ impl ExecutionUnit {
             "Expected in-mem table in `eval_incr_plan`, but found `DbTable`"
         );
 
-        // Partition the `update` into two `MemTable`s, `(inserts, deletes)`,
-        // so that we can remember which are which without adding a column to each row.
-        // Previously, we used to add such a column `"__op_type: AlgebraicType::U8"`.
-        fn partition_updates(update: &DatabaseTableUpdate) -> (Option<Vec<&ProductValue>>, Option<Vec<&ProductValue>>) {
-            // Pre-allocate with capacity given by an upper bound,
-            // because realloc is worse than over-allocing.
-            let mut inserts = Vec::with_capacity(update.ops.len());
-            let mut deletes = Vec::with_capacity(update.ops.len());
-            for op in update.ops.iter() {
-                // 0 = delete, 1 = insert
-                if op.op_type == 0 { &mut deletes } else { &mut inserts }.push(&op.row);
-            }
-            (
-                (!inserts.is_empty()).then_some(inserts),
-                (!deletes.is_empty()).then_some(deletes),
-            )
-        }
-
         let mut ops = Vec::new();
-
         for table in tables.filter(|table| table.table_id == return_table) {
             // Evaluate the query separately against inserts and deletes,
             // so that we can pass each row to the query engine unaltered,
             // without forgetting which are inserts and which are deletes.
+            // Previously, we used to add such a column `"__op_type: AlgebraicType::U8"`.
             // Then, collect the rows into the single `ops` vec,
             // restoring the appropriate `op_type`.
-            let (inserts, deletes) = partition_updates(table);
-            if let Some(inserts) = inserts {
-                let query = Self::eval_query_expr_against_memtable(ctx, db, tx, inserts, eval_incr_plan)?;
+            if !table.inserts.is_empty() {
+                let query = Self::eval_query_expr_against_memtable(ctx, db, tx, &table.inserts, eval_incr_plan)?;
                 // op_type 1: insert
                 Self::collect_rows_with_table_op(&mut ops, query, 1)?;
             }
-            if let Some(deletes) = deletes {
-                let query = Self::eval_query_expr_against_memtable(ctx, db, tx, deletes, eval_incr_plan)?;
+            if !table.deletes.is_empty() {
+                let query = Self::eval_query_expr_against_memtable(ctx, db, tx, &table.deletes, eval_incr_plan)?;
                 // op_type 0: delete
                 Self::collect_rows_with_table_op(&mut ops, query, 0)?;
             }

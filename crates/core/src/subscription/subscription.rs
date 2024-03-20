@@ -209,36 +209,6 @@ pub struct IncrementalJoin {
     virtual_plan: QueryExpr,
 }
 
-/// One side of an [`IncrementalJoin`].
-///
-/// Holds the updates pertaining to a table on one side of the join.
-struct JoinSide<'a> {
-    inserts: Vec<&'a ProductValue>,
-    deletes: Vec<&'a ProductValue>,
-}
-
-impl<'a> JoinSide<'a> {
-    /// Return a list of updates consisting of only insert operations.
-    pub fn inserts(&self) -> Vec<&'a ProductValue> {
-        self.inserts.clone()
-    }
-
-    /// Return a list of updates with only delete operations.
-    pub fn deletes(&self) -> Vec<&'a ProductValue> {
-        self.deletes.clone()
-    }
-
-    /// Does this table update include inserts?
-    pub fn has_inserts(&self) -> bool {
-        !self.inserts.is_empty()
-    }
-
-    /// Does this table update include deletes?
-    pub fn has_deletes(&self) -> bool {
-        !self.deletes.is_empty()
-    }
-}
-
 impl IncrementalJoin {
     fn optimize_query(join: IndexJoin) -> QueryExpr {
         let expr = QueryExpr::from(join);
@@ -322,70 +292,15 @@ impl IncrementalJoin {
         })
     }
 
-    /// Find any updates to the tables mentioned by `self` and group them into [`JoinSide`]s.
-    ///
-    /// The supplied updates are assumed to be the full set of updates from a single transaction.
-    ///
-    /// If neither side of the join is modified by any of the updates, `None` is returned.
-    /// Otherwise, `Some((index_table, probe_table))` is returned
-    /// with the updates partitioned into the respective [`JoinSide`].
-    fn find_updates<'a>(
-        &self,
-        updates: impl IntoIterator<Item = &'a DatabaseTableUpdate>,
-    ) -> Option<(JoinSide<'a>, JoinSide<'a>)> {
-        let mut lhs_inserts = Vec::new();
-        let mut lhs_deletes = Vec::new();
-        let mut rhs_inserts = Vec::new();
-        let mut rhs_deletes = Vec::new();
-
-        // Partitions `updates` into `deletes` and `inserts`.
-        fn partition_into<'a>(
-            deletes: &mut Vec<&'a ProductValue>,
-            inserts: &mut Vec<&'a ProductValue>,
-            updates: &'a DatabaseTableUpdate,
-        ) {
-            for update in &updates.ops {
-                if update.op_type == 0 {
-                    &mut *deletes
-                } else {
-                    &mut *inserts
-                }
-                .push(&update.row);
-            }
-        }
-
-        // Partitions all updates into the `(l|r)hs_(insert|delete)_ops` above.
-        for update in updates {
-            if update.table_id == self.lhs.table_id {
-                partition_into(&mut lhs_deletes, &mut lhs_inserts, update);
-            } else if update.table_id == self.rhs.table_id {
-                partition_into(&mut rhs_deletes, &mut rhs_inserts, update);
-            }
-        }
-
-        // No updates at all? Return `None`.
-        if [&lhs_inserts, &lhs_deletes, &rhs_inserts, &rhs_deletes]
-            .iter()
-            .all(|ops| ops.is_empty())
-        {
-            return None;
-        }
-
-        // Stich together the `JoinSide`s.
-        let join_side = |deletes, inserts| JoinSide { deletes, inserts };
-        Some((join_side(lhs_deletes, lhs_inserts), join_side(rhs_deletes, rhs_inserts)))
-    }
-
     /// Evaluate join plan for lhs updates.
     fn eval_lhs<'a>(
         &'a self,
         ctx: &'a ExecutionContext<'a>,
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
-        lhs: impl 'a + IntoIterator<Item = &'a ProductValue>,
+        lhs: impl 'a + Iterator<Item = &'a ProductValue>,
     ) -> Result<impl Iterator<Item = Cow<'a, ProductValue>>, DBError> {
-        let source = Some(lhs.into_iter().map(RelValue::ProjRef));
-        eval_updates(ctx, db, tx, self.plan_for_delta_lhs(), source)
+        eval_updates(ctx, db, tx, self.plan_for_delta_lhs(), Some(lhs.map(RelValue::ProjRef)))
     }
 
     /// Evaluate join plan for rhs updates.
@@ -394,10 +309,9 @@ impl IncrementalJoin {
         ctx: &'a ExecutionContext<'a>,
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
-        rhs: impl 'a + IntoIterator<Item = &'a ProductValue>,
+        rhs: impl 'a + Iterator<Item = &'a ProductValue>,
     ) -> Result<impl Iterator<Item = Cow<'a, ProductValue>>, DBError> {
-        let source = Some(rhs.into_iter().map(RelValue::ProjRef));
-        eval_updates(ctx, db, tx, self.plan_for_delta_rhs(), source)
+        eval_updates(ctx, db, tx, self.plan_for_delta_rhs(), Some(rhs.map(RelValue::ProjRef)))
     }
 
     /// Evaluate join plan for both lhs and rhs updates.
@@ -406,11 +320,11 @@ impl IncrementalJoin {
         ctx: &'a ExecutionContext<'a>,
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
-        lhs: impl 'a + IntoIterator<Item = &'a ProductValue>,
-        rhs: impl 'a + IntoIterator<Item = &'a ProductValue>,
+        lhs: impl 'a + Iterator<Item = &'a ProductValue>,
+        rhs: impl 'a + Iterator<Item = &'a ProductValue>,
     ) -> Result<impl Iterator<Item = Cow<'a, ProductValue>>, DBError> {
-        let is = Either::Left(lhs.into_iter().map(RelValue::ProjRef));
-        let ps = Either::Right(rhs.into_iter().map(RelValue::ProjRef));
+        let is = Either::Left(lhs.map(RelValue::ProjRef));
+        let ps = Either::Right(rhs.map(RelValue::ProjRef));
         let sources: SourceSet<_, 2> = if self.return_index_rows { [is, ps] } else { [ps, is] }.into();
         eval_updates(ctx, db, tx, &self.virtual_plan, sources)
     }
@@ -472,57 +386,96 @@ impl IncrementalJoin {
         ctx: &'a ExecutionContext<'a>,
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
-        updates: impl IntoIterator<Item = &'a DatabaseTableUpdate>,
+        updates: impl 'a + Clone + Iterator<Item = &'a DatabaseTableUpdate>,
     ) -> Result<Option<impl Iterator<Item = TableOpCow<'a>>>, DBError> {
-        let Some((lhs, rhs)) = self.find_updates(updates) else {
+        // Find any updates to the tables mentioned by `self` and group them into [`JoinSide`]s.
+        //
+        // The supplied updates are assumed to be the full set of updates from a single transaction.
+        //
+        // If neither side of the join is modified by any of the updates, `None` is returned.
+        // Otherwise, `Some((index_table, probe_table))` is returned
+        // with the updates partitioned into the respective [`JoinSide`].
+        // =====================================================================
+
+        // Partitions `updates` into `deletes` and `inserts` for `lhs` and `rhs`.
+        let mut lhs_deletes = updates
+            .clone()
+            .filter(|u| u.table_id == self.lhs.table_id)
+            .flat_map(|u| &u.deletes)
+            .peekable();
+        let mut lhs_inserts = updates
+            .clone()
+            .filter(|u| u.table_id == self.lhs.table_id)
+            .flat_map(|u| &u.inserts)
+            .peekable();
+        let mut rhs_deletes = updates
+            .clone()
+            .filter(|u| u.table_id == self.rhs.table_id)
+            .flat_map(|u| &u.deletes)
+            .peekable();
+        let mut rhs_inserts = updates
+            .filter(|u| u.table_id == self.rhs.table_id)
+            .flat_map(|u| &u.inserts)
+            .peekable();
+
+        // No updates at all? Return `None`.
+        let has_lhs_deletes = lhs_deletes.peek().is_some();
+        let has_lhs_inserts = lhs_inserts.peek().is_some();
+        let has_rhs_deletes = rhs_deletes.peek().is_some();
+        let has_rhs_inserts = rhs_inserts.peek().is_some();
+        if !has_lhs_deletes && !has_lhs_inserts && !has_rhs_deletes && !has_rhs_inserts {
             return Ok(None);
-        };
+        }
+
+        // Compute the incremental join
+        // =====================================================================
 
         // (1) A+ x B(t)
-        let join_1 = if lhs.has_inserts() {
-            self.eval_lhs(ctx, db, tx, lhs.inserts())?.collect()
+        let join_1 = if has_lhs_inserts {
+            self.eval_lhs(ctx, db, tx, lhs_inserts.clone())?.collect()
         } else {
             Vec::with_capacity(0)
         };
         // (2) A- x B(t)
-        let mut join_2 = if lhs.has_deletes() {
-            self.eval_lhs(ctx, db, tx, lhs.deletes())?.collect()
+        let mut join_2 = if has_lhs_deletes {
+            self.eval_lhs(ctx, db, tx, lhs_deletes.clone())?.collect()
         } else {
             HashSet::with_capacity(0)
         };
         // (3) A- x B+
-        let join_3 = if lhs.has_deletes() && rhs.has_inserts() {
-            self.eval_all(ctx, db, tx, lhs.deletes(), rhs.inserts())?.collect()
+        let join_3 = if has_lhs_deletes && has_rhs_inserts {
+            self.eval_all(ctx, db, tx, lhs_deletes.clone(), rhs_inserts.clone())?
+                .collect()
         } else {
             Vec::with_capacity(0)
         };
         // (4) A- x B-
-        let join_4 = if lhs.has_deletes() && rhs.has_deletes() {
-            self.eval_all(ctx, db, tx, lhs.deletes(), rhs.deletes())?.collect()
+        let join_4 = if has_lhs_deletes && has_rhs_deletes {
+            self.eval_all(ctx, db, tx, lhs_deletes, rhs_deletes.clone())?.collect()
         } else {
             Vec::with_capacity(0)
         };
         // (5) A(t) x B+
-        let mut join_5 = if rhs.has_inserts() {
-            self.eval_rhs(ctx, db, tx, rhs.inserts())?.collect()
+        let mut join_5 = if has_rhs_inserts {
+            self.eval_rhs(ctx, db, tx, rhs_inserts.clone())?.collect()
         } else {
             HashSet::with_capacity(0)
         };
         // (6) A(t) x B-
-        let mut join_6 = if rhs.has_deletes() {
-            self.eval_rhs(ctx, db, tx, rhs.deletes())?.collect()
+        let mut join_6 = if has_rhs_deletes {
+            self.eval_rhs(ctx, db, tx, rhs_deletes.clone())?.collect()
         } else {
             HashSet::with_capacity(0)
         };
         // (7) A+ x B+
-        let join_7 = if lhs.has_inserts() && rhs.has_inserts() {
-            self.eval_all(ctx, db, tx, lhs.inserts(), rhs.inserts())?.collect()
+        let join_7 = if has_lhs_inserts && has_rhs_inserts {
+            self.eval_all(ctx, db, tx, lhs_inserts.clone(), rhs_inserts)?.collect()
         } else {
             Vec::with_capacity(0)
         };
         // (8) A+ x B-
-        let join_8 = if lhs.has_inserts() && rhs.has_deletes() {
-            self.eval_all(ctx, db, tx, lhs.inserts(), rhs.deletes())?.collect()
+        let join_8 = if has_lhs_inserts && has_rhs_deletes {
+            self.eval_all(ctx, db, tx, lhs_inserts, rhs_deletes)?.collect()
         } else {
             Vec::with_capacity(0)
         };
