@@ -246,6 +246,11 @@ macro_rules! decl_index {
             pub(super) fn to_le_bytes(self) -> [u8; 4] {
                 self.0.to_le_bytes()
             }
+            #[allow(unused)]
+            #[doc(hidden)]
+            pub(super) fn from_le_bytes(b: [u8; 4]) -> Self {
+                Self(u32::from_le_bytes(b))
+            }
         }
     };
 }
@@ -296,8 +301,8 @@ impl BufferIdx {
     }
 }
 
-decl_index!(BufferIterIdx => std::vec::IntoIter<Box<[u8]>>);
-pub(super) type BufferIters = ResourceSlab<BufferIterIdx>;
+decl_index!(RowIterIdx => std::vec::IntoIter<Box<[u8]>>);
+pub(super) type RowIters = ResourceSlab<RowIterIdx>;
 
 pub(super) struct TimingSpan {
     pub start: Instant,
@@ -317,10 +322,10 @@ decl_index!(TimingSpanIdx => TimingSpan);
 pub(super) type TimingSpanSet = ResourceSlab<TimingSpanIdx>;
 
 pub mod errnos {
-    /// NOTE! This is copied from the bindings-sys crate.
-    /// The include! macro does not work when publishing to crates.io
-    /// TODO(noa): Figure out a way to do this without include!
-    ///
+    //! NOTE! This is copied from the bindings-sys crate.
+    //! The include! macro does not work when publishing to crates.io
+    //! TODO(noa): Figure out a way to do this without include!
+
     /// Error code for "No such table".
     pub const NO_SUCH_TABLE: u16 = 1;
 
@@ -330,20 +335,8 @@ pub mod errnos {
     /// Error code for when a unique constraint is violated.
     pub const UNIQUE_ALREADY_EXISTS: u16 = 3;
 
-    macro_rules! errnos {
-        ($mac:ident) => {
-            $mac! {
-                NO_SUCH_TABLE => "No such table",
-                LOOKUP_NOT_FOUND => "Value or range provided not found in table",
-                UNIQUE_ALREADY_EXISTS => "Value with given unique identifier already exists",
-            }
-        };
-    }
-
-    macro_rules! nothing {
-        ($($tt:tt)*) => {};
-    }
-    errnos!(nothing);
+    /// The provided buffer is not large enough to store the data.
+    pub const BUFFER_TOO_SMALL: u16 = 4;
 }
 
 pub fn err_to_errno(err: &NodesError) -> Option<u16> {
@@ -387,7 +380,7 @@ macro_rules! abi_funcs {
             "spacetime_8.0"::insert,
             "spacetime_8.0"::iter_by_col_eq,
             "spacetime_8.0"::iter_drop,
-            "spacetime_8.0"::iter_next,
+            "spacetime_8.0"::iter_advance,
             "spacetime_8.0"::iter_start,
             "spacetime_8.0"::iter_start_filtered,
             "spacetime_8.0"::schedule_reducer,

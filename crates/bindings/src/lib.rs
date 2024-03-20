@@ -251,7 +251,7 @@ pub struct TableIter<T: TableType> {
     _marker: PhantomData<T>,
 }
 
-const DEFAULT_BUFFER_CAPACITY: usize = 0x8000;
+const DEFAULT_BUFFER_CAPACITY: usize = 0x20_000;
 
 thread_local! {
     /// A global pool of buffers used for iteration.

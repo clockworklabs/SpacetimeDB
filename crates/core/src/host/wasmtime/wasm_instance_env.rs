@@ -7,12 +7,12 @@ use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace,
 use crate::execution_context::ExecutionContext;
 use crate::host::scheduler::{ScheduleError, ScheduledReducerId};
 use crate::host::timestamp::Timestamp;
-use crate::host::wasm_common::instrumentation;
 use crate::host::wasm_common::module_host_actor::ExecutionTimings;
 use crate::host::wasm_common::{
-    err_to_errno, instrumentation::CallTimes, AbiRuntimeError, BufferIdx, BufferIterIdx, BufferIters, Buffers,
-    TimingSpan, TimingSpanIdx, TimingSpanSet,
+    err_to_errno, instrumentation::CallTimes, AbiRuntimeError, BufferIdx, Buffers, RowIterIdx, RowIters, TimingSpan,
+    TimingSpanIdx, TimingSpanSet,
 };
+use crate::host::wasm_common::{errnos, instrumentation};
 use crate::host::AbiCall;
 use anyhow::{anyhow, Context};
 use wasmtime::{AsContext, Caller, StoreContextMut};
@@ -54,7 +54,7 @@ pub(super) struct WasmInstanceEnv {
     buffers: Buffers,
 
     /// The slab of `BufferIters` created for this instance.
-    iters: BufferIters,
+    iters: RowIters,
 
     /// Track time spent in module-defined spans.
     timing_spans: TimingSpanSet,
@@ -193,6 +193,7 @@ impl WasmInstanceEnv {
                 }
                 None => anyhow::Error::from(AbiRuntimeError { func, err }),
             },
+            WasmError::BufferTooSmall => return Ok(errnos::BUFFER_TOO_SMALL.into()),
             WasmError::Wasm(err) => err,
         })
     }
@@ -542,7 +543,7 @@ impl WasmInstanceEnv {
         col_id: u32,
         val: WasmPtr<u8>,
         val_len: u32,
-        out: WasmPtr<BufferIdx>,
+        out: WasmPtr<RowIterIdx>,
     ) -> RtResult<u32> {
         Self::cvt_ret(caller, AbiCall::IterByColEq, out, |caller| {
             let (mem, env) = Self::mem_env(caller);
@@ -553,15 +554,15 @@ impl WasmInstanceEnv {
             let ctx = env.reducer_context()?;
 
             // Find the relevant rows.
-            let data = env
+            let chunks = env
                 .instance_env
-                .iter_by_col_eq(&ctx, table_id.into(), col_id.into(), value)?;
+                .iter_by_col_eq_chunks(&ctx, table_id.into(), col_id.into(), value)?;
 
             // Release the immutable borrow of `env.buffers` by dropping `ctx`.
             drop(ctx);
 
             // Insert the encoded + concatenated rows into a new buffer and return its id.
-            Ok(env.buffers.insert(data.into()))
+            Ok(env.iters.insert(chunks.into_iter()))
         })
     }
 
@@ -573,7 +574,7 @@ impl WasmInstanceEnv {
     /// Returns an error if
     /// - a table with the provided `table_id` doesn't exist
     // #[tracing::instrument(skip_all)]
-    pub fn iter_start(caller: Caller<'_, Self>, table_id: u32, out: WasmPtr<BufferIterIdx>) -> RtResult<u32> {
+    pub fn iter_start(caller: Caller<'_, Self>, table_id: u32, out: WasmPtr<RowIterIdx>) -> RtResult<u32> {
         Self::cvt_ret(caller, AbiCall::IterStart, out, |caller| {
             let env = caller.data_mut();
             // Retrieve the execution context for the current reducer.
@@ -605,7 +606,7 @@ impl WasmInstanceEnv {
         table_id: u32,
         filter: WasmPtr<u8>,
         filter_len: u32,
-        out: WasmPtr<BufferIterIdx>,
+        out: WasmPtr<RowIterIdx>,
     ) -> RtResult<u32> {
         Self::cvt_ret(caller, AbiCall::IterStartFiltered, out, |caller| {
             let (mem, env) = Self::mem_env(caller);
@@ -624,7 +625,7 @@ impl WasmInstanceEnv {
         })
     }
 
-    /// Advances the registered iterator with the index given by `iter_key`.
+    /// Advances the registered iterator with the index given by `iter`.
     ///
     /// On success, the next element (the row as bytes) is written to a buffer.
     /// The buffer's index is returned and written to the `out` pointer.
@@ -636,34 +637,57 @@ impl WasmInstanceEnv {
     /// - writing to `out` would overflow a 32-bit integer
     /// - advancing the iterator resulted in an error
     // #[tracing::instrument(skip_all)]
-    pub fn iter_next(caller: Caller<'_, Self>, iter_key: u32, out: WasmPtr<BufferIdx>) -> RtResult<u32> {
-        Self::cvt_ret(caller, AbiCall::IterNext, out, |caller| {
-            let env = caller.data_mut();
+    pub fn iter_advance(
+        caller: Caller<'_, Self>,
+        iter: u32,
+        buffer: WasmPtr<u8>,
+        buffer_len: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        let iter = RowIterIdx(iter);
+        Self::cvt(caller, AbiCall::IterNext, |caller| {
+            let (mem, env) = Self::mem_env(caller);
 
-            // Retrieve the iterator by `iter_key`.
-            let iter = env.iters.get_mut(BufferIterIdx(iter_key)).context("no such iterator")?;
+            // Retrieve the iterator by `iter`.
+            let iter = env.iters.get_mut(iter).context("no such iterator")?;
 
+            let buffer_len_ = u32::read_from(mem, buffer_len)?;
+            let mut wasm_buffer = mem.deref_slice_mut(buffer, buffer_len_)?;
+
+            let mut written = 0;
             // Advance the iterator.
-            Ok(iter
-                .next()
-                .map_or(BufferIdx::INVALID, |buf| env.insert_buffer(buf.into())))
+            while let Some(chunk) = iter.as_slice().first() {
+                let Some(buf_chunk) = wasm_buffer.get_mut(..chunk.len()) else {
+                    break;
+                };
+                buf_chunk.copy_from_slice(chunk);
+                written += chunk.len();
+                wasm_buffer = &mut wasm_buffer[chunk.len()..];
+                iter.next();
+            }
+            if written == 0 {
+                if let Some(chunk) = iter.as_slice().first() {
+                    u32::try_from(chunk.len()).unwrap().write_to(mem, buffer_len)?;
+                    return Err(WasmError::BufferTooSmall);
+                }
+            }
+            (written as u32).write_to(mem, buffer_len)?;
+
+            Ok(())
         })
     }
 
-    /// Drops the entire registered iterator with the index given by `iter_key`.
+    /// Drops the entire registered iterator with the index given by `iter`.
     /// The iterator is effectively de-registered.
     ///
     /// Returns an error if the iterator does not exist.
     // #[tracing::instrument(skip_all)]
-    pub fn iter_drop(caller: Caller<'_, Self>, iter_key: u32) -> RtResult<u32> {
-        Self::cvt(caller, AbiCall::IterDrop, |caller| {
-            caller
-                .data_mut()
-                .iters
-                .take(BufferIterIdx(iter_key))
-                .context("no such iterator")?;
-            Ok(())
-        })
+    pub fn iter_drop(mut caller: Caller<'_, Self>, iter: u32) -> RtResult<()> {
+        caller
+            .data_mut()
+            .iters
+            .take(RowIterIdx(iter))
+            .context("no such iterator")?;
+        Ok(())
     }
 
     /// Returns the length (number of bytes) of buffer `bufh` without
