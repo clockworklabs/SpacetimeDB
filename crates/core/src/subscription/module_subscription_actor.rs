@@ -85,11 +85,9 @@ impl ModuleSubscriptions {
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
         // but that should not pose an issue.
         let mut subscriptions = self.subscriptions.write();
-        drop(tx);
         subscriptions.remove_subscription(&sender.id.identity);
         subscriptions.add_subscription(sender.clone(), execution_set.into_iter());
         let num_queries = subscriptions.num_queries();
-        drop(subscriptions);
 
         WORKER_METRICS
             .subscription_queries
@@ -98,7 +96,6 @@ impl ModuleSubscriptions {
 
         #[cfg(test)]
         if let Some(assert) = _assert {
-            let tx = self.relational_db.begin_tx();
             assert(&tx);
         }
 
@@ -190,7 +187,6 @@ mod tests {
     use tokio::{runtime::Builder, sync::mpsc};
 
     #[test]
-    #[ignore = "before #997"]
     /// Asserts that a subscription holds a tx handle for the entire length of its evaluation.
     fn test_tx_subscription_ordering() -> ResultTest<()> {
         let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
