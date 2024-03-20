@@ -74,6 +74,7 @@ pub fn make_actor(mcc: ModuleCreationContext) -> Result<impl super::module_host:
 #[derive(Debug, derive_more::From)]
 enum WasmError {
     Db(NodesError),
+    BufferTooSmall,
     Wasm(anyhow::Error),
 }
 
@@ -110,6 +111,9 @@ impl From<WasmtimeFuel> for EnergyQuanta {
 trait WasmPointee {
     type Pointer;
     fn write_to(self, mem: &mut MemView, ptr: Self::Pointer) -> Result<(), WasmError>;
+    fn read_from(mem: &mut MemView, ptr: Self::Pointer) -> Result<Self, WasmError>
+    where
+        Self: Sized;
 }
 macro_rules! impl_pointee {
     ($($t:ty),*) => {
@@ -120,11 +124,14 @@ macro_rules! impl_pointee {
                 mem.deref_slice_mut(ptr, bytes.len() as u32)?.copy_from_slice(&bytes);
                 Ok(())
             }
+            fn read_from(mem: &mut MemView, ptr: Self::Pointer) -> Result<Self, WasmError> {
+                Ok(Self::from_le_bytes(*mem.deref_array(ptr)?))
+            }
         })*
     };
 }
 impl_pointee!(u8, u16, u32, u64);
-impl_pointee!(super::wasm_common::BufferIdx, super::wasm_common::BufferIterIdx);
+impl_pointee!(super::wasm_common::BufferIdx, super::wasm_common::RowIterIdx);
 type WasmPtr<T> = <T as WasmPointee>::Pointer;
 
 /// Wraps access to WASM linear memory with some additional functionality.
@@ -199,6 +206,11 @@ impl MemView {
             .get_mut(offset as usize..)
             .and_then(|s| s.get_mut(..len as usize))
             .ok_or(MemError::OutOfBounds)
+    }
+
+    /// Get a byte array of wasm memory the size of `N`.
+    fn deref_array<const N: usize>(&self, offset: WasmPtr<u8>) -> Result<&[u8; N], MemError> {
+        Ok(self.deref_slice(offset, N as u32)?.try_into().unwrap())
     }
 }
 
