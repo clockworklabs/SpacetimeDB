@@ -154,35 +154,56 @@ pub struct DatabaseUpdateCow<'a> {
 pub struct DatabaseTableUpdateCow<'a> {
     pub table_id: TableId,
     pub table_name: String,
-    pub ops: Vec<TableOpCow<'a>>,
+    pub updates: UpdatesCow<'a>,
 }
 
-#[derive(PartialEq, Debug)]
-pub struct TableOpCow<'a> {
+#[derive(Default, PartialEq, Debug)]
+pub struct UpdatesCow<'a> {
+    pub deletes: Vec<Cow<'a, ProductValue>>,
+    pub inserts: Vec<Cow<'a, ProductValue>>,
+}
+
+impl UpdatesCow<'_> {
+    /// Returns whether there are any updates.
+    pub fn has_updates(&self) -> bool {
+        !(self.deletes.is_empty() && self.inserts.is_empty())
+    }
+
+    /// Returns a combined iterator over both deletes and inserts.
+    pub fn iter(&self) -> impl Iterator<Item = TableOpRef<'_>> {
+        self.deletes
+            .iter()
+            .map(TableOpRef::delete)
+            .chain(self.inserts.iter().map(TableOpRef::insert))
+    }
+}
+
+pub struct TableOpRef<'a> {
     pub op_type: u8,
-    pub row: Cow<'a, ProductValue>,
+    pub row: &'a ProductValue,
 }
 
-impl<'a> TableOpCow<'a> {
+impl<'a> TableOpRef<'a> {
     #[inline]
-    pub fn new(op_type: u8, row: Cow<'a, ProductValue>) -> Self {
+    fn new(op_type: u8, row: &'a Cow<'a, ProductValue>) -> Self {
+        let row = &**row;
         Self { op_type, row }
     }
 
     #[inline]
-    pub fn insert(row: Cow<'a, ProductValue>) -> Self {
+    pub fn insert(row: &'a Cow<'a, ProductValue>) -> Self {
         Self::new(1, row)
     }
 
     #[inline]
-    pub fn delete(row: Cow<'a, ProductValue>) -> Self {
+    pub fn delete(row: &'a Cow<'a, ProductValue>) -> Self {
         Self::new(0, row)
     }
 }
 
-impl From<&TableOpCow<'_>> for TableRowOperation {
-    fn from(top: &TableOpCow<'_>) -> Self {
-        let row = to_vec(&*top.row).unwrap();
+impl From<TableOpRef<'_>> for TableRowOperation {
+    fn from(top: TableOpRef<'_>) -> Self {
+        let row = to_vec(top.row).unwrap();
         let op = if top.op_type == 1 {
             OperationType::Insert.into()
         } else {
@@ -192,17 +213,15 @@ impl From<&TableOpCow<'_>> for TableRowOperation {
     }
 }
 
-impl From<&TableOpCow<'_>> for TableRowOperationJson {
-    fn from(top: &TableOpCow<'_>) -> Self {
-        let row = top.row.elements.clone();
-        let op = if top.op_type == 1 { "insert" } else { "delete" }.into();
-        Self { op, row }
+impl From<TableOpRef<'_>> for TableRowOperationJson {
+    fn from(top: TableOpRef<'_>) -> Self {
+        TableOp::from(top).into()
     }
 }
 
-impl From<TableOpCow<'_>> for TableOp {
-    fn from(top: TableOpCow<'_>) -> Self {
-        let row = top.row.into_owned();
+impl From<TableOpRef<'_>> for TableOp {
+    fn from(top: TableOpRef<'_>) -> Self {
+        let row = top.row.clone();
         let op_type = top.op_type;
         Self { op_type, row }
     }
@@ -232,14 +251,9 @@ impl TableOp {
 }
 
 impl From<&TableOp> for TableRowOperation {
-    fn from(top: &TableOp) -> Self {
-        let row = to_vec(&top.row).unwrap();
-        let op = if top.op_type == 1 {
-            OperationType::Insert.into()
-        } else {
-            OperationType::Delete.into()
-        };
-        Self { op, row }
+    #[inline]
+    fn from(TableOp { op_type, row }: &TableOp) -> Self {
+        TableOpRef { row, op_type: *op_type }.into()
     }
 }
 
