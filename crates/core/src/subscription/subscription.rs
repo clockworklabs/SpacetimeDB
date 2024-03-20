@@ -30,7 +30,7 @@ use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{
-    DatabaseTableUpdate, DatabaseUpdate, DatabaseUpdateCow, ProtocolDatabaseUpdate, TableOpCow,
+    DatabaseTableUpdate, DatabaseUpdate, DatabaseUpdateCow, ProtocolDatabaseUpdate, UpdatesCow,
 };
 use crate::json::client_api::TableUpdateJson;
 use crate::vm::{build_query, TxMode};
@@ -396,7 +396,7 @@ impl IncrementalJoin {
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         updates: impl 'a + Clone + Iterator<Item = &'a DatabaseTableUpdate>,
-    ) -> Result<Vec<TableOpCow<'a>>, DBError> {
+    ) -> Result<UpdatesCow<'a>, DBError> {
         // Find any updates to the tables mentioned by `self` and group them into [`JoinSide`]s.
         //
         // The supplied updates are assumed to be the full set of updates from a single transaction.
@@ -433,7 +433,7 @@ impl IncrementalJoin {
         let has_rhs_deletes = rhs_deletes.peek().is_some();
         let has_rhs_inserts = rhs_inserts.peek().is_some();
         if !has_lhs_deletes && !has_lhs_inserts && !has_rhs_deletes && !has_rhs_inserts {
-            return Ok(Vec::new());
+            return Ok(<_>::default());
         }
 
         // Compute the incremental join
@@ -515,22 +515,22 @@ impl IncrementalJoin {
 
         join_5.retain(|row| !join_6.remove(row));
 
-        // Collect all updates:
-        let mut updates = Vec::new();
-
-        // Add deletes first.
-        updates.extend(join_2.into_iter().map(TableOpCow::delete));
+        // Collect deletes:
+        let mut deletes = Vec::new();
+        deletes.extend(join_2);
         for row in join_4 {
-            updates.push(TableOpCow::delete(row?));
+            deletes.push(row?);
         }
-        updates.extend(join_6.into_iter().map(TableOpCow::delete));
+        deletes.extend(join_6);
 
-        // And then add inserts:
+        // Collect inserts:
+        let mut inserts = Vec::new();
         for row in join_1 {
-            updates.push(TableOpCow::insert(row?));
+            inserts.push(row?);
         }
-        updates.extend(join_5.into_iter().map(TableOpCow::insert));
-        Ok(updates)
+        inserts.extend(join_5);
+
+        Ok(UpdatesCow { deletes, inserts })
     }
 }
 

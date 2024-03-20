@@ -130,6 +130,7 @@ pub fn classify(expr: &QueryExpr) -> Option<Supported> {
 
 #[cfg(test)]
 mod tests {
+    use std::borrow::Cow;
     use std::sync::Arc;
 
     use super::*;
@@ -334,7 +335,7 @@ mod tests {
         let result = result
             .tables
             .into_iter()
-            .flat_map(|x| x.ops.into_iter().map(|x| x.row.into_owned()))
+            .flat_map(|update| update.updates.iter().map(|t| t.row).cloned().collect::<Vec<_>>())
             .sorted()
             .collect::<Vec<_>>();
 
@@ -417,14 +418,14 @@ mod tests {
 
         assert_eq!(result.tables.len(), 1);
 
-        let update = &result.tables[0];
+        let update = &result.tables[0].updates;
 
-        assert_eq!(update.ops.len(), 1);
+        assert_eq!(update.inserts.len(), 0);
+        assert_eq!(update.deletes.len(), 1);
 
-        let op = &update.ops[0];
+        let op = &update.deletes[0];
 
-        assert_eq!(op.op_type, 0);
-        assert_eq!(&*op.row, &product!(13u64, 3u64));
+        assert_eq!(&**op, &product!(13u64, 3u64));
         Ok(())
     }
 
@@ -770,21 +771,12 @@ mod tests {
                 .tables
                 .into_iter()
                 .map(|update| {
-                    let mut deletes = Vec::new();
-                    let mut inserts = Vec::new();
-                    for update in update.ops {
-                        let row = update.row.into_owned();
-                        if update.op_type == 0 {
-                            deletes.push(row);
-                        } else {
-                            inserts.push(row);
-                        }
-                    }
+                    let convert = |cows: Vec<_>| cows.into_iter().map(Cow::into_owned).collect();
                     DatabaseTableUpdate {
                         table_id: update.table_id,
                         table_name: update.table_name,
-                        deletes,
-                        inserts,
+                        deletes: convert(update.updates.deletes),
+                        inserts: convert(update.updates.inserts),
                     }
                 })
                 .collect();

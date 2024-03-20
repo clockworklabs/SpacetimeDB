@@ -3,7 +3,7 @@ use super::subscription::{IncrementalJoin, SupportedQuery};
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
-use crate::host::module_host::{DatabaseTableUpdate, DatabaseTableUpdateCow, TableOp, TableOpCow};
+use crate::host::module_host::{DatabaseTableUpdate, DatabaseTableUpdateCow, TableOp, UpdatesCow};
 use crate::json::client_api::TableUpdateJson;
 use crate::vm::{build_query, TxMode};
 use spacetimedb_client_api_messages::client_api::{TableRowOperation, TableUpdate};
@@ -14,6 +14,7 @@ use spacetimedb_vm::eval::IterRows;
 use spacetimedb_vm::expr::{NoInMemUsed, Query, QueryExpr, SourceExpr, SourceId};
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::RelValue;
+use std::borrow::Cow;
 use std::hash::Hash;
 
 /// A hash for uniquely identifying query execution units,
@@ -254,14 +255,14 @@ impl ExecutionUnit {
         tx: &'a TxMode<'a>,
         tables: impl 'a + Clone + Iterator<Item = &'a DatabaseTableUpdate>,
     ) -> Result<Option<DatabaseTableUpdateCow<'a>>, DBError> {
-        let ops = match &self.eval_incr_plan {
+        let updates = match &self.eval_incr_plan {
             EvalIncrPlan::Select(plan) => Self::eval_incr_query_expr(ctx, db, tx, tables, plan, self.return_table())?,
             EvalIncrPlan::Semijoin(plan) => plan.eval(ctx, db, tx, tables)?,
         };
-        Ok((!ops.is_empty()).then(|| DatabaseTableUpdateCow {
+        Ok(updates.has_updates().then(|| DatabaseTableUpdateCow {
             table_id: self.return_table(),
             table_name: self.return_name(),
-            ops,
+            updates,
         }))
     }
 
@@ -286,44 +287,35 @@ impl ExecutionUnit {
         tables: impl Iterator<Item = &'a DatabaseTableUpdate>,
         eval_incr_plan: &'a QueryExpr,
         return_table: TableId,
-    ) -> Result<Vec<TableOpCow<'a>>, DBError> {
+    ) -> Result<UpdatesCow<'a>, DBError> {
         assert!(
             eval_incr_plan.source.is_mem_table(),
             "Expected in-mem table in `eval_incr_plan`, but found `DbTable`"
         );
 
-        let mut ops = Vec::new();
+        let mut deletes = Vec::new();
+        let mut inserts = Vec::new();
         for table in tables.filter(|table| table.table_id == return_table) {
             // Evaluate the query separately against inserts and deletes,
             // so that we can pass each row to the query engine unaltered,
             // without forgetting which are inserts and which are deletes.
             // Previously, we used to add such a column `"__op_type: AlgebraicType::U8"`.
-            // Then, collect the rows into the single `ops` vec,
-            // restoring the appropriate `op_type`.
             if !table.inserts.is_empty() {
                 let query = Self::eval_query_expr_against_memtable(ctx, db, tx, &table.inserts, eval_incr_plan)?;
-                // op_type 1: insert
-                Self::collect_rows_with_table_op(&mut ops, query, 1)?;
+                Self::collect_rows(&mut inserts, query)?;
             }
             if !table.deletes.is_empty() {
                 let query = Self::eval_query_expr_against_memtable(ctx, db, tx, &table.deletes, eval_incr_plan)?;
-                // op_type 0: delete
-                Self::collect_rows_with_table_op(&mut ops, query, 0)?;
+                Self::collect_rows(&mut deletes, query)?;
             }
         }
-        Ok(ops)
+        Ok(UpdatesCow { deletes, inserts })
     }
 
-    /// Collect the results of `query` into a vec `into`,
-    /// annotating each as a `TableOp` with the `op_type`.
-    fn collect_rows_with_table_op<'a>(
-        into: &mut Vec<TableOpCow<'a>>,
-        mut query: Box<IterRows<'a>>,
-        op_type: u8,
-    ) -> Result<(), DBError> {
+    /// Collect the results of `query` into a vec `sink`.
+    fn collect_rows<'a>(sink: &mut Vec<Cow<'a, ProductValue>>, mut query: Box<IterRows<'a>>) -> Result<(), DBError> {
         while let Some(row) = query.next()? {
-            let row = row.into_product_value_cow();
-            into.push(TableOpCow { op_type, row });
+            sink.push(row.into_product_value_cow());
         }
         Ok(())
     }
