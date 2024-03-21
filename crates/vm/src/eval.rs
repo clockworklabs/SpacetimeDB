@@ -4,8 +4,9 @@ use crate::expr::{Expr, Query};
 use crate::iterators::RelIter;
 use crate::program::{ProgramVm, Sources};
 use crate::rel_ops::RelOps;
-use crate::relation::{MemTable, RelValue};
+use crate::relation::RelValue;
 use spacetimedb_sats::relation::{FieldExprRef, Relation};
+use spacetimedb_sats::ProductValue;
 use std::sync::Arc;
 
 pub type IterRows<'a> = dyn RelOps<'a> + 'a;
@@ -100,12 +101,10 @@ pub(crate) fn build_source_expr_query<'a, const N: usize>(
     let source_id = source.source_id().unwrap_or_else(|| todo!("How pass the db iter?"));
     let head = source.head().clone();
     let rc = source.row_count();
-    match sources.take(source_id) {
-        None => {
-            panic!("Query plan specifies in-mem table for {source_id:?}, but found a `DbTable` or nothing")
-        }
-        Some(t) => Box::new(RelIter::new(head, rc, t.data.into_iter().map(RelValue::Projection))) as Box<IterRows<'a>>,
-    }
+    let table = sources.take(source_id).unwrap_or_else(|| {
+        panic!("Query plan specifies in-mem table for {source_id:?}, but found a `DbTable` or nothing")
+    });
+    Box::new(RelIter::new(head, rc, table.into_iter().map(RelValue::Projection)))
 }
 
 /// Execute the code
@@ -146,7 +145,11 @@ fn to_vec(of: Vec<Expr>) -> Code {
 }
 
 /// Optimize, compile & run the [Expr]
-pub fn run_ast<const N: usize, P: ProgramVm>(p: &mut P, ast: Expr, mut sources: SourceSet<MemTable, N>) -> Code {
+pub fn run_ast<const N: usize, P: ProgramVm>(
+    p: &mut P,
+    ast: Expr,
+    mut sources: SourceSet<Vec<ProductValue>, N>,
+) -> Code {
     let code = match ast {
         Expr::Block(x) => to_vec(x),
         Expr::Crud(x) => Code::Crud(*x),
@@ -209,7 +212,7 @@ pub mod tests {
     use spacetimedb_sats::relation::FieldName;
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
 
-    fn run_query<const N: usize>(p: &mut Program, ast: Expr, sources: SourceSet<MemTable, N>) -> MemTable {
+    fn run_query<const N: usize>(p: &mut Program, ast: Expr, sources: SourceSet<Vec<ProductValue>, N>) -> MemTable {
         match run_ast(p, ast, sources) {
             Code::Table(x) => x,
             x => panic!("Unexpected result on query: {x}"),

@@ -399,7 +399,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         tracing::trace!(table = query.source.table_name());
 
         let result = build_query(self.ctx, self.db, self.tx, query, &mut |id| {
-            sources.take(id).map(|mt| mt.data.into_iter().map(RelValue::Projection))
+            sources.take(id).map(|mt| mt.into_iter().map(RelValue::Projection))
         })?;
         let head = result.head().clone();
         let rows = result.collect_vec(|row| row.into_product_value())?;

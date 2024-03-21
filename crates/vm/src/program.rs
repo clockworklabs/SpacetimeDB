@@ -7,6 +7,7 @@ use crate::eval::{build_query, build_source_expr_query};
 use crate::expr::{Code, CrudExpr, SourceSet};
 use crate::rel_ops::RelOps;
 use crate::relation::MemTable;
+use spacetimedb_sats::ProductValue;
 
 /// A trait to allow split the execution of `programs` to allow executing
 /// `queries` that take in account each `program` state/enviroment.
@@ -20,7 +21,7 @@ pub trait ProgramVm {
     fn eval_query<const N: usize>(&mut self, query: CrudExpr, sources: Sources<'_, N>) -> Result<Code, ErrorVm>;
 }
 
-pub type Sources<'a, const N: usize> = &'a mut SourceSet<MemTable, N>;
+pub type Sources<'a, const N: usize> = &'a mut SourceSet<Vec<ProductValue>, N>;
 
 /// A default program that run in-memory without a database
 pub struct Program;
@@ -29,14 +30,13 @@ impl ProgramVm for Program {
     fn eval_query<const N: usize>(&mut self, query: CrudExpr, sources: Sources<'_, N>) -> Result<Code, ErrorVm> {
         match query {
             CrudExpr::Query(query) => {
-                let table_access = query.source.table_access();
                 let result = build_source_expr_query(sources, &query.source);
                 let result = build_query(result, &query.query, sources)?;
 
                 let head = result.head().clone();
                 let rows: Vec<_> = result.collect_vec(|row| row.into_product_value())?;
 
-                Ok(Code::Table(MemTable::new(head, table_access, rows)))
+                Ok(Code::Table(MemTable::new(head, query.source.table_access(), rows)))
             }
             CrudExpr::Insert { .. } => {
                 todo!()

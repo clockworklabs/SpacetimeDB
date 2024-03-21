@@ -166,7 +166,7 @@ mod tests {
         tx: &Tx,
         query: &QueryExpr,
         auth: AuthCtx,
-        sources: SourceSet<MemTable, N>,
+        sources: SourceSet<Vec<ProductValue>, N>,
     ) -> Result<Vec<MemTable>, DBError> {
         let mut tx = tx.into();
         let p = &mut DbProgram::new(cx, db, &mut tx, auth);
@@ -275,7 +275,10 @@ mod tests {
 
     /// Replace the primary (ie. `source`) table of the given [`QueryExpr`] with
     /// a virtual [`MemTable`] consisting of the rows in [`DatabaseTableUpdate`].
-    fn query_to_mem_table(mut of: QueryExpr, data: &DatabaseTableUpdate) -> (QueryExpr, SourceSet<MemTable, 1>) {
+    fn query_to_mem_table(
+        mut of: QueryExpr,
+        data: &DatabaseTableUpdate,
+    ) -> (QueryExpr, SourceSet<Vec<ProductValue>, 1>) {
         let data = data.ops.iter().map(|op| op.row.clone()).collect();
         let mem_table = MemTable::new(of.source.head().clone(), of.source.table_access(), data);
         let mut sources = SourceSet::empty();

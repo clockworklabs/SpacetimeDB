@@ -183,6 +183,7 @@ impl MemTable {
         }
     }
 
+    /// For testing purposes only this provides a single-col header / product value.
     pub fn from_value(of: AlgebraicValue) -> Self {
         let head = Header::for_mem_table(of.type_of().into());
         Self::new(Arc::new(head), StAccess::Public, [of.into()].into())
