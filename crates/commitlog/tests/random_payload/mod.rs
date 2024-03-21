@@ -7,6 +7,9 @@ use tempfile::tempdir_in;
 
 use crate::{enable_logging, tempdir};
 
+#[cfg(target_os = "linux")]
+mod io_uring;
+
 fn gen_payload() -> [u8; 256] {
     let mut rng = rand::thread_rng();
     let mut buf = [0u8; 256];

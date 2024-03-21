@@ -10,6 +10,10 @@ description = "Implementation of the SpacetimeDB commitlog."
 [features]
 default = ["serde"]
 
+[[bench]]
+name = "bytes"
+harness = false
+
 [dependencies]
 bitflags.workspace = true
 crc32c.workspace = true
@@ -26,7 +30,16 @@ libc = "0.2.153"
 [target.'cfg(windows)'.dependencies]
 winapi = "0.3.9"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+async-stream = "0.3.5"
+futures.workspace = true
+libc = "0.2.153"
+tokio-uring = { git = "https://github.com/tokio-rs/tokio-uring", rev = "a69d4bf"}
+tokio.workspace = true
+
 [dev-dependencies]
+anyhow.workspace = true
+criterion.workspace = true
 env_logger.workspace = true
 once_cell.workspace = true
 proptest-derive.workspace = true

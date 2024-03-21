@@ -11,9 +11,9 @@ use crate::{error::ChecksumMismatch, payload::Decoder, segment::CHECKSUM_ALGORIT
 
 #[derive(Debug)]
 pub struct Header {
-    min_tx_offset: u64,
-    n: u16,
-    len: u32,
+    pub min_tx_offset: u64,
+    pub n: u16,
+    pub len: u32,
 }
 
 impl Header {
@@ -261,11 +261,11 @@ fn decode_u32<R: Read>(mut read: R) -> io::Result<u32> {
     Ok(u32::from_le_bytes(buf))
 }
 
-fn decode_error(e: DecodeError) -> io::Error {
+pub(crate) fn decode_error(e: DecodeError) -> io::Error {
     invalid_data(e)
 }
 
-fn invalid_data<E>(e: E) -> io::Error
+pub(crate) fn invalid_data<E>(e: E) -> io::Error
 where
     E: Into<Box<dyn std::error::Error + Send + Sync>>,
 {
