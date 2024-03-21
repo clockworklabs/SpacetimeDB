@@ -43,7 +43,7 @@ use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::relation::DbTable;
-use spacetimedb_vm::expr::{self, IndexJoin, Query, QueryExpr, SourceSet};
+use spacetimedb_vm::expr::{self, IndexJoin, Query, QueryExpr, SourceProvider, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::{MemTable, RelValue};
 use std::borrow::Cow;
@@ -158,14 +158,14 @@ impl AsRef<QueryExpr> for SupportedQuery {
 }
 
 /// Evaluates `query` and returns all the updates.
-fn eval_updates<'a, const N: usize>(
+fn eval_updates<'a>(
     ctx: &'a ExecutionContext<'a>,
     db: &'a RelationalDB,
     tx: &'a TxMode<'a>,
     query: &'a QueryExpr,
-    mut sources: SourceSet<impl 'a + Iterator<Item = RelValue<'a>>, N>,
+    mut sources: impl SourceProvider<'a>,
 ) -> Result<impl Iterator<Item = Cow<'a, ProductValue>>, DBError> {
-    let query = build_query(ctx, db, tx, query, &mut |id| sources.take(id))?;
+    let query = build_query(ctx, db, tx, query, &mut sources)?;
     // TODO(perf): avoid collecting into a vec.
     Ok(query.collect_vec(|rv| rv.into_product_value_cow())?.into_iter())
 }
@@ -384,8 +384,8 @@ impl IncrementalJoin {
         tx: &'a TxMode<'a>,
         lhs: impl 'a + IntoIterator<Item = &'a ProductValue>,
     ) -> Result<impl Iterator<Item = Cow<'a, ProductValue>>, DBError> {
-        let source = lhs.into_iter().map(RelValue::ProjRef);
-        eval_updates(ctx, db, tx, self.plan_for_delta_lhs(), [source].into())
+        let source = Some(lhs.into_iter().map(RelValue::ProjRef));
+        eval_updates(ctx, db, tx, self.plan_for_delta_lhs(), source)
     }
 
     /// Evaluate join plan for rhs updates.
@@ -396,8 +396,8 @@ impl IncrementalJoin {
         tx: &'a TxMode<'a>,
         rhs: impl 'a + IntoIterator<Item = &'a ProductValue>,
     ) -> Result<impl Iterator<Item = Cow<'a, ProductValue>>, DBError> {
-        let source = rhs.into_iter().map(RelValue::ProjRef);
-        eval_updates(ctx, db, tx, self.plan_for_delta_rhs(), [source].into())
+        let source = Some(rhs.into_iter().map(RelValue::ProjRef));
+        eval_updates(ctx, db, tx, self.plan_for_delta_rhs(), source)
     }
 
     /// Evaluate join plan for both lhs and rhs updates.
@@ -411,7 +411,7 @@ impl IncrementalJoin {
     ) -> Result<impl Iterator<Item = Cow<'a, ProductValue>>, DBError> {
         let is = Either::Left(lhs.into_iter().map(RelValue::ProjRef));
         let ps = Either::Right(rhs.into_iter().map(RelValue::ProjRef));
-        let sources = if self.return_index_rows { [is, ps] } else { [ps, is] }.into();
+        let sources: SourceSet<_, 2> = if self.return_index_rows { [is, ps] } else { [ps, is] }.into();
         eval_updates(ctx, db, tx, &self.virtual_plan, sources)
     }
 

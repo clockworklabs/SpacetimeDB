@@ -3,12 +3,10 @@
 //! It carries an [EnvDb] with the functions, idents, types.
 
 use crate::errors::ErrorVm;
-use crate::eval::{build_query, IterRows};
+use crate::eval::{build_query, build_source_expr_query};
 use crate::expr::{Code, CrudExpr, SourceSet};
-use crate::iterators::RelIter;
 use crate::rel_ops::RelOps;
-use crate::relation::{MemTable, RelValue};
-use spacetimedb_sats::relation::Relation;
+use crate::relation::MemTable;
 
 /// A trait to allow split the execution of `programs` to allow executing
 /// `queries` that take in account each `program` state/enviroment.
@@ -31,19 +29,8 @@ impl ProgramVm for Program {
     fn eval_query<const N: usize>(&mut self, query: CrudExpr, sources: Sources<'_, N>) -> Result<Code, ErrorVm> {
         match query {
             CrudExpr::Query(query) => {
-                let head = query.head().clone();
-                let row_count = query.row_count();
                 let table_access = query.source.table_access();
-                let result = if let Some(source_id) = query.source.source_id() {
-                    let Some(result_table) = sources.take(source_id) else {
-                        panic!("Query plan specifies a `MemTable` for {source_id:?}, but found a `DbTable` or nothing");
-                    };
-                    let iter = result_table.data.into_iter().map(RelValue::Projection);
-                    Box::new(RelIter::new(head, row_count, iter)) as Box<IterRows<'_>>
-                } else {
-                    panic!("DB not set")
-                };
-
+                let result = build_source_expr_query(sources, &query.source);
                 let result = build_query(result, &query.query, sources)?;
 
                 let head = result.head().clone();

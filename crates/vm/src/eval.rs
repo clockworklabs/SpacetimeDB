@@ -93,7 +93,10 @@ pub fn build_query<'a, const N: usize>(
     Ok(result)
 }
 
-fn build_source_expr_query<'a, const N: usize>(sources: Sources<'_, N>, source: &SourceExpr) -> Box<IterRows<'a>> {
+pub(crate) fn build_source_expr_query<'a, const N: usize>(
+    sources: Sources<'_, N>,
+    source: &SourceExpr,
+) -> Box<IterRows<'a>> {
     let source_id = source.source_id().unwrap_or_else(|| todo!("How pass the db iter?"));
     let head = source.head().clone();
     let rc = source.row_count();

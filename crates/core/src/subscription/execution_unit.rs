@@ -11,11 +11,10 @@ use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::relation::DbTable;
 use spacetimedb_vm::eval::IterRows;
-use spacetimedb_vm::expr::{Query, QueryExpr, SourceExpr, SourceId, SourceSet};
+use spacetimedb_vm::expr::{NoInMemUsed, Query, QueryExpr, SourceExpr, SourceId};
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::RelValue;
 use std::hash::Hash;
-use std::iter;
 
 /// A hash for uniquely identifying query execution units,
 /// to avoid recompilation of queries that have an open subscription.
@@ -242,7 +241,7 @@ impl ExecutionUnit {
     ) -> Result<Vec<T>, DBError> {
         let ctx = ExecutionContext::subscribe(db.address());
         let tx: TxMode = tx.into();
-        let query = build_query::<iter::Empty<_>>(&ctx, db, &tx, eval_plan, &mut |_| None)?;
+        let query = build_query(&ctx, db, &tx, eval_plan, &mut NoInMemUsed)?;
         let ops = query.collect_vec(convert)?;
         Ok(ops)
     }
@@ -278,11 +277,11 @@ impl ExecutionUnit {
         mem_table: Vec<&'a ProductValue>,
         eval_incr_plan: &'a QueryExpr,
     ) -> Result<Box<IterRows<'a>>, DBError> {
-        // Build a `SourceSet` containing the updates from `table`.
-        let mut sources: SourceSet<_, 1> = [mem_table.into_iter().map(RelValue::ProjRef)].into();
-        // Evaluate the saved plan against the new `SourceSet`,
+        // Provide the updates from `table`.
+        let sources = &mut Some(mem_table.into_iter().map(RelValue::ProjRef));
+        // Evaluate the saved plan against the new updates,
         // returning an iterator over the selected rows.
-        build_query(ctx, db, tx, eval_incr_plan, &mut |id| sources.take(id)).map_err(Into::into)
+        build_query(ctx, db, tx, eval_incr_plan, sources).map_err(Into::into)
     }
 
     fn eval_incr_query_expr<'a>(

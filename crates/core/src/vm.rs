@@ -40,12 +40,12 @@ impl<'a> From<&'a Tx> for TxMode<'a> {
 
 //TODO: This is partially duplicated from the `vm` crate to avoid borrow checker issues
 //and pull all that crate in core. Will be revisited after trait refactor
-pub fn build_query<'a, I: 'a + Iterator<Item = RelValue<'a>>>(
+pub fn build_query<'a>(
     ctx: &'a ExecutionContext<'a>,
     stdb: &'a RelationalDB,
     tx: &'a TxMode<'a>,
     query: &'a QueryExpr,
-    sources: &mut impl FnMut(SourceId) -> Option<I>,
+    sources: &mut impl SourceProvider<'a>,
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {
     let db_table = query.source.is_db_table();
 
@@ -177,13 +177,13 @@ pub fn build_query<'a, I: 'a + Iterator<Item = RelValue<'a>>>(
         .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))
 }
 
-fn join_inner<'a, I: 'a + Iterator<Item = RelValue<'a>>>(
+fn join_inner<'a>(
     ctx: &'a ExecutionContext<'a>,
     db: &'a RelationalDB,
     tx: &'a TxMode<'a>,
     lhs: impl RelOps<'a> + 'a,
     rhs: &'a JoinExpr,
-    sources: &mut impl FnMut(SourceId) -> Option<I>,
+    sources: &mut impl SourceProvider<'a>,
 ) -> Result<impl RelOps<'a> + 'a, ErrorVm> {
     let semi = rhs.semi;
 
@@ -231,15 +231,15 @@ fn join_inner<'a, I: 'a + Iterator<Item = RelValue<'a>>>(
 /// If `query` refers to an in memory table,
 /// `sources` will be used to fetch the table `I`.
 /// Examples of `I` could be derived from `MemTable` or `&'a [ProductValue]`
-/// whereas `sources` could be a closure that takes from a `SourceSet`.
+/// whereas `sources` could a [`SourceSet`].
 ///
 /// On the other hand, if the `query` is a `SourceExpr::DbTable`, `sources` is unused.
-fn get_table<'a, I: 'a + Iterator<Item = RelValue<'a>>>(
+fn get_table<'a>(
     ctx: &'a ExecutionContext<'a>,
     stdb: &'a RelationalDB,
     tx: &'a TxMode,
     query: &SourceExpr,
-    sources: &mut impl FnMut(SourceId) -> Option<I>,
+    sources: &mut impl SourceProvider<'a>,
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {
     Ok(match query {
         SourceExpr::InMemory {
@@ -258,14 +258,14 @@ fn get_table<'a, I: 'a + Iterator<Item = RelValue<'a>>>(
     })
 }
 
-//
-fn in_mem_to_rel_ops<'a, I: 'a + Iterator<Item = RelValue<'a>>>(
-    sources: &mut impl FnMut(SourceId) -> Option<I>,
+// Extracts an in-memory table with `source_id` from `sources` and builds a query for the table.
+fn in_mem_to_rel_ops<'a>(
+    sources: &mut impl SourceProvider<'a>,
     source_id: SourceId,
     head: Arc<Header>,
     rc: RowCount,
 ) -> Box<IterRows<'a>> {
-    let source = sources(source_id).unwrap_or_else(|| {
+    let source = sources.take_source(source_id).unwrap_or_else(|| {
         panic!("Query plan specifies in-mem table for {source_id:?}, but found a `DbTable` or nothing")
     });
     Box::new(RelIter::new(head, rc, source)) as Box<IterRows<'a>>
