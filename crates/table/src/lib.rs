@@ -21,6 +21,7 @@ pub mod row_hash;
 pub mod row_type_visitor;
 pub mod table;
 pub mod var_len;
+pub mod bflatn_to_bsatn_fast_path;
 
 #[cfg(test)]
 mod proptest_sats;

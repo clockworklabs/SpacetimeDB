@@ -874,7 +874,7 @@ impl Table {
 }
 
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
     use super::*;
     use crate::blob_store::HashMapBlobStore;
     use crate::indexes::{PageIndex, PageOffset};
@@ -885,7 +885,7 @@ mod test {
     use spacetimedb_sats::db::def::{ColumnDef, IndexDef, IndexType, TableDef};
     use spacetimedb_sats::{product, AlgebraicType, ArrayValue};
 
-    fn table(ty: ProductType) -> Table {
+    pub(crate) fn table(ty: ProductType) -> Table {
         let def = TableDef::from_product("", ty);
         let schema = TableSchema::from_def(0.into(), def);
         Table::new(schema, SquashedOffset::COMMITTED_STATE)
