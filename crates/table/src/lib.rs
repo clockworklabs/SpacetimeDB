@@ -8,6 +8,7 @@
 
 pub mod bflatn_from;
 pub mod bflatn_to;
+pub mod bflatn_to_bsatn_fast_path;
 pub mod blob_store;
 pub mod btree_index;
 pub mod eq;
@@ -21,7 +22,6 @@ pub mod row_hash;
 pub mod row_type_visitor;
 pub mod table;
 pub mod var_len;
-pub mod bflatn_to_bsatn_fast_path;
 
 #[cfg(test)]
 mod proptest_sats;

@@ -183,7 +183,7 @@ impl LayoutBuilder {
 
     fn visit_sum(&mut self, sum: &SumTypeLayout) -> Option<()> {
         // If the sum has no variants, it's the never type, so there's no point in computing a layout.
-        let first_variant = sum.variants.get(0)?;
+        let first_variant = sum.variants.first()?;
 
         let variant_layout = |variant: &SumTypeVariantLayout| {
             let mut builder = LayoutBuilder::default();
