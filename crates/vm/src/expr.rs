@@ -302,7 +302,7 @@ pub struct SourceId(pub usize);
 /// - `&'a [ProductValue]` producing [`RelValue::ProjRef`].
 pub trait SourceProvider<'a> {
     /// The type of in-memory tables that this provider uses.
-    type Source: 'a + Iterator<Item = RelValue<'a>>;
+    type Source: 'a + IntoIterator<Item = RelValue<'a>>;
 
     /// Retrieve the `Self::Source` associated with `id`, if any.
     ///
@@ -314,14 +314,14 @@ pub trait SourceProvider<'a> {
     fn take_source(&mut self, id: SourceId) -> Option<Self::Source>;
 }
 
-impl<'a, I: 'a + Iterator<Item = RelValue<'a>>, F: FnMut(SourceId) -> Option<I>> SourceProvider<'a> for F {
+impl<'a, I: 'a + IntoIterator<Item = RelValue<'a>>, F: FnMut(SourceId) -> Option<I>> SourceProvider<'a> for F {
     type Source = I;
     fn take_source(&mut self, id: SourceId) -> Option<Self::Source> {
         self(id)
     }
 }
 
-impl<'a, I: 'a + Iterator<Item = RelValue<'a>>> SourceProvider<'a> for Option<I> {
+impl<'a, I: 'a + IntoIterator<Item = RelValue<'a>>> SourceProvider<'a> for Option<I> {
     type Source = I;
     fn take_source(&mut self, _: SourceId) -> Option<Self::Source> {
         self.take()
@@ -349,7 +349,7 @@ pub struct SourceSet<T, const N: usize>(
     ArrayVec<Option<T>, N>,
 );
 
-impl<'a, T: 'a + Iterator<Item = RelValue<'a>>, const N: usize> SourceProvider<'a> for SourceSet<T, N> {
+impl<'a, T: 'a + IntoIterator<Item = RelValue<'a>>, const N: usize> SourceProvider<'a> for SourceSet<T, N> {
     type Source = T;
     fn take_source(&mut self, id: SourceId) -> Option<T> {
         self.take(id)
@@ -419,15 +419,13 @@ impl<T, const N: usize> std::ops::IndexMut<SourceId> for SourceSet<T, N> {
     }
 }
 
-impl<const N: usize> SourceSet<MemTable, N> {
+impl<const N: usize> SourceSet<Vec<ProductValue>, N> {
     /// Insert a [`MemTable`] into this `SourceSet` so it can be used in a query plan,
     /// and return a [`SourceExpr`] which can be embedded in that plan.
     pub fn add_mem_table(&mut self, table: MemTable) -> SourceExpr {
-        let head = table.head.clone();
-        let access = table.table_access;
         let len = table.data.len();
-        let id = self.add(table);
-        SourceExpr::from_mem_table(head, access, len, id)
+        let id = self.add(table.data);
+        SourceExpr::from_mem_table(table.head, table.table_access, len, id)
     }
 
     /// Resolve `source` to a `Table` for use in query execution.
@@ -441,7 +439,14 @@ impl<const N: usize> SourceSet<MemTable, N> {
     pub fn take_table(&mut self, source: &SourceExpr) -> Option<Table> {
         match source {
             SourceExpr::DbTable(db_table) => Some(Table::DbTable(db_table.clone())),
-            SourceExpr::InMemory { source_id, .. } => self.take(*source_id).map(Into::into),
+            SourceExpr::InMemory {
+                source_id,
+                header,
+                table_access,
+                ..
+            } => self
+                .take(*source_id)
+                .map(|data| MemTable::new(header.clone(), *table_access, data).into()),
         }
     }
 }

@@ -558,7 +558,7 @@ fn with_delta_table(
     mut join: IndexJoin,
     index_side: Option<Vec<ProductValue>>,
     probe_side: Option<Vec<ProductValue>>,
-) -> (IndexJoin, SourceSet<MemTable, 2>) {
+) -> (IndexJoin, SourceSet<Vec<ProductValue>, 2>) {
     let mut sources = SourceSet::empty();
 
     if let Some(index_side) = index_side {
