@@ -208,8 +208,6 @@ mod tests {
         // Subscribing to T should return a single row
         let query_handle = runtime.spawn_blocking(move || {
             let db = module_subscriptions.relational_db.clone();
-            // Wake up writer thread after starting the reader thread
-            let _ = send.send(());
             let query_strings = vec!["select * from T".into()];
             module_subscriptions.add_subscriber(
                 sender,
@@ -219,6 +217,9 @@ mod tests {
                 },
                 Instant::now(),
                 Some(Arc::new(move |tx: &_| {
+                    // Wake up writer thread after starting the reader tx
+                    let _ = send.send(());
+                    // Then go to sleep
                     std::thread::sleep(Duration::from_secs(1));
                     let ctx = ExecutionContext::default();
                     // Assuming subscription evaluation holds a lock on the db,
