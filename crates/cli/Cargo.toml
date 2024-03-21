@@ -52,6 +52,7 @@ tabled.workspace = true
 tar.workspace = true
 tempfile.workspace = true
 termcolor.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
 toml.workspace = true
 wasmbin.workspace = true

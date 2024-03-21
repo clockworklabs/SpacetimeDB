@@ -4375,6 +4375,7 @@ dependencies = [
  "tar",
  "tempfile",
  "termcolor",
+ "thiserror",
  "tokio",
  "toml 0.8.2",
  "wasmbin",

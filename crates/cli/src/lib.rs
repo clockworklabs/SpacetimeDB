@@ -1,9 +1,11 @@
 pub mod api;
 mod config;
 mod edit_distance;
+mod errors;
 mod subcommands;
 mod tasks;
 pub mod util;
+
 use clap::{ArgMatches, Command};
 
 pub use config::Config;
