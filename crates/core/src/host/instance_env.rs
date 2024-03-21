@@ -2,7 +2,6 @@ use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
 use spacetimedb_lib::bsatn::to_writer;
 use spacetimedb_table::table::UniqueConstraintViolation;
-use std::iter;
 use std::ops::DerefMut;
 use std::sync::Arc;
 
@@ -22,7 +21,7 @@ use spacetimedb_sats::buffer::BufWriter;
 use spacetimedb_sats::db::def::{IndexDef, IndexType};
 use spacetimedb_sats::relation::{FieldExpr, FieldName};
 use spacetimedb_sats::{ProductType, Typespace};
-use spacetimedb_vm::expr::ColumnOp;
+use spacetimedb_vm::expr::{ColumnOp, NoInMemUsed};
 
 #[derive(Clone)]
 pub struct InstanceEnv {
@@ -377,7 +376,7 @@ impl InstanceEnv {
 
         let tx: TxMode = tx.into();
         // SQL queries can never reference `MemTable`s, so pass in an empty set.
-        let mut query = build_query::<iter::Empty<_>>(ctx, stdb, &tx, &query, &mut |_| None)?;
+        let mut query = build_query(ctx, stdb, &tx, &query, &mut NoInMemUsed)?;
 
         // write all rows and flush at row boundaries.
         let mut chunked_writer = ChunkedWriter::default();

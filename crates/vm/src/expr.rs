@@ -18,7 +18,7 @@ use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::ops::Bound;
 use std::sync::Arc;
-use std::{fmt, mem};
+use std::{fmt, iter, mem};
 
 /// Trait for checking if the `caller` have access to `Self`
 pub trait AuthAccess {
@@ -274,17 +274,73 @@ impl From<Query> for Option<ColumnOp> {
     }
 }
 
-/// A set of [`SourceTable`]s referenced by a query plan by their [`SourceId`].
+/// An identifier for a data source (i.e. a table) in a query plan.
 ///
-/// Rather than embedding tables in query plans, we store a `SourceExpr::MemTable`,
-/// which contains the information necessary for optimization along with a [`SourceId`].
-/// Query execution then executes the plan, and when it encounters a `SourceExpr::MemTable`,
-/// retrieves the `T` table from the corresponding `SourceSet`.
-/// This allows query plans to be re-used, though each execution requires a new `SourceSet`.
+/// When compiling a query plan, rather than embedding the inputs in the plan,
+/// we annotate each input with a `SourceId`, and the compiled plan refers to its inputs by id.
+/// This allows the plan to be re-used with distinct inputs,
+/// assuming the inputs obey the same schema.
 ///
-/// Internally, the `SourceSet` stores an `Option<T>` for each planned [`SourceId`].
-/// During execution, the VM will [`Option::take`] the [`MemTable`] to consume them.
-/// This means that a query plan may not include multiple references to the same [`SourceId`].
+/// Note that re-using a query plan is only a good idea
+/// if the new inputs are similar to those used for compilation
+/// in terms of cardinality and distribution.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, From, Hash)]
+pub struct SourceId(pub usize);
+
+/// Types that relate [`SourceId`]s to their in-memory tables.
+///
+/// Rather than embedding tables in query plans, we store a [`SourceExpr::InMemory`],
+/// which contains the information necessary for optimization along with a `SourceId`.
+/// Query execution then executes the plan, and when it encounters a `SourceExpr::InMemory`,
+/// retrieves the `Self::Source` table from the corresponding provider.
+/// This allows query plans to be re-used, though each execution might require a new provider.
+///
+/// An in-memory table `Self::Source` is a type capable of producing [`RelValue<'a>`]s.
+/// The general form of this is `Iterator<Item = RelValue<'a>>`.
+/// Depending on the situation, this could be e.g.,
+/// - [`MemTable`], producing [`RelValue::Projection`],
+/// - `&'a [ProductValue]` producing [`RelValue::ProjRef`].
+pub trait SourceProvider<'a> {
+    /// The type of in-memory tables that this provider uses.
+    type Source: 'a + Iterator<Item = RelValue<'a>>;
+
+    /// Retrieve the `Self::Source` associated with `id`, if any.
+    ///
+    /// Taking the same `id` a second time may or may not yield the same source.
+    /// Callers should not assume that a generic provider will yield it more than once.
+    /// This means that a query plan may not include multiple references to the same [`SourceId`].
+    ///
+    /// Implementations are also not obligated to inspect `id`, e.g., if there's only one option.
+    fn take_source(&mut self, id: SourceId) -> Option<Self::Source>;
+}
+
+impl<'a, I: 'a + Iterator<Item = RelValue<'a>>, F: FnMut(SourceId) -> Option<I>> SourceProvider<'a> for F {
+    type Source = I;
+    fn take_source(&mut self, id: SourceId) -> Option<Self::Source> {
+        self(id)
+    }
+}
+
+impl<'a, I: 'a + Iterator<Item = RelValue<'a>>> SourceProvider<'a> for Option<I> {
+    type Source = I;
+    fn take_source(&mut self, _: SourceId) -> Option<Self::Source> {
+        self.take()
+    }
+}
+
+pub struct NoInMemUsed;
+
+impl<'a> SourceProvider<'a> for NoInMemUsed {
+    type Source = iter::Empty<RelValue<'a>>;
+    fn take_source(&mut self, _: SourceId) -> Option<Self::Source> {
+        None
+    }
+}
+
+/// A [`SourceProvider`] backed by an `ArrayVec`.
+///
+/// Internally, the `SourceSet` stores an `Option<T>` for each planned [`SourceId`]
+/// which are [`Option::take`]n out of the set.
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[repr(transparent)]
 pub struct SourceSet<T, const N: usize>(
@@ -292,6 +348,13 @@ pub struct SourceSet<T, const N: usize>(
     // on incr-select by ~10% by not using `Vec<Option<T>>`.
     ArrayVec<Option<T>, N>,
 );
+
+impl<'a, T: 'a + Iterator<Item = RelValue<'a>>, const N: usize> SourceProvider<'a> for SourceSet<T, N> {
+    type Source = T;
+    fn take_source(&mut self, id: SourceId) -> Option<T> {
+        self.take(id)
+    }
+}
 
 impl<T, const N: usize> From<[T; N]> for SourceSet<T, N> {
     #[inline]
@@ -322,7 +385,7 @@ impl<T, const N: usize> SourceSet<T, N> {
     /// Extract the entry referred to by `id` from this `SourceSet`,
     /// leaving a "gap" in its place.
     ///
-    /// Subsequent calls to `take_mem_table` on the same `id` will return `None`.
+    /// Subsequent calls to `take` on the same `id` will return `None`.
     pub fn take(&mut self, id: SourceId) -> Option<T> {
         self.0.get_mut(id.0).map(mem::take).unwrap_or_default()
     }
@@ -382,19 +445,6 @@ impl<const N: usize> SourceSet<MemTable, N> {
         }
     }
 }
-
-/// An identifier for a data source (i.e. a table) in a query plan.
-///
-/// When compiling a query plan, rather than embedding the inputs in the plan,
-/// we annotate each input with a `SourceId`, and the compiled plan refers to its inputs by id.
-/// This allows the plan to be re-used with distinct inputs,
-/// assuming the inputs obey the same schema.
-///
-/// Note that re-using a query plan is only a good idea
-/// if the new inputs are similar to those used for compilation
-/// in terms of cardinality and distribution.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, From, Hash)]
-pub struct SourceId(pub usize);
 
 /// A reference to a table within a query plan,
 /// used as the source for selections, scans, filters and joins.
