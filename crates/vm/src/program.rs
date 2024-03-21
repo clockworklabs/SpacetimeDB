@@ -24,17 +24,6 @@ pub trait ProgramVm {
 
 pub type Sources<'a, const N: usize> = &'a mut SourceSet<MemTable, N>;
 
-pub struct ProgramStore<P> {
-    pub p: P,
-    pub code: Code,
-}
-
-impl<P> ProgramStore<P> {
-    pub fn new(p: P, code: Code) -> Self {
-        Self { p, code }
-    }
-}
-
 /// A default program that run in-memory without a database
 pub struct Program;
 

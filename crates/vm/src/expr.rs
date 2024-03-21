@@ -287,7 +287,11 @@ impl From<Query> for Option<ColumnOp> {
 /// This means that a query plan may not include multiple references to the same [`SourceId`].
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[repr(transparent)]
-pub struct SourceSet<T, const N: usize>(ArrayVec<Option<T>, N>);
+pub struct SourceSet<T, const N: usize>(
+    // Benchmarks showed an improvement in performance
+    // on incr-select by ~10% by not using `Vec<Option<T>>`.
+    ArrayVec<Option<T>, N>,
+);
 
 impl<T, const N: usize> From<[T; N]> for SourceSet<T, N> {
     #[inline]
@@ -374,7 +378,7 @@ impl<const N: usize> SourceSet<MemTable, N> {
     pub fn take_table(&mut self, source: &SourceExpr) -> Option<Table> {
         match source {
             SourceExpr::DbTable(db_table) => Some(Table::DbTable(db_table.clone())),
-            SourceExpr::MemTable { source_id, .. } => self.take(*source_id).map(Into::into),
+            SourceExpr::InMemory { source_id, .. } => self.take(*source_id).map(Into::into),
         }
     }
 }
@@ -392,18 +396,18 @@ impl<const N: usize> SourceSet<MemTable, N> {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, From, Hash)]
 pub struct SourceId(pub usize);
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 /// A reference to a table within a query plan,
 /// used as the source for selections, scans, filters and joins.
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum SourceExpr {
     /// A plan for a "virtual" or projected table.
     ///
-    /// The actual [`MemTable`] is not stored within the query plan;
-    /// rather, the `source_id` is an index with a corresponding [`SourceSet`]
-    /// which contains the [`MemTable`].
+    /// The actual in-memory table, e.g., [`MemTable`] or `&'a [ProductValue]`
+    /// is not stored within the query plan;
+    /// rather, the `source_id` is an index which corresponds to the table in e.g., a [`SourceSet`].
     ///
-    /// This allows query plans to be reused by supplying a new [`SourceSet`].
-    MemTable {
+    /// This allows query plans to be reused by supplying e.g., a new [`SourceSet`].
+    InMemory {
         source_id: SourceId,
         header: Arc<Header>,
         table_type: StTableType,
@@ -421,7 +425,7 @@ impl SourceExpr {
     /// Returns `None` if `self` refers to a [`DbTable`], as [`DbTable`]s are stored directly in the `SourceExpr`,
     /// rather than indirected through the [`SourceSet`].
     pub fn source_id(&self) -> Option<SourceId> {
-        if let SourceExpr::MemTable { source_id, .. } = self {
+        if let SourceExpr::InMemory { source_id, .. } = self {
             Some(*source_id)
         } else {
             None
@@ -434,27 +438,27 @@ impl SourceExpr {
 
     pub fn table_type(&self) -> StTableType {
         match self {
-            SourceExpr::MemTable { table_type, .. } => *table_type,
+            SourceExpr::InMemory { table_type, .. } => *table_type,
             SourceExpr::DbTable(db_table) => db_table.table_type,
         }
     }
 
     pub fn table_access(&self) -> StAccess {
         match self {
-            SourceExpr::MemTable { table_access, .. } => *table_access,
+            SourceExpr::InMemory { table_access, .. } => *table_access,
             SourceExpr::DbTable(db_table) => db_table.table_access,
         }
     }
 
     pub fn head(&self) -> &Arc<Header> {
         match self {
-            SourceExpr::MemTable { header, .. } => header,
+            SourceExpr::InMemory { header, .. } => header,
             SourceExpr::DbTable(db_table) => &db_table.head,
         }
     }
 
     pub fn is_mem_table(&self) -> bool {
-        matches!(self, SourceExpr::MemTable { .. })
+        matches!(self, SourceExpr::InMemory { .. })
     }
 
     pub fn is_db_table(&self) -> bool {
@@ -462,7 +466,7 @@ impl SourceExpr {
     }
 
     pub fn from_mem_table(header: Arc<Header>, table_access: StAccess, row_count: usize, id: SourceId) -> Self {
-        SourceExpr::MemTable {
+        SourceExpr::InMemory {
             source_id: id,
             header,
             table_type: StTableType::User,
@@ -500,7 +504,7 @@ impl Relation for SourceExpr {
 
     fn row_count(&self) -> RowCount {
         match self {
-            SourceExpr::MemTable { row_count, .. } => *row_count,
+            SourceExpr::InMemory { row_count, .. } => *row_count,
             SourceExpr::DbTable(_) => RowCount::unknown(),
         }
     }
@@ -1865,7 +1869,7 @@ impl From<QueryExpr> for Expr {
 impl fmt::Display for SourceExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SourceExpr::MemTable { header, source_id, .. } => {
+            SourceExpr::InMemory { header, source_id, .. } => {
                 let ty = AlgebraicType::Product(header.ty());
                 write!(f, "SourceExpr({source_id:?} => virtual {ty:?})")
             }
@@ -2040,7 +2044,7 @@ mod tests {
 
     fn tables() -> [SourceExpr; 2] {
         [
-            SourceExpr::MemTable {
+            SourceExpr::InMemory {
                 source_id: SourceId(0),
                 header: Arc::new(Header {
                     table_name: "foo".into(),
@@ -2146,7 +2150,7 @@ mod tests {
                 .map(|(i, _)| (ColId(i as u32).into(), Constraints::indexed()))
                 .collect(),
         );
-        SourceExpr::MemTable {
+        SourceExpr::InMemory {
             source_id: SourceId(0),
             header: Arc::new(head),
             row_count: RowCount::unknown(),

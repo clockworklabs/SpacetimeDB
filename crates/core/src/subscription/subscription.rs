@@ -750,7 +750,7 @@ mod tests {
         let IndexJoin {
             probe_side:
                 QueryExpr {
-                    source: SourceExpr::MemTable { .. },
+                    source: SourceExpr::InMemory { .. },
                     query: ref lhs,
                 },
             probe_field:
@@ -837,7 +837,7 @@ mod tests {
         let IndexJoin {
             probe_side:
                 QueryExpr {
-                    source: SourceExpr::MemTable { .. },
+                    source: SourceExpr::InMemory { .. },
                     query: ref rhs,
                 },
             probe_field:

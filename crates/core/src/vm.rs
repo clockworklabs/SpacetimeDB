@@ -224,16 +224,16 @@ fn join_inner<'a, I: 'a + Iterator<Item = RelValue<'a>>>(
     )
 }
 
-/// Resolve `query` to a table iterator, either an [`IterRows`] or a [`TableCursor`].
+/// Resolve `query` to a table iterator,
+/// either taken from an in-memory table, in the case of [`SourceExpr::InMemory`],
+/// or from a physical table, in the case of [`SourceExpr::DbTable`].
 ///
-/// If `query` refers to a `MemTable`, this will `Option::take` said `MemTable` out of `sources`,
-/// leaving `None`.
-/// This means that a query cannot refer to a `MemTable` multiple times,
-/// nor can a `SourceSet` which contains a `MemTable` be reused.
-/// This is because [`IterRows`] takes ownership of the `MemTable`.
+/// If `query` refers to an in memory table,
+/// `sources` will be used to fetch the table `I`.
+/// Examples of `I` could be derived from `MemTable` or `&'a [ProductValue]`
+/// whereas `sources` could be a closure that takes from a `SourceSet`.
 ///
-/// On the other hand, if the `query` is a `DbTable`, `sources` is unused
-/// and therefore unmodified.
+/// On the other hand, if the `query` is a `SourceExpr::DbTable`, `sources` is unused.
 fn get_table<'a, I: 'a + Iterator<Item = RelValue<'a>>>(
     ctx: &'a ExecutionContext<'a>,
     stdb: &'a RelationalDB,
@@ -242,12 +242,12 @@ fn get_table<'a, I: 'a + Iterator<Item = RelValue<'a>>>(
     sources: &mut impl FnMut(SourceId) -> Option<I>,
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {
     Ok(match query {
-        SourceExpr::MemTable {
+        SourceExpr::InMemory {
             source_id,
             header,
             row_count,
             ..
-        } => build_source_query(sources, *source_id, header.clone(), *row_count),
+        } => in_mem_to_rel_ops(sources, *source_id, header.clone(), *row_count),
         SourceExpr::DbTable(x) => {
             let iter = match tx {
                 TxMode::MutTx(tx) => stdb.iter_mut(ctx, tx, x.table_id)?,
@@ -258,7 +258,8 @@ fn get_table<'a, I: 'a + Iterator<Item = RelValue<'a>>>(
     })
 }
 
-fn build_source_query<'a, I: 'a + Iterator<Item = RelValue<'a>>>(
+//
+fn in_mem_to_rel_ops<'a, I: 'a + Iterator<Item = RelValue<'a>>>(
     sources: &mut impl FnMut(SourceId) -> Option<I>,
     source_id: SourceId,
     head: Arc<Header>,

@@ -11,7 +11,7 @@ use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::relation::DbTable;
 use spacetimedb_vm::eval::IterRows;
-use spacetimedb_vm::expr::{Query, QueryExpr, SourceSet};
+use spacetimedb_vm::expr::{Query, QueryExpr, SourceExpr, SourceId, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::RelValue;
 use std::hash::Hash;
@@ -59,7 +59,7 @@ enum EvalIncrPlan {
     Semijoin(IncrementalJoin),
 
     /// For single-table selects, store only one version of the plan,
-    /// which has a single source, a [`MemTable`], produced by [`query::query_to_mem_table`].
+    /// which has a single source, an in-memory table, produced by [`query::query_to_mem_table`].
     Select(QueryExpr),
 }
 
@@ -77,7 +77,7 @@ pub struct ExecutionUnit {
     /// This is a direct compilation of the source query.
     eval_plan: QueryExpr,
     /// A version of the plan optimized for `eval_incr`,
-    /// whose source is a [`MemTable`], as if by [`query::to_mem_table`].
+    /// whose source is an in-memory table, as if by [`query::to_mem_table`].
     eval_incr_plan: EvalIncrPlan,
 }
 
@@ -100,22 +100,15 @@ impl From<SupportedQuery> for ExecutionUnit {
 }
 
 impl ExecutionUnit {
-    /// Pre-compute a plan for `eval_incr` which reads from a `MemTable`
+    /// Pre-compute a plan for `eval_incr` which reads from an in-memory table
     /// rather than re-planning on every incremental update.
     fn compile_select_eval_incr(expr: &QueryExpr) -> QueryExpr {
-        let source = expr
-            .source
-            .get_db_table()
-            .expect("The plan passed to `ExecutionUnit::new` must read from `DbTable`s, but found a `MemTable`");
-        let table_id = source.table_id;
-        let table_name = source.head.table_name.clone();
-        let table_update = DatabaseTableUpdate {
-            table_id,
-            table_name,
-            ops: vec![],
-        };
-
-        // NOTE: The `eval_incr_plan` will reference a `SourceExpr::MemTable`
+        let source = &expr.source;
+        assert!(
+            source.is_db_table(),
+            "The plan passed to `compile_select_eval_incr` must read from `DbTable`s, but found in-mem table"
+        );
+        // NOTE: The `eval_incr_plan` will reference a `SourceExpr::InMemory`
         // with `row_count: RowCount::exact(0)`.
         // This is inaccurate; while we cannot predict the exact number of rows,
         // we know that it will never be 0,
@@ -126,16 +119,15 @@ impl ExecutionUnit {
         // Some day down the line, when we have a real query planner,
         // we may need to provide a row count estimation that is, if not accurate,
         // at least less specifically inaccurate.
-        let (eval_incr_plan, _source_set) = query::query_to_mem_table(expr.clone(), &table_update);
-        debug_assert_eq!(_source_set.len(), 1);
-
-        eval_incr_plan
+        let source = SourceExpr::from_mem_table(source.head().clone(), source.table_access(), 0, SourceId(0));
+        let query = expr.query.clone();
+        QueryExpr { source, query }
     }
 
     pub fn new(eval_plan: SupportedQuery, hash: QueryHash) -> Result<Self, DBError> {
         // Pre-compile the `expr` as fully as possible, twice, for two different paths:
-        // - `eval_incr_plan`, for incremental updates from a `MemTable`.
-        // - `eval_plan`, for initial subscriptions from a `DbTable`.
+        // - `eval_incr_plan`, for incremental updates from an `SourceExpr::InMemory` table.
+        // - `eval_plan`, for initial subscriptions from a `SourceExpr::DbTable`.
 
         let eval_incr_plan = match &eval_plan {
             SupportedQuery {
@@ -172,7 +164,7 @@ impl ExecutionUnit {
         self.eval_plan
             .source
             .get_db_table()
-            .expect("ExecutionUnit eval_plan should have DbTable source, but found MemTable")
+            .expect("ExecutionUnit eval_plan should have DbTable source, but found in-mem table")
     }
 
     /// The table from which this query returns rows.
@@ -303,7 +295,7 @@ impl ExecutionUnit {
     ) -> Result<Vec<TableOpCow<'a>>, DBError> {
         assert!(
             eval_incr_plan.source.is_mem_table(),
-            "Expected MemTable in `eval_incr_plan`, but found `DbTable`"
+            "Expected in-mem table in `eval_incr_plan`, but found `DbTable`"
         );
 
         // Partition the `update` into two `MemTable`s, `(inserts, deletes)`,

@@ -2,15 +2,13 @@ use crate::db::db_metrics::{DB_METRICS, MAX_QUERY_COMPILE_TIME};
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::WorkloadType;
-use crate::host::module_host::DatabaseTableUpdate;
 use crate::sql::compiler::compile_sql;
 use crate::subscription::subscription::SupportedQuery;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Address;
-use spacetimedb_vm::expr::{self, Crud, CrudExpr, DbType, QueryExpr, SourceSet};
-use spacetimedb_vm::relation::MemTable;
+use spacetimedb_vm::expr::{self, Crud, CrudExpr, DbType, QueryExpr};
 use std::time::Instant;
 
 use super::subscription::get_all;
@@ -21,19 +19,6 @@ pub const SUBSCRIBE_TO_ALL_QUERY: &str = "SELECT * FROM *";
 pub enum QueryDef {
     Table(String),
     Sql(String),
-}
-
-/// Replace the primary (ie. `source`) table of the given [`QueryExpr`] with
-/// a virtual [`MemTable`] consisting of the rows in [`DatabaseTableUpdate`].
-pub fn query_to_mem_table(mut of: QueryExpr, data: &DatabaseTableUpdate) -> (QueryExpr, SourceSet<MemTable, 1>) {
-    let mem_table = MemTable::new(
-        of.source.head().clone(),
-        of.source.table_access(),
-        data.ops.iter().map(|op| op.row.clone()).collect(),
-    );
-    let mut sources = SourceSet::empty();
-    of.source = sources.add_mem_table(mem_table);
-    (of, sources)
 }
 
 // TODO: It's semantically wrong to `SUBSCRIBE_TO_ALL_QUERY`
@@ -153,7 +138,7 @@ mod tests {
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::db::relational_db::MutTx;
     use crate::execution_context::ExecutionContext;
-    use crate::host::module_host::{DatabaseUpdate, TableOp};
+    use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp};
     use crate::sql::execute::collect_result;
     use crate::sql::execute::run;
     use crate::subscription::subscription::ExecutionSet;
@@ -170,8 +155,9 @@ mod tests {
     use spacetimedb_sats::{product, AlgebraicType, ProductType, ProductValue};
     use spacetimedb_vm::dsl::{mem_table, scalar};
     use spacetimedb_vm::eval::run_ast;
-    use spacetimedb_vm::expr::Expr;
+    use spacetimedb_vm::expr::{Expr, SourceSet};
     use spacetimedb_vm::operator::OpCmp;
+    use spacetimedb_vm::relation::MemTable;
 
     /// Runs a query that evaluates if the changes made should be reported to the [ModuleSubscriptionManager]
     fn run_query<const N: usize>(
@@ -285,6 +271,16 @@ mod tests {
         let q = q.with_project(fields, None);
 
         Ok((schema, table, data, q))
+    }
+
+    /// Replace the primary (ie. `source`) table of the given [`QueryExpr`] with
+    /// a virtual [`MemTable`] consisting of the rows in [`DatabaseTableUpdate`].
+    fn query_to_mem_table(mut of: QueryExpr, data: &DatabaseTableUpdate) -> (QueryExpr, SourceSet<MemTable, 1>) {
+        let data = data.ops.iter().map(|op| op.row.clone()).collect();
+        let mem_table = MemTable::new(of.source.head().clone(), of.source.table_access(), data);
+        let mut sources = SourceSet::empty();
+        of.source = sources.add_mem_table(mem_table);
+        (of, sources)
     }
 
     fn check_query(
