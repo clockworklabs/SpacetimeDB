@@ -9,6 +9,9 @@ mod segment;
 mod varchar;
 mod varint;
 
+#[cfg(target_os = "linux")]
+pub mod io_uring;
+
 pub use crate::{
     commit::Commit,
     payload::{Decoder, Encode},
