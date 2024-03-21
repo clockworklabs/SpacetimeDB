@@ -131,14 +131,14 @@ public static partial class RawBindings
     }
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _get_table_id(
+    public static partial CheckedStatus get_table_id(
         [In] byte[] name,
         uint name_len,
         out TableId out_
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _create_index(
+    public static partial CheckedStatus create_index(
         [In] byte[] index_name,
         uint index_name_len,
         TableId table_id,
@@ -148,7 +148,7 @@ public static partial class RawBindings
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _iter_by_col_eq(
+    public static partial CheckedStatus iter_by_col_eq(
         TableId table_id,
         ColId col_id,
         [In] byte[] value,
@@ -157,10 +157,10 @@ public static partial class RawBindings
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _insert(TableId table_id, byte[] row, uint row_len);
+    public static partial CheckedStatus insert(TableId table_id, byte[] row, uint row_len);
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _delete_by_col_eq(
+    public static partial CheckedStatus delete_by_col_eq(
         TableId table_id,
         ColId col_id,
         [In] byte[] value,
@@ -169,7 +169,7 @@ public static partial class RawBindings
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _delete_by_rel(
+    public static partial CheckedStatus delete_by_rel(
         TableId table_id,
         [In] byte[] relation,
         uint relation_len,
@@ -177,10 +177,10 @@ public static partial class RawBindings
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _iter_start(TableId table_id, out BufferIter out_);
+    public static partial CheckedStatus iter_start(TableId table_id, out BufferIter out_);
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _iter_start_filtered(
+    public static partial CheckedStatus iter_start_filtered(
         TableId table_id,
         [In] byte[] filter,
         uint filter_len,
@@ -188,13 +188,13 @@ public static partial class RawBindings
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _iter_next(BufferIter iter_handle, out Buffer out_);
+    public static partial CheckedStatus iter_next(BufferIter iter_handle, out Buffer out_);
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _iter_drop(BufferIter iter_handle);
+    public static partial CheckedStatus iter_drop(BufferIter iter_handle);
 
     [LibraryImport(StdbNamespace)]
-    public static partial void _console_log(
+    public static partial void console_log(
         byte level,
         [In] byte[] target,
         uint target_len,
@@ -206,7 +206,7 @@ public static partial class RawBindings
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial void _schedule_reducer(
+    public static partial void schedule_reducer(
         [In] byte[] name,
         uint name_len,
         [In] byte[] args,
@@ -216,18 +216,18 @@ public static partial class RawBindings
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial void _cancel_reducer(ScheduleToken schedule_token_handle);
+    public static partial void cancel_reducer(ScheduleToken schedule_token_handle);
 
     [LibraryImport(StdbNamespace)]
-    public static partial uint _buffer_len(Buffer buf_handle);
+    public static partial uint buffer_len(Buffer buf_handle);
 
     [LibraryImport(StdbNamespace)]
-    public static partial void _buffer_consume(
+    public static partial void buffer_consume(
         Buffer buf_handle,
-        [MarshalUsing(CountElementName = nameof(dst_len))] [Out] byte[] dst,
+        [MarshalUsing(CountElementName = nameof(dst_len))][Out] byte[] dst,
         uint dst_len
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial Buffer _buffer_alloc([In] byte[] data, uint data_len);
+    public static partial Buffer buffer_alloc([In] byte[] data, uint data_len);
 }

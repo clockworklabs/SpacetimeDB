@@ -17,9 +17,9 @@ public static class Runtime
 
     internal static byte[] Consume(this RawBindings.Buffer buffer)
     {
-        var len = RawBindings._buffer_len(buffer);
+        var len = RawBindings.buffer_len(buffer);
         var result = new byte[len];
-        RawBindings._buffer_consume(buffer, result, len);
+        RawBindings.buffer_consume(buffer, result, len);
         return result;
     }
 
@@ -34,11 +34,11 @@ public static class Runtime
         {
             if (filterBytes is null)
             {
-                RawBindings._iter_start(table_id, out handle);
+                RawBindings.iter_start(table_id, out handle);
             }
             else
             {
-                RawBindings._iter_start_filtered(
+                RawBindings.iter_start_filtered(
                     table_id,
                     filterBytes,
                     (uint)filterBytes.Length,
@@ -49,7 +49,7 @@ public static class Runtime
 
         public bool MoveNext()
         {
-            RawBindings._iter_next(handle, out var nextBuf);
+            RawBindings.iter_next(handle, out var nextBuf);
             if (nextBuf.Equals(RawBindings.Buffer.INVALID))
             {
                 return false;
@@ -62,7 +62,7 @@ public static class Runtime
         {
             if (!handle.Equals(RawBindings.BufferIter.INVALID))
             {
-                RawBindings._iter_drop(handle);
+                RawBindings.iter_drop(handle);
                 handle = RawBindings.BufferIter.INVALID;
                 // Avoid running ~BufferIter if Dispose was executed successfully.
                 GC.SuppressFinalize(this);
@@ -126,7 +126,7 @@ public static class Runtime
         var filename_bytes = UTF8.GetBytes(filename);
         var text_bytes = UTF8.GetBytes(text);
 
-        RawBindings._console_log(
+        RawBindings.console_log(
             (byte)level,
             target_bytes,
             (uint)target_bytes.Length,
@@ -241,7 +241,7 @@ public static class Runtime
         {
             var name_bytes = UTF8.GetBytes(name);
 
-            RawBindings._schedule_reducer(
+            RawBindings.schedule_reducer(
                 name_bytes,
                 (uint)name_bytes.Length,
                 args,
@@ -251,19 +251,19 @@ public static class Runtime
             );
         }
 
-        public void Cancel() => RawBindings._cancel_reducer(handle);
+        public void Cancel() => RawBindings.cancel_reducer(handle);
     }
 
     public static RawBindings.TableId GetTableId(string name)
     {
         var name_bytes = UTF8.GetBytes(name);
-        RawBindings._get_table_id(name_bytes, (uint)name_bytes.Length, out var out_);
+        RawBindings.get_table_id(name_bytes, (uint)name_bytes.Length, out var out_);
         return out_;
     }
 
     public static void Insert(RawBindings.TableId tableId, byte[] row)
     {
-        RawBindings._insert(tableId, row, (uint)row.Length);
+        RawBindings.insert(tableId, row, (uint)row.Length);
     }
 
     public static uint DeleteByColEq(
@@ -272,7 +272,7 @@ public static class Runtime
         byte[] value
     )
     {
-        RawBindings._delete_by_col_eq(tableId, colId, value, (uint)value.Length, out var out_);
+        RawBindings.delete_by_col_eq(tableId, colId, value, (uint)value.Length, out var out_);
         return out_;
     }
 
@@ -301,7 +301,7 @@ public static class Runtime
         byte[] value
     )
     {
-        RawBindings._iter_by_col_eq(tableId, colId, value, (uint)value.Length, out var buf);
+        RawBindings.iter_by_col_eq(tableId, colId, value, (uint)value.Length, out var buf);
         return buf.Consume();
     }
 }

@@ -24,7 +24,7 @@ pub mod raw {
     // on. Any non-breaking additions to the abi surface should be put in a new `extern {}` block
     // with a module identifier with a minor version 1 above the previous highest minor version.
     // For breaking changes, all functions should be moved into one new `spacetime_X.0` block.
-    #[link(wasm_import_module = "spacetime_7.0")]
+    #[link(wasm_import_module = "spacetime_8.0")]
     extern "C" {
         /*
         /// Create a table with `name`, a UTF-8 slice in WASM memory lasting `name_len` bytes,
@@ -50,7 +50,7 @@ pub mod raw {
         /// - the slice `(name, name_len)` is not valid UTF-8
         /// - `name + name_len` overflows a 64-bit address.
         /// - writing to `out` overflows a 32-bit integer
-        pub fn _get_table_id(name: *const u8, name_len: usize, out: *mut TableId) -> u16;
+        pub fn get_table_id(name: *const u8, name_len: usize, out: *mut TableId) -> u16;
 
         /// Creates an index with the name `index_name` and type `index_type`,
         /// on a product of the given columns in `col_ids`
@@ -69,7 +69,7 @@ pub mod raw {
         /// - `index_type > 1`
         ///
         /// Traps if `index_type == 1` or `col_ids.len() != 1`.
-        pub fn _create_index(
+        pub fn create_index(
             index_name: *const u8,
             index_name_len: usize,
             table_id: TableId,
@@ -95,7 +95,7 @@ pub mod raw {
         /// - `(val, val_len)` cannot be decoded to an `AlgebraicValue`
         ///   typed at the `AlgebraicType` of the column,
         /// - `val + val_len` overflows a 64-bit integer
-        pub fn _iter_by_col_eq(
+        pub fn iter_by_col_eq(
             table_id: TableId,
             col_id: ColId,
             val: *const u8,
@@ -118,7 +118,7 @@ pub mod raw {
         /// - `row + row_len` overflows a 64-bit integer
         /// - `(row, row_len)` doesn't decode from BSATN to a `ProductValue`
         ///   according to the `ProductType` that the table's schema specifies.
-        pub fn _insert(table_id: TableId, row: *mut u8, row_len: usize) -> u16;
+        pub fn insert(table_id: TableId, row: *mut u8, row_len: usize) -> u16;
 
         /// Deletes all rows in the table identified by `table_id`
         /// where the column identified by `col_id` matches the byte string,
@@ -137,7 +137,7 @@ pub mod raw {
         ///   according to the `AlgebraicType` that the table's schema specifies for `col_id`.
         /// - `value + value_len` overflows a 64-bit integer
         /// - writing to `out` would overflow a 32-bit integer
-        pub fn _delete_by_col_eq(
+        pub fn delete_by_col_eq(
             table_id: TableId,
             col_id: ColId,
             value: *const u8,
@@ -161,7 +161,7 @@ pub mod raw {
         ///   according to the `ProductValue` that the table's schema specifies for rows.
         /// - `relation + relation_len` overflows a 64-bit integer
         /// - writing to `out` would overflow a 32-bit integer
-        pub fn _delete_by_rel(table_id: TableId, relation: *const u8, relation_len: usize, out: *mut u32) -> u16;
+        pub fn delete_by_rel(table_id: TableId, relation: *const u8, relation_len: usize, out: *mut u32) -> u16;
 
         /// Start iteration on each row, as bytes, of a table identified by `table_id`.
         ///
@@ -170,9 +170,9 @@ pub mod raw {
         ///
         /// Returns an error if
         /// - a table with the provided `table_id` doesn't exist
-        pub fn _iter_start(table_id: TableId, out: *mut BufferIter) -> u16;
+        pub fn iter_start(table_id: TableId, out: *mut BufferIter) -> u16;
 
-        /// Like [`_iter_start`], start iteration on each row,
+        /// Like [`iter_start`], start iteration on each row,
         /// as bytes, of a table identified by `table_id`.
         ///
         /// The rows are filtered through `filter`, which is read from WASM memory
@@ -185,7 +185,7 @@ pub mod raw {
         /// - a table with the provided `table_id` doesn't exist
         /// - `(filter, filter_len)` doesn't decode to a filter expression
         /// - `filter + filter_len` overflows a 64-bit integer
-        pub fn _iter_start_filtered(
+        pub fn iter_start_filtered(
             table_id: TableId,
             filter: *const u8,
             filter_len: usize,
@@ -203,13 +203,13 @@ pub mod raw {
         /// - `iter` does not identify a registered `BufferIter`
         /// - writing to `out` would overflow a 64-bit integer
         /// - advancing the iterator resulted in an error
-        pub fn _iter_next(iter: ManuallyDrop<BufferIter>, out: *mut Buffer) -> u16;
+        pub fn iter_next(iter: ManuallyDrop<BufferIter>, out: *mut Buffer) -> u16;
 
         /// Drops the entire registered iterator with the index given by `iter_key`.
         /// The iterator is effectively de-registered.
         ///
         /// Returns an error if the iterator does not exist.
-        pub fn _iter_drop(iter: ManuallyDrop<BufferIter>) -> u16;
+        pub fn iter_drop(iter: ManuallyDrop<BufferIter>) -> u16;
 
         /// Log at `level` a `message` message occuring in `filename:line_number`
         /// with [`target`] being the module path at the `log!` invocation site.
@@ -225,7 +225,7 @@ pub mod raw {
         /// - `message + message_len > u64::MAX`
         ///
         /// [`target`]: https://docs.rs/log/latest/log/struct.Record.html#method.target
-        pub fn _console_log(
+        pub fn console_log(
             level: u8,
             target: *const u8,
             target_len: usize,
@@ -248,7 +248,7 @@ pub mod raw {
         /// - the `time` delay exceeds `64^6 - 1` milliseconds from now
         /// - `name` does not point to valid UTF-8
         /// - `name + name_len` or `args + args_len` overflow a 64-bit integer
-        pub fn _schedule_reducer(
+        pub fn schedule_reducer(
             name: *const u8,
             name_len: usize,
             args: *const u8,
@@ -260,15 +260,15 @@ pub mod raw {
         /// Unschedule a reducer using the same `id` generated as when it was scheduled.
         ///
         /// This assumes that the reducer hasn't already been executed.
-        pub fn _cancel_reducer(id: u64);
+        pub fn cancel_reducer(id: u64);
 
         /// Returns the length (number of bytes) of buffer `bufh` without
         /// transferring ownership of the data into the function.
         ///
-        /// The `bufh` must have previously been allocating using `_buffer_alloc`.
+        /// The `bufh` must have previously been allocating using `buffer_alloc`.
         ///
         /// Traps if the buffer does not exist.
-        pub fn _buffer_len(bufh: ManuallyDrop<Buffer>) -> usize;
+        pub fn buffer_len(bufh: ManuallyDrop<Buffer>) -> usize;
 
         /// Consumes the `buffer`,
         /// moving its contents to the slice `(dst, dst_len)`.
@@ -276,7 +276,7 @@ pub mod raw {
         /// Traps if
         /// - the buffer does not exist
         /// - `dst + dst_len` overflows a 64-bit integer
-        pub fn _buffer_consume(buffer: Buffer, dst: *mut u8, dst_len: usize);
+        pub fn buffer_consume(buffer: Buffer, dst: *mut u8, dst_len: usize);
 
         /// Creates a buffer of size `data_len` in the host environment.
         ///
@@ -287,25 +287,25 @@ pub mod raw {
         /// The buffer is registered in the host environment and is indexed by the returned `u32`.
         ///
         /// Traps if `data + data_len` overflows a 64-bit integer.
-        pub fn _buffer_alloc(data: *const u8, data_len: usize) -> Buffer;
+        pub fn buffer_alloc(data: *const u8, data_len: usize) -> Buffer;
 
         /// Begin a timing span.
         ///
-        /// When the returned `u32` span ID is passed to [`_span_end`],
+        /// When the returned `u32` span ID is passed to [`span_end`],
         /// the duration between the calls will be printed to the module's logs.
         ///
         /// The slice (`name`, `name_len`) must be valid UTF-8 bytes.
-        pub fn _span_start(name: *const u8, name_len: usize) -> u32;
+        pub fn span_start(name: *const u8, name_len: usize) -> u32;
 
         /// End a timing span.
         ///
-        /// The `span_id` must be the result of a call to `_span_start`.
+        /// The `span_id` must be the result of a call to `span_start`.
         /// The duration between the two calls will be computed and printed to the module's logs.
         ///
         /// Behavior is unspecified
-        /// if `_span_end` is called on a `span_id` which is not the result of a call to `_span_start`,
-        /// or if `_span_end` is called multiple times with the same `span_id`.
-        pub fn _span_end(span_id: u32);
+        /// if `span_end` is called on a `span_id` which is not the result of a call to `span_start`,
+        /// or if `span_end` is called multiple times with the same `span_id`.
+        pub fn span_end(span_id: u32);
     }
 
     /// What strategy does the database index use?
@@ -320,17 +320,17 @@ pub mod raw {
         Hash = 1,
     }
 
-    /// The error log level. See [`_console_log`].
+    /// The error log level. See [`console_log`].
     pub const LOG_LEVEL_ERROR: u8 = 0;
-    /// The warn log level. See [`_console_log`].
+    /// The warn log level. See [`console_log`].
     pub const LOG_LEVEL_WARN: u8 = 1;
-    /// The info log level. See [`_console_log`].
+    /// The info log level. See [`console_log`].
     pub const LOG_LEVEL_INFO: u8 = 2;
-    /// The debug log level. See [`_console_log`].
+    /// The debug log level. See [`console_log`].
     pub const LOG_LEVEL_DEBUG: u8 = 3;
-    /// The trace log level. See [`_console_log`].
+    /// The trace log level. See [`console_log`].
     pub const LOG_LEVEL_TRACE: u8 = 4;
-    /// The panic log level. See [`_console_log`].
+    /// The panic log level. See [`console_log`].
     ///
     /// A panic level is emitted just before a fatal error causes the WASM module to trap.
     pub const LOG_LEVEL_PANIC: u8 = 101;
@@ -510,7 +510,7 @@ unsafe fn call<T>(f: impl FnOnce(*mut T) -> u16) -> Result<T, Errno> {
 /// Returns an error if the table does not exist.
 #[inline]
 pub fn get_table_id(name: &str) -> Result<TableId, Errno> {
-    unsafe { call(|out| raw::_get_table_id(name.as_ptr(), name.len(), out)) }
+    unsafe { call(|out| raw::get_table_id(name.as_ptr(), name.len(), out)) }
 }
 
 /// Creates an index with the name `index_name` and type `index_type`,
@@ -528,7 +528,7 @@ pub fn get_table_id(name: &str) -> Result<TableId, Errno> {
 #[inline]
 pub fn create_index(index_name: &str, table_id: TableId, index_type: u8, col_ids: &[u8]) -> Result<(), Errno> {
     cvt(unsafe {
-        raw::_create_index(
+        raw::create_index(
             index_name.as_ptr(),
             index_name.len(),
             table_id,
@@ -557,7 +557,7 @@ pub fn create_index(index_name: &str, table_id: TableId, index_type: u8, col_ids
 ///   typed at the `AlgebraicType` of the column
 #[inline]
 pub fn iter_by_col_eq(table_id: TableId, col_id: ColId, val: &[u8]) -> Result<Buffer, Errno> {
-    unsafe { call(|out| raw::_iter_by_col_eq(table_id, col_id, val.as_ptr(), val.len(), out)) }
+    unsafe { call(|out| raw::iter_by_col_eq(table_id, col_id, val.as_ptr(), val.len(), out)) }
 }
 
 /// Inserts a row into the table identified by `table_id`,
@@ -574,7 +574,7 @@ pub fn iter_by_col_eq(table_id: TableId, col_id: ColId, val: &[u8]) -> Result<Bu
 ///   according to the `ProductType` that the table's schema specifies.
 #[inline]
 pub fn insert(table_id: TableId, row: &mut [u8]) -> Result<(), Errno> {
-    cvt(unsafe { raw::_insert(table_id, row.as_mut_ptr(), row.len()) })
+    cvt(unsafe { raw::insert(table_id, row.as_mut_ptr(), row.len()) })
 }
 
 /// Deletes all rows in the table identified by `table_id`
@@ -591,7 +591,7 @@ pub fn insert(table_id: TableId, row: &mut [u8]) -> Result<(), Errno> {
 /// - `col_id` does not identify a column of the table
 #[inline]
 pub fn delete_by_col_eq(table_id: TableId, col_id: ColId, value: &[u8]) -> Result<u32, Errno> {
-    unsafe { call(|out| raw::_delete_by_col_eq(table_id, col_id, value.as_ptr(), value.len(), out)) }
+    unsafe { call(|out| raw::delete_by_col_eq(table_id, col_id, value.as_ptr(), value.len(), out)) }
 }
 
 /// Deletes those rows, in the table identified by `table_id`,
@@ -609,7 +609,7 @@ pub fn delete_by_col_eq(table_id: TableId, col_id: ColId, value: &[u8]) -> Resul
 /// - `(relation, relation_len)` doesn't decode from BSATN to a `Vec<ProductValue>`
 #[inline]
 pub fn delete_by_rel(table_id: TableId, relation: &[u8]) -> Result<u32, Errno> {
-    unsafe { call(|out| raw::_delete_by_rel(table_id, relation.as_ptr(), relation.len(), out)) }
+    unsafe { call(|out| raw::delete_by_rel(table_id, relation.as_ptr(), relation.len(), out)) }
 }
 
 /// Returns an iterator for each row, as bytes, of a table identified by `table_id`.
@@ -627,8 +627,8 @@ pub fn delete_by_rel(table_id: TableId, relation: &[u8]) -> Result<u32, Errno> {
 pub fn iter(table_id: TableId, filter: Option<&[u8]>) -> Result<BufferIter, Errno> {
     unsafe {
         call(|out| match filter {
-            None => raw::_iter_start(table_id, out),
-            Some(filter) => raw::_iter_start_filtered(table_id, filter.as_ptr(), filter.len(), out),
+            None => raw::iter_start(table_id, out),
+            Some(filter) => raw::iter_start_filtered(table_id, filter.as_ptr(), filter.len(), out),
         })
     }
 }
@@ -668,7 +668,7 @@ pub fn console_log(
     let opt_ptr = |b: Option<&str>| b.map_or(ptr::null(), |b| b.as_ptr());
     let opt_len = |b: Option<&str>| b.map_or(0, |b| b.len());
     unsafe {
-        raw::_console_log(
+        raw::console_log(
             level as u8,
             opt_ptr(target),
             opt_len(target),
@@ -695,7 +695,7 @@ pub fn console_log(
 #[inline]
 pub fn schedule(name: &str, args: &[u8], time: u64) -> u64 {
     let mut out = 0;
-    unsafe { raw::_schedule_reducer(name.as_ptr(), name.len(), args.as_ptr(), args.len(), time, &mut out) }
+    unsafe { raw::schedule_reducer(name.as_ptr(), name.len(), args.as_ptr(), args.len(), time, &mut out) }
     out
 }
 
@@ -703,7 +703,7 @@ pub fn schedule(name: &str, args: &[u8], time: u64) -> u64 {
 ///
 /// This assumes that the reducer hasn't already been executed.
 pub fn cancel_reducer(id: u64) {
-    unsafe { raw::_cancel_reducer(id) }
+    unsafe { raw::cancel_reducer(id) }
 }
 
 pub use raw::{Buffer, BufferIter};
@@ -711,7 +711,7 @@ pub use raw::{Buffer, BufferIter};
 impl Buffer {
     /// Returns the number of bytes of the data stored in the buffer.
     pub fn data_len(&self) -> usize {
-        unsafe { raw::_buffer_len(self.handle()) }
+        unsafe { raw::buffer_len(self.handle()) }
     }
 
     /// Read the contents of the buffer into the provided Vec.
@@ -747,12 +747,12 @@ impl Buffer {
     ///
     /// The module will crash if `buf`'s length doesn't match the buffer.
     pub fn read_uninit(self, buf: &mut [MaybeUninit<u8>]) {
-        unsafe { raw::_buffer_consume(self, buf.as_mut_ptr().cast(), buf.len()) }
+        unsafe { raw::buffer_consume(self, buf.as_mut_ptr().cast(), buf.len()) }
     }
 
     /// Allocates a buffer with the contents of `data`.
     pub fn alloc(data: &[u8]) -> Self {
-        unsafe { raw::_buffer_alloc(data.as_ptr(), data.len()) }
+        unsafe { raw::buffer_alloc(data.as_ptr(), data.len()) }
     }
 }
 
@@ -760,7 +760,7 @@ impl Iterator for BufferIter {
     type Item = Result<Buffer, Errno>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let buf = unsafe { call(|out| raw::_iter_next(self.handle(), out)) };
+        let buf = unsafe { call(|out| raw::iter_next(self.handle(), out)) };
         match buf {
             Ok(buf) if buf.is_invalid() => None,
             res => Some(res),
@@ -770,7 +770,7 @@ impl Iterator for BufferIter {
 
 impl Drop for BufferIter {
     fn drop(&mut self) {
-        cvt(unsafe { raw::_iter_drop(self.handle()) }).unwrap();
+        cvt(unsafe { raw::iter_drop(self.handle()) }).unwrap();
     }
 }
 
