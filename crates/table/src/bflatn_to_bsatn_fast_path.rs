@@ -27,7 +27,7 @@ use crate::{
 pub struct KnownBsatnLayout {
     /// The length of the encoded BSATN representation of a row of this type,
     /// in bytes.
-    bsatn_length: usize,
+    bsatn_length: u16,
 
     fields: Vec<MemcpyField>,
 }
@@ -39,7 +39,7 @@ impl KnownBsatnLayout {
     /// - `row` must store a valid, initialized instance of the BFLATN row type
     ///   for which `self` was computed.
     pub unsafe fn serialize_row_into(&self, buf: &mut [u8], row: &Bytes) {
-        debug_assert!(buf.len() >= self.bsatn_length);
+        debug_assert!(buf.len() >= self.bsatn_length as usize);
         for field in &self.fields {
             // Safety: forward caller requirements.
             unsafe { field.copy(buf, row) };
@@ -68,13 +68,15 @@ impl KnownBsatnLayout {
 #[derive(PartialEq, Eq, Debug)]
 struct MemcpyField {
     /// Offset in the BFLATN row from which to begin `memcpy`ing, in bytes.
-    bflatn_offset: usize,
+    bflatn_offset: u16,
 
     /// Offset in the BSATN buffer to which to begin `memcpy`ing, in bytes.
-    bsatn_offset: usize,
+    // TODO(comment): Could be a running counter, but this way we just have all the `memcpy` args in one place.
+    // Should bench; I suspect this allows more insn parallelism and is therefore better.
+    bsatn_offset: u16,
 
     /// Length to `memcpy`, in bytes.
-    length: usize,
+    length: u16,
 }
 
 impl MemcpyField {
@@ -85,9 +87,9 @@ impl MemcpyField {
     /// - `row[self.bflatn_offset .. self.bflatn_offset + length]` must all be initialized.
     unsafe fn copy(&self, buf: &mut [u8], row: &Bytes) {
         // Safety: forward caller requirement #1.
-        let to = unsafe { buf.get_unchecked_mut(range_move(0..self.length, self.bsatn_offset)) };
+        let to = unsafe { buf.get_unchecked_mut(range_move(0..self.length as usize, self.bsatn_offset as usize)) };
         // Safety: forward caller requirement #2.
-        let from = unsafe { row.get_unchecked(range_move(0..self.length, self.bflatn_offset)) };
+        let from = unsafe { row.get_unchecked(range_move(0..self.length as usize, self.bflatn_offset as usize)) };
         // Safety: forward caller requirement #3.
         let from = unsafe { slice_assume_init_ref(from) };
         to.copy_from_slice(from);
@@ -131,12 +133,12 @@ impl LayoutBuilder {
         self.fields.last_mut().unwrap()
     }
 
-    fn next_bflatn_offset(&self) -> usize {
+    fn next_bflatn_offset(&self) -> u16 {
         let last = self.current_field();
         last.bflatn_offset + last.length
     }
 
-    fn next_bsatn_offset(&self) -> usize {
+    fn next_bsatn_offset(&self) -> u16 {
         let last = self.current_field();
         last.bsatn_offset + last.length
     }
@@ -149,8 +151,8 @@ impl LayoutBuilder {
         Some(())
     }
 
-    fn visit_product_element(&mut self, elt: &ProductTypeElementLayout, product_base_offset: usize) -> Option<()> {
-        let elt_offset = product_base_offset + elt.offset as usize;
+    fn visit_product_element(&mut self, elt: &ProductTypeElementLayout, product_base_offset: u16) -> Option<()> {
+        let elt_offset = product_base_offset + elt.offset;
         let next_bflatn_offset = self.next_bflatn_offset();
         if next_bflatn_offset != elt_offset {
             // Padding between previous element and this element,
@@ -215,7 +217,7 @@ impl LayoutBuilder {
         // then splice the `first_variant_layout` into `self`.
 
         let payload_bflatn_offset = self.next_bflatn_offset();
-        let tag_bflatn_offset = payload_bflatn_offset + sum.offset_of_tag();
+        let tag_bflatn_offset = payload_bflatn_offset + sum.tag_offset;
 
         let tag_bsatn_offset = self.next_bsatn_offset();
         let payload_bsatn_offset = tag_bsatn_offset + 1;
@@ -249,7 +251,7 @@ impl LayoutBuilder {
     }
 
     fn visit_primitive(&mut self, prim: &PrimitiveType) {
-        self.current_field_mut().length += prim.size()
+        self.current_field_mut().length += prim.size() as u16
     }
 }
 
@@ -260,7 +262,7 @@ mod test {
     use proptest::prelude::*;
     use spacetimedb_sats::{bsatn, AlgebraicType, ProductType};
 
-    fn assert_expected_layout(ty: ProductType, bsatn_length: usize, fields: &[(usize, usize, usize)]) {
+    fn assert_expected_layout(ty: ProductType, bsatn_length: u16, fields: &[(u16, u16, u16)]) {
         let expected_layout = KnownBsatnLayout {
             bsatn_length,
             fields: fields
@@ -298,7 +300,7 @@ mod test {
             AlgebraicType::U128,
             AlgebraicType::I128,
         ] {
-            let size = AlgebraicTypeLayout::from(prim.clone()).size();
+            let size = AlgebraicTypeLayout::from(prim.clone()).size() as u16;
             assert_expected_layout(ProductType::from([prim]), size, &[(0, 0, size)]);
         }
 
@@ -411,7 +413,7 @@ mod test {
             let (page, offset) = row_ref.page_and_offset();
             let bytes = page.get_row_data(offset, table.row_layout().size());
 
-            let mut fast_path = vec![0u8; bsatn_layout.bsatn_length];
+            let mut fast_path = vec![0u8; bsatn_layout.bsatn_length as usize];
             unsafe {
                 bsatn_layout.serialize_row_into(&mut fast_path, bytes);
             }
