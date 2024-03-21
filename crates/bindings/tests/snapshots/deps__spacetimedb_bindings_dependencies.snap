@@ -2,7 +2,7 @@
 source: crates/bindings/tests/deps.rs
 expression: "cargo tree -p spacetimedb -f {lib} -e no-dev"
 ---
-total crates: 74
+total crates: 56
 spacetimedb
 ├── derive_more
 │   ├── convert_case
@@ -37,43 +37,11 @@ spacetimedb
 │   ├── spacetimedb_primitives
 │   │   ├── bitflags
 │   │   ├── either
-│   │   └── spacetimedb_data_structures
-│   │       ├── hashbrown
-│   │       │   ├── ahash
-│   │       │   │   ├── cfg_if
-│   │       │   │   ├── once_cell
-│   │       │   │   └── zerocopy
-│   │       │   │   [build-dependencies]
-│   │       │   │   └── version_check
-│   │       │   ├── allocator_api2
-│   │       │   ├── rayon
-│   │       │   │   ├── either
-│   │       │   │   └── rayon_core
-│   │       │   │       ├── crossbeam_deque
-│   │       │   │       │   ├── cfg_if
-│   │       │   │       │   ├── crossbeam_epoch
-│   │       │   │       │   │   ├── cfg_if
-│   │       │   │       │   │   ├── crossbeam_utils
-│   │       │   │       │   │   │   └── cfg_if
-│   │       │   │       │   │   ├── memoffset
-│   │       │   │       │   │   │   [build-dependencies]
-│   │       │   │       │   │   │   └── autocfg
-│   │       │   │       │   │   └── scopeguard
-│   │       │   │       │   │   [build-dependencies]
-│   │       │   │       │   │   └── autocfg
-│   │       │   │       │   └── crossbeam_utils (*)
-│   │       │   │       └── crossbeam_utils (*)
-│   │       │   └── serde
-│   │       ├── nohash_hasher
-│   │       └── thiserror
-│   │           └── thiserror_impl
-│   │               ├── proc_macro2 (*)
-│   │               ├── quote (*)
-│   │               └── syn
-│   │                   ├── proc_macro2 (*)
-│   │                   ├── quote (*)
-│   │                   └── unicode_ident
-│   └── syn (*)
+│   │   └── nohash_hasher
+│   └── syn
+│       ├── proc_macro2 (*)
+│       ├── quote (*)
+│       └── unicode_ident
 ├── spacetimedb_bindings_sys
 │   └── spacetimedb_primitives (*)
 ├── spacetimedb_lib
@@ -89,26 +57,6 @@ spacetimedb
 │   ├── itertools
 │   │   └── either
 │   ├── spacetimedb_bindings_macro (*)
-│   ├── spacetimedb_metrics
-│   │   ├── arrayvec
-│   │   ├── itertools (*)
-│   │   ├── paste
-│   │   └── prometheus
-│   │       ├── cfg_if
-│   │       ├── fnv
-│   │       ├── lazy_static
-│   │       ├── memchr
-│   │       ├── parking_lot
-│   │       │   ├── lock_api
-│   │       │   │   └── scopeguard
-│   │       │   │   [build-dependencies]
-│   │       │   │   └── autocfg
-│   │       │   └── parking_lot_core
-│   │       │       ├── cfg_if
-│   │       │       ├── libc
-│   │       │       └── smallvec
-│   │       ├── protobuf
-│   │       └── thiserror (*)
 │   ├── spacetimedb_primitives (*)
 │   ├── spacetimedb_sats
 │   │   ├── arrayvec
@@ -137,8 +85,21 @@ spacetimedb
 │   │   │   └── keccak
 │   │   ├── smallvec
 │   │   ├── spacetimedb_bindings_macro (*)
-│   │   ├── spacetimedb_data_structures (*)
-│   │   ├── spacetimedb_metrics (*)
+│   │   ├── spacetimedb_data_structures
+│   │   │   ├── hashbrown
+│   │   │   │   ├── ahash
+│   │   │   │   │   ├── cfg_if
+│   │   │   │   │   ├── once_cell
+│   │   │   │   │   └── zerocopy
+│   │   │   │   │   [build-dependencies]
+│   │   │   │   │   └── version_check
+│   │   │   │   └── allocator_api2
+│   │   │   ├── nohash_hasher
+│   │   │   └── thiserror
+│   │   │       └── thiserror_impl
+│   │   │           ├── proc_macro2 (*)
+│   │   │           ├── quote (*)
+│   │   │           └── syn (*)
 │   │   ├── spacetimedb_primitives (*)
 │   │   └── thiserror (*)
 │   └── thiserror (*)

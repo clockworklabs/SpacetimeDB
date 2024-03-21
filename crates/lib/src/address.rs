@@ -21,6 +21,7 @@ pub struct Address {
 
 impl_st!([] Address, _ts => AlgebraicType::product([("__address_bytes", AlgebraicType::bytes())]));
 
+#[cfg(feature = "metrics_impls")]
 impl spacetimedb_metrics::typed_prometheus::AsPrometheusLabel for Address {
     fn as_prometheus_str(&self) -> impl AsRef<str> + '_ {
         self.to_hex()
