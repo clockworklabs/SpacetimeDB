@@ -9,6 +9,7 @@ use spacetimedb_sats::{
 use thiserror::Error;
 
 pub mod txdata;
+pub use txdata::Txdata;
 
 /// A **datatype** which can be encoded.
 ///
