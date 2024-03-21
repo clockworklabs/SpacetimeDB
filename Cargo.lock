@@ -3757,7 +3757,6 @@ dependencies = [
  "anyhow",
  "log",
  "spacetimedb",
- "spacetimedb-lib",
 ]
 
 [[package]]
@@ -4272,7 +4271,6 @@ dependencies = [
  "bytes",
  "derive_more",
  "log",
- "once_cell",
  "rand 0.8.5",
  "scoped-tls",
  "spacetimedb-bindings-macro",
@@ -4537,8 +4535,6 @@ dependencies = [
  "hex",
  "insta",
  "itertools 0.12.0",
- "once_cell",
- "prometheus",
  "proptest",
  "proptest-derive",
  "rand 0.8.5",
@@ -4550,7 +4546,6 @@ dependencies = [
  "spacetimedb-primitives",
  "spacetimedb-sats",
  "thiserror",
- "tracing",
 ]
 
 [[package]]
@@ -4601,7 +4596,6 @@ dependencies = [
  "spacetimedb-metrics",
  "spacetimedb-primitives",
  "thiserror",
- "tracing",
 ]
 
 [[package]]
