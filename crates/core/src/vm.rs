@@ -589,7 +589,7 @@ pub(crate) mod tests {
         ST_COLUMNS_NAME, ST_INDEXES_NAME, ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID, ST_TABLES_NAME,
     };
     use crate::db::datastore::traits::IsolationLevel;
-    use crate::db::relational_db::tests_utils::make_test_db;
+    use crate::db::relational_db::tests_utils::TestDB;
     use crate::execution_context::ExecutionContext;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
@@ -651,7 +651,7 @@ pub(crate) mod tests {
     /// Location
     /// | entity_id: u64 | x : f32 | z : f32 |
     fn test_db_query_inner_join() -> ResultTest<()> {
-        let (stdb, _tmp_dir) = make_test_db()?;
+        let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
@@ -701,7 +701,7 @@ pub(crate) mod tests {
     /// Location
     /// | entity_id: u64 | x : f32 | z : f32 |
     fn test_db_query_semijoin() -> ResultTest<()> {
-        let (stdb, _tmp_dir) = make_test_db()?;
+        let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
@@ -753,7 +753,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_query_catalog_tables() -> ResultTest<()> {
-        let (stdb, _tmp_dir) = make_test_db()?;
+        let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
@@ -786,7 +786,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_query_catalog_columns() -> ResultTest<()> {
-        let (stdb, _tmp_dir) = make_test_db()?;
+        let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
@@ -825,7 +825,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_query_catalog_indexes() -> ResultTest<()> {
-        let (db, _tmp_dir) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row = product!(1u64, "health");
@@ -869,7 +869,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_query_catalog_sequences() -> ResultTest<()> {
-        let (db, _tmp_dir) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();

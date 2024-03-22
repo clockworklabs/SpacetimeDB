@@ -3,7 +3,7 @@ use crate::{
     schemas::{table_name, BenchTable, IndexStrategy},
     ResultBench,
 };
-use spacetimedb::db::relational_db::{open_db, RelationalDB};
+use spacetimedb::db::relational_db::{tests_utils::TestDB, RelationalDB};
 use spacetimedb::execution_context::ExecutionContext;
 use spacetimedb_lib::sats::AlgebraicValue;
 use spacetimedb_primitives::{ColId, TableId};
@@ -14,8 +14,7 @@ use tempdir::TempDir;
 pub type DbResult = (RelationalDB, TempDir, u32);
 
 pub struct SpacetimeRaw {
-    db: RelationalDB,
-    _temp_dir: TempDir,
+    pub db: TestDB,
 }
 
 impl BenchDatabase for SpacetimeRaw {
@@ -24,17 +23,16 @@ impl BenchDatabase for SpacetimeRaw {
     }
     type TableId = TableId;
 
-    fn build(in_memory: bool, fsync: bool) -> ResultBench<Self>
+    fn build(in_memory: bool, _fsync: bool) -> ResultBench<Self>
     where
         Self: Sized,
     {
-        let temp_dir = TempDir::new("stdb_test")?;
-        let db = open_db(temp_dir.path(), in_memory, fsync)?;
-
-        Ok(SpacetimeRaw {
-            db,
-            _temp_dir: temp_dir,
-        })
+        let db = if in_memory {
+            TestDB::in_memory()
+        } else {
+            TestDB::durable()
+        }?;
+        Ok(Self { db })
     }
 
     fn create_table<T: BenchTable>(&mut self, index_strategy: IndexStrategy) -> ResultBench<Self::TableId> {
