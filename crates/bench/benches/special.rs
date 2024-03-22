@@ -3,7 +3,7 @@ use mimalloc::MiMalloc;
 use sats::{bsatn, db::def::TableDef};
 use spacetimedb::db::{Config, Storage};
 use spacetimedb_bench::{
-    schemas::{create_sequential, u32_u64_str, u32_u64_u64, BenchTable, RandomTable},
+    schemas::{create_sequential, u32_u64_str, u32_u64_u64, u64_u64_u32, BenchTable, RandomTable},
     spacetime_module::BENCHMARKS_MODULE,
 };
 use spacetimedb_lib::{sats, ProductValue};
@@ -16,6 +16,7 @@ static GLOBAL: MiMalloc = MiMalloc;
 fn criterion_benchmark(c: &mut Criterion) {
     serialize_benchmarks::<u32_u64_str>(c);
     serialize_benchmarks::<u32_u64_u64>(c);
+    serialize_benchmarks::<u64_u64_u32>(c);
 
     custom_module_benchmarks(c);
 }
