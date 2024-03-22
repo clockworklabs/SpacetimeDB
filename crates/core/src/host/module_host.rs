@@ -13,12 +13,10 @@ use spacetimedb_lib::identity::RequestId;
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
 use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_logger::LogLevel;
-use crate::db::datastore::traits::{TxData, TxOp};
-use crate::db::relational_db::RelationalDB;
+use crate::db::datastore::traits::TxData;
 use crate::db::update::UpdateDatabaseError;
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
-use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
 use crate::identity::Identity;
 use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
@@ -70,28 +68,26 @@ impl DatabaseUpdate {
         false
     }
 
-    pub fn from_writes(stdb: &RelationalDB, tx_data: &TxData) -> Self {
-        let mut map: HashMap<TableId, Vec<TableOp>> = HashMap::new();
-        for record in tx_data.records.iter() {
-            let pv = record.product_value.clone();
-            map.entry(record.table_id).or_default().push(match record.op {
-                TxOp::Delete => TableOp::delete(pv),
-                TxOp::Insert(_) => TableOp::insert(pv),
-            });
-        }
+    pub fn from_writes(tx_data: &TxData) -> Self {
+        let tables = tx_data
+            .inserts()
+            .map(|(table_id, table_name, rows)| DatabaseTableUpdate {
+                table_id: *table_id,
+                table_name: table_name.to_owned(),
+                ops: rows.iter().cloned().map(TableOp::insert).collect(),
+            })
+            .chain(
+                tx_data
+                    .deletes()
+                    .map(|(table_id, table_name, rows)| DatabaseTableUpdate {
+                        table_id: *table_id,
+                        table_name: table_name.to_owned(),
+                        ops: rows.iter().cloned().map(TableOp::delete).collect(),
+                    }),
+            )
+            .collect();
 
-        let ctx = ExecutionContext::internal(stdb.address());
-        let table_updates = stdb.with_read_only(&ctx, |tx| {
-            map.into_iter()
-                .map(|(table_id, ops)| DatabaseTableUpdate {
-                    table_id,
-                    table_name: stdb.table_name_from_id(tx, table_id).unwrap().unwrap().into_owned(),
-                    ops,
-                })
-                .collect()
-        });
-
-        DatabaseUpdate { tables: table_updates }
+        DatabaseUpdate { tables }
     }
 }
 

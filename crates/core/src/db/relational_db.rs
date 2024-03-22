@@ -1,16 +1,15 @@
 use super::datastore::traits::{
-    IsolationLevel, MutProgrammable, MutTx as _, MutTxDatastore, Programmable, Tx as _, TxData, TxDatastore,
+    IsolationLevel, MutProgrammable, MutTx as _, MutTxDatastore, Programmable, Tx as _, TxDatastore,
 };
 use super::datastore::{
     locking_tx_datastore::{
         datastore::Locking,
         state_view::{Iter, IterByColEq, IterByColRange},
     },
-    traits::TxRecord,
+    traits::TxData,
 };
 use super::relational_operators::Relation;
 use crate::address::Address;
-use crate::db::datastore::traits::TxOp;
 use crate::db::db_metrics::DB_METRICS;
 use crate::error::{DBError, DatabaseError, TableError};
 use crate::execution_context::ExecutionContext;
@@ -24,7 +23,6 @@ use spacetimedb_sats::db::def::{ColumnDef, IndexDef, SequenceDef, TableDef, Tabl
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_table::indexes::RowPointer;
 use std::borrow::Cow;
-use std::collections::BTreeMap;
 use std::fs::{create_dir_all, File};
 use std::ops::RangeBounds;
 use std::path::Path;
@@ -276,96 +274,82 @@ impl RelationalDB {
 
         log::trace!("COMMIT MUT TX");
 
-        fn fold_ops(
-            ctx: &ExecutionContext,
-            records: &[TxRecord],
-        ) -> (
-            BTreeMap<TableId, Vec<ProductValue>>,
-            BTreeMap<TableId, Vec<ProductValue>>,
-        ) {
-            let db = &ctx.database();
-            records.iter().fold(
-                (BTreeMap::new(), BTreeMap::new()),
-                |(mut inserts, mut deletes), record| {
-                    let table_id: u32 = record.table_id.into();
-                    let table_name = record.table_name.as_str();
-                    let num_table_rows = DB_METRICS
-                        .rdb_num_table_rows
-                        .with_label_values(db, &table_id, table_name);
-                    #[cfg(feature = "metrics")]
-                    let num_rows_inserted = DB_METRICS.rdb_num_rows_inserted.with_label_values(
-                        &ctx.workload(),
-                        db,
-                        ctx.reducer_name(),
-                        &table_id,
-                        table_name,
-                    );
-                    #[cfg(feature = "metrics")]
-                    let num_rows_deleted = DB_METRICS.rdb_num_rows_deleted.with_label_values(
-                        &ctx.workload(),
-                        db,
-                        ctx.reducer_name(),
-                        &table_id,
-                        table_name,
-                    );
+        let Some(tx_data) = self.inner.commit_mut_tx(ctx, tx)? else {
+            return Ok(None);
+        };
 
-                    let rows = match record.op {
-                        TxOp::Insert(_) => {
-                            #[cfg(feature = "metrics")]
-                            num_rows_inserted.inc();
-                            // NOTE: Crucial to maintain stat for query optimizer
-                            num_table_rows.inc();
-                            inserts.entry(record.table_id).or_default()
-                        }
-                        TxOp::Delete => {
-                            #[cfg(feature = "metrics")]
-                            num_rows_deleted.inc();
-                            // NOTE: Crucial to maintain stat for query optimizer
-                            num_table_rows.dec();
-                            deletes.entry(record.table_id).or_default()
-                        }
-                    };
-                    // TODO: Avoid clone
-                    rows.push(record.product_value.clone());
-                    (inserts, deletes)
-                },
+        // NOTE: To maintain row count stats, we need to fold the ops even
+        // if durability is disabled.
+        let db = &ctx.database();
+        let num_table_rows = |table_id: &TableId, table_name: &str| {
+            DB_METRICS
+                .rdb_num_table_rows
+                .with_label_values(db, &table_id.0, table_name)
+        };
+        #[cfg(feature = "metrics")]
+        let num_rows_inserted = |table_id: &TableId, table_name: &str| {
+            DB_METRICS.rdb_num_rows_inserted.with_label_values(
+                &ctx.workload(),
+                db,
+                ctx.reducer_name(),
+                &table_id.0,
+                table_name,
             )
-        }
+        };
+        #[cfg(feature = "metrics")]
+        let num_rows_deleted = |table_id: &TableId, table_name: &str| {
+            DB_METRICS.rdb_num_rows_deleted.with_label_values(
+                &ctx.workload(),
+                db,
+                ctx.reducer_name(),
+                &table_id.0,
+                table_name,
+            )
+        };
 
-        fn into_ops(m: BTreeMap<TableId, Vec<ProductValue>>) -> Box<[Ops<ProductValue>]> {
-            m.into_iter()
-                .map(|(table_id, rowdata)| Ops {
-                    table_id,
-                    rowdata: rowdata.into(),
-                })
-                .collect()
-        }
+        let inserts = tx_data
+            .inserts()
+            .map(|(table_id, table_name, rowdata)| {
+                num_table_rows(table_id, table_name).add(rowdata.len() as i64);
+                #[cfg(feature = "metrics")]
+                num_rows_inserted(table_id, table_name).inc_by(rowdata.len() as u64);
 
-        if let Some(tx_data) = self.inner.commit_mut_tx(ctx, tx)? {
-            // NOTE: To maintain row count stats, fold ops even if we don't
-            // have durability.
-            let (inserts, deletes) = fold_ops(ctx, &tx_data.records);
+                Ops {
+                    table_id: *table_id,
+                    rowdata: rowdata.clone(),
+                }
+            })
+            .collect();
 
-            let Some(durability) = self.durability.as_ref() else {
-                return Ok(Some(tx_data));
-            };
+        let deletes = tx_data
+            .deletes()
+            .map(|(table_id, table_name, rowdata)| {
+                num_table_rows(table_id, table_name).sub(rowdata.len() as i64);
+                #[cfg(feature = "metrics")]
+                num_rows_deleted(table_id, table_name).inc_by(rowdata.len() as u64);
 
+                Ops {
+                    table_id: *table_id,
+                    rowdata: rowdata.clone(),
+                }
+            })
+            .collect();
+
+        if let Some(durability) = &self.durability {
             let txdata = Txdata {
                 inputs: None,
                 outputs: None,
                 mutations: Some(Mutations {
-                    inserts: into_ops(inserts),
-                    deletes: into_ops(deletes),
+                    inserts,
+                    deletes,
                     truncates: Box::new([]),
                 }),
             };
             log::trace!("append {txdata:?}");
             durability.append_tx(txdata);
-
-            return Ok(Some(tx_data));
         }
 
-        Ok(None)
+        Ok(Some(tx_data))
     }
 
     /// Run a fallible function in a transaction.
