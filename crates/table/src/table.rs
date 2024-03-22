@@ -28,7 +28,7 @@ use spacetimedb_sats::{
     db::def::TableSchema,
     product_value::InvalidFieldError,
     satn::Satn,
-    ser::{Error, Serialize, Serializer},
+    ser::{Serialize, Serializer},
     AlgebraicValue, ProductType, ProductValue,
 };
 use thiserror::Error;
@@ -737,32 +737,6 @@ impl<'a> RowRef<'a> {
             Ok(())
         } else {
             // Use the slower, but more general, `bsatn_from` serializer to write the row.
-            bsatn::to_writer(buf, self)
-        }
-    }
-
-    pub fn to_bsatn_slice<'b>(&self, buf: &'b mut &'b mut [u8]) -> Result<(), BsatnError> {
-        if let Some(static_bsatn_layout) = &self.table.static_bsatn_layout {
-            let len = static_bsatn_layout.bsatn_length as usize;
-            if buf.len() < len {
-                return Err(BsatnError::custom(format!(
-                    "Buffer of insufficient length: need {} bytes, but `buf.len()` is {}",
-                    len,
-                    buf.len()
-                )));
-            }
-            let (page, offset) = self.page_and_offset();
-            let row = page.get_row_data(offset, self.table.row_layout.size());
-            // Safety:
-            // - Existence of a `RowRef` treated as proof
-            //   of row's validity and type information's correctness.
-            // - Earlier check of `buf.len()` ensures `buf` is large enough.
-            unsafe {
-                static_bsatn_layout.serialize_row_into(buf, row);
-            }
-            *buf = &mut buf[len..];
-            Ok(())
-        } else {
             bsatn::to_writer(buf, self)
         }
     }
