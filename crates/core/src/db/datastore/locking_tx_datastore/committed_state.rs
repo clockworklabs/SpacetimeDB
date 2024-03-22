@@ -539,7 +539,7 @@ impl CommittedState {
 }
 
 pub struct CommittedIndexIter<'a> {
-    ctx: &'a ExecutionContext<'a>,
+    ctx: &'a ExecutionContext,
     table_id: TableId,
     tx_state: Option<&'a TxState>,
     committed_state: &'a CommittedState,
@@ -569,7 +569,7 @@ impl<'a> CommittedIndexIter<'a> {
 #[cfg(feature = "metrics")]
 impl Drop for CommittedIndexIter<'_> {
     fn drop(&mut self) {
-        let mut metrics = self.ctx.metrics.borrow_mut();
+        let mut metrics = self.ctx.metrics.write();
         let get_table_name = || {
             self.committed_state
                 .get_schema(&self.table_id)

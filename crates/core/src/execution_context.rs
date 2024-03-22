@@ -1,6 +1,7 @@
-use std::cell::RefCell;
+use std::sync::Arc;
 
 use derive_more::Display;
+use parking_lot::RwLock;
 use spacetimedb_lib::Address;
 use spacetimedb_primitives::TableId;
 
@@ -112,15 +113,15 @@ impl Metrics {
 /// In particular it provides details about the currently executing txn to runtime operations.
 /// More generally it acts as a container for information that database operations may require to function correctly.
 #[derive(Default, Clone)]
-pub struct ExecutionContext<'a> {
+pub struct ExecutionContext {
     /// The database on which a transaction is being executed.
     database: Address,
     /// The reducer from which the current transaction originated.
-    reducer: Option<&'a str>,
+    reducer: Option<String>,
     /// The type of workload that is being executed.
     workload: WorkloadType,
     /// The Metrics to be reported for this transaction.
-    pub metrics: RefCell<Metrics>,
+    pub metrics: Arc<RwLock<Metrics>>,
 }
 
 /// Classifies a transaction according to its workload.
@@ -142,14 +143,14 @@ impl Default for WorkloadType {
     }
 }
 
-impl<'a> ExecutionContext<'a> {
+impl ExecutionContext {
     /// Returns an [ExecutionContext] for a reducer transaction.
-    pub fn reducer(database: Address, name: &'a str) -> Self {
+    pub fn reducer(database: Address, name: String) -> Self {
         Self {
             database,
             reducer: Some(name),
             workload: WorkloadType::Reducer,
-            metrics: RefCell::new(Metrics::default()),
+            metrics: Arc::new(RwLock::new(Metrics::default())),
         }
     }
 
@@ -159,7 +160,7 @@ impl<'a> ExecutionContext<'a> {
             database,
             reducer: None,
             workload: WorkloadType::Sql,
-            metrics: RefCell::new(Metrics::default()),
+            metrics: Arc::new(RwLock::new(Metrics::default())),
         }
     }
 
@@ -169,7 +170,7 @@ impl<'a> ExecutionContext<'a> {
             database,
             reducer: None,
             workload: WorkloadType::Subscribe,
-            metrics: RefCell::new(Metrics::default()),
+            metrics: Arc::new(RwLock::new(Metrics::default())),
         }
     }
 
@@ -179,7 +180,7 @@ impl<'a> ExecutionContext<'a> {
             database,
             reducer: None,
             workload: WorkloadType::Update,
-            metrics: RefCell::new(Metrics::default()),
+            metrics: Arc::new(RwLock::new(Metrics::default())),
         }
     }
 
@@ -189,7 +190,7 @@ impl<'a> ExecutionContext<'a> {
             database,
             reducer: None,
             workload: WorkloadType::Internal,
-            metrics: RefCell::new(Metrics::default()),
+            metrics: Arc::new(RwLock::new(Metrics::default())),
         }
     }
 
@@ -202,7 +203,7 @@ impl<'a> ExecutionContext<'a> {
     /// If this is a reducer context, returns the name of the reducer.
     #[inline]
     pub fn reducer_name(&self) -> &str {
-        self.reducer.unwrap_or_default()
+        self.reducer.as_deref().unwrap_or_default()
     }
 
     /// Returns the type of workload that is being executed.
@@ -212,11 +213,11 @@ impl<'a> ExecutionContext<'a> {
     }
 }
 
-impl Drop for ExecutionContext<'_> {
+impl Drop for ExecutionContext {
     fn drop(&mut self) {
         let workload = self.workload;
         let database = self.database;
-        let reducer = self.reducer.unwrap_or_default();
-        self.metrics.borrow_mut().flush(&workload, &database, reducer);
+        let reducer = self.reducer.as_deref().unwrap_or_default();
+        self.metrics.write().flush(&workload, &database, reducer);
     }
 }
