@@ -283,11 +283,16 @@ mod tests {
     use super::*;
     use crate::db::datastore::traits::IsolationLevel;
     use crate::db::relational_db::tests_utils::make_test_db;
+    use crate::execution_context::ExecutionContext;
+    use crate::sql::execute::execute_sql;
+    use crate::vm::tests::create_table_with_rows;
     use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_lib::identity::AuthCtx;
     use spacetimedb_lib::operator::OpQuery;
     use spacetimedb_primitives::{col_list, ColList, TableId};
-    use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue};
+    use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductType};
     use spacetimedb_vm::expr::{IndexJoin, IndexScan, JoinExpr, Query};
+    use std::convert::From;
     use std::ops::Bound;
 
     fn assert_index_scan(
@@ -1069,6 +1074,27 @@ mod tests {
                 panic!("Unexpected")
             }
         }
+        Ok(())
+    }
+
+    #[test]
+    fn compile_enum_field() -> ResultTest<()> {
+        let (db, _tmp) = make_test_db()?;
+
+        // Create table [enum] with enum type on [a]
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
+        let head = ProductType::from([("a", AlgebraicType::simple_enum(["Player", "Gm"].into_iter()))]);
+        let rows: Vec<_> = (1..=10).map(|_| product!(AlgebraicValue::enum_simple(0))).collect();
+        create_table_with_rows(&db, &mut tx, "enum", head.clone(), &rows)?;
+        db.commit_tx(&ExecutionContext::default(), tx)?;
+
+        let tx = db.begin_tx();
+        // Should work with any qualified field
+        let sql = "select * from enum where a = 'Player'";
+        let q = compile_sql(&db, &tx, sql);
+        assert!(q.is_ok());
+        let result = execute_sql(&db, q.unwrap(), AuthCtx::for_testing())?;
+        assert_eq!(result[0].data, vec![product![AlgebraicValue::enum_simple(0)]]);
         Ok(())
     }
 }
