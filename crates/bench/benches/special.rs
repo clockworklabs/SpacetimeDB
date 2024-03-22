@@ -1,11 +1,13 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use mimalloc::MiMalloc;
+use sats::{bsatn, db::def::TableDef};
 use spacetimedb::db::{Config, Storage};
 use spacetimedb_bench::{
     schemas::{create_sequential, u32_u64_str, u32_u64_u64, BenchTable, RandomTable},
     spacetime_module::BENCHMARKS_MODULE,
 };
 use spacetimedb_lib::{sats, ProductValue};
+use spacetimedb_primitives::TableId;
 use spacetimedb_testing::modules::start_runtime;
 
 #[global_allocator]
@@ -86,7 +88,39 @@ fn serialize_benchmarks<T: BenchTable + RandomTable>(c: &mut Criterion) {
         );
     });
 
-    // TODO: benches for BFLATN -> BSATN via `StaticBsatnLayout`.
+    let mut table = spacetimedb_table::table::Table::new(
+        TableDef::from_product(name, T::product_type().clone()).into_schema(TableId(0)),
+        spacetimedb_table::indexes::SquashedOffset::COMMITTED_STATE,
+    );
+    let mut blob_store = spacetimedb_table::blob_store::HashMapBlobStore::default();
+
+    let ptrs = data_pv
+        .elements
+        .iter()
+        .map(|row| table.insert(&mut blob_store, row.as_product().unwrap()).unwrap().1)
+        .collect::<Vec<_>>();
+    let refs = ptrs
+        .into_iter()
+        .map(|ptr| table.get_row_ref(&blob_store, ptr).unwrap())
+        .collect::<Vec<_>>();
+    group.bench_function(&format!("{name}/bflatn_to_bsatn_slow_path/count={count}"), |b| {
+        b.iter(|| {
+            let mut buf = Vec::new();
+            for row_ref in &refs {
+                bsatn::to_writer(&mut buf, row_ref).unwrap();
+            }
+            buf
+        })
+    });
+    group.bench_function(&format!("{name}/bflatn_to_bsatn_fast_path/count={count}"), |b| {
+        b.iter(|| {
+            let mut buf = Vec::new();
+            for row_ref in &refs {
+                row_ref.to_bsatn_extend(&mut buf).unwrap();
+            }
+            buf
+        });
+    });
 
     // TODO: deserialize benches (needs a typespace)
 }

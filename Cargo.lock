@@ -4318,6 +4318,7 @@ dependencies = [
  "spacetimedb-primitives",
  "spacetimedb-sats",
  "spacetimedb-standalone",
+ "spacetimedb-table",
  "spacetimedb-testing",
  "tempdir",
  "tokio",
