@@ -86,6 +86,8 @@ fn serialize_benchmarks<T: BenchTable + RandomTable>(c: &mut Criterion) {
         );
     });
 
+    // TODO: benches for BFLATN -> BSATN via `StaticBsatnLayout`.
+
     // TODO: deserialize benches (needs a typespace)
 }
 

@@ -1,11 +1,12 @@
 use derive_more::From;
+use spacetimedb_sats::bsatn::ser::BsatnError;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::error::RelationError;
 use spacetimedb_sats::product_value::ProductValue;
 use spacetimedb_sats::relation::{
     DbTable, FieldExpr, FieldExprRef, FieldName, Header, HeaderOnlyField, Relation, RowCount,
 };
-use spacetimedb_sats::{impl_serialize, AlgebraicValue};
+use spacetimedb_sats::{bsatn, impl_serialize, AlgebraicValue};
 use spacetimedb_table::read_column::ReadColumn;
 use spacetimedb_table::table::RowRef;
 use std::borrow::Cow;
@@ -117,6 +118,24 @@ impl<'a> RelValue<'a> {
             elements.push(val);
         }
         Ok(elements.into())
+    }
+
+    /// BSATN-encode the row referred to by `self` into `buf`,
+    /// pushing `self`'s bytes onto the end of `buf` as if by [`Vec::extend`].
+    ///
+    /// This method will use a [`spacetimedb_table::bflatn_to_bsatn_fast_pathStaticBsatnLayout`]
+    /// if one is available, and may therefore be faster than calling [`bsatn::to_writer`].
+    pub fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
+        match self {
+            RelValue::Row(row_ref) => row_ref.to_bsatn_extend(buf),
+            RelValue::Projection(row) => {
+                // Pre-allocate the capacity needed to write `result`.
+                let len = bsatn::to_len(row)?;
+                buf.reserve(len);
+                // Use the slower, but more general, `bsatn_from` serializer to write the row.
+                bsatn::to_writer(buf, row)
+            }
+        }
     }
 }
 

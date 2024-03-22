@@ -25,7 +25,6 @@ use anyhow::anyhow;
 use itertools::Itertools;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::{
-    bsatn,
     db::{
         auth::{StAccess, StTableType},
         def::TableSchema,
@@ -446,8 +445,13 @@ impl CommittedState {
                 commit_table
                     .insert(commit_blob_store, &pv)
                     .expect("Failed to insert when merging commit");
-                let bytes = bsatn::to_vec(&pv).expect("Failed to BSATN-serialize ProductValue");
+
+                // Serialize the `row_ref` rather than the `pv`
+                // so we can take advantage of the BFLATN -> BSATN fast path for fixed-sized rows.
+                // TODO(perf): Remove `DataKey` from `TxRecord` and avoid this entirely.
+                let bytes = row_ref.to_bsatn_vec().expect("Failed to BSATN-serialize RowRef");
                 let data_key = DataKey::from_data(&bytes);
+
                 tx_data.records.push(TxRecord {
                     op: TxOp::Insert(Arc::new(bytes)),
                     product_value: pv,

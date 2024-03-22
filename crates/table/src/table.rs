@@ -13,6 +13,7 @@ use super::{
     row_type_visitor::{row_type_visitor, VarLenVisitorProgram},
 };
 use crate::{
+    bflatn_to_bsatn_fast_path::StaticBsatnLayout,
     read_column::{ReadColumn, TypeError},
     static_assert_size,
 };
@@ -23,10 +24,11 @@ use core::ops::RangeBounds;
 use spacetimedb_primitives::{ColId, ColList};
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer,
+    bsatn::{self, ser::BsatnError},
     db::def::TableSchema,
     product_value::InvalidFieldError,
     satn::Satn,
-    ser::{Serialize, Serializer},
+    ser::{Error, Serialize, Serializer},
     AlgebraicValue, ProductType, ProductValue,
 };
 use thiserror::Error;
@@ -71,6 +73,9 @@ impl Table {
 pub(crate) struct TableInner {
     /// The type of rows this table stores, with layout information included.
     row_layout: RowTypeLayout,
+    /// A [`StaticBsatnLayout`] for fast BFLATN -> BSATN serialization,
+    /// if the [`RowTypeLayout`] has a static BSATN length and layout.
+    static_bsatn_layout: Option<StaticBsatnLayout>,
     /// The page manager that holds rows
     /// including both their fixed and variable components.
     pages: Pages,
@@ -110,7 +115,7 @@ impl TableInner {
     }
 }
 
-static_assert_size!(Table, 248);
+static_assert_size!(Table, 280);
 
 /// Various error that can happen on table insertion.
 #[derive(Error, Debug)]
@@ -675,6 +680,95 @@ impl<'a> RowRef<'a> {
     pub fn page_and_offset(&self) -> (&Page, PageOffset) {
         self.table.page_and_offset(self.pointer())
     }
+
+    pub fn bsatn_length(&self) -> Option<usize> {
+        self.table.static_bsatn_layout.as_ref().map(|s| s.bsatn_length as usize)
+    }
+
+    /// BSATN-encode the row referred to by `self` into a freshly-allocated `Vec<u8>`.
+    ///
+    /// This method will use a [`StaticBsatnLayout`] if one is available,
+    /// and may therefore be faster than calling [`bsatn::to_vec`].
+    pub fn to_bsatn_vec(&self) -> Result<Vec<u8>, BsatnError> {
+        if let Some(static_bsatn_layout) = &self.table.static_bsatn_layout {
+            let mut vec = vec![0; static_bsatn_layout.bsatn_length as usize];
+            let (page, offset) = self.page_and_offset();
+            let row = page.get_row_data(offset, self.table.row_layout.size());
+            // Safety:
+            // - Existence of a `RowRef` treated as proof
+            //   of row's validity and type information's correctness.
+            // - `vec` constructed with exactly correct length above.
+            unsafe {
+                static_bsatn_layout.serialize_row_into(&mut vec, row);
+            }
+            Ok(vec)
+        } else {
+            bsatn::to_vec(self)
+        }
+    }
+
+    /// BSATN-encode the row referred to by `self` into `buf`,
+    /// pushing `self`'s bytes onto the end of `buf` as if by [`Vec::extend`].
+    ///
+    /// This method will use a [`StaticBsatnLayout`] if one is available,
+    /// and may therefore be faster than calling [`bsatn::to_writer`].
+    pub fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
+        if let Some(static_bsatn_layout) = &self.table.static_bsatn_layout {
+            // Get an initially-zeroed slice within `buf` of the correct length.
+            let start = buf.len();
+            let len = static_bsatn_layout.bsatn_length as usize;
+            buf.reserve(len);
+            buf.extend(std::iter::repeat(0).take(len));
+            let buf = &mut buf[start..start + len];
+
+            // Find the row referred to by `self`.
+            let (page, offset) = self.page_and_offset();
+            let row = page.get_row_data(offset, self.table.row_layout.size());
+
+            // Write the row into the slice using a series of `memcpy`s.
+            // Safety:
+            // - Existence of a `RowRef` treated as proof
+            //   of row's validity and type information's correctness.
+            // - `buf` constructed with exactly correct length above.
+            unsafe {
+                static_bsatn_layout.serialize_row_into(buf, row);
+            }
+
+            Ok(())
+        } else {
+            // Pre-allocate the capacity needed to write `result`.
+            let len = bsatn::to_len(self)?;
+            buf.reserve(len);
+            // Use the slower, but more general, `bsatn_from` serializer to write the row.
+            bsatn::to_writer(buf, self)
+        }
+    }
+
+    pub fn to_bsatn_slice<'b>(&self, buf: &'b mut &'b mut [u8]) -> Result<(), BsatnError> {
+        if let Some(static_bsatn_layout) = &self.table.static_bsatn_layout {
+            let len = static_bsatn_layout.bsatn_length as usize;
+            if buf.len() < len {
+                return Err(BsatnError::custom(format!(
+                    "Buffer of insufficient length: need {} bytes, but `buf.len()` is {}",
+                    len,
+                    buf.len()
+                )));
+            }
+            let (page, offset) = self.page_and_offset();
+            let row = page.get_row_data(offset, self.table.row_layout.size());
+            // Safety:
+            // - Existence of a `RowRef` treated as proof
+            //   of row's validity and type information's correctness.
+            // - Earlier check of `buf.len()` ensures `buf` is large enough.
+            unsafe {
+                static_bsatn_layout.serialize_row_into(buf, row);
+            }
+            *buf = &mut buf[len..];
+            Ok(())
+        } else {
+            bsatn::to_writer(buf, self)
+        }
+    }
 }
 
 impl Serialize for RowRef<'_> {
@@ -822,10 +916,12 @@ impl Table {
         indexes_capacity: usize,
     ) -> Self {
         let row_layout: RowTypeLayout = schema.get_row_type().clone().into();
+        let static_bsatn_layout = StaticBsatnLayout::for_row_type(&row_layout);
         let visitor_prog = row_type_visitor(&row_layout);
         Self {
             inner: TableInner {
                 row_layout,
+                static_bsatn_layout,
                 pages: Pages::default(),
             },
             visitor_prog,
@@ -955,7 +1051,9 @@ pub(crate) mod test {
 
         let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
         prop_assert_eq!(row_ref.to_product_value(), val.clone());
-        prop_assert_eq!(to_vec(&val).unwrap(), to_vec(&row_ref).unwrap());
+        let bsatn_val = to_vec(&val).unwrap();
+        prop_assert_eq!(&bsatn_val, &to_vec(&row_ref).unwrap());
+        prop_assert_eq!(&bsatn_val, &row_ref.to_bsatn_vec().unwrap());
 
         prop_assert_eq!(
             &table.scan_rows(&blob_store).map(|r| r.pointer()).collect::<Vec<_>>(),

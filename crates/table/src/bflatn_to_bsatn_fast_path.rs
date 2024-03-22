@@ -32,7 +32,7 @@ pub struct StaticBsatnLayout {
     ///
     /// Storing this allows us to pre-allocate correctly-sized buffers,
     /// avoiding potentially-expensive `realloc`s.
-    bsatn_length: u16,
+    pub(crate) bsatn_length: u16,
 
     /// A series of `memcpy` invocations from a BFLATN row into a BSATN buffer
     /// which are sufficient to BSATN serialize the row.
