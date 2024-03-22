@@ -23,6 +23,8 @@ use spacetimedb_sats::{
 /// When `base` is already aligned, `base` will be returned.
 pub const fn align_to(base: usize, required_alignment: usize) -> usize {
     if required_alignment == 0 {
+        // Avoid computing the remainder below, as that panics.
+        // This path is reachable for e.g., uninhabited types.
         base
     } else {
         let misalignment = base % required_alignment;
