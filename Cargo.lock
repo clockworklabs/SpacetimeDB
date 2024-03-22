@@ -2973,6 +2973,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b2a4787296e9989611394c33f193f676704af1686e70b8f8033ab5ba9a35a94"
 
 [[package]]
+name = "perf-test-module"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
 name = "petgraph"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4375,6 +4383,7 @@ dependencies = [
  "tar",
  "tempfile",
  "termcolor",
+ "thiserror",
  "tokio",
  "toml 0.8.2",
  "wasmbin",

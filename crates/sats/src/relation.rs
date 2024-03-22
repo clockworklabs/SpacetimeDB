@@ -299,7 +299,7 @@ impl Header {
     }
 
     pub fn column<'a>(&'a self, col: &'a FieldName) -> Option<&Column> {
-        self.fields.iter().find(|f| &f.field == col)
+        self.column_pos(col).map(|id| &self.fields[id.idx()])
     }
 
     /// Copy the [Constraints] that are referenced in the list of `for_columns`

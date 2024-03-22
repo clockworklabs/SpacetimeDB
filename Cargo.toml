@@ -20,6 +20,7 @@ members = [
   "crates/testing",
   "crates/vm",
   "modules/benchmarks",
+  "modules/perf-test",
   "modules/rust-wasm-test",
   "modules/quickstart-chat",
   "modules/sdk-test",
@@ -61,6 +62,10 @@ codegen-units = 256
 rpath = false
 
 [profile.bench]
+debug = true
+
+[profile.test]
+opt-level = 1
 debug = true
 
 [profile.profiling]

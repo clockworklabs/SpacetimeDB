@@ -9,6 +9,7 @@ use spacetimedb_lib::sats::{satn, Typespace};
 use tabled::settings::Style;
 
 use crate::config::Config;
+use crate::errors::error_for_status;
 use crate::util::{database_address, get_auth_header_only};
 
 pub fn cli() -> clap::Command {
@@ -88,11 +89,8 @@ fn print_timings(now: Instant) {
 pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str, with_stats: bool) -> Result<(), anyhow::Error> {
     let now = Instant::now();
 
-    let json = builder
-        .body(sql.to_owned())
-        .send()
+    let json = error_for_status(builder.body(sql.to_owned()).send().await?)
         .await?
-        .error_for_status()?
         .text()
         .await?;
 
