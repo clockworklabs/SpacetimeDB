@@ -128,13 +128,7 @@ impl<'a> RelValue<'a> {
     pub fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
         match self {
             RelValue::Row(row_ref) => row_ref.to_bsatn_extend(buf),
-            RelValue::Projection(row) => {
-                // Pre-allocate the capacity needed to write `result`.
-                let len = bsatn::to_len(row)?;
-                buf.reserve(len);
-                // Use the slower, but more general, `bsatn_from` serializer to write the row.
-                bsatn::to_writer(buf, row)
-            }
+            RelValue::Projection(row) => bsatn::to_writer(buf, row),
         }
     }
 }

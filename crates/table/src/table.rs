@@ -736,9 +736,6 @@ impl<'a> RowRef<'a> {
 
             Ok(())
         } else {
-            // Pre-allocate the capacity needed to write `result`.
-            let len = bsatn::to_len(self)?;
-            buf.reserve(len);
             // Use the slower, but more general, `bsatn_from` serializer to write the row.
             bsatn::to_writer(buf, self)
         }
