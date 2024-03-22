@@ -19,6 +19,13 @@ pub enum Traversal {
         #[source]
         prev_error: Option<Box<Self>>,
     },
+    /// The log is considered forked iff a commit with the same `min_tx_offset`
+    /// but a different crc32 than the previous commit is encountered.
+    ///
+    /// This may happen in rare circumstances where a write was considered
+    /// failed (e.g. due to a failed `fsync(2)`), when it was actually successful.
+    #[error("forked history: offset={offset}")]
+    Forked { offset: u64 },
     #[error("failed to decode tx record at offset={offset}")]
     Decode {
         offset: u64,

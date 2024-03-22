@@ -107,6 +107,79 @@ impl Commit {
     /// Verifies the checksum of the commit. If it doesn't match, an error of
     /// kind [`io::ErrorKind::InvalidData`] with an inner error downcastable to
     /// [`ChecksumMismatch`] is returned.
+    ///
+    /// To retain access to the checksum, use [`StoredCommit::decode`].
+    pub fn decode<R: Read>(reader: R) -> io::Result<Option<Self>> {
+        let commit = StoredCommit::decode(reader)?;
+        Ok(commit.map(Into::into))
+    }
+
+    /// Convert `self` into an iterator yielding [`Transaction`]s.
+    ///
+    /// The supplied [`Decoder`] is responsible for extracting individual
+    /// transactions from the `records` buffer.
+    pub fn into_transactions<D: Decoder>(
+        self,
+        version: u8,
+        de: &D,
+    ) -> impl Iterator<Item = Result<Transaction<D::Record>, D::Error>> + '_ {
+        let records = Cursor::new(self.records);
+        (self.min_tx_offset..(self.min_tx_offset + self.n as u64)).scan(records, move |recs, offset| {
+            let mut cursor = &*recs;
+            let tx = de
+                .decode_record(version, offset, &mut cursor)
+                .map(|txdata| Transaction { offset, txdata });
+            Some(tx)
+        })
+    }
+}
+
+impl From<StoredCommit> for Commit {
+    fn from(
+        StoredCommit {
+            min_tx_offset,
+            n,
+            records,
+            checksum: _,
+        }: StoredCommit,
+    ) -> Self {
+        Self {
+            min_tx_offset,
+            n,
+            records,
+        }
+    }
+}
+
+/// A [`Commit`] as stored on disk.
+///
+/// Differs from [`Commit`] only in the presence of a `checksum` field, which
+/// is computed when encoding a commit for storage.
+#[derive(Debug, PartialEq)]
+pub struct StoredCommit {
+    /// See [`Commit::min_tx_offset`].
+    pub min_tx_offset: u64,
+    /// See [`Commit::n`].
+    pub n: u16,
+    /// See [`Commit::records`].
+    pub records: Vec<u8>,
+    /// The checksum computed when encoding a [`Commit`] for storage.
+    pub checksum: u32,
+}
+
+impl StoredCommit {
+    /// The largest transaction offset in this commit.
+    pub fn max_tx_offset(&self) -> u64 {
+        self.min_tx_offset + self.n as u64
+    }
+
+    /// Attempt to read one [`StoredCommit`] from the given [`Read`]er.
+    ///
+    /// Returns `None` if the reader is already at EOF.
+    ///
+    /// Verifies the checksum of the commit. If it doesn't match, an error of
+    /// kind [`io::ErrorKind::InvalidData`] with an inner error downcastable to
+    /// [`ChecksumMismatch`] is returned.
     pub fn decode<R: Read>(reader: R) -> io::Result<Option<Self>> {
         let mut reader = Crc32cReader::new(reader);
 
@@ -127,22 +200,20 @@ impl Commit {
             min_tx_offset: hdr.min_tx_offset,
             n: hdr.n,
             records,
+            checksum: crc,
         }))
     }
 
+    /// Convert `self` into an iterator yielding [`Transaction`]s.
+    ///
+    /// The supplied [`Decoder`] is responsible for extracting individual
+    /// transactions from the `records` buffer.
     pub fn into_transactions<D: Decoder>(
         self,
         version: u8,
         de: &D,
     ) -> impl Iterator<Item = Result<Transaction<D::Record>, D::Error>> + '_ {
-        let records = Cursor::new(self.records);
-        (self.min_tx_offset..(self.min_tx_offset + self.n as u64)).scan(records, move |recs, offset| {
-            let mut cursor = &*recs;
-            let tx = de
-                .decode_record(version, offset, &mut cursor)
-                .map(|txdata| Transaction { offset, txdata });
-            Some(tx)
-        })
+        Commit::from(self).into_transactions(version, de)
     }
 }
 
@@ -165,17 +236,11 @@ impl Metadata {
 }
 
 impl From<Commit> for Metadata {
-    fn from(
-        Commit {
-            min_tx_offset,
-            n,
-            records,
-        }: Commit,
-    ) -> Self {
+    fn from(commit: Commit) -> Self {
         Self {
-            min_tx_offset,
-            max_tx_offset: min_tx_offset + n as u64,
-            size_in_bytes: Header::LEN as u64 + records.len() as u64 + /* crc32 */ 4,
+            min_tx_offset: commit.min_tx_offset,
+            max_tx_offset: commit.max_tx_offset(),
+            size_in_bytes: commit.encoded_len() as u64,
         }
     }
 }
@@ -214,9 +279,9 @@ mod tests {
 
         let mut buf = Vec::with_capacity(commit.encoded_len());
         commit.write(&mut buf).unwrap();
-        let commit2 = Commit::decode(&mut buf.as_slice()).unwrap();
+        let commit2 = Commit::decode(&mut buf.as_slice()).unwrap().unwrap();
 
-        assert_eq!(Some(commit), commit2);
+        assert_eq!(commit, commit2);
     }
 
     #[test]
