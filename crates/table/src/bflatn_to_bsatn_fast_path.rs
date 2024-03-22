@@ -1,6 +1,6 @@
 //! This module implements a fast path for serializing certain types from BFLATN to BSATN.
 //!
-//! The key insight is that a majority of row types in a game will have a known fixed length,
+//! The key insight is that a majority of row types will have a known fixed length,
 //! with no variable-length members.
 //! BFLATN is designed with this in mind, storing fixed-length portions of rows inline,
 //! at the expense of an indirection to reach var-length columns like strings.
@@ -11,6 +11,8 @@
 //!
 //! For row types with fixed BSATN lengths, we can reduce the BFLATN -> BSATN conversion
 //! to a series of `memcpy`s, skipping over padding sequences.
+//! This is potentially much faster than the more general  [`crate::bflatn_from::serialize_row_from_page`],
+//! which traverses a [`RowTypeLayout`] and dispatches on the type of each column.
 
 use crate::{
     indexes::Bytes,
@@ -24,15 +26,20 @@ use crate::{
 /// A precomputed BSATN layout for a type whose encoded length is a known constant,
 /// enabling fast BFLATN -> BSATN conversion.
 #[derive(PartialEq, Eq, Debug)]
-pub struct KnownBsatnLayout {
+pub struct StaticBsatnLayout {
     /// The length of the encoded BSATN representation of a row of this type,
     /// in bytes.
+    ///
+    /// Storing this allows us to pre-allocate correctly-sized buffers,
+    /// avoiding potentially-expensive `realloc`s.
     bsatn_length: u16,
 
+    /// A series of `memcpy` invocations from a BFLATN row into a BSATN buffer
+    /// which are sufficient to BSATN serialize the row.
     fields: Vec<MemcpyField>,
 }
 
-impl KnownBsatnLayout {
+impl StaticBsatnLayout {
     /// # Safety
     ///
     /// - `buf` must be at least `self.bsatn_length` long.
@@ -46,7 +53,7 @@ impl KnownBsatnLayout {
         }
     }
 
-    /// Construct a `KnownBsatnLayout` for converting BFLATN rows of `row_type` into BSATN.
+    /// Construct a `StaticBsatnLayout` for converting BFLATN rows of `row_type` into BSATN.
     ///
     /// Returns `None` if `row_type` contains a column which does not have a constant length in BSATN,
     /// either a [`VarLenType`]
@@ -118,11 +125,11 @@ impl Default for LayoutBuilder {
 }
 
 impl LayoutBuilder {
-    fn build(self) -> KnownBsatnLayout {
+    fn build(self) -> StaticBsatnLayout {
         let LayoutBuilder { fields } = self;
         let fields: Vec<_> = fields.into_iter().filter(|field| !field.is_empty()).collect();
         let bsatn_length = fields.last().map(|last| last.bsatn_offset + last.length).unwrap_or(0);
-        KnownBsatnLayout { bsatn_length, fields }
+        StaticBsatnLayout { bsatn_length, fields }
     }
 
     fn current_field(&self) -> &MemcpyField {
@@ -157,6 +164,10 @@ impl LayoutBuilder {
         if next_bflatn_offset != elt_offset {
             // Padding between previous element and this element,
             // so start a new field.
+            //
+            // Note that this is the only place we have to reason about alignment and padding
+            // because the enclosing `ProductTypeLayout` has already computed valid aligned offsets
+            // for the elements.
 
             let bsatn_offset = self.next_bsatn_offset();
             self.fields.push(MemcpyField {
@@ -193,7 +204,7 @@ impl LayoutBuilder {
             Some(builder.build())
         };
 
-        // Check that the variants all have the same `KnownBsatnLayout`.
+        // Check that the variants all have the same `StaticBsatnLayout`.
         // If they don't, bail.
         let first_variant_layout = variant_layout(first_variant)?;
         for later_variant in &sum.variants[1..] {
@@ -263,7 +274,7 @@ mod test {
     use spacetimedb_sats::{bsatn, AlgebraicType, ProductType};
 
     fn assert_expected_layout(ty: ProductType, bsatn_length: u16, fields: &[(u16, u16, u16)]) {
-        let expected_layout = KnownBsatnLayout {
+        let expected_layout = StaticBsatnLayout {
             bsatn_length,
             fields: fields
                 .iter()
@@ -276,7 +287,7 @@ mod test {
                 .collect(),
         };
         let row_type = RowTypeLayout::from(ty);
-        let Some(computed_layout) = KnownBsatnLayout::for_row_type(&row_type) else {
+        let Some(computed_layout) = StaticBsatnLayout::for_row_type(&row_type) else {
             panic!("assert_expected_layout: Computed `None` for row {row_type:#?}\nExpected:{expected_layout:#?}");
         };
         assert_eq!(
@@ -381,7 +392,7 @@ mod test {
             AlgebraicType::sum([AlgebraicType::U8, AlgebraicType::U16]),
         ] {
             let layout = RowTypeLayout::from(ProductType::from([ty]));
-            if let Some(computed) = KnownBsatnLayout::for_row_type(&layout) {
+            if let Some(computed) = StaticBsatnLayout::for_row_type(&layout) {
                 panic!("Expected row type not to have a constant BSATN layout!\nRow type: {layout:#?}\nBSATN layout: {computed:#?}");
             }
         }
@@ -393,13 +404,23 @@ mod test {
         // Writing a proptest generator which produces only types that have a fixed BSATN length
         // seems hard, because we'd have to generate sums with known matching layouts,
         // so we just bump the `max_global_rejects` up as high as it'll go and move on with our lives.
+        //
+        // Note that I (pgoldman 2024-03-21) tried modifying `generate_typed_row`
+        // to not emit `String`, `Array` or `Map` types (the trivially var-len types),
+        // but did not see a meaningful decrease in the number of rejects.
+        // This is because a majority of the var-len BSATN types in the `generate_typed_row` space
+        // are due to sums with inconsistent payload layouts.
+        //
+        // We still include the test `known_bsatn_same_as_bsatn_from`
+        // because it tests row types not covered in `known_types_expected_layout`,
+        // especially larger types with unusual sequences of aligned fields.
         #![proptest_config(ProptestConfig { max_global_rejects: 65536, ..Default::default()})]
 
         #[test]
         fn known_bsatn_same_as_bflatn_from((ty, val) in generate_typed_row()) {
             let mut blob_store = HashMapBlobStore::default();
             let mut table = crate::table::test::table(ty);
-            let Some(bsatn_layout) = KnownBsatnLayout::for_row_type(table.row_layout()) else {
+            let Some(bsatn_layout) = StaticBsatnLayout::for_row_type(table.row_layout()) else {
                 // `ty` has a var-len member or a sum with different payload lengths,
                 // so the fast path doesn't apply.
                 return Err(TestCaseError::reject("Var-length type"));
