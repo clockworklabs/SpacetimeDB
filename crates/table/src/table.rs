@@ -681,6 +681,10 @@ impl<'a> RowRef<'a> {
         self.table.page_and_offset(self.pointer())
     }
 
+    /// The length of this row when BSATN-encoded.
+    ///
+    /// Only available for rows whose types have a static BSATN layout.
+    /// Returns `None` for rows of other types, e.g. rows containing strings.
     pub fn bsatn_length(&self) -> Option<usize> {
         self.table.static_bsatn_layout.as_ref().map(|s| s.bsatn_length as usize)
     }
@@ -708,7 +712,7 @@ impl<'a> RowRef<'a> {
     }
 
     /// BSATN-encode the row referred to by `self` into `buf`,
-    /// pushing `self`'s bytes onto the end of `buf` as if by [`Vec::extend`].
+    /// pushing `self`'s bytes onto the end of `buf`, similar to [`Vec::extend`].
     ///
     /// This method will use a [`StaticBsatnLayout`] if one is available,
     /// and may therefore be faster than calling [`bsatn::to_writer`].

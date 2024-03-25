@@ -46,15 +46,23 @@ pub struct StaticBsatnLayout {
 }
 
 impl StaticBsatnLayout {
+    /// Serialize `row` from BFLATN to BSATN into `buf`.
+    ///
     /// # Safety
     ///
     /// - `buf` must be at least `self.bsatn_length` long.
     /// - `row` must store a valid, initialized instance of the BFLATN row type
     ///   for which `self` was computed.
+    ///   As a consequence of this, for every `field` in `self.fields`,
+    ///   `row[field.bflatn_offset .. field.bflatn_offset + length]` will be initialized.
+    // TODO(perf): We could take `buf: &mut Bytes` to avoid needing to zero the buffer before calling.
+    // This method will always fully inialize `buf[0..self.bsatn_length]`.
+    // Some complexity here as `RowRef::to_bsatn_extend` must maintain panic-safety,
+    // so it must do `Vec::reserve`, followed by `serialize_row_into`, and only then `Vec::set_len`.
     pub unsafe fn serialize_row_into(&self, buf: &mut [u8], row: &Bytes) {
         debug_assert!(buf.len() >= self.bsatn_length as usize);
         for field in &self.fields[..] {
-            // Safety: forward caller requirements.
+            // SAFETY: forward caller requirements.
             unsafe { field.copy(buf, row) };
         }
     }
@@ -65,7 +73,7 @@ impl StaticBsatnLayout {
     /// either a [`VarLenType`]
     /// or a [`SumTypeLayout`] whose variants do not have the same "live" unpadded length.
     pub fn for_row_type(row_type: &RowTypeLayout) -> Option<Self> {
-        let mut builder = LayoutBuilder::default();
+        let mut builder = LayoutBuilder::new_builder();
         builder.visit_product(row_type.product())?;
         Some(builder.build())
     }
@@ -84,8 +92,8 @@ struct MemcpyField {
     bflatn_offset: u16,
 
     /// Offset in the BSATN buffer to which to begin `memcpy`ing, in bytes.
-    // TODO(comment): Could be a running counter, but this way we just have all the `memcpy` args in one place.
-    // Should bench; I suspect this allows more insn parallelism and is therefore better.
+    // TODO(perf): Could be a running counter, but this way we just have all the `memcpy` args in one place.
+    // Should bench; I (pgoldman 2024-03-25) suspect this allows more insn parallelism and is therefore better.
     bsatn_offset: u16,
 
     /// Length to `memcpy`, in bytes.
@@ -93,17 +101,20 @@ struct MemcpyField {
 }
 
 impl MemcpyField {
+    /// Copies the bytes at `row[self.bflatn_offset ..  self.bflatn_offset + self.length]`
+    /// into `buf[self.bsatn_offset + self.length]`.
+    ///
     /// # Safety
     ///
     /// - `buf` must be at least `self.bsatn_offset + self.length` long.
     /// - `row` must be at least `self.bflatn_offset + self.length` long.
     /// - `row[self.bflatn_offset .. self.bflatn_offset + length]` must all be initialized.
     unsafe fn copy(&self, buf: &mut [u8], row: &Bytes) {
-        // Safety: forward caller requirement #1.
+        // SAFETY: forward caller requirement #1.
         let to = unsafe { buf.get_unchecked_mut(range_move(0..self.length as usize, self.bsatn_offset as usize)) };
-        // Safety: forward caller requirement #2.
+        // SAFETY: forward caller requirement #2.
         let from = unsafe { row.get_unchecked(range_move(0..self.length as usize, self.bflatn_offset as usize)) };
-        // Safety: forward caller requirement #3.
+        // SAFETY: forward caller requirement #3.
         let from = unsafe { slice_assume_init_ref(from) };
         to.copy_from_slice(from);
     }
@@ -113,13 +124,14 @@ impl MemcpyField {
     }
 }
 
+/// A builder for a [`StaticBsatnLayout`].
 struct LayoutBuilder {
     /// Always at least one element.
     fields: Vec<MemcpyField>,
 }
 
-impl Default for LayoutBuilder {
-    fn default() -> Self {
+impl LayoutBuilder {
+    fn new_builder() -> Self {
         Self {
             fields: vec![MemcpyField {
                 bflatn_offset: 0,
@@ -128,9 +140,7 @@ impl Default for LayoutBuilder {
             }],
         }
     }
-}
 
-impl LayoutBuilder {
     fn build(self) -> StaticBsatnLayout {
         let LayoutBuilder { fields } = self;
         let fields: Vec<_> = fields.into_iter().filter(|field| !field.is_empty()).collect();
@@ -206,7 +216,7 @@ impl LayoutBuilder {
         let first_variant = sum.variants.first()?;
 
         let variant_layout = |variant: &SumTypeVariantLayout| {
-            let mut builder = LayoutBuilder::default();
+            let mut builder = LayoutBuilder::new_builder();
             builder.visit_value(&variant.ty)?;
             Some(builder.build())
         };

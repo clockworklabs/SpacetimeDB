@@ -123,7 +123,7 @@ impl<'a> RelValue<'a> {
     /// BSATN-encode the row referred to by `self` into `buf`,
     /// pushing `self`'s bytes onto the end of `buf` as if by [`Vec::extend`].
     ///
-    /// This method will use a [`spacetimedb_table::bflatn_to_bsatn_fast_pathStaticBsatnLayout`]
+    /// This method will use a [`spacetimedb_table::bflatn_to_bsatn_fast_path::StaticBsatnLayout`]
     /// if one is available, and may therefore be faster than calling [`bsatn::to_writer`].
     pub fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
         match self {
