@@ -705,6 +705,24 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
             writeln!(output, "return args is null ? null : new ReducerEvent(dbEvent, args);").unwrap();
         });
     });
+    writeln!(output).unwrap();
+
+    writeln!(output, "#if UNITY_5_3_OR_NEWER").unwrap();
+    writeln!(output, "public class NetworkManager : MonoBehaviour").unwrap();
+    block!(output, {
+        writeln!(
+            output,
+            "protected void Awake() => SpacetimeDBClient.CreateInstance(new UnityDebugLogger());"
+        )
+        .unwrap();
+        writeln!(
+            output,
+            "private void OnDestroy() => SpacetimeDBClient.instance.Close();"
+        )
+        .unwrap();
+        writeln!(output, "private void Update() => SpacetimeDBClient.instance.Update();").unwrap();
+    });
+    writeln!(output, "#endif").unwrap();
 
     vec![vec![("_Globals.cs".to_string(), autogen_csharp_footer(output))]]
 }
