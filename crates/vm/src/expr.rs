@@ -1,6 +1,7 @@
 use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
 use crate::operator::{OpCmp, OpLogic, OpQuery};
 use crate::relation::{MemTable, RelValue, Table};
+use arrayvec::ArrayVec;
 use derive_more::From;
 use smallvec::{smallvec, SmallVec};
 use spacetimedb_lib::Identity;
@@ -15,9 +16,9 @@ use spacetimedb_sats::ProductValue;
 use std::cmp::Reverse;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
-use std::fmt;
 use std::ops::Bound;
 use std::sync::Arc;
+use std::{fmt, iter, mem};
 
 /// Trait for checking if the `caller` have access to `Self`
 pub trait AuthAccess {
@@ -273,57 +274,120 @@ impl From<Query> for Option<ColumnOp> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Default)]
-#[repr(transparent)]
-/// A set of [`MemTable`]s referenced by a query plan by their [`SourceId`].
+/// An identifier for a data source (i.e. a table) in a query plan.
 ///
-/// Rather than embedding [`MemTable`]s in query plans, we store a `SourceExpr::MemTable`,
-/// which contains the information necessary for optimization along with a [`SourceId`].
-/// Query execution then executes the plan, and when it encounters a `SourceExpr::MemTable`,
-/// retrieves the [`MemTable`] from the corresponding `SourceSet`.
-/// This allows query plans to be re-used, though each execution requires a new `SourceSet`.
+/// When compiling a query plan, rather than embedding the inputs in the plan,
+/// we annotate each input with a `SourceId`, and the compiled plan refers to its inputs by id.
+/// This allows the plan to be re-used with distinct inputs,
+/// assuming the inputs obey the same schema.
 ///
-/// Internally, the `SourceSet` stores an `Option<MemTable>` for each planned [`SourceId`].
-/// During execution, the VM will [`Option::take`] the [`MemTable`] to consume them.
-/// This means that a query plan may not include multiple references to the same [`SourceId`].
-pub struct SourceSet(Vec<Option<MemTable>>);
+/// Note that re-using a query plan is only a good idea
+/// if the new inputs are similar to those used for compilation
+/// in terms of cardinality and distribution.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, From, Hash)]
+pub struct SourceId(pub usize);
 
-impl SourceSet {
+/// Types that relate [`SourceId`]s to their in-memory tables.
+///
+/// Rather than embedding tables in query plans, we store a [`SourceExpr::InMemory`],
+/// which contains the information necessary for optimization along with a `SourceId`.
+/// Query execution then executes the plan, and when it encounters a `SourceExpr::InMemory`,
+/// retrieves the `Self::Source` table from the corresponding provider.
+/// This allows query plans to be re-used, though each execution might require a new provider.
+///
+/// An in-memory table `Self::Source` is a type capable of producing [`RelValue<'a>`]s.
+/// The general form of this is `Iterator<Item = RelValue<'a>>`.
+/// Depending on the situation, this could be e.g.,
+/// - [`MemTable`], producing [`RelValue::Projection`],
+/// - `&'a [ProductValue]` producing [`RelValue::ProjRef`].
+pub trait SourceProvider<'a> {
+    /// The type of in-memory tables that this provider uses.
+    type Source: 'a + IntoIterator<Item = RelValue<'a>>;
+
+    /// Retrieve the `Self::Source` associated with `id`, if any.
+    ///
+    /// Taking the same `id` a second time may or may not yield the same source.
+    /// Callers should not assume that a generic provider will yield it more than once.
+    /// This means that a query plan may not include multiple references to the same [`SourceId`].
+    ///
+    /// Implementations are also not obligated to inspect `id`, e.g., if there's only one option.
+    fn take_source(&mut self, id: SourceId) -> Option<Self::Source>;
+}
+
+impl<'a, I: 'a + IntoIterator<Item = RelValue<'a>>, F: FnMut(SourceId) -> Option<I>> SourceProvider<'a> for F {
+    type Source = I;
+    fn take_source(&mut self, id: SourceId) -> Option<Self::Source> {
+        self(id)
+    }
+}
+
+impl<'a, I: 'a + IntoIterator<Item = RelValue<'a>>> SourceProvider<'a> for Option<I> {
+    type Source = I;
+    fn take_source(&mut self, _: SourceId) -> Option<Self::Source> {
+        self.take()
+    }
+}
+
+pub struct NoInMemUsed;
+
+impl<'a> SourceProvider<'a> for NoInMemUsed {
+    type Source = iter::Empty<RelValue<'a>>;
+    fn take_source(&mut self, _: SourceId) -> Option<Self::Source> {
+        None
+    }
+}
+
+/// A [`SourceProvider`] backed by an `ArrayVec`.
+///
+/// Internally, the `SourceSet` stores an `Option<T>` for each planned [`SourceId`]
+/// which are [`Option::take`]n out of the set.
+#[derive(Debug, PartialEq, Eq, Clone)]
+#[repr(transparent)]
+pub struct SourceSet<T, const N: usize>(
+    // Benchmarks showed an improvement in performance
+    // on incr-select by ~10% by not using `Vec<Option<T>>`.
+    ArrayVec<Option<T>, N>,
+);
+
+impl<'a, T: 'a + IntoIterator<Item = RelValue<'a>>, const N: usize> SourceProvider<'a> for SourceSet<T, N> {
+    type Source = T;
+    fn take_source(&mut self, id: SourceId) -> Option<T> {
+        self.take(id)
+    }
+}
+
+impl<T, const N: usize> From<[T; N]> for SourceSet<T, N> {
+    #[inline]
+    fn from(sources: [T; N]) -> Self {
+        Self(sources.map(Some).into())
+    }
+}
+
+impl<T, const N: usize> SourceSet<T, N> {
+    /// Returns an empty source set.
+    pub fn empty() -> Self {
+        Self(ArrayVec::new())
+    }
+
     /// Get a fresh `SourceId` which can be used as the id for a new entry.
     fn next_id(&self) -> SourceId {
         SourceId(self.0.len())
     }
 
-    /// Insert a [`MemTable`] into this `SourceSet` so it can be used in a query plan,
-    /// and return a [`SourceExpr`] which can be embedded in that plan.
-    pub fn add_mem_table(&mut self, table: MemTable) -> SourceExpr {
+    /// Insert an entry into this `SourceSet` so it can be used in a query plan,
+    /// and return a [`SourceId`] which can be embedded in that plan.
+    pub fn add(&mut self, table: T) -> SourceId {
         let source_id = self.next_id();
-        let expr = SourceExpr::from_mem_table(&table, source_id);
         self.0.push(Some(table));
-        expr
+        source_id
     }
 
-    /// Extract the [`MemTable`] referred to by `id` from this `SourceSet`,
+    /// Extract the entry referred to by `id` from this `SourceSet`,
     /// leaving a "gap" in its place.
     ///
-    /// Subsequent calls to `take_mem_table` on the same `id` will return `None`.
-    pub fn take_mem_table(&mut self, id: SourceId) -> Option<MemTable> {
-        self.0.get_mut(id.0)?.take()
-    }
-
-    /// Resolve `source` to a `Table` for use in query execution.
-    ///
-    /// If the `source` is a [`SourceExpr::DbTable`], this simply clones the [`DbTable`] and returns it.
-    /// ([`DbTable::clone`] is inexpensive.)
-    /// In this case, `self` is not modified.
-    ///
-    /// If the `source` is a [`SourceExpr::MemTable`], this behaves like [`Self::take_mem_table`].
-    /// Subsequent calls to `take_table` or `take_mem_table` with the same `source` will fail.
-    pub fn take_table(&mut self, source: &SourceExpr) -> Option<Table> {
-        match source {
-            SourceExpr::DbTable(db_table) => Some(Table::DbTable(db_table.clone())),
-            SourceExpr::MemTable { source_id, .. } => self.take_mem_table(*source_id).map(Table::MemTable),
-        }
+    /// Subsequent calls to `take` on the same `id` will return `None`.
+    pub fn take(&mut self, id: SourceId) -> Option<T> {
+        self.0.get_mut(id.0).map(mem::take).unwrap_or_default()
     }
 
     /// Returns the number of slots for [`MemTable`]s in this set.
@@ -341,45 +405,64 @@ impl SourceSet {
     }
 }
 
-impl std::ops::Index<SourceId> for SourceSet {
-    type Output = Option<MemTable>;
+impl<T, const N: usize> std::ops::Index<SourceId> for SourceSet<T, N> {
+    type Output = Option<T>;
 
-    fn index(&self, idx: SourceId) -> &Option<MemTable> {
+    fn index(&self, idx: SourceId) -> &Self::Output {
         &self.0[idx.0]
     }
 }
 
-impl std::ops::IndexMut<SourceId> for SourceSet {
-    fn index_mut(&mut self, idx: SourceId) -> &mut Option<MemTable> {
+impl<T, const N: usize> std::ops::IndexMut<SourceId> for SourceSet<T, N> {
+    fn index_mut(&mut self, idx: SourceId) -> &mut Self::Output {
         &mut self.0[idx.0]
     }
 }
 
-/// An identifier for a data source (i.e. a table) in a query plan.
-///
-/// When compiling a query plan, rather than embedding the inputs in the plan,
-/// we annotate each input with a `SourceId`, and the compiled plan refers to its inputs by id.
-/// This allows the plan to be re-used with distinct inputs,
-/// assuming the inputs obey the same schema.
-///
-/// Note that re-using a query plan is only a good idea
-/// if the new inputs are similar to those used for compilation
-/// in terms of cardinality and distribution.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, From, Hash)]
-pub struct SourceId(pub usize);
+impl<const N: usize> SourceSet<Vec<ProductValue>, N> {
+    /// Insert a [`MemTable`] into this `SourceSet` so it can be used in a query plan,
+    /// and return a [`SourceExpr`] which can be embedded in that plan.
+    pub fn add_mem_table(&mut self, table: MemTable) -> SourceExpr {
+        let len = table.data.len();
+        let id = self.add(table.data);
+        SourceExpr::from_mem_table(table.head, table.table_access, len, id)
+    }
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+    /// Resolve `source` to a `Table` for use in query execution.
+    ///
+    /// If the `source` is a [`SourceExpr::DbTable`], this simply clones the [`DbTable`] and returns it.
+    /// ([`DbTable::clone`] is inexpensive.)
+    /// In this case, `self` is not modified.
+    ///
+    /// If the `source` is a [`SourceExpr::MemTable`], this behaves like [`Self::take_mem_table`].
+    /// Subsequent calls to `take_table` or `take_mem_table` with the same `source` will fail.
+    pub fn take_table(&mut self, source: &SourceExpr) -> Option<Table> {
+        match source {
+            SourceExpr::DbTable(db_table) => Some(Table::DbTable(db_table.clone())),
+            SourceExpr::InMemory {
+                source_id,
+                header,
+                table_access,
+                ..
+            } => self
+                .take(*source_id)
+                .map(|data| MemTable::new(header.clone(), *table_access, data).into()),
+        }
+    }
+}
+
 /// A reference to a table within a query plan,
 /// used as the source for selections, scans, filters and joins.
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum SourceExpr {
     /// A plan for a "virtual" or projected table.
     ///
-    /// The actual [`MemTable`] is not stored within the query plan;
-    /// rather, the `source_id` is an index with a corresponding [`SourceSet`]
-    /// which contains the [`MemTable`].
+    /// The actual in-memory table, e.g., [`MemTable`] or `&'a [ProductValue]`
+    /// is not stored within the query plan;
+    /// rather, the `source_id` is an index which corresponds to the table in e.g., a [`SourceSet`].
     ///
-    /// This allows query plans to be reused by supplying a new [`SourceSet`].
-    MemTable {
+    /// This allows query plans to be reused by supplying e.g., a new [`SourceSet`].
+    InMemory {
         source_id: SourceId,
         header: Arc<Header>,
         table_type: StTableType,
@@ -397,7 +480,7 @@ impl SourceExpr {
     /// Returns `None` if `self` refers to a [`DbTable`], as [`DbTable`]s are stored directly in the `SourceExpr`,
     /// rather than indirected through the [`SourceSet`].
     pub fn source_id(&self) -> Option<SourceId> {
-        if let SourceExpr::MemTable { source_id, .. } = self {
+        if let SourceExpr::InMemory { source_id, .. } = self {
             Some(*source_id)
         } else {
             None
@@ -410,40 +493,40 @@ impl SourceExpr {
 
     pub fn table_type(&self) -> StTableType {
         match self {
-            SourceExpr::MemTable { table_type, .. } => *table_type,
+            SourceExpr::InMemory { table_type, .. } => *table_type,
             SourceExpr::DbTable(db_table) => db_table.table_type,
         }
     }
 
     pub fn table_access(&self) -> StAccess {
         match self {
-            SourceExpr::MemTable { table_access, .. } => *table_access,
+            SourceExpr::InMemory { table_access, .. } => *table_access,
             SourceExpr::DbTable(db_table) => db_table.table_access,
         }
     }
 
     pub fn head(&self) -> &Arc<Header> {
         match self {
-            SourceExpr::MemTable { header, .. } => header,
+            SourceExpr::InMemory { header, .. } => header,
             SourceExpr::DbTable(db_table) => &db_table.head,
         }
     }
 
     pub fn is_mem_table(&self) -> bool {
-        matches!(self, SourceExpr::MemTable { .. })
+        matches!(self, SourceExpr::InMemory { .. })
     }
 
     pub fn is_db_table(&self) -> bool {
         matches!(self, SourceExpr::DbTable(_))
     }
 
-    pub fn from_mem_table(mem_table: &MemTable, id: SourceId) -> Self {
-        SourceExpr::MemTable {
+    pub fn from_mem_table(header: Arc<Header>, table_access: StAccess, row_count: usize, id: SourceId) -> Self {
+        SourceExpr::InMemory {
             source_id: id,
-            header: mem_table.head.clone(),
+            header,
             table_type: StTableType::User,
-            table_access: mem_table.table_access,
-            row_count: RowCount::exact(mem_table.data.len()),
+            table_access,
+            row_count: RowCount::exact(row_count),
         }
     }
 
@@ -476,7 +559,7 @@ impl Relation for SourceExpr {
 
     fn row_count(&self) -> RowCount {
         match self {
-            SourceExpr::MemTable { row_count, .. } => *row_count,
+            SourceExpr::InMemory { row_count, .. } => *row_count,
             SourceExpr::DbTable(_) => RowCount::unknown(),
         }
     }
@@ -1841,7 +1924,7 @@ impl From<QueryExpr> for Expr {
 impl fmt::Display for SourceExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SourceExpr::MemTable { header, source_id, .. } => {
+            SourceExpr::InMemory { header, source_id, .. } => {
                 let ty = AlgebraicType::Product(header.ty());
                 write!(f, "SourceExpr({source_id:?} => virtual {ty:?})")
             }
@@ -2016,7 +2099,7 @@ mod tests {
 
     fn tables() -> [SourceExpr; 2] {
         [
-            SourceExpr::MemTable {
+            SourceExpr::InMemory {
                 source_id: SourceId(0),
                 header: Arc::new(Header {
                     table_name: "foo".into(),
@@ -2122,7 +2205,7 @@ mod tests {
                 .map(|(i, _)| (ColId(i as u32).into(), Constraints::indexed()))
                 .collect(),
         );
-        SourceExpr::MemTable {
+        SourceExpr::InMemory {
             source_id: SourceId(0),
             header: Arc::new(head),
             row_count: RowCount::unknown(),

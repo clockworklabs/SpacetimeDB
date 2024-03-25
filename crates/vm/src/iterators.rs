@@ -1,31 +1,25 @@
 use crate::errors::ErrorVm;
 use crate::rel_ops::RelOps;
-use crate::relation::{MemTable, RelValue};
-use core::mem;
+use crate::relation::RelValue;
 use spacetimedb_sats::relation::{Header, RowCount};
 use std::sync::Arc;
 
-/// Common wrapper for relational iterators that work like cursors.
+/// Turns an iterator over `ProductValue`s into a `RelOps`.
 #[derive(Debug)]
-pub struct RelIter<T> {
+pub struct RelIter<I> {
     pub head: Arc<Header>,
     pub row_count: RowCount,
-    pub pos: usize,
-    pub of: T,
+    pub iter: I,
 }
 
-impl<T> RelIter<T> {
-    pub fn new(head: Arc<Header>, row_count: RowCount, of: T) -> Self {
-        Self {
-            head,
-            row_count,
-            pos: 0,
-            of,
-        }
+impl<I> RelIter<I> {
+    pub fn new(head: Arc<Header>, row_count: RowCount, iter: impl IntoIterator<IntoIter = I>) -> Self {
+        let iter = iter.into_iter();
+        Self { head, row_count, iter }
     }
 }
 
-impl<'a> RelOps<'a> for RelIter<MemTable> {
+impl<'a, I: Iterator<Item = RelValue<'a>>> RelOps<'a> for RelIter<I> {
     fn head(&self) -> &Arc<Header> {
         &self.head
     }
@@ -35,11 +29,6 @@ impl<'a> RelOps<'a> for RelIter<MemTable> {
     }
 
     fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
-        Ok((self.pos < self.of.data.len()).then(|| {
-            let row = &mut self.of.data[self.pos];
-            self.pos += 1;
-
-            RelValue::Projection(mem::take(row))
-        }))
+        Ok(self.iter.next())
     }
 }

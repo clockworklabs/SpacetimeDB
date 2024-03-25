@@ -130,6 +130,8 @@ fn eval(c: &mut Criterion) {
     );
     bench_eval(c, "full-join", &name);
 
+    let ctx_incr = &ExecutionContext::incremental_update(db.address());
+
     // To profile this benchmark for 30s
     // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- incr-select --exact --profile-time=30
     c.bench_function("incr-select", |b| {
@@ -137,13 +139,14 @@ fn eval(c: &mut Criterion) {
         let select_lhs = "select * from footprint";
         let select_rhs = "select * from location";
         let auth = AuthCtx::for_testing();
-        let tx = db.begin_tx();
-        let query_lhs = compile_read_only_query(&db, &tx, &auth, select_lhs).unwrap();
-        let query_rhs = compile_read_only_query(&db, &tx, &auth, select_rhs).unwrap();
+        let tx = &db.begin_tx();
+        let query_lhs = compile_read_only_query(&db, tx, &auth, select_lhs).unwrap();
+        let query_rhs = compile_read_only_query(&db, tx, &auth, select_rhs).unwrap();
         let query = ExecutionSet::from_iter(query_lhs.into_iter().chain(query_rhs));
+        let tx = &tx.into();
 
         b.iter(|| {
-            let out = query.eval_incr(&db, &tx, &update).unwrap();
+            let out = query.eval_incr(ctx_incr, &db, tx, &update).unwrap();
             black_box(out);
         })
     });
@@ -159,12 +162,13 @@ fn eval(c: &mut Criterion) {
             where location.chunk_index = {chunk_index}"
         );
         let auth = AuthCtx::for_testing();
-        let tx = db.begin_tx();
-        let query = compile_read_only_query(&db, &tx, &auth, &join).unwrap();
+        let tx = &db.begin_tx();
+        let query = compile_read_only_query(&db, tx, &auth, &join).unwrap();
         let query: ExecutionSet = query.into();
+        let tx = &tx.into();
 
         b.iter(|| {
-            let out = query.eval_incr(&db, &tx, &update).unwrap();
+            let out = query.eval_incr(ctx_incr, &db, tx, &update).unwrap();
             black_box(out);
         })
     });
