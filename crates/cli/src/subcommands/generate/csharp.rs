@@ -708,7 +708,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
     writeln!(output).unwrap();
 
     writeln!(output, "#if UNITY_5_3_OR_NEWER").unwrap();
-    writeln!(output, "public class NetworkManager : MonoBehaviour").unwrap();
+    writeln!(output, "public class NetworkManager : UnityEngine.MonoBehaviour").unwrap();
     block!(output, {
         writeln!(
             output,
