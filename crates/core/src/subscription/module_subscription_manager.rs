@@ -41,7 +41,7 @@ impl SubscriptionManager {
     }
 
     pub fn query(&self, hash: &QueryHash) -> Option<Query> {
-        self.queries.get(hash).map(Arc::clone)
+        self.queries.get(hash).cloned()
     }
 
     pub fn num_queries(&self) -> usize {

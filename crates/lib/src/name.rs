@@ -531,7 +531,14 @@ fn ensure_domain_segment(input: &str) -> Result<(), ParseError> {
 }
 
 fn ensure_domain_tld(input: &str) -> Result<(), ParseError> {
-    DomainTld::try_from(input).map(|_| ())
+    let DomainSegment(input) = DomainSegment::try_from(input)?;
+    if input.contains('/') {
+        Err(ParseError::ContainsSlash { part: input.to_owned() })
+    } else if is_address(input) {
+        Err(ParseError::Address { part: input.to_owned() })
+    } else {
+        Ok(())
+    }
 }
 
 /// Parsing helper to validate (path) segments of a [`DomainName`], without
@@ -550,25 +557,6 @@ impl<'a> TryFrom<&'a str> for DomainSegment<'a> {
             Err(ParseError::Whitespace {
                 input: value.to_string(),
             })
-        } else {
-            Ok(Self(value))
-        }
-    }
-}
-
-/// Parsing helper to validate that a [`DomainSegment`] is a valid [`Tld`],
-/// without consuming the input.
-struct DomainTld<'a>(&'a str);
-
-impl<'a> TryFrom<&'a str> for DomainTld<'a> {
-    type Error = ParseError;
-
-    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
-        let DomainSegment(value) = DomainSegment::try_from(value)?;
-        if value.contains('/') {
-            Err(ParseError::ContainsSlash { part: value.to_owned() })
-        } else if is_address(value) {
-            Err(ParseError::Address { part: value.to_owned() })
         } else {
             Ok(Self(value))
         }

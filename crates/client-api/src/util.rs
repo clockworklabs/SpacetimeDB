@@ -96,7 +96,7 @@ impl NameOrAddress {
                 domain: None,
             }),
             Self::Name(name) => {
-                let domain = name.parse().map_err(DomainParsingRejection)?;
+                let domain = name.parse().map_err(|_| DomainParsingRejection)?;
                 let address = ctx.lookup_address(&domain).map_err(log_and_500)?;
                 match address {
                     Some(address) => Ok(ResolvedAddress {
