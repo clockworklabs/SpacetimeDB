@@ -623,30 +623,6 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
         )
         .unwrap();
         writeln!(output).unwrap();
-        writeln!(
-            output,
-            "public static ReducerEvent? FromDbEvent(ClientApi.Event dbEvent)"
-        )
-        .unwrap();
-        block!(output, {
-            writeln!(output, "var argBytes = dbEvent.FunctionCall.ArgBytes;").unwrap();
-            writeln!(output, "IReducerArgs? args = dbEvent.FunctionCall.Reducer switch {{").unwrap();
-            {
-                indent_scope!(output);
-                for (reducer, reducer_name) in std::iter::zip(&reducers, &reducer_names) {
-                    let reducer_str_name = &reducer.name;
-                    writeln!(
-                        output,
-                        "\"{reducer_str_name}\" => BSATNHelpers.FromProtoBytes<{reducer_name}ArgsStruct>(argBytes),"
-                    )
-                    .unwrap();
-                }
-                writeln!(output, "_ => null").unwrap();
-            }
-            writeln!(output, "}};").unwrap();
-            writeln!(output, "return args is null ? null : new ReducerEvent(dbEvent, args);").unwrap();
-        });
-        writeln!(output).unwrap();
         // Properties for reducer args
         for reducer_name in &reducer_names {
             writeln!(output, r#"[Obsolete("Accessors that implicitly cast `Args` are deprecated, please match `Args` against the desired type explicitly instead.")]"#).unwrap();
@@ -666,27 +642,67 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
     });
     writeln!(output).unwrap();
 
-    writeln!(output, "public static class ModuleRegistration").unwrap();
+    writeln!(output, "public class SpacetimeDBClient : SpacetimeDBClientBase").unwrap();
     block!(output, {
-        writeln!(output, "[ModuleInitializer]").unwrap();
-        writeln!(output, "public static void Register()").unwrap();
+        writeln!(
+            output,
+            "protected SpacetimeDBClient(ISpacetimeDBLogger loggerToUse) : base(loggerToUse)"
+        )
+        .unwrap();
         block!(output, {
             for item in items {
                 if let GenItem::Table(table) = item {
                     writeln!(
                         output,
-                        "SpacetimeDBClient.clientDB.AddTable<{table_name}>();",
+                        "clientDB.AddTable<{table_name}>();",
                         table_name = table.schema.table_name
                     )
                     .unwrap();
                 }
             }
-            writeln!(output).unwrap();
+        });
+        writeln!(output).unwrap();
+
+        writeln!(output, "private static SpacetimeDBClient? _instance;").unwrap();
+        // TODO: a better way to handle uninstantiated case without adding cost to each access?
+        writeln!(output, "public static SpacetimeDBClient instance => _instance!;").unwrap();
+        writeln!(
+            output,
+            "public static void CreateInstance(ISpacetimeDBLogger loggerToUse)"
+        )
+        .unwrap();
+        block!(output, {
             writeln!(
                 output,
-                "SpacetimeDBClient.SetReducerEventFromDbEvent(ReducerEvent.FromDbEvent);"
+                r#"if (_instance != null) throw new Exception("SpacetimeDBClient.CreateInstance has already been called.");"#
             )
             .unwrap();
+            writeln!(output, "_instance = new SpacetimeDBClient(loggerToUse);").unwrap();
+        });
+        writeln!(output).unwrap();
+
+        writeln!(
+            output,
+            "protected override ReducerEventBase? ReducerEventFromDbEvent(ClientApi.Event dbEvent)"
+        )
+        .unwrap();
+        block!(output, {
+            writeln!(output, "var argBytes = dbEvent.FunctionCall.ArgBytes;").unwrap();
+            writeln!(output, "IReducerArgs? args = dbEvent.FunctionCall.Reducer switch {{").unwrap();
+            {
+                indent_scope!(output);
+                for (reducer, reducer_name) in std::iter::zip(&reducers, &reducer_names) {
+                    let reducer_str_name = &reducer.name;
+                    writeln!(
+                        output,
+                        "\"{reducer_str_name}\" => BSATNHelpers.FromProtoBytes<{reducer_name}ArgsStruct>(argBytes),"
+                    )
+                    .unwrap();
+                }
+                writeln!(output, "_ => null").unwrap();
+            }
+            writeln!(output, "}};").unwrap();
+            writeln!(output, "return args is null ? null : new ReducerEvent(dbEvent, args);").unwrap();
         });
     });
 
