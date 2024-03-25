@@ -1,7 +1,8 @@
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
-use spacetimedb_lib::bsatn::to_writer;
-use spacetimedb_table::table::UniqueConstraintViolation;
+use spacetimedb_sats::bsatn::ser::BsatnError;
+use spacetimedb_table::table::{RowRef, UniqueConstraintViolation};
+use spacetimedb_vm::relation::RelValue;
 use std::ops::DerefMut;
 use std::sync::Arc;
 
@@ -15,9 +16,8 @@ use crate::execution_context::ExecutionContext;
 use crate::vm::{build_query, TxMode};
 use spacetimedb_lib::filter::CmpArgs;
 use spacetimedb_lib::operator::OpQuery;
-use spacetimedb_lib::{bsatn, ProductValue};
+use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::{ColId, ColListBuilder, TableId};
-use spacetimedb_sats::buffer::BufWriter;
 use spacetimedb_sats::db::def::{IndexDef, IndexType};
 use spacetimedb_sats::relation::{FieldExpr, FieldName};
 use spacetimedb_sats::{ProductType, Typespace};
@@ -41,17 +41,13 @@ struct ChunkedWriter {
     scratch_space: Vec<u8>,
 }
 
-impl BufWriter for ChunkedWriter {
-    fn put_slice(&mut self, slice: &[u8]) {
-        self.scratch_space.extend_from_slice(slice);
-    }
-}
-
 impl ChunkedWriter {
-    /// Reserves `len` additional bytes in the scratch space,
-    /// or does nothing if the capacity is already sufficient.
-    fn reserve_in_scratch(&mut self, len: usize) {
-        self.scratch_space.reserve(len);
+    fn write_row_ref_to_scratch(&mut self, row: RowRef<'_>) -> Result<(), BsatnError> {
+        row.to_bsatn_extend(&mut self.scratch_space)
+    }
+
+    fn write_rel_value_to_scratch(&mut self, row: &RelValue<'_>) -> Result<(), BsatnError> {
+        row.to_bsatn_extend(&mut self.scratch_space)
     }
 
     /// Flushes the data collected in the scratch space if it's larger than our
@@ -288,10 +284,8 @@ impl InstanceEnv {
         let results = stdb.iter_by_col_eq_mut(ctx, tx, table_id, col_id, value)?;
         let mut bytes = Vec::new();
         for result in results {
-            // Pre-allocate the capacity needed to write `result`.
-            bytes.reserve(bsatn::to_len(&result).unwrap());
             // Write the ref directly to the BSATN `bytes` buffer.
-            bsatn::to_writer(&mut bytes, &result).unwrap();
+            result.to_bsatn_extend(&mut bytes).unwrap();
         }
         Ok(bytes)
     }
@@ -304,10 +298,8 @@ impl InstanceEnv {
         let tx = &mut *self.tx.get()?;
 
         for row in stdb.iter_mut(ctx, tx, table_id)? {
-            // Pre-allocate the capacity needed to write `row`.
-            chunked_writer.reserve_in_scratch(bsatn::to_len(&row).unwrap());
             // Write the ref directly to the BSATN `chunked_writer` buffer.
-            bsatn::to_writer(&mut chunked_writer, &row).unwrap();
+            chunked_writer.write_row_ref_to_scratch(row).unwrap();
             // Flush at row boundaries.
             chunked_writer.flush();
         }
@@ -381,7 +373,7 @@ impl InstanceEnv {
         // write all rows and flush at row boundaries.
         let mut chunked_writer = ChunkedWriter::default();
         while let Some(row) = query.next()? {
-            to_writer(&mut chunked_writer, &row).unwrap();
+            chunked_writer.write_rel_value_to_scratch(&row).unwrap();
             chunked_writer.flush();
         }
         Ok(chunked_writer.into_chunks())

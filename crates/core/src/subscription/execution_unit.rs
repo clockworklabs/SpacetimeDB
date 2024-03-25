@@ -7,7 +7,6 @@ use crate::host::module_host::{DatabaseTableUpdate, TableOp};
 use crate::json::client_api::TableUpdateJson;
 use crate::vm::{build_query, TxMode};
 use spacetimedb_client_api_messages::client_api::{TableRowOperation, TableUpdate};
-use spacetimedb_lib::bsatn::to_writer;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::relation::DbTable;
 use spacetimedb_vm::eval::IterRows;
@@ -229,7 +228,7 @@ impl ExecutionUnit {
     pub fn eval_binary(&self, db: &RelationalDB, tx: &Tx) -> Result<Option<TableUpdate>, DBError> {
         let mut buf = Vec::new();
         let table_row_operations = Self::eval_query_expr(db, tx, &self.eval_plan, |row| {
-            to_writer(&mut buf, &row).unwrap();
+            row.to_bsatn_extend(&mut buf).unwrap();
             let row = buf.clone();
             buf.clear();
             TableRowOperation { op: 1, row }
