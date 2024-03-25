@@ -23,7 +23,7 @@ use spacetimedb::messages::control_db::{Database, DatabaseInstance};
 use spacetimedb::sql::execute::execute;
 use spacetimedb_lib::address::AddressForUrl;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::name::{self, DnsLookupResponse, DomainName, DomainParsingError, PublishOp, PublishResult};
+use spacetimedb_lib::name::{self, DnsLookupResponse, DomainName, PublishOp, PublishResult};
 use spacetimedb_lib::recovery::{RecoveryCode, RecoveryCodeResponse};
 use spacetimedb_lib::sats::WithTypespace;
 use std::collections::HashMap;
@@ -38,8 +38,7 @@ use crate::routes::subscribe::generate_random_address;
 use crate::util::{ByteStringBody, NameOrAddress};
 use crate::{log_and_500, ControlStateDelegate, DatabaseDef, NodeDelegate};
 
-#[derive(derive_more::From)]
-pub(crate) struct DomainParsingRejection(pub(crate) DomainParsingError);
+pub(crate) struct DomainParsingRejection;
 
 impl IntoResponse for DomainParsingRejection {
     fn into_response(self) -> axum::response::Response {
@@ -608,7 +607,7 @@ pub async fn dns<S: ControlStateDelegate>(
     Path(DNSParams { database_name }): Path<DNSParams>,
     Query(DNSQueryParams {}): Query<DNSQueryParams>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let domain = database_name.parse().map_err(DomainParsingRejection)?;
+    let domain = database_name.parse().map_err(|_| DomainParsingRejection)?;
     let address = ctx.lookup_address(&domain).map_err(log_and_500)?;
     let response = if let Some(address) = address {
         DnsLookupResponse::Success { domain, address }
@@ -645,7 +644,7 @@ pub async fn register_tld<S: ControlStateDelegate>(
     // so, unless you are the owner, this will fail, hence not using get_or_create
     let auth = auth_or_unauth(auth)?;
 
-    let tld = tld.parse::<DomainName>().map_err(DomainParsingRejection)?.into();
+    let tld = tld.parse::<DomainName>().map_err(|_| DomainParsingRejection)?.into();
     let result = ctx.register_tld(&auth.identity, tld).await.map_err(log_and_500)?;
     Ok(axum::Json(result))
 }
@@ -906,7 +905,7 @@ pub async fn set_name<S: ControlStateDelegate>(
         return Err((StatusCode::UNAUTHORIZED, "Identity does not own database.").into());
     }
 
-    let domain = domain.parse().map_err(DomainParsingRejection)?;
+    let domain = domain.parse().map_err(|_| DomainParsingRejection)?;
     let response = ctx
         .create_dns_record(&auth.identity, &domain, &address)
         .await

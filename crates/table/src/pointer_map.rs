@@ -180,6 +180,7 @@ impl PointerMap {
 // due to `PointerMap::maintains_invariants` being undefined.
 // Easily solved by including a stub definition.
 #[cfg(not(debug_assertions))]
+#[allow(dead_code)]
 impl PointerMap {
     fn maintains_invariants(&self) -> bool {
         unreachable!(

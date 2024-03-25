@@ -364,10 +364,7 @@ pub struct VarLenVisitorProgram {
 #[inline]
 fn next_vlr_offset(program: &[Insn], instr_ptr: &mut u16, read_tag: impl Fn(u16) -> u8) -> Option<PageOffset> {
     loop {
-        let Some(insn) = program.get(*instr_ptr as usize) else {
-            return None;
-        };
-        match insn {
+        match program.get(*instr_ptr as usize)? {
             Insn::VisitOffset(offset) => {
                 *instr_ptr += 1;
                 return Some(PageOffset(*offset));
