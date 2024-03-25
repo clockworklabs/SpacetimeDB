@@ -457,7 +457,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
     // let reducer_pascal_name = func_name.to_case(Case::Pascal);
     let func_name_pascal_case = func_name.to_case(Case::Pascal);
 
-    let mut output = autogen_csharp_header(namespace, &["ClientApi"]);
+    let mut output = autogen_csharp_header(namespace, &[]);
 
     //Args struct
     writeln!(output, "[SpacetimeDB.Type]").unwrap();
@@ -581,7 +581,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
         .map(|reducer| reducer.name.to_case(Case::Pascal))
         .collect();
 
-    let mut output = autogen_csharp_header(namespace, &["System.Runtime.CompilerServices", "ClientApi"]);
+    let mut output = autogen_csharp_header(namespace, &[]);
 
     writeln!(output, "public enum ReducerType").unwrap();
     block!(output, {
