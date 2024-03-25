@@ -136,9 +136,12 @@ impl ObjectDB for HashMapObjectDB {
         let filename = hex::encode(&hash.data[1..]);
         let path = self.root.join(folder).join(filename);
 
-        // TODO: Remove this `#[allow(...)]`.
-        #[allow(clippy::suspicious_open_options)]
-        let mut unsynced = OpenOptions::new().write(true).create(true).open(path).unwrap();
+        let mut unsynced = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(path)
+            .unwrap();
         unsynced.write_all(&bytes).unwrap();
         self.unsynced.push(unsynced);
 
