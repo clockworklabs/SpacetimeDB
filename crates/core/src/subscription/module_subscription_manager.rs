@@ -157,7 +157,6 @@ impl SubscriptionManager {
                 .flat_map_iter(|(hash, delta)| {
                     let table_id = delta.table_id;
                     let table_name = delta.table_name;
-                    let ops = delta.ops;
                     // Store at most one copy of the serialization to BSATN
                     // and ditto for the "serialization" for JSON.
                     // Each subscriber gets to pick which of these they want,
@@ -168,12 +167,16 @@ impl SubscriptionManager {
                     let mut ops_json: Option<Vec<TableRowOperationJson>> = None;
                     self.subscribers.get(hash).into_iter().flatten().map(move |id| {
                         let ops = match self.clients[id].protocol {
-                            Protocol::Binary => {
-                                Either::Left(ops_bin.get_or_insert_with(|| ops.iter().map_into().collect()).clone())
-                            }
-                            Protocol::Text => {
-                                Either::Right(ops_json.get_or_insert_with(|| ops.iter().map_into().collect()).clone())
-                            }
+                            Protocol::Binary => Either::Left(
+                                ops_bin
+                                    .get_or_insert_with(|| delta.updates.iter().map_into().collect())
+                                    .clone(),
+                            ),
+                            Protocol::Text => Either::Right(
+                                ops_json
+                                    .get_or_insert_with(|| delta.updates.iter().map_into().collect())
+                                    .clone(),
+                            ),
                         };
                         (id, table_id, table_name.clone(), ops)
                     })

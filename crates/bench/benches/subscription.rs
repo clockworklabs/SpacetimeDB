@@ -3,7 +3,7 @@ use spacetimedb::client::Protocol;
 use spacetimedb::db::relational_db::{open_db, RelationalDB};
 use spacetimedb::error::DBError;
 use spacetimedb::execution_context::ExecutionContext;
-use spacetimedb::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp};
+use spacetimedb::host::module_host::{DatabaseTableUpdate, DatabaseUpdate};
 use spacetimedb::subscription::query::compile_read_only_query;
 use spacetimedb::subscription::subscription::ExecutionSet;
 use spacetimedb_lib::identity::AuthCtx;
@@ -26,12 +26,7 @@ fn create_table_location(db: &RelationalDB) -> Result<TableId, DBError> {
 }
 
 fn create_table_footprint(db: &RelationalDB) -> Result<TableId, DBError> {
-    let footprint = AlgebraicType::sum([
-        ("A", AlgebraicType::unit()),
-        ("B", AlgebraicType::unit()),
-        ("C", AlgebraicType::unit()),
-        ("D", AlgebraicType::unit()),
-    ]);
+    let footprint = AlgebraicType::sum(["A", "B", "C", "D"].map(|n| (n, AlgebraicType::unit())));
     let schema = &[
         ("entity_id", AlgebraicType::U64),
         ("type", footprint),
@@ -45,7 +40,8 @@ fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> Database
     DatabaseTableUpdate {
         table_id,
         table_name: table_name.to_string(),
-        ops: vec![TableOp::insert(row)],
+        inserts: vec![row],
+        deletes: vec![],
     }
 }
 

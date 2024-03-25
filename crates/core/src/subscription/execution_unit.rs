@@ -3,7 +3,7 @@ use super::subscription::{IncrementalJoin, SupportedQuery};
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
-use crate::host::module_host::{DatabaseTableUpdate, DatabaseTableUpdateCow, TableOp, TableOpCow};
+use crate::host::module_host::{DatabaseTableUpdate, DatabaseTableUpdateCow, TableOp, UpdatesCow};
 use crate::json::client_api::TableUpdateJson;
 use crate::vm::{build_query, TxMode};
 use spacetimedb_client_api_messages::client_api::{TableRowOperation, TableUpdate};
@@ -15,6 +15,7 @@ use spacetimedb_vm::eval::IterRows;
 use spacetimedb_vm::expr::{NoInMemUsed, Query, QueryExpr, SourceExpr, SourceId};
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::RelValue;
+use std::borrow::Cow;
 use std::hash::Hash;
 
 /// A hash for uniquely identifying query execution units,
@@ -253,21 +254,16 @@ impl ExecutionUnit {
         ctx: &'a ExecutionContext<'a>,
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
-        tables: impl Iterator<Item = &'a DatabaseTableUpdate>,
+        tables: impl 'a + Clone + Iterator<Item = &'a DatabaseTableUpdate>,
     ) -> Result<Option<DatabaseTableUpdateCow<'a>>, DBError> {
-        let ops = match &self.eval_incr_plan {
-            EvalIncrPlan::Select(eval_incr_plan) => {
-                Self::eval_incr_query_expr(ctx, db, tx, tables, eval_incr_plan, self.return_table())?
-            }
-            EvalIncrPlan::Semijoin(eval_incr_plan) => eval_incr_plan
-                .eval(ctx, db, tx, tables)?
-                .map(Vec::<_>::from_iter)
-                .unwrap_or_default(),
+        let updates = match &self.eval_incr_plan {
+            EvalIncrPlan::Select(plan) => Self::eval_incr_query_expr(ctx, db, tx, tables, plan, self.return_table())?,
+            EvalIncrPlan::Semijoin(plan) => plan.eval(ctx, db, tx, tables)?,
         };
-        Ok((!ops.is_empty()).then(|| DatabaseTableUpdateCow {
+        Ok(updates.has_updates().then(|| DatabaseTableUpdateCow {
             table_id: self.return_table(),
             table_name: self.return_name(),
-            ops,
+            updates,
         }))
     }
 
@@ -275,11 +271,11 @@ impl ExecutionUnit {
         ctx: &'a ExecutionContext,
         db: &'a RelationalDB,
         tx: &'a TxMode,
-        mem_table: Vec<&'a ProductValue>,
+        mem_table: &'a [ProductValue],
         eval_incr_plan: &'a QueryExpr,
     ) -> Result<Box<IterRows<'a>>, DBError> {
         // Provide the updates from `table`.
-        let sources = &mut Some(mem_table.into_iter().map(RelValue::ProjRef));
+        let sources = &mut Some(mem_table.iter().map(RelValue::ProjRef));
         // Evaluate the saved plan against the new updates,
         // returning an iterator over the selected rows.
         build_query(ctx, db, tx, eval_incr_plan, sources).map_err(Into::into)
@@ -292,63 +288,35 @@ impl ExecutionUnit {
         tables: impl Iterator<Item = &'a DatabaseTableUpdate>,
         eval_incr_plan: &'a QueryExpr,
         return_table: TableId,
-    ) -> Result<Vec<TableOpCow<'a>>, DBError> {
+    ) -> Result<UpdatesCow<'a>, DBError> {
         assert!(
             eval_incr_plan.source.is_mem_table(),
             "Expected in-mem table in `eval_incr_plan`, but found `DbTable`"
         );
 
-        // Partition the `update` into two `MemTable`s, `(inserts, deletes)`,
-        // so that we can remember which are which without adding a column to each row.
-        // Previously, we used to add such a column `"__op_type: AlgebraicType::U8"`.
-        fn partition_updates(update: &DatabaseTableUpdate) -> (Option<Vec<&ProductValue>>, Option<Vec<&ProductValue>>) {
-            // Pre-allocate with capacity given by an upper bound,
-            // because realloc is worse than over-allocing.
-            let mut inserts = Vec::with_capacity(update.ops.len());
-            let mut deletes = Vec::with_capacity(update.ops.len());
-            for op in update.ops.iter() {
-                // 0 = delete, 1 = insert
-                if op.op_type == 0 { &mut deletes } else { &mut inserts }.push(&op.row);
-            }
-            (
-                (!inserts.is_empty()).then_some(inserts),
-                (!deletes.is_empty()).then_some(deletes),
-            )
-        }
-
-        let mut ops = Vec::new();
-
+        let mut deletes = Vec::new();
+        let mut inserts = Vec::new();
         for table in tables.filter(|table| table.table_id == return_table) {
             // Evaluate the query separately against inserts and deletes,
             // so that we can pass each row to the query engine unaltered,
             // without forgetting which are inserts and which are deletes.
-            // Then, collect the rows into the single `ops` vec,
-            // restoring the appropriate `op_type`.
-            let (inserts, deletes) = partition_updates(table);
-            if let Some(inserts) = inserts {
-                let query = Self::eval_query_expr_against_memtable(ctx, db, tx, inserts, eval_incr_plan)?;
-                // op_type 1: insert
-                Self::collect_rows_with_table_op(&mut ops, query, 1)?;
+            // Previously, we used to add such a column `"__op_type: AlgebraicType::U8"`.
+            if !table.inserts.is_empty() {
+                let query = Self::eval_query_expr_against_memtable(ctx, db, tx, &table.inserts, eval_incr_plan)?;
+                Self::collect_rows(&mut inserts, query)?;
             }
-            if let Some(deletes) = deletes {
-                let query = Self::eval_query_expr_against_memtable(ctx, db, tx, deletes, eval_incr_plan)?;
-                // op_type 0: delete
-                Self::collect_rows_with_table_op(&mut ops, query, 0)?;
+            if !table.deletes.is_empty() {
+                let query = Self::eval_query_expr_against_memtable(ctx, db, tx, &table.deletes, eval_incr_plan)?;
+                Self::collect_rows(&mut deletes, query)?;
             }
         }
-        Ok(ops)
+        Ok(UpdatesCow { deletes, inserts })
     }
 
-    /// Collect the results of `query` into a vec `into`,
-    /// annotating each as a `TableOp` with the `op_type`.
-    fn collect_rows_with_table_op<'a>(
-        into: &mut Vec<TableOpCow<'a>>,
-        mut query: Box<IterRows<'a>>,
-        op_type: u8,
-    ) -> Result<(), DBError> {
+    /// Collect the results of `query` into a vec `sink`.
+    fn collect_rows<'a>(sink: &mut Vec<Cow<'a, ProductValue>>, mut query: Box<IterRows<'a>>) -> Result<(), DBError> {
         while let Some(row) = query.next()? {
-            let row = row.into_product_value_cow();
-            into.push(TableOpCow { op_type, row });
+            sink.push(row.into_product_value_cow());
         }
         Ok(())
     }
