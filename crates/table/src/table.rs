@@ -115,7 +115,7 @@ impl TableInner {
     }
 }
 
-static_assert_size!(Table, 280);
+static_assert_size!(Table, 272);
 
 /// Various error that can happen on table insertion.
 #[derive(Error, Debug)]

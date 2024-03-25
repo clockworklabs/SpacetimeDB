@@ -13,6 +13,12 @@
 //! to a series of `memcpy`s, skipping over padding sequences.
 //! This is potentially much faster than the more general  [`crate::bflatn_from::serialize_row_from_page`],
 //! which traverses a [`RowTypeLayout`] and dispatches on the type of each column.
+//!
+//! For example, to serialize a row of type `(u64, u64, u32, u64)`,
+//! [`bflatn_from`] will do four dispatches, three calls to `serialize_u64` and one to `serialize_u32`.
+//! This module will make 2 `memcpy`s (or actually, `<[u8]>::copy_from_slice`s):
+//! one of 20 bytes to copy the leading `(u64, u64, u32)`, which contains no padding,
+//! and then one of 8 bytes to copy the trailing `u64`, skipping over 4 bytes of padding in between.
 
 use crate::{
     indexes::Bytes,
@@ -36,7 +42,7 @@ pub struct StaticBsatnLayout {
 
     /// A series of `memcpy` invocations from a BFLATN row into a BSATN buffer
     /// which are sufficient to BSATN serialize the row.
-    fields: Vec<MemcpyField>,
+    fields: Box<[MemcpyField]>,
 }
 
 impl StaticBsatnLayout {
@@ -47,7 +53,7 @@ impl StaticBsatnLayout {
     ///   for which `self` was computed.
     pub unsafe fn serialize_row_into(&self, buf: &mut [u8], row: &Bytes) {
         debug_assert!(buf.len() >= self.bsatn_length as usize);
-        for field in &self.fields {
+        for field in &self.fields[..] {
             // Safety: forward caller requirements.
             unsafe { field.copy(buf, row) };
         }
@@ -72,7 +78,7 @@ impl StaticBsatnLayout {
 /// Within the row type's BFLATN layout, `row[bflatn_offset .. (bflatn_offset + length)]`
 /// must not contain any padding bytes,
 /// i.e. all of those bytes must be fully initialized if the row is initialized.
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
 struct MemcpyField {
     /// Offset in the BFLATN row from which to begin `memcpy`ing, in bytes.
     bflatn_offset: u16,
@@ -129,6 +135,7 @@ impl LayoutBuilder {
         let LayoutBuilder { fields } = self;
         let fields: Vec<_> = fields.into_iter().filter(|field| !field.is_empty()).collect();
         let bsatn_length = fields.last().map(|last| last.bsatn_offset + last.length).unwrap_or(0);
+        let fields = fields.into_boxed_slice();
         StaticBsatnLayout { bsatn_length, fields }
     }
 
@@ -239,7 +246,7 @@ impl LayoutBuilder {
             length: 1,
         });
 
-        for payload_field in first_variant_layout.fields {
+        for payload_field in &first_variant_layout.fields[..] {
             self.fields.push(MemcpyField {
                 bflatn_offset: payload_bflatn_offset + payload_field.bflatn_offset,
                 bsatn_offset: payload_bsatn_offset + payload_field.bsatn_offset,
