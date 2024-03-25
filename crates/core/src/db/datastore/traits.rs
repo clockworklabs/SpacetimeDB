@@ -177,8 +177,6 @@ pub struct TxRecord {
     pub(crate) key: DataKey,
     /// The table that was modified.
     pub(crate) table_id: TableId,
-    /// The table that was modified.
-    pub(crate) table_name: String,
 }
 
 /// A record of all the operations within a transaction.
