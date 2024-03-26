@@ -646,7 +646,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
     block!(output, {
         writeln!(
             output,
-            "protected SpacetimeDBClient(ISpacetimeDBLogger loggerToUse) : base(loggerToUse)"
+            "protected SpacetimeDBClient()"
         )
         .unwrap();
         block!(output, {
@@ -663,22 +663,8 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
         });
         writeln!(output).unwrap();
 
-        writeln!(output, "private static SpacetimeDBClient? _instance;").unwrap();
         // TODO: a better way to handle uninstantiated case without adding cost to each access?
-        writeln!(output, "public static SpacetimeDBClient instance => _instance!;").unwrap();
-        writeln!(
-            output,
-            "public static void CreateInstance(ISpacetimeDBLogger loggerToUse)"
-        )
-        .unwrap();
-        block!(output, {
-            writeln!(
-                output,
-                r#"if (_instance != null) throw new Exception("SpacetimeDBClient.CreateInstance has already been called.");"#
-            )
-            .unwrap();
-            writeln!(output, "_instance = new SpacetimeDBClient(loggerToUse);").unwrap();
-        });
+        writeln!(output, "public static readonly SpacetimeDBClient instance = new();").unwrap();
         writeln!(output).unwrap();
 
         writeln!(
@@ -710,11 +696,6 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
     writeln!(output, "#if UNITY_5_3_OR_NEWER").unwrap();
     writeln!(output, "public class NetworkManager : UnityEngine.MonoBehaviour").unwrap();
     block!(output, {
-        writeln!(
-            output,
-            "protected void Awake() => SpacetimeDBClient.CreateInstance(new UnityDebugLogger());"
-        )
-        .unwrap();
         writeln!(
             output,
             "private void OnDestroy() => SpacetimeDBClient.instance.Close();"
