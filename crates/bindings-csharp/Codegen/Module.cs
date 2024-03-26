@@ -26,89 +26,86 @@ public class Module : IIncrementalGenerator
 {
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        var tables = context
-            .SyntaxProvider
-            .ForAttributeWithMetadataName(
-                fullyQualifiedMetadataName: "SpacetimeDB.TableAttribute",
-                predicate: (node, ct) => true, // already covered by attribute restrictions
-                transform: (context, ct) =>
-                {
-                    var table = (TypeDeclarationSyntax)context.TargetNode;
+        var tables = context.SyntaxProvider.ForAttributeWithMetadataName(
+            fullyQualifiedMetadataName: "SpacetimeDB.TableAttribute",
+            predicate: (node, ct) => true, // already covered by attribute restrictions
+            transform: (context, ct) =>
+            {
+                var table = (TypeDeclarationSyntax)context.TargetNode;
 
-                    var resolvedTable =
-                        (ITypeSymbol?)context.SemanticModel.GetDeclaredSymbol(table)
-                        ?? throw new System.Exception("Could not resolve table");
+                var resolvedTable =
+                    (ITypeSymbol?)context.SemanticModel.GetDeclaredSymbol(table)
+                    ?? throw new System.Exception("Could not resolve table");
 
-                    var fields = resolvedTable
-                        .GetMembers()
-                        .OfType<IFieldSymbol>()
-                        .Where(f => !f.IsStatic)
-                        .Select(f =>
-                        {
-                            var indexKind = f.GetAttributes()
-                                .Where(
-                                    a =>
-                                        a.AttributeClass?.ToDisplayString()
-                                        == "SpacetimeDB.ColumnAttribute"
-                                )
-                                .Select(a => (ColumnAttrs)a.ConstructorArguments[0].Value!)
-                                .SingleOrDefault();
-
-                            if (indexKind.HasFlag(ColumnAttrs.AutoInc))
-                            {
-                                var isValidForAutoInc = f.Type.SpecialType switch
-                                {
-                                    SpecialType.System_Byte
-                                    or SpecialType.System_SByte
-                                    or SpecialType.System_Int16
-                                    or SpecialType.System_UInt16
-                                    or SpecialType.System_Int32
-                                    or SpecialType.System_UInt32
-                                    or SpecialType.System_Int64
-                                    or SpecialType.System_UInt64
-                                        => true,
-                                    SpecialType.None
-                                        => f.Type.ToString() switch
-                                        {
-                                            "System.Int128" or "System.UInt128" => true,
-                                            _ => false
-                                        },
-                                    _ => false
-                                };
-
-                                if (!isValidForAutoInc)
-                                {
-                                    throw new System.Exception(
-                                        $"Type {f.Type} is not valid for AutoInc or Identity as it's not an integer."
-                                    );
-                                }
-                            }
-
-                            return (
-                                Name: f.Name,
-                                Type: SymbolToName(f.Type),
-                                TypeInfo: GetTypeInfo(f.Type),
-                                IndexKind: indexKind
-                            );
-                        })
-                        .ToArray();
-
-                    return new
+                var fields = resolvedTable
+                    .GetMembers()
+                    .OfType<IFieldSymbol>()
+                    .Where(f => !f.IsStatic)
+                    .Select(f =>
                     {
-                        Scope = new Scope(table),
-                        Name = table.Identifier.Text,
-                        FullName = SymbolToName(context.SemanticModel.GetDeclaredSymbol(table)!),
-                        Fields = fields,
-                    };
-                }
-            );
+                        var indexKind = f.GetAttributes()
+                            .Where(a =>
+                                a.AttributeClass?.ToDisplayString() == "SpacetimeDB.ColumnAttribute"
+                            )
+                            .Select(a => (ColumnAttrs)a.ConstructorArguments[0].Value!)
+                            .SingleOrDefault();
+
+                        if (indexKind.HasFlag(ColumnAttrs.AutoInc))
+                        {
+                            var isValidForAutoInc = f.Type.SpecialType switch
+                            {
+                                SpecialType.System_Byte
+                                or SpecialType.System_SByte
+                                or SpecialType.System_Int16
+                                or SpecialType.System_UInt16
+                                or SpecialType.System_Int32
+                                or SpecialType.System_UInt32
+                                or SpecialType.System_Int64
+                                or SpecialType.System_UInt64
+                                    => true,
+                                SpecialType.None
+                                    => f.Type.ToString() switch
+                                    {
+                                        "System.Int128" or "System.UInt128" => true,
+                                        _ => false
+                                    },
+                                _ => false
+                            };
+
+                            if (!isValidForAutoInc)
+                            {
+                                throw new System.Exception(
+                                    $"Type {f.Type} is not valid for AutoInc or Identity as it's not an integer."
+                                );
+                            }
+                        }
+
+                        return (
+                            Name: f.Name,
+                            Type: SymbolToName(f.Type),
+                            TypeInfo: GetTypeInfo(f.Type),
+                            IndexKind: indexKind
+                        );
+                    })
+                    .ToArray();
+
+                return new
+                {
+                    Scope = new Scope(table),
+                    Name = table.Identifier.Text,
+                    FullName = SymbolToName(context.SemanticModel.GetDeclaredSymbol(table)!),
+                    Fields = fields,
+                };
+            }
+        );
 
         tables
             .Select(
                 (t, ct) =>
                 {
-                    var autoIncFields = t.Fields
-                        .Where(f => f.IndexKind.HasFlag(ColumnAttrs.AutoInc))
+                    var autoIncFields = t.Fields.Where(f =>
+                        f.IndexKind.HasFlag(ColumnAttrs.AutoInc)
+                    )
                         .Select(f => f.Name);
 
                     var extensions =
@@ -197,50 +194,44 @@ public class Module : IIncrementalGenerator
 
         var tableNames = tables.Select((t, ct) => t.FullName).Collect();
 
-        var reducers = context
-            .SyntaxProvider
-            .ForAttributeWithMetadataName(
-                fullyQualifiedMetadataName: "SpacetimeDB.ReducerAttribute",
-                predicate: (node, ct) => true, // already covered by attribute restrictions
-                transform: (context, ct) =>
+        var reducers = context.SyntaxProvider.ForAttributeWithMetadataName(
+            fullyQualifiedMetadataName: "SpacetimeDB.ReducerAttribute",
+            predicate: (node, ct) => true, // already covered by attribute restrictions
+            transform: (context, ct) =>
+            {
+                var method = (IMethodSymbol)
+                    context.SemanticModel.GetDeclaredSymbol(context.TargetNode)!;
+
+                if (!method.ReturnsVoid)
                 {
-                    var method = (IMethodSymbol)
-                        context.SemanticModel.GetDeclaredSymbol(context.TargetNode)!;
-
-                    if (!method.ReturnsVoid)
-                    {
-                        throw new System.Exception($"Reducer {method} must return void");
-                    }
-
-                    var exportName = (string?)
-                        context
-                            .Attributes
-                            .SingleOrDefault()
-                            ?.ConstructorArguments
-                            .SingleOrDefault()
-                            .Value;
-
-                    return new
-                    {
-                        Name = method.Name,
-                        ExportName = exportName ?? method.Name,
-                        FullName = SymbolToName(method),
-                        Args = method
-                            .Parameters
-                            .Select(
-                                p =>
-                                    (
-                                        p.Name,
-                                        p.Type,
-                                        IsDbEvent: p.Type.ToString()
-                                            == "SpacetimeDB.Runtime.DbEventArgs"
-                                    )
-                            )
-                            .ToArray(),
-                        Scope = new Scope((TypeDeclarationSyntax)context.TargetNode.Parent!)
-                    };
+                    throw new System.Exception($"Reducer {method} must return void");
                 }
-            );
+
+                var exportName = (string?)
+                    context
+                        .Attributes.SingleOrDefault()
+                        ?.ConstructorArguments
+                        .SingleOrDefault()
+                        .Value;
+
+                return new
+                {
+                    Name = method.Name,
+                    ExportName = exportName ?? method.Name,
+                    FullName = SymbolToName(method),
+                    Args = method
+                        .Parameters.Select(p =>
+                            (
+                                p.Name,
+                                p.Type,
+                                IsDbEvent: p.Type.ToString() == "SpacetimeDB.Runtime.DbEventArgs"
+                            )
+                        )
+                        .ToArray(),
+                    Scope = new Scope((TypeDeclarationSyntax)context.TargetNode.Parent!)
+                };
+            }
+        );
 
         var addReducers = reducers
             .Select(
@@ -292,6 +283,8 @@ public class Module : IIncrementalGenerator
             using System.Runtime.InteropServices;
             using static SpacetimeDB.Runtime;
             using System.Diagnostics.CodeAnalysis;
+
+            using Buffer = SpacetimeDB.RawBindings.Buffer;
 
             static class ModuleRegistration {{
                 {string.Join("\n", addReducers.Select(r => r.Class))}
