@@ -171,7 +171,7 @@ jobs:
     timeout-minutes: 20 # on a successful run, runs in 8 minutes
     container:
       image: rust:1.76
-    options: --privileged
+      options: --privileged
     # filter for a comment containing 'benchmarks please'
     if: ${{ github.event_name != 'issue_comment' || (github.event.issue.pull_request && contains(github.event.comment.body, 'benchmarks please')) }}
     env:
