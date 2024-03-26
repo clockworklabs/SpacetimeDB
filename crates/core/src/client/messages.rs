@@ -28,13 +28,19 @@ pub trait ServerMessage: Sized {
                 let msg_bytes = self.serialize_binary().encode_to_vec();
                 let reader = &mut &msg_bytes[..];
 
+                // TODO(perf): Compression should depend on message size and type.
+                //
                 // SubscriptionUpdate messages will typically be quite large,
-                // so we choose a relatively large buffer size,
-                // in this case 128KB,
-                // to optimize for compression speed.
-                // TODO(perf,bikeshedding): Measure whether allocating a large buffer here is expensive,
-                // and adjust buffer size accordingly.
-                const BUFFER_SIZE: usize = 128 * 1024;
+                // while TransactionUpdate messages will typically be quite small.
+                //
+                // If we are optimizing for SubscriptionUpdates,
+                // we want a large buffer.
+                // But if we are optimizing for TransactionUpdates,
+                // we probably want to skip compression altogether.
+                //
+                // For now we choose a reasonable middle ground,
+                // which is to compress everything using a 32KB buffer.
+                const BUFFER_SIZE: usize = 32 * 1024;
                 // Again we are optimizing for compression speed,
                 // so we choose the lowest (fastest) level of compression.
                 const COMPRESSION_LEVEL: u32 = 1;
