@@ -9,9 +9,10 @@ use futures::{FutureExt, SinkExt, StreamExt};
 use http::{HeaderValue, StatusCode};
 use scopeguard::ScopeGuard;
 use serde::Deserialize;
-use spacetimedb::client::messages::{IdentityTokenMessage, ServerMessage};
+use spacetimedb::client::messages::{IdentityTokenMessage, SerializableMessage, ServerMessage};
 use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, MessageHandleError, Protocol};
 use spacetimedb::util::{also_poll, future_queue};
+use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_lib::address::AddressForUrl;
 use spacetimedb_lib::Address;
 use std::time::Instant;
@@ -168,7 +169,7 @@ where
 
 const LIVELINESS_TIMEOUT: Duration = Duration::from_secs(60);
 
-async fn ws_client_actor(client: ClientConnection, ws: WebSocketStream, sendrx: mpsc::Receiver<DataMessage>) {
+async fn ws_client_actor(client: ClientConnection, ws: WebSocketStream, sendrx: mpsc::Receiver<SerializableMessage>) {
     // ensure that even if this task gets cancelled, we always cleanup the connection
     let client = scopeguard::guard(client, |client| {
         tokio::spawn(client.disconnect());
@@ -182,7 +183,7 @@ async fn ws_client_actor(client: ClientConnection, ws: WebSocketStream, sendrx: 
 async fn ws_client_actor_inner(
     client: &ClientConnection,
     mut ws: WebSocketStream,
-    mut sendrx: mpsc::Receiver<DataMessage>,
+    mut sendrx: mpsc::Receiver<SerializableMessage>,
 ) {
     let mut liveness_check_interval = tokio::time::interval(LIVELINESS_TIMEOUT);
     let mut got_pong = true;
@@ -240,7 +241,10 @@ async fn ws_client_actor_inner(
                     log::info!("dropping messages due to ws already being closed: {:?}", &rx_buf[..n]);
                 } else {
                     let send_all = async {
-                        for msg in rx_buf.drain(..n).map(datamsg_to_wsmsg) {
+                        let id = client.id.identity;
+                        for msg in rx_buf.drain(..n).map(|msg| datamsg_to_wsmsg(msg.serialize(client.protocol))) {
+                            WORKER_METRICS.websocket_sent.with_label_values(&id).inc();
+                            WORKER_METRICS.websocket_sent_msg_size.with_label_values(&id).observe(msg.len() as f64);
                             // feed() buffers the message, but does not necessarily send it
                             ws.feed(msg).await?;
                         }
