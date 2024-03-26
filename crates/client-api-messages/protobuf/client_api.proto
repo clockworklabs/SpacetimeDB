@@ -30,13 +30,23 @@ message Message {
         OneOffQuery oneOffQuery = 7;
         // database -> client, return results to a one off SQL query.
         OneOffQueryResponse oneOffQueryResponse = 8;
-        // database -> client, a `SubscriptionUpdate` message in response to a `Subscribe`,
+        // database -> client, a `SubscriptionApplied` message in response to a `Subscribe`,
         // compressed with Brotli.
-        //
-        // Note that the bytes here are a (Brotli-compressed) `SubscriptionUpdate`,
-        // not a `Message` whose `type` is `subscriptionUpdate`.
         bytes compressedSubscriptionUpdate = 9;
     }
+}
+
+message SubscriptionApplied {
+  repeated TableSubResponse tables = 1;
+  uint32 requestId = 2;
+  uint64 total_host_execution_duration_micros = 3;
+}
+
+message TableSubResponse {
+  uint32 tableId = 1;
+  string tableName = 2;
+  // BSATN encoding of all response rows concatenated together.
+  bytes bsatnRows = 3;
 }
 
 /// Received by database from client to inform of user's identity, token and client address.
