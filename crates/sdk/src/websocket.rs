@@ -1,5 +1,6 @@
 use crate::identity::Credentials;
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
+use brotli::BrotliDecompress;
 use futures::{SinkExt, StreamExt, TryStreamExt};
 use futures_channel::mpsc;
 use http::uri::{Scheme, Uri};
@@ -151,7 +152,9 @@ impl DbConnection {
     }
 
     pub(crate) fn parse_response(bytes: &[u8]) -> Result<Message> {
-        Ok(Message::decode(bytes)?)
+        let mut decompressed = Vec::new();
+        BrotliDecompress(&mut &bytes[..], &mut decompressed).context("Failed to Brotli decompress message")?;
+        Ok(Message::decode(&decompressed[..])?)
     }
 
     pub(crate) fn encode_message(msg: Message) -> WebSocketMessage {

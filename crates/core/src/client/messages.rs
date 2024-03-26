@@ -1,6 +1,8 @@
 use base64::Engine;
+use brotli::CompressorReader;
 use prost::Message as _;
 use spacetimedb_lib::identity::RequestId;
+use std::io::Read;
 use std::time::Instant;
 
 use crate::host::module_host::{EventStatus, ModuleEvent, ProtocolDatabaseUpdate};
@@ -22,7 +24,38 @@ pub trait ServerMessage: Sized {
     fn serialize(self, protocol: Protocol) -> DataMessage {
         match protocol {
             Protocol::Text => self.serialize_text().to_json().into(),
-            Protocol::Binary => self.serialize_binary().encode_to_vec().into(),
+            Protocol::Binary => {
+                let msg_bytes = self.serialize_binary().encode_to_vec();
+                let reader = &mut &msg_bytes[..];
+
+                // TODO(perf): Compression should depend on message size and type.
+                //
+                // SubscriptionUpdate messages will typically be quite large,
+                // while TransactionUpdate messages will typically be quite small.
+                //
+                // If we are optimizing for SubscriptionUpdates,
+                // we want a large buffer.
+                // But if we are optimizing for TransactionUpdates,
+                // we probably want to skip compression altogether.
+                //
+                // For now we choose a reasonable middle ground,
+                // which is to compress everything using a 32KB buffer.
+                const BUFFER_SIZE: usize = 32 * 1024;
+                // Again we are optimizing for compression speed,
+                // so we choose the lowest (fastest) level of compression.
+                const COMPRESSION_LEVEL: u32 = 1;
+                // The default value for an internal compression parameter.
+                // See `BrotliEncoderParams` for more details.
+                const LG_WIN: u32 = 22;
+
+                let mut encoder = CompressorReader::new(reader, BUFFER_SIZE, COMPRESSION_LEVEL, LG_WIN);
+
+                let mut out = Vec::new();
+                encoder
+                    .read_to_end(&mut out)
+                    .expect("Failed to Brotli compress `SubscriptionUpdateMessage`");
+                out.into()
+            }
         }
     }
     fn serialize_text(self) -> MessageJson;
