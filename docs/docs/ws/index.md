@@ -21,7 +21,7 @@ Clients connecting via WebSocket can choose between two protocols, [`v1.bin.spac
 
 ### Binary Protocol
 
-The SpacetimeDB binary WebSocket protocol, `v1.bin.spacetimedb`, encodes messages using [ProtoBuf 3](https://protobuf.dev), and reducer and row data using [BSATN](/docs/bsatn).
+The SpacetimeDB binary WebSocket protocol, `v1.bin.spacetimedb`, encodes messages using [ProtoBuf 3](https://protobuf.dev), and reducer and row data using [BSATN](/docs/bsatn). All messages sent by the server to the client are compressed using [brotli](https://github.com/google/brotli). Messages received by the server from the client should not be compressed.
 
 The binary protocol's messages are defined in [`client_api.proto`](https://github.com/clockworklabs/SpacetimeDB/blob/master/crates/client-api-messages/protobuf/client_api.proto).
 
