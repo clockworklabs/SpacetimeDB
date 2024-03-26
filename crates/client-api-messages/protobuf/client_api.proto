@@ -10,8 +10,13 @@ message Message {
     oneof type {
         // client -> database, request a reducer run.
         FunctionCall functionCall = 1;
-        // database -> client, contained in `TransactionUpdate`, informs of changes to
-        // subscribed rows.
+        // database -> client, response to `Subscribe` containing all matching committed rows.
+        // Also contained in `TransactionUpdate`, where it informs of changes to subscribed rows
+        // resulting from a TX.
+        //
+        // Currently (2024-03-26) never sent by the server in this form;
+        // rather, the `SubscriptionUpdate` is encoded as bytes, Brotli compressed,
+        // and sent as a `compressedSubscriptionUpdate`.
         SubscriptionUpdate subscriptionUpdate = 2;
         // database -> client, contained in `TransactionUpdate`, describes a reducer run.
         Event event = 3;
@@ -25,6 +30,12 @@ message Message {
         OneOffQuery oneOffQuery = 7;
         // database -> client, return results to a one off SQL query.
         OneOffQueryResponse oneOffQueryResponse = 8;
+        // database -> client, a `SubscriptionUpdate` message in response to a `Subscribe`,
+        // compressed with Brotli.
+        //
+        // Note that the bytes here are a (Brotli-compressed) `SubscriptionUpdate`,
+        // not a `Message` whose `type` is `subscriptionUpdate`.
+        bytes compressedSubscriptionUpdate = 9;
     }
 }
 

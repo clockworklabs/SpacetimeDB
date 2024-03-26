@@ -4,7 +4,7 @@ use futures::{SinkExt, StreamExt, TryStreamExt};
 use futures_channel::mpsc;
 use http::uri::{Scheme, Uri};
 use prost::Message as ProtobufMessage;
-use spacetimedb_client_api_messages::client_api::Message;
+use spacetimedb_client_api_messages::client_api::{message, Message, SubscriptionUpdate};
 use spacetimedb_lib::Address;
 use tokio::task::JoinHandle;
 use tokio::{net::TcpStream, runtime};
@@ -151,7 +151,16 @@ impl DbConnection {
     }
 
     pub(crate) fn parse_response(bytes: &[u8]) -> Result<Message> {
-        Ok(Message::decode(bytes)?)
+        match Message::decode(bytes)? {
+            Message {
+                r#type: Some(message::Type::CompressedSubscriptionUpdate(bytes)),
+            } => Ok(Message {
+                r#type: Some(message::Type::SubscriptionUpdate(SubscriptionUpdate::decode(
+                    &bytes[..],
+                )?)),
+            }),
+            msg => Ok(msg),
+        }
     }
 
     pub(crate) fn encode_message(msg: Message) -> WebSocketMessage {

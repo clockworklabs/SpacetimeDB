@@ -106,6 +106,7 @@ base64 = "0.21.2"
 bitflags = "2.3.3"
 bit-vec = "0.6"
 blake3 = "1.5"
+brotli = "3.5"
 byte-unit = "4.0.18"
 bytes = "1.2.1"
 bytestring = { version = "1.2.0", features = ["serde"] }
@@ -222,7 +223,6 @@ urlencoding = "2.1.2"
 uuid = { version = "1.2.1", features = ["v4"] }
 walkdir = "2.2.5"
 wasmbin = "0.6"
-
 
 wasmtime = { version = "15", default-features = false, features = ["cranelift", "demangle", "addr2line", "cache"] }
 

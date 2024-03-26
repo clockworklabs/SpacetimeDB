@@ -1,4 +1,6 @@
 use base64::Engine;
+use brotli::enc::BrotliEncoderParams;
+use brotli::BrotliCompress;
 use prost::Message as _;
 use spacetimedb_lib::identity::RequestId;
 use std::time::Instant;
@@ -152,8 +154,21 @@ impl ServerMessage for SubscriptionUpdateMessage {
     }
 
     fn serialize_binary(self) -> Message {
-        let msg = self.subscription_update.into_protobuf();
-        let r#type = Some(message::Type::SubscriptionUpdate(msg));
+        // TODO(perf): Avoid allocating an uncompressed `Vec<u8>` here;
+        // write directly into the `BrotliCompress` stream.
+        let msg = self.subscription_update.into_protobuf().encode_to_vec();
+        let mut out = Vec::new();
+        BrotliCompress(
+            &mut &msg[..],
+            &mut out,
+            &BrotliEncoderParams {
+                quality: 1,
+                ..Default::default()
+            },
+        )
+        .expect("Failed to Brotli compress `SubscriptionUpdateMessage`");
+        let r#type = Some(message::Type::CompressedSubscriptionUpdate(msg));
+
         Message { r#type }
     }
 }
