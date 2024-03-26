@@ -321,6 +321,7 @@ fn compile_expr_value(table: &From, field: Option<&ProductTypeElement>, of: SqlE
             Value::Number(value, is_long) => infer_number(field, &value, is_long)?,
             Value::SingleQuotedString(s) => AlgebraicValue::String(s),
             Value::DoubleQuotedString(s) => AlgebraicValue::String(s),
+            Value::HexStringLiteral(s) => AlgebraicValue::String(s),
             Value::Boolean(x) => AlgebraicValue::Bool(x),
             Value::Null => AlgebraicValue::OptionNone(),
             x => {

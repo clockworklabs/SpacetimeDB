@@ -1,4 +1,5 @@
 use crate::errors::{ErrorType, ErrorVm};
+use spacetimedb_lib::{Address, Identity};
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use std::fmt::Display;
@@ -48,6 +49,20 @@ pub fn parse(value: &str, ty: &AlgebraicType) -> Result<AlgebraicValue, ErrorVm>
         &AlgebraicType::F32 => _parse::<f32>(value, ty),
         &AlgebraicType::F64 => _parse::<f64>(value, ty),
         &AlgebraicType::String => Ok(AlgebraicValue::String(value.to_string())),
+        AlgebraicType::Product(x) => {
+            if x.is_identity() {
+                return Ok(Identity::from_hex(value)
+                    .map_err(|err| ErrorVm::Other(err.into()))?
+                    .into());
+            }
+            if x.is_address() {
+                return Ok(Address::from_hex(value).map_err(ErrorVm::Other)?.into());
+            }
+            Err(ErrorVm::Unsupported(format!(
+                "Can't parse '{value}' to {}",
+                x.to_satn_pretty()
+            )))
+        }
         x => Err(ErrorVm::Unsupported(format!(
             "Can't parse '{value}' to {}",
             x.to_satn_pretty()
