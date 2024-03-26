@@ -4278,6 +4278,7 @@ name = "spacetimedb"
 version = "0.8.2"
 dependencies = [
  "bytes",
+ "chrono",
  "derive_more",
  "log",
  "once_cell",
