@@ -173,7 +173,7 @@ pub(crate) trait StateView {
 }
 
 pub struct Iter<'a> {
-    ctx: &'a ExecutionContext<'a>,
+    ctx: &'a ExecutionContext,
     table_id: TableId,
     tx_state: Option<&'a TxState>,
     committed_state: &'a CommittedState,
@@ -320,7 +320,7 @@ impl<'a> Iterator for Iter<'a> {
 }
 
 pub struct IndexSeekIterMutTxId<'a> {
-    pub(crate) ctx: &'a ExecutionContext<'a>,
+    pub(crate) ctx: &'a ExecutionContext,
     pub(crate) table_id: TableId,
     pub(crate) tx_state: &'a TxState,
     pub(crate) committed_state: &'a CommittedState,

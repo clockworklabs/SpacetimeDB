@@ -531,7 +531,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         };
 
         let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable));
-        let tx_slot = self.instance.instance_env().tx.clone();
+        let mut tx_slot = self.instance.instance_env().tx.clone();
 
         let reducer_span = tracing::trace_span!(
             "run_reducer",
@@ -540,10 +540,10 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             energy.used = tracing::field::Empty,
         )
         .entered();
-
+        let ctx = ExecutionContext::reducer(address, reducer_name.to_owned());
         // run the call_reducer call in rayon. it's important that we don't acquire a lock inside a rayon task,
         // as that can lead to deadlock.
-        let (tx, result) = rayon::scope(|_| tx_slot.set(tx, || self.instance.call_reducer(op, budget)));
+        let (ctx, tx, result) = rayon::scope(|_| tx_slot.set(ctx, tx, || self.instance.call_reducer(op, budget)));
 
         let ExecuteResult {
             energy,
@@ -578,8 +578,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         // the tx, someone adds a subscription and receives this tx as an initial update, and then receives the
         // update again when we broadcast_event.
         let subscriptions = self.info.subscriptions.subscriptions.read();
-
-        let ctx = ExecutionContext::reducer(address, reducer_name);
         let status = match call_result {
             Err(err) => {
                 stdb.rollback_mut_tx(&ctx, tx);
