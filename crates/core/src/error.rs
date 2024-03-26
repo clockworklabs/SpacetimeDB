@@ -1,3 +1,4 @@
+use core::fmt;
 use std::io;
 use std::num::ParseIntError;
 use std::path::PathBuf;
@@ -18,7 +19,6 @@ use spacetimedb_sats::db::def::IndexDef;
 use spacetimedb_sats::db::error::{LibError, RelationError, SchemaErrors};
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::product_value::InvalidFieldError;
-use spacetimedb_sats::relation::FieldName;
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_vm::errors::{ErrorKind, ErrorLang, ErrorVm};
 use spacetimedb_vm::expr::Crud;
@@ -98,6 +98,19 @@ pub enum SubscriptionError {
     Unsupported(String),
 }
 
+#[derive(Debug)]
+pub struct FieldNameStr {
+    pub table: String,
+    pub field: String,
+}
+
+impl fmt::Display for FieldNameStr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self { table, field } = self;
+        write!(f, "{table}.{field}")
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum PlanError {
     #[error("Unsupported feature: `{feature}`")]
@@ -107,14 +120,14 @@ pub enum PlanError {
     #[error("Qualified Table `{expect}` not found")]
     TableNotFoundQualified { expect: String },
     #[error("Unknown field: `{field}` not found in the table(s): `{tables:?}`")]
-    UnknownField { field: FieldName, tables: Vec<String> },
+    UnknownField { field: FieldNameStr, tables: Vec<String> },
     #[error("Field(s): `{fields:?}` not found in the table(s): `{tables:?}`")]
     UnknownFields {
-        fields: Vec<FieldName>,
+        fields: Vec<FieldNameStr>,
         tables: Vec<String>,
     },
     #[error("Ambiguous field: `{field}`. Also found in {found:?}")]
-    AmbiguousField { field: String, found: Vec<FieldName> },
+    AmbiguousField { field: String, found: Vec<FieldNameStr> },
     #[error("Plan error: `{0}`")]
     Unstructured(String),
     #[error("Internal DBError: `{0}`")]

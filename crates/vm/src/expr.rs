@@ -1842,7 +1842,7 @@ impl fmt::Display for SourceExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SourceExpr::MemTable { header, source_id, .. } => {
-                let ty = AlgebraicType::Product(header.ty());
+                let ty = AlgebraicType::Product(header.to_product_type());
                 write!(f, "SourceExpr({source_id:?} => virtual {ty:?})")
             }
             SourceExpr::DbTable(x) => {

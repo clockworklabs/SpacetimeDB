@@ -332,11 +332,11 @@ impl InstanceEnv {
                     op: OpQuery::Cmp(op),
                     lhs: Box::new(ColumnOp::Field(FieldExpr::Name(FieldName::positional(
                         table_name,
-                        lhs_field as usize,
+                        lhs_field.into(),
                     )))),
                     rhs: Box::new(ColumnOp::Field(match rhs {
                         filter::Rhs::Field(rhs_field) => {
-                            FieldExpr::Name(FieldName::positional(table_name, rhs_field as usize))
+                            FieldExpr::Name(FieldName::positional(table_name, rhs_field.into()))
                         }
                         filter::Rhs::Value(rhs_value) => FieldExpr::Value(rhs_value),
                     })),

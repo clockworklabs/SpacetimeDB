@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
-use crate::error::{DBError, PlanError};
+use crate::error::{DBError, FieldNameStr, PlanError};
 use spacetimedb_primitives::{ColList, ConstraintKind, Constraints};
 use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::db::def::{ColumnDef, ColumnSchema, ConstraintDef, FieldDef, TableDef, TableSchema};
@@ -111,6 +111,7 @@ impl Selection {
     }
 }
 
+#[derive(Debug)]
 pub struct OnExpr {
     pub op: OpCmp,
     pub lhs: FieldName,
@@ -118,10 +119,12 @@ pub struct OnExpr {
 }
 
 /// The `JOIN [INNER] ON join_expr OpCmp join_expr` clause
+#[derive(Debug)]
 pub enum Join {
     Inner { rhs: TableSchema, on: OnExpr },
 }
 
+#[derive(Debug)]
 /// The list of tables in `... FROM table1 [JOIN table2] ...`
 pub struct From {
     pub root: TableSchema,
@@ -200,11 +203,20 @@ impl From {
             .filter(|(_, col)| col.col_name == field.field)
             .collect();
 
+        dbg!(self.iter_columns().map(|(_, col)| col).collect::<Vec<_>>());
+        dbg!(f);
+
+        if f == "location.1" {
+            panic!();
+        }
         match fields.len() {
-            0 => Err(PlanError::UnknownField {
-                field: FieldName::named(field.table.unwrap_or("?"), field.field),
+            0 => dbg!(Err(PlanError::UnknownField {
+                field: FieldNameStr {
+                    table: field.table.unwrap_or("?").to_string(),
+                    field: field.field.into(),
+                },
                 tables: self.table_names(),
-            }),
+            })),
             1 => {
                 let (table, column) = &fields[0];
                 Ok(FieldDef {
@@ -220,17 +232,23 @@ impl From {
                             table_name: &table.table_name,
                         })
                     } else {
-                        Err(PlanError::UnknownField {
-                            field: FieldName::named(field.table.unwrap_or("?"), field.field),
+                        dbg!(Err(PlanError::UnknownField {
+                            field: FieldNameStr {
+                                table: field.table.unwrap_or("?").to_string(),
+                                field: field.field.into(),
+                            },
                             tables: self.table_names(),
-                        })
+                        }))
                     }
                 } else {
                     Err(PlanError::AmbiguousField {
                         field: f.into(),
                         found: fields
                             .iter()
-                            .map(|(table, column)| FieldName::named(&table.table_name, &column.col_name))
+                            .map(|(table, column)| FieldNameStr {
+                                table: table.table_name.clone(),
+                                field: column.col_name.clone(),
+                            })
                             .collect(),
                     })
                 }
@@ -277,6 +295,7 @@ fn extract_field(table: &From, of: &SqlExpr) -> Result<Option<ProductTypeElement
             Ok(Some(f.into()))
         }
         SqlExpr::CompoundIdentifier(ident) => {
+            dbg!(of);
             let col_name = compound_ident(ident);
             let f = table.find_field(&col_name)?;
             Ok(Some(f.into()))
@@ -665,7 +684,10 @@ fn compile_insert<T: TableSchemaView>(
 
     let columns = columns
         .into_iter()
-        .map(|x| FieldName::named(&table.table_name, &x.to_string()))
+        .map(|x| {
+            let col = table.get_column_by_name(&x.to_string()).unwrap();
+            FieldName::positional(&table.table_name, col.col_pos)
+        })
         .collect();
 
     let table = From::new(table);
@@ -704,9 +726,18 @@ fn compile_update<T: TableSchemaView>(
     for col in assignments {
         let name: String = col.id.iter().map(|x| x.to_string()).collect();
 
-        let field = table.root.get_column_by_name(&name).map(ProductTypeElement::from);
-        let value = compile_expr_field(&table, field.as_ref(), col.value)?;
-        x.insert(FieldName::named(&table.root.table_name, &name), value);
+        let Some(column) = table.root.get_column_by_name(&name) else {
+            return Err(PlanError::UnknownField {
+                tables: table.table_names(),
+                field: FieldNameStr {
+                    table: table.root.table_name,
+                    field: name,
+                },
+            });
+        };
+        let field = ProductTypeElement::from(column);
+        let value = compile_expr_field(&table, Some(&field), col.value)?;
+        x.insert(FieldName::positional(&table.root.table_name, column.col_pos), value);
     }
 
     Ok(SqlAst::Update {

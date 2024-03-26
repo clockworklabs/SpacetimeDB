@@ -2,7 +2,7 @@ use crate::algebraic_value::AlgebraicValue;
 use crate::db::auth::{StAccess, StTableType};
 use crate::db::error::RelationError;
 use crate::satn::Satn;
-use crate::{algebraic_type, AlgebraicType, ProductType, ProductTypeElement, Typespace, WithTypespace};
+use crate::{algebraic_type, AlgebraicType, ProductType, Typespace, WithTypespace};
 use derive_more::From;
 use spacetimedb_primitives::{ColId, ColList, ColListBuilder, Constraints, TableId};
 use std::collections::hash_map::DefaultHasher;
@@ -35,71 +35,34 @@ pub fn extract_table_field(ident: &str) -> Result<TableField, RelationError> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
-pub enum FieldOnly<'a> {
-    Name(&'a str),
-    Pos(usize),
-}
-
-impl fmt::Display for FieldOnly<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            FieldOnly::Name(x) => {
-                write!(f, "{x}")
-            }
-            FieldOnly::Pos(x) => {
-                write!(f, "{x}")
-            }
-        }
-    }
-}
-
 // TODO(perf): Remove `Clone` derivation.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-pub enum FieldName {
-    Name { table: String, field: String },
-    Pos { table: String, field: usize },
+pub struct FieldName {
+    table: String,
+    field: ColId,
 }
 
 impl FieldName {
-    pub fn named(table: &str, field: &str) -> Self {
-        Self::Name {
-            table: table.to_string(),
-            field: field.to_string(),
-        }
-    }
-
-    pub fn positional(table: &str, field: usize) -> Self {
-        Self::Pos {
+    pub fn positional(table: &str, field: ColId) -> Self {
+        Self {
             table: table.to_string(),
             field,
         }
     }
 
     pub fn table(&self) -> &str {
-        let (FieldName::Name { table, .. } | FieldName::Pos { table, .. }) = self;
-        table
+        &self.table
     }
 
-    pub fn field(&self) -> FieldOnly {
-        match self {
-            FieldName::Name { field, .. } => FieldOnly::Name(field),
-            FieldName::Pos { field, .. } => FieldOnly::Pos(*field),
-        }
+    pub fn field(&self) -> ColId {
+        self.field
     }
+}
 
-    pub fn field_name(&self) -> Option<&str> {
-        match self {
-            FieldName::Name { field, .. } => Some(field),
-            FieldName::Pos { .. } => None,
-        }
-    }
-
-    pub fn into_field_name(self) -> Option<String> {
-        match self {
-            FieldName::Name { field, .. } => Some(field),
-            FieldName::Pos { .. } => None,
-        }
+impl fmt::Display for FieldName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self { table, field } = self;
+        write!(f, "{table}.{field}")
     }
 }
 
@@ -116,19 +79,6 @@ impl FieldExpr {
         match self {
             Self::Name(x) => FieldExprRef::Name(x),
             Self::Value(x) => FieldExprRef::Value(x),
-        }
-    }
-}
-
-impl fmt::Display for FieldName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            FieldName::Name { table, field } => {
-                write!(f, "{table}.{field}")
-            }
-            FieldName::Pos { table, field } => {
-                write!(f, "{table}.{field}")
-            }
         }
     }
 }
@@ -157,7 +107,7 @@ pub enum FieldExprRef<'a> {
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct ColumnOnlyField<'a> {
-    pub field: FieldOnly<'a>,
+    pub field: ColId,
     pub algebraic_type: &'a AlgebraicType,
 }
 
@@ -228,17 +178,9 @@ impl Header {
             .into_iter()
             .enumerate()
             .map(|(pos, f)| {
-                let name = match f.name {
-                    None => FieldName::Pos {
-                        table: table_name.clone(),
-                        field: pos,
-                    },
-                    Some(field) => FieldName::Name {
-                        table: table_name.clone(),
-                        field,
-                    },
-                };
-                Column::new(name, f.algebraic_type, ColId(pos as u32))
+                let col = pos.into();
+                let name = FieldName::positional(&table_name, col);
+                Column::new(name, f.algebraic_type, col)
             })
             .collect();
 
@@ -246,11 +188,7 @@ impl Header {
     }
 
     pub fn to_product_type(&self) -> ProductType {
-        ProductType::from_iter(
-            self.fields.iter().map(|x| {
-                ProductTypeElement::new(x.algebraic_type.clone(), x.field.field_name().map(ToString::to_string))
-            }),
-        )
+        self.fields.iter().map(|x| x.algebraic_type.clone()).collect()
     }
 
     pub fn for_mem_table(fields: ProductType) -> Self {
@@ -264,38 +202,17 @@ impl Header {
         }
     }
 
-    pub fn ty(&self) -> ProductType {
-        ProductType::from_iter(
-            self.fields
-                .iter()
-                .map(|x| (x.field.field_name(), x.algebraic_type.clone())),
-        )
-    }
-
-    pub fn find_by_name(&self, field_name: &str) -> Option<&Column> {
-        self.fields.iter().find(|x| x.field.field_name() == Some(field_name))
-    }
-
     pub fn column_pos<'a>(&'a self, col: &'a FieldName) -> Option<ColId> {
-        match col {
-            FieldName::Name { .. } => self.fields.iter().position(|f| &f.field == col),
-            FieldName::Pos { field, .. } => self
-                .fields
-                .iter()
-                .enumerate()
-                .position(|(pos, f)| &f.field == col || *field == pos),
-        }
-        .map(Into::into)
+        self.fields
+            .iter()
+            .enumerate()
+            .position(|(pos, f)| &f.field == col || col.field.idx() == pos)
+            .map(Into::into)
     }
 
     pub fn column_pos_or_err<'a>(&'a self, col: &'a FieldName) -> Result<ColId, RelationError> {
         self.column_pos(col)
             .ok_or_else(|| RelationError::FieldNotFound(self.clone_for_error(), col.clone()))
-    }
-
-    /// Finds the position of a field with `name`.
-    pub fn find_pos_by_name(&self, name: &str) -> Option<ColId> {
-        self.column_pos(&FieldName::named(&self.table_name, name))
     }
 
     pub fn column<'a>(&'a self, col: &'a FieldName) -> Option<&Column> {
@@ -336,14 +253,9 @@ impl Header {
                     p.push(self.fields[pos.idx()].clone());
                 }
                 FieldExpr::Value(col) => {
-                    p.push(Column::new(
-                        FieldName::Pos {
-                            table: self.table_name.clone(),
-                            field: pos,
-                        },
-                        col.type_of(),
-                        pos.into(),
-                    ));
+                    let pos = pos.into();
+                    let field = FieldName::positional(&self.table_name, pos);
+                    p.push(Column::new(field, col.type_of(), pos));
                 }
             }
         }
@@ -353,18 +265,15 @@ impl Header {
         Ok(Self::new(self.table_name.clone(), p, constraints))
     }
 
-    /// Adds the fields &  [Constraints] from `right` to this [`Header`],
-    /// renaming duplicated fields with a counter like `a, a => a, a0`.
+    /// Adds the fields &  [Constraints] from `right` to this [`Header`].
     pub fn extend(&self, right: &Self) -> Self {
-        let count = self.fields.len() + right.fields.len();
-
         // Increase the positions of the columns in `right.constraints`, adding the count of fields on `left`
         let mut constraints = self.constraints.clone();
-        let len_lhs = self.fields.len() as u32;
+        let adjust_by_len_lhs = |col: ColId| ColId(col.0 + self.fields.len() as u32);
         constraints.extend(right.constraints.iter().map(|(cols, c)| {
             let cols = cols
                 .iter()
-                .map(|col| ColId(col.0 + len_lhs))
+                .map(adjust_by_len_lhs)
                 .collect::<ColListBuilder>()
                 .build()
                 .unwrap();
@@ -372,22 +281,10 @@ impl Header {
         }));
 
         let mut fields = self.fields.clone();
-        fields.reserve(count - fields.len());
-
-        let mut cont = 0;
-        //Avoid duplicated field names...
-        for mut f in right.fields.iter().cloned() {
-            if f.field.table() == self.table_name && self.column_pos(&f.field).is_some() {
-                let name = format!("{}_{}", f.field.field(), cont);
-                f.field = FieldName::Name {
-                    table: f.field.table().into(),
-                    field: name,
-                };
-
-                cont += 1;
-            }
-            fields.push(f);
-        }
+        fields.extend(right.fields.iter().cloned().map(|mut col| {
+            col.col_id = adjust_by_len_lhs(col.col_id);
+            col
+        }));
 
         Self::new(self.table_name.clone(), fields, constraints)
     }
@@ -395,12 +292,7 @@ impl Header {
 
 impl From<Header> for ProductType {
     fn from(value: Header) -> Self {
-        ProductType::from_iter(
-            value
-                .fields
-                .into_iter()
-                .map(|x| ProductTypeElement::new(x.algebraic_type, x.field.into_field_name())),
-        )
+        value.fields.into_iter().map(|x| x.algebraic_type).collect()
     }
 }
 

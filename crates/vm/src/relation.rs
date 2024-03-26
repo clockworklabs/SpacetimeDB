@@ -175,10 +175,6 @@ impl MemTable {
     pub fn get_field_pos(&self, pos: usize) -> Option<&FieldName> {
         self.head.fields.get(pos).map(|x| &x.field)
     }
-
-    pub fn get_field_named(&self, name: &str) -> Option<&FieldName> {
-        self.head.find_by_name(name).map(|x| &x.field)
-    }
 }
 
 impl Relation for MemTable {

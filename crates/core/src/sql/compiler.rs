@@ -94,7 +94,7 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
             Column::QualifiedWildcard { table: name } => {
                 if let Some(t) = table.iter_tables().find(|x| x.table_name == name) {
                     for c in t.columns().iter() {
-                        col_ids.push(FieldName::named(&t.table_name, &c.col_name).into());
+                        col_ids.push(FieldName::positional(&t.table_name, c.col_pos).into());
                     }
                     qualified_wildcards.push(t.table_id);
                 } else {
@@ -168,7 +168,7 @@ fn compile_columns(table: &TableSchema, columns: Vec<FieldName>) -> DbTable {
 
     for col in columns.into_iter() {
         if let Some(x) = table.get_column_by_field(&col) {
-            let field = FieldName::named(&table.table_name, &x.col_name);
+            let field = FieldName::positional(&table.table_name, x.col_pos);
             new.push(relation::Column::new(field, x.col_type.clone(), x.col_pos));
         }
     }

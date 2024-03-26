@@ -6,7 +6,7 @@ use std::sync::Arc;
 use crate::db::auth::{StAccess, StTableType};
 use crate::db::error::{DefType, SchemaError};
 use crate::product_value::InvalidFieldError;
-use crate::relation::{Column, DbTable, FieldName, FieldOnly, Header, TableField};
+use crate::relation::{Column, DbTable, FieldName, Header};
 use crate::{de, impl_deserialize, impl_serialize, ser};
 use crate::{AlgebraicType, ProductType, ProductTypeElement};
 use spacetimedb_primitives::*;
@@ -294,7 +294,7 @@ pub struct FieldDef<'a> {
 
 impl From<FieldDef<'_>> for FieldName {
     fn from(value: FieldDef) -> Self {
-        FieldName::named(value.table_name, &value.column.col_name)
+        FieldName::positional(value.table_name, value.column.col_pos)
     }
 }
 
@@ -592,10 +592,7 @@ impl TableSchema {
     ///
     /// This function ignores the `table_name` when searching for a column.
     pub fn get_column_by_field(&self, field: &FieldName) -> Option<&ColumnSchema> {
-        match field.field() {
-            FieldOnly::Name(x) => self.get_column_by_name(x),
-            FieldOnly::Pos(x) => self.get_column(x),
-        }
+        self.get_column(field.field().idx())
     }
 
     pub fn get_columns(&self, columns: &ColList) -> Vec<(ColId, Option<&ColumnSchema>)> {
@@ -623,11 +620,6 @@ impl TableSchema {
             let mut cols = columns.iter();
             cols.next() == Some(*col_pos) && cols.next().is_none()
         })
-    }
-
-    /// Turn a [TableField] that could be an unqualified field `id` into `table.id`
-    pub fn normalize_field(&self, or_use: &TableField) -> FieldName {
-        FieldName::named(or_use.table.unwrap_or(&self.table_name), or_use.field)
     }
 
     /// Project the fields from the supplied `indexes`.
@@ -957,7 +949,7 @@ impl From<&TableSchema> for Header {
             .enumerate()
             .map(|(pos, x)| {
                 Column::new(
-                    FieldName::named(&value.table_name, &x.col_name),
+                    FieldName::positional(&value.table_name, x.col_pos),
                     x.col_type.clone(),
                     ColId(pos as u32),
                 )
@@ -1199,10 +1191,7 @@ impl TableDef {
     ///
     /// Warning: It ignores the `table_name`
     pub fn get_column_by_field(&self, field: &FieldName) -> Option<&ColumnDef> {
-        match field.field() {
-            FieldOnly::Name(x) => self.get_column_by_name(x),
-            FieldOnly::Pos(x) => self.get_column(x),
-        }
+        self.get_column(field.field().idx())
     }
 
     pub fn get_column(&self, pos: usize) -> Option<&ColumnDef> {
