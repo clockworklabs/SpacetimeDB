@@ -1,5 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use spacetimedb::client::Protocol;
+use spacetimedb::client::messages::{SubscriptionUpdate, SubscriptionUpdateMessage};
+use spacetimedb::client::{ClientActorId, ClientConnectionSender, Protocol};
 use spacetimedb::db::relational_db::{open_db, RelationalDB};
 use spacetimedb::error::DBError;
 use spacetimedb::execution_context::ExecutionContext;
@@ -7,8 +8,10 @@ use spacetimedb::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableO
 use spacetimedb::subscription::query::compile_read_only_query;
 use spacetimedb::subscription::subscription::ExecutionSet;
 use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::Identity;
 use spacetimedb_primitives::{col_list, TableId};
 use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductValue};
+use std::time::Instant;
 use tempdir::TempDir;
 
 fn create_table_location(db: &RelationalDB) -> Result<TableId, DBError> {
@@ -108,7 +111,29 @@ fn eval(c: &mut Criterion) {
             let query = compile_read_only_query(&db, &tx, &auth, sql).unwrap();
             let query: ExecutionSet = query.into();
 
-            b.iter(|| drop(black_box(query.eval(Protocol::Binary, &db, &tx).unwrap())))
+            b.iter_custom(|iters| {
+                let start = Instant::now();
+                // The `buffer` for the channels need to grow with the #iters, to avoid to send to a closed one.
+                let (client, _rx) = ClientConnectionSender::dummy_buffer(
+                    ClientActorId::for_test(Identity::ZERO),
+                    Protocol::Binary,
+                    iters as usize,
+                );
+
+                for _ in 0..iters {
+                    let result = black_box(query.eval(Protocol::Binary, &db, &tx).unwrap());
+                    let msg = SubscriptionUpdateMessage {
+                        subscription_update: SubscriptionUpdate {
+                            database_update: result,
+                            request_id: None,
+                            timer: None,
+                        },
+                    };
+                    black_box(client.send_message(msg)).unwrap();
+                }
+
+                start.elapsed()
+            });
         });
     };
 
