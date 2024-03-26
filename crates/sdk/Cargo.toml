@@ -15,6 +15,7 @@ spacetimedb-client-api-messages.workspace = true
 anyhow.workspace = true
 anymap.workspace = true
 base64.workspace = true
+brotli.workspace = true
 futures.workspace = true
 futures-channel.workspace = true
 home.workspace = true
