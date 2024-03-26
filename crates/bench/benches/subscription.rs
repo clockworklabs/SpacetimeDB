@@ -1,5 +1,8 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+
+use spacetimedb::client::messages::{SubscriptionUpdate, SubscriptionUpdateMessage};
 use spacetimedb::client::Protocol;
+use spacetimedb::client::{ClientActorId, ClientConnectionSender};
 use spacetimedb::db::relational_db::RelationalDB;
 use spacetimedb::error::DBError;
 use spacetimedb::execution_context::ExecutionContext;
@@ -8,8 +11,10 @@ use spacetimedb::subscription::query::compile_read_only_query;
 use spacetimedb::subscription::subscription::ExecutionSet;
 use spacetimedb_bench::database::BenchDatabase as _;
 use spacetimedb_bench::spacetime_raw::SpacetimeRaw;
+use spacetimedb_lib::Identity;
 use spacetimedb_primitives::{col_list, TableId};
 use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductValue};
+use std::time::Instant;
 
 fn create_table_location(db: &RelationalDB) -> Result<TableId, DBError> {
     let schema = &[
@@ -102,8 +107,33 @@ fn eval(c: &mut Criterion) {
             let tx = raw.db.begin_tx();
             let query = compile_read_only_query(&raw.db, &tx, sql).unwrap();
             let query: ExecutionSet = query.into();
+
             let ctx = &ExecutionContext::subscribe(raw.db.address());
-            b.iter(|| drop(black_box(query.eval(ctx, Protocol::Binary, &raw.db, &tx, None))))
+            b.iter(|| drop(black_box(query.eval(ctx, Protocol::Binary, &raw.db, &tx, None))));
+
+            b.iter_custom(|iters| {
+                let start = Instant::now();
+                // The `buffer` for the channels need to grow with the #iters, to avoid to send to a closed one.
+                let (client, _rx) = ClientConnectionSender::dummy_buffer(
+                    ClientActorId::for_test(Identity::ZERO),
+                    Protocol::Binary,
+                    iters as usize,
+                );
+
+                for _ in 0..iters {
+                    let result = black_box(query.eval(ctx, Protocol::Binary, &raw.db, &tx, None));
+                    let msg = SubscriptionUpdateMessage {
+                        subscription_update: SubscriptionUpdate {
+                            database_update: result,
+                            request_id: None,
+                            timer: None,
+                        },
+                    };
+                    black_box(client.send_message(msg)).unwrap();
+                }
+
+                start.elapsed()
+            });
         });
     };
 
