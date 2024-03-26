@@ -1,6 +1,8 @@
 use base64::Engine;
+use brotli::CompressorReader;
 use prost::Message as _;
 use spacetimedb_lib::identity::RequestId;
+use std::io::{Cursor, Read};
 use std::time::Instant;
 
 use crate::host::module_host::{EventStatus, ModuleEvent, ProtocolDatabaseUpdate};
@@ -21,12 +23,12 @@ use super::{DataMessage, Protocol};
 pub trait ServerMessage: Sized {
     fn serialize(self, protocol: Protocol) -> DataMessage {
         match protocol {
-            Protocol::Text => self.serialize_text().to_json().into(),
-            Protocol::Binary => self.serialize_binary().encode_to_vec().into(),
+            Protocol::Text => self.serialize_text().into(),
+            Protocol::Binary => self.serialize_binary().into(),
         }
     }
-    fn serialize_text(self) -> MessageJson;
-    fn serialize_binary(self) -> Message;
+    fn serialize_text(self) -> String;
+    fn serialize_binary(self) -> Vec<u8>;
 }
 
 pub struct IdentityTokenMessage {
@@ -36,14 +38,15 @@ pub struct IdentityTokenMessage {
 }
 
 impl ServerMessage for IdentityTokenMessage {
-    fn serialize_text(self) -> MessageJson {
+    fn serialize_text(self) -> String {
         MessageJson::IdentityToken(IdentityTokenJson {
             identity: self.identity,
             token: self.identity_token,
             address: self.address,
         })
+        .to_json()
     }
-    fn serialize_binary(self) -> Message {
+    fn serialize_binary(self) -> Vec<u8> {
         Message {
             r#type: Some(message::Type::IdentityToken(IdentityToken {
                 identity: self.identity.as_bytes().to_vec(),
@@ -51,6 +54,7 @@ impl ServerMessage for IdentityTokenMessage {
                 address: self.address.as_slice().to_vec(),
             })),
         }
+        .encode_to_vec()
     }
 }
 
@@ -60,7 +64,7 @@ pub struct TransactionUpdateMessage<'a, U> {
 }
 
 impl<U: Into<Vec<TableUpdate>> + Into<Vec<TableUpdateJson>>> ServerMessage for TransactionUpdateMessage<'_, U> {
-    fn serialize_text(self) -> MessageJson {
+    fn serialize_text(self) -> String {
         let Self { event, database_update } = self;
         let (status_str, errmsg) = match &event.status {
             EventStatus::Committed(_) => ("committed", String::new()),
@@ -87,9 +91,10 @@ impl<U: Into<Vec<TableUpdate>> + Into<Vec<TableUpdateJson>>> ServerMessage for T
             event,
             subscription_update,
         })
+        .to_json()
     }
 
-    fn serialize_binary(self) -> Message {
+    fn serialize_binary(self) -> Vec<u8> {
         let Self { event, database_update } = self;
         let (status, errmsg) = match &event.status {
             EventStatus::Committed(_) => (event::Status::Committed, String::new()),
@@ -120,20 +125,21 @@ impl<U: Into<Vec<TableUpdate>> + Into<Vec<TableUpdateJson>>> ServerMessage for T
         Message {
             r#type: Some(message::Type::TransactionUpdate(tx_update)),
         }
+        .encode_to_vec()
     }
 }
 
 impl<U: Clone + Into<Vec<TableUpdate>> + Into<Vec<TableUpdateJson>>> ServerMessage
     for &mut TransactionUpdateMessage<'_, U>
 {
-    fn serialize_text(self) -> MessageJson {
+    fn serialize_text(self) -> String {
         TransactionUpdateMessage {
             event: self.event,
             database_update: self.database_update.clone(),
         }
         .serialize_text()
     }
-    fn serialize_binary(self) -> Message {
+    fn serialize_binary(self) -> Vec<u8> {
         TransactionUpdateMessage {
             event: self.event,
             database_update: self.database_update.clone(),
@@ -147,14 +153,31 @@ pub struct SubscriptionUpdateMessage {
 }
 
 impl ServerMessage for SubscriptionUpdateMessage {
-    fn serialize_text(self) -> MessageJson {
-        MessageJson::SubscriptionUpdate(self.subscription_update.into_json())
+    fn serialize_text(self) -> String {
+        MessageJson::SubscriptionUpdate(self.subscription_update.into_json()).to_json()
     }
 
-    fn serialize_binary(self) -> Message {
+    fn serialize_binary(self) -> Vec<u8> {
         let msg = self.subscription_update.into_protobuf();
         let r#type = Some(message::Type::SubscriptionUpdate(msg));
-        Message { r#type }
+        let reader = Cursor::new(Message { r#type }.encode_to_vec());
+
+        // SubscriptionUpdate messages will typically be quite large,
+        // so we choose a relatively large buffer size,
+        // in this case 128KB,
+        // to optimize for compression speed.
+        const BUFFER_SIZE: usize = 128 * 1024;
+        // Again we are optimizing for compression speed,
+        // so we choose the lowest (fastest) level of compression.
+        const COMPRESSION_LEVEL: u32 = 1;
+        // The default value for an internal compression parameter.
+        // See `BrotliEncoderParams` for more details.
+        const LG_WIN: u32 = 22;
+
+        let mut encoder = CompressorReader::new(reader, BUFFER_SIZE, COMPRESSION_LEVEL, LG_WIN);
+        let mut buf = vec![];
+        let _ = encoder.read_to_end(&mut buf);
+        buf
     }
 }
 
@@ -209,12 +232,12 @@ where
         match protocol {
             Protocol::Text => self
                 .text
-                .get_or_insert_with(|| self.msg.serialize_text().to_json())
+                .get_or_insert_with(|| self.msg.serialize_text())
                 .clone()
                 .into(),
             Protocol::Binary => self
                 .binary
-                .get_or_insert_with(|| self.msg.serialize_binary().encode_to_vec())
+                .get_or_insert_with(|| self.msg.serialize_binary())
                 .clone()
                 .into(),
         }
@@ -229,7 +252,7 @@ pub struct OneOffQueryResponseMessage {
 }
 
 impl ServerMessage for OneOffQueryResponseMessage {
-    fn serialize_text(self) -> MessageJson {
+    fn serialize_text(self) -> String {
         MessageJson::OneOffQueryResponse(OneOffQueryResponseJson {
             message_id_base64: base64::engine::general_purpose::STANDARD.encode(self.message_id),
             error: self.error,
@@ -242,9 +265,10 @@ impl ServerMessage for OneOffQueryResponseMessage {
                 })
                 .collect(),
         })
+        .to_json()
     }
 
-    fn serialize_binary(self) -> Message {
+    fn serialize_binary(self) -> Vec<u8> {
         Message {
             r#type: Some(message::Type::OneOffQueryResponse(OneOffQueryResponse {
                 message_id: self.message_id,
@@ -268,5 +292,6 @@ impl ServerMessage for OneOffQueryResponseMessage {
                 total_host_execution_duration_micros: self.total_host_execution_duration,
             })),
         }
+        .encode_to_vec()
     }
 }

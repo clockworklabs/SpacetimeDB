@@ -247,7 +247,7 @@ impl MessageExecutionError {
 }
 
 impl ServerMessage for MessageExecutionError {
-    fn serialize_text(self) -> crate::json::client_api::MessageJson {
+    fn serialize_text(self) -> String {
         TransactionUpdateMessage::<DatabaseUpdate> {
             event: &mut self.into_event(),
             database_update: Default::default(),
@@ -255,7 +255,7 @@ impl ServerMessage for MessageExecutionError {
         .serialize_text()
     }
 
-    fn serialize_binary(self) -> Message {
+    fn serialize_binary(self) -> Vec<u8> {
         TransactionUpdateMessage::<DatabaseUpdate> {
             event: &mut self.into_event(),
             database_update: Default::default(),
