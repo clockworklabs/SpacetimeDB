@@ -1,8 +1,8 @@
 use base64::Engine;
-use brotli::enc::BrotliEncoderParams;
-use brotli::BrotliCompress;
+use brotli::CompressorReader;
 use prost::Message as _;
 use spacetimedb_lib::identity::RequestId;
+use std::io::Read;
 use std::time::Instant;
 
 use crate::host::module_host::{EventStatus, ModuleEvent, ProtocolDatabaseUpdate};
@@ -157,17 +157,28 @@ impl ServerMessage for SubscriptionUpdateMessage {
         // TODO(perf): Avoid allocating an uncompressed `Vec<u8>` here;
         // write directly into the `BrotliCompress` stream.
         let msg = self.subscription_update.into_protobuf().encode_to_vec();
+        let reader = &mut &msg[..];
+
+        // SubscriptionUpdate messages will typically be quite large,
+        // so we choose a relatively large buffer size,
+        // in this case 128KB,
+        // to optimize for compression speed.
+        const BUFFER_SIZE: usize = 128 * 1024;
+        // Again we are optimizing for compression speed,
+        // so we choose the lowest (fastest) level of compression.
+        const COMPRESSION_LEVEL: u32 = 1;
+        // The default value for an internal compression parameter.
+        // See `BrotliEncoderParams` for more details.
+        const LG_WIN: u32 = 22;
+
+        let mut encoder = CompressorReader::new(reader, BUFFER_SIZE, COMPRESSION_LEVEL, LG_WIN);
+
         let mut out = Vec::new();
-        BrotliCompress(
-            &mut &msg[..],
-            &mut out,
-            &BrotliEncoderParams {
-                quality: 1,
-                ..Default::default()
-            },
-        )
-        .expect("Failed to Brotli compress `SubscriptionUpdateMessage`");
-        let r#type = Some(message::Type::CompressedSubscriptionUpdate(msg));
+        encoder
+            .read_to_end(&mut out)
+            .expect("Failed to Brotli compress `SubscriptionUpdateMessage`");
+
+        let r#type = Some(message::Type::CompressedSubscriptionUpdate(out));
 
         Message { r#type }
     }

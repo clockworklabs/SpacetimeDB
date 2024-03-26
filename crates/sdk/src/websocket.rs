@@ -1,5 +1,6 @@
 use crate::identity::Credentials;
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
+use brotli::BrotliDecompress;
 use futures::{SinkExt, StreamExt, TryStreamExt};
 use futures_channel::mpsc;
 use http::uri::{Scheme, Uri};
@@ -154,11 +155,16 @@ impl DbConnection {
         match Message::decode(bytes)? {
             Message {
                 r#type: Some(message::Type::CompressedSubscriptionUpdate(bytes)),
-            } => Ok(Message {
-                r#type: Some(message::Type::SubscriptionUpdate(SubscriptionUpdate::decode(
-                    &bytes[..],
-                )?)),
-            }),
+            } => {
+                let compressed_bytes = &mut &bytes[..];
+                let mut decompressed_bytes = Vec::new();
+                BrotliDecompress(compressed_bytes, &mut decompressed_bytes)
+                    .context("Failed to BrotliDecompress CompressedSubscriptionUpdate")?;
+                let decoded = SubscriptionUpdate::decode(&decompressed_bytes[..])?;
+                Ok(Message {
+                    r#type: Some(message::Type::SubscriptionUpdate(decoded)),
+                })
+            }
             msg => Ok(msg),
         }
     }
