@@ -70,6 +70,26 @@ impl SumType {
     pub fn is_simple_enum(&self) -> bool {
         self.variants.iter().all(SumTypeVariant::is_unit)
     }
+
+    /// Returns the sum type variant using `tag_name` with their tag position.
+    pub fn get_variant(&self, tag_name: &str) -> Option<(u8, &SumTypeVariant)> {
+        self.variants.iter().enumerate().find_map(|(pos, x)| {
+            if x.name.as_deref() == Some(tag_name) {
+                Some((pos as u8, x))
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Returns the sum type variant using `tag_name` with their tag position, if this is a [Self::is_simple_enum]
+    pub fn get_variant_simple(&self, tag_name: &str) -> Option<(u8, &SumTypeVariant)> {
+        if self.is_simple_enum() {
+            self.get_variant(tag_name)
+        } else {
+            None
+        }
+    }
 }
 
 impl From<Vec<SumTypeVariant>> for SumType {
