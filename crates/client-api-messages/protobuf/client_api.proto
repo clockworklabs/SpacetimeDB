@@ -36,20 +36,35 @@ message Message {
     }
 }
 
+/// Sent by database to client in response to a `Subscribe` message,
+/// compressed within a `compressedSubscriptionUpdate` `Message`.
+///
+/// - `tables` stores a `TableSubResponse` for each queried table,
+///            containing all committed rows which match the subscribed queries.
+/// - `requestId` will be the same id as contained in the `Subscribe` message
+///               which initiated this new subscription.
+/// - `total_host_execution_duration_micros` is what it says.
 message SubscriptionApplied {
   repeated TableSubResponse tables = 1;
   uint32 requestId = 2;
   uint64 total_host_execution_duration_micros = 3;
 }
 
+/// A single table's matching rows within a `SubscriptionApplied` message.
+///
+/// `tableId` and `tableName` identify the table. Clients should use the `tableName`, as
+///                           it is a stable part of a module's API, whereas `tableId` may
+///                           or may not change between runs.
+///
+/// `bsatnRows` are all matching rows in the committed state,
+///             encoded as BSATN and concatenated.
 message TableSubResponse {
   uint32 tableId = 1;
   string tableName = 2;
-  // BSATN encoding of all response rows concatenated together.
   bytes bsatnRows = 3;
 }
 
-/// Received by database from client to inform of user's identity, token and client address.
+/// Sent by database to client to inform of user's identity, token and client address.
 ///
 /// The database will always send an `IdentityToken` message
 /// as the first message for a new WebSocket connection.
