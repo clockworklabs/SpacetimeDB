@@ -165,7 +165,8 @@ impl From<Commit> for Metadata {
     }
 }
 
-fn decode_u32<R: Read>(mut read: R) -> io::Result<u32> {
+/// Decode a `u32`, stored in little endian form, from `read`.
+fn decode_u32(mut read: impl Read) -> io::Result<u32> {
     let mut buf = [0; 4];
     read.read_exact(&mut buf)?;
     Ok(u32::from_le_bytes(buf))
