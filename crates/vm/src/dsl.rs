@@ -13,7 +13,7 @@ pub fn scalar<T: Into<AlgebraicValue>>(of: T) -> AlgebraicValue {
     of.into()
 }
 
-pub fn value<T: Into<AlgebraicValue>>(of: T) -> Expr {
+pub fn value(of: impl Into<AlgebraicValue>) -> Expr {
     let v: AlgebraicValue = of.into();
     Expr::Value(v)
 }
