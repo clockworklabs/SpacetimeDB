@@ -31,7 +31,7 @@ fn maybe_primitive(b: &BuiltinType) -> MaybePrimitive {
         | BuiltinType::U32
         | BuiltinType::F32
         | BuiltinType::F64 => "number",
-        BuiltinType::I128 | BuiltinType::U128 | BuiltinType::I64 | BuiltinType::U64 => "BigInt",
+        BuiltinType::I128 | BuiltinType::U128 | BuiltinType::I64 | BuiltinType::U64 => "bigint",
         BuiltinType::String => "string",
         BuiltinType::Array(ty) => return MaybePrimitive::Array(ty),
         BuiltinType::Map(m) => return MaybePrimitive::Map(m),
