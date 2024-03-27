@@ -330,6 +330,7 @@ pub struct BTreeIndex {
 
 static_assert_size!(BTreeIndex, 56);
 
+
 impl BTreeIndex {
     /// Returns a new possibly unique index, with `index_id` for a set of columns.
     pub fn new(
@@ -375,11 +376,6 @@ impl BTreeIndex {
         })
     }
 
-    /// Extracts from `row` the relevant column values according to what columns are indexed.
-    pub fn get_fields(&self, cols: &ColList, row: &ProductValue) -> Result<AlgebraicValue, InvalidFieldError> {
-        row.project_not_empty(cols)
-    }
-
     /// Inserts `ptr` with the value `row` to this index.
     /// This index will extract the necessary values from `row` based on `self.cols`.
     ///
@@ -393,15 +389,6 @@ impl BTreeIndex {
     /// Returns whether `ptr` was present.
     pub fn delete(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<bool, InvalidFieldError> {
         self.idx.delete(cols, row_ref)
-    }
-
-    /// Returns whether indexing `row` again would violate a unique constraint, if any.
-    pub fn violates_unique_constraint(&self, cols: &ColList, row: &ProductValue) -> bool {
-        if self.is_unique {
-            let col_value = self.get_fields(cols, row).unwrap();
-            return self.contains_any(&col_value);
-        }
-        false
     }
 
     /// Returns an iterator over the rows that would violate the unique constraint of this index,

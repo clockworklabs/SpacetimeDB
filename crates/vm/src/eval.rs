@@ -5,6 +5,7 @@ use crate::iterators::RelIter;
 use crate::program::ProgramVm;
 use crate::rel_ops::RelOps;
 use crate::relation::RelValue;
+use spacetimedb_lib::relation::ValueSource;
 use spacetimedb_sats::relation::{FieldExprRef, Relation};
 use std::sync::Arc;
 
@@ -19,6 +20,7 @@ pub fn build_query<'a>(
     mut result: Box<IterRows<'a>>,
     query: &'a [Query],
     sources: &mut SourceSet,
+    vsource: &ValueSource,
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {
     for q in query {
         result = match q {
@@ -38,8 +40,8 @@ pub fn build_query<'a>(
                     result
                 } else {
                     let header = result.head().clone();
-                    let iter = result.project(cols, move |cols, row| {
-                        Ok(RelValue::Projection(row.project_owned(cols, &header)?))
+                    let iter = result.project(cols, vsource, move |cols, row| {
+                        Ok(RelValue::Projection(row.project_owned(cols, &header, vsource)?))
                     })?;
                     Box::new(iter)
                 }
@@ -64,7 +66,7 @@ pub fn build_query<'a>(
                     todo!("How pass the db iter?")
                 };
 
-                let rhs = build_query(rhs, &q.rhs.query, sources)?;
+                let rhs = build_query(rhs, &q.rhs.query, sources, vsource)?;
 
                 let lhs = result;
                 let key_lhs_header = lhs.head().clone();
@@ -76,11 +78,11 @@ pub fn build_query<'a>(
                     let iter = lhs.join_inner(
                         rhs,
                         col_lhs_header.clone(),
-                        move |row| Ok(row.get(col_lhs, &key_lhs_header)?.into_owned().into()),
-                        move |row| Ok(row.get(col_rhs, &key_rhs_header)?.into_owned().into()),
+                        move |row| Ok(row.get(col_lhs, &key_lhs_header, vsource)?.into_owned().into()),
+                        move |row| Ok(row.get(col_rhs, &key_rhs_header, vsource)?.into_owned().into()),
                         move |l, r| {
-                            let l = l.get(col_lhs, &col_lhs_header)?;
-                            let r = r.get(col_rhs, &col_rhs_header)?;
+                            let l = l.get(col_lhs, &col_lhs_header, vsource)?;
+                            let r = r.get(col_rhs, &col_rhs_header, vsource)?;
                             Ok(l == r)
                         },
                         |l, _| l,
@@ -90,11 +92,11 @@ pub fn build_query<'a>(
                     let iter = lhs.join_inner(
                         rhs,
                         Arc::new(col_lhs_header.extend(&col_rhs_header)),
-                        move |row| Ok(row.get(col_lhs, &key_lhs_header)?.into_owned().into()),
-                        move |row| Ok(row.get(col_rhs, &key_rhs_header)?.into_owned().into()),
+                        move |row| Ok(row.get(col_lhs, &key_lhs_header, vsource)?.into_owned().into()),
+                        move |row| Ok(row.get(col_rhs, &key_rhs_header, vsource)?.into_owned().into()),
                         move |l, r| {
-                            let l = l.get(col_lhs, &col_lhs_header)?;
-                            let r = r.get(col_rhs, &col_rhs_header)?;
+                            let l = l.get(col_lhs, &col_lhs_header, vsource)?;
+                            let r = r.get(col_rhs, &col_rhs_header, vsource)?;
                             Ok(l == r)
                         },
                         move |l, r| l.extend(r),

@@ -4,7 +4,7 @@ pub mod ser;
 use crate::{AlgebraicType, ArrayValue, MapValue, ProductValue, SumValue};
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use std::ops::{Bound, RangeBounds};
+use std::{mem, ops::{Bound, RangeBounds}};
 
 /// Totally ordered [`f32`] allowing all IEEE-754 floating point values.
 pub type F32 = decorum::Total<f32>;
@@ -112,6 +112,11 @@ pub enum AlgebraicValue {
 
 #[allow(non_snake_case)]
 impl AlgebraicValue {
+    /// Extract the value and replace it with a dummy one that is cheap to make.
+    pub fn take(&mut self) -> Self {
+        mem::replace(self, Self::U8(0))
+    }
+
     /// Interpret the value as a byte slice or `None` if it isn't a byte slice.
     #[inline]
     pub fn as_bytes(&self) -> Option<&[u8]> {

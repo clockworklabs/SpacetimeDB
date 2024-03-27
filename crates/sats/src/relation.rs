@@ -1,9 +1,9 @@
 use crate::algebraic_value::AlgebraicValue;
 use crate::db::auth::{StAccess, StTableType};
 use crate::db::error::RelationError;
-use crate::satn::Satn;
-use crate::{algebraic_type, AlgebraicType, ProductType, ProductTypeElement, Typespace, WithTypespace};
+use crate::{algebraic_type, AlgebraicType, ProductType, ProductTypeElement};
 use derive_more::From;
+use smallvec::SmallVec;
 use spacetimedb_primitives::{ColId, ColList, ColListBuilder, Constraints, TableId};
 use std::collections::hash_map::DefaultHasher;
 use std::fmt;
@@ -103,11 +103,60 @@ impl FieldName {
     }
 }
 
+/// A reference to an [`AlgebraicValue`] stored somewhere else.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash)]
+pub struct ValueId(u16);
+
+impl ValueId {
+    /// Converts the ID to an index in a vector.
+    pub fn idx(&self) -> usize {
+        self.0 as usize
+    }
+}
+
+pub type ValuesNeededByIndex = SmallVec<[ValueId; 1]>;
+
+/// Specifies the `ValueId`s needed by a query
+/// so that they can be extracted from `[AlgebraicValue]`
+/// and converted to a `Vec<AlgebraicValue>` which the query can use.
+///
+/// The inner vector specifies the values needed from the input to a query for a single `AlgebraicValue`.
+/// If there's a single value needed,
+/// it's not a compound and the value is extracted directly from the input.
+/// Otherwise, it's a compound and several values are extracted to build a `AlgebraicValue::Product`.
+pub struct ValuesNeededByQuery(SmallVec<[ValuesNeededByIndex; 1]>);
+
+/// Provides the values needed by a compiled query, e.g., `QueryExpr`,
+/// so that it can retrieve them by the [`ValueId`]s that the query embeds.
+pub struct ValueSource(Vec<AlgebraicValue>);
+
+impl ValueSource {
+    /// Return a reference to the value identified by `id`.
+    pub fn get(&self, id: ValueId) -> &AlgebraicValue {
+        &self.0[id.idx()]
+    }
+
+    /// Builds a source based on available `inputs`
+    /// and a specification `needed_by_query` of which values to extract
+    /// and how to combine them if necessary.
+    pub fn build(inputs: &mut [AlgebraicValue], needed_by_query: &ValuesNeededByQuery) -> Self {
+        let built = needed_by_query
+            .0
+            .iter()
+            .map(|needed| match &**needed {
+                [id] => inputs[id.idx()].take(),
+                ids => AlgebraicValue::Product(ids.iter().map(|id| inputs[id.idx()].take()).collect()),
+            })
+            .collect();
+        Self(built)
+    }
+}
+
 // TODO(perf): Remove `Clone` derivation.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, From)]
 pub enum FieldExpr {
     Name(FieldName),
-    Value(AlgebraicValue),
+    Value(ValueId),
 }
 
 impl FieldExpr {
@@ -115,7 +164,7 @@ impl FieldExpr {
     pub fn borrowed(&self) -> FieldExprRef<'_> {
         match self {
             Self::Name(x) => FieldExprRef::Name(x),
-            Self::Value(x) => FieldExprRef::Value(x),
+            Self::Value(x) => FieldExprRef::Value(*x),
         }
     }
 }
@@ -136,14 +185,8 @@ impl fmt::Display for FieldName {
 impl fmt::Display for FieldExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            FieldExpr::Name(x) => {
-                write!(f, "{x}")
-            }
-            FieldExpr::Value(x) => {
-                let ty = x.type_of();
-                let ts = Typespace::new(vec![]);
-                write!(f, "{}", WithTypespace::new(&ts, &ty).with_value(x).to_satn())
-            }
+            FieldExpr::Name(x) => write!(f, "{x}"),
+            FieldExpr::Value(id) => write!(f, "value_#{}", id.idx()),
         }
     }
 }
@@ -152,7 +195,7 @@ impl fmt::Display for FieldExpr {
 #[derive(Clone, Copy)]
 pub enum FieldExprRef<'a> {
     Name(&'a FieldName),
-    Value(&'a AlgebraicValue),
+    Value(ValueId),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -324,7 +367,7 @@ impl Header {
     }
 
     /// Project the [FieldExpr] & the [Constraints] that referenced them
-    pub fn project(&self, cols: &[impl Into<FieldExpr> + Clone]) -> Result<Self, RelationError> {
+    pub fn project(&self, cols: &[impl Into<FieldExpr> + Clone], vsource: &ValueSource) -> Result<Self, RelationError> {
         let mut p = Vec::with_capacity(cols.len());
         let mut to_keep = ColListBuilder::new();
 
@@ -336,6 +379,7 @@ impl Header {
                     p.push(self.fields[pos.idx()].clone());
                 }
                 FieldExpr::Value(col) => {
+                    let col = vsource.get(col);
                     p.push(Column::new(
                         FieldName::Pos {
                             table: self.table_name.clone(),

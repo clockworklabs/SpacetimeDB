@@ -1,5 +1,6 @@
 use crate::errors::ErrorVm;
 use crate::relation::RelValue;
+use spacetimedb_lib::relation::ValueSource;
 use spacetimedb_sats::product_value::ProductValue;
 use spacetimedb_sats::relation::{FieldExpr, Header, RowCount};
 use std::collections::HashMap;
@@ -61,13 +62,13 @@ pub trait RelOps<'a> {
     ///
     /// It is the equivalent of a `SELECT` clause on SQL.
     #[inline]
-    fn project<P>(self, cols: &[FieldExpr], extractor: P) -> Result<Project<Self, P>, ErrorVm>
+    fn project<P>(self, cols: &[FieldExpr], vsource: &ValueSource, extractor: P) -> Result<Project<Self, P>, ErrorVm>
     where
         P: for<'b> FnMut(&[FieldExpr], RelValue<'b>) -> Result<RelValue<'b>, ErrorVm>,
         Self: Sized,
     {
         let count = self.row_count();
-        let head = self.head().project(cols)?;
+        let head = self.head().project(cols, vsource)?;
         Ok(Project::new(self, count, Arc::new(head), cols, extractor))
     }
 
