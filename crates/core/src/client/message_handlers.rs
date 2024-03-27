@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::energy::EnergyQuanta;
@@ -249,7 +250,7 @@ impl MessageExecutionError {
 impl ServerMessage for MessageExecutionError {
     fn serialize_text(self) -> crate::json::client_api::MessageJson {
         TransactionUpdateMessage::<DatabaseUpdate> {
-            event: &mut self.into_event(),
+            event: Arc::new(self.into_event()),
             database_update: Default::default(),
         }
         .serialize_text()
@@ -257,7 +258,7 @@ impl ServerMessage for MessageExecutionError {
 
     fn serialize_binary(self) -> Message {
         TransactionUpdateMessage::<DatabaseUpdate> {
-            event: &mut self.into_event(),
+            event: Arc::new(self.into_event()),
             database_update: Default::default(),
         }
         .serialize_binary()

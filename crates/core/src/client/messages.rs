@@ -1,9 +1,11 @@
 use base64::Engine;
+use derive_more::From;
 use prost::Message as _;
 use spacetimedb_lib::identity::RequestId;
+use std::sync::Arc;
 use std::time::Instant;
 
-use crate::host::module_host::{EventStatus, ModuleEvent, ProtocolDatabaseUpdate};
+use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ProtocolDatabaseUpdate};
 use crate::identity::Identity;
 use crate::json::client_api::{
     EventJson, FunctionCallJson, IdentityTokenJson, MessageJson, OneOffQueryResponseJson, OneOffTableJson,
@@ -14,6 +16,7 @@ use spacetimedb_client_api_messages::client_api::{OneOffQueryResponse, OneOffTab
 use spacetimedb_lib::Address;
 use spacetimedb_vm::relation::MemTable;
 
+use super::message_handlers::MessageExecutionError;
 use super::{DataMessage, Protocol};
 
 /// A message sent from the server to the client. Because clients can request either text or binary messages,
@@ -29,6 +32,41 @@ pub trait ServerMessage: Sized {
     fn serialize_binary(self) -> Message;
 }
 
+#[derive(Debug, From)]
+pub enum SerializableMessage {
+    Query(OneOffQueryResponseMessage),
+    Error(MessageExecutionError),
+    Identity(IdentityTokenMessage),
+    Subscribe(SubscriptionUpdateMessage),
+    DatabaseUpdate(TransactionUpdateMessage<DatabaseUpdate>),
+    ProtocolUpdate(TransactionUpdateMessage<ProtocolDatabaseUpdate>),
+}
+
+impl ServerMessage for SerializableMessage {
+    fn serialize_text(self) -> MessageJson {
+        match self {
+            SerializableMessage::Query(msg) => msg.serialize_text(),
+            SerializableMessage::Error(msg) => msg.serialize_text(),
+            SerializableMessage::Identity(msg) => msg.serialize_text(),
+            SerializableMessage::Subscribe(msg) => msg.serialize_text(),
+            SerializableMessage::DatabaseUpdate(msg) => msg.serialize_text(),
+            SerializableMessage::ProtocolUpdate(msg) => msg.serialize_text(),
+        }
+    }
+
+    fn serialize_binary(self) -> Message {
+        match self {
+            SerializableMessage::Query(msg) => msg.serialize_binary(),
+            SerializableMessage::Error(msg) => msg.serialize_binary(),
+            SerializableMessage::Identity(msg) => msg.serialize_binary(),
+            SerializableMessage::Subscribe(msg) => msg.serialize_binary(),
+            SerializableMessage::DatabaseUpdate(msg) => msg.serialize_binary(),
+            SerializableMessage::ProtocolUpdate(msg) => msg.serialize_binary(),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct IdentityTokenMessage {
     pub identity: Identity,
     pub identity_token: String,
@@ -54,12 +92,13 @@ impl ServerMessage for IdentityTokenMessage {
     }
 }
 
-pub struct TransactionUpdateMessage<'a, U> {
-    pub event: &'a ModuleEvent,
+#[derive(Debug)]
+pub struct TransactionUpdateMessage<U> {
+    pub event: Arc<ModuleEvent>,
     pub database_update: SubscriptionUpdate<U>,
 }
 
-impl<U: Into<Vec<TableUpdate>> + Into<Vec<TableUpdateJson>>> ServerMessage for TransactionUpdateMessage<'_, U> {
+impl<U: Into<Vec<TableUpdate>> + Into<Vec<TableUpdateJson>>> ServerMessage for TransactionUpdateMessage<U> {
     fn serialize_text(self) -> MessageJson {
         let Self { event, database_update } = self;
         let (status_str, errmsg) = match &event.status {
@@ -123,25 +162,7 @@ impl<U: Into<Vec<TableUpdate>> + Into<Vec<TableUpdateJson>>> ServerMessage for T
     }
 }
 
-impl<U: Clone + Into<Vec<TableUpdate>> + Into<Vec<TableUpdateJson>>> ServerMessage
-    for &mut TransactionUpdateMessage<'_, U>
-{
-    fn serialize_text(self) -> MessageJson {
-        TransactionUpdateMessage {
-            event: self.event,
-            database_update: self.database_update.clone(),
-        }
-        .serialize_text()
-    }
-    fn serialize_binary(self) -> Message {
-        TransactionUpdateMessage {
-            event: self.event,
-            database_update: self.database_update.clone(),
-        }
-        .serialize_binary()
-    }
-}
-
+#[derive(Debug)]
 pub struct SubscriptionUpdateMessage {
     pub subscription_update: SubscriptionUpdate<ProtocolDatabaseUpdate>,
 }
@@ -185,42 +206,7 @@ impl<T: Into<Vec<TableUpdateJson>>> SubscriptionUpdate<T> {
     }
 }
 
-pub struct CachedMessage<M> {
-    msg: M,
-    text: Option<String>,
-    binary: Option<Vec<u8>>,
-}
-
-impl<M> CachedMessage<M> {
-    pub fn new(msg: M) -> Self {
-        Self {
-            msg,
-            text: None,
-            binary: None,
-        }
-    }
-}
-
-impl<M> CachedMessage<M>
-where
-    for<'b> &'b mut M: ServerMessage,
-{
-    pub fn serialize(&mut self, protocol: Protocol) -> DataMessage {
-        match protocol {
-            Protocol::Text => self
-                .text
-                .get_or_insert_with(|| self.msg.serialize_text().to_json())
-                .clone()
-                .into(),
-            Protocol::Binary => self
-                .binary
-                .get_or_insert_with(|| self.msg.serialize_binary().encode_to_vec())
-                .clone()
-                .into(),
-        }
-    }
-}
-
+#[derive(Debug)]
 pub struct OneOffQueryResponseMessage {
     pub message_id: Vec<u8>,
     pub error: Option<String>,

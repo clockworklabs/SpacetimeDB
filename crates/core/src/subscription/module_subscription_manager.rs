@@ -112,7 +112,7 @@ impl SubscriptionManager {
     /// evaluates only the necessary queries for those delta tables,
     /// and then sends the results to each client.
     #[tracing::instrument(skip_all)]
-    pub fn eval_updates(&self, db: &RelationalDB, event: &ModuleEvent) {
+    pub fn eval_updates(&self, db: &RelationalDB, event: Arc<ModuleEvent>) {
         let tables = &event.status.database_update().unwrap().tables;
 
         let tx = scopeguard::guard(db.begin_tx(), |tx| {
@@ -246,7 +246,10 @@ impl SubscriptionManager {
                     request_id: event.request_id,
                     timer: event.timer,
                 };
-                let message = TransactionUpdateMessage { event, database_update };
+                let message = TransactionUpdateMessage {
+                    event: event.clone(),
+                    database_update,
+                };
                 if let Err(e) = client.send_message(message) {
                     tracing::warn!(%client.id, "failed to send update message to client: {e}")
                 }
