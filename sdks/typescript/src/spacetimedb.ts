@@ -47,18 +47,12 @@ import { stdbLogger } from "./logger";
 let brotliDecompress: (data: Uint8Array) => Uint8Array;
 
 const brotliLibPromise = (async () => {
-  if (typeof window === "undefined") {
-    // In Node.js we can use native decompressor.
-    const { brotliDecompressSync } = await import("zlib");
-    brotliDecompress = brotliDecompressSync;
-  } else {
-    // In browser we have to use Wasm version of brotli.
-    // First, we need to load JS itself.
-    const exportsPromise = await import("brotli-dec-wasm");
-    // Then await Wasm initialization.
-    const { decompress } = await exportsPromise.default;
-    brotliDecompress = decompress;
-  }
+  // In browser we have to use Wasm version of brotli.
+  // First, we need to load JS itself.
+  const exportsPromise = await import("brotli-dec-wasm");
+  // Then await Wasm initialization.
+  const { decompress } = await exportsPromise.default;
+  brotliDecompress = decompress;
 })();
 
 export {
