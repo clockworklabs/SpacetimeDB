@@ -54,7 +54,7 @@ async fn configure_tracing() {
     let honeycomb_api_key = std::env::var("HONEYCOMB_API_KEY").unwrap();
     metadata.insert("x-honeycomb-team", MetadataValue::from_str(&honeycomb_api_key).unwrap());
     let honeycomb_ca_path = std::env::var("HONEYCOMB_CA_PATH").unwrap_or("/etc/spacetimedb/honeycomb_ca.pem".into());
-    let pem = fs::read_to_string(&honeycomb_ca__path).expect("Could not read honeycomb cert");
+    let pem = fs::read_to_string(&honeycomb_ca_path).expect("Could not read honeycomb cert");
     let certificate = Certificate::from_pem(pem.as_bytes());
     let tls_config = ClientTlsConfig::default()
         .domain_name("api.honeycomb.io")
