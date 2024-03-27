@@ -43,7 +43,23 @@ import {
 } from "./message_types";
 import { SpacetimeDBGlobals } from "./global";
 import { stdbLogger } from "./logger";
-import brotliPromise from "brotli-dec-wasm";
+
+let brotliDecompress: (data: Uint8Array) => Uint8Array;
+
+const brotliLibPromise = (async () => {
+  if (typeof window === "undefined") {
+    // In Node.js we can use native decompressor.
+    const { brotliDecompressSync } = await import("zlib");
+    brotliDecompress = brotliDecompressSync;
+  } else {
+    // In browser we have to use Wasm version of brotli.
+    // First, we need to load JS itself.
+    const exportsPromise = await import("brotli-dec-wasm");
+    // Then await Wasm initialization.
+    const { decompress } = await exportsPromise.default;
+    brotliDecompress = decompress;
+  }
+})();
 
 export {
   ProductValue,
@@ -274,10 +290,10 @@ export class SpacetimeDBClient {
    * Handles WebSocket onMessage event.
    * @param wsMessage MessageEvent object.
    */
-  private async handleOnMessage(wsMessage: any) {
+  private handleOnMessage(wsMessage: MessageEvent) {
     this.emitter.emit("receiveWSMessage", wsMessage);
 
-    const message = await this.processMessage(wsMessage);
+    const message: Message = this.processMessage(wsMessage);
     if (message instanceof SubscriptionUpdateMessage) {
       for (let tableUpdate of message.tableUpdates) {
         const tableName = tableUpdate.tableName;
@@ -489,6 +505,10 @@ export class SpacetimeDBClient {
     const stdbProtocol = this.protocol === "binary" ? "bin" : "text";
     this.ws = await this.createWSFn(url, `v1.${stdbProtocol}.spacetimedb`);
 
+    // We need to make sure that Brotli library is ready before we start receiving messages.
+    // (test mocks in particular expect that messages are handled synchronously)
+    await brotliLibPromise;
+
     this.ws.binaryType = "arraybuffer";
 
     this.ws.onclose = this.handleOnClose.bind(this);
@@ -497,7 +517,7 @@ export class SpacetimeDBClient {
     this.ws.onmessage = this.handleOnMessage.bind(this);
   }
 
-  private async processMessage(wsMessage: MessageEvent): Promise<Message> {
+  private processMessage(wsMessage: MessageEvent) {
     if (this.protocol === "binary") {
       // Helpers for parsing message components which appear in multiple messages.
       const parseTableRowOperation = (
@@ -536,10 +556,7 @@ export class SpacetimeDBClient {
       };
 
       const compressedData = wsMessage.data as ArrayBuffer;
-      const brotli = await brotliPromise;
-      const decompressedData = brotli.decompress(
-        new Uint8Array(compressedData)
-      );
+      const decompressedData = brotliDecompress(new Uint8Array(compressedData));
       const message: Proto.Message = Proto.Message.decode(decompressedData);
       if (message["subscriptionUpdate"]) {
         const rawSubscriptionUpdate = message.subscriptionUpdate;
