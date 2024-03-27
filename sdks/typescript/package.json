@@ -40,7 +40,6 @@
   },
   "dependencies": {
     "brotli-dec-wasm": "^2.1.0",
-    "buffer": "^6.0.3",
     "events": "^3.3.0",
     "isomorphic-ws": "^5.0.0",
     "long": "^5.2.3",
