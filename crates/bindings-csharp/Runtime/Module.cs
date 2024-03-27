@@ -286,7 +286,7 @@ public static class FFI
         {
             module = new();
             var moduleBytes = ModuleDef.GetSatsTypeInfo().ToBytes(userModule);
-            var res = RawBindings._buffer_alloc(moduleBytes, (uint)moduleBytes.Length);
+            var res = RawBindings.buffer_alloc(moduleBytes, (uint)moduleBytes.Length);
             return res;
         }
         catch (Exception e)
@@ -328,7 +328,7 @@ public static class FFI
         {
             var error_str = e.ToString();
             var error_bytes = System.Text.Encoding.UTF8.GetBytes(error_str);
-            return RawBindings._buffer_alloc(error_bytes, (uint)error_bytes.Length);
+            return RawBindings.buffer_alloc(error_bytes, (uint)error_bytes.Length);
         }
     }
 }

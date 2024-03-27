@@ -18,60 +18,62 @@ OPAQUE_TYPEDEF(IndexType, uint8_t);
 OPAQUE_TYPEDEF(LogLevel, uint8_t);
 OPAQUE_TYPEDEF(ScheduleToken, uint64_t);
 OPAQUE_TYPEDEF(Buffer, uint32_t);
-OPAQUE_TYPEDEF(BufferIter, uint32_t);
+OPAQUE_TYPEDEF(RowIter, uint32_t);
 
 #define CSTR(s) (uint8_t*)s, sizeof(s) - 1
 
 #define IMPORT(ret, name, params, args)                             \
-  __attribute__((import_module("spacetime_7.0"),                    \
+  __attribute__((import_module("spacetime_8.0"),                    \
                  import_name(#name))) extern ret name##_imp params; \
   ret name params { return name##_imp args; }
 
-IMPORT(void, _console_log,
+IMPORT(void, console_log,
        (LogLevel level, const uint8_t* target, uint32_t target_len,
         const uint8_t* filename, uint32_t filename_len, uint32_t line_number,
         const uint8_t* message, uint32_t message_len),
        (level, target, target_len, filename, filename_len, line_number, message,
         message_len));
 
-IMPORT(Status, _get_table_id,
+IMPORT(Status, get_table_id,
        (const uint8_t* name, uint32_t name_len, TableId* id),
        (name, name_len, id));
-IMPORT(Status, _create_index,
+IMPORT(Status, create_index,
        (const uint8_t* index_name, uint32_t index_name_len, TableId table_id,
         const ColId* col_ids, uint32_t col_ids_len, IndexType type),
        (index_name, index_name_len, table_id, col_ids, col_ids_len, type));
-IMPORT(Status, _iter_by_col_eq,
+IMPORT(Status, iter_by_col_eq,
        (TableId table_id, ColId col_id, const uint8_t* value,
-        uint32_t value_len, BufferIter* iter),
+        uint32_t value_len, RowIter* iter),
        (table_id, col_id, value, value_len, iter));
-IMPORT(Status, _insert, (TableId table_id, const uint8_t* row, uint32_t len),
+IMPORT(Status, insert, (TableId table_id, const uint8_t* row, uint32_t len),
        (table_id, row, len));
-IMPORT(Status, _delete_by_col_eq,
+IMPORT(Status, delete_by_col_eq,
        (TableId table_id, ColId col_id, const uint8_t* value,
         uint32_t value_len, uint32_t* num_deleted),
        (table_id, col_id, value, value_len, num_deleted));
-IMPORT(Status, _delete_by_rel,
+IMPORT(Status, delete_by_rel,
        (TableId table_id, const uint8_t* relation, uint32_t relation_len,
         uint32_t* num_deleted),
        (table_id, relation, relation_len, num_deleted));
-IMPORT(Status, _iter_start, (TableId table_id, BufferIter* iter),
+IMPORT(Status, iter_start, (TableId table_id, RowIter* iter),
        (table_id, iter));
-IMPORT(Status, _iter_start_filtered,
+IMPORT(Status, iter_start_filtered,
        (TableId table_id, const uint8_t* filter, uint32_t filter_len,
-        BufferIter* iter),
+        RowIter* iter),
        (table_id, filter, filter_len, iter));
-IMPORT(Status, _iter_next, (BufferIter iter, Buffer* row), (iter, row));
-IMPORT(Status, _iter_drop, (BufferIter iter), (iter));
-IMPORT(void, _schedule_reducer,
+IMPORT(Status, iter_advance,
+       (RowIter iter, uint8_t* buffer, size_t* buffer_len),
+       (iter, buffer, buffer_len));
+IMPORT(void, iter_drop, (RowIter iter), (iter));
+IMPORT(void, schedule_reducer,
        (const uint8_t* name, uint32_t name_len, const uint8_t* args,
         uint32_t args_len, uint64_t timestamp, ScheduleToken* token),
        (name, name_len, args, args_len, timestamp, token));
-IMPORT(void, _cancel_reducer, (ScheduleToken token), (token));
-IMPORT(uint32_t, _buffer_len, (Buffer buf), (buf));
-IMPORT(void, _buffer_consume, (Buffer buf, uint8_t* dst, uint32_t dst_len),
+IMPORT(void, cancel_reducer, (ScheduleToken token), (token));
+IMPORT(uint32_t, buffer_len, (Buffer buf), (buf));
+IMPORT(void, buffer_consume, (Buffer buf, uint8_t* dst, uint32_t dst_len),
        (buf, dst, dst_len));
-IMPORT(Buffer, _buffer_alloc, (const uint8_t* data, uint32_t len), (data, len));
+IMPORT(Buffer, buffer_alloc, (const uint8_t* data, uint32_t len), (data, len));
 
 static MonoClass* ffi_class;
 
@@ -208,7 +210,7 @@ int32_t WASI_NAME(fd_write)(__wasi_fd_t fd, const __wasi_ciovec_t* iovs,
     // Note: this will produce ugly broken output, but there's not much we can
     // do about it until we have proper line-buffered WASI writer in the core.
     // It's better than nothing though.
-    _console_log_imp((LogLevel){fd == STDERR_FILENO ? /*WARN*/ 1 : /*INFO*/ 2},
+    console_log_imp((LogLevel){fd == STDERR_FILENO ? /*WARN*/ 1 : /*INFO*/ 2},
                      CSTR("wasi"), CSTR(__FILE__), __LINE__, iovs[i].buf,
                      iovs[i].buf_len);
     *retptr0 += iovs[i].buf_len;

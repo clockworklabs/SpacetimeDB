@@ -30,19 +30,58 @@ public static partial class RawBindings
         {
             if (status != 0)
             {
-                throw new Exception(
-                    status switch
-                    {
-                        1 => "No such table",
-                        2 => "Value or range provided not found in table",
-                        3 => "Value with given unique identifier already exists",
-                        _ => $"SpacetimeDB error code {status}",
-                    }
-                );
+                throw status switch
+                {
+                    ERRNO_NO_SUCH_TABLE => new NoSuchTableException(),
+                    ERRNO_LOOKUP_NOT_FOUND => new LookupNotFoundException(),
+                    ERRNO_UNIQUE_ALREADY_EXISTS => new UniqueAlreadyExistsException(),
+                    ERRNO_BUFFER_TOO_SMALL => new BufferTooSmallException(),
+                    _ => new StdbException(status),
+                };
             }
             return default;
         }
     }
+
+    private const ushort ERRNO_NO_SUCH_TABLE = 1;
+    private const ushort ERRNO_LOOKUP_NOT_FOUND = 2;
+    private const ushort ERRNO_UNIQUE_ALREADY_EXISTS = 3;
+    private const ushort ERRNO_BUFFER_TOO_SMALL = 4;
+
+
+    public class StdbException : Exception
+    {
+        public ushort Code { get; private set; }
+
+        internal StdbException(ushort code) => Code = code;
+
+        public override string Message => $"SpacetimeDB error code {Code}";
+    }
+
+    public class NoSuchTableException : StdbException
+    {
+        internal NoSuchTableException() : base(ERRNO_NO_SUCH_TABLE) { }
+        public override string Message => "No such table";
+    }
+
+    public class LookupNotFoundException : StdbException
+    {
+        internal LookupNotFoundException() : base(ERRNO_LOOKUP_NOT_FOUND) { }
+        public override string Message => "Value or range provided not found in table";
+    }
+
+    public class UniqueAlreadyExistsException : StdbException
+    {
+        internal UniqueAlreadyExistsException() : base(ERRNO_UNIQUE_ALREADY_EXISTS) { }
+        public override string Message => "Value with given unique identifier already exists";
+    }
+
+    public class BufferTooSmallException : StdbException
+    {
+        internal BufferTooSmallException() : base(ERRNO_BUFFER_TOO_SMALL) { }
+        public override string Message => "The provided buffer is not large enough to store the data";
+    }
+
 
     [NativeMarshalling(typeof(StatusMarshaller))]
     public struct CheckedStatus;
@@ -112,33 +151,33 @@ public static partial class RawBindings
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    public readonly struct BufferIter(uint handle) : IEquatable<BufferIter>
+    public readonly struct RowIter(uint handle) : IEquatable<RowIter>
     {
         private readonly uint handle = handle;
-        public static readonly BufferIter INVALID = new(uint.MaxValue);
+        public static readonly RowIter INVALID = new(uint.MaxValue);
 
-        public bool Equals(BufferIter other) => handle == other.handle;
+        public bool Equals(RowIter other) => handle == other.handle;
 
-        public static explicit operator uint(BufferIter buf) => buf.handle;
+        public static explicit operator uint(RowIter buf) => buf.handle;
 
-        public override bool Equals(object? obj) => obj is BufferIter other && Equals(other);
+        public override bool Equals(object? obj) => obj is RowIter other && Equals(other);
 
         public override int GetHashCode() => handle.GetHashCode();
 
-        public static bool operator ==(BufferIter left, BufferIter right) => left.Equals(right);
+        public static bool operator ==(RowIter left, RowIter right) => left.Equals(right);
 
-        public static bool operator !=(BufferIter left, BufferIter right) => !(left == right);
+        public static bool operator !=(RowIter left, RowIter right) => !(left == right);
     }
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _get_table_id(
+    public static partial CheckedStatus get_table_id(
         [In] byte[] name,
         uint name_len,
         out TableId out_
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _create_index(
+    public static partial CheckedStatus create_index(
         [In] byte[] index_name,
         uint index_name_len,
         TableId table_id,
@@ -148,19 +187,19 @@ public static partial class RawBindings
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _iter_by_col_eq(
+    public static partial CheckedStatus iter_by_col_eq(
         TableId table_id,
         ColId col_id,
         [In] byte[] value,
         uint value_len,
-        out Buffer out_
+        out RowIter out_
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _insert(TableId table_id, byte[] row, uint row_len);
+    public static partial CheckedStatus insert(TableId table_id, byte[] row, uint row_len);
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _delete_by_col_eq(
+    public static partial CheckedStatus delete_by_col_eq(
         TableId table_id,
         ColId col_id,
         [In] byte[] value,
@@ -169,7 +208,7 @@ public static partial class RawBindings
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _delete_by_rel(
+    public static partial CheckedStatus delete_by_rel(
         TableId table_id,
         [In] byte[] relation,
         uint relation_len,
@@ -177,24 +216,29 @@ public static partial class RawBindings
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _iter_start(TableId table_id, out BufferIter out_);
+    public static partial CheckedStatus iter_start(TableId table_id, out RowIter out_);
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _iter_start_filtered(
+    public static partial CheckedStatus iter_start_filtered(
         TableId table_id,
         [In] byte[] filter,
         uint filter_len,
-        out BufferIter out_
+        out RowIter out_
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _iter_next(BufferIter iter_handle, out Buffer out_);
+    public static partial CheckedStatus iter_advance(
+        RowIter iter_handle,
+        // [MarshalUsing(CountElementName = nameof(dst_len))] [Out] byte[] dst,
+        byte[] buffer,
+        ref uint buffer_len
+    );
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _iter_drop(BufferIter iter_handle);
+    public static partial void iter_drop(RowIter iter_handle);
 
     [LibraryImport(StdbNamespace)]
-    public static partial void _console_log(
+    public static partial void console_log(
         byte level,
         [In] byte[] target,
         uint target_len,
@@ -206,7 +250,7 @@ public static partial class RawBindings
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial void _schedule_reducer(
+    public static partial void schedule_reducer(
         [In] byte[] name,
         uint name_len,
         [In] byte[] args,
@@ -216,18 +260,18 @@ public static partial class RawBindings
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial void _cancel_reducer(ScheduleToken schedule_token_handle);
+    public static partial void cancel_reducer(ScheduleToken schedule_token_handle);
 
     [LibraryImport(StdbNamespace)]
-    public static partial uint _buffer_len(Buffer buf_handle);
+    public static partial uint buffer_len(Buffer buf_handle);
 
     [LibraryImport(StdbNamespace)]
-    public static partial void _buffer_consume(
+    public static partial void buffer_consume(
         Buffer buf_handle,
-        [MarshalUsing(CountElementName = nameof(dst_len))] [Out] byte[] dst,
+        [MarshalUsing(CountElementName = nameof(dst_len))][Out] byte[] dst,
         uint dst_len
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial Buffer _buffer_alloc([In] byte[] data, uint data_len);
+    public static partial Buffer buffer_alloc([In] byte[] data, uint data_len);
 }

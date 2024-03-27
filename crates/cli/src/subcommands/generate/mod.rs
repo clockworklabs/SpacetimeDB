@@ -413,7 +413,7 @@ fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<ModuleDef> {
     let module_name = &*format!("spacetime_{MODULE_ABI_MAJOR_VERSION}.0");
     linker.func_wrap(
         module_name,
-        "_console_log",
+        "console_log",
         |caller: Caller<'_, WasmCtx>,
          _level: u32,
          _target: u32,
@@ -432,7 +432,7 @@ fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<ModuleDef> {
             }
         },
     )?;
-    linker.func_wrap(module_name, "_buffer_alloc", WasmCtx::buffer_alloc)?;
+    linker.func_wrap(module_name, "buffer_alloc", WasmCtx::buffer_alloc)?;
     let instance = linker.instantiate(&mut store, &module)?;
     let memory = Memory {
         mem: instance.get_memory(&mut store, "memory").unwrap(),
