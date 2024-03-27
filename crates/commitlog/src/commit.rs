@@ -206,7 +206,7 @@ mod tests {
     }
 
     #[test]
-    fn bitflip() {
+    fn bitflip_of_random_byte_violates_checksum() {
         let commit = Commit {
             min_tx_offset: 42,
             n: 10,
