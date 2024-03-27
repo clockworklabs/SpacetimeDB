@@ -10,7 +10,7 @@
     "forceConsistentCasingInFileNames": true,
     "strict": true,
     "noImplicitAny": false,
-    "moduleResolution": "nodenext",
+    "moduleResolution": "Node",
     "allowSyntheticDefaultImports": true
   },
   "include": ["src"],

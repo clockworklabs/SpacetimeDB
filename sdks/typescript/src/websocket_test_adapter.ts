@@ -7,6 +7,8 @@ class WebsocketTestAdapter {
   public messageQueue: any[];
   public closed: boolean;
 
+  public binaryType: BinaryType = "blob";
+
   constructor() {
     this.messageQueue = [];
     this.closed = false;
@@ -25,7 +27,7 @@ class WebsocketTestAdapter {
   }
 
   public sendToClient(message: any) {
-    if (typeof message.data !== 'string') {
+    if (typeof message.data !== "string") {
       message.data = JSON.stringify(message.data);
     }
     this.onmessage(message);
