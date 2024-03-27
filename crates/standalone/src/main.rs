@@ -1,7 +1,5 @@
 use clap::Command;
 
-use tokio::runtime::Builder;
-
 use spacetimedb_lib::util;
 use spacetimedb_standalone::*;
 use std::panic;
@@ -46,9 +44,5 @@ fn main() -> anyhow::Result<()> {
     }));
 
     // Create a multi-threaded run loop
-    Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(async_main())
+    spacetimedb::startup::tokio_runtime().unwrap().block_on(async_main())
 }

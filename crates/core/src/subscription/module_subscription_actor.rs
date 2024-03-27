@@ -127,20 +127,18 @@ impl ModuleSubscriptions {
     /// It's recommended to take a read lock on `subscriptions` field *before* you commit
     /// the transaction that will give you the event you pass here, to prevent a race condition
     /// where a just-added subscriber receives the same update twice.
-    pub async fn broadcast_event(
+    pub fn broadcast_event(
         &self,
         client: Option<&ClientConnectionSender>,
         subscriptions: &SubscriptionManager,
-        event: Arc<ModuleEvent>,
+        event: &ModuleEvent,
     ) {
         match event.status {
-            EventStatus::Committed(_) => {
-                tokio::task::block_in_place(|| self.broadcast_commit_event(subscriptions, event))
-            }
+            EventStatus::Committed(_) => subscriptions.eval_updates(&self.relational_db, event),
             EventStatus::Failed(_) => {
                 if let Some(client) = client {
                     let message = TransactionUpdateMessage::<DatabaseUpdate> {
-                        event: &event,
+                        event,
                         database_update: <_>::default(),
                     };
                     let _ = client.send_message(message);
@@ -150,26 +148,6 @@ impl ModuleSubscriptions {
             }
             EventStatus::OutOfEnergy => {} // ?
         }
-    }
-
-    /// A blocking version of [`broadcast_event`][Self::broadcast_event].
-    pub fn blocking_broadcast_event(
-        &self,
-        client: Option<&ClientConnectionSender>,
-        subscriptions: &SubscriptionManager,
-        event: Arc<ModuleEvent>,
-    ) {
-        tokio::runtime::Handle::current().block_on(self.broadcast_event(client, subscriptions, event))
-    }
-
-    /// Broadcast the commit event to all interested subscribers.
-    ///
-    /// This function is blocking, even though it returns a future. The returned future resolves
-    /// once all updates have been successfully added to the subscribers' send queues (i.e. after
-    /// it resolves, it's guaranteed that if you call `subscriber.send(x)` the client will receive
-    /// x after they receive this subscription update).
-    fn broadcast_commit_event(&self, subscriptions: &SubscriptionManager, event: Arc<ModuleEvent>) {
-        subscriptions.eval_updates(&self.relational_db, &event)
     }
 }
 

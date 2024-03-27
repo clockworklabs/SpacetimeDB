@@ -1,4 +1,6 @@
 use itertools::Itertools;
+use once_cell::sync::Lazy;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tracing_appender::rolling;
@@ -137,52 +139,75 @@ fn reload_config<S>(conf_file: &Path, reload_handle: &reload::Handle<EnvFilter, 
 }
 
 fn configure_rayon() {
+    let cpus = &CPU_AFFINITY.rayon;
     rayon_core::ThreadPoolBuilder::new()
         .thread_name(|_idx| "rayon-worker".to_string())
-        .spawn_handler(thread_spawn_handler(tokio::runtime::Handle::current()))
-        // TODO(perf, pgoldman 2024-02-22):
-        // in the case where we have many modules running many reducers,
-        // we'll wind up with Rayon threads competing with each other and with Tokio threads
-        // for CPU time.
-        //
-        // We should investigate creating two separate CPU pools,
-        // possibly via https://docs.rs/nix/latest/nix/sched/fn.sched_setaffinity.html,
-        // and restricting Tokio threads to one CPU pool
-        // and Rayon threads to the other.
-        // Then we should give Tokio and Rayon each a number of worker threads
-        // equal to the size of their pool.
-        .num_threads(std::thread::available_parallelism().unwrap().get() / 2)
+        .num_threads(cpus.len())
+        .start_handler(|_i| {
+            #[cfg(target_os = "linux")]
+            sched::set_cpu(cpus.clone().nth(_i).unwrap());
+        })
         .build_global()
         .unwrap()
 }
 
-/// A Rayon [spawn_handler](https://docs.rs/rustc-rayon-core/latest/rayon_core/struct.ThreadPoolBuilder.html#method.spawn_handler)
-/// which enters the given Tokio runtime at thread startup,
-/// so that the Rayon workers can send along async channels.
-///
-/// Other than entering the `rt`, this spawn handler behaves identitically to the default Rayon spawn handler,
-/// as documented in
-/// https://docs.rs/rustc-rayon-core/0.5.0/rayon_core/struct.ThreadPoolBuilder.html#method.spawn_handler
-///
-/// Having Rayon threads block on async operations is a code smell.
-/// We need to be careful that the Rayon threads never actually block,
-/// i.e. that every async operation they invoke immediately completes.
-/// I (pgoldman 2024-02-22) believe that our Rayon threads only ever send to unbounded channels,
-/// and therefore never wait.
-fn thread_spawn_handler(rt: tokio::runtime::Handle) -> impl FnMut(rayon::ThreadBuilder) -> Result<(), std::io::Error> {
-    move |thread| {
-        let rt = rt.clone();
-        let mut builder = std::thread::Builder::new();
-        if let Some(name) = thread.name() {
-            builder = builder.name(name.to_owned());
-        }
-        if let Some(stack_size) = thread.stack_size() {
-            builder = builder.stack_size(stack_size);
-        }
-        builder.spawn(move || {
-            let _rt_guard = rt.enter();
-            thread.run()
-        })?;
-        Ok(())
+/// Contains the cpu affinity ranges for different threadpools in spacetimedb.
+#[derive(Clone)]
+struct CpuAffinity {
+    /// The cpu range for the tokio threadpool; io operations and standard application logic.
+    tokio: Range<usize>,
+    /// The cpu range for the rayon threadpool; cpu-heavy operations that are parallelized
+    /// across multiple cores.
+    rayon: Range<usize>,
+}
+
+static CPU_AFFINITY: Lazy<CpuAffinity> = Lazy::new(|| {
+    let ncpus = std::thread::available_parallelism().unwrap().get();
+    assert!(ncpus >= 2);
+    let split = ncpus / 2;
+    CpuAffinity {
+        tokio: 0..split,
+        rayon: split..ncpus,
     }
+});
+
+#[cfg(target_os = "linux")]
+mod sched {
+
+    use nix::sched::{sched_setaffinity, CpuSet};
+    use nix::unistd::Pid;
+
+    pub fn set_cpu(cpu: usize) {
+        setaffinity(&cpuset([cpu]))
+    }
+
+    pub fn cpuset(cpus: impl IntoIterator<Item = usize>) -> CpuSet {
+        let mut cpuset = CpuSet::new();
+        for cpu in cpus {
+            cpuset.set(cpu).unwrap();
+        }
+        cpuset
+    }
+
+    pub fn setaffinity(cpuset: &CpuSet) {
+        if let Err(e) = sched_setaffinity(Pid::from_raw(0), cpuset) {
+            tracing::warn!("failed to set cpu affinity: {e}")
+        }
+    }
+}
+
+pub fn tokio_runtime() -> std::io::Result<tokio::runtime::Runtime> {
+    let cpus = CPU_AFFINITY.tokio.clone();
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(cpus.len())
+        .on_thread_start({
+            #[cfg(target_os = "linux")]
+            let cpuset = sched::cpuset(cpus);
+            move || {
+                #[cfg(target_os = "linux")]
+                sched::setaffinity(&cpuset);
+            }
+        })
+        .build()
 }
