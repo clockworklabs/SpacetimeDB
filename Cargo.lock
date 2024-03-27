@@ -953,6 +953,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "crc32c"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "89254598aa9b9fa608de44b3ae54c810f0f06d755e24c50177f1f8f31ff50ce2"
+dependencies = [
+ "rustc_version",
+]
+
+[[package]]
 name = "crc32fast"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4435,6 +4444,21 @@ dependencies = [
  "prost",
  "prost-build",
  "strum",
+]
+
+[[package]]
+name = "spacetimedb-commitlog"
+version = "0.8.2"
+dependencies = [
+ "bitflags 2.4.1",
+ "crc32c",
+ "env_logger",
+ "itertools 0.12.0",
+ "log",
+ "proptest",
+ "rand 0.8.5",
+ "spacetimedb-sats",
+ "thiserror",
 ]
 
 [[package]]
