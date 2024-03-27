@@ -1,7 +1,8 @@
+use super::lim_btree_map::{BTreeMap, Range};
 use core::ops::RangeBounds;
 use core::slice;
 use smallvec::SmallVec;
-use std::collections::btree_map::{BTreeMap, Range};
+//use std::collections::btree_map::{BTreeMap, Range};
 
 /// A multi map that relates a `K` to a *set* of `V`s.
 #[derive(Default)]
@@ -25,7 +26,7 @@ impl<K: Ord, V: Ord> MultiMap<K, V> {
     ///
     /// Returns false if `key -> val` was already in the map.
     pub fn insert(&mut self, key: K, val: V) -> bool {
-        let vset = self.map.entry(key).or_default();
+        let vset = self.map.entry(key, K::cmp).or_default();
         // Use binary search to maintain the sort order.
         // This is used to determine in `O(log(vset.len()))` whether `val` was already present.
         let Err(idx) = vset.binary_search(&val) else {
@@ -39,7 +40,7 @@ impl<K: Ord, V: Ord> MultiMap<K, V> {
     ///
     /// Returns whether `key -> val` was present.
     pub fn delete(&mut self, key: &K, val: &V) -> bool {
-        if let Some(vset) = self.map.get_mut(key) {
+        if let Some(vset) = self.map.get_mut(|other| key.cmp(other)) {
             // The `vset` is sorted so we can binary search.
             if let Ok(idx) = vset.binary_search(val) {
                 // Maintain the sorted order. Don't use `swap_remove`!
@@ -53,8 +54,10 @@ impl<K: Ord, V: Ord> MultiMap<K, V> {
     /// Returns an iterator over the multimap that yields all the `V`s
     /// of the `K`s that fall within the specified `range`.
     pub fn values_in_range(&self, range: &impl RangeBounds<K>) -> MultiMapRangeIter<'_, K, V> {
+        let start = range.start_bound().map(|key| |other: &K| key.cmp(other));
+        let end = range.end_bound().map(|key| |other: &K| key.cmp(other));
         MultiMapRangeIter {
-            outer: self.map.range((range.start_bound(), range.end_bound())),
+            outer: self.map.range(start, end),
             inner: None,
         }
     }

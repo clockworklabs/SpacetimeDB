@@ -1,4 +1,4 @@
-#![forbid(unsafe_op_in_unsafe_fn)]
+//#![forbid(unsafe_op_in_unsafe_fn)]
 
 //! The `spacetimedb_table` crate provides a `Table` implementation
 //! and various ways to interact with a table.

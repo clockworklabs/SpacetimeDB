@@ -33,9 +33,11 @@ use multimap::{MultiMap, MultiMapRangeIter};
 use spacetimedb_primitives::{ColList, IndexId};
 use spacetimedb_sats::{product_value::InvalidFieldError, AlgebraicValue, ProductValue};
 
+pub mod lim_btree_map;
 mod multimap;
+pub use lim_btree_map::BTreeMap;
 
-/// An iterator over a [`TypedMultiMap`], with a specialized key type.
+/// An iterator over a [`TypedIndex`], with a specialized key type.
 ///
 /// See module docs for info about specialization.
 enum TypedMultiMapRangeIter<'a> {
