@@ -1,6 +1,6 @@
 #![allow(clippy::disallowed_names)]
+use spacetimedb::spacetimedb_lib::{self, bsatn};
 use spacetimedb::{query, spacetimedb, Deserialize, ReducerContext, SpacetimeType, Timestamp};
-use spacetimedb_lib::bsatn;
 
 #[spacetimedb(table)]
 #[spacetimedb(index(btree, name = "foo", x))]
