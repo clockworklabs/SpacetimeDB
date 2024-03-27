@@ -25,6 +25,7 @@ use spacetimedb_lib::address::AddressForUrl;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::name::{self, DnsLookupResponse, DomainName, PublishOp, PublishResult};
 use spacetimedb_lib::recovery::{RecoveryCode, RecoveryCodeResponse};
+use spacetimedb_lib::sats::energy::QueryTimer;
 use spacetimedb_lib::sats::WithTypespace;
 use std::collections::HashMap;
 use std::convert::From;
@@ -562,6 +563,7 @@ where
     let results = match execute(
         worker_ctx.database_instance_context_controller(),
         instance_id,
+        &mut QueryTimer::default(),
         body,
         auth,
     ) {

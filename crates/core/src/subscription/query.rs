@@ -155,7 +155,7 @@ mod tests {
     use crate::db::relational_db::MutTx;
     use crate::execution_context::ExecutionContext;
     use crate::host::module_host::{DatabaseUpdate, TableOp};
-    use crate::sql::execute::run;
+    use crate::sql::execute::tests::run_for_testing;
     use crate::subscription::subscription::ExecutionSet;
     use crate::vm::tests::create_table_with_rows;
     use itertools::Itertools;
@@ -303,6 +303,15 @@ mod tests {
         Ok(())
     }
 
+    fn eval_incr_test(
+        db: &RelationalDB,
+        tx: &Tx,
+        s: &ExecutionSet,
+        update: &DatabaseUpdate,
+    ) -> Result<DatabaseUpdate, DBError> {
+        Ok(s.eval_incr(db, tx, update)?.of)
+    }
+
     fn check_query_incr(
         db: &RelationalDB,
         tx: &Tx,
@@ -311,7 +320,7 @@ mod tests {
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
-        let result = s.eval_incr(db, tx, update)?;
+        let result = eval_incr_test(db, tx, s, update)?;
         assert_eq!(
             result.tables.len(),
             total_tables,
@@ -400,7 +409,7 @@ mod tests {
 
         let query: ExecutionSet = singleton_execution_set(query)?;
 
-        let result = query.eval_incr(&db, &tx, &update)?;
+        let result = eval_incr_test(&db, &tx, &query, &update)?;
 
         assert_eq!(result.tables.len(), 1);
 
@@ -537,7 +546,7 @@ mod tests {
 
         insert into EnemyState (entity_id, herd_id, status, type, direction) values (1, 1181485940, 1633678837, 1158301365, 132191327);
         insert into EnemyState (entity_id, herd_id, status, type, direction) values (2, 2017368418, 194072456, 34423057, 1296770410);";
-        run(&db, sql_insert, AuthCtx::for_testing())?;
+        run_for_testing(&db, sql_insert)?;
 
         let sql_query = "\
             SELECT EnemyState.* FROM EnemyState \
@@ -758,18 +767,20 @@ mod tests {
             insert_row(&db, tx, rhs_id, r2.clone())
         })?;
 
-        let result = db.with_read_only(&ExecutionContext::default(), |tx| {
-            query.eval_incr(
-                &db,
-                tx,
-                &DatabaseUpdate {
-                    tables: vec![
-                        delete_op(rhs_id, "rhs", r1.clone()),
-                        insert_op(rhs_id, "rhs", r2.clone()),
-                    ],
-                },
-            )
-        })?;
+        let result = db
+            .with_read_only(&ExecutionContext::default(), |tx| {
+                query.eval_incr(
+                    &db,
+                    tx,
+                    &DatabaseUpdate {
+                        tables: vec![
+                            delete_op(rhs_id, "rhs", r1.clone()),
+                            insert_op(rhs_id, "rhs", r2.clone()),
+                        ],
+                    },
+                )
+            })?
+            .of;
 
         // No updates to report
         assert_eq!(result.tables.len(), 0);
@@ -792,18 +803,20 @@ mod tests {
             insert_row(&db, tx, rhs_id, r2.clone())
         })?;
 
-        let result = db.with_read_only(&ExecutionContext::default(), |tx| {
-            query.eval_incr(
-                &db,
-                tx,
-                &DatabaseUpdate {
-                    tables: vec![
-                        delete_op(rhs_id, "rhs", r1.clone()),
-                        insert_op(rhs_id, "rhs", r2.clone()),
-                    ],
-                },
-            )
-        })?;
+        let result = db
+            .with_read_only(&ExecutionContext::default(), |tx| {
+                query.eval_incr(
+                    &db,
+                    tx,
+                    &DatabaseUpdate {
+                        tables: vec![
+                            delete_op(rhs_id, "rhs", r1.clone()),
+                            insert_op(rhs_id, "rhs", r2.clone()),
+                        ],
+                    },
+                )
+            })?
+            .of;
 
         // No updates to report
         assert_eq!(result.tables.len(), 0);
@@ -826,18 +839,20 @@ mod tests {
             insert_row(&db, tx, rhs_id, r2.clone())
         })?;
 
-        let result = db.with_read_only(&ExecutionContext::default(), |tx| {
-            query.eval_incr(
-                &db,
-                tx,
-                &DatabaseUpdate {
-                    tables: vec![
-                        delete_op(rhs_id, "rhs", r1.clone()),
-                        insert_op(rhs_id, "rhs", r2.clone()),
-                    ],
-                },
-            )
-        })?;
+        let result = db
+            .with_read_only(&ExecutionContext::default(), |tx| {
+                query.eval_incr(
+                    &db,
+                    tx,
+                    &DatabaseUpdate {
+                        tables: vec![
+                            delete_op(rhs_id, "rhs", r1.clone()),
+                            insert_op(rhs_id, "rhs", r2.clone()),
+                        ],
+                    },
+                )
+            })?
+            .of;
 
         // A single delete from lhs
         assert_eq!(result.tables.len(), 1);
@@ -861,18 +876,20 @@ mod tests {
             insert_row(&db, tx, rhs_id, r2.clone())
         })?;
 
-        let result = db.with_read_only(&ExecutionContext::default(), |tx| {
-            query.eval_incr(
-                &db,
-                tx,
-                &DatabaseUpdate {
-                    tables: vec![
-                        delete_op(rhs_id, "rhs", r1.clone()),
-                        insert_op(rhs_id, "rhs", r2.clone()),
-                    ],
-                },
-            )
-        })?;
+        let result = db
+            .with_read_only(&ExecutionContext::default(), |tx| {
+                query.eval_incr(
+                    &db,
+                    tx,
+                    &DatabaseUpdate {
+                        tables: vec![
+                            delete_op(rhs_id, "rhs", r1.clone()),
+                            insert_op(rhs_id, "rhs", r2.clone()),
+                        ],
+                    },
+                )
+            })?
+            .of;
 
         // A single insert into lhs
         assert_eq!(result.tables.len(), 1);
@@ -896,18 +913,20 @@ mod tests {
             insert_row(&db, tx, rhs_id, rhs_row.clone())
         })?;
 
-        let result = db.with_read_only(&ExecutionContext::default(), |tx| {
-            query.eval_incr(
-                &db,
-                tx,
-                &DatabaseUpdate {
-                    tables: vec![
-                        insert_op(lhs_id, "lhs", lhs_row.clone()),
-                        insert_op(rhs_id, "rhs", rhs_row.clone()),
-                    ],
-                },
-            )
-        })?;
+        let result = db
+            .with_read_only(&ExecutionContext::default(), |tx| {
+                query.eval_incr(
+                    &db,
+                    tx,
+                    &DatabaseUpdate {
+                        tables: vec![
+                            insert_op(lhs_id, "lhs", lhs_row.clone()),
+                            insert_op(rhs_id, "rhs", rhs_row.clone()),
+                        ],
+                    },
+                )
+            })?
+            .of;
 
         // A single insert into lhs
         assert_eq!(result.tables.len(), 1);
@@ -931,18 +950,20 @@ mod tests {
             insert_row(&db, tx, rhs_id, rhs_row.clone())
         })?;
 
-        let result = db.with_read_only(&ExecutionContext::default(), |tx| {
-            query.eval_incr(
-                &db,
-                tx,
-                &DatabaseUpdate {
-                    tables: vec![
-                        insert_op(lhs_id, "lhs", lhs_row.clone()),
-                        insert_op(rhs_id, "rhs", rhs_row.clone()),
-                    ],
-                },
-            )
-        })?;
+        let result = db
+            .with_read_only(&ExecutionContext::default(), |tx| {
+                query.eval_incr(
+                    &db,
+                    tx,
+                    &DatabaseUpdate {
+                        tables: vec![
+                            insert_op(lhs_id, "lhs", lhs_row.clone()),
+                            insert_op(rhs_id, "rhs", rhs_row.clone()),
+                        ],
+                    },
+                )
+            })?
+            .of;
 
         // No updates to report
         assert_eq!(result.tables.len(), 0);
@@ -966,18 +987,20 @@ mod tests {
             Ok(())
         })?;
 
-        let result = db.with_read_only(&ExecutionContext::default(), |tx| {
-            query.eval_incr(
-                &db,
-                tx,
-                &DatabaseUpdate {
-                    tables: vec![
-                        delete_op(lhs_id, "lhs", lhs_row.clone()),
-                        delete_op(rhs_id, "rhs", rhs_row.clone()),
-                    ],
-                },
-            )
-        })?;
+        let result = db
+            .with_read_only(&ExecutionContext::default(), |tx| {
+                query.eval_incr(
+                    &db,
+                    tx,
+                    &DatabaseUpdate {
+                        tables: vec![
+                            delete_op(lhs_id, "lhs", lhs_row.clone()),
+                            delete_op(rhs_id, "rhs", rhs_row.clone()),
+                        ],
+                    },
+                )
+            })?
+            .of;
 
         // A single delete from lhs
         assert_eq!(result.tables.len(), 1);
@@ -1002,18 +1025,20 @@ mod tests {
             Ok(())
         })?;
 
-        let result = db.with_read_only(&ExecutionContext::default(), |tx| {
-            query.eval_incr(
-                &db,
-                tx,
-                &DatabaseUpdate {
-                    tables: vec![
-                        delete_op(lhs_id, "lhs", lhs_row.clone()),
-                        delete_op(rhs_id, "rhs", rhs_row.clone()),
-                    ],
-                },
-            )
-        })?;
+        let result = db
+            .with_read_only(&ExecutionContext::default(), |tx| {
+                query.eval_incr(
+                    &db,
+                    tx,
+                    &DatabaseUpdate {
+                        tables: vec![
+                            delete_op(lhs_id, "lhs", lhs_row.clone()),
+                            delete_op(rhs_id, "rhs", rhs_row.clone()),
+                        ],
+                    },
+                )
+            })?
+            .of;
 
         // No updates to report
         assert_eq!(result.tables.len(), 0);
@@ -1040,26 +1065,28 @@ mod tests {
             insert_row(&db, tx, rhs_id, rhs_new.clone())
         })?;
 
-        let result = db.with_read_only(&ExecutionContext::default(), |tx| {
-            query.eval_incr(
-                &db,
-                tx,
-                &DatabaseUpdate {
-                    tables: vec![
-                        DatabaseTableUpdate {
-                            table_id: lhs_id,
-                            table_name: "lhs".to_string(),
-                            ops: vec![TableOp::delete(lhs_old.clone()), TableOp::insert(lhs_new.clone())],
-                        },
-                        DatabaseTableUpdate {
-                            table_id: rhs_id,
-                            table_name: "rhs".to_string(),
-                            ops: vec![TableOp::delete(rhs_old.clone()), TableOp::insert(rhs_new.clone())],
-                        },
-                    ],
-                },
-            )
-        })?;
+        let result = db
+            .with_read_only(&ExecutionContext::default(), |tx| {
+                query.eval_incr(
+                    &db,
+                    tx,
+                    &DatabaseUpdate {
+                        tables: vec![
+                            DatabaseTableUpdate {
+                                table_id: lhs_id,
+                                table_name: "lhs".to_string(),
+                                ops: vec![TableOp::delete(lhs_old.clone()), TableOp::insert(lhs_new.clone())],
+                            },
+                            DatabaseTableUpdate {
+                                table_id: rhs_id,
+                                table_name: "rhs".to_string(),
+                                ops: vec![TableOp::delete(rhs_old.clone()), TableOp::insert(rhs_new.clone())],
+                            },
+                        ],
+                    },
+                )
+            })?
+            .of;
 
         // A delete and an insert into lhs
         assert_eq!(result.tables.len(), 1);

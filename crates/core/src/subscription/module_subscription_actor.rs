@@ -4,34 +4,65 @@ use super::query::compile_read_only_query;
 use super::subscription::ExecutionSet;
 use crate::client::messages::{SubscriptionUpdate, SubscriptionUpdateMessage, TransactionUpdateMessage};
 use crate::client::{ClientActorId, ClientConnectionSender};
+use crate::database_instance_context::DatabaseInstanceContext;
 use crate::db::relational_db::{RelationalDB, Tx};
+use crate::energy::EnergyMonitor;
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
+use crate::messages::control_db::Database;
 use crate::protobuf::client_api::Subscribe;
 use crate::worker_metrics::WORKER_METRICS;
 use parking_lot::RwLock;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
-use std::{sync::Arc, time::Instant};
+use spacetimedb_sats::energy::QueryTimer;
+use std::{fmt, sync::Arc, time::Instant};
 
 type Subscriptions = Arc<RwLock<SubscriptionManager>>;
 
-#[derive(Debug)]
 pub struct ModuleSubscriptions {
-    relational_db: Arc<RelationalDB>,
     pub subscriptions: Subscriptions,
     owner_identity: Identity,
+    relational_db: Arc<RelationalDB>,
+    energy_monitor: Arc<dyn EnergyMonitor>,
+    database: Database,
+    pub database_instance_id: u64,
+}
+
+impl fmt::Debug for ModuleSubscriptions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ModuleSubscriptions")
+            .field("subscriptions", &self.subscriptions)
+            .field("owner_identity", &self.owner_identity)
+            .field("ctx", &"Arc<dyn DatabaseInstanceContext>")
+            .finish()
+    }
 }
 
 type AssertTxFn = Arc<dyn Fn(&Tx)>;
 
 impl ModuleSubscriptions {
-    pub fn new(relational_db: Arc<RelationalDB>, owner_identity: Identity) -> Self {
+    pub(crate) fn new(ctx: &DatabaseInstanceContext, owner_identity: Identity) -> Self {
         Self {
-            relational_db,
             subscriptions: Arc::new(RwLock::new(SubscriptionManager::default())),
             owner_identity,
+            database_instance_id: ctx.database_instance_id,
+            database: ctx.database.clone(),
+            relational_db: ctx.relational_db.clone(),
+            energy_monitor: ctx.energy_monitor.clone(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_testing(relational_db: Arc<RelationalDB>, owner_identity: Identity) -> Self {
+        Self {
+            subscriptions: Arc::new(RwLock::new(SubscriptionManager::default())),
+            owner_identity,
+            database_instance_id: 0,
+            database: Database::for_testing(),
+            relational_db,
+            energy_monitor: Arc::new(crate::energy::NullEnergyMonitor),
         }
     }
 
@@ -54,6 +85,7 @@ impl ModuleSubscriptions {
         let mut queries = vec![];
 
         let guard = self.subscriptions.read();
+        let mut query_timer = QueryTimer::default();
 
         for sql in subscription.query_strings {
             let hash = QueryHash::from_string(&sql);
@@ -76,6 +108,10 @@ impl ModuleSubscriptions {
         let execution_set: ExecutionSet = queries.into();
         let database_update = execution_set.eval(sender.protocol, &self.relational_db, &tx)?;
 
+        query_timer.finish_execution();
+        self.energy_monitor
+            .record_query_energy(&self.database, self.database_instance_id, query_timer.total());
+
         WORKER_METRICS
             .initial_subscription_evals
             .with_label_values(&self.relational_db.address())
@@ -85,6 +121,7 @@ impl ModuleSubscriptions {
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
         // but that should not pose an issue.
         let mut subscriptions = self.subscriptions.write();
+
         subscriptions.remove_subscription(&sender.id.identity);
         subscriptions.add_subscription(sender.clone(), execution_set.into_iter());
         let num_queries = subscriptions.num_queries();
@@ -201,7 +238,7 @@ mod tests {
         let id = Identity::ZERO;
         let client = ClientActorId::for_test(id);
         let sender = Arc::new(ClientConnectionSender::dummy(client, Protocol::Binary));
-        let module_subscriptions = ModuleSubscriptions::new(db.clone(), id);
+        let module_subscriptions = ModuleSubscriptions::for_testing(db.clone(), id);
 
         let (send, mut recv) = mpsc::unbounded_channel();
 

@@ -21,7 +21,7 @@ pub struct EnergyBalance {
     pub balance: i128,
 }
 
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Database {
     pub id: u64,
     pub address: Address,
@@ -30,6 +30,20 @@ pub struct Database {
     pub num_replicas: u32,
     pub program_bytes_address: Hash,
     pub publisher_address: Option<Address>,
+}
+
+impl Database {
+    pub fn for_testing() -> Self {
+        Self {
+            id: 0,
+            address: Default::default(),
+            identity: Default::default(),
+            host_type: HostType::Wasm,
+            num_replicas: 0,
+            program_bytes_address: Hash::ZERO,
+            publisher_address: None,
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]

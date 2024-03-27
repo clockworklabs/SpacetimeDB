@@ -29,6 +29,7 @@ use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::util::const_unwrap;
 use crate::worker_metrics::WORKER_METRICS;
 use spacetimedb_sats::db::def::TableDef;
+use spacetimedb_sats::energy::QueryTimer;
 
 use super::*;
 
@@ -83,7 +84,6 @@ pub(crate) struct WasmModuleHostActor<T: WasmModule> {
     scheduler: Scheduler,
     func_names: Arc<FuncNames>,
     info: Arc<ModuleInfo>,
-    energy_monitor: Arc<dyn EnergyMonitor>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -129,7 +129,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             scheduler,
             program_bytes: _,
             program_hash: module_hash,
-            energy_monitor,
+            energy_monitor: _,
         } = mcc;
         log::trace!(
             "Making new module host actor for database {}",
@@ -143,8 +143,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         func_names.preinits.sort_unstable();
 
         let owner_identity = database_instance_context.identity;
-        let relational_db = database_instance_context.relational_db.clone();
-        let subscriptions = ModuleSubscriptions::new(relational_db, owner_identity);
+        let subscriptions = ModuleSubscriptions::new(&database_instance_context, owner_identity);
 
         let uninit_instance = module.instantiate_pre()?;
         let mut instance = uninit_instance.instantiate(
@@ -197,7 +196,6 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             info,
             database_instance_context,
             scheduler,
-            energy_monitor,
         };
         module.initial_instance = Some(Box::new(module.make_from_instance(instance)));
 
@@ -210,7 +208,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         WasmModuleInstance {
             instance,
             info: self.info.clone(),
-            energy_monitor: self.energy_monitor.clone(),
+            energy_monitor: self.database_instance_context.energy_monitor.clone(),
             trapped: false,
         }
     }
@@ -265,6 +263,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         caller_identity: Identity,
         query: String,
     ) -> Result<Vec<spacetimedb_vm::relation::MemTable>, DBError> {
+        let mut timer = QueryTimer::default();
         let db = &self.database_instance_context.relational_db;
         let auth = AuthCtx::new(self.database_instance_context.identity, caller_identity);
         log::debug!("One-off query: {query}");
@@ -281,8 +280,16 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
                 })
                 .collect::<Result<_, _>>()
         })?;
+        let result = sql::execute::execute_sql(db, &mut timer, compiled, auth)?;
+        timer.finish_execution();
 
-        sql::execute::execute_sql(db, compiled, auth)
+        self.database_instance_context.energy_monitor.record_query_energy(
+            &self.database_instance_context.database,
+            self.database_instance_context.database_instance_id,
+            timer.total(),
+        );
+
+        Ok(result)
     }
 
     fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error> {
