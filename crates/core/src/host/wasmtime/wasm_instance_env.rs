@@ -1,5 +1,6 @@
 #![allow(clippy::too_many_arguments)]
 
+use std::ops::DerefMut;
 use std::time::Instant;
 
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
@@ -153,16 +154,15 @@ impl WasmInstanceEnv {
     }
 
     /// Returns an execution context for a reducer call.
-    fn reducer_context(&self) -> ExecutionContext {
-        ExecutionContext::reducer(self.instance_env().dbic.address, self.reducer_name.as_str())
+    fn reducer_context(&self) -> Result<impl DerefMut<Target = ExecutionContext> + '_, WasmError> {
+        self.instance_env().get_ctx().map_err(|err| WasmError::Db(err.into()))
     }
 
     // TODO: make this part of cvt(), maybe?
     /// Gather the appropriate metadata and log a wasm_abi_call_duration_ns with the given AbiCall & duration
     #[cfg(feature = "metrics")]
     fn start_abi_call_timer(&self, call: AbiCall) -> prometheus::HistogramTimer {
-        let ctx = self.reducer_context();
-        let db = ctx.database();
+        let db = self.instance_env().dbic.address;
 
         DB_METRICS
             .wasm_abi_call_duration_sec
@@ -394,7 +394,7 @@ impl WasmInstanceEnv {
             // Insert the row into the DB. We get back the decoded version.
             // Then re-encode and write that back into WASM memory at `row`.
             // We're doing this because of autoinc.
-            let ctx = env.reducer_context();
+            let ctx = env.reducer_context()?;
             let new_row = env.instance_env.insert(&ctx, table_id.into(), row_buffer)?;
             new_row.encode(&mut { row_buffer });
             Ok(())
@@ -431,7 +431,7 @@ impl WasmInstanceEnv {
 
         Self::cvt_ret(caller, AbiCall::DeleteByColEq, out, |caller| {
             let (mem, env) = Self::mem_env(caller);
-            let ctx = env.reducer_context();
+            let ctx = env.reducer_context()?;
             let value = mem.deref_slice(value, value_len)?;
             let count = env
                 .instance_env
@@ -574,12 +574,15 @@ impl WasmInstanceEnv {
             let value = mem.deref_slice(val, val_len)?;
 
             // Retrieve the execution context for the current reducer.
-            let ctx = env.reducer_context();
+            let ctx = env.reducer_context()?;
 
             // Find the relevant rows.
             let data = env
                 .instance_env
                 .iter_by_col_eq(&ctx, table_id.into(), col_id.into(), value)?;
+
+            // Release the immutable borrow of `env.buffers` by dropping `ctx`.
+            drop(ctx);
 
             // Insert the encoded + concatenated rows into a new buffer and return its id.
             Ok(env.buffers.insert(data.into()))
@@ -601,10 +604,10 @@ impl WasmInstanceEnv {
         Self::cvt_ret(caller, AbiCall::IterStart, out, |caller| {
             let env = caller.data_mut();
             // Retrieve the execution context for the current reducer.
-            let ctx = env.reducer_context();
+            let ctx = env.reducer_context()?;
             // Collect the iterator chunks.
             let chunks = env.instance_env.iter_chunks(&ctx, table_id.into())?;
-
+            drop(ctx);
             // Register the iterator and get back the index to write to `out`.
             // Calls to the iterator are done through dynamic dispatch.
             Ok(env.iters.insert(chunks.into_iter()))
@@ -637,14 +640,14 @@ impl WasmInstanceEnv {
         Self::cvt_ret(caller, AbiCall::IterStartFiltered, out, |caller| {
             let (mem, env) = Self::mem_env(caller);
             // Retrieve the execution context for the current reducer.
-            let ctx = env.reducer_context();
+            let ctx = env.reducer_context()?;
 
             // Read the slice `(filter, filter_len)`.
             let filter = mem.deref_slice(filter, filter_len)?;
 
             // Construct the iterator.
             let chunks = env.instance_env.iter_filtered_chunks(&ctx, table_id.into(), filter)?;
-
+            drop(ctx);
             // Register the iterator and get back the index to write to `out`.
             // Calls to the iterator are done through dynamic dispatch.
             Ok(env.iters.insert(chunks.into_iter()))

@@ -299,7 +299,7 @@ pub struct IndexSemiJoin<'a, 'c, Rhs: RelOps<'a>> {
     /// A reference to the current transaction.
     pub tx: &'a TxMode<'a>,
     /// The execution context for the current transaction.
-    ctx: &'a ExecutionContext<'a>,
+    ctx: &'a ExecutionContext,
 }
 
 impl<'a, Rhs: RelOps<'a>> IndexSemiJoin<'a, '_, Rhs> {
@@ -371,7 +371,7 @@ impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoin<'a, '_, Rhs> {
 /// A [ProgramVm] implementation that carry a [RelationalDB] for it
 /// query execution
 pub struct DbProgram<'db, 'tx> {
-    ctx: &'tx ExecutionContext<'tx>,
+    ctx: &'tx ExecutionContext,
     pub(crate) db: &'db RelationalDB,
     pub(crate) tx: &'tx mut TxMode<'tx>,
     pub(crate) auth: AuthCtx,

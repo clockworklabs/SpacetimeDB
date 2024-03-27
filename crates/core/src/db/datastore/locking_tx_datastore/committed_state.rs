@@ -19,7 +19,7 @@ use crate::{
         db_metrics::DB_METRICS,
     },
     error::TableError,
-    execution_context::ExecutionContext,
+    execution_context::{ExecutionContext, MetricType},
 };
 use anyhow::anyhow;
 use itertools::Itertools;
@@ -543,7 +543,7 @@ impl CommittedState {
 }
 
 pub struct CommittedIndexIter<'a> {
-    ctx: &'a ExecutionContext<'a>,
+    ctx: &'a ExecutionContext,
     table_id: TableId,
     tx_state: Option<&'a TxState>,
     committed_state: &'a CommittedState,
@@ -573,32 +573,30 @@ impl<'a> CommittedIndexIter<'a> {
 #[cfg(feature = "metrics")]
 impl Drop for CommittedIndexIter<'_> {
     fn drop(&mut self) {
-        let workload = &self.ctx.workload();
-        let db = &self.ctx.database();
-        let reducer_name = self.ctx.reducer_name();
-        let table_id = &self.table_id.0;
-        let table_name = self
-            .committed_state
-            .get_schema(&self.table_id)
-            .map(|table| table.table_name.as_str())
-            .unwrap_or_default();
+        let mut metrics = self.ctx.metrics.write();
+        let get_table_name = || {
+            self.committed_state
+                .get_schema(&self.table_id)
+                .map(|table| table.table_name.as_str())
+                .unwrap_or_default()
+                .to_string()
+        };
 
-        DB_METRICS
-            .rdb_num_index_seeks
-            .with_label_values(workload, db, reducer_name, table_id, table_name)
-            .inc();
-
+        metrics.inc_by(self.table_id, MetricType::IndexSeeks, 1, get_table_name);
         // Increment number of index keys scanned
-        DB_METRICS
-            .rdb_num_keys_scanned
-            .with_label_values(workload, db, reducer_name, table_id, table_name)
-            .inc_by(self.committed_rows.num_pointers_yielded());
-
+        metrics.inc_by(
+            self.table_id,
+            MetricType::KeysScanned,
+            self.committed_rows.num_pointers_yielded(),
+            get_table_name,
+        );
         // Increment number of rows fetched
-        DB_METRICS
-            .rdb_num_rows_fetched
-            .with_label_values(workload, db, reducer_name, table_id, table_name)
-            .inc_by(self.num_committed_rows_fetched);
+        metrics.inc_by(
+            self.table_id,
+            MetricType::RowsFetched,
+            self.num_committed_rows_fetched,
+            get_table_name,
+        );
     }
 }
 

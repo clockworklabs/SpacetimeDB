@@ -649,10 +649,10 @@ mod tests {
     /// Utility to query the system tables and return their concrete table row
     pub struct SystemTableQuery<'a> {
         db: &'a MutTxId,
-        ctx: &'a ExecutionContext<'a>,
+        ctx: &'a ExecutionContext,
     }
 
-    fn query_st_tables<'a>(ctx: &'a ExecutionContext<'a>, tx: &'a MutTxId) -> SystemTableQuery<'a> {
+    fn query_st_tables<'a>(ctx: &'a ExecutionContext, tx: &'a MutTxId) -> SystemTableQuery<'a> {
         SystemTableQuery { db: tx, ctx }
     }
 
