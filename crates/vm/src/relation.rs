@@ -11,7 +11,6 @@ use spacetimedb_table::read_column::ReadColumn;
 use spacetimedb_table::table::RowRef;
 use std::borrow::Cow;
 use std::hash::{Hash, Hasher};
-use std::mem;
 use std::sync::Arc;
 
 /// RelValue represents either a reference to a row in a table,
@@ -97,10 +96,7 @@ impl<'a> RelValue<'a> {
     fn read_or_take_column(&mut self, col: usize) -> Option<AlgebraicValue> {
         match self {
             Self::Row(row_ref) => AlgebraicValue::read_column(*row_ref, col).ok(),
-            Self::Projection(pv) => {
-                let elem = pv.elements.get_mut(col)?;
-                Some(mem::replace(elem, AlgebraicValue::U8(0)))
-            }
+            Self::Projection(pv) => pv.elements.get_mut(col).map(AlgebraicValue::take),
         }
     }
 
