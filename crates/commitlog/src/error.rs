@@ -35,6 +35,18 @@ pub enum Traversal {
     Io(#[from] io::Error),
 }
 
+/// Error returned by [`crate::Commitlog::append`].
+#[derive(Debug, Error)]
+#[error("failed to commit during append")]
+pub struct Append<T> {
+    /// The payload which was passed to [`crate::Commitlog::append`], but was
+    /// not retained because flushing the data to the underlying storage failed.
+    pub txdata: T,
+    /// Why flushing to persistent storage failed.
+    #[source]
+    pub source: io::Error,
+}
+
 /// A checksum mismatch was detected.
 ///
 /// Usually wrapped in another error, such as [`io::Error`].
