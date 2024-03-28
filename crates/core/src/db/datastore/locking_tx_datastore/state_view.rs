@@ -31,7 +31,7 @@ pub(crate) trait StateView {
         let ctx = ExecutionContext::internal(database_address);
         let name = &table_name.to_owned().into();
         let row = self
-            .iter_by_col_eq(&ctx, &ST_TABLES_ID, StTableFields::TableName.col_id().into(), name)?
+            .iter_by_col_eq(&ctx, &ST_TABLES_ID, StTableFields::TableName, name)?
             .next();
         Ok(row.map(|row| row.read_col(StTableFields::TableId).unwrap()))
     }
@@ -56,19 +56,18 @@ pub(crate) trait StateView {
         &'a self,
         ctx: &'a ExecutionContext,
         table_id: &TableId,
-        cols: ColList,
+        cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
     ) -> Result<IterByColEq<'a, 'r>> {
-        self.iter_by_col_range(ctx, table_id, cols, value)
+        self.iter_by_col_range(ctx, table_id, cols.into(), value)
     }
 
     /// Reads the schema information for the specified `table_id` directly from the database.
     fn schema_for_table_raw(&self, ctx: &ExecutionContext, table_id: TableId) -> Result<TableSchema> {
         // Look up the table_name for the table in question.
-        let st_table_table_id_col = StTableFields::TableId.col_id().into();
         let value_eq = &table_id.into();
         let row = self
-            .iter_by_col_eq(ctx, &ST_TABLES_ID, st_table_table_id_col, value_eq)?
+            .iter_by_col_eq(ctx, &ST_TABLES_ID, StTableFields::TableId, value_eq)?
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, table_id.into()))?;
         let row = StTableRow::try_from(row)?;
@@ -78,9 +77,8 @@ pub(crate) trait StateView {
         let table_access = row.table_access;
 
         // Look up the columns for the table in question.
-        let st_columns_table_id_col = StColumnFields::TableId.col_id().into();
         let mut columns = self
-            .iter_by_col_eq(ctx, &ST_COLUMNS_ID, st_columns_table_id_col, value_eq)?
+            .iter_by_col_eq(ctx, &ST_COLUMNS_ID, StColumnFields::TableId, value_eq)?
             .map(|row| {
                 let row = StColumnRow::try_from(row)?;
                 Ok(ColumnSchema {
@@ -94,9 +92,8 @@ pub(crate) trait StateView {
         columns.sort_by_key(|col| col.col_pos);
 
         // Look up the constraints for the table in question.
-        let st_constraints_table_id = StConstraintFields::TableId.col_id().into();
         let constraints = self
-            .iter_by_col_eq(ctx, &ST_CONSTRAINTS_ID, st_constraints_table_id, value_eq)?
+            .iter_by_col_eq(ctx, &ST_CONSTRAINTS_ID, StConstraintFields::TableId, value_eq)?
             .map(|row| {
                 let row = StConstraintRow::try_from(row)?;
                 Ok(ConstraintSchema {
@@ -110,9 +107,8 @@ pub(crate) trait StateView {
             .collect::<Result<Vec<_>>>()?;
 
         // Look up the sequences for the table in question.
-        let st_seq_table_id = StSequenceFields::TableId.col_id().into();
         let sequences = self
-            .iter_by_col_eq(ctx, &ST_SEQUENCES_ID, st_seq_table_id, value_eq)?
+            .iter_by_col_eq(ctx, &ST_SEQUENCES_ID, StSequenceFields::TableId, value_eq)?
             .map(|row| {
                 let row = StSequenceRow::try_from(row)?;
                 Ok(SequenceSchema {
@@ -130,9 +126,8 @@ pub(crate) trait StateView {
             .collect::<Result<Vec<_>>>()?;
 
         // Look up the indexes for the table in question.
-        let st_idx_table_id = StIndexFields::TableId.col_id().into();
         let indexes = self
-            .iter_by_col_eq(ctx, &ST_INDEXES_ID, st_idx_table_id, value_eq)?
+            .iter_by_col_eq(ctx, &ST_INDEXES_ID, StIndexFields::TableId, value_eq)?
             .map(|row| {
                 let row = StIndexRow::try_from(row)?;
                 Ok(IndexSchema {

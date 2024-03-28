@@ -9,13 +9,8 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Address;
-use spacetimedb_primitives::ColId;
-use spacetimedb_sats::db::auth::StAccess;
-use spacetimedb_sats::relation::{Column, FieldName, Header};
-use spacetimedb_sats::AlgebraicType;
 use spacetimedb_vm::expr::{self, Crud, CrudExpr, DbType, QueryExpr, SourceSet};
 use spacetimedb_vm::relation::MemTable;
-use std::sync::Arc;
 use std::time::Instant;
 
 use super::subscription::get_all;
@@ -28,90 +23,14 @@ pub enum QueryDef {
     Sql(String),
 }
 
-pub const OP_TYPE_FIELD_NAME: &str = "__op_type";
-
-/// Locate the `__op_type` column in the table described by `header`,
-/// if it exists.
-///
-/// The current version of this function depends on the fact that
-/// the `__op_type` column is always the final column in the schema.
-/// This is true because the `__op_type` column is added by [`to_mem_table_with_op_type`] at the end,
-/// and never originates anywhere else.
-///
-/// If we ever change to having the `__op_type` column in any other position,
-/// e.g. by projecting together two `MemTables` from [`to_mem_table_with_op_type`],
-/// this function may need to change, possibly to:
-/// ```ignore
-/// header.find_pos_by_name(OP_TYPE_FIELD_NAME)
-/// ```
-pub fn find_op_type_col_pos(header: &Header) -> Option<ColId> {
-    if let Some(last_col) = header.fields.last() {
-        if last_col.field.field_name() == Some(OP_TYPE_FIELD_NAME) {
-            return Some(ColId((header.fields.len() - 1) as u32));
-        }
-    }
-    None
-}
-
-/// Create a virtual table from a sequence of table updates.
-/// Add a special column __op_type to distinguish inserts and deletes.
-pub fn to_mem_table_with_op_type(head: Arc<Header>, table_access: StAccess, data: &DatabaseTableUpdate) -> MemTable {
-    let mut t = MemTable::new(head, table_access, Vec::with_capacity(data.ops.len()));
-
-    if let Some(pos) = find_op_type_col_pos(&t.head) {
-        for op in data.ops.iter().map(|row| {
-            let mut new = row.row.clone();
-
-            match new.elements.len().cmp(&pos.idx()) {
-                std::cmp::Ordering::Equal => {
-                    // When we enter through `ExecutionUnit::eval_incr`,
-                    // we will have a `head` computed by a previous call to `to_mem_table`,
-                    // and therefore will have an op_type column,
-                    // but the `data` will be fresh for a newly committed transaction,
-                    // and therefore the rows will not include the op_type column.
-                    // In that case, push the op_type onto the end of each row.
-                    new.elements.push(row.op_type.into());
-                }
-                std::cmp::Ordering::Greater => {
-                    new.elements[pos.idx()] = row.op_type.into();
-                }
-                std::cmp::Ordering::Less => {
-                    panic!(
-                        "Expected {} either in-bounds or as the last column, but found at position {} in {:?}",
-                        OP_TYPE_FIELD_NAME, pos, t.head,
-                    );
-                }
-            }
-
-            new
-        }) {
-            t.data.push(op);
-        }
-    } else {
-        // TODO(perf): Eliminate this `clone_for_error` call, as we're not in an error path.
-        let mut head = t.head.clone_for_error();
-        head.fields.push(Column::new(
-            FieldName::named(&t.head.table_name, OP_TYPE_FIELD_NAME),
-            AlgebraicType::U8,
-            t.head.fields.len().into(),
-        ));
-        t.head = Arc::new(head);
-        for row in &data.ops {
-            let mut new = row.row.clone();
-            new.elements.push(row.op_type.into());
-            t.data.push(new);
-        }
-    }
-    t
-}
-
 /// Replace the primary (ie. `source`) table of the given [`QueryExpr`] with
 /// a virtual [`MemTable`] consisting of the rows in [`DatabaseTableUpdate`].
-///
-/// To be able to reify the `op_type` of the individual operations in the update,
-/// each virtual row is extended with a column [`OP_TYPE_FIELD_NAME`].
-pub fn to_mem_table(mut of: QueryExpr, data: &DatabaseTableUpdate) -> (QueryExpr, SourceSet) {
-    let mem_table = to_mem_table_with_op_type(of.source.head().clone(), of.source.table_access(), data);
+pub fn query_to_mem_table(mut of: QueryExpr, data: &DatabaseTableUpdate) -> (QueryExpr, SourceSet) {
+    let mem_table = MemTable::new(
+        of.source.head().clone(),
+        of.source.table_access(),
+        data.ops.iter().map(|op| op.row.clone()).collect(),
+    );
     let mut sources = SourceSet::default();
     let source_expr = sources.add_mem_table(mem_table);
     of.source = source_expr;
@@ -230,6 +149,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
+    use crate::client::Protocol;
     use crate::db::datastore::traits::IsolationLevel;
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::db::relational_db::MutTx;
@@ -239,13 +159,14 @@ mod tests {
     use crate::subscription::subscription::ExecutionSet;
     use crate::vm::tests::create_table_with_rows;
     use itertools::Itertools;
+    use spacetimedb_lib::bsatn::to_vec;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::Identity;
     use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::db::def::*;
     use spacetimedb_sats::relation::FieldName;
-    use spacetimedb_sats::{product, ProductType, ProductValue};
+    use spacetimedb_sats::{product, AlgebraicType, ProductType, ProductValue};
     use spacetimedb_vm::dsl::{mem_table, scalar};
     use spacetimedb_vm::operator::OpCmp;
 
@@ -364,7 +285,7 @@ mod tests {
         q: &QueryExpr,
         data: &DatabaseTableUpdate,
     ) -> ResultTest<()> {
-        let (q, sources) = to_mem_table(q.clone(), data);
+        let (q, sources) = query_to_mem_table(q.clone(), data);
         let result = run_query(
             &ExecutionContext::default(),
             db,
@@ -382,15 +303,6 @@ mod tests {
         Ok(())
     }
 
-    fn get_result(result: DatabaseUpdate) -> Vec<ProductValue> {
-        result
-            .tables
-            .iter()
-            .flat_map(|x| x.ops.iter().map(|x| x.row.clone()))
-            .sorted()
-            .collect::<Vec<_>>()
-    }
-
     fn check_query_incr(
         db: &RelationalDB,
         tx: &Tx,
@@ -406,7 +318,12 @@ mod tests {
             "Must return the correct number of tables: {result:#?}"
         );
 
-        let result = get_result(result);
+        let result = result
+            .tables
+            .into_iter()
+            .flat_map(|x| x.ops.into_iter().map(|x| x.row))
+            .sorted()
+            .collect::<Vec<_>>();
 
         assert_eq!(result, rows, "Must return the correct row(s)");
 
@@ -420,14 +337,20 @@ mod tests {
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
-        let result = s.eval(db, tx)?;
+        let result = s.eval(Protocol::Binary, db, tx)?.tables.unwrap_left();
         assert_eq!(
-            result.tables.len(),
+            result.len(),
             total_tables,
             "Must return the correct number of tables: {result:#?}"
         );
 
-        let result = get_result(result);
+        let result = result
+            .into_iter()
+            .flat_map(|x| x.table_row_operations.into_iter().map(|x| x.row))
+            .sorted()
+            .collect_vec();
+
+        let rows = rows.iter().map(|r| to_vec(r).unwrap()).collect_vec();
 
         assert_eq!(result, rows, "Must return the correct row(s)");
 
@@ -552,7 +475,7 @@ mod tests {
 
         let q = QueryExpr::new(&schema);
 
-        let (q, sources) = to_mem_table(q, &data);
+        let (q, sources) = query_to_mem_table(q, &data);
         //Try access the private table
         match run_query(
             &ExecutionContext::default(),

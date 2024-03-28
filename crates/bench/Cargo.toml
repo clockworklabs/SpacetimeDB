@@ -35,6 +35,7 @@ spacetimedb-standalone = { path = "../standalone" }
 spacetimedb-client-api = { path = "../client-api" }
 spacetimedb-testing = { path = "../testing" }
 spacetimedb-primitives = { path = "../primitives" }
+spacetimedb-table = { path = "../table" }
 
 ahash.workspace = true
 anyhow.workspace = true

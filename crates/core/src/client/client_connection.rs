@@ -60,7 +60,7 @@ impl ClientConnectionSender {
         self.send(message.serialize(self.protocol))
     }
 
-    pub fn send(&self, message: DataMessage) -> Result<(), ClientSendError> {
+    fn send(&self, message: DataMessage) -> Result<(), ClientSendError> {
         let bytes_len = message.len();
 
         if self.cancelled.load(Relaxed) {
@@ -226,9 +226,13 @@ impl ClientConnection {
 
     pub async fn subscribe(&self, subscription: Subscribe, timer: Instant) -> Result<(), DBError> {
         let me = self.clone();
-        tokio::task::spawn_blocking(move || me.module.subscriptions().add_subscriber(me.sender, subscription, timer))
-            .await
-            .unwrap()
+        tokio::task::spawn_blocking(move || {
+            me.module
+                .subscriptions()
+                .add_subscriber(me.sender, subscription, timer, None)
+        })
+        .await
+        .unwrap()
     }
 
     pub async fn one_off_query(&self, query: &str, message_id: &[u8], timer: Instant) -> Result<(), anyhow::Error> {

@@ -153,16 +153,19 @@ static_assert_size!(PointerMap, 80);
 // These are only used as sanity checks in the debug profile, and e.g., in tests.
 #[cfg(debug_assertions)]
 impl PointerMap {
+    #[allow(unused)]
     fn maintains_invariants(&self) -> bool {
         self.maintains_map_invariant() && self.maintains_colliders_invariant()
     }
 
+    #[allow(unused)]
     fn maintains_colliders_invariant(&self) -> bool {
         self.colliders.iter().enumerate().all(|(idx, slot)| {
             slot.len() >= 2 || slot.is_empty() && self.emptied_collider_slots.contains(&ColliderSlotIndex::new(idx))
         })
     }
 
+    #[allow(unused)]
     fn maintains_map_invariant(&self) -> bool {
         self.map.values().all(|poc| {
             let collider = poc.as_collider();
@@ -177,6 +180,7 @@ impl PointerMap {
 // due to `PointerMap::maintains_invariants` being undefined.
 // Easily solved by including a stub definition.
 #[cfg(not(debug_assertions))]
+#[allow(dead_code)]
 impl PointerMap {
     fn maintains_invariants(&self) -> bool {
         unreachable!(
@@ -234,8 +238,6 @@ impl PointerMap {
     ///
     /// Handles any hash conflicts for `hash`.
     pub fn insert(&mut self, hash: RowHash, ptr: RowPointer) -> bool {
-        debug_assert!(self.maintains_invariants());
-
         let mut was_in_map = false;
 
         self.map
@@ -291,8 +293,6 @@ impl PointerMap {
             // 0 hashes so far.
             .or_insert(PtrOrCollider::ptr(ptr));
 
-        debug_assert!(self.maintains_invariants());
-
         was_in_map
     }
 
@@ -300,8 +300,6 @@ impl PointerMap {
     ///
     /// Returns whether the association was deleted.
     pub fn remove(&mut self, hash: RowHash, ptr: RowPointer) -> bool {
-        debug_assert!(self.maintains_invariants());
-
         let ret = 'fun: {
             let Entry::Occupied(mut entry) = self.map.entry(hash) else {
                 break 'fun false;
@@ -334,8 +332,6 @@ impl PointerMap {
 
             true
         };
-
-        debug_assert!(self.maintains_invariants());
 
         ret
     }

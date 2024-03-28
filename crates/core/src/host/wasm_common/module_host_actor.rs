@@ -484,6 +484,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     /// The method also performs various measurements and records energy usage,
     /// as well as broadcasting a [`ModuleEvent`] containg information about
     /// the outcome of the call.
+    #[tracing::instrument(skip_all)]
     fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
         let CallReducerParams {
             timestamp,

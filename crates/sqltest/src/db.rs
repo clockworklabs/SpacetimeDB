@@ -17,7 +17,6 @@ impl AsyncDB for DBRunner {
     type ColumnType = Kind;
 
     async fn run(&mut self, sql: &str) -> Result<DBOutput<Self::ColumnType>, Self::Error> {
-        //dbg!("RUNNING", sql);
         let mut last = None;
         for x in sql.split('\n') {
             last = Some(match self {

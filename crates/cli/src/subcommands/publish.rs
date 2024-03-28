@@ -32,12 +32,20 @@ pub fn cli() -> clap::Command {
                 .help("When publishing a new module to an existing address, also delete all tables associated with the database"),
         )
         .arg(
-            Arg::new("path_to_project")
+            Arg::new("project_path")
                 .value_parser(clap::value_parser!(PathBuf))
                 .default_value(".")
                 .long("project-path")
                 .short('p')
                 .help("The system path (absolute or relative) to the module project")
+        )
+        .arg(
+            Arg::new("wasm_file")
+                .value_parser(clap::value_parser!(PathBuf))
+                .long("wasm-file")
+                .short('w')
+                .conflicts_with("project_path")
+                .help("The system path (absolute or relative) to the wasm file we should publish, instead of building the project."),
         )
         .arg(
             Arg::new("trace_log")
@@ -100,13 +108,14 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let server = args.get_one::<String>("server").map(|s| s.as_str());
     let identity = args.get_one::<String>("identity").map(String::as_str);
     let name_or_address = args.get_one::<String>("name|address");
-    let path_to_project = args.get_one::<PathBuf>("path_to_project").unwrap();
+    let path_to_project = args.get_one::<PathBuf>("project_path").unwrap();
     let host_type = args.get_one::<String>("host_type").unwrap();
     let clear_database = args.get_flag("clear_database");
     let trace_log = args.get_flag("trace_log");
     let anon_identity = args.get_flag("anon_identity");
     let skip_clippy = args.get_flag("skip_clippy");
     let build_debug = args.get_flag("debug");
+    let wasm_file = args.get_one::<PathBuf>("wasm_file");
     let database_host = config.get_host_url(server)?;
 
     let mut query_params = Vec::<(&str, &str)>::new();
@@ -138,7 +147,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
 
     let path_to_wasm = if !path_to_project.is_dir() && path_to_project.extension().map_or(false, |ext| ext == "wasm") {
+        println!("Note: Using --project-path to provide a wasm file is deprecated, and will be");
+        println!("removed in a future release. Please use --wasm-file instead.");
         path_to_project.clone()
+    } else if let Some(path) = wasm_file {
+        println!("Skipping build. Instead we are publishing {}", path.display());
+        path.clone()
     } else {
         crate::tasks::build(path_to_project, skip_clippy, build_debug)?
     };
@@ -148,6 +162,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         server.unwrap_or(config.default_server_name().unwrap_or("<default>")),
         database_host
     );
+
+    eprintln!("Publishing module...");
 
     let mut builder = reqwest::Client::new().post(Url::parse_with_params(
         format!("{}/database/publish", database_host).as_str(),

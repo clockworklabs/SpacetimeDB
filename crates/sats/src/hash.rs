@@ -76,8 +76,6 @@ impl fmt::Debug for Hash {
     }
 }
 
-pub struct HashFromHexError(usize);
-
 impl hex::FromHex for Hash {
     type Error = hex::FromHexError;
 

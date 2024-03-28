@@ -152,11 +152,7 @@ fn create_keys(public_key_path: &Path, private_key_path: &Path) -> anyhow::Resul
 }
 
 fn get_key_path(env: &str) -> Option<PathBuf> {
-    let Some(path) = std::env::var_os(env) else {
-        return None;
-    };
-    let path = std::path::PathBuf::from(path);
-    Some(path)
+    std::env::var_os(env).map(std::path::PathBuf::from)
 }
 
 #[async_trait]

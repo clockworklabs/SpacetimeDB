@@ -4,10 +4,10 @@ use super::query::compile_read_only_query;
 use super::subscription::ExecutionSet;
 use crate::client::messages::{SubscriptionUpdate, SubscriptionUpdateMessage, TransactionUpdateMessage};
 use crate::client::{ClientActorId, ClientConnectionSender};
-use crate::db::relational_db::RelationalDB;
+use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
-use crate::host::module_host::{EventStatus, ModuleEvent};
+use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
 use crate::protobuf::client_api::Subscribe;
 use crate::worker_metrics::WORKER_METRICS;
 use parking_lot::RwLock;
@@ -23,6 +23,8 @@ pub struct ModuleSubscriptions {
     pub subscriptions: Subscriptions,
     owner_identity: Identity,
 }
+
+type AssertTxFn = Arc<dyn Fn(&Tx)>;
 
 impl ModuleSubscriptions {
     pub fn new(relational_db: Arc<RelationalDB>, owner_identity: Identity) -> Self {
@@ -40,6 +42,7 @@ impl ModuleSubscriptions {
         sender: Arc<ClientConnectionSender>,
         subscription: Subscribe,
         timer: Instant,
+        _assert: Option<AssertTxFn>,
     ) -> Result<(), DBError> {
         let tx = scopeguard::guard(self.relational_db.begin_tx(), |tx| {
             let ctx = ExecutionContext::subscribe(self.relational_db.address());
@@ -71,7 +74,7 @@ impl ModuleSubscriptions {
         drop(guard);
 
         let execution_set: ExecutionSet = queries.into();
-        let database_update = execution_set.eval(&self.relational_db, &tx)?;
+        let database_update = execution_set.eval(sender.protocol, &self.relational_db, &tx)?;
 
         WORKER_METRICS
             .initial_subscription_evals
@@ -82,16 +85,19 @@ impl ModuleSubscriptions {
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
         // but that should not pose an issue.
         let mut subscriptions = self.subscriptions.write();
-        drop(tx);
         subscriptions.remove_subscription(&sender.id.identity);
         subscriptions.add_subscription(sender.clone(), execution_set.into_iter());
         let num_queries = subscriptions.num_queries();
-        drop(subscriptions);
 
         WORKER_METRICS
             .subscription_queries
             .with_label_values(&self.relational_db.address())
             .set(num_queries as i64);
+
+        #[cfg(test)]
+        if let Some(assert) = _assert {
+            assert(&tx);
+        }
 
         // NOTE: It is important to send the state in this thread because if you spawn a new
         // thread it's possible for messages to get sent to the client out of order. If you do
@@ -133,9 +139,9 @@ impl ModuleSubscriptions {
             }
             EventStatus::Failed(_) => {
                 if let Some(client) = client {
-                    let message = TransactionUpdateMessage {
+                    let message = TransactionUpdateMessage::<DatabaseUpdate> {
                         event: &event,
-                        database_update: Default::default(),
+                        database_update: <_>::default(),
                     };
                     let _ = client.send_message(message);
                 } else {
@@ -164,5 +170,76 @@ impl ModuleSubscriptions {
     /// x after they receive this subscription update).
     fn broadcast_commit_event(&self, subscriptions: &SubscriptionManager, event: Arc<ModuleEvent>) {
         subscriptions.eval_updates(&self.relational_db, &event)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ModuleSubscriptions;
+    use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
+    use crate::db::relational_db::tests_utils::make_test_db;
+    use crate::execution_context::ExecutionContext;
+    use spacetimedb_client_api_messages::client_api::Subscribe;
+    use spacetimedb_lib::{error::ResultTest, AlgebraicType, Identity};
+    use spacetimedb_sats::product;
+    use std::time::Instant;
+    use std::{sync::Arc, time::Duration};
+    use tokio::{runtime::Builder, sync::mpsc};
+
+    #[test]
+    /// Asserts that a subscription holds a tx handle for the entire length of its evaluation.
+    fn test_tx_subscription_ordering() -> ResultTest<()> {
+        let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
+
+        // Create table with one row
+        let db = Arc::new(make_test_db()?.0);
+        let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
+        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+            db.insert(tx, table_id, product!(1_u8))
+        })?;
+
+        let id = Identity::ZERO;
+        let client = ClientActorId::for_test(id);
+        let sender = Arc::new(ClientConnectionSender::dummy(client, Protocol::Binary));
+        let module_subscriptions = ModuleSubscriptions::new(db.clone(), id);
+
+        let (send, mut recv) = mpsc::unbounded_channel();
+
+        // Subscribing to T should return a single row
+        let query_handle = runtime.spawn_blocking(move || {
+            let db = module_subscriptions.relational_db.clone();
+            let query_strings = vec!["select * from T".into()];
+            module_subscriptions.add_subscriber(
+                sender,
+                Subscribe {
+                    query_strings,
+                    request_id: 0,
+                },
+                Instant::now(),
+                Some(Arc::new(move |tx: &_| {
+                    // Wake up writer thread after starting the reader tx
+                    let _ = send.send(());
+                    // Then go to sleep
+                    std::thread::sleep(Duration::from_secs(1));
+                    let ctx = ExecutionContext::default();
+                    // Assuming subscription evaluation holds a lock on the db,
+                    // any mutations to T will necessarily occur after,
+                    // and therefore we should only see a single row returned.
+                    assert_eq!(1, db.iter(&ctx, tx, table_id).unwrap().count());
+                })),
+            )
+        });
+
+        // Write a second row to T concurrently with the reader thread
+        let write_handle = runtime.spawn(async move {
+            let _ = recv.recv().await;
+            db.with_auto_commit(&ExecutionContext::default(), |tx| {
+                db.insert(tx, table_id, product!(2_u8))
+            })
+        });
+
+        runtime.block_on(write_handle)??;
+        runtime.block_on(query_handle)??;
+        Ok(())
     }
 }

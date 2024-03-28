@@ -130,7 +130,16 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
                         OpCmp::Eq => {}
                         x => unreachable!("Unsupported operator `{x}` for joins"),
                     }
-                    q = q.with_join_inner(rhs_source_expr, on.lhs.clone(), on.rhs.clone());
+                    // Always construct inner joins, never semijoins.
+                    // The query optimizer can rewrite certain inner joins into semijoins later in the pipeline.
+                    // The full pipeline for a query like `SELECT lhs.* FROM lhs JOIN rhs ON lhs.a = rhs.a` is:
+                    // - We produce `[JoinInner(semi: false), Project]`.
+                    // - Optimizer rewrites to `[JoinInner(semi: true)]`.
+                    // - Optimizer rewrites to `[IndexJoin]`.
+                    // For incremental queries, this all happens on the original query with `DbTable` sources.
+                    // Then, the query is "incrementalized" by replacing the sources with `MemTable`s,
+                    // and the `IndexJoin` is rewritten back into a `JoinInner(semi: true)`.
+                    q = q.with_join_inner(rhs_source_expr, on.lhs.clone(), on.rhs.clone(), false);
                 }
             }
         }
@@ -579,6 +588,7 @@ mod tests {
                     table: ref rhs_table,
                     field: ref rhs_field,
                 },
+            semi: false,
         }) = query[1]
         else {
             panic!("unexpected operator {:#?}", query[1]);
@@ -658,6 +668,7 @@ mod tests {
                     table: ref rhs_table,
                     field: ref rhs_field,
                 },
+            semi: false,
         }) = query[1]
         else {
             panic!("unexpected operator {:#?}", query[1]);
@@ -718,6 +729,7 @@ mod tests {
                     table: ref rhs_table,
                     field: ref rhs_field,
                 },
+            semi: false,
         }) = query[0]
         else {
             panic!("unexpected operator {:#?}", query[0]);
@@ -806,6 +818,7 @@ mod tests {
                     table: ref rhs_table,
                     field: ref rhs_field,
                 },
+            semi: false,
         }) = query[1]
         else {
             panic!("unexpected operator {:#?}", query[1]);
@@ -866,26 +879,26 @@ mod tests {
             probe_side:
                 QueryExpr {
                     source: SourceExpr::DbTable(DbTable { table_id, .. }),
-                    query: ref rhs,
+                    query: rhs,
                 },
             probe_field:
                 FieldName::Name {
-                    table: ref probe_table,
-                    field: ref probe_field,
+                    table: probe_table,
+                    field: probe_field,
                 },
             index_side: SourceExpr::DbTable(DbTable {
                 table_id: index_table, ..
             }),
             index_col,
             ..
-        }) = query[0]
+        }) = &query[0]
         else {
             panic!("unexpected operator {:#?}", query[0]);
         };
 
-        assert_eq!(table_id, rhs_id);
-        assert_eq!(index_table, lhs_id);
-        assert_eq!(index_col, 1.into());
+        assert_eq!(*table_id, rhs_id);
+        assert_eq!(*index_table, lhs_id);
+        assert_eq!(index_col, &1.into());
         assert_eq!(probe_field, "b");
         assert_eq!(probe_table, "rhs");
 
@@ -964,26 +977,26 @@ mod tests {
             probe_side:
                 QueryExpr {
                     source: SourceExpr::DbTable(DbTable { table_id, .. }),
-                    query: ref rhs,
+                    query: rhs,
                 },
             probe_field:
                 FieldName::Name {
-                    table: ref probe_table,
-                    field: ref probe_field,
+                    table: probe_table,
+                    field: probe_field,
                 },
             index_side: SourceExpr::DbTable(DbTable {
                 table_id: index_table, ..
             }),
             index_col,
             ..
-        }) = query[0]
+        }) = &query[0]
         else {
             panic!("unexpected operator {:#?}", query[0]);
         };
 
-        assert_eq!(table_id, rhs_id);
-        assert_eq!(index_table, lhs_id);
-        assert_eq!(index_col, 1.into());
+        assert_eq!(*table_id, rhs_id);
+        assert_eq!(*index_table, lhs_id);
+        assert_eq!(index_col, &1.into());
         assert_eq!(probe_field, "b");
         assert_eq!(probe_table, "rhs");
 

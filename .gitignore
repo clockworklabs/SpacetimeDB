@@ -192,6 +192,9 @@ linux-target/
 /target
 #Cargo.lock
 
+__pycache__/
+.test_out
+
 ## JetBrains
 .idea/
 
