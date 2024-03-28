@@ -4,10 +4,12 @@ use std::{
 };
 
 use crc32c::{Crc32cReader, Crc32cWriter};
+use log::{debug, warn};
 use spacetimedb_sats::buffer::{BufReader, Cursor, DecodeError};
 
 use crate::{error::ChecksumMismatch, payload::Decoder, segment::CHECKSUM_ALGORITHM_CRC32C, Transaction};
 
+#[derive(Debug)]
 pub struct Header {
     min_tx_offset: u64,
     n: u16,
@@ -34,13 +36,17 @@ impl Header {
         let mut hdr = [0; Self::LEN];
         if let Err(e) = reader.read_exact(&mut hdr) {
             if e.kind() == io::ErrorKind::UnexpectedEof {
+                debug!("commit header: EOF");
                 return Ok(None);
             }
 
             return Err(e);
         }
         match &mut hdr.as_slice() {
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] => Ok(None),
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] => {
+                debug!("commit header: all zeroes");
+                Ok(None)
+            }
             buf => {
                 let min_tx_offset = buf.get_u64().map_err(decode_error)?;
                 let n = buf.get_u16().map_err(decode_error)?;
@@ -189,8 +195,11 @@ impl StoredCommit {
         let Some(hdr) = Header::decode(&mut reader)? else {
             return Ok(None);
         };
+        debug!("commit::{hdr:?}");
         let mut records = vec![0; hdr.len as usize];
-        reader.read_exact(&mut records)?;
+        reader
+            .read_exact(&mut records)
+            .inspect_err(|e| warn!("failed to read {} records: {}", hdr.len, e))?;
 
         let chk = reader.crc32c();
         let crc = decode_u32(reader.into_inner())?;

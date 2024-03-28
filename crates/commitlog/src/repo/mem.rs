@@ -3,10 +3,9 @@ use std::{
     io,
     ops::DerefMut as _,
     sync::{Arc, RwLock},
-    u64,
 };
 
-use crate::segment::FileLike;
+use crate::{dio::WriteAt, segment::FileLike};
 
 use super::Repo;
 
@@ -41,21 +40,32 @@ impl FileLike for Segment {
         Ok(())
     }
 
-    fn ftruncate(&self, size: u64) -> io::Result<()> {
+    fn ftruncate(&mut self, size: u64) -> io::Result<()> {
         let mut inner = self.buf.write().unwrap();
         inner.resize(size as usize, 0);
         Ok(())
     }
 }
 
+impl WriteAt for Segment {
+    fn write_at(&mut self, buf: &[u8], offset: u64) -> io::Result<usize> {
+        let mut inner = self.buf.write().unwrap();
+        let mut cursor = io::Cursor::new(inner.deref_mut());
+        cursor.set_position(offset);
+        let sz = io::Write::write(&mut cursor, buf)?;
+
+        Ok(sz)
+    }
+
+    fn write_all_at(&mut self, buf: &[u8], offset: u64) -> io::Result<()> {
+        self.write_at(buf, offset).map(drop)
+    }
+}
+
 impl io::Write for Segment {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let mut inner = self.buf.write().unwrap();
-        // Piggyback on unsafe code in Cursor
-        let mut cursor = io::Cursor::new(inner.deref_mut());
-        cursor.set_position(self.pos);
-        let sz = cursor.write(buf)?;
-        self.pos = cursor.position();
+        let sz = self.write_at(buf, self.pos)?;
+        self.pos += sz as u64;
 
         Ok(sz)
     }
