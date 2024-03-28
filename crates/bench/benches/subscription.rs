@@ -103,8 +103,8 @@ fn eval(c: &mut Criterion) {
             let tx = db.begin_tx();
             let query = compile_read_only_query(&db, &tx, &auth, sql).unwrap();
             let query: ExecutionSet = query.into();
-
-            b.iter(|| drop(black_box(query.eval(Protocol::Binary, &db, &tx).unwrap())))
+            let ctx = &ExecutionContext::subscribe(db.address());
+            b.iter(|| drop(black_box(query.eval(ctx, Protocol::Binary, &db, &tx).unwrap())))
         });
     };
 

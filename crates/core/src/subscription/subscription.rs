@@ -565,31 +565,37 @@ pub struct ExecutionSet {
 }
 
 impl ExecutionSet {
-    pub fn eval(&self, protocol: Protocol, db: &RelationalDB, tx: &Tx) -> Result<ProtocolDatabaseUpdate, DBError> {
+    pub fn eval(
+        &self,
+        ctx: &ExecutionContext,
+        protocol: Protocol,
+        db: &RelationalDB,
+        tx: &Tx,
+    ) -> Result<ProtocolDatabaseUpdate, DBError> {
         let tables = match protocol {
-            Protocol::Binary => Either::Left(self.eval_binary(db, tx)?),
-            Protocol::Text => Either::Right(self.eval_json(db, tx)?),
+            Protocol::Binary => Either::Left(self.eval_binary(ctx, db, tx)?),
+            Protocol::Text => Either::Right(self.eval_json(ctx, db, tx)?),
         };
         Ok(ProtocolDatabaseUpdate { tables })
     }
 
     #[tracing::instrument(skip_all)]
-    fn eval_json(&self, db: &RelationalDB, tx: &Tx) -> Result<Vec<TableUpdateJson>, DBError> {
+    fn eval_json(&self, ctx: &ExecutionContext, db: &RelationalDB, tx: &Tx) -> Result<Vec<TableUpdateJson>, DBError> {
         // evaluate each of the execution units in this ExecutionSet in parallel
         self.exec_units
             // if you need eval to run single-threaded for debugging, change this to .iter()
             .par_iter()
-            .filter_map(|unit| unit.eval_json(db, tx).transpose())
+            .filter_map(|unit| unit.eval_json(ctx, db, tx).transpose())
             .collect::<Result<Vec<_>, _>>()
     }
 
     #[tracing::instrument(skip_all)]
-    fn eval_binary(&self, db: &RelationalDB, tx: &Tx) -> Result<Vec<TableUpdate>, DBError> {
+    fn eval_binary(&self, ctx: &ExecutionContext, db: &RelationalDB, tx: &Tx) -> Result<Vec<TableUpdate>, DBError> {
         // evaluate each of the execution units in this ExecutionSet in parallel
         self.exec_units
             // if you need eval to run single-threaded for debugging, change this to .iter()
             .par_iter()
-            .filter_map(|unit| unit.eval_binary(db, tx).transpose())
+            .filter_map(|unit| unit.eval_binary(ctx, db, tx).transpose())
             .collect::<Result<Vec<_>, _>>()
     }
 

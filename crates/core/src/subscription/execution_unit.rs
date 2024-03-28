@@ -206,8 +206,13 @@ impl ExecutionUnit {
 
     /// Evaluate this execution unit against the database using the json format.
     #[tracing::instrument(skip_all)]
-    pub fn eval_json(&self, db: &RelationalDB, tx: &Tx) -> Result<Option<TableUpdateJson>, DBError> {
-        let table_row_operations = Self::eval_query_expr(db, tx, &self.eval_plan, |row| {
+    pub fn eval_json(
+        &self,
+        ctx: &ExecutionContext,
+        db: &RelationalDB,
+        tx: &Tx,
+    ) -> Result<Option<TableUpdateJson>, DBError> {
+        let table_row_operations = Self::eval_query_expr(ctx, db, tx, &self.eval_plan, |row| {
             TableOp::insert(row.into_product_value()).into()
         })?;
         Ok((!table_row_operations.is_empty()).then(|| TableUpdateJson {
@@ -219,9 +224,14 @@ impl ExecutionUnit {
 
     /// Evaluate this execution unit against the database using the binary format.
     #[tracing::instrument(skip_all)]
-    pub fn eval_binary(&self, db: &RelationalDB, tx: &Tx) -> Result<Option<TableUpdate>, DBError> {
+    pub fn eval_binary(
+        &self,
+        ctx: &ExecutionContext,
+        db: &RelationalDB,
+        tx: &Tx,
+    ) -> Result<Option<TableUpdate>, DBError> {
         let mut buf = Vec::new();
-        let table_row_operations = Self::eval_query_expr(db, tx, &self.eval_plan, |row| {
+        let table_row_operations = Self::eval_query_expr(ctx, db, tx, &self.eval_plan, |row| {
             row.to_bsatn_extend(&mut buf).unwrap();
             let row = buf.clone();
             buf.clear();
@@ -235,14 +245,14 @@ impl ExecutionUnit {
     }
 
     fn eval_query_expr<T>(
+        ctx: &ExecutionContext,
         db: &RelationalDB,
         tx: &Tx,
         eval_plan: &QueryExpr,
         convert: impl FnMut(RelValue<'_>) -> T,
     ) -> Result<Vec<T>, DBError> {
-        let ctx = ExecutionContext::subscribe(db.address());
         let tx: TxMode = tx.into();
-        let query = build_query(&ctx, db, &tx, eval_plan, &mut NoInMemUsed)?;
+        let query = build_query(ctx, db, &tx, eval_plan, &mut NoInMemUsed)?;
         let ops = query.collect_vec(convert)?;
         Ok(ops)
     }
