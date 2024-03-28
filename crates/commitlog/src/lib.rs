@@ -15,6 +15,8 @@ pub use crate::{
     segment::{Transaction, DEFAULT_LOG_FORMAT_VERSION},
     varchar::Varchar,
 };
+pub mod buf;
+pub mod dio;
 pub mod error;
 pub mod payload;
 

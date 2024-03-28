@@ -4333,6 +4333,7 @@ dependencies = [
  "crc32c",
  "env_logger",
  "itertools 0.12.0",
+ "libc",
  "log",
  "once_cell",
  "proptest",
@@ -4343,6 +4344,7 @@ dependencies = [
  "spacetimedb-sats",
  "tempfile",
  "thiserror",
+ "winapi",
 ]
 
 [[package]]

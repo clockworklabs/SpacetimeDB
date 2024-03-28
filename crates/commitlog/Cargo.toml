@@ -20,6 +20,12 @@ spacetimedb-primitives.workspace = true
 spacetimedb-sats.workspace = true
 thiserror.workspace = true
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2.153"
+
+[target.'cfg(windows)'.dependencies]
+winapi = "0.3.9"
+
 [dev-dependencies]
 env_logger.workspace = true
 once_cell.workspace = true
