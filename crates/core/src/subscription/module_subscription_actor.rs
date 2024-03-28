@@ -140,7 +140,7 @@ impl ModuleSubscriptions {
             EventStatus::Failed(_) => {
                 if let Some(client) = client {
                     let message = TransactionUpdateMessage::<DatabaseUpdate> {
-                        event: &event,
+                        event,
                         database_update: <_>::default(),
                     };
                     let _ = client.send_message(message);
@@ -169,7 +169,7 @@ impl ModuleSubscriptions {
     /// it resolves, it's guaranteed that if you call `subscriber.send(x)` the client will receive
     /// x after they receive this subscription update).
     fn broadcast_commit_event(&self, subscriptions: &SubscriptionManager, event: Arc<ModuleEvent>) {
-        subscriptions.eval_updates(&self.relational_db, &event)
+        subscriptions.eval_updates(&self.relational_db, event)
     }
 }
 

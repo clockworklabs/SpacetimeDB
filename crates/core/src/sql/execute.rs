@@ -1,13 +1,13 @@
 use super::compiler::compile_sql;
 use crate::database_instance_context_controller::DatabaseInstanceContextController;
-use crate::db::relational_db::{RelationalDB, Tx};
+use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, DatabaseError};
 use crate::execution_context::ExecutionContext;
 use crate::vm::{DbProgram, TxMode};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{ProductType, ProductValue};
 use spacetimedb_vm::eval::run_ast;
-use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr, SourceSet};
+use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
 use spacetimedb_vm::relation::MemTable;
 use tracing::info;
 
@@ -34,7 +34,7 @@ pub fn execute(
     }
 }
 
-fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Result<(), DBError> {
+pub(crate) fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Result<(), DBError> {
     match r {
         CodeResult::Value(_) => {}
         CodeResult::Table(x) => result.push(x),
@@ -50,23 +50,6 @@ fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Result<(), DBErr
     Ok(())
 }
 
-pub fn execute_single_sql(
-    cx: &ExecutionContext,
-    db: &RelationalDB,
-    tx: &Tx,
-    ast: CrudExpr,
-    auth: AuthCtx,
-    sources: SourceSet,
-) -> Result<Vec<MemTable>, DBError> {
-    let mut tx: TxMode = tx.into();
-    let p = &mut DbProgram::new(cx, db, &mut tx, auth);
-    let q = Expr::Crud(Box::new(ast));
-
-    let mut result = Vec::with_capacity(1);
-    collect_result(&mut result, run_ast(p, q, sources).into())?;
-    Ok(result)
-}
-
 /// Run the compiled `SQL` expression inside the `vm` created by [DbProgram]
 ///
 /// Evaluates `ast` and accordingly triggers mutable or read tx to execute
@@ -74,20 +57,21 @@ pub fn execute_sql(db: &RelationalDB, ast: Vec<CrudExpr>, auth: AuthCtx) -> Resu
     let total = ast.len();
     let ctx = ExecutionContext::sql(db.address());
     let mut result = Vec::with_capacity(total);
+    let sources = [].into();
     match CrudExpr::is_reads(&ast) {
         false => db.with_auto_commit(&ctx, |mut_tx| {
             let mut tx: TxMode = mut_tx.into();
             let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
             let p = &mut DbProgram::new(&ctx, db, &mut tx, auth);
             // SQL queries can never reference `MemTable`s, so pass an empty `SourceSet`.
-            collect_result(&mut result, run_ast(p, q, SourceSet::default()).into())
+            collect_result(&mut result, run_ast(p, q, sources).into())
         }),
         true => db.with_read_only(&ctx, |tx| {
             let mut tx = TxMode::Tx(tx);
             let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
             let p = &mut DbProgram::new(&ctx, db, &mut tx, auth);
             // SQL queries can never reference `MemTable`s, so pass an empty `SourceSet`.
-            collect_result(&mut result, run_ast(p, q, SourceSet::default()).into())
+            collect_result(&mut result, run_ast(p, q, sources).into())
         }),
     }?;
 

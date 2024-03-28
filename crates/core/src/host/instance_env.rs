@@ -21,7 +21,7 @@ use spacetimedb_primitives::{ColId, ColListBuilder, TableId};
 use spacetimedb_sats::db::def::{IndexDef, IndexType};
 use spacetimedb_sats::relation::{FieldExpr, FieldName};
 use spacetimedb_sats::{ProductType, Typespace};
-use spacetimedb_vm::expr::{ColumnOp, SourceSet};
+use spacetimedb_vm::expr::{ColumnOp, NoInMemUsed};
 
 #[derive(Clone)]
 pub struct InstanceEnv {
@@ -372,8 +372,8 @@ impl InstanceEnv {
         // Invent a system where we can make these kinds of "optimization path tests".
 
         let tx: TxMode = tx.into();
-        // SQL queries can never reference `MemTable`s, so pass in an empty `SourceSet`.
-        let mut query = build_query(ctx, stdb, &tx, &query, &mut SourceSet::default())?;
+        // SQL queries can never reference `MemTable`s, so pass in an empty set.
+        let mut query = build_query(ctx, stdb, &tx, &query, &mut NoInMemUsed)?;
 
         // write all rows and flush at row boundaries.
         let mut chunked_writer = ChunkedWriter::default();

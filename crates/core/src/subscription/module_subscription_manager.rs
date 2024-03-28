@@ -13,6 +13,7 @@ use spacetimedb_lib::Identity;
 use spacetimedb_primitives::TableId;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
+use std::ops::Deref;
 use std::sync::Arc;
 
 type Query = Arc<ExecutionUnit>;
@@ -112,7 +113,7 @@ impl SubscriptionManager {
     /// evaluates only the necessary queries for those delta tables,
     /// and then sends the results to each client.
     #[tracing::instrument(skip_all)]
-    pub fn eval_updates(&self, db: &RelationalDB, event: &ModuleEvent) {
+    pub fn eval_updates(&self, db: &RelationalDB, event: Arc<ModuleEvent>) {
         let tables = &event.status.database_update().unwrap().tables;
 
         let tx = scopeguard::guard(db.begin_tx(), |tx| {
@@ -134,11 +135,13 @@ impl SubscriptionManager {
             }
 
             let span = tracing::info_span!("eval_incr").entered();
+            let ctx = ExecutionContext::incremental_update(db.address());
+            let tx = &tx.deref().into();
             let eval = units
                 .into_par_iter()
                 .filter_map(|(hash, tables)| self.queries.get(hash).map(|unit| (hash, tables, unit)))
                 .filter_map(|(hash, tables, unit)| {
-                    match unit.eval_incr(db, &tx, tables.into_iter()) {
+                    match unit.eval_incr(&ctx, db, tx, tables.into_iter()) {
                         Ok(None) => None,
                         Ok(Some(table)) => Some((hash, table)),
                         Err(err) => {
@@ -154,7 +157,6 @@ impl SubscriptionManager {
                 .flat_map_iter(|(hash, delta)| {
                     let table_id = delta.table_id;
                     let table_name = delta.table_name;
-                    let ops = delta.ops;
                     // Store at most one copy of the serialization to BSATN
                     // and ditto for the "serialization" for JSON.
                     // Each subscriber gets to pick which of these they want,
@@ -165,12 +167,14 @@ impl SubscriptionManager {
                     let mut ops_json: Option<Vec<TableRowOperationJson>> = None;
                     self.subscribers.get(hash).into_iter().flatten().map(move |id| {
                         let ops = match self.clients[id].protocol {
-                            Protocol::Binary => {
-                                Either::Left(ops_bin.get_or_insert_with(|| ops.iter().map_into().collect()).clone())
-                            }
+                            Protocol::Binary => Either::Left(
+                                ops_bin
+                                    .get_or_insert_with(|| delta.updates.iter().map_into().collect())
+                                    .clone(),
+                            ),
                             Protocol::Text => Either::Right(
                                 ops_json
-                                    .get_or_insert_with(|| ops.iter().cloned().map_into().collect())
+                                    .get_or_insert_with(|| delta.updates.iter().map_into().collect())
                                     .clone(),
                             ),
                         };
@@ -246,7 +250,10 @@ impl SubscriptionManager {
                     request_id: event.request_id,
                     timer: event.timer,
                 };
-                let message = TransactionUpdateMessage { event, database_update };
+                let message = TransactionUpdateMessage {
+                    event: event.clone(),
+                    database_update,
+                };
                 if let Err(e) = client.send_message(message) {
                     tracing::warn!(%client.id, "failed to send update message to client: {e}")
                 }
