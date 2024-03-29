@@ -118,8 +118,8 @@ sleep 300
 
 docker-compose -f "$BOTS_DIR/docker-compose.yml" down
 
-kill -INT "$SPACETIME_PROCESS"
-kill -INT "$TRACY_PROCESS"
+kill -INT "$SPACETIME_PROCESS" || echo "missing spacetime process?"
+kill -INT "$TRACY_PROCESS" || echo "missing tracy process?"
 sleep 30
 
 zip "$OUT_DIR/bottest.zip" "$OUT_DIR/spacetime.log" "$OUT_DIR/tracy-capture.log" "$OUT_DIR/deploy_world.log" "$OUT_DIR/output.tracy" -r
