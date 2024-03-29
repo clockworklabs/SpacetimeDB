@@ -43,6 +43,8 @@ import {
 } from "./message_types";
 import { SpacetimeDBGlobals } from "./global";
 import { stdbLogger } from "./logger";
+import decompress from "brotli/decompress";
+import { Buffer } from "buffer";
 
 export {
   ProductValue,
@@ -540,9 +542,12 @@ export class SpacetimeDBClient {
       if (typeof data.arrayBuffer === "undefined") {
         data = new Blob([data]);
       }
-      data.arrayBuffer().then((data: any) => {
+      data.arrayBuffer().then((data: Uint8Array) => {
+        // From https://github.com/foliojs/brotli.js/issues/31 :
+        // use a `Buffer` rather than a `Uint8Array` because for some reason brotli requires that.
+        let decompressed = decompress(new Buffer(data));
         const message: Proto.Message = Proto.Message.decode(
-          new Uint8Array(data)
+          new Uint8Array(decompressed)
         );
         if (message["subscriptionUpdate"]) {
           const rawSubscriptionUpdate = message.subscriptionUpdate;
