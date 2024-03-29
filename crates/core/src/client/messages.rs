@@ -46,6 +46,8 @@ pub trait ServerMessage: Sized {
                 const BUFFER_SIZE: usize = 32 * 1024;
                 // Again we are optimizing for compression speed,
                 // so we choose the lowest (fastest) level of compression.
+                // Experiments on internal workloads have shown compression ratios between 7:1 and 10:1
+                // for large `SubscriptionUpdate` messages at this level.
                 const COMPRESSION_LEVEL: u32 = 1;
                 // The default value for an internal compression parameter.
                 // See `BrotliEncoderParams` for more details.
