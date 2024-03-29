@@ -24,9 +24,11 @@ function assert_file {
         exit 1
     fi
 }
+# we need to ensure everything dies in case of an early exit to avoid polluting
+# the bot test machine with processes
 function cleanup {
-    kill $SPACETIME_PROCESS
-    kill $TRACY_PROCESS
+    kill $SPACETIME_PROCESS || echo "already dead"
+    kill $TRACY_PROCESS || echo "already dead"
     git checkout -- .
 }
 
