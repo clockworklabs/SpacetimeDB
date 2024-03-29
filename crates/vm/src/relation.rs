@@ -11,10 +11,10 @@ use spacetimedb_table::read_column::ReadColumn;
 use spacetimedb_table::table::RowRef;
 use std::borrow::Cow;
 use std::hash::{Hash, Hasher};
-use std::mem;
 use std::sync::Arc;
 
 /// RelValue represents either a reference to a row in a table,
+/// a reference to an inserted row,
 /// or an ephemeral row constructed during query execution.
 ///
 /// A `RelValue` is the type generated/consumed by a [Relation] operator.
@@ -22,20 +22,37 @@ use std::sync::Arc;
 pub enum RelValue<'a> {
     Row(RowRef<'a>),
     Projection(ProductValue),
+    ProjRef(&'a ProductValue),
 }
 
 impl_serialize!(['a] RelValue<'a>, (self, ser) => match self {
     Self::Row(row) => row.serialize(ser),
     Self::Projection(row) => row.serialize(ser),
+    Self::ProjRef(row) => row.serialize(ser),
 });
 
 impl<'a> RelValue<'a> {
-    /// Converts `self` into a `ProductValue`
-    /// either by reading a value from a table or consuming the owned product.
+    /// Converts `self` into a [`ProductValue`]
+    /// either by reading a value from a table,
+    /// cloning the reference to a `ProductValue`,
+    /// or consuming the owned product.
     pub fn into_product_value(self) -> ProductValue {
         match self {
-            Self::Row(row_ref) => row_ref.to_product_value(),
+            Self::Row(row) => row.to_product_value(),
             Self::Projection(row) => row,
+            Self::ProjRef(row) => row.clone(),
+        }
+    }
+
+    /// Converts `self` into a `Cow<'a, ProductValue>`
+    /// either by reading a value from a table,
+    /// passing the reference to a `ProductValue`,
+    /// or consuming the owned product.
+    pub fn into_product_value_cow(self) -> Cow<'a, ProductValue> {
+        match self {
+            Self::Row(row) => Cow::Owned(row.to_product_value()),
+            Self::Projection(row) => Cow::Owned(row),
+            Self::ProjRef(row) => Cow::Borrowed(row),
         }
     }
 
@@ -44,6 +61,7 @@ impl<'a> RelValue<'a> {
         match self {
             Self::Row(row_ref) => row_ref.row_layout().product().elements.len(),
             Self::Projection(row) => row.elements.len(),
+            Self::ProjRef(row) => row.elements.len(),
         }
     }
 
@@ -63,6 +81,7 @@ impl<'a> RelValue<'a> {
         match self {
             Self::Row(row_ref) => AlgebraicValue::read_column(*row_ref, col).ok().map(Cow::Owned),
             Self::Projection(pv) => pv.elements.get(col).map(Cow::Borrowed),
+            Self::ProjRef(pv) => pv.elements.get(col).map(Cow::Borrowed),
         }
     }
 
@@ -92,15 +111,13 @@ impl<'a> RelValue<'a> {
     }
 
     /// Reads or takes the column at `col`.
-    /// Calling this method consumes the column at `col`
+    /// Calling this method consumes the column at `col` for a `RelValue::Projection`,
     /// so it should not be called again for the same input.
     fn read_or_take_column(&mut self, col: usize) -> Option<AlgebraicValue> {
         match self {
             Self::Row(row_ref) => AlgebraicValue::read_column(*row_ref, col).ok(),
-            Self::Projection(pv) => {
-                let elem = pv.elements.get_mut(col)?;
-                Some(mem::replace(elem, AlgebraicValue::U8(0)))
-            }
+            Self::Projection(pv) => pv.elements.get_mut(col).map(AlgebraicValue::take),
+            Self::ProjRef(pv) => pv.elements.get(col).cloned(),
         }
     }
 
@@ -129,6 +146,7 @@ impl<'a> RelValue<'a> {
         match self {
             RelValue::Row(row_ref) => row_ref.to_bsatn_extend(buf),
             RelValue::Projection(row) => bsatn::to_writer(buf, row),
+            RelValue::ProjRef(row) => bsatn::to_writer(buf, row),
         }
     }
 }
@@ -165,6 +183,7 @@ impl MemTable {
         }
     }
 
+    /// For testing purposes only this provides a single-col header / product value.
     pub fn from_value(of: AlgebraicValue) -> Self {
         let head = Header::for_mem_table(of.type_of().into());
         Self::new(Arc::new(head), StAccess::Public, [of.into()].into())

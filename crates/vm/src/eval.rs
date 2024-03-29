@@ -1,11 +1,12 @@
 use crate::errors::ErrorVm;
-use crate::expr::{Code, SourceSet};
+use crate::expr::{Code, SourceExpr, SourceSet};
 use crate::expr::{Expr, Query};
 use crate::iterators::RelIter;
-use crate::program::ProgramVm;
+use crate::program::{ProgramVm, Sources};
 use crate::rel_ops::RelOps;
 use crate::relation::RelValue;
 use spacetimedb_sats::relation::{FieldExprRef, Relation};
+use spacetimedb_sats::ProductValue;
 use std::sync::Arc;
 
 pub type IterRows<'a> = dyn RelOps<'a> + 'a;
@@ -15,10 +16,10 @@ pub type IterRows<'a> = dyn RelOps<'a> + 'a;
 /// While constructing the query, the `sources` will be destructively modified with `Option::take`
 /// to extract the sources,
 /// so the `query` cannot refer to the same `SourceId` multiple times.
-pub fn build_query<'a>(
+pub fn build_query<'a, const N: usize>(
     mut result: Box<IterRows<'a>>,
     query: &'a [Query],
-    sources: &mut SourceSet,
+    sources: Sources<'_, N>,
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {
     for q in query {
         result = match q {
@@ -48,22 +49,8 @@ pub fn build_query<'a>(
                 //Pick the smaller set to be at the left
                 let col_lhs = FieldExprRef::Name(&q.col_lhs);
                 let col_rhs = FieldExprRef::Name(&q.col_rhs);
-                let row_rhs = q.rhs.source.row_count();
 
-                let semi = q.semi;
-
-                let head = q.rhs.source.head().clone();
-                let rhs = if let Some(rhs_source_id) = q.rhs.source.source_id() {
-                    let Some(rhs_table) = sources.take_mem_table(rhs_source_id) else {
-                        panic!(
-                            "Query plan specifies a `MemTable` for {rhs_source_id:?}, but found a `DbTable` or nothing"
-                        );
-                    };
-                    Box::new(RelIter::new(head, row_rhs, rhs_table)) as Box<IterRows<'_>>
-                } else {
-                    todo!("How pass the db iter?")
-                };
-
+                let rhs = build_source_expr_query(sources, &q.rhs.source);
                 let rhs = build_query(rhs, &q.rhs.query, sources)?;
 
                 let lhs = result;
@@ -72,7 +59,7 @@ pub fn build_query<'a>(
                 let col_lhs_header = lhs.head().clone();
                 let col_rhs_header = rhs.head().clone();
 
-                if semi {
+                if q.semi {
                     let iter = lhs.join_inner(
                         rhs,
                         col_lhs_header.clone(),
@@ -107,8 +94,21 @@ pub fn build_query<'a>(
     Ok(result)
 }
 
+pub(crate) fn build_source_expr_query<'a, const N: usize>(
+    sources: Sources<'_, N>,
+    source: &SourceExpr,
+) -> Box<IterRows<'a>> {
+    let source_id = source.source_id().unwrap_or_else(|| todo!("How pass the db iter?"));
+    let head = source.head().clone();
+    let rc = source.row_count();
+    let table = sources.take(source_id).unwrap_or_else(|| {
+        panic!("Query plan specifies in-mem table for {source_id:?}, but found a `DbTable` or nothing")
+    });
+    Box::new(RelIter::new(head, rc, table.into_iter().map(RelValue::Projection)))
+}
+
 /// Execute the code
-pub fn eval<P: ProgramVm>(p: &mut P, code: Code, sources: &mut SourceSet) -> Code {
+pub fn eval<const N: usize, P: ProgramVm>(p: &mut P, code: Code, sources: Sources<'_, N>) -> Code {
     match code {
         c @ (Code::Value(_) | Code::Halt(_) | Code::Table(_)) => c,
         Code::Block(lines) => {
@@ -145,7 +145,11 @@ fn to_vec(of: Vec<Expr>) -> Code {
 }
 
 /// Optimize, compile & run the [Expr]
-pub fn run_ast<P: ProgramVm>(p: &mut P, ast: Expr, mut sources: SourceSet) -> Code {
+pub fn run_ast<const N: usize, P: ProgramVm>(
+    p: &mut P,
+    ast: Expr,
+    mut sources: SourceSet<Vec<ProductValue>, N>,
+) -> Code {
     let code = match ast {
         Expr::Block(x) => to_vec(x),
         Expr::Crud(x) => Code::Crud(*x),
@@ -202,14 +206,13 @@ pub mod tests {
     use crate::expr::SourceSet;
     use crate::program::Program;
     use crate::relation::MemTable;
-    use spacetimedb_lib::identity::AuthCtx;
     use spacetimedb_lib::operator::{OpCmp, OpLogic};
     use spacetimedb_sats::db::auth::StAccess;
     use spacetimedb_sats::db::error::RelationError;
     use spacetimedb_sats::relation::FieldName;
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
 
-    fn run_query(p: &mut Program, ast: Expr, sources: SourceSet) -> MemTable {
+    fn run_query<const N: usize>(p: &mut Program, ast: Expr, sources: SourceSet<Vec<ProductValue>, N>) -> MemTable {
         match run_ast(p, ast, sources) {
             Code::Table(x) => x,
             x => panic!("Unexpected result on query: {x}"),
@@ -218,10 +221,10 @@ pub mod tests {
 
     #[test]
     fn test_select() {
-        let p = &mut Program::new(AuthCtx::for_testing());
+        let p = &mut Program;
         let input = MemTable::from_value(scalar(1));
         let field = input.get_field_pos(0).unwrap().clone();
-        let mut sources = SourceSet::default();
+        let mut sources = SourceSet::<_, 1>::empty();
         let source_expr = sources.add_mem_table(input);
 
         let q = query(source_expr).with_select_cmp(OpCmp::Eq, field, scalar(1));
@@ -239,11 +242,11 @@ pub mod tests {
 
     #[test]
     fn test_project() {
-        let p = &mut Program::new(AuthCtx::for_testing());
+        let p = &mut Program;
         let input = scalar(1);
         let table = MemTable::from_value(scalar(1));
 
-        let mut sources = SourceSet::default();
+        let mut sources = SourceSet::<_, 1>::empty();
         let source_expr = sources.add_mem_table(table.clone());
 
         let source = query(source_expr);
@@ -259,7 +262,7 @@ pub mod tests {
             "Project"
         );
 
-        let mut sources = SourceSet::default();
+        let mut sources = SourceSet::<_, 1>::empty();
         let source_expr = sources.add_mem_table(table.clone());
 
         let source = query(source_expr);
@@ -276,11 +279,11 @@ pub mod tests {
 
     #[test]
     fn test_join_inner() {
-        let p = &mut Program::new(AuthCtx::for_testing());
+        let p = &mut Program;
         let table = MemTable::from_value(scalar(1));
         let field = table.get_field_pos(0).unwrap().clone();
 
-        let mut sources = SourceSet::default();
+        let mut sources = SourceSet::<_, 2>::empty();
         let source_expr = sources.add_mem_table(table.clone());
         let second_source_expr = sources.add_mem_table(table);
 
@@ -303,11 +306,11 @@ pub mod tests {
 
     #[test]
     fn test_semijoin() {
-        let p = &mut Program::new(AuthCtx::for_testing());
+        let p = &mut Program;
         let table = MemTable::from_value(scalar(1));
         let field = table.get_field_pos(0).unwrap().clone();
 
-        let mut sources = SourceSet::default();
+        let mut sources = SourceSet::<_, 2>::empty();
         let source_expr = sources.add_mem_table(table.clone());
         let second_source_expr = sources.add_mem_table(table);
 
@@ -334,7 +337,7 @@ pub mod tests {
 
     #[test]
     fn test_query_logic() {
-        let p = &mut Program::new(AuthCtx::for_testing());
+        let p = &mut Program;
 
         let inv = ProductType::from([("id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
 
@@ -343,7 +346,7 @@ pub mod tests {
         let input = mem_table(inv, vec![row]);
         let inv = input.clone();
 
-        let mut sources = SourceSet::default();
+        let mut sources = SourceSet::<_, 1>::empty();
         let source_expr = sources.add_mem_table(input.clone());
 
         let q = query(source_expr.clone()).with_select_cmp(OpLogic::And, scalar(true), scalar(true));
@@ -352,7 +355,7 @@ pub mod tests {
 
         assert_eq!(result, Code::Table(inv.clone()), "Query And");
 
-        let mut sources = SourceSet::default();
+        let mut sources = SourceSet::<_, 1>::empty();
         let source_expr = sources.add_mem_table(input);
 
         let q = query(source_expr).with_select_cmp(OpLogic::Or, scalar(true), scalar(false));
@@ -366,7 +369,7 @@ pub mod tests {
     /// Inventory
     /// | id: u64 | name : String |
     fn test_query_inner_join() {
-        let p = &mut Program::new(AuthCtx::for_testing());
+        let p = &mut Program;
 
         let inv = ProductType::from([("id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
 
@@ -375,7 +378,7 @@ pub mod tests {
         let input = mem_table(inv, vec![row]);
         let field = input.get_field_pos(0).unwrap().clone();
 
-        let mut sources = SourceSet::default();
+        let mut sources = SourceSet::<_, 2>::empty();
         let source_expr = sources.add_mem_table(input.clone());
         let second_source_expr = sources.add_mem_table(input);
 
@@ -401,7 +404,7 @@ pub mod tests {
     /// Inventory
     /// | id: u64 | name : String |
     fn test_query_semijoin() {
-        let p = &mut Program::new(AuthCtx::for_testing());
+        let p = &mut Program;
 
         let inv = ProductType::from([("id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
 
@@ -410,7 +413,7 @@ pub mod tests {
         let input = mem_table(inv, vec![row]);
         let field = input.get_field_pos(0).unwrap().clone();
 
-        let mut sources = SourceSet::default();
+        let mut sources = SourceSet::<_, 2>::empty();
         let source_expr = sources.add_mem_table(input.clone());
         let second_source_expr = sources.add_mem_table(input);
 
@@ -436,7 +439,7 @@ pub mod tests {
     /// Location
     /// | entity_id: u64 | x : f32 | z : f32 |
     fn test_query_game() {
-        let p = &mut Program::new(AuthCtx::for_testing());
+        let p = &mut Program;
 
         let data = create_game_data();
 
@@ -449,7 +452,7 @@ pub mod tests {
         let location_x = data.location.get_field_named("x").unwrap().clone();
         let location_z = data.location.get_field_named("z").unwrap().clone();
 
-        let mut sources = SourceSet::default();
+        let mut sources = SourceSet::<_, 2>::empty();
         let player_source_expr = sources.add_mem_table(data.player.clone());
         let location_source_expr = sources.add_mem_table(data.location.clone());
 
@@ -480,7 +483,7 @@ pub mod tests {
 
         assert_eq!(result.as_without_table_name(), input.as_without_table_name(), "Player");
 
-        let mut sources = SourceSet::default();
+        let mut sources = SourceSet::<_, 3>::empty();
         let player_source_expr = sources.add_mem_table(data.player);
         let location_source_expr = sources.add_mem_table(data.location);
         let inventory_source_expr = sources.add_mem_table(data.inv);

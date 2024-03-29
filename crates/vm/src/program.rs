@@ -3,14 +3,11 @@
 //! It carries an [EnvDb] with the functions, idents, types.
 
 use crate::errors::ErrorVm;
-use crate::eval::{build_query, IterRows};
+use crate::eval::{build_query, build_source_expr_query};
 use crate::expr::{Code, CrudExpr, SourceSet};
-use crate::iterators::RelIter;
 use crate::rel_ops::RelOps;
 use crate::relation::MemTable;
-use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::Address;
-use spacetimedb_sats::relation::Relation;
+use spacetimedb_sats::ProductValue;
 
 /// A trait to allow split the execution of `programs` to allow executing
 /// `queries` that take in account each `program` state/enviroment.
@@ -19,71 +16,27 @@ use spacetimedb_sats::relation::Relation;
 ///
 /// It could also permit run queries backed by different engines, like in `MySql`.
 pub trait ProgramVm {
-    fn address(&self) -> Option<Address>;
-    fn ctx(&self) -> &dyn ProgramVm;
-    fn auth(&self) -> &AuthCtx;
-
     /// Allows to execute the query with the state carried by the implementation of this
     /// trait
-    fn eval_query(&mut self, query: CrudExpr, sources: &mut SourceSet) -> Result<Code, ErrorVm>;
+    fn eval_query<const N: usize>(&mut self, query: CrudExpr, sources: Sources<'_, N>) -> Result<Code, ErrorVm>;
 }
 
-pub struct ProgramStore<P> {
-    pub p: P,
-    pub code: Code,
-}
-
-impl<P> ProgramStore<P> {
-    pub fn new(p: P, code: Code) -> Self {
-        Self { p, code }
-    }
-}
+pub type Sources<'a, const N: usize> = &'a mut SourceSet<Vec<ProductValue>, N>;
 
 /// A default program that run in-memory without a database
-pub struct Program {
-    pub(crate) auth: AuthCtx,
-}
-
-impl Program {
-    pub fn new(auth: AuthCtx) -> Self {
-        Self { auth }
-    }
-}
+pub struct Program;
 
 impl ProgramVm for Program {
-    fn address(&self) -> Option<Address> {
-        None
-    }
-
-    fn ctx(&self) -> &dyn ProgramVm {
-        self as &dyn ProgramVm
-    }
-
-    fn auth(&self) -> &AuthCtx {
-        &self.auth
-    }
-
-    fn eval_query(&mut self, query: CrudExpr, sources: &mut SourceSet) -> Result<Code, ErrorVm> {
+    fn eval_query<const N: usize>(&mut self, query: CrudExpr, sources: Sources<'_, N>) -> Result<Code, ErrorVm> {
         match query {
             CrudExpr::Query(query) => {
-                let head = query.head().clone();
-                let row_count = query.row_count();
-                let table_access = query.source.table_access();
-                let result = if let Some(source_id) = query.source.source_id() {
-                    let Some(result_table) = sources.take_mem_table(source_id) else {
-                        panic!("Query plan specifies a `MemTable` for {source_id:?}, but found a `DbTable` or nothing");
-                    };
-                    Box::new(RelIter::new(head, row_count, result_table)) as Box<IterRows<'_>>
-                } else {
-                    panic!("DB not set")
-                };
-
+                let result = build_source_expr_query(sources, &query.source);
                 let result = build_query(result, &query.query, sources)?;
 
                 let head = result.head().clone();
                 let rows: Vec<_> = result.collect_vec(|row| row.into_product_value())?;
 
-                Ok(Code::Table(MemTable::new(head, table_access, rows)))
+                Ok(Code::Table(MemTable::new(head, query.source.table_access(), rows)))
             }
             CrudExpr::Insert { .. } => {
                 todo!()
