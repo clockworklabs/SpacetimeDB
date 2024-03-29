@@ -90,7 +90,7 @@ cargo build --bin spacetime --release
 
 echo ------- PREPARING WORLD -------
 
-target/release/spacetime start --listen-addr 0.0.0.0:3000 "$OUT_DIR/.spacetime" >"$OUT_DIR/spacetime.log" 2>&1 &
+target/release/spacetime start --listen-addr 0.0.0.0:3000 "$OUT_DIR/.spacetime" >"$OUT_DIR/spacetime_deploy_world.log" 2>&1 &
 SPACETIME_PROCESS=$!
 sleep 5
 
@@ -103,7 +103,7 @@ echo ------- RUNNING BOTS AND COLLECTING TRACE -------
 kill -INT "$SPACETIME_PROCESS"
 sleep 5
 
-target/release/spacetime start --listen-addr 0.0.0.0:3000 --enable-tracy "$OUT_DIR/.spacetime" >>"$OUT_DIR/spacetime.log" 2>&1 &
+target/release/spacetime start --listen-addr 0.0.0.0:3000 --enable-tracy "$OUT_DIR/.spacetime" >"$OUT_DIR/spacetime_bots.log" 2>&1 &
 SPACETIME_PROCESS=$!
 sleep 5
 
@@ -122,4 +122,4 @@ kill -INT "$SPACETIME_PROCESS" || echo "missing spacetime process?"
 kill -INT "$TRACY_PROCESS" || echo "missing tracy process?"
 sleep 30
 
-zip "$OUT_DIR/bottest.zip" "$OUT_DIR/spacetime.log" "$OUT_DIR/tracy-capture.log" "$OUT_DIR/deploy_world.log" "$OUT_DIR/output.tracy" -r
+zip "$OUT_DIR/bottest.zip" "$OUT_DIR/*.log" "$OUT_DIR/output.tracy" -r
