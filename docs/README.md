@@ -13,7 +13,7 @@ To make changes to our docs, you can open a pull request in this repository. You
 git clone ssh://git@github.com/<username>/spacetime-docs
 ```
 
-3. Make your edits to the docs that you want to make + test them locally (see Testing Your Edits below)
+3. Make your edits to the docs that you want to make + test them locally
 4. Commit your changes:
 
 ```bash

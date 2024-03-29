@@ -17,9 +17,10 @@ The SpacetimeDB client C# for Rust contains all the tools you need to build nati
     - [Method `SpacetimeDBClient.Connect`](#method-spacetimedbclientconnect)
     - [Event `SpacetimeDBClient.onIdentityReceived`](#event-spacetimedbclientonidentityreceived)
     - [Event `SpacetimeDBClient.onConnect`](#event-spacetimedbclientonconnect)
-  - [Subscribe to queries](#subscribe-to-queries)
+  - [Query subscriptions & one-time actions](#subscribe-to-queries)
     - [Method `SpacetimeDBClient.Subscribe`](#method-spacetimedbclientsubscribe)
     - [Event `SpacetimeDBClient.onSubscriptionApplied`](#event-spacetimedbclientonsubscriptionapplied)
+    - [Method `SpacetimeDBClient.OneOffQuery`](#event-spacetimedbclientoneoffquery)
   - [View rows of subscribed tables](#view-rows-of-subscribed-tables)
     - [Class `{TABLE}`](#class-table)
       - [Static Method `{TABLE}.Iter`](#static-method-tableiter)
@@ -64,13 +65,11 @@ dotnet add package spacetimedbsdk
 
 ### Using Unity
 
-To install the SpacetimeDB SDK into a Unity project, download the SpacetimeDB SDK from the following link.
+To install the SpacetimeDB SDK into a Unity project, [download the SpacetimeDB SDK](https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk/releases/latest), packaged as a `.unitypackage`.
 
-https://sdk.spacetimedb.com/SpacetimeDBUnitySDK.unitypackage
+In Unity navigate to the `Assets > Import Package > Custom Package` menu in the menu bar. Select your `SpacetimeDB.Unity.Comprehensive.Tutorial.unitypackage` file and leave all folders checked.
 
-In Unity navigate to the `Assets > Import Package > Custom Package...` menu in the menu bar. Select your `SpacetimeDBUnitySDK.unitypackage` file and leave all folders checked.
-
-(See also the [Unity Tutorial](/docs/unity/part-1).)
+(See also the [Unity Tutorial](/docs/unity/part-1))
 
 ## Generate module bindings
 
@@ -317,6 +316,15 @@ void Main()
     // ...initialize...
     SpacetimeDBClient.instance.onSubscriptionApplied += OnSubscriptionApplied;
 }
+```
+
+### Method [`OneTimeQuery`](#method-spacetimedbclientsubscribe)
+
+You may not want to subscribe to a query, but instead want to run a query once and receive the results immediately via a `Task` result:
+
+```csharp
+// Query all Messages from the sender "bob"
+SpacetimeDBClient.instance.OneOffQuery<Message>("WHERE sender = \"bob\"");
 ```
 
 ## View rows of subscribed tables

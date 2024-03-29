@@ -42,6 +42,7 @@ static partial class Module
     {
         // We can skip (or explicitly set to zero) auto-incremented fields when creating new rows.
         var person = new Person { Name = name, Age = age };
+        
         // `Insert()` method is auto-generated and will insert the given row into the table.
         person.Insert();
         // After insertion, the auto-incremented fields will be populated with their actual values.
@@ -211,8 +212,10 @@ public partial struct Person
 
     // Finds a row in the table with the given value in the `Id` column and returns it, or `null` if no such row exists.
     public static Person? FindById(int id);
+    
     // Deletes a row in the table with the given value in the `Id` column and returns `true` if the row was found and deleted, or `false` if no such row exists.
     public static bool DeleteById(int id);
+    
     // Updates a row in the table with the given value in the `Id` column and returns `true` if the row was found and updated, or `false` if no such row exists.
     public static bool UpdateById(int oldId, Person newValue);
 }

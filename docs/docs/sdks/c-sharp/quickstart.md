@@ -1,8 +1,8 @@
 # C# Client SDK Quick Start
 
-In this guide we'll show you how to get up and running with a simple SpacetimDB app with a client written in C#.
+In this guide we'll show you how to get up and running with a simple SpacetimeDB app with a client written in C#.
 
-We'll implement a command-line client for the module created in our Rust or C# Module Quickstart guides. Make sure you follow one of these guides before you start on this one.
+We'll implement a command-line client for the module created in our [Rust](../../modules/rust/quickstart.md) or [C# Module](../../modules/c-sharp/quickstart.md) Quickstart guides. Ensure you followed one of these guides before continuing.
 
 ## Project structure
 
@@ -12,7 +12,7 @@ Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart
 cd quickstart-chat
 ```
 
-Within it, create a new C# console application project called `client` using either Visual Studio or the .NET CLI:
+Within it, create a new C# console application project called `client` using either Visual Studio, Rider or the .NET CLI:
 
 ```bash
 dotnet new console -o client
@@ -22,7 +22,7 @@ Open the project in your IDE of choice.
 
 ## Add the NuGet package for the C# SpacetimeDB SDK
 
-Add the `SpacetimeDB.ClientSDK` [NuGet package](https://www.nuget.org/packages/spacetimedbsdk) using Visual Studio NuGet package manager or via the .NET CLI
+Add the `SpacetimeDB.ClientSDK` [NuGet package](https://www.nuget.org/packages/spacetimedbsdk) using Visual Studio or Rider _NuGet Package Manager_ or via the .NET CLI:
 
 ```bash
 dotnet add package SpacetimeDB.ClientSDK
@@ -65,8 +65,10 @@ We will also need to create some global variables that will be explained when we
 ```csharp
 // our local client SpacetimeDB identity
 Identity? local_identity = null;
+
 // declare a thread safe queue to store commands in format (command, args)
 ConcurrentQueue<(string,string)> input_queue = new ConcurrentQueue<(string, string)>();
+
 // declare a threadsafe cancel token to cancel the process loop
 CancellationTokenSource cancel_token = new CancellationTokenSource();
 ```
@@ -75,10 +77,10 @@ CancellationTokenSource cancel_token = new CancellationTokenSource();
 
 We'll work outside-in, first defining our `Main` function at a high level, then implementing each behavior it needs. We need `Main` to do several things:
 
-1. Initialize the AuthToken module, which loads and stores our authentication token to/from local storage.
-2. Create the SpacetimeDBClient instance.
+1. Initialize the `AuthToken` module, which loads and stores our authentication token to/from local storage.
+2. Create the `SpacetimeDBClient` instance.
 3. Register callbacks on any events we want to handle. These will print to standard output messages received from the database and updates about users' names and online statuses.
-4. Start our processing thread, which connects to the SpacetimeDB module, updates the SpacetimeDB client and processes commands that come in from the input loop running in the main thread.
+4. Start our processing thread which connects to the SpacetimeDB module, updates the SpacetimeDB client and processes commands that come in from the input loop running in the main thread.
 5. Start the input loop, which reads commands from standard input and sends them to the processing thread.
 6. When the input loop exits, stop the processing thread and wait for it to exit.
 
@@ -154,7 +156,7 @@ string UserNameOrIdentity(User user) => user.Name ?? user.Identity.ToString()!.S
 
 void User_OnInsert(User insertedValue, ReducerEvent? dbEvent)
 {
-    if(insertedValue.Online)
+    if (insertedValue.Online)
     {
         Console.WriteLine($"{UserNameOrIdentity(insertedValue)} is online");
     }
@@ -178,20 +180,21 @@ We'll print an appropriate message in each of these cases.
 ```csharp
 void User_OnUpdate(User oldValue, User newValue, ReducerEvent dbEvent)
 {
-    if(oldValue.Name != newValue.Name)
+    if (oldValue.Name != newValue.Name)
     {
         Console.WriteLine($"{UserNameOrIdentity(oldValue)} renamed to {newValue.Name}");
     }
-    if(oldValue.Online != newValue.Online)
+    
+    if (oldValue.Online == newValue.Online)
+        return;
+        
+    if (newValue.Online)
     {
-        if(newValue.Online)
-        {
-            Console.WriteLine($"{UserNameOrIdentity(newValue)} connected.");
-        }
-        else
-        {
-            Console.WriteLine($"{UserNameOrIdentity(newValue)} disconnected.");
-        }
+        Console.WriteLine($"{UserNameOrIdentity(newValue)} connected.");
+    }
+    else
+    {
+        Console.WriteLine($"{UserNameOrIdentity(newValue)} disconnected.");
     }
 }
 ```
@@ -209,7 +212,7 @@ void PrintMessage(Message message)
 {
     var sender = User.FilterByIdentity(message.Sender);
     var senderName = "unknown";
-    if(sender != null)
+    if (sender != null)
     {
         senderName = UserNameOrIdentity(sender);
     }
@@ -219,7 +222,7 @@ void PrintMessage(Message message)
 
 void Message_OnInsert(Message insertedValue, ReducerEvent? dbEvent)
 {
-    if(dbEvent != null)
+    if (dbEvent != null)
     {
         PrintMessage(insertedValue);
     }
@@ -254,7 +257,11 @@ We'll test both that our identity matches the sender and that the status is `Fai
 ```csharp
 void Reducer_OnSetNameEvent(ReducerEvent reducerEvent, string name)
 {
-    if(reducerEvent.Identity == local_identity && reducerEvent.Status == ClientApi.Event.Types.Status.Failed)
+    bool localIdentityFailedToChangeName = 
+        reducerEvent.Identity == local_identity && 
+        reducerEvent.Status == ClientApi.Event.Types.Status.Failed;
+        
+    if (localIdentityFailedToChangeName)
     {
         Console.Write($"Failed to change name to {name}");
     }
@@ -268,7 +275,11 @@ We handle warnings on rejected messages the same way as rejected names, though t
 ```csharp
 void Reducer_OnSendMessageEvent(ReducerEvent reducerEvent, string text)
 {
-    if (reducerEvent.Identity == local_identity && reducerEvent.Status == ClientApi.Event.Types.Status.Failed)
+    bool localIdentityFailedToSendMessage = 
+        reducerEvent.Identity == local_identity && 
+        reducerEvent.Status == ClientApi.Event.Types.Status.Failed;
+
+    if (localIdentityFailedToSendMessage)
     {
         Console.Write($"Failed to send message {text}");
     }
@@ -282,7 +293,10 @@ Once we are connected, we can send our subscription to the SpacetimeDB module. S
 ```csharp
 void OnConnect()
 {
-    SpacetimeDBClient.instance.Subscribe(new List<string> { "SELECT * FROM User", "SELECT * FROM Message" });
+    SpacetimeDBClient.instance.Subscribe(new List<string> 
+    { 
+        "SELECT * FROM User", "SELECT * FROM Message" 
+    });
 }
 ```
 
@@ -370,12 +384,12 @@ void InputLoop()
     while (true)
     {
         var input = Console.ReadLine();
-        if(input == null)
+        if (input == null)
         {
             break;
         }
 
-        if(input.StartsWith("/name "))
+        if (input.StartsWith("/name "))
         {
             input_queue.Enqueue(("name", input.Substring(6)));
             continue;
@@ -421,4 +435,4 @@ dotnet run --project client
 
 ## What's next?
 
-Congratulations! You've built a simple chat app using SpacetimeDB. You can look at the C# SDK Reference for more information about the client SDK. If you are interested in developing in the Unity3d game engine, check out our Unity3d Comprehensive Tutorial and BitcraftMini game example.
+Congratulations! You've built a simple chat app using SpacetimeDB. You can look at the C# SDK Reference for more information about the client SDK. If you are interested in developing in the Unity game engine, check out our Unity3d Comprehensive Tutorial and BitcraftMini game example.
