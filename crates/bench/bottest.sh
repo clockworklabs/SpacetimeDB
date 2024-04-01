@@ -123,5 +123,6 @@ kill -INT "$TRACY_PROCESS" || echo "missing tracy process?"
 sleep 30
 
 ls -al "$OUT_DIR"
+cat "$OUT_DIR/spacetime_bots.log"
 
 zip -r "$OUT_DIR/bottest.zip" "$OUT_DIR/*.log" "$OUT_DIR/output.tracy"
