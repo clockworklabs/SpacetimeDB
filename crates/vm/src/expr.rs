@@ -1452,7 +1452,7 @@ impl QueryExpr {
                 self.query.push(Query::IndexScan(IndexScan { table, columns, bounds }));
                 self
             }
-            // merge with a preceding lower bounded index scan (enclusive)
+            // merge with a preceding lower bounded index scan (exclusive)
             Query::IndexScan(IndexScan {
                 columns: lhs_col_id,
                 bounds: (Bound::Excluded(lower), Bound::Unbounded),
