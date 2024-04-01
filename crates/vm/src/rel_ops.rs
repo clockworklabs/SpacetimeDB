@@ -134,6 +134,30 @@ impl<'a, I: RelOps<'a> + ?Sized> RelOps<'a> for Box<I> {
     }
 }
 
+/// `RelOps` iterator which never returns any rows.
+///
+/// Used to compile queries with unsatisfiable bounds, like `WHERE x < 5 AND x > 5`.
+#[derive(Clone, Debug)]
+pub struct EmptyRelOps {
+    head: Arc<Header>,
+}
+
+impl EmptyRelOps {
+    pub fn new(head: Arc<Header>) -> Self {
+        Self { head }
+    }
+}
+
+impl<'a> RelOps<'a> for EmptyRelOps {
+    fn head(&self) -> &Arc<Header> {
+        &self.head
+    }
+
+    fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
+        Ok(None)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Select<I, P> {
     pub(crate) iter: I,

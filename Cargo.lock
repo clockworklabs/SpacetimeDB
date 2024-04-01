@@ -4761,6 +4761,7 @@ dependencies = [
  "arrayvec",
  "derive_more",
  "itertools 0.12.0",
+ "log",
  "smallvec",
  "spacetimedb-lib",
  "spacetimedb-primitives",
