@@ -1359,6 +1359,12 @@ impl QueryExpr {
                 // Queries like `WHERE x < 5 AND x > 5` never return any rows and are likely mistakes.
                 // Detect such queries and log a warning.
                 // Compute this condition early, then compute the resulting query and log it.
+                // TODO: We should not emit an `IndexScan` in this case.
+                // Further design work is necessary to decide whether this should be an error at query compile time,
+                // or whether we should emit a query plan which explicitly says that it will return 0 rows.
+                // The current behavior is a hack
+                // because this patch was written (2024-04-01 pgoldman) a short time before the BitCraft alpha,
+                // and a more invasive change was infeasible.
                 let is_never = !inclusive && value == upper;
 
                 let bounds = (Self::bound(value, inclusive), Bound::Excluded(upper));
@@ -1455,6 +1461,12 @@ impl QueryExpr {
                 // Queries like `WHERE x < 5 AND x > 5` never return any rows and are likely mistakes.
                 // Detect such queries and log a warning.
                 // Compute this condition early, then compute the resulting query and log it.
+                // TODO: We should not emit an `IndexScan` in this case.
+                // Further design work is necessary to decide whether this should be an error at query compile time,
+                // or whether we should emit a query plan which explicitly says that it will return 0 rows.
+                // The current behavior is a hack
+                // because this patch was written (2024-04-01 pgoldman) a short time before the BitCraft alpha,
+                // and a more invasive change was infeasible.
                 let is_never = !inclusive && value == lower;
 
                 let bounds = (Bound::Excluded(lower), Self::bound(value, inclusive));

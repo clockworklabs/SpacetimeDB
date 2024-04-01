@@ -108,6 +108,11 @@ pub fn build_query<'a>(
                     // return an empty iterator.
                     // Unlike the above case, this is not necessary, as the below `select` will never panic,
                     // but it's still nice to avoid needlessly traversing a bunch of rows.
+                    // TODO: We should change the compiler to not emit an `IndexScan` in this case,
+                    // so that this branch is unreachable.
+                    // The current behavior is a hack
+                    // because this patch was written (2024-04-01 pgoldman) a short time before the BitCraft alpha,
+                    // and a more invasive change was infeasible.
                     Box::new(EmptyRelOps::new(index_scan.table.head.clone())) as Box<IterRows<'a>>
                 } else if cols.is_singleton() {
                     // For singleton constraints, we compare the column directly against `bounds`.
