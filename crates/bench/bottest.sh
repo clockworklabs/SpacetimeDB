@@ -124,4 +124,4 @@ sleep 30
 
 ls -al "$OUT_DIR"
 
-zip "$OUT_DIR/bottest.zip" "$OUT_DIR/*.log" "$OUT_DIR/output.tracy" -r
+zip -r "$OUT_DIR/bottest.zip" "$OUT_DIR/*.log" "$OUT_DIR/output.tracy"
