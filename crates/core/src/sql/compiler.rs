@@ -12,8 +12,16 @@ use std::sync::Arc;
 
 use super::ast::TableSchemaView;
 
+/// DIRTY HACK ALERT: Maximum allowed length, in UTF-8 bytes, of SQL queries.
+/// Any query longer than this will be rejected.
+/// This prevents a stack overflow when compiling queries with deeply-nested `AND` and `OR` conditions.
+const MAX_SQL_LENGTH: usize = 50_000;
+
 /// Compile the `SQL` expression into an `ast`
 pub fn compile_sql<T: TableSchemaView>(db: &RelationalDB, tx: &T, sql_text: &str) -> Result<Vec<CrudExpr>, DBError> {
+    if sql_text.len() > MAX_SQL_LENGTH {
+        return Err(anyhow::anyhow!("SQL query exceeds maximum allowed length: \"{sql_text:.120}...\"").into());
+    }
     tracing::trace!(sql = sql_text);
     let ast = compile_to_ast(db, tx, sql_text)?;
 
