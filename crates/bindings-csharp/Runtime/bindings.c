@@ -1,11 +1,12 @@
-#ifndef EXPERIMENTAL_WASM_AOT
 #include <assert.h>
 // #include <mono/metadata/appdomain.h>
 // #include <mono/metadata/object.h>
 #include <stdint.h>
 #include <unistd.h>
 
+#ifndef EXPERIMENTAL_WASM_AOT
 #include "driver.h"
+#endif
 
 #define OPAQUE_TYPEDEF(name, T) \
   typedef struct name {         \
@@ -23,10 +24,16 @@ OPAQUE_TYPEDEF(BufferIter, uint32_t);
 
 #define CSTR(s) (uint8_t*)s, sizeof(s) - 1
 
-#define IMPORT(ret, name, params, args)                             \
-  __attribute__((import_module("spacetime_7.0"),                    \
-                 import_name(#name))) extern ret name##_imp params; \
+#define STDB_EXTERN(name) \
+  __attribute__((import_module("spacetime_7.0"), import_name(#name))) extern
+
+#ifndef EXPERIMENTAL_WASM_AOT
+#define IMPORT(ret, name, params, args)    \
+  STDB_EXTERN(name) ret name##_imp params; \
   ret name params { return name##_imp args; }
+#else
+#define IMPORT(ret, name, params, args) STDB_EXTERN(name) ret name params;
+#endif
 
 IMPORT(void, _console_log,
        (LogLevel level, const uint8_t* target, uint32_t target_len,
@@ -74,6 +81,7 @@ IMPORT(void, _buffer_consume, (Buffer buf, uint8_t* dst, uint32_t dst_len),
        (buf, dst, dst_len));
 IMPORT(Buffer, _buffer_alloc, (const uint8_t* data, uint32_t len), (data, len));
 
+#ifndef EXPERIMENTAL_WASM_AOT
 static MonoClass* ffi_class;
 
 #define CEXPORT(name) __attribute__((export_name(#name))) name
@@ -210,10 +218,10 @@ int32_t WASI_NAME(fd_write)(__wasi_fd_t fd, const __wasi_ciovec_t* iovs,
     // Note: this will produce ugly broken output, but there's not much we can
     // do about it until we have proper line-buffered WASI writer in the core.
     // It's better than nothing though.
-    // _console_log_imp((LogLevel){fd == STDERR_FILENO ? /*WARN*/ 1 : /*INFO*/
-    // 2},
-    //                  CSTR("wasi"), CSTR(__FILE__), __LINE__, iovs[i].buf,
-    //                  iovs[i].buf_len);
+    _console_log((LogLevel){fd == STDERR_FILENO ? /*WARN*/ 1 : /*INFO*/
+                                2},
+                 CSTR("wasi"), CSTR(__FILE__), __LINE__, iovs[i].buf,
+                 iovs[i].buf_len);
     *retptr0 += iovs[i].buf_len;
   }
   return 0;
