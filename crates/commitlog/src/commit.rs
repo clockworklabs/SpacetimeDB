@@ -4,9 +4,9 @@ use std::{
 };
 
 use crc32c::{Crc32cReader, Crc32cWriter};
-use spacetimedb_sats::buffer::{BufReader, DecodeError};
+use spacetimedb_sats::buffer::{BufReader, Cursor, DecodeError};
 
-use crate::{error::ChecksumMismatch, segment::CHECKSUM_ALGORITHM_CRC32C};
+use crate::{error::ChecksumMismatch, payload::Decoder, segment::CHECKSUM_ALGORITHM_CRC32C, Transaction};
 
 pub struct Header {
     min_tx_offset: u64,
@@ -131,6 +131,21 @@ impl Commit {
             n: hdr.n,
             records,
         }))
+    }
+
+    pub fn into_transactions<D: Decoder>(
+        self,
+        version: u8,
+        de: &D,
+    ) -> impl Iterator<Item = Result<Transaction<D::Record>, D::Error>> + '_ {
+        let records = Cursor::new(self.records);
+        (self.min_tx_offset..(self.min_tx_offset + self.n as u64)).scan(records, move |recs, offset| {
+            let mut cursor = &*recs;
+            let tx = de
+                .decode_record(version, offset, &mut cursor)
+                .map(|txdata| Transaction { offset, txdata });
+            Some(tx)
+        })
     }
 }
 
