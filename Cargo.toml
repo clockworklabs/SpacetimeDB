@@ -7,6 +7,7 @@ members = [
   "crates/cli",
   "crates/client-api",
   "crates/client-api-messages",
+  "crates/commitlog",
   "crates/core",
   "crates/data-structures",
   "crates/lib",
@@ -85,6 +86,7 @@ spacetimedb-bindings-sys = { path = "crates/bindings-sys", version = "0.8.2" }
 spacetimedb-cli = { path = "crates/cli", version = "0.8.2" }
 spacetimedb-client-api = { path = "crates/client-api", version = "0.8.2" }
 spacetimedb-client-api-messages = { path = "crates/client-api-messages", version = "0.8.2" }
+spacetimedb-commitlog = { path = "crates/commitlog", version = "0.8.2" }
 spacetimedb-core = { path = "crates/core", version = "0.8.2" }
 spacetimedb-lib = { path = "crates/lib", default-features = false, version = "0.8.2" }
 spacetimedb-metrics = { path = "crates/metrics", version = "0.8.2" }
@@ -116,6 +118,7 @@ clap = { version = "4.2.4", features = ["derive"] }
 colored = "2.0.0"
 console = { version = "0.15.6" }
 convert_case = "0.6.0"
+crc32c = "0.6.4"
 criterion = { version = "0.5.1", features = ["async", "async_tokio", "html_reports"] }
 crossbeam-channel = "0.5"
 cursive = { version = "0.20", default-features = false, features = ["crossterm-backend"] }
