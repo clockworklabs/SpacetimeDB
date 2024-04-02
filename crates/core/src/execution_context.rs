@@ -11,6 +11,8 @@ pub enum MetricType {
     IndexSeeks,
     KeysScanned,
     RowsFetched,
+    RowsInserted,
+    RowsDeleted,
 }
 #[derive(Default, Clone)]
 struct BufferMetric {
@@ -18,6 +20,8 @@ struct BufferMetric {
     pub index_seeks: u64,
     pub keys_scanned: u64,
     pub rows_fetched: u64,
+    pub rows_inserted: u64,
+    pub rows_deleted: u64,
     pub cache_table_name: String,
 }
 
@@ -33,6 +37,12 @@ impl BufferMetric {
             MetricType::RowsFetched => {
                 self.rows_fetched += val;
             }
+            MetricType::RowsInserted => {
+                self.rows_inserted += val;
+            }
+            MetricType::RowsDeleted => {
+                self.rows_deleted += val;
+            }
         }
     }
 }
@@ -41,10 +51,8 @@ impl BufferMetric {
     pub fn new(table_id: TableId, table_name: String) -> Self {
         Self {
             table_id,
-            index_seeks: 0,
-            keys_scanned: 0,
-            rows_fetched: 0,
             cache_table_name: table_name,
+            ..Default::default()
         }
     }
 }
@@ -72,39 +80,28 @@ impl Metrics {
     }
 
     fn flush(&mut self, workload: &WorkloadType, database: &Address, reducer: &str) {
+        macro_rules! flush_metric {
+            ($db_metric:expr, $metric:expr, $metric_field:ident) => {
+                if $metric.$metric_field > 0 {
+                    $db_metric
+                        .with_label_values(
+                            workload,
+                            database,
+                            reducer,
+                            &$metric.table_id.0,
+                            &$metric.cache_table_name,
+                        )
+                        .inc_by($metric.$metric_field);
+                }
+            };
+        }
+
         self.0.iter().for_each(|metric| {
-            DB_METRICS
-                .rdb_num_index_seeks
-                .with_label_values(
-                    workload,
-                    database,
-                    reducer,
-                    &metric.table_id.0,
-                    &metric.cache_table_name,
-                )
-                .inc_by(metric.index_seeks);
-
-            DB_METRICS
-                .rdb_num_keys_scanned
-                .with_label_values(
-                    workload,
-                    database,
-                    reducer,
-                    &metric.table_id.0,
-                    &metric.cache_table_name,
-                )
-                .inc_by(metric.keys_scanned);
-
-            DB_METRICS
-                .rdb_num_rows_fetched
-                .with_label_values(
-                    workload,
-                    database,
-                    reducer,
-                    &metric.table_id.0,
-                    &metric.cache_table_name,
-                )
-                .inc_by(metric.keys_scanned);
+            flush_metric!(DB_METRICS.rdb_num_index_seeks, metric, index_seeks);
+            flush_metric!(DB_METRICS.rdb_num_keys_scanned, metric, keys_scanned);
+            flush_metric!(DB_METRICS.rdb_num_rows_fetched, metric, rows_fetched);
+            flush_metric!(DB_METRICS.rdb_num_rows_inserted, metric, rows_inserted);
+            flush_metric!(DB_METRICS.rdb_num_rows_deleted, metric, rows_deleted);
         });
     }
 }
