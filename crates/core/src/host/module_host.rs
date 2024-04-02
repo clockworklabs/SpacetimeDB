@@ -178,38 +178,62 @@ impl UpdatesCow<'_> {
     }
 }
 
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpType {
+    Delete = 0,
+    Insert = 1,
+}
+
+impl TryFrom<u8> for OpType {
+    type Error = ();
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Delete),
+            1 => Ok(Self::Insert),
+            _ => Err(()),
+        }
+    }
+}
+
 pub struct TableOpRef<'a> {
-    pub op_type: u8,
+    pub op_type: OpType,
     pub row: &'a ProductValue,
 }
 
 impl<'a> TableOpRef<'a> {
     #[inline]
-    fn new(op_type: u8, row: &'a Cow<'a, ProductValue>) -> Self {
+    fn new(op_type: OpType, row: &'a Cow<'a, ProductValue>) -> Self {
         let row = &**row;
         Self { op_type, row }
     }
 
     #[inline]
     pub fn insert(row: &'a Cow<'a, ProductValue>) -> Self {
-        Self::new(1, row)
+        Self::new(OpType::Insert, row)
     }
 
     #[inline]
     pub fn delete(row: &'a Cow<'a, ProductValue>) -> Self {
-        Self::new(0, row)
+        Self::new(OpType::Delete, row)
+    }
+}
+
+impl From<OpType> for OperationType {
+    fn from(op: OpType) -> Self {
+        match op {
+            OpType::Delete => OperationType::Delete,
+            OpType::Insert => OperationType::Insert,
+        }
     }
 }
 
 impl From<TableOpRef<'_>> for TableRowOperation {
     fn from(top: TableOpRef<'_>) -> Self {
         let row = to_vec(top.row).unwrap();
-        let op = if top.op_type == 1 {
-            OperationType::Insert.into()
-        } else {
-            OperationType::Delete.into()
-        };
-        Self { op, row }
+        let op: OperationType = top.op_type.into();
+        Self { op: op.into(), row }
     }
 }
 
@@ -229,24 +253,24 @@ impl From<TableOpRef<'_>> for TableOp {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableOp {
-    pub op_type: u8,
+    pub op_type: OpType,
     pub row: ProductValue,
 }
 
 impl TableOp {
     #[inline]
-    pub fn new(op_type: u8, row: ProductValue) -> Self {
+    pub fn new(op_type: OpType, row: ProductValue) -> Self {
         Self { op_type, row }
     }
 
     #[inline]
     pub fn insert(row: ProductValue) -> Self {
-        Self::new(1, row)
+        Self::new(OpType::Insert, row)
     }
 
     #[inline]
     pub fn delete(row: ProductValue) -> Self {
-        Self::new(0, row)
+        Self::new(OpType::Delete, row)
     }
 }
 
@@ -260,7 +284,12 @@ impl From<&TableOp> for TableRowOperation {
 impl From<TableOp> for TableRowOperationJson {
     fn from(top: TableOp) -> Self {
         let row = top.row.elements;
-        let op = if top.op_type == 1 { "insert" } else { "delete" }.into();
+        let op = if top.op_type == OpType::Insert {
+            "insert"
+        } else {
+            "delete"
+        }
+        .into();
         Self { op, row }
     }
 }
