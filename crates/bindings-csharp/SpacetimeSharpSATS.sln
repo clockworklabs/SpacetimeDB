@@ -7,9 +7,9 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Codegen", "Codegen\Codegen.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Runtime", "Runtime\Runtime.csproj", "{003DDE57-BB32-49F0-B94E-88F2D0414D19}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Codegen", "BSATN.Codegen\Codegen.csproj", "{771D5368-E850-4441-8B82-90B38BF3DD9E}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BSATN.Codegen", "BSATN.Codegen\BSATN.Codegen.csproj", "{771D5368-E850-4441-8B82-90B38BF3DD9E}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Runtime", "BSATN.Runtime\Runtime.csproj", "{A3AFB5AD-15DE-46CC-ACEE-E5819C07BE58}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BSATN.Runtime", "BSATN.Runtime\BSATN.Runtime.csproj", "{A3AFB5AD-15DE-46CC-ACEE-E5819C07BE58}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
