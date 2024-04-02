@@ -15,7 +15,7 @@ use crate::{
         },
     },
     error::{DBError, LogReplayError},
-    execution_context::ExecutionContext,
+    execution_context::{ExecutionContext, MetricType},
 };
 use anyhow::Context;
 use spacetimedb_sats::hash::{hash_bytes, Hash};
@@ -384,10 +384,7 @@ impl CommitLogMut {
         }
 
         let mut writes = Vec::with_capacity(tx_data.records.len());
-
-        let workload = &ctx.workload();
         let db = &ctx.database();
-        let reducer = &ctx.reducer_name();
 
         for record in &tx_data.records {
             let table_id: u32 = record.table_id.into();
@@ -397,10 +394,9 @@ impl CommitLogMut {
                 TxOp::Insert(_) => {
                     // Increment rows inserted metric
                     #[cfg(feature = "metrics")]
-                    DB_METRICS
-                        .rdb_num_rows_inserted
-                        .with_label_values(workload, db, reducer, &table_id, table_name)
-                        .inc();
+                    ctx.metrics
+                        .write()
+                        .inc_by(table_id.into(), MetricType::RowsInserted, 1, || table_name.to_string());
                     // Increment table rows gauge
                     DB_METRICS
                         .rdb_num_table_rows
@@ -411,10 +407,9 @@ impl CommitLogMut {
                 TxOp::Delete => {
                     // Increment rows deleted metric
                     #[cfg(feature = "metrics")]
-                    DB_METRICS
-                        .rdb_num_rows_deleted
-                        .with_label_values(workload, db, reducer, &table_id, table_name)
-                        .inc();
+                    ctx.metrics
+                        .write()
+                        .inc_by(table_id.into(), MetricType::RowsDeleted, 1, || table_name.to_string());
                     // Decrement table rows gauge
                     DB_METRICS
                         .rdb_num_table_rows
