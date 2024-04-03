@@ -19,7 +19,7 @@ name = "odb_flavor_bench"
 harness = false
 
 [dependencies]
-spacetimedb-lib = { workspace = true, features = ["serde"] }
+spacetimedb-lib = { workspace = true, features = ["serde", "metrics"] }
 spacetimedb-client-api-messages.workspace = true
 spacetimedb-metrics.workspace = true
 spacetimedb-primitives.workspace = true
@@ -27,7 +27,7 @@ spacetimedb-sats = { workspace = true, features = ["serde"] }
 spacetimedb-table.workspace = true
 spacetimedb-vm.workspace = true
 
-anyhow.workspace = true
+anyhow = { workspace = true, features = ["backtrace"] }
 async-trait.workspace = true
 backtrace.workspace = true
 base64.workspace = true

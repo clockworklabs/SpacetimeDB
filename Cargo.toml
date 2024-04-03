@@ -97,7 +97,7 @@ spacetimedb-table = { path = "crates/table", version = "0.8.2" }
 spacetimedb-vm = { path = "crates/vm", version = "0.8.2" }
 
 ahash = "0.8"
-anyhow = { version = "1.0.68", features = ["backtrace"] }
+anyhow = "1.0.68"
 anymap = "0.12"
 arrayvec = "0.7.2"
 async-trait = "0.1.68"

@@ -24,7 +24,6 @@ spacetimedb-primitives.workspace = true
 
 derive_more.workspace = true
 log.workspace = true
-once_cell.workspace = true
 scoped-tls.workspace = true
 
 [dev-dependencies]
