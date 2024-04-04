@@ -375,26 +375,33 @@ impl CommittedState {
         table.get_row_ref(&self.blob_store, row_ptr).unwrap()
     }
 
-    pub fn merge(&mut self, tx_state: TxState) -> TxData {
+    pub fn merge(&mut self, tx_state: TxState, ctx: &ExecutionContext) -> TxData {
         // TODO(perf): pre-allocate `Vec::with_capacity`?
         let mut tx_data = TxData { records: vec![] };
 
         self.next_tx_offset += 1;
 
         // First, apply deletes. This will free up space in the committed tables.
-        self.merge_apply_deletes(&mut tx_data, tx_state.delete_tables);
+        self.merge_apply_deletes(&mut tx_data, tx_state.delete_tables, ctx);
 
         // Then, apply inserts. This will re-fill the holes freed by deletions
         // before allocating new pages.
 
-        self.merge_apply_inserts(&mut tx_data, tx_state.insert_tables, tx_state.blob_store);
+        self.merge_apply_inserts(&mut tx_data, tx_state.insert_tables, tx_state.blob_store, ctx);
 
         tx_data
     }
 
-    fn merge_apply_deletes(&mut self, tx_data: &mut TxData, delete_tables: BTreeMap<TableId, BTreeSet<RowPointer>>) {
+    fn merge_apply_deletes(
+        &mut self,
+        tx_data: &mut TxData,
+        delete_tables: BTreeMap<TableId, BTreeSet<RowPointer>>,
+        ctx: &ExecutionContext,
+    ) {
         for (table_id, row_ptrs) in delete_tables {
             if let Some((table, blob_store)) = self.get_table_and_blob_store(table_id) {
+                let db = &ctx.database();
+
                 // Note: we maintain the invariant that the delete_tables
                 // holds only committed rows which should be deleted,
                 // i.e. `RowPointer`s with `SquashedOffset::COMMITTED_STATE`,
@@ -407,11 +414,22 @@ impl CommittedState {
                     let data_key = pv.to_data_key();
                     tx_data.records.push(TxRecord {
                         op: TxOp::Delete,
-                        table_name: table.schema.table_name.clone(),
                         table_id,
                         key: data_key,
                         product_value: pv,
                     });
+
+                    let table_name = table.get_schema().table_name.as_str();
+                    // Increment rows deleted metric
+                    #[cfg(feature = "metrics")]
+                    ctx.metrics
+                        .write()
+                        .inc_by(table_id, MetricType::RowsDeleted, 1, || table_name.to_string());
+                    // Decrement table rows gauge
+                    DB_METRICS
+                        .rdb_num_table_rows
+                        .with_label_values(db, &table_id.into(), table_name)
+                        .dec();
                 }
             } else if !row_ptrs.is_empty() {
                 panic!("Deletion for non-existent table {:?}... huh?", table_id);
@@ -424,6 +442,7 @@ impl CommittedState {
         tx_data: &mut TxData,
         insert_tables: BTreeMap<TableId, Table>,
         tx_blob_store: impl BlobStore,
+        ctx: &ExecutionContext,
     ) {
         // TODO(perf): Consider moving whole pages from the `insert_tables` into the committed state,
         //             rather than copying individual rows out of them.
@@ -439,6 +458,12 @@ impl CommittedState {
                 // TODO(perf): avoid cloning here.
                 *tx_table.schema.clone(),
             );
+
+            // NOTE: if there is a schema change the table id will not change
+            // and that is what is important here so it doesn't matter if we
+            // do this before or after the schema update below.
+            let db = &ctx.database();
+
             // For each newly-inserted row, insert it into the committed state.
             for row_ref in tx_table.scan_rows(&tx_blob_store) {
                 let pv = row_ref.to_product_value();
@@ -456,9 +481,20 @@ impl CommittedState {
                     op: TxOp::Insert(Arc::new(bytes)),
                     product_value: pv,
                     key: data_key,
-                    table_name: commit_table.schema.table_name.clone(),
                     table_id,
                 });
+
+                let table_name = commit_table.get_schema().table_name.as_str();
+                // Increment rows inserted metric
+                #[cfg(feature = "metrics")]
+                ctx.metrics
+                    .write()
+                    .inc_by(table_id, MetricType::RowsInserted, 1, || table_name.to_string());
+                // Increment table rows gauge
+                DB_METRICS
+                    .rdb_num_table_rows
+                    .with_label_values(db, &table_id.into(), table_name)
+                    .inc();
             }
 
             // Add all newly created indexes to the committed state.

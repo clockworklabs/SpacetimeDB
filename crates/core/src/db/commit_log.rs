@@ -8,14 +8,13 @@ use super::{
 use crate::{
     db::{
         datastore::traits::TxOp,
-        db_metrics::DB_METRICS,
         messages::{
             transaction::Transaction,
             write::{Operation, Write},
         },
     },
     error::{DBError, LogReplayError},
-    execution_context::{ExecutionContext, MetricType},
+    execution_context::ExecutionContext,
 };
 use anyhow::Context;
 use spacetimedb_sats::hash::{hash_bytes, Hash};
@@ -372,7 +371,7 @@ impl CommitLogMut {
 
     fn generate_commit(
         &self,
-        ctx: &ExecutionContext,
+        _ctx: &ExecutionContext,
         unwritten_commit: &mut MutexGuard<'_, Commit>,
         tx_data: &TxData,
     ) -> Option<Vec<u8>> {
@@ -384,39 +383,13 @@ impl CommitLogMut {
         }
 
         let mut writes = Vec::with_capacity(tx_data.records.len());
-        let db = &ctx.database();
 
         for record in &tx_data.records {
             let table_id: u32 = record.table_id.into();
-            let table_name = record.table_name.as_str();
 
             let operation = match record.op {
-                TxOp::Insert(_) => {
-                    // Increment rows inserted metric
-                    #[cfg(feature = "metrics")]
-                    ctx.metrics
-                        .write()
-                        .inc_by(table_id.into(), MetricType::RowsInserted, 1, || table_name.to_string());
-                    // Increment table rows gauge
-                    DB_METRICS
-                        .rdb_num_table_rows
-                        .with_label_values(db, &table_id, table_name)
-                        .inc();
-                    Operation::Insert
-                }
-                TxOp::Delete => {
-                    // Increment rows deleted metric
-                    #[cfg(feature = "metrics")]
-                    ctx.metrics
-                        .write()
-                        .inc_by(table_id.into(), MetricType::RowsDeleted, 1, || table_name.to_string());
-                    // Decrement table rows gauge
-                    DB_METRICS
-                        .rdb_num_table_rows
-                        .with_label_values(db, &table_id, table_name)
-                        .dec();
-                    Operation::Delete
-                }
+                TxOp::Insert(_) => Operation::Insert,
+                TxOp::Delete => Operation::Delete,
             };
 
             writes.push(Write {
