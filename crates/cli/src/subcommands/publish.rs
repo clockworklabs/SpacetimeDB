@@ -117,7 +117,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let name_or_address = args.get_one::<String>("name|address");
     let path_to_project = args.get_one::<PathBuf>("project_path").unwrap();
     let host_type = args.get_one::<String>("host_type").unwrap();
-    let clear_database = args.get_flag("destroy_previous");
+    let destroy_previous = args.get_flag("destroy_previous");
     let force = args.get_flag("force");
     let trace_log = args.get_flag("trace_log");
     let anon_identity = args.get_flag("anon_identity");
@@ -167,7 +167,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         database_host
     );
 
-    if clear_database {
+    if destroy_previous {
         if force {
             eprintln!("Skipping confirmation due to --force.");
         } else {
