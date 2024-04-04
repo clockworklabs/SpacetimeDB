@@ -30,7 +30,7 @@ pub fn cli() -> clap::Command {
                 .short('c')
                 .action(SetTrue)
                 .requires("name_or_address")
-                .help("When publishing to an existing address, first delete all data associated with the database"),
+                .help("When publishing to an existing address, first DESTROY all data associated with the module"),
         )
         .arg(
             Arg::new("project_path")
