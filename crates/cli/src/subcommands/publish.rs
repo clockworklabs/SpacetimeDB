@@ -126,8 +126,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let path_to_project = args.get_one::<PathBuf>("project_path").unwrap();
     let host_type = args.get_one::<String>("host_type").unwrap();
     let clear_database = args.get_flag("destroy_previous") || args.get_flag("deprecated_clear_database");
-    // This is to preserve backwards-compatibility with the old --clear-database.
-    let force = args.get_flag("force") || args.get_flag("deprecated_clear_database");
+    let force = args.get_flag("force");
     let trace_log = args.get_flag("trace_log");
     let anon_identity = args.get_flag("anon_identity");
     let skip_clippy = args.get_flag("skip_clippy");
@@ -177,7 +176,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     );
 
     if clear_database {
-        if force {
+        // This is to preserve backwards-compatibility with the old --clear-database.
+        if force || args.get_flag("deprecated_clear_database") {
             eprintln!("Skipping confirmation due to --force.");
         } else {
             // Note: `name_or_address` should be set, because it is `required` in the CLI arg config.
