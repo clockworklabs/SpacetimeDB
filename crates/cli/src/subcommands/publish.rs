@@ -25,8 +25,8 @@ pub fn cli() -> clap::Command {
                 .help("The type of host that should be for hosting this module"),
         )
         .arg(
-            Arg::new("destroy_previous")
-                .long("destroy-previous")
+            Arg::new("delete_tables")
+                .long("delete-tables")
                 .short('c')
                 .action(SetTrue)
                 .requires("name_or_address")
@@ -117,7 +117,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let name_or_address = args.get_one::<String>("name|address");
     let path_to_project = args.get_one::<PathBuf>("project_path").unwrap();
     let host_type = args.get_one::<String>("host_type").unwrap();
-    let destroy_previous = args.get_flag("destroy_previous");
+    let delete_tables = args.get_flag("delete_tables");
     let force = args.get_flag("force");
     let trace_log = args.get_flag("trace_log");
     let anon_identity = args.get_flag("anon_identity");
@@ -167,7 +167,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         database_host
     );
 
-    if destroy_previous {
+    if delete_tables {
         if force {
             eprintln!("Skipping confirmation due to --force.");
         } else {
