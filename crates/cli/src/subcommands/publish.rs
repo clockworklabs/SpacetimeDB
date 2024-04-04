@@ -109,7 +109,7 @@ pub fn cli() -> clap::Command {
                 .help("DANGEROUS - Proceed with all actions without waiting for user confirmation")
         )
         .arg(
-            Arg::new("clear_database")
+            Arg::new("deprecated_clear_database")
                 .long("clear-database")
                 .requires("name_or_address")
                 .conflicts_with("destroy_previous")
@@ -125,9 +125,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let name_or_address = args.get_one::<String>("name|address");
     let path_to_project = args.get_one::<PathBuf>("project_path").unwrap();
     let host_type = args.get_one::<String>("host_type").unwrap();
-    let clear_database = args.get_flag("destroy_previous") || args.get_flag("clear_database");
-    // This is to preserve backwards-compatibility with the (deprecated) --clear-database.
-    let force = args.get_flag("force") || args.get_flag("clear_database");
+    let clear_database = args.get_flag("destroy_previous") || args.get_flag("deprecated_clear_database");
+    // This is to preserve backwards-compatibility with the old --clear-database.
+    let force = args.get_flag("force") || args.get_flag("deprecated_clear_database");
     let trace_log = args.get_flag("trace_log");
     let anon_identity = args.get_flag("anon_identity");
     let skip_clippy = args.get_flag("skip_clippy");
