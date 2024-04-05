@@ -41,7 +41,7 @@ impl<'a> From<&'a Tx> for TxMode<'a> {
 //TODO: This is partially duplicated from the `vm` crate to avoid borrow checker issues
 //and pull all that crate in core. Will be revisited after trait refactor
 pub fn build_query<'a>(
-    ctx: &'a ExecutionContext<'a>,
+    ctx: &'a ExecutionContext,
     stdb: &'a RelationalDB,
     tx: &'a TxMode<'a>,
     query: &'a QueryExpr,
@@ -178,7 +178,7 @@ pub fn build_query<'a>(
 }
 
 fn join_inner<'a>(
-    ctx: &'a ExecutionContext<'a>,
+    ctx: &'a ExecutionContext,
     db: &'a RelationalDB,
     tx: &'a TxMode<'a>,
     lhs: impl RelOps<'a> + 'a,
@@ -235,7 +235,7 @@ fn join_inner<'a>(
 ///
 /// On the other hand, if the `query` is a `SourceExpr::DbTable`, `sources` is unused.
 fn get_table<'a>(
-    ctx: &'a ExecutionContext<'a>,
+    ctx: &'a ExecutionContext,
     stdb: &'a RelationalDB,
     tx: &'a TxMode,
     query: &SourceExpr,
@@ -311,7 +311,7 @@ pub struct IndexSemiJoin<'a, 'c, Rhs: RelOps<'a>> {
     /// A reference to the current transaction.
     pub tx: &'a TxMode<'a>,
     /// The execution context for the current transaction.
-    ctx: &'a ExecutionContext<'a>,
+    ctx: &'a ExecutionContext,
 }
 
 impl<'a, Rhs: RelOps<'a>> IndexSemiJoin<'a, '_, Rhs> {
@@ -383,7 +383,7 @@ impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoin<'a, '_, Rhs> {
 /// A [ProgramVm] implementation that carry a [RelationalDB] for it
 /// query execution
 pub struct DbProgram<'db, 'tx> {
-    ctx: &'tx ExecutionContext<'tx>,
+    ctx: &'tx ExecutionContext,
     pub(crate) db: &'db RelationalDB,
     pub(crate) tx: &'tx mut TxMode<'tx>,
     pub(crate) auth: AuthCtx,

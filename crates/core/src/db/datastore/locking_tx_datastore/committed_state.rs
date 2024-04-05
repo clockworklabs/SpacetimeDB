@@ -19,7 +19,7 @@ use crate::{
         db_metrics::DB_METRICS,
     },
     error::TableError,
-    execution_context::ExecutionContext,
+    execution_context::{ExecutionContext, MetricType},
 };
 use anyhow::anyhow;
 use itertools::Itertools;
@@ -400,9 +400,7 @@ impl CommittedState {
     ) {
         for (table_id, row_ptrs) in delete_tables {
             if let Some((table, blob_store)) = self.get_table_and_blob_store(table_id) {
-                let workload = &ctx.workload();
                 let db = &ctx.database();
-                let reducer = ctx.reducer_name();
 
                 // Note: we maintain the invariant that the delete_tables
                 // holds only committed rows which should be deleted,
@@ -424,10 +422,9 @@ impl CommittedState {
                     let table_name = table.get_schema().table_name.as_str();
                     // Increment rows deleted metric
                     #[cfg(feature = "metrics")]
-                    DB_METRICS
-                        .rdb_num_rows_deleted
-                        .with_label_values(workload, db, reducer, &table_id.into(), table_name)
-                        .inc();
+                    ctx.metrics
+                        .write()
+                        .inc_by(table_id, MetricType::RowsDeleted, 1, || table_name.to_string());
                     // Decrement table rows gauge
                     DB_METRICS
                         .rdb_num_table_rows
@@ -465,9 +462,7 @@ impl CommittedState {
             // NOTE: if there is a schema change the table id will not change
             // and that is what is important here so it doesn't matter if we
             // do this before or after the schema update below.
-            let workload = &ctx.workload();
             let db = &ctx.database();
-            let reducer = ctx.reducer_name();
 
             // For each newly-inserted row, insert it into the committed state.
             for row_ref in tx_table.scan_rows(&tx_blob_store) {
@@ -492,10 +487,9 @@ impl CommittedState {
                 let table_name = commit_table.get_schema().table_name.as_str();
                 // Increment rows inserted metric
                 #[cfg(feature = "metrics")]
-                DB_METRICS
-                    .rdb_num_rows_inserted
-                    .with_label_values(workload, db, reducer, &table_id.into(), table_name)
-                    .inc();
+                ctx.metrics
+                    .write()
+                    .inc_by(table_id, MetricType::RowsInserted, 1, || table_name.to_string());
                 // Increment table rows gauge
                 DB_METRICS
                     .rdb_num_table_rows
@@ -585,7 +579,7 @@ impl CommittedState {
 }
 
 pub struct CommittedIndexIter<'a> {
-    ctx: &'a ExecutionContext<'a>,
+    ctx: &'a ExecutionContext,
     table_id: TableId,
     tx_state: Option<&'a TxState>,
     committed_state: &'a CommittedState,
@@ -615,32 +609,30 @@ impl<'a> CommittedIndexIter<'a> {
 #[cfg(feature = "metrics")]
 impl Drop for CommittedIndexIter<'_> {
     fn drop(&mut self) {
-        let workload = &self.ctx.workload();
-        let db = &self.ctx.database();
-        let reducer_name = self.ctx.reducer_name();
-        let table_id = &self.table_id.0;
-        let table_name = self
-            .committed_state
-            .get_schema(&self.table_id)
-            .map(|table| table.table_name.as_str())
-            .unwrap_or_default();
+        let mut metrics = self.ctx.metrics.write();
+        let get_table_name = || {
+            self.committed_state
+                .get_schema(&self.table_id)
+                .map(|table| table.table_name.as_str())
+                .unwrap_or_default()
+                .to_string()
+        };
 
-        DB_METRICS
-            .rdb_num_index_seeks
-            .with_label_values(workload, db, reducer_name, table_id, table_name)
-            .inc();
-
+        metrics.inc_by(self.table_id, MetricType::IndexSeeks, 1, get_table_name);
         // Increment number of index keys scanned
-        DB_METRICS
-            .rdb_num_keys_scanned
-            .with_label_values(workload, db, reducer_name, table_id, table_name)
-            .inc_by(self.committed_rows.num_pointers_yielded());
-
+        metrics.inc_by(
+            self.table_id,
+            MetricType::KeysScanned,
+            self.committed_rows.num_pointers_yielded(),
+            get_table_name,
+        );
         // Increment number of rows fetched
-        DB_METRICS
-            .rdb_num_rows_fetched
-            .with_label_values(workload, db, reducer_name, table_id, table_name)
-            .inc_by(self.num_committed_rows_fetched);
+        metrics.inc_by(
+            self.table_id,
+            MetricType::RowsFetched,
+            self.num_committed_rows_fetched,
+            get_table_name,
+        );
     }
 }
 

@@ -164,7 +164,7 @@ type ResCowPV<'a> = Result<Cow<'a, ProductValue>, ErrorVm>;
 
 /// Evaluates `query` and returns all the updates.
 fn eval_updates<'a>(
-    ctx: &'a ExecutionContext<'a>,
+    ctx: &'a ExecutionContext,
     db: &'a RelationalDB,
     tx: &'a TxMode<'a>,
     query: &'a QueryExpr,
@@ -304,7 +304,7 @@ impl IncrementalJoin {
     /// Evaluate join plan for lhs updates.
     fn eval_lhs<'a>(
         &'a self,
-        ctx: &'a ExecutionContext<'a>,
+        ctx: &'a ExecutionContext,
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         lhs: impl 'a + Iterator<Item = &'a ProductValue>,
@@ -315,7 +315,7 @@ impl IncrementalJoin {
     /// Evaluate join plan for rhs updates.
     fn eval_rhs<'a>(
         &'a self,
-        ctx: &'a ExecutionContext<'a>,
+        ctx: &'a ExecutionContext,
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         rhs: impl 'a + Iterator<Item = &'a ProductValue>,
@@ -326,7 +326,7 @@ impl IncrementalJoin {
     /// Evaluate join plan for both lhs and rhs updates.
     fn eval_all<'a>(
         &'a self,
-        ctx: &'a ExecutionContext<'a>,
+        ctx: &'a ExecutionContext,
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         lhs: impl 'a + Iterator<Item = &'a ProductValue>,
@@ -392,7 +392,7 @@ impl IncrementalJoin {
     /// (8) A+ x B-
     pub fn eval<'a>(
         &'a self,
-        ctx: &'a ExecutionContext<'a>,
+        ctx: &'a ExecutionContext,
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         updates: impl 'a + Clone + Iterator<Item = &'a DatabaseTableUpdate>,
@@ -565,38 +565,44 @@ pub struct ExecutionSet {
 }
 
 impl ExecutionSet {
-    pub fn eval(&self, protocol: Protocol, db: &RelationalDB, tx: &Tx) -> Result<ProtocolDatabaseUpdate, DBError> {
+    pub fn eval(
+        &self,
+        ctx: &ExecutionContext,
+        protocol: Protocol,
+        db: &RelationalDB,
+        tx: &Tx,
+    ) -> Result<ProtocolDatabaseUpdate, DBError> {
         let tables = match protocol {
-            Protocol::Binary => Either::Left(self.eval_binary(db, tx)?),
-            Protocol::Text => Either::Right(self.eval_json(db, tx)?),
+            Protocol::Binary => Either::Left(self.eval_binary(ctx, db, tx)?),
+            Protocol::Text => Either::Right(self.eval_json(ctx, db, tx)?),
         };
         Ok(ProtocolDatabaseUpdate { tables })
     }
 
     #[tracing::instrument(skip_all)]
-    fn eval_json(&self, db: &RelationalDB, tx: &Tx) -> Result<Vec<TableUpdateJson>, DBError> {
+    fn eval_json(&self, ctx: &ExecutionContext, db: &RelationalDB, tx: &Tx) -> Result<Vec<TableUpdateJson>, DBError> {
         // evaluate each of the execution units in this ExecutionSet in parallel
         self.exec_units
             // if you need eval to run single-threaded for debugging, change this to .iter()
             .par_iter()
-            .filter_map(|unit| unit.eval_json(db, tx).transpose())
+            .filter_map(|unit| unit.eval_json(ctx, db, tx).transpose())
             .collect::<Result<Vec<_>, _>>()
     }
 
     #[tracing::instrument(skip_all)]
-    fn eval_binary(&self, db: &RelationalDB, tx: &Tx) -> Result<Vec<TableUpdate>, DBError> {
+    fn eval_binary(&self, ctx: &ExecutionContext, db: &RelationalDB, tx: &Tx) -> Result<Vec<TableUpdate>, DBError> {
         // evaluate each of the execution units in this ExecutionSet in parallel
         self.exec_units
             // if you need eval to run single-threaded for debugging, change this to .iter()
             .par_iter()
-            .filter_map(|unit| unit.eval_binary(db, tx).transpose())
+            .filter_map(|unit| unit.eval_binary(ctx, db, tx).transpose())
             .collect::<Result<Vec<_>, _>>()
     }
 
     #[tracing::instrument(skip_all)]
     pub fn eval_incr<'a>(
         &'a self,
-        ctx: &'a ExecutionContext<'a>,
+        ctx: &'a ExecutionContext,
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         database_update: &'a DatabaseUpdate,
