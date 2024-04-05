@@ -39,8 +39,8 @@ pub fn cli() -> clap::Command {
                 .required(true)
         )
         .arg(
-            Arg::new("as_identity")
-                .long("as-identity")
+            Arg::new("identity")
+                .long("identity")
                 .short('i')
                 .conflicts_with("anon_identity")
                 .help("The identity to use for querying the database")
@@ -50,7 +50,7 @@ pub fn cli() -> clap::Command {
             Arg::new("anon_identity")
                 .long("anon-identity")
                 .short('a')
-                .conflicts_with("as_identity")
+                .conflicts_with("identity")
                 .action(ArgAction::SetTrue)
                 .help("If this flag is present, no identity will be provided when querying the database")
         )
@@ -65,12 +65,12 @@ pub fn cli() -> clap::Command {
 pub(crate) async fn parse_req(mut config: Config, args: &ArgMatches) -> Result<Connection, anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let database = args.get_one::<String>("database").unwrap();
-    let as_identity = args.get_one::<String>("as_identity");
+    let identity = args.get_one::<String>("identity");
     let anon_identity = args.get_flag("anon_identity");
 
     Ok(Connection {
         host: config.get_host_url(server)?,
-        auth_header: get_auth_header_only(&mut config, anon_identity, as_identity, server).await?,
+        auth_header: get_auth_header_only(&mut config, anon_identity, identity, server).await?,
         address: database_address(&config, database, server).await?,
         database: database.to_string(),
     })
