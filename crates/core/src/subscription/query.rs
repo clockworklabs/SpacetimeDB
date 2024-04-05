@@ -1,3 +1,4 @@
+use super::subscription::get_all;
 use crate::db::db_metrics::{DB_METRICS, MAX_QUERY_COMPILE_TIME};
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
@@ -11,15 +12,8 @@ use spacetimedb_lib::Address;
 use spacetimedb_vm::expr::{self, Crud, CrudExpr, DbType, QueryExpr};
 use std::time::Instant;
 
-use super::subscription::get_all;
-
 static WHITESPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap());
 pub const SUBSCRIBE_TO_ALL_QUERY: &str = "SELECT * FROM *";
-
-pub enum QueryDef {
-    Table(String),
-    Sql(String),
-}
 
 // TODO: It's semantically wrong to `SUBSCRIBE_TO_ALL_QUERY`
 // as it can only return back the changes valid for the tables in scope *right now*
