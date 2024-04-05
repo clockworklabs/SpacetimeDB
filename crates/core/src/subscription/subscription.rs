@@ -25,7 +25,7 @@
 
 use super::execution_unit::ExecutionUnit;
 use super::query;
-use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
+use crate::client::Protocol;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
@@ -53,38 +53,6 @@ use std::hash::Hash;
 use std::iter;
 use std::ops::Deref;
 use std::sync::Arc;
-
-/// A subscription is an [`ExecutionSet`], along with a set of subscribers all
-/// interested in the same set of queries.
-#[derive(Debug)]
-pub struct Subscription {
-    pub queries: ExecutionSet,
-    subscribers: Vec<ClientConnectionSender>,
-}
-
-impl Subscription {
-    pub fn new(queries: impl Into<ExecutionSet>, subscriber: ClientConnectionSender) -> Self {
-        Self {
-            queries: queries.into(),
-            subscribers: vec![subscriber],
-        }
-    }
-
-    pub fn subscribers(&self) -> &[ClientConnectionSender] {
-        &self.subscribers
-    }
-
-    pub fn remove_subscriber(&mut self, client_id: ClientActorId) -> Option<ClientConnectionSender> {
-        let i = self.subscribers.iter().position(|sub| sub.id == client_id)?;
-        Some(self.subscribers.swap_remove(i))
-    }
-
-    pub fn add_subscriber(&mut self, sender: ClientConnectionSender) {
-        if !self.subscribers.iter().any(|s| s.id == sender.id) {
-            self.subscribers.push(sender);
-        }
-    }
-}
 
 /// A [`QueryExpr`] tagged with [`query::Supported`].
 ///
