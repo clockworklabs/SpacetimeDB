@@ -5,8 +5,8 @@ use crate::relation::{Column, DbTable, FieldName, FieldOnly, Header, TableField}
 use crate::{de, impl_deserialize, impl_serialize, ser};
 use crate::{AlgebraicType, ProductType, ProductTypeElement};
 use derive_more::Display;
-use hashbrown::{HashMap, HashSet};
 use itertools::Itertools;
+use spacetimedb_data_structures::map::{HashMap, HashSet};
 use spacetimedb_primitives::*;
 use std::sync::Arc;
 

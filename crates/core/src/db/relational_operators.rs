@@ -1,4 +1,4 @@
-use hashbrown::HashSet;
+use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::ProductValue;
 use std::marker::PhantomData;
 

@@ -1,6 +1,6 @@
 use crate::errors::ErrorVm;
 use crate::relation::RelValue;
-use hashbrown::HashMap;
+use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_sats::product_value::ProductValue;
 use spacetimedb_sats::relation::{FieldExpr, Header, RowCount};
 use std::sync::Arc;

@@ -20,6 +20,7 @@ bench = false
 [dependencies]
 spacetimedb-primitives.workspace = true
 spacetimedb-core.workspace = true
+spacetimedb-data-structures.workspace = true
 spacetimedb-lib = { workspace = true, features = ["cli"] }
 spacetimedb-standalone = { workspace = true, optional = true }
 
@@ -35,7 +36,6 @@ duct.workspace = true
 email_address.workspace = true
 futures.workspace = true
 flate2.workspace = true
-hashbrown.workspace = true
 is-terminal.workspace = true
 itertools.workspace = true
 indicatif.workspace = true

@@ -21,10 +21,9 @@ use crate::{
     error::TableError,
     execution_context::{ExecutionContext, MetricType},
 };
-use ahash::HashMapExt as _;
 use anyhow::anyhow;
 use itertools::Itertools;
-use nohash_hasher::IntMap;
+use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::{
     db::{

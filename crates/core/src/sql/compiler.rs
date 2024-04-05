@@ -1,7 +1,7 @@
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
 use crate::sql::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
-use hashbrown::HashMap;
+use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::db::def::{TableDef, TableSchema};
 use spacetimedb_sats::relation::{self, DbTable, FieldExpr, FieldName, Header};

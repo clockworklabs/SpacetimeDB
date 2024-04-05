@@ -8,6 +8,7 @@ description = "A Rust SDK for clients to interface with SpacetimeDB"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+spacetimedb-data-structures.workspace = true
 spacetimedb-sats.workspace = true
 spacetimedb-lib = { workspace = true, features = ["serde"]}
 spacetimedb-client-api-messages.workspace = true
@@ -18,7 +19,6 @@ base64.workspace = true
 brotli.workspace = true
 futures.workspace = true
 futures-channel.workspace = true
-hashbrown.workspace = true
 home.workspace = true
 http.workspace = true
 im.workspace = true

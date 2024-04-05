@@ -6,6 +6,7 @@ license-file = "LICENSE"
 description = "A VM for SpacetimeDB"
 
 [dependencies]
+spacetimedb-data-structures.workspace = true
 spacetimedb-sats.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-primitives.workspace = true
@@ -14,7 +15,6 @@ spacetimedb-table.workspace = true
 anyhow.workspace = true
 arrayvec.workspace = true
 derive_more.workspace = true
-hashbrown.workspace = true
 itertools.workspace = true
 smallvec.workspace = true
 thiserror.workspace = true

@@ -1,8 +1,8 @@
 use crate::db::ostorage::ObjectDB;
 use crate::error::DBError;
 use crate::hash::{hash_bytes, Hash};
-use hashbrown::HashMap;
 use hex;
+use spacetimedb_data_structures::map::HashMap;
 #[cfg(target_family = "unix")]
 use std::os::unix::prelude::MetadataExt;
 use std::{

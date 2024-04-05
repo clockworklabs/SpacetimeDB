@@ -19,6 +19,7 @@ name = "odb_flavor_bench"
 harness = false
 
 [dependencies]
+spacetimedb-data-structures.workspace = true
 spacetimedb-lib = { workspace = true, features = ["serde", "metrics"] }
 spacetimedb-client-api-messages.workspace = true
 spacetimedb-metrics.workspace = true
@@ -27,7 +28,6 @@ spacetimedb-sats = { workspace = true, features = ["serde"] }
 spacetimedb-table.workspace = true
 spacetimedb-vm.workspace = true
 
-ahash.workspace = true
 anyhow = { workspace = true, features = ["backtrace"] }
 async-trait.workspace = true
 backtrace.workspace = true
@@ -46,7 +46,6 @@ enum-map.workspace = true
 flate2.workspace = true
 fs2.workspace = true
 futures.workspace = true
-hashbrown.workspace = true
 hex.workspace = true
 hostname.workspace = true
 hyper.workspace = true
@@ -56,7 +55,6 @@ itertools.workspace = true
 jsonwebtoken.workspace = true
 lazy_static.workspace = true
 log.workspace = true
-nohash-hasher.workspace = true
 once_cell.workspace = true
 openssl.workspace = true
 parking_lot.workspace = true

@@ -88,6 +88,8 @@ spacetimedb-client-api = { path = "crates/client-api", version = "0.8.2" }
 spacetimedb-client-api-messages = { path = "crates/client-api-messages", version = "0.8.2" }
 spacetimedb-commitlog = { path = "crates/commitlog", version = "0.8.2" }
 spacetimedb-core = { path = "crates/core", version = "0.8.2" }
+spacetimedb-data-structures = { path = "crates/data-structures", version = "0.8.2" }
+
 spacetimedb-lib = { path = "crates/lib", default-features = false, version = "0.8.2" }
 spacetimedb-metrics = { path = "crates/metrics", version = "0.8.2" }
 spacetimedb-primitives = { path = "crates/primitives", version = "0.8.2" }

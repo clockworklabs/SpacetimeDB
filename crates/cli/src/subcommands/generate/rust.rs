@@ -1,7 +1,7 @@
 use super::code_indenter::CodeIndenter;
 use super::{GenCtx, GenItem};
 use convert_case::{Case, Casing};
-use hashbrown::HashSet;
+use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::sats::db::def::TableSchema;
 use spacetimedb_lib::sats::{
     AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, ProductTypeElement, SumType,

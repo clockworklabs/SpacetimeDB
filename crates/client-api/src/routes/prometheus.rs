@@ -1,8 +1,8 @@
 use crate::{log_and_500, ControlStateReadAccess};
 use axum::extract::State;
 use axum::response::IntoResponse;
-use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
+use spacetimedb_data_structures::map::HashMap;
 
 #[derive(Serialize, Deserialize)]
 struct SDConfig {

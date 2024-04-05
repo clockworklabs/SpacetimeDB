@@ -1,8 +1,8 @@
 use crate::execution_context::WorkloadType;
 use crate::host::AbiCall;
-use hashbrown::HashMap;
 use once_cell::sync::Lazy;
 use prometheus::{GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
+use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::Address;
 use spacetimedb_metrics::metrics_group;
 use spacetimedb_primitives::TableId;

@@ -7,8 +7,8 @@ use anymap::{
     any::{Any, CloneAny},
     Map,
 };
-use hashbrown::HashMap as StdHashMap;
 use im::HashMap;
+use spacetimedb_data_structures::map::HashMap as StdHashMap;
 use spacetimedb_sats::bsatn;
 use std::sync::Arc;
 

@@ -1,7 +1,7 @@
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::{DBError, PlanError};
-use hashbrown::HashMap;
 use itertools::Itertools;
+use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_primitives::{ColList, ConstraintKind, Constraints};
 use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::db::def::{ColumnDef, ColumnSchema, ConstraintDef, FieldDef, TableDef, TableSchema};

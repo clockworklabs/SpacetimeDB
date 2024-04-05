@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 spacetimedb-cli.workspace = true
+spacetimedb-data-structures.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-core.workspace = true
 spacetimedb-standalone.workspace = true

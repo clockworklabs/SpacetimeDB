@@ -29,7 +29,7 @@ use anyhow::Context;
 use anymap::{any::Any, Map};
 use futures::stream::StreamExt;
 use futures_channel::mpsc;
-use hashbrown::HashMap;
+use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_sats::bsatn;
 use std::{
     marker::PhantomData,

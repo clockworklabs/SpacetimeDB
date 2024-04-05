@@ -6,6 +6,7 @@ license-file = "LICENSE"
 description = "The HTTP API for SpacetimeDB"
 
 [dependencies]
+spacetimedb-data-structures.workspace = true
 spacetimedb-core.workspace = true
 spacetimedb-lib = { workspace = true, features = ["serde"] }
 
@@ -24,7 +25,6 @@ chrono = { version = "0.4.23", features = ["serde"]}
 rand = "0.8.5"
 axum.workspace = true
 axum-extra.workspace = true
-hashbrown.workspace = true
 hyper.workspace = true
 hyper-util.workspace = true
 http.workspace = true

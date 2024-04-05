@@ -3,18 +3,12 @@ use crate::db::auth::{StAccess, StTableType};
 use crate::db::error::RelationError;
 use crate::satn::Satn;
 use crate::{algebraic_type, AlgebraicType, ProductType, ProductTypeElement, Typespace, WithTypespace};
+use core::fmt;
+use core::hash::{BuildHasher, Hash};
 use derive_more::From;
+use spacetimedb_data_structures::map::DefaultHashBuilder;
 use spacetimedb_primitives::{ColId, ColList, ColListBuilder, Constraints, TableId};
-use std::collections::hash_map::DefaultHasher;
-use std::fmt;
-use std::hash::{Hash, Hasher};
 use std::sync::Arc;
-
-pub fn calculate_hash<T: Hash>(t: &T) -> u64 {
-    let mut s = DefaultHasher::new();
-    t.hash(&mut s);
-    s.finish()
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub struct TableField<'a> {
@@ -254,7 +248,8 @@ impl Header {
     }
 
     pub fn for_mem_table(fields: ProductType) -> Self {
-        let table_name = format!("mem#{:x}", calculate_hash(&fields));
+        let hash = DefaultHashBuilder::default().hash_one(&fields);
+        let table_name = format!("mem#{:x}", hash);
         Self::from_product_type(table_name, fields)
     }
 

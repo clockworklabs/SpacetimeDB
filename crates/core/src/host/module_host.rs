@@ -14,14 +14,12 @@ use crate::protobuf::client_api::{TableRowOperation, TableUpdate};
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
 use crate::util::notify_once::NotifyOnce;
-use ahash::HashMapExt as _;
 use derive_more::{From, Into};
 use futures::{Future, FutureExt};
-use hashbrown::HashMap;
 use indexmap::IndexMap;
 use itertools::{Either, Itertools};
-use nohash_hasher::IntMap;
 use spacetimedb_client_api_messages::client_api::table_row_operation::OperationType;
+use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap, IntMap};
 use spacetimedb_lib::bsatn::to_vec;
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::{Address, ReducerDef, TableDesc};
@@ -72,7 +70,7 @@ impl DatabaseUpdate {
     }
 
     pub fn from_writes(stdb: &RelationalDB, tx_data: &TxData) -> Self {
-        let mut map: IntMap<_, (Vec<_>, Vec<_>)> = IntMap::new();
+        let mut map: IntMap<TableId, (Vec<ProductValue>, Vec<ProductValue>)> = IntMap::new();
         for record in tx_data.records.iter() {
             let pv = record.product_value.clone();
             let table = map.entry(record.table_id).or_default();

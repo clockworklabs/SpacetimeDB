@@ -1,4 +1,4 @@
-use nohash_hasher::IntMap;
+use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_primitives::SequenceId;
 use spacetimedb_sats::db::def::SequenceSchema;
 

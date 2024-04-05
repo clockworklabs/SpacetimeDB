@@ -17,7 +17,7 @@ use crate::{
     execution_context::ExecutionContext,
 };
 use anyhow::Context;
-use hashbrown::{hash_map::Entry, HashMap};
+use spacetimedb_data_structures::map::{Entry, HashMap};
 use spacetimedb_sats::hash::{hash_bytes, Hash};
 use spacetimedb_sats::DataKey;
 use spacetimedb_table::indexes::RowPointer;
