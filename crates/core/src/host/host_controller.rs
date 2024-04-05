@@ -1,3 +1,5 @@
+use super::module_host::{Catalog, EntityDef, EventStatus, ModuleHost, NoSuchModule, UpdateDatabaseResult};
+use super::ReducerArgs;
 use crate::db::update::UpdateDatabaseError;
 use crate::energy::{EnergyMonitor, EnergyQuanta, NullEnergyMonitor};
 use crate::execution_context::ExecutionContext;
@@ -10,17 +12,14 @@ use anyhow::{ensure, Context};
 use futures::TryFutureExt;
 use parking_lot::Mutex;
 use serde::Serialize;
-use std::collections::HashMap;
+use spacetimedb_data_structures::map::IntMap;
 use std::fmt;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use super::module_host::{Catalog, EntityDef, EventStatus, ModuleHost, NoSuchModule, UpdateDatabaseResult};
-use super::ReducerArgs;
-
 pub struct HostController {
-    modules: Mutex<HashMap<u64, ModuleHost>>,
+    modules: Mutex<IntMap<u64, ModuleHost>>,
     pub energy_monitor: Arc<dyn EnergyMonitor>,
 }
 
@@ -98,7 +97,7 @@ impl From<&EventStatus> for ReducerOutcome {
 impl HostController {
     pub fn new(energy_monitor: Arc<impl EnergyMonitor>) -> Self {
         Self {
-            modules: Mutex::new(HashMap::new()),
+            modules: Mutex::default(),
             energy_monitor,
         }
     }

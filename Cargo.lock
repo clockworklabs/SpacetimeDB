@@ -1823,6 +1823,8 @@ checksum = "7dfda62a12f55daeae5015f81b0baea145391cb4520f86c248fc615d72640d12"
 dependencies = [
  "ahash 0.8.3",
  "allocator-api2",
+ "rayon",
+ "serde",
 ]
 
 [[package]]
@@ -4290,7 +4292,6 @@ dependencies = [
 name = "spacetimedb-bench"
 version = "0.8.2"
 dependencies = [
- "ahash 0.8.3",
  "anyhow",
  "anymap",
  "byte-unit",
@@ -4311,6 +4312,7 @@ dependencies = [
  "serde_json",
  "spacetimedb-client-api",
  "spacetimedb-core",
+ "spacetimedb-data-structures",
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-sats",
@@ -4373,6 +4375,7 @@ dependencies = [
  "serde_with",
  "slab",
  "spacetimedb-core",
+ "spacetimedb-data-structures",
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-standalone",
@@ -4417,6 +4420,7 @@ dependencies = [
  "serde",
  "serde_json",
  "spacetimedb-core",
+ "spacetimedb-data-structures",
  "spacetimedb-lib",
  "tempfile",
  "tokio",
@@ -4517,6 +4521,7 @@ dependencies = [
  "sled",
  "smallvec",
  "spacetimedb-client-api-messages",
+ "spacetimedb-data-structures",
  "spacetimedb-lib",
  "spacetimedb-metrics",
  "spacetimedb-primitives",
@@ -4548,6 +4553,8 @@ dependencies = [
 name = "spacetimedb-data-structures"
 version = "0.8.2"
 dependencies = [
+ "hashbrown 0.14.1",
+ "nohash-hasher",
  "serde",
  "thiserror",
 ]
@@ -4596,6 +4603,7 @@ dependencies = [
  "bitflags 2.4.1",
  "either",
  "proptest",
+ "spacetimedb-data-structures",
 ]
 
 [[package]]
@@ -4624,6 +4632,7 @@ dependencies = [
  "sha3",
  "smallvec",
  "spacetimedb-bindings-macro",
+ "spacetimedb-data-structures",
  "spacetimedb-metrics",
  "spacetimedb-primitives",
  "thiserror",
@@ -4649,6 +4658,7 @@ dependencies = [
  "prost",
  "rand 0.8.5",
  "spacetimedb-client-api-messages",
+ "spacetimedb-data-structures",
  "spacetimedb-lib",
  "spacetimedb-sats",
  "spacetimedb-testing",
@@ -4696,11 +4706,11 @@ dependencies = [
  "derive_more",
  "enum-as-inner",
  "itertools 0.12.0",
- "nohash-hasher",
  "proptest",
  "proptest-derive",
  "rand 0.8.5",
  "smallvec",
+ "spacetimedb-data-structures",
  "spacetimedb-primitives",
  "spacetimedb-sats",
  "thiserror",
@@ -4724,6 +4734,7 @@ dependencies = [
  "spacetimedb-cli",
  "spacetimedb-client-api",
  "spacetimedb-core",
+ "spacetimedb-data-structures",
  "spacetimedb-lib",
  "spacetimedb-standalone",
  "tempfile",
@@ -4740,6 +4751,7 @@ dependencies = [
  "derive_more",
  "itertools 0.12.0",
  "smallvec",
+ "spacetimedb-data-structures",
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-sats",
@@ -5097,6 +5109,7 @@ name = "test-counter"
 version = "0.8.2"
 dependencies = [
  "anyhow",
+ "spacetimedb-data-structures",
 ]
 
 [[package]]

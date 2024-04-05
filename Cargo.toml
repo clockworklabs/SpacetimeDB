@@ -88,6 +88,8 @@ spacetimedb-client-api = { path = "crates/client-api", version = "0.8.2" }
 spacetimedb-client-api-messages = { path = "crates/client-api-messages", version = "0.8.2" }
 spacetimedb-commitlog = { path = "crates/commitlog", version = "0.8.2" }
 spacetimedb-core = { path = "crates/core", version = "0.8.2" }
+spacetimedb-data-structures = { path = "crates/data-structures", version = "0.8.2" }
+
 spacetimedb-lib = { path = "crates/lib", default-features = false, version = "0.8.2" }
 spacetimedb-metrics = { path = "crates/metrics", version = "0.8.2" }
 spacetimedb-primitives = { path = "crates/primitives", version = "0.8.2" }
@@ -138,6 +140,7 @@ futures = "0.3"
 futures-channel = "0.3"
 getrandom = { version = "0.2.7", features = ["custom"] }
 glob = "0.3.1"
+hashbrown = { version = "0.14", features = ["rayon", "serde"] }
 headers = "0.4"
 hex = "0.4.3"
 home = "0.5"

@@ -1,15 +1,14 @@
-use derive_more::Display;
-use itertools::Itertools;
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-
 use crate::db::auth::{StAccess, StTableType};
 use crate::db::error::{DefType, SchemaError};
 use crate::product_value::InvalidFieldError;
 use crate::relation::{Column, DbTable, FieldName, FieldOnly, Header, TableField};
 use crate::{de, impl_deserialize, impl_serialize, ser};
 use crate::{AlgebraicType, ProductType, ProductTypeElement};
+use derive_more::Display;
+use itertools::Itertools;
+use spacetimedb_data_structures::map::{HashMap, HashSet};
 use spacetimedb_primitives::*;
+use std::sync::Arc;
 
 /// The default preallocation amount for sequences.
 pub const SEQUENCE_PREALLOCATION_AMOUNT: i128 = 4_096;

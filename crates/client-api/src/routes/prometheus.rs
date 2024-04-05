@@ -1,10 +1,8 @@
-use std::collections::HashMap;
-
+use crate::{log_and_500, ControlStateReadAccess};
 use axum::extract::State;
 use axum::response::IntoResponse;
 use serde::{Deserialize, Serialize};
-
-use crate::{log_and_500, ControlStateReadAccess};
+use spacetimedb_data_structures::map::HashMap;
 
 #[derive(Serialize, Deserialize)]
 struct SDConfig {

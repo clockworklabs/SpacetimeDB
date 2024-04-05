@@ -4,6 +4,7 @@ use crate::relation::{MemTable, RelValue, Table};
 use arrayvec::ArrayVec;
 use derive_more::From;
 use smallvec::{smallvec, SmallVec};
+use spacetimedb_data_structures::map::{HashMap, HashSet};
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_type::AlgebraicType;
@@ -15,7 +16,7 @@ use spacetimedb_sats::relation::{Column, DbTable, FieldExpr, FieldName, Header, 
 use spacetimedb_sats::ProductValue;
 use std::cmp::Reverse;
 use std::collections::btree_map::Entry;
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 use std::ops::Bound;
 use std::sync::Arc;
 use std::{fmt, iter, mem};

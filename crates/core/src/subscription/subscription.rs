@@ -38,6 +38,7 @@ use anyhow::Context;
 use itertools::Either;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::client_api::TableUpdate;
+use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::TableId;
@@ -48,7 +49,6 @@ use spacetimedb_vm::expr::{self, IndexJoin, Query, QueryExpr, SourceProvider, So
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::{MemTable, RelValue};
 use std::borrow::Cow;
-use std::collections::HashSet;
 use std::hash::Hash;
 use std::iter;
 use std::ops::Deref;

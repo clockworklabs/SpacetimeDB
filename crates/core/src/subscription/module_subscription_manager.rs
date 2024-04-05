@@ -9,10 +9,9 @@ use itertools::{Either, Itertools as _};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use smallvec::SmallVec;
 use spacetimedb_client_api_messages::client_api::{TableRowOperation, TableUpdate};
+use spacetimedb_data_structures::map::{Entry, HashMap, HashSet, IntMap};
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::TableId;
-use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -33,7 +32,7 @@ pub struct SubscriptionManager {
     // The subscribers for each query.
     subscribers: HashMap<QueryHash, HashSet<Identity>>,
     // Inverted index from tables to queries that read from them.
-    tables: HashMap<TableId, HashSet<QueryHash>>,
+    tables: IntMap<TableId, HashSet<QueryHash>>,
 }
 
 impl SubscriptionManager {

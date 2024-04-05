@@ -1,6 +1,7 @@
 #![allow(clippy::disallowed_macros)]
+
+use spacetimedb_data_structures::map::{HashMap, HashSet};
 use std::{
-    collections::{HashMap, HashSet},
     sync::{Arc, Condvar, Mutex},
     time::Duration,
 };

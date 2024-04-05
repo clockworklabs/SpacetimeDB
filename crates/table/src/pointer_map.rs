@@ -16,8 +16,10 @@
 use super::indexes::{PageIndex, PageOffset, RowHash, RowPointer, SquashedOffset};
 use crate::static_assert_size;
 use core::{hint, slice};
-use nohash_hasher::IntMap; // No need to hash a hash.
-use std::collections::hash_map::Entry;
+use spacetimedb_data_structures::map::{
+    Entry,
+    IntMap, // No need to hash a hash.
+};
 
 /// An index to the outer layer of `colliders` in `PointerMap`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

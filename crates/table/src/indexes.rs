@@ -8,7 +8,7 @@ use core::fmt;
 use core::mem::MaybeUninit;
 use core::ops::{AddAssign, Div, Mul, Range, SubAssign};
 use derive_more::{Add, Sub};
-use nohash_hasher::IsEnabled;
+use spacetimedb_data_structures::map::ValidAsIdentityHash;
 
 /// A byte is a possibly uninit `u8`.
 pub type Byte = MaybeUninit<u8>;
@@ -52,7 +52,7 @@ pub struct RowHash(pub u64);
 static_assert_size!(RowHash, 8);
 
 /// `RowHash` is already a hash, so no need to hash again.
-impl IsEnabled for RowHash {}
+impl ValidAsIdentityHash for RowHash {}
 
 impl RowHash {
     /// Returns a `Hasher` builder that yields the type of hashes that `RowHash` stores.

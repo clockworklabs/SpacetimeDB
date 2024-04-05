@@ -450,12 +450,12 @@ mod test {
     use core::ops::Bound::*;
     use proptest::prelude::*;
     use proptest::{collection::vec, test_runner::TestCaseResult};
+    use spacetimedb_data_structures::map::HashMap;
     use spacetimedb_primitives::ColListBuilder;
     use spacetimedb_sats::{
         db::def::{TableDef, TableSchema},
         product, AlgebraicType, ProductType, ProductValue,
     };
-    use std::collections::HashMap;
 
     fn gen_cols(ty_len: usize) -> impl Strategy<Value = ColList> {
         vec((0..ty_len as u32).prop_map_into(), 1..=ty_len)

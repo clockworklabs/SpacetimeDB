@@ -1,9 +1,7 @@
-use std::collections::HashMap;
-
-use bytes::Bytes;
-use spacetimedb_sats::hash::{hash_bytes, Hash};
-
 use crate::db::ostorage::ObjectDB;
+use bytes::Bytes;
+use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_sats::hash::{hash_bytes, Hash};
 
 /// A simple in-memory object store, mapping hashes to their contents.
 #[derive(Default)]
