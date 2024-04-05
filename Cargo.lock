@@ -1823,6 +1823,8 @@ checksum = "7dfda62a12f55daeae5015f81b0baea145391cb4520f86c248fc615d72640d12"
 dependencies = [
  "ahash 0.8.3",
  "allocator-api2",
+ "rayon",
+ "serde",
 ]
 
 [[package]]
@@ -4359,6 +4361,7 @@ dependencies = [
  "email_address",
  "flate2",
  "futures",
+ "hashbrown 0.14.1",
  "indicatif",
  "insta",
  "is-terminal",
@@ -4402,6 +4405,7 @@ dependencies = [
  "derive_more",
  "email_address",
  "futures",
+ "hashbrown 0.14.1",
  "headers",
  "http",
  "hyper",
@@ -4459,6 +4463,7 @@ dependencies = [
 name = "spacetimedb-core"
 version = "0.8.2"
 dependencies = [
+ "ahash 0.8.3",
  "anyhow",
  "async-trait",
  "backtrace",
@@ -4478,6 +4483,7 @@ dependencies = [
  "flate2",
  "fs2",
  "futures",
+ "hashbrown 0.14.1",
  "hex",
  "hostname",
  "hyper",
@@ -4487,6 +4493,7 @@ dependencies = [
  "jsonwebtoken",
  "lazy_static",
  "log",
+ "nohash-hasher",
  "once_cell",
  "openssl",
  "parking_lot 0.12.1",
@@ -4595,6 +4602,7 @@ version = "0.8.2"
 dependencies = [
  "bitflags 2.4.1",
  "either",
+ "nohash-hasher",
  "proptest",
 ]
 
@@ -4615,6 +4623,7 @@ dependencies = [
  "decorum",
  "derive_more",
  "enum-as-inner",
+ "hashbrown 0.14.1",
  "hex",
  "itertools 0.12.0",
  "proptest",
@@ -4640,6 +4649,7 @@ dependencies = [
  "cursive",
  "futures",
  "futures-channel",
+ "hashbrown 0.14.1",
  "hex",
  "home",
  "http",
@@ -4695,6 +4705,7 @@ dependencies = [
  "decorum",
  "derive_more",
  "enum-as-inner",
+ "hashbrown 0.14.1",
  "itertools 0.12.0",
  "nohash-hasher",
  "proptest",
@@ -4738,6 +4749,7 @@ dependencies = [
  "anyhow",
  "arrayvec",
  "derive_more",
+ "hashbrown 0.14.1",
  "itertools 0.12.0",
  "smallvec",
  "spacetimedb-lib",

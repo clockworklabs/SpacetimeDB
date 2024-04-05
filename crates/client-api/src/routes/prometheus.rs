@@ -1,10 +1,8 @@
-use std::collections::HashMap;
-
+use crate::{log_and_500, ControlStateReadAccess};
 use axum::extract::State;
 use axum::response::IntoResponse;
+use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
-
-use crate::{log_and_500, ControlStateReadAccess};
 
 #[derive(Serialize, Deserialize)]
 struct SDConfig {

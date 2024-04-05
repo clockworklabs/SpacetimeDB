@@ -5,16 +5,18 @@ use crate::db::relational_db::RelationalDB;
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, ProtocolDatabaseUpdate};
 use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
+use hashbrown::{hash_map::Entry, HashMap, HashSet};
 use itertools::{Either, Itertools as _};
+use nohash_hasher::BuildNoHashHasher;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use smallvec::SmallVec;
 use spacetimedb_client_api_messages::client_api::{TableRowOperation, TableUpdate};
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::TableId;
-use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::sync::Arc;
+
+type IntMap<K, V> = HashMap<K, V, BuildNoHashHasher<K>>;
 
 type Query = Arc<ExecutionUnit>;
 type Client = Arc<ClientConnectionSender>;
@@ -33,7 +35,7 @@ pub struct SubscriptionManager {
     // The subscribers for each query.
     subscribers: HashMap<QueryHash, HashSet<Identity>>,
     // Inverted index from tables to queries that read from them.
-    tables: HashMap<TableId, HashSet<QueryHash>>,
+    tables: IntMap<TableId, HashSet<QueryHash>>,
 }
 
 impl SubscriptionManager {

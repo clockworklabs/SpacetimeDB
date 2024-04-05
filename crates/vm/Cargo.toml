@@ -14,6 +14,7 @@ spacetimedb-table.workspace = true
 anyhow.workspace = true
 arrayvec.workspace = true
 derive_more.workspace = true
+hashbrown.workspace = true
 itertools.workspace = true
 smallvec.workspace = true
 thiserror.workspace = true

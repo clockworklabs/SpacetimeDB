@@ -1,5 +1,7 @@
 //! Provides identifiers such as `TableId`.
+
 use core::fmt;
+use nohash_hasher::IsEnabled;
 
 #[derive(Debug, Default, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
 #[repr(transparent)]
@@ -28,6 +30,8 @@ macro_rules! system_id {
                 self.0 as usize
             }
         }
+
+        impl IsEnabled for $name {}
 
         impl From<i32> for $name {
             fn from(value: i32) -> Self {

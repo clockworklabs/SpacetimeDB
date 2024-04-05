@@ -7,9 +7,9 @@ use anymap::{
     any::{Any, CloneAny},
     Map,
 };
+use hashbrown::HashMap as StdHashMap;
 use im::HashMap;
 use spacetimedb_sats::bsatn;
-use std::collections::HashMap as StdHashMap;
 use std::sync::Arc;
 
 /// A local mirror of the subscribed rows of one table in the database.

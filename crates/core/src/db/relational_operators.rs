@@ -1,5 +1,6 @@
+use hashbrown::HashSet;
 use spacetimedb_lib::ProductValue;
-use std::{collections::HashSet, marker::PhantomData};
+use std::marker::PhantomData;
 
 // NOTE
 // Currently anything that is IntoIterator is also a relation
@@ -149,10 +150,7 @@ impl<'a, S: Relation, U: Relation> IntoIterator for Union<'a, S, U> {
         for next in self.u {
             set_u.insert(next);
         }
-        std::collections::HashSet::union(&set_s, &set_u)
-            .cloned()
-            .collect::<Vec<_>>()
-            .into_iter()
+        HashSet::union(&set_s, &set_u).cloned().collect::<Vec<_>>().into_iter()
     }
 }
 
@@ -175,7 +173,7 @@ impl<'a, S: Relation, U: Relation> IntoIterator for Intersection<'a, S, U> {
         for next in self.u {
             set_u.insert(next);
         }
-        std::collections::HashSet::intersection(&set_s, &set_u)
+        HashSet::intersection(&set_s, &set_u)
             .cloned()
             .collect::<Vec<_>>()
             .into_iter()
@@ -201,7 +199,7 @@ impl<'a, S: Relation, U: Relation> IntoIterator for Difference<'a, S, U> {
         for next in self.u {
             set_u.insert(next);
         }
-        std::collections::HashSet::difference(&set_s, &set_u)
+        HashSet::difference(&set_s, &set_u)
             .cloned()
             .collect::<Vec<_>>()
             .into_iter()

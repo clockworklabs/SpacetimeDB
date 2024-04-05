@@ -1,12 +1,12 @@
-use std::{collections::HashMap, sync::Mutex};
-
 use crate::execution_context::WorkloadType;
 use crate::host::AbiCall;
+use hashbrown::HashMap;
 use once_cell::sync::Lazy;
 use prometheus::{GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
 use spacetimedb_lib::Address;
 use spacetimedb_metrics::metrics_group;
 use spacetimedb_primitives::TableId;
+use std::sync::Mutex;
 
 metrics_group!(
     #[non_exhaustive]

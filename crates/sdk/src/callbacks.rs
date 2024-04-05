@@ -29,9 +29,9 @@ use anyhow::Context;
 use anymap::{any::Any, Map};
 use futures::stream::StreamExt;
 use futures_channel::mpsc;
+use hashbrown::HashMap;
 use spacetimedb_sats::bsatn;
 use std::{
-    collections::HashMap,
     marker::PhantomData,
     sync::{
         atomic::{AtomicUsize, Ordering},

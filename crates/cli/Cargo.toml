@@ -35,6 +35,7 @@ duct.workspace = true
 email_address.workspace = true
 futures.workspace = true
 flate2.workspace = true
+hashbrown.workspace = true
 is-terminal.workspace = true
 itertools.workspace = true
 indicatif.workspace = true

@@ -1,9 +1,7 @@
-use itertools::Itertools;
-use std::borrow::Cow;
-use std::collections::HashMap;
-
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::{DBError, PlanError};
+use hashbrown::HashMap;
+use itertools::Itertools;
 use spacetimedb_primitives::{ColList, ConstraintKind, Constraints};
 use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::db::def::{ColumnDef, ColumnSchema, ConstraintDef, FieldDef, TableDef, TableSchema};
@@ -20,6 +18,7 @@ use sqlparser::ast::{
 };
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
+use std::borrow::Cow;
 
 /// Simplify to detect features of the syntax we don't support yet
 /// Because we use [PostgreSqlDialect] in the compiler step it already protect against features

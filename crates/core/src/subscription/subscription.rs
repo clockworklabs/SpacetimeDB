@@ -35,6 +35,7 @@ use crate::host::module_host::{
 use crate::json::client_api::TableUpdateJson;
 use crate::vm::{build_query, TxMode};
 use anyhow::Context;
+use hashbrown::HashSet;
 use itertools::Either;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::client_api::TableUpdate;
@@ -48,7 +49,6 @@ use spacetimedb_vm::expr::{self, IndexJoin, Query, QueryExpr, SourceProvider, So
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::{MemTable, RelValue};
 use std::borrow::Cow;
-use std::collections::HashSet;
 use std::hash::Hash;
 use std::iter;
 use std::ops::Deref;

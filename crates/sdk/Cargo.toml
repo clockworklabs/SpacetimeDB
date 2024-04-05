@@ -18,6 +18,7 @@ base64.workspace = true
 brotli.workspace = true
 futures.workspace = true
 futures-channel.workspace = true
+hashbrown.workspace = true
 home.workspace = true
 http.workspace = true
 im.workspace = true

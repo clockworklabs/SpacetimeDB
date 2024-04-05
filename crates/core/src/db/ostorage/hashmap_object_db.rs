@@ -1,17 +1,15 @@
 use crate::db::ostorage::ObjectDB;
+use crate::error::DBError;
 use crate::hash::{hash_bytes, Hash};
+use hashbrown::HashMap;
 use hex;
-
+#[cfg(target_family = "unix")]
+use std::os::unix::prelude::MetadataExt;
 use std::{
-    collections::HashMap,
     fs::{self, read_dir, File, OpenOptions},
     io::{Read, Write},
     path::{Path, PathBuf},
 };
-
-use crate::error::DBError;
-#[cfg(target_family = "unix")]
-use std::os::unix::prelude::MetadataExt;
 
 pub struct HashMapObjectDB {
     root: PathBuf,

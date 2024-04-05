@@ -21,8 +21,10 @@ use crate::{
     error::TableError,
     execution_context::{ExecutionContext, MetricType},
 };
+use ahash::HashMapExt as _;
 use anyhow::anyhow;
 use itertools::Itertools;
+use nohash_hasher::IntMap;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::{
     db::{
@@ -38,7 +40,7 @@ use spacetimedb_table::{
     table::{IndexScanIter, InsertError, RowRef, Table},
 };
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet},
     ops::RangeBounds,
     sync::Arc,
 };
@@ -46,7 +48,7 @@ use std::{
 #[derive(Default)]
 pub(crate) struct CommittedState {
     pub(crate) next_tx_offset: u64,
-    pub(crate) tables: HashMap<TableId, Table>,
+    pub(crate) tables: IntMap<TableId, Table>,
     pub(crate) blob_store: HashMapBlobStore,
 }
 
@@ -106,7 +108,7 @@ fn ignore_duplicate_insert_error<T>(res: std::result::Result<T, InsertError>) ->
 
 impl CommittedState {
     pub fn bootstrap_system_tables(&mut self, database_address: Address) -> Result<()> {
-        let mut sequences_start: HashMap<TableId, i128> = HashMap::with_capacity(10);
+        let mut sequences_start: IntMap<TableId, i128> = IntMap::with_capacity(10);
 
         // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
         // and therefore has performance implications and must not be disabled.

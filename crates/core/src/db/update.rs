@@ -1,21 +1,19 @@
-use core::fmt;
-use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap};
-use std::time::Duration;
-
-use anyhow::Context;
-use itertools::Itertools;
-use similar::{Algorithm, TextDiff};
-use spacetimedb_primitives::ConstraintKind;
-
+use super::datastore::locking_tx_datastore::MutTxId;
+use super::relational_db::RelationalDB;
 use crate::database_logger::SystemLogger;
 use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
-
-use super::datastore::locking_tx_datastore::MutTxId;
-use super::relational_db::RelationalDB;
+use anyhow::Context;
+use core::fmt;
+use hashbrown::HashMap;
+use itertools::Itertools;
+use similar::{Algorithm, TextDiff};
+use spacetimedb_primitives::ConstraintKind;
 use spacetimedb_sats::db::def::{ConstraintSchema, IndexSchema, SequenceSchema, TableDef, TableSchema};
 use spacetimedb_sats::hash::Hash;
+use std::borrow::Cow;
+use std::collections::BTreeMap;
+use std::time::Duration;
 
 #[derive(thiserror::Error, Debug)]
 pub enum UpdateDatabaseError {

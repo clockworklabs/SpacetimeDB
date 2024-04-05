@@ -1,6 +1,6 @@
+use nohash_hasher::IntMap;
 use spacetimedb_primitives::SequenceId;
 use spacetimedb_sats::db::def::SequenceSchema;
-use std::collections::HashMap;
 
 pub struct Sequence {
     schema: SequenceSchema,
@@ -97,7 +97,7 @@ impl Sequence {
 /// A map of [`SequenceId`] -> [`Sequence`].
 #[derive(Default)]
 pub struct SequencesState {
-    sequences: HashMap<SequenceId, Sequence>,
+    sequences: IntMap<SequenceId, Sequence>,
 }
 
 impl SequencesState {
