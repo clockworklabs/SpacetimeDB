@@ -113,7 +113,7 @@ impl<'a> RelValue<'a> {
     /// Reads or takes the column at `col`.
     /// Calling this method consumes the column at `col` for a `RelValue::Projection`,
     /// so it should not be called again for the same input.
-    fn read_or_take_column(&mut self, col: usize) -> Option<AlgebraicValue> {
+    pub fn read_or_take_column(&mut self, col: usize) -> Option<AlgebraicValue> {
         match self {
             Self::Row(row_ref) => AlgebraicValue::read_column(*row_ref, col).ok(),
             Self::Projection(pv) => pv.elements.get_mut(col).map(AlgebraicValue::take),
