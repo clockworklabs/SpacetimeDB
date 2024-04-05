@@ -35,8 +35,8 @@ pub fn cli() -> clap::Command {
                 .help("The nickname, host name or URL of the server hosting the database"),
         )
         .arg(
-            Arg::new("as_identity")
-                .long("as-identity")
+            Arg::new("identity")
+                .long("identity")
                 .short('i')
                 .conflicts_with("anon_identity")
                 .help("The identity to use for the call"),
@@ -45,7 +45,7 @@ pub fn cli() -> clap::Command {
             Arg::new("anon_identity")
                 .long("anon-identity")
                 .short('a')
-                .conflicts_with("as_identity")
+                .conflicts_with("identity")
                 .action(ArgAction::SetTrue)
                 .help("If this flag is present, the call will be executed with no identity provided"),
         )
@@ -58,7 +58,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
     let arguments = args.get_many::<String>("arguments");
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
 
-    let as_identity = args.get_one::<String>("as_identity");
+    let as_identity = args.get_one::<String>("identity");
     let anon_identity = args.get_flag("anon_identity");
 
     let address = database_address(&config, database, server).await?;
