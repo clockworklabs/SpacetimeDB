@@ -1,12 +1,11 @@
 use crate::algebraic_value::AlgebraicValue;
 use crate::db::auth::{StAccess, StTableType};
 use crate::db::error::RelationError;
-use crate::satn::Satn;
-use crate::{algebraic_type, AlgebraicType, ProductType, ProductTypeElement, Typespace, WithTypespace};
+use crate::{algebraic_type, AlgebraicType, ProductType, ProductTypeElement};
 use core::fmt;
 use core::hash::{BuildHasher, Hash};
 use derive_more::From;
-use spacetimedb_data_structures::map::DefaultHashBuilder;
+use spacetimedb_data_structures::map::{DefaultHashBuilder, ValidAsIdentityHash};
 use spacetimedb_primitives::{ColId, ColList, ColListBuilder, Constraints, TableId};
 use std::sync::Arc;
 
@@ -97,11 +96,33 @@ impl FieldName {
     }
 }
 
+/// A reference to an [`AlgebraicValue`] stored somewhere else.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash)]
+pub struct ValueId(pub u16);
+
+impl ValidAsIdentityHash for ValueId {}
+
+impl ValueId {
+    /// Converts the ID to an index in a vector.
+    pub fn idx(&self) -> usize {
+        self.0 as usize
+    }
+}
+
+/// Provides the values needed by a compiled query, e.g., `QueryExpr`,
+/// so that it can retrieve them by the [`ValueId`]s that the query embeds.
+pub type ValueSource<'a> = &'a [AlgebraicValue];
+
+/// Returns a reference to the value identified by `id`.
+pub fn vs_get(vsource: ValueSource<'_>, id: ValueId) -> &AlgebraicValue {
+    &vsource[id.idx()]
+}
+
 // TODO(perf): Remove `Clone` derivation.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, From)]
 pub enum FieldExpr {
     Name(FieldName),
-    Value(AlgebraicValue),
+    Value(ValueId),
 }
 
 impl FieldExpr {
@@ -109,7 +130,7 @@ impl FieldExpr {
     pub fn borrowed(&self) -> FieldExprRef<'_> {
         match self {
             Self::Name(x) => FieldExprRef::Name(x),
-            Self::Value(x) => FieldExprRef::Value(x),
+            Self::Value(x) => FieldExprRef::Value(*x),
         }
     }
 }
@@ -130,14 +151,8 @@ impl fmt::Display for FieldName {
 impl fmt::Display for FieldExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            FieldExpr::Name(x) => {
-                write!(f, "{x}")
-            }
-            FieldExpr::Value(x) => {
-                let ty = x.type_of();
-                let ts = Typespace::new(vec![]);
-                write!(f, "{}", WithTypespace::new(&ts, &ty).with_value(x).to_satn())
-            }
+            FieldExpr::Name(x) => write!(f, "{x}"),
+            FieldExpr::Value(ValueId(id)) => write!(f, "value_id_{id}"),
         }
     }
 }
@@ -146,7 +161,7 @@ impl fmt::Display for FieldExpr {
 #[derive(Clone, Copy)]
 pub enum FieldExprRef<'a> {
     Name(&'a FieldName),
-    Value(&'a AlgebraicValue),
+    Value(ValueId),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -319,7 +334,11 @@ impl Header {
     }
 
     /// Project the [FieldExpr] & the [Constraints] that referenced them
-    pub fn project(&self, cols: &[impl Into<FieldExpr> + Clone]) -> Result<Self, RelationError> {
+    pub fn project(
+        &self,
+        cols: &[impl Into<FieldExpr> + Clone],
+        vsource: ValueSource<'_>,
+    ) -> Result<Self, RelationError> {
         let mut p = Vec::with_capacity(cols.len());
         let mut to_keep = ColListBuilder::new();
 
@@ -330,16 +349,14 @@ impl Header {
                     to_keep.push(pos);
                     p.push(self.fields[pos.idx()].clone());
                 }
-                FieldExpr::Value(col) => {
-                    p.push(Column::new(
-                        FieldName::Pos {
-                            table: self.table_name.clone(),
-                            field: pos,
-                        },
-                        col.type_of(),
-                        pos.into(),
-                    ));
-                }
+                FieldExpr::Value(vid) => p.push(Column::new(
+                    FieldName::Pos {
+                        table: self.table_name.clone(),
+                        field: pos,
+                    },
+                    vs_get(vsource, vid).type_of(),
+                    pos.into(),
+                )),
             }
         }
 
@@ -520,7 +537,7 @@ mod tests {
     #[test]
     fn test_project() {
         let head = head("t1", ("a", "b"), 0);
-        let new = head.project(&[] as &[FieldName]).unwrap();
+        let new = head.project(&<_>::default(), &[] as &[FieldName]).unwrap();
 
         let mut empty = head.clone_for_error();
         empty.fields.clear();
@@ -530,7 +547,10 @@ mod tests {
 
         let all = head.clone_for_error();
         let new = head
-            .project(&[FieldName::named("t1", "a"), FieldName::named("t1", "b")])
+            .project(
+                &<_>::default(),
+                &[FieldName::named("t1", "a"), FieldName::named("t1", "b")],
+            )
             .unwrap();
 
         assert_eq!(all, new);
@@ -539,7 +559,7 @@ mod tests {
         first.fields.pop();
         first.constraints = first.retain_constraints(&0.into());
 
-        let new = head.project(&[FieldName::named("t1", "a")]).unwrap();
+        let new = head.project(&<_>::default(), &[FieldName::named("t1", "a")]).unwrap();
 
         assert_eq!(first, new);
 
@@ -547,7 +567,7 @@ mod tests {
         second.fields.remove(0);
         second.constraints = second.retain_constraints(&1.into());
 
-        let new = head.project(&[FieldName::named("t1", "b")]).unwrap();
+        let new = head.project(&<_>::default(), &[FieldName::named("t1", "b")]).unwrap();
 
         assert_eq!(second, new);
     }
@@ -560,7 +580,10 @@ mod tests {
         let new = head_lhs.extend(&head_rhs);
 
         let lhs = new
-            .project(&[FieldName::named("t1", "a"), FieldName::named("t1", "b")])
+            .project(
+                &<_>::default(),
+                &[FieldName::named("t1", "a"), FieldName::named("t1", "b")],
+            )
             .unwrap();
 
         assert_eq!(head_lhs, lhs);
@@ -569,7 +592,10 @@ mod tests {
         head_rhs.table_name = head_lhs.table_name.clone();
 
         let rhs = new
-            .project(&[FieldName::named("t2", "c"), FieldName::named("t2", "d")])
+            .project(
+                &<_>::default(),
+                &[FieldName::named("t2", "c"), FieldName::named("t2", "d")],
+            )
             .unwrap();
 
         assert_eq!(head_rhs, rhs);

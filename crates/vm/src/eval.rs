@@ -5,7 +5,7 @@ use crate::iterators::RelIter;
 use crate::program::{ProgramVm, Sources};
 use crate::rel_ops::RelOps;
 use crate::relation::RelValue;
-use spacetimedb_sats::relation::{FieldExprRef, Relation};
+use spacetimedb_sats::relation::{FieldExprRef, Relation, ValueSource};
 use spacetimedb_sats::ProductValue;
 use std::sync::Arc;
 
@@ -20,6 +20,7 @@ pub fn build_query<'a, const N: usize>(
     mut result: Box<IterRows<'a>>,
     query: &'a [Query],
     sources: Sources<'_, N>,
+    vsource: ValueSource<'a>,
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {
     for q in query {
         result = match q {
@@ -31,7 +32,7 @@ pub fn build_query<'a, const N: usize>(
             }
             Query::Select(cmp) => {
                 let header = result.head().clone();
-                let iter = result.select(move |row| cmp.compare(row, &header));
+                let iter = result.select(move |row| cmp.compare(row, &header, vsource));
                 Box::new(iter)
             }
             Query::Project(cols, _) => {
@@ -39,8 +40,8 @@ pub fn build_query<'a, const N: usize>(
                     result
                 } else {
                     let header = result.head().clone();
-                    let iter = result.project(cols, move |cols, row| {
-                        Ok(RelValue::Projection(row.project_owned(cols, &header)?))
+                    let iter = result.project(cols, vsource, move |cols, row| {
+                        Ok(RelValue::Projection(row.project_owned(cols, &header, vsource)?))
                     })?;
                     Box::new(iter)
                 }
@@ -51,7 +52,7 @@ pub fn build_query<'a, const N: usize>(
                 let col_rhs = FieldExprRef::Name(&q.col_rhs);
 
                 let rhs = build_source_expr_query(sources, &q.rhs.source);
-                let rhs = build_query(rhs, &q.rhs.query, sources)?;
+                let rhs = build_query(rhs, &q.rhs.query, sources, vsource)?;
 
                 let lhs = result;
                 let key_lhs_header = lhs.head().clone();
@@ -63,11 +64,11 @@ pub fn build_query<'a, const N: usize>(
                     let iter = lhs.join_inner(
                         rhs,
                         col_lhs_header.clone(),
-                        move |row| Ok(row.get(col_lhs, &key_lhs_header)?.into_owned().into()),
-                        move |row| Ok(row.get(col_rhs, &key_rhs_header)?.into_owned().into()),
+                        move |row| Ok(row.get(col_lhs, &key_lhs_header, vsource)?.into_owned().into()),
+                        move |row| Ok(row.get(col_rhs, &key_rhs_header, vsource)?.into_owned().into()),
                         move |l, r| {
-                            let l = l.get(col_lhs, &col_lhs_header)?;
-                            let r = r.get(col_rhs, &col_rhs_header)?;
+                            let l = l.get(col_lhs, &col_lhs_header, vsource)?;
+                            let r = r.get(col_rhs, &col_rhs_header, vsource)?;
                             Ok(l == r)
                         },
                         |l, _| l,
@@ -77,11 +78,11 @@ pub fn build_query<'a, const N: usize>(
                     let iter = lhs.join_inner(
                         rhs,
                         Arc::new(col_lhs_header.extend(&col_rhs_header)),
-                        move |row| Ok(row.get(col_lhs, &key_lhs_header)?.into_owned().into()),
-                        move |row| Ok(row.get(col_rhs, &key_rhs_header)?.into_owned().into()),
+                        move |row| Ok(row.get(col_lhs, &key_lhs_header, vsource)?.into_owned().into()),
+                        move |row| Ok(row.get(col_rhs, &key_rhs_header, vsource)?.into_owned().into()),
                         move |l, r| {
-                            let l = l.get(col_lhs, &col_lhs_header)?;
-                            let r = r.get(col_rhs, &col_rhs_header)?;
+                            let l = l.get(col_lhs, &col_lhs_header, vsource)?;
+                            let r = r.get(col_rhs, &col_rhs_header, vsource)?;
                             Ok(l == r)
                         },
                         move |l, r| l.extend(r),
@@ -108,13 +109,18 @@ pub(crate) fn build_source_expr_query<'a, const N: usize>(
 }
 
 /// Execute the code
-pub fn eval<const N: usize, P: ProgramVm>(p: &mut P, code: Code, sources: Sources<'_, N>) -> Code {
+pub fn eval<const N: usize, P: ProgramVm>(
+    p: &mut P,
+    code: Code,
+    sources: Sources<'_, N>,
+    vsource: ValueSource<'_>,
+) -> Code {
     match code {
         c @ (Code::Value(_) | Code::Halt(_) | Code::Table(_)) => c,
         Code::Block(lines) => {
             let mut result = Vec::with_capacity(lines.len());
             for x in lines {
-                let r = eval(p, x, sources);
+                let r = eval(p, x, sources, vsource);
                 if r != Code::Pass {
                     result.push(r);
                 }
@@ -126,22 +132,33 @@ pub fn eval<const N: usize, P: ProgramVm>(p: &mut P, code: Code, sources: Source
                 _ => Code::Block(result),
             }
         }
-        Code::Crud(q) => p.eval_query(q, sources).unwrap_or_else(|err| Code::Halt(err.into())),
+        Code::Crud(q) => p
+            .eval_query(q, sources, vsource)
+            .unwrap_or_else(|err| Code::Halt(err.into())),
         Code::Pass => Code::Pass,
     }
 }
 
 fn to_vec(of: Vec<Expr>) -> Code {
-    let mut new = Vec::with_capacity(of.len());
-    for ast in of {
-        let code = match ast {
+    let new = of
+        .into_iter()
+        .map(|ast| match ast {
             Expr::Block(x) => to_vec(x),
             Expr::Crud(x) => Code::Crud(*x),
             x => Code::Halt(ErrorVm::Unsupported(format!("{x:?}")).into()),
-        };
-        new.push(code);
-    }
+        })
+        .collect();
     Code::Block(new)
+}
+
+fn ast_to_code(ast: Expr) -> Code {
+    match ast {
+        Expr::Block(x) => to_vec(x),
+        Expr::Crud(x) => Code::Crud(*x),
+        Expr::Value(x) => Code::Value(x),
+        Expr::Halt(err) => Code::Halt(err),
+        Expr::Ident(x) => Code::Halt(ErrorVm::Unsupported(format!("Ident {x}")).into()),
+    }
 }
 
 /// Optimize, compile & run the [Expr]
@@ -149,15 +166,9 @@ pub fn run_ast<const N: usize, P: ProgramVm>(
     p: &mut P,
     ast: Expr,
     mut sources: SourceSet<Vec<ProductValue>, N>,
+    vsource: ValueSource<'_>,
 ) -> Code {
-    let code = match ast {
-        Expr::Block(x) => to_vec(x),
-        Expr::Crud(x) => Code::Crud(*x),
-        Expr::Value(x) => Code::Value(x),
-        Expr::Halt(err) => Code::Halt(err),
-        Expr::Ident(x) => Code::Halt(ErrorVm::Unsupported(format!("Ident {x}")).into()),
-    };
-    eval(p, code, &mut sources)
+    eval(p, ast_to_code(ast), &mut sources, vsource)
 }
 
 /// Used internally for testing SQL JOINS.

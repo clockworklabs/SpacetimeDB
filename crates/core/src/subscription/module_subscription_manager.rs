@@ -1,22 +1,223 @@
-use super::execution_unit::{ExecutionUnit, QueryHash};
+use super::execution_unit::{ExecutionUnit, PrepQueryHash};
+use super::query::compile_read_only_query;
 use crate::client::messages::{SubscriptionUpdate, TransactionUpdateMessage};
 use crate::client::{ClientConnectionSender, Protocol};
-use crate::db::relational_db::RelationalDB;
+use crate::db::relational_db::{RelationalDB, Tx};
+use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, ProtocolDatabaseUpdate};
 use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
+use crate::sql::ast::{compile_value, parse_values_comma_sep_sql};
 use itertools::{Either, Itertools as _};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use smallvec::SmallVec;
 use spacetimedb_client_api_messages::client_api::{TableRowOperation, TableUpdate};
-use spacetimedb_data_structures::map::{Entry, HashMap, HashSet, IntMap};
-use spacetimedb_lib::Identity;
+use spacetimedb_data_structures::map::{Entry, HashMap, HashSet, IntMap, IntSet, RawEntryMut, ValidAsIdentityHash};
+use spacetimedb_lib::identity::{AuthCtx, Identity};
 use spacetimedb_primitives::TableId;
+use spacetimedb_sats::relation::{ValueId, ValueSource};
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
+use sqlparser::dialect::PostgreSqlDialect;
+use sqlparser::parser::Parser;
+use sqlparser::tokenizer::Token;
 use std::ops::Deref;
 use std::sync::Arc;
 
-type Query = Arc<ExecutionUnit>;
 type Client = Arc<ClientConnectionSender>;
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+struct PrepQueryId(u64);
+
+impl ValidAsIdentityHash for PrepQueryId {}
+
+impl PrepQueryId {
+    fn advance(&mut self) -> Self {
+        let curr = *self;
+        self.0 += 1;
+        curr
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+struct ValueSourceId(u64);
+
+impl ValidAsIdentityHash for ValueSourceId {}
+
+impl ValueSourceId {
+    fn advance(&mut self) -> Self {
+        let curr = *self;
+        self.0 += 1;
+        curr
+    }
+}
+
+#[derive(Debug, Default)]
+struct PrepQueryManager {
+    /// A monotonically increasing counter for reserving IDs for prepared queries.
+    counter: PrepQueryId,
+    /// Inverted index from tables to queries that read from them.
+    tables: IntMap<TableId, IntSet<PrepQueryId>>,
+    /// The prepared queries for which there is at least one subscriber.
+    queries: IntMap<PrepQueryId, Arc<ExecutionUnit>>,
+    /// The lookup table from SQL to compiled prepared queries.
+    lookup: HashMap<Arc<str>, PrepQueryId>,
+    /// Reverse lookup table used for deleting entries in `lookup`.
+    lookup_rev: IntMap<PrepQueryId, Arc<str>>,
+    /// Stores the type of a particular [`ValueId`] for a particular prepared query.
+    type_at_value_id: IntMap<PrepQueryId, IntMap<ValueId, AlgebraicType>>,
+    value_sources: IntMap<PrepQueryId, ValueSourceManager>,
+}
+
+impl PrepQueryManager {
+    /// Prepares `sql` as a subscription query if not already prepared,
+    /// returning the prepared query ID and the compiled execution unit.
+    pub fn maybe_prepare(
+        &mut self,
+        db: &RelationalDB,
+        tx: &Tx,
+        auth: &AuthCtx,
+        sql: &str,
+    ) -> Result<(PrepQueryId, &Arc<ExecutionUnit>), DBError> {
+        // Return from cache if possible.
+        let lookup = match self.lookup.raw_entry_mut().from_key(sql) {
+            RawEntryMut::Occupied(entry) => {
+                let pqid = entry.get();
+                let query = &self.queries[pqid];
+                return Ok((*pqid, query));
+            }
+            RawEntryMut::Vacant(entry) => entry,
+        };
+
+        // Not prepared already, compile `sql` and prepare the unit.
+        let mut compiled = compile_read_only_query(db, tx, auth, sql)?;
+        if compiled.len() != 1 {
+            return Err(SubscriptionError::Unsupported("subscription query must be a single statement".into()).into());
+        }
+        let unit = ExecutionUnit::new(compiled.swap_remove(0))?;
+
+        // Reserve an id and insert into the various maps.
+        let pqid = self.counter.advance();
+        let query: Arc<str> = sql.into();
+        lookup.insert(query.clone(), pqid);
+        self.lookup_rev.insert(pqid, query);
+
+        // Record the tables that this unit reads from.
+        self.tables.entry(unit.return_table()).or_default().insert(pqid);
+        self.tables.entry(unit.filter_table()).or_default().insert(pqid);
+
+        let unit = self.queries.entry(pqid).or_insert(Arc::new(unit));
+
+        Ok((pqid, unit))
+    }
+
+    /// Removes the prepared query identified by `id`.
+    ///
+    /// Panics if `id` does not refer to a prepared query.
+    pub fn remove(&mut self, id: PrepQueryId) {
+        let unit = self.queries.remove(&id).unwrap();
+
+        // Remove `hash` from the set of queries for `table_id`.
+        // When the table has no queries, cleanup the map entry altogether.
+        for table_id in [unit.return_table(), unit.filter_table()] {
+            if let Entry::Occupied(mut entry) = self.tables.entry(table_id) {
+                let hashes = entry.get_mut();
+                hashes.remove(&id);
+                if hashes.is_empty() {
+                    entry.remove();
+                }
+            }
+        }
+
+        let sql = self.lookup_rev.remove(&id).unwrap();
+        self.lookup.remove(&sql);
+    }
+
+    /// Returns whether prepared query `id` reads from `table`.
+    #[cfg(test)]
+    fn query_reads_from_table(&self, id: PrepQueryId, table: TableId) -> bool {
+        self.tables.get(&table).is_some_and(|queries| queries.contains(id))
+    }
+
+    pub fn compile_value_source(&mut self, id: PrepQueryId, values_sql: &str) -> Result<SharedValueSource, DBError> {
+        let type_at = self.type_at_value_id.get(&id);
+        let type_at = |idx| &type_at.unwrap()[&ValueId(idx as u16)];
+        parse_values_comma_sep_sql(values_sql, type_at).map(Into::into)
+    }
+}
+
+type SharedValueSource = Arc<[AlgebraicValue]>;
+
+#[derive(Debug, Default)]
+struct ValueSourceManager {
+    /// A monotonically increasing counter for reserving IDs for value sources.
+    counter: ValueSourceId,
+    /// The "compiled" value sources.
+    vsources: IntMap<ValueSourceId, SharedValueSource>,
+    /// The lookup table from SQL strings that construct value sources to ids for the value sources.
+    lookup: HashMap<Arc<str>, ValueSourceId>,
+    /// Reverse lookup table used for deleting entries in `lookup`.
+    lookup_rev: HashMap<ValueSourceId, Arc<str>>,
+}
+
+impl ValueSourceManager {
+    pub fn compile(&mut self, values_sql: &str) -> Result<(ValueSourceId, &SharedValueSource), DBError> {
+        // Return from cache if possible.
+        let lookup = match self.lookup.raw_entry_mut().from_key(values_sql) {
+            RawEntryMut::Occupied(entry) => {
+                let vsid = entry.get();
+                let svs = &self.vsources[vsid];
+                return Ok((*vsid, svs));
+            }
+            RawEntryMut::Vacant(entry) => entry,
+        };
+
+        // Not prepared already, compile `values_sql`.
+        let values = parse_values_comma_sep_sql(values_sql, |idx| todo!())?;
+        let vsource: SharedValueSource = values.into();
+
+        // Reserve an id and insert into the various maps.
+        let vsid = self.counter.advance();
+        let query: Arc<str> = values_sql.into();
+        lookup.insert(query.clone(), vsid);
+        self.lookup_rev.insert(vsid, query);
+
+        let vsource = self.vsources.entry(vsid).or_insert(vsource);
+
+        Ok((vsid, vsource))
+    }
+}
+
+struct QueryManager {
+    /// The subscribers for each query.
+    subscribers: IntMap<(PrepQueryId, ValueSourceId), HashSet<Identity>>,
+    /// The lookup table from SQL strings that construct value sources to the actual value sources.
+    lookup: HashMap<Arc<str>, SharedValueSource>,
+    /// Reverse lookup table used for deleting entries in `lookup`.
+    lookup_rev: HashMap<SharedValueSource, Arc<str>>,
+
+    /// A monotonically increasing counter for reserving IDs for queries.
+    counter: QueryId,
+    /// Queries for which there is at least one subscriber.
+    queries: IntMap<QueryId, (PrepQueryId, Arc<ValueSource>)>,
+
+    queries_using_prep: IntMap<PrepQueryId, IntSet<ValueSourceId>>,
+}
+
+impl QueryManager {
+    pub fn num_queries(&self) -> usize {
+        self.queries.len()
+    }
+
+    #[cfg(test)]
+    fn contains_query(&self, query: QueryId) -> bool {
+        self.queries.contains_key(&query)
+    }
+
+    #[cfg(test)]
+    fn contains_subscription(&self, subscriber: &Identity, query: QueryId) -> bool {
+        self.subscribers.get(&query).is_some_and(|ids| ids.contains(subscriber))
+    }
+}
 
 /// Responsible for the efficient evaluation of subscriptions.
 /// It performs basic multi-query optimization,
@@ -25,14 +226,12 @@ type Client = Arc<ClientConnectionSender>;
 /// with the results copied to the N receivers.
 #[derive(Debug, Default)]
 pub struct SubscriptionManager {
-    // Subscriber identities and their client connections.
+    /// Subscriber identities and their client connections.
     clients: HashMap<Identity, Client>,
-    // Queries for which there is at least one subscriber.
-    queries: HashMap<QueryHash, Query>,
-    // The subscribers for each query.
-    subscribers: HashMap<QueryHash, HashSet<Identity>>,
-    // Inverted index from tables to queries that read from them.
-    tables: IntMap<TableId, HashSet<QueryHash>>,
+    /// The manager for value sources.
+    pub vsource: ValueSourceManager,
+    /// The manager for prepared queries.
+    pub prepared: PrepQueryManager,
 }
 
 impl SubscriptionManager {
@@ -40,27 +239,8 @@ impl SubscriptionManager {
         self.clients[id].clone()
     }
 
-    pub fn query(&self, hash: &QueryHash) -> Option<Query> {
+    pub fn query(&self, id: QueryId) -> Option<()> {
         self.queries.get(hash).cloned()
-    }
-
-    pub fn num_queries(&self) -> usize {
-        self.queries.len()
-    }
-
-    #[cfg(test)]
-    fn contains_query(&self, hash: &QueryHash) -> bool {
-        self.queries.contains_key(hash)
-    }
-
-    #[cfg(test)]
-    fn contains_subscription(&self, subscriber: &Identity, query: &QueryHash) -> bool {
-        self.subscribers.get(query).is_some_and(|ids| ids.contains(subscriber))
-    }
-
-    #[cfg(test)]
-    fn query_reads_from_table(&self, query: &QueryHash, table: &TableId) -> bool {
-        self.tables.get(table).is_some_and(|queries| queries.contains(query))
     }
 
     /// Adds a client and its queries to the subscription manager.
@@ -84,17 +264,6 @@ impl SubscriptionManager {
     /// it is removed from the index along with its table ids.
     #[tracing::instrument(skip_all)]
     pub fn remove_subscription(&mut self, client: &Identity) {
-        // Remove `hash` from the set of queries for `table_id`.
-        // When the table has no queries, cleanup the map entry altogether.
-        let mut remove_table_query = |table_id: TableId, hash: &QueryHash| {
-            if let Entry::Occupied(mut entry) = self.tables.entry(table_id) {
-                let hashes = entry.get_mut();
-                if hashes.remove(hash) && hashes.is_empty() {
-                    entry.remove();
-                }
-            }
-        };
-
         self.clients.remove(client);
         self.subscribers.retain(|hash, ids| {
             ids.remove(client);
@@ -275,7 +444,7 @@ mod tests {
         execution_context::ExecutionContext,
         sql::compiler::compile_sql,
         subscription::{
-            execution_unit::{ExecutionUnit, QueryHash},
+            execution_unit::{ExecutionUnit, PrepQueryHash},
             subscription::SupportedQuery,
         },
     };
@@ -295,7 +464,7 @@ mod tests {
                 unreachable!();
             };
             let plan = SupportedQuery::new(query, sql.to_owned())?;
-            let hash = QueryHash::from_string(sql);
+            let hash = PrepQueryHash::from_string(sql);
             Ok(Arc::new(ExecutionUnit::new(plan, hash)?))
         })
     }

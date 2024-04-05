@@ -6,6 +6,7 @@ use crate::execution_context::ExecutionContext;
 use crate::vm::{DbProgram, TxMode};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{ProductType, ProductValue};
+use spacetimedb_sats::relation::ValueSource;
 use spacetimedb_vm::eval::run_ast;
 use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
 use spacetimedb_vm::relation::MemTable;
@@ -53,7 +54,12 @@ pub(crate) fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Resul
 /// Run the compiled `SQL` expression inside the `vm` created by [DbProgram]
 ///
 /// Evaluates `ast` and accordingly triggers mutable or read tx to execute
-pub fn execute_sql(db: &RelationalDB, ast: Vec<CrudExpr>, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
+pub fn execute_sql(
+    db: &RelationalDB,
+    ast: Vec<CrudExpr>,
+    auth: AuthCtx,
+    vsource: &ValueSource,
+) -> Result<Vec<MemTable>, DBError> {
     let total = ast.len();
     let ctx = ExecutionContext::sql(db.address());
     let mut result = Vec::with_capacity(total);
@@ -64,14 +70,14 @@ pub fn execute_sql(db: &RelationalDB, ast: Vec<CrudExpr>, auth: AuthCtx) -> Resu
             let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
             let p = &mut DbProgram::new(&ctx, db, &mut tx, auth);
             // SQL queries can never reference `MemTable`s, so pass an empty `SourceSet`.
-            collect_result(&mut result, run_ast(p, q, sources).into())
+            collect_result(&mut result, run_ast(p, q, sources, vsource).into())
         }),
         true => db.with_read_only(&ctx, |tx| {
             let mut tx = TxMode::Tx(tx);
             let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
             let p = &mut DbProgram::new(&ctx, db, &mut tx, auth);
             // SQL queries can never reference `MemTable`s, so pass an empty `SourceSet`.
-            collect_result(&mut result, run_ast(p, q, sources).into())
+            collect_result(&mut result, run_ast(p, q, sources, vsource).into())
         }),
     }?;
 

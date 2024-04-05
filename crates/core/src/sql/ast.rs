@@ -1,4 +1,5 @@
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
+use sqlparser::tokenizer::Token;
 use crate::error::{DBError, PlanError};
 use itertools::Itertools;
 use spacetimedb_data_structures::map::HashMap;
@@ -288,23 +289,79 @@ fn extract_field(table: &From, of: &SqlExpr) -> Result<Option<ProductTypeElement
 ///
 /// When `field` is `None`, the type is inferred to an integer or float depending on if a `.` separator is present.
 /// The `is_long` parameter decides whether to parse as a 64-bit type or a 32-bit one.
-fn infer_number(field: Option<&ProductTypeElement>, value: &str, is_long: bool) -> Result<AlgebraicValue, ErrorVm> {
-    match field {
-        None => {
-            let ty = if value.contains('.') {
-                if is_long {
-                    AlgebraicType::F64
-                } else {
-                    AlgebraicType::F32
-                }
-            } else if is_long {
-                AlgebraicType::I64
+fn infer_number(field: Option<&AlgebraicType>, value: &str, is_long: bool) -> Result<AlgebraicValue, ErrorVm> {
+    if let Some(ty) = field {
+        parse(value, ty)
+    } else {
+        let ty = if value.contains('.') {
+            if is_long {
+                AlgebraicType::F64
             } else {
-                AlgebraicType::I32
-            };
-            parse(value, &ty)
+                AlgebraicType::F32
+            }
+        } else if is_long {
+            AlgebraicType::I64
+        } else {
+            AlgebraicType::I32
+        };
+        parse(value, &ty)
+    }
+}
+
+//
+
+// select * from loc where loc.chunk_id = ?
+// [0..9]
+
+// select * from foo where foo.a = ? and foo.b = ? and foo.username = ?
+// [42]
+// AlgebraicValue::Integer(VarInt)
+
+// 42,24,"foobar"
+
+/// Compiles a [Value] in sql to an `AlgebraicValue`.
+pub fn compile_value(field: Option<&AlgebraicType>, of: Value) -> Result<AlgebraicValue, PlanError> {
+    Ok(match of {
+        Value::Number(value, is_long) => infer_number(field, &value, is_long)?,
+        Value::SingleQuotedString(s) => AlgebraicValue::String(s),
+        Value::DoubleQuotedString(s) => AlgebraicValue::String(s),
+        Value::Boolean(x) => AlgebraicValue::Bool(x),
+        Value::Null => AlgebraicValue::OptionNone(),
+        x => {
+            return Err(PlanError::Unsupported {
+                feature: format!("Unsupported value: {x}."),
+            })
         }
-        Some(f) => parse(value, &f.algebraic_type),
+    })
+}
+
+pub fn parse_values_comma_sep_sql<'a>(
+    sql: &str,
+    ty_at_idx: impl Fn(usize) -> &'a AlgebraicType,
+) -> Result<Vec<AlgebraicValue>, DBError> {
+    let err_into = |error| DBError::SqlParser {
+        sql: sql.to_string(),
+        error,
+    };
+
+    let mut parser = Parser::new(&PostgreSqlDialect {}).try_with_sql(sql).map_err(err_into)?;
+
+    if let Token::EOF = parser.peek_token().token {
+        Ok(Vec::new())
+    } else {
+        let mut idx = 0;
+        let mut values = vec![];
+        loop {
+            let sql_val = parser.parse_value().map_err(err_into)?;
+            let av = compile_value(Some(ty_at_idx(idx)), sql_val)?;
+            values.push(av);
+            idx += 1;
+
+            if !parser.consume_token(&Token::Comma) {
+                break;
+            }
+        }
+        Ok(values)
     }
 }
 
@@ -327,18 +384,7 @@ fn compile_expr_value(table: &From, field: Option<&ProductTypeElement>, of: SqlE
             let col_name = compound_ident(&ident);
             FieldExpr::Name(table.find_field(&col_name)?.into())
         }
-        SqlExpr::Value(x) => FieldExpr::Value(match x {
-            Value::Number(value, is_long) => infer_number(field, &value, is_long)?,
-            Value::SingleQuotedString(s) => infer_str_or_enum(field, s)?,
-            Value::DoubleQuotedString(s) => AlgebraicValue::String(s),
-            Value::Boolean(x) => AlgebraicValue::Bool(x),
-            Value::Null => AlgebraicValue::OptionNone(),
-            x => {
-                return Err(PlanError::Unsupported {
-                    feature: format!("Unsupported value: {x}."),
-                });
-            }
-        }),
+        SqlExpr::Value(x) => FieldExpr::Value(compile_value(field, x)?),
         SqlExpr::BinaryOp { left, op, right } => {
             let (op, lhs, rhs) = compile_bin_op(table, op, left, right)?;
 
@@ -595,7 +641,7 @@ fn compile_select_item(from: &From, select_item: SelectItem) -> Result<Column, P
 fn compile_select<T: TableSchemaView>(db: &RelationalDB, tx: &T, select: Select) -> Result<SqlAst, PlanError> {
     let from = compile_from(db, tx, &select.from)?;
     // SELECT ...
-    let mut project = Vec::new();
+    let mut project = Vec::with_capacity(select.projection.len());
     for select_item in select.projection {
         let col = compile_select_item(&from, select_item)?;
         project.push(col);
@@ -1093,19 +1139,12 @@ pub(crate) fn compile_to_ast<T: TableSchemaView>(
         error,
     })?;
 
-    let mut results = Vec::new();
+    let mut results = Vec::with_capacity(ast.len());
     for statement in ast {
-        let plan_result = compile_statement(db, tx, statement);
-        let query = match plan_result {
-            Ok(plan) => plan,
-            Err(error) => {
-                return Err(DBError::Plan {
-                    sql: sql_text.to_string(),
-                    error,
-                });
-            }
-        };
-        results.push(query);
+        results.push(compile_statement(db, tx, statement).map_err(|error| DBError::Plan {
+            sql: sql_text.to_string(),
+            error,
+        })?);
     }
     Ok(results)
 }

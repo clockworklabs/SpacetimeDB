@@ -1,4 +1,4 @@
-use super::execution_unit::{ExecutionUnit, QueryHash};
+use super::execution_unit::{ExecutionUnit, PrepQueryHash};
 use super::module_subscription_manager::SubscriptionManager;
 use super::query::compile_read_only_query;
 use super::subscription::ExecutionSet;
@@ -53,22 +53,12 @@ impl ModuleSubscriptions {
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
         let mut queries = vec![];
 
-        let guard = self.subscriptions.read();
+        let guard = self.subscriptions.write();
 
         for sql in subscription.query_strings {
-            let hash = QueryHash::from_string(&sql);
-            if let Some(unit) = guard.query(&hash) {
-                queries.push(unit);
-            } else {
-                let mut compiled = compile_read_only_query(&self.relational_db, &tx, &auth, &sql)?;
-                if compiled.len() > 1 {
-                    return Result::Err(
-                        SubscriptionError::Unsupported(String::from("Multiple statements in subscription query"))
-                            .into(),
-                    );
-                }
-                queries.push(Arc::new(ExecutionUnit::new(compiled.remove(0), hash)?));
-            }
+            // TODO: handle value source.
+            let (_, unit) = guard.prepared.maybe_prepare(&self.relational_db, &tx, &auth, &sql)?;
+            queries.push(unit.clone());
         }
 
         drop(guard);

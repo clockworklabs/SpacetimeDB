@@ -45,24 +45,21 @@ pub fn compile_read_only_query(
     let compiled = compile_sql(relational_db, tx, &input)?;
     let mut queries = Vec::with_capacity(compiled.len());
     for q in compiled {
+        let err_sf = |crud| Err(SubscriptionError::SideEffect(crud).into());
         match q {
             CrudExpr::Query(x) => queries.push(x),
-            CrudExpr::Insert { .. } => {
-                return Err(SubscriptionError::SideEffect(Crud::Insert).into());
-            }
-            CrudExpr::Update { .. } => return Err(SubscriptionError::SideEffect(Crud::Update).into()),
-            CrudExpr::Delete { .. } => return Err(SubscriptionError::SideEffect(Crud::Delete).into()),
-            CrudExpr::CreateTable { .. } => {
-                return Err(SubscriptionError::SideEffect(Crud::Create(DbType::Table)).into())
-            }
-            CrudExpr::Drop { kind, .. } => return Err(SubscriptionError::SideEffect(Crud::Drop(kind)).into()),
+            CrudExpr::Insert { .. } => return err_sf(Crud::Insert),
+            CrudExpr::Update { .. } => return err_sf(Crud::Update),
+            CrudExpr::Delete { .. } => return err_sf(Crud::Delete),
+            CrudExpr::CreateTable { .. } => return err_sf(Crud::Create(DbType::Table)),
+            CrudExpr::Drop { kind, .. } => return err_sf(Crud::Drop(kind)),
         }
     }
 
     if !queries.is_empty() {
         Ok(queries
             .into_iter()
-            .map(|query| SupportedQuery::new(query, input.to_string()))
+            .map(|query| SupportedQuery::new(query, input))
             .collect::<Result<_, _>>()?)
     } else {
         Err(SubscriptionError::Empty.into())

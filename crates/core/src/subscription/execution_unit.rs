@@ -9,7 +9,7 @@ use crate::vm::{build_query, TxMode};
 use spacetimedb_client_api_messages::client_api::{TableRowOperation, TableUpdate};
 use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::TableId;
-use spacetimedb_sats::relation::DbTable;
+use spacetimedb_sats::relation::{DbTable, ValueSource};
 use spacetimedb_vm::eval::IterRows;
 use spacetimedb_vm::expr::{NoInMemUsed, Query, QueryExpr, SourceExpr, SourceId};
 use spacetimedb_vm::rel_ops::RelOps;
@@ -17,7 +17,7 @@ use spacetimedb_vm::relation::RelValue;
 use std::borrow::Cow;
 use std::hash::Hash;
 
-/// A hash for uniquely identifying query execution units,
+/// A hash for uniquely identifying a *prepared* query execution unit,
 /// to avoid recompilation of queries that have an open subscription.
 ///
 /// Currently we are using a cryptographic hash,
@@ -34,11 +34,11 @@ use std::hash::Hash;
 /// And we want to associate a hash with the entire unit of execution,
 /// rather than an individual plan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct QueryHash {
+pub struct PrepQueryHash {
     data: [u8; 32],
 }
 
-impl QueryHash {
+impl PrepQueryHash {
     pub const NONE: Self = Self { data: [0; 32] };
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
@@ -69,8 +69,6 @@ enum EvalIncrPlan {
 /// such as those of an incremental join.
 #[derive(Debug)]
 pub struct ExecutionUnit {
-    hash: QueryHash,
-
     /// A version of the plan optimized for `eval`,
     /// whose source is a [`DbTable`].
     ///
@@ -81,21 +79,12 @@ pub struct ExecutionUnit {
     eval_incr_plan: EvalIncrPlan,
 }
 
-/// An ExecutionUnit is uniquely identified by its QueryHash.
-impl Eq for ExecutionUnit {}
-
-impl PartialEq for ExecutionUnit {
-    fn eq(&self, other: &Self) -> bool {
-        self.hash == other.hash
-    }
-}
-
 impl From<SupportedQuery> for ExecutionUnit {
     // Used in tests and benches.
     // TODO(bikeshedding): Remove this impl,
     // in favor of more explcit calls to `ExecutionUnit::new` with `QueryHash::NONE`.
     fn from(plan: SupportedQuery) -> Self {
-        Self::new(plan, QueryHash::NONE).unwrap()
+        Self::new(plan).unwrap()
     }
 }
 
@@ -124,7 +113,7 @@ impl ExecutionUnit {
         QueryExpr { source, query }
     }
 
-    pub fn new(eval_plan: SupportedQuery, hash: QueryHash) -> Result<Self, DBError> {
+    pub fn new(eval_plan: SupportedQuery) -> Result<Self, DBError> {
         // Pre-compile the `expr` as fully as possible, twice, for two different paths:
         // - `eval_incr_plan`, for incremental updates from an `SourceExpr::InMemory` table.
         // - `eval_plan`, for initial subscriptions from a `SourceExpr::DbTable`.
@@ -139,10 +128,8 @@ impl ExecutionUnit {
                 expr,
             } => EvalIncrPlan::Semijoin(IncrementalJoin::new(expr)?),
         };
-        let eval_plan = eval_plan.expr;
         Ok(ExecutionUnit {
-            hash,
-            eval_plan,
+            eval_plan: eval_plan.expr,
             eval_incr_plan,
         })
     }
@@ -153,11 +140,6 @@ impl ExecutionUnit {
             EvalIncrPlan::Select(_) => Supported::Select,
             EvalIncrPlan::Semijoin(_) => Supported::Semijoin,
         }
-    }
-
-    /// The unique query hash for this execution unit.
-    pub fn hash(&self) -> QueryHash {
-        self.hash
     }
 
     fn return_db_table(&self) -> &DbTable {
@@ -282,12 +264,13 @@ impl ExecutionUnit {
         tx: &'a TxMode,
         mem_table: &'a [ProductValue],
         eval_incr_plan: &'a QueryExpr,
+        vsource: &'a ValueSource,
     ) -> Result<Box<IterRows<'a>>, DBError> {
         // Provide the updates from `table`.
         let sources = &mut Some(mem_table.iter().map(RelValue::ProjRef));
         // Evaluate the saved plan against the new updates,
         // returning an iterator over the selected rows.
-        build_query(ctx, db, tx, eval_incr_plan, sources).map_err(Into::into)
+        build_query(ctx, db, tx, eval_incr_plan, sources, vsource).map_err(Into::into)
     }
 
     fn eval_incr_query_expr<'a>(
@@ -297,11 +280,14 @@ impl ExecutionUnit {
         tables: impl Iterator<Item = &'a DatabaseTableUpdate>,
         eval_incr_plan: &'a QueryExpr,
         return_table: TableId,
+        vsource: &'a ValueSource,
     ) -> Result<UpdatesCow<'a>, DBError> {
         assert!(
             eval_incr_plan.source.is_mem_table(),
             "Expected in-mem table in `eval_incr_plan`, but found `DbTable`"
         );
+
+        let eval = |updates| Self::eval_query_expr_against_memtable(ctx, db, tx, updates, eval_incr_plan, vsource);
 
         let mut deletes = Vec::new();
         let mut inserts = Vec::new();
@@ -311,12 +297,10 @@ impl ExecutionUnit {
             // without forgetting which are inserts and which are deletes.
             // Previously, we used to add such a column `"__op_type: AlgebraicType::U8"`.
             if !table.inserts.is_empty() {
-                let query = Self::eval_query_expr_against_memtable(ctx, db, tx, &table.inserts, eval_incr_plan)?;
-                Self::collect_rows(&mut inserts, query)?;
+                Self::collect_rows(&mut inserts, eval(&table.inserts)?)?;
             }
             if !table.deletes.is_empty() {
-                let query = Self::eval_query_expr_against_memtable(ctx, db, tx, &table.deletes, eval_incr_plan)?;
-                Self::collect_rows(&mut deletes, query)?;
+                Self::collect_rows(&mut deletes, eval(&table.deletes)?)?;
             }
         }
         Ok(UpdatesCow { deletes, inserts })

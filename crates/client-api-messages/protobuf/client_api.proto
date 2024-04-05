@@ -221,7 +221,7 @@ message TransactionUpdate {
 ///
 /// One-off queries are identified by a client-generated messageID.
 /// To avoid data leaks, the server will NOT cache responses to messages based on UUID!
-/// It also will not check for duplicate IDs. They are just a way to match responses to messages. 
+/// It also will not check for duplicate IDs. They are just a way to match responses to messages.
 message OneOffQuery {
     bytes messageId = 1;
     string queryString = 2;

@@ -43,7 +43,7 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
-use spacetimedb_sats::relation::DbTable;
+use spacetimedb_sats::relation::{DbTable, ValueSource};
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::expr::{self, IndexJoin, Query, QueryExpr, SourceProvider, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
@@ -64,8 +64,8 @@ pub struct SupportedQuery {
 }
 
 impl SupportedQuery {
-    pub fn new(expr: QueryExpr, text: String) -> Result<Self, DBError> {
-        let kind = query::classify(&expr).ok_or(SubscriptionError::Unsupported(text))?;
+    pub fn new(expr: QueryExpr, text: Cow<'_, str>) -> Result<Self, DBError> {
+        let kind = query::classify(&expr).ok_or_else(|| SubscriptionError::Unsupported(text.into_owned()))?;
         Ok(Self { kind, expr })
     }
 
@@ -137,8 +137,9 @@ fn eval_updates<'a>(
     tx: &'a TxMode<'a>,
     query: &'a QueryExpr,
     mut sources: impl SourceProvider<'a>,
+    vsource: &'a ValueSource,
 ) -> Result<impl 'a + Iterator<Item = ResCowPV<'a>>, DBError> {
-    let mut query = build_query(ctx, db, tx, query, &mut sources)?;
+    let mut query = build_query(ctx, db, tx, query, &mut sources, vsource)?;
     Ok(iter::from_fn(move || {
         query
             .next()
@@ -220,10 +221,7 @@ impl IncrementalJoin {
     ///
     /// An error is returned if the expression is not well-formed.
     pub fn new(expr: &QueryExpr) -> anyhow::Result<Self> {
-        if expr.query.len() != 1 {
-            return Err(anyhow::anyhow!("expected a single index join, but got {:#?}", expr));
-        }
-        let expr::Query::IndexJoin(ref join) = expr.query[0] else {
+        let [expr::Query::IndexJoin(join)] = &*expr.query else {
             return Err(anyhow::anyhow!("expected a single index join, but got {:#?}", expr));
         };
 
@@ -276,8 +274,10 @@ impl IncrementalJoin {
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         lhs: impl 'a + Iterator<Item = &'a ProductValue>,
+        vsource: &'a ValueSource,
     ) -> Result<impl Iterator<Item = ResCowPV<'a>>, DBError> {
-        eval_updates(ctx, db, tx, self.plan_for_delta_lhs(), Some(lhs.map(RelValue::ProjRef)))
+        let sources = Some(lhs.map(RelValue::ProjRef));
+        eval_updates(ctx, db, tx, self.plan_for_delta_lhs(), sources, vsource)
     }
 
     /// Evaluate join plan for rhs updates.
@@ -287,8 +287,10 @@ impl IncrementalJoin {
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         rhs: impl 'a + Iterator<Item = &'a ProductValue>,
+        vsource: &'a ValueSource,
     ) -> Result<impl Iterator<Item = ResCowPV<'a>>, DBError> {
-        eval_updates(ctx, db, tx, self.plan_for_delta_rhs(), Some(rhs.map(RelValue::ProjRef)))
+        let sources = Some(rhs.map(RelValue::ProjRef));
+        eval_updates(ctx, db, tx, self.plan_for_delta_rhs(), sources, vsource)
     }
 
     /// Evaluate join plan for both lhs and rhs updates.
@@ -299,11 +301,12 @@ impl IncrementalJoin {
         tx: &'a TxMode<'a>,
         lhs: impl 'a + Iterator<Item = &'a ProductValue>,
         rhs: impl 'a + Iterator<Item = &'a ProductValue>,
+        vsource: &'a ValueSource,
     ) -> Result<impl Iterator<Item = ResCowPV<'a>>, DBError> {
         let is = Either::Left(lhs.map(RelValue::ProjRef));
         let ps = Either::Right(rhs.map(RelValue::ProjRef));
         let sources: SourceSet<_, 2> = if self.return_index_rows { [is, ps] } else { [ps, is] }.into();
-        eval_updates(ctx, db, tx, &self.virtual_plan, sources)
+        eval_updates(ctx, db, tx, &self.virtual_plan, sources, vsource)
     }
 
     /// Evaluate this [`IncrementalJoin`] over the row updates of a transaction t.
@@ -364,6 +367,7 @@ impl IncrementalJoin {
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         updates: impl 'a + Clone + Iterator<Item = &'a DatabaseTableUpdate>,
+        vsource: &'a ValueSource,
     ) -> Result<UpdatesCow<'a>, DBError> {
         // Find any updates to the tables mentioned by `self` and group them into [`JoinSide`]s.
         //
@@ -437,35 +441,35 @@ impl IncrementalJoin {
 
         // (1) A+ x B(t)
         let j1_lhs_ins = lhs_inserts.clone();
-        let join_1 = make_iter(has_lhs_inserts, || self.eval_lhs(ctx, db, tx, j1_lhs_ins))?;
+        let join_1 = make_iter(has_lhs_inserts, || self.eval_lhs(ctx, db, tx, j1_lhs_ins, vsource))?;
         // (2) A- x B(t)
         let j2_lhs_del = lhs_deletes.clone();
-        let mut join_2 = collect_set(has_lhs_deletes, || self.eval_lhs(ctx, db, tx, j2_lhs_del))?;
+        let mut join_2 = collect_set(has_lhs_deletes, || self.eval_lhs(ctx, db, tx, j2_lhs_del, vsource))?;
         // (3) A- x B+
         let j3_lhs_del = lhs_deletes.clone();
         let j3_rhs_ins = rhs_inserts.clone();
         let join_3 = make_iter(has_lhs_deletes && has_rhs_inserts, || {
-            self.eval_all(ctx, db, tx, j3_lhs_del, j3_rhs_ins)
+            self.eval_all(ctx, db, tx, j3_lhs_del, j3_rhs_ins, vsource)
         })?;
         // (4) A- x B-
         let j4_rhs_del = rhs_deletes.clone();
         let join_4 = make_iter(has_lhs_deletes && has_rhs_deletes, || {
-            self.eval_all(ctx, db, tx, lhs_deletes, j4_rhs_del)
+            self.eval_all(ctx, db, tx, lhs_deletes, j4_rhs_del, vsource)
         })?;
         // (5) A(t) x B+
         let j5_rhs_ins = rhs_inserts.clone();
-        let mut join_5 = collect_set(has_rhs_inserts, || self.eval_rhs(ctx, db, tx, j5_rhs_ins))?;
+        let mut join_5 = collect_set(has_rhs_inserts, || self.eval_rhs(ctx, db, tx, j5_rhs_ins, vsource))?;
         // (6) A(t) x B-
         let j6_rhs_del = rhs_deletes.clone();
-        let mut join_6 = collect_set(has_rhs_deletes, || self.eval_rhs(ctx, db, tx, j6_rhs_del))?;
+        let mut join_6 = collect_set(has_rhs_deletes, || self.eval_rhs(ctx, db, tx, j6_rhs_del, vsource))?;
         // (7) A+ x B+
         let j7_lhs_ins = lhs_inserts.clone();
         let join_7 = make_iter(has_lhs_inserts && has_rhs_inserts, || {
-            self.eval_all(ctx, db, tx, j7_lhs_ins, rhs_inserts)
+            self.eval_all(ctx, db, tx, j7_lhs_ins, rhs_inserts, vsource)
         })?;
         // (8) A+ x B-
         let join_8 = make_iter(has_lhs_inserts && has_rhs_deletes, || {
-            self.eval_all(ctx, db, tx, lhs_inserts, rhs_deletes)
+            self.eval_all(ctx, db, tx, lhs_inserts, rhs_deletes, vsource)
         })?;
 
         // A- x B(s) = A- x B(t) \ A- x B+
@@ -527,7 +531,7 @@ fn with_delta_table(
 }
 
 /// A set of independent single or multi-query execution units.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct ExecutionSet {
     exec_units: Vec<Arc<ExecutionUnit>>,
 }

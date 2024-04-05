@@ -7,10 +7,10 @@ use crate::execution_context::ExecutionContext;
 use core::ops::RangeBounds;
 use itertools::Itertools;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::RowCount;
+use spacetimedb_lib::relation::{vs_get, RowCount};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::def::TableDef;
-use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldExprRef, FieldName, Header, Relation};
+use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldExprRef, FieldName, Header, Relation, ValueSource};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::eval::IterRows;
@@ -19,6 +19,7 @@ use spacetimedb_vm::iterators::RelIter;
 use spacetimedb_vm::program::{ProgramVm, Sources};
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::{MemTable, RelValue, Table};
+use std::ops::Bound;
 use std::sync::Arc;
 
 pub enum TxMode<'a> {
@@ -46,6 +47,7 @@ pub fn build_query<'a>(
     tx: &'a TxMode<'a>,
     query: &'a QueryExpr,
     sources: &mut impl SourceProvider<'a>,
+    vsource: ValueSource<'a>,
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {
     let db_table = query.source.is_db_table();
 
@@ -65,11 +67,23 @@ pub fn build_query<'a>(
     //   removing the need for this convoluted logic?
     let mut result = None;
 
+    let proj_bound = |bound: &Bound<_>, idx| bound.as_ref().map(|vids: &Vec<_>| vs_get(vsource, vids[idx]));
+
     for op in &query.query {
         result = Some(match op {
             Query::IndexScan(IndexScan { table, columns, bounds }) if db_table => {
-                let bounds = (bounds.start_bound(), bounds.end_bound());
-                iter_by_col_range(ctx, stdb, tx, table, columns.clone(), bounds)?
+                if columns.is_singleton() {
+                    let bounds = (proj_bound(&bounds.0, 0), proj_bound(&bounds.1, 0));
+                    iter_by_col_range(ctx, stdb, tx, table, columns.clone(), bounds)?
+                } else {
+                    let proj_bound = |bound: &Bound<_>| {
+                        bound.as_ref().map(|vids: &Vec<_>| {
+                            AlgebraicValue::Product(vids.iter().map(|vid| vs_get(vsource, *vid).clone()).collect())
+                        })
+                    };
+                    let bounds = (proj_bound(&bounds.0), proj_bound(&bounds.1));
+                    iter_by_col_range(ctx, stdb, tx, table, columns.clone(), bounds)?
+                }
             }
             Query::IndexScan(index_scan) => {
                 let result = result
@@ -78,18 +92,19 @@ pub fn build_query<'a>(
                     .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))?;
 
                 let cols = &index_scan.columns;
-                let bounds = &index_scan.bounds;
+                let (lower, upper) = &index_scan.bounds;
                 if cols.is_singleton() {
-                    // For singleton constraints, we compare the column directly against `bounds`.
+                    // For singleton constraints,
+                    // we compare the column directly against `bounds` converted to be on `AlgebraicValue`.
                     let head = cols.head().idx();
+                    let bounds = (proj_bound(lower, 0), proj_bound(upper, 0));
                     let iter = result.select(move |row| Ok(bounds.contains(&*row.read_column(head).unwrap())));
                     Box::new(iter) as Box<IterRows<'a>>
                 } else {
-                    // For multi-col constraints, these are stored as bounds of product values,
+                    // For multi-col constraints, these are stored as bounds of `[ValueId]`,
                     // so we need to project these into single-col bounds and compare against the column.
-                    // Project start/end `Bound<AV>`s to `Bound<Vec<AV>>`s.
-                    let start_bound = bounds.0.as_ref().map(|av| &av.as_product().unwrap().elements);
-                    let end_bound = bounds.1.as_ref().map(|av| &av.as_product().unwrap().elements);
+                    // Project start/end `Bound<[ValueId]>`s to (morally) `Bound<[AV]>`s.
+
                     // Construct the query:
                     let iter = result.select(move |row| {
                         // Go through each column position,
@@ -98,10 +113,8 @@ pub fn build_query<'a>(
                         // All columns must match to include the row,
                         // which is essentially the same as a big `AND` of `ColumnOp`s.
                         Ok(cols.iter().enumerate().all(|(idx, col)| {
-                            let start_bound = start_bound.map(|pv| &pv[idx]);
-                            let end_bound = end_bound.map(|pv| &pv[idx]);
                             let read_col = row.read_column(col.idx()).unwrap();
-                            (start_bound, end_bound).contains(&*read_col)
+                            (proj_bound(lower, idx), proj_bound(upper, idx)).contains(&*read_col)
                         }))
                     });
                     Box::new(iter)
@@ -122,7 +135,7 @@ pub fn build_query<'a>(
                 // and therefore this unwrap is always safe.
                 let index_table = index_side.table_id().unwrap();
                 let index_header = index_side.head();
-                let probe_side = build_query(ctx, stdb, tx, probe_side, sources)?;
+                let probe_side = build_query(ctx, stdb, tx, probe_side, sources, vsource)?;
                 Box::new(IndexSemiJoin {
                     ctx,
                     db: stdb,
@@ -135,6 +148,7 @@ pub fn build_query<'a>(
                     index_col: *index_col,
                     index_iter: None,
                     return_index_rows: *return_index_rows,
+                    vsource,
                 })
             }
             Query::Select(cmp) => {
@@ -143,7 +157,7 @@ pub fn build_query<'a>(
                     .map(Ok)
                     .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))?;
                 let header = result.head().clone();
-                let iter = result.select(move |row| cmp.compare(row, &header));
+                let iter = result.select(move |row| cmp.compare(row, &header, vsource));
                 Box::new(iter)
             }
             Query::Project(cols, _) => {
@@ -155,8 +169,8 @@ pub fn build_query<'a>(
                     result
                 } else {
                     let header = result.head().clone();
-                    let iter = result.project(cols, move |cols, row| {
-                        Ok(RelValue::Projection(row.project_owned(cols, &header)?))
+                    let iter = result.project(cols, vsource, move |cols, row| {
+                        Ok(RelValue::Projection(row.project_owned(cols, &header, vsource)?))
                     })?;
                     Box::new(iter)
                 }
@@ -166,7 +180,7 @@ pub fn build_query<'a>(
                     .take()
                     .map(Ok)
                     .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))?;
-                let iter = join_inner(ctx, stdb, tx, result, join, sources)?;
+                let iter = join_inner(ctx, stdb, tx, result, join, sources, vsource)?;
                 Box::new(iter)
             }
         })
@@ -184,6 +198,7 @@ fn join_inner<'a>(
     lhs: impl RelOps<'a> + 'a,
     rhs: &'a JoinExpr,
     sources: &mut impl SourceProvider<'a>,
+    vsource: ValueSource<'a>,
 ) -> Result<impl RelOps<'a> + 'a, ErrorVm> {
     let semi = rhs.semi;
 
@@ -192,7 +207,7 @@ fn join_inner<'a>(
     let key_lhs = [col_lhs];
     let key_rhs = [col_rhs];
 
-    let rhs = build_query(ctx, db, tx, &rhs.rhs, sources)?;
+    let rhs = build_query(ctx, db, tx, &rhs.rhs, sources, vsource)?;
     let key_lhs_header = lhs.head().clone();
     let key_rhs_header = rhs.head().clone();
     let col_lhs_header = lhs.head().clone();
@@ -207,11 +222,11 @@ fn join_inner<'a>(
     lhs.join_inner(
         rhs,
         header,
-        move |row| Ok(row.project(&key_lhs, &key_lhs_header)?),
-        move |row| Ok(row.project(&key_rhs, &key_rhs_header)?),
+        move |row| Ok(row.project(&key_lhs, &key_lhs_header, vsource)?),
+        move |row| Ok(row.project(&key_rhs, &key_rhs_header, vsource)?),
         move |l, r| {
-            let l = l.get(col_lhs, &col_lhs_header)?;
-            let r = r.get(col_rhs, &col_rhs_header)?;
+            let l = l.get(col_lhs, &col_lhs_header, vsource)?;
+            let r = r.get(col_rhs, &col_rhs_header, vsource)?;
             Ok(l == r)
         },
         move |l, r| {
@@ -312,12 +327,14 @@ pub struct IndexSemiJoin<'a, 'c, Rhs: RelOps<'a>> {
     pub tx: &'a TxMode<'a>,
     /// The execution context for the current transaction.
     ctx: &'a ExecutionContext,
+    /// The source to draw any query values from.
+    vsource: ValueSource<'a>,
 }
 
 impl<'a, Rhs: RelOps<'a>> IndexSemiJoin<'a, '_, Rhs> {
     fn filter(&self, index_row: &RelValue<'_>) -> Result<bool, ErrorVm> {
         Ok(if let Some(op) = &self.index_select {
-            op.compare(index_row, self.index_header)?
+            op.compare(index_row, self.index_header, self.vsource)?
         } else {
             true
         })
@@ -394,13 +411,17 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         Self { ctx, db, tx, auth }
     }
 
-    fn _eval_query<const N: usize>(&mut self, query: &QueryExpr, sources: Sources<'_, N>) -> Result<Code, ErrorVm> {
+    fn _eval_query<const N: usize>(
+        &mut self,
+        query: &QueryExpr,
+        sources: Sources<'_, N>,
+        vsource: ValueSource<'_>,
+    ) -> Result<Code, ErrorVm> {
         let table_access = query.source.table_access();
         tracing::trace!(table = query.source.table_name());
 
-        let result = build_query(self.ctx, self.db, self.tx, query, &mut |id| {
-            sources.take(id).map(|mt| mt.into_iter().map(RelValue::Projection))
-        })?;
+        let sources = &mut |id| sources.take(id).map(|mt| mt.into_iter().map(RelValue::Projection));
+        let result = build_query(self.ctx, self.db, self.tx, query, sources, vsource)?;
         let head = result.head().clone();
         let rows = result.collect_vec(|row| row.into_product_value())?;
 
@@ -437,11 +458,16 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         }
     }
 
-    fn _delete_query<const N: usize>(&mut self, query: &QueryExpr, sources: Sources<'_, N>) -> Result<Code, ErrorVm> {
+    fn _delete_query<const N: usize>(
+        &mut self,
+        query: &QueryExpr,
+        sources: Sources<'_, N>,
+        vsource: ValueSource<'_>,
+    ) -> Result<Code, ErrorVm> {
         let table = sources
             .take_table(&query.source)
             .expect("Cannot delete from a `MemTable`");
-        let result = self._eval_query(query, sources)?;
+        let result = self._eval_query(query, sources, vsource)?;
 
         match result {
             Code::Table(result) => self._execute_delete(&table, result.data),
@@ -493,11 +519,16 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
 
 impl ProgramVm for DbProgram<'_, '_> {
     // Safety: For DbProgram with tx = TxMode::Tx variant, all queries must match to CrudCode::Query and no other branch.
-    fn eval_query<const N: usize>(&mut self, query: CrudExpr, sources: Sources<'_, N>) -> Result<Code, ErrorVm> {
+    fn eval_query<const N: usize>(
+        &mut self,
+        query: CrudExpr,
+        sources: Sources<'_, N>,
+        vsource: ValueSource<'_>,
+    ) -> Result<Code, ErrorVm> {
         query.check_auth(self.auth.owner, self.auth.caller)?;
 
         match query {
-            CrudExpr::Query(query) => self._eval_query(&query, sources),
+            CrudExpr::Query(query) => self._eval_query(&query, sources, vsource),
             CrudExpr::Insert { source, rows } => {
                 let src = sources.take_table(&source).unwrap();
                 self._execute_insert(&src, rows)
@@ -506,7 +537,7 @@ impl ProgramVm for DbProgram<'_, '_> {
                 delete,
                 mut assignments,
             } => {
-                let result = self._eval_query(&delete, sources)?;
+                let result = self._eval_query(&delete, sources, vsource)?;
 
                 let Code::Table(deleted) = result else {
                     return Ok(result);
@@ -533,7 +564,7 @@ impl ProgramVm for DbProgram<'_, '_> {
                             .zip(&exprs)
                             .map(|(val, expr)| {
                                 if let Some(FieldExpr::Value(assigned)) = expr {
-                                    assigned.clone()
+                                    vs_get(vsource, *assigned).clone()
                                 } else {
                                     val
                                 }
@@ -546,7 +577,7 @@ impl ProgramVm for DbProgram<'_, '_> {
 
                 self._execute_insert(&table, insert_rows)
             }
-            CrudExpr::Delete { query } => self._delete_query(&query, sources),
+            CrudExpr::Delete { query } => self._delete_query(&query, sources, vsource),
             CrudExpr::CreateTable { table } => self._create_table(table),
             CrudExpr::Drop { name, kind, .. } => self._drop(&name, kind),
         }
