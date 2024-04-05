@@ -53,21 +53,15 @@ pub fn cli() -> clap::Command {
                 .help("Turn on diagnostic/performance tracing for this project")
                 .action(SetTrue),
         )
-        // TODO(tyler): We should be able to pass in either an identity or an alias here
         .arg(
             Arg::new("identity")
                 .long("identity")
-                .short('I')
+                .short('i')
                 .help("The identity that should own the database")
-                .long_help("The identity that should own the database. If no identity is provided, your default identity will be used."))
-        // TODO(jdetter): add this back in when we actually support this
-        // .arg(
-        //     Arg::new("as_identity")
-        //         .long("as-identity")
-        //         .short('i')
-        //         .required(false)
-        //         .conflicts_with("anon_identity"),
-        // )
+                .long_help("The identity that should own the database. If no identity is provided, your default identity will be used.")
+                .required(false)
+                .conflicts_with("anon_identity")
+        )
         .arg(
             Arg::new("anon_identity")
                 .long("anon-identity")
