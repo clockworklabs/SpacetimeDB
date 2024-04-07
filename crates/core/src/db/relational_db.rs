@@ -289,6 +289,7 @@ impl RelationalDB {
     pub fn commit_tx(&self, ctx: &ExecutionContext, tx: MutTx) -> Result<Option<(TxData, Option<usize>)>, DBError> {
         log::trace!("COMMIT MUT TX");
         if let Some(tx_data) = self.inner.commit_mut_tx(ctx, tx)? {
+            // TODO(cloutiertyler): We should measure the time to append a transaction to the commitlog separately in metrics
             let bytes_written = self
                 .commit_log
                 .as_ref()
