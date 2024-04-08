@@ -202,7 +202,7 @@ impl SubscriptionManager {
                             Entry::Vacant(entry) => drop(entry.insert(match ops {
                                 Either::Left(ops) => Either::Left(TableUpdate {
                                     table_id: table_id.into(),
-                                    table_name,
+                                    table_name: table_name.into(),
                                     table_row_operations: ops,
                                 }),
                                 Either::Right(ops) => Either::Right(TableUpdateJson {

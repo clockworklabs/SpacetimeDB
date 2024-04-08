@@ -253,21 +253,21 @@ impl MutTxId {
 
         self.delete(ST_TABLES_ID, st_table_ptr)?;
         // Update the table's name in st_tables.
-        st.table_name = new_name.to_string();
+        st.table_name = new_name.into();
         self.insert(ST_TABLES_ID, &mut st.into(), database_address)?;
         Ok(())
     }
 
     pub fn table_id_from_name(&self, table_name: &str, database_address: Address) -> Result<Option<TableId>> {
         let ctx = ExecutionContext::internal(database_address);
-        let table_name = &table_name.to_owned().into();
+        let table_name = &table_name.into();
         let row = self
             .iter_by_col_eq(&ctx, &ST_TABLES_ID, StTableFields::TableName, table_name)?
             .next();
         Ok(row.map(|row| row.read_col(StTableFields::TableId).unwrap()))
     }
 
-    pub fn table_name_from_id<'a>(&'a self, ctx: &'a ExecutionContext, table_id: TableId) -> Result<Option<String>> {
+    pub fn table_name_from_id<'a>(&'a self, ctx: &'a ExecutionContext, table_id: TableId) -> Result<Option<Box<str>>> {
         self.iter_by_col_eq(ctx, &ST_TABLES_ID, StTableFields::TableId, &table_id.into())
             .map(|mut iter| iter.next().map(|row| row.read_col(StTableFields::TableName).unwrap()))
     }
@@ -402,7 +402,7 @@ impl MutTxId {
 
     pub fn index_id_from_name(&self, index_name: &str, database_address: Address) -> Result<Option<IndexId>> {
         let ctx = ExecutionContext::internal(database_address);
-        let name = &index_name.to_owned().into();
+        let name = &<Box<str>>::from(index_name).into();
         self.iter_by_col_eq(&ctx, &ST_INDEXES_ID, StIndexFields::IndexName, name)
             .map(|mut iter| iter.next().map(|row| row.read_col(StIndexFields::IndexId).unwrap()))
     }
@@ -520,7 +520,7 @@ impl MutTxId {
 
     pub fn sequence_id_from_name(&self, seq_name: &str, database_address: Address) -> Result<Option<SequenceId>> {
         let ctx = ExecutionContext::internal(database_address);
-        let name = &seq_name.to_owned().into();
+        let name = &<Box<str>>::from(seq_name).into();
         self.iter_by_col_eq(&ctx, &ST_SEQUENCES_ID, StSequenceFields::SequenceName, name)
             .map(|mut iter| {
                 iter.next()
@@ -619,7 +619,7 @@ impl MutTxId {
             &ExecutionContext::internal(database_address),
             &ST_CONSTRAINTS_ID,
             StConstraintFields::ConstraintName,
-            &constraint_name.to_owned().into(),
+            &<Box<str>>::from(constraint_name).into(),
         )
         .map(|mut iter| {
             iter.next()

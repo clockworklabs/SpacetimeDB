@@ -26,7 +26,7 @@ pub(crate) trait StateView {
 
     fn table_id_from_name(&self, table_name: &str, database_address: Address) -> Result<Option<TableId>> {
         let ctx = ExecutionContext::internal(database_address);
-        let name = &table_name.to_owned().into();
+        let name = &<Box<str>>::from(table_name).into();
         let row = self
             .iter_by_col_eq(&ctx, &ST_TABLES_ID, StTableFields::TableName, name)?
             .next();
@@ -68,7 +68,7 @@ pub(crate) trait StateView {
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, table_id.into()))?;
         let row = StTableRow::try_from(row)?;
-        let table_name: String = row.table_name;
+        let table_name = row.table_name;
         let table_id: TableId = row.table_id;
         let table_type = row.table_type;
         let table_access = row.table_access;
@@ -326,7 +326,7 @@ pub struct IndexSeekIterMutTxId<'a> {
 //         let get_table_name = || {
 //             self.committed_state
 //                 .get_schema(&self.table_id)
-//                 .map(|table| table.table_name.as_str())
+//                 .map(|table| &*table.table_name)
 //                 .unwrap_or_default()
 //                 .to_string()
 //         };

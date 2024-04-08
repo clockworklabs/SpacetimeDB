@@ -1,6 +1,7 @@
 use super::util::fmt_fn;
 
 use std::fmt::{self, Write};
+use std::ops::Deref;
 
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::db::def::TableSchema;
@@ -256,17 +257,17 @@ fn convert_product_type<'a>(
 ) -> impl fmt::Display + 'a {
     fmt_fn(move |f| {
         writeln!(f, "AlgebraicType.createProductType([")?;
-        for elem in &product_type.elements {
+        for elem in &*product_type.elements {
             writeln!(
                 f,
                 "{INDENT}new ProductTypeElement(\"{}\", {}),",
                 elem.name
                     .to_owned()
                     .map(|s| {
-                        if s == "__identity_bytes" {
-                            s
+                        if &*s == "__identity_bytes" {
+                            s.into()
                         } else {
-                            typescript_field_name(s.to_case(Case::Camel))
+                            typescript_field_name(s.deref().to_case(Case::Camel))
                         }
                     })
                     .unwrap_or("null".into()),
@@ -280,7 +281,7 @@ fn convert_product_type<'a>(
 fn convert_sum_type<'a>(ctx: &'a GenCtx, sum_type: &'a SumType, ref_prefix: &'a str) -> impl fmt::Display + 'a {
     fmt_fn(move |f| {
         writeln!(f, "AlgebraicType.createSumType([")?;
-        for elem in &sum_type.variants {
+        for elem in &*sum_type.variants {
             writeln!(
                 f,
                 "\tnew SumTypeVariant({}, {}),",
@@ -426,7 +427,7 @@ pub fn autogen_typescript_sum(ctx: &GenCtx, name: &str, sum_type: &SumType) -> S
 
         writeln!(output).unwrap();
 
-        for variant in &sum_type.variants {
+        for variant in &*sum_type.variants {
             let variant_name = variant
                 .name
                 .as_ref()
@@ -601,7 +602,7 @@ pub fn autogen_typescript_table(ctx: &GenCtx, table: &TableDesc) -> String {
     )
 }
 
-fn generate_imports(ctx: &GenCtx, elements: &Vec<ProductTypeElement>, imports: &mut Vec<String>, prefix: Option<&str>) {
+fn generate_imports(ctx: &GenCtx, elements: &[ProductTypeElement], imports: &mut Vec<String>, prefix: Option<&str>) {
     for field in elements {
         _generate_imports(ctx, &field.algebraic_type, imports, prefix);
     }
@@ -610,7 +611,7 @@ fn generate_imports(ctx: &GenCtx, elements: &Vec<ProductTypeElement>, imports: &
 // TODO: refactor to allow passing both elements and variants
 fn generate_imports_variants(
     ctx: &GenCtx,
-    variants: &Vec<SumTypeVariant>,
+    variants: &[SumTypeVariant],
     imports: &mut Vec<String>,
     prefix: Option<&str>,
 ) {
@@ -642,7 +643,7 @@ fn _generate_imports(ctx: &GenCtx, ty: &AlgebraicType, imports: &mut Vec<String>
         }
         // Generate imports for the fields of anonymous sum types like `Option<T>`.
         AlgebraicType::Sum(s) => {
-            for variant in &s.variants {
+            for variant in &*s.variants {
                 _generate_imports(ctx, &variant.algebraic_type, imports, prefix);
             }
         }
@@ -692,7 +693,7 @@ fn autogen_typescript_product_table_common(
 
         let mut constructor_signature = Vec::new();
         let mut constructor_assignments = Vec::new();
-        for field in &product_type.elements {
+        for field in &*product_type.elements {
             let field_name = field
                 .name
                 .as_ref()
@@ -714,7 +715,7 @@ fn autogen_typescript_product_table_common(
             // if this table has a primary key add it to the codegen
             if let Some(primary_key) = schema
                 .pk()
-                .map(|field| format!("\"{}\"", field.col_name.to_case(Case::Camel)))
+                .map(|field| format!("\"{}\"", field.col_name.deref().to_case(Case::Camel)))
             {
                 writeln!(
                     output,
@@ -755,7 +756,7 @@ fn autogen_typescript_product_table_common(
             writeln!(output, "return [").unwrap();
 
             let mut args = Vec::new();
-            for field in &product_type.elements {
+            for field in &*product_type.elements {
                 let field_name = field
                     .name
                     .as_ref()

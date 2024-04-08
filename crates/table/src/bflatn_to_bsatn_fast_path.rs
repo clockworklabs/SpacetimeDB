@@ -321,7 +321,7 @@ mod test {
         }
 
         for (ty, bsatn_length, fields) in [
-            (ProductType::new(vec![]), 0, &[][..]),
+            (ProductType::new([].into()), 0, &[][..]),
             (
                 ProductType::from([AlgebraicType::sum([
                     AlgebraicType::U8,

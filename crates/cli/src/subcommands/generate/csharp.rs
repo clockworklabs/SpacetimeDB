@@ -1,6 +1,7 @@
 use super::util::fmt_fn;
 
 use std::fmt::{self, Write};
+use std::ops::Deref;
 
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::db::def::TableSchema;
@@ -110,7 +111,7 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
             let name = csharp_typename(ctx, *r);
             match &ctx.typespace.types[r.idx()] {
                 AlgebraicType::Sum(sum_type) => {
-                    if is_enum(sum_type) {
+                    if sum_type.is_simple_enum() {
                         let parts: Vec<&str> = name.split('.').collect();
                         if parts.len() >= 2 {
                             let enum_namespace = parts[0];
@@ -253,7 +254,7 @@ fn convert_type<'a>(
             let algebraic_type = &ctx.typespace.types[r.idx()];
             match algebraic_type {
                 AlgebraicType::Sum(sum) => {
-                    if is_enum(sum) {
+                    if sum.is_simple_enum() {
                         let split: Vec<&str> = name.split('.').collect();
                         if split.len() >= 2 {
                             assert_eq!(
@@ -317,7 +318,7 @@ fn convert_algebraic_type<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace:
             let name = csharp_typename(ctx, *r);
             match &ctx.typespace.types[r.idx()] {
                 AlgebraicType::Sum(sum_type) => {
-                    if is_enum(sum_type) {
+                    if sum_type.is_simple_enum() {
                         let parts: Vec<&str> = name.split('.').collect();
                         if parts.len() >= 2 {
                             let enum_namespace = parts[0];
@@ -349,7 +350,7 @@ fn convert_product_type<'a>(
             "SpacetimeDB.SATS.AlgebraicType.CreateProductType(new SpacetimeDB.SATS.ProductTypeElement[]"
         )?;
         writeln!(f, "{{")?;
-        for elem in &product_type.elements {
+        for elem in &*product_type.elements {
             writeln!(
                 f,
                 "{INDENT}new SpacetimeDB.SATS.ProductTypeElement({}, {}),",
@@ -371,7 +372,7 @@ fn convert_sum_type<'a>(ctx: &'a GenCtx, sum_type: &'a SumType, namespace: &'a s
             "SpacetimeDB.SATS.AlgebraicType.CreateSumType(new System.Collections.Generic.List<SpacetimeDB.SATS.SumTypeVariant>"
         )?;
         writeln!(f, "{{")?;
-        for elem in &sum_type.variants {
+        for elem in &*sum_type.variants {
             writeln!(
                 f,
                 "\tnew SpacetimeDB.SATS.SumTypeVariant({}, {}),",
@@ -386,23 +387,8 @@ fn convert_sum_type<'a>(ctx: &'a GenCtx, sum_type: &'a SumType, namespace: &'a s
     })
 }
 
-pub fn is_enum(sum_type: &SumType) -> bool {
-    for variant in sum_type.clone().variants {
-        match variant.algebraic_type {
-            AlgebraicType::Product(product) => {
-                if product.elements.is_empty() {
-                    continue;
-                }
-            }
-            _ => return false,
-        }
-    }
-
-    true
-}
-
 pub fn autogen_csharp_sum(ctx: &GenCtx, name: &str, sum_type: &SumType, namespace: &str) -> String {
-    if is_enum(sum_type) {
+    if sum_type.is_simple_enum() {
         autogen_csharp_enum(ctx, name, sum_type, namespace)
     } else {
         unimplemented!();
@@ -467,7 +453,7 @@ pub fn autogen_csharp_enum(ctx: &GenCtx, name: &str, sum_type: &SumType, namespa
                         writeln!(output, "{{").unwrap();
                         {
                             indent_scope!(output);
-                            for variant in &sum_type.variants {
+                            for variant in &*sum_type.variants {
                                 let variant_name = variant
                                     .name
                                     .as_ref()
@@ -500,7 +486,7 @@ pub fn autogen_csharp_enum(ctx: &GenCtx, name: &str, sum_type: &SumType, namespa
                     .unwrap();
                 }
                 None => {
-                    for variant in &sum_type.variants {
+                    for variant in &*sum_type.variants {
                         let variant_name = variant
                             .name
                             .as_ref()
@@ -614,7 +600,7 @@ fn autogen_csharp_product_table_common(
         {
             indent_scope!(output);
 
-            for field in &product_type.elements {
+            for field in &*product_type.elements {
                 let field_name = field
                     .name
                     .as_ref()
@@ -641,7 +627,7 @@ fn autogen_csharp_product_table_common(
                     AlgebraicType::Ref(type_ref) => {
                         let ref_type = &ctx.typespace.types[type_ref.idx()];
                         if let AlgebraicType::Sum(sum_type) = ref_type {
-                            if is_enum(sum_type) {
+                            if sum_type.is_simple_enum() {
                                 writeln!(output, "[SpacetimeDB.Enum]").unwrap();
                             } else {
                                 unimplemented!()
@@ -1307,7 +1293,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
                 AlgebraicType::Ref(type_ref) => {
                     let ref_type = &ctx.typespace.types[type_ref.idx()];
                     if let AlgebraicType::Sum(sum_type) = ref_type {
-                        if is_enum(sum_type) {
+                        if sum_type.is_simple_enum() {
                             json_args.push_str(
                                 format!("new SpacetimeDB.EnumWrapper<{}>({})", arg_type_str, arg_name).as_str(),
                             );
@@ -1403,7 +1389,8 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
                         let arg_name = arg
                             .name
                             .clone()
-                            .unwrap_or_else(|| format!("arg_{}", i))
+                            .unwrap_or_else(|| format!("arg_{}", i).into())
+                            .deref()
                             .to_case(Case::Pascal);
                         let arg_type_str = ty_fmt(ctx, &arg.algebraic_type, namespace);
                         writeln!(output, ",({arg_type_str})args.{arg_name}").unwrap();
@@ -1441,7 +1428,8 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
                 let arg_name = arg
                     .name
                     .clone()
-                    .unwrap_or_else(|| format!("arg_{}", i))
+                    .unwrap_or_else(|| format!("arg_{}", i).into())
+                    .deref()
                     .to_case(Case::Pascal);
                 let algebraic_type = convert_algebraic_type(ctx, &arg.algebraic_type, namespace);
                 writeln!(
@@ -1472,7 +1460,8 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
             let arg_name = arg
                 .name
                 .clone()
-                .unwrap_or_else(|| format!("arg_{}", i))
+                .unwrap_or_else(|| format!("arg_{}", i).into())
+                .deref()
                 .to_case(Case::Pascal);
             let cs_type = ty_fmt(ctx, &arg.algebraic_type, namespace);
             writeln!(output, "public {cs_type} {arg_name};").unwrap();
@@ -1503,7 +1492,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
         .collect();
     let reducer_names: Vec<String> = reducers
         .iter()
-        .map(|reducer| reducer.name.to_case(Case::Pascal))
+        .map(|reducer| reducer.name.deref().to_case(Case::Pascal))
         .collect();
 
     let use_namespace = true;
@@ -1570,7 +1559,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
         writeln!(output).unwrap();
         // Properties for reducer args
         for reducer in &reducers {
-            let reducer_name = reducer.name.to_case(Case::Pascal);
+            let reducer_name = reducer.name.deref().to_case(Case::Pascal);
             writeln!(output, "public {reducer_name}ArgsStruct {reducer_name}Args").unwrap();
             writeln!(output, "{{").unwrap();
             {
@@ -1598,7 +1587,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
             {
                 indent_scope!(output);
                 for reducer in &reducers {
-                    let reducer_name = reducer.name.to_case(Case::Pascal);
+                    let reducer_name = reducer.name.deref().to_case(Case::Pascal);
                     writeln!(output, "case ReducerType.{reducer_name}:").unwrap();
                     writeln!(output, "{{").unwrap();
                     {
@@ -1611,7 +1600,8 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
                                 let arg_name = arg
                                     .name
                                     .clone()
-                                    .unwrap_or_else(|| format!("arg_{}", i))
+                                    .unwrap_or_else(|| format!("arg_{}", i).into())
+                                    .deref()
                                     .to_case(Case::Pascal);
                                 writeln!(output, "args.{arg_name},").unwrap();
                             }

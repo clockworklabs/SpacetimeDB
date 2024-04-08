@@ -34,18 +34,18 @@ pub struct SumType {
     /// The possible variants of the sum type.
     ///
     /// The order is relevant as it defines the tags of the variants at runtime.
-    pub variants: Vec<SumTypeVariant>,
+    pub variants: Box<[SumTypeVariant]>,
 }
 
 impl SumType {
     /// Returns a sum type with these possible `variants`.
-    pub const fn new(variants: Vec<SumTypeVariant>) -> Self {
+    pub const fn new(variants: Box<[SumTypeVariant]>) -> Self {
         Self { variants }
     }
 
     /// Returns a sum type of unnamed variants taken from `types`.
-    pub fn new_unnamed(types: Vec<AlgebraicType>) -> Self {
-        let variants = types.into_iter().map(|ty| ty.into()).collect::<Vec<_>>();
+    pub fn new_unnamed(types: Box<[AlgebraicType]>) -> Self {
+        let variants = Vec::from(types).into_iter().map(|ty| ty.into()).collect();
         Self { variants }
     }
 
@@ -92,8 +92,8 @@ impl SumType {
     }
 }
 
-impl From<Vec<SumTypeVariant>> for SumType {
-    fn from(fields: Vec<SumTypeVariant>) -> Self {
+impl From<Box<[SumTypeVariant]>> for SumType {
+    fn from(fields: Box<[SumTypeVariant]>) -> Self {
         SumType::new(fields)
     }
 }

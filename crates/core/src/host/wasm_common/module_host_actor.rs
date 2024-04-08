@@ -285,7 +285,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         sql::execute::execute_sql(db, compiled, auth)
     }
 
-    fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error> {
+    fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {
         let db = &*self.database_instance_context.relational_db;
         db.with_auto_commit(&ExecutionContext::internal(db.address()), |tx| {
             let tables = db.get_all_tables_mut(tx)?;
@@ -293,7 +293,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
             // so we can assume there's only one table to clear.
             if let Some(table_id) = tables
                 .iter()
-                .find_map(|t| (t.table_name == table_name).then_some(t.table_id))
+                .find_map(|t| (&*t.table_name == table_name).then_some(t.table_id))
             {
                 db.clear_table(tx, table_id)?;
             }

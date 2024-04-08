@@ -51,21 +51,21 @@ impl fmt::Display for FieldOnly<'_> {
 // TODO(perf): Remove `Clone` derivation.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub enum FieldName {
-    Name { table: String, field: String },
-    Pos { table: String, field: usize },
+    Name { table: Box<str>, field: Box<str> },
+    Pos { table: Box<str>, field: usize },
 }
 
 impl FieldName {
     pub fn named(table: &str, field: &str) -> Self {
         Self::Name {
-            table: table.to_string(),
-            field: field.to_string(),
+            table: table.into(),
+            field: field.into(),
         }
     }
 
     pub fn positional(table: &str, field: usize) -> Self {
         Self::Pos {
-            table: table.to_string(),
+            table: table.into(),
             field,
         }
     }
@@ -89,7 +89,7 @@ impl FieldName {
         }
     }
 
-    pub fn into_field_name(self) -> Option<String> {
+    pub fn into_field_name(self) -> Option<Box<str>> {
         match self {
             FieldName::Name { field, .. } => Some(field),
             FieldName::Pos { .. } => None,
@@ -188,13 +188,13 @@ pub struct HeaderOnlyField<'a> {
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Header {
-    pub table_name: String,
+    pub table_name: Box<str>,
     pub fields: Vec<Column>,
     pub constraints: Vec<(ColList, Constraints)>,
 }
 
 impl Header {
-    pub fn new(table_name: String, fields: Vec<Column>, constraints: Vec<(ColList, Constraints)>) -> Self {
+    pub fn new(table_name: Box<str>, fields: Vec<Column>, constraints: Vec<(ColList, Constraints)>) -> Self {
         Self {
             table_name,
             fields,
@@ -216,9 +216,8 @@ impl Header {
         }
     }
 
-    pub fn from_product_type(table_name: String, fields: ProductType) -> Self {
-        let cols = fields
-            .elements
+    pub fn from_product_type(table_name: Box<str>, fields: ProductType) -> Self {
+        let cols = Vec::from(fields.elements)
             .into_iter()
             .enumerate()
             .map(|(pos, f)| {
@@ -241,15 +240,15 @@ impl Header {
 
     pub fn to_product_type(&self) -> ProductType {
         ProductType::from_iter(
-            self.fields.iter().map(|x| {
-                ProductTypeElement::new(x.algebraic_type.clone(), x.field.field_name().map(ToString::to_string))
-            }),
+            self.fields
+                .iter()
+                .map(|x| ProductTypeElement::new(x.algebraic_type.clone(), x.field.field_name().map(Into::into))),
         )
     }
 
     pub fn for_mem_table(fields: ProductType) -> Self {
         let hash = DefaultHashBuilder::default().hash_one(&fields);
-        let table_name = format!("mem#{:x}", hash);
+        let table_name = format!("mem#{:x}", hash).into();
         Self::from_product_type(table_name, fields)
     }
 
@@ -372,8 +371,8 @@ impl Header {
         let mut cont = 0;
         //Avoid duplicated field names...
         for mut f in right.fields.iter().cloned() {
-            if f.field.table() == self.table_name && self.column_pos(&f.field).is_some() {
-                let name = format!("{}_{}", f.field.field(), cont);
+            if f.field.table() == &*self.table_name && self.column_pos(&f.field).is_some() {
+                let name = format!("{}_{}", f.field.field(), cont).into();
                 f.field = FieldName::Name {
                     table: f.field.table().into(),
                     field: name,

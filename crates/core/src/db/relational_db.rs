@@ -25,6 +25,7 @@ use spacetimedb_table::indexes::RowPointer;
 use std::borrow::Cow;
 use std::fs::{create_dir_all, File};
 use std::io;
+use std::mem;
 use std::ops::RangeBounds;
 use std::path::Path;
 use std::sync::Arc;
@@ -244,7 +245,7 @@ impl RelationalDB {
             }
             Cow::Owned(mut schema) => {
                 let col_idx = check_bounds(&schema)?;
-                Cow::Owned(schema.elements.swap_remove(col_idx).algebraic_type)
+                Cow::Owned(mem::take(&mut schema.elements[col_idx].algebraic_type))
             }
         })
     }
@@ -986,7 +987,7 @@ mod tests {
 
     fn column(name: &str, ty: AlgebraicType) -> ColumnDef {
         ColumnDef {
-            col_name: name.to_string(),
+            col_name: name.into(),
             col_type: ty,
         }
     }
@@ -1014,7 +1015,7 @@ mod tests {
         TableDef::new(
             "MyTable".into(),
             vec![ColumnDef {
-                col_name: "my_col".to_string(),
+                col_name: "my_col".into(),
                 col_type,
             }],
         )
@@ -1073,7 +1074,7 @@ mod tests {
         stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
         let table_id = stdb.table_id_from_name_mut(&tx, "MyTable")?.unwrap();
         let schema = stdb.schema_for_table_mut(&tx, table_id)?;
-        let col = schema.columns().iter().find(|x| x.col_name == "my_col").unwrap();
+        let col = schema.columns().iter().find(|x| &*x.col_name == "my_col").unwrap();
         assert_eq!(col.col_pos, 0.into());
         Ok(())
     }
@@ -1267,7 +1268,7 @@ mod tests {
     }
 
     fn table_indexed(is_unique: bool) -> TableDef {
-        my_table(AlgebraicType::I64).with_indexes(vec![IndexDef::btree("MyTable_my_col_idx".to_string(), 0, is_unique)])
+        my_table(AlgebraicType::I64).with_indexes(vec![IndexDef::btree("MyTable_my_col_idx".into(), 0, is_unique)])
     }
 
     #[test]
@@ -1393,7 +1394,7 @@ mod tests {
             "MyTable".into(),
             ["col1", "col2", "col3", "col4"]
                 .map(|c| ColumnDef {
-                    col_name: c.to_string(),
+                    col_name: c.into(),
                     col_type: AlgebraicType::I64,
                 })
                 .into(),

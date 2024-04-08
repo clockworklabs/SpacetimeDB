@@ -289,7 +289,8 @@ impl MutTxDatastore for Locking {
         tx: &'a Self::MutTx,
         table_id: TableId,
     ) -> Result<Option<Cow<'a, str>>> {
-        tx.table_name_from_id(ctx, table_id).map(|opt| opt.map(Cow::Owned))
+        tx.table_name_from_id(ctx, table_id)
+            .map(|opt| opt.map(|s| Cow::Owned(s.into())))
     }
 
     fn create_index_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, index: IndexDef) -> Result<IndexId> {
@@ -721,7 +722,7 @@ mod tests {
     }
 
     impl SystemTableQuery<'_> {
-        pub fn scan_st_tables(&self) -> Result<Vec<StTableRow<String>>> {
+        pub fn scan_st_tables(&self) -> Result<Vec<StTableRow<Box<str>>>> {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_TABLES_ID)?
@@ -734,7 +735,7 @@ mod tests {
             &self,
             cols: impl Into<ColList>,
             value: &AlgebraicValue,
-        ) -> Result<Vec<StTableRow<String>>> {
+        ) -> Result<Vec<StTableRow<Box<str>>>> {
             Ok(self
                 .db
                 .iter_by_col_eq(self.ctx, &ST_TABLES_ID, cols.into(), value)?
@@ -743,7 +744,7 @@ mod tests {
                 .collect::<Vec<_>>())
         }
 
-        pub fn scan_st_columns(&self) -> Result<Vec<StColumnRow<String>>> {
+        pub fn scan_st_columns(&self) -> Result<Vec<StColumnRow<Box<str>>>> {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_COLUMNS_ID)?
@@ -756,7 +757,7 @@ mod tests {
             &self,
             cols: impl Into<ColList>,
             value: &AlgebraicValue,
-        ) -> Result<Vec<StColumnRow<String>>> {
+        ) -> Result<Vec<StColumnRow<Box<str>>>> {
             Ok(self
                 .db
                 .iter_by_col_eq(self.ctx, &ST_COLUMNS_ID, cols.into(), value)?
@@ -765,7 +766,7 @@ mod tests {
                 .collect::<Vec<_>>())
         }
 
-        pub fn scan_st_constraints(&self) -> Result<Vec<StConstraintRow<String>>> {
+        pub fn scan_st_constraints(&self) -> Result<Vec<StConstraintRow<Box<str>>>> {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_CONSTRAINTS_ID)?
@@ -774,7 +775,7 @@ mod tests {
                 .collect::<Vec<_>>())
         }
 
-        pub fn scan_st_sequences(&self) -> Result<Vec<StSequenceRow<String>>> {
+        pub fn scan_st_sequences(&self) -> Result<Vec<StSequenceRow<Box<str>>>> {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_SEQUENCES_ID)?
@@ -783,7 +784,7 @@ mod tests {
                 .collect::<Vec<_>>())
         }
 
-        pub fn scan_st_indexes(&self) -> Result<Vec<StIndexRow<String>>> {
+        pub fn scan_st_indexes(&self) -> Result<Vec<StIndexRow<Box<str>>>> {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_INDEXES_ID)?
@@ -816,7 +817,7 @@ mod tests {
         name: &'a str,
         unique: bool,
     }
-    impl From<IndexRow<'_>> for StIndexRow<String> {
+    impl From<IndexRow<'_>> for StIndexRow<Box<str>> {
         fn from(value: IndexRow<'_>) -> Self {
             Self {
                 index_id: value.id.into(),
@@ -835,7 +836,7 @@ mod tests {
         ty: StTableType,
         access: StAccess,
     }
-    impl From<TableRow<'_>> for StTableRow<String> {
+    impl From<TableRow<'_>> for StTableRow<Box<str>> {
         fn from(value: TableRow<'_>) -> Self {
             Self {
                 table_id: value.id.into(),
@@ -852,7 +853,7 @@ mod tests {
         name: &'a str,
         ty: AlgebraicType,
     }
-    impl From<ColRow<'_>> for StColumnRow<String> {
+    impl From<ColRow<'_>> for StColumnRow<Box<str>> {
         fn from(value: ColRow<'_>) -> Self {
             Self {
                 table_id: value.table.into(),
@@ -867,7 +868,7 @@ mod tests {
             Self {
                 table_id: value.table.into(),
                 col_pos: value.pos.into(),
-                col_name: value.name.to_string(),
+                col_name: value.name.into(),
                 col_type: value.ty,
             }
         }
@@ -875,7 +876,7 @@ mod tests {
     impl From<ColRow<'_>> for ColumnDef {
         fn from(value: ColRow<'_>) -> Self {
             Self {
-                col_name: value.name.to_string(),
+                col_name: value.name.into(),
                 col_type: value.ty,
             }
         }
@@ -888,11 +889,11 @@ mod tests {
         col_pos: u32,
         start: i128,
     }
-    impl From<SequenceRow<'_>> for StSequenceRow<String> {
+    impl From<SequenceRow<'_>> for StSequenceRow<Box<str>> {
         fn from(value: SequenceRow<'_>) -> Self {
             Self {
                 sequence_id: value.id.into(),
-                sequence_name: value.name.to_string(),
+                sequence_name: value.name.into(),
                 table_id: value.table.into(),
                 col_pos: value.col_pos.into(),
                 increment: 1,
@@ -908,7 +909,7 @@ mod tests {
         fn from(value: SequenceRow<'_>) -> Self {
             Self {
                 sequence_id: value.id.into(),
-                sequence_name: value.name.to_string(),
+                sequence_name: value.name.into(),
                 table_id: value.table.into(),
                 col_pos: value.col_pos.into(),
                 increment: 1,
@@ -933,7 +934,7 @@ mod tests {
                 index_id: value.id.into(),
                 table_id: value.table.into(),
                 columns: ColId(value.col).into(),
-                index_name: value.name.to_string(),
+                index_name: value.name.into(),
                 is_unique: value.unique,
                 index_type: IndexType::BTree,
             }
@@ -947,7 +948,7 @@ mod tests {
         table_id: u32,
         columns: ColList,
     }
-    impl From<ConstraintRow<'_>> for StConstraintRow<String> {
+    impl From<ConstraintRow<'_>> for StConstraintRow<Box<str>> {
         fn from(value: ConstraintRow<'_>) -> Self {
             Self {
                 constraint_id: value.constraint_id.into(),

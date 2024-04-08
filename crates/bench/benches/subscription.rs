@@ -40,7 +40,7 @@ fn create_table_footprint(db: &RelationalDB) -> Result<TableId, DBError> {
 fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
     DatabaseTableUpdate {
         table_id,
-        table_name: table_name.to_string(),
+        table_name: table_name.into(),
         inserts: [row].into(),
         deletes: [].into(),
     }

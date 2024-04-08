@@ -72,7 +72,7 @@ impl DatabaseUpdate {
         let mut map: IntMap<TableId, DatabaseTableUpdate> = IntMap::new();
         let new_update = |table_id, table_name: &str| DatabaseTableUpdate {
             table_id,
-            table_name: table_name.to_string(),
+            table_name: table_name.into(),
             inserts: [].into(),
             deletes: [].into(),
         };
@@ -107,7 +107,7 @@ impl From<DatabaseUpdate> for Vec<TableUpdateJson> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatabaseTableUpdate {
     pub table_id: TableId,
-    pub table_name: String,
+    pub table_name: Box<str>,
     // Note: `Arc<[ProductValue]>` allows to cheaply
     // use the values from `TxData` without cloning the
     // contained `ProductValue`s.
@@ -122,7 +122,7 @@ impl From<DatabaseTableUpdate> for TableUpdate {
         let table_row_operations = deletes.chain(inserts).map(|x| x.into()).collect();
         Self {
             table_id: table.table_id.into(),
-            table_name: table.table_name,
+            table_name: table.table_name.into(),
             table_row_operations,
         }
     }
@@ -149,7 +149,7 @@ pub struct DatabaseUpdateCow<'a> {
 #[derive(PartialEq, Debug)]
 pub struct DatabaseTableUpdateCow<'a> {
     pub table_id: TableId,
-    pub table_name: String,
+    pub table_name: Box<str>,
     pub updates: UpdatesCow<'a>,
 }
 
@@ -278,7 +278,7 @@ impl From<&TableOp> for TableRowOperation {
 
 impl From<TableOp> for TableRowOperationJson {
     fn from(top: TableOp) -> Self {
-        let row = top.row.elements;
+        let row = top.row.elements.into();
         let op = if top.op_type == OpType::Insert {
             "insert"
         } else {
@@ -331,12 +331,12 @@ pub struct ModuleInfo {
     pub module_hash: Hash,
     pub typespace: Typespace,
     pub reducers: ReducersMap,
-    pub catalog: HashMap<String, EntityDef>,
+    pub catalog: HashMap<Box<str>, EntityDef>,
     pub log_tx: tokio::sync::broadcast::Sender<bytes::Bytes>,
     pub subscriptions: ModuleSubscriptions,
 }
 
-pub struct ReducersMap(pub IndexMap<String, ReducerDef>);
+pub struct ReducersMap(pub IndexMap<Box<str>, ReducerDef>);
 
 impl fmt::Debug for ReducersMap {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -374,7 +374,7 @@ pub trait Module: Send + Sync + 'static {
         caller_identity: Identity,
         query: String,
     ) -> Result<Vec<spacetimedb_vm::relation::MemTable>, DBError>;
-    fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error>;
+    fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error>;
     #[cfg(feature = "tracelogging")]
     fn get_trace(&self) -> Option<bytes::Bytes>;
     #[cfg(feature = "tracelogging")]
@@ -467,7 +467,7 @@ trait DynModuleHost: Send + Sync + 'static {
         caller_identity: Identity,
         query: String,
     ) -> Result<Vec<spacetimedb_vm::relation::MemTable>, DBError>;
-    fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error>;
+    fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error>;
     fn start(&self);
     fn exit(&self) -> Closed<'_>;
     fn exited(&self) -> Closed<'_>;
@@ -551,7 +551,7 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
         self.module.one_off_query(caller_identity, query)
     }
 
-    fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error> {
+    fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {
         self.module.clear_table(table_name)
     }
 
@@ -818,7 +818,7 @@ impl ModuleHost {
     /// FIXME(jgilles): this is a temporary workaround for deleting not currently being supported
     /// for tables without primary keys. It is only used in the benchmarks.
     /// Note: this doesn't drop the table, it just clears it!
-    pub async fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error> {
+    pub async fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {
         self.inner.clear_table(table_name)?;
         Ok(())
     }

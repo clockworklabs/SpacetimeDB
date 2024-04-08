@@ -528,13 +528,10 @@ mod callgrind_benches {
             assert_eq!(self.format, "bsatn", "provided metadata has incorrect format");
 
             let buckets = 64;
-            let data = create_sequential::<u32_u64_str>(0xdeadbeef, self.count, buckets);
-            let data = ProductValue {
-                elements: data
-                    .into_iter()
-                    .map(|row| spacetimedb_lib::AlgebraicValue::Product(row.into_product_value()))
-                    .collect::<Vec<_>>(),
-            };
+            let data = create_sequential::<u32_u64_str>(0xdeadbeef, self.count, buckets)
+                .into_iter()
+                .map(|row| spacetimedb_lib::AlgebraicValue::Product(row.into_product_value()))
+                .collect::<ProductValue>();
 
             spacetimedb::callgrind_flag::enable_callgrind_globally(|| {
                 // don't time deallocation: return this!
@@ -567,13 +564,10 @@ mod callgrind_benches {
             assert_eq!(self.format, "json", "provided metadata has incorrect format");
 
             let buckets = 64;
-            let data = create_sequential::<u32_u64_str>(0xdeadbeef, self.count, buckets);
-            let data = ProductValue {
-                elements: data
-                    .into_iter()
-                    .map(|row| spacetimedb_lib::AlgebraicValue::Product(row.into_product_value()))
-                    .collect::<Vec<_>>(),
-            };
+            let data = create_sequential::<u32_u64_str>(0xdeadbeef, self.count, buckets)
+                .into_iter()
+                .map(|row| spacetimedb_lib::AlgebraicValue::Product(row.into_product_value()))
+                .collect::<ProductValue>();
 
             spacetimedb::callgrind_flag::enable_callgrind_globally(|| {
                 // don't time deallocation: return this!

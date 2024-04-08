@@ -562,7 +562,6 @@ impl ProgramVm for DbProgram<'_, '_> {
                     .into_iter()
                     .map(|row| {
                         let elements = row
-                            .elements
                             .into_iter()
                             .zip(&exprs)
                             .map(|(val, expr)| {
@@ -634,12 +633,11 @@ pub(crate) mod tests {
         schema: ProductType,
         rows: &[ProductValue],
     ) -> ResultTest<TableId> {
-        let columns: Vec<_> = schema
-            .elements
+        let columns: Vec<_> = Vec::from(schema.elements)
             .into_iter()
             .enumerate()
             .map(|(i, e)| ColumnDef {
-                col_name: e.name.unwrap_or(i.to_string()),
+                col_name: e.name.unwrap_or_else(|| i.to_string().into()),
                 col_type: e.algebraic_type,
             })
             .collect();
@@ -797,7 +795,7 @@ pub(crate) mod tests {
             ST_TABLES_NAME,
             StTableRow {
                 table_id: ST_TABLES_ID,
-                table_name: ST_TABLES_NAME.to_string(),
+                table_name: ST_TABLES_NAME.into(),
                 table_type: StTableType::System,
                 table_access: StAccess::Public,
             }
@@ -878,7 +876,7 @@ pub(crate) mod tests {
             ST_INDEXES_NAME,
             StIndexRow {
                 index_id,
-                index_name: "idx_1".to_owned(),
+                index_name: "idx_1".into(),
                 table_id,
                 columns: ColList::new(0.into()),
                 is_unique: true,
@@ -913,7 +911,7 @@ pub(crate) mod tests {
             ST_SEQUENCES_NAME,
             StSequenceRow {
                 sequence_id: 3.into(),
-                sequence_name: "seq_st_sequence_sequence_id_primary_key_auto".to_string(),
+                sequence_name: "seq_st_sequence_sequence_id_primary_key_auto".into(),
                 table_id: 2.into(),
                 col_pos: 0.into(),
                 increment: 1,

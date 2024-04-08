@@ -100,7 +100,7 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
                 Err(err) => return Err(err),
             },
             Column::QualifiedWildcard { table: name } => {
-                if let Some(t) = table.iter_tables().find(|x| x.table_name == name) {
+                if let Some(t) = table.iter_tables().find(|x| *x.table_name == name) {
                     for c in t.columns().iter() {
                         col_ids.push(FieldName::named(&t.table_name, &c.col_name).into());
                     }
@@ -672,10 +672,10 @@ mod tests {
         };
 
         assert_eq!(table_id, rhs_id);
-        assert_eq!(lhs_field, "b");
-        assert_eq!(rhs_field, "b");
-        assert_eq!(lhs_table, "lhs");
-        assert_eq!(rhs_table, "rhs");
+        assert_eq!(&**lhs_field, "b");
+        assert_eq!(&**rhs_field, "b");
+        assert_eq!(&**lhs_table, "lhs");
+        assert_eq!(&**rhs_table, "rhs");
         Ok(())
     }
 
@@ -721,8 +721,8 @@ mod tests {
             panic!("unexpected left hand side {:#?}", **lhs);
         };
 
-        assert_eq!(table, "lhs");
-        assert_eq!(field, "a");
+        assert_eq!(&**table, "lhs");
+        assert_eq!(&**field, "a");
 
         let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **rhs else {
             panic!("unexpected right hand side {:#?}", **rhs);
@@ -752,10 +752,10 @@ mod tests {
         };
 
         assert_eq!(table_id, rhs_id);
-        assert_eq!(lhs_field, "b");
-        assert_eq!(rhs_field, "b");
-        assert_eq!(lhs_table, "lhs");
-        assert_eq!(rhs_table, "rhs");
+        assert_eq!(&**lhs_field, "b");
+        assert_eq!(&**rhs_field, "b");
+        assert_eq!(&**lhs_table, "lhs");
+        assert_eq!(&**rhs_table, "rhs");
         assert!(rhs.is_empty());
         Ok(())
     }
@@ -813,10 +813,10 @@ mod tests {
         };
 
         assert_eq!(table_id, rhs_id);
-        assert_eq!(lhs_field, "b");
-        assert_eq!(rhs_field, "b");
-        assert_eq!(lhs_table, "lhs");
-        assert_eq!(rhs_table, "rhs");
+        assert_eq!(&**lhs_field, "b");
+        assert_eq!(&**rhs_field, "b");
+        assert_eq!(&**lhs_table, "lhs");
+        assert_eq!(&**rhs_table, "rhs");
 
         // The selection should be pushed onto the rhs of the join
         let Query::Select(ColumnOp::Cmp {
@@ -832,8 +832,8 @@ mod tests {
             panic!("unexpected left hand side {:#?}", **lhs);
         };
 
-        assert_eq!(table, "rhs");
-        assert_eq!(field, "c");
+        assert_eq!(&**table, "rhs");
+        assert_eq!(&**field, "c");
 
         let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **rhs else {
             panic!("unexpected right hand side {:#?}", **rhs);
@@ -902,10 +902,10 @@ mod tests {
         };
 
         assert_eq!(table_id, rhs_id);
-        assert_eq!(lhs_field, "b");
-        assert_eq!(rhs_field, "b");
-        assert_eq!(lhs_table, "lhs");
-        assert_eq!(rhs_table, "rhs");
+        assert_eq!(&**lhs_field, "b");
+        assert_eq!(&**rhs_field, "b");
+        assert_eq!(&**lhs_table, "lhs");
+        assert_eq!(&**rhs_table, "rhs");
 
         assert_eq!(1, rhs.len());
 
@@ -976,8 +976,8 @@ mod tests {
         assert_eq!(*table_id, rhs_id);
         assert_eq!(*index_table, lhs_id);
         assert_eq!(index_col, &1.into());
-        assert_eq!(probe_field, "b");
-        assert_eq!(probe_table, "rhs");
+        assert_eq!(&**probe_field, "b");
+        assert_eq!(&**probe_table, "rhs");
 
         assert_eq!(2, rhs.len());
 
@@ -1005,8 +1005,8 @@ mod tests {
             panic!("unexpected left hand side {:#?}", field);
         };
 
-        assert_eq!(table, "rhs");
-        assert_eq!(field, "d");
+        assert_eq!(&**table, "rhs");
+        assert_eq!(&**field, "d");
 
         let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **value else {
             panic!("unexpected right hand side {:#?}", value);
@@ -1074,8 +1074,8 @@ mod tests {
         assert_eq!(*table_id, rhs_id);
         assert_eq!(*index_table, lhs_id);
         assert_eq!(index_col, &1.into());
-        assert_eq!(probe_field, "b");
-        assert_eq!(probe_table, "rhs");
+        assert_eq!(&**probe_field, "b");
+        assert_eq!(&**probe_table, "rhs");
 
         assert_eq!(2, rhs.len());
 
@@ -1098,8 +1098,8 @@ mod tests {
             panic!("unexpected left hand side {:#?}", field);
         };
 
-        assert_eq!(table, "rhs");
-        assert_eq!(field, "d");
+        assert_eq!(&**table, "rhs");
+        assert_eq!(&**field, "d");
 
         let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **value else {
             panic!("unexpected right hand side {:#?}", value);

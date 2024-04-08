@@ -102,7 +102,7 @@ impl TableDesc {
 
 #[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
 pub struct ReducerDef {
-    pub name: String,
+    pub name: Box<str>,
     pub args: Vec<ProductTypeElement>,
 }
 

@@ -234,7 +234,7 @@ pub struct ProductTypeElementLayout {
     ///
     /// This allows us to convert back to `ProductTypeElement`,
     /// which we do when reporting type errors.
-    pub name: Option<String>,
+    pub name: Option<Box<str>>,
 }
 
 /// A mirrior of [`SumType`] annotated with a [`Layout`].
@@ -265,7 +265,7 @@ pub struct SumTypeVariantLayout {
     ///
     /// This allows us to convert back to `SumTypeVariant`,
     /// which we do when reporting type errors.
-    pub name: Option<String>,
+    pub name: Option<Box<str>>,
 }
 
 /// Variants of [`BuiltinType`] which do not require a `VarLenRef` indirection,
@@ -372,8 +372,7 @@ impl From<ProductType> for ProductTypeLayout {
         // This is consistent with Rust.
         let mut max_child_align = 1;
 
-        let elements = ty
-            .elements
+        let elements = Vec::from(ty.elements)
             .into_iter()
             .map(|elem| {
                 let layout_type: AlgebraicTypeLayout = elem.algebraic_type.into();
@@ -408,8 +407,7 @@ impl From<SumType> for SumTypeLayout {
         // This is consistent with Rust.
         let mut max_child_align = 0;
 
-        let variants = ty
-            .variants
+        let variants = Vec::from(ty.variants)
             .into_iter()
             .map(|variant| {
                 let layout_type: AlgebraicTypeLayout = variant.algebraic_type.into();
@@ -596,7 +594,7 @@ pub fn required_var_len_granules_for_row(val: &ProductValue) -> usize {
     }
 
     fn traverse_product(val: &ProductValue, count: &mut usize) {
-        for elt in &val.elements {
+        for elt in val {
             traverse_av(elt, count);
         }
     }
@@ -782,7 +780,7 @@ mod test {
             let sum_permutations = variants
                 .into_iter()
                 .permutations(len)
-                .map(|vars| vars.into_iter().map(SumTypeVariant::from).collect::<Vec<_>>())
+                .map(|vars| vars.into_iter().map(SumTypeVariant::from).collect::<Box<[_]>>())
                 .map(AlgebraicType::sum);
             // Compute the layouts of each equivalent sum type.
             let mut sum_layout_perms = sum_permutations

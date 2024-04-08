@@ -16,7 +16,7 @@ pub struct ProductTypeElement {
     /// As our type system is structural,
     /// a type like `{ foo: U8 }`, where `foo: U8` is the `ProductTypeElement`,
     /// is inequal to `{ bar: U8 }`, although their `algebraic_type`s (`U8`) match.
-    pub name: Option<String>,
+    pub name: Option<Box<str>>,
     /// The type of the element.
     ///
     /// Only values of this type can be stored in the element.
@@ -25,12 +25,12 @@ pub struct ProductTypeElement {
 
 impl ProductTypeElement {
     /// Returns an element with the given `name` and `algebraic_type`.
-    pub const fn new(algebraic_type: AlgebraicType, name: Option<String>) -> Self {
+    pub const fn new(algebraic_type: AlgebraicType, name: Option<Box<str>>) -> Self {
         Self { algebraic_type, name }
     }
 
     /// Returns a named element with `name` and `algebraic_type`.
-    pub fn new_named(algebraic_type: AlgebraicType, name: impl Into<String>) -> Self {
+    pub fn new_named(algebraic_type: AlgebraicType, name: impl Into<Box<str>>) -> Self {
         Self::new(algebraic_type, Some(name.into()))
     }
 

@@ -438,7 +438,7 @@ pub trait MutProgrammable: MutTxDatastore {
 mod tests {
     use spacetimedb_primitives::{col_list, ColId, Constraints};
     use spacetimedb_sats::db::def::ConstraintDef;
-    use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductType, ProductTypeElement, Typespace};
+    use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductType, Typespace};
 
     use super::{ColumnDef, IndexDef, TableDef};
 
@@ -471,16 +471,7 @@ mod tests {
             schema: expected_schema.clone(),
             data: AlgebraicTypeRef(0),
         };
-        let row_type = ProductType::new(vec![
-            ProductTypeElement {
-                name: Some("id".into()),
-                algebraic_type: AlgebraicType::U32,
-            },
-            ProductTypeElement {
-                name: Some("name".into()),
-                algebraic_type: AlgebraicType::String,
-            },
-        ]);
+        let row_type = ProductType::from([("id", AlgebraicType::U32), ("name", AlgebraicType::String)]);
 
         let mut datastore_schema = spacetimedb_lib::TableDesc::into_table_def(
             Typespace::new(vec![row_type.into()]).with_type(&lib_table_def),

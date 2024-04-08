@@ -412,7 +412,7 @@ impl CommittedState {
 
                     // TODO: re-write `TxData` to remove `ProductValue`s
                     let pv = table.delete(blob_store, row_ptr).expect("Delete for non-existent row!");
-                    let table_name = table.get_schema().table_name.as_str();
+                    let table_name = &*table.get_schema().table_name;
                     //Increment rows deleted metric
                     ctx.metrics
                         .write()
@@ -469,7 +469,7 @@ impl CommittedState {
                     .insert(commit_blob_store, &pv)
                     .expect("Failed to insert when merging commit");
 
-                let table_name = commit_table.get_schema().table_name.as_str();
+                let table_name = &*commit_table.get_schema().table_name;
                 // Increment rows inserted metric
                 ctx.metrics
                     .write()
@@ -603,7 +603,7 @@ impl<'a> CommittedIndexIter<'a> {
 //         let get_table_name = || {
 //             self.committed_state
 //                 .get_schema(&self.table_id)
-//                 .map(|table| table.table_name.as_str())
+//                 .map(|table| &*table.table_name)
 //                 .unwrap_or_default()
 //                 .to_string()
 //         };

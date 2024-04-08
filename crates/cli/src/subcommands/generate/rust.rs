@@ -10,6 +10,7 @@ use spacetimedb_lib::sats::{
 use spacetimedb_lib::{ReducerDef, TableDesc};
 use spacetimedb_primitives::ColList;
 use std::fmt::Write;
+use std::ops::Deref;
 
 type Indenter = CodeIndenter<String>;
 
@@ -228,7 +229,7 @@ pub fn autogen_rust_sum(ctx: &GenCtx, name: &str, sum_type: &SumType) -> String 
     out.delimited_block(
         "{",
         |out| {
-            for variant in &sum_type.variants {
+            for variant in &*sum_type.variants {
                 write_enum_variant(ctx, out, variant);
                 out.newline();
             }
@@ -243,7 +244,7 @@ fn write_enum_variant(ctx: &GenCtx, out: &mut Indenter, variant: &SumTypeVariant
     let Some(name) = &variant.name else {
         panic!("Sum type variant has no name: {:?}", variant);
     };
-    let name = name.to_case(Case::Pascal);
+    let name = name.deref().to_case(Case::Pascal);
     write!(out, "{}", name).unwrap();
     match &variant.algebraic_type {
         AlgebraicType::Product(ProductType { elements }) if elements.is_empty() => {
@@ -307,7 +308,7 @@ pub fn write_arglist_no_delimiters(
         let Some(name) = &elt.name else {
             panic!("Product type element has no name: {:?}", elt);
         };
-        let name = name.to_case(Case::Snake);
+        let name = name.deref().to_case(Case::Snake);
 
         write!(out, "{}: ", name).unwrap();
         write_type(ctx, out, &elt.algebraic_type);
@@ -337,7 +338,7 @@ pub fn autogen_rust_table(ctx: &GenCtx, table: &TableDesc) -> String {
     let mut output = CodeIndenter::new(String::new());
     let out = &mut output;
 
-    let type_name = table.schema.table_name.to_case(Case::Pascal);
+    let type_name = table.schema.table_name.deref().to_case(Case::Pascal);
 
     begin_rust_struct_def_shared(ctx, out, &type_name, &find_product_type(ctx, table.data).elements);
 
@@ -412,7 +413,7 @@ fn find_primary_key_column_index(table: &TableSchema) -> Option<usize> {
 }
 
 fn print_impl_tabletype(ctx: &GenCtx, out: &mut Indenter, table: &TableSchema) {
-    let type_name = table.table_name.to_case(Case::Pascal);
+    let type_name = table.table_name.deref().to_case(Case::Pascal);
 
     write!(out, "impl TableType for {} ", type_name).unwrap();
 
@@ -428,7 +429,7 @@ fn print_impl_tabletype(ctx: &GenCtx, out: &mut Indenter, table: &TableSchema) {
     out.newline();
 
     if let Some(pk_field) = table.pk() {
-        let pk_field_name = pk_field.col_name.to_case(Case::Snake);
+        let pk_field_name = pk_field.col_name.deref().to_case(Case::Snake);
         // TODO: ensure that primary key types are always `Eq`, `Hash`, `Clone`.
         write!(out, "impl TableWithPrimaryKey for {} ", type_name).unwrap();
         out.delimited_block(
@@ -460,7 +461,7 @@ fn print_table_filter_methods(ctx: &GenCtx, out: &mut Indenter, table_type_name:
         "{",
         |out| {
             for field in table.columns() {
-                let field_name = field.col_name.to_case(Case::Snake);
+                let field_name = field.col_name.deref().to_case(Case::Snake);
                 // TODO: ensure that fields are PartialEq
                 writeln!(out, "{}", ALLOW_UNUSED).unwrap();
                 write!(out, "pub fn filter_by_{}({}: ", field_name, field_name).unwrap();
@@ -502,30 +503,30 @@ fn print_table_filter_methods(ctx: &GenCtx, out: &mut Indenter, table_type_name:
 }
 
 fn reducer_type_name(reducer: &ReducerDef) -> String {
-    let mut name = reducer.name.to_case(Case::Pascal);
+    let mut name = reducer.name.deref().to_case(Case::Pascal);
     name.push_str("Args");
     name
 }
 
 fn reducer_variant_name(reducer: &ReducerDef) -> String {
-    reducer.name.to_case(Case::Pascal)
+    reducer.name.deref().to_case(Case::Pascal)
 }
 
 fn reducer_module_name(reducer: &ReducerDef) -> String {
-    let mut name = reducer.name.to_case(Case::Snake);
+    let mut name = reducer.name.deref().to_case(Case::Snake);
     name.push_str("_reducer");
     name
 }
 
 fn reducer_function_name(reducer: &ReducerDef) -> String {
-    reducer.name.to_case(Case::Snake)
+    reducer.name.deref().to_case(Case::Snake)
 }
 
 fn iter_reducer_arg_names(reducer: &ReducerDef) -> impl Iterator<Item = Option<String>> + '_ {
     reducer
         .args
         .iter()
-        .map(|elt| elt.name.as_ref().map(|name| name.to_case(Case::Snake)))
+        .map(|elt| elt.name.as_ref().map(|name| name.deref().to_case(Case::Snake)))
 }
 
 fn iter_reducer_arg_types(reducer: &'_ ReducerDef) -> impl Iterator<Item = &'_ AlgebraicType> {
@@ -794,7 +795,7 @@ fn iter_table_items(items: &[GenItem]) -> impl Iterator<Item = &TableDesc> {
 
 fn iter_module_names(items: &[GenItem]) -> impl Iterator<Item = String> + '_ {
     items.iter().map(|item| match item {
-        GenItem::Table(table) => table.schema.table_name.to_case(Case::Snake),
+        GenItem::Table(table) => table.schema.table_name.deref().to_case(Case::Snake),
         GenItem::TypeAlias(ty) => ty.name.to_case(Case::Snake),
         GenItem::Reducer(reducer) => reducer_module_name(reducer),
     })
@@ -874,8 +875,8 @@ fn print_handle_table_update_defn(_ctx: &GenCtx, out: &mut Indenter, items: &[Ge
                             } else {
                                 "handle_table_update_no_primary_key"
                             },
-                            table.table_name.to_case(Case::Snake),
-                            table.table_name.to_case(Case::Pascal),
+                            table.table_name.deref().to_case(Case::Snake),
+                            table.table_name.deref().to_case(Case::Pascal),
                         ).unwrap();
                     }
                     writeln!(
@@ -900,8 +901,8 @@ fn print_invoke_row_callbacks_defn(out: &mut Indenter, items: &[GenItem]) {
                 writeln!(
                     out,
                     "reminders.invoke_callbacks::<{}::{}>(worker, &reducer_event, state);",
-                    table.schema.table_name.to_case(Case::Snake),
-                    table.schema.table_name.to_case(Case::Pascal),
+                    table.schema.table_name.deref().to_case(Case::Snake),
+                    table.schema.table_name.deref().to_case(Case::Pascal),
                 ).unwrap();
             }
         },
@@ -925,8 +926,8 @@ fn print_handle_resubscribe_defn(out: &mut Indenter, items: &[GenItem]) {
                             out,
                             "{:?} => client_cache.handle_resubscribe_for_type::<{}::{}>(callbacks, new_subs),",
                             table.schema.table_name,
-                            table.schema.table_name.to_case(Case::Snake),
-                            table.schema.table_name.to_case(Case::Pascal),
+                            table.schema.table_name.deref().to_case(Case::Snake),
+                            table.schema.table_name.deref().to_case(Case::Pascal),
                         ).unwrap();
                     }
                     writeln!(

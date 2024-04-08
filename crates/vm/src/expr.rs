@@ -76,7 +76,7 @@ impl ColumnOp {
 
         // Otherwise, pair column ids and product fields together.
         cols.iter()
-            .zip(value.into_product().unwrap().elements)
+            .zip(value.into_product().unwrap())
             .map(eq)
             .reduce(Self::and)
             .unwrap()
