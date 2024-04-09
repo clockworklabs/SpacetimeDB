@@ -319,6 +319,7 @@ impl RelationalDB {
                     }),
                 };
                 log::trace!("append {txdata:?}");
+                // TODO(cloutiertyler): We should measure the time to append a transaction to the commitlog separately in metrics
                 durability.append_tx(txdata);
             }
 
