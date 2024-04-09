@@ -17,8 +17,9 @@ use spacetimedb_vm::eval::IterRows;
 use spacetimedb_vm::expr::*;
 use spacetimedb_vm::iterators::RelIter;
 use spacetimedb_vm::program::{ProgramVm, Sources};
-use spacetimedb_vm::rel_ops::RelOps;
+use spacetimedb_vm::rel_ops::{EmptyRelOps, RelOps};
 use spacetimedb_vm::relation::{MemTable, RelValue, Table};
+use std::ops::Bound;
 use std::sync::Arc;
 
 pub enum TxMode<'a> {
@@ -35,6 +36,18 @@ impl<'a> From<&'a mut MutTx> for TxMode<'a> {
 impl<'a> From<&'a Tx> for TxMode<'a> {
     fn from(tx: &'a Tx) -> Self {
         TxMode::Tx(tx)
+    }
+}
+
+fn bound_is_satisfiable(lower: &Bound<AlgebraicValue>, upper: &Bound<AlgebraicValue>) -> bool {
+    match (lower, upper) {
+        (Bound::Excluded(lower), Bound::Excluded(upper)) if lower >= upper => false,
+        (Bound::Included(lower), Bound::Excluded(upper)) | (Bound::Excluded(lower), Bound::Included(upper))
+            if lower > upper =>
+        {
+            false
+        }
+        _ => true,
     }
 }
 
@@ -68,8 +81,17 @@ pub fn build_query<'a>(
     for op in &query.query {
         result = Some(match op {
             Query::IndexScan(IndexScan { table, columns, bounds }) if db_table => {
-                let bounds = (bounds.start_bound(), bounds.end_bound());
-                iter_by_col_range(ctx, stdb, tx, table, columns.clone(), bounds)?
+                if !bound_is_satisfiable(&bounds.0, &bounds.1) {
+                    // If the bound is impossible to satisfy
+                    // because the lower bound is greater than the upper bound, or both bounds are excluded and equal,
+                    // return an empty iterator.
+                    // This avoids a panic in `BTreeMap`'s `NodeRef::search_tree_for_bifurcation`,
+                    // which is very unhappy about unsatisfiable bounds.
+                    Box::new(EmptyRelOps::new(table.head.clone())) as Box<IterRows<'a>>
+                } else {
+                    let bounds = (bounds.start_bound(), bounds.end_bound());
+                    iter_by_col_range(ctx, stdb, tx, table, columns.clone(), bounds)?
+                }
             }
             Query::IndexScan(index_scan) => {
                 let result = result
@@ -79,7 +101,20 @@ pub fn build_query<'a>(
 
                 let cols = &index_scan.columns;
                 let bounds = &index_scan.bounds;
-                if cols.is_singleton() {
+
+                if !bound_is_satisfiable(&bounds.0, &bounds.1) {
+                    // If the bound is impossible to satisfy
+                    // because the lower bound is greater than the upper bound, or both bounds are excluded and equal,
+                    // return an empty iterator.
+                    // Unlike the above case, this is not necessary, as the below `select` will never panic,
+                    // but it's still nice to avoid needlessly traversing a bunch of rows.
+                    // TODO: We should change the compiler to not emit an `IndexScan` in this case,
+                    // so that this branch is unreachable.
+                    // The current behavior is a hack
+                    // because this patch was written (2024-04-01 pgoldman) a short time before the BitCraft alpha,
+                    // and a more invasive change was infeasible.
+                    Box::new(EmptyRelOps::new(index_scan.table.head.clone())) as Box<IterRows<'a>>
+                } else if cols.is_singleton() {
                     // For singleton constraints, we compare the column directly against `bounds`.
                     let head = cols.head().idx();
                     let iter = result.select(move |row| Ok(bounds.contains(&*row.read_column(head).unwrap())));

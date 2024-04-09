@@ -1357,8 +1357,24 @@ impl QueryExpr {
                 bounds: (Bound::Unbounded, Bound::Excluded(upper)),
                 ..
             }) if columns == lhs_col_id => {
+                // Queries like `WHERE x < 5 AND x > 5` never return any rows and are likely mistakes.
+                // Detect such queries and log a warning.
+                // Compute this condition early, then compute the resulting query and log it.
+                // TODO: We should not emit an `IndexScan` in this case.
+                // Further design work is necessary to decide whether this should be an error at query compile time,
+                // or whether we should emit a query plan which explicitly says that it will return 0 rows.
+                // The current behavior is a hack
+                // because this patch was written (2024-04-01 pgoldman) a short time before the BitCraft alpha,
+                // and a more invasive change was infeasible.
+                let is_never = !inclusive && value == upper;
+
                 let bounds = (Self::bound(value, inclusive), Bound::Excluded(upper));
                 self.query.push(Query::IndexScan(IndexScan { table, columns, bounds }));
+
+                if is_never {
+                    log::warn!("Query will select no rows due to equal excluded bounds: {self:?}")
+                }
+
                 self
             }
             // merge with a preceding select
@@ -1437,14 +1453,30 @@ impl QueryExpr {
                 self.query.push(Query::IndexScan(IndexScan { table, columns, bounds }));
                 self
             }
-            // merge with a preceding lower bounded index scan (inclusive)
+            // merge with a preceding lower bounded index scan (exclusive)
             Query::IndexScan(IndexScan {
                 columns: lhs_col_id,
                 bounds: (Bound::Excluded(lower), Bound::Unbounded),
                 ..
             }) if columns == lhs_col_id => {
+                // Queries like `WHERE x < 5 AND x > 5` never return any rows and are likely mistakes.
+                // Detect such queries and log a warning.
+                // Compute this condition early, then compute the resulting query and log it.
+                // TODO: We should not emit an `IndexScan` in this case.
+                // Further design work is necessary to decide whether this should be an error at query compile time,
+                // or whether we should emit a query plan which explicitly says that it will return 0 rows.
+                // The current behavior is a hack
+                // because this patch was written (2024-04-01 pgoldman) a short time before the BitCraft alpha,
+                // and a more invasive change was infeasible.
+                let is_never = !inclusive && value == lower;
+
                 let bounds = (Bound::Excluded(lower), Self::bound(value, inclusive));
                 self.query.push(Query::IndexScan(IndexScan { table, columns, bounds }));
+
+                if is_never {
+                    log::warn!("Query will select no rows due to equal excluded bounds: {self:?}")
+                }
+
                 self
             }
             // merge with a preceding select

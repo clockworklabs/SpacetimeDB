@@ -93,7 +93,7 @@ pub(crate) mod tests {
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::vm::tests::create_table_with_rows;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_primitives::col_list;
+    use spacetimedb_primitives::{col_list, ColId};
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::relation::Header;
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
@@ -683,5 +683,38 @@ SELECT * FROM inventory",
         query.push_str("((x = 1000) and (y = 1000))");
 
         assert!(run_for_testing(&db, &query).is_err());
+    }
+
+    #[test]
+    fn test_impossible_bounds_no_panic() {
+        let (db, _tmp_dir) = make_test_db().unwrap();
+
+        let table_id = db
+            .create_table_for_test("test", &[("x", AlgebraicType::I32)], &[(ColId(0), "test_x")])
+            .unwrap();
+
+        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+            for i in 0..1000i32 {
+                db.insert(tx, table_id, product!(i)).unwrap();
+            }
+            Ok::<(), DBError>(())
+        })
+        .unwrap();
+
+        let result = run_for_testing(&db, "select * from test where x > 5 and x < 5").unwrap();
+        assert_eq!(result.len(), 1);
+        assert!(result[0].data.is_empty());
+
+        let result = run_for_testing(&db, "select * from test where x >= 5 and x < 4").unwrap();
+        assert_eq!(result.len(), 1);
+        assert!(
+            result[0].data.is_empty(),
+            "Expected no rows but found {:#?}",
+            result[0].data
+        );
+
+        let result = run_for_testing(&db, "select * from test where x > 5 and x <= 4").unwrap();
+        assert_eq!(result.len(), 1);
+        assert!(result[0].data.is_empty());
     }
 }
