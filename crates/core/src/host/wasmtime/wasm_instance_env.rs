@@ -160,7 +160,7 @@ impl WasmInstanceEnv {
 
     // TODO: make this part of cvt(), maybe?
     /// Gather the appropriate metadata and log a wasm_abi_call_duration_ns with the given AbiCall & duration
-    #[cfg(feature = "metrics")]
+    #[allow(unused)]
     fn start_abi_call_timer(&self, call: AbiCall) -> prometheus::HistogramTimer {
         let db = self.instance_env().dbic.address;
 
@@ -382,8 +382,7 @@ impl WasmInstanceEnv {
     pub fn insert(caller: Caller<'_, Self>, table_id: u32, row: WasmPtr<u8>, row_len: u32) -> RtResult<u32> {
         // TODO: Instead of writing this metric on every insert call,
         // we should aggregate and write at the end of the transaction.
-        #[cfg(feature = "metrics")]
-        let _guard = caller.data().start_abi_call_timer(AbiCall::Insert);
+        // let _guard = caller.data().start_abi_call_timer(AbiCall::Insert);
 
         Self::cvt(caller, AbiCall::Insert, |caller| {
             let (mem, env) = Self::mem_env(caller);
@@ -426,8 +425,9 @@ impl WasmInstanceEnv {
         value_len: u32,
         out: WasmPtr<u32>,
     ) -> RtResult<u32> {
-        #[cfg(feature = "metrics")]
-        let _guard = caller.data().start_abi_call_timer(AbiCall::DeleteByColEq);
+        // TODO: Instead of writing this metric on every insert call,
+        // we should aggregate and write at the end of the transaction.
+        // let _guard = caller.data().start_abi_call_timer(AbiCall::DeleteByColEq);
 
         Self::cvt_ret(caller, AbiCall::DeleteByColEq, out, |caller| {
             let (mem, env) = Self::mem_env(caller);
@@ -565,8 +565,9 @@ impl WasmInstanceEnv {
         val_len: u32,
         out: WasmPtr<BufferIdx>,
     ) -> RtResult<u32> {
-        #[cfg(feature = "metrics")]
-        let _guard = caller.data().start_abi_call_timer(AbiCall::IterByColEq);
+        // TODO: Instead of writing this metric on every insert call,
+        // we should aggregate and write at the end of the transaction.
+        // let _guard = caller.data().start_abi_call_timer(AbiCall::IterByColEq);
 
         Self::cvt_ret(caller, AbiCall::IterByColEq, out, |caller| {
             let (mem, env) = Self::mem_env(caller);
@@ -598,8 +599,9 @@ impl WasmInstanceEnv {
     /// - a table with the provided `table_id` doesn't exist
     // #[tracing::instrument(skip_all)]
     pub fn iter_start(caller: Caller<'_, Self>, table_id: u32, out: WasmPtr<BufferIterIdx>) -> RtResult<u32> {
-        #[cfg(feature = "metrics")]
-        let _guard = caller.data().start_abi_call_timer(AbiCall::IterStart);
+        // TODO: Instead of writing this metric on every insert call,
+        // we should aggregate and write at the end of the transaction.
+        // let _guard = caller.data().start_abi_call_timer(AbiCall::IterStart);
 
         Self::cvt_ret(caller, AbiCall::IterStart, out, |caller| {
             let env = caller.data_mut();
@@ -634,8 +636,9 @@ impl WasmInstanceEnv {
         filter_len: u32,
         out: WasmPtr<BufferIterIdx>,
     ) -> RtResult<u32> {
-        #[cfg(feature = "metrics")]
-        let _guard = caller.data().start_abi_call_timer(AbiCall::IterStartFiltered);
+        // TODO: Instead of writing this metric on every insert call,
+        // we should aggregate and write at the end of the transaction.
+        // let _guard = caller.data().start_abi_call_timer(AbiCall::IterStartFiltered);
 
         Self::cvt_ret(caller, AbiCall::IterStartFiltered, out, |caller| {
             let (mem, env) = Self::mem_env(caller);
