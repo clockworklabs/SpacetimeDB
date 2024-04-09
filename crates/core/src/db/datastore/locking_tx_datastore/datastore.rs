@@ -544,15 +544,28 @@ impl MutTx for Locking {
     }
 
     fn rollback_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) {
-        #[cfg(feature = "metrics")]
-        record_metrics(ctx, tx.timer, tx.lock_wait_time, false);
+        let lock_wait_time = tx.lock_wait_time;
+        let timer = tx.timer;
+        // TODO(cloutiertyler): We should probably track the tx.rollback() time separately.
         tx.rollback();
+
+        // Record metrics for the transaction at the very end right before we drop
+        // the MutTx and release the lock.
+        #[cfg(feature = "metrics")]
+        record_metrics(ctx, timer, lock_wait_time, false);
     }
 
     fn commit_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) -> Result<Option<TxData>> {
+        let lock_wait_time = tx.lock_wait_time;
+        let timer = tx.timer;
+        // TODO(cloutiertyler): We should probably track the tx.commit() time separately.
+        let res = tx.commit(ctx);
+
+        // Record metrics for the transaction at the very end right before we drop
+        // the MutTx and release the lock.
         #[cfg(feature = "metrics")]
-        record_metrics(ctx, tx.timer, tx.lock_wait_time, true);
-        Ok(Some(tx.commit(ctx)))
+        record_metrics(ctx, timer, lock_wait_time, true);
+        Ok(Some(res))
     }
 
     #[cfg(test)]
