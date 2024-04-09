@@ -15,18 +15,17 @@ name = "serde"
 required-features = ["serde"]
 
 [features]
-default = ["serde", "metrics"]
+default = ["serde"]
 serde = ["dep:serde", "spacetimedb-sats/serde", "dep:serde_with", "chrono/serde"]
 cli = ["clap"]
 # Allows using `Arbitrary` impls defined in this crate.
 proptest = ["dep:proptest", "dep:proptest-derive"]
-metrics = ["dep:spacetimedb-metrics", "spacetimedb-sats/metrics"]
 
 [dependencies]
 spacetimedb-bindings-macro.workspace = true
 spacetimedb-sats.workspace = true
 spacetimedb-primitives.workspace = true
-spacetimedb-metrics = { workspace = true, optional = true }
+spacetimedb-metrics.workspace = true
 
 anyhow.workspace = true
 bitflags.workspace = true

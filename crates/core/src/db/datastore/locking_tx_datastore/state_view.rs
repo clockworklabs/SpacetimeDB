@@ -3,16 +3,13 @@ use super::{
 };
 use crate::{
     address::Address,
-    db::{
-        datastore::system_tables::{
-            StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StIndexFields, StIndexRow,
-            StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMNS_ID, ST_CONSTRAINTS_ID,
-            ST_INDEXES_ID, ST_SEQUENCES_ID, ST_TABLES_ID,
-        },
-        db_metrics::DB_METRICS,
+    db::datastore::system_tables::{
+        StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StIndexFields, StIndexRow, StSequenceFields,
+        StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMNS_ID, ST_CONSTRAINTS_ID, ST_INDEXES_ID,
+        ST_SEQUENCES_ID, ST_TABLES_ID,
     },
     error::TableError,
-    execution_context::ExecutionContext,
+    execution_context::{ExecutionContext, MetricType},
 };
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::{
@@ -177,19 +174,16 @@ pub struct Iter<'a> {
     num_committed_rows_fetched: u64,
 }
 
-#[cfg(feature = "metrics")]
 impl Drop for Iter<'_> {
     fn drop(&mut self) {
-        DB_METRICS
-            .rdb_num_rows_fetched
-            .with_label_values(
-                &self.ctx.workload(),
-                &self.ctx.database(),
-                self.ctx.reducer_name(),
-                &self.table_id.into(),
-                self.table_name,
-            )
-            .inc_by(self.num_committed_rows_fetched);
+        let mut metrics = self.ctx.metrics.write();
+        // Increment number of rows fetched
+        metrics.inc_by(
+            self.table_id,
+            MetricType::RowsFetched,
+            self.num_committed_rows_fetched,
+            || self.table_name.to_string(),
+        );
     }
 }
 
@@ -324,40 +318,38 @@ pub struct IndexSeekIterMutTxId<'a> {
     pub(crate) num_committed_rows_fetched: u64,
 }
 
-#[cfg(feature = "metrics")]
 impl Drop for IndexSeekIterMutTxId<'_> {
     fn drop(&mut self) {
-        let workload = &self.ctx.workload();
-        let db = &self.ctx.database();
-        let reducer_name = self.ctx.reducer_name();
-        let table_id = &self.table_id.0;
-        let table_name = self
-            .committed_state
-            .get_schema(&self.table_id)
-            .map(|table| table.table_name.as_str())
-            .unwrap_or_default();
+        let mut metrics = self.ctx.metrics.write();
+        let get_table_name = || {
+            self.committed_state
+                .get_schema(&self.table_id)
+                .map(|table| table.table_name.as_str())
+                .unwrap_or_default()
+                .to_string()
+        };
+
+        let num_pointers_yielded = self
+            .committed_rows
+            .as_ref()
+            .map_or(0, |iter| iter.num_pointers_yielded());
 
         // Increment number of index seeks
-        DB_METRICS
-            .rdb_num_index_seeks
-            .with_label_values(workload, db, reducer_name, table_id, table_name)
-            .inc();
-
+        metrics.inc_by(self.table_id, MetricType::IndexSeeks, 1, get_table_name);
         // Increment number of index keys scanned
-        DB_METRICS
-            .rdb_num_keys_scanned
-            .with_label_values(workload, db, reducer_name, table_id, table_name)
-            .inc_by(
-                self.committed_rows
-                    .as_ref()
-                    .map_or(0, |iter| iter.num_pointers_yielded()),
-            );
-
+        metrics.inc_by(
+            self.table_id,
+            MetricType::KeysScanned,
+            num_pointers_yielded,
+            get_table_name,
+        );
         // Increment number of rows fetched
-        DB_METRICS
-            .rdb_num_rows_fetched
-            .with_label_values(workload, db, reducer_name, table_id, table_name)
-            .inc_by(self.num_committed_rows_fetched);
+        metrics.inc_by(
+            self.table_id,
+            MetricType::RowsFetched,
+            self.num_committed_rows_fetched,
+            get_table_name,
+        );
     }
 }
 
