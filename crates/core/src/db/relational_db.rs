@@ -1,16 +1,15 @@
 use super::datastore::traits::{
-    IsolationLevel, MutProgrammable, MutTx as _, MutTxDatastore, Programmable, Tx as _, TxData, TxDatastore,
+    IsolationLevel, MutProgrammable, MutTx as _, MutTxDatastore, Programmable, Tx as _, TxDatastore,
 };
 use super::datastore::{
     locking_tx_datastore::{
         datastore::Locking,
         state_view::{Iter, IterByColEq, IterByColRange},
     },
-    traits::TxRecord,
+    traits::TxData,
 };
 use super::relational_operators::Relation;
 use crate::address::Address;
-use crate::db::datastore::traits::TxOp;
 use crate::db::db_metrics::DB_METRICS;
 use crate::error::{DBError, DatabaseError, TableError};
 use crate::execution_context::ExecutionContext;
@@ -24,8 +23,8 @@ use spacetimedb_sats::db::def::{ColumnDef, IndexDef, SequenceDef, TableDef, Tabl
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_table::indexes::RowPointer;
 use std::borrow::Cow;
-use std::collections::BTreeMap;
 use std::fs::{create_dir_all, File};
+use std::io;
 use std::ops::RangeBounds;
 use std::path::Path;
 use std::sync::Arc;
@@ -35,6 +34,15 @@ pub type Tx = <Locking as super::datastore::traits::Tx>::Tx;
 
 type RowCountFn = Arc<dyn Fn(TableId, &str) -> i64 + Send + Sync>;
 
+/// A function to determine the size on disk of the durable state of the
+/// local database instance. This is used for metrics and energy accounting
+/// purposes.
+///
+/// It is not part of the [`Durability`] trait because it must report disk
+/// usage of the local instance only, even if exclusively remote durability is
+/// configured or the database is in follower state.
+type DiskSizeFn = Arc<dyn Fn() -> io::Result<u64> + Send + Sync>;
+
 pub type Txdata = commitlog::payload::Txdata<ProductValue>;
 
 #[derive(Clone)]
@@ -43,7 +51,11 @@ pub struct RelationalDB {
     pub(crate) inner: Locking,
     durability: Option<Arc<dyn Durability<TxData = Txdata>>>,
     address: Address,
+
     row_count_fn: RowCountFn,
+    /// Function to determine the durable size on disk. `Some` if `durability`
+    /// is `Some`, `None` otherwise.
+    disk_size_fn: Option<DiskSizeFn>,
 
     // Release file lock last when dropping.
     _lock: Arc<File>,
@@ -82,8 +94,12 @@ impl RelationalDB {
             },
         )
         .map(Arc::new)?;
+        let disk_size_fn = Arc::new({
+            let durability = durability.clone();
+            move || durability.size_on_disk()
+        });
 
-        Self::open(root, address, Some(durability.clone()))?.apply(durability)
+        Self::open(root, address, Some((durability.clone(), disk_size_fn)))?.apply(durability)
     }
 
     /// Open a database with root directory `root` and the provided [`Durability`]
@@ -94,7 +110,7 @@ impl RelationalDB {
     pub fn open(
         root: impl AsRef<Path>,
         address: Address,
-        durability: Option<Arc<dyn Durability<TxData = Txdata>>>,
+        durability: Option<(Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn)>,
     ) -> Result<Self, DBError> {
         create_dir_all(&root)?;
 
@@ -102,6 +118,7 @@ impl RelationalDB {
         lock.try_lock_exclusive()
             .map_err(|e| DatabaseError::DatabasedOpened(root.as_ref().to_path_buf(), e.into()))?;
 
+        let (durability, disk_size_fn) = durability.map(|(a, b)| (Some(a), Some(b))).unwrap_or_default();
         let inner = Locking::bootstrap(address)?;
         let row_count_fn: RowCountFn = Arc::new(move |table_id, table_name| {
             DB_METRICS
@@ -113,9 +130,12 @@ impl RelationalDB {
         Ok(Self {
             inner,
             durability,
-            _lock: Arc::new(lock),
             address,
+
             row_count_fn,
+            disk_size_fn,
+
+            _lock: Arc::new(lock),
         })
     }
 
@@ -159,9 +179,11 @@ impl RelationalDB {
         self.address
     }
 
-    /// The number of bytes on disk occupied by the [MessageLog].
-    pub fn message_log_size_on_disk(&self) -> u64 {
-        unimplemented!()
+    /// The number of bytes on disk occupied by the durability layer.
+    ///
+    /// If this is an in-memory instance, `Ok(0)` is returned.
+    pub fn size_on_disk(&self) -> io::Result<u64> {
+        self.disk_size_fn.as_ref().map_or(Ok(0), |f| f())
     }
 
     pub fn encode_row(row: &ProductValue, bytes: &mut Vec<u8>) {
@@ -276,57 +298,41 @@ impl RelationalDB {
 
         log::trace!("COMMIT MUT TX");
 
-        fn fold_ops(
-            records: &[TxRecord],
-        ) -> (
-            BTreeMap<TableId, Vec<ProductValue>>,
-            BTreeMap<TableId, Vec<ProductValue>>,
-        ) {
-            records.iter().fold(
-                (BTreeMap::new(), BTreeMap::new()),
-                |(mut inserts, mut deletes), record| {
-                    let rows = match record.op {
-                        TxOp::Insert(_) => inserts.entry(record.table_id).or_default(),
-                        TxOp::Delete => deletes.entry(record.table_id).or_default(),
-                    };
-                    // TODO: Avoid clone
-                    rows.push(record.product_value.clone());
-                    (inserts, deletes)
-                },
-            )
-        }
+        let Some(tx_data) = self.inner.commit_mut_tx(ctx, tx)? else {
+            return Ok(None);
+        };
 
-        fn into_ops(m: BTreeMap<TableId, Vec<ProductValue>>) -> Box<[Ops<ProductValue>]> {
-            m.into_iter()
+        if let Some(durability) = &self.durability {
+            let inserts = tx_data
+                .inserts()
                 .map(|(table_id, rowdata)| Ops {
-                    table_id,
-                    rowdata: rowdata.into(),
+                    table_id: *table_id,
+                    rowdata: rowdata.clone(),
                 })
-                .collect()
+                .collect();
+            let deletes = tx_data
+                .deletes()
+                .map(|(table_id, rowdata)| Ops {
+                    table_id: *table_id,
+                    rowdata: rowdata.clone(),
+                })
+                .collect();
+
+            let txdata = Txdata {
+                inputs: None,
+                outputs: None,
+                mutations: Some(Mutations {
+                    inserts,
+                    deletes,
+                    truncates: Box::new([]),
+                }),
+            };
+            log::trace!("append {txdata:?}");
+            // TODO(cloutiertyler): We should measure the time to append a transaction to the commitlog separately in metrics
+            durability.append_tx(txdata);
         }
 
-        if let Some(tx_data) = self.inner.commit_mut_tx(ctx, tx)? {
-            if let Some(durability) = self.durability.as_ref() {
-                let (inserts, deletes) = fold_ops(&tx_data.records);
-
-                let txdata = Txdata {
-                    inputs: None,
-                    outputs: None,
-                    mutations: Some(Mutations {
-                        inserts: into_ops(inserts),
-                        deletes: into_ops(deletes),
-                        truncates: Box::new([]),
-                    }),
-                };
-                log::trace!("append {txdata:?}");
-                // TODO(cloutiertyler): We should measure the time to append a transaction to the commitlog separately in metrics
-                durability.append_tx(txdata);
-            }
-
-            return Ok(Some(tx_data));
-        }
-
-        Ok(None)
+        Ok(Some(tx_data))
     }
 
     /// Run a fallible function in a transaction.
@@ -943,8 +949,12 @@ pub mod tests_utils {
                 },
             )
             .map(Arc::new)?;
+            let disk_size_fn = Arc::new({
+                let handle = handle.clone();
+                move || handle.size_on_disk()
+            });
 
-            let rdb = RelationalDB::open(root, Self::ADDRESS, Some(handle.clone()))?
+            let rdb = RelationalDB::open(root, Self::ADDRESS, Some((handle.clone(), disk_size_fn)))?
                 .apply(handle.clone())?
                 .with_row_count(Self::row_count_fn());
 

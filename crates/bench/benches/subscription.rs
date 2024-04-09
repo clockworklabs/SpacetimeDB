@@ -41,8 +41,8 @@ fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> Database
     DatabaseTableUpdate {
         table_id,
         table_name: table_name.to_string(),
-        inserts: vec![row],
-        deletes: vec![],
+        inserts: [row].into(),
+        deletes: [].into(),
     }
 }
 

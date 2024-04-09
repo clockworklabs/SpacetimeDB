@@ -122,11 +122,13 @@ impl DatabaseInstanceContextController {
     pub fn update_metrics(&self) {
         for (cell, _) in self.contexts.lock().unwrap().values() {
             if let Some((db, _)) = cell.get() {
-                DB_METRICS
-                    .message_log_size
-                    .with_label_values(&db.address)
-                    .set(db.message_log_size_on_disk() as i64);
-                // Use the previous gauge value if there is an issue getting the file size.
+                // Use the previous gauge value if there is an issue getting the file sizes.
+                if let Ok(num_bytes) = db.durability_size_on_disk() {
+                    DB_METRICS
+                        .message_log_size
+                        .with_label_values(&db.address)
+                        .set(num_bytes as i64);
+                }
                 if let Ok(num_bytes) = db.log_file_size() {
                     DB_METRICS
                         .module_log_file_size

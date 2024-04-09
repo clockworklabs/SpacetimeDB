@@ -3,6 +3,7 @@ use crate::db::relational_db::RelationalDB;
 use crate::db::{Config, Storage};
 use crate::error::DBError;
 use crate::messages::control_db::Database;
+use std::io;
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -50,9 +51,11 @@ impl DatabaseInstanceContext {
         scheduler_db_path
     }
 
-    /// The number of bytes on disk occupied by the [MessageLog].
-    pub fn message_log_size_on_disk(&self) -> u64 {
-        self.relational_db.message_log_size_on_disk()
+    /// The number of bytes on disk occupied by the database's durability layer.
+    ///
+    /// An in-memory database will return `Ok(0)`.
+    pub fn durability_size_on_disk(&self) -> io::Result<u64> {
+        self.relational_db.size_on_disk()
     }
 
     /// The size of the log file.
@@ -65,7 +68,7 @@ impl DatabaseInstanceContext {
     /// Some sources of size-on-disk may error, in which case the corresponding array element will be None.
     pub fn total_disk_usage(&self) -> TotalDiskUsage {
         TotalDiskUsage {
-            message_log: self.message_log_size_on_disk(),
+            durability: self.durability_size_on_disk().ok(),
             logs: self.log_file_size().ok(),
         }
     }
@@ -81,7 +84,7 @@ impl Deref for DatabaseInstanceContext {
 
 #[derive(Copy, Clone, Default)]
 pub struct TotalDiskUsage {
-    message_log: u64,
+    durability: Option<u64>,
     logs: Option<u64>,
 }
 
@@ -89,12 +92,12 @@ impl TotalDiskUsage {
     /// Returns self, but if any of the sources are None then we take it from fallback
     pub fn or(self, fallback: TotalDiskUsage) -> Self {
         Self {
-            message_log: self.message_log,
+            durability: self.durability.or(fallback.durability),
             logs: self.logs.or(fallback.logs),
         }
     }
 
     pub fn sum(&self) -> u64 {
-        self.message_log + self.logs.unwrap_or(0)
+        self.durability.unwrap_or(0) + self.logs.unwrap_or(0)
     }
 }
