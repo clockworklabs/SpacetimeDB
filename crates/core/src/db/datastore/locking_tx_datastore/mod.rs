@@ -23,6 +23,8 @@ use std::{
     vec,
 };
 
+static IGNORE_TABLES: [&str; 5] = ["st_indexes", "st_table", "st_columns", "st_sequence", "st_constraints"];
+
 use super::{
     system_tables::{
         system_tables, StColumnRow, StIndexRow, StSequenceRow, StTableRow, SystemTable, ST_COLUMNS_ID, ST_COLUMNS_NAME,
@@ -1881,6 +1883,69 @@ impl Locking {
         committed_state.build_sequence_state(&mut sequence_state)?;
         Ok(())
     }
+    pub fn replay_transaction1(
+        &self,
+        hash: &mut HashMap<String, HashMap<RowId, ProductValue>>,
+        transaction: &Transaction,
+        odb: &dyn ObjectDB,
+    ) -> Result<(), DBError> {
+        let mut committed_state = self.committed_state.write_arc();
+        for write in &transaction.writes {
+            let table_id = TableId(write.set_id);
+            let schema = committed_state
+                .schema_for_table(&ExecutionContext::default(), table_id)?
+                .into_owned();
+            let table_name = schema.table_name.clone();
+            let mut rows_hash = hash.entry(table_name.clone()).or_insert_with(|| HashMap::new());
+            match write.operation {
+                Operation::Delete => {
+                    if !IGNORE_TABLES.contains(&table_name.as_str()) {
+                        rows_hash.remove(&RowId(write.data_key));
+                    }
+                    committed_state
+                        .table_rows(table_id, schema)
+                        .remove(&RowId(write.data_key));
+                    DB_METRICS
+                        .rdb_num_table_rows
+                        .with_label_values(&self.database_address, &table_id.into(), &table_name)
+                        .dec();
+                }
+                Operation::Insert => {
+                    let row_type = schema.get_row_type();
+                    let product_value = match write.data_key {
+                        DataKey::Data(data) => ProductValue::decode(row_type, &mut &data[..]).unwrap_or_else(|e| {
+                            panic!(
+                                "Couldn't decode product value from message log: `{}`. Expected row type: {:?}",
+                                e, row_type
+                            )
+                        }),
+                        DataKey::Hash(hash) => {
+                            let data = odb.get(hash).unwrap_or_else(|| {
+                                panic!("Object {hash} referenced from transaction not present in object DB");
+                            });
+                            ProductValue::decode(row_type, &mut &data[..]).unwrap_or_else(|e| {
+                                panic!(
+                                    "Couldn't decode product value {} from object DB: `{}`. Expected row type: {:?}",
+                                    hash, e, row_type
+                                )
+                            })
+                        }
+                    };
+                    if !IGNORE_TABLES.contains(&table_name.as_str()) {
+                        rows_hash.insert(RowId(write.data_key), product_value.clone());
+                    }
+                    committed_state
+                        .table_rows(table_id, schema)
+                        .insert(RowId(write.data_key), product_value);
+                    DB_METRICS
+                        .rdb_num_table_rows
+                        .with_label_values(&self.database_address, &table_id.into(), &table_name)
+                        .inc();
+                }
+            }
+        }
+        Ok(())
+    }
 
     pub fn replay_transaction(&self, transaction: &Transaction, odb: &dyn ObjectDB) -> Result<(), DBError> {
         let mut committed_state = self.committed_state.write_arc();
@@ -1890,7 +1955,6 @@ impl Locking {
                 .schema_for_table(&ExecutionContext::default(), table_id)?
                 .into_owned();
             let table_name = schema.table_name.clone();
-
             match write.operation {
                 Operation::Delete => {
                     committed_state
