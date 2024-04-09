@@ -17,10 +17,10 @@ use crate::{
     read_column::{ReadColumn, TypeError},
     static_assert_size,
 };
-use ahash::AHashMap;
 use core::fmt;
 use core::hash::{BuildHasher, Hasher};
 use core::ops::RangeBounds;
+use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_primitives::{ColId, ColList};
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer,
@@ -45,7 +45,7 @@ pub struct Table {
     /// Maps `RowHash -> [RowPointer]` where a [`RowPointer`] points into `pages`.
     pointer_map: PointerMap,
     /// The indices associated with a set of columns of the table.
-    pub indexes: AHashMap<ColList, BTreeIndex>,
+    pub indexes: HashMap<ColList, BTreeIndex>,
     /// The schema of the table, from which the type, and other details are derived.
     pub schema: Box<TableSchema>,
     /// `SquashedOffset::TX_STATE` or `SquashedOffset::COMMITTED_STATE`
@@ -115,7 +115,7 @@ impl TableInner {
     }
 }
 
-static_assert_size!(Table, 272);
+static_assert_size!(Table, 240);
 
 /// Various error that can happen on table insertion.
 #[derive(Error, Debug)]
@@ -901,7 +901,7 @@ impl Table {
             },
             visitor_prog,
             schema: Box::new(schema),
-            indexes: AHashMap::with_capacity(indexes_capacity),
+            indexes: HashMap::with_capacity(indexes_capacity),
             pointer_map: PointerMap::default(),
             squashed_offset,
         }

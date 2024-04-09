@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use spacetimedb_data_structures::map::HashMap;
 use std::path::Path;
 
 #[test]

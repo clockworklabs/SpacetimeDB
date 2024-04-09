@@ -219,10 +219,10 @@ dependencies = [
  "axum-core",
  "bytes",
  "futures-util",
- "http 1.0.0",
- "http-body 1.0.0",
+ "http",
+ "http-body",
  "http-body-util",
- "hyper 1.1.0",
+ "hyper",
  "hyper-util",
  "itoa",
  "matchit",
@@ -252,8 +252,8 @@ dependencies = [
  "async-trait",
  "bytes",
  "futures-util",
- "http 1.0.0",
- "http-body 1.0.0",
+ "http",
+ "http-body",
  "http-body-util",
  "mime",
  "pin-project-lite",
@@ -275,8 +275,8 @@ dependencies = [
  "bytes",
  "futures-util",
  "headers",
- "http 1.0.0",
- "http-body 1.0.0",
+ "http",
+ "http-body",
  "http-body-util",
  "mime",
  "pin-project-lite",
@@ -989,6 +989,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "crc32c"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "89254598aa9b9fa608de44b3ae54c810f0f06d755e24c50177f1f8f31ff50ce2"
+dependencies = [
+ "rustc_version",
+]
+
+[[package]]
 name = "crc32fast"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1222,9 +1231,9 @@ dependencies = [
 
 [[package]]
 name = "data-encoding"
-version = "2.4.0"
+version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2e66c9d817f1720209181c316d28635c050fa304f9c79e47a520882661b7308"
+checksum = "7e962a19be5cfc3f3bf6dd8f61eb50107f356ad6270fbb3ed41476571db78be5"
 
 [[package]]
 name = "decorum"
@@ -1579,9 +1588,9 @@ checksum = "00b0228411908ca8685dba7fc2cdd70ec9990a6e753e89b6ac91a84c40fbaf4b"
 
 [[package]]
 name = "form_urlencoded"
-version = "1.2.0"
+version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a62bc1cf6f830c2ec14a513a9fb124d0a213a629668a4186f329db21fe045652"
+checksum = "e13624c2627564efccf4934284bdd98cbaa14e79b0b5a141218e507b3a823456"
 dependencies = [
  "percent-encoding",
 ]
@@ -1765,25 +1774,6 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 
 [[package]]
 name = "h2"
-version = "0.3.21"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91fc23aa11be92976ef4729127f1a74adf36d8436f7816b185d18df956790833"
-dependencies = [
- "bytes",
- "fnv",
- "futures-core",
- "futures-sink",
- "futures-util",
- "http 0.2.9",
- "indexmap 1.9.3",
- "slab",
- "tokio",
- "tokio-util",
- "tracing",
-]
-
-[[package]]
-name = "h2"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1d308f63daf4181410c242d34c11f928dcb3aa105852019e043c9d1f4e4368a"
@@ -1793,7 +1783,7 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "futures-util",
- "http 1.0.0",
+ "http",
  "indexmap 2.0.2",
  "slab",
  "tokio",
@@ -1833,6 +1823,8 @@ checksum = "7dfda62a12f55daeae5015f81b0baea145391cb4520f86c248fc615d72640d12"
 dependencies = [
  "ahash 0.8.3",
  "allocator-api2",
+ "rayon",
+ "serde",
 ]
 
 [[package]]
@@ -1853,7 +1845,7 @@ dependencies = [
  "base64 0.21.4",
  "bytes",
  "headers-core",
- "http 1.0.0",
+ "http",
  "httpdate",
  "mime",
  "sha1",
@@ -1865,7 +1857,7 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "54b4a22553d4242c49fddb9ba998a99962b5cc6f22cb5a3482bec22522403ce4"
 dependencies = [
- "http 1.0.0",
+ "http",
 ]
 
 [[package]]
@@ -1926,17 +1918,6 @@ dependencies = [
 
 [[package]]
 name = "http"
-version = "0.2.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd6effc99afb63425aff9b05836f029929e345a6148a14b7ecd5ab67af944482"
-dependencies = [
- "bytes",
- "fnv",
- "itoa",
-]
-
-[[package]]
-name = "http"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b32afd38673a8016f7c9ae69e5af41a58f81b1d31689040f2f1959594ce194ea"
@@ -1948,23 +1929,12 @@ dependencies = [
 
 [[package]]
 name = "http-body"
-version = "0.4.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d5f38f16d184e36f2408a55281cd658ecbd3ca05cce6d6510a176eca393e26d1"
-dependencies = [
- "bytes",
- "http 0.2.9",
- "pin-project-lite",
-]
-
-[[package]]
-name = "http-body"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1cac85db508abc24a2e48553ba12a996e87244a0395ce011e62b37158745d643"
 dependencies = [
  "bytes",
- "http 1.0.0",
+ "http",
 ]
 
 [[package]]
@@ -1975,8 +1945,8 @@ checksum = "41cb79eb393015dadd30fc252023adb0b2400a0caee0fa2a077e6e21a551e840"
 dependencies = [
  "bytes",
  "futures-util",
- "http 1.0.0",
- "http-body 1.0.0",
+ "http",
+ "http-body",
  "pin-project-lite",
 ]
 
@@ -2000,30 +1970,6 @@ checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
 
 [[package]]
 name = "hyper"
-version = "0.14.28"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf96e135eb83a2a8ddf766e426a841d8ddd7449d5f00d34ea02b41d2f19eef80"
-dependencies = [
- "bytes",
- "futures-channel",
- "futures-core",
- "futures-util",
- "h2 0.3.21",
- "http 0.2.9",
- "http-body 0.4.5",
- "httparse",
- "httpdate",
- "itoa",
- "pin-project-lite",
- "socket2",
- "tokio",
- "tower-service",
- "tracing",
- "want",
-]
-
-[[package]]
-name = "hyper"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fb5aa53871fc917b1a9ed87b683a5d86db645e23acb32c2e0785a353e522fb75"
@@ -2031,44 +1977,50 @@ dependencies = [
  "bytes",
  "futures-channel",
  "futures-util",
- "h2 0.4.0",
- "http 1.0.0",
- "http-body 1.0.0",
+ "h2",
+ "http",
+ "http-body",
  "httparse",
  "httpdate",
  "itoa",
  "pin-project-lite",
  "tokio",
+ "want",
 ]
 
 [[package]]
 name = "hyper-tls"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6183ddfa99b85da61a140bea0efc93fdf56ceaa041b37d553518030827f9905"
+checksum = "70206fc6890eaca9fde8a0bf71caa2ddfc9fe045ac9e5c70df101a7dbde866e0"
 dependencies = [
  "bytes",
- "hyper 0.14.28",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
  "native-tls",
  "tokio",
  "tokio-native-tls",
+ "tower-service",
 ]
 
 [[package]]
 name = "hyper-util"
-version = "0.1.2"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bdea9aac0dbe5a9240d68cfd9501e2db94222c6dc06843e06640b9e07f0fdc67"
+checksum = "ca38ef113da30126bbff9cd1705f9273e15d45498615d138b0c20279ac7a76aa"
 dependencies = [
  "bytes",
  "futures-channel",
  "futures-util",
- "http 1.0.0",
- "http-body 1.0.0",
- "hyper 1.1.0",
+ "http",
+ "http-body",
+ "hyper",
  "pin-project-lite",
  "socket2",
  "tokio",
+ "tower",
+ "tower-service",
  "tracing",
 ]
 
@@ -2150,9 +2102,9 @@ checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
 
 [[package]]
 name = "idna"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d20d6b07bfbc108882d88ed8e37d39636dcc260e15e30c45e6ba089610b917c"
+checksum = "634d9b1461af396cad843f47fdba5597a4f9e6ddd4bfb6ff5d85028c25cb12f6"
 dependencies = [
  "unicode-bidi",
  "unicode-normalization",
@@ -3004,9 +2956,9 @@ dependencies = [
 
 [[package]]
 name = "percent-encoding"
-version = "2.3.0"
+version = "2.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9b2a4787296e9989611394c33f193f676704af1686e70b8f8033ab5ba9a35a94"
+checksum = "e3148f5046208a5d56bcfc03053e3ca6334e51da8dfb19b6cdc8b306fae3283e"
 
 [[package]]
 name = "perf-test-module"
@@ -3680,20 +3632,22 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.11.22"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "046cd98826c46c2ac8ddecae268eb5c2e58628688a5fc7a2643704a73faba95b"
+checksum = "58b48d98d932f4ee75e541614d32a7f44c889b72bd9c2e04d95edd135989df88"
 dependencies = [
  "base64 0.21.4",
  "bytes",
  "encoding_rs",
  "futures-core",
  "futures-util",
- "h2 0.3.21",
- "http 0.2.9",
- "http-body 0.4.5",
- "hyper 0.14.28",
+ "h2",
+ "http",
+ "http-body",
+ "http-body-util",
+ "hyper",
  "hyper-tls",
+ "hyper-util",
  "ipnet",
  "js-sys",
  "log",
@@ -3702,9 +3656,11 @@ dependencies = [
  "once_cell",
  "percent-encoding",
  "pin-project-lite",
+ "rustls-pemfile",
  "serde",
  "serde_json",
  "serde_urlencoded",
+ "sync_wrapper",
  "system-configuration",
  "tokio",
  "tokio-native-tls",
@@ -3801,7 +3757,6 @@ dependencies = [
  "anyhow",
  "log",
  "spacetimedb",
- "spacetimedb-lib",
 ]
 
 [[package]]
@@ -3854,6 +3809,15 @@ dependencies = [
  "libc",
  "linux-raw-sys",
  "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "rustls-pemfile"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c74cae0a4cf6ccbbf5f359f08efdf8ee7e1dc532573bf0db71968cb56b1448c"
+dependencies = [
+ "base64 0.21.4",
 ]
 
 [[package]]
@@ -3998,9 +3962,9 @@ dependencies = [
 
 [[package]]
 name = "sendgrid"
-version = "0.19.2"
+version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "524482908e6edc4f1deac0fe8be323fb11d48b598d4a1a414a866599595f55f1"
+checksum = "38b3e6f961e931130444f970c2af8cb203deea0ffd09bb6d2e79c05a36bc6ef9"
 dependencies = [
  "data-encoding",
  "reqwest",
@@ -4316,7 +4280,6 @@ dependencies = [
  "bytes",
  "derive_more",
  "log",
- "once_cell",
  "rand 0.8.5",
  "scoped-tls",
  "spacetimedb-bindings-macro",
@@ -4329,7 +4292,6 @@ dependencies = [
 name = "spacetimedb-bench"
 version = "0.8.2"
 dependencies = [
- "ahash 0.8.3",
  "anyhow",
  "anymap",
  "byte-unit",
@@ -4350,6 +4312,7 @@ dependencies = [
  "serde_json",
  "spacetimedb-client-api",
  "spacetimedb-core",
+ "spacetimedb-data-structures",
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-sats",
@@ -4412,6 +4375,7 @@ dependencies = [
  "serde_with",
  "slab",
  "spacetimedb-core",
+ "spacetimedb-data-structures",
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-standalone",
@@ -4442,8 +4406,8 @@ dependencies = [
  "email_address",
  "futures",
  "headers",
- "http 1.0.0",
- "hyper 1.1.0",
+ "http",
+ "hyper",
  "hyper-util",
  "itoa",
  "lazy_static",
@@ -4456,6 +4420,7 @@ dependencies = [
  "serde",
  "serde_json",
  "spacetimedb-core",
+ "spacetimedb-data-structures",
  "spacetimedb-lib",
  "tempfile",
  "tokio",
@@ -4471,6 +4436,27 @@ dependencies = [
  "prost",
  "prost-build",
  "strum",
+]
+
+[[package]]
+name = "spacetimedb-commitlog"
+version = "0.8.2"
+dependencies = [
+ "bitflags 2.4.1",
+ "crc32c",
+ "env_logger",
+ "itertools 0.12.0",
+ "log",
+ "once_cell",
+ "proptest",
+ "proptest-derive",
+ "rand 0.8.5",
+ "serde",
+ "spacetimedb-primitives",
+ "spacetimedb-sats",
+ "tempfile",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]
@@ -4498,7 +4484,7 @@ dependencies = [
  "futures",
  "hex",
  "hostname",
- "hyper 1.1.0",
+ "hyper",
  "imara-diff",
  "indexmap 2.0.2",
  "itertools 0.12.0",
@@ -4535,6 +4521,7 @@ dependencies = [
  "sled",
  "smallvec",
  "spacetimedb-client-api-messages",
+ "spacetimedb-data-structures",
  "spacetimedb-lib",
  "spacetimedb-metrics",
  "spacetimedb-primitives",
@@ -4566,6 +4553,8 @@ dependencies = [
 name = "spacetimedb-data-structures"
 version = "0.8.2"
 dependencies = [
+ "hashbrown 0.14.1",
+ "nohash-hasher",
  "serde",
  "thiserror",
 ]
@@ -4584,8 +4573,6 @@ dependencies = [
  "hex",
  "insta",
  "itertools 0.12.0",
- "once_cell",
- "prometheus",
  "proptest",
  "proptest-derive",
  "rand 0.8.5",
@@ -4597,7 +4584,6 @@ dependencies = [
  "spacetimedb-primitives",
  "spacetimedb-sats",
  "thiserror",
- "tracing",
 ]
 
 [[package]]
@@ -4617,6 +4603,7 @@ dependencies = [
  "bitflags 2.4.1",
  "either",
  "proptest",
+ "spacetimedb-data-structures",
 ]
 
 [[package]]
@@ -4645,10 +4632,10 @@ dependencies = [
  "sha3",
  "smallvec",
  "spacetimedb-bindings-macro",
+ "spacetimedb-data-structures",
  "spacetimedb-metrics",
  "spacetimedb-primitives",
  "thiserror",
- "tracing",
 ]
 
 [[package]]
@@ -4664,13 +4651,14 @@ dependencies = [
  "futures-channel",
  "hex",
  "home",
- "http 1.0.0",
+ "http",
  "im",
  "lazy_static",
  "log",
  "prost",
  "rand 0.8.5",
  "spacetimedb-client-api-messages",
+ "spacetimedb-data-structures",
  "spacetimedb-lib",
  "spacetimedb-sats",
  "spacetimedb-testing",
@@ -4688,7 +4676,7 @@ dependencies = [
  "clap 4.4.6",
  "dirs",
  "hostname",
- "http 1.0.0",
+ "http",
  "log",
  "once_cell",
  "openssl",
@@ -4718,11 +4706,11 @@ dependencies = [
  "derive_more",
  "enum-as-inner",
  "itertools 0.12.0",
- "nohash-hasher",
  "proptest",
  "proptest-derive",
  "rand 0.8.5",
  "smallvec",
+ "spacetimedb-data-structures",
  "spacetimedb-primitives",
  "spacetimedb-sats",
  "thiserror",
@@ -4746,6 +4734,7 @@ dependencies = [
  "spacetimedb-cli",
  "spacetimedb-client-api",
  "spacetimedb-core",
+ "spacetimedb-data-structures",
  "spacetimedb-lib",
  "spacetimedb-standalone",
  "tempfile",
@@ -4763,6 +4752,7 @@ dependencies = [
  "itertools 0.12.0",
  "log",
  "smallvec",
+ "spacetimedb-data-structures",
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-sats",
@@ -5120,6 +5110,7 @@ name = "test-counter"
 version = "0.8.2"
 dependencies = [
  "anyhow",
+ "spacetimedb-data-structures",
 ]
 
 [[package]]
@@ -5408,8 +5399,8 @@ checksum = "09e12e6351354851911bdf8c2b8f2ab15050c567d70a8b9a37ae7b8301a4080d"
 dependencies = [
  "bitflags 2.4.1",
  "bytes",
- "http 1.0.0",
- "http-body 1.0.0",
+ "http",
+ "http-body",
  "http-body-util",
  "pin-project-lite",
  "tower-layer",
@@ -5569,7 +5560,7 @@ dependencies = [
  "byteorder",
  "bytes",
  "data-encoding",
- "http 1.0.0",
+ "http",
  "httparse",
  "log",
  "native-tls",
@@ -5656,9 +5647,9 @@ dependencies = [
 
 [[package]]
 name = "url"
-version = "2.4.1"
+version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "143b538f18257fac9cad154828a57c6bf5157e1aa604d4816b5995bf6de87ae5"
+checksum = "31e6302e3bb753d46e83516cae55ae196fc0c309407cf11ab35cc51a4c2a4633"
 dependencies = [
  "form_urlencoded",
  "idna",
@@ -5833,9 +5824,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-streams"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4609d447824375f43e1ffbc051b50ad8f4b3ae8219680c94452ea05eb240ac7"
+checksum = "b65dc4c90b63b118468cf747d8bf3566c1913ef60be765b5730ead9e0a3ba129"
 dependencies = [
  "futures-util",
  "js-sys",

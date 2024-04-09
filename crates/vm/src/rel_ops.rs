@@ -1,8 +1,8 @@
 use crate::errors::ErrorVm;
 use crate::relation::RelValue;
+use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_sats::product_value::ProductValue;
 use spacetimedb_sats::relation::{FieldExpr, Header, RowCount};
-use std::collections::HashMap;
 use std::sync::Arc;
 
 pub(crate) trait ResultExt<T> {

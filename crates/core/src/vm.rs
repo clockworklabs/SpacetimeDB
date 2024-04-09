@@ -10,7 +10,7 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::RowCount;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::def::TableDef;
-use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldExprRef, FieldName, Header, Relation};
+use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldExprRef, Header, Relation};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::eval::IterRows;
@@ -54,7 +54,7 @@ fn bound_is_satisfiable(lower: &Bound<AlgebraicValue>, upper: &Bound<AlgebraicVa
 //TODO: This is partially duplicated from the `vm` crate to avoid borrow checker issues
 //and pull all that crate in core. Will be revisited after trait refactor
 pub fn build_query<'a>(
-    ctx: &'a ExecutionContext<'a>,
+    ctx: &'a ExecutionContext,
     stdb: &'a RelationalDB,
     tx: &'a TxMode<'a>,
     query: &'a QueryExpr,
@@ -158,12 +158,16 @@ pub fn build_query<'a>(
                 let index_table = index_side.table_id().unwrap();
                 let index_header = index_side.head();
                 let probe_side = build_query(ctx, stdb, tx, probe_side, sources)?;
+                let probe_col = probe_side
+                    .head()
+                    .column_pos(probe_field)
+                    .expect("query compiler should have ensured the column exist");
                 Box::new(IndexSemiJoin {
                     ctx,
                     db: stdb,
                     tx,
                     probe_side,
-                    probe_field,
+                    probe_col,
                     index_header,
                     index_select,
                     index_table,
@@ -213,7 +217,7 @@ pub fn build_query<'a>(
 }
 
 fn join_inner<'a>(
-    ctx: &'a ExecutionContext<'a>,
+    ctx: &'a ExecutionContext,
     db: &'a RelationalDB,
     tx: &'a TxMode<'a>,
     lhs: impl RelOps<'a> + 'a,
@@ -270,7 +274,7 @@ fn join_inner<'a>(
 ///
 /// On the other hand, if the `query` is a `SourceExpr::DbTable`, `sources` is unused.
 fn get_table<'a>(
-    ctx: &'a ExecutionContext<'a>,
+    ctx: &'a ExecutionContext,
     stdb: &'a RelationalDB,
     tx: &'a TxMode,
     query: &SourceExpr,
@@ -326,8 +330,8 @@ pub struct IndexSemiJoin<'a, 'c, Rhs: RelOps<'a>> {
     /// An iterator for the probe side.
     /// The values returned will be used to probe the index.
     pub probe_side: Rhs,
-    /// The field whose value will be used to probe the index.
-    pub probe_field: &'c FieldName,
+    /// The column whose value will be used to probe the index.
+    pub probe_col: ColId,
     /// The header for the index side of the join.
     pub index_header: &'c Arc<Header>,
     /// An optional predicate to evaluate over the matching rows of the index.
@@ -336,7 +340,7 @@ pub struct IndexSemiJoin<'a, 'c, Rhs: RelOps<'a>> {
     pub index_table: TableId,
     /// The column id for which the index is defined.
     pub index_col: ColId,
-    /// Is this a left or right semijion?
+    /// Is this a left or right semijoin?
     pub return_index_rows: bool,
     /// An iterator for the index side.
     /// A new iterator will be instantiated for each row on the probe side.
@@ -346,7 +350,7 @@ pub struct IndexSemiJoin<'a, 'c, Rhs: RelOps<'a>> {
     /// A reference to the current transaction.
     pub tx: &'a TxMode<'a>,
     /// The execution context for the current transaction.
-    ctx: &'a ExecutionContext<'a>,
+    ctx: &'a ExecutionContext,
 }
 
 impl<'a, Rhs: RelOps<'a>> IndexSemiJoin<'a, '_, Rhs> {
@@ -389,24 +393,19 @@ impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoin<'a, '_, Rhs> {
         }
 
         // Otherwise probe the index with a row from the probe side.
-        while let Some(row) = self.probe_side.next()? {
-            if let Some(pos) = self.probe_side.head().column_pos(self.probe_field) {
-                if let Some(value) = row.read_column(pos.idx()) {
-                    let table_id = self.index_table;
-                    let col_id = self.index_col;
-
-                    let value = value.into_owned();
-
-                    let mut index_iter = match self.tx {
-                        TxMode::MutTx(tx) => self.db.iter_by_col_range_mut(self.ctx, tx, table_id, col_id, value)?,
-                        TxMode::Tx(tx) => self.db.iter_by_col_range(self.ctx, tx, table_id, col_id, value)?,
-                    };
-                    while let Some(value) = index_iter.next() {
-                        let value = RelValue::Row(value);
-                        if self.filter(&value)? {
-                            self.index_iter = Some(index_iter);
-                            return Ok(Some(self.map(value, Some(row))));
-                        }
+        let table_id = self.index_table;
+        let col_id = self.index_col;
+        while let Some(mut row) = self.probe_side.next()? {
+            if let Some(value) = row.read_or_take_column(self.probe_col.idx()) {
+                let mut index_iter = match self.tx {
+                    TxMode::MutTx(tx) => self.db.iter_by_col_range_mut(self.ctx, tx, table_id, col_id, value)?,
+                    TxMode::Tx(tx) => self.db.iter_by_col_range(self.ctx, tx, table_id, col_id, value)?,
+                };
+                while let Some(value) = index_iter.next() {
+                    let value = RelValue::Row(value);
+                    if self.filter(&value)? {
+                        self.index_iter = Some(index_iter);
+                        return Ok(Some(self.map(value, Some(row))));
                     }
                 }
             }
@@ -418,7 +417,7 @@ impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoin<'a, '_, Rhs> {
 /// A [ProgramVm] implementation that carry a [RelationalDB] for it
 /// query execution
 pub struct DbProgram<'db, 'tx> {
-    ctx: &'tx ExecutionContext<'tx>,
+    ctx: &'tx ExecutionContext,
     pub(crate) db: &'db RelationalDB,
     pub(crate) tx: &'tx mut TxMode<'tx>,
     pub(crate) auth: AuthCtx,

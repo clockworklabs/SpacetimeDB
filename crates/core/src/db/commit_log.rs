@@ -17,14 +17,12 @@ use crate::{
     execution_context::ExecutionContext,
 };
 use anyhow::Context;
+use spacetimedb_data_structures::map::{Entry, HashMap};
 use spacetimedb_sats::hash::{hash_bytes, Hash};
 use spacetimedb_sats::DataKey;
 use spacetimedb_table::indexes::RowPointer;
-use std::{
-    collections::{hash_map, HashMap},
-    io,
-    sync::{Arc, Mutex, MutexGuard},
-};
+use std::io;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 /// A read-only handle to the commit log.
 #[derive(Clone)]
@@ -543,7 +541,7 @@ impl Replay {
                 }
             });
         for hash in hashes {
-            if let hash_map::Entry::Vacant(entry) = objects.entry(hash) {
+            if let Entry::Vacant(entry) = objects.entry(hash) {
                 let obj = odb.get(hash).ok_or(ReplayError::MissingObject {
                     segment_offset: self.segment_offset,
                     last_commit_offset: self.last_commit_offset.unwrap_or_default(),

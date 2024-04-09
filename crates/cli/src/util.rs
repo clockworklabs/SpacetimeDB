@@ -2,9 +2,9 @@ use anyhow::Context;
 use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
 use reqwest::RequestBuilder;
 use serde::Deserialize;
+use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::name::{DnsLookupResponse, RegisterTldResult, ReverseDNSResponse};
 use spacetimedb_lib::{Address, AlgebraicType, Identity};
-use std::collections::HashMap;
 use std::io::Write;
 use std::path::Path;
 

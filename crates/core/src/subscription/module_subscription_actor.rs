@@ -44,8 +44,8 @@ impl ModuleSubscriptions {
         timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<(), DBError> {
+        let ctx = ExecutionContext::subscribe(self.relational_db.address());
         let tx = scopeguard::guard(self.relational_db.begin_tx(), |tx| {
-            let ctx = ExecutionContext::subscribe(self.relational_db.address());
             self.relational_db.release_tx(&ctx, tx);
         });
         // check for backward comp.
@@ -74,7 +74,7 @@ impl ModuleSubscriptions {
         drop(guard);
 
         let execution_set: ExecutionSet = queries.into();
-        let database_update = execution_set.eval(sender.protocol, &self.relational_db, &tx)?;
+        let database_update = execution_set.eval(&ctx, sender.protocol, &self.relational_db, &tx)?;
 
         WORKER_METRICS
             .initial_subscription_evals

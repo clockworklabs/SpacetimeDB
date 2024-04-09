@@ -1,16 +1,13 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::Mutex;
-use std::time::Duration;
-
-use once_cell::sync::OnceCell;
-
+use super::database_instance_context::DatabaseInstanceContext;
 use crate::database_instance_context::TotalDiskUsage;
 use crate::db::db_metrics::DB_METRICS;
 use crate::energy::EnergyMonitor;
 use crate::host::Scheduler;
-
-use super::database_instance_context::DatabaseInstanceContext;
+use once_cell::sync::OnceCell;
+use spacetimedb_data_structures::map::IntMap;
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::time::Duration;
 
 /// The database state managed by [`DatabaseInstanceContextController`].
 ///
@@ -32,7 +29,7 @@ type Context = Arc<OnceCell<(Arc<DatabaseInstanceContext>, Scheduler)>>;
 
 #[derive(Clone)]
 pub struct DatabaseInstanceContextController {
-    contexts: Arc<Mutex<HashMap<u64, (Context, TotalDiskUsage)>>>,
+    contexts: Arc<Mutex<IntMap<u64, (Context, TotalDiskUsage)>>>,
     energy_monitor: Arc<dyn EnergyMonitor>,
 }
 

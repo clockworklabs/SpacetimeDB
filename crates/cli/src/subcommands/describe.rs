@@ -23,8 +23,8 @@ pub fn cli() -> clap::Command {
         .arg(Arg::new("brief").long("brief").short('b').action(SetTrue)
             .help("If this flag is present, a brief description shall be returned"))
         .arg(
-            Arg::new("as_identity")
-                .long("as-identity")
+            Arg::new("identity")
+                .long("identity")
                 .short('i')
                 .conflicts_with("anon_identity")
                 .help("The identity to use to describe the entity")
@@ -34,7 +34,7 @@ pub fn cli() -> clap::Command {
             Arg::new("anon_identity")
                 .long("anon-identity")
                 .short('a')
-                .conflicts_with("as_identity")
+                .conflicts_with("identity")
                 .action(SetTrue)
                 .help("If this flag is present, no identity will be provided when describing the database"),
         )
@@ -54,7 +54,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let entity_type = args.get_one::<String>("entity_type");
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
 
-    let as_identity = args.get_one::<String>("as_identity");
+    let identity = args.get_one::<String>("identity");
     let anon_identity = args.get_flag("anon_identity");
 
     let address = database_address(&config, database, server).await?;
@@ -69,7 +69,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             entity_name
         ),
     });
-    let auth_header = get_auth_header_only(&mut config, anon_identity, as_identity, server).await?;
+    let auth_header = get_auth_header_only(&mut config, anon_identity, identity, server).await?;
     let builder = add_auth_header_opt(builder, &auth_header);
 
     let descr = builder

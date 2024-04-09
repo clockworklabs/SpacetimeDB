@@ -1,7 +1,9 @@
 //! Provides identifiers such as `TableId`.
-use core::fmt;
 
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
+use core::fmt;
+use spacetimedb_data_structures::map::ValidAsIdentityHash;
+
+#[derive(Debug, Default, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
 #[repr(transparent)]
 pub struct TableId(pub u32);
 
@@ -28,6 +30,8 @@ macro_rules! system_id {
                 self.0 as usize
             }
         }
+
+        impl ValidAsIdentityHash for $name {}
 
         impl From<i32> for $name {
             fn from(value: i32) -> Self {

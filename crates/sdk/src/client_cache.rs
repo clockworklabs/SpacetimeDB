@@ -8,8 +8,8 @@ use anymap::{
     Map,
 };
 use im::HashMap;
+use spacetimedb_data_structures::map::HashMap as StdHashMap;
 use spacetimedb_sats::bsatn;
-use std::collections::HashMap as StdHashMap;
 use std::sync::Arc;
 
 /// A local mirror of the subscribed rows of one table in the database.

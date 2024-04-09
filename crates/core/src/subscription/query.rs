@@ -1,3 +1,4 @@
+use super::subscription::get_all;
 use crate::db::db_metrics::{DB_METRICS, MAX_QUERY_COMPILE_TIME};
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
@@ -11,15 +12,8 @@ use spacetimedb_lib::Address;
 use spacetimedb_vm::expr::{self, Crud, CrudExpr, DbType, QueryExpr};
 use std::time::Instant;
 
-use super::subscription::get_all;
-
 static WHITESPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap());
 pub const SUBSCRIBE_TO_ALL_QUERY: &str = "SELECT * FROM *";
-
-pub enum QueryDef {
-    Table(String),
-    Sql(String),
-}
 
 // TODO: It's semantically wrong to `SUBSCRIBE_TO_ALL_QUERY`
 // as it can only return back the changes valid for the tables in scope *right now*
@@ -345,13 +339,14 @@ mod tests {
     }
 
     fn check_query_eval(
+        ctx: &ExecutionContext,
         db: &RelationalDB,
         tx: &Tx,
         s: &ExecutionSet,
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
-        let result = s.eval(Protocol::Binary, db, tx)?.tables.unwrap_left();
+        let result = s.eval(ctx, Protocol::Binary, db, tx)?.tables.unwrap_left();
         assert_eq!(
             result.len(),
             total_tables,
@@ -590,7 +585,8 @@ mod tests {
         let row_2 = product!(2u64, "jhon doe");
         let tx = db.begin_tx();
         let s = compile_read_only_query(&db, &tx, &AuthCtx::for_testing(), SUBSCRIBE_TO_ALL_QUERY)?.into();
-        check_query_eval(&db, &tx, &s, 2, &[row_1.clone(), row_2.clone()])?;
+        let ctx = ExecutionContext::subscribe(db.address());
+        check_query_eval(&ctx, &db, &tx, &s, 2, &[row_1.clone(), row_2.clone()])?;
 
         let data1 = DatabaseTableUpdate {
             table_id: schema_1.table_id,

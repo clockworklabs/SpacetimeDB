@@ -662,6 +662,30 @@ SELECT * FROM inventory",
     }
 
     #[test]
+    fn test_large_query_no_panic() {
+        let (db, _tmp_dir) = make_test_db().unwrap();
+
+        let _table_id = db
+            .create_table_for_test_multi_column(
+                "test",
+                &[("x", AlgebraicType::I32), ("y", AlgebraicType::I32)],
+                col_list![0, 1],
+            )
+            .unwrap();
+
+        let mut query = "select * from test where ".to_string();
+        for x in 0..1_000 {
+            for y in 0..1_000 {
+                let fragment = format!("((x = {x}) and y = {y}) or");
+                query.push_str(&fragment);
+            }
+        }
+        query.push_str("((x = 1000) and (y = 1000))");
+
+        assert!(run_for_testing(&db, &query).is_err());
+    }
+
+    #[test]
     fn test_impossible_bounds_no_panic() {
         let (db, _tmp_dir) = make_test_db().unwrap();
 
