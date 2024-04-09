@@ -110,13 +110,13 @@ impl CommitLog {
                         decoded_commit_offset,
                         expected,
                     }) => {
-                        log::warn!("Out-of-order commit {}, expected {}", decoded_commit_offset, expected);
-                        return Err(LogReplayError::OutOfOrderCommit {
-                            commit_offset: decoded_commit_offset,
-                            segment_offset,
-                            last_commit_offset,
-                        }
-                        .into());
+                        log::warn!("Out-of-order commit {}, expected {}, last_commit_offset {}, segment_offset {}", decoded_commit_offset, expected, last_commit_offset, segment_offset);
+                        mlog.reset_to(last_commit_offset)
+                            .map_err(|source| LogReplayError::Reset {
+                                offset: last_commit_offset,
+                                source,
+                            })?;
+                        break;
                     }
                     // We expect that partial writes can occur at the end of a
                     // segment. Trimming the log is, however, only safe if we're
@@ -126,14 +126,13 @@ impl CommitLog {
                         last_commit_offset: commit_offset,
                         source,
                     }) if segment_offset < total_segments - 1 => {
-                        log::warn!("Corrupt commit after offset {}", commit_offset);
-                        return Err(LogReplayError::TrailingSegments {
-                            segment_offset,
-                            total_segments,
-                            commit_offset,
-                            source,
-                        }
-                        .into());
+                        log::warn!("Corrupt commit after offset {} {:?}", commit_offset, source);
+                        mlog.reset_to(commit_offset)
+                            .map_err(|source| LogReplayError::Reset {
+                                offset: commit_offset,
+                                source,
+                            })?;
+                        break;
                     }
                     Err(ReplayError::MissingObject {
                         segment_offset,
@@ -142,25 +141,35 @@ impl CommitLog {
                         referenced_from_commit_offset,
                     }) if segment_offset < total_segments - 1 => {
                         log::warn!(
-                            "Missing object {} referenced from {}",
+                            "Missing object {} referenced from {}, last_commit_offset {}",
                             hash,
-                            referenced_from_commit_offset
+                            referenced_from_commit_offset,
+                            last_commit_offset
                         );
-                        return Err(LogReplayError::TrailingSegments {
-                            segment_offset,
-                            total_segments,
-                            commit_offset: last_commit_offset,
-                            source: io::Error::new(io::ErrorKind::Other, "Missing object"),
-                        }
-                        .into());
+                        mlog.reset_to(last_commit_offset)
+                            .map_err(|source| LogReplayError::Reset {
+                                offset: last_commit_offset,
+                                source,
+                            })?;
+                        break;
                     }
-
                     // We are near the end of the log, so trim it to the known-
                     // good prefix.
                     Err(
                         ReplayError::CorruptedData { last_commit_offset, .. }
-                        | ReplayError::MissingObject { last_commit_offset, .. },
                     ) => {
+                        log::warn!("Corrupt commit in the last segment after offset {}", last_commit_offset);
+                        mlog.reset_to(last_commit_offset)
+                            .map_err(|source| LogReplayError::Reset {
+                                offset: last_commit_offset,
+                                source,
+                            })?;
+                        break;
+                    }
+                    Err(
+                        ReplayError::MissingObject { last_commit_offset, .. },
+                    ) => {
+                        log::warn!("Missing object in the last segment referenced from {}", last_commit_offset);
                         mlog.reset_to(last_commit_offset)
                             .map_err(|source| LogReplayError::Reset {
                                 offset: last_commit_offset,
