@@ -20,7 +20,7 @@ harness = false
 
 [dependencies]
 spacetimedb-data-structures.workspace = true
-spacetimedb-lib = { workspace = true, features = ["serde", "metrics"] }
+spacetimedb-lib = { workspace = true, features = ["serde"] }
 spacetimedb-client-api-messages.workspace = true
 spacetimedb-metrics.workspace = true
 spacetimedb-primitives.workspace = true
@@ -103,12 +103,10 @@ rocksdb = { workspace = true, optional = true }
 [features]
 # Print a warning when doing an unindexed `iter_by_col_range` on a large table.
 unindexed_iter_by_col_range_warn = []
-# Enable metrics in spacetimedb.
-metrics = []
 # Optional storage engines.
 odb_rocksdb = ["dep:rocksdb"]
 odb_sled = []
-default = ["odb_sled", "metrics", "unindexed_iter_by_col_range_warn"]
+default = ["odb_sled", "unindexed_iter_by_col_range_warn"]
 
 [dev-dependencies]
 spacetimedb-lib = { path = "../lib", features = ["proptest"] }
