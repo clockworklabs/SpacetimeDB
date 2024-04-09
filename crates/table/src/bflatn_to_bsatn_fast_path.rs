@@ -244,8 +244,8 @@ impl LayoutBuilder {
         // but BSATN stores `(tag, payload)`,
         // then splice the `first_variant_layout` into `self`.
 
-        let payload_bflatn_offset = self.next_bflatn_offset();
-        let tag_bflatn_offset = payload_bflatn_offset + sum.tag_offset;
+        let tag_bflatn_offset = self.next_bflatn_offset();
+        let payload_bflatn_offset = tag_bflatn_offset + sum.payload_offset;
 
         let tag_bsatn_offset = self.next_bsatn_offset();
         let payload_bsatn_offset = tag_bsatn_offset + 1;
@@ -341,9 +341,9 @@ mod test {
                     AlgebraicType::Bool,
                 ])]),
                 2,
-                // Sums get wonky layouts
-                // because BFLATN and BSATN store the tag and the payload in opposite orders.
-                &[(1, 0, 1), (0, 1, 1)][..],
+                // in bflatn, sums have padding after the tag to the max alignment of any variant payload
+                // in this case, 0 bytes of padding, because all payloads are aligned to 1
+                &[(0, 0, 1), (1, 1, 1)][..],
             ),
             (
                 ProductType::from([AlgebraicType::sum([
@@ -357,9 +357,9 @@ mod test {
                     AlgebraicType::U32,
                 ])]),
                 5,
-                // Sums get wonky layouts
-                // because BFLATN and BSATN store the tag and the payload in opposite orders.
-                &[(4, 0, 1), (0, 1, 4)][..],
+                // in bflatn, sums have padding after the tag to the max alignment of any variant payload
+                // in this case, 3 bytes of padding
+                &[(0, 0, 1), (4, 1, 4)][..],
             ),
             (
                 ProductType::from([
@@ -367,9 +367,9 @@ mod test {
                     AlgebraicType::U32,
                 ]),
                 21,
-                // Sums get wonky layouts
-                // because BFLATN and BSATN store the tag and the payload in opposite orders.
-                &[(16, 0, 1), (0, 1, 16), (32, 17, 4)][..],
+                // in bflatn, sums have padding after the tag to the max alignment of any variant payload
+                // in this case, 15 bytes of padding
+                &[(0, 0, 1), (16, 1, 16), (32, 17, 4)][..],
             ),
             (
                 ProductType::from([
@@ -392,6 +392,20 @@ mod test {
                 ]),
                 31,
                 &[(0, 0, 1), (2, 1, 30)][..],
+            ),
+            // make sure sums with no variant data are handled correctly
+            (
+                ProductType::from([AlgebraicType::sum([AlgebraicType::product::<[AlgebraicType; 0]>([])])]),
+                1,
+                &[(0, 0, 1)][..],
+            ),
+            (
+                ProductType::from([AlgebraicType::sum([
+                    AlgebraicType::product::<[AlgebraicType; 0]>([]),
+                    AlgebraicType::product::<[AlgebraicType; 0]>([]),
+                ])]),
+                1,
+                &[(0, 0, 1)][..],
             ),
         ] {
             assert_expected_layout(ty, bsatn_length, fields);
