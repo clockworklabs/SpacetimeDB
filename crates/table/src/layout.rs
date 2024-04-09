@@ -244,7 +244,8 @@ pub struct SumTypeLayout {
     pub layout: Layout,
     /// The variants of the sum type.
     pub variants: Collection<SumTypeVariantLayout>,
-    /// The relative offset of a sum value's tag for sums of this type.
+    /// The relative offset of a sum value's payload for sums of this type.
+    /// Sum value tags are always at offset 0.
     pub payload_offset: u16,
 }
 
