@@ -1,16 +1,12 @@
 use super::subscription::get_all;
-use crate::db::db_metrics::{DB_METRICS, MAX_QUERY_COMPILE_TIME};
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
-use crate::execution_context::WorkloadType;
 use crate::sql::compiler::compile_sql;
 use crate::subscription::subscription::SupportedQuery;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::Address;
 use spacetimedb_vm::expr::{self, Crud, CrudExpr, DbType, QueryExpr};
-use std::time::Instant;
 
 static WHITESPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap());
 pub const SUBSCRIBE_TO_ALL_QUERY: &str = "SELECT * FROM *";
@@ -67,33 +63,6 @@ pub fn compile_read_only_query(
     } else {
         Err(SubscriptionError::Empty.into())
     }
-}
-
-// TODO: Enable query compilation metrics once cardinality has been addressed.
-#[allow(unused)]
-fn record_query_compilation_metrics(workload: WorkloadType, db: &Address, query: &str, start: Instant) {
-    let compile_duration = start.elapsed().as_secs_f64();
-
-    DB_METRICS
-        .rdb_query_compile_time_sec
-        .with_label_values(&workload, db)
-        .observe(compile_duration);
-
-    let max_compile_duration = *MAX_QUERY_COMPILE_TIME
-        .lock()
-        .unwrap()
-        .entry((*db, workload))
-        .and_modify(|max| {
-            if compile_duration > *max {
-                *max = compile_duration;
-            }
-        })
-        .or_insert_with(|| compile_duration);
-
-    DB_METRICS
-        .rdb_query_compile_time_sec_max
-        .with_label_values(&workload, db)
-        .set(max_compile_duration);
 }
 
 /// The kind of [`QueryExpr`] currently supported for incremental evaluation.
