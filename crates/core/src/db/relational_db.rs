@@ -91,7 +91,7 @@ impl RelationalDB {
 
                     let percentage =
                         f64::floor((commit.commit_offset as f64 / max_commit_offset as f64) * 100.0) as i32;
-                    if percentage > last_logged_percentage && percentage % 10 == 0 {
+                    if percentage > last_logged_percentage {
                         last_logged_percentage = percentage;
                         log::info!(
                             "[{}] Loaded {}% ({}/{})",
@@ -764,6 +764,7 @@ pub fn open_db(path: impl AsRef<Path>, in_memory: bool, fsync: bool) -> Result<R
         )))
     };
     let odb = Arc::new(Mutex::new(make_default_ostorage(in_memory, path.join("odb"))?));
+    log::debug!("ODB opened");
     let stdb = RelationalDB::open(path, mlog, odb, Address::zero(), fsync)?;
 
     Ok(stdb)
