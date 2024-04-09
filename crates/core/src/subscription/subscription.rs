@@ -675,7 +675,7 @@ pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::relational_db::tests_utils::make_test_db;
+    use crate::db::relational_db::tests_utils::TestDB;
     use crate::sql::compiler::compile_sql;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_sats::relation::{DbTable, FieldName};
@@ -686,7 +686,7 @@ mod tests {
     // Compile an index join after replacing the index side with a virtual table.
     // The original index and probe sides should be swapped after introducing the delta table.
     fn compile_incremental_index_join_index_side() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -771,7 +771,7 @@ mod tests {
     // Compile an index join after replacing the probe side with a virtual table.
     // The original index and probe sides should remain after introducing the virtual table.
     fn compile_incremental_index_join_probe_side() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -856,7 +856,7 @@ mod tests {
 
     #[test]
     fn compile_incremental_join_unindexed_semi_join() {
-        let (db, _tmp) = make_test_db().expect("Failed to make_test_db");
+        let db = TestDB::durable().expect("failed to make test db");
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];

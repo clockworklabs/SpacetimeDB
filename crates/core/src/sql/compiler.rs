@@ -282,7 +282,8 @@ fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, P
 mod tests {
     use super::*;
     use crate::db::datastore::traits::IsolationLevel;
-    use crate::db::relational_db::tests_utils::make_test_db;
+    use crate::db::relational_db::tests_utils::TestDB;
+
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::operator::OpQuery;
     use spacetimedb_primitives::{col_list, ColList, TableId};
@@ -317,7 +318,7 @@ mod tests {
 
     #[test]
     fn compile_eq() -> ResultTest<()> {
-        let (db, _) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [test] without any indexes
         let schema = &[("a", AlgebraicType::U64)];
@@ -337,7 +338,7 @@ mod tests {
 
     #[test]
     fn compile_not_eq() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [test] with cols [a, b] and index on [b].
         db.create_table_for_test(
@@ -360,7 +361,7 @@ mod tests {
 
     #[test]
     fn compile_index_eq() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [test] with index on [a]
         let schema = &[("a", AlgebraicType::U64)];
@@ -380,7 +381,7 @@ mod tests {
 
     #[test]
     fn compile_eq_and_eq() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [test] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -402,7 +403,7 @@ mod tests {
 
     #[test]
     fn compile_index_eq_and_eq() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [test] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -424,7 +425,7 @@ mod tests {
 
     #[test]
     fn compile_index_multi_eq_and_eq() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [test] with index on [b]
         let schema = &[
@@ -447,7 +448,7 @@ mod tests {
 
     #[test]
     fn compile_eq_or_eq() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [test] with indexes on [a] and [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -468,7 +469,7 @@ mod tests {
 
     #[test]
     fn compile_index_range_open() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [test] with indexes on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -489,7 +490,7 @@ mod tests {
 
     #[test]
     fn compile_index_range_closed() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [test] with indexes on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -515,7 +516,7 @@ mod tests {
 
     #[test]
     fn compile_index_eq_select_range() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [test] with indexes on [a] and [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -537,7 +538,7 @@ mod tests {
 
     #[test]
     fn compile_join_lhs_push_down() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [lhs] with index on [a]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -604,7 +605,7 @@ mod tests {
 
     #[test]
     fn compile_join_lhs_push_down_no_index() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [lhs] with no indexes
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -685,7 +686,7 @@ mod tests {
 
     #[test]
     fn compile_join_rhs_push_down_no_index() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [lhs] with no indexes
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -766,7 +767,7 @@ mod tests {
 
     #[test]
     fn compile_join_lhs_and_rhs_push_down() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [lhs] with index on [a]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -841,7 +842,7 @@ mod tests {
 
     #[test]
     fn compile_index_join() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -939,7 +940,7 @@ mod tests {
 
     #[test]
     fn compile_index_multi_join() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -1032,7 +1033,7 @@ mod tests {
 
     #[test]
     fn compile_check_ambiguous_field() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [lhs] with index on [a]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
