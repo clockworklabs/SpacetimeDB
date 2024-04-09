@@ -37,14 +37,6 @@ Example usage:
 }
 
 fn main() -> anyhow::Result<()> {
-    // take_hook() returns the default hook in case when a custom one is not set
-    let orig_hook = panic::take_hook();
-    panic::set_hook(Box::new(move |panic_info| {
-        // invoke the default handler and exit the process
-        orig_hook(panic_info);
-        process::exit(1);
-    }));
-
     // Create a multi-threaded run loop
     Builder::new_multi_thread()
         .enable_all()
