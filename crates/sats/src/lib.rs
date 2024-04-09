@@ -1,6 +1,7 @@
 pub mod algebraic_type;
 mod algebraic_type_ref;
 pub mod algebraic_value;
+mod algebraic_value_hash;
 pub mod array_type;
 pub mod array_value;
 pub mod bsatn;
