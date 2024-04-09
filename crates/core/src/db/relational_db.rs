@@ -508,7 +508,6 @@ impl RelationalDB {
     }
 
     pub fn drop_table(&self, ctx: &ExecutionContext, tx: &mut MutTx, table_id: TableId) -> Result<(), DBError> {
-        #[cfg(feature = "metrics")]
         let _guard = DB_METRICS
             .rdb_drop_table_time
             .with_label_values(&table_id.0)

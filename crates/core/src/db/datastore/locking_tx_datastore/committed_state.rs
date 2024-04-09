@@ -413,7 +413,6 @@ impl CommittedState {
                     let pv = table.delete(blob_store, row_ptr).expect("Delete for non-existent row!");
                     let table_name = table.get_schema().table_name.as_str();
                     // Increment rows deleted metric
-                    #[cfg(feature = "metrics")]
                     ctx.metrics
                         .write()
                         .inc_by(table_id, MetricType::RowsDeleted, 1, || table_name.to_string());
@@ -471,7 +470,6 @@ impl CommittedState {
 
                 let table_name = commit_table.get_schema().table_name.as_str();
                 // Increment rows inserted metric
-                #[cfg(feature = "metrics")]
                 ctx.metrics
                     .write()
                     .inc_by(table_id, MetricType::RowsInserted, 1, || table_name.to_string());
@@ -596,7 +594,6 @@ impl<'a> CommittedIndexIter<'a> {
     }
 }
 
-#[cfg(feature = "metrics")]
 impl Drop for CommittedIndexIter<'_> {
     fn drop(&mut self) {
         let mut metrics = self.ctx.metrics.write();

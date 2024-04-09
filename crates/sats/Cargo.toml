@@ -11,12 +11,11 @@ description = "Spacetime Algebraic Type Notation"
 serde = ["dep:serde"]
 # Allows using `Arbitrary` impls defined in this crate.
 proptest = ["dep:proptest", "dep:proptest-derive"]
-metrics = ["dep:spacetimedb-metrics"]
 
 [dependencies]
 spacetimedb-bindings-macro.workspace = true
 spacetimedb-primitives.workspace = true
-spacetimedb-metrics = { workspace = true, optional = true }
+spacetimedb-metrics.workspace = true
 
 arrayvec.workspace = true
 bitflags.workspace = true

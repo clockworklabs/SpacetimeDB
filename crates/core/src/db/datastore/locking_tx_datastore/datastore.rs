@@ -416,7 +416,6 @@ impl MutTxDatastore for Locking {
     }
 }
 
-#[cfg(feature = "metrics")]
 pub(crate) fn record_metrics(ctx: &ExecutionContext, tx_timer: Instant, lock_wait_time: Duration, committed: bool) {
     let workload = &ctx.workload();
     let db = &ctx.database();
@@ -486,7 +485,6 @@ impl MutTx for Locking {
 
         // Record metrics for the transaction at the very end right before we drop
         // the MutTx and release the lock.
-        #[cfg(feature = "metrics")]
         record_metrics(ctx, timer, lock_wait_time, false);
     }
 
@@ -498,7 +496,6 @@ impl MutTx for Locking {
 
         // Record metrics for the transaction at the very end right before we drop
         // the MutTx and release the lock.
-        #[cfg(feature = "metrics")]
         record_metrics(ctx, timer, lock_wait_time, true);
         Ok(Some(res))
     }
