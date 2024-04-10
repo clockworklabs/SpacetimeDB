@@ -14,7 +14,7 @@ use std::{
 };
 
 use anyhow::Context as _;
-use log::{debug, info, trace, warn};
+use log::{info, trace, warn};
 use spacetimedb_commitlog::{error, payload::Txdata, Commit, Commitlog, Decoder, Encode, Transaction};
 use tokio::{
     sync::mpsc,
@@ -215,7 +215,7 @@ impl<T: Encode + Send + Sync + 'static> PersisterTask<T> {
                 clog.flush().map(drop).unwrap_or_else(flush_error);
             }
 
-            debug!("flush-append succeeded");
+            trace!("flush-append succeeded");
         })
         .await;
         if let Err(e) = task {

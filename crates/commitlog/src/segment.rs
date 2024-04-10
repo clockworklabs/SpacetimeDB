@@ -5,7 +5,7 @@ use std::{
     ops::Range,
 };
 
-use log::debug;
+use log::trace;
 
 use crate::{
     commit::{self, Commit},
@@ -333,7 +333,7 @@ impl Metadata {
             })
         }
         while let Some(commit) = commit_meta(&mut reader, &sofar)? {
-            debug!("commit::{commit:?}");
+            trace!("commit::{commit:?}");
             if commit.tx_range.start != sofar.tx_range.end {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
