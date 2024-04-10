@@ -422,9 +422,9 @@ impl CommittedState {
 
                     let table_name = table.get_schema().table_name.as_str();
                     // Increment rows deleted metric
-                    ctx.metrics
-                        .write()
-                        .inc_by(table_id, MetricType::RowsDeleted, 1, || table_name.to_string());
+                    // ctx.metrics
+                    //     .write()
+                    //     .inc_by(table_id, MetricType::RowsDeleted, 1, || table_name.to_string());
                     // Decrement table rows gauge
                     DB_METRICS
                         .rdb_num_table_rows
@@ -486,9 +486,9 @@ impl CommittedState {
 
                 let table_name = commit_table.get_schema().table_name.as_str();
                 // Increment rows inserted metric
-                ctx.metrics
-                    .write()
-                    .inc_by(table_id, MetricType::RowsInserted, 1, || table_name.to_string());
+                // ctx.metrics
+                //     .write()
+                //     .inc_by(table_id, MetricType::RowsInserted, 1, || table_name.to_string());
                 // Increment table rows gauge
                 DB_METRICS
                     .rdb_num_table_rows
@@ -576,7 +576,7 @@ impl CommittedState {
         }
     }
 }
-
+#[allow(dead_code)]
 pub struct CommittedIndexIter<'a> {
     ctx: &'a ExecutionContext,
     table_id: TableId,
@@ -605,34 +605,36 @@ impl<'a> CommittedIndexIter<'a> {
     }
 }
 
-impl Drop for CommittedIndexIter<'_> {
-    fn drop(&mut self) {
-        let mut metrics = self.ctx.metrics.write();
-        let get_table_name = || {
-            self.committed_state
-                .get_schema(&self.table_id)
-                .map(|table| table.table_name.as_str())
-                .unwrap_or_default()
-                .to_string()
-        };
+// TODO(shub): this runs parralely for subscriptions leading to lock contention.
+// commenting until we find a way to batch them without lock.
+// impl Drop for CommittedIndexIter<'_> {
+//     fn drop(&mut self) {
+//         let mut metrics = self.ctx.metrics.write();
+//         let get_table_name = || {
+//             self.committed_state
+//                 .get_schema(&self.table_id)
+//                 .map(|table| table.table_name.as_str())
+//                 .unwrap_or_default()
+//                 .to_string()
+//         };
 
-        metrics.inc_by(self.table_id, MetricType::IndexSeeks, 1, get_table_name);
-        // Increment number of index keys scanned
-        metrics.inc_by(
-            self.table_id,
-            MetricType::KeysScanned,
-            self.committed_rows.num_pointers_yielded(),
-            get_table_name,
-        );
-        // Increment number of rows fetched
-        metrics.inc_by(
-            self.table_id,
-            MetricType::RowsFetched,
-            self.num_committed_rows_fetched,
-            get_table_name,
-        );
-    }
-}
+//         metrics.inc_by(self.table_id, MetricType::IndexSeeks, 1, get_table_name);
+//         // Increment number of index keys scanned
+//         metrics.inc_by(
+//             self.table_id,
+//             MetricType::KeysScanned,
+//             self.committed_rows.num_pointers_yielded(),
+//             get_table_name,
+//         );
+//         // Increment number of rows fetched
+//         metrics.inc_by(
+//             self.table_id,
+//             MetricType::RowsFetched,
+//             self.num_committed_rows_fetched,
+//             get_table_name,
+//         );
+//     }
+// }
 
 impl<'a> Iterator for CommittedIndexIter<'a> {
     type Item = RowRef<'a>;
