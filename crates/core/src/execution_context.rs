@@ -78,7 +78,7 @@ impl Metrics {
     pub fn table_exists(&self, table_id: TableId) -> bool {
         self.0.iter().any(|x| x.table_id == table_id)
     }
-
+    #[allow(dead_code)]
     fn flush(&mut self, workload: &WorkloadType, database: &Address, reducer: &str) {
         macro_rules! flush_metric {
             ($db_metric:expr, $metric:expr, $metric_field:ident) => {
