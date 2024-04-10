@@ -257,9 +257,7 @@ impl LayoutBuilder {
                 bsatn_offset: payload_bsatn_offset,
                 length: 0,
             });
-        } else if sum.payload_offset == 1 {
-            // Nothing to do.
-        }
+        } // Otherwise, nothing to do.
 
         // Lay out the variants.
         // Since all variants have the same layout, we just use the first one.
