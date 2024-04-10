@@ -1,14 +1,13 @@
-use crate::{config::IdentityConfig, Config};
+use std::process::Output;
+
+use crate::{util::spacetime_reverse_dns, Config};
 use anyhow::Context;
 use clap::{Arg, ArgMatches, Command};
 use futures::future::join_all;
 use reqwest::StatusCode;
 use serde::Deserialize;
 
-use spacetimedb_lib::{
-    name::{DomainName, ReverseDNSResponse},
-    Address,
-};
+use spacetimedb_lib::{name::DomainName, Address};
 use tabled::{
     settings::{object::Columns, Alignment, Modify, Style},
     Table, Tabled,
@@ -80,8 +79,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 
     let identity = identity_config.nick_or_identity();
     if !result.addresses.is_empty() {
-        let databases_dns =
-            get_dns_for_database_addresses(config.clone(), server, identity_config, &result.addresses).await;
+        let databases_dns = get_dns_for_database_addresses(config.clone(), server, &result.addresses).await;
 
         let combined_dns_address_rows: Vec<DatabaseRow> = result
             .addresses
@@ -125,44 +123,16 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 async fn get_dns_for_database_addresses(
     config: Config,
     server: Option<&str>,
-    identity_config: &IdentityConfig,
     addresses: &Vec<AddressRow>,
 ) -> Result<Vec<Vec<DomainName>>, anyhow::Error> {
-    let client = reqwest::Client::new();
     let mut database_names: Vec<Vec<DomainName>> = vec![];
-    let futures = addresses.iter().map(|address| async {
-        let res = client
-            .get(format!(
-                "{}/database/reverse_dns/{}",
-                config.get_host_url(server)?,
-                address.db_address
-            ))
-            .basic_auth("token", Some(&identity_config.token))
-            .send()
-            .await?;
-
-        if res.status() != StatusCode::OK {
-            return Err(anyhow::anyhow!(format!(
-                "Unable to retrieve database name for database {}: {}",
-                address.db_address,
-                res.status()
-            )));
-        }
-
-        let result: ReverseDNSResponse = res.json().await?;
-        if result.names.len() > 0 {
-            return Ok(result.names.clone());
-        } else {
-            return Err(anyhow::anyhow!(format!(
-                "Unable to retrieve database name for database {}",
-                address.db_address,
-            )));
-        }
-    });
+    let futures = addresses
+        .iter()
+        .map(|address| async { spacetime_reverse_dns(&config, &address.db_address.to_string(), server).await });
 
     let result = join_all(futures).await;
     for domains in result {
-        database_names.push(domains.unwrap());
+        database_names.push(domains.unwrap().names);
     }
 
     return Ok(database_names);
