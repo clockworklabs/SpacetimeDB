@@ -18,7 +18,7 @@ use spacetimedb_sats::{
     SumTypeVariant,
 };
 
-/// Aligns a `base` offset to the `required_alignment` (in the + direction) and returns it.
+/// Aligns a `base` offset to the `required_alignment` (in the positive direction) and returns it.
 ///
 /// When `base` is already aligned, `base` will be returned.
 pub const fn align_to(base: usize, required_alignment: usize) -> usize {
@@ -425,12 +425,20 @@ impl From<SumType> for SumTypeLayout {
             .collect::<Vec<_>>()
             .into();
 
-        // guarantees tag fits inside align
+        // Guarantees that tag fits inside align.
         let align = u16::max(max_child_align as u16, 1);
 
+        // Ensure the payload field is sufficiently aligned for all its members.
+        // `max_child_size` and `max_child_align` will already be consistent
+        // if the most-aligned variant is also the largest,
+        // but this is not necessarily the case.
+        // E.g. if variant A is a product of 31 `u8`s, and variant B is a single `u64`,
+        // `max_child_size` will be 31 and `max_child_align` will be 8.
+        // Note that `payload_size` may be 0.
+        let payload_size = align_to(max_child_size, max_child_align);
+
         // [tag | pad to align | payload]
-        // payload may be empty
-        let size = align + align_to(max_child_size, max_child_align) as u16;
+        let size = align + payload_size as u16;
         let payload_offset = align;
         let layout = Layout { align, size };
         Self {

@@ -96,6 +96,7 @@ fn product_type_to_rose_tree(ty: &ProductTypeLayout, current_offset: &mut usize)
 /// See [`algebraic_type_to_rose_tree`] for more details.
 fn sum_type_to_rose_tree(ty: &SumTypeLayout, current_offset: &mut usize) -> VarLenRoseTree {
     // The tag goes before the variant data.
+    // Currently, this is the same as `*current_offset`.
     let tag_offset = *current_offset + ty.offset_of_tag();
 
     // For each variant, collect that variant's sub-tree.

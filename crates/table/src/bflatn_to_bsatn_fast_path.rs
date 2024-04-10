@@ -341,8 +341,8 @@ mod test {
                     AlgebraicType::Bool,
                 ])]),
                 2,
-                // in bflatn, sums have padding after the tag to the max alignment of any variant payload
-                // in this case, 0 bytes of padding, because all payloads are aligned to 1
+                // In BFLATN, sums have padding after the tag to the max alignment of any variant payload.
+                // In this case, 0 bytes of padding, because all payloads are aligned to 1.
                 &[(0, 0, 1), (1, 1, 1)][..],
             ),
             (
@@ -357,8 +357,8 @@ mod test {
                     AlgebraicType::U32,
                 ])]),
                 5,
-                // in bflatn, sums have padding after the tag to the max alignment of any variant payload
-                // in this case, 3 bytes of padding
+                // In BFLATN, sums have padding after the tag to the max alignment of any variant payload.
+                // In this case, 3 bytes of padding.
                 &[(0, 0, 1), (4, 1, 4)][..],
             ),
             (
@@ -367,8 +367,8 @@ mod test {
                     AlgebraicType::U32,
                 ]),
                 21,
-                // in bflatn, sums have padding after the tag to the max alignment of any variant payload
-                // in this case, 15 bytes of padding
+                // In BFLATN, sums have padding after the tag to the max alignment of any variant payload.
+                // In this case, 15 bytes of padding.
                 &[(0, 0, 1), (16, 1, 16), (32, 17, 4)][..],
             ),
             (
@@ -393,7 +393,7 @@ mod test {
                 31,
                 &[(0, 0, 1), (2, 1, 30)][..],
             ),
-            // make sure sums with no variant data are handled correctly
+            // Make sure sums with no variant data are handled correctly.
             (
                 ProductType::from([AlgebraicType::sum([AlgebraicType::product::<[AlgebraicType; 0]>([])])]),
                 1,
