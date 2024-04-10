@@ -210,11 +210,11 @@ impl ExecutionContext {
     }
 }
 
-// impl Drop for ExecutionContext {
-//     fn drop(&mut self) {
-//         let workload = self.workload;
-//         let database = self.database;
-//         let reducer = self.reducer.as_deref().unwrap_or_default();
-//         self.metrics.write().flush(&workload, &database, reducer);
-//     }
-// }
+impl Drop for ExecutionContext {
+    fn drop(&mut self) {
+        let workload = self.workload;
+        let database = self.database;
+        let reducer = self.reducer.as_deref().unwrap_or_default();
+        self.metrics.write().flush(&workload, &database, reducer);
+    }
+}
