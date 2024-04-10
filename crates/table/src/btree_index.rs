@@ -441,12 +441,7 @@ impl BTreeIndex {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{
-        blob_store::HashMapBlobStore,
-        indexes::SquashedOffset,
-        proptest_sats::{generate_product_value, generate_row_type},
-        table::Table,
-    };
+    use crate::{blob_store::HashMapBlobStore, indexes::SquashedOffset, table::Table};
     use core::ops::Bound::*;
     use proptest::prelude::*;
     use proptest::{collection::vec, test_runner::TestCaseResult};
@@ -454,7 +449,9 @@ mod test {
     use spacetimedb_primitives::ColListBuilder;
     use spacetimedb_sats::{
         db::def::{TableDef, TableSchema},
-        product, AlgebraicType, ProductType, ProductValue,
+        product,
+        proptest::{generate_product_value, generate_row_type},
+        AlgebraicType, ProductType, ProductValue,
     };
 
     fn gen_cols(ty_len: usize) -> impl Strategy<Value = ColList> {

@@ -23,7 +23,7 @@ harness = false
 
 [features]
 # Allows using `Arbitrary` impls defined in this crate.
-proptest = ["dep:proptest", "dep:proptest-derive"]
+proptest = ["dep:proptest", "dep:proptest-derive", "spacetimedb-sats/proptest"]
 
 # Needed for miri
 blake3_pure = ["blake3/pure"]

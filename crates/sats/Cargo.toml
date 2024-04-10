@@ -34,6 +34,7 @@ smallvec.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+ahash.workspace = true
 bytes.workspace = true
 rand.workspace = true
 # Also as dev-dependencies for use in _this_ crate's tests.

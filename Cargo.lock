@@ -4641,6 +4641,7 @@ dependencies = [
 name = "spacetimedb-sats"
 version = "0.8.2"
 dependencies = [
+ "ahash 0.8.3",
  "arrayvec",
  "bitflags 2.4.1",
  "bytes",

@@ -450,12 +450,12 @@ impl BflatnSerializedRowBuffer<'_> {
 #[cfg(test)]
 pub mod test {
     use super::*;
-    use crate::proptest_sats::generate_typed_row;
     use crate::{
         bflatn_from::serialize_row_from_page, blob_store::HashMapBlobStore, row_type_visitor::row_type_visitor,
     };
     use proptest::{prelude::*, prop_assert_eq, proptest};
     use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
+    use spacetimedb_sats::proptest::generate_typed_row;
 
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(2048))]

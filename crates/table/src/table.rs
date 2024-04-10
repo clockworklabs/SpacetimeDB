@@ -973,11 +973,11 @@ pub(crate) mod test {
     use super::*;
     use crate::blob_store::HashMapBlobStore;
     use crate::indexes::{PageIndex, PageOffset};
-    use crate::proptest_sats::generate_typed_row;
     use proptest::prelude::*;
     use proptest::test_runner::TestCaseResult;
     use spacetimedb_sats::bsatn::to_vec;
     use spacetimedb_sats::db::def::{ColumnDef, IndexDef, IndexType, TableDef};
+    use spacetimedb_sats::proptest::generate_typed_row;
     use spacetimedb_sats::{product, AlgebraicType, ArrayValue};
 
     pub(crate) fn table(ty: ProductType) -> Table {
