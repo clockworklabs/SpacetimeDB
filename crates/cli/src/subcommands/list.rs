@@ -43,7 +43,7 @@ struct AddressRow {
 
 #[derive(Tabled, Deserialize)]
 struct DatabaseRow {
-    pub db_name: DomainName,
+    pub db_names: String,
     pub db_address: Address,
 }
 
@@ -88,7 +88,16 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
             .iter()
             .enumerate()
             .map(|(index, address)| DatabaseRow {
-                db_name: databases_dns.as_ref().unwrap().get(index).unwrap().clone(),
+                db_names: databases_dns
+                    .as_ref()
+                    .unwrap()
+                    .get(index)
+                    .unwrap()
+                    .clone()
+                    .iter()
+                    .map(|domain| domain.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", "),
                 db_address: address.db_address,
             })
             .collect();
@@ -118,9 +127,9 @@ async fn get_dns_for_database_addresses(
     server: Option<&str>,
     identity_config: &IdentityConfig,
     addresses: &Vec<AddressRow>,
-) -> Result<Vec<DomainName>, anyhow::Error> {
+) -> Result<Vec<Vec<DomainName>>, anyhow::Error> {
     let client = reqwest::Client::new();
-    let mut database_names: Vec<DomainName> = vec![];
+    let mut database_names: Vec<Vec<DomainName>> = vec![];
     let futures = addresses.iter().map(|address| async {
         let res = client
             .get(format!(
@@ -141,8 +150,8 @@ async fn get_dns_for_database_addresses(
         }
 
         let result: ReverseDNSResponse = res.json().await?;
-        if result.names.get(0).is_some() {
-            return Ok(result.names.get(0).unwrap().clone());
+        if result.names.len() > 0 {
+            return Ok(result.names.clone());
         } else {
             return Err(anyhow::anyhow!(format!(
                 "Unable to retrieve database name for database {}",
@@ -152,8 +161,8 @@ async fn get_dns_for_database_addresses(
     });
 
     let result = join_all(futures).await;
-    for domain in result {
-        database_names.push(domain.unwrap());
+    for domains in result {
+        database_names.push(domains.unwrap());
     }
 
     return Ok(database_names);
