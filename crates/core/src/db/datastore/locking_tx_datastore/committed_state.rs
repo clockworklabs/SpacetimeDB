@@ -421,10 +421,10 @@ impl CommittedState {
                     });
 
                     let table_name = table.get_schema().table_name.as_str();
-                    // Increment rows deleted metric
-                    // ctx.metrics
-                    //     .write()
-                    //     .inc_by(table_id, MetricType::RowsDeleted, 1, || table_name.to_string());
+                    //Increment rows deleted metric
+                    ctx.metrics
+                        .write()
+                        .inc_by(table_id, MetricType::RowsDeleted, 1, || table_name.to_string());
                     // Decrement table rows gauge
                     DB_METRICS
                         .rdb_num_table_rows
@@ -486,9 +486,9 @@ impl CommittedState {
 
                 let table_name = commit_table.get_schema().table_name.as_str();
                 // Increment rows inserted metric
-                // ctx.metrics
-                //     .write()
-                //     .inc_by(table_id, MetricType::RowsInserted, 1, || table_name.to_string());
+                ctx.metrics
+                    .write()
+                    .inc_by(table_id, MetricType::RowsInserted, 1, || table_name.to_string());
                 // Increment table rows gauge
                 DB_METRICS
                     .rdb_num_table_rows
