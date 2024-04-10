@@ -6,12 +6,6 @@ pub mod address;
 pub mod filter;
 pub mod identity;
 pub mod operator;
-pub mod type_def {
-    pub use spacetimedb_sats::{AlgebraicType, ProductType, ProductTypeElement, SumType};
-}
-pub mod type_value {
-    pub use spacetimedb_sats::{AlgebraicValue, ProductValue};
-}
 
 pub mod error;
 pub mod version;
@@ -20,9 +14,11 @@ pub use address::Address;
 pub use identity::Identity;
 pub use spacetimedb_sats::hash::{self, hash_bytes, Hash};
 pub use spacetimedb_sats::relation;
+pub use spacetimedb_sats::SpacetimeType;
+pub use spacetimedb_sats::__make_register_reftype;
 pub use spacetimedb_sats::{self as sats, bsatn, buffer, de, ser};
-pub use type_def::*;
-pub use type_value::{AlgebraicValue, ProductValue};
+pub use spacetimedb_sats::{AlgebraicType, ProductType, ProductTypeElement, SumType};
+pub use spacetimedb_sats::{AlgebraicValue, ProductValue};
 
 pub const MODULE_ABI_MAJOR_VERSION: u16 = 8;
 
