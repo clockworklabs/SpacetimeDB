@@ -1,5 +1,3 @@
-use std::process::Output;
-
 use crate::{util::spacetime_reverse_dns, Config};
 use anyhow::Context;
 use clap::{Arg, ArgMatches, Command};
