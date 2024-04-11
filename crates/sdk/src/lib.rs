@@ -13,7 +13,7 @@ use global_connection::{with_connection, with_connection_mut, with_disconnect_ca
 // references them, but users should not.
 
 #[doc(hidden)]
-pub use spacetimedb_client_api_messages::client_api as client_api_messages;
+pub use spacetimedb_client_api_messages::ws as ws_messages;
 
 #[doc(hidden)]
 pub mod client_cache;

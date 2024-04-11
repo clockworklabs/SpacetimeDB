@@ -1,12 +1,13 @@
 use crate::callbacks::DbCallbacks;
-use crate::client_api_messages;
 use crate::reducer::AnyReducerEvent;
 use crate::spacetime_module::SpacetimeModule;
 use crate::table::{TableType, TableWithPrimaryKey};
+use crate::ws_messages;
 use anymap::{
     any::{Any, CloneAny},
     Map,
 };
+use bytes::Bytes;
 use im::HashMap;
 use spacetimedb_data_structures::map::HashMap as StdHashMap;
 use spacetimedb_sats::bsatn;
@@ -31,27 +32,7 @@ pub struct TableCache<T: TableType> {
     /// or branching on enum variants.
     ///
     /// Note that this is an [`im::HashMap`], and so can be shared efficiently.
-    entries: HashMap<Vec<u8>, T>,
-}
-
-// In order to be resilient against future extensions to the protocol,
-// Protobuf/Prost does not deserialize `enum` fields directly into a Rust `enum`.
-// Instead, it leaves the message field as an `i32`,
-// which we must then compare against the enum variants.
-// These helper functions do that comparison.
-
-/// Is `op` the `Delete` operation?
-///
-/// `op` will be the `op` field of a `client_api_messages::TableRowOperation`.
-fn op_is_delete(op: i32) -> bool {
-    (client_api_messages::table_row_operation::OperationType::Delete as i32) == op
-}
-
-/// Is `op` the `Insert` operation?
-///
-/// `op` will be the `op` field of a `client_api_messages::TableRowOperation`.
-fn op_is_insert(op: i32) -> bool {
-    (client_api_messages::table_row_operation::OperationType::Insert as i32) == op
+    entries: HashMap<Bytes, T>,
 }
 
 impl<T: TableType> TableCache<T> {
@@ -65,7 +46,7 @@ impl<T: TableType> TableCache<T> {
     ///
     /// `row_bytes` should be the BSATN-serialized representation of `value`.
     /// It will be used as the key in a `HashMap`.
-    fn insert(&mut self, callbacks: &mut Vec<RowCallback<T>>, row_bytes: Vec<u8>, value: T) {
+    fn insert(&mut self, callbacks: &mut Vec<RowCallback<T>>, row_bytes: Bytes, value: T) {
         callbacks.push(RowCallback::Insert(value.clone()));
 
         if self.entries.insert(row_bytes, value).is_some() {
@@ -77,7 +58,7 @@ impl<T: TableType> TableCache<T> {
     ///
     /// `row_bytes` should be the BSATN-serialized representation of `value`.
     /// It will be used as the key in a `HashMap`.
-    fn delete(&mut self, callbacks: &mut Vec<RowCallback<T>>, row_bytes: Vec<u8>, value: T) {
+    fn delete(&mut self, callbacks: &mut Vec<RowCallback<T>>, row_bytes: Bytes, value: T) {
         callbacks.push(RowCallback::Delete(value));
 
         if self.entries.remove(&row_bytes).is_none() {
@@ -94,47 +75,37 @@ impl<T: TableType> TableCache<T> {
         }
     }
 
-    /// Decode an instance of `T`, i.e. a row, from the `row` field of the `row_op`, and
-    /// dispatch on the `op` field of the `row_op` to determine the appropriate action:
-    /// `self.delete` or `self.insert`.
-    fn handle_row_update(
-        &mut self,
-        callbacks: &mut Vec<RowCallback<T>>,
-        row_op: client_api_messages::TableRowOperation,
-    ) {
-        let client_api_messages::TableRowOperation { op, row } = row_op;
-        match bsatn::from_slice(&row) {
+    fn decode_row(row: &Bytes) -> Option<T> {
+        match bsatn::from_slice::<T>(row) {
+            Ok(value) => Some(value),
             Err(e) => {
                 log::error!(
                     "Error while deserializing row from TableRowOperation: {:?}. Row is {:?}",
                     e,
                     row
                 );
-            }
-            Ok(value) => {
-                if op_is_delete(op) {
-                    log::trace!("Got delete event for {:?} row {:?}", T::TABLE_NAME, value);
-                    self.delete(callbacks, row, value);
-                } else if op_is_insert(op) {
-                    log::trace!("Got insert event for {:?} row {:?}", T::TABLE_NAME, value);
-                    self.insert(callbacks, row, value);
-                } else {
-                    log::error!("Unknown table_row_operation::OperationType {}", op);
-                }
+                None
             }
         }
     }
 
-    /// For each `TableRowOperation` in the `table_update`, insert or remove the row into
+    /// For each `insert` or `delete` in the `table_update`, insert or remove the row into
     /// or from the cache as appropriate. Do not handle primary keys, and do not generate
     /// `on_update` methods.
     fn handle_table_update_no_primary_key(
         &mut self,
         callbacks: &mut Vec<RowCallback<T>>,
-        table_update: client_api_messages::TableUpdate,
+        table_update: ws_messages::TableUpdate,
     ) {
-        for row_update in table_update.table_row_operations.into_iter() {
-            self.handle_row_update(callbacks, row_update);
+        for row in table_update.deletes {
+            if let Some(value) = Self::decode_row(&row.0) {
+                self.delete(callbacks, row.0, value)
+            }
+        }
+        for row in table_update.inserts {
+            if let Some(value) = Self::decode_row(&row.0) {
+                self.insert(callbacks, row.0, value)
+            }
         }
     }
 
@@ -182,22 +153,34 @@ impl<T: TableType> TableCache<T> {
     fn reinitialize_for_new_subscribed_set(
         &mut self,
         callbacks: &mut Vec<RowCallback<T>>,
-        new_subs: client_api_messages::TableUpdate,
+        new_subs: ws_messages::TableUpdate,
     ) {
         // TODO: there should be a fast path where `self` is empty prior to this
         //       operation, where we avoid building a diff and just insert all the
         //       `new_subs`.
-        enum DiffEntry<T> {
-            Insert(T),
-            Delete(T),
-            NoChange(T),
+        enum DiffEntryKind {
+            Insert,
+            Delete,
+            NoChange,
         }
+        struct DiffEntry<T> {
+            kind: DiffEntryKind,
+            value: T,
+        }
+        let diffentry_delete = |value| DiffEntry {
+            kind: DiffEntryKind::Delete,
+            value,
+        };
+        let diffentry_insert = |value| DiffEntry {
+            kind: DiffEntryKind::Insert,
+            value,
+        };
 
         let prev_subs = std::mem::take(&mut self.entries);
 
-        let mut diff: StdHashMap<Vec<u8>, DiffEntry<T>> = StdHashMap::with_capacity(
+        let mut diff: StdHashMap<Bytes, DiffEntry<T>> = StdHashMap::with_capacity(
             // pre-allocate plenty of space to avoid hash conflicts
-            (new_subs.table_row_operations.len() + prev_subs.len()) * 2,
+            (new_subs.inserts.len() + prev_subs.len()) * 2,
         );
 
         for (row_bytes, value) in prev_subs.into_iter() {
@@ -206,71 +189,63 @@ impl<T: TableType> TableCache<T> {
                 T::TABLE_NAME,
                 value,
             );
-            if diff.insert(row_bytes, DiffEntry::Delete(value)).is_some() {
+            if diff.insert(row_bytes, diffentry_delete(value)).is_some() {
                 // This should be impossible, but just in case...
                 log::error!("Found duplicate row in existing `TableCache` for {:?}", T::TABLE_NAME);
             }
         }
 
-        for row_op in new_subs.table_row_operations.into_iter() {
-            let client_api_messages::TableRowOperation { op, row: row_bytes } = row_op;
-
-            if !op_is_insert(op) {
-                log::error!(
-                    "Received non-`Insert` `TableRowOperation` for {:?} in new set",
-                    T::TABLE_NAME,
-                );
-                continue;
-            }
-
-            // TODO: It would be cool to be able to do this with the `HashMap::entry` api,
-            //       but I couldn't get the upgrade branch (i.e. the `DiffEntry::Delete`
-            //       pattern) to borrowck, since `Entry` only provides `and_modify`, not
-            //       `map`, and we need to move the row of the `Delete` into the
-            //       `NoChange`.
-            match diff.remove(&row_bytes) {
-                None => match bsatn::from_slice(&row_bytes) {
-                    Err(e) => {
-                        log::error!(
-                            "Error while deserializing row from `TableRowOperation`: {:?}. Row is {:?}",
-                            e,
-                            row_bytes,
-                        );
-                        continue;
-                    }
-                    Ok(row) => {
-                        log::trace!("Initializing table {:?}: got new row {:?}.", T::TABLE_NAME, row);
-                        diff.insert(row_bytes, DiffEntry::Insert(row));
-                    }
-                },
-
-                Some(diff_entry @ (DiffEntry::Insert(_) | DiffEntry::NoChange(_))) => {
-                    log::warn!("Received duplicate `Insert` for {:?} in new set", T::TABLE_NAME);
-                    diff.insert(row_bytes, diff_entry);
-                }
-                Some(DiffEntry::Delete(row)) => {
-                    log::trace!("Initializing table {:?}: row {:?} remains present", T::TABLE_NAME, row);
-                    diff.insert(row_bytes, DiffEntry::NoChange(row));
-                }
-            };
+        if !new_subs.deletes.is_empty() {
+            log::error!(
+                "Received non-`Insert` `TableRowOperation` for {:?} in new set",
+                T::TABLE_NAME,
+            );
         }
 
-        for (row_bytes, diff_entry) in diff.into_iter() {
-            match diff_entry {
-                DiffEntry::Delete(row) => {
+        for ws_messages::Row(row_bytes) in new_subs.inserts {
+            match diff.entry(row_bytes) {
+                spacetimedb_data_structures::map::Entry::Vacant(v) => {
+                    if let Some(row) = Self::decode_row(v.key()) {
+                        log::trace!("Initializing table {:?}: got new row {:?}.", T::TABLE_NAME, row);
+                        v.insert(diffentry_insert(row));
+                    }
+                }
+
+                spacetimedb_data_structures::map::Entry::Occupied(mut o) => {
+                    let entry = o.get_mut();
+                    match entry.kind {
+                        DiffEntryKind::Insert | DiffEntryKind::NoChange => {
+                            log::warn!("Received duplicate `Insert` for {:?} in new set", T::TABLE_NAME);
+                        }
+                        DiffEntryKind::Delete => {
+                            log::trace!(
+                                "Initializing table {:?}: row {:?} remains present",
+                                T::TABLE_NAME,
+                                entry.value
+                            );
+                            entry.kind = DiffEntryKind::NoChange;
+                        }
+                    }
+                }
+            }
+        }
+
+        for (row_bytes, DiffEntry { kind, value }) in diff.into_iter() {
+            match kind {
+                DiffEntryKind::Delete => {
                     // Invoke `on_delete` callbacks; the row was previously resident but
                     // is going away.
-                    callbacks.push(RowCallback::Delete(row));
+                    callbacks.push(RowCallback::Delete(value));
                 }
-                DiffEntry::NoChange(row) => {
+                DiffEntryKind::NoChange => {
                     // Insert into the new cache table, but do not invoke `on_insert`
                     // callbacks; the row was already resident.
-                    self.entries.insert(row_bytes, row);
+                    self.entries.insert(row_bytes, value);
                 }
-                DiffEntry::Insert(row) => {
+                DiffEntryKind::Insert => {
                     // Insert into the new cache table and invoke `on_insert` callbacks;
                     // the row is new.
-                    self.insert(callbacks, row_bytes, row);
+                    self.insert(callbacks, row_bytes, value);
                 }
             }
         }
@@ -284,18 +259,18 @@ impl<T: TableWithPrimaryKey> TableCache<T> {
     fn handle_table_update_with_primary_key(
         &mut self,
         callbacks: &mut Vec<RowCallback<T>>,
-        table_update: client_api_messages::TableUpdate,
+        table_update: ws_messages::TableUpdate,
     ) {
         log::trace!("Handling TableUpdate for table {:?} with primary key", T::TABLE_NAME);
 
         enum DiffEntry<T> {
-            Insert(Vec<u8>, T),
-            Delete(Vec<u8>, T),
+            Insert(Bytes, T),
+            Delete(Bytes, T),
             Update {
                 old: T,
-                old_bytes: Vec<u8>,
+                old_bytes: Bytes,
                 new: T,
-                new_bytes: Vec<u8>,
+                new_bytes: Bytes,
             },
         }
 
@@ -333,33 +308,6 @@ impl<T: TableWithPrimaryKey> TableCache<T> {
             }
         }
 
-        fn parse_diff_entry<T: TableWithPrimaryKey>(
-            client_api_messages::TableRowOperation { op, row: row_bytes }: client_api_messages::TableRowOperation,
-        ) -> Option<DiffEntry<T>> {
-            match bsatn::from_slice(&row_bytes) {
-                Err(e) => {
-                    log::error!(
-                        "Error while deserializing row from `TableRowOperation`: {:?}. Row is {:?}",
-                        e,
-                        row_bytes,
-                    );
-                    None
-                }
-                Ok(row) => {
-                    if op_is_delete(op) {
-                        log::trace!("Got delete event for {:?} row {:?}", T::TABLE_NAME, row);
-                        Some(DiffEntry::Delete(row_bytes, row))
-                    } else if op_is_insert(op) {
-                        log::trace!("Got insert event for {:?} row {:?}", T::TABLE_NAME, row);
-                        Some(DiffEntry::Insert(row_bytes, row))
-                    } else {
-                        log::error!("Unknown table_row_operation::OperationType {}", op);
-                        None
-                    }
-                }
-            }
-        }
-
         fn primary_key<T: TableWithPrimaryKey>(entry: &DiffEntry<T>) -> &T::PrimaryKey {
             match entry {
                 DiffEntry::Insert(_, new) => new.primary_key(),
@@ -370,13 +318,23 @@ impl<T: TableWithPrimaryKey> TableCache<T> {
 
         let mut diff: StdHashMap<T::PrimaryKey, DiffEntry<T>> = StdHashMap::with_capacity(
             // Pre-allocate plenty of space to minimize hash collisions.
-            table_update.table_row_operations.len() * 2,
+            (table_update.inserts.len() + table_update.deletes.len()) * 2,
         );
 
         // Traverse the `table_update` to construct a diff, merging duplicated `Insert`
         // and `Delete` into `Update`.
-        for row_op in table_update.table_row_operations.into_iter() {
-            if let Some(diff_entry) = parse_diff_entry(row_op) {
+        for ws_messages::Row(row_bytes) in table_update.deletes {
+            if let Some(value) = Self::decode_row(&row_bytes) {
+                let diff_entry = DiffEntry::Delete(row_bytes, value);
+                let pk: T::PrimaryKey = <T::PrimaryKey as Clone>::clone(primary_key(&diff_entry));
+                let existing_entry = diff.remove(&pk);
+                let new_entry = merge_diff_entries(diff_entry, existing_entry);
+                diff.insert(pk, new_entry);
+            }
+        }
+        for ws_messages::Row(row_bytes) in table_update.inserts {
+            if let Some(value) = Self::decode_row(&row_bytes) {
+                let diff_entry = DiffEntry::Insert(row_bytes, value);
                 let pk: T::PrimaryKey = <T::PrimaryKey as Clone>::clone(primary_key(&diff_entry));
                 let existing_entry = diff.remove(&pk);
                 let new_entry = merge_diff_entries(diff_entry, existing_entry);
@@ -401,7 +359,7 @@ impl<T: TableWithPrimaryKey> TableCache<T> {
 
     /// Remove `old` from the cache and replace it with `new`,
     /// and invoke any on-update callbacks.
-    fn update(&mut self, callbacks: &mut Vec<RowCallback<T>>, old_bytes: Vec<u8>, old: T, new_bytes: Vec<u8>, new: T) {
+    fn update(&mut self, callbacks: &mut Vec<RowCallback<T>>, old_bytes: Bytes, old: T, new_bytes: Bytes, new: T) {
         callbacks.push(RowCallback::Update(old, new.clone()));
 
         if self.entries.remove(&old_bytes).is_none() {
@@ -447,11 +405,17 @@ pub struct RowCallbackReminders {
 }
 
 impl RowCallbackReminders {
-    /// Construct a `RowCallbackReminder` with capacity
-    /// appropriate for the number of table updates in `subs`.
-    pub(crate) fn new_for_subscription_update(subs: &client_api_messages::SubscriptionUpdate) -> RowCallbackReminders {
+    pub(crate) fn new() -> Self {
         RowCallbackReminders {
-            table_row_callbacks: Map::with_capacity(subs.table_updates.len()),
+            table_row_callbacks: Map::new(),
+        }
+    }
+
+    /// Construct a `RowCallbackReminder` with capacity
+    /// appropriate for the number of table updates in `db_update`.
+    pub(crate) fn new_for_database_update(db_update: &ws_messages::DatabaseUpdate) -> RowCallbackReminders {
+        RowCallbackReminders {
+            table_row_callbacks: Map::with_capacity(db_update.tables.len()),
         }
     }
 
@@ -528,7 +492,7 @@ impl ClientCache {
     pub fn handle_table_update_no_primary_key<T: TableType>(
         &mut self,
         callback_reminders: &mut RowCallbackReminders,
-        update: client_api_messages::TableUpdate,
+        update: ws_messages::TableUpdate,
     ) {
         let table_cache = self.find_table::<T>();
         let table_callbacks = callback_reminders.find_table_callback_reminders::<T>();
@@ -542,7 +506,7 @@ impl ClientCache {
     pub fn handle_table_update_with_primary_key<T: TableWithPrimaryKey>(
         &mut self,
         callback_reminders: &mut RowCallbackReminders,
-        update: client_api_messages::TableUpdate,
+        update: ws_messages::TableUpdate,
     ) {
         let table_cache = self.find_table::<T>();
         let table_callbacks = callback_reminders.find_table_callback_reminders::<T>();
@@ -556,7 +520,7 @@ impl ClientCache {
     pub fn handle_resubscribe_for_type<T: TableType>(
         &mut self,
         callback_reminders: &mut RowCallbackReminders,
-        new_subs: client_api_messages::TableUpdate,
+        new_subs: ws_messages::TableUpdate,
     ) {
         let table_cache = self.find_table::<T>();
         let table_callbacks = callback_reminders.find_table_callback_reminders::<T>();
@@ -576,7 +540,7 @@ impl ClientCache {
     pub(crate) fn handle_table_update(
         &mut self,
         callback_reminders: &mut RowCallbackReminders,
-        table_update: client_api_messages::TableUpdate,
+        table_update: ws_messages::TableUpdate,
     ) {
         self.module
             .clone()
@@ -589,7 +553,7 @@ impl ClientCache {
     pub(crate) fn handle_table_reinitialize_for_new_subscribed_set(
         &mut self,
         callback_reminders: &mut RowCallbackReminders,
-        new_subs: client_api_messages::TableUpdate,
+        new_subs: ws_messages::TableUpdate,
     ) {
         self.module
             .clone()

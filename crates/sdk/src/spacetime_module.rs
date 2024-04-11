@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use crate::{
     callbacks::{DbCallbacks, ReducerCallbacks},
-    client_api_messages,
     client_cache::{ClientCache, ClientCacheView, RowCallbackReminders},
     reducer::AnyReducerEvent,
+    ws_messages,
 };
 
 pub trait SpacetimeModule: Send + Sync {
@@ -13,7 +13,7 @@ pub trait SpacetimeModule: Send + Sync {
     /// arg.
     fn handle_event(
         &self,
-        event: client_api_messages::Event,
+        event: ws_messages::TransactionUpdate,
         callbacks: &mut ReducerCallbacks,
         state: ClientCacheView,
     ) -> Option<Arc<AnyReducerEvent>>;
@@ -24,7 +24,7 @@ pub trait SpacetimeModule: Send + Sync {
     /// that `TableCache`.
     fn handle_table_update(
         &self,
-        table_update: client_api_messages::TableUpdate,
+        table_update: ws_messages::TableUpdate,
         cache: &mut ClientCache,
         callbacks: &mut RowCallbackReminders,
     );
@@ -34,7 +34,7 @@ pub trait SpacetimeModule: Send + Sync {
     /// `reinitialize_for_new_subscribed_set` that `TableCache`.
     fn handle_resubscribe(
         &self,
-        table_update: client_api_messages::TableUpdate,
+        table_update: ws_messages::TableUpdate,
         cache: &mut ClientCache,
         callbacks: &mut RowCallbackReminders,
     );

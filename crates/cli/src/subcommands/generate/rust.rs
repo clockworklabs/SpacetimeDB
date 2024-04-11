@@ -779,7 +779,7 @@ pub fn autogen_rust_globals(ctx: &GenCtx, items: &[GenItem]) -> Vec<(String, Str
 
 /// Extra imports required by the `mod.rs` file, in addition to the [`SPACETIMEDB_IMPORTS`].
 const DISPATCH_IMPORTS: &[&str] = &[
-    "use spacetimedb_sdk::client_api_messages::{TableUpdate, Event};",
+    "use spacetimedb_sdk::ws_messages::{TableUpdate, TransactionUpdate};",
     "use spacetimedb_sdk::client_cache::{ClientCache, RowCallbackReminders};",
     "use spacetimedb_sdk::identity::Credentials;",
     "use spacetimedb_sdk::callbacks::{DbCallbacks, ReducerCallbacks};",
@@ -961,13 +961,9 @@ fn print_handle_resubscribe_defn(out: &mut Indenter, items: &[GenItem]) {
 /// to `ReducerCallbacks::handle_event_of_type` with an appropriate type argument.
 fn print_handle_event_defn(out: &mut Indenter, items: &[GenItem]) {
     out.delimited_block(
-        "fn handle_event(&self, event: Event, _reducer_callbacks: &mut ReducerCallbacks, _state: Arc<ClientCache>) -> Option<Arc<AnyReducerEvent>> {",
+        "fn handle_event(&self, event: TransactionUpdate, _reducer_callbacks: &mut ReducerCallbacks, _state: Arc<ClientCache>) -> Option<Arc<AnyReducerEvent>> {",
         |out| {
-            out.delimited_block(
-                "let Some(function_call) = &event.function_call else {",
-                |out| writeln!(out, "spacetimedb_sdk::log::warn!(\"Received Event with None function_call\"); return None;"),
-                "};\n",
-            );
+            writeln!(out, "let reducer_call = &event.reducer_call;");
 
             // If the module defines no reducers,
             // we'll generate a single match arm, the fallthrough.
@@ -977,7 +973,7 @@ fn print_handle_event_defn(out: &mut Indenter, items: &[GenItem]) {
             writeln!(out, "#[allow(clippy::match_single_binding)]");
 
             out.delimited_block(
-                "match &function_call.reducer[..] {",
+                "match &reducer_call.reducer_name[..] {",
                 |out| {
                     for reducer in iter_reducer_items(items) {
                         writeln!(

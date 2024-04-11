@@ -1,13 +1,13 @@
 use crate::callbacks::{
     CredentialStore, DbCallbacks, DisconnectCallbacks, ReducerCallbacks, SubscriptionAppliedCallbacks,
 };
-use crate::client_api_messages;
 use crate::client_cache::{ClientCache, ClientCacheView, RowCallbackReminders};
 use crate::global_connection::CLIENT_CACHE;
 use crate::identity::Credentials;
-use crate::reducer::{AnyReducerEvent, Reducer};
+use crate::reducer::Reducer;
 use crate::spacetime_module::SpacetimeModule;
 use crate::websocket::DbConnection;
+use crate::ws_messages;
 use anyhow::{Context, Result};
 use futures::stream::StreamExt;
 use futures_channel::mpsc;
@@ -27,7 +27,7 @@ pub struct BackgroundDbConnection {
 
     handle: runtime::Handle,
     /// None if not yet connected.
-    send_chan: Option<mpsc::UnboundedSender<client_api_messages::Message>>,
+    send_chan: Option<mpsc::UnboundedSender<ws_messages::ClientMessage>>,
     #[allow(unused)]
     /// None if not yet connected.
     websocket_loop_handle: Option<JoinHandle<()>>,
@@ -82,42 +82,6 @@ fn enter_or_create_runtime() -> Result<(Option<Runtime>, runtime::Handle)> {
     }
 }
 
-fn process_table_update(
-    update: client_api_messages::TableUpdate,
-    client_cache: &mut ClientCache,
-    callback_reminders: &mut RowCallbackReminders,
-) {
-    client_cache.handle_table_update(callback_reminders, update);
-}
-
-fn process_subscription_update_for_new_subscribed_set(
-    msg: client_api_messages::SubscriptionUpdate,
-    client_cache: &mut ClientCache,
-    callback_reminders: &mut RowCallbackReminders,
-) {
-    for update in msg.table_updates {
-        client_cache.handle_table_reinitialize_for_new_subscribed_set(callback_reminders, update);
-    }
-}
-
-fn process_subscription_update_for_transaction_update(
-    msg: client_api_messages::SubscriptionUpdate,
-    client_cache: &mut ClientCache,
-    callback_reminders: &mut RowCallbackReminders,
-) {
-    for update in msg.table_updates {
-        process_table_update(update, client_cache, callback_reminders);
-    }
-}
-
-fn process_event(
-    msg: client_api_messages::Event,
-    reducer_callbacks: &mut ReducerCallbacks,
-    state: ClientCacheView,
-) -> Option<Arc<AnyReducerEvent>> {
-    reducer_callbacks.handle_event(msg, state)
-}
-
 /// Advance the client cache state by `update`
 /// starting from the state in `client_cache`,
 /// then store the new state back into `client_cache` and return it.
@@ -144,53 +108,55 @@ fn update_client_cache(
     update: impl FnOnce(&mut ClientCache),
 ) -> ClientCacheView {
     let mut cache_lock = client_cache.lock().expect("ClientCache Mutex is poisoned");
-    // Make a new state starting from the one in `cache_lock`.
-    // `new_state` is not yet shared, and so can be mutated.
-    let mut new_state = ClientCache::clone(cache_lock.as_ref().unwrap());
+    let cache_arc = cache_lock.as_mut().unwrap();
+    // If there are no other references to cache_arc, we can mutate it. Otherwise,
+    // Arc::make_mut will clone it.
+    let new_state = Arc::make_mut(cache_arc);
     // Advance `new_state` to hold any changes.
-    update(&mut new_state);
-    // Make `new_state` shared, and store it back into `cache_lock`.
-    *cache_lock = Some(Arc::new(new_state));
+    update(new_state);
     // Return the new state.
-    Option::clone(&cache_lock).unwrap()
+    cache_arc.clone()
 }
 
 fn process_transaction_update(
-    client_api_messages::TransactionUpdate {
-        subscription_update,
-        event,
-    }: client_api_messages::TransactionUpdate,
+    mut msg: ws_messages::TransactionUpdate,
     client_cache: &Mutex<Option<ClientCacheView>>,
     db_callbacks: &Mutex<DbCallbacks>,
     reducer_callbacks: &Mutex<ReducerCallbacks>,
 ) {
     // Process the updated tables in the `subscription_update`.
-    if let Some(update) = subscription_update {
-        let mut callback_reminders = RowCallbackReminders::new_for_subscription_update(&update);
-        let new_state = update_client_cache(client_cache, |client_cache| {
-            process_subscription_update_for_transaction_update(update, client_cache, &mut callback_reminders);
-        });
+    let db_update = match &mut msg.status {
+        ws_messages::UpdateStatus::Committed(db_update) => Some(std::mem::take(db_update)),
+        _ => None,
+    };
+    let mut callback_reminders = match &db_update {
+        Some(db_update) => RowCallbackReminders::new_for_database_update(db_update),
+        _ => RowCallbackReminders::new(),
+    };
+    let new_state = match db_update {
+        Some(db_update) => update_client_cache(client_cache, |client_cache| {
+            for table in db_update.tables {
+                client_cache.handle_table_update(&mut callback_reminders, table);
+            }
+        }),
+        None => client_cache
+            .lock()
+            .expect("ClientCache Mutex is poisoned")
+            .clone()
+            .unwrap(),
+    };
 
-        let mut db_callbacks_lock = db_callbacks.lock().expect("DbCallbacks Mutex is poisoned");
-
-        if let Some(event) = event {
-            let mut reducer_lock = reducer_callbacks.lock().expect("ReducerCallbacks Mutex is poisoned");
-            let event = process_event(event, &mut reducer_lock, new_state.clone());
-            new_state.invoke_row_callbacks(&mut callback_reminders, &mut db_callbacks_lock, event);
-        } else {
-            log::error!("Received TransactionUpdate with no Event");
-            new_state.invoke_row_callbacks(&mut callback_reminders, &mut db_callbacks_lock, None);
-        }
-    } else {
-        log::error!("Received TransactionUpdate with no SubscriptionUpdate");
-    }
+    let mut db_callbacks_lock = db_callbacks.lock().expect("DbCallbacks Mutex is poisoned");
+    let mut reducer_lock = reducer_callbacks.lock().expect("ReducerCallbacks Mutex is poisoned");
+    let event = reducer_lock.handle_event(msg, new_state.clone());
+    new_state.invoke_row_callbacks(&mut callback_reminders, &mut db_callbacks_lock, event);
 }
 
 // This function's future will be run in the background with `Runtime::spawn`, so the
 // future must be `'static`. As a result, it must own (shared pointers to) the
 // `ClientCache`, `ReducerCallbacks` and `Credentials`, rather than references.
 async fn receiver_loop(
-    mut recv: mpsc::UnboundedReceiver<client_api_messages::Message>,
+    mut recv: mpsc::UnboundedReceiver<ws_messages::ServerMessage>,
     client_cache: SharedCell<Option<ClientCacheView>>,
     db_callbacks: SharedCell<DbCallbacks>,
     reducer_callbacks: SharedCell<ReducerCallbacks>,
@@ -200,14 +166,14 @@ async fn receiver_loop(
 ) {
     while let Some(msg) = recv.next().await {
         match msg {
-            client_api_messages::Message { r#type: None } => (),
-            client_api_messages::Message {
-                r#type: Some(client_api_messages::message::Type::SubscriptionUpdate(update)),
-            } => {
-                log::info!("Message SubscriptionUpdate");
-                let mut callback_reminders = RowCallbackReminders::new_for_subscription_update(&update);
+            ws_messages::ServerMessage::InitialSubscription(update) => {
+                log::info!("Message InitialSubscription");
+                let mut callback_reminders = RowCallbackReminders::new_for_database_update(&update.database_update);
                 let new_state = update_client_cache(&client_cache, |client_cache| {
-                    process_subscription_update_for_new_subscribed_set(update, client_cache, &mut callback_reminders);
+                    for tbl_update in update.database_update.tables {
+                        client_cache
+                            .handle_table_reinitialize_for_new_subscribed_set(&mut callback_reminders, tbl_update);
+                    }
                 });
 
                 subscription_callbacks
@@ -218,22 +184,20 @@ async fn receiver_loop(
                 let mut db_callbacks_lock = db_callbacks.lock().expect("DbCallbacks Mutex is poisoned");
                 new_state.invoke_row_callbacks(&mut callback_reminders, &mut db_callbacks_lock, None);
             }
-            client_api_messages::Message {
-                r#type: Some(client_api_messages::message::Type::TransactionUpdate(transaction_update)),
-            } => {
+            ws_messages::ServerMessage::TransactionUpdate(transaction_update) => {
                 log::trace!("Message TransactionUpdate");
 
                 process_transaction_update(transaction_update, &client_cache, &db_callbacks, &reducer_callbacks);
             }
-            client_api_messages::Message {
-                r#type: Some(client_api_messages::message::Type::IdentityToken(ident)),
-            } => {
+            ws_messages::ServerMessage::IdentityToken(ident) => {
                 log::trace!("Message IdentityToken");
                 let state = Option::clone(&client_cache.lock().expect("ClientCache Mutex is poisoned")).unwrap();
                 let mut credentials_lock = credentials.lock().expect("Credentials Mutex is poisoned");
                 credentials_lock.handle_identity_token(ident, state);
             }
-            other => log::info!("Unknown message: {:?}", other),
+            ws_messages::ServerMessage::OneOffQueryResponse(_) => {
+                log::info!("unexpected OneOffQueryResponse")
+            }
         }
     }
     let final_state = client_cache.lock().expect("ClientCache Mutex is poisoned");
@@ -274,7 +238,7 @@ impl BackgroundDbConnection {
 
     fn spawn_receiver(
         &self,
-        recv: mpsc::UnboundedReceiver<client_api_messages::Message>,
+        recv: mpsc::UnboundedReceiver<ws_messages::ServerMessage>,
         client_cache: SharedCell<Option<ClientCacheView>>,
     ) -> JoinHandle<()> {
         self.handle.spawn(receiver_loop(
@@ -378,7 +342,7 @@ impl BackgroundDbConnection {
         }
     }
 
-    fn send_message(&self, message: client_api_messages::Message) -> Result<()> {
+    fn send_message(&self, message: ws_messages::ClientMessage) -> Result<()> {
         self.send_chan
             .as_ref()
             .context("Cannot send message before connecting")?
@@ -391,28 +355,19 @@ impl BackgroundDbConnection {
     }
 
     pub(crate) fn subscribe_owned(&self, queries: Vec<String>) -> Result<()> {
-        self.send_message(client_api_messages::Message {
-            r#type: Some(client_api_messages::message::Type::Subscribe(
-                // Todo: generate random request_id instead of 0.
-                client_api_messages::Subscribe {
-                    query_strings: queries,
-                    request_id: 0,
-                },
-            )),
-        })
+        self.send_message(ws_messages::ClientMessage::Subscribe(ws_messages::Subscribe {
+            query_strings: queries,
+            request_id: 0,
+        }))
         .with_context(|| "Subscribing to new queries")
     }
 
     pub(crate) fn invoke_reducer<R: Reducer>(&self, reducer: R) -> Result<()> {
-        self.send_message(client_api_messages::Message {
-            r#type: Some(client_api_messages::message::Type::FunctionCall(
-                client_api_messages::FunctionCall {
-                    reducer: R::REDUCER_NAME.to_string(),
-                    arg_bytes: bsatn::to_vec(&reducer).expect("Serializing reducer failed"),
-                    request_id: 0,
-                },
-            )),
-        })
+        self.send_message(ws_messages::ClientMessage::CallReducer(ws_messages::CallReducer {
+            reducer: ws_messages::ReducerId::Name(R::REDUCER_NAME.to_string()),
+            args: bsatn::to_vec(&reducer).expect("Serializing reducer failed").into(),
+            request_id: 0,
+        }))
         .with_context(|| format!("Invoking reducer {}", R::REDUCER_NAME))
     }
 }

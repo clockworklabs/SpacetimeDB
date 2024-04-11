@@ -107,7 +107,7 @@ impl BenchDatabase for SpacetimeModule {
             module.call_reducer_binary(&name, ProductValue::new(&[])).await?;
             */
             // workaround for now
-            module.client.module.clear_table(&table_id.pascal_case).await?;
+            module.client.module.clear_table(&table_id.pascal_case)?;
             Ok(())
         })
     }

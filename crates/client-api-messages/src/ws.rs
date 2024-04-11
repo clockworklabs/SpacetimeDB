@@ -8,7 +8,7 @@ use crate::timestamp::Timestamp;
 
 #[derive(SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
-pub enum ClientMessage<Args> {
+pub enum ClientMessage<Args = Row> {
     /// Request a reducer run.
     CallReducer(CallReducer<Args>),
     /// Register SQL queries on which to receive updates.

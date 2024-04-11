@@ -3103,29 +3103,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "prost"
-version = "0.10.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71adf41db68aa0daaefc69bb30bcd68ded9b9abaad5d1fbb6304c4fb390e083e"
-dependencies = [
- "bytes",
- "prost-derive",
-]
-
-[[package]]
-name = "prost-derive"
-version = "0.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b670f45da57fb8542ebdbb6105a925fe571b67f9e7ed9f47a06a84e72b4e7cc"
-dependencies = [
- "anyhow",
- "itertools 0.10.5",
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
-
-[[package]]
 name = "protobuf"
 version = "2.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4497,6 +4474,7 @@ dependencies = [
  "anymap",
  "base64 0.21.4",
  "brotli",
+ "bytes",
  "cursive",
  "futures",
  "futures-channel",
@@ -4506,7 +4484,6 @@ dependencies = [
  "im",
  "lazy_static",
  "log",
- "prost",
  "rand 0.8.5",
  "spacetimedb-client-api-messages",
  "spacetimedb-data-structures",
@@ -4596,7 +4573,6 @@ dependencies = [
  "env_logger",
  "lazy_static",
  "log",
- "prost",
  "rand 0.8.5",
  "serde",
  "serde_json",

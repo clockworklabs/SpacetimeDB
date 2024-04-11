@@ -9,14 +9,13 @@ use tokio::runtime::{Builder, Runtime};
 
 use spacetimedb::address::Address;
 
-use prost::Message;
 use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, Protocol};
 use spacetimedb::config::{FilesLocal, SpacetimeDbFiles};
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::db::{Config, Storage};
-use spacetimedb::protobuf::client_api;
+use spacetimedb::messages::ws;
 use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, DatabaseDef, NodeDelegate};
-use spacetimedb_lib::sats;
+use spacetimedb_lib::{bsatn, sats};
 
 pub use spacetimedb::database_logger::LogLevel;
 
@@ -56,14 +55,12 @@ impl ModuleHandle {
     }
 
     pub async fn call_reducer_binary(&self, reducer: &str, args: sats::ProductValue) -> anyhow::Result<()> {
-        let message = client_api::Message {
-            r#type: Some(client_api::message::Type::FunctionCall(client_api::FunctionCall {
-                reducer: reducer.to_string(),
-                arg_bytes: sats::bsatn::to_vec(&args)?,
-                request_id: 0,
-            })),
-        };
-        self.send(message.encode_to_vec()).await
+        let message = ws::ClientMessage::CallReducer(ws::CallReducer {
+            reducer: ws::ReducerId::Name(reducer.to_string()),
+            args: bsatn::to_vec(&args).unwrap(),
+            request_id: 0,
+        });
+        self.send(bsatn::to_vec(&message).unwrap()).await
     }
 
     pub async fn send(&self, message: impl Into<DataMessage>) -> anyhow::Result<()> {
