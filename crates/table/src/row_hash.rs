@@ -63,7 +63,8 @@ unsafe fn hash_product(
     }
 }
 
-/// Hashes `value = &bytes[range_move(0..ty.size(), *curr_offset)]` typed at `ty`.
+/// Hashes `value = &bytes[range_move(0..ty.size(), *curr_offset)]` typed at `ty`
+/// and advances the `curr_offset`.
 ///
 /// SAFETY:
 /// 1. the `value` must be valid at type `ty` and properly aligned for `ty`.

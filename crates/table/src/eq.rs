@@ -96,7 +96,8 @@ unsafe fn eq_product(ctx: &mut EqCtx<'_, '_>, ty: &ProductTypeLayout) -> bool {
 }
 
 /// For `value_a/b = &ctx.a/b.bytes[range_move(0..ty.size(), *ctx.curr_offset)]` typed at `ty`,
-/// equates `value_a == value_b`, including any var-len objects.
+/// equates `value_a == value_b`, including any var-len objects,
+/// and advances the `ctx.curr_offset`.
 ///
 /// SAFETY:
 /// 1. `value_a/b` must both be valid at type `ty` and properly aligned for `ty`.
