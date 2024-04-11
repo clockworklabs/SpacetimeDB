@@ -393,7 +393,7 @@ pub trait ModuleInstance: Send + 'static {
     // should probably be generic over the type of token, but that turns out a
     // bit unpleasant at the moment. So we just use the widest possible integer.
 
-    fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<ReducerCallResult>;
+    fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<Option<ReducerCallResult>>;
 
     fn update_database(&mut self, fence: u128) -> anyhow::Result<UpdateDatabaseResult>;
 
@@ -430,7 +430,7 @@ impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
     fn trapped(&self) -> bool {
         self.inst.trapped()
     }
-    fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<ReducerCallResult> {
+    fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<Option<ReducerCallResult>> {
         let ret = self.inst.init_database(fence, args);
         self.check_trap();
         ret
@@ -778,7 +778,11 @@ impl ModuleHost {
         Ok(self.info().log_tx.subscribe())
     }
 
-    pub async fn init_database(&self, fence: u128, args: ReducerArgs) -> Result<ReducerCallResult, InitDatabaseError> {
+    pub async fn init_database(
+        &self,
+        fence: u128,
+        args: ReducerArgs,
+    ) -> Result<Option<ReducerCallResult>, InitDatabaseError> {
         let args = match self.catalog().get_reducer("__init__") {
             Some(schema) => args.into_tuple(schema)?,
             _ => ArgsTuple::default(),

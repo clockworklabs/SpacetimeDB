@@ -528,7 +528,12 @@ impl StandaloneEnv {
                         log::info!("Database already initialized with module {}", hash);
                     }
                 } else {
-                    self.host_controller.init_module_host(lock.token() as u128, ctx).await?;
+                    self.host_controller
+                        .init_module_host(lock.token() as u128, ctx)
+                        .await?
+                        .map(Result::from)
+                        .transpose()
+                        .context("Init reducer failed")?;
                 }
 
                 Ok(())
@@ -574,7 +579,12 @@ impl StandaloneEnv {
                             "Update requested on non-initialized database, initializing with module {}",
                             database.program_bytes_address
                         );
-                        self.host_controller.init_module_host(lock.token() as u128, ctx).await?;
+                        self.host_controller
+                            .init_module_host(lock.token() as u128, ctx)
+                            .await?
+                            .map(Result::from)
+                            .transpose()
+                            .context("Init reducer failed")?;
                         Ok(None)
                     }
                     Some(hash) if hash == database.program_bytes_address => {

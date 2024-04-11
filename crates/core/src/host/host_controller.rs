@@ -8,7 +8,7 @@ use crate::host;
 use crate::messages::control_db::HostType;
 use crate::module_host_context::{ModuleCreationContext, ModuleHostContext};
 use crate::util::spawn_rayon;
-use anyhow::{ensure, Context};
+use anyhow::ensure;
 use futures::TryFutureExt;
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -67,6 +67,12 @@ pub struct ReducerCallResult {
     pub execution_duration: Duration,
 }
 
+impl From<ReducerCallResult> for Result<(), anyhow::Error> {
+    fn from(value: ReducerCallResult) -> Self {
+        value.outcome.into_result()
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum ReducerOutcome {
     Committed,
@@ -102,24 +108,44 @@ impl HostController {
         }
     }
 
+    /// Initialize a module and underlying database.
+    ///
+    /// This will call the `init` reducer of the supplied program and set the
+    /// program as the database's program if it succeeds (or no `init` reducer
+    /// is defined).
+    ///
+    /// The method is executed in a transaction: if an error occurs (including
+    /// the `init` reducer failing), the module will not be in an initialized
+    /// state and the database will not have a program set..
+    ///
+    /// The result of calling the `init` reducer is returned as `Some` (or `None`
+    /// if the module does not define an `init` reducer).
+    ///
+    /// Note that callers may want to scrutinize the [`ReducerOutcome`] contained
+    /// in the [`ReducerCallResult`] in order to decide if the module was
+    /// indeed initialized successfully.
+    ///
+    /// The reason this error case is nested is that some callers may want to
+    /// report it instead of short-circuiting using `?`, consistent with
+    /// [`Self::update_module_host`].
     pub async fn init_module_host(
         &self,
         fence: u128,
         module_host_context: ModuleHostContext,
-    ) -> Result<ModuleHost, anyhow::Error> {
-        self.setup_module_host(module_host_context, |module_host| async {
+    ) -> Result<Option<ReducerCallResult>, anyhow::Error> {
+        self.setup_module_host(module_host_context, |module_host| async move {
             // TODO(cloutiertyler): Hook this up again
             // let identity = &module_host.info().identity;
             // let max_spend = worker_budget::max_tx_spend(identity);
-            let rcr = module_host.init_database(fence, ReducerArgs::Nullary).await?;
-            // worker_budget::record_tx_spend(identity, rcr.energy_quanta_used);
-            rcr.outcome.into_result().context("init reducer failed")?;
-
-            Ok(module_host)
+            let maybe_init_call_result = module_host.init_database(fence, ReducerArgs::Nullary).await?;
+            Ok(maybe_init_call_result)
         })
         .await
     }
 
+    /// Exit and delete the module corresponding to the provided instance id.
+    ///
+    /// Note that this currently does not delete any physical data.
     pub async fn delete_module_host(
         &self,
         _fence: u128,
@@ -138,6 +164,19 @@ impl HostController {
         Ok(())
     }
 
+    /// Update an existing module and database with the supplied program.
+    ///
+    /// This will call the `update` reducer of the supplied program and set the
+    /// program as the database's program if it succeeds (or no `update` reducer
+    /// is defined).
+    ///
+    /// The method is executed in a transaction: if an error occurs (including
+    /// the `update` reducer failing), the module and database will not be
+    /// updated, and the previous instance will keep running.
+    ///
+    /// The result of calling the `update` reducer is returned in
+    /// [`UpdateDatabaseResult`], which itself is a `Result`. Callers may choose
+    /// to short-circuit it using `?`, or report the outcome in a different way.
     pub async fn update_module_host(
         &self,
         fence: u128,
@@ -156,17 +195,21 @@ impl HostController {
         .or_else(|e| e.downcast::<UpdateDatabaseError>().map(Err))
     }
 
+    /// Spawn the given module host.
+    ///
+    /// The supplied program must match the program stored in the database,
+    /// otherwise an error is returned.
+    ///
     /// NOTE: Currently repeating reducers are only restarted when the [ModuleHost] is spawned.
     /// That means that if SpacetimeDB is restarted, repeating reducers will not be restarted unless
     /// there is a trigger that causes the [ModuleHost] to be spawned (e.g. a reducer is run).
-    ///
-    /// TODO(cloutiertyler): We need to determine what the correct behavior should be. In my mind,
-    /// the repeating reducers for all [ModuleHost]s should be rescheduled on startup, with the overarching
-    /// theory that SpacetimeDB should make a best effort to be as invisible as possible and not
-    /// impact the logic of applications. The idea being that if SpacetimeDB is a distributed operating
-    /// system, the applications will expect to be called when they are scheduled to be called regardless
-    /// of whether the OS has been restarted.
     pub async fn spawn_module_host(&self, mhc: ModuleHostContext) -> Result<ModuleHost, anyhow::Error> {
+        // TODO(cloutiertyler): We need to determine what the correct behavior should be. In my mind,
+        // the repeating reducers for all [ModuleHost]s should be rescheduled on startup, with the overarching
+        // theory that SpacetimeDB should make a best effort to be as invisible as possible and not
+        // impact the logic of applications. The idea being that if SpacetimeDB is a distributed operating
+        // system, the applications will expect to be called when they are scheduled to be called regardless
+        // of whether the OS has been restarted.
         self.setup_module_host(mhc, |mh| async { Ok(mh) }).await
     }
 
