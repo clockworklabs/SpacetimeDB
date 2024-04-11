@@ -49,7 +49,10 @@ unsafe fn hash_product(
     curr_offset: &mut usize,
     ty: &ProductTypeLayout,
 ) {
+    let base_offset = *curr_offset;
     for elem_ty in &*ty.elements {
+        *curr_offset = base_offset + elem_ty.offset as usize;
+
         // SAFETY: By 1., `value` is valid at `ty`,
         // so it follows that valid and properly aligned sub-`value`s
         // are valid `elem_ty.ty`s.
@@ -60,8 +63,7 @@ unsafe fn hash_product(
     }
 }
 
-/// Hashes `value = &bytes[range_move(0..ty.size(), *curr_offset)]` typed at `ty`
-/// and advances the `curr_offset`.
+/// Hashes `value = &bytes[range_move(0..ty.size(), *curr_offset)]` typed at `ty`.
 ///
 /// SAFETY:
 /// 1. the `value` must be valid at type `ty` and properly aligned for `ty`.
@@ -74,8 +76,13 @@ unsafe fn hash_value(
     curr_offset: &mut usize,
     ty: &AlgebraicTypeLayout,
 ) {
-    let ty_alignment = ty.align();
-    *curr_offset = align_to(*curr_offset, ty_alignment);
+    debug_assert_eq!(
+        *curr_offset,
+        align_to(*curr_offset, ty.align()),
+        "curr_offset {} insufficiently aligned for type {:?}",
+        *curr_offset,
+        ty
+    );
 
     match ty {
         AlgebraicTypeLayout::Sum(ty) => {
@@ -148,8 +155,6 @@ unsafe fn hash_value(
             unsafe { hash_vlo(hasher, page, bytes, curr_offset) }
         }
     }
-    // TODO(perf,bikeshedding): unncessary work for some cases?
-    *curr_offset = align_to(*curr_offset, ty_alignment);
 }
 
 /// Hashes the bytes of a var-len object

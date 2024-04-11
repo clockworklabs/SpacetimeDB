@@ -83,25 +83,33 @@ struct EqCtx<'page_a, 'page_b> {
 /// 2. for any `vlr_a/b: VarLenRef` stored in `value_a/b`,
 ///   `vlr_a/b.first_offset` must either be `NULL` or point to a valid granule in `page_a/b`.
 unsafe fn eq_product(ctx: &mut EqCtx<'_, '_>, ty: &ProductTypeLayout) -> bool {
-    ty.elements.iter().all(|elem_ty|
+    let base_offset = ctx.curr_offset;
+    ty.elements.iter().all(|elem_ty| {
+        ctx.curr_offset = base_offset + elem_ty.offset as usize;
+
         // SAFETY: By 1., `value_a/b` are valid at `ty`,
         // so it follows that valid and properly aligned sub-`value_a/b`s
         // are valid `elem_ty.ty`s.
         // By 2., and the above, it follows that sub-`value_a/b`s won't have dangling `VarLenRef`s.
-        unsafe { eq_value(ctx, &elem_ty.ty) })
+        unsafe { eq_value(ctx, &elem_ty.ty) }
+    })
 }
 
 /// For `value_a/b = &ctx.a/b.bytes[range_move(0..ty.size(), *ctx.curr_offset)]` typed at `ty`,
-/// equates `value_a == value_b`, including any var-len objects,
-/// and advances the `ctx.curr_offset`.
+/// equates `value_a == value_b`, including any var-len objects.
 ///
 /// SAFETY:
 /// 1. `value_a/b` must both be valid at type `ty` and properly aligned for `ty`.
 /// 2. for any `vlr_a/b: VarLenRef` stored in `value_a/b`,
 ///   `vlr_a/b.first_offset` must either be `NULL` or point to a valid granule in `page_a/b`.
 unsafe fn eq_value(ctx: &mut EqCtx<'_, '_>, ty: &AlgebraicTypeLayout) -> bool {
-    let ty_alignment = ty.align();
-    ctx.curr_offset = align_to(ctx.curr_offset, ty_alignment);
+    debug_assert_eq!(
+        ctx.curr_offset,
+        align_to(ctx.curr_offset, ty.align()),
+        "curr_offset {} insufficiently aligned for type {:?}",
+        ctx.curr_offset,
+        ty
+    );
 
     let res = match ty {
         AlgebraicTypeLayout::Sum(ty) => {
@@ -160,8 +168,6 @@ unsafe fn eq_value(ctx: &mut EqCtx<'_, '_>, ty: &AlgebraicTypeLayout) -> bool {
             unsafe { eq_vlo(ctx) }
         }
     };
-    // TODO(perf,bikeshedding): unncessary work for some cases?
-    ctx.curr_offset = align_to(ctx.curr_offset, ty_alignment);
     res
 }
 
