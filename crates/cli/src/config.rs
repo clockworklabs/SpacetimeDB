@@ -107,7 +107,7 @@ pub struct RawConfig {
 
 const DEFAULT_HOST: &str = "127.0.0.1:3000";
 const DEFAULT_PROTOCOL: &str = "http";
-const DEFAULT_HOST_NICKNAME: &str = "local";
+const DEFAULT_HOST_NICKNAME: &str = "testnet";
 
 #[derive(Clone)]
 pub struct Config {
