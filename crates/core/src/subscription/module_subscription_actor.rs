@@ -177,22 +177,24 @@ impl ModuleSubscriptions {
 mod tests {
     use super::ModuleSubscriptions;
     use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
-    use crate::db::relational_db::tests_utils::make_test_db;
+    use crate::db::relational_db::tests_utils::TestDB;
     use crate::execution_context::ExecutionContext;
     use spacetimedb_client_api_messages::client_api::Subscribe;
     use spacetimedb_lib::{error::ResultTest, AlgebraicType, Identity};
     use spacetimedb_sats::product;
     use std::time::Instant;
     use std::{sync::Arc, time::Duration};
-    use tokio::{runtime::Builder, sync::mpsc};
+    use tokio::sync::mpsc;
 
     #[test]
     /// Asserts that a subscription holds a tx handle for the entire length of its evaluation.
     fn test_tx_subscription_ordering() -> ResultTest<()> {
-        let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
+        let test_db = TestDB::durable()?;
+
+        let runtime = test_db.runtime().cloned().unwrap();
+        let db = Arc::new(test_db.db.clone());
 
         // Create table with one row
-        let db = Arc::new(make_test_db()?.0);
         let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
         db.with_auto_commit(&ExecutionContext::default(), |tx| {
             db.insert(tx, table_id, product!(1_u8))
@@ -240,6 +242,9 @@ mod tests {
 
         runtime.block_on(write_handle)??;
         runtime.block_on(query_handle)??;
+
+        test_db.close()?;
+
         Ok(())
     }
 }

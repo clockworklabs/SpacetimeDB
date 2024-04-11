@@ -18,22 +18,21 @@ use crate::{
             },
         },
         db_metrics::{DB_METRICS, MAX_TX_CPU_TIME},
-        messages::{transaction::Transaction, write::Operation},
-        ostorage::ObjectDB,
     },
     error::DBError,
     execution_context::ExecutionContext,
 };
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use parking_lot::{Mutex, RwLock};
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::db::def::{IndexDef, SequenceDef, TableDef, TableSchema};
-use spacetimedb_sats::{hash::Hash, AlgebraicValue, DataKey, ProductType, ProductValue};
+use spacetimedb_sats::{bsatn, buffer::BufReader, hash::Hash, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_table::{indexes::RowPointer, table::RowRef};
 use std::ops::RangeBounds;
 use std::sync::Arc;
 use std::time::Instant;
 use std::{borrow::Cow, time::Duration};
+use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, DBError>;
 
@@ -146,75 +145,11 @@ impl Locking {
     /// We **could** check them in between transactions if we wanted to update
     /// the indexes and constraints as they changed during replay, but that is
     /// unnecessary.
-    pub fn replay_transaction(&self, transaction: &Transaction, odb: &dyn ObjectDB) -> Result<()> {
-        let mut committed_state = self.committed_state.write_arc();
-        for write in &transaction.writes {
-            let table_id = TableId(write.set_id);
-            let schema = committed_state
-                .schema_for_table(&ExecutionContext::default(), table_id)?
-                .into_owned();
-            let table_name = schema.table_name.clone();
-            let row_type = schema.get_row_type();
-
-            let decode_row = |mut data: &[u8], source: &str| {
-                ProductValue::decode(row_type, &mut data).unwrap_or_else(|e| {
-                    panic!(
-                        "Couldn't decode product value from {}: `{}`. Expected row type: {:?}",
-                        source, e, row_type
-                    )
-                })
-            };
-
-            let data_key_to_av = |data_key| match data_key {
-                DataKey::Data(data) => decode_row(&data, "message log"),
-
-                DataKey::Hash(hash) => {
-                    let data = odb.get(hash).unwrap_or_else(|| {
-                        panic!("Object {hash} referenced from transaction not present in object DB");
-                    });
-                    decode_row(&data, "object DB")
-                }
-            };
-
-            let row = data_key_to_av(write.data_key);
-
-            match write.operation {
-                Operation::Delete => {
-                    committed_state
-                        .replay_delete_by_rel(table_id, &row)
-                        .unwrap_or_else(|e| {
-                            panic!(
-                                "Error deleting row {:?} during transaction {:?} playback: {:?}",
-                                &row, committed_state.next_tx_offset, e
-                            );
-                        });
-                    // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
-                    // and therefore has performance implications and must not be disabled.
-                    DB_METRICS
-                        .rdb_num_table_rows
-                        .with_label_values(&self.database_address, &table_id.into(), &table_name)
-                        .dec();
-                }
-                Operation::Insert => {
-                    committed_state
-                        .replay_insert(table_id, &schema, &row)
-                        .unwrap_or_else(|e| {
-                            panic!(
-                                "Failed to insert row {:?} during transaction {:?} playback: {:?}",
-                                &row, committed_state.next_tx_offset, e
-                            );
-                        });
-                    // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
-                    // and therefore has performance implications and must not be disabled.
-                    DB_METRICS
-                        .rdb_num_table_rows
-                        .with_label_values(&self.database_address, &table_id.into(), &table_name)
-                        .inc();
-                }
-            }
+    pub fn replay(&self) -> Replay {
+        Replay {
+            database_address: self.database_address,
+            committed_state: self.committed_state.clone(),
         }
-        committed_state.next_tx_offset += 1;
-        Ok(())
     }
 }
 
@@ -630,6 +565,127 @@ impl MutProgrammable for Locking {
             }),
             self.database_address,
         )?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum ReplayError {
+    #[error(transparent)]
+    Decode(#[from] bsatn::DecodeError),
+    #[error(transparent)]
+    Db(#[from] DBError),
+    #[error(transparent)]
+    Any(#[from] anyhow::Error),
+}
+
+/// A [`spacetimedb_commitlog::Decoder`] suitable for replaying a transaction
+/// history into the database state.
+pub struct Replay {
+    database_address: Address,
+    committed_state: Arc<RwLock<CommittedState>>,
+}
+
+impl spacetimedb_commitlog::Decoder for Replay {
+    type Record = spacetimedb_commitlog::payload::Txdata<ProductValue>;
+    type Error = spacetimedb_commitlog::payload::txdata::DecoderError<ReplayError>;
+
+    fn decode_record<'a, R: BufReader<'a>>(
+        &self,
+        version: u8,
+        tx_offset: u64,
+        reader: &mut R,
+    ) -> std::result::Result<Self::Record, Self::Error> {
+        let mut committed_state = self.committed_state.write_arc();
+        let mut visitor = ReplayVisitor {
+            database_address: &self.database_address,
+            committed_state: &mut committed_state,
+        };
+        spacetimedb_commitlog::payload::txdata::decode_record_fn(&mut visitor, version, tx_offset, reader)
+    }
+}
+
+struct ReplayVisitor<'a> {
+    database_address: &'a Address,
+    committed_state: &'a mut CommittedState,
+}
+
+impl spacetimedb_commitlog::payload::txdata::Visitor for ReplayVisitor<'_> {
+    type Error = ReplayError;
+    type Row = ProductValue;
+
+    fn visit_insert<'a, R: BufReader<'a>>(
+        &mut self,
+        table_id: TableId,
+        reader: &mut R,
+    ) -> std::result::Result<Self::Row, Self::Error> {
+        let schema = self
+            .committed_state
+            .schema_for_table(&ExecutionContext::default(), table_id)?
+            .into_owned();
+        let row = ProductValue::decode(schema.get_row_type(), reader)?;
+
+        self.committed_state
+            .replay_insert(table_id, &schema, &row)
+            .with_context(|| {
+                format!(
+                    "Error deleting row {:?} during transaction {:?} playback",
+                    row, self.committed_state.next_tx_offset
+                )
+            })?;
+        // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
+        // and therefore has performance implications and must not be disabled.
+        DB_METRICS
+            .rdb_num_table_rows
+            .with_label_values(self.database_address, &table_id.into(), &schema.table_name)
+            .inc();
+
+        Ok(row)
+    }
+
+    fn visit_delete<'a, R: BufReader<'a>>(
+        &mut self,
+        table_id: TableId,
+        reader: &mut R,
+    ) -> std::result::Result<Self::Row, Self::Error> {
+        let schema = self
+            .committed_state
+            .schema_for_table(&ExecutionContext::default(), table_id)?;
+        // TODO: avoid clone
+        let table_name = schema.table_name.clone();
+        let row = ProductValue::decode(schema.get_row_type(), reader)?;
+
+        self.committed_state
+            .replay_delete_by_rel(table_id, &row)
+            .with_context(|| {
+                format!(
+                    "Error deleting row {:?} during transaction {:?} playback",
+                    row, self.committed_state.next_tx_offset
+                )
+            })?;
+        // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
+        // and therefore has performance implications and must not be disabled.
+        DB_METRICS
+            .rdb_num_table_rows
+            .with_label_values(self.database_address, &table_id.into(), &table_name)
+            .dec();
+
+        Ok(row)
+    }
+
+    fn visit_truncate(&mut self, _table_id: TableId) -> std::result::Result<(), Self::Error> {
+        Err(anyhow!("visit: truncate not yet supported").into())
+    }
+
+    fn visit_tx_start(&mut self, offset: u64) -> std::result::Result<(), Self::Error> {
+        debug_assert!(offset == self.committed_state.next_tx_offset);
+
+        Ok(())
+    }
+
+    fn visit_tx_end(&mut self) -> std::prelude::v1::Result<(), Self::Error> {
+        self.committed_state.next_tx_offset += 1;
+
         Ok(())
     }
 }

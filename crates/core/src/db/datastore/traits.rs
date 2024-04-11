@@ -7,7 +7,6 @@ use crate::execution_context::ExecutionContext;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::def::*;
 use spacetimedb_sats::hash::Hash;
-use spacetimedb_sats::DataKey;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
 
 /// The `IsolationLevel` enum specifies the degree to which a transaction is
@@ -173,8 +172,6 @@ pub struct TxRecord {
     pub(crate) op: TxOp,
     /// The value of the modified row.
     pub(crate) product_value: ProductValue,
-    /// The key of the modified row.
-    pub(crate) key: DataKey,
     /// The table that was modified.
     pub(crate) table_id: TableId,
 }

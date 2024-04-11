@@ -124,13 +124,6 @@ impl DatabaseInstanceContextController {
                     .with_label_values(&db.address)
                     .set(db.message_log_size_on_disk() as i64);
                 // Use the previous gauge value if there is an issue getting the file size.
-                if let Ok(num_bytes) = db.object_db_size_on_disk() {
-                    DB_METRICS
-                        .object_db_disk_usage
-                        .with_label_values(&db.address)
-                        .set(num_bytes as i64);
-                }
-                // Use the previous gauge value if there is an issue getting the file size.
                 if let Ok(num_bytes) = db.log_file_size() {
                     DB_METRICS
                         .module_log_file_size

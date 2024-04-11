@@ -85,11 +85,6 @@ metrics_group!(
         #[labels(db: Address)]
         pub message_log_size: IntGaugeVec,
 
-        #[name = spacetime_object_db_disk_usage]
-        #[help = "For a given database, the number of bytes occupied by large object storage"]
-        #[labels(db: Address)]
-        pub object_db_disk_usage: IntGaugeVec,
-
         #[name = spacetime_module_log_file_size_bytes]
         #[help = "For a given module, the size of its log file (in bytes)"]
         #[labels(db: Address)]

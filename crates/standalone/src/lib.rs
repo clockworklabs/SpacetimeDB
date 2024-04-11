@@ -646,6 +646,7 @@ impl StandaloneEnv {
         let root_db_path = stdb_path("worker_node/database_instances");
 
         let (dbic, (scheduler, scheduler_starter)) = {
+            let rt = tokio::runtime::Handle::current();
             let (dbic, scheduler) = tokio::task::block_in_place(|| {
                 self.db_inst_ctx_controller.get_or_try_init(instance_id, || {
                     let dbic = DatabaseInstanceContext::from_database(
@@ -653,6 +654,7 @@ impl StandaloneEnv {
                         database,
                         instance_id,
                         root_db_path.clone(),
+                        rt,
                     )?;
                     let (sched, _) = Scheduler::open(dbic.scheduler_db_path(root_db_path))?;
 
