@@ -95,6 +95,10 @@ fn product_type_to_rose_tree(ty: &ProductTypeLayout, current_offset: &mut usize)
 ///
 /// See [`algebraic_type_to_rose_tree`] for more details.
 fn sum_type_to_rose_tree(ty: &SumTypeLayout, current_offset: &mut usize) -> VarLenRoseTree {
+    // The tag goes before the variant data.
+    // Currently, this is the same as `*current_offset`.
+    let tag_offset = *current_offset + ty.offset_of_tag();
+
     // For each variant, collect that variant's sub-tree.
     let mut variants = ty
         .variants
@@ -116,9 +120,6 @@ fn sum_type_to_rose_tree(ty: &SumTypeLayout, current_offset: &mut usize) -> VarL
             algebraic_type_to_rose_tree(var_ty, &mut child_offset)
         })
         .collect::<Vec<_>>();
-
-    // The tag goes after the variant data.
-    let tag_offset = ty.offset_of_tag() + *current_offset;
 
     // Store the new offset after the sum.
     *current_offset += ty.size();
@@ -548,7 +549,7 @@ mod test {
     #[test]
     fn visit_var_len_bare_enum() {
         let ty = row_type([AlgebraicType::option(
-            AlgebraicType::String, // tag 0
+            AlgebraicType::String, // tag 0, size 4, align 2
         )]);
         assert_eq!(ty.size(), Size(6));
         assert_eq!(ty.align(), 2);
@@ -562,7 +563,7 @@ mod test {
         let program = row_type_visitor(&ty);
         // Variant 1 (String) is live
         row[outer_tag].write(0);
-        check_addrs(&program, row, [0]);
+        check_addrs(&program, row, [2]);
 
         // Variant 1 (none) is live
         row[outer_tag].write(1);
@@ -574,13 +575,13 @@ mod test {
         // Tables are always product types.
         let ty = row_type([AlgebraicType::sum([
             AlgebraicType::U32,                                                  // tag 0, size 4, align 4
-            AlgebraicType::String,                                               // tag 1, size 4, align 4
+            AlgebraicType::String,                                               // tag 1, size 4, align 2
             AlgebraicType::product([AlgebraicType::U32, AlgebraicType::String]), // tag 2, size 8, align 4
             AlgebraicType::sum(
-                // tag 3, size 8, align 4, inner tag at +4
+                // tag 3, size 8, align 4
                 [
-                    AlgebraicType::U32,    // 3, 0
-                    AlgebraicType::String, // 3, 1
+                    AlgebraicType::U32,    // tag (3, 0), size 4, align 4
+                    AlgebraicType::String, // tag (3, 1), size 4, align 2
                 ],
             ),
         ])]);
@@ -588,9 +589,9 @@ mod test {
         assert_eq!(ty.align(), 4);
         let outer_sum = &ty[0].as_sum().unwrap();
         let outer_tag = outer_sum.offset_of_tag();
-        assert_eq!(outer_tag, 8);
+        assert_eq!(outer_tag, 0);
         let inner_sum = outer_sum.variants[3].ty.as_sum().unwrap();
-        let inner_tag = inner_sum.offset_of_tag();
+        let inner_tag = outer_sum.offset_of_variant_data(3) + inner_sum.offset_of_tag();
         assert_eq!(inner_tag, 4);
 
         let row = &mut uninit_array::<u32, 3>();
@@ -605,11 +606,11 @@ mod test {
 
         // Variant 1 (String) is live
         row[outer_tag].write(1);
-        check_addrs(&program, row, [0]);
+        check_addrs(&program, row, [4]);
 
         // Variant 2 (Product) is live
         row[outer_tag].write(2);
-        check_addrs(&program, row, [4]);
+        check_addrs(&program, row, [8]);
 
         // Variant 3 (Sum) is live but its tag is not init yet.
         row[outer_tag].write(3);
@@ -620,6 +621,6 @@ mod test {
 
         // Variant 3, 1 (Sum, String) is live.
         row[inner_tag].write(1);
-        check_addrs(&program, row, [0]);
+        check_addrs(&program, row, [8]);
     }
 }
