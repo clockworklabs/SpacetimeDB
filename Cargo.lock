@@ -4571,6 +4571,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-durability"
+version = "0.8.2"
+dependencies = [
+ "anyhow",
+ "log",
+ "spacetimedb-commitlog",
+ "spacetimedb-sats",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "spacetimedb-lib"
 version = "0.8.2"
 dependencies = [

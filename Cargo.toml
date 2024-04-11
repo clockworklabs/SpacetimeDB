@@ -10,6 +10,7 @@ members = [
   "crates/commitlog",
   "crates/core",
   "crates/data-structures",
+  "crates/durability",
   "crates/lib",
   "crates/metrics",
   "crates/primitives",
@@ -89,7 +90,7 @@ spacetimedb-client-api-messages = { path = "crates/client-api-messages", version
 spacetimedb-commitlog = { path = "crates/commitlog", version = "0.8.2" }
 spacetimedb-core = { path = "crates/core", version = "0.8.2" }
 spacetimedb-data-structures = { path = "crates/data-structures", version = "0.8.2" }
-
+spacetimedb-durability = { path = "crates/durability", version = "0.8.2" }
 spacetimedb-lib = { path = "crates/lib", default-features = false, version = "0.8.2" }
 spacetimedb-metrics = { path = "crates/metrics", version = "0.8.2" }
 spacetimedb-primitives = { path = "crates/primitives", version = "0.8.2" }
