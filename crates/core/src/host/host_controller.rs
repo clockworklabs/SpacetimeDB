@@ -2,7 +2,7 @@ use super::module_host::{EntityDef, EventStatus, ModuleHost, NoSuchModule, Updat
 use super::{ReducerArgs, Scheduler};
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::db::db_metrics::DB_METRICS;
-use crate::db::relational_db::RelationalDB;
+use crate::db::relational_db::{ConnectedClients, RelationalDB};
 use crate::energy::{EnergyMonitor, EnergyQuanta};
 use crate::execution_context::ExecutionContext;
 use crate::messages::control_db::{Database, HostType};
@@ -621,7 +621,7 @@ async fn make_dbic(
     config: db::Config,
     database: Database,
     instance_id: u64,
-) -> anyhow::Result<DatabaseInstanceContext> {
+) -> anyhow::Result<(DatabaseInstanceContext, Option<ConnectedClients>)> {
     let root_dir = root_dir.to_path_buf();
     let rt = tokio::runtime::Handle::current();
     spawn_rayon(move || {
@@ -717,7 +717,8 @@ impl Host {
     ) -> anyhow::Result<Self> {
         let host_type = database.host_type;
         let program_hash = database.program_bytes_address;
-        let dbic = make_dbic(root_dir, config, database, instance_id).await.map(Arc::new)?;
+        let (dbic, connected_clients) = make_dbic(root_dir, config, database, instance_id).await?;
+        let dbic = Arc::new(dbic);
 
         let program_bytes = load_program(&dbic.relational_db, &program_storage, &program_hash)?;
         let (scheduler, scheduler_starter) = Scheduler::open(dbic.scheduler_db_path(root_dir.to_path_buf()))?;
@@ -733,6 +734,20 @@ impl Host {
             on_panic,
         )
         .await?;
+
+        if let Some(connected_clients) = connected_clients {
+            for (identity, address) in connected_clients {
+                module_host
+                    .call_identity_connected_disconnected(identity, address, false)
+                    .await
+                    .with_context(|| {
+                        format!(
+                            "Error calling disconnect for {} {} on {}",
+                            identity, address, dbic.address
+                        )
+                    })?;
+            }
+        }
 
         scheduler_starter.start(&module_host)?;
         let metrics_task = tokio::spawn(disk_monitor(dbic.clone(), energy_monitor.clone())).abort_handle();

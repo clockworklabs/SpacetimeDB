@@ -1,3 +1,4 @@
+use super::wasm_common::{CLIENT_CONNECTED_DUNDER, CLIENT_DISCONNECTED_DUNDER};
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
 use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_instance_context::DatabaseInstanceContext;
@@ -661,12 +662,10 @@ impl ModuleHost {
         caller_address: Address,
         connected: bool,
     ) -> Result<(), ReducerCallError> {
-        // TODO: DUNDER consts are in wasm_common, so seems weird to use them
-        // here. But maybe there should be dunders for this?
         let reducer_name = if connected {
-            "__identity_connected__"
+            CLIENT_CONNECTED_DUNDER
         } else {
-            "__identity_disconnected__"
+            CLIENT_DISCONNECTED_DUNDER
         };
 
         self.call_reducer_inner(
