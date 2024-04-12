@@ -8,7 +8,7 @@ use crate::host;
 use crate::messages::control_db::HostType;
 use crate::module_host_context::{ModuleCreationContext, ModuleHostContext};
 use crate::util::spawn_rayon;
-use anyhow::ensure;
+use anyhow::{ensure, Context};
 use futures::TryFutureExt;
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -224,7 +224,7 @@ impl HostController {
     ///
     /// In the `Err` case, `F` **MUST** roll back any modifications it has made
     /// to the database passed in the [`ModuleHostContext`].
-    async fn setup_module_host<F, Fut, T>(&self, mhc: ModuleHostContext, f: F) -> anyhow::Result<T>
+    async fn setup_module_host<F, Fut, T>(&self, mut mhc: ModuleHostContext, f: F) -> anyhow::Result<T>
     where
         F: FnOnce(ModuleHost) -> Fut,
         Fut: Future<Output = anyhow::Result<T>>,
@@ -241,6 +241,20 @@ impl HostController {
         };
         let module_host = spawn_rayon(move || Self::make_module_host(mhc.host_type, mcc)).await?;
         module_host.start();
+
+        if let Some(dangling) = mhc.dangling_client_connections.take() {
+            for (identity, address) in dangling {
+                module_host
+                    .call_identity_connected_disconnected(identity, address, false)
+                    .await
+                    .with_context(|| {
+                        format!(
+                            "Error calling disconnect for {} {} on {}",
+                            identity, address, mhc.dbic.database.address
+                        )
+                    })?;
+            }
+        }
 
         let res = f(module_host.clone())
             .or_else(|e| async {
