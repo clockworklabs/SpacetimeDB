@@ -327,9 +327,12 @@ impl RelationalDB {
                     truncates: Box::new([]),
                 }),
             };
-            log::trace!("append {txdata:?}");
-            // TODO: Should measure queuing time + actual write
-            durability.append_tx(txdata);
+
+            if !txdata.is_empty() {
+                log::trace!("append {txdata:?}");
+                // TODO: Should measure queuing time + actual write
+                durability.append_tx(txdata);
+            }
         }
 
         Ok(Some(tx_data))

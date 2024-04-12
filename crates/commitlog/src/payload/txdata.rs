@@ -99,6 +99,15 @@ pub struct Txdata<T> {
     pub mutations: Option<Mutations<T>>,
 }
 
+impl<T> Txdata<T> {
+    /// `true` if `self` contains neither inputs, outputs nor mutations.
+    pub fn is_empty(&self) -> bool {
+        self.inputs.is_none()
+            && self.outputs.is_none()
+            && self.mutations.as_ref().map(Mutations::is_empty).unwrap_or(true)
+    }
+}
+
 impl<T: Encode> Txdata<T> {
     pub const VERSION: u8 = 0;
 
@@ -244,6 +253,13 @@ pub struct Mutations<T> {
     pub deletes: Box<[Ops<T>]>,
     /// Truncated tables.
     pub truncates: Box<[TableId]>,
+}
+
+impl<T> Mutations<T> {
+    /// `true` if `self` contains no mutations at all.
+    pub fn is_empty(&self) -> bool {
+        self.inserts.is_empty() && self.deletes.is_empty() && self.truncates.is_empty()
+    }
 }
 
 impl<T: Encode> Mutations<T> {
