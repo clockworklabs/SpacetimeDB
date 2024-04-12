@@ -281,6 +281,8 @@ fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, P
             kind,
             table_access,
         } => compile_drop(name, kind, table_access)?,
+        SqlAst::SetVar { name, value } => CrudExpr::SetVar { name, value },
+        SqlAst::ReadVar { name } => CrudExpr::ReadVar { name },
     };
 
     Ok(q.optimize(&|table_id, table_name| db.row_count(table_id, table_name)))
@@ -1165,7 +1167,7 @@ mod tests {
         let sql = "select * from enum where a = 'Player'";
         let q = compile_sql(&db, &tx, sql);
         assert!(q.is_ok());
-        let result = execute_sql(&db, q.unwrap(), AuthCtx::for_testing())?;
+        let result = execute_sql(&db, sql, q.unwrap(), AuthCtx::for_testing())?;
         assert_eq!(result[0].data, vec![product![AlgebraicValue::enum_simple(0)]]);
         Ok(())
     }

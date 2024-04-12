@@ -6,6 +6,7 @@ use spacetimedb::execution_context::ExecutionContext;
 use spacetimedb::host::module_host::{DatabaseTableUpdate, DatabaseUpdate};
 use spacetimedb::subscription::query::compile_read_only_query;
 use spacetimedb::subscription::subscription::ExecutionSet;
+use spacetimedb::util::slow::SlowQueryConfig;
 use spacetimedb_bench::database::BenchDatabase as _;
 use spacetimedb_bench::spacetime_raw::SpacetimeRaw;
 use spacetimedb_lib::identity::AuthCtx;
@@ -107,7 +108,7 @@ fn eval(c: &mut Criterion) {
             let tx = raw.db.begin_tx();
             let query = compile_read_only_query(&raw.db, &tx, &auth, sql).unwrap();
             let query: ExecutionSet = query.into();
-            let ctx = &ExecutionContext::subscribe(raw.db.address());
+            let ctx = &ExecutionContext::subscribe(raw.db.address(), SlowQueryConfig::default());
             b.iter(|| drop(black_box(query.eval(ctx, Protocol::Binary, &raw.db, &tx).unwrap())))
         });
     };
@@ -130,7 +131,7 @@ fn eval(c: &mut Criterion) {
     );
     bench_eval(c, "full-join", &name);
 
-    let ctx_incr = &ExecutionContext::incremental_update(raw.db.address());
+    let ctx_incr = &ExecutionContext::incremental_update(raw.db.address(), SlowQueryConfig::default());
 
     // To profile this benchmark for 30s
     // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- incr-select --exact --profile-time=30

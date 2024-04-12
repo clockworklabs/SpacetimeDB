@@ -523,6 +523,17 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
             TxMode::Tx(_) => unreachable!("mutable operation is invalid with read tx"),
         }
     }
+
+    fn _set_config(&mut self, name: String, value: AlgebraicValue) -> Result<Code, ErrorVm> {
+        self.db.set_config(&name, value)?;
+        Ok(Code::Pass)
+    }
+
+    fn _read_config(&self, name: String) -> Result<Code, ErrorVm> {
+        let config = self.db.config.read();
+
+        Ok(Code::Table(config.read_key_into_table(&name)?))
+    }
 }
 
 impl ProgramVm for DbProgram<'_, '_> {
@@ -582,6 +593,8 @@ impl ProgramVm for DbProgram<'_, '_> {
             CrudExpr::Delete { query } => self._delete_query(&query, sources),
             CrudExpr::CreateTable { table } => self._create_table(table),
             CrudExpr::Drop { name, kind, .. } => self._drop(&name, kind),
+            CrudExpr::SetVar { name, value } => self._set_config(name, value),
+            CrudExpr::ReadVar { name } => self._read_config(name),
         }
     }
 }

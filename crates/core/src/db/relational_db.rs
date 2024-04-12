@@ -10,11 +10,14 @@ use super::datastore::{
 };
 use super::relational_operators::Relation;
 use crate::address::Address;
+use crate::config::DatabaseConfig;
 use crate::db::db_metrics::DB_METRICS;
 use crate::error::{DBError, DatabaseError, TableError};
 use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
+use crate::util::slow::SlowQueryConfig;
 use fs2::FileExt;
+use parking_lot::RwLock;
 use spacetimedb_commitlog as commitlog;
 use spacetimedb_durability::{self as durability, Durability};
 use spacetimedb_primitives::*;
@@ -22,6 +25,7 @@ use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{ColumnDef, IndexDef, SequenceDef, TableDef, TableSchema};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_table::indexes::RowPointer;
+use spacetimedb_vm::errors::ErrorVm;
 use std::borrow::Cow;
 use std::fs::{create_dir_all, File};
 use std::io;
@@ -59,6 +63,7 @@ pub struct RelationalDB {
 
     // Release file lock last when dropping.
     _lock: Arc<File>,
+    pub(crate) config: Arc<RwLock<DatabaseConfig>>,
 }
 
 impl std::fmt::Debug for RelationalDB {
@@ -136,6 +141,9 @@ impl RelationalDB {
             disk_size_fn,
 
             _lock: Arc::new(lock),
+            config: Arc::new(RwLock::new(DatabaseConfig::with_slow_query(
+                SlowQueryConfig::with_defaults(),
+            ))),
         })
     }
 
@@ -749,6 +757,10 @@ impl RelationalDB {
     /// is, an impl of [`crate::host::ModuleInstance`].
     pub(crate) fn set_program_hash(&self, tx: &mut MutTx, fence: u128, hash: Hash) -> Result<(), DBError> {
         self.inner.set_program_hash(tx, fence, hash)
+    }
+
+    pub fn set_config(&self, key: &str, value: AlgebraicValue) -> Result<(), ErrorVm> {
+        self.config.write().set_config(key, value)
     }
 }
 

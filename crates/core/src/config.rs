@@ -1,5 +1,13 @@
+use crate::util::slow::{SlowQueryConfig, Threshold};
+use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductType};
+use spacetimedb_vm::dsl::mem_table;
+use spacetimedb_vm::errors::{ConfigError, ErrorVm};
+use spacetimedb_vm::relation::MemTable;
 use std::env::temp_dir;
+use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
+use std::time::Duration;
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 mod paths {
@@ -150,5 +158,114 @@ impl SpacetimeDbFiles for FilesGlobal {
 
     fn config(&self) -> PathBuf {
         paths::config_path()
+    }
+}
+
+/// Enumeration of options for reading configuration settings.
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub enum ReadConfigOption {
+    SlowQueryThreshold,
+    SlowIncrementalUpdatesThreshold,
+    SlowSubscriptionsThreshold,
+}
+
+impl ReadConfigOption {
+    pub fn type_of(&self) -> AlgebraicType {
+        AlgebraicType::U64
+    }
+}
+
+impl Display for ReadConfigOption {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let value = match self {
+            ReadConfigOption::SlowQueryThreshold => "slow_query_threshold",
+            ReadConfigOption::SlowIncrementalUpdatesThreshold => "slow_incremental_updates_threshold",
+            ReadConfigOption::SlowSubscriptionsThreshold => "slow_subscriptions_threshold",
+        };
+        write!(f, "{value}")
+    }
+}
+
+impl FromStr for ReadConfigOption {
+    type Err = ConfigError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "slow_query_threshold" => Ok(Self::SlowQueryThreshold),
+            "slow_incremental_updates_threshold" => Ok(Self::SlowIncrementalUpdatesThreshold),
+            "slow_subscriptions_threshold" => Ok(Self::SlowSubscriptionsThreshold),
+            x => Err(ConfigError::NotFound(x.into())),
+        }
+    }
+}
+
+pub enum SetConfigOption {
+    SlowQuery(Threshold),
+}
+
+/// Holds a list of the runtime configurations settings of the database
+#[derive(Debug, Clone, Copy)]
+pub struct DatabaseConfig {
+    pub(crate) slow_query: SlowQueryConfig,
+}
+
+impl DatabaseConfig {
+    /// Creates a new `DatabaseConfig` with the specified slow query settings.
+    pub fn with_slow_query(slow_query: SlowQueryConfig) -> Self {
+        Self { slow_query }
+    }
+
+    /// Reads a configuration setting specified by parsing `key`.
+    pub fn read(&self, key: &str) -> Result<Option<Duration>, ConfigError> {
+        let key = ReadConfigOption::from_str(key)?;
+
+        Ok(match key {
+            ReadConfigOption::SlowQueryThreshold => self.slow_query.queries,
+            ReadConfigOption::SlowIncrementalUpdatesThreshold => self.slow_query.incremental_updates,
+            ReadConfigOption::SlowSubscriptionsThreshold => self.slow_query.subscriptions,
+        })
+    }
+
+    /// Reads a configuration setting specified by parsing `key` and converts it into a `MemTable`.
+    ///
+    /// For returning as `table` for `SQL` queries.
+    pub fn read_key_into_table(&self, key: &str) -> Result<MemTable, ConfigError> {
+        let value = if let Some(value) = self.read(key)? {
+            value.as_millis()
+        } else {
+            0u128
+        };
+
+        let value: AlgebraicValue = if value == 0 {
+            AlgebraicValue::OptionNone()
+        } else {
+            AlgebraicValue::OptionSome(value.into())
+        };
+
+        let head = ProductType::from([(key, value.type_of())]);
+
+        Ok(mem_table(head, vec![product!(value)]))
+    }
+
+    /// Writes the configuration setting specified by parsing `key` and `value`.
+    pub fn set_config(&mut self, key: &str, value: AlgebraicValue) -> Result<(), ErrorVm> {
+        let config = ReadConfigOption::from_str(key)?;
+        let millis = if let Some(value) = value.as_u64() {
+            if *value == 0 {
+                None
+            } else {
+                Some(Duration::from_millis(*value))
+            }
+        } else {
+            return Err(ConfigError::TypeError(key.into(), value, AlgebraicType::U64).into());
+        };
+
+        match config {
+            ReadConfigOption::SlowQueryThreshold => self.slow_query.queries = millis,
+            ReadConfigOption::SlowIncrementalUpdatesThreshold => self.slow_query.incremental_updates = millis,
+            ReadConfigOption::SlowSubscriptionsThreshold => self.slow_query.subscriptions = millis,
+        };
+
+        Ok(())
     }
 }

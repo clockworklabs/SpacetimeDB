@@ -114,9 +114,9 @@ impl SubscriptionManager {
     #[tracing::instrument(skip_all)]
     pub fn eval_updates(&self, db: &RelationalDB, event: Arc<ModuleEvent>) {
         let tables = &event.status.database_update().unwrap().tables;
-
+        let slow = db.config.read().slow_query;
         let tx = scopeguard::guard(db.begin_tx(), |tx| {
-            tx.release(&ExecutionContext::incremental_update(db.address()));
+            tx.release(&ExecutionContext::incremental_update(db.address(), slow));
         });
 
         // Put the main work on a rayon compute thread.
@@ -134,13 +134,13 @@ impl SubscriptionManager {
             }
 
             let span = tracing::info_span!("eval_incr").entered();
-            let ctx = ExecutionContext::incremental_update(db.address());
+            let ctx = ExecutionContext::incremental_update(db.address(), slow);
             let tx = &tx.deref().into();
             let eval = units
                 .into_par_iter()
                 .filter_map(|(hash, tables)| self.queries.get(hash).map(|unit| (hash, tables, unit)))
                 .filter_map(|(hash, tables, unit)| {
-                    match unit.eval_incr(&ctx, db, tx, tables.into_iter()) {
+                    match unit.eval_incr(&ctx, db, tx, &unit.sql, tables.into_iter()) {
                         Ok(None) => None,
                         Ok(Some(table)) => Some((hash, table)),
                         Err(err) => {

@@ -6,6 +6,7 @@ use spacetimedb_lib::Address;
 use spacetimedb_primitives::TableId;
 
 use crate::db::db_metrics::DB_METRICS;
+use crate::util::slow::SlowQueryConfig;
 
 pub enum MetricType {
     IndexSeeks,
@@ -118,6 +119,8 @@ pub struct ExecutionContext {
     workload: WorkloadType,
     /// The Metrics to be reported for this transaction.
     pub metrics: Arc<RwLock<Metrics>>,
+    /// Configuration threshold for detecting slow queries.
+    pub slow_query_config: SlowQueryConfig,
 }
 
 /// Classifies a transaction according to its workload.
@@ -141,12 +144,18 @@ impl Default for WorkloadType {
 
 impl ExecutionContext {
     /// Returns an [ExecutionContext] with the provided parameters and empty metrics.
-    fn new(database: Address, reducer: Option<String>, workload: WorkloadType) -> Self {
+    fn new(
+        database: Address,
+        reducer: Option<String>,
+        workload: WorkloadType,
+        slow_query_config: SlowQueryConfig,
+    ) -> Self {
         Self {
             database,
             reducer,
             workload,
             metrics: <_>::default(),
+            slow_query_config,
         }
     }
 
@@ -156,23 +165,23 @@ impl ExecutionContext {
     }
 
     /// Returns an [ExecutionContext] for a one-off sql query.
-    pub fn sql(database: Address) -> Self {
-        Self::new(database, None, WorkloadType::Sql)
+    pub fn sql(database: Address, slow_query_config: SlowQueryConfig) -> Self {
+        Self::new(database, None, WorkloadType::Sql, slow_query_config)
     }
 
     /// Returns an [ExecutionContext] for an initial subscribe call.
-    pub fn subscribe(database: Address) -> Self {
-        Self::new(database, None, WorkloadType::Subscribe)
+    pub fn subscribe(database: Address, slow_query_config: SlowQueryConfig) -> Self {
+        Self::new(database, None, WorkloadType::Subscribe, slow_query_config)
     }
 
     /// Returns an [ExecutionContext] for a subscription update.
-    pub fn incremental_update(database: Address) -> Self {
-        Self::new(database, None, WorkloadType::Update)
+    pub fn incremental_update(database: Address, slow_query_config: SlowQueryConfig) -> Self {
+        Self::new(database, None, WorkloadType::Update, slow_query_config)
     }
 
     /// Returns an [ExecutionContext] for an internal database operation.
     pub fn internal(database: Address) -> Self {
-        Self::new(database, None, WorkloadType::Internal)
+        Self::new(database, None, WorkloadType::Internal, Default::default())
     }
 
     /// Returns the address of the database on which we are operating.

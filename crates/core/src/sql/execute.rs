@@ -53,11 +53,15 @@ pub(crate) fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Resul
 /// Run the compiled `SQL` expression inside the `vm` created by [DbProgram]
 ///
 /// Evaluates `ast` and accordingly triggers mutable or read tx to execute
-pub fn execute_sql(db: &RelationalDB, ast: Vec<CrudExpr>, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
+///
+/// Also, in case the execution takes more than x, log it as `slow query`
+pub fn execute_sql(db: &RelationalDB, sql: &str, ast: Vec<CrudExpr>, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
     let total = ast.len();
-    let ctx = ExecutionContext::sql(db.address());
+    let ctx = ExecutionContext::sql(db.address(), db.config.read().slow_query);
     let mut result = Vec::with_capacity(total);
     let sources = [].into();
+    let slow_logger = ctx.slow_query_config.for_queries(sql);
+
     match CrudExpr::is_reads(&ast) {
         false => db.with_auto_commit(&ctx, |mut_tx| {
             let mut tx: TxMode = mut_tx.into();
@@ -74,15 +78,16 @@ pub fn execute_sql(db: &RelationalDB, ast: Vec<CrudExpr>, auth: AuthCtx) -> Resu
             collect_result(&mut result, run_ast(p, q, sources).into())
         }),
     }?;
+    slow_logger.log();
 
     Ok(result)
 }
 
 /// Run the `SQL` string using the `auth` credentials
 pub fn run(db: &RelationalDB, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
-    let ctx = &ExecutionContext::sql(db.address());
+    let ctx = &ExecutionContext::sql(db.address(), db.config.read().slow_query);
     let ast = db.with_read_only(ctx, |tx| compile_sql(db, tx, sql_text))?;
-    execute_sql(db, ast, auth)
+    execute_sql(db, sql_text, ast, auth)
 }
 
 #[cfg(test)]
