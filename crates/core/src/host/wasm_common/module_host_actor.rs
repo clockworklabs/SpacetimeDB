@@ -14,7 +14,7 @@ use crate::database_logger::{LogLevel, Record, SystemLogger};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::traits::IsolationLevel;
 use crate::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
-use crate::execution_context::ExecutionContext;
+use crate::execution_context::{self, ExecutionContext, ReducerContext};
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_host::{
     CallReducerParams, DatabaseUpdate, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo,
@@ -239,6 +239,10 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
             .expect("failed to initialize instance");
         let _ = instance.extract_descriptions();
         self.make_from_instance(instance)
+    }
+
+    fn dbic(&self) -> &DatabaseInstanceContext {
+        &self.database_instance_context
     }
 
     fn inject_logs(&self, log_level: LogLevel, message: &str) {
@@ -538,7 +542,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             energy.used = tracing::field::Empty,
         )
         .entered();
-        let ctx = ExecutionContext::reducer(address, reducer_name.to_owned());
+        let ctx = ExecutionContext::reducer(address, ReducerContext::from(op.clone()));
         // run the call_reducer call in rayon. it's important that we don't acquire a lock inside a rayon task,
         // as that can lead to deadlock.
         let (ctx, tx, result) = rayon::scope(|_| tx_slot.set(ctx, tx, || self.instance.call_reducer(op, budget)));
@@ -645,12 +649,35 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     }
 }
 
-#[derive(Debug)]
+/// Describes a reducer call in a cheaply shareable way.
+#[derive(Clone, Debug)]
 pub struct ReducerOp<'a> {
     pub id: ReducerId,
     pub name: &'a str,
     pub caller_identity: &'a Identity,
     pub caller_address: &'a Address,
     pub timestamp: Timestamp,
+    /// The BSATN-serialized arguments passed to the reducer.
     pub arg_bytes: Bytes,
+}
+
+impl From<ReducerOp<'_>> for execution_context::ReducerContext {
+    fn from(
+        ReducerOp {
+            id: _,
+            name,
+            caller_identity,
+            caller_address,
+            timestamp,
+            arg_bytes,
+        }: ReducerOp<'_>,
+    ) -> Self {
+        Self {
+            name: name.to_owned(),
+            caller_identity: *caller_identity,
+            caller_address: *caller_address,
+            timestamp,
+            arg_bsatn: arg_bytes.clone(),
+        }
+    }
 }

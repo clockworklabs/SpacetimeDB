@@ -573,6 +573,8 @@ impl MutProgrammable for Locking {
 
 #[derive(Debug, Error)]
 pub enum ReplayError {
+    #[error("Expected tx offset {expected}, encountered {encountered}")]
+    InvalidOffset { expected: u64, encountered: u64 },
     #[error(transparent)]
     Decode(#[from] bsatn::DecodeError),
     #[error(transparent)]
@@ -679,7 +681,21 @@ impl spacetimedb_commitlog::payload::txdata::Visitor for ReplayVisitor<'_> {
     }
 
     fn visit_tx_start(&mut self, offset: u64) -> std::result::Result<(), Self::Error> {
-        debug_assert!(offset == self.committed_state.next_tx_offset);
+        // The first transaction in a history must have the same offset as the
+        // committed state.
+        //
+        // (Technically, the history should guarantee that all subsequent
+        // transaction offsets are contiguous, but we don't currently have a
+        // good way to only check the first transaction.)
+        //
+        // Note that this is not a panic, because the starting offset can be
+        // chosen at runtime.
+        if offset != self.committed_state.next_tx_offset {
+            return Err(ReplayError::InvalidOffset {
+                expected: self.committed_state.next_tx_offset,
+                encountered: offset,
+            });
+        }
 
         Ok(())
     }
