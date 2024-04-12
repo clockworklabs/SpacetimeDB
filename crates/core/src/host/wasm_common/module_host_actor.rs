@@ -604,7 +604,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             }
             Ok(Ok(())) => {
                 if let Some(tx_data) = stdb.commit_tx(&ctx, tx).unwrap() {
-                    EventStatus::Committed(DatabaseUpdate::from_writes(stdb, &tx_data))
+                    EventStatus::Committed(DatabaseUpdate::from_writes(&tx_data))
                 } else {
                     todo!("Write skew, you need to implement retries my man, T-dawg.");
                 }
