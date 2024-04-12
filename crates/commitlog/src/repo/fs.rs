@@ -49,6 +49,18 @@ impl Fs {
     pub fn segment_path(&self, offset: u64) -> PathBuf {
         self.root.join(segment_file_name(offset))
     }
+
+    /// Determine the size on disk as the sum of the sizes of all segments.
+    ///
+    /// Note that the actively written-to segment (if any) is included.
+    pub fn size_on_disk(&self) -> io::Result<u64> {
+        let mut sz = 0;
+        for offset in self.existing_offsets()? {
+            sz += self.segment_path(offset).metadata()?.len();
+        }
+
+        Ok(sz)
+    }
 }
 
 impl Repo for Fs {

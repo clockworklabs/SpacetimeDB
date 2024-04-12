@@ -211,6 +211,12 @@ impl<T> Commitlog<T> {
             inner: RwLock::new(inner),
         })
     }
+
+    /// Determine the size on disk of this commitlog.
+    pub fn size_on_disk(&self) -> io::Result<u64> {
+        let inner = self.inner.read().unwrap();
+        inner.repo.size_on_disk()
+    }
 }
 
 impl<T: Encode> Commitlog<T> {
