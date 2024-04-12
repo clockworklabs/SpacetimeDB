@@ -1,7 +1,5 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
-use std::any::TypeId;
-use std::collections::{btree_map, BTreeMap};
 use std::fmt;
 use std::marker::PhantomData;
 use std::sync::{Mutex, OnceLock};
@@ -14,9 +12,9 @@ use crate::{sys, ReducerContext, ScheduleToken, SpacetimeType, TableType, Timest
 use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
 use spacetimedb_lib::sats::db::auth::StTableType;
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
-use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, AlgebraicType, AlgebraicTypeRef, ProductTypeElement};
+use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, ProductTypeElement};
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
-use spacetimedb_lib::{bsatn, Address, Identity, MiscModuleExport, ModuleDef, ReducerDef, TableDesc, TypeAlias};
+use spacetimedb_lib::{bsatn, Address, Identity, ModuleDefBuilder, ReducerDef, TableDesc};
 use spacetimedb_primitives::*;
 
 /// The `sender` invokes `reducer` at `timestamp` and provides it with the given `args`.
@@ -387,17 +385,17 @@ fn register_describer(f: fn(&mut ModuleBuilder)) {
 /// Registers a describer for the `SpacetimeType` `T`.
 pub fn register_reftype<T: SpacetimeType>() {
     register_describer(|module| {
-        T::make_type(module);
+        T::make_type(&mut module.inner);
     })
 }
 
 /// Registers a describer for the `TableType` `T`.
 pub fn register_table<T: TableType>() {
     register_describer(|module| {
-        let data = *T::make_type(module).as_ref().unwrap();
+        let data = *T::make_type(&mut module.inner).as_ref().unwrap();
         let columns = module
-            .module
-            .typespace
+            .inner
+            .typespace()
             .with_type(&data)
             .resolve_refs()
             .and_then(|x| {
@@ -448,7 +446,7 @@ pub fn register_table<T: TableType>() {
             .with_indexes(indexes);
         let schema = TableDesc { schema, data };
 
-        module.module.tables.push(schema)
+        module.inner.add_table(schema)
     })
 }
 
@@ -476,8 +474,8 @@ impl From<crate::IndexDesc<'_>> for IndexDef {
 /// Registers a describer for the reducer `I` with arguments `A`.
 pub fn register_reducer<'a, A: Args<'a>, T, I: ReducerInfo>(_: impl Reducer<'a, A, T>) {
     register_describer(|module| {
-        let schema = A::schema::<I>(module);
-        module.module.reducers.push(schema);
+        let schema = A::schema::<I>(&mut module.inner);
+        module.inner.add_reducer(schema);
         module.reducers.push(I::INVOKE);
     })
 }
@@ -486,44 +484,9 @@ pub fn register_reducer<'a, A: Args<'a>, T, I: ReducerInfo>(_: impl Reducer<'a, 
 #[derive(Default)]
 struct ModuleBuilder {
     /// The module definition.
-    module: ModuleDef,
+    inner: ModuleDefBuilder,
     /// The reducers of the module.
     reducers: Vec<ReducerFn>,
-    /// The type map from `T: 'static` Rust types to sats types.
-    type_map: BTreeMap<TypeId, AlgebraicTypeRef>,
-}
-
-impl TypespaceBuilder for ModuleBuilder {
-    fn add(
-        &mut self,
-        typeid: TypeId,
-        name: Option<&'static str>,
-        make_ty: impl FnOnce(&mut Self) -> AlgebraicType,
-    ) -> AlgebraicType {
-        let r = match self.type_map.entry(typeid) {
-            btree_map::Entry::Occupied(o) => *o.get(),
-            btree_map::Entry::Vacant(v) => {
-                // Bind a fresh alias to the unit type.
-                let slot_ref = self.module.typespace.add(AlgebraicType::unit());
-                // Relate `typeid -> fresh alias`.
-                v.insert(slot_ref);
-
-                // Alias provided? Relate `name -> slot_ref`.
-                if let Some(name) = name {
-                    self.module.misc_exports.push(MiscModuleExport::TypeAlias(TypeAlias {
-                        name: name.to_owned(),
-                        ty: slot_ref,
-                    }));
-                }
-
-                // Borrow of `v` has ended here, so we can now convince the borrow checker.
-                let ty = make_ty(self);
-                self.module.typespace[slot_ref] = ty;
-                slot_ref
-            }
-        };
-        AlgebraicType::Ref(r)
-    }
 }
 
 // Not actually a mutex; because WASM is single-threaded this basically just turns into a refcell.
@@ -543,7 +506,8 @@ extern "C" fn __describe_module__() -> Buffer {
     }
 
     // Serialize the module to bsatn.
-    let bytes = bsatn::to_vec(&module.module).expect("unable to serialize typespace");
+    let module_def = module.inner.finish();
+    let bytes = bsatn::to_vec(&module_def).expect("unable to serialize typespace");
 
     // Write the set of reducers.
     REDUCERS.set(module.reducers).ok().unwrap();

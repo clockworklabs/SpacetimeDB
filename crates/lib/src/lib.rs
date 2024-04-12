@@ -1,3 +1,6 @@
+use std::any::TypeId;
+use std::collections::{btree_map, BTreeMap};
+
 use anyhow::Context;
 use spacetimedb_sats::db::def::TableDef;
 use spacetimedb_sats::{impl_serialize, WithTypespace};
@@ -170,6 +173,90 @@ pub struct ModuleDef {
     pub tables: Vec<TableDesc>,
     pub reducers: Vec<ReducerDef>,
     pub misc_exports: Vec<MiscModuleExport>,
+}
+
+impl ModuleDef {
+    pub fn builder() -> ModuleDefBuilder {
+        ModuleDefBuilder::default()
+    }
+
+    pub fn with_builder(f: impl FnOnce(&mut ModuleDefBuilder)) -> Self {
+        let mut builder = Self::builder();
+        f(&mut builder);
+        builder.finish()
+    }
+}
+
+/// A builder for a [`ModuleDef`].
+#[derive(Default)]
+pub struct ModuleDefBuilder {
+    /// The module definition.
+    module: ModuleDef,
+    /// The type map from `T: 'static` Rust types to sats types.
+    type_map: BTreeMap<TypeId, sats::AlgebraicTypeRef>,
+}
+
+impl ModuleDefBuilder {
+    pub fn add_type<T: SpacetimeType>(&mut self) -> AlgebraicType {
+        sats::typespace::TypespaceBuilder::add_type::<T>(self)
+    }
+
+    pub fn add_table(&mut self, table: TableDesc) {
+        self.module.tables.push(table)
+    }
+
+    pub fn add_reducer(&mut self, reducer: ReducerDef) {
+        self.module.reducers.push(reducer)
+    }
+
+    pub fn add_misc_export(&mut self, misc_export: MiscModuleExport) {
+        self.module.misc_exports.push(misc_export)
+    }
+
+    pub fn add_type_alias(&mut self, type_alias: TypeAlias) {
+        self.add_misc_export(MiscModuleExport::TypeAlias(type_alias))
+    }
+
+    pub fn typespace(&self) -> &sats::Typespace {
+        &self.module.typespace
+    }
+
+    pub fn finish(self) -> ModuleDef {
+        self.module
+    }
+}
+
+impl sats::typespace::TypespaceBuilder for ModuleDefBuilder {
+    fn add(
+        &mut self,
+        typeid: TypeId,
+        name: Option<&'static str>,
+        make_ty: impl FnOnce(&mut Self) -> AlgebraicType,
+    ) -> AlgebraicType {
+        let r = match self.type_map.entry(typeid) {
+            btree_map::Entry::Occupied(o) => *o.get(),
+            btree_map::Entry::Vacant(v) => {
+                // Bind a fresh alias to the unit type.
+                let slot_ref = self.module.typespace.add(AlgebraicType::unit());
+                // Relate `typeid -> fresh alias`.
+                v.insert(slot_ref);
+
+                // Alias provided? Relate `name -> slot_ref`.
+                if let Some(name) = name {
+                    self.module.misc_exports.push(MiscModuleExport::TypeAlias(TypeAlias {
+                        name: name.to_owned(),
+                        ty: slot_ref,
+                    }));
+                }
+
+                // Borrow of `v` has ended here, so we can now convince the borrow checker.
+                let ty = make_ty(self);
+                self.module.typespace[slot_ref] = ty;
+                slot_ref
+            }
+        };
+        AlgebraicType::Ref(r)
+    }
 }
 
 // an enum to keep it extensible without breaking abi

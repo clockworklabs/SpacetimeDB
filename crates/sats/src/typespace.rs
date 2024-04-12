@@ -198,6 +198,13 @@ pub trait TypespaceBuilder {
         name: Option<&'static str>,
         make_ty: impl FnOnce(&mut Self) -> AlgebraicType,
     ) -> AlgebraicType;
+
+    fn add_type<T: SpacetimeType>(&mut self) -> AlgebraicType
+    where
+        Self: Sized,
+    {
+        T::make_type(self)
+    }
 }
 
 /// Implements [`SpacetimeType`] for a type in a simplified manner.
