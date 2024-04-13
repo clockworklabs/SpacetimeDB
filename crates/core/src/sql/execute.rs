@@ -205,7 +205,7 @@ pub(crate) mod tests {
         let (db, _) = create_data(1)?;
 
         let tx = db.begin_tx();
-        let schema = db.schema_for_table(&tx, ST_TABLES_ID).unwrap().into_owned();
+        let schema = db.schema_for_table(&tx, ST_TABLES_ID).unwrap();
         db.release_tx(&ExecutionContext::internal(db.address()), tx);
         let result = run_for_testing(
             &db,
@@ -220,7 +220,7 @@ pub(crate) mod tests {
             scalar(StTableType::System.as_str()),
             scalar(StAccess::Public.as_str()),
         );
-        let input = mem_table(Header::from(&schema), vec![row]);
+        let input = mem_table(Header::from(&*schema), vec![row]);
 
         assert_eq!(
             result.as_without_table_name(),

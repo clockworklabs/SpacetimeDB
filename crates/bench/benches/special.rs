@@ -87,7 +87,9 @@ fn serialize_benchmarks<T: BenchTable + RandomTable>(c: &mut Criterion) {
     });
 
     let mut table = spacetimedb_table::table::Table::new(
-        TableDef::from_product(name, T::product_type().clone()).into_schema(TableId(0)),
+        TableDef::from_product(name, T::product_type().clone())
+            .into_schema(TableId(0))
+            .into(),
         spacetimedb_table::indexes::SquashedOffset::COMMITTED_STATE,
     );
     let mut blob_store = spacetimedb_table::blob_store::HashMapBlobStore::default();

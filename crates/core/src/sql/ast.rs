@@ -18,7 +18,7 @@ use sqlparser::ast::{
 };
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
-use std::borrow::Cow;
+use std::sync::Arc;
 
 /// Simplify to detect features of the syntax we don't support yet
 /// Because we use [PostgreSqlDialect] in the compiler step it already protect against features
@@ -120,21 +120,21 @@ pub struct OnExpr {
 
 /// The `JOIN [INNER] ON join_expr OpCmp join_expr` clause
 pub enum Join {
-    Inner { rhs: TableSchema, on: OnExpr },
+    Inner { rhs: Arc<TableSchema>, on: OnExpr },
 }
 
 /// The list of tables in `... FROM table1 [JOIN table2] ...`
 pub struct From {
-    pub root: TableSchema,
+    pub root: Arc<TableSchema>,
     pub join: Option<Vec<Join>>,
 }
 
 impl From {
-    pub fn new(root: TableSchema) -> Self {
+    pub fn new(root: Arc<TableSchema>) -> Self {
         Self { root, join: None }
     }
 
-    pub fn with_inner_join(self, rhs: TableSchema, on: OnExpr) -> Self {
+    pub fn with_inner_join(self, rhs: Arc<TableSchema>, on: OnExpr) -> Self {
         let mut x = self;
 
         // Check if the field are inverted:
@@ -158,16 +158,16 @@ impl From {
     }
 
     /// Returns all the tables, including the ones inside the joins
-    pub fn iter_tables(&self) -> impl Iterator<Item = &TableSchema> {
-        [&self.root].into_iter().chain(self.join.iter().flat_map(|x| {
-            x.iter().map(|t| match t {
-                Join::Inner { rhs, .. } => rhs,
-            })
-        }))
+    pub fn iter_tables(&self) -> impl Iterator<Item = &Arc<TableSchema>> {
+        [&self.root].into_iter().chain(
+            self.join
+                .iter()
+                .flat_map(|x| x.iter().map(|Join::Inner { rhs, .. }| rhs)),
+        )
     }
 
     /// Returns all the columns from [Self::iter_tables], removing duplicates by `col_name`
-    pub fn iter_columns_dedup(&self) -> impl Iterator<Item = (&TableSchema, &ColumnSchema)> {
+    pub fn iter_columns_dedup(&self) -> impl Iterator<Item = (&Arc<TableSchema>, &ColumnSchema)> {
         self.iter_tables()
             .flat_map(|t| t.columns().iter().map(move |column| (t, column)))
             .dedup_by(|(_, x), (_, y)| x.col_name == y.col_name)
@@ -179,7 +179,7 @@ impl From {
     }
 
     /// Returns all the columns from [Self::iter_tables]
-    pub fn iter_columns(&self) -> impl Iterator<Item = (&TableSchema, &ColumnSchema)> {
+    pub fn iter_columns(&self) -> impl Iterator<Item = (&Arc<TableSchema>, &ColumnSchema)> {
         self.iter_tables()
             .flat_map(|t| t.columns().iter().map(move |column| (t, column)))
     }
@@ -248,17 +248,17 @@ pub enum SqlAst {
         selection: Option<Selection>,
     },
     Insert {
-        table: TableSchema,
+        table: Arc<TableSchema>,
         columns: Vec<FieldName>,
         values: Vec<Vec<FieldExpr>>,
     },
     Update {
-        table: TableSchema,
+        table: Arc<TableSchema>,
         assignments: HashMap<FieldName, FieldExpr>,
         selection: Option<Selection>,
     },
     Delete {
-        table: TableSchema,
+        table: Arc<TableSchema>,
         selection: Option<Selection>,
     },
     CreateTable {
@@ -445,11 +445,11 @@ fn compile_where(table: &From, filter: Option<SqlExpr>) -> Result<Option<Selecti
 }
 
 pub trait TableSchemaView {
-    fn find_table(&self, db: &RelationalDB, t: Table) -> Result<Cow<'_, TableSchema>, PlanError>;
+    fn find_table(&self, db: &RelationalDB, t: Table) -> Result<Arc<TableSchema>, PlanError>;
 }
 
 impl TableSchemaView for Tx {
-    fn find_table(&self, db: &RelationalDB, t: Table) -> Result<Cow<'_, TableSchema>, PlanError> {
+    fn find_table(&self, db: &RelationalDB, t: Table) -> Result<Arc<TableSchema>, PlanError> {
         let table_id = db
             .table_id_from_name(self, &t.name)?
             .ok_or(PlanError::UnknownTable { table: t.name.clone() })?;
@@ -462,7 +462,7 @@ impl TableSchemaView for Tx {
 }
 
 impl TableSchemaView for MutTx {
-    fn find_table(&self, db: &RelationalDB, t: Table) -> Result<Cow<'_, TableSchema>, PlanError> {
+    fn find_table(&self, db: &RelationalDB, t: Table) -> Result<Arc<TableSchema>, PlanError> {
         let table_id = db
             .table_id_from_name_mut(self, &t.name)?
             .ok_or(PlanError::UnknownTable { table: t.name.clone() })?;
@@ -490,14 +490,14 @@ fn compile_from<T: TableSchemaView>(db: &RelationalDB, tx: &T, from: &[TableWith
     };
 
     let t = compile_table_factor(root_table.relation.clone())?;
-    let base = tx.find_table(db, t)?.into_owned();
+    let base = tx.find_table(db, t)?;
     let mut base = From::new(base);
 
     for join in &root_table.joins {
         match &join.join_operator {
             JoinOperator::Inner(constraint) => {
                 let t = compile_table_factor(join.relation.clone())?;
-                let join = tx.find_table(db, t)?.into_owned();
+                let join = tx.find_table(db, t)?;
 
                 match constraint {
                     JoinConstraint::On(x) => {
@@ -674,7 +674,7 @@ fn compile_insert<T: TableSchemaView>(
     columns: Vec<Ident>,
     data: &Values,
 ) -> Result<SqlAst, PlanError> {
-    let table = tx.find_table(db, Table::new(table_name))?.into_owned();
+    let table = tx.find_table(db, Table::new(table_name))?;
 
     let columns = columns
         .into_iter()
@@ -709,7 +709,7 @@ fn compile_update<T: TableSchemaView>(
     assignments: Vec<Assignment>,
     selection: Option<SqlExpr>,
 ) -> Result<SqlAst, PlanError> {
-    let table = From::new(tx.find_table(db, table)?.into_owned());
+    let table = From::new(tx.find_table(db, table)?);
     let selection = compile_where(&table, selection)?;
 
     let mut x = HashMap::with_capacity(assignments.len());
@@ -736,7 +736,7 @@ fn compile_delete<T: TableSchemaView>(
     table: Table,
     selection: Option<SqlExpr>,
 ) -> Result<SqlAst, PlanError> {
-    let table = From::new(tx.find_table(db, table)?.into_owned());
+    let table = From::new(tx.find_table(db, table)?);
     let selection = compile_where(&table, selection)?;
 
     Ok(SqlAst::Delete {

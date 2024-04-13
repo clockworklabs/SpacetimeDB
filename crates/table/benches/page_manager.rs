@@ -496,7 +496,7 @@ fn make_table(c: &mut Criterion) {
                 let mut tables = Vec::with_capacity(num_iters as usize);
                 let start = WallTime.start();
                 for schema in schemas {
-                    tables.push(Table::new(schema, SquashedOffset::COMMITTED_STATE));
+                    tables.push(Table::new(schema.into(), SquashedOffset::COMMITTED_STATE));
                 }
                 let elapsed = WallTime.end(start);
                 black_box(tables);
@@ -515,7 +515,7 @@ fn make_table(c: &mut Criterion) {
 fn make_table_for_row_type<R: Row>(name: &str) -> Table {
     let ty = R::row_type();
     let schema = schema_from_ty(ty.clone(), name);
-    Table::new(schema, SquashedOffset::COMMITTED_STATE)
+    Table::new(schema.into(), SquashedOffset::COMMITTED_STATE)
 }
 
 fn use_type_throughput<T>(group: &mut BenchmarkGroup<'_, impl Measurement>) {
@@ -730,7 +730,7 @@ impl IndexedRow for Box<str> {
 
 fn make_table_with_indexes<R: IndexedRow>() -> Table {
     let schema = R::make_schema();
-    let mut tbl = Table::new(schema, SquashedOffset::COMMITTED_STATE);
+    let mut tbl = Table::new(schema.into(), SquashedOffset::COMMITTED_STATE);
 
     let cols = R::indexed_columns();
     let idx = BTreeIndex::new(IndexId(0), &R::row_type().into(), &cols, false, "idx").unwrap();

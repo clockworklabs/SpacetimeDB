@@ -1,5 +1,5 @@
 use super::datastore::traits::{
-    IsolationLevel, MutProgrammable, MutTx as _, MutTxDatastore, Programmable, Tx as _, TxDatastore,
+    IsolationLevel, MutProgrammable, MutTx as _, MutTxDatastore, Programmable, RowTypeForTable, Tx as _, TxDatastore,
 };
 use super::datastore::{
     locking_tx_datastore::{
@@ -25,7 +25,6 @@ use spacetimedb_table::indexes::RowPointer;
 use std::borrow::Cow;
 use std::fs::{create_dir_all, File};
 use std::io;
-use std::mem;
 use std::ops::RangeBounds;
 use std::path::Path;
 use std::sync::Arc;
@@ -192,15 +191,11 @@ impl RelationalDB {
         row.encode(bytes);
     }
 
-    pub fn schema_for_table_mut<'tx>(
-        &self,
-        tx: &'tx MutTx,
-        table_id: TableId,
-    ) -> Result<Cow<'tx, TableSchema>, DBError> {
+    pub fn schema_for_table_mut(&self, tx: &MutTx, table_id: TableId) -> Result<Arc<TableSchema>, DBError> {
         self.inner.schema_for_table_mut_tx(tx, table_id)
     }
 
-    pub fn schema_for_table<'tx>(&self, tx: &'tx Tx, table_id: TableId) -> Result<Cow<'tx, TableSchema>, DBError> {
+    pub fn schema_for_table(&self, tx: &Tx, table_id: TableId) -> Result<Arc<TableSchema>, DBError> {
         self.inner.schema_for_table_tx(tx, table_id)
     }
 
@@ -208,26 +203,27 @@ impl RelationalDB {
         &self,
         tx: &'tx MutTx,
         table_id: TableId,
-    ) -> Result<Cow<'tx, ProductType>, DBError> {
+    ) -> Result<RowTypeForTable<'tx>, DBError> {
         self.inner.row_type_for_table_mut_tx(tx, table_id)
     }
 
-    pub fn get_all_tables_mut<'tx>(&self, tx: &'tx MutTx) -> Result<Vec<Cow<'tx, TableSchema>>, DBError> {
+    pub fn get_all_tables_mut(&self, tx: &MutTx) -> Result<Vec<Arc<TableSchema>>, DBError> {
         self.inner
             .get_all_tables_mut_tx(&ExecutionContext::internal(self.address), tx)
     }
 
-    pub fn get_all_tables<'tx>(&self, tx: &'tx Tx) -> Result<Vec<Cow<'tx, TableSchema>>, DBError> {
+    pub fn get_all_tables(&self, tx: &Tx) -> Result<Vec<Arc<TableSchema>>, DBError> {
         self.inner
             .get_all_tables_tx(&ExecutionContext::internal(self.address), tx)
     }
 
-    pub fn schema_for_column<'tx>(
+    pub fn decode_column(
         &self,
-        tx: &'tx MutTx,
+        tx: &MutTx,
         table_id: TableId,
         col_id: ColId,
-    ) -> Result<Cow<'tx, AlgebraicType>, DBError> {
+        bytes: &[u8],
+    ) -> Result<AlgebraicValue, DBError> {
         // We need to do a manual bounds check here
         // since we want to do `swap_remove` to get an owned value
         // in the case of `Cow::Owned` and avoid a `clone`.
@@ -238,27 +234,10 @@ impl RelationalDB {
             }
             Ok(col_idx)
         };
-        Ok(match self.row_schema_for_table(tx, table_id)? {
-            Cow::Borrowed(schema) => {
-                let col_idx = check_bounds(schema)?;
-                Cow::Borrowed(&schema.elements[col_idx].algebraic_type)
-            }
-            Cow::Owned(mut schema) => {
-                let col_idx = check_bounds(&schema)?;
-                Cow::Owned(mem::take(&mut schema.elements[col_idx].algebraic_type))
-            }
-        })
-    }
-
-    pub fn decode_column(
-        &self,
-        tx: &MutTx,
-        table_id: TableId,
-        col_id: ColId,
-        bytes: &[u8],
-    ) -> Result<AlgebraicValue, DBError> {
-        let schema = self.schema_for_column(tx, table_id, col_id)?;
-        Ok(AlgebraicValue::decode(&schema, &mut &*bytes)?)
+        let row_ty = &*self.row_schema_for_table(tx, table_id)?;
+        let col_idx = check_bounds(row_ty)?;
+        let col_ty = &row_ty.elements[col_idx].algebraic_type;
+        Ok(AlgebraicValue::decode(col_ty, &mut &*bytes)?)
     }
 
     /// Begin a transaction.

@@ -95,7 +95,7 @@ pub trait HasLayout {
 ///   where `VarLenType` returns a static ref to [`VAR_LEN_REF_LAYOUT`],
 ///   and `PrimitiveType` dispatches on its variant to return a static ref
 ///   to a type-specific `Layout`.
-#[derive(Debug, PartialEq, Eq, EnumAsInner)]
+#[derive(Debug, PartialEq, Eq, Clone, EnumAsInner)]
 pub enum AlgebraicTypeLayout {
     /// A sum type, annotated with its layout.
     Sum(SumTypeLayout),
@@ -165,7 +165,7 @@ pub const fn row_size_for_type<T>() -> Size {
 /// The type of a row, annotated with a [`Layout`].
 ///
 /// This type ensures that the minimum row size is adhered to.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct RowTypeLayout(ProductTypeLayout);
 
 impl RowTypeLayout {
@@ -207,7 +207,7 @@ impl Index<usize> for RowTypeLayout {
 }
 
 /// A mirror of [`ProductType`] annotated with a [`Layout`].
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ProductTypeLayout {
     /// The memoized layout of the product type.
     pub layout: Layout,
@@ -222,7 +222,7 @@ impl HasLayout for ProductTypeLayout {
 }
 
 /// A mirrior of [`ProductTypeElement`] annotated with a [`Layout`].
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ProductTypeElementLayout {
     /// The relative offset of a field's value to its parent product value.
     pub offset: u16,
@@ -238,7 +238,7 @@ pub struct ProductTypeElementLayout {
 }
 
 /// A mirrior of [`SumType`] annotated with a [`Layout`].
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SumTypeLayout {
     /// The layout of a sum value of this sum type.
     pub layout: Layout,
@@ -256,7 +256,7 @@ impl HasLayout for SumTypeLayout {
 }
 
 /// A mirrior of [`SumTypeVariant`] annotated with a [`Layout`].
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SumTypeVariantLayout {
     /// The type of the variant.
     pub ty: AlgebraicTypeLayout,
@@ -270,7 +270,7 @@ pub struct SumTypeVariantLayout {
 
 /// Variants of [`BuiltinType`] which do not require a `VarLenRef` indirection,
 /// i.e. bools, integers and floats.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum PrimitiveType {
     Bool,
     I8,
@@ -301,7 +301,7 @@ impl HasLayout for PrimitiveType {
 
 /// [`BuiltinType`] variants which require a `VarLenRef` indirection,
 /// i.e. strings, arrays and maps.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum VarLenType {
     /// The string type corresponds to `AlgebraicType::String`.
     String,

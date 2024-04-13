@@ -14,7 +14,8 @@ use crate::{
                 Epoch, StModuleFields, StModuleRow, StTableFields, ST_MODULE_ID, ST_TABLES_ID, WASM_MODULE,
             },
             traits::{
-                DataRow, IsolationLevel, MutProgrammable, MutTx, MutTxDatastore, Programmable, Tx, TxData, TxDatastore,
+                DataRow, IsolationLevel, MutProgrammable, MutTx, MutTxDatastore, Programmable, RowTypeForTable, Tx,
+                TxData, TxDatastore,
             },
         },
         db_metrics::{DB_METRICS, MAX_TX_CPU_TIME},
@@ -26,7 +27,7 @@ use anyhow::{anyhow, Context};
 use parking_lot::{Mutex, RwLock};
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::db::def::{IndexDef, SequenceDef, TableDef, TableSchema};
-use spacetimedb_sats::{bsatn, buffer::BufReader, hash::Hash, AlgebraicValue, ProductType, ProductValue};
+use spacetimedb_sats::{bsatn, buffer::BufReader, hash::Hash, AlgebraicValue, ProductValue};
 use spacetimedb_table::{indexes::RowPointer, table::RowRef};
 use std::ops::RangeBounds;
 use std::sync::Arc;
@@ -225,11 +226,11 @@ impl TxDatastore for Locking {
         Ok(tx.table_exists(&table_id).map(Cow::Borrowed))
     }
 
-    fn schema_for_table_tx<'tx>(&self, tx: &'tx Self::Tx, table_id: TableId) -> Result<Cow<'tx, TableSchema>> {
+    fn schema_for_table_tx(&self, tx: &Self::Tx, table_id: TableId) -> Result<Arc<TableSchema>> {
         tx.schema_for_table(&ExecutionContext::internal(self.database_address), table_id)
     }
 
-    fn get_all_tables_tx<'tx>(&self, ctx: &ExecutionContext, tx: &'tx Self::Tx) -> Result<Vec<Cow<'tx, TableSchema>>> {
+    fn get_all_tables_tx(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> Result<Vec<Arc<TableSchema>>> {
         self.iter_tx(ctx, tx, ST_TABLES_ID)?
             .map(|row_ref| {
                 let table_id = row_ref.read_col(StTableFields::TableId)?;
@@ -257,7 +258,7 @@ impl MutTxDatastore for Locking {
     /// reflect the schema of the table.q
     ///
     /// This function is known to be called quite frequently.
-    fn row_type_for_table_mut_tx<'tx>(&self, tx: &'tx Self::MutTx, table_id: TableId) -> Result<Cow<'tx, ProductType>> {
+    fn row_type_for_table_mut_tx<'tx>(&self, tx: &'tx Self::MutTx, table_id: TableId) -> Result<RowTypeForTable<'tx>> {
         tx.row_type_for_table(table_id, self.database_address)
     }
 
@@ -265,7 +266,7 @@ impl MutTxDatastore for Locking {
     /// expensive than `row_type_for_table_mut_tx`.  Prefer
     /// `row_type_for_table_mut_tx` if you only need to access the `ProductType`
     /// of the table.
-    fn schema_for_table_mut_tx<'tx>(&self, tx: &'tx Self::MutTx, table_id: TableId) -> Result<Cow<'tx, TableSchema>> {
+    fn schema_for_table_mut_tx(&self, tx: &Self::MutTx, table_id: TableId) -> Result<Arc<TableSchema>> {
         tx.schema_for_table(&ExecutionContext::internal(self.database_address), table_id)
     }
 
@@ -622,8 +623,7 @@ impl spacetimedb_commitlog::payload::txdata::Visitor for ReplayVisitor<'_> {
     ) -> std::result::Result<Self::Row, Self::Error> {
         let schema = self
             .committed_state
-            .schema_for_table(&ExecutionContext::default(), table_id)?
-            .into_owned();
+            .schema_for_table(&ExecutionContext::default(), table_id)?;
         let row = ProductValue::decode(schema.get_row_type(), reader)?;
 
         self.committed_state
@@ -1277,7 +1277,7 @@ mod tests {
         datastore.commit_mut_tx_for_test(tx)?;
 
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
-        let schema = datastore.schema_for_table_mut_tx(&tx, table_id)?.into_owned();
+        let schema = datastore.schema_for_table_mut_tx(&tx, table_id)?;
 
         for index in &*schema.indexes {
             datastore.drop_index_mut_tx(&mut tx, index.index_id)?;

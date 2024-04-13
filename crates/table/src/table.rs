@@ -31,6 +31,7 @@ use spacetimedb_sats::{
     ser::{Serialize, Serializer},
     AlgebraicValue, ProductType, ProductValue,
 };
+use std::sync::Arc;
 use thiserror::Error;
 
 /// A database table containing the row schema, the rows, and indices.
@@ -47,7 +48,7 @@ pub struct Table {
     /// The indices associated with a set of columns of the table.
     pub indexes: HashMap<ColList, BTreeIndex>,
     /// The schema of the table, from which the type, and other details are derived.
-    pub schema: Box<TableSchema>,
+    pub schema: Arc<TableSchema>,
     /// `SquashedOffset::TX_STATE` or `SquashedOffset::COMMITTED_STATE`
     /// depending on whether this is a tx scratchpad table
     /// or a committed table.
@@ -135,9 +136,19 @@ pub enum InsertError {
 
 // Public API:
 impl Table {
-    /// Creates a new empty table with the given `schema`.
-    pub fn new(schema: TableSchema, squashed_offset: SquashedOffset) -> Self {
-        Self::new_with_indexes_capacity(schema, squashed_offset, 0)
+    /// Creates a new empty table with the given `schema` and `squashed_offset`.
+    pub fn new(schema: Arc<TableSchema>, squashed_offset: SquashedOffset) -> Self {
+        let row_layout: RowTypeLayout = schema.get_row_type().clone().into();
+        let static_bsatn_layout = StaticBsatnLayout::for_row_type(&row_layout);
+        let visitor_prog = row_type_visitor(&row_layout);
+        Self::new_with_indexes_capacity(
+            schema,
+            row_layout,
+            static_bsatn_layout,
+            visitor_prog,
+            squashed_offset,
+            0,
+        )
     }
 
     /// Check if the `row` conflicts with any unique index on `self`,
@@ -476,8 +487,20 @@ impl Table {
     }
 
     /// Returns the schema for this table.
-    pub fn get_schema(&self) -> &TableSchema {
+    pub fn get_schema(&self) -> &Arc<TableSchema> {
         &self.schema
+    }
+
+    /// Runs a mutation on the [`TableSchema`] of this table.
+    ///
+    /// This uses a clone-on-write mechanism.
+    /// If none but `self` refers to the schema, then the mutation will be in-place.
+    /// Otherwise, the schema must be cloned, mutated,
+    /// and then the cloned version is written back to the table.
+    pub fn with_mut_schema(&mut self, with: impl FnOnce(&mut TableSchema)) {
+        let mut schema = self.schema.clone();
+        with(Arc::make_mut(&mut schema));
+        self.schema = schema;
     }
 
     /// Inserts a new `index` into the table.
@@ -523,12 +546,13 @@ impl Table {
     /// The new table will be completely empty
     /// and will use the given `squashed_offset` instead of that of `self`.
     pub fn clone_structure(&self, squashed_offset: SquashedOffset) -> Self {
-        // TODO(perf): Consider `Arc`ing `self.schema`.
-        // We'll still need to mutate the schema sometimes,
-        // but those are rare, so we could use `ArcSwap` for that.
-        let schema = self.schema.as_ref().clone();
+        let schema = self.schema.clone();
+        let layout = self.row_layout().clone();
+        let sbl = self.inner.static_bsatn_layout.clone();
+        let visitor = self.visitor_prog.clone();
+        let mut new =
+            Table::new_with_indexes_capacity(schema, layout, sbl, visitor, squashed_offset, self.indexes.len());
 
-        let mut new = Table::new_with_indexes_capacity(schema, squashed_offset, self.indexes.len());
         for (cols, index) in self.indexes.iter() {
             // `new` is known to be empty (we just constructed it!),
             // so no need for an actual blob store here.
@@ -883,16 +907,16 @@ impl Table {
         }
     }
 
-    /// Returns a new empty table with the given `schema`
+    /// Returns a new empty table with the given `schema`, `row_layout`, and `static_bsatn_layout`s
     /// and with a specified capacity for the `indexes` of the table.
     fn new_with_indexes_capacity(
-        schema: TableSchema,
+        schema: Arc<TableSchema>,
+        row_layout: RowTypeLayout,
+        static_bsatn_layout: Option<StaticBsatnLayout>,
+        visitor_prog: VarLenVisitorProgram,
         squashed_offset: SquashedOffset,
         indexes_capacity: usize,
     ) -> Self {
-        let row_layout: RowTypeLayout = schema.get_row_type().clone().into();
-        let static_bsatn_layout = StaticBsatnLayout::for_row_type(&row_layout);
-        let visitor_prog = row_type_visitor(&row_layout);
         Self {
             inner: TableInner {
                 row_layout,
@@ -900,7 +924,7 @@ impl Table {
                 pages: Pages::default(),
             },
             visitor_prog,
-            schema: Box::new(schema),
+            schema,
             indexes: HashMap::with_capacity(indexes_capacity),
             pointer_map: PointerMap::default(),
             squashed_offset,
@@ -959,7 +983,7 @@ pub(crate) mod test {
     pub(crate) fn table(ty: ProductType) -> Table {
         let def = TableDef::from_product("", ty);
         let schema = TableSchema::from_def(0.into(), def);
-        Table::new(schema, SquashedOffset::COMMITTED_STATE)
+        Table::new(schema.into(), SquashedOffset::COMMITTED_STATE)
     }
 
     #[test]
@@ -983,7 +1007,7 @@ pub(crate) mod test {
         }]);
         let schema = TableSchema::from_def(0.into(), table_def);
         let index_schema = schema.indexes[0].clone();
-        let mut table = Table::new(schema, SquashedOffset::COMMITTED_STATE);
+        let mut table = Table::new(schema.into(), SquashedOffset::COMMITTED_STATE);
         let cols = ColList::new(0.into());
 
         let index = BTreeIndex::new(index_schema.index_id, &table.inner.row_layout, &cols, true, index_name).unwrap();
