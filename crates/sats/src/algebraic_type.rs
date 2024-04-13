@@ -114,6 +114,13 @@ pub enum AlgebraicType {
     Ref(AlgebraicTypeRef),
 }
 
+/// Provided to enable `mem::take`.
+impl Default for AlgebraicType {
+    fn default() -> Self {
+        Self::ZERO_REF
+    }
+}
+
 #[allow(non_upper_case_globals)]
 impl AlgebraicType {
     /// The first type in the typespace.
@@ -243,7 +250,7 @@ impl AlgebraicType {
 
     /// Returns a sum type of unit variants with names taken from `var_names`.
     pub fn simple_enum<'a>(var_names: impl Iterator<Item = &'a str>) -> Self {
-        Self::sum(var_names.into_iter().map(SumTypeVariant::unit).collect::<Vec<_>>())
+        Self::sum(var_names.into_iter().map(SumTypeVariant::unit).collect::<Box<[_]>>())
     }
 
     pub fn as_value(&self) -> AlgebraicValue {

@@ -853,8 +853,8 @@ impl IndexScanIter<'_> {
 #[error("Unique constraint violation '{}' in table '{}': column(s): '{:?}' value: {}", constraint_name, table_name, cols, value.to_satn())]
 pub struct UniqueConstraintViolation {
     pub constraint_name: String,
-    pub table_name: String,
-    pub cols: Vec<String>,
+    pub table_name: Box<str>,
+    pub cols: Vec<Box<str>>,
     pub value: AlgebraicValue,
 }
 
@@ -1004,8 +1004,8 @@ pub(crate) mod test {
                 value,
             })) => {
                 assert_eq!(constraint_name, index_name);
-                assert_eq!(table_name, "UniqueIndexed");
-                assert_eq!(cols, &["unique_col"]);
+                assert_eq!(&*table_name, "UniqueIndexed");
+                assert_eq!(cols.iter().map(|c| c.to_string()).collect::<Vec<_>>(), &["unique_col"]);
                 assert_eq!(value, AlgebraicValue::I32(0));
             }
             Err(e) => panic!("Expected UniqueConstraintViolation but found {:?}", e),
@@ -1041,14 +1041,14 @@ pub(crate) mod test {
     #[test]
     fn repro_serialize_bsatn_empty_array() {
         let ty = AlgebraicType::array(AlgebraicType::U64);
-        let arr = ArrayValue::from(Vec::<u64>::new());
+        let arr = ArrayValue::from(Vec::<u64>::new().into_boxed_slice());
         insert_retrieve_body(ty, AlgebraicValue::from(arr)).unwrap();
     }
 
     #[test]
     fn repro_serialize_bsatn_debug_assert() {
         let ty = AlgebraicType::array(AlgebraicType::U64);
-        let arr = ArrayValue::from((0..130u64).collect::<Vec<_>>());
+        let arr = ArrayValue::from((0..130u64).collect::<Box<_>>());
         insert_retrieve_body(ty, AlgebraicValue::from(arr)).unwrap();
     }
 

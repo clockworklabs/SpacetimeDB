@@ -18,7 +18,7 @@ use std::time::Duration;
 #[derive(thiserror::Error, Debug)]
 pub enum UpdateDatabaseError {
     #[error("incompatible schema changes for: {tables:?}. See database log for details.")]
-    IncompatibleSchema { tables: Vec<String> },
+    IncompatibleSchema { tables: Vec<Box<str>> },
     #[error(transparent)]
     Database(#[from] DBError),
 }
@@ -100,7 +100,7 @@ impl fmt::Display for TaintReason {
 /// A table with name `table_name` marked tainted for reason [`TaintReason`].
 #[derive(Debug, PartialEq)]
 pub struct Tainted {
-    pub table_name: String,
+    pub table_name: Box<str>,
     pub reason: TaintReason,
 }
 
@@ -111,7 +111,7 @@ pub enum SchemaUpdates {
     /// The schema can be updates.
     Updates {
         /// Tables to create.
-        new_tables: HashMap<String, TableDef>,
+        new_tables: HashMap<Box<str>, TableDef>,
     },
 }
 
@@ -135,7 +135,7 @@ pub fn schema_updates(
     let mut new_tables = HashMap::new();
     let mut tainted_tables = Vec::new();
 
-    let mut known_tables: BTreeMap<String, Cow<TableSchema>> = existing_tables
+    let mut known_tables: BTreeMap<Box<str>, Cow<TableSchema>> = existing_tables
         .into_iter()
         .map(|schema| (schema.table_name.clone(), schema))
         .collect();
@@ -476,7 +476,7 @@ mod tests {
                         t.table_name,
                         t.reason
                     );
-                    actual_tainted_tables.push(t.table_name);
+                    actual_tainted_tables.push(t.table_name.to_string());
                 }
                 assert_eq!(&actual_tainted_tables, tainted_tables);
             }

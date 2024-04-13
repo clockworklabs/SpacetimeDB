@@ -201,8 +201,8 @@ impl BflatnSerializedRowBuffer<'_> {
             (&AlgebraicTypeLayout::U32, AlgebraicValue::U32(val)) => self.write_u32(*val),
             (&AlgebraicTypeLayout::I64, AlgebraicValue::I64(val)) => self.write_i64(*val),
             (&AlgebraicTypeLayout::U64, AlgebraicValue::U64(val)) => self.write_u64(*val),
-            (&AlgebraicTypeLayout::I128, AlgebraicValue::I128(val)) => self.write_i128(*val),
-            (&AlgebraicTypeLayout::U128, AlgebraicValue::U128(val)) => self.write_u128(*val),
+            (&AlgebraicTypeLayout::I128, AlgebraicValue::I128(val)) => self.write_i128(val.0),
+            (&AlgebraicTypeLayout::U128, AlgebraicValue::U128(val)) => self.write_u128(val.0),
             // Float types:
             (&AlgebraicTypeLayout::F32, AlgebraicValue::F32(val)) => self.write_f32((*val).into()),
             (&AlgebraicTypeLayout::F64, AlgebraicValue::F64(val)) => self.write_f64((*val).into()),

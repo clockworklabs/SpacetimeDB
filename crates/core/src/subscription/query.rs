@@ -144,7 +144,7 @@ mod tests {
     fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
         DatabaseTableUpdate {
             table_id,
-            table_name: table_name.to_string(),
+            table_name: table_name.into(),
             deletes: [].into(),
             inserts: [row].into(),
         }
@@ -153,7 +153,7 @@ mod tests {
     fn delete_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
         DatabaseTableUpdate {
             table_id,
-            table_name: table_name.to_string(),
+            table_name: table_name.into(),
             deletes: [row].into(),
             inserts: [].into(),
         }
@@ -180,7 +180,7 @@ mod tests {
 
         let data = DatabaseTableUpdate {
             table_id,
-            table_name: table_name.to_string(),
+            table_name: table_name.into(),
             deletes: [].into(),
             inserts: [row.clone()].into(),
         };
@@ -441,7 +441,7 @@ mod tests {
 
         let data = DatabaseTableUpdate {
             table_id: schema.table_id,
-            table_name: "_inventory".to_string(),
+            table_name: "_inventory".into(),
             deletes: [].into(),
             inserts: [row.clone()].into(),
         };
@@ -562,14 +562,14 @@ mod tests {
 
         let data1 = DatabaseTableUpdate {
             table_id: schema_1.table_id,
-            table_name: "inventory".to_string(),
+            table_name: "inventory".into(),
             deletes: [row_1].into(),
             inserts: [].into(),
         };
 
         let data2 = DatabaseTableUpdate {
             table_id: schema_2.table_id,
-            table_name: "player".to_string(),
+            table_name: "player".into(),
             deletes: [].into(),
             inserts: [row_2].into(),
         };
@@ -1024,13 +1024,13 @@ mod tests {
             vec![
                 DatabaseTableUpdate {
                     table_id: lhs_id,
-                    table_name: "lhs".to_string(),
+                    table_name: "lhs".into(),
                     deletes: [lhs_old.clone()].into(),
                     inserts: [lhs_new.clone()].into(),
                 },
                 DatabaseTableUpdate {
                     table_id: rhs_id,
-                    table_name: "rhs".to_string(),
+                    table_name: "rhs".into(),
                     deletes: [rhs_old.clone()].into(),
                     inserts: [rhs_new.clone()].into(),
                 },
@@ -1043,7 +1043,7 @@ mod tests {
             result.tables[0],
             DatabaseTableUpdate {
                 table_id: lhs_id,
-                table_name: "lhs".to_string(),
+                table_name: "lhs".into(),
                 deletes: [lhs_old].into(),
                 inserts: [lhs_new].into(),
             },

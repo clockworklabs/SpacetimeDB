@@ -31,7 +31,7 @@ use crate::{
 use core::ops::RangeBounds;
 use multimap::{MultiMap, MultiMapRangeIter};
 use spacetimedb_primitives::{ColList, IndexId};
-use spacetimedb_sats::{product_value::InvalidFieldError, AlgebraicValue};
+use spacetimedb_sats::{algebraic_value::Packed, product_value::InvalidFieldError, AlgebraicValue};
 
 mod multimap;
 
@@ -48,9 +48,9 @@ enum TypedMultiMapRangeIter<'a> {
     I32(MultiMapRangeIter<'a, i32, RowPointer>),
     U64(MultiMapRangeIter<'a, u64, RowPointer>),
     I64(MultiMapRangeIter<'a, i64, RowPointer>),
-    U128(MultiMapRangeIter<'a, u128, RowPointer>),
-    I128(MultiMapRangeIter<'a, i128, RowPointer>),
-    String(MultiMapRangeIter<'a, String, RowPointer>),
+    U128(MultiMapRangeIter<'a, Packed<u128>, RowPointer>),
+    I128(MultiMapRangeIter<'a, Packed<i128>, RowPointer>),
+    String(MultiMapRangeIter<'a, Box<str>, RowPointer>),
     AlgebraicValue(MultiMapRangeIter<'a, AlgebraicValue, RowPointer>),
 }
 
@@ -115,9 +115,9 @@ enum TypedIndex {
     I32(MultiMap<i32, RowPointer>),
     U64(MultiMap<u64, RowPointer>),
     I64(MultiMap<i64, RowPointer>),
-    U128(MultiMap<u128, RowPointer>),
-    I128(MultiMap<i128, RowPointer>),
-    String(MultiMap<String, RowPointer>),
+    U128(MultiMap<Packed<u128>, RowPointer>),
+    I128(MultiMap<Packed<i128>, RowPointer>),
+    String(MultiMap<Box<str>, RowPointer>),
     AlgebraicValue(MultiMap<AlgebraicValue, RowPointer>),
 }
 
@@ -142,21 +142,20 @@ impl TypedIndex {
             Ok(this.insert(key, row_ref.pointer()))
         }
         match self {
-            TypedIndex::Bool(ref mut this) => insert_at_type(this, cols, row_ref),
+            TypedIndex::Bool(this) => insert_at_type(this, cols, row_ref),
+            TypedIndex::U8(this) => insert_at_type(this, cols, row_ref),
+            TypedIndex::I8(this) => insert_at_type(this, cols, row_ref),
+            TypedIndex::U16(this) => insert_at_type(this, cols, row_ref),
+            TypedIndex::I16(this) => insert_at_type(this, cols, row_ref),
+            TypedIndex::U32(this) => insert_at_type(this, cols, row_ref),
+            TypedIndex::I32(this) => insert_at_type(this, cols, row_ref),
+            TypedIndex::U64(this) => insert_at_type(this, cols, row_ref),
+            TypedIndex::I64(this) => insert_at_type(this, cols, row_ref),
+            TypedIndex::U128(this) => insert_at_type(this, cols, row_ref),
+            TypedIndex::I128(this) => insert_at_type(this, cols, row_ref),
+            TypedIndex::String(this) => insert_at_type(this, cols, row_ref),
 
-            TypedIndex::U8(ref mut this) => insert_at_type(this, cols, row_ref),
-            TypedIndex::I8(ref mut this) => insert_at_type(this, cols, row_ref),
-            TypedIndex::U16(ref mut this) => insert_at_type(this, cols, row_ref),
-            TypedIndex::I16(ref mut this) => insert_at_type(this, cols, row_ref),
-            TypedIndex::U32(ref mut this) => insert_at_type(this, cols, row_ref),
-            TypedIndex::I32(ref mut this) => insert_at_type(this, cols, row_ref),
-            TypedIndex::U64(ref mut this) => insert_at_type(this, cols, row_ref),
-            TypedIndex::I64(ref mut this) => insert_at_type(this, cols, row_ref),
-            TypedIndex::U128(ref mut this) => insert_at_type(this, cols, row_ref),
-            TypedIndex::I128(ref mut this) => insert_at_type(this, cols, row_ref),
-            TypedIndex::String(ref mut this) => insert_at_type(this, cols, row_ref),
-
-            TypedIndex::AlgebraicValue(ref mut this) => {
+            TypedIndex::AlgebraicValue(this) => {
                 let key = row_ref.project_not_empty(cols)?;
                 Ok(this.insert(key, row_ref.pointer()))
             }

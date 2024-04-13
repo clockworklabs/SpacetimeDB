@@ -185,8 +185,8 @@ impl ColList {
         }
     }
 
-    /// Convert to a `Vec<u32>`.
-    pub fn to_u32_vec(&self) -> alloc::vec::Vec<u32> {
+    /// Convert to a `Box<[u32]>`.
+    pub fn to_u32_vec(&self) -> alloc::boxed::Box<[u32]> {
         self.iter().map(u32::from).collect()
     }
 

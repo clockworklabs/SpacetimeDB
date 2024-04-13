@@ -270,7 +270,7 @@ macro_rules! impl_reducer {
                     name: Info::NAME.into(),
                     args: vec![
                         $(ProductTypeElement {
-                            name: $T.map(str::to_owned),
+                            name: $T.map(Into::into),
                             algebraic_type: <$T>::make_type(_typespace),
                         }),*
                     ],
@@ -470,7 +470,7 @@ impl From<crate::IndexDesc<'_>> for IndexDef {
         };
 
         IndexDef {
-            index_name: index.name.to_string(),
+            index_name: index.name.into(),
             is_unique: false,
             index_type: index.ty,
             columns,

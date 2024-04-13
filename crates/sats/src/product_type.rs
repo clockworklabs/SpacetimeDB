@@ -34,12 +34,12 @@ pub struct ProductType {
     ///
     /// These factors can either be named or unnamed.
     /// When all the factors are unnamed, we can regard this as a plain tuple type.
-    pub elements: Vec<ProductTypeElement>,
+    pub elements: Box<[ProductTypeElement]>,
 }
 
 impl ProductType {
     /// Returns a product type with the given `elements` as its factors.
-    pub const fn new(elements: Vec<ProductTypeElement>) -> Self {
+    pub const fn new(elements: Box<[ProductTypeElement]>) -> Self {
         Self { elements }
     }
 
@@ -49,7 +49,7 @@ impl ProductType {
             [ProductTypeElement {
                 name: Some(name),
                 algebraic_type,
-            }] => name == check && algebraic_type.is_bytes(),
+            }] => &**name == check && algebraic_type.is_bytes(),
             _ => false,
         }
     }
@@ -86,13 +86,13 @@ impl<'a, I: Into<AlgebraicType>> FromIterator<(&'a str, I)> for ProductType {
 impl<'a, I: Into<AlgebraicType>> FromIterator<(Option<&'a str>, I)> for ProductType {
     fn from_iter<T: IntoIterator<Item = (Option<&'a str>, I)>>(iter: T) -> Self {
         iter.into_iter()
-            .map(|(name, ty)| ProductTypeElement::new(ty.into(), name.map(str::to_string)))
+            .map(|(name, ty)| ProductTypeElement::new(ty.into(), name.map(Into::into)))
             .collect()
     }
 }
 
-impl From<Vec<ProductTypeElement>> for ProductType {
-    fn from(fields: Vec<ProductTypeElement>) -> Self {
+impl From<Box<[ProductTypeElement]>> for ProductType {
+    fn from(fields: Box<[ProductTypeElement]>) -> Self {
         ProductType::new(fields)
     }
 }
@@ -136,7 +136,7 @@ impl ProductType {
 impl<'a> WithTypespace<'a, ProductType> {
     #[inline]
     pub fn elements(&self) -> ElementsWithTypespace<'a> {
-        self.iter_with(&self.ty().elements)
+        self.iter_with(&*self.ty().elements)
     }
 
     #[inline]

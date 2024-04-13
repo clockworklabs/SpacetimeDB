@@ -172,7 +172,7 @@ impl ExecutionUnit {
         self.return_db_table().table_id
     }
 
-    pub fn return_name(&self) -> String {
+    pub fn return_name(&self) -> Box<str> {
         self.return_db_table().head.table_name.clone()
     }
 
@@ -239,7 +239,7 @@ impl ExecutionUnit {
         })?;
         Ok((!table_row_operations.is_empty()).then(|| TableUpdate {
             table_id: self.return_table().into(),
-            table_name: self.return_name(),
+            table_name: self.return_name().into(),
             table_row_operations,
         }))
     }

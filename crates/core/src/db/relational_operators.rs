@@ -108,11 +108,12 @@ impl<S: Iterator<Item = ProductValue>> Iterator for Project<S> {
     type Item = ProductValue;
 
     fn next(&mut self) -> Option<ProductValue> {
-        self.source.next().map(|mut row| {
+        self.source.next().map(|row| {
+            let mut row: Vec<_> = row.elements.into();
             for &i in self.cols.iter().rev() {
-                row.elements.remove(i as usize);
+                row.remove(i as usize);
             }
-            row
+            row.into()
         })
     }
 }

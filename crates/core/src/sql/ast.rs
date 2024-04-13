@@ -78,12 +78,14 @@ macro_rules! unsupported {
 
 /// A convenient wrapper for a table name (that comes from an `ObjectName`).
 pub struct Table {
-    pub(crate) name: String,
+    pub(crate) name: Box<str>,
 }
 
 impl Table {
     pub fn new(name: ObjectName) -> Self {
-        Self { name: name.to_string() }
+        Self {
+            name: name.to_string().into(),
+        }
     }
 }
 
@@ -137,7 +139,7 @@ impl From {
 
         // Check if the field are inverted:
         // FROM t1 JOIN t2 ON t2.id = t1.id
-        let on = if on.rhs.table() == x.root.table_name && x.root.get_column_by_field(&on.rhs).is_some() {
+        let on = if on.rhs.table() == &*x.root.table_name && x.root.get_column_by_field(&on.rhs).is_some() {
             OnExpr {
                 op: on.op.reverse(),
                 lhs: on.rhs,
@@ -172,7 +174,7 @@ impl From {
     }
 
     /// Returns all the table names as a `Vec<String>`, including the ones inside the joins.
-    pub fn table_names(&self) -> Vec<String> {
+    pub fn table_names(&self) -> Vec<Box<str>> {
         self.iter_tables().map(|x| x.table_name.clone()).collect()
     }
 
@@ -196,7 +198,7 @@ impl From {
         let field = extract_table_field(f)?;
         let fields: Vec<_> = self
             .iter_columns()
-            .filter(|(_, col)| col.col_name == field.field)
+            .filter(|(_, col)| &*col.col_name == field.field)
             .collect();
 
         match fields.len() {
@@ -213,7 +215,7 @@ impl From {
             }
             _ => {
                 if let Some(table_name) = field.table {
-                    if let Some((table, column)) = fields.iter().find(|(t, _)| t.table_name == table_name) {
+                    if let Some((table, column)) = fields.iter().find(|(t, _)| &*t.table_name == table_name) {
                         Ok(FieldDef {
                             column,
                             table_name: &table.table_name,
@@ -315,7 +317,7 @@ fn infer_str_or_enum(field: Option<&ProductTypeElement>, value: String) -> Resul
     if let Some(sum) = field.and_then(|x| x.algebraic_type.as_sum()) {
         parse_simple_enum(sum, &value)
     } else {
-        Ok(AlgebraicValue::String(value))
+        Ok(AlgebraicValue::String(value.into()))
     }
 }
 
@@ -330,7 +332,7 @@ fn compile_expr_value(table: &From, field: Option<&ProductTypeElement>, of: SqlE
         SqlExpr::Value(x) => FieldExpr::Value(match x {
             Value::Number(value, is_long) => infer_number(field, &value, is_long)?,
             Value::SingleQuotedString(s) => infer_str_or_enum(field, s)?,
-            Value::DoubleQuotedString(s) => AlgebraicValue::String(s),
+            Value::DoubleQuotedString(s) => AlgebraicValue::String(s.into()),
             Value::HexStringLiteral(s) => infer_number(field, &s, false)?,
             Value::Boolean(x) => AlgebraicValue::Bool(x),
             Value::Null => AlgebraicValue::OptionNone(),
@@ -877,7 +879,7 @@ fn compile_create_table(table: Table, cols: Vec<SqlColumnDef>) -> Result<SqlAst,
 
         let ty = column_def_type(&name, is_null, &col.data_type)?;
         columns.push(ColumnDef {
-            col_name: name,
+            col_name: name.into(),
             col_type: ty,
         });
     }

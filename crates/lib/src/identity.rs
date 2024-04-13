@@ -128,7 +128,7 @@ impl FromStr for Identity {
 
 impl From<Identity> for AlgebraicValue {
     fn from(value: Identity) -> Self {
-        AlgebraicValue::Product(ProductValue::from(AlgebraicValue::Bytes(value.to_vec())))
+        AlgebraicValue::Product(ProductValue::from(AlgebraicValue::Bytes(value.to_vec().into())))
     }
 }
 

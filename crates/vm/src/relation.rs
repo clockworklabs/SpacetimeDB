@@ -67,11 +67,11 @@ impl<'a> RelValue<'a> {
 
     /// Extends `self` with the columns in `other`.
     ///
-    /// This will always cause `RowRef<'_>`s to be read out into
+    /// This will always cause `RowRef<'_>`s to be read out into [`ProductValue`]s.
     pub fn extend(self, other: RelValue<'a>) -> RelValue<'a> {
-        let mut x = self.into_product_value();
-        x.elements.extend(other.into_product_value().elements);
-        RelValue::Projection(x)
+        let mut x: Vec<_> = self.into_product_value().elements.into();
+        x.extend(other.into_product_value());
+        RelValue::Projection(x.into())
     }
 
     /// Read the column at index `col`.

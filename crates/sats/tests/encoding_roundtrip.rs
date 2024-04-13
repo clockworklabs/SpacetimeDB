@@ -30,9 +30,9 @@ fn map_vec<T, U>(vec: Vec<T>, map: impl Fn(T) -> U) -> Vec<U> {
 
 fn array_value<T>(vec: Vec<T>) -> AlgebraicValue
 where
-    ArrayValue: From<Vec<T>>,
+    ArrayValue: From<Box<[T]>>,
 {
-    AlgebraicValue::Array(vec.into())
+    AlgebraicValue::Array(vec.into_boxed_slice().into())
 }
 
 fn array_values() -> impl Strategy<Value = AlgebraicValue> {
@@ -47,7 +47,7 @@ fn array_values() -> impl Strategy<Value = AlgebraicValue> {
         vec(0i128..10, 0..10).prop_map(array_value),
         vec(0u128..10, 0..10).prop_map(array_value),
         vec(0..10, 0..10).prop_map(|v| array_value(map_vec(v, |x| x == 0))),
-        vec(0i32..10, 0..10).prop_map(|v| array_value(map_vec(v, |x| x.to_string()))),
+        vec(0i32..10, 0..10).prop_map(|v| array_value(map_vec(v, |x| x.to_string().into_boxed_str()))),
         vec(0i32..10, 0..10).prop_map(|v| array_value(map_vec(v, |x| F32::from_inner(x as f32)))),
         vec(0i32..10, 0..10).prop_map(|v| array_value(map_vec(v, |x| F64::from_inner(x as f64)))),
     ]
@@ -69,7 +69,7 @@ fn leaf_values() -> impl Strategy<Value = AlgebraicValue> {
         any::<f32>().prop_map(Into::into),
         any::<f64>().prop_map(Into::into),
         "[0-1]+".prop_map(|x| array_value(x.into_bytes())),
-        ".*".prop_map(AlgebraicValue::String),
+        ".*".prop_map_into().prop_map(AlgebraicValue::String),
     ]
 }
 

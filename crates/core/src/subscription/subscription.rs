@@ -730,8 +730,8 @@ mod tests {
         // Assert that original index and probe tables have been swapped.
         assert_eq!(index_table, rhs_id);
         assert_eq!(index_col, 0.into());
-        assert_eq!(probe_field, "b");
-        assert_eq!(probe_table, "lhs");
+        assert_eq!(&**probe_field, "b");
+        assert_eq!(&**probe_table, "lhs");
         Ok(())
     }
 
@@ -817,8 +817,8 @@ mod tests {
         // Assert that original index and probe tables have not been swapped.
         assert_eq!(index_table, lhs_id);
         assert_eq!(index_col, 1.into());
-        assert_eq!(probe_field, "b");
-        assert_eq!(probe_table, "rhs");
+        assert_eq!(&**probe_field, "b");
+        assert_eq!(&**probe_table, "rhs");
         Ok(())
     }
 
