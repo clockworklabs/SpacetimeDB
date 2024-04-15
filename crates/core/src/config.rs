@@ -178,9 +178,9 @@ impl ReadConfigOption {
 impl Display for ReadConfigOption {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let value = match self {
-            ReadConfigOption::SlowQueryThreshold => "slow_query_threshold",
-            ReadConfigOption::SlowIncrementalUpdatesThreshold => "slow_incremental_updates_threshold",
-            ReadConfigOption::SlowSubscriptionsThreshold => "slow_subscriptions_threshold",
+            ReadConfigOption::SlowQueryThreshold => "slow_ad_hoc_query_ms",
+            ReadConfigOption::SlowIncrementalUpdatesThreshold => "slow_tx_update_ms",
+            ReadConfigOption::SlowSubscriptionsThreshold => "slow_subscription_query_ms",
         };
         write!(f, "{value}")
     }
@@ -191,9 +191,9 @@ impl FromStr for ReadConfigOption {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "slow_query_threshold" => Ok(Self::SlowQueryThreshold),
-            "slow_incremental_updates_threshold" => Ok(Self::SlowIncrementalUpdatesThreshold),
-            "slow_subscriptions_threshold" => Ok(Self::SlowSubscriptionsThreshold),
+            "slow_ad_hoc_query_ms" => Ok(Self::SlowQueryThreshold),
+            "slow_tx_update_ms" => Ok(Self::SlowIncrementalUpdatesThreshold),
+            "slow_subscription_query_ms" => Ok(Self::SlowSubscriptionsThreshold),
             x => Err(ConfigError::NotFound(x.into())),
         }
     }

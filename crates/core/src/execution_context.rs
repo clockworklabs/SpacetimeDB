@@ -161,7 +161,7 @@ impl ExecutionContext {
 
     /// Returns an [ExecutionContext] for a reducer transaction.
     pub fn reducer(database: Address, name: String) -> Self {
-        Self::new(database, Some(name), WorkloadType::Reducer)
+        Self::new(database, Some(name), WorkloadType::Reducer, Default::default())
     }
 
     /// Returns an [ExecutionContext] for a one-off sql query.

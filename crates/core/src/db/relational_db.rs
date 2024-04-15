@@ -63,7 +63,7 @@ pub struct RelationalDB {
 
     // Release file lock last when dropping.
     _lock: Arc<File>,
-    pub(crate) config: Arc<RwLock<DatabaseConfig>>,
+    config: Arc<RwLock<DatabaseConfig>>,
 }
 
 impl std::fmt::Debug for RelationalDB {
@@ -759,8 +759,13 @@ impl RelationalDB {
         self.inner.set_program_hash(tx, fence, hash)
     }
 
+    /// Set a runtime configurations setting of the database
     pub fn set_config(&self, key: &str, value: AlgebraicValue) -> Result<(), ErrorVm> {
         self.config.write().set_config(key, value)
+    }
+    /// Read the runtime configurations settings of the database
+    pub fn read_config(&self) -> DatabaseConfig {
+        *self.config.read()
     }
 }
 

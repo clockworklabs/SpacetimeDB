@@ -530,7 +530,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
     }
 
     fn _read_config(&self, name: String) -> Result<Code, ErrorVm> {
-        let config = self.db.config.read();
+        let config = self.db.read_config();
 
         Ok(Code::Table(config.read_key_into_table(&name)?))
     }

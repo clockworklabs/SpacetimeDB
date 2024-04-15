@@ -48,16 +48,6 @@ impl SlowQueryConfig {
         self.queries = Some(duration);
         self
     }
-
-    pub fn for_queries(self, sql: &str) -> SlowQuery {
-        SlowQuery::query(self, sql)
-    }
-    pub fn for_subscriptions(self, sql: &str) -> SlowQuery {
-        SlowQuery::query(self, sql)
-    }
-    pub fn for_incremental_updates(self, sql: &str) -> SlowQuery {
-        SlowQuery::incremental_updates(self, sql)
-    }
 }
 
 impl Default for SlowQueryConfig {
@@ -66,7 +56,7 @@ impl Default for SlowQueryConfig {
     }
 }
 
-/// Represents `threshold` for [SlowQuery].
+/// Represents `threshold` for [SlowQueryLogger].
 pub enum Threshold {
     IncrementalUpdates(Option<Duration>),
     Subscriptions(Option<Duration>),
@@ -74,7 +64,7 @@ pub enum Threshold {
 }
 
 /// Start the recording of a `sql` with a specific [Threshold].
-pub struct SlowQuery<'a> {
+pub struct SlowQueryLogger<'a> {
     /// The SQL statement of the query.
     sql: &'a str,
     /// The start time of the query execution.
@@ -83,7 +73,7 @@ pub struct SlowQuery<'a> {
     threshold: Threshold,
 }
 
-impl<'a> SlowQuery<'a> {
+impl<'a> SlowQueryLogger<'a> {
     pub fn new(sql: &'a str, threshold: Threshold) -> Self {
         Self {
             sql,
@@ -92,17 +82,17 @@ impl<'a> SlowQuery<'a> {
         }
     }
 
-    /// Creates a new [SlowQuery] instance for general queries.
+    /// Creates a new [SlowQueryLogger] instance for general queries.
     pub fn query(config: SlowQueryConfig, sql: &'a str) -> Self {
         Self::new(sql, Threshold::Queries(config.queries))
     }
 
-    /// Creates a new [SlowQuery] instance for subscriptions.
+    /// Creates a new [SlowQueryLogger] instance for subscriptions.
     pub fn subscription(config: SlowQueryConfig, sql: &'a str) -> Self {
         Self::new(sql, Threshold::Subscriptions(config.subscriptions))
     }
 
-    /// Creates a new [SlowQuery] instance for incremental updates.
+    /// Creates a new [SlowQueryLogger] instance for incremental updates.
     pub fn incremental_updates(config: SlowQueryConfig, sql: &'a str) -> Self {
         Self::new(sql, Threshold::IncrementalUpdates(config.queries))
     }
@@ -175,9 +165,7 @@ mod tests {
         let sql = "select * from test where x > 0";
         let q = compile_sql(&db, &tx, sql)?;
 
-        let slow = SlowQueryConfig::default()
-            .with_queries(Duration::from_millis(1))
-            .for_queries(sql);
+        let slow = SlowQueryLogger::query(SlowQueryConfig::default().with_queries(Duration::from_millis(1)), sql);
 
         let result = execute_sql(&db, sql, q, AuthCtx::for_testing())?;
         assert_eq!(result[0].data[0], product![1, 2]);
@@ -191,11 +179,16 @@ mod tests {
     fn test_runtime_config() -> ResultTest<()> {
         let db = TestDB::in_memory()?.db;
 
-        let config = *db.config.read();
+        let config = db.read_config();
 
         let check = |table: MemTable, x: Option<Duration>| {
             assert_eq!(
-                table.data[0].field_as_sum(0, None).unwrap().value.as_u128().copied(),
+                table.data[0]
+                    .field_as_sum(0, None)
+                    .unwrap()
+                    .value
+                    .as_u128()
+                    .map(|x| x.0),
                 x.map(|x| x.as_millis())
             );
         };
@@ -221,7 +214,7 @@ mod tests {
             format!("SET {} TO 1", ReadConfigOption::SlowIncrementalUpdatesThreshold),
         )?;
 
-        let config = *db.config.read();
+        let config = db.read_config();
 
         assert_eq!(config.slow_query.queries, Some(Duration::from_millis(1)));
         assert_eq!(config.slow_query.subscriptions, Some(Duration::from_millis(1)));
@@ -241,7 +234,7 @@ mod tests {
         // And disable the config
         run_query_write(&db, format!("SET {} TO 0", ReadConfigOption::SlowQueryThreshold))?;
 
-        let config = *db.config.read();
+        let config = db.read_config();
 
         let result = run_query(&db, format!("SHOW {}", ReadConfigOption::SlowQueryThreshold))?;
         check(result, config.slow_query.queries);

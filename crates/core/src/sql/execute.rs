@@ -3,6 +3,7 @@ use crate::database_instance_context_controller::DatabaseInstanceContextControll
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, DatabaseError};
 use crate::execution_context::ExecutionContext;
+use crate::util::slow::SlowQueryLogger;
 use crate::vm::{DbProgram, TxMode};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{ProductType, ProductValue};
@@ -57,10 +58,10 @@ pub(crate) fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Resul
 /// Also, in case the execution takes more than x, log it as `slow query`
 pub fn execute_sql(db: &RelationalDB, sql: &str, ast: Vec<CrudExpr>, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
     let total = ast.len();
-    let ctx = ExecutionContext::sql(db.address(), db.config.read().slow_query);
+    let ctx = ExecutionContext::sql(db.address(), db.read_config().slow_query);
     let mut result = Vec::with_capacity(total);
     let sources = [].into();
-    let slow_logger = ctx.slow_query_config.for_queries(sql);
+    let slow_logger = SlowQueryLogger::query(ctx.slow_query_config, sql);
 
     match CrudExpr::is_reads(&ast) {
         false => db.with_auto_commit(&ctx, |mut_tx| {
@@ -85,7 +86,7 @@ pub fn execute_sql(db: &RelationalDB, sql: &str, ast: Vec<CrudExpr>, auth: AuthC
 
 /// Run the `SQL` string using the `auth` credentials
 pub fn run(db: &RelationalDB, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
-    let ctx = &ExecutionContext::sql(db.address(), db.config.read().slow_query);
+    let ctx = &ExecutionContext::sql(db.address(), db.read_config().slow_query);
     let ast = db.with_read_only(ctx, |tx| compile_sql(db, tx, sql_text))?;
     execute_sql(db, sql_text, ast, auth)
 }

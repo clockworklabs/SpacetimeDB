@@ -46,7 +46,7 @@ impl ModuleSubscriptions {
     ) -> Result<(), DBError> {
         let ctx = ExecutionContext::subscribe(
             self.relational_db.address(),
-            self.relational_db.config.read().slow_query,
+            self.relational_db.read_config().slow_query,
         );
         let tx = scopeguard::guard(self.relational_db.begin_tx(), |tx| {
             self.relational_db.release_tx(&ctx, tx);
