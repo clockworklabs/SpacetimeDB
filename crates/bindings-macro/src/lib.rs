@@ -76,7 +76,7 @@ mod sym {
 /// and it is structured roughly like so:
 /// ```ignore
 /// input = table | init | connect | disconnect | migrate
-///       | reducer [, repeat = Duration]
+///       | reducer
 ///       | index(btree | hash [, name = string] [, field_name:ident]*)
 /// ```
 ///
@@ -102,7 +102,8 @@ fn route_input(input: MacroInput, item: TokenStream) -> syn::Result<TokenStream>
     match input {
         MacroInput::Table => spacetimedb_table(item),
         MacroInput::Init => spacetimedb_init(item),
-        MacroInput::Reducer { repeat } => spacetimedb_reducer(repeat, item),
+        MacroInput::Reducer(Some(span)) => Err(syn::Error::new(span, "`repeat` support has been removed")),
+        MacroInput::Reducer(None) => spacetimedb_reducer(item),
         MacroInput::Connect => spacetimedb_special_reducer("__identity_connected__", item),
         MacroInput::Disconnect => spacetimedb_special_reducer("__identity_disconnected__", item),
         MacroInput::Migrate => spacetimedb_special_reducer("__migrate__", item),
@@ -124,9 +125,7 @@ fn duration_totokens(dur: Duration) -> TokenStream {
 enum MacroInput {
     Table,
     Init,
-    Reducer {
-        repeat: Option<Duration>,
-    },
+    Reducer(Option<Span>),
     Connect,
     Disconnect,
     Migrate,
@@ -181,16 +180,17 @@ impl syn::parse::Parse for MacroInput {
                 // it has to be `repeat = Duration`.
                 let mut repeat = None;
                 comma_then_comma_delimited(input, || {
+                    let start = input.span();
                     match_tok!(match input {
-                        tok @ kw::repeat => {
-                            check_duplicate(&repeat, tok.span)?;
+                        kw::repeat => {
                             input.parse::<Token![=]>()?;
-                            repeat = Some(input.call(parse_duration)?);
+                            input.call(parse_duration)?;
+                            repeat = Some(start);
                         }
                     });
                     Ok(())
                 })?;
-                Self::Reducer { repeat }
+                Self::Reducer(repeat)
             }
             kw::connect => Self::Connect,
             kw::disconnect => Self::Disconnect,
@@ -263,8 +263,7 @@ mod kw {
 }
 
 /// Generates a reducer in place of `item`.
-fn spacetimedb_reducer(repeat: Option<Duration>, item: TokenStream) -> syn::Result<TokenStream> {
-    let repeat_dur = repeat.map_or(ReducerExtra::Schedule, ReducerExtra::Repeat);
+fn spacetimedb_reducer(item: TokenStream) -> syn::Result<TokenStream> {
     let original_function = syn::parse2::<ItemFn>(item)?;
 
     // Extract reducer name, making sure it's not `__XXX__` as that's the form we reserve for special reducers.
@@ -276,7 +275,7 @@ fn spacetimedb_reducer(repeat: Option<Duration>, item: TokenStream) -> syn::Resu
         ));
     }
 
-    gen_reducer(original_function, &reducer_name, repeat_dur)
+    gen_reducer(original_function, &reducer_name, ReducerExtra::Schedule)
 }
 
 /// Generates the special `__init__` "reducer" in place of `item`.
@@ -289,7 +288,6 @@ fn spacetimedb_init(item: TokenStream) -> syn::Result<TokenStream> {
 enum ReducerExtra {
     None,
     Schedule,
-    Repeat(Duration),
 }
 
 fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtra) -> syn::Result<TokenStream> {
@@ -348,7 +346,6 @@ fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtr
 
     let register_describer_symbol = format!("__preinit__20_register_describer_{reducer_name}");
 
-    let mut epilogue = TokenStream::new();
     let mut extra_impls = TokenStream::new();
 
     if !matches!(extra, ReducerExtra::None) {
@@ -368,20 +365,6 @@ fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtr
         }));
     }
 
-    if let ReducerExtra::Repeat(repeat_dur) = &extra {
-        let repeat_dur = duration_totokens(*repeat_dur);
-        epilogue.extend(quote! {
-            if _res.is_ok() {
-                spacetimedb::rt::schedule_repeater::<_, _, #func_name>(#func_name)
-            }
-        });
-        extra_impls.extend(quote! {
-            impl spacetimedb::rt::RepeaterInfo for #func_name {
-                const REPEAT_INTERVAL: ::core::time::Duration = #repeat_dur;
-            }
-        });
-    }
-
     let generated_function = quote! {
         fn __reducer(
             __sender: spacetimedb::sys::Buffer,
@@ -397,7 +380,6 @@ fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtr
                 __caller_address,
                 __timestamp,
                 __args,
-                |_res| { #epilogue },
             )
         }
     };
