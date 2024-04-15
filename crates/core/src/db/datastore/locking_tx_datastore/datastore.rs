@@ -481,7 +481,6 @@ impl MutTxDatastore for Locking {
     }
 }
 
-#[cfg(feature = "metrics")]
 pub(crate) fn record_metrics(ctx: &ExecutionContext, tx_timer: Instant, lock_wait_time: Duration, committed: bool) {
     let workload = &ctx.workload();
     let db = &ctx.database();
@@ -544,15 +543,26 @@ impl MutTx for Locking {
     }
 
     fn rollback_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) {
-        #[cfg(feature = "metrics")]
-        record_metrics(ctx, tx.timer, tx.lock_wait_time, false);
+        let lock_wait_time = tx.lock_wait_time;
+        let timer = tx.timer;
+        // TODO(cloutiertyler): We should probably track the tx.rollback() time separately.
         tx.rollback();
+
+        // Record metrics for the transaction at the very end right before we drop
+        // the MutTx and release the lock.
+        record_metrics(ctx, timer, lock_wait_time, false);
     }
 
     fn commit_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) -> Result<Option<TxData>> {
-        #[cfg(feature = "metrics")]
-        record_metrics(ctx, tx.timer, tx.lock_wait_time, true);
-        Ok(Some(tx.commit(ctx)))
+        let lock_wait_time = tx.lock_wait_time;
+        let timer = tx.timer;
+        // TODO(cloutiertyler): We should probably track the tx.commit() time separately.
+        let res = tx.commit(ctx);
+
+        // Record metrics for the transaction at the very end right before we drop
+        // the MutTx and release the lock.
+        record_metrics(ctx, timer, lock_wait_time, true);
+        Ok(Some(res))
     }
 
     #[cfg(test)]
@@ -592,7 +602,6 @@ impl MutProgrammable for Locking {
             // This is because datastore iterators write to the metric store when dropped.
             // Hence if we don't explicitly drop here,
             // there will be another immutable borrow of self after the two mutable borrows below.
-            drop(iter);
 
             tx.delete(ST_MODULE_ID, row_ref.pointer())?;
             tx.insert(
@@ -611,7 +620,6 @@ impl MutProgrammable for Locking {
         // This is because datastore iterators write to the metric store when dropped.
         // Hence if we don't explicitly drop here,
         // there will be another immutable borrow of self after the mutable borrow of the insert.
-        drop(iter);
 
         tx.insert(
             ST_MODULE_ID,

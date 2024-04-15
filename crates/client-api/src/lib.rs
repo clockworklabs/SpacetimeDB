@@ -14,8 +14,8 @@ use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, DatabaseInstance, IdentityEmail, Node};
 use spacetimedb::module_host_context::ModuleHostContext;
 use spacetimedb::sendgrid_controller::SendGridController;
-use spacetimedb_lib::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
-use spacetimedb_lib::recovery::RecoveryCode;
+use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
+use spacetimedb_client_api_messages::recovery::RecoveryCode;
 
 pub mod auth;
 pub mod routes;

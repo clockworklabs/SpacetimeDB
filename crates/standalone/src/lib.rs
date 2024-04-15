@@ -32,8 +32,8 @@ use spacetimedb::object_db::ObjectDb;
 use spacetimedb::sendgrid_controller::SendGridController;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb::{stdb_path, worker_metrics};
-use spacetimedb_lib::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
-use spacetimedb_lib::recovery::RecoveryCode;
+use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
+use spacetimedb_client_api_messages::recovery::RecoveryCode;
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -528,7 +528,12 @@ impl StandaloneEnv {
                         log::info!("Database already initialized with module {}", hash);
                     }
                 } else {
-                    self.host_controller.init_module_host(lock.token() as u128, ctx).await?;
+                    self.host_controller
+                        .init_module_host(lock.token() as u128, ctx)
+                        .await?
+                        .map(Result::from)
+                        .transpose()
+                        .context("Init reducer failed")?;
                 }
 
                 Ok(())
@@ -574,7 +579,12 @@ impl StandaloneEnv {
                             "Update requested on non-initialized database, initializing with module {}",
                             database.program_bytes_address
                         );
-                        self.host_controller.init_module_host(lock.token() as u128, ctx).await?;
+                        self.host_controller
+                            .init_module_host(lock.token() as u128, ctx)
+                            .await?
+                            .map(Result::from)
+                            .transpose()
+                            .context("Init reducer failed")?;
                         Ok(None)
                     }
                     Some(hash) if hash == database.program_bytes_address => {

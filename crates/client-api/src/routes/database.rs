@@ -29,11 +29,11 @@ use spacetimedb::identity::Identity;
 use spacetimedb::json::client_api::StmtResultJson;
 use spacetimedb::messages::control_db::{Database, DatabaseInstance};
 use spacetimedb::sql::execute::execute;
+use spacetimedb_client_api_messages::name::{self, DnsLookupResponse, DomainName, PublishOp, PublishResult};
+use spacetimedb_client_api_messages::recovery::{RecoveryCode, RecoveryCodeResponse};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::address::AddressForUrl;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::name::{self, DnsLookupResponse, DomainName, PublishOp, PublishResult};
-use spacetimedb_lib::recovery::{RecoveryCode, RecoveryCodeResponse};
 use spacetimedb_lib::sats::WithTypespace;
 use std::convert::From;
 
