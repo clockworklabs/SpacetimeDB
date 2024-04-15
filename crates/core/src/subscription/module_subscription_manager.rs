@@ -271,7 +271,7 @@ mod tests {
 
     use crate::{
         client::{ClientActorId, ClientConnectionSender, Protocol},
-        db::relational_db::{tests_utils::make_test_db, RelationalDB},
+        db::relational_db::{tests_utils::TestDB, RelationalDB},
         execution_context::ExecutionContext,
         sql::compiler::compile_sql,
         subscription::{
@@ -302,7 +302,7 @@ mod tests {
 
     #[test]
     fn test_subscribe() -> ResultTest<()> {
-        let (db, _) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         let table_id = create_table(&db, "T")?;
         let sql = "select * from T";
@@ -325,7 +325,7 @@ mod tests {
 
     #[test]
     fn test_unsubscribe() -> ResultTest<()> {
-        let (db, _) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         let table_id = create_table(&db, "T")?;
         let sql = "select * from T";
@@ -349,7 +349,7 @@ mod tests {
 
     #[test]
     fn test_subscribe_idempotent() -> ResultTest<()> {
-        let (db, _) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         let table_id = create_table(&db, "T")?;
         let sql = "select * from T";
@@ -379,7 +379,7 @@ mod tests {
 
     #[test]
     fn test_share_queries_full() -> ResultTest<()> {
-        let (db, _) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         let table_id = create_table(&db, "T")?;
         let sql = "select * from T";
@@ -416,7 +416,7 @@ mod tests {
 
     #[test]
     fn test_share_queries_partial() -> ResultTest<()> {
-        let (db, _) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         let t = create_table(&db, "T")?;
         let s = create_table(&db, "S")?;

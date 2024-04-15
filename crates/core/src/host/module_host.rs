@@ -1,12 +1,10 @@
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
 use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_logger::LogLevel;
-use crate::db::datastore::traits::{TxData, TxOp};
-use crate::db::relational_db::RelationalDB;
+use crate::db::datastore::traits::TxData;
 use crate::db::update::UpdateDatabaseError;
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
-use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
 use crate::identity::Identity;
 use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
@@ -70,31 +68,27 @@ impl DatabaseUpdate {
         false
     }
 
-    pub fn from_writes(stdb: &RelationalDB, tx_data: &TxData) -> Self {
-        let mut map: IntMap<TableId, (Vec<ProductValue>, Vec<ProductValue>)> = IntMap::new();
-        for record in tx_data.records.iter() {
-            let pv = record.product_value.clone();
-            let table = map.entry(record.table_id).or_default();
-            match record.op {
-                TxOp::Delete => &mut table.0,
-                TxOp::Insert(_) => &mut table.1,
-            }
-            .push(pv);
+    pub fn from_writes(tx_data: &TxData) -> Self {
+        let mut map: IntMap<TableId, DatabaseTableUpdate> = IntMap::new();
+        let new_update = |table_id, table_name: &str| DatabaseTableUpdate {
+            table_id,
+            table_name: table_name.to_string(),
+            inserts: [].into(),
+            deletes: [].into(),
+        };
+        for (table_id, table_name, rows) in tx_data.inserts_with_table_name() {
+            map.entry(*table_id)
+                .or_insert_with(|| new_update(*table_id, table_name))
+                .inserts = rows.clone();
         }
-
-        let ctx = ExecutionContext::internal(stdb.address());
-        let table_updates = stdb.with_read_only(&ctx, |tx| {
-            map.into_iter()
-                .map(|(table_id, (deletes, inserts))| DatabaseTableUpdate {
-                    table_id,
-                    table_name: stdb.table_name_from_id(tx, table_id).unwrap().unwrap().into_owned(),
-                    deletes,
-                    inserts,
-                })
-                .collect()
-        });
-
-        DatabaseUpdate { tables: table_updates }
+        for (table_id, table_name, rows) in tx_data.deletes_with_table_name() {
+            map.entry(*table_id)
+                .or_insert_with(|| new_update(*table_id, table_name))
+                .deletes = rows.clone();
+        }
+        DatabaseUpdate {
+            tables: map.into_values().collect(),
+        }
     }
 }
 
@@ -114,15 +108,18 @@ impl From<DatabaseUpdate> for Vec<TableUpdateJson> {
 pub struct DatabaseTableUpdate {
     pub table_id: TableId,
     pub table_name: String,
-    pub inserts: Vec<ProductValue>,
-    pub deletes: Vec<ProductValue>,
+    // Note: `Arc<[ProductValue]>` allows to cheaply
+    // use the values from `TxData` without cloning the
+    // contained `ProductValue`s.
+    pub inserts: Arc<[ProductValue]>,
+    pub deletes: Arc<[ProductValue]>,
 }
 
 impl From<DatabaseTableUpdate> for TableUpdate {
     fn from(table: DatabaseTableUpdate) -> Self {
-        let deletes = table.deletes.into_iter().map(TableOp::delete);
-        let inserts = table.inserts.into_iter().map(TableOp::insert);
-        let table_row_operations = deletes.chain(inserts).map(|x| (&x).into()).collect();
+        let deletes = table.deletes.iter().map(TableOpRef::delete);
+        let inserts = table.inserts.iter().map(TableOpRef::insert);
+        let table_row_operations = deletes.chain(inserts).map(|x| x.into()).collect();
         Self {
             table_id: table.table_id.into(),
             table_name: table.table_name,
@@ -133,8 +130,8 @@ impl From<DatabaseTableUpdate> for TableUpdate {
 
 impl From<DatabaseTableUpdate> for TableUpdateJson {
     fn from(table: DatabaseTableUpdate) -> Self {
-        let deletes = table.deletes.into_iter().map(TableOp::delete);
-        let inserts = table.inserts.into_iter().map(TableOp::insert);
+        let deletes = table.deletes.iter().map(TableOpRef::delete);
+        let inserts = table.inserts.iter().map(TableOpRef::insert);
         let table_row_operations = deletes.chain(inserts).map_into().collect();
         Self {
             table_id: table.table_id.into(),
@@ -172,8 +169,8 @@ impl UpdatesCow<'_> {
     pub fn iter(&self) -> impl Iterator<Item = TableOpRef<'_>> {
         self.deletes
             .iter()
-            .map(TableOpRef::delete)
-            .chain(self.inserts.iter().map(TableOpRef::insert))
+            .map(|row| TableOpRef::delete(row))
+            .chain(self.inserts.iter().map(|row| TableOpRef::insert(row)))
     }
 }
 
@@ -203,18 +200,17 @@ pub struct TableOpRef<'a> {
 
 impl<'a> TableOpRef<'a> {
     #[inline]
-    fn new(op_type: OpType, row: &'a Cow<'a, ProductValue>) -> Self {
-        let row = &**row;
+    pub fn new(op_type: OpType, row: &'a ProductValue) -> Self {
         Self { op_type, row }
     }
 
     #[inline]
-    pub fn insert(row: &'a Cow<'a, ProductValue>) -> Self {
+    pub fn insert(row: &'a ProductValue) -> Self {
         Self::new(OpType::Insert, row)
     }
 
     #[inline]
-    pub fn delete(row: &'a Cow<'a, ProductValue>) -> Self {
+    pub fn delete(row: &'a ProductValue) -> Self {
         Self::new(OpType::Delete, row)
     }
 }

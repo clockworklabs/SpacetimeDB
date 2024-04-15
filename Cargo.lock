@@ -4490,6 +4490,7 @@ dependencies = [
  "dirs",
  "email_address",
  "enum-map",
+ "env_logger",
  "flate2",
  "fs2",
  "futures",
@@ -4532,7 +4533,9 @@ dependencies = [
  "sled",
  "smallvec",
  "spacetimedb-client-api-messages",
+ "spacetimedb-commitlog",
  "spacetimedb-data-structures",
+ "spacetimedb-durability",
  "spacetimedb-lib",
  "spacetimedb-metrics",
  "spacetimedb-primitives",
@@ -4568,6 +4571,18 @@ dependencies = [
  "nohash-hasher",
  "serde",
  "thiserror",
+]
+
+[[package]]
+name = "spacetimedb-durability"
+version = "0.8.2"
+dependencies = [
+ "anyhow",
+ "log",
+ "spacetimedb-commitlog",
+ "spacetimedb-sats",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

@@ -18,7 +18,7 @@ use spacetimedb_sats::{
     SumTypeVariant,
 };
 
-/// Aligns a `base` offset to the `required_alignment` and returns it.
+/// Aligns a `base` offset to the `required_alignment` (in the positive direction) and returns it.
 ///
 /// When `base` is already aligned, `base` will be returned.
 pub const fn align_to(base: usize, required_alignment: usize) -> usize {
@@ -244,8 +244,9 @@ pub struct SumTypeLayout {
     pub layout: Layout,
     /// The variants of the sum type.
     pub variants: Collection<SumTypeVariantLayout>,
-    /// The relative offset of a sum value's tag for sums of this type.
-    pub tag_offset: u16,
+    /// The relative offset of a sum value's payload for sums of this type.
+    /// Sum value tags are always at offset 0.
+    pub payload_offset: u16,
 }
 
 impl HasLayout for SumTypeLayout {
@@ -424,13 +425,25 @@ impl From<SumType> for SumTypeLayout {
             .collect::<Vec<_>>()
             .into();
 
-        let tag_offset = max_child_size as u16;
-        let size = align_to(max_child_size + 1, max_child_align) as u16;
-        let align = max_child_align as u16;
+        // Guarantees that tag fits inside align.
+        let align = u16::max(max_child_align as u16, 1);
+
+        // Ensure the payload field is sufficiently aligned for all its members.
+        // `max_child_size` and `max_child_align` will already be consistent
+        // if the most-aligned variant is also the largest,
+        // but this is not necessarily the case.
+        // E.g. if variant A is a product of 31 `u8`s, and variant B is a single `u64`,
+        // `max_child_size` will be 31 and `max_child_align` will be 8.
+        // Note that `payload_size` may be 0.
+        let payload_size = align_to(max_child_size, max_child_align);
+
+        // [tag | pad to align | payload]
+        let size = align + payload_size as u16;
+        let payload_offset = align;
         let layout = Layout { align, size };
         Self {
             layout,
-            tag_offset,
+            payload_offset,
             variants,
         }
     }
@@ -542,33 +555,24 @@ impl SumTypeVariantLayout {
 
 impl SumTypeLayout {
     pub fn offset_of_variant_data(&self, _variant_tag: u8) -> usize {
-        // Store the tag at the end, so that the payloads are trivially aligned without padding before.
+        // Store the tag at the start, similar to BSATN.
+        // Unlike BSATN, there is also padding.
         //
         // ```ignore
-        // [ variant data | tag | padding ]
+        // [ tag | padding to variant data align | variant data ]
         // ```
         //
-        // This means the variant data is always at offset 0.
-        //
-        // (Could swap the order of the tag & the padding, but it doesn't matter,
-        // as you need to know size & align of the variant data to compute the tag offset either way.)
-        //
-        // TODO(bikeshedding): consider if this is better than storing the tag at the beginning.
-        // Given that we pre-compute and memoize the offset of the tag,
-        // there's very little performance reason to switch.
-        0
+        self.payload_offset as usize
     }
 
     pub fn offset_of_tag(&self) -> usize {
-        // Store the tag at the end, so that the payloads are trivially aligned without padding before.
+        // Store the tag at the start, similar to BSATN.
         //
         // ```ignore
-        // [ variant data | tag | padding ]
+        // [ tag | padding to variant data align | variant data ]
         // ```
         //
-        // This means the tag is always just past the variant data,
-        // i.e. at `sum_data_size(sum)`.
-        self.tag_offset as usize
+        0
     }
 }
 

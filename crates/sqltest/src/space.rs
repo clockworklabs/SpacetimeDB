@@ -1,6 +1,6 @@
 use crate::db::DBRunner;
 use async_trait::async_trait;
-use spacetimedb::db::relational_db::{open_db, RelationalDB};
+use spacetimedb::db::relational_db::tests_utils::TestDB;
 use spacetimedb::error::DBError;
 use spacetimedb::execution_context::ExecutionContext;
 use spacetimedb::sql::compiler::compile_sql;
@@ -13,7 +13,6 @@ use spacetimedb_vm::relation::MemTable;
 use sqllogictest::{AsyncDB, ColumnType, DBOutput};
 use std::fs;
 use std::io::Write;
-use tempfile::TempDir;
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Kind(pub(crate) AlgebraicType);
@@ -60,21 +59,15 @@ fn append_file(to: &std::path::Path, content: &str) -> anyhow::Result<()> {
 }
 
 pub struct SpaceDb {
-    pub(crate) conn: RelationalDB,
-    #[allow(dead_code)]
-    tmp_dir: TempDir,
+    pub(crate) conn: TestDB,
     auth: AuthCtx,
 }
 
 impl SpaceDb {
     pub fn new() -> anyhow::Result<Self> {
-        let tmp_dir = TempDir::with_prefix("stdb_test")?;
-        let in_memory = false;
-        let fsync = false;
-        let conn = open_db(&tmp_dir, in_memory, fsync)?;
+        let conn = TestDB::durable()?;
         Ok(Self {
             conn,
-            tmp_dir,
             auth: AuthCtx::for_testing(),
         })
     }

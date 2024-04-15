@@ -14,14 +14,12 @@ path = "src/lib.rs"  # The source file of the target.
 # Benching off, because of https://bheisler.github.io/criterion.rs/book/faq.html#cargo-bench-gives-unrecognized-option-errors-for-valid-command-line-options
 bench = false
 
-[[bench]]
-name = "odb_flavor_bench"
-harness = false
-
 [dependencies]
 spacetimedb-data-structures.workspace = true
 spacetimedb-lib = { workspace = true, features = ["serde"] }
 spacetimedb-client-api-messages.workspace = true
+spacetimedb-commitlog.workspace = true
+spacetimedb-durability.workspace = true
 spacetimedb-metrics.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-sats = { workspace = true, features = ["serde"] }
@@ -107,6 +105,8 @@ unindexed_iter_by_col_range_warn = []
 odb_rocksdb = ["dep:rocksdb"]
 odb_sled = []
 default = ["odb_sled", "unindexed_iter_by_col_range_warn"]
+# Enable test helpers and utils
+test = []
 
 [dev-dependencies]
 spacetimedb-lib = { path = "../lib", features = ["proptest"] }
@@ -118,6 +118,7 @@ criterion.workspace = true
 proptest.workspace = true
 proptest-derive.workspace = true
 rand.workspace = true
+env_logger.workspace = true
 
 [build-dependencies]
 prost-build.workspace = true
