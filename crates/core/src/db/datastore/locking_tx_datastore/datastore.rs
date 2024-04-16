@@ -29,10 +29,10 @@ use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId
 use spacetimedb_sats::db::def::{IndexDef, SequenceDef, TableDef, TableSchema};
 use spacetimedb_sats::{bsatn, buffer::BufReader, hash::Hash, AlgebraicValue, ProductValue};
 use spacetimedb_table::{indexes::RowPointer, table::RowRef};
-use std::ops::RangeBounds;
 use std::sync::Arc;
 use std::time::Instant;
 use std::{borrow::Cow, time::Duration};
+use std::{cell::RefCell, ops::RangeBounds};
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, DBError>;
@@ -111,45 +111,17 @@ impl Locking {
         Ok(())
     }
 
-    /// n.b. (Tyler) We actually **do not** want to check constraints at replay
-    /// time because not only is it a pain, but actually **subtly wrong** the
-    /// way we have it implemented. It's wrong because the actual constraints of
-    /// the database may change as different transactions are added to the
-    /// schema and you would actually have to change your indexes and
-    /// constraints as you replayed the log. This we are not currently doing
-    /// (we're building all the non-bootstrapped indexes at the end after
-    /// replaying), and thus aren't implementing constraint checking correctly
-    /// as it stands.
+    /// Obtain a [`spacetimedb_commitlog::Decoder`] suitable for replaying a
+    /// [`spacetimedb_durability::History`] onto the currently committed state.
     ///
-    /// However, the above is all rendered moot anyway because we don't need to
-    /// check constraints while replaying if we just assume that they were all
-    /// checked prior to the transaction committing in the first place.
-    ///
-    /// Note also that operation/mutation ordering **does not** matter for
-    /// operations inside a transaction of the message log assuming we only ever
-    /// insert **OR** delete a unique row in one transaction. If we ever insert
-    /// **AND** delete then order **does** matter. The issue caused by checking
-    /// constraints for each operation while replaying does not imply that order
-    /// matters. Ordering of operations would **only** matter if you wanted to
-    /// view the state of the database as of a partially applied transaction. We
-    /// never actually want to do this, because after a transaction has been
-    /// committed, it is assumed that all operations happen instantaneously and
-    /// atomically at the timestamp of the transaction. The only time that we
-    /// actually want to view the state of a database while a transaction is
-    /// partially applied is while the transaction is running **before** it
-    /// commits. Thus, we only care about operation ordering while the
-    /// transaction is running, but we do not care about it at all in the
-    /// context of the commit log.
-    ///
-    /// Not caring about the order in the log, however, requires that we **do
-    /// not** check index constraints during replay of transaction operatoins.
-    /// We **could** check them in between transactions if we wanted to update
-    /// the indexes and constraints as they changed during replay, but that is
-    /// unnecessary.
-    pub fn replay(&self) -> Replay {
+    /// The provided closure will be called for each transaction found in the
+    /// history, the parameter is the transaction's offset. The closure is called
+    /// _before_ the transaction is applied to the database state.
+    pub fn replay<F: FnMut(u64)>(&self, progress: F) -> Replay<F> {
         Replay {
             database_address: self.database_address,
             committed_state: self.committed_state.clone(),
+            progress: RefCell::new(progress),
         }
     }
 }
@@ -585,12 +557,13 @@ pub enum ReplayError {
 
 /// A [`spacetimedb_commitlog::Decoder`] suitable for replaying a transaction
 /// history into the database state.
-pub struct Replay {
+pub struct Replay<F> {
     database_address: Address,
     committed_state: Arc<RwLock<CommittedState>>,
+    progress: RefCell<F>,
 }
 
-impl spacetimedb_commitlog::Decoder for Replay {
+impl<F: FnMut(u64)> spacetimedb_commitlog::Decoder for Replay<F> {
     type Record = spacetimedb_commitlog::payload::Txdata<ProductValue>;
     type Error = spacetimedb_commitlog::payload::txdata::DecoderError<ReplayError>;
 
@@ -604,17 +577,55 @@ impl spacetimedb_commitlog::Decoder for Replay {
         let mut visitor = ReplayVisitor {
             database_address: &self.database_address,
             committed_state: &mut committed_state,
+            progress: &mut *self.progress.borrow_mut(),
         };
         spacetimedb_commitlog::payload::txdata::decode_record_fn(&mut visitor, version, tx_offset, reader)
     }
 }
 
-struct ReplayVisitor<'a> {
+// n.b. (Tyler) We actually **do not** want to check constraints at replay
+// time because not only is it a pain, but actually **subtly wrong** the
+// way we have it implemented. It's wrong because the actual constraints of
+// the database may change as different transactions are added to the
+// schema and you would actually have to change your indexes and
+// constraints as you replayed the log. This we are not currently doing
+// (we're building all the non-bootstrapped indexes at the end after
+// replaying), and thus aren't implementing constraint checking correctly
+// as it stands.
+//
+// However, the above is all rendered moot anyway because we don't need to
+// check constraints while replaying if we just assume that they were all
+// checked prior to the transaction committing in the first place.
+//
+// Note also that operation/mutation ordering **does not** matter for
+// operations inside a transaction of the message log assuming we only ever
+// insert **OR** delete a unique row in one transaction. If we ever insert
+// **AND** delete then order **does** matter. The issue caused by checking
+// constraints for each operation while replaying does not imply that order
+// matters. Ordering of operations would **only** matter if you wanted to
+// view the state of the database as of a partially applied transaction. We
+// never actually want to do this, because after a transaction has been
+// committed, it is assumed that all operations happen instantaneously and
+// atomically at the timestamp of the transaction. The only time that we
+// actually want to view the state of a database while a transaction is
+// partially applied is while the transaction is running **before** it
+// commits. Thus, we only care about operation ordering while the
+// transaction is running, but we do not care about it at all in the
+// context of the commit log.
+//
+// Not caring about the order in the log, however, requires that we **do
+// not** check index constraints during replay of transaction operatoins.
+// We **could** check them in between transactions if we wanted to update
+// the indexes and constraints as they changed during replay, but that is
+// unnecessary.
+
+struct ReplayVisitor<'a, F> {
     database_address: &'a Address,
     committed_state: &'a mut CommittedState,
+    progress: &'a mut F,
 }
 
-impl spacetimedb_commitlog::payload::txdata::Visitor for ReplayVisitor<'_> {
+impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVisitor<'_, F> {
     type Error = ReplayError;
     type Row = ProductValue;
 
@@ -696,6 +707,7 @@ impl spacetimedb_commitlog::payload::txdata::Visitor for ReplayVisitor<'_> {
                 encountered: offset,
             });
         }
+        (self.progress)(offset);
 
         Ok(())
     }
