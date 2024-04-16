@@ -614,7 +614,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
         let outcome = ReducerOutcome::from(&status);
 
-        let event = ModuleEvent {
+        let event = Arc::new(ModuleEvent {
             timestamp,
             caller_identity,
             caller_address: caller_address_opt,
@@ -624,10 +624,10 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             host_execution_duration: timings.total_duration,
             request_id,
             timer,
-        };
+        });
         self.info
             .subscriptions
-            .blocking_broadcast_event(client.as_deref(), &subscriptions, Arc::new(event));
+            .blocking_broadcast_event(client.as_deref(), &subscriptions, &event);
 
         let reducer_span = reducer_span.entered();
         reducer_span
