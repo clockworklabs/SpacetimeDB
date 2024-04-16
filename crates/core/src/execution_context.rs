@@ -14,6 +14,7 @@ pub enum MetricType {
     RowsInserted,
     RowsDeleted,
 }
+
 #[derive(Default, Clone)]
 struct BufferMetric {
     pub table_id: TableId,
@@ -59,11 +60,8 @@ impl BufferMetric {
 
 #[derive(Default, Clone)]
 pub struct Metrics(Vec<BufferMetric>);
-impl Metrics {
-    pub fn new() -> Self {
-        Self(Vec::new())
-    }
 
+impl Metrics {
     pub fn inc_by<F: FnOnce() -> String>(&mut self, table_id: TableId, ty: MetricType, val: u64, get_table_name: F) {
         if let Some(metric) = self.0.iter_mut().find(|x| x.table_id == table_id) {
             metric.inc_by(ty, val);
@@ -78,6 +76,7 @@ impl Metrics {
     pub fn table_exists(&self, table_id: TableId) -> bool {
         self.0.iter().any(|x| x.table_id == table_id)
     }
+
     #[allow(dead_code)]
     fn flush(&mut self, workload: &WorkloadType, database: &Address, reducer: &str) {
         macro_rules! flush_metric {
@@ -141,54 +140,39 @@ impl Default for WorkloadType {
 }
 
 impl ExecutionContext {
-    /// Returns an [ExecutionContext] for a reducer transaction.
-    pub fn reducer(database: Address, name: String) -> Self {
+    /// Returns an [ExecutionContext] with the provided parameters and empty metrics.
+    fn new(database: Address, reducer: Option<String>, workload: WorkloadType) -> Self {
         Self {
             database,
-            reducer: Some(name),
-            workload: WorkloadType::Reducer,
-            metrics: Arc::new(RwLock::new(Metrics::default())),
+            reducer,
+            workload,
+            metrics: <_>::default(),
         }
+    }
+
+    /// Returns an [ExecutionContext] for a reducer transaction.
+    pub fn reducer(database: Address, name: String) -> Self {
+        Self::new(database, Some(name), WorkloadType::Reducer)
     }
 
     /// Returns an [ExecutionContext] for a one-off sql query.
     pub fn sql(database: Address) -> Self {
-        Self {
-            database,
-            reducer: None,
-            workload: WorkloadType::Sql,
-            metrics: Arc::new(RwLock::new(Metrics::default())),
-        }
+        Self::new(database, None, WorkloadType::Sql)
     }
 
     /// Returns an [ExecutionContext] for an initial subscribe call.
     pub fn subscribe(database: Address) -> Self {
-        Self {
-            database,
-            reducer: None,
-            workload: WorkloadType::Subscribe,
-            metrics: Arc::new(RwLock::new(Metrics::default())),
-        }
+        Self::new(database, None, WorkloadType::Subscribe)
     }
 
     /// Returns an [ExecutionContext] for a subscription update.
     pub fn incremental_update(database: Address) -> Self {
-        Self {
-            database,
-            reducer: None,
-            workload: WorkloadType::Update,
-            metrics: Arc::new(RwLock::new(Metrics::default())),
-        }
+        Self::new(database, None, WorkloadType::Update)
     }
 
     /// Returns an [ExecutionContext] for an internal database operation.
     pub fn internal(database: Address) -> Self {
-        Self {
-            database,
-            reducer: None,
-            workload: WorkloadType::Internal,
-            metrics: Arc::new(RwLock::new(Metrics::default())),
-        }
+        Self::new(database, None, WorkloadType::Internal)
     }
 
     /// Returns the address of the database on which we are operating.
