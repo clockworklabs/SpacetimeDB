@@ -399,21 +399,25 @@ impl CommittedState {
                     let pv = table
                         .delete(blob_store, row_ptr, |row| row.to_product_value())
                         .expect("Delete for non-existent row!");
-                    let table_name = &*table.get_schema().table_name;
-                    //Increment rows deleted metric
-                    ctx.metrics
-                        .write()
-                        .inc_by(table_id, MetricType::RowsDeleted, 1, || table_name.to_string());
-                    // Decrement table rows gauge
-                    DB_METRICS
-                        .rdb_num_table_rows
-                        .with_label_values(db, &table_id.into(), table_name)
-                        .dec();
                     deletes.push(pv);
                 }
+
+                let table_name = &*table.get_schema().table_name;
+
                 if !deletes.is_empty() {
-                    tx_data.set_deletes_for_table(table_id, &table.get_schema().table_name, deletes.into());
+                    tx_data.set_deletes_for_table(table_id, table_name, deletes.into());
                 }
+
+                // Bulk update rows-deleted metric and the table rows gauge.
+                ctx.metrics
+                    .write()
+                    .inc_by(table_id, MetricType::RowsDeleted, row_ptrs.len() as u64, || {
+                        table_name.to_string()
+                    });
+                DB_METRICS
+                    .rdb_num_table_rows
+                    .with_label_values(db, &table_id.into(), table_name)
+                    .sub(row_ptrs.len() as i64);
             } else if !row_ptrs.is_empty() {
                 panic!("Deletion for non-existent table {:?}... huh?", table_id);
             }
