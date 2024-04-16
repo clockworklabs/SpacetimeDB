@@ -25,7 +25,7 @@ OPAQUE_TYPEDEF(BufferIter, uint32_t);
 #define CSTR(s) (uint8_t*)s, sizeof(s) - 1
 
 #define STDB_EXTERN(name) \
-  __attribute__((import_module("spacetime_7.0"), import_name(#name))) extern
+  __attribute__((import_module("spacetime_8.0"), import_name(#name))) extern
 
 #ifndef EXPERIMENTAL_WASM_AOT
 #define IMPORT(ret, name, params, args)    \
