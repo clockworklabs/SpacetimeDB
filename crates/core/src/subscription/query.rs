@@ -174,7 +174,7 @@ mod tests {
         table_name: &str,
         head: &ProductType,
         row: &ProductValue,
-    ) -> ResultTest<(TableSchema, MemTable, DatabaseTableUpdate, QueryExpr)> {
+    ) -> ResultTest<(Arc<TableSchema>, MemTable, DatabaseTableUpdate, QueryExpr)> {
         let table = mem_table(head.clone(), [row.clone()]);
         let table_id = create_table_with_rows(db, tx, table_name, head.clone(), &[row.clone()])?;
 
@@ -185,9 +185,9 @@ mod tests {
             inserts: [row.clone()].into(),
         };
 
-        let schema = db.schema_for_table_mut(tx, table_id).unwrap().into_owned();
+        let schema = db.schema_for_table_mut(tx, table_id).unwrap();
 
-        let q = QueryExpr::new(&schema);
+        let q = QueryExpr::new(&*schema);
 
         Ok((schema, table, data, q))
     }
@@ -196,7 +196,7 @@ mod tests {
         db: &RelationalDB,
         tx: &mut MutTx,
         access: StAccess,
-    ) -> ResultTest<(TableSchema, MemTable, DatabaseTableUpdate, QueryExpr)> {
+    ) -> ResultTest<(Arc<TableSchema>, MemTable, DatabaseTableUpdate, QueryExpr)> {
         let table_name = if access == StAccess::Public {
             "inventory"
         } else {
@@ -222,7 +222,7 @@ mod tests {
     fn make_player(
         db: &RelationalDB,
         tx: &mut MutTx,
-    ) -> ResultTest<(TableSchema, MemTable, DatabaseTableUpdate, QueryExpr)> {
+    ) -> ResultTest<(Arc<TableSchema>, MemTable, DatabaseTableUpdate, QueryExpr)> {
         let table_name = "player";
         let head = ProductType::from([("player_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row = product!(2u64, "jhon doe");
@@ -431,7 +431,7 @@ mod tests {
         check_query(&db, &table, &tx, &q, &data)?;
 
         //SELECT * FROM inventory WHERE inventory_id = 1
-        let q_id = QueryExpr::new(&schema).with_select_cmp(
+        let q_id = QueryExpr::new(&*schema).with_select_cmp(
             OpCmp::Eq,
             FieldName::named("_inventory", "inventory_id"),
             scalar(1u64),
@@ -452,7 +452,7 @@ mod tests {
 
         check_query_incr(&db, &tx, &s, &update, 1, &[row])?;
 
-        let q = QueryExpr::new(&schema);
+        let q = QueryExpr::new(&*schema);
 
         let (q, sources) = query_to_mem_table(q, &data);
         //Try access the private table

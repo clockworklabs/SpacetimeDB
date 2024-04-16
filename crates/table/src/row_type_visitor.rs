@@ -37,6 +37,7 @@ use core::fmt;
 use core::marker::PhantomData;
 use core::mem::MaybeUninit;
 use itertools::Itertools;
+use std::sync::Arc;
 
 /// Construct an implementor of `VarLenMembers`,
 /// which visits the var-len members in a row of `ty`.
@@ -269,7 +270,7 @@ fn remove_trailing_gotos(program: &mut Vec<Insn>) -> bool {
 }
 
 /// The instruction set of a [`VarLenVisitorProgram`].
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum Insn {
     // TODO(perf): consider boxing this variant (or making it a variable-width instruction)
     //             to minimize sizeof(insn),
@@ -348,9 +349,10 @@ impl fmt::Display for Insn {
 /// Forward progress, and thus termination,
 /// during interpretation is guaranteed when evaluating a program,
 /// as all jumps (`SwitchOnTag` and `Goto`) will set `new_instr_ptr > old_instr_ptr`.
+#[derive(Clone)]
 pub struct VarLenVisitorProgram {
     /// The list of instructions that make up this program.
-    insns: Box<[Insn]>,
+    insns: Arc<[Insn]>,
 }
 
 /// Evalutes the `program`,

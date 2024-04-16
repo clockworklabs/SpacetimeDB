@@ -6,6 +6,7 @@ use super::{
     tx_state::TxState,
     SharedMutexGuard, SharedWriteGuard,
 };
+use crate::db::datastore::traits::RowTypeForTable;
 use crate::db::{
     datastore::{
         system_tables::{
@@ -39,8 +40,8 @@ use spacetimedb_table::{
     table::{InsertError, RowRef, Table},
 };
 use std::{
-    borrow::Cow,
     ops::RangeBounds,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -137,7 +138,7 @@ impl MutTxId {
         // Remove the adjacent object that has an unset `id = 0`, they will be created below with the correct `id`
         schema_internal.clear_adjacent_schemas();
 
-        self.create_table_internal(table_id, schema_internal);
+        self.create_table_internal(table_id, schema_internal.into());
 
         // Insert constraints into `st_constraints`
         for constraint in table_schema.constraints {
@@ -159,7 +160,7 @@ impl MutTxId {
         Ok(table_id)
     }
 
-    fn create_table_internal(&mut self, table_id: TableId, schema: TableSchema) {
+    fn create_table_internal(&mut self, table_id: TableId, schema: Arc<TableSchema>) {
         self.tx_state
             .insert_tables
             .insert(table_id, Table::new(schema, SquashedOffset::TX_STATE));
@@ -180,11 +181,11 @@ impl MutTxId {
             .map(|table| table.get_row_type())
     }
 
-    pub fn row_type_for_table(&self, table_id: TableId, database_address: Address) -> Result<Cow<'_, ProductType>> {
+    pub fn row_type_for_table(&self, table_id: TableId, database_address: Address) -> Result<RowTypeForTable<'_>> {
         // Fetch the `ProductType` from the in memory table if it exists.
         // The `ProductType` is invalidated if the schema of the table changes.
         if let Some(row_type) = self.get_row_type(table_id) {
-            return Ok(Cow::Borrowed(row_type));
+            return Ok(RowTypeForTable::Ref(row_type));
         }
 
         let ctx = ExecutionContext::internal(database_address);
@@ -195,26 +196,21 @@ impl MutTxId {
         // representation of a table. This would happen in situations where
         // we have created the table in the database, but have not yet
         // represented in memory or inserted any rows into it.
-        Ok(match self.schema_for_table(&ctx, table_id)? {
-            Cow::Borrowed(x) => Cow::Borrowed(x.get_row_type()),
-            Cow::Owned(x) => Cow::Owned(x.into_row_type()),
-        })
+        Ok(RowTypeForTable::Arc(self.schema_for_table(&ctx, table_id)?))
     }
 
     pub fn drop_table(&mut self, table_id: TableId, database_address: Address) -> Result<()> {
-        let schema = self
-            .schema_for_table(&ExecutionContext::internal(database_address), table_id)?
-            .into_owned();
+        let schema = &*self.schema_for_table(&ExecutionContext::internal(database_address), table_id)?;
 
-        for row in schema.indexes {
+        for row in &schema.indexes {
             self.drop_index(row.index_id, database_address)?;
         }
 
-        for row in schema.sequences {
+        for row in &schema.sequences {
             self.drop_sequence(row.sequence_id, database_address)?;
         }
 
-        for row in schema.constraints {
+        for row in &schema.constraints {
             self.drop_constraint(row.constraint_id, database_address)?;
         }
 
@@ -321,7 +317,7 @@ impl MutTxId {
             pair
         } else {
             let ctx = ExecutionContext::internal(database_address);
-            let schema = self.schema_for_table(&ctx, table_id)?.into_owned();
+            let schema = self.schema_for_table(&ctx, table_id)?;
             self.tx_state
                 .insert_tables
                 .insert(index.table_id, Table::new(schema, SquashedOffset::TX_STATE));
@@ -348,13 +344,16 @@ impl MutTxId {
             )?;
         }
 
-        table.schema.indexes.push(IndexSchema {
-            table_id: index.table_id,
-            columns: index.columns.clone(),
-            index_name: index.index_name.clone(),
-            is_unique: index.is_unique,
-            index_id,
-            index_type: index.index_type,
+        // This won't clone-write when creating a table but likely to otherwise.
+        table.with_mut_schema(|s| {
+            s.indexes.push(IndexSchema {
+                table_id: index.table_id,
+                columns: index.columns.clone(),
+                index_name: index.index_name.clone(),
+                is_unique: index.is_unique,
+                index_id,
+                index_type: index.index_type,
+            })
         });
 
         table.indexes.insert(index.columns, insert_index);
@@ -381,16 +380,18 @@ impl MutTxId {
                 .find(|(_, idx)| idx.index_id == index_id)
                 .map(|(cols, _)| cols.clone())
             {
-                table.schema.indexes.retain(|x| x.columns != col);
+                // This likely will do a clone-write as over time?
+                // The schema might have found other referents.
+                table.with_mut_schema(|s| s.indexes.retain(|x| x.columns != col));
                 table.indexes.remove(&col);
             }
         };
 
-        for (_, table) in self.committed_state_write_lock.tables.iter_mut() {
-            // TODO: Transactionality.
-            // Currently, it appears that a TX which drops an index and then aborts
-            // will leave the index dropped, rather than restoring it.
-            clear_indexes(table);
+        // TODO: Transactionality.
+        // Currently, it appears that a TX which drops an index and then aborts
+        // will leave the index dropped, rather than restoring it.
+        if let Some(commit_table) = self.committed_state_write_lock.get_table_mut(table_id) {
+            clear_indexes(commit_table);
         }
         if let Some((insert_table, _)) = self.tx_state.get_table_and_blob_store(table_id) {
             clear_indexes(insert_table);
@@ -482,8 +483,9 @@ impl MutTxId {
         sequence_row.sequence_id = seq_id;
 
         let schema: SequenceSchema = sequence_row.into();
-        let insert_table = self.get_insert_table_mut(schema.table_id)?;
-        insert_table.schema.update_sequence(schema.clone());
+        self.get_insert_table_mut(schema.table_id)?
+            // This won't clone-write when creating a table but likely to otherwise.
+            .with_mut_schema(|s| s.update_sequence(schema.clone()));
         self.sequence_state_lock.insert(seq_id, Sequence::new(schema));
 
         log::trace!("SEQUENCE CREATED: id = {}", seq_id);
@@ -513,7 +515,9 @@ impl MutTxId {
         // rather than restoring it during rollback.
         self.sequence_state_lock.remove(sequence_id);
         if let Some((insert_table, _)) = self.tx_state.get_table_and_blob_store(table_id) {
-            insert_table.schema.remove_sequence(sequence_id);
+            // This likely will do a clone-write as over time?
+            // The schema might have found other referents.
+            insert_table.with_mut_schema(|s| s.remove_sequence(sequence_id));
         }
         Ok(())
     }
@@ -574,7 +578,8 @@ impl MutTxId {
         } else {
             log::trace!("CONSTRAINT CREATED: {}", &constraint.constraint_name);
         }
-        insert_table.schema.update_constraint(constraint);
+        // This won't clone-write when creating a table but likely to otherwise.
+        insert_table.with_mut_schema(|s| s.update_constraint(constraint));
 
         Ok(constraint_id)
     }
@@ -604,7 +609,9 @@ impl MutTxId {
         self.delete(ST_CONSTRAINTS_ID, st_constraint_ref.pointer())?;
 
         if let Ok(insert_table) = self.get_insert_table_mut(table_id) {
-            insert_table.schema.remove_constraint(constraint_id);
+            // This likely will do a clone-write as over time?
+            // The schema might have found other referents.
+            insert_table.with_mut_schema(|s| s.remove_constraint(constraint_id));
         }
 
         Ok(())
@@ -947,7 +954,7 @@ impl MutTxId {
 }
 
 impl StateView for MutTxId {
-    fn get_schema(&self, table_id: &TableId) -> Option<&TableSchema> {
+    fn get_schema(&self, table_id: &TableId) -> Option<&Arc<TableSchema>> {
         if let Some(row_type) = self
             .tx_state
             .insert_tables
