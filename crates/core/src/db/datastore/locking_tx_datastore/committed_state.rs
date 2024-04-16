@@ -453,22 +453,27 @@ impl CommittedState {
                     .insert(commit_blob_store, &pv)
                     .expect("Failed to insert when merging commit");
 
-                let table_name = &*commit_table.get_schema().table_name;
-                // Increment rows inserted metric
-                ctx.metrics
-                    .write()
-                    .inc_by(table_id, MetricType::RowsInserted, 1, || table_name.to_string());
-                // Increment table rows gauge
-                DB_METRICS
-                    .rdb_num_table_rows
-                    .with_label_values(db, &table_id.into(), table_name)
-                    .inc();
-
                 inserts.push(pv);
             }
+            let num_ins = inserts.len();
+
+            let table_name = &*commit_table.get_schema().table_name;
+
             if !inserts.is_empty() {
-                tx_data.set_inserts_for_table(table_id, &commit_table.get_schema().table_name, inserts.into());
+                tx_data.set_inserts_for_table(table_id, table_name, inserts.into());
             }
+
+            // Now we know how many rows were inserted,
+            // so bulk update rows-inserted metric and the table rows gauge.
+            ctx.metrics
+                .write()
+                .inc_by(table_id, MetricType::RowsInserted, num_ins as u64, || {
+                    table_name.to_string()
+                });
+            DB_METRICS
+                .rdb_num_table_rows
+                .with_label_values(db, &table_id.into(), table_name)
+                .add(num_ins as i64);
 
             // Add all newly created indexes to the committed state.
             for (cols, mut index) in tx_table.indexes {
