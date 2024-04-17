@@ -541,7 +541,9 @@ impl ExecutionSet {
         tx: &Tx,
     ) -> Result<ProtocolDatabaseUpdate, DBError> {
         let tables = match protocol {
-            Protocol::Binary => Either::Left(self.eval_binary(ctx, db, tx)?),
+            Protocol::BinaryUncompressed | Protocol::BinaryBrotliCompressed => {
+                Either::Left(self.eval_binary(ctx, db, tx)?)
+            }
             Protocol::Text => Either::Right(self.eval_json(ctx, db, tx)?),
         };
         Ok(ProtocolDatabaseUpdate { tables })

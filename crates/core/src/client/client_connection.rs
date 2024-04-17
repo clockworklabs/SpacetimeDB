@@ -19,7 +19,8 @@ use tokio::task::AbortHandle;
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
 pub enum Protocol {
     Text,
-    Binary,
+    BinaryUncompressed,
+    BinaryBrotliCompressed,
 }
 
 #[derive(Debug)]

@@ -74,8 +74,10 @@ where
 
     let db_address = name_or_address.resolve(&ctx).await?.into();
 
-    let (res, ws_upgrade, protocol) =
-        ws.select_protocol([(BIN_PROTOCOL, Protocol::Binary), (TEXT_PROTOCOL, Protocol::Text)]);
+    let (res, ws_upgrade, protocol) = ws.select_protocol([
+        (BIN_PROTOCOL, Protocol::BinaryBrotliCompressed),
+        (TEXT_PROTOCOL, Protocol::Text),
+    ]);
 
     let protocol = protocol.ok_or((StatusCode::BAD_REQUEST, "no valid protocol selected"))?;
 

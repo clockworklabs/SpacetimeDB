@@ -160,13 +160,13 @@ impl SubscriptionManager {
                     // and ditto for the "serialization" for JSON.
                     // Each subscriber gets to pick which of these they want,
                     // but we only fill `ops_bin` and `ops_json` at most once.
-                    // The former will be `Some(_)` if some subscriber uses `Protocol::Binary`
+                    // The former will be `Some(_)` if some subscriber uses `Protocol::BinaryBrotliCompressed`
                     // and the latter `Some(_)` if some subscriber uses `Protocol::Text`.
                     let mut ops_bin: Option<Vec<TableRowOperation>> = None;
                     let mut ops_json: Option<Vec<TableRowOperationJson>> = None;
                     self.subscribers.get(hash).into_iter().flatten().map(move |id| {
                         let ops = match self.clients[id].protocol {
-                            Protocol::Binary => Either::Left(
+                            Protocol::BinaryUncompressed | Protocol::BinaryBrotliCompressed => Either::Left(
                                 ops_bin
                                     .get_or_insert_with(|| delta.updates.iter().map_into().collect())
                                     .clone(),
@@ -185,7 +185,7 @@ impl SubscriptionManager {
                 // For each subscriber, aggregate all the updates for the same table.
                 // That is, we build a map `(subscriber_id, table_id) -> updates`.
                 // A particular subscriber uses only one protocol,
-                // so we'll have either `TableUpdate` (`Protocol::Binary`)
+                // so we'll have either `TableUpdate` (`Protocol::BinaryBrotliCompressed`)
                 // or `TableUpdateJson` (`Protocol::Text`).
                 .fold(
                     HashMap::<(&Identity, TableId), Either<TableUpdate, TableUpdateJson>>::new(),
@@ -311,7 +311,7 @@ mod tests {
 
         let id = Identity::ZERO;
         let client = ClientActorId::for_test(id);
-        let client = Arc::new(ClientConnectionSender::dummy(client, Protocol::Binary));
+        let client = Arc::new(ClientConnectionSender::dummy(client, Protocol::BinaryBrotliCompressed));
 
         let mut subscriptions = SubscriptionManager::default();
         subscriptions.add_subscription(client, [plan]);
@@ -334,7 +334,7 @@ mod tests {
 
         let id = Identity::ZERO;
         let client = ClientActorId::for_test(id);
-        let client = Arc::new(ClientConnectionSender::dummy(client, Protocol::Binary));
+        let client = Arc::new(ClientConnectionSender::dummy(client, Protocol::BinaryBrotliCompressed));
 
         let mut subscriptions = SubscriptionManager::default();
         subscriptions.add_subscription(client, [plan]);
@@ -358,7 +358,7 @@ mod tests {
 
         let id = Identity::ZERO;
         let client = ClientActorId::for_test(id);
-        let client = Arc::new(ClientConnectionSender::dummy(client, Protocol::Binary));
+        let client = Arc::new(ClientConnectionSender::dummy(client, Protocol::BinaryBrotliCompressed));
 
         let mut subscriptions = SubscriptionManager::default();
         subscriptions.add_subscription(client.clone(), [plan.clone()]);
@@ -388,11 +388,11 @@ mod tests {
 
         let id0 = Identity::ZERO;
         let client0 = ClientActorId::for_test(id0);
-        let client0 = Arc::new(ClientConnectionSender::dummy(client0, Protocol::Binary));
+        let client0 = Arc::new(ClientConnectionSender::dummy(client0, Protocol::BinaryBrotliCompressed));
 
         let id1 = Identity::from_byte_array([1; 32]);
         let client1 = ClientActorId::for_test(id1);
-        let client1 = Arc::new(ClientConnectionSender::dummy(client1, Protocol::Binary));
+        let client1 = Arc::new(ClientConnectionSender::dummy(client1, Protocol::BinaryBrotliCompressed));
 
         let mut subscriptions = SubscriptionManager::default();
         subscriptions.add_subscription(client0, [plan.clone()]);
@@ -435,11 +435,11 @@ mod tests {
 
         let id0 = Identity::ZERO;
         let client0 = ClientActorId::for_test(id0);
-        let client0 = Arc::new(ClientConnectionSender::dummy(client0, Protocol::Binary));
+        let client0 = Arc::new(ClientConnectionSender::dummy(client0, Protocol::BinaryBrotliCompressed));
 
         let id1 = Identity::from_byte_array([1; 32]);
         let client1 = ClientActorId::for_test(id1);
-        let client1 = Arc::new(ClientConnectionSender::dummy(client1, Protocol::Binary));
+        let client1 = Arc::new(ClientConnectionSender::dummy(client1, Protocol::BinaryBrotliCompressed));
 
         let mut subscriptions = SubscriptionManager::default();
         subscriptions.add_subscription(client0, [plan_scan.clone(), plan_select0.clone()]);

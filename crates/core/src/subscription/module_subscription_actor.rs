@@ -202,7 +202,7 @@ mod tests {
 
         let id = Identity::ZERO;
         let client = ClientActorId::for_test(id);
-        let sender = Arc::new(ClientConnectionSender::dummy(client, Protocol::Binary));
+        let sender = Arc::new(ClientConnectionSender::dummy(client, Protocol::BinaryBrotliCompressed));
         let module_subscriptions = ModuleSubscriptions::new(db.clone(), id);
 
         let (send, mut recv) = mpsc::unbounded_channel();
