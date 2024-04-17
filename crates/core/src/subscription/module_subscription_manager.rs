@@ -3,7 +3,7 @@ use crate::client::messages::{SubscriptionUpdate, TransactionUpdateMessage};
 use crate::client::{ClientConnectionSender, Protocol};
 use crate::db::relational_db::RelationalDB;
 use crate::execution_context::ExecutionContext;
-use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, ProtocolDatabaseUpdate};
+use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, ModuleEvent, ProtocolDatabaseUpdate};
 use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
 use itertools::{Either, Itertools as _};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -116,7 +116,12 @@ impl SubscriptionManager {
     /// evaluates only the necessary queries for those delta tables,
     /// and then sends the results to each client.
     #[tracing::instrument(skip_all)]
-    pub fn eval_updates(&self, db: &RelationalDB, event: Arc<ModuleEvent>) {
+    pub fn eval_updates(
+        &self,
+        db: &RelationalDB,
+        event: Arc<ModuleEvent>,
+        sender_client: Option<&ClientConnectionSender>,
+    ) {
         let tables = &event.status.database_update().unwrap().tables;
         let slow = db.read_config().slow_query;
         let tx = scopeguard::guard(db.begin_tx(), |tx| {
@@ -245,7 +250,21 @@ impl SubscriptionManager {
                 );
             drop(span);
 
-            let _span = tracing::info_span!("eval_send").entered();
+            if !eval.contains_key(&event.caller_identity) {
+                if let Some(client) = sender_client {
+                    // if the caller is not subscribed to any queries send a transaction update
+                    // with an empty subscription update
+                    let message = TransactionUpdateMessage::<DatabaseUpdate> {
+                        event: event.clone(),
+                        database_update: <_>::default(),
+                    };
+
+                    if let Err(e) = client.send_message(message) {
+                        tracing::warn!(%client.id, "failed to send update message to client: {e}")
+                    }
+                }
+            }
+
             eval.into_iter().for_each(|(id, tables)| {
                 let client = self.client(id);
                 let database_update = SubscriptionUpdate {
@@ -267,7 +286,7 @@ impl SubscriptionManager {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{sync::Arc, time::Duration};
 
     use spacetimedb_lib::{error::ResultTest, Address, AlgebraicType, Identity};
     use spacetimedb_primitives::TableId;
@@ -276,7 +295,12 @@ mod tests {
     use crate::{
         client::{ClientActorId, ClientConnectionSender, ClientName, Protocol},
         db::relational_db::{tests_utils::TestDB, RelationalDB},
+        energy::EnergyQuanta,
         execution_context::ExecutionContext,
+        host::{
+            module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall},
+            ArgsTuple, Timestamp,
+        },
         sql::compiler::compile_sql,
         subscription::{
             execution_unit::{ExecutionUnit, QueryHash},
@@ -492,6 +516,50 @@ mod tests {
 
         assert!(!subscriptions.query_reads_from_table(&hash_scan, &s));
         assert!(!subscriptions.query_reads_from_table(&hash_select1, &t));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_caller_transaction_update_without_subscription() -> ResultTest<()> {
+        // test if a transaction update is sent to the reducer caller even if
+        // the caller haven't subscribed to any updates
+        let (db, _) = make_test_db()?;
+
+        let id0 = Identity::ZERO;
+        let client0 = ClientActorId::for_test(id0);
+        let (client0, mut rx) = ClientConnectionSender::dummy_with_channel(client0, Protocol::Binary);
+
+        let subscriptions = SubscriptionManager::default();
+
+        let event = Arc::new(ModuleEvent {
+            timestamp: Timestamp::now(),
+            caller_identity: id0,
+            caller_address: None,
+            function_call: ModuleFunctionCall {
+                reducer: "DummyReducer".into(),
+                args: ArgsTuple::nullary(),
+            },
+            status: EventStatus::Committed(DatabaseUpdate::default()),
+            energy_quanta_used: EnergyQuanta::ZERO,
+            host_execution_duration: Duration::default(),
+            request_id: None,
+            timer: None,
+        });
+
+        subscriptions.eval_updates(&db, event, Some(&client0));
+
+        tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap()
+            .block_on(async move {
+                tokio::time::timeout(Duration::from_millis(5), async move {
+                    rx.recv().await.expect("Expected at least one message");
+                })
+                .await
+                .expect("Timed out waiting for a message to the client");
+            });
 
         Ok(())
     }

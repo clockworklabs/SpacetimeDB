@@ -17,6 +17,7 @@ pub fn create_dir_or_err(path: &str) -> anyhow::Result<()> {
 /// `contents`. Otherwise if the file doesn't exist and `allow_create` is set to false, an error is
 /// returned. Otherwise if the file does exist, do nothing.
 pub fn create_file_with_contents(path: &str, contents: &str) -> anyhow::Result<()> {
+    println!("Creating file: {}", path.to_string());
     create_dir_or_err(Path::new(path).parent().unwrap().to_str().unwrap())?;
     if !Path::new(path).is_file() {
         log::info!("Creating file {}", path);
