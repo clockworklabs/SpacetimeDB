@@ -18,6 +18,7 @@ use spacetimedb_client_api_messages::client_api::{OneOffQueryResponse, OneOffTab
 use spacetimedb_lib::Address;
 use spacetimedb_vm::relation::MemTable;
 
+use super::client_connection::ProtocolEncoding;
 use super::message_handlers::MessageExecutionError;
 use super::{DataMessage, Protocol};
 
@@ -25,12 +26,13 @@ use super::{DataMessage, Protocol};
 /// a server message needs to be encodable as either.
 pub trait ServerMessage: Sized {
     fn serialize(self, protocol: Protocol) -> DataMessage {
-        match protocol {
-            Protocol::Text => self.serialize_text().to_json().into(),
-            #[cfg(not(feature = "brotli-compression"))]
-            Protocol::Binary => self.serialize_binary().encode_to_vec().into(),
-            #[cfg(feature = "brotli-compression")]
-            Protocol::Binary => {
+        match protocol.encoding {
+            ProtocolEncoding::Text => self.serialize_text().to_json().into(),
+            ProtocolEncoding::Binary => {
+                if !protocol.binary_compression {
+                    return self.serialize_binary().encode_to_vec().into();
+                }
+
                 let msg_bytes = self.serialize_binary().encode_to_vec();
                 let reader = &mut &msg_bytes[..];
 
