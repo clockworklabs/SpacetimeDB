@@ -80,6 +80,13 @@ impl<T> Commitlog<T> {
     /// Open the log at root directory `root` with [`Options`].
     ///
     /// The root directory must already exist.
+    ///
+    /// Note that opening a commitlog involves I/O: some consistency checks are
+    /// performed, and the next writing position is determined.
+    ///
+    /// This is only necessary when opening the commitlog for writing. See the
+    /// free-standing functions in this module for how to traverse a read-only
+    /// commitlog.
     pub fn open(root: impl Into<PathBuf>, opts: Options) -> io::Result<Self> {
         let inner = commitlog::Generic::open(repo::Fs::new(root), opts)?;
 
@@ -389,4 +396,86 @@ impl<T: Send + Sync + 'static> Commitlog<T> {
 
         rx
     }
+}
+
+/// Obtain an iterator which traverses the commitlog located at the `root`
+/// directory from the start, yielding [`Commit`]s.
+///
+/// Starts the traversal without the upfront I/O imposed by [`Commitlog::open`].
+/// See [`Commitlog::commits`] for more information.
+pub fn commits(root: impl Into<PathBuf>) -> io::Result<impl Iterator<Item = Result<Commit, error::Traversal>>> {
+    commits_from(root, 0)
+}
+
+/// Obtain an iterator which traverses the commitlog located at the `root`
+/// directory starting from `offset` and yielding [`Commit`]s.
+///
+/// Starts the traversal without the upfront I/O imposed by [`Commitlog::open`].
+/// See [`Commitlog::commits_from`] for more information.
+pub fn commits_from(
+    root: impl Into<PathBuf>,
+    offset: u64,
+) -> io::Result<impl Iterator<Item = Result<Commit, error::Traversal>>> {
+    commitlog::commits_from(repo::Fs::new(root), DEFAULT_LOG_FORMAT_VERSION, offset)
+}
+
+/// Obtain an iterator which traverses the commitlog located at the `root`
+/// directory from the start, yielding [`Transaction`]s.
+///
+/// Starts the traversal without the upfront I/O imposed by [`Commitlog::open`].
+/// See [`Commitlog::transactions`] for more information.
+pub fn transactions<'a, D, T>(
+    root: impl Into<PathBuf>,
+    de: &'a D,
+) -> io::Result<impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a>
+where
+    D: Decoder<Record = T>,
+    D::Error: From<error::Traversal>,
+    T: 'a,
+{
+    transactions_from(root, 0, de)
+}
+
+/// Obtain an iterator which traverses the commitlog located at the `root`
+/// directory starting from `offset` and yielding [`Transaction`]s.
+///
+/// Starts the traversal without the upfront I/O imposed by [`Commitlog::open`].
+/// See [`Commitlog::transactions_from`] for more information.
+pub fn transactions_from<'a, D, T>(
+    root: impl Into<PathBuf>,
+    offset: u64,
+    de: &'a D,
+) -> io::Result<impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a>
+where
+    D: Decoder<Record = T>,
+    D::Error: From<error::Traversal>,
+    T: 'a,
+{
+    commitlog::transactions_from(repo::Fs::new(root), DEFAULT_LOG_FORMAT_VERSION, offset, de)
+}
+
+/// Traverse the commitlog located at the `root` directory from the start and
+/// "fold" its transactions into the provided [`Decoder`].
+///
+/// Starts the traversal without the upfront I/O imposed by [`Commitlog::open`].
+/// See [`Commitlog::fold_transactions`] for more information.
+pub fn fold_transactions<D>(root: impl Into<PathBuf>, de: D) -> Result<(), D::Error>
+where
+    D: Decoder,
+    D::Error: From<error::Traversal> + From<io::Error>,
+{
+    fold_transactions_from(root, 0, de)
+}
+
+/// Traverse the commitlog located at the `root` directory starting from `offset`
+/// and "fold" its transactions into the provided [`Decoder`].
+///
+/// Starts the traversal without the upfront I/O imposed by [`Commitlog::open`].
+/// See [`Commitlog::fold_transactions_from`] for more information.
+pub fn fold_transactions_from<D>(root: impl Into<PathBuf>, offset: u64, de: D) -> Result<(), D::Error>
+where
+    D: Decoder,
+    D::Error: From<error::Traversal> + From<io::Error>,
+{
+    commitlog::fold_transactions_from(repo::Fs::new(root), DEFAULT_LOG_FORMAT_VERSION, offset, de)
 }
