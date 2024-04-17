@@ -36,9 +36,9 @@ hex.workspace = true
 cursive.workspace = true
 futures-channel.workspace = true
 
+# for tests
+spacetimedb-testing = { path = "../testing" }
+
 [features]
 brotli-compression = []
 default = ["brotli-compression"]
-
-# for tests
-spacetimedb-testing = { path = "../testing" }
