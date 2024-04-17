@@ -27,6 +27,9 @@ pub trait ServerMessage: Sized {
     fn serialize(self, protocol: Protocol) -> DataMessage {
         match protocol {
             Protocol::Text => self.serialize_text().to_json().into(),
+            #[cfg(not(feature = "brotli-compression"))]
+            Protocol::Binary => self.serialize_binary().encode_to_vec().into(),
+            #[cfg(feature = "brotli-compression")]
             Protocol::Binary => {
                 let msg_bytes = self.serialize_binary().encode_to_vec();
                 let reader = &mut &msg_bytes[..];

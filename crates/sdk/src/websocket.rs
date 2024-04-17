@@ -1,5 +1,8 @@
 use crate::identity::Credentials;
-use anyhow::{bail, Context, Result};
+#[cfg(feature = "brotli-compression")]
+use anyhow::Context;
+use anyhow::{bail, Result};
+#[cfg(feature = "brotli-compression")]
 use brotli::BrotliDecompress;
 use futures::{SinkExt, StreamExt, TryStreamExt};
 use futures_channel::mpsc;
@@ -151,10 +154,16 @@ impl DbConnection {
         Ok(DbConnection { sock })
     }
 
+    #[cfg(feature = "brotli-compression")]
     pub(crate) fn parse_response(bytes: &[u8]) -> Result<Message> {
         let mut decompressed = Vec::new();
         BrotliDecompress(&mut &bytes[..], &mut decompressed).context("Failed to Brotli decompress message")?;
         Ok(Message::decode(&decompressed[..])?)
+    }
+
+    #[cfg(not(feature = "brotli-compression"))]
+    pub(crate) fn parse_response(bytes: &[u8]) -> Result<Message> {
+        Ok(Message::decode(bytes)?)
     }
 
     pub(crate) fn encode_message(msg: Message) -> WebSocketMessage {

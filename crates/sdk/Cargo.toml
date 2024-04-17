@@ -7,6 +7,9 @@ description = "A Rust SDK for clients to interface with SpacetimeDB"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+brotli-compression = []
+
 [dependencies]
 spacetimedb-data-structures.workspace = true
 spacetimedb-sats.workspace = true
