@@ -74,11 +74,11 @@ impl ChunkedWriter {
         self.chunks
     }
 
-    pub fn collect_iter(iter: impl Iterator<Item = impl ToBsatn>) -> Vec<Box<[u8]>> {
+    pub fn collect_iter(iter: impl Iterator<Item = impl ToBsatnExtend>) -> Vec<Box<[u8]>> {
         let mut chunked_writer = Self::default();
         for item in iter {
             // Write the item directly to the BSATN `chunked_writer` buffer.
-            item.to_bstan_extend(&mut chunked_writer.scratch_space).unwrap();
+            item.to_bsatn_extend(&mut chunked_writer.scratch_space).unwrap();
             // Flush at item boundaries.
             chunked_writer.flush();
         }
@@ -86,16 +86,16 @@ impl ChunkedWriter {
     }
 }
 
-trait ToBsatn {
-    fn to_bstan_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError>;
+trait ToBsatnExtend {
+    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError>;
 }
-impl ToBsatn for RowRef<'_> {
-    fn to_bstan_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
+impl ToBsatnExtend for RowRef<'_> {
+    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
         self.to_bsatn_extend(buf)
     }
 }
-impl ToBsatn for RelValue<'_> {
-    fn to_bstan_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
+impl ToBsatnExtend for RelValue<'_> {
+    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
         self.to_bsatn_extend(buf)
     }
 }
