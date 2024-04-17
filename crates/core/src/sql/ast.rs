@@ -1,3 +1,4 @@
+use crate::config::ReadConfigOption;
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::{DBError, PlanError};
 use itertools::Itertools;
@@ -18,6 +19,7 @@ use sqlparser::ast::{
 };
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
+use std::str::FromStr;
 use std::sync::Arc;
 
 /// Simplify to detect features of the syntax we don't support yet
@@ -269,6 +271,13 @@ pub enum SqlAst {
         kind: DbType,
         table_access: StAccess,
     },
+    SetVar {
+        name: String,
+        value: AlgebraicValue,
+    },
+    ReadVar {
+        name: String,
+    },
 }
 
 fn extract_field(table: &From, of: &SqlExpr) -> Result<Option<ProductTypeElement>, PlanError> {
@@ -319,6 +328,16 @@ fn infer_str_or_enum(field: Option<&ProductTypeElement>, value: String) -> Resul
     } else {
         Ok(AlgebraicValue::String(value.into()))
     }
+}
+
+/// Parses `name` as a [ReadConfigOption] and then parse the numeric value.
+fn infer_config(name: &str, value: &str, is_long: bool) -> Result<AlgebraicValue, ErrorVm> {
+    let config = ReadConfigOption::from_str(name)?;
+    infer_number(
+        Some(&ProductTypeElement::new_named(config.type_of(), name)),
+        value,
+        is_long,
+    )
 }
 
 /// Compiles a [SqlExpr] expression into a [ColumnOp]
@@ -909,6 +928,51 @@ fn compile_drop(name: &ObjectName, kind: ObjectType) -> Result<SqlAst, PlanError
     })
 }
 
+/// Compiles the equivalent of `SET key = value`
+fn compile_set_config(name: ObjectName, value: Vec<SqlExpr>) -> Result<SqlAst, PlanError> {
+    let name = name.to_string();
+
+    let value = match value.as_slice() {
+        [first] => first.clone(),
+        _ => {
+            return Err(PlanError::Unsupported {
+                feature: format!("Invalid value for config: {name} => {value:?}."),
+            });
+        }
+    };
+
+    let value = match value {
+        SqlExpr::Value(x) => match x {
+            Value::Number(value, is_long) => infer_config(&name, &value, is_long)?,
+            x => {
+                return Err(PlanError::Unsupported {
+                    feature: format!("Unsupported value for config: {x}."),
+                });
+            }
+        },
+        x => {
+            return Err(PlanError::Unsupported {
+                feature: format!("Unsupported expression for config: {x}"),
+            });
+        }
+    };
+
+    Ok(SqlAst::SetVar { name, value })
+}
+
+/// Compiles the equivalent of `SHOW key`
+fn compile_read_config(name: Vec<Ident>) -> Result<SqlAst, PlanError> {
+    let name = match name.as_slice() {
+        [first] => first.to_string(),
+        _ => {
+            return Err(PlanError::Unsupported {
+                feature: format!("Invalid name for config: {name:?}"),
+            });
+        }
+    };
+    Ok(SqlAst::ReadVar { name })
+}
+
 /// Compiles a `SQL` clause
 fn compile_statement<T: TableSchemaView>(db: &RelationalDB, tx: &T, statement: Statement) -> Result<SqlAst, PlanError> {
     match statement {
@@ -1078,6 +1142,16 @@ fn compile_statement<T: TableSchemaView>(db: &RelationalDB, tx: &T, statement: S
             };
             compile_drop(name, object_type)
         }
+        Statement::SetVariable {
+            local,
+            hivevar,
+            variable,
+            value,
+        } => {
+            unsupported!("SET", local, hivevar);
+            compile_set_config(variable, value)
+        }
+        Statement::ShowVariable { variable } => compile_read_config(variable),
         x => Err(PlanError::Unsupported {
             feature: format!("Syntax {x}"),
         }),

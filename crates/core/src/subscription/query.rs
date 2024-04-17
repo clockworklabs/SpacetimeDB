@@ -52,6 +52,8 @@ pub fn compile_read_only_query(
                 return Err(SubscriptionError::SideEffect(Crud::Create(DbType::Table)).into())
             }
             CrudExpr::Drop { kind, .. } => return Err(SubscriptionError::SideEffect(Crud::Drop(kind)).into()),
+            CrudExpr::SetVar { .. } => return Err(SubscriptionError::SideEffect(Crud::Config).into()),
+            CrudExpr::ReadVar { .. } => return Err(SubscriptionError::SideEffect(Crud::Config).into()),
         }
     }
 
@@ -106,6 +108,7 @@ mod tests {
     use crate::sql::execute::collect_result;
     use crate::sql::execute::run;
     use crate::subscription::subscription::ExecutionSet;
+    use crate::util::slow::SlowQueryConfig;
     use crate::vm::tests::create_table_with_rows;
     use crate::vm::DbProgram;
     use itertools::Itertools;
@@ -286,7 +289,7 @@ mod tests {
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
-        let ctx = &ExecutionContext::incremental_update(db.address());
+        let ctx = &ExecutionContext::incremental_update(db.address(), SlowQueryConfig::default());
         let tx = &tx.into();
         let result = s.eval_incr(ctx, db, tx, update)?;
         assert_eq!(
@@ -335,8 +338,8 @@ mod tests {
         Ok(())
     }
 
-    fn singleton_execution_set(expr: QueryExpr) -> ResultTest<ExecutionSet> {
-        Ok(ExecutionSet::from_iter([SupportedQuery::try_from(expr)?]))
+    fn singleton_execution_set(expr: QueryExpr, sql: String) -> ResultTest<ExecutionSet> {
+        Ok(ExecutionSet::from_iter([SupportedQuery::try_from((expr, sql))?]))
     }
 
     #[test]
@@ -374,9 +377,9 @@ mod tests {
             panic!("unexpected query {:#?}", exp[0]);
         };
 
-        let query: ExecutionSet = singleton_execution_set(query)?;
+        let query: ExecutionSet = singleton_execution_set(query, sql.into())?;
 
-        let ctx = &ExecutionContext::incremental_update(db.address());
+        let ctx = &ExecutionContext::incremental_update(db.address(), SlowQueryConfig::default());
         let tx = (&tx).into();
         let result = query.eval_incr(ctx, &db, &tx, &update)?;
 
@@ -437,7 +440,7 @@ mod tests {
             scalar(1u64),
         );
 
-        let s = singleton_execution_set(q_id)?;
+        let s = singleton_execution_set(q_id, "SELECT * FROM inventory WHERE inventory_id = 1".into())?;
 
         let data = DatabaseTableUpdate {
             table_id: schema.table_id,
@@ -557,7 +560,7 @@ mod tests {
         let row_2 = product!(2u64, "jhon doe");
         let tx = db.begin_tx();
         let s = compile_read_only_query(&db, &tx, &AuthCtx::for_testing(), SUBSCRIBE_TO_ALL_QUERY)?.into();
-        let ctx = ExecutionContext::subscribe(db.address());
+        let ctx = ExecutionContext::subscribe(db.address(), SlowQueryConfig::default());
         check_query_eval(&ctx, &db, &tx, &s, 2, &[row_1.clone(), row_2.clone()])?;
 
         let data1 = DatabaseTableUpdate {
@@ -675,7 +678,7 @@ mod tests {
             let Some(CrudExpr::Query(query)) = exp.pop() else {
                 panic!("unexpected query {:#?}", exp[0]);
             };
-            singleton_execution_set(query)
+            singleton_execution_set(query, sql.into())
         })
     }
 

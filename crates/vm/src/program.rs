@@ -53,6 +53,12 @@ impl ProgramVm for Program {
             CrudExpr::Drop { .. } => {
                 todo!()
             }
+            CrudExpr::SetVar { .. } => {
+                todo!()
+            }
+            CrudExpr::ReadVar { .. } => {
+                todo!()
+            }
         }
     }
 }

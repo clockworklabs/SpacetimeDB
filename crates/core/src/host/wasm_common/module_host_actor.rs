@@ -268,7 +268,8 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         let db = &self.database_instance_context.relational_db;
         let auth = AuthCtx::new(self.database_instance_context.identity, caller_identity);
         log::debug!("One-off query: {query}");
-        let ctx = &ExecutionContext::sql(db.address());
+        // Don't need the `slow query` logger on compilation
+        let ctx = &ExecutionContext::sql(db.address(), db.read_config().slow_query);
         let compiled: Vec<_> = db.with_read_only(ctx, |tx| {
             let ast = sql::compiler::compile_sql(db, tx, &query)?;
             ast.into_iter()
@@ -282,7 +283,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
                 .collect::<Result<_, _>>()
         })?;
 
-        sql::execute::execute_sql(db, compiled, auth)
+        sql::execute::execute_sql(db, &query, compiled, auth)
     }
 
     fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {

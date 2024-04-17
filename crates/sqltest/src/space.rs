@@ -76,7 +76,7 @@ impl SpaceDb {
     pub(crate) fn run_sql(&self, sql: &str) -> anyhow::Result<Vec<MemTable>> {
         self.conn.with_read_only(&ExecutionContext::default(), |tx| {
             let ast = compile_sql(&self.conn, tx, sql)?;
-            let result = execute_sql(&self.conn, ast, self.auth)?;
+            let result = execute_sql(&self.conn, sql, ast, self.auth)?;
             //remove comments to see which SQL worked. Can't collect it outside from lack of a hook in the external `sqllogictest` crate... :(
             //append_file(&std::path::PathBuf::from(".ok.sql"), sql)?;
             Ok(result)
