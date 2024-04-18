@@ -5,7 +5,6 @@ use crate::db::relational_db::RelationalDB;
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, ProtocolDatabaseUpdate};
 use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
-use core::hash;
 use itertools::{Either, Itertools as _};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use smallvec::SmallVec;
@@ -13,8 +12,6 @@ use spacetimedb_client_api_messages::client_api::{TableRowOperation, TableUpdate
 use spacetimedb_data_structures::map::{Entry, HashMap, HashSet, IntMap};
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::TableId;
-use spacetimedb_table::table;
-use std::any::Any;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -142,9 +139,7 @@ impl SubscriptionManager {
             let eval = units
                 .into_iter()
                 .enumerate()
-                .map(|(idx, (hash, vec))| {
-                    (hash, vec, &all_ctx[idx])
-                })
+                .map(|(idx, (hash, vec))| (hash, vec, &all_ctx[idx]))
                 .collect::<Vec<_>>()
                 .into_par_iter()
                 .filter_map(|(hash, tables, ctx)| self.queries.get(hash).map(|unit| (hash, tables, unit, ctx)))
@@ -265,6 +260,9 @@ impl SubscriptionManager {
                 if let Err(e) = client.send_message(message) {
                     tracing::warn!(%client.id, "failed to send update message to client: {e}")
                 }
+            });
+            tokio::task::spawn_blocking(|| {
+                drop(all_ctx);
             });
         })
     }
