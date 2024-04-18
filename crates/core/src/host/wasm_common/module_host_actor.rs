@@ -569,8 +569,27 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
         // Defer the reducer energy recording until the end.
         // We need this to happen but we also don't want to hold `tx` while doing it.
+        // Also defer some other tracing / metrics.
         let em = &self.energy_monitor;
-        scopeguard::defer!(em.record_reducer(&energy_fingerprint, energy.used, timings.total_duration));
+        scopeguard::defer!({
+            em.record_reducer(&energy_fingerprint, energy.used, timings.total_duration);
+
+            let reducer_span = reducer_span.entered();
+            reducer_span
+                .record("timings.total_duration", tracing::field::debug(timings.total_duration))
+                .record("energy.used", tracing::field::debug(energy.used));
+
+            const FRAME_LEN_60FPS: Duration = const_unwrap(Duration::from_secs(1).checked_div(60));
+            if timings.total_duration > FRAME_LEN_60FPS {
+                // If we can't get your reducer done in a single frame we should debug it.
+                tracing::debug!(
+                    message = "Long running reducer finished executing",
+                    reducer_name,
+                    ?timings.total_duration,
+                );
+            }
+            reducer_span.exit();
+        });
 
         // Take a lock on our subscriptions now. Otherwise, we could have a race condition where we commit
         // the tx, someone adds a subscription and receives this tx as an initial update, and then receives the
@@ -629,22 +648,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             .subscriptions
             .blocking_broadcast_event(client.as_deref(), &subscriptions, &event);
         drop(subscriptions);
-
-        let reducer_span = reducer_span.entered();
-        reducer_span
-            .record("timings.total_duration", tracing::field::debug(timings.total_duration))
-            .record("energy.used", tracing::field::debug(energy.used));
-
-        const FRAME_LEN_60FPS: Duration = const_unwrap(Duration::from_secs(1).checked_div(60));
-        if timings.total_duration > FRAME_LEN_60FPS {
-            // If we can't get your reducer done in a single frame we should debug it.
-            tracing::debug!(
-                message = "Long running reducer finished executing",
-                reducer_name,
-                ?timings.total_duration,
-            );
-        }
-        reducer_span.exit();
 
         ReducerCallResult {
             outcome,
