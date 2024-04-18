@@ -1,10 +1,12 @@
 use std::time::{Duration, Instant};
 
+use crate::execution_context::{ExecutionContext, WorkloadType};
+
 /// Default threshold for general queries in `ms`.
 const THRESHOLD_QUERIES_MILLIS: u64 = 100;
 
 /// Configuration threshold for detecting slow queries.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct SlowQueryConfig {
     /// The threshold duration for incremental updates.
     pub(crate) incremental_updates: Option<Duration>,
@@ -15,15 +17,6 @@ pub struct SlowQueryConfig {
 }
 
 impl SlowQueryConfig {
-    /// Creates a new `SlowQueryConfig` with all the threshold set to [None].
-    pub fn new() -> Self {
-        Self {
-            incremental_updates: None,
-            subscriptions: None,
-            queries: None,
-        }
-    }
-
     /// Creates a new `SlowQueryConfig` with [THRESHOLD_QUERIES_MILLIS] for `queries` and the rest set to [None].
     pub fn with_defaults() -> Self {
         Self {
@@ -50,64 +43,51 @@ impl SlowQueryConfig {
     }
 }
 
-impl Default for SlowQueryConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Represents `threshold` for [SlowQueryLogger].
-pub enum Threshold {
-    IncrementalUpdates(Option<Duration>),
-    Subscriptions(Option<Duration>),
-    Queries(Option<Duration>),
-}
-
-/// Start the recording of a `sql` with a specific [Threshold].
+/// Records the execution time of some `sql`
+/// and logs when the duration goes above a specific one.
 pub struct SlowQueryLogger<'a> {
     /// The SQL statement of the query.
     sql: &'a str,
     /// The start time of the query execution.
-    start: Instant,
-    /// Which [Threshold] to use.
-    threshold: Threshold,
+    start: Option<Instant>,
+    /// The threshold, if any, over which execution duration would result in logging.
+    threshold: &'a Option<Duration>,
+    /// The context the query is being run in.
+    workload: WorkloadType,
 }
 
 impl<'a> SlowQueryLogger<'a> {
-    pub fn new(sql: &'a str, threshold: Threshold) -> Self {
+    pub fn new(sql: &'a str, threshold: &'a Option<Duration>, workload: WorkloadType) -> Self {
         Self {
             sql,
-            start: Instant::now(),
+            start: threshold.map(|_| Instant::now()),
             threshold,
+            workload,
         }
     }
 
     /// Creates a new [SlowQueryLogger] instance for general queries.
-    pub fn query(config: SlowQueryConfig, sql: &'a str) -> Self {
-        Self::new(sql, Threshold::Queries(config.queries))
+    pub fn query(ctx: &'a ExecutionContext, sql: &'a str) -> Self {
+        Self::new(sql, &ctx.slow_query_config.queries, ctx.workload())
     }
 
     /// Creates a new [SlowQueryLogger] instance for subscriptions.
-    pub fn subscription(config: SlowQueryConfig, sql: &'a str) -> Self {
-        Self::new(sql, Threshold::Subscriptions(config.subscriptions))
+    pub fn subscription(ctx: &'a ExecutionContext, sql: &'a str) -> Self {
+        Self::new(sql, &ctx.slow_query_config.subscriptions, ctx.workload())
     }
 
     /// Creates a new [SlowQueryLogger] instance for incremental updates.
-    pub fn incremental_updates(config: SlowQueryConfig, sql: &'a str) -> Self {
-        Self::new(sql, Threshold::IncrementalUpdates(config.queries))
+    pub fn incremental_updates(ctx: &'a ExecutionContext, sql: &'a str) -> Self {
+        Self::new(sql, &ctx.slow_query_config.incremental_updates, ctx.workload())
     }
 
     /// Log as `tracing::warn!` the query if it exceeds the threshold.
     pub fn log(&self) -> Option<Duration> {
-        let (kind, dur) = match self.threshold {
-            Threshold::IncrementalUpdates(dur) => ("IncrementalUpdates", dur),
-            Threshold::Subscriptions(dur) => ("Subscriptions", dur),
-            Threshold::Queries(dur) => ("Queries", dur),
-        };
-        if let Some(dur) = dur {
-            let elapsed = self.start.elapsed();
-            if elapsed > dur {
-                tracing::warn!(kind = kind, threshold = ?dur, elapsed = ?elapsed, sql = self.sql, "SLOW QUERY");
+        if let Some((start, threshold)) = self.start.zip(self.threshold.as_ref()) {
+            let elapsed = start.elapsed();
+            if &elapsed > threshold {
+                let workload = self.workload.as_ref();
+                tracing::warn!(?workload, ?threshold, ?elapsed, ?self.sql, "SLOW QUERY");
                 return Some(elapsed);
             }
         };
@@ -154,7 +134,10 @@ mod tests {
         let table_id =
             db.create_table_for_test("test", &[("x", AlgebraicType::I32), ("y", AlgebraicType::I32)], &[])?;
 
-        db.with_auto_commit(&ExecutionContext::default(), |tx| -> ResultTest<_> {
+        let mut ctx = ExecutionContext::default();
+        ctx.slow_query_config = ctx.slow_query_config.with_queries(Duration::from_millis(1));
+
+        db.with_auto_commit(&ctx, |tx| -> ResultTest<_> {
             for i in 0..100_000 {
                 db.insert(tx, table_id, product![i, i * 2])?;
             }
@@ -165,7 +148,7 @@ mod tests {
         let sql = "select * from test where x > 0";
         let q = compile_sql(&db, &tx, sql)?;
 
-        let slow = SlowQueryLogger::query(SlowQueryConfig::default().with_queries(Duration::from_millis(1)), sql);
+        let slow = SlowQueryLogger::query(&ctx, sql);
 
         let result = execute_sql(&db, sql, q, AuthCtx::for_testing())?;
         assert_eq!(result[0].data[0], product![1, 2]);

@@ -1,4 +1,4 @@
-use crate::util::slow::{SlowQueryConfig, Threshold};
+use crate::util::slow::SlowQueryConfig;
 use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductType};
 use spacetimedb_vm::dsl::mem_table;
 use spacetimedb_vm::errors::{ConfigError, ErrorVm};
@@ -197,10 +197,6 @@ impl FromStr for ReadConfigOption {
             x => Err(ConfigError::NotFound(x.into())),
         }
     }
-}
-
-pub enum SetConfigOption {
-    SlowQuery(Threshold),
 }
 
 /// Holds a list of the runtime configurations settings of the database
