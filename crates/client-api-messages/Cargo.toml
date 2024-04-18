@@ -3,6 +3,7 @@ name = "spacetimedb-client-api-messages"
 version.workspace = true
 edition.workspace = true
 license-file = "LICENSE"
+repository.workspace = true
 description = "Types for the SpacetimeDB client API messages"
 
 [dependencies]

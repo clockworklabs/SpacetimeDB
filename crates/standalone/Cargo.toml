@@ -3,6 +3,7 @@ name = "spacetimedb-standalone"
 version.workspace = true
 edition.workspace = true
 license-file = "LICENSE"
+repository.workspace = true
 description = "An executable for running a single SpacetimeDB standalone instance"
 
 [[bin]]

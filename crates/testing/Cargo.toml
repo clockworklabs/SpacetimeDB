@@ -2,6 +2,7 @@
 name = "spacetimedb-testing"
 version.workspace = true
 edition.workspace = true
+repository.workspace = true
 
 [dependencies]
 spacetimedb-cli.workspace = true

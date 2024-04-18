@@ -3,6 +3,7 @@ name = "spacetimedb-sats"
 version.workspace = true
 edition.workspace = true
 license-file = "LICENSE"
+repository.workspace = true
 description = "Spacetime Algebraic Type Notation"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
