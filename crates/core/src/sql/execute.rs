@@ -61,7 +61,7 @@ pub fn execute_sql(db: &RelationalDB, sql: &str, ast: Vec<CrudExpr>, auth: AuthC
     let ctx = ExecutionContext::sql(db.address(), db.read_config().slow_query);
     let mut result = Vec::with_capacity(total);
     let sources = [].into();
-    let slow_logger = SlowQueryLogger::query(ctx.slow_query_config, sql);
+    let slow_logger = SlowQueryLogger::query(&ctx, sql);
 
     match CrudExpr::is_reads(&ast) {
         false => db.with_auto_commit(&ctx, |mut_tx| {
