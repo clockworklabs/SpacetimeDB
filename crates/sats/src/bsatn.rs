@@ -5,6 +5,7 @@ use crate::Typespace;
 use smallvec::SmallVec;
 
 pub mod de;
+pub mod eq;
 pub mod ser;
 
 pub use de::Deserializer;
