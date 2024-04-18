@@ -538,7 +538,7 @@ impl MutProgrammable for Locking {
             // This is because datastore iterators write to the metric store when dropped.
             // Hence if we don't explicitly drop here,
             // there will be another immutable borrow of self after the two mutable borrows below.
-
+            drop(iter);
             tx.delete(ST_MODULE_ID, row_ref.pointer())?;
             tx.insert(
                 ST_MODULE_ID,
@@ -556,7 +556,7 @@ impl MutProgrammable for Locking {
         // This is because datastore iterators write to the metric store when dropped.
         // Hence if we don't explicitly drop here,
         // there will be another immutable borrow of self after the mutable borrow of the insert.
-
+        drop(iter);
         tx.insert(
             ST_MODULE_ID,
             &mut ProductValue::from(&StModuleRow {
