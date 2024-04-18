@@ -628,6 +628,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         self.info
             .subscriptions
             .blocking_broadcast_event(client.as_deref(), &subscriptions, &event);
+        drop(subscriptions);
 
         let reducer_span = reducer_span.entered();
         reducer_span
