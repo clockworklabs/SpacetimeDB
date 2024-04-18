@@ -33,12 +33,12 @@
 use super::{
     blob_store::BlobHash,
     indexes::{Byte, Bytes, PageOffset, Size},
-    util::slice_assume_init_ref,
 };
 use crate::{static_assert_align, static_assert_size};
 use core::iter;
 use core::marker::PhantomData;
 use core::mem::{self, MaybeUninit};
+use spacetimedb_sats::algebraic_value::ser::slice_assume_init_ref;
 
 /// Reference to var-len object within a page.
 // TODO: make this larger and do short-string optimization?

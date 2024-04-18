@@ -305,7 +305,7 @@ unsafe fn serialize_bsatn<S: Serializer>(
     let vlr = unsafe { read_from_bytes::<VarLenRef>(bytes, curr_offset) };
 
     if vlr.is_large_blob() {
-        // SAFETY: As `vlr` a blob, `vlr.first_granule` always points to a valid granule.
+        // SAFETY: As `vlr` is a blob, `vlr.first_granule` always points to a valid granule.
         let blob = unsafe { vlr_blob_bytes(page, blob_store, vlr) };
         // SAFETY: The BSATN in `blob` is encoded from an `AlgebraicValue`.
         unsafe { ser.serialize_bsatn(ty, blob) }

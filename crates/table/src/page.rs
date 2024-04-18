@@ -1693,12 +1693,10 @@ impl<'page> Iterator for VarLenGranulesIter<'page> {
 mod tests {
     use super::*;
     use crate::{
-        blob_store::NullBlobStore,
-        layout::row_size_for_type,
-        util::{slice_assume_init_ref, uninit_array},
-        var_len::AlignedVarLenOffsets,
+        blob_store::NullBlobStore, layout::row_size_for_type, util::uninit_array, var_len::AlignedVarLenOffsets,
     };
     use proptest::{collection::vec, prelude::*};
+    use spacetimedb_sats::algebraic_value::ser::slice_assume_init_ref;
     use std::slice::from_raw_parts;
 
     fn as_uninit(slice: &[u8]) -> &Bytes {

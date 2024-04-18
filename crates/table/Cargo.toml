@@ -48,6 +48,7 @@ proptest = { workspace = true, optional = true }
 proptest-derive = { workspace = true, optional = true }
 
 [dev-dependencies]
+spacetimedb-sats = { workspace = true, features = ["proptest"] }
 criterion.workspace = true
 proptest.workspace = true
 proptest-derive.workspace = true

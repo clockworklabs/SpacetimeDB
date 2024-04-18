@@ -770,7 +770,15 @@ fn hash_in_page(c: &mut Criterion) {
         group.bench_function(name, |b| {
             let mut hasher = RowHash::hasher_builder().build_hasher();
             b.iter(|| {
-                unsafe { hash_row_in_page(&mut hasher, black_box(&page), black_box(offset), black_box(&ty)) };
+                unsafe {
+                    hash_row_in_page(
+                        &mut hasher,
+                        black_box(&page),
+                        black_box(&NullBlobStore),
+                        black_box(offset),
+                        black_box(&ty),
+                    )
+                };
                 black_box(&mut hasher);
             });
         });
