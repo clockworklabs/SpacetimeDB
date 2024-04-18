@@ -53,16 +53,16 @@ pub struct SlowQueryLogger<'a> {
     /// The threshold, if any, over which execution duration would result in logging.
     threshold: &'a Option<Duration>,
     /// The context the query is being run in.
-    ctx: WorkloadType,
+    workload: WorkloadType,
 }
 
 impl<'a> SlowQueryLogger<'a> {
-    pub fn new(sql: &'a str, threshold: &'a Option<Duration>, ctx: WorkloadType) -> Self {
+    pub fn new(sql: &'a str, threshold: &'a Option<Duration>, workload: WorkloadType) -> Self {
         Self {
             sql,
             start: threshold.map(|_| Instant::now()),
             threshold,
-            ctx,
+            workload,
         }
     }
 
@@ -86,8 +86,8 @@ impl<'a> SlowQueryLogger<'a> {
         if let Some((start, threshold)) = self.start.zip(self.threshold.as_ref()) {
             let elapsed = start.elapsed();
             if &elapsed > threshold {
-                let context = self.ctx.as_ref();
-                tracing::warn!(?context, ?threshold, ?elapsed, ?self.sql, "SLOW QUERY");
+                let workload = self.workload.as_ref();
+                tracing::warn!(?workload, ?threshold, ?elapsed, ?self.sql, "SLOW QUERY");
                 return Some(elapsed);
             }
         };
