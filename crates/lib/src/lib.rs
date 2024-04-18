@@ -187,3 +187,35 @@ pub struct TypeAlias {
     pub name: String,
     pub ty: sats::AlgebraicTypeRef,
 }
+
+impl ModuleDef {
+    pub fn validate_reducers(&self) -> Result<(), ModuleValidationError> {
+        for reducer in &self.reducers {
+            match &*reducer.name {
+                // in the future, these should maybe be flagged as lifecycle reducers by a MiscModuleExport
+                //  or something, rather than by magic names
+                "__init__" => {}
+                "__identity_connected__" | "__identity_disconnected__" | "__update__" | "__migrate__" => {
+                    if !reducer.args.is_empty() {
+                        return Err(ModuleValidationError::InvalidLifecycleReducer {
+                            reducer: reducer.name.clone(),
+                        });
+                    }
+                }
+                name if name.starts_with("__") && name.ends_with("__") => {
+                    return Err(ModuleValidationError::UnknownDunderscore)
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum ModuleValidationError {
+    #[error("lifecycle reducer {reducer:?} has invalid signature")]
+    InvalidLifecycleReducer { reducer: Box<str> },
+    #[error("reducers with double-underscores at the start and end of their names are not allowed")]
+    UnknownDunderscore,
+}
