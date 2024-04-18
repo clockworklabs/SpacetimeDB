@@ -541,6 +541,12 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         };
 
         let ctx = ExecutionContext::reducer(address, ReducerContext::from(op.clone()));
+        let reducer_span = tracing::trace_span!(
+            "run_reducer",
+            timings.total_duration = tracing::field::Empty,
+            energy.budget = budget.get(),
+            energy.used = tracing::field::Empty,
+        );
         let mut tx_slot = self.instance.instance_env().tx.clone();
         let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable));
         let _guard = WORKER_METRICS
@@ -548,13 +554,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             .with_label_values(&address, op.name)
             .with_timer(tx.timer);
 
-        let reducer_span = tracing::trace_span!(
-            "run_reducer",
-            timings.total_duration = tracing::field::Empty,
-            energy.budget = budget.get(),
-            energy.used = tracing::field::Empty,
-        )
-        .entered();
+        let reducer_span = reducer_span.entered();
         // Run the call_reducer call in rayon.
         // It's important that we don't acquire a lock inside a rayon task,
         // as that can lead to deadlock.
