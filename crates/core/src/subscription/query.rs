@@ -547,8 +547,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_subscribe_all() -> ResultTest<()> {
+    #[tokio::test]
+    async fn test_subscribe_all() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
