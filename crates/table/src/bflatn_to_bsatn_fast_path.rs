@@ -31,7 +31,7 @@ use crate::{
 
 /// A precomputed BSATN layout for a type whose encoded length is a known constant,
 /// enabling fast BFLATN -> BSATN conversion.
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct StaticBsatnLayout {
     /// The length of the encoded BSATN representation of a row of this type,
     /// in bytes.

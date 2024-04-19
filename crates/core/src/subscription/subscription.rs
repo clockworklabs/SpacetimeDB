@@ -61,12 +61,13 @@ use std::sync::Arc;
 pub struct SupportedQuery {
     pub kind: query::Supported,
     pub expr: QueryExpr,
+    pub sql: String,
 }
 
 impl SupportedQuery {
-    pub fn new(expr: QueryExpr, text: String) -> Result<Self, DBError> {
-        let kind = query::classify(&expr).ok_or(SubscriptionError::Unsupported(text))?;
-        Ok(Self { kind, expr })
+    pub fn new(expr: QueryExpr, sql: String) -> Result<Self, DBError> {
+        let kind = query::classify(&expr).ok_or_else(|| SubscriptionError::Unsupported(sql.clone()))?;
+        Ok(Self { kind, expr, sql })
     }
 
     pub fn kind(&self) -> query::Supported {
@@ -113,12 +114,12 @@ impl SupportedQuery {
 }
 
 #[cfg(test)]
-impl TryFrom<QueryExpr> for SupportedQuery {
+impl TryFrom<(QueryExpr, String)> for SupportedQuery {
     type Error = DBError;
 
-    fn try_from(expr: QueryExpr) -> Result<Self, Self::Error> {
+    fn try_from((expr, sql): (QueryExpr, String)) -> Result<Self, Self::Error> {
         let kind = query::classify(&expr).context("Unsupported query expression")?;
-        Ok(Self { kind, expr })
+        Ok(Self { kind, expr, sql })
     }
 }
 
@@ -555,13 +556,15 @@ impl ExecutionSet {
             .par_iter()
             .filter_map(|unit| {
                 let ctx = ctx.clone();
-                unit.eval_json(&ctx, db, tx).transpose().map(|result| (result, ctx))
+                unit.eval_json(&ctx, db, tx, &unit.sql)
+                    .transpose()
+                    .map(|result| (result, ctx))
             })
             .unzip();
 
-            tokio::task::spawn_blocking(|| {
-                drop(all_ctx);
-            });
+        tokio::task::spawn_blocking(|| {
+            drop(all_ctx);
+        });
         eval.into_iter().collect::<Result<_, _>>()
     }
 
@@ -573,13 +576,15 @@ impl ExecutionSet {
             .par_iter()
             .filter_map(|unit| {
                 let ctx = ctx.clone();
-                unit.eval_binary(&ctx, db, tx).transpose().map(|result| (result, ctx))
+                unit.eval_binary(&ctx, db, tx, &unit.sql)
+                    .transpose()
+                    .map(|result| (result, ctx))
             })
             .unzip();
 
-            tokio::task::spawn_blocking(|| {
-                drop(all_ctx);
-            });
+        tokio::task::spawn_blocking(|| {
+            drop(all_ctx);
+        });
         eval.into_iter().collect::<Result<_, _>>()
     }
 
@@ -593,7 +598,7 @@ impl ExecutionSet {
     ) -> Result<DatabaseUpdateCow<'_>, DBError> {
         let mut tables = Vec::new();
         for unit in &self.exec_units {
-            if let Some(table) = unit.eval_incr(ctx, db, tx, database_update.tables.iter())? {
+            if let Some(table) = unit.eval_incr(ctx, db, tx, &unit.sql, database_update.tables.iter())? {
                 tables.push(table);
             }
         }
@@ -652,6 +657,7 @@ pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> 
         .map(|src| SupportedQuery {
             kind: query::Supported::Select,
             expr: QueryExpr::new(src),
+            sql: format!("SELECT * FROM {}", src.table_name),
         })
         .collect())
 }

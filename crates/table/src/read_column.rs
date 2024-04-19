@@ -355,7 +355,7 @@ mod test {
     fn table(ty: ProductType) -> Table {
         let def = TableDef::from_product("", ty);
         let schema = TableSchema::from_def(0.into(), def);
-        Table::new(schema, SquashedOffset::COMMITTED_STATE)
+        Table::new(schema.into(), SquashedOffset::COMMITTED_STATE)
     }
 
     proptest! {

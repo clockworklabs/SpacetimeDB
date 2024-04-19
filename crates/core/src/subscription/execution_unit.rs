@@ -5,6 +5,7 @@ use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseTableUpdateCow, TableOp, UpdatesCow};
 use crate::json::client_api::TableUpdateJson;
+use crate::util::slow::SlowQueryLogger;
 use crate::vm::{build_query, TxMode};
 use spacetimedb_client_api_messages::client_api::{TableRowOperation, TableUpdate};
 use spacetimedb_lib::ProductValue;
@@ -71,6 +72,7 @@ enum EvalIncrPlan {
 pub struct ExecutionUnit {
     hash: QueryHash,
 
+    pub(crate) sql: String,
     /// A version of the plan optimized for `eval`,
     /// whose source is a [`DbTable`].
     ///
@@ -133,16 +135,18 @@ impl ExecutionUnit {
             SupportedQuery {
                 kind: query::Supported::Select,
                 expr,
+                ..
             } => EvalIncrPlan::Select(Self::compile_select_eval_incr(expr)),
             SupportedQuery {
                 kind: query::Supported::Semijoin,
                 expr,
+                ..
             } => EvalIncrPlan::Semijoin(IncrementalJoin::new(expr)?),
         };
-        let eval_plan = eval_plan.expr;
         Ok(ExecutionUnit {
             hash,
-            eval_plan,
+            sql: eval_plan.sql,
+            eval_plan: eval_plan.expr,
             eval_incr_plan,
         })
     }
@@ -211,8 +215,9 @@ impl ExecutionUnit {
         ctx: &ExecutionContext,
         db: &RelationalDB,
         tx: &Tx,
+        sql: &str,
     ) -> Result<Option<TableUpdateJson>, DBError> {
-        let table_row_operations = Self::eval_query_expr(ctx, db, tx, &self.eval_plan, |row| {
+        let table_row_operations = Self::eval_query_expr(ctx, db, tx, &self.eval_plan, sql, |row| {
             TableOp::insert(row.into_product_value()).into()
         })?;
         Ok((!table_row_operations.is_empty()).then(|| TableUpdateJson {
@@ -229,9 +234,10 @@ impl ExecutionUnit {
         ctx: &ExecutionContext,
         db: &RelationalDB,
         tx: &Tx,
+        sql: &str,
     ) -> Result<Option<TableUpdate>, DBError> {
         let mut buf = Vec::new();
-        let table_row_operations = Self::eval_query_expr(ctx, db, tx, &self.eval_plan, |row| {
+        let table_row_operations = Self::eval_query_expr(ctx, db, tx, &self.eval_plan, sql, |row| {
             row.to_bsatn_extend(&mut buf).unwrap();
             let row = buf.clone();
             buf.clear();
@@ -249,11 +255,14 @@ impl ExecutionUnit {
         db: &RelationalDB,
         tx: &Tx,
         eval_plan: &QueryExpr,
+        sql: &str,
         convert: impl FnMut(RelValue<'_>) -> T,
     ) -> Result<Vec<T>, DBError> {
         let tx: TxMode = tx.into();
+        let slow_query = SlowQueryLogger::subscription(ctx, sql);
         let query = build_query(ctx, db, &tx, eval_plan, &mut NoInMemUsed)?;
         let ops = query.collect_vec(convert)?;
+        slow_query.log();
         Ok(ops)
     }
 
@@ -263,12 +272,16 @@ impl ExecutionUnit {
         ctx: &'a ExecutionContext,
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
+        sql: &'a str,
         tables: impl 'a + Clone + Iterator<Item = &'a DatabaseTableUpdate>,
     ) -> Result<Option<DatabaseTableUpdateCow<'a>>, DBError> {
+        let slow_query = SlowQueryLogger::incremental_updates(ctx, sql);
         let updates = match &self.eval_incr_plan {
             EvalIncrPlan::Select(plan) => Self::eval_incr_query_expr(ctx, db, tx, tables, plan, self.return_table())?,
             EvalIncrPlan::Semijoin(plan) => plan.eval(ctx, db, tx, tables)?,
         };
+        slow_query.log();
+
         Ok(updates.has_updates().then(|| DatabaseTableUpdateCow {
             table_id: self.return_table(),
             table_name: self.return_name(),

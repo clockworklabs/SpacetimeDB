@@ -1,11 +1,15 @@
 use std::sync::Arc;
 
+use bytes::Bytes;
 use derive_more::Display;
 use parking_lot::RwLock;
-use spacetimedb_lib::Address;
+use spacetimedb_commitlog::{payload::txdata, Varchar};
+use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::TableId;
+use spacetimedb_sats::bsatn;
 
-use crate::db::db_metrics::DB_METRICS;
+use crate::util::slow::SlowQueryConfig;
+use crate::{db::db_metrics::DB_METRICS, host::Timestamp};
 
 pub enum MetricType {
     IndexSeeks,
@@ -113,20 +117,74 @@ pub struct ExecutionContext {
     /// The database on which a transaction is being executed.
     database: Address,
     /// The reducer from which the current transaction originated.
-    reducer: Option<String>,
+    reducer: Option<ReducerContext>,
     /// The type of workload that is being executed.
     workload: WorkloadType,
     /// The Metrics to be reported for this transaction.
     pub metrics: Arc<RwLock<Metrics>>,
+    /// Configuration threshold for detecting slow queries.
+    pub slow_query_config: SlowQueryConfig,
+}
+
+/// If an [`ExecutionContext`] is a reducer context, describes the reducer.
+///
+/// Note that this information is written to persistent storage.
+#[derive(Clone)]
+pub struct ReducerContext {
+    /// The name of the reducer.
+    pub name: String,
+    /// The [`Identity`] of the caller.
+    pub caller_identity: Identity,
+    /// The [`Address`] of the caller.
+    pub caller_address: Address,
+    /// The timestamp of the reducer invocation.
+    pub timestamp: Timestamp,
+    /// The BSATN-encoded arguments given to the reducer.
+    ///
+    /// Note that [`Bytes`] is a refcounted value, but the memory it points to
+    /// can be large-ish. The reference should be freed as soon as possible.
+    pub arg_bsatn: Bytes,
+}
+
+impl From<&ReducerContext> for txdata::Inputs {
+    fn from(
+        ReducerContext {
+            name,
+            caller_identity,
+            caller_address,
+            timestamp,
+            arg_bsatn,
+        }: &ReducerContext,
+    ) -> Self {
+        let reducer_name = Arc::new(Varchar::from_str_truncate(name));
+        let cap = arg_bsatn.len()
+        /* caller_identity */
+        + 32
+        /* caller_address */
+        + 16
+        /* timestamp */
+        + 8;
+        let mut buf = Vec::with_capacity(cap);
+        bsatn::to_writer(&mut buf, caller_identity).unwrap();
+        bsatn::to_writer(&mut buf, caller_address).unwrap();
+        bsatn::to_writer(&mut buf, timestamp).unwrap();
+        buf.extend_from_slice(arg_bsatn);
+
+        txdata::Inputs {
+            reducer_name,
+            reducer_args: buf.into(),
+        }
+    }
 }
 
 impl Clone for ExecutionContext {
     fn clone(&self) -> Self {
         Self {
-            database: self.database.clone(),
+            database: self.database,
             reducer: self.reducer.clone(),
-            workload: self.workload.clone(),
+            workload: self.workload,
             metrics: <_>::default(),
+            slow_query_config: self.slow_query_config,
         }
     }
 }
@@ -152,38 +210,44 @@ impl Default for WorkloadType {
 
 impl ExecutionContext {
     /// Returns an [ExecutionContext] with the provided parameters and empty metrics.
-    fn new(database: Address, reducer: Option<String>, workload: WorkloadType) -> Self {
+    fn new(
+        database: Address,
+        reducer: Option<ReducerContext>,
+        workload: WorkloadType,
+        slow_query_config: SlowQueryConfig,
+    ) -> Self {
         Self {
             database,
             reducer,
             workload,
             metrics: <_>::default(),
+            slow_query_config,
         }
     }
 
     /// Returns an [ExecutionContext] for a reducer transaction.
-    pub fn reducer(database: Address, name: String) -> Self {
-        Self::new(database, Some(name), WorkloadType::Reducer)
+    pub fn reducer(database: Address, ctx: ReducerContext) -> Self {
+        Self::new(database, Some(ctx), WorkloadType::Reducer, Default::default())
     }
 
     /// Returns an [ExecutionContext] for a one-off sql query.
-    pub fn sql(database: Address) -> Self {
-        Self::new(database, None, WorkloadType::Sql)
+    pub fn sql(database: Address, slow_query_config: SlowQueryConfig) -> Self {
+        Self::new(database, None, WorkloadType::Sql, slow_query_config)
     }
 
     /// Returns an [ExecutionContext] for an initial subscribe call.
-    pub fn subscribe(database: Address) -> Self {
-        Self::new(database, None, WorkloadType::Subscribe)
+    pub fn subscribe(database: Address, slow_query_config: SlowQueryConfig) -> Self {
+        Self::new(database, None, WorkloadType::Subscribe, slow_query_config)
     }
 
     /// Returns an [ExecutionContext] for a subscription update.
-    pub fn incremental_update(database: Address) -> Self {
-        Self::new(database, None, WorkloadType::Update)
+    pub fn incremental_update(database: Address, slow_query_config: SlowQueryConfig) -> Self {
+        Self::new(database, None, WorkloadType::Update, slow_query_config)
     }
 
     /// Returns an [ExecutionContext] for an internal database operation.
     pub fn internal(database: Address) -> Self {
-        Self::new(database, None, WorkloadType::Internal)
+        Self::new(database, None, WorkloadType::Internal, Default::default())
     }
 
     /// Returns the address of the database on which we are operating.
@@ -195,7 +259,13 @@ impl ExecutionContext {
     /// If this is a reducer context, returns the name of the reducer.
     #[inline]
     pub fn reducer_name(&self) -> &str {
-        self.reducer.as_deref().unwrap_or_default()
+        self.reducer.as_ref().map(|ctx| ctx.name.as_str()).unwrap_or_default()
+    }
+
+    /// If this is a reducer context, returns the full reducer metadata.
+    #[inline]
+    pub fn reducer_context(&self) -> Option<&ReducerContext> {
+        self.reducer.as_ref()
     }
 
     /// Returns the type of workload that is being executed.
@@ -209,7 +279,7 @@ impl Drop for ExecutionContext {
     fn drop(&mut self) {
         let workload = self.workload;
         let database = self.database;
-        let reducer = self.reducer.as_deref().unwrap_or_default();
+        let reducer = self.reducer_name();
         self.metrics.write().flush(&workload, &database, reducer);
     }
 }

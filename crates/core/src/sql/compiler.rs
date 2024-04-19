@@ -121,7 +121,7 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
     }
 
     let source_expr = SourceExpr::DbTable(db_table_raw(
-        &table.root,
+        &*table.root,
         table.root.table_id,
         table.root.table_type,
         table.root.table_access,
@@ -133,7 +133,7 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
         for join in joins {
             match join {
                 Join::Inner { rhs, on } => {
-                    let rhs_source_expr = SourceExpr::DbTable(db_table(rhs, rhs.table_id));
+                    let rhs_source_expr = SourceExpr::DbTable(db_table(&**rhs, rhs.table_id));
                     match on.op {
                         OpCmp::Eq => {}
                         x => unreachable!("Unsupported operator `{x}` for joins"),
@@ -190,11 +190,11 @@ fn compile_columns(table: &TableSchema, columns: Vec<FieldName>) -> DbTable {
 
 /// Compiles a `INSERT ...` clause
 fn compile_insert(
-    table: TableSchema,
+    table: &TableSchema,
     columns: Vec<FieldName>,
     values: Vec<Vec<FieldExpr>>,
 ) -> Result<CrudExpr, PlanError> {
-    let source_expr = SourceExpr::DbTable(compile_columns(&table, columns));
+    let source_expr = SourceExpr::DbTable(compile_columns(table, columns));
 
     let mut rows = Vec::with_capacity(values.len());
     for x in values {
@@ -219,28 +219,28 @@ fn compile_insert(
 }
 
 /// Compiles a `DELETE ...` clause
-fn compile_delete(table: TableSchema, selection: Option<Selection>) -> Result<CrudExpr, PlanError> {
+fn compile_delete(table: Arc<TableSchema>, selection: Option<Selection>) -> Result<CrudExpr, PlanError> {
     let query = if let Some(filter) = selection {
-        let query = QueryExpr::new(&table);
+        let query = QueryExpr::new(&*table);
         compile_where(query, &From::new(table), filter)?
     } else {
-        QueryExpr::new(&table)
+        QueryExpr::new(&*table)
     };
     Ok(CrudExpr::Delete { query })
 }
 
 /// Compiles a `UPDATE ...` clause
 fn compile_update(
-    table: TableSchema,
+    table: Arc<TableSchema>,
     assignments: HashMap<FieldName, FieldExpr>,
     selection: Option<Selection>,
 ) -> Result<CrudExpr, PlanError> {
     let table = From::new(table);
     let delete = if let Some(filter) = selection.clone() {
-        let query = QueryExpr::new(&table.root);
+        let query = QueryExpr::new(&*table.root);
         compile_where(query, &table, filter)?
     } else {
-        QueryExpr::new(&table.root)
+        QueryExpr::new(&*table.root)
     };
 
     Ok(CrudExpr::Update { delete, assignments })
@@ -268,7 +268,7 @@ fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, P
             project,
             selection,
         } => CrudExpr::Query(compile_select(from, project, selection)?),
-        SqlAst::Insert { table, columns, values } => compile_insert(table, columns, values)?,
+        SqlAst::Insert { table, columns, values } => compile_insert(&table, columns, values)?,
         SqlAst::Update {
             table,
             assignments,
@@ -281,6 +281,8 @@ fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, P
             kind,
             table_access,
         } => compile_drop(name, kind, table_access)?,
+        SqlAst::SetVar { name, value } => CrudExpr::SetVar { name, value },
+        SqlAst::ReadVar { name } => CrudExpr::ReadVar { name },
     };
 
     Ok(q.optimize(&|table_id, table_name| db.row_count(table_id, table_name)))
@@ -1165,7 +1167,7 @@ mod tests {
         let sql = "select * from enum where a = 'Player'";
         let q = compile_sql(&db, &tx, sql);
         assert!(q.is_ok());
-        let result = execute_sql(&db, q.unwrap(), AuthCtx::for_testing())?;
+        let result = execute_sql(&db, sql, q.unwrap(), AuthCtx::for_testing())?;
         assert_eq!(result[0].data, vec![product![AlgebraicValue::enum_simple(0)]]);
         Ok(())
     }

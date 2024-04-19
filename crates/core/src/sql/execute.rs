@@ -3,6 +3,7 @@ use crate::database_instance_context_controller::DatabaseInstanceContextControll
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, DatabaseError};
 use crate::execution_context::ExecutionContext;
+use crate::util::slow::SlowQueryLogger;
 use crate::vm::{DbProgram, TxMode};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{ProductType, ProductValue};
@@ -53,11 +54,15 @@ pub(crate) fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Resul
 /// Run the compiled `SQL` expression inside the `vm` created by [DbProgram]
 ///
 /// Evaluates `ast` and accordingly triggers mutable or read tx to execute
-pub fn execute_sql(db: &RelationalDB, ast: Vec<CrudExpr>, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
+///
+/// Also, in case the execution takes more than x, log it as `slow query`
+pub fn execute_sql(db: &RelationalDB, sql: &str, ast: Vec<CrudExpr>, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
     let total = ast.len();
-    let ctx = ExecutionContext::sql(db.address());
+    let ctx = ExecutionContext::sql(db.address(), db.read_config().slow_query);
     let mut result = Vec::with_capacity(total);
     let sources = [].into();
+    let slow_logger = SlowQueryLogger::query(&ctx, sql);
+
     match CrudExpr::is_reads(&ast) {
         false => db.with_auto_commit(&ctx, |mut_tx| {
             let mut tx: TxMode = mut_tx.into();
@@ -74,15 +79,16 @@ pub fn execute_sql(db: &RelationalDB, ast: Vec<CrudExpr>, auth: AuthCtx) -> Resu
             collect_result(&mut result, run_ast(p, q, sources).into())
         }),
     }?;
+    slow_logger.log();
 
     Ok(result)
 }
 
 /// Run the `SQL` string using the `auth` credentials
 pub fn run(db: &RelationalDB, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
-    let ctx = &ExecutionContext::sql(db.address());
+    let ctx = &ExecutionContext::sql(db.address(), db.read_config().slow_query);
     let ast = db.with_read_only(ctx, |tx| compile_sql(db, tx, sql_text))?;
-    execute_sql(db, ast, auth)
+    execute_sql(db, sql_text, ast, auth)
 }
 
 #[cfg(test)]
@@ -205,7 +211,7 @@ pub(crate) mod tests {
         let (db, _) = create_data(1)?;
 
         let tx = db.begin_tx();
-        let schema = db.schema_for_table(&tx, ST_TABLES_ID).unwrap().into_owned();
+        let schema = db.schema_for_table(&tx, ST_TABLES_ID).unwrap();
         db.release_tx(&ExecutionContext::internal(db.address()), tx);
         let result = run_for_testing(
             &db,
@@ -220,7 +226,7 @@ pub(crate) mod tests {
             scalar(StTableType::System.as_str()),
             scalar(StAccess::Public.as_str()),
         );
-        let input = mem_table(Header::from(&schema), vec![row]);
+        let input = mem_table(Header::from(&*schema), vec![row]);
 
         assert_eq!(
             result.as_without_table_name(),

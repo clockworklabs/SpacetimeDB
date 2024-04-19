@@ -1,10 +1,12 @@
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
 use crate::client::{ClientActorId, ClientConnectionSender};
+use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::LogLevel;
 use crate::db::datastore::traits::TxData;
 use crate::db::update::UpdateDatabaseError;
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
+use crate::execution_context::{ExecutionContext, ReducerContext};
 use crate::hash::Hash;
 use crate::identity::Identity;
 use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
@@ -13,6 +15,7 @@ use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
 use crate::util::notify_once::NotifyOnce;
 use crate::worker_metrics::WORKER_METRICS;
+use bytes::Bytes;
 use derive_more::{From, Into};
 use futures::{Future, FutureExt};
 use indexmap::IndexMap;
@@ -367,6 +370,7 @@ pub trait Module: Send + Sync + 'static {
     fn initial_instances(&mut self) -> Self::InitialInstances<'_>;
     fn info(&self) -> Arc<ModuleInfo>;
     fn create_instance(&self) -> Self::Instance;
+    fn dbic(&self) -> &DatabaseInstanceContext;
     fn inject_logs(&self, log_level: LogLevel, message: &str);
     fn close(self);
     fn one_off_query(
@@ -461,6 +465,7 @@ impl fmt::Debug for ModuleHost {
 #[async_trait::async_trait]
 trait DynModuleHost: Send + Sync + 'static {
     async fn get_instance(&self, db: Address) -> Result<Box<dyn ModuleInstance>, NoSuchModule>;
+    fn dbic(&self) -> &DatabaseInstanceContext;
     fn inject_logs(&self, log_level: LogLevel, message: &str);
     fn one_off_query(
         &self,
@@ -537,6 +542,10 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
             inst,
             module: self.module.clone(),
         }))
+    }
+
+    fn dbic(&self) -> &DatabaseInstanceContext {
+        self.module.dbic()
     }
 
     fn inject_logs(&self, log_level: LogLevel, message: &str) {
@@ -669,25 +678,53 @@ impl ModuleHost {
         caller_address: Address,
         connected: bool,
     ) -> Result<(), ReducerCallError> {
-        match self
-            .call_reducer_inner(
-                caller_identity,
-                Some(caller_address),
-                None,
-                None,
-                None,
-                if connected {
-                    "__identity_connected__"
-                } else {
-                    "__identity_disconnected__"
-                },
-                ReducerArgs::Nullary,
-            )
-            .await
-        {
-            Ok(_) | Err(ReducerCallError::NoSuchReducer) => Ok(()),
-            Err(e) => Err(e),
-        }
+        // TODO: DUNDER consts are in wasm_common, so seems weird to use them
+        // here. But maybe there should be dunders for this?
+        let reducer_name = if connected {
+            "__identity_connected__"
+        } else {
+            "__identity_disconnected__"
+        };
+
+        self.call_reducer_inner(
+            caller_identity,
+            Some(caller_address),
+            None,
+            None,
+            None,
+            reducer_name,
+            ReducerArgs::Nullary,
+        )
+        .await
+        .map(drop)
+        .or_else(|e| match e {
+            // If the module doesn't define connected or disconnected, commit
+            // an empty transaction to ensure we always have those events
+            // paired in the commitlog.
+            //
+            // This is necessary to be able to disconnect clients after a server
+            // crash.
+            ReducerCallError::NoSuchReducer => {
+                let db = &self.inner.dbic().relational_db;
+                db.with_auto_commit(
+                    &ExecutionContext::reducer(
+                        db.address(),
+                        ReducerContext {
+                            name: reducer_name.to_owned(),
+                            caller_identity,
+                            caller_address,
+                            timestamp: Timestamp::now(),
+                            arg_bsatn: Bytes::new(),
+                        },
+                    ),
+                    |_| anyhow::Ok(()),
+                )
+                .ok();
+
+                Ok(())
+            }
+            e => Err(e),
+        })
     }
 
     async fn call_reducer_inner(

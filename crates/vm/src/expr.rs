@@ -768,6 +768,7 @@ pub enum Crud {
     Delete,
     Create(DbType),
     Drop(DbType),
+    Config,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -792,6 +793,13 @@ pub enum CrudExpr {
         kind: DbType,
         table_access: StAccess,
     },
+    SetVar {
+        name: String,
+        value: AlgebraicValue,
+    },
+    ReadVar {
+        name: String,
+    },
 }
 
 impl CrudExpr {
@@ -803,7 +811,9 @@ impl CrudExpr {
     }
 
     pub fn is_reads<'a>(exprs: impl IntoIterator<Item = &'a CrudExpr>) -> bool {
-        exprs.into_iter().all(|expr| matches!(expr, CrudExpr::Query(_)))
+        exprs
+            .into_iter()
+            .all(|expr| matches!(expr, CrudExpr::Query(_) | CrudExpr::ReadVar { .. }))
     }
 }
 

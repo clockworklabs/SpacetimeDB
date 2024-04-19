@@ -1,3 +1,4 @@
+use crate::config::ReadConfigOption;
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::{DBError, PlanError};
 use itertools::Itertools;
@@ -18,7 +19,8 @@ use sqlparser::ast::{
 };
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
-use std::borrow::Cow;
+use std::str::FromStr;
+use std::sync::Arc;
 
 /// Simplify to detect features of the syntax we don't support yet
 /// Because we use [PostgreSqlDialect] in the compiler step it already protect against features
@@ -120,21 +122,21 @@ pub struct OnExpr {
 
 /// The `JOIN [INNER] ON join_expr OpCmp join_expr` clause
 pub enum Join {
-    Inner { rhs: TableSchema, on: OnExpr },
+    Inner { rhs: Arc<TableSchema>, on: OnExpr },
 }
 
 /// The list of tables in `... FROM table1 [JOIN table2] ...`
 pub struct From {
-    pub root: TableSchema,
+    pub root: Arc<TableSchema>,
     pub join: Option<Vec<Join>>,
 }
 
 impl From {
-    pub fn new(root: TableSchema) -> Self {
+    pub fn new(root: Arc<TableSchema>) -> Self {
         Self { root, join: None }
     }
 
-    pub fn with_inner_join(self, rhs: TableSchema, on: OnExpr) -> Self {
+    pub fn with_inner_join(self, rhs: Arc<TableSchema>, on: OnExpr) -> Self {
         let mut x = self;
 
         // Check if the field are inverted:
@@ -158,16 +160,16 @@ impl From {
     }
 
     /// Returns all the tables, including the ones inside the joins
-    pub fn iter_tables(&self) -> impl Iterator<Item = &TableSchema> {
-        [&self.root].into_iter().chain(self.join.iter().flat_map(|x| {
-            x.iter().map(|t| match t {
-                Join::Inner { rhs, .. } => rhs,
-            })
-        }))
+    pub fn iter_tables(&self) -> impl Iterator<Item = &Arc<TableSchema>> {
+        [&self.root].into_iter().chain(
+            self.join
+                .iter()
+                .flat_map(|x| x.iter().map(|Join::Inner { rhs, .. }| rhs)),
+        )
     }
 
     /// Returns all the columns from [Self::iter_tables], removing duplicates by `col_name`
-    pub fn iter_columns_dedup(&self) -> impl Iterator<Item = (&TableSchema, &ColumnSchema)> {
+    pub fn iter_columns_dedup(&self) -> impl Iterator<Item = (&Arc<TableSchema>, &ColumnSchema)> {
         self.iter_tables()
             .flat_map(|t| t.columns().iter().map(move |column| (t, column)))
             .dedup_by(|(_, x), (_, y)| x.col_name == y.col_name)
@@ -179,7 +181,7 @@ impl From {
     }
 
     /// Returns all the columns from [Self::iter_tables]
-    pub fn iter_columns(&self) -> impl Iterator<Item = (&TableSchema, &ColumnSchema)> {
+    pub fn iter_columns(&self) -> impl Iterator<Item = (&Arc<TableSchema>, &ColumnSchema)> {
         self.iter_tables()
             .flat_map(|t| t.columns().iter().map(move |column| (t, column)))
     }
@@ -248,17 +250,17 @@ pub enum SqlAst {
         selection: Option<Selection>,
     },
     Insert {
-        table: TableSchema,
+        table: Arc<TableSchema>,
         columns: Vec<FieldName>,
         values: Vec<Vec<FieldExpr>>,
     },
     Update {
-        table: TableSchema,
+        table: Arc<TableSchema>,
         assignments: HashMap<FieldName, FieldExpr>,
         selection: Option<Selection>,
     },
     Delete {
-        table: TableSchema,
+        table: Arc<TableSchema>,
         selection: Option<Selection>,
     },
     CreateTable {
@@ -268,6 +270,13 @@ pub enum SqlAst {
         name: String,
         kind: DbType,
         table_access: StAccess,
+    },
+    SetVar {
+        name: String,
+        value: AlgebraicValue,
+    },
+    ReadVar {
+        name: String,
     },
 }
 
@@ -319,6 +328,16 @@ fn infer_str_or_enum(field: Option<&ProductTypeElement>, value: String) -> Resul
     } else {
         Ok(AlgebraicValue::String(value.into()))
     }
+}
+
+/// Parses `name` as a [ReadConfigOption] and then parse the numeric value.
+fn infer_config(name: &str, value: &str, is_long: bool) -> Result<AlgebraicValue, ErrorVm> {
+    let config = ReadConfigOption::from_str(name)?;
+    infer_number(
+        Some(&ProductTypeElement::new_named(config.type_of(), name)),
+        value,
+        is_long,
+    )
 }
 
 /// Compiles a [SqlExpr] expression into a [ColumnOp]
@@ -445,11 +464,11 @@ fn compile_where(table: &From, filter: Option<SqlExpr>) -> Result<Option<Selecti
 }
 
 pub trait TableSchemaView {
-    fn find_table(&self, db: &RelationalDB, t: Table) -> Result<Cow<'_, TableSchema>, PlanError>;
+    fn find_table(&self, db: &RelationalDB, t: Table) -> Result<Arc<TableSchema>, PlanError>;
 }
 
 impl TableSchemaView for Tx {
-    fn find_table(&self, db: &RelationalDB, t: Table) -> Result<Cow<'_, TableSchema>, PlanError> {
+    fn find_table(&self, db: &RelationalDB, t: Table) -> Result<Arc<TableSchema>, PlanError> {
         let table_id = db
             .table_id_from_name(self, &t.name)?
             .ok_or(PlanError::UnknownTable { table: t.name.clone() })?;
@@ -462,7 +481,7 @@ impl TableSchemaView for Tx {
 }
 
 impl TableSchemaView for MutTx {
-    fn find_table(&self, db: &RelationalDB, t: Table) -> Result<Cow<'_, TableSchema>, PlanError> {
+    fn find_table(&self, db: &RelationalDB, t: Table) -> Result<Arc<TableSchema>, PlanError> {
         let table_id = db
             .table_id_from_name_mut(self, &t.name)?
             .ok_or(PlanError::UnknownTable { table: t.name.clone() })?;
@@ -490,14 +509,14 @@ fn compile_from<T: TableSchemaView>(db: &RelationalDB, tx: &T, from: &[TableWith
     };
 
     let t = compile_table_factor(root_table.relation.clone())?;
-    let base = tx.find_table(db, t)?.into_owned();
+    let base = tx.find_table(db, t)?;
     let mut base = From::new(base);
 
     for join in &root_table.joins {
         match &join.join_operator {
             JoinOperator::Inner(constraint) => {
                 let t = compile_table_factor(join.relation.clone())?;
-                let join = tx.find_table(db, t)?.into_owned();
+                let join = tx.find_table(db, t)?;
 
                 match constraint {
                     JoinConstraint::On(x) => {
@@ -674,7 +693,7 @@ fn compile_insert<T: TableSchemaView>(
     columns: Vec<Ident>,
     data: &Values,
 ) -> Result<SqlAst, PlanError> {
-    let table = tx.find_table(db, Table::new(table_name))?.into_owned();
+    let table = tx.find_table(db, Table::new(table_name))?;
 
     let columns = columns
         .into_iter()
@@ -709,7 +728,7 @@ fn compile_update<T: TableSchemaView>(
     assignments: Vec<Assignment>,
     selection: Option<SqlExpr>,
 ) -> Result<SqlAst, PlanError> {
-    let table = From::new(tx.find_table(db, table)?.into_owned());
+    let table = From::new(tx.find_table(db, table)?);
     let selection = compile_where(&table, selection)?;
 
     let mut x = HashMap::with_capacity(assignments.len());
@@ -736,7 +755,7 @@ fn compile_delete<T: TableSchemaView>(
     table: Table,
     selection: Option<SqlExpr>,
 ) -> Result<SqlAst, PlanError> {
-    let table = From::new(tx.find_table(db, table)?.into_owned());
+    let table = From::new(tx.find_table(db, table)?);
     let selection = compile_where(&table, selection)?;
 
     Ok(SqlAst::Delete {
@@ -909,6 +928,51 @@ fn compile_drop(name: &ObjectName, kind: ObjectType) -> Result<SqlAst, PlanError
     })
 }
 
+/// Compiles the equivalent of `SET key = value`
+fn compile_set_config(name: ObjectName, value: Vec<SqlExpr>) -> Result<SqlAst, PlanError> {
+    let name = name.to_string();
+
+    let value = match value.as_slice() {
+        [first] => first.clone(),
+        _ => {
+            return Err(PlanError::Unsupported {
+                feature: format!("Invalid value for config: {name} => {value:?}."),
+            });
+        }
+    };
+
+    let value = match value {
+        SqlExpr::Value(x) => match x {
+            Value::Number(value, is_long) => infer_config(&name, &value, is_long)?,
+            x => {
+                return Err(PlanError::Unsupported {
+                    feature: format!("Unsupported value for config: {x}."),
+                });
+            }
+        },
+        x => {
+            return Err(PlanError::Unsupported {
+                feature: format!("Unsupported expression for config: {x}"),
+            });
+        }
+    };
+
+    Ok(SqlAst::SetVar { name, value })
+}
+
+/// Compiles the equivalent of `SHOW key`
+fn compile_read_config(name: Vec<Ident>) -> Result<SqlAst, PlanError> {
+    let name = match name.as_slice() {
+        [first] => first.to_string(),
+        _ => {
+            return Err(PlanError::Unsupported {
+                feature: format!("Invalid name for config: {name:?}"),
+            });
+        }
+    };
+    Ok(SqlAst::ReadVar { name })
+}
+
 /// Compiles a `SQL` clause
 fn compile_statement<T: TableSchemaView>(db: &RelationalDB, tx: &T, statement: Statement) -> Result<SqlAst, PlanError> {
     match statement {
@@ -1078,6 +1142,16 @@ fn compile_statement<T: TableSchemaView>(db: &RelationalDB, tx: &T, statement: S
             };
             compile_drop(name, object_type)
         }
+        Statement::SetVariable {
+            local,
+            hivevar,
+            variable,
+            value,
+        } => {
+            unsupported!("SET", local, hivevar);
+            compile_set_config(variable, value)
+        }
+        Statement::ShowVariable { variable } => compile_read_config(variable),
         x => Err(PlanError::Unsupported {
             feature: format!("Syntax {x}"),
         }),
