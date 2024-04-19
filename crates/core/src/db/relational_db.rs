@@ -158,14 +158,41 @@ impl RelationalDB {
     where
         T: durability::History<TxData = Txdata>,
     {
-        log::debug!("[{}] DATABASE: applying transaction history...", self.address);
-        // TODO: Output progress
+        log::info!("[{}] DATABASE: applying transaction history...", self.address);
+
+        // TODO: Revisit once we actually replay history suffixes, ie. starting
+        // from an offset larger than the history's min offset.
+        // TODO: We may want to require that a `tokio::runtime::Handle` is
+        // always supplied when constructing a `RelationalDB`. This would allow
+        // to spawn a timer task here which just prints the progress periodically
+        // in case the history is finite but very long.
+        let max_tx_offset = history.max_tx_offset();
+        let mut last_logged_percentage = 0;
+        let progress = |tx_offset: u64| {
+            if let Some(max_tx_offset) = max_tx_offset {
+                let percentage = f64::floor((tx_offset as f64 / max_tx_offset as f64) * 100.0) as i32;
+                if percentage > last_logged_percentage && percentage % 10 == 0 {
+                    log::info!(
+                        "[{}] Loaded {}% ({}/{})",
+                        self.address,
+                        percentage,
+                        tx_offset,
+                        max_tx_offset
+                    );
+                    last_logged_percentage = percentage;
+                }
+            // Print _something_ even if we don't know what's still ahead.
+            } else if tx_offset % 10_000 == 0 {
+                log::info!("[{}] Loading transaction {}", self.address, tx_offset);
+            }
+        };
+
         history
-            .fold_transactions_from(0, self.inner.replay())
+            .fold_transactions_from(0, self.inner.replay(progress))
             .map_err(anyhow::Error::from)?;
-        log::debug!("[{}] DATABASE: applied transaction history", self.address);
+        log::info!("[{}] DATABASE: applied transaction history", self.address);
         self.inner.rebuild_state_after_replay()?;
-        log::debug!("[{}] DATABASE: rebuilt state after replay", self.address);
+        log::info!("[{}] DATABASE: rebuilt state after replay", self.address);
 
         Ok(self)
     }
