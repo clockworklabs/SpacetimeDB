@@ -4,4 +4,5 @@
 include!(concat!(env!("OUT_DIR"), "/protobuf.rs"));
 
 pub mod name;
+pub mod protocol;
 pub mod recovery;

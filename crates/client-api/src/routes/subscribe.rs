@@ -10,7 +10,9 @@ use http::{HeaderValue, StatusCode};
 use scopeguard::ScopeGuard;
 use serde::Deserialize;
 use spacetimedb::client::messages::{IdentityTokenMessage, SerializableMessage, ServerMessage};
-use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, MessageHandleError, Protocol};
+use spacetimedb::client::{
+    ClientActorId, ClientConnection, DataMessage, MessageHandleError, Protocol, ProtocolCompression, ProtocolEncoding,
+};
 use spacetimedb::util::{also_poll, future_queue};
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_lib::address::AddressForUrl;
@@ -74,10 +76,25 @@ where
 
     let db_address = name_or_address.resolve(&ctx).await?.into();
 
-    let (res, ws_upgrade, protocol) =
-        ws.select_protocol([(BIN_PROTOCOL, Protocol::Binary), (TEXT_PROTOCOL, Protocol::Text)]);
+    let (res, ws_upgrade, encoding) = ws.select_protocol([
+        (BIN_PROTOCOL, ProtocolEncoding::Binary),
+        (TEXT_PROTOCOL, ProtocolEncoding::Text),
+    ]);
 
-    let protocol = protocol.ok_or((StatusCode::BAD_REQUEST, "no valid protocol selected"))?;
+    let encoding = encoding.ok_or((StatusCode::BAD_REQUEST, "no valid protocol encoding selected"))?;
+    let protocol = Protocol {
+        encoding,
+        binary_compression: match std::env::var("SPACETIMEDB_COMPRESSION")
+            .map_or(String::from("default"), |s| s.to_lowercase())
+            .as_str()
+        {
+            "default" | "1" | "true" => ProtocolCompression::Brotli,
+            "no" | "0" | "false" => ProtocolCompression::None,
+            "none" => ProtocolCompression::None,
+            "brotli" => ProtocolCompression::Brotli,
+            _ => Err("Unhandled SPACETIMEDB_COMPRESSION value")?,
+        },
+    };
 
     // TODO: Should also maybe refactor the code and the protocol to allow a single websocket
     // to connect to multiple modules

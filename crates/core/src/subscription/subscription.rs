@@ -25,7 +25,7 @@
 
 use super::execution_unit::ExecutionUnit;
 use super::query;
-use crate::client::Protocol;
+use crate::client::{Protocol, ProtocolEncoding};
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
@@ -540,9 +540,9 @@ impl ExecutionSet {
         db: &RelationalDB,
         tx: &Tx,
     ) -> Result<ProtocolDatabaseUpdate, DBError> {
-        let tables = match protocol {
-            Protocol::Binary => Either::Left(self.eval_binary(ctx, db, tx)?),
-            Protocol::Text => Either::Right(self.eval_json(ctx, db, tx)?),
+        let tables = match protocol.encoding {
+            ProtocolEncoding::Binary => Either::Left(self.eval_binary(ctx, db, tx)?),
+            ProtocolEncoding::Text => Either::Right(self.eval_json(ctx, db, tx)?),
         };
         Ok(ProtocolDatabaseUpdate { tables })
     }

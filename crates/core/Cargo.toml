@@ -104,8 +104,7 @@ unindexed_iter_by_col_range_warn = []
 # Optional storage engines.
 odb_rocksdb = ["dep:rocksdb"]
 odb_sled = []
-brotli-compression = []
-default = ["odb_sled", "unindexed_iter_by_col_range_warn", "brotli-compression"]
+default = ["odb_sled", "unindexed_iter_by_col_range_warn"]
 # Enable test helpers and utils
 test = []
 

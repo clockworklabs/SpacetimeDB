@@ -15,12 +15,12 @@ use crate::json::client_api::{
 };
 use crate::protobuf::client_api::{event, message, Event, FunctionCall, IdentityToken, Message, TransactionUpdate};
 use spacetimedb_client_api_messages::client_api::{OneOffQueryResponse, OneOffTable, TableUpdate};
+use spacetimedb_client_api_messages::protocol::*;
 use spacetimedb_lib::Address;
 use spacetimedb_vm::relation::MemTable;
 
-use super::client_connection::ProtocolEncoding;
 use super::message_handlers::MessageExecutionError;
-use super::{DataMessage, Protocol};
+use super::DataMessage;
 
 /// A message sent from the server to the client. Because clients can request either text or binary messages,
 /// a server message needs to be encodable as either.
@@ -29,7 +29,7 @@ pub trait ServerMessage: Sized {
         match protocol.encoding {
             ProtocolEncoding::Text => self.serialize_text().to_json().into(),
             ProtocolEncoding::Binary => {
-                if !protocol.binary_compression {
+                if protocol.binary_compression == ProtocolCompression::None {
                     return self.serialize_binary().encode_to_vec().into();
                 }
 

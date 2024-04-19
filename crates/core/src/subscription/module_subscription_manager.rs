@@ -1,6 +1,6 @@
 use super::execution_unit::{ExecutionUnit, QueryHash};
 use crate::client::messages::{SubscriptionUpdate, TransactionUpdateMessage};
-use crate::client::{ClientConnectionSender, Protocol};
+use crate::client::{ClientConnectionSender, ProtocolEncoding};
 use crate::db::relational_db::RelationalDB;
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, ProtocolDatabaseUpdate};
@@ -160,18 +160,18 @@ impl SubscriptionManager {
                     // and ditto for the "serialization" for JSON.
                     // Each subscriber gets to pick which of these they want,
                     // but we only fill `ops_bin` and `ops_json` at most once.
-                    // The former will be `Some(_)` if some subscriber uses `Protocol::Binary`
-                    // and the latter `Some(_)` if some subscriber uses `Protocol::Text`.
+                    // The former will be `Some(_)` if some subscriber uses `ProtocolEncoding::Binary`
+                    // and the latter `Some(_)` if some subscriber uses `ProtocolEncoding::Text`.
                     let mut ops_bin: Option<Vec<TableRowOperation>> = None;
                     let mut ops_json: Option<Vec<TableRowOperationJson>> = None;
                     self.subscribers.get(hash).into_iter().flatten().map(move |id| {
-                        let ops = match self.clients[id].protocol {
-                            Protocol::Binary => Either::Left(
+                        let ops = match self.clients[id].protocol.encoding {
+                            ProtocolEncoding::Binary => Either::Left(
                                 ops_bin
                                     .get_or_insert_with(|| delta.updates.iter().map_into().collect())
                                     .clone(),
                             ),
-                            Protocol::Text => Either::Right(
+                            ProtocolEncoding::Text => Either::Right(
                                 ops_json
                                     .get_or_insert_with(|| delta.updates.iter().map_into().collect())
                                     .clone(),
@@ -185,8 +185,8 @@ impl SubscriptionManager {
                 // For each subscriber, aggregate all the updates for the same table.
                 // That is, we build a map `(subscriber_id, table_id) -> updates`.
                 // A particular subscriber uses only one protocol,
-                // so we'll have either `TableUpdate` (`Protocol::Binary`)
-                // or `TableUpdateJson` (`Protocol::Text`).
+                // so we'll have either `TableUpdate` (`ProtocolEncoding::Binary`)
+                // or `TableUpdateJson` (`ProtocolEncoding::Text`).
                 .fold(
                     HashMap::<(&Identity, TableId), Either<TableUpdate, TableUpdateJson>>::new(),
                     |mut tables, (id, table_id, table_name, ops)| {
@@ -270,7 +270,7 @@ mod tests {
     use spacetimedb_vm::expr::CrudExpr;
 
     use crate::{
-        client::{ClientActorId, ClientConnectionSender, Protocol},
+        client::{ClientActorId, ClientConnectionSender, Protocol, ProtocolCompression, ProtocolEncoding},
         db::relational_db::{tests_utils::TestDB, RelationalDB},
         execution_context::ExecutionContext,
         sql::compiler::compile_sql,
@@ -300,6 +300,13 @@ mod tests {
         })
     }
 
+    fn uncompressed_binary() -> Protocol {
+        Protocol {
+            encoding: ProtocolEncoding::Binary,
+            binary_compression: ProtocolCompression::None,
+        }
+    }
+
     #[test]
     fn test_subscribe() -> ResultTest<()> {
         let db = TestDB::durable()?;
@@ -311,7 +318,7 @@ mod tests {
 
         let id = Identity::ZERO;
         let client = ClientActorId::for_test(id);
-        let client = Arc::new(ClientConnectionSender::dummy(client, Protocol::Binary));
+        let client = Arc::new(ClientConnectionSender::dummy(client, uncompressed_binary()));
 
         let mut subscriptions = SubscriptionManager::default();
         subscriptions.add_subscription(client, [plan]);
@@ -334,7 +341,7 @@ mod tests {
 
         let id = Identity::ZERO;
         let client = ClientActorId::for_test(id);
-        let client = Arc::new(ClientConnectionSender::dummy(client, Protocol::Binary));
+        let client = Arc::new(ClientConnectionSender::dummy(client, uncompressed_binary()));
 
         let mut subscriptions = SubscriptionManager::default();
         subscriptions.add_subscription(client, [plan]);
@@ -358,7 +365,7 @@ mod tests {
 
         let id = Identity::ZERO;
         let client = ClientActorId::for_test(id);
-        let client = Arc::new(ClientConnectionSender::dummy(client, Protocol::Binary));
+        let client = Arc::new(ClientConnectionSender::dummy(client, uncompressed_binary()));
 
         let mut subscriptions = SubscriptionManager::default();
         subscriptions.add_subscription(client.clone(), [plan.clone()]);
@@ -388,11 +395,11 @@ mod tests {
 
         let id0 = Identity::ZERO;
         let client0 = ClientActorId::for_test(id0);
-        let client0 = Arc::new(ClientConnectionSender::dummy(client0, Protocol::Binary));
+        let client0 = Arc::new(ClientConnectionSender::dummy(client0, uncompressed_binary()));
 
         let id1 = Identity::from_byte_array([1; 32]);
         let client1 = ClientActorId::for_test(id1);
-        let client1 = Arc::new(ClientConnectionSender::dummy(client1, Protocol::Binary));
+        let client1 = Arc::new(ClientConnectionSender::dummy(client1, uncompressed_binary()));
 
         let mut subscriptions = SubscriptionManager::default();
         subscriptions.add_subscription(client0, [plan.clone()]);
@@ -435,11 +442,11 @@ mod tests {
 
         let id0 = Identity::ZERO;
         let client0 = ClientActorId::for_test(id0);
-        let client0 = Arc::new(ClientConnectionSender::dummy(client0, Protocol::Binary));
+        let client0 = Arc::new(ClientConnectionSender::dummy(client0, uncompressed_binary()));
 
         let id1 = Identity::from_byte_array([1; 32]);
         let client1 = ClientActorId::for_test(id1);
-        let client1 = Arc::new(ClientConnectionSender::dummy(client1, Protocol::Binary));
+        let client1 = Arc::new(ClientConnectionSender::dummy(client1, uncompressed_binary()));
 
         let mut subscriptions = SubscriptionManager::default();
         subscriptions.add_subscription(client0, [plan_scan.clone(), plan_select0.clone()]);

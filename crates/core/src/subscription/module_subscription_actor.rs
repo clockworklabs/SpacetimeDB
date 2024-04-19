@@ -176,7 +176,7 @@ impl ModuleSubscriptions {
 #[cfg(test)]
 mod tests {
     use super::ModuleSubscriptions;
-    use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
+    use crate::client::{ClientActorId, ClientConnectionSender, Protocol, ProtocolCompression, ProtocolEncoding};
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::execution_context::ExecutionContext;
     use spacetimedb_client_api_messages::client_api::Subscribe;
@@ -185,6 +185,13 @@ mod tests {
     use std::time::Instant;
     use std::{sync::Arc, time::Duration};
     use tokio::sync::mpsc;
+
+    fn uncompressed_binary() -> Protocol {
+        Protocol {
+            encoding: ProtocolEncoding::Binary,
+            binary_compression: ProtocolCompression::None,
+        }
+    }
 
     #[test]
     /// Asserts that a subscription holds a tx handle for the entire length of its evaluation.
@@ -202,7 +209,7 @@ mod tests {
 
         let id = Identity::ZERO;
         let client = ClientActorId::for_test(id);
-        let sender = Arc::new(ClientConnectionSender::dummy(client, Protocol::Binary));
+        let sender = Arc::new(ClientConnectionSender::dummy(client, uncompressed_binary()));
         let module_subscriptions = ModuleSubscriptions::new(db.clone(), id);
 
         let (send, mut recv) = mpsc::unbounded_channel();

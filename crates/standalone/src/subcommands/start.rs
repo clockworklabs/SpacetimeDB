@@ -174,7 +174,7 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     let jwt_pub_key_path = read_argument(args, "jwt_pub_key_path", "SPACETIMEDB_JWT_PUB_KEY");
     let jwt_priv_key_path = read_argument(args, "jwt_priv_key_path", "SPACETIMEDB_JWT_PRIV_KEY");
     let enable_tracy = args.get_flag("enable_tracy");
-    let websocket_compression = args.get_flag("websocket_compression");
+    let websocket_compression = args.get_one::<String>("websocket_compression");
     let storage = if args.get_flag("in_memory") {
         Storage::Memory
     } else {
@@ -215,6 +215,10 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
 
     if enable_tracy {
         set_env_with_warning("SPACETIMEDB_TRACY", "1");
+    }
+
+    if let Some(websocket_compression) = websocket_compression {
+        set_env_with_warning("SPACETIMEDB_COMPRESSION", websocket_compression);
     }
 
     startup::StartupOptions::default().configure();

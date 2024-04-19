@@ -97,7 +97,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::client::Protocol;
+    use crate::client::{Protocol, ProtocolCompression, ProtocolEncoding};
     use crate::db::datastore::traits::IsolationLevel;
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::db::relational_db::MutTx;
@@ -307,6 +307,13 @@ mod tests {
         Ok(())
     }
 
+    fn uncompressed_binary() -> Protocol {
+        Protocol {
+            encoding: ProtocolEncoding::Binary,
+            binary_compression: ProtocolCompression::None,
+        }
+    }
+
     fn check_query_eval(
         ctx: &ExecutionContext,
         db: &RelationalDB,
@@ -315,7 +322,7 @@ mod tests {
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
-        let result = s.eval(ctx, Protocol::Binary, db, tx)?.tables.unwrap_left();
+        let result = s.eval(ctx, uncompressed_binary(), db, tx)?.tables.unwrap_left();
         assert_eq!(
             result.len(),
             total_tables,

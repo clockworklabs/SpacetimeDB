@@ -11,6 +11,7 @@ use crate::websocket::DbConnection;
 use anyhow::{Context, Result};
 use futures::stream::StreamExt;
 use futures_channel::mpsc;
+use spacetimedb_client_api_messages::protocol::ProtocolCompression;
 use spacetimedb_sats::bsatn;
 use std::sync::{Arc, Mutex};
 use tokio::runtime::{self, Builder, Runtime};
@@ -344,6 +345,17 @@ impl BackgroundDbConnection {
         let client_cache = Arc::new(ClientCache::new(module.clone()));
         *client_cache_lock = Some(client_cache);
 
+        let server_compression = match std::env::var("SPACETIMEDB_COMPRESSION")
+            .map_or(String::from("default"), |s| s.to_lowercase())
+            .as_str()
+        {
+            "default" | "1" | "true" => ProtocolCompression::Brotli,
+            "no" | "0" | "false" => ProtocolCompression::None,
+            "none" => ProtocolCompression::None,
+            "brotli" => ProtocolCompression::Brotli,
+            _ => panic!("Unhandled SPACETIMEDB_COMPRESSION value"),
+        };
+
         // `block_in_place` is required here, as tokio won't allow us to call
         // `block_on` if it would block the current thread of an outer runtime
         let connection = tokio::task::block_in_place(|| {
@@ -351,6 +363,7 @@ impl BackgroundDbConnection {
                 spacetimedb_uri,
                 db_name,
                 credentials.as_ref(),
+                server_compression,
                 client_address,
             ))
         })?;

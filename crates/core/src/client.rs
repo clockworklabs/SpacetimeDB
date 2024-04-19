@@ -6,9 +6,10 @@ mod client_connection_index;
 mod message_handlers;
 pub mod messages;
 
-pub use client_connection::{ClientConnection, ClientConnectionSender, ClientSendError, DataMessage, Protocol};
+pub use client_connection::{ClientConnection, ClientConnectionSender, ClientSendError, DataMessage};
 pub use client_connection_index::ClientActorIndex;
 pub use message_handlers::MessageHandleError;
+pub use spacetimedb_client_api_messages::protocol::{Protocol, ProtocolCompression, ProtocolEncoding};
 use spacetimedb_lib::Address;
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]

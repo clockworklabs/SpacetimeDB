@@ -1,14 +1,12 @@
 use crate::identity::Credentials;
-#[cfg(feature = "brotli-compression")]
-use anyhow::Context;
-use anyhow::{bail, Result};
-#[cfg(feature = "brotli-compression")]
+use anyhow::{bail, Context, Result};
 use brotli::BrotliDecompress;
 use futures::{SinkExt, StreamExt, TryStreamExt};
 use futures_channel::mpsc;
 use http::uri::{Scheme, Uri};
 use prost::Message as ProtobufMessage;
 use spacetimedb_client_api_messages::client_api::Message;
+use spacetimedb_client_api_messages::protocol::ProtocolCompression;
 use spacetimedb_lib::Address;
 use tokio::task::JoinHandle;
 use tokio::{net::TcpStream, runtime};
@@ -21,6 +19,7 @@ use tokio_tungstenite::{
 
 pub(crate) struct DbConnection {
     sock: WebSocketStream<MaybeTlsStream<TcpStream>>,
+    server_compression: ProtocolCompression,
 }
 
 fn parse_scheme(scheme: Option<Scheme>) -> Result<Scheme> {
@@ -131,6 +130,7 @@ impl DbConnection {
         host: Host,
         db_name: &str,
         credentials: Option<&Credentials>,
+        server_compression: ProtocolCompression,
         client_address: Address,
     ) -> Result<Self>
     where
@@ -151,19 +151,21 @@ impl DbConnection {
             false,
         )
         .await?;
-        Ok(DbConnection { sock })
+        Ok(DbConnection {
+            sock,
+            server_compression,
+        })
     }
 
-    #[cfg(feature = "brotli-compression")]
-    pub(crate) fn parse_response(bytes: &[u8]) -> Result<Message> {
-        let mut decompressed = Vec::new();
-        BrotliDecompress(&mut &bytes[..], &mut decompressed).context("Failed to Brotli decompress message")?;
-        Ok(Message::decode(&decompressed[..])?)
-    }
-
-    #[cfg(not(feature = "brotli-compression"))]
-    pub(crate) fn parse_response(bytes: &[u8]) -> Result<Message> {
-        Ok(Message::decode(bytes)?)
+    pub(crate) fn parse_response(compression: ProtocolCompression, bytes: &[u8]) -> Result<Message> {
+        match compression {
+            ProtocolCompression::None => Ok(Message::decode(bytes)?),
+            ProtocolCompression::Brotli => {
+                let mut decompressed = Vec::new();
+                BrotliDecompress(&mut &bytes[..], &mut decompressed).context("Failed to Brotli decompress message")?;
+                Ok(Message::decode(&decompressed[..])?)
+            }
+        }
     }
 
     pub(crate) fn encode_message(msg: Message) -> WebSocketMessage {
@@ -193,7 +195,7 @@ impl DbConnection {
                     ),
 
                     Ok(Some(WebSocketMessage::Binary(bytes))) => {
-                        match Self::parse_response(&bytes) {
+                        match Self::parse_response(self.server_compression, &bytes) {
                             Err(e) => Self::maybe_log_error::<(), _>(
                                 "Error decoding WebSocketMessage::Binary payload",
                                 Err(e),

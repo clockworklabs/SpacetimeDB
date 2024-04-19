@@ -12,27 +12,10 @@ use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
 use derive_more::From;
 use futures::prelude::*;
+use spacetimedb_client_api_messages::protocol::*;
 use spacetimedb_lib::identity::RequestId;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::AbortHandle;
-
-#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
-pub enum ProtocolEncoding {
-    Text,
-    Binary,
-}
-
-#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
-pub enum ProtocolCompression {
-    None,
-    Brotli,
-}
-
-#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
-pub struct Protocol {
-    pub encoding: ProtocolEncoding,
-    pub binary_compression: ProtocolCompression,
-}
 
 #[derive(Debug)]
 pub struct ClientConnectionSender {

@@ -184,7 +184,7 @@ impl CompiledModule {
         // for stuff like "get logs" or "get message log"
         ModuleHandle {
             _env: env,
-            client: ClientConnection::dummy(client_id, Protocol::Text, instance.id, module),
+            client: ClientConnection::dummy(client_id, ProtocolEncoding::Text, instance.id, module),
             db_address,
         }
     }
