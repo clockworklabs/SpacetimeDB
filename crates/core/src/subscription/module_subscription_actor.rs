@@ -193,6 +193,7 @@ mod tests {
     use tokio::sync::mpsc;
 
     #[test]
+    /// Asserts that a subscription holds a tx handle for the entire length of its evaluation.
     fn test_tx_subscription_ordering() -> ResultTest<()> {
         let test_db = TestDB::durable()?;
 
@@ -254,7 +255,7 @@ mod tests {
     }
 
     #[test]
-    /// Asserts that a subscription holds a tx handle for the entire length of its evaluation.
+    /// checks if multiple clients with the same identity are properly handled
     fn test_subscriptions_for_the_same_client_identity() -> ResultTest<()> {
         let test_db = TestDB::durable()?;
         let runtime = test_db.runtime().cloned().unwrap();
@@ -268,10 +269,8 @@ mod tests {
         let module_subscriptions = ModuleSubscriptions::new(db.clone(), id.identity);
 
         let client_id0 = ClientActorId::for_test();
-        let (client0, mut rx0) = ClientConnectionSender::dummy_with_channel(client_id0, Protocol::Binary);
-
-        let client_id1 = ClientActorId::for_test();
-        let (client1, mut rx1) = ClientConnectionSender::dummy_with_channel(client_id1, Protocol::Binary);
+        let (client0, mut rx0) = ClientConnectionSender::dummy_with_channel(client_id0.clone(), Protocol::Binary);
+        let (client1, mut rx1) = ClientConnectionSender::dummy_with_channel(client_id0, Protocol::Binary);
 
         // Subscribing to T should return a single row
         let query_strings = vec!["select * from T where a = 1".into()];
@@ -325,13 +324,18 @@ mod tests {
             timer: None,
         });
 
-        let subscriptions = module_subscriptions.subscriptions.read();
-        module_subscriptions.blocking_broadcast_event(Some(&sender), &subscriptions, event);
-        drop(subscriptions);
+        runtime.spawn_blocking(move || {
+            let subscriptions = module_subscriptions.subscriptions.read();
+            module_subscriptions.blocking_broadcast_event(Some(&sender), &subscriptions, event);
+        });
 
         runtime.block_on(async move {
-            rx0.recv().await.expect("Expected at least one message");
-            rx1.recv().await.expect("Expected at least one message");
+            tokio::time::timeout(Duration::from_millis(10), async move {
+                rx0.recv().await.expect("Expected at least one message");
+                rx1.recv().await.expect("Expected at least one message");
+            })
+            .await
+            .unwrap();
         });
 
         Ok(())
