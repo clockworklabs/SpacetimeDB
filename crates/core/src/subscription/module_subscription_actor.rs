@@ -326,7 +326,7 @@ mod tests {
         });
 
         let subscriptions = module_subscriptions.subscriptions.read();
-        module_subscriptions.blocking_broadcast_event(Some(&sender), &*subscriptions, event);
+        module_subscriptions.blocking_broadcast_event(Some(&sender), &subscriptions, event);
         drop(subscriptions);
 
         runtime.block_on(async move {
