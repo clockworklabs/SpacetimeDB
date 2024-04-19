@@ -85,7 +85,7 @@ impl ModuleSubscriptions {
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
         // but that should not pose an issue.
         let mut subscriptions = self.subscriptions.write();
-        subscriptions.remove_subscription(&sender.id.identity);
+        subscriptions.remove_subscription(&(sender.id.identity, sender.id.address));
         subscriptions.add_subscription(sender.clone(), execution_set.into_iter());
         let num_queries = subscriptions.num_queries();
 
@@ -115,7 +115,7 @@ impl ModuleSubscriptions {
 
     pub fn remove_subscriber(&self, client_id: ClientActorId) {
         let mut subscriptions = self.subscriptions.write();
-        subscriptions.remove_subscription(&client_id.identity);
+        subscriptions.remove_subscription(&(client_id.identity, client_id.address));
         WORKER_METRICS
             .subscription_queries
             .with_label_values(&self.relational_db.address())
