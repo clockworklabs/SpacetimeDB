@@ -550,21 +550,37 @@ impl ExecutionSet {
     #[tracing::instrument(skip_all)]
     fn eval_json(&self, ctx: &ExecutionContext, db: &RelationalDB, tx: &Tx) -> Result<Vec<TableUpdateJson>, DBError> {
         // evaluate each of the execution units in this ExecutionSet in parallel
-        self.exec_units
-            // if you need eval to run single-threaded for debugging, change this to .iter()
+        let (eval, all_ctx): (Vec<_>, Vec<_>) = self
+            .exec_units
             .par_iter()
-            .filter_map(|unit| unit.eval_json(ctx, db, tx).transpose())
-            .collect::<Result<Vec<_>, _>>()
+            .filter_map(|unit| {
+                let ctx = ctx.clone();
+                unit.eval_json(&ctx, db, tx).transpose().map(|result| (result, ctx))
+            })
+            .unzip();
+
+            tokio::task::spawn_blocking(|| {
+                drop(all_ctx);
+            });
+        eval.into_iter().collect::<Result<_, _>>()
     }
 
     #[tracing::instrument(skip_all)]
     fn eval_binary(&self, ctx: &ExecutionContext, db: &RelationalDB, tx: &Tx) -> Result<Vec<TableUpdate>, DBError> {
         // evaluate each of the execution units in this ExecutionSet in parallel
-        self.exec_units
-            // if you need eval to run single-threaded for debugging, change this to .iter()
+        let (eval, all_ctx): (Vec<_>, Vec<_>) = self
+            .exec_units
             .par_iter()
-            .filter_map(|unit| unit.eval_binary(ctx, db, tx).transpose())
-            .collect::<Result<Vec<_>, _>>()
+            .filter_map(|unit| {
+                let ctx = ctx.clone();
+                unit.eval_binary(&ctx, db, tx).transpose().map(|result| (result, ctx))
+            })
+            .unzip();
+
+            tokio::task::spawn_blocking(|| {
+                drop(all_ctx);
+            });
+        eval.into_iter().collect::<Result<_, _>>()
     }
 
     #[tracing::instrument(skip_all)]

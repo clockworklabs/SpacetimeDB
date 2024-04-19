@@ -108,7 +108,7 @@ impl Metrics {
 /// Represents the context under which a database runtime method is executed.
 /// In particular it provides details about the currently executing txn to runtime operations.
 /// More generally it acts as a container for information that database operations may require to function correctly.
-#[derive(Default, Clone)]
+#[derive(Default)]
 pub struct ExecutionContext {
     /// The database on which a transaction is being executed.
     database: Address,
@@ -118,6 +118,17 @@ pub struct ExecutionContext {
     workload: WorkloadType,
     /// The Metrics to be reported for this transaction.
     pub metrics: Arc<RwLock<Metrics>>,
+}
+
+impl Clone for ExecutionContext {
+    fn clone(&self) -> Self {
+        Self {
+            database: self.database.clone(),
+            reducer: self.reducer.clone(),
+            workload: self.workload.clone(),
+            metrics: <_>::default(),
+        }
+    }
 }
 
 /// Classifies a transaction according to its workload.
