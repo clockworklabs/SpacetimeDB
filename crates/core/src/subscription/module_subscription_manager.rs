@@ -250,17 +250,19 @@ impl SubscriptionManager {
                 );
             drop(span);
 
-            if !eval.contains_key(&event.caller_identity) {
-                if let Some(client) = sender_client {
-                    // if the caller is not subscribed to any queries send a transaction update
-                    // with an empty subscription update
-                    let message = TransactionUpdateMessage::<DatabaseUpdate> {
-                        event: event.clone(),
-                        database_update: <_>::default(),
-                    };
+            if let Some(address) = event.caller_address {
+                if !eval.contains_key(&(event.caller_identity, address)) {
+                    if let Some(client) = sender_client {
+                        // if the caller is not subscribed to any queries send a transaction update
+                        // with an empty subscription update
+                        let message = TransactionUpdateMessage::<DatabaseUpdate> {
+                            event: event.clone(),
+                            database_update: <_>::default(),
+                        };
 
-                    if let Err(e) = client.send_message(message) {
-                        tracing::warn!(%client.id, "failed to send update message to client: {e}")
+                        if let Err(e) = client.send_message(message) {
+                            tracing::warn!(%client.id, "failed to send update message to client: {e}")
+                        }
                     }
                 }
             }
@@ -524,7 +526,7 @@ mod tests {
     fn test_caller_transaction_update_without_subscription() -> ResultTest<()> {
         // test if a transaction update is sent to the reducer caller even if
         // the caller haven't subscribed to any updates
-        let (db, _) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         let id0 = Identity::ZERO;
         let client0 = ClientActorId::for_test(id0);
