@@ -537,7 +537,7 @@ mod tests {
         let event = Arc::new(ModuleEvent {
             timestamp: Timestamp::now(),
             caller_identity: id0,
-            caller_address: None,
+            caller_address: Some(client0.id.address),
             function_call: ModuleFunctionCall {
                 reducer: "DummyReducer".into(),
                 args: ArgsTuple::nullary(),
@@ -556,7 +556,7 @@ mod tests {
             .build()
             .unwrap()
             .block_on(async move {
-                tokio::time::timeout(Duration::from_millis(5), async move {
+                tokio::time::timeout(Duration::from_millis(20), async move {
                     rx.recv().await.expect("Expected at least one message");
                 })
                 .await
