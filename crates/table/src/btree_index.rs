@@ -130,16 +130,17 @@ impl TypedIndex {
     /// this will behave oddly; it may return an error,
     /// or may insert a nonsense value into the index.
     /// Note, however, that it will not invoke undefined behavior.
-    fn insert(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<bool, InvalidFieldError> {
+    fn insert(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<(), InvalidFieldError> {
         fn insert_at_type<T: Ord + ReadColumn>(
             this: &mut MultiMap<T, RowPointer>,
             cols: &ColList,
             row_ref: RowRef<'_>,
-        ) -> Result<bool, InvalidFieldError> {
+        ) -> Result<(), InvalidFieldError> {
             debug_assert!(cols.is_singleton());
             let col_pos = cols.head();
             let key = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
-            Ok(this.insert(key, row_ref.pointer()))
+            this.insert(key, row_ref.pointer());
+            Ok(())
         }
         match self {
             TypedIndex::Bool(this) => insert_at_type(this, cols, row_ref),
@@ -157,7 +158,8 @@ impl TypedIndex {
 
             TypedIndex::AlgebraicValue(this) => {
                 let key = row_ref.project_not_empty(cols)?;
-                Ok(this.insert(key, row_ref.pointer()))
+                this.insert(key, row_ref.pointer());
+                Ok(())
             }
         }
     }
@@ -378,7 +380,7 @@ impl BTreeIndex {
     /// This index will extract the necessary values from `row` based on `self.cols`.
     ///
     /// Return false if `ptr` was already indexed prior to this call.
-    pub fn insert(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<bool, InvalidFieldError> {
+    pub fn insert(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<(), InvalidFieldError> {
         self.idx.insert(cols, row_ref)
     }
 
@@ -419,12 +421,11 @@ impl BTreeIndex {
         &mut self,
         cols: &ColList,
         rows: impl IntoIterator<Item = RowRef<'table>>,
-    ) -> Result<bool, InvalidFieldError> {
-        let mut all_inserted = true;
+    ) -> Result<(), InvalidFieldError> {
         for row_ref in rows {
-            all_inserted &= self.insert(cols, row_ref)?;
+            self.insert(cols, row_ref)?;
         }
-        Ok(all_inserted)
+        Ok(())
     }
 
     /// Deletes all entries from the index, leaving it empty.
@@ -516,13 +517,9 @@ mod test {
             prop_assert_eq!(index.idx.len(), 0);
             prop_assert_eq!(index.contains_any(&value), false);
 
-            prop_assert_eq!(index.insert(&cols, row_ref).unwrap(), true);
+            index.insert(&cols, row_ref).unwrap();
             prop_assert_eq!(index.idx.len(), 1);
             prop_assert_eq!(index.contains_any(&value), true);
-
-            // Try inserting again, it should fail.
-            prop_assert_eq!(index.insert(&cols, row_ref).unwrap(), false);
-            prop_assert_eq!(index.idx.len(), 1);
 
             prop_assert_eq!(index.delete(&cols, row_ref).unwrap(), true);
             prop_assert_eq!(index.idx.len(), 0);
@@ -547,7 +544,7 @@ mod test {
             );
 
             // Insert.
-            prop_assert_eq!(index.insert(&cols, row_ref).unwrap(), true);
+            index.insert(&cols, row_ref).unwrap();
 
             // Inserting again would be a problem.
             prop_assert_eq!(index.idx.len(), 1);
@@ -580,7 +577,7 @@ mod test {
                 let ptr = table.insert(&mut blob_store, &row).unwrap().1;
                 val_to_ptr.insert(x, ptr);
                 let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
-                prop_assert_eq!(index.insert(&cols, row_ref).unwrap(), true);
+                index.insert(&cols, row_ref).unwrap();
             }
 
             fn test_seek(index: &BTreeIndex, val_to_ptr: &HashMap<u64, RowPointer>, range: impl RangeBounds<AlgebraicValue>, expect: impl IntoIterator<Item = u64>) -> TestCaseResult {
