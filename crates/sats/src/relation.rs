@@ -11,25 +11,6 @@ use spacetimedb_primitives::{ColId, ColList, ColListBuilder, Constraints, TableI
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
-pub struct TableField<'a> {
-    pub table: Option<&'a str>,
-    pub field: &'a str,
-}
-
-pub fn extract_table_field(ident: &str) -> Result<TableField, RelationError> {
-    let parts: Vec<_> = ident.split('.').take(3).collect();
-
-    match parts[..] {
-        [table, field] => Ok(TableField {
-            table: Some(table),
-            field,
-        }),
-        [field] => Ok(TableField { table: None, field }),
-        _ => Err(RelationError::FieldPathInvalid(ident.to_string())),
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub enum FieldOnly<'a> {
     Name(&'a str),
     Pos(usize),
