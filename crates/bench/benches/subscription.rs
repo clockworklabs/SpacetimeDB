@@ -95,11 +95,11 @@ fn eval(c: &mut Criterion) {
     let new_lhs_row = product!(entity_id, footprint, owner);
     let new_rhs_row = product!(entity_id, chunk_index, x, z, dimension);
 
+    let ins_lhs = insert_op(lhs, "footprint", new_lhs_row);
+    let ins_rhs = insert_op(rhs, "location", new_rhs_row);
+
     let update = DatabaseUpdate {
-        tables: vec![
-            insert_op(lhs, "footprint", new_lhs_row),
-            insert_op(rhs, "location", new_rhs_row),
-        ],
+        tables: vec![ins_lhs, ins_rhs],
     };
 
     let bench_eval = |c: &mut Criterion, name, sql| {

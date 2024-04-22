@@ -5,7 +5,7 @@ use crate::db::relational_db::RelationalDB;
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, ProtocolDatabaseUpdate};
 use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
-use itertools::{Either, Itertools as _};
+use itertools::Either;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use smallvec::SmallVec;
 use spacetimedb_client_api_messages::client_api::{TableRowOperation, TableUpdate};
@@ -170,16 +170,12 @@ impl SubscriptionManager {
                     let mut ops_json: Option<Vec<TableRowOperationJson>> = None;
                     self.subscribers.get(hash).into_iter().flatten().map(move |id| {
                         let ops = match self.clients[id].protocol {
-                            Protocol::Binary => Either::Left(
-                                ops_bin
-                                    .get_or_insert_with(|| delta.updates.iter().map_into().collect())
-                                    .clone(),
-                            ),
-                            Protocol::Text => Either::Right(
-                                ops_json
-                                    .get_or_insert_with(|| delta.updates.iter().map_into().collect())
-                                    .clone(),
-                            ),
+                            Protocol::Binary => {
+                                Either::Left(ops_bin.get_or_insert_with(|| (&delta.updates).into()).clone())
+                            }
+                            Protocol::Text => {
+                                Either::Right(ops_json.get_or_insert_with(|| (&delta.updates).into()).clone())
+                            }
                         };
                         (id, table_id, table_name.clone(), ops)
                     })
