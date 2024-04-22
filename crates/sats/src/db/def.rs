@@ -953,14 +953,7 @@ impl From<&TableSchema> for Header {
         let fields = value
             .columns
             .iter()
-            .enumerate()
-            .map(|(pos, x)| {
-                Column::new(
-                    FieldName::named(&value.table_name, &x.col_name),
-                    x.col_type.clone(),
-                    ColId(pos as u32),
-                )
-            })
+            .map(|x| Column::new(FieldName::named(&value.table_name, &x.col_name), x.col_type.clone()))
             .collect();
 
         Header::new(value.table_name.clone(), fields, constraints)

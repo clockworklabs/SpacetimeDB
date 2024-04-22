@@ -160,16 +160,11 @@ pub struct ColumnOnlyField<'a> {
 pub struct Column {
     pub field: FieldName,
     pub algebraic_type: AlgebraicType,
-    pub col_id: ColId,
 }
 
 impl Column {
-    pub fn new(field: FieldName, algebraic_type: AlgebraicType, col_id: ColId) -> Self {
-        Self {
-            field,
-            algebraic_type,
-            col_id,
-        }
+    pub fn new(field: FieldName, algebraic_type: AlgebraicType) -> Self {
+        Self { field, algebraic_type }
     }
 
     pub fn as_without_table(&self) -> ColumnOnlyField {
@@ -231,7 +226,7 @@ impl Header {
                         field,
                     },
                 };
-                Column::new(name, f.algebraic_type, ColId(pos as u32))
+                Column::new(name, f.algebraic_type)
             })
             .collect();
 
@@ -292,8 +287,8 @@ impl Header {
         self.column_pos(&FieldName::named(&self.table_name, name))
     }
 
-    pub fn column<'a>(&'a self, col: &'a FieldName) -> Option<&Column> {
-        self.column_pos(col).map(|id| &self.fields[id.idx()])
+    pub fn field_name<'a>(&'a self, col: &'a FieldName) -> Option<(ColId, &FieldName)> {
+        self.column_pos(col).map(|id| (id, &self.fields[id.idx()].field))
     }
 
     /// Copy the [Constraints] that are referenced in the list of `for_columns`
@@ -336,7 +331,6 @@ impl Header {
                             field: pos,
                         },
                         col.type_of(),
-                        pos.into(),
                     ));
                 }
             }
@@ -509,8 +503,8 @@ mod tests {
         Header::new(
             table.into(),
             vec![
-                Column::new(FieldName::named(table, fields.0), AlgebraicType::I8, 0.into()),
-                Column::new(FieldName::named(table, fields.1), AlgebraicType::I8, 0.into()),
+                Column::new(FieldName::named(table, fields.0), AlgebraicType::I8),
+                Column::new(FieldName::named(table, fields.1), AlgebraicType::I8),
             ],
             ct,
         )
