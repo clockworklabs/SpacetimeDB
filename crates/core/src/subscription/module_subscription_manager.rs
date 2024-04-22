@@ -142,12 +142,11 @@ impl SubscriptionManager {
             let tx = &tx.deref().into();
             let eval = units
                 .into_iter()
-                .enumerate()
-                .map(|(idx, (hash, vec))| (hash, vec, &all_ctx[idx]))
+                .zip(&all_ctx)
                 .collect::<Vec<_>>()
                 .into_par_iter()
-                .filter_map(|(hash, tables, ctx)| self.queries.get(hash).map(|unit| (hash, tables, unit, ctx)))
-                .filter_map(|(hash, tables, unit, ctx)| {
+                .filter_map(|((hash, tables), ctx)| {
+                    let unit = self.queries.get(hash)?;
                     match unit.eval_incr(ctx, db, tx, &unit.sql, tables.into_iter()) {
                         Ok(None) => None,
                         Ok(Some(table)) => Some((hash, table)),
