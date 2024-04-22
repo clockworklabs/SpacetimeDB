@@ -234,11 +234,10 @@ impl Header {
     }
 
     pub fn to_product_type(&self) -> ProductType {
-        ProductType::from_iter(
-            self.fields
-                .iter()
-                .map(|x| ProductTypeElement::new(x.algebraic_type.clone(), x.field.field_name().map(Into::into))),
-        )
+        self.fields
+            .iter()
+            .map(|x| ProductTypeElement::new(x.algebraic_type.clone(), x.field.field_name().map(Into::into)))
+            .collect()
     }
 
     pub fn for_mem_table(fields: ProductType) -> Self {
@@ -251,14 +250,6 @@ impl Header {
         HeaderOnlyField {
             fields: self.fields.iter().map(|x| x.as_without_table()).collect(),
         }
-    }
-
-    pub fn ty(&self) -> ProductType {
-        ProductType::from_iter(
-            self.fields
-                .iter()
-                .map(|x| (x.field.field_name(), x.algebraic_type.clone())),
-        )
     }
 
     pub fn find_by_name(&self, field_name: &str) -> Option<&Column> {
