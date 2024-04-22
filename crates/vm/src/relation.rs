@@ -20,8 +20,15 @@ use std::sync::Arc;
 /// A `RelValue` is the type generated/consumed by a [Relation] operator.
 #[derive(Debug, Clone)]
 pub enum RelValue<'a> {
+    /// A reference to a row in a table.
     Row(RowRef<'a>),
+    /// An ephemeral row made during query execution.
     Projection(ProductValue),
+    /// A row coming directly from a collected update.
+    ///
+    /// This is really a row in a table, and not an actual projection.
+    /// However, for (lifetime) reasons, we cannot (yet) keep it as a `RowRef<'_>`
+    /// and must convert that into a `ProductValue`.
     ProjRef(&'a ProductValue),
 }
 
