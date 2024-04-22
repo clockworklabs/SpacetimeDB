@@ -73,10 +73,13 @@ pub fn update() {
     log::info!("Update called!");
 }
 
-#[spacetimedb(reducer, repeat = 1000ms)]
+#[spacetimedb(reducer)]
 pub fn repeating_test(ctx: ReducerContext, prev_time: Timestamp) {
     let delta_time = prev_time.elapsed();
     log::trace!("Timestamp: {:?}, Delta time: {:?}", ctx.timestamp, delta_time);
+
+    // Reschedule ourselves.
+    spacetimedb::schedule!("1000ms", repeating_test(_, Timestamp::now()));
 }
 
 #[spacetimedb(reducer)]
