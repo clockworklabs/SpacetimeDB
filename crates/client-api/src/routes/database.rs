@@ -580,7 +580,7 @@ where
     let json = results
         .into_iter()
         .map(|result| StmtResultJson {
-            schema: result.head.ty(),
+            schema: result.head.to_product_type(),
             rows: result.data,
         })
         .collect::<Vec<_>>();

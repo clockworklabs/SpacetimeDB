@@ -1,7 +1,7 @@
 use crate::db::auth::{StAccess, StTableType};
 use crate::db::error::{DefType, SchemaError};
 use crate::product_value::InvalidFieldError;
-use crate::relation::{Column, DbTable, FieldName, FieldOnly, Header, TableField};
+use crate::relation::{Column, DbTable, FieldName, FieldOnly, Header};
 use crate::{de, impl_deserialize, impl_serialize, ser};
 use crate::{AlgebraicType, ProductType, ProductTypeElement};
 use derive_more::Display;
@@ -613,22 +613,6 @@ impl TableSchema {
         self.columns.iter().find(|x| &*x.col_name == col_name)
     }
 
-    /// Check if there is an index for this [FieldName]
-    ///
-    /// Warning: It ignores the `table_name`
-    pub fn get_index_by_field(&self, field: &FieldName) -> Option<&IndexSchema> {
-        let ColumnSchema { col_pos, .. } = self.get_column_by_field(field)?;
-        self.indexes.iter().find(|IndexSchema { columns, .. }| {
-            let mut cols = columns.iter();
-            cols.next() == Some(*col_pos) && cols.next().is_none()
-        })
-    }
-
-    /// Turn a [TableField] that could be an unqualified field `id` into `table.id`
-    pub fn normalize_field(&self, or_use: &TableField) -> FieldName {
-        FieldName::named(or_use.table.unwrap_or(&self.table_name), or_use.field)
-    }
-
     /// Project the fields from the supplied `indexes`.
     pub fn project(&self, indexes: impl Iterator<Item = ColId>) -> Result<Vec<&ColumnSchema>, InvalidFieldError> {
         indexes
@@ -953,14 +937,7 @@ impl From<&TableSchema> for Header {
         let fields = value
             .columns
             .iter()
-            .enumerate()
-            .map(|(pos, x)| {
-                Column::new(
-                    FieldName::named(&value.table_name, &x.col_name),
-                    x.col_type.clone(),
-                    ColId(pos as u32),
-                )
-            })
+            .map(|x| Column::new(FieldName::named(&value.table_name, &x.col_name), x.col_type.clone()))
             .collect();
 
         Header::new(value.table_name.clone(), fields, constraints)

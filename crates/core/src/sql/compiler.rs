@@ -171,21 +171,17 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
 }
 
 /// Builds the schema description [DbTable] from the [TableSchema] and their list of columns
-fn compile_columns(table: &TableSchema, columns: Vec<FieldName>) -> DbTable {
-    let mut new = Vec::with_capacity(columns.len());
+fn compile_columns(table: &TableSchema, field_names: Vec<FieldName>) -> DbTable {
+    let mut columns = Vec::with_capacity(field_names.len());
+    let cols = field_names
+        .into_iter()
+        .filter_map(|col| table.get_column_by_field(&col))
+        .map(|col| relation::Column::new(FieldName::named(&table.table_name, &col.col_name), col.col_type.clone()));
+    columns.extend(cols);
 
-    for col in columns.into_iter() {
-        if let Some(x) = table.get_column_by_field(&col) {
-            let field = FieldName::named(&table.table_name, &x.col_name);
-            new.push(relation::Column::new(field, x.col_type.clone(), x.col_pos));
-        }
-    }
-    DbTable::new(
-        Arc::new(Header::new(table.table_name.clone(), new, table.get_constraints())),
-        table.table_id,
-        table.table_type,
-        table.table_access,
-    )
+    let header = Arc::new(Header::new(table.table_name.clone(), columns, table.get_constraints()));
+
+    DbTable::new(header, table.table_id, table.table_type, table.table_access)
 }
 
 /// Compiles a `INSERT ...` clause

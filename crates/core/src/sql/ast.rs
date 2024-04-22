@@ -6,7 +6,8 @@ use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_primitives::{ColList, ConstraintKind, Constraints};
 use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::db::def::{ColumnDef, ColumnSchema, ConstraintDef, FieldDef, TableDef, TableSchema};
-use spacetimedb_sats::relation::{extract_table_field, FieldExpr, FieldName};
+use spacetimedb_sats::db::error::RelationError;
+use spacetimedb_sats::relation::{FieldExpr, FieldName};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductTypeElement};
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::expr::{ColumnOp, DbType, Expr};
@@ -197,26 +198,34 @@ impl From {
     /// Returns an error if no fields match `f` (`PlanError::UnknownField`) or if the field is ambiguous
     /// due to multiple matches (`PlanError::AmbiguousField`).
     pub fn find_field<'a>(&'a self, f: &'a str) -> Result<FieldDef, PlanError> {
-        let field = extract_table_field(f)?;
+        fn extract_table_field(ident: &str) -> Result<(Option<&str>, &str), RelationError> {
+            match ident.split('.').take(3).collect::<Vec<_>>()[..] {
+                [table, field] => Ok((Some(table), field)),
+                [field] => Ok((None, field)),
+                _ => Err(RelationError::FieldPathInvalid(ident.to_string())),
+            }
+        }
+
+        let (f_table, f_field) = extract_table_field(f)?;
         let fields: Vec<_> = self
             .iter_columns()
-            .filter(|(_, col)| &*col.col_name == field.field)
+            .filter(|(_, col)| &*col.col_name == f_field)
             .collect();
 
         match fields.len() {
             0 => Err(PlanError::UnknownField {
-                field: FieldName::named(field.table.unwrap_or("?"), field.field),
+                field: FieldName::named(f_table.unwrap_or("?"), f_field),
                 tables: self.table_names(),
             }),
             1 => {
                 let (table, column) = &fields[0];
                 Ok(FieldDef {
                     column,
-                    table_name: field.table.unwrap_or(&table.table_name),
+                    table_name: f_table.unwrap_or(&table.table_name),
                 })
             }
             _ => {
-                if let Some(table_name) = field.table {
+                if let Some(table_name) = f_table {
                     if let Some((table, column)) = fields.iter().find(|(t, _)| &*t.table_name == table_name) {
                         Ok(FieldDef {
                             column,
@@ -224,7 +233,7 @@ impl From {
                         })
                     } else {
                         Err(PlanError::UnknownField {
-                            field: FieldName::named(field.table.unwrap_or("?"), field.field),
+                            field: FieldName::named(f_table.unwrap_or("?"), f_field),
                             tables: self.table_names(),
                         })
                     }

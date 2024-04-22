@@ -11,25 +11,6 @@ use spacetimedb_primitives::{ColId, ColList, ColListBuilder, Constraints, TableI
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
-pub struct TableField<'a> {
-    pub table: Option<&'a str>,
-    pub field: &'a str,
-}
-
-pub fn extract_table_field(ident: &str) -> Result<TableField, RelationError> {
-    let parts: Vec<_> = ident.split('.').take(3).collect();
-
-    match parts[..] {
-        [table, field] => Ok(TableField {
-            table: Some(table),
-            field,
-        }),
-        [field] => Ok(TableField { table: None, field }),
-        _ => Err(RelationError::FieldPathInvalid(ident.to_string())),
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub enum FieldOnly<'a> {
     Name(&'a str),
     Pos(usize),
@@ -160,16 +141,11 @@ pub struct ColumnOnlyField<'a> {
 pub struct Column {
     pub field: FieldName,
     pub algebraic_type: AlgebraicType,
-    pub col_id: ColId,
 }
 
 impl Column {
-    pub fn new(field: FieldName, algebraic_type: AlgebraicType, col_id: ColId) -> Self {
-        Self {
-            field,
-            algebraic_type,
-            col_id,
-        }
+    pub fn new(field: FieldName, algebraic_type: AlgebraicType) -> Self {
+        Self { field, algebraic_type }
     }
 
     pub fn as_without_table(&self) -> ColumnOnlyField {
@@ -231,7 +207,7 @@ impl Header {
                         field,
                     },
                 };
-                Column::new(name, f.algebraic_type, ColId(pos as u32))
+                Column::new(name, f.algebraic_type)
             })
             .collect();
 
@@ -239,11 +215,10 @@ impl Header {
     }
 
     pub fn to_product_type(&self) -> ProductType {
-        ProductType::from_iter(
-            self.fields
-                .iter()
-                .map(|x| ProductTypeElement::new(x.algebraic_type.clone(), x.field.field_name().map(Into::into))),
-        )
+        self.fields
+            .iter()
+            .map(|x| ProductTypeElement::new(x.algebraic_type.clone(), x.field.field_name().map(Into::into)))
+            .collect()
     }
 
     pub fn for_mem_table(fields: ProductType) -> Self {
@@ -256,14 +231,6 @@ impl Header {
         HeaderOnlyField {
             fields: self.fields.iter().map(|x| x.as_without_table()).collect(),
         }
-    }
-
-    pub fn ty(&self) -> ProductType {
-        ProductType::from_iter(
-            self.fields
-                .iter()
-                .map(|x| (x.field.field_name(), x.algebraic_type.clone())),
-        )
     }
 
     pub fn find_by_name(&self, field_name: &str) -> Option<&Column> {
@@ -292,8 +259,8 @@ impl Header {
         self.column_pos(&FieldName::named(&self.table_name, name))
     }
 
-    pub fn column<'a>(&'a self, col: &'a FieldName) -> Option<&Column> {
-        self.column_pos(col).map(|id| &self.fields[id.idx()])
+    pub fn field_name<'a>(&'a self, col: &'a FieldName) -> Option<(ColId, &FieldName)> {
+        self.column_pos(col).map(|id| (id, &self.fields[id.idx()].field))
     }
 
     /// Copy the [Constraints] that are referenced in the list of `for_columns`
@@ -336,7 +303,6 @@ impl Header {
                             field: pos,
                         },
                         col.type_of(),
-                        pos.into(),
                     ));
                 }
             }
@@ -509,8 +475,8 @@ mod tests {
         Header::new(
             table.into(),
             vec![
-                Column::new(FieldName::named(table, fields.0), AlgebraicType::I8, 0.into()),
-                Column::new(FieldName::named(table, fields.1), AlgebraicType::I8, 0.into()),
+                Column::new(FieldName::named(table, fields.0), AlgebraicType::I8),
+                Column::new(FieldName::named(table, fields.1), AlgebraicType::I8),
             ],
             ct,
         )
