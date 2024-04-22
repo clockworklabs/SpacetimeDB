@@ -1,3 +1,4 @@
+use core::hash::{Hash, Hasher};
 use derive_more::From;
 use spacetimedb_sats::bsatn::ser::BsatnError;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
@@ -8,7 +9,6 @@ use spacetimedb_sats::{bsatn, impl_serialize, AlgebraicValue};
 use spacetimedb_table::read_column::ReadColumn;
 use spacetimedb_table::table::RowRef;
 use std::borrow::Cow;
-use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 /// RelValue represents either a reference to a row in a table,
@@ -28,6 +28,33 @@ pub enum RelValue<'a> {
     /// However, for (lifetime) reasons, we cannot (yet) keep it as a `RowRef<'_>`
     /// and must convert that into a `ProductValue`.
     ProjRef(&'a ProductValue),
+}
+
+impl Eq for RelValue<'_> {}
+
+impl PartialEq for RelValue<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Projection(x), Self::Projection(y)) => x == y,
+            (Self::ProjRef(x), Self::ProjRef(y)) => x == y,
+            (Self::Row(x), Self::Row(y)) => x == y,
+            (Self::Projection(x), Self::ProjRef(y)) | (Self::ProjRef(y), Self::Projection(x)) => x == *y,
+            (Self::Row(x), Self::Projection(y)) | (Self::Projection(y), Self::Row(x)) => x == y,
+            (Self::Row(x), Self::ProjRef(y)) | (Self::ProjRef(y), Self::Row(x)) => x == *y,
+        }
+    }
+}
+
+impl Hash for RelValue<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            // `x.hash(state)` and `x.to_product_value().hash(state)`
+            // have the same effect on `state`.
+            Self::Row(x) => x.hash(state),
+            Self::Projection(x) => x.hash(state),
+            Self::ProjRef(x) => x.hash(state),
+        }
+    }
 }
 
 impl_serialize!(['a] RelValue<'a>, (self, ser) => match self {
