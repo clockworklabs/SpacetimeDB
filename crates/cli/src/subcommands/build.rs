@@ -15,7 +15,7 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("skip_clippy")
                 .long("skip_clippy")
-                .short('s')
+                .short('S')
                 .action(SetTrue)
                 .env("SPACETIME_SKIP_CLIPPY")
                 .value_parser(clap::builder::FalseyValueParser::new())
