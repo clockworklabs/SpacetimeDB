@@ -1,16 +1,17 @@
 use super::compiler::compile_sql;
-use crate::database_instance_context_controller::DatabaseInstanceContextController;
+use crate::db::datastore::locking_tx_datastore::state_view::StateView;
+use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::relational_db::RelationalDB;
-use crate::error::{DBError, DatabaseError};
+use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{DbProgram, TxMode};
 use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::relation::FieldName;
 use spacetimedb_lib::{ProductType, ProductValue};
 use spacetimedb_vm::eval::run_ast;
 use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
 use spacetimedb_vm::relation::MemTable;
-use tracing::info;
 
 pub struct StmtResult {
     pub schema: ProductType,
@@ -19,21 +20,6 @@ pub struct StmtResult {
 
 // TODO(cloutiertyler): we could do this the swift parsing way in which
 // we always generate a plan, but it may contain errors
-
-/// Run a `SQL` query/statement in the specified `database_instance_id`.
-pub fn execute(
-    db_inst_ctx_controller: &DatabaseInstanceContextController,
-    database_instance_id: u64,
-    sql_text: String,
-    auth: AuthCtx,
-) -> Result<Vec<MemTable>, DBError> {
-    info!(sql = sql_text);
-    if let Some((database_instance_context, _)) = db_inst_ctx_controller.get(database_instance_id) {
-        run(&database_instance_context.relational_db, &sql_text, auth)
-    } else {
-        Err(DatabaseError::NotFound(database_instance_id).into())
-    }
-}
 
 pub(crate) fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Result<(), DBError> {
     match r {
@@ -51,33 +37,34 @@ pub(crate) fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Resul
     Ok(())
 }
 
+pub fn ctx_sql(db: &RelationalDB) -> ExecutionContext {
+    ExecutionContext::sql(db.address(), db.read_config().slow_query)
+}
+
 /// Run the compiled `SQL` expression inside the `vm` created by [DbProgram]
 ///
 /// Evaluates `ast` and accordingly triggers mutable or read tx to execute
 ///
 /// Also, in case the execution takes more than x, log it as `slow query`
 pub fn execute_sql(db: &RelationalDB, sql: &str, ast: Vec<CrudExpr>, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
-    let total = ast.len();
-    let ctx = ExecutionContext::sql(db.address(), db.read_config().slow_query);
-    let mut result = Vec::with_capacity(total);
-    let sources = [].into();
-    let slow_logger = SlowQueryLogger::query(&ctx, sql);
+    fn execute(p: &mut DbProgram<'_, '_>, ast: Vec<CrudExpr>) -> Result<Vec<MemTable>, DBError> {
+        let mut result = Vec::with_capacity(ast.len());
+        let query = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
+        // SQL queries can never reference `MemTable`s, so pass an empty `SourceSet`.
+        collect_result(&mut result, run_ast(p, query, [].into()).into())?;
+        Ok(result)
+    }
 
-    match CrudExpr::is_reads(&ast) {
-        false => db.with_auto_commit(&ctx, |mut_tx| {
-            let mut tx: TxMode = mut_tx.into();
-            let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
-            let p = &mut DbProgram::new(&ctx, db, &mut tx, auth);
-            // SQL queries can never reference `MemTable`s, so pass an empty `SourceSet`.
-            collect_result(&mut result, run_ast(p, q, sources).into())
-        }),
-        true => db.with_read_only(&ctx, |tx| {
-            let mut tx = TxMode::Tx(tx);
-            let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
-            let p = &mut DbProgram::new(&ctx, db, &mut tx, auth);
-            // SQL queries can never reference `MemTable`s, so pass an empty `SourceSet`.
-            collect_result(&mut result, run_ast(p, q, sources).into())
-        }),
+    let ctx = ctx_sql(db);
+    let slow_logger = SlowQueryLogger::query(&ctx, sql);
+    let result = if CrudExpr::is_reads(&ast) {
+        db.with_read_only(&ctx, |tx| {
+            execute(&mut DbProgram::new(&ctx, db, &mut TxMode::Tx(tx), auth), ast)
+        })
+    } else {
+        db.with_auto_commit(&ctx, |mut_tx| {
+            execute(&mut DbProgram::new(&ctx, db, &mut mut_tx.into(), auth), ast)
+        })
     }?;
     slow_logger.log();
 
@@ -86,9 +73,18 @@ pub fn execute_sql(db: &RelationalDB, sql: &str, ast: Vec<CrudExpr>, auth: AuthC
 
 /// Run the `SQL` string using the `auth` credentials
 pub fn run(db: &RelationalDB, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
-    let ctx = &ExecutionContext::sql(db.address(), db.read_config().slow_query);
-    let ast = db.with_read_only(ctx, |tx| compile_sql(db, tx, sql_text))?;
+    let ast = db.with_read_only(&ctx_sql(db), |tx| compile_sql(db, tx, sql_text))?;
     execute_sql(db, sql_text, ast, auth)
+}
+
+/// Translates a `FieldName` to the field's name.
+pub fn translate_col(tx: &TxId, field: FieldName) -> Option<Box<str>> {
+    Some(
+        tx.get_schema(&field.table)?
+            .get_column(field.col.idx())?
+            .col_name
+            .clone(),
+    )
 }
 
 #[cfg(test)]
@@ -107,7 +103,7 @@ pub(crate) mod tests {
     use spacetimedb_vm::eval::test_data::create_game_data;
 
     /// Short-cut for simplify test execution
-    fn run_for_testing(db: &RelationalDB, sql_text: &str) -> Result<Vec<MemTable>, DBError> {
+    pub(crate) fn run_for_testing(db: &RelationalDB, sql_text: &str) -> Result<Vec<MemTable>, DBError> {
         run(db, sql_text, AuthCtx::for_testing())
     }
 
@@ -244,9 +240,9 @@ pub(crate) mod tests {
 
         assert_eq!(result.len(), 1, "Not return results");
         let result = result.first().unwrap().clone();
-        //The expected result
-        let col = table.head.find_by_name("inventory_id").unwrap();
-        let inv = table.head.project(&[col.field.clone()]).unwrap();
+        // The expected result.
+        let col = table.head.fields[0].field;
+        let inv = table.head.project(&[col]).unwrap();
 
         let row = product!(scalar(1u64));
         let input = mem_table(inv, vec![row]);
@@ -268,9 +264,9 @@ pub(crate) mod tests {
         assert_eq!(result.len(), 1, "Not return results");
         let result = result.first().unwrap().clone();
 
-        //The expected result
-        let col = table.head.find_by_name("inventory_id").unwrap();
-        let inv = table.head.project(&[col.field.clone()]).unwrap();
+        // The expected result.
+        let col = table.head.fields[0].field;
+        let inv = table.head.project(&[col]).unwrap();
 
         let row = product!(scalar(1u64));
         let input = mem_table(inv, vec![row]);
@@ -296,8 +292,8 @@ pub(crate) mod tests {
         let mut result = result.first().unwrap().clone();
         result.data.sort();
         //The expected result
-        let col = table.head.find_by_name("inventory_id").unwrap();
-        let inv = table.head.project(&[col.field.clone()]).unwrap();
+        let col = table.head.fields[0].field;
+        let inv = table.head.project(&[col]).unwrap();
 
         let input = mem_table(inv, vec![product!(scalar(1u64)), product!(scalar(2u64))]);
 
@@ -321,9 +317,9 @@ pub(crate) mod tests {
         assert_eq!(result.len(), 1, "Not return results");
         let mut result = result.first().unwrap().clone();
         result.data.sort();
-        //The expected result
-        let col = table.head.find_by_name("inventory_id").unwrap();
-        let inv = table.head.project(&[col.field.clone()]).unwrap();
+        // The expected result.
+        let col = table.head.fields[0].field;
+        let inv = table.head.project(&[col]).unwrap();
 
         let input = mem_table(inv, vec![product!(scalar(1u64)), product!(scalar(2u64))]);
 
@@ -342,27 +338,9 @@ pub(crate) mod tests {
         let db = TestDB::durable()?;
 
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
-        create_table_with_rows(
-            &db,
-            &mut tx,
-            "Inventory",
-            data.inv.head.to_product_type(),
-            &data.inv.data,
-        )?;
-        create_table_with_rows(
-            &db,
-            &mut tx,
-            "Player",
-            data.player.head.to_product_type(),
-            &data.player.data,
-        )?;
-        create_table_with_rows(
-            &db,
-            &mut tx,
-            "Location",
-            data.location.head.to_product_type(),
-            &data.location.data,
-        )?;
+        create_table_with_rows(&db, &mut tx, "Inventory", data.inv_ty, &data.inv.data)?;
+        create_table_with_rows(&db, &mut tx, "Player", data.player_ty, &data.player.data)?;
+        create_table_with_rows(&db, &mut tx, "Location", data.location_ty, &data.location.data)?;
         db.commit_tx(&ExecutionContext::default(), tx)?;
 
         let result = &run_for_testing(
@@ -636,9 +614,9 @@ pub(crate) mod tests {
 
         let result = run_for_testing(
             &db,
-            "insert into inventory (id, name) values (1, 'Kiley');
-insert into inventory (id, name) values (2, 'Terza');
-insert into inventory (id, name) values (3, 'Alvie');
+            "insert into inventory (inventory_id, name) values (1, 'Kiley');
+insert into inventory (inventory_id, name) values (2, 'Terza');
+insert into inventory (inventory_id, name) values (3, 'Alvie');
 SELECT * FROM inventory",
         )?;
 

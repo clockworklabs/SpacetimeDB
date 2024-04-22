@@ -160,7 +160,7 @@ pub fn build_query<'a>(
                 let probe_side = build_query(ctx, stdb, tx, probe_side, sources)?;
                 let probe_col = probe_side
                     .head()
-                    .column_pos(probe_field)
+                    .column_pos(*probe_field)
                     .expect("query compiler should have ensured the column exist");
                 Box::new(IndexSemiJoin {
                     ctx,
@@ -226,8 +226,8 @@ fn join_inner<'a>(
 ) -> Result<impl RelOps<'a> + 'a, ErrorVm> {
     let semi = rhs.semi;
 
-    let col_lhs = FieldExprRef::Name(&rhs.col_lhs);
-    let col_rhs = FieldExprRef::Name(&rhs.col_rhs);
+    let col_lhs = FieldExprRef::Name(rhs.col_lhs);
+    let col_rhs = FieldExprRef::Name(rhs.col_rhs);
     let key_lhs = [col_lhs];
     let key_rhs = [col_rhs];
 
@@ -625,7 +625,8 @@ pub(crate) mod tests {
     use crate::db::datastore::system_tables::{
         st_columns_schema, st_indexes_schema, st_sequences_schema, st_table_schema, StColumnFields, StColumnRow,
         StIndexFields, StIndexRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, ST_COLUMNS_ID,
-        ST_COLUMNS_NAME, ST_INDEXES_NAME, ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID, ST_TABLES_NAME,
+        ST_COLUMNS_NAME, ST_INDEXES_ID, ST_INDEXES_NAME, ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID,
+        ST_TABLES_NAME,
     };
     use crate::db::datastore::traits::IsolationLevel;
     use crate::db::relational_db::tests_utils::TestDB;
@@ -703,12 +704,12 @@ pub(crate) mod tests {
         let schema = TableDef::from_product("inventory", head).into_schema(table_id);
 
         let data = MemTable::from_value(scalar(1u64));
-        let rhs = data.get_field_pos(0).unwrap().clone();
+        let rhs = *data.get_field_pos(0).unwrap();
 
         let mut sources = SourceSet::<_, 1>::empty();
         let rhs_source_expr = sources.add_mem_table(data);
 
-        let q = query(&schema).with_join_inner(rhs_source_expr, FieldName::positional("inventory", 0), rhs, false);
+        let q = query(&schema).with_join_inner(rhs_source_expr, FieldName::new(table_id, 0.into()), rhs, false);
 
         let result = match run_ast(p, q.into(), sources) {
             Code::Table(x) => x,
@@ -753,12 +754,12 @@ pub(crate) mod tests {
         let schema = TableDef::from_product("test", head).into_schema(table_id);
 
         let data = MemTable::from_value(scalar(1u64));
-        let rhs = data.get_field_pos(0).unwrap().clone();
+        let rhs = *data.get_field_pos(0).unwrap();
 
         let mut sources = SourceSet::<_, 1>::empty();
         let rhs_source_expr = sources.add_mem_table(data);
 
-        let q = query(&schema).with_join_inner(rhs_source_expr, FieldName::positional("inventory", 0), rhs, true);
+        let q = query(&schema).with_join_inner(rhs_source_expr, FieldName::new(table_id, 0.into()), rhs, true);
 
         let result = match run_ast(p, q.into(), sources) {
             Code::Table(x) => x,
@@ -800,7 +801,7 @@ pub(crate) mod tests {
 
         let q = query(&st_table_schema()).with_select_cmp(
             OpCmp::Eq,
-            FieldName::named(ST_TABLES_NAME, StTableFields::TableName.name()),
+            FieldName::new(ST_TABLES_ID, StTableFields::TableName.into()),
             scalar(ST_TABLES_NAME),
         );
         check_catalog(
@@ -834,12 +835,12 @@ pub(crate) mod tests {
         let q = query(&st_columns_schema())
             .with_select_cmp(
                 OpCmp::Eq,
-                FieldName::named(ST_COLUMNS_NAME, StColumnFields::TableId.name()),
+                FieldName::new(ST_COLUMNS_ID, StColumnFields::TableId.into()),
                 scalar(ST_COLUMNS_ID),
             )
             .with_select_cmp(
                 OpCmp::Eq,
-                FieldName::named(ST_COLUMNS_NAME, StColumnFields::ColPos.name()),
+                FieldName::new(ST_COLUMNS_ID, StColumnFields::ColPos.into()),
                 scalar(StColumnFields::TableId as u32),
             );
         check_catalog(
@@ -881,7 +882,7 @@ pub(crate) mod tests {
 
         let q = query(&st_indexes_schema()).with_select_cmp(
             OpCmp::Eq,
-            FieldName::named(ST_INDEXES_NAME, StIndexFields::IndexName.name()),
+            FieldName::new(ST_INDEXES_ID, StIndexFields::IndexName.into()),
             scalar("idx_1"),
         );
         check_catalog(
@@ -916,7 +917,7 @@ pub(crate) mod tests {
 
         let q = query(&st_sequences_schema()).with_select_cmp(
             OpCmp::Eq,
-            FieldName::named(ST_SEQUENCES_NAME, StSequenceFields::TableId.name()),
+            FieldName::new(ST_SEQUENCES_ID, StSequenceFields::TableId.into()),
             scalar(ST_SEQUENCES_ID),
         );
         check_catalog(

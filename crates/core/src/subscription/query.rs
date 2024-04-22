@@ -82,7 +82,7 @@ pub enum Supported {
 /// evaluation is not currently supported for the expression.
 pub fn classify(expr: &QueryExpr) -> Option<Supported> {
     use expr::Query::*;
-    if expr.query.len() == 1 && matches!(expr.query[0], IndexJoin(_)) {
+    if matches!(&*expr.query, [IndexJoin(_)]) {
         return Some(Supported::Semijoin);
     }
     for op in &expr.query {
@@ -106,7 +106,7 @@ mod tests {
     use crate::execution_context::ExecutionContext;
     use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate};
     use crate::sql::execute::collect_result;
-    use crate::sql::execute::run;
+    use crate::sql::execute::tests::run_for_testing;
     use crate::subscription::subscription::ExecutionSet;
     use crate::util::slow::SlowQueryConfig;
     use crate::vm::tests::create_table_with_rows;
@@ -212,10 +212,7 @@ mod tests {
         let (schema, table, data, q) = make_data(db, tx, table_name, &head, &row)?;
 
         // For filtering out the hidden field `OP_TYPE_FIELD_NAME`
-        let fields = &[
-            FieldName::named(table_name, "inventory_id").into(),
-            FieldName::named(table_name, "name").into(),
-        ];
+        let fields = &[0, 1].map(|c| FieldName::new(schema.table_id, c.into()).into());
 
         let q = q.with_project(fields, None);
 
@@ -232,11 +229,7 @@ mod tests {
 
         let (schema, table, data, q) = make_data(db, tx, table_name, &head, &row)?;
 
-        // For filtering out the hidden field `OP_TYPE_FIELD_NAME`
-        let fields = &[
-            FieldName::named(table_name, "player_id").into(),
-            FieldName::named(table_name, "name").into(),
-        ];
+        let fields = &[0, 1].map(|c| FieldName::new(schema.table_id, c.into()).into());
 
         let q = q.with_project(fields, None);
 
@@ -411,7 +404,7 @@ mod tests {
         let q_1 = q.clone();
         check_query(&db, &table, &tx, &q_1, &data)?;
 
-        let q_2 = q.with_select_cmp(OpCmp::Eq, FieldName::named("inventory", "inventory_id"), scalar(1u64));
+        let q_2 = q.with_select_cmp(OpCmp::Eq, FieldName::new(schema.table_id, 0.into()), scalar(1u64));
         check_query(&db, &table, &tx, &q_2, &data)?;
 
         Ok(())
@@ -433,10 +426,10 @@ mod tests {
         let tx = db.begin_tx();
         check_query(&db, &table, &tx, &q, &data)?;
 
-        //SELECT * FROM inventory WHERE inventory_id = 1
+        // SELECT * FROM inventory WHERE inventory_id = 1
         let q_id = QueryExpr::new(&*schema).with_select_cmp(
             OpCmp::Eq,
-            FieldName::named("_inventory", "inventory_id"),
+            FieldName::new(schema.table_id, 0.into()),
             scalar(1u64),
         );
 
@@ -519,7 +512,7 @@ mod tests {
 
         insert into EnemyState (entity_id, herd_id, status, type, direction) values (1, 1181485940, 1633678837, 1158301365, 132191327);
         insert into EnemyState (entity_id, herd_id, status, type, direction) values (2, 2017368418, 194072456, 34423057, 1296770410);";
-        run(&db, sql_insert, AuthCtx::for_testing())?;
+        run_for_testing(&db, sql_insert)?;
 
         let sql_query = "\
             SELECT EnemyState.* FROM EnemyState \

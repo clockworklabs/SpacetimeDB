@@ -6,7 +6,7 @@ use spacetimedb_sats::product_value::ProductValue;
 use spacetimedb_sats::relation::{
     DbTable, FieldExpr, FieldExprRef, FieldName, Header, HeaderOnlyField, Relation, RowCount,
 };
-use spacetimedb_sats::{bsatn, impl_serialize, AlgebraicValue};
+use spacetimedb_sats::{bsatn, impl_serialize, AlgebraicValue, ProductType};
 use spacetimedb_table::read_column::ReadColumn;
 use spacetimedb_table::table::RowRef;
 use std::borrow::Cow;
@@ -101,7 +101,7 @@ impl<'a> RelValue<'a> {
             FieldExprRef::Name(col) => {
                 let pos = header.column_pos_or_err(col)?.idx();
                 self.read_column(pos)
-                    .ok_or_else(|| RelationError::FieldNotFoundAtPos(pos, col.clone()))?
+                    .ok_or_else(|| RelationError::FieldNotFoundAtPos(pos, col))?
             }
             FieldExprRef::Value(x) => Cow::Borrowed(x),
         };
@@ -133,9 +133,9 @@ impl<'a> RelValue<'a> {
         for col in cols {
             let val = match col {
                 FieldExpr::Name(col) => {
-                    let pos = header.column_pos_or_err(col)?.idx();
+                    let pos = header.column_pos_or_err(*col)?.idx();
                     self.read_or_take_column(pos)
-                        .ok_or_else(|| RelationError::FieldNotFoundAtPos(pos, col.clone()))?
+                        .ok_or_else(|| RelationError::FieldNotFoundAtPos(pos, *col))?
                 }
                 FieldExpr::Value(x) => x.clone(),
             };
@@ -159,7 +159,7 @@ impl<'a> RelValue<'a> {
 }
 
 /// An in-memory table
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct MemTableWithoutTableName<'a> {
     pub head: HeaderOnlyField<'a>,
     pub data: &'a [ProductValue],
@@ -192,7 +192,7 @@ impl MemTable {
 
     /// For testing purposes only this provides a single-col header / product value.
     pub fn from_value(of: AlgebraicValue) -> Self {
-        let head = Header::for_mem_table(of.type_of().into());
+        let head = ProductType::from(of.type_of()).into();
         Self::new(Arc::new(head), StAccess::Public, [of.into()].into())
     }
 
@@ -213,10 +213,6 @@ impl MemTable {
 
     pub fn get_field_pos(&self, pos: usize) -> Option<&FieldName> {
         self.head.fields.get(pos).map(|x| &x.field)
-    }
-
-    pub fn get_field_named(&self, name: &str) -> Option<&FieldName> {
-        self.head.find_by_name(name).map(|x| &x.field)
     }
 }
 

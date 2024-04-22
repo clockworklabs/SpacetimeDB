@@ -1352,7 +1352,6 @@ mod tests {
 
         stdb.commit_tx(&ExecutionContext::default(), tx)?;
 
-        dbg!("reopen...");
         let stdb = stdb.reopen()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
