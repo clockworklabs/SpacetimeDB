@@ -195,13 +195,13 @@ unsafe fn hash_value(
 /// SAFETY: `data = bytes[range_move(0..size_of::<VarLenRef>(), *curr_offset)]`
 /// must be a valid `vlr = VarLenRef` and `&data` must be properly aligned for a `VarLenRef`.
 /// The `vlr.first_granule` must be `NULL` or must point to a valid granule in `page`.
-unsafe fn run_vlo_bytes(
+pub(crate) unsafe fn run_vlo_bytes<R>(
     page: &Page,
     bytes: &Bytes,
     blob_store: &dyn BlobStore,
     curr_offset: &mut usize,
-    run: impl FnOnce(&[u8]),
-) {
+    run: impl FnOnce(&[u8]) -> R,
+) -> R {
     // SAFETY: `value` was valid at and aligned for `ty`.
     // These `ty` store a `vlr: VarLenRef` as their fixed value.
     // The range thus is valid and properly aligned for `VarLenRef`.
@@ -217,8 +217,8 @@ unsafe fn run_vlo_bytes(
         let total_len = vlr.length_in_bytes as usize;
 
         // SAFETY: `total_len == var_iter.map(|c| c.len()).sum()`.
-        unsafe { concat_byte_chunks_buf(total_len, var_iter, run) };
-    };
+        unsafe { concat_byte_chunks_buf(total_len, var_iter, run) }
+    }
 }
 
 /// Read a `T` from `bytes` at the `curr_offset` and advance by `size` bytes.
