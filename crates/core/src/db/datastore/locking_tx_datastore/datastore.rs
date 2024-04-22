@@ -25,6 +25,8 @@ use crate::{
 };
 use anyhow::{anyhow, Context};
 use parking_lot::{Mutex, RwLock};
+use spacetimedb_commitlog::payload::txdata;
+use spacetimedb_lib::Identity;
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::db::def::{IndexDef, SequenceDef, TableDef, TableSchema};
 use spacetimedb_sats::{bsatn, buffer::BufReader, hash::Hash, AlgebraicValue, ProductValue};
@@ -32,7 +34,7 @@ use spacetimedb_table::{indexes::RowPointer, table::RowRef};
 use std::sync::Arc;
 use std::time::Instant;
 use std::{borrow::Cow, time::Duration};
-use std::{cell::RefCell, ops::RangeBounds};
+use std::{cell::RefCell, collections::HashSet, ops::RangeBounds};
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, DBError>;
@@ -122,6 +124,7 @@ impl Locking {
             database_address: self.database_address,
             committed_state: self.committed_state.clone(),
             progress: RefCell::new(progress),
+            connected_clients: RefCell::new(HashSet::new()),
         }
     }
 }
@@ -561,11 +564,18 @@ pub struct Replay<F> {
     database_address: Address,
     committed_state: Arc<RwLock<CommittedState>>,
     progress: RefCell<F>,
+    connected_clients: RefCell<HashSet<(Identity, Address)>>,
+}
+
+impl<F> Replay<F> {
+    pub fn into_connected_clients(self) -> HashSet<(Identity, Address)> {
+        self.connected_clients.into_inner()
+    }
 }
 
 impl<F: FnMut(u64)> spacetimedb_commitlog::Decoder for Replay<F> {
-    type Record = spacetimedb_commitlog::payload::Txdata<ProductValue>;
-    type Error = spacetimedb_commitlog::payload::txdata::DecoderError<ReplayError>;
+    type Record = txdata::Txdata<ProductValue>;
+    type Error = txdata::DecoderError<ReplayError>;
 
     fn decode_record<'a, R: BufReader<'a>>(
         &self,
@@ -578,8 +588,24 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::Decoder for Replay<F> {
             database_address: &self.database_address,
             committed_state: &mut committed_state,
             progress: &mut *self.progress.borrow_mut(),
+            connected_clients: &mut self.connected_clients.borrow_mut(),
         };
-        spacetimedb_commitlog::payload::txdata::decode_record_fn(&mut visitor, version, tx_offset, reader)
+        txdata::decode_record_fn(&mut visitor, version, tx_offset, reader)
+    }
+}
+
+impl<F: FnMut(u64)> spacetimedb_commitlog::Decoder for &mut Replay<F> {
+    type Record = txdata::Txdata<ProductValue>;
+    type Error = txdata::DecoderError<ReplayError>;
+
+    #[inline]
+    fn decode_record<'a, R: BufReader<'a>>(
+        &self,
+        version: u8,
+        tx_offset: u64,
+        reader: &mut R,
+    ) -> std::result::Result<Self::Record, Self::Error> {
+        spacetimedb_commitlog::Decoder::decode_record(&**self, version, tx_offset, reader)
     }
 }
 
@@ -623,6 +649,7 @@ struct ReplayVisitor<'a, F> {
     database_address: &'a Address,
     committed_state: &'a mut CommittedState,
     progress: &'a mut F,
+    connected_clients: &'a mut HashSet<(Identity, Address)>,
 }
 
 impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVisitor<'_, F> {
@@ -712,8 +739,31 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
         Ok(())
     }
 
-    fn visit_tx_end(&mut self) -> std::prelude::v1::Result<(), Self::Error> {
+    fn visit_tx_end(&mut self) -> std::result::Result<(), Self::Error> {
         self.committed_state.next_tx_offset += 1;
+
+        Ok(())
+    }
+
+    fn visit_inputs(&mut self, inputs: &txdata::Inputs) -> std::result::Result<(), Self::Error> {
+        let decode_caller = || {
+            let buf = &mut inputs.reducer_args.as_ref();
+            let caller_identity: Identity = bsatn::from_reader(buf).context("Could not decode caller identity")?;
+            let caller_address: Address = bsatn::from_reader(buf).context("Could not decode caller address")?;
+            anyhow::Ok((caller_identity, caller_address))
+        };
+        if let Some(action) = inputs.reducer_name.strip_prefix("__identity_") {
+            let caller = decode_caller()?;
+            match action {
+                "connected__" => {
+                    self.connected_clients.insert(caller);
+                }
+                "disconnected__" => {
+                    self.connected_clients.remove(&caller);
+                }
+                _ => {}
+            }
+        }
 
         Ok(())
     }

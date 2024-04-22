@@ -1,5 +1,5 @@
 use super::database_logger::DatabaseLogger;
-use crate::db::relational_db::RelationalDB;
+use crate::db::relational_db::{ConnectedClients, RelationalDB};
 use crate::db::{Config, Storage};
 use crate::error::DBError;
 use crate::messages::control_db::Database;
@@ -25,23 +25,26 @@ impl DatabaseInstanceContext {
         instance_id: u64,
         root_db_path: PathBuf,
         rt: tokio::runtime::Handle,
-    ) -> Result<Self> {
+    ) -> Result<(Self, Option<ConnectedClients>)> {
         let mut db_path = root_db_path;
         db_path.extend([&*database.address.to_hex(), &*instance_id.to_string()]);
         db_path.push("database");
 
         let log_path = DatabaseLogger::filepath(&database.address, instance_id);
-        let relational_db = match config.storage {
-            Storage::Memory => RelationalDB::open(db_path, database.address, None)?,
-            Storage::Disk => RelationalDB::local(db_path, rt, database.address)?,
+        let (relational_db, dangling_connections) = match config.storage {
+            Storage::Memory => RelationalDB::open(db_path, database.address, None).map(|db| (db, None))?,
+            Storage::Disk => RelationalDB::local(db_path, rt, database.address)
+                .map(|(db, connected_clients)| (db, (!connected_clients.is_empty()).then_some(connected_clients)))?,
         };
 
-        Ok(Self {
+        let dbic = Self {
             database,
             database_instance_id: instance_id,
             logger: Arc::new(DatabaseLogger::open(log_path)),
             relational_db: Arc::new(relational_db),
-        })
+        };
+
+        Ok((dbic, dangling_connections))
     }
 
     pub fn scheduler_db_path(&self, root_db_path: PathBuf) -> PathBuf {

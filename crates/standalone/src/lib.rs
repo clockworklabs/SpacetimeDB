@@ -645,24 +645,26 @@ impl StandaloneEnv {
 
         let root_db_path = stdb_path("worker_node/database_instances");
 
-        let (dbic, (scheduler, scheduler_starter)) = {
+        let (dbic, dangling, (scheduler, scheduler_starter)) = {
             let rt = tokio::runtime::Handle::current();
+            let mut dangling = None;
             let (dbic, scheduler) = tokio::task::block_in_place(|| {
                 self.db_inst_ctx_controller.get_or_try_init(instance_id, || {
-                    let dbic = DatabaseInstanceContext::from_database(
+                    let (dbic, dangling_clients) = DatabaseInstanceContext::from_database(
                         self.config,
                         database,
                         instance_id,
                         root_db_path.clone(),
                         rt,
                     )?;
+                    dangling = dangling_clients;
                     let (sched, _) = Scheduler::open(dbic.scheduler_db_path(root_db_path))?;
 
                     anyhow::Ok((dbic, sched))
                 })
             })?;
 
-            (dbic, scheduler.new_with_same_db())
+            (dbic, dangling, scheduler.new_with_same_db())
         };
 
         let mhc = ModuleHostContext {
@@ -671,6 +673,7 @@ impl StandaloneEnv {
             program_bytes: program_bytes.into(),
             scheduler,
             scheduler_starter,
+            dangling_client_connections: dangling,
         };
 
         Ok(mhc)

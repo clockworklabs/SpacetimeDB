@@ -1,6 +1,7 @@
 use spacetimedb_lib::Hash;
 
 use crate::database_instance_context::DatabaseInstanceContext;
+use crate::db::relational_db::ConnectedClients;
 use crate::energy::EnergyMonitor;
 use crate::host::scheduler::{Scheduler, SchedulerStarter};
 use crate::messages::control_db::HostType;
@@ -13,6 +14,7 @@ pub struct ModuleHostContext {
     pub scheduler_starter: SchedulerStarter,
     pub host_type: HostType,
     pub program_bytes: AnyBytes,
+    pub dangling_client_connections: Option<ConnectedClients>,
 }
 
 pub struct ModuleCreationContext {
