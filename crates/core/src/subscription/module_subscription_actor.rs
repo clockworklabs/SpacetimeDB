@@ -179,11 +179,14 @@ impl ModuleSubscriptions {
 #[cfg(test)]
 mod tests {
     use super::ModuleSubscriptions;
+    use crate::client::messages::{SerializableMessage, SubscriptionUpdate, TransactionUpdateMessage};
     use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::energy::EnergyQuanta;
     use crate::execution_context::ExecutionContext;
-    use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
+    use crate::host::module_host::{
+        DatabaseTableUpdate, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ProtocolDatabaseUpdate,
+    };
     use crate::host::{ArgsTuple, Timestamp};
     use spacetimedb_client_api_messages::client_api::Subscribe;
     use spacetimedb_lib::{error::ResultTest, AlgebraicType, Identity};
@@ -207,7 +210,7 @@ mod tests {
         })?;
 
         let id = Identity::ZERO;
-        let client_id = ClientActorId::for_test();
+        let client_id = ClientActorId::for_test(None, None);
         let sender = Arc::new(ClientConnectionSender::dummy(client_id, Protocol::Binary));
         let module_subscriptions = ModuleSubscriptions::new(db.clone(), id);
 
@@ -264,13 +267,14 @@ mod tests {
         let db = Arc::new(test_db.db.clone());
         let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
 
-        let id = ClientActorId::for_test();
+        let id = ClientActorId::for_test(None, None);
         let sender = Arc::new(ClientConnectionSender::dummy(id, Protocol::Binary));
         let module_subscriptions = ModuleSubscriptions::new(db.clone(), id.identity);
 
-        let client_id0 = ClientActorId::for_test();
-        let (client0, mut rx0) = ClientConnectionSender::dummy_with_channel(client_id0.clone(), Protocol::Binary);
-        let (client1, mut rx1) = ClientConnectionSender::dummy_with_channel(client_id0, Protocol::Binary);
+        let client_id0 = ClientActorId::for_test(None, None);
+        let client_id1 = ClientActorId::for_test(Some(client_id0.identity), None);
+        let (client0, mut rx0) = ClientConnectionSender::dummy_with_channel(client_id0, Protocol::Binary);
+        let (client1, mut rx1) = ClientConnectionSender::dummy_with_channel(client_id1, Protocol::Binary);
 
         // Subscribing to T should return a single row
         let query_strings = vec!["select * from T where a = 1".into()];
@@ -292,17 +296,17 @@ mod tests {
                 Arc::new(client1),
                 Subscribe {
                     query_strings,
-                    request_id: 0,
+                    request_id: 1,
                 },
                 Instant::now(),
                 None,
             )
             .unwrap();
 
-        let inserts = Arc::new([product![product!(1_u8), product!(2_u8)]]);
+        let inserts = Arc::new([product!(1u8), product!(2u8), product!(2u8)]);
         let table_update = DatabaseTableUpdate {
             table_id,
-            table_name: Box::from("Foo"),
+            table_name: Box::from("T"),
             inserts,
             deletes: Arc::new([]),
         };
@@ -324,15 +328,34 @@ mod tests {
             timer: None,
         });
 
-        runtime.spawn_blocking(move || {
-            let subscriptions = module_subscriptions.subscriptions.read();
-            module_subscriptions.blocking_broadcast_event(Some(&sender), &subscriptions, event);
-        });
-
         runtime.block_on(async move {
-            tokio::time::timeout(Duration::from_millis(10), async move {
-                rx0.recv().await.expect("Expected at least one message");
-                rx1.recv().await.expect("Expected at least one message");
+            tokio::task::block_in_place(move || {
+                let subscriptions = module_subscriptions.subscriptions.read();
+                module_subscriptions.blocking_broadcast_event(Some(&sender), &subscriptions, event);
+            });
+            tokio::time::sleep(Duration::from_secs(4)).await;
+            tokio::time::timeout(Duration::from_millis(100), async move {
+                rx0.recv().await.expect("Expected subscription update message");
+                let m0 = rx0.recv().await.expect("Expected transaction update message");
+                rx1.recv().await.expect("Expected subscription update message");
+                let m1 = rx1.recv().await.expect("Expected transaction update message");
+
+                // check if the first client got the update with only 1 row and the second client
+                // got the update with 2 rows
+                assert!(matches!(m0,
+                    SerializableMessage::ProtocolUpdate(
+                        TransactionUpdateMessage {
+                            database_update: SubscriptionUpdate {
+                                database_update: ProtocolDatabaseUpdate { tables, .. },
+                            ..},
+                        ..}) if tables.clone().left().unwrap()[0].table_row_operations.len() == 1));
+                assert!(matches!(m1,
+                    SerializableMessage::ProtocolUpdate(
+                        TransactionUpdateMessage {
+                            database_update: SubscriptionUpdate {
+                                database_update: ProtocolDatabaseUpdate { tables, .. },
+                            ..},
+                        ..}) if tables.clone().left().unwrap()[0].table_row_operations.len() == 2));
             })
             .await
             .unwrap();

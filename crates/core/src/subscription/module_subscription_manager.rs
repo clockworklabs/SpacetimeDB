@@ -30,11 +30,11 @@ type Client = Arc<ClientConnectionSender>;
 #[derive(Debug, Default)]
 pub struct SubscriptionManager {
     // Subscriber identities and their client connections.
-    clients: HashMap<Id, Client>,
+    pub clients: HashMap<Id, Client>,
     // Queries for which there is at least one subscriber.
     queries: HashMap<QueryHash, Query>,
     // The subscribers for each query.
-    subscribers: HashMap<QueryHash, HashSet<Id>>,
+    pub subscribers: HashMap<QueryHash, HashSet<Id>>,
     // Inverted index from tables to queries that read from them.
     tables: IntMap<TableId, HashSet<QueryHash>>,
 }
