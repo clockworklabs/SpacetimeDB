@@ -62,12 +62,12 @@ pub fn join_inner<'a>(
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {
     let lhs_head = lhs.head();
     let rhs_head = rhs.head();
-    let col_lhs = lhs_head.column_pos_or_err(q.col_lhs)?;
-    let col_rhs = rhs_head.column_pos_or_err(q.col_rhs)?;
+    let col_lhs = q.col_lhs.idx();
+    let col_rhs = q.col_rhs.idx();
 
-    let key_lhs = move |row: &RelValue<'_>| row.read_column(col_lhs.idx()).unwrap().into_owned();
-    let key_rhs = move |row: &RelValue<'_>| row.read_column(col_rhs.idx()).unwrap().into_owned();
-    let pred = move |l: &RelValue<'_>, r: &RelValue<'_>| l.read_column(col_lhs.idx()) == r.read_column(col_rhs.idx());
+    let key_lhs = move |row: &RelValue<'_>| row.read_column(col_lhs).unwrap().into_owned();
+    let key_rhs = move |row: &RelValue<'_>| row.read_column(col_rhs).unwrap().into_owned();
+    let pred = move |l: &RelValue<'_>, r: &RelValue<'_>| l.read_column(col_lhs) == r.read_column(col_rhs);
 
     Ok(if q.semi {
         let head = lhs_head.clone();
@@ -240,6 +240,7 @@ pub mod tests {
     use crate::program::Program;
     use crate::relation::MemTable;
     use spacetimedb_lib::operator::{OpCmp, OpLogic};
+    use spacetimedb_primitives::ColId;
     use spacetimedb_sats::db::error::RelationError;
     use spacetimedb_sats::relation::{FieldName, Header};
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
@@ -305,21 +306,21 @@ pub mod tests {
         let p = &mut Program;
         let table_id = 0.into();
         let table = mem_table_one_u64(table_id);
-        let column = table.head().fields[0].clone();
-        let field = *table.get_field_pos(0).unwrap();
+        let col: ColId = 0.into();
+        let field = table.head().fields[col.idx()].clone();
 
         let mut sources = SourceSet::<_, 2>::empty();
         let source_expr = sources.add_mem_table(table.clone());
         let second_source_expr = sources.add_mem_table(table);
 
-        let q = QueryExpr::new(source_expr).with_join_inner(second_source_expr, field, field, false);
+        let q = QueryExpr::new(source_expr).with_join_inner(second_source_expr, col, col, false);
         let result = match run_ast(p, q.into(), sources) {
             Code::Table(x) => x,
             x => panic!("Invalid result {x}"),
         };
 
         // The expected result.
-        let head = Header::new(table_id, "".into(), [column.clone(), column].into(), Vec::new());
+        let head = Header::new(table_id, "".into(), [field.clone(), field].into(), Vec::new());
         let input = MemTable::from_iter(head.into(), [product!(1u64, 1u64)]);
 
         println!("{}", &result.head);
@@ -337,13 +338,13 @@ pub mod tests {
         let p = &mut Program;
         let table_id = 0.into();
         let table = mem_table_one_u64(table_id);
-        let field = *table.get_field_pos(0).unwrap();
+        let col = 0.into();
 
         let mut sources = SourceSet::<_, 2>::empty();
         let source_expr = sources.add_mem_table(table.clone());
         let second_source_expr = sources.add_mem_table(table);
 
-        let q = QueryExpr::new(source_expr).with_join_inner(second_source_expr, field, field, true);
+        let q = QueryExpr::new(source_expr).with_join_inner(second_source_expr, col, col, true);
         let result = match run_ast(p, q.into(), sources) {
             Code::Table(x) => x,
             x => panic!("Invalid result {x}"),
@@ -404,14 +405,14 @@ pub mod tests {
         let row = product![1u64, "health"];
 
         let table_id = 0.into();
-        let input = mem_table(table_id, inv, vec![row]);
-        let field = *input.get_field_pos(0).unwrap();
+        let input = mem_table(table_id, inv, [row]);
+        let col = 0.into();
 
         let mut sources = SourceSet::<_, 2>::empty();
         let source_expr = sources.add_mem_table(input.clone());
         let second_source_expr = sources.add_mem_table(input);
 
-        let q = QueryExpr::new(source_expr).with_join_inner(second_source_expr, field, field, false);
+        let q = QueryExpr::new(source_expr).with_join_inner(second_source_expr, col, col, false);
 
         let result = match run_ast(p, q.into(), sources) {
             Code::Table(x) => x,
@@ -440,14 +441,14 @@ pub mod tests {
         let row = product![1u64, "health"];
 
         let table_id = 0.into();
-        let input = mem_table(table_id, inv, vec![row]);
-        let field = *input.get_field_pos(0).unwrap();
+        let input = mem_table(table_id, inv, [row]);
+        let col = 0.into();
 
         let mut sources = SourceSet::<_, 2>::empty();
         let source_expr = sources.add_mem_table(input.clone());
         let second_source_expr = sources.add_mem_table(input);
 
-        let q = QueryExpr::new(source_expr).with_join_inner(second_source_expr, field, field, true);
+        let q = QueryExpr::new(source_expr).with_join_inner(second_source_expr, col, col, true);
 
         let result = match run_ast(p, q.into(), sources) {
             Code::Table(x) => x,
@@ -473,9 +474,13 @@ pub mod tests {
 
         // See table above.
         let data = create_game_data();
-        let [inv_inventory_id, inv_name] = [0, 1].map(|c: usize| data.inv.head().fields[c].field);
-        let [location_entity_id, location_x, location_z] = [0, 1, 2].map(|c| data.location.head().fields[c].field);
-        let [player_entity_id, player_inventory_id] = [0, 1].map(|c| data.player.head().fields[c].field);
+        let inv @ [inv_inventory_id, _] = [0, 1].map(|c| c.into());
+        let inv_head = data.inv.head().clone();
+        let inv_expr = |col: ColId| inv_head.fields[col.idx()].field.into();
+        let [location_entity_id, location_x, location_z] = [0, 1, 2].map(|c| c.into());
+        let [player_entity_id, player_inventory_id] = [0, 1].map(|c| c.into());
+        let loc_head = data.location.head().clone();
+        let loc_field = |col: ColId| loc_head.fields[col.idx()].field;
         let inv_table_id = data.inv.head.table_id;
         let player_table_id = data.player.head.table_id;
 
@@ -492,10 +497,10 @@ pub mod tests {
         // WHERE x > 0 AND x <= 32 AND z > 0 AND z <= 32
         let q = QueryExpr::new(player_source_expr)
             .with_join_inner(location_source_expr, player_entity_id, location_entity_id, true)
-            .with_select_cmp(OpCmp::Gt, location_x, scalar(0.0f32))
-            .with_select_cmp(OpCmp::LtEq, location_x, scalar(32.0f32))
-            .with_select_cmp(OpCmp::Gt, location_z, scalar(0.0f32))
-            .with_select_cmp(OpCmp::LtEq, location_z, scalar(32.0f32));
+            .with_select_cmp(OpCmp::Gt, loc_field(location_x), scalar(0.0f32))
+            .with_select_cmp(OpCmp::LtEq, loc_field(location_x), scalar(32.0f32))
+            .with_select_cmp(OpCmp::Gt, loc_field(location_z), scalar(0.0f32))
+            .with_select_cmp(OpCmp::LtEq, loc_field(location_z), scalar(32.0f32));
 
         let result = run_query(p, q.into(), sources);
 
@@ -529,11 +534,11 @@ pub mod tests {
             // This necessitates a trailing `project` to get just `Inventory.*`.
             .with_join_inner(player_source_expr, inv_inventory_id, player_inventory_id, false)
             .with_join_inner(location_source_expr, player_entity_id, location_entity_id, true)
-            .with_select_cmp(OpCmp::Gt, location_x, scalar(0.0f32))
-            .with_select_cmp(OpCmp::LtEq, location_x, scalar(32.0f32))
-            .with_select_cmp(OpCmp::Gt, location_z, scalar(0.0f32))
-            .with_select_cmp(OpCmp::LtEq, location_z, scalar(32.0f32))
-            .with_project(&[inv_inventory_id.into(), inv_name.into()], None);
+            .with_select_cmp(OpCmp::Gt, loc_field(location_x), scalar(0.0f32))
+            .with_select_cmp(OpCmp::LtEq, loc_field(location_x), scalar(32.0f32))
+            .with_select_cmp(OpCmp::Gt, loc_field(location_z), scalar(0.0f32))
+            .with_select_cmp(OpCmp::LtEq, loc_field(location_z), scalar(32.0f32))
+            .with_project(&inv.map(inv_expr), None);
 
         let result = run_query(p, q.into(), sources);
 

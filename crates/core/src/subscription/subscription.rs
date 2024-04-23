@@ -653,7 +653,7 @@ mod tests {
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::sql::compiler::compile_sql;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_sats::relation::{DbTable, FieldName};
+    use spacetimedb_sats::relation::DbTable;
     use spacetimedb_sats::{product, AlgebraicType};
     use spacetimedb_vm::expr::{CrudExpr, IndexJoin, Query, SourceExpr};
 
@@ -666,7 +666,7 @@ mod tests {
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
         let indexes = &[(1.into(), "b")];
-        let lhs_id = db.create_table_for_test("lhs", schema, indexes)?;
+        let _ = db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [b, c]
         let schema = &[
@@ -716,10 +716,7 @@ mod tests {
                     source: SourceExpr::InMemory { .. },
                     query: ref lhs,
                 },
-            probe_field: FieldName {
-                table: probe_table,
-                col: probe_field,
-            },
+            probe_col,
             index_side: SourceExpr::DbTable(DbTable {
                 table_id: index_table, ..
             }),
@@ -736,8 +733,7 @@ mod tests {
         // Assert that original index and probe tables have been swapped.
         assert_eq!(index_table, rhs_id);
         assert_eq!(index_col, 0.into());
-        assert_eq!(probe_field, 1.into());
-        assert_eq!(probe_table, lhs_id);
+        assert_eq!(probe_col, 1.into());
         Ok(())
     }
 
@@ -759,7 +755,7 @@ mod tests {
             ("d", AlgebraicType::U64),
         ];
         let indexes = &[(0.into(), "b"), (1.into(), "c")];
-        let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
+        let _ = db.create_table_for_test("rhs", schema, indexes)?;
 
         let tx = db.begin_tx();
         // Should generate an index join since there is an index on `lhs.b`.
@@ -802,10 +798,7 @@ mod tests {
                     source: SourceExpr::InMemory { .. },
                     query: ref rhs,
                 },
-            probe_field: FieldName {
-                table: probe_table,
-                col: probe_field,
-            },
+            probe_col,
             index_side: SourceExpr::DbTable(DbTable {
                 table_id: index_table, ..
             }),
@@ -822,8 +815,7 @@ mod tests {
         // Assert that original index and probe tables have not been swapped.
         assert_eq!(index_table, lhs_id);
         assert_eq!(index_col, 1.into());
-        assert_eq!(probe_field, 0.into());
-        assert_eq!(probe_table, rhs_id);
+        assert_eq!(probe_col, 0.into());
         Ok(())
     }
 

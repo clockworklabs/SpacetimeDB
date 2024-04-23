@@ -95,6 +95,9 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
         match join {
             Join::Inner { rhs, on } => {
                 let rhs_source_expr: SourceExpr = rhs.deref().into();
+                let col_lhs = q.source.head().column_pos_or_err(on.lhs)?;
+                let col_rhs = rhs_source_expr.head().column_pos_or_err(on.rhs)?;
+
                 match on.op {
                     OpCmp::Eq => {}
                     x => unreachable!("Unsupported operator `{x}` for joins"),
@@ -108,7 +111,7 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
                 // For incremental queries, this all happens on the original query with `DbTable` sources.
                 // Then, the query is "incrementalized" by replacing the sources with `MemTable`s,
                 // and the `IndexJoin` is rewritten back into a `JoinInner(semi: true)`.
-                q = q.with_join_inner(rhs_source_expr, on.lhs, on.rhs, false);
+                q = q.with_join_inner(rhs_source_expr, col_lhs, col_rhs, false);
             }
         }
     }
@@ -605,14 +608,8 @@ mod tests {
                     source: SourceExpr::DbTable(DbTable { table_id, .. }),
                     ..
                 },
-            col_lhs: FieldName {
-                table: lhs_table,
-                col: lhs_field,
-            },
-            col_rhs: FieldName {
-                table: rhs_table,
-                col: rhs_field,
-            },
+            col_lhs,
+            col_rhs,
             semi: false,
         }) = query[1]
         else {
@@ -620,10 +617,8 @@ mod tests {
         };
 
         assert_eq!(table_id, rhs_id);
-        assert_eq!(lhs_field, 1.into());
-        assert_eq!(rhs_field, 0.into());
-        assert_eq!(lhs_table, lhs_id);
-        assert_eq!(rhs_table, rhs_id);
+        assert_eq!(col_lhs, 1.into());
+        assert_eq!(col_rhs, 0.into());
         Ok(())
     }
 
@@ -683,14 +678,8 @@ mod tests {
                     source: SourceExpr::DbTable(DbTable { table_id, .. }),
                     query: ref rhs,
                 },
-            col_lhs: FieldName {
-                table: lhs_table,
-                col: lhs_field,
-            },
-            col_rhs: FieldName {
-                table: rhs_table,
-                col: rhs_field,
-            },
+            col_lhs,
+            col_rhs,
             semi: false,
         }) = query[1]
         else {
@@ -698,10 +687,8 @@ mod tests {
         };
 
         assert_eq!(table_id, rhs_id);
-        assert_eq!(lhs_field, 1.into());
-        assert_eq!(rhs_field, 0.into());
-        assert_eq!(lhs_table, lhs_id);
-        assert_eq!(rhs_table, rhs_id);
+        assert_eq!(col_lhs, 1.into());
+        assert_eq!(col_rhs, 0.into());
         assert!(rhs.is_empty());
         Ok(())
     }
@@ -742,14 +729,8 @@ mod tests {
                     source: SourceExpr::DbTable(DbTable { table_id, .. }),
                     query: ref rhs,
                 },
-            col_lhs: FieldName {
-                table: lhs_table,
-                col: lhs_field,
-            },
-            col_rhs: FieldName {
-                table: rhs_table,
-                col: rhs_field,
-            },
+            col_lhs,
+            col_rhs,
             semi: false,
         }) = query[0]
         else {
@@ -757,10 +738,8 @@ mod tests {
         };
 
         assert_eq!(table_id, rhs_id);
-        assert_eq!(lhs_field, 1.into());
-        assert_eq!(rhs_field, 0.into());
-        assert_eq!(lhs_table, lhs_id);
-        assert_eq!(rhs_table, rhs_id);
+        assert_eq!(col_lhs, 1.into());
+        assert_eq!(col_rhs, 0.into());
 
         // The selection should be pushed onto the rhs of the join
         let Query::Select(ColumnOp::Cmp {
@@ -829,14 +808,8 @@ mod tests {
                     source: SourceExpr::DbTable(DbTable { table_id, .. }),
                     query: ref rhs,
                 },
-            col_lhs: FieldName {
-                table: lhs_table,
-                col: lhs_field,
-            },
-            col_rhs: FieldName {
-                table: rhs_table,
-                col: rhs_field,
-            },
+            col_lhs,
+            col_rhs,
             semi: false,
         }) = query[1]
         else {
@@ -844,10 +817,8 @@ mod tests {
         };
 
         assert_eq!(table_id, rhs_id);
-        assert_eq!(lhs_field, 1.into());
-        assert_eq!(rhs_field, 0.into());
-        assert_eq!(lhs_table, lhs_id);
-        assert_eq!(rhs_table, rhs_id);
+        assert_eq!(col_lhs, 1.into());
+        assert_eq!(col_rhs, 0.into());
 
         assert_eq!(1, rhs.len());
 
@@ -900,10 +871,7 @@ mod tests {
                     source: SourceExpr::DbTable(DbTable { table_id, .. }),
                     query: rhs,
                 },
-            probe_field: FieldName {
-                table: probe_table,
-                col: probe_field,
-            },
+            probe_col,
             index_side: SourceExpr::DbTable(DbTable {
                 table_id: index_table, ..
             }),
@@ -917,8 +885,7 @@ mod tests {
         assert_eq!(*table_id, rhs_id);
         assert_eq!(*index_table, lhs_id);
         assert_eq!(index_col, &1.into());
-        assert_eq!(*probe_field, 0.into());
-        assert_eq!(*probe_table, rhs_id);
+        assert_eq!(*probe_col, 0.into());
 
         assert_eq!(2, rhs.len());
 
@@ -997,10 +964,7 @@ mod tests {
                     source: SourceExpr::DbTable(DbTable { table_id, .. }),
                     query: rhs,
                 },
-            probe_field: FieldName {
-                table: probe_table,
-                col: probe_field,
-            },
+            probe_col,
             index_side: SourceExpr::DbTable(DbTable {
                 table_id: index_table, ..
             }),
@@ -1014,8 +978,7 @@ mod tests {
         assert_eq!(*table_id, rhs_id);
         assert_eq!(*index_table, lhs_id);
         assert_eq!(index_col, &1.into());
-        assert_eq!(*probe_field, 0.into());
-        assert_eq!(*probe_table, rhs_id);
+        assert_eq!(*probe_col, 0.into());
 
         assert_eq!(2, rhs.len());
 

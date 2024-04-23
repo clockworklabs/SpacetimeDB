@@ -158,7 +158,7 @@ pub fn build_query<'a>(
             }
             Query::IndexJoin(IndexJoin {
                 probe_side,
-                probe_field,
+                probe_col,
                 index_side,
                 index_select,
                 index_col,
@@ -172,16 +172,12 @@ pub fn build_query<'a>(
                 let index_table = index_side.table_id().unwrap();
                 let index_header = index_side.head();
                 let probe_side = build_query(ctx, stdb, tx, probe_side, sources)?;
-                let probe_col = probe_side
-                    .head()
-                    .column_pos(*probe_field)
-                    .expect("query compiler should have ensured the column exist");
                 Box::new(IndexSemiJoin {
                     ctx,
                     db: stdb,
                     tx,
                     probe_side,
-                    probe_col,
+                    probe_col: *probe_col,
                     index_header,
                     index_select,
                     index_table,
@@ -672,11 +668,9 @@ pub(crate) mod tests {
         let table_id = schema.table_id;
 
         let data = mem_table_one_u64(u32::MAX.into());
-        let rhs = *data.get_field_pos(0).unwrap();
         let mut sources = SourceSet::<_, 1>::empty();
         let rhs_source_expr = sources.add_mem_table(data);
-        let q =
-            QueryExpr::new(&*schema).with_join_inner(rhs_source_expr, FieldName::new(table_id, 0.into()), rhs, false);
+        let q = QueryExpr::new(&*schema).with_join_inner(rhs_source_expr, 0.into(), 0.into(), false);
         let result = run_query(&stdb, q, sources);
 
         // The expected result.
@@ -695,14 +689,11 @@ pub(crate) mod tests {
 
         let ctx = ExecutionContext::default();
         let (schema, row) = stdb.with_auto_commit(&ctx, |tx| create_inv_table(&stdb, tx))?;
-        let table_id = schema.table_id;
 
         let data = mem_table_one_u64(u32::MAX.into());
-        let rhs = *data.get_field_pos(0).unwrap();
         let mut sources = SourceSet::<_, 1>::empty();
         let rhs_source_expr = sources.add_mem_table(data);
-        let q =
-            QueryExpr::new(&*schema).with_join_inner(rhs_source_expr, FieldName::new(table_id, 0.into()), rhs, true);
+        let q = QueryExpr::new(&*schema).with_join_inner(rhs_source_expr, 0.into(), 0.into(), true);
         let result = run_query(&stdb, q, sources);
 
         // The expected result.
