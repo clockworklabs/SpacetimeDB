@@ -20,7 +20,7 @@ pub mod instance_env;
 mod timestamp;
 mod wasm_common;
 
-pub use host_controller::{DescribedEntityType, HostController, ReducerCallResult, ReducerOutcome};
+pub use host_controller::{DescribedEntityType, HostController, ProgramStorage, ReducerCallResult, ReducerOutcome};
 pub use module_host::{
     EntityDef, ModuleHost, NoSuchModule, ReducerCallError, UpdateDatabaseResult, UpdateDatabaseSuccess,
 };

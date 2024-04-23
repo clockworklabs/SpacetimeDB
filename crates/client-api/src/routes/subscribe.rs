@@ -94,18 +94,10 @@ where
     let identity_token = auth.creds.token().to_owned();
 
     let host = ctx.host_controller();
-    let module = match host.get_module_host(instance_id) {
-        Ok(m) => m,
-        Err(_) => {
-            // TODO(kim): probably wrong -- check if instance node id matches ours
-            log::debug!("creating fresh module host");
-            let dbic = ctx
-                .load_module_host_context(database, instance_id)
-                .await
-                .map_err(log_and_500)?;
-            host.spawn_module_host(dbic).await.map_err(log_and_500)?
-        }
-    };
+    let module = host
+        .get_or_launch_module_host(database, instance_id)
+        .await
+        .map_err(log_and_500)?;
 
     let client_id = ClientActorId {
         identity: auth.identity,
