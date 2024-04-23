@@ -445,7 +445,7 @@ async fn exec_import(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
 
     //optional
     let nickname = args.get_one::<String>("name").cloned();
-    config.can_set_name(nickname.as_ref().map(|x| x.as_str()))?;
+    config.can_set_name(nickname.as_deref())?;
 
     config.identity_configs_mut().push(IdentityConfig {
         identity,
