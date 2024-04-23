@@ -18,6 +18,7 @@ use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_lib::address::AddressForUrl;
 use spacetimedb_lib::Address;
 use std::time::Instant;
+use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
 
 use crate::auth::{SpacetimeAuthHeader, SpacetimeIdentity, SpacetimeIdentityToken};
@@ -146,15 +147,20 @@ where
             }
         };
 
+        let mut ip = "unknown".to_string();
+        let mut src_port = 0;
         match forwarded_for {
-            Some(TypedHeader(XForwardedFor(ip))) => {
-                log::debug!("New client connected from ip {}", ip)
+            Some(TypedHeader(XForwardedFor(new_ip, new_src_port))) => {
+                ip = new_ip.to_string();
+                src_port = new_src_port;
+                log::debug!("New client connected from ip {}:{}", ip, src_port)
             }
             None => log::debug!("New client connected from unknown ip"),
         }
 
         let actor = |client, sendrx| ws_client_actor(client, ws, sendrx);
-        let client = match ClientConnection::spawn(client_id, protocol, instance_id, module, actor).await {
+        let client = match ClientConnection::spawn(client_id, protocol, instance_id, module, actor, ip, src_port).await
+        {
             Ok(s) => s,
             Err(e) => {
                 log::warn!("ModuleHost died while we were connecting: {e:#}");
@@ -277,7 +283,10 @@ async fn ws_client_actor_inner(
                     }
                     let time = t1.elapsed();
                     if time > Duration::from_millis(50) {
-                        tracing::warn!(?time, "send_all took a very long time");
+                        // get the IP of the client connected via websocket
+
+
+                        tracing::warn!(?time, "send_all took a very long time: IP: {} src_port: {}", client.ip, client.src_port);
                     }
                 }
                 continue;
@@ -383,6 +392,7 @@ enum ClientMessage {
     Pong(Vec<u8>),
     Close(Option<CloseFrame<'static>>),
 }
+
 impl ClientMessage {
     fn from_message(msg: WsMessage) -> Self {
         match msg {

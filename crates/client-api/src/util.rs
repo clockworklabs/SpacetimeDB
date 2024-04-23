@@ -36,7 +36,7 @@ impl<S: Send + Sync> FromRequest<S> for ByteStringBody {
     }
 }
 
-pub struct XForwardedFor(pub IpAddr);
+pub struct XForwardedFor(pub IpAddr, pub u16);
 
 impl headers::Header for XForwardedFor {
     fn name() -> &'static HeaderName {
@@ -48,12 +48,23 @@ impl headers::Header for XForwardedFor {
         let val = values.next().ok_or_else(headers::Error::invalid)?;
         let val = val.to_str().map_err(|_| headers::Error::invalid())?;
         let (first, _) = val.split_once(',').ok_or_else(headers::Error::invalid)?;
-        let ip = first.trim().parse().map_err(|_| headers::Error::invalid())?;
-        Ok(XForwardedFor(ip))
+        let first = first.trim();
+
+        // Assuming the first entry is either an IP or an "IP:port" pair
+        let (ip, port) = match first.split_once(':') {
+            Some((ip, port)) => (
+                ip.parse::<IpAddr>().map_err(|_| headers::Error::invalid())?,
+                port.parse::<u16>().map_err(|_| headers::Error::invalid())?,
+            ),
+            None => (first.parse::<IpAddr>().map_err(|_| headers::Error::invalid())?, 0), // Default to port 0 if no port is specified
+        };
+
+        Ok(XForwardedFor(ip, port))
     }
 
     fn encode<E: Extend<HeaderValue>>(&self, values: &mut E) {
-        values.extend([self.0.to_string().try_into().unwrap()])
+        let value = format!("{}:{}", self.0, self.1);
+        values.extend([value.try_into().unwrap()])
     }
 }
 

@@ -14,6 +14,7 @@ use derive_more::From;
 use futures::prelude::*;
 use spacetimedb_client_api_messages::protocol::*;
 use spacetimedb_lib::identity::RequestId;
+use spacetimedb_sats::satn::Satn;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::AbortHandle;
 
@@ -21,6 +22,8 @@ use tokio::task::AbortHandle;
 pub struct ClientConnectionSender {
     pub id: ClientActorId,
     pub protocol: Protocol,
+    pub ip: String,
+    pub src_port: u16,
     sendtx: mpsc::Sender<SerializableMessage>,
     abort_handle: AbortHandle,
     cancelled: AtomicBool,
@@ -45,6 +48,8 @@ impl ClientConnectionSender {
         Self {
             id,
             protocol,
+            ip: "unknown".to_string(),
+            src_port: 0,
             sendtx,
             abort_handle,
             cancelled: AtomicBool::new(false),
@@ -121,6 +126,8 @@ impl ClientConnection {
         database_instance_id: u64,
         module: ModuleHost,
         actor: F,
+        ip: String,
+        src_port: u16,
     ) -> Result<ClientConnection, ReducerCallError>
     where
         F: FnOnce(ClientConnection, mpsc::Receiver<SerializableMessage>) -> Fut,
@@ -141,7 +148,9 @@ impl ClientConnection {
         let (fut_tx, fut_rx) = oneshot::channel::<Fut>();
         // weird dance so that we can get an abort_handle into ClientConnection
         let abort_handle = tokio::spawn(async move {
-            let Ok(fut) = fut_rx.await else { return };
+            let Ok(fut) = fut_rx.await else {
+                return;
+            };
 
             let _gauge_guard = WORKER_METRICS.connected_clients.with_label_values(&db).inc_scope();
 
@@ -154,6 +163,8 @@ impl ClientConnection {
             protocol,
             sendtx,
             abort_handle,
+            ip,
+            src_port,
             cancelled: AtomicBool::new(false),
         });
         let this = Self {
