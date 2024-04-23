@@ -543,7 +543,7 @@ impl From<&TableSchema> for SourceExpr {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct IndexJoin {
     pub probe_side: QueryExpr,
-    pub probe_field: FieldName,
+    pub probe_col: ColId,
     pub index_side: SourceExpr,
     pub index_select: Option<ColumnOp>,
     pub index_col: ColId,
@@ -580,7 +580,7 @@ impl IndexJoin {
             .probe_side
             .source
             .head()
-            .has_constraint(self.probe_field, Constraints::indexed())
+            .has_constraint(self.probe_col, Constraints::indexed())
         {
             return self;
         }
@@ -593,10 +593,6 @@ impl IndexJoin {
         {
             return self;
         }
-        // The compiler ensures the following unwrap is safe.
-        // The existence of this column has already been verified,
-        // during construction of the index join.
-        let probe_column = self.probe_side.source.head().column_pos(self.probe_field).unwrap();
         match self.index_side.get_db_table() {
             // If the size of the indexed table is sufficiently large,
             // do not reorder.
@@ -607,8 +603,6 @@ impl IndexJoin {
             // If this is a delta table, we must reorder.
             // If this is a sufficiently small physical table, we should reorder.
             _ => {
-                // For the same reason the compiler also ensures this unwrap is safe.
-                let index_field = self.index_side.head().fields[self.index_col.idx()].field;
                 // Merge all selections from the original probe side into a single predicate.
                 // This includes an index scan if present.
                 let predicate = self
@@ -631,13 +625,13 @@ impl IndexJoin {
                     // Plus any selections from the original index probe.
                     probe_side,
                     // The new probe field is the previous index field.
-                    probe_field: index_field,
+                    probe_col: self.index_col,
                     // The original probe table is now the table that is being probed.
                     index_side: self.probe_side.source,
                     // Any selections from the original probe side are pulled above the index lookup.
                     index_select: predicate,
                     // The new index field is the previous probe field.
-                    index_col: probe_column,
+                    index_col: self.probe_col,
                     // Because we have swapped the original index and probe sides of the join,
                     // the new index join needs to return rows from the opposite side.
                     return_index_rows: !self.return_index_rows,
@@ -651,10 +645,8 @@ impl IndexJoin {
     // In particular when there are updates to both the left and right tables.
     // In other words, when an index join has two delta tables.
     pub fn to_inner_join(self) -> QueryExpr {
-        let col_idx = self.index_side.head().fields[self.index_col.idx()].field;
-
         if self.return_index_rows {
-            let (col_lhs, col_rhs) = (col_idx, self.probe_field);
+            let (col_lhs, col_rhs) = (self.index_col, self.probe_col);
             let rhs = self.probe_side;
 
             let source = self.index_side;
@@ -666,7 +658,7 @@ impl IndexJoin {
             };
             QueryExpr { source, query }
         } else {
-            let (col_lhs, col_rhs) = (self.probe_field, col_idx);
+            let (col_lhs, col_rhs) = (self.probe_col, self.index_col);
             let mut rhs: QueryExpr = self.index_side.into();
 
             if let Some(predicate) = self.index_select {
@@ -684,8 +676,8 @@ impl IndexJoin {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct JoinExpr {
     pub rhs: QueryExpr,
-    pub col_lhs: FieldName,
-    pub col_rhs: FieldName,
+    pub col_lhs: ColId,
+    pub col_rhs: ColId,
     /// If true, this is a left semi-join, returning rows only from the source table,
     /// using the `rhs` as a filter.
     ///
@@ -694,7 +686,7 @@ pub struct JoinExpr {
 }
 
 impl JoinExpr {
-    pub fn new(rhs: QueryExpr, col_lhs: FieldName, col_rhs: FieldName, semi: bool) -> Self {
+    pub fn new(rhs: QueryExpr, col_lhs: ColId, col_rhs: ColId, semi: bool) -> Self {
         Self {
             rhs,
             col_lhs,
@@ -1554,7 +1546,7 @@ impl QueryExpr {
         x
     }
 
-    pub fn with_join_inner(self, with: impl Into<QueryExpr>, lhs: FieldName, rhs: FieldName, semi: bool) -> Self {
+    pub fn with_join_inner(self, with: impl Into<QueryExpr>, lhs: ColId, rhs: ColId, semi: bool) -> Self {
         let mut x = self;
         x.query
             .push(Query::JoinInner(JoinExpr::new(with.into(), lhs, rhs, semi)));
@@ -1718,31 +1710,29 @@ impl QueryExpr {
         match join {
             Query::JoinInner(JoinExpr {
                 rhs: probe_side,
-                col_lhs: index_field,
-                col_rhs: probe_field,
+                col_lhs: index_col,
+                col_rhs: probe_col,
                 semi: true,
             }) => {
                 if !probe_side.query.is_empty() {
                     // An applicable join must have an index defined on the correct field.
-                    if let Some(index_col) = source.head().column_pos(index_field) {
-                        if source.head().has_constraint(index_field, Constraints::indexed()) {
-                            let index_join = IndexJoin {
-                                probe_side,
-                                probe_field,
-                                index_side: source.clone(),
-                                index_select: None,
-                                index_col,
-                                return_index_rows: true,
-                            };
-                            let query = [Query::IndexJoin(index_join)].into();
-                            return QueryExpr { source, query };
-                        }
+                    if source.head().has_constraint(index_col, Constraints::indexed()) {
+                        let index_join = IndexJoin {
+                            probe_side,
+                            probe_col,
+                            index_side: source.clone(),
+                            index_select: None,
+                            index_col,
+                            return_index_rows: true,
+                        };
+                        let query = [Query::IndexJoin(index_join)].into();
+                        return QueryExpr { source, query };
                     }
                 }
                 let join = Query::JoinInner(JoinExpr {
                     rhs: probe_side,
-                    col_lhs: index_field,
-                    col_rhs: probe_field,
+                    col_lhs: index_col,
+                    col_rhs: probe_col,
                     semi: true,
                 });
                 QueryExpr {
@@ -2104,7 +2094,7 @@ mod tests {
             }),
             Query::IndexJoin(IndexJoin {
                 probe_side: mem_table.clone().into(),
-                probe_field: FieldName::new(mem_table.head().table_id, 0.into()),
+                probe_col: 0.into(),
                 index_side: SourceExpr::DbTable(DbTable {
                     head: Arc::new(Header {
                         table_id: db_table.head().table_id,
@@ -2121,9 +2111,9 @@ mod tests {
                 return_index_rows: true,
             }),
             Query::JoinInner(JoinExpr {
-                col_rhs: FieldName::new(mem_table.head().table_id, 1.into()),
+                col_rhs: 1.into(),
                 rhs: mem_table.into(),
-                col_lhs: FieldName::new(db_table.head().table_id, 1.into()),
+                col_lhs: 1.into(),
                 semi: false,
             }),
         ]
@@ -2188,16 +2178,16 @@ mod tests {
             &[(0, AlgebraicType::U8, false), (1, AlgebraicType::U8, true)],
         );
 
-        let index_field = index_side.head().fields[1].field;
-        let probe_field = probe_side.head().fields[1].field;
+        let index_col = 1.into();
+        let probe_col = 1.into();
         let select_field = FieldName::new(index_side.head().table_id, 0.into());
         let index_select = ColumnOp::cmp(select_field, OpCmp::Eq, 0u8);
         let join = IndexJoin {
             probe_side: probe_side.clone().into(),
-            probe_field,
+            probe_col,
             index_side: index_side.clone(),
             index_select: Some(index_select.clone()),
-            index_col: 1.into(),
+            index_col,
             return_index_rows: false,
         };
 
@@ -2210,8 +2200,8 @@ mod tests {
             panic!("expected an inner join, but got {:#?}", expr.query[0]);
         };
 
-        assert_eq!(join.col_lhs, probe_field);
-        assert_eq!(join.col_rhs, index_field);
+        assert_eq!(join.col_lhs, probe_col);
+        assert_eq!(join.col_rhs, index_col);
         assert_eq!(
             join.rhs,
             QueryExpr {
@@ -2549,12 +2539,7 @@ mod tests {
         let rhs_source = SourceExpr::from(&rhs);
 
         let q = QueryExpr::new(lhs_source.clone())
-            .with_join_inner(
-                rhs_source.clone(),
-                FieldName::new(lhs.table_id, 0.into()),
-                FieldName::new(rhs.table_id, 0.into()),
-                false,
-            )
+            .with_join_inner(rhs_source.clone(), 0.into(), 0.into(), false)
             .with_project(
                 &[0, 1].map(|c| FieldExpr::Name(FieldName::new(lhs.table_id, c.into()))),
                 Some(TableId(0)),
@@ -2602,12 +2587,7 @@ mod tests {
         let lhs_source = SourceExpr::from(&lhs);
         let rhs_source = SourceExpr::from(&rhs);
 
-        let q = QueryExpr::new(lhs_source.clone()).with_join_inner(
-            rhs_source.clone(),
-            FieldName::new(lhs.table_id, 0.into()),
-            FieldName::new(rhs.table_id, 0.into()),
-            false,
-        );
+        let q = QueryExpr::new(lhs_source.clone()).with_join_inner(rhs_source.clone(), 0.into(), 0.into(), false);
         let optimized = q.clone().optimize(&|_, _| 0);
         assert_eq!(q, optimized);
     }
@@ -2634,12 +2614,7 @@ mod tests {
         let rhs_source = SourceExpr::from(&rhs);
 
         let q = QueryExpr::new(lhs_source.clone())
-            .with_join_inner(
-                rhs_source.clone(),
-                FieldName::new(lhs.table_id, 0.into()),
-                FieldName::new(rhs.table_id, 0.into()),
-                false,
-            )
+            .with_join_inner(rhs_source.clone(), 0.into(), 0.into(), false)
             .with_project(
                 &[0, 1].map(|c| FieldExpr::Name(FieldName::new(rhs.table_id, c.into()))),
                 Some(TableId(1)),
