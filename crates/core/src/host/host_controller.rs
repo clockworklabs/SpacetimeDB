@@ -19,7 +19,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 pub struct HostController {
-    modules: Mutex<IntMap<u64, ModuleHost>>,
+    modules: Arc<Mutex<IntMap<u64, ModuleHost>>>,
     pub energy_monitor: Arc<dyn EnergyMonitor>,
 }
 
@@ -103,7 +103,7 @@ impl From<&EventStatus> for ReducerOutcome {
 impl HostController {
     pub fn new(energy_monitor: Arc<impl EnergyMonitor>) -> Self {
         Self {
-            modules: Mutex::default(),
+            modules: Arc::new(Mutex::default()),
             energy_monitor,
         }
     }
@@ -239,7 +239,8 @@ impl HostController {
             program_bytes: mhc.program_bytes,
             energy_monitor: self.energy_monitor.clone(),
         };
-        let module_host = spawn_rayon(move || Self::make_module_host(mhc.host_type, mcc)).await?;
+        let unregister = self.unregister_fn(key);
+        let module_host = spawn_rayon(move || Self::make_module_host(mhc.host_type, mcc, unregister)).await?;
         module_host.start();
 
         let res = f(module_host.clone())
@@ -291,6 +292,16 @@ impl HostController {
         Ok(res)
     }
 
+    /// On-panic callback passed to [`ModuleHost`]s created by this controller.
+    ///
+    /// Removes the module with the given `instance_id` from this controller.
+    fn unregister_fn(&self, instance_id: u64) -> impl Fn() + Send + Sync + 'static {
+        let modules = self.modules.clone();
+        move || {
+            modules.lock().remove(&instance_id);
+        }
+    }
+
     /// Set up the actual module host.
     ///
     /// This is a fairly expensive operation and should not be run on the async
@@ -298,13 +309,17 @@ impl HostController {
     ///
     /// Note that this function **MUST NOT** make any modifications to the
     /// database passed in as part of the [`ModuleCreationContext`].
-    fn make_module_host(host_type: HostType, mcc: ModuleCreationContext) -> anyhow::Result<ModuleHost> {
+    fn make_module_host(
+        host_type: HostType,
+        mcc: ModuleCreationContext,
+        unregister: impl Fn() + Send + Sync + 'static,
+    ) -> anyhow::Result<ModuleHost> {
         let module_host = match host_type {
             HostType::Wasm => {
                 let start = Instant::now();
                 let actor = host::wasmtime::make_actor(mcc)?;
                 log::trace!("wasmtime::make_actor blocked for {:?}", start.elapsed());
-                ModuleHost::new(actor)
+                ModuleHost::new(actor, unregister)
             }
         };
         Ok(module_host)
@@ -332,6 +347,7 @@ impl HostController {
     ) -> anyhow::Result<tokio::sync::broadcast::Receiver<bytes::Bytes>> {
         Ok(self.get_module_host(instance_id)?.info().log_tx.subscribe())
     }
+
     pub fn get_module_host(&self, instance_id: u64) -> Result<ModuleHost, NoSuchModule> {
         let modules = self.modules.lock();
         modules.get(&instance_id).cloned().ok_or(NoSuchModule)
