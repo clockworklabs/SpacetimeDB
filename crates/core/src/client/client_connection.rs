@@ -6,14 +6,14 @@ use std::time::Instant;
 use super::messages::{OneOffQueryResponseMessage, SerializableMessage};
 use super::{message_handlers, ClientActorId, MessageHandleError};
 use crate::error::DBError;
-use crate::host::{ModuleHost, ReducerArgs, ReducerCallError, ReducerCallResult};
+use crate::host::{ModuleHost, NoSuchModule, ReducerArgs, ReducerCallError, ReducerCallResult};
 use crate::protobuf::client_api::Subscribe;
 use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
 use derive_more::From;
 use futures::prelude::*;
 use spacetimedb_lib::identity::RequestId;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
@@ -93,6 +93,7 @@ pub struct ClientConnection {
     sender: Arc<ClientConnectionSender>,
     pub database_instance_id: u64,
     pub module: ModuleHost,
+    module_rx: watch::Receiver<ModuleHost>,
 }
 
 impl Deref for ClientConnection {
@@ -133,7 +134,7 @@ impl ClientConnection {
         id: ClientActorId,
         protocol: Protocol,
         database_instance_id: u64,
-        module: ModuleHost,
+        mut module_rx: watch::Receiver<ModuleHost>,
         actor: F,
     ) -> Result<ClientConnection, ReducerCallError>
     where
@@ -144,6 +145,7 @@ impl ClientConnection {
         // TODO: Right now this is connecting clients directly to an instance, but their requests should be
         // logically subscribed to the database, not any particular instance. We should handle failover for
         // them and stuff. Not right now though.
+        let module = module_rx.borrow_and_update().clone();
         module
             .call_identity_connected_disconnected(id.identity, id.address, true)
             .await?;
@@ -174,6 +176,7 @@ impl ClientConnection {
             sender,
             database_instance_id,
             module,
+            module_rx,
         };
 
         let actor_fut = actor(this.clone(), sendrx);
@@ -183,11 +186,18 @@ impl ClientConnection {
         Ok(this)
     }
 
-    pub fn dummy(id: ClientActorId, protocol: Protocol, database_instance_id: u64, module: ModuleHost) -> Self {
+    pub fn dummy(
+        id: ClientActorId,
+        protocol: Protocol,
+        database_instance_id: u64,
+        mut module_rx: watch::Receiver<ModuleHost>,
+    ) -> Self {
+        let module = module_rx.borrow_and_update().clone();
         Self {
             sender: Arc::new(ClientConnectionSender::dummy(id, protocol)),
             database_instance_id,
             module,
+            module_rx,
         }
     }
 
@@ -202,6 +212,16 @@ impl ClientConnection {
         timer: Instant,
     ) -> impl Future<Output = Result<(), MessageHandleError>> + '_ {
         message_handlers::handle(self, message.into(), timer)
+    }
+
+    pub async fn watch_module_host(&mut self) -> Result<(), NoSuchModule> {
+        match self.module_rx.changed().await {
+            Ok(()) => {
+                self.module = self.module_rx.borrow_and_update().clone();
+                Ok(())
+            }
+            Err(_) => Err(NoSuchModule),
+        }
     }
 
     pub async fn call_reducer(

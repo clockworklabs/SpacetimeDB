@@ -17,7 +17,7 @@ use std::{sync::Arc, time::Instant};
 
 type Subscriptions = Arc<RwLock<SubscriptionManager>>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ModuleSubscriptions {
     relational_db: Arc<RelationalDB>,
     /// If taking a lock (tx) on the db at the same time, ALWAYS lock the db first.

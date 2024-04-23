@@ -25,7 +25,7 @@ use crate::identity::Identity;
 use crate::messages::control_db::Database;
 use crate::module_host_context::ModuleCreationContext;
 use crate::sql;
-use crate::subscription::module_subscription_actor::{ModuleSubscriptions, WriteConflict};
+use crate::subscription::module_subscription_actor::WriteConflict;
 use crate::util::const_unwrap;
 use crate::util::prometheus_handle::HistogramExt;
 use crate::worker_metrics::WORKER_METRICS;
@@ -145,10 +145,6 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         module.for_each_export(|sym, ty| func_names.update_from_general(sym, ty))?;
         func_names.preinits.sort_unstable();
 
-        let owner_identity = database_instance_context.identity;
-        let relational_db = database_instance_context.relational_db.clone();
-        let subscriptions = ModuleSubscriptions::new(relational_db, owner_identity);
-
         let uninit_instance = module.instantiate_pre()?;
         let mut instance = uninit_instance.instantiate(
             InstanceEnv::new(database_instance_context.clone(), scheduler.clone()),
@@ -193,7 +189,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             reducers,
             catalog,
             log_tx,
-            subscriptions,
+            subscriptions: database_instance_context.subscriptions.clone(),
         });
 
         let func_names = Arc::new(func_names);
