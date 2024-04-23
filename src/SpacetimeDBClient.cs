@@ -521,7 +521,6 @@ namespace SpacetimeDB
         {
             public Message message;
             public List<DbOp> dbOps;
-            public HashSet<byte[]> inserts;
         }
 
         // The message that has been preprocessed and has had its state diff calculated
