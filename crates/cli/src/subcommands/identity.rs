@@ -455,7 +455,7 @@ async fn exec_import(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
     //optional
     let nickname = args.get_one::<String>("name").cloned();
     if let Some(ref name) = nickname {
-        if config.get_identity_config_by_name(&name).is_some() {
+        if config.get_identity_config_by_name(name).is_some() {
             return Err(anyhow::anyhow!(
                 "An identity with that name already exists. Please import using a different name."
             ));
