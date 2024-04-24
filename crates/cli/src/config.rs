@@ -151,7 +151,7 @@ impl RawConfig {
             ecdsa_public_key: None,
         };
         RawConfig {
-            default_server: testnet.nickname.clone(),
+            default_server: local.nickname.clone(),
             identity_configs: Vec::new(),
             server_configs: vec![local, testnet],
         }
