@@ -4380,6 +4380,7 @@ dependencies = [
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-standalone",
+ "spacetimedb-testing",
  "syntect",
  "tabled",
  "tar",
