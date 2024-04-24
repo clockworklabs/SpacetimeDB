@@ -105,10 +105,6 @@ pub struct RawConfig {
     server_configs: Vec<ServerConfig>,
 }
 
-const DEFAULT_HOST: &str = "testnet.spacetimedb.com";
-const DEFAULT_PROTOCOL: &str = "https";
-const DEFAULT_HOST_NICKNAME: &str = "testnet";
-
 #[derive(Clone)]
 pub struct Config {
     proj: RawConfig,
@@ -141,14 +137,14 @@ fn hanging_default_server_context(server: &str) -> String {
 impl RawConfig {
     fn new_with_localhost() -> Self {
         RawConfig {
-            default_server: Some(DEFAULT_HOST_NICKNAME.to_string()),
+            default_server: Some("testnet".to_string()),
             identity_configs: Vec::new(),
             server_configs: vec![
                 ServerConfig {
                     default_identity: None,
-                    host: DEFAULT_HOST.to_string(),
-                    protocol: DEFAULT_PROTOCOL.to_string(),
-                    nickname: Some(DEFAULT_HOST_NICKNAME.to_string()),
+                    host: "127.0.0.1:3000".to_string(),
+                    protocol: "http".to_string(),
+                    nickname: Some("local".to_string()),
                     ecdsa_public_key: None,
                 },
                 ServerConfig {
