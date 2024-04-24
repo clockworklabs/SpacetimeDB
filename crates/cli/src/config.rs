@@ -136,25 +136,24 @@ fn hanging_default_server_context(server: &str) -> String {
 
 impl RawConfig {
     fn new_with_localhost() -> Self {
+        let local = ServerConfig {
+            default_identity: None,
+            host: "127.0.0.1:3000".to_string(),
+            protocol: "http".to_string(),
+            nickname: Some("local".to_string()),
+            ecdsa_public_key: None,
+        };
+        let testnet = ServerConfig {
+            default_identity: None,
+            host: "testnet.spacetimedb.com".to_string(),
+            protocol: "https".to_string(),
+            nickname: Some("testnet".to_string()),
+            ecdsa_public_key: None,
+        };
         RawConfig {
-            default_server: Some("testnet".to_string()),
+            default_server: Some(testnet.nickname.clone()),
             identity_configs: Vec::new(),
-            server_configs: vec![
-                ServerConfig {
-                    default_identity: None,
-                    host: "127.0.0.1:3000".to_string(),
-                    protocol: "http".to_string(),
-                    nickname: Some("local".to_string()),
-                    ecdsa_public_key: None,
-                },
-                ServerConfig {
-                    default_identity: None,
-                    host: "testnet.spacetimedb.com".to_string(),
-                    protocol: "https".to_string(),
-                    nickname: Some("testnet".to_string()),
-                    ecdsa_public_key: None,
-                },
-            ],
+            server_configs: vec![local, testnet],
         }
     }
 
