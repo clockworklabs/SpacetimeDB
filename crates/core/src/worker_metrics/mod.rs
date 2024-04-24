@@ -1,11 +1,11 @@
-use std::{collections::HashMap, sync::Mutex};
-
 use crate::execution_context::WorkloadType;
 use crate::hash::Hash;
 use once_cell::sync::Lazy;
 use prometheus::{GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
+use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_metrics::metrics_group;
+use std::sync::Mutex;
 
 metrics_group!(
     pub struct WorkerMetrics {

@@ -13,7 +13,7 @@ pub fn scalar<T: Into<AlgebraicValue>>(of: T) -> AlgebraicValue {
     of.into()
 }
 
-pub fn value<T: Into<AlgebraicValue>>(of: T) -> Expr {
+pub fn value(of: impl Into<AlgebraicValue>) -> Expr {
     let v: AlgebraicValue = of.into();
     Expr::Value(v)
 }
@@ -43,9 +43,6 @@ pub fn db_table<T: Into<Header>>(head: T, table_id: TableId) -> DbTable {
     db_table_raw(head, table_id, StTableType::User, access)
 }
 
-pub fn query<Source>(source: Source) -> QueryExpr
-where
-    Source: Into<SourceExpr>,
-{
+pub fn query(source: impl Into<SourceExpr>) -> QueryExpr {
     QueryExpr::new(source)
 }

@@ -1,8 +1,9 @@
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::energy::EnergyQuanta;
 use crate::execution_context::WorkloadType;
-use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall};
+use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
 use crate::host::{ReducerArgs, Timestamp};
 use crate::identity::Identity;
 use crate::protobuf::client_api::{message, FunctionCall, Message, Subscribe};
@@ -216,7 +217,7 @@ impl DecodedMessage<'_> {
     }
 }
 
-/// An error that arises from executing a message.  
+/// An error that arises from executing a message.
 #[derive(thiserror::Error, Debug)]
 #[error("error executing message (reducer: {reducer:?}) (err: {err:?})")]
 pub struct MessageExecutionError {
@@ -248,16 +249,16 @@ impl MessageExecutionError {
 
 impl ServerMessage for MessageExecutionError {
     fn serialize_text(self) -> crate::json::client_api::MessageJson {
-        TransactionUpdateMessage {
-            event: &mut self.into_event(),
+        TransactionUpdateMessage::<DatabaseUpdate> {
+            event: Arc::new(self.into_event()),
             database_update: Default::default(),
         }
         .serialize_text()
     }
 
     fn serialize_binary(self) -> Message {
-        TransactionUpdateMessage {
-            event: &mut self.into_event(),
+        TransactionUpdateMessage::<DatabaseUpdate> {
+            event: Arc::new(self.into_event()),
             database_update: Default::default(),
         }
         .serialize_binary()

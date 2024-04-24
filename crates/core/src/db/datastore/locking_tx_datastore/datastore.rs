@@ -275,7 +275,7 @@ impl TxDatastore for Locking {
         cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a, 'r>> {
-        tx.iter_by_col_eq(ctx, &table_id, cols.into(), value)
+        tx.iter_by_col_eq(ctx, &table_id, cols, value)
     }
 
     fn table_id_exists_tx(&self, tx: &Self::Tx, table_id: &TableId) -> bool {
@@ -481,7 +481,6 @@ impl MutTxDatastore for Locking {
     }
 }
 
-#[cfg(feature = "metrics")]
 pub(crate) fn record_metrics(ctx: &ExecutionContext, tx_timer: Instant, lock_wait_time: Duration, committed: bool) {
     let workload = &ctx.workload();
     let db = &ctx.database();
@@ -544,15 +543,26 @@ impl MutTx for Locking {
     }
 
     fn rollback_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) {
-        #[cfg(feature = "metrics")]
-        record_metrics(ctx, tx.timer, tx.lock_wait_time, false);
+        let lock_wait_time = tx.lock_wait_time;
+        let timer = tx.timer;
+        // TODO(cloutiertyler): We should probably track the tx.rollback() time separately.
         tx.rollback();
+
+        // Record metrics for the transaction at the very end right before we drop
+        // the MutTx and release the lock.
+        record_metrics(ctx, timer, lock_wait_time, false);
     }
 
     fn commit_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) -> Result<Option<TxData>> {
-        #[cfg(feature = "metrics")]
-        record_metrics(ctx, tx.timer, tx.lock_wait_time, true);
-        Ok(Some(tx.commit()))
+        let lock_wait_time = tx.lock_wait_time;
+        let timer = tx.timer;
+        // TODO(cloutiertyler): We should probably track the tx.commit() time separately.
+        let res = tx.commit(ctx);
+
+        // Record metrics for the transaction at the very end right before we drop
+        // the MutTx and release the lock.
+        record_metrics(ctx, timer, lock_wait_time, true);
+        Ok(Some(res))
     }
 
     #[cfg(test)]
@@ -592,7 +602,6 @@ impl MutProgrammable for Locking {
             // This is because datastore iterators write to the metric store when dropped.
             // Hence if we don't explicitly drop here,
             // there will be another immutable borrow of self after the two mutable borrows below.
-            drop(iter);
 
             tx.delete(ST_MODULE_ID, row_ref.pointer())?;
             tx.insert(
@@ -611,7 +620,6 @@ impl MutProgrammable for Locking {
         // This is because datastore iterators write to the metric store when dropped.
         // Hence if we don't explicitly drop here,
         // there will be another immutable borrow of self after the mutable borrow of the insert.
-        drop(iter);
 
         tx.insert(
             ST_MODULE_ID,
@@ -649,10 +657,10 @@ mod tests {
     /// Utility to query the system tables and return their concrete table row
     pub struct SystemTableQuery<'a> {
         db: &'a MutTxId,
-        ctx: &'a ExecutionContext<'a>,
+        ctx: &'a ExecutionContext,
     }
 
-    fn query_st_tables<'a>(ctx: &'a ExecutionContext<'a>, tx: &'a MutTxId) -> SystemTableQuery<'a> {
+    fn query_st_tables<'a>(ctx: &'a ExecutionContext, tx: &'a MutTxId) -> SystemTableQuery<'a> {
         SystemTableQuery { db: tx, ctx }
     }
 

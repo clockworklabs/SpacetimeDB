@@ -1,17 +1,15 @@
 use crate::db::ostorage::ObjectDB;
+use crate::error::DBError;
 use crate::hash::{hash_bytes, Hash};
 use hex;
-
+use spacetimedb_data_structures::map::HashMap;
+#[cfg(target_family = "unix")]
+use std::os::unix::prelude::MetadataExt;
 use std::{
-    collections::HashMap,
     fs::{self, read_dir, File, OpenOptions},
     io::{Read, Write},
     path::{Path, PathBuf},
 };
-
-use crate::error::DBError;
-#[cfg(target_family = "unix")]
-use std::os::unix::prelude::MetadataExt;
 
 pub struct HashMapObjectDB {
     root: PathBuf,
@@ -136,7 +134,12 @@ impl ObjectDB for HashMapObjectDB {
         let filename = hex::encode(&hash.data[1..]);
         let path = self.root.join(folder).join(filename);
 
-        let mut unsynced = OpenOptions::new().write(true).create(true).open(path).unwrap();
+        let mut unsynced = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(path)
+            .unwrap();
         unsynced.write_all(&bytes).unwrap();
         self.unsynced.push(unsynced);
 

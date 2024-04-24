@@ -4,7 +4,7 @@ use std::any::TypeId;
 use std::collections::{btree_map, BTreeMap};
 use std::fmt;
 use std::marker::PhantomData;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use sys::Buffer;
 
@@ -18,8 +18,6 @@ use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, AlgebraicType, Alg
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
 use spacetimedb_lib::{bsatn, Address, Identity, MiscModuleExport, ModuleDef, ReducerDef, TableDesc, TypeAlias};
 use spacetimedb_primitives::*;
-
-pub use once_cell::sync::{Lazy, OnceCell};
 
 /// The `sender` invokes `reducer` at `timestamp` and provides it with the given `args`.
 ///
@@ -538,7 +536,7 @@ static DESCRIBERS: Mutex<Vec<fn(&mut ModuleBuilder)>> = Mutex::new(Vec::new());
 
 /// A reducer function takes in `(Sender, Timestamp, Args)` and writes to a new `Buffer`.
 pub type ReducerFn = fn(Buffer, Buffer, u64, &[u8]) -> Buffer;
-static REDUCERS: OnceCell<Vec<ReducerFn>> = OnceCell::new();
+static REDUCERS: OnceLock<Vec<ReducerFn>> = OnceLock::new();
 
 /// Describes the module into a serialized form that is returned and writes the set of `REDUCERS`.
 #[no_mangle]

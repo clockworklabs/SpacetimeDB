@@ -29,6 +29,7 @@ proptest = ["dep:proptest", "dep:proptest-derive"]
 blake3_pure = ["blake3/pure"]
 
 [dependencies]
+spacetimedb-data-structures.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-sats.workspace = true
 
@@ -39,7 +40,6 @@ decorum.workspace = true
 derive_more.workspace = true
 enum-as-inner.workspace = true
 itertools.workspace = true
-nohash-hasher.workspace = true
 smallvec.workspace = true
 thiserror.workspace = true
 
@@ -49,7 +49,6 @@ proptest-derive = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion.workspace = true
-criterion-perf-events.workspace = true
 proptest.workspace = true
 proptest-derive.workspace = true
 rand.workspace = true

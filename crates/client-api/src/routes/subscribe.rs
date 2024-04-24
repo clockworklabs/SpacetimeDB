@@ -9,9 +9,10 @@ use futures::{FutureExt, SinkExt, StreamExt};
 use http::{HeaderValue, StatusCode};
 use scopeguard::ScopeGuard;
 use serde::Deserialize;
-use spacetimedb::client::messages::{IdentityTokenMessage, ServerMessage};
+use spacetimedb::client::messages::{IdentityTokenMessage, SerializableMessage, ServerMessage};
 use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, MessageHandleError, Protocol};
-use spacetimedb::util::future_queue;
+use spacetimedb::util::{also_poll, future_queue};
+use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_lib::address::AddressForUrl;
 use spacetimedb_lib::Address;
 use std::time::Instant;
@@ -168,7 +169,7 @@ where
 
 const LIVELINESS_TIMEOUT: Duration = Duration::from_secs(60);
 
-async fn ws_client_actor(client: ClientConnection, ws: WebSocketStream, sendrx: mpsc::Receiver<DataMessage>) {
+async fn ws_client_actor(client: ClientConnection, ws: WebSocketStream, sendrx: mpsc::Receiver<SerializableMessage>) {
     // ensure that even if this task gets cancelled, we always cleanup the connection
     let client = scopeguard::guard(client, |client| {
         tokio::spawn(client.disconnect());
@@ -182,7 +183,7 @@ async fn ws_client_actor(client: ClientConnection, ws: WebSocketStream, sendrx: 
 async fn ws_client_actor_inner(
     client: &ClientConnection,
     mut ws: WebSocketStream,
-    mut sendrx: mpsc::Receiver<DataMessage>,
+    mut sendrx: mpsc::Receiver<SerializableMessage>,
 ) {
     let mut liveness_check_interval = tokio::time::interval(LIVELINESS_TIMEOUT);
     let mut got_pong = true;
@@ -194,6 +195,10 @@ async fn ws_client_actor_inner(
     // client.disconnect() is called. Otherwise, we can be left with a stale future that's never
     // awaited, which can lead to bugs like:
     // https://rust-lang.github.io/wg-async/vision/submitted_stories/status_quo/aws_engineer/solving_a_deadlock.html
+    //
+    // NOTE: never let this go unpolled while you're awaiting something; otherwise, it's possible
+    //       to deadlock or delay for a long time. see usage of `also_poll()` in the branches of the
+    //       `select!` for examples of how to do this.
     //
     // TODO: do we want this to have a fixed capacity? or should it be unbounded
     let mut handle_queue = pin!(future_queue(|(message, timer)| client.handle_message(message, timer)));
@@ -236,13 +241,19 @@ async fn ws_client_actor_inner(
                     log::info!("dropping messages due to ws already being closed: {:?}", &rx_buf[..n]);
                 } else {
                     let send_all = async {
-                        for msg in rx_buf.drain(..n).map(datamsg_to_wsmsg) {
+                        let id = client.id.identity;
+                        for msg in rx_buf.drain(..n).map(|msg| datamsg_to_wsmsg(msg.serialize(client.protocol))) {
+                            WORKER_METRICS.websocket_sent.with_label_values(&id).inc();
+                            WORKER_METRICS.websocket_sent_msg_size.with_label_values(&id).observe(msg.len() as f64);
                             // feed() buffers the message, but does not necessarily send it
                             ws.feed(msg).await?;
                         }
                         // now we flush all the messages to the socket
                         ws.flush().await
                     };
+                    // Flush the websocket while continuing to poll the `handle_queue`,
+                    // to avoid deadlocks or delays due to enqueued futures holding resources.
+                    let send_all = also_poll(send_all, handle_queue.make_progress());
                     let t1 = Instant::now();
                     if let Err(error) = send_all.await {
                         log::warn!("Websocket send error: {error}")
@@ -257,7 +268,13 @@ async fn ws_client_actor_inner(
 
             // If the module has exited, close the websocket.
             () = client.module.exited(), if !closed => {
-                if let Err(e) = ws.close(Some(CloseFrame { code: CloseCode::Away, reason: "module exited".into() })).await {
+                // Send a close frame while continuing to poll the `handle_queue`,
+                // to avoid deadlocks or delays due to enqueued futures holding resources.
+                let close = also_poll(
+                    ws.close(Some(CloseFrame { code: CloseCode::Away, reason: "module exited".into() })),
+                    handle_queue.make_progress(),
+                );
+                if let Err(e) = close.await {
                     log::warn!("error closing: {e:#}")
                 }
                 closed = true;
@@ -268,7 +285,9 @@ async fn ws_client_actor_inner(
             _ = liveness_check_interval.tick() => {
                 // If we received a pong at some point, send a fresh ping.
                 if mem::take(&mut got_pong) {
-                    if let Err(e) = ws.send(WsMessage::Ping(Vec::new())).await {
+                    // Send a ping message while continuing to poll the `handle_queue`,
+                    // to avoid deadlocks or delays due to enqueued futures holding resources.
+                    if let Err(e) = also_poll(ws.send(WsMessage::Ping(Vec::new())), handle_queue.make_progress()).await {
                         log::warn!("error sending ping: {e:#}");
                     }
                     continue;

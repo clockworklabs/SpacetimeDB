@@ -19,13 +19,13 @@ use crate::{
         db_metrics::DB_METRICS,
     },
     error::TableError,
-    execution_context::ExecutionContext,
+    execution_context::{ExecutionContext, MetricType},
 };
 use anyhow::anyhow;
 use itertools::Itertools;
+use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::{
-    bsatn,
     db::{
         auth::{StAccess, StTableType},
         def::TableSchema,
@@ -39,7 +39,7 @@ use spacetimedb_table::{
     table::{IndexScanIter, InsertError, RowRef, Table},
 };
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet},
     ops::RangeBounds,
     sync::Arc,
 };
@@ -47,7 +47,7 @@ use std::{
 #[derive(Default)]
 pub(crate) struct CommittedState {
     pub(crate) next_tx_offset: u64,
-    pub(crate) tables: HashMap<TableId, Table>,
+    pub(crate) tables: IntMap<TableId, Table>,
     pub(crate) blob_store: HashMapBlobStore,
 }
 
@@ -107,7 +107,7 @@ fn ignore_duplicate_insert_error<T>(res: std::result::Result<T, InsertError>) ->
 
 impl CommittedState {
     pub fn bootstrap_system_tables(&mut self, database_address: Address) -> Result<()> {
-        let mut sequences_start: HashMap<TableId, i128> = HashMap::with_capacity(10);
+        let mut sequences_start: IntMap<TableId, i128> = IntMap::with_capacity(10);
 
         // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
         // and therefore has performance implications and must not be disabled.
@@ -376,26 +376,33 @@ impl CommittedState {
         table.get_row_ref(&self.blob_store, row_ptr).unwrap()
     }
 
-    pub fn merge(&mut self, tx_state: TxState) -> TxData {
+    pub fn merge(&mut self, tx_state: TxState, ctx: &ExecutionContext) -> TxData {
         // TODO(perf): pre-allocate `Vec::with_capacity`?
         let mut tx_data = TxData { records: vec![] };
 
         self.next_tx_offset += 1;
 
         // First, apply deletes. This will free up space in the committed tables.
-        self.merge_apply_deletes(&mut tx_data, tx_state.delete_tables);
+        self.merge_apply_deletes(&mut tx_data, tx_state.delete_tables, ctx);
 
         // Then, apply inserts. This will re-fill the holes freed by deletions
         // before allocating new pages.
 
-        self.merge_apply_inserts(&mut tx_data, tx_state.insert_tables, tx_state.blob_store);
+        self.merge_apply_inserts(&mut tx_data, tx_state.insert_tables, tx_state.blob_store, ctx);
 
         tx_data
     }
 
-    fn merge_apply_deletes(&mut self, tx_data: &mut TxData, delete_tables: BTreeMap<TableId, BTreeSet<RowPointer>>) {
+    fn merge_apply_deletes(
+        &mut self,
+        tx_data: &mut TxData,
+        delete_tables: BTreeMap<TableId, BTreeSet<RowPointer>>,
+        ctx: &ExecutionContext,
+    ) {
         for (table_id, row_ptrs) in delete_tables {
             if let Some((table, blob_store)) = self.get_table_and_blob_store(table_id) {
+                let db = &ctx.database();
+
                 // Note: we maintain the invariant that the delete_tables
                 // holds only committed rows which should be deleted,
                 // i.e. `RowPointer`s with `SquashedOffset::COMMITTED_STATE`,
@@ -408,11 +415,21 @@ impl CommittedState {
                     let data_key = pv.to_data_key();
                     tx_data.records.push(TxRecord {
                         op: TxOp::Delete,
-                        table_name: table.schema.table_name.clone(),
                         table_id,
                         key: data_key,
                         product_value: pv,
                     });
+
+                    let table_name = table.get_schema().table_name.as_str();
+                    //Increment rows deleted metric
+                    ctx.metrics
+                        .write()
+                        .inc_by(table_id, MetricType::RowsDeleted, 1, || table_name.to_string());
+                    // Decrement table rows gauge
+                    DB_METRICS
+                        .rdb_num_table_rows
+                        .with_label_values(db, &table_id.into(), table_name)
+                        .dec();
                 }
             } else if !row_ptrs.is_empty() {
                 panic!("Deletion for non-existent table {:?}... huh?", table_id);
@@ -425,6 +442,7 @@ impl CommittedState {
         tx_data: &mut TxData,
         insert_tables: BTreeMap<TableId, Table>,
         tx_blob_store: impl BlobStore,
+        ctx: &ExecutionContext,
     ) {
         // TODO(perf): Consider moving whole pages from the `insert_tables` into the committed state,
         //             rather than copying individual rows out of them.
@@ -440,21 +458,42 @@ impl CommittedState {
                 // TODO(perf): avoid cloning here.
                 *tx_table.schema.clone(),
             );
+
+            // NOTE: if there is a schema change the table id will not change
+            // and that is what is important here so it doesn't matter if we
+            // do this before or after the schema update below.
+            let db = &ctx.database();
+
             // For each newly-inserted row, insert it into the committed state.
             for row_ref in tx_table.scan_rows(&tx_blob_store) {
                 let pv = row_ref.to_product_value();
                 commit_table
                     .insert(commit_blob_store, &pv)
                     .expect("Failed to insert when merging commit");
-                let bytes = bsatn::to_vec(&pv).expect("Failed to BSATN-serialize ProductValue");
+
+                // Serialize the `row_ref` rather than the `pv`
+                // so we can take advantage of the BFLATN -> BSATN fast path for fixed-sized rows.
+                // TODO(perf): Remove `DataKey` from `TxRecord` and avoid this entirely.
+                let bytes = row_ref.to_bsatn_vec().expect("Failed to BSATN-serialize RowRef");
                 let data_key = DataKey::from_data(&bytes);
+
                 tx_data.records.push(TxRecord {
                     op: TxOp::Insert(Arc::new(bytes)),
                     product_value: pv,
                     key: data_key,
-                    table_name: commit_table.schema.table_name.clone(),
                     table_id,
                 });
+
+                let table_name = commit_table.get_schema().table_name.as_str();
+                // Increment rows inserted metric
+                ctx.metrics
+                    .write()
+                    .inc_by(table_id, MetricType::RowsInserted, 1, || table_name.to_string());
+                // Increment table rows gauge
+                DB_METRICS
+                    .rdb_num_table_rows
+                    .with_label_values(db, &table_id.into(), table_name)
+                    .inc();
             }
 
             // Add all newly created indexes to the committed state.
@@ -537,9 +576,9 @@ impl CommittedState {
         }
     }
 }
-
+#[allow(dead_code)]
 pub struct CommittedIndexIter<'a> {
-    ctx: &'a ExecutionContext<'a>,
+    ctx: &'a ExecutionContext,
     table_id: TableId,
     tx_state: Option<&'a TxState>,
     committed_state: &'a CommittedState,
@@ -566,37 +605,36 @@ impl<'a> CommittedIndexIter<'a> {
     }
 }
 
-#[cfg(feature = "metrics")]
-impl Drop for CommittedIndexIter<'_> {
-    fn drop(&mut self) {
-        let workload = &self.ctx.workload();
-        let db = &self.ctx.database();
-        let reducer_name = self.ctx.reducer_name();
-        let table_id = &self.table_id.0;
-        let table_name = self
-            .committed_state
-            .get_schema(&self.table_id)
-            .map(|table| table.table_name.as_str())
-            .unwrap_or_default();
+// TODO(shub): this runs parralely for subscriptions leading to lock contention.
+// commenting until we find a way to batch them without lock.
+// impl Drop for CommittedIndexIter<'_> {
+//     fn drop(&mut self) {
+//         let mut metrics = self.ctx.metrics.write();
+//         let get_table_name = || {
+//             self.committed_state
+//                 .get_schema(&self.table_id)
+//                 .map(|table| table.table_name.as_str())
+//                 .unwrap_or_default()
+//                 .to_string()
+//         };
 
-        DB_METRICS
-            .rdb_num_index_seeks
-            .with_label_values(workload, db, reducer_name, table_id, table_name)
-            .inc();
-
-        // Increment number of index keys scanned
-        DB_METRICS
-            .rdb_num_keys_scanned
-            .with_label_values(workload, db, reducer_name, table_id, table_name)
-            .inc_by(self.committed_rows.num_pointers_yielded());
-
-        // Increment number of rows fetched
-        DB_METRICS
-            .rdb_num_rows_fetched
-            .with_label_values(workload, db, reducer_name, table_id, table_name)
-            .inc_by(self.num_committed_rows_fetched);
-    }
-}
+//         metrics.inc_by(self.table_id, MetricType::IndexSeeks, 1, get_table_name);
+//         // Increment number of index keys scanned
+//         metrics.inc_by(
+//             self.table_id,
+//             MetricType::KeysScanned,
+//             self.committed_rows.num_pointers_yielded(),
+//             get_table_name,
+//         );
+//         // Increment number of rows fetched
+//         metrics.inc_by(
+//             self.table_id,
+//             MetricType::RowsFetched,
+//             self.num_committed_rows_fetched,
+//             get_table_name,
+//         );
+//     }
+// }
 
 impl<'a> Iterator for CommittedIndexIter<'a> {
     type Item = RowRef<'a>;

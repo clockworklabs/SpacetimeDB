@@ -2,7 +2,6 @@ use anyhow::Context as _;
 use hex::FromHex as _;
 use sats::{impl_deserialize, impl_serialize, impl_st, AlgebraicType};
 use spacetimedb_bindings_macro::{Deserialize, Serialize};
-use spacetimedb_metrics::typed_prometheus::AsPrometheusLabel;
 use std::{fmt, net::Ipv6Addr};
 
 use crate::sats;
@@ -24,7 +23,7 @@ pub struct Address {
 
 impl_st!([] Address, _ts => AlgebraicType::product([("__address_bytes", AlgebraicType::bytes())]));
 
-impl AsPrometheusLabel for Address {
+impl spacetimedb_metrics::typed_prometheus::AsPrometheusLabel for Address {
     fn as_prometheus_str(&self) -> impl AsRef<str> + '_ {
         self.to_hex()
     }

@@ -11,7 +11,8 @@ use email_address::EmailAddress;
 use reqwest::{StatusCode, Url};
 use serde::Deserialize;
 use spacetimedb::auth::identity::decode_token;
-use spacetimedb_lib::{recovery::RecoveryCodeResponse, Identity};
+use spacetimedb_client_api_messages::recovery::RecoveryCodeResponse;
+use spacetimedb_lib::Identity;
 use tabled::{
     settings::{object::Columns, Alignment, Modify, Style},
     Table, Tabled,

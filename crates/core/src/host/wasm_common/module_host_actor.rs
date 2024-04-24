@@ -336,7 +336,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
     }
 
     #[tracing::instrument(skip(self, args), fields(db_id = self.instance.instance_env().dbic.id))]
-    fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<ReducerCallResult> {
+    fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<Option<ReducerCallResult>> {
         let timestamp = Timestamp::now();
         let stdb = &*self.database_instance_context().relational_db;
         let ctx = ExecutionContext::internal(stdb.address());
@@ -360,11 +360,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         let rcr = match self.info.reducers.lookup_id(INIT_DUNDER) {
             None => {
                 stdb.commit_tx(&ctx, tx)?;
-                ReducerCallResult {
-                    outcome: ReducerOutcome::Committed,
-                    energy_used: EnergyQuanta::ZERO,
-                    execution_duration: Duration::ZERO,
-                }
+                None
             }
 
             Some(reducer_id) => {
@@ -378,7 +374,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                     ..
                 } = self.database_instance_context().database;
                 let client = None;
-                self.call_reducer_with_tx(
+                Some(self.call_reducer_with_tx(
                     Some(tx),
                     CallReducerParams {
                         timestamp,
@@ -390,7 +386,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                         reducer_id,
                         args,
                     },
-                )
+                ))
             }
         };
 
@@ -484,6 +480,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     /// The method also performs various measurements and records energy usage,
     /// as well as broadcasting a [`ModuleEvent`] containg information about
     /// the outcome of the call.
+    #[tracing::instrument(skip_all)]
     fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
         let CallReducerParams {
             timestamp,
@@ -531,7 +528,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         };
 
         let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable));
-        let tx_slot = self.instance.instance_env().tx.clone();
+        let mut tx_slot = self.instance.instance_env().tx.clone();
 
         let reducer_span = tracing::trace_span!(
             "run_reducer",
@@ -540,10 +537,10 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             energy.used = tracing::field::Empty,
         )
         .entered();
-
+        let ctx = ExecutionContext::reducer(address, reducer_name.to_owned());
         // run the call_reducer call in rayon. it's important that we don't acquire a lock inside a rayon task,
         // as that can lead to deadlock.
-        let (tx, result) = rayon::scope(|_| tx_slot.set(tx, || self.instance.call_reducer(op, budget)));
+        let (ctx, tx, result) = rayon::scope(|_| tx_slot.set(ctx, tx, || self.instance.call_reducer(op, budget)));
 
         let ExecuteResult {
             energy,
@@ -578,8 +575,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         // the tx, someone adds a subscription and receives this tx as an initial update, and then receives the
         // update again when we broadcast_event.
         let subscriptions = self.info.subscriptions.subscriptions.read();
-
-        let ctx = ExecutionContext::reducer(address, reducer_name);
         let status = match call_result {
             Err(err) => {
                 stdb.rollback_mut_tx(&ctx, tx);

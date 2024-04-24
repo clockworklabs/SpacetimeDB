@@ -1,21 +1,23 @@
-use core::fmt;
-use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap};
-
-use anyhow::Context;
-
+use super::datastore::locking_tx_datastore::MutTxId;
+use super::relational_db::RelationalDB;
 use crate::database_logger::SystemLogger;
 use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
-
-use super::datastore::locking_tx_datastore::MutTxId;
-use super::relational_db::RelationalDB;
-use spacetimedb_sats::db::def::{TableDef, TableSchema};
+use anyhow::Context;
+use core::fmt;
+use itertools::Itertools;
+use similar::{Algorithm, TextDiff};
+use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_primitives::ConstraintKind;
+use spacetimedb_sats::db::def::{ConstraintSchema, IndexSchema, SequenceSchema, TableDef, TableSchema};
 use spacetimedb_sats::hash::Hash;
+use std::borrow::Cow;
+use std::collections::BTreeMap;
+use std::time::Duration;
 
 #[derive(thiserror::Error, Debug)]
 pub enum UpdateDatabaseError {
-    #[error("incompatible schema changes for: {tables:?}")]
+    #[error("incompatible schema changes for: {tables:?}. See database log for details.")]
     IncompatibleSchema { tables: Vec<String> },
     #[error(transparent)]
     Database(#[from] DBError),
@@ -46,6 +48,19 @@ pub fn update_database(
                 let mut tables = Vec::with_capacity(tainted.len());
                 for t in tainted {
                     system_logger.warn(&format!("{}: {}", t.table_name, t.reason));
+                    if let TaintReason::IncompatibleSchema { existing, proposed } = t.reason {
+                        let existing = format!("{existing:#?}");
+                        let proposed = format!("{proposed:#?}");
+                        let diff = TextDiff::configure()
+                            .timeout(Duration::from_millis(200))
+                            .algorithm(Algorithm::Patience)
+                            .diff_lines(&existing, &proposed);
+                        system_logger.warn(&format!(
+                            "{}: Diff existing vs. proposed:\n{}",
+                            t.table_name,
+                            diff.unified_diff()
+                        ));
+                    }
                     tables.push(t.table_name);
                 }
                 return Ok(Err(UpdateDatabaseError::IncompatibleSchema { tables }));
@@ -65,7 +80,10 @@ pub fn update_database(
 #[derive(Debug, Eq, PartialEq)]
 pub enum TaintReason {
     /// The (row) schema changed, and we don't know how to go from A to B.
-    IncompatibleSchema,
+    IncompatibleSchema {
+        existing: TableSchema,
+        proposed: TableSchema,
+    },
     /// The table is no longer present in the new schema.
     Orphaned,
 }
@@ -73,7 +91,7 @@ pub enum TaintReason {
 impl fmt::Display for TaintReason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::IncompatibleSchema => "incompatible schema",
+            Self::IncompatibleSchema { .. } => "incompatible schema",
             Self::Orphaned => "orphaned",
         })
     }
@@ -125,10 +143,58 @@ pub fn schema_updates(
     for proposed_schema_def in proposed_tables {
         let proposed_table_name = &proposed_schema_def.table_name;
         if let Some(known_schema) = known_tables.remove(proposed_table_name) {
-            // Not pretty, but roundtripping through `TableDef` ensures all the
-            // fields are ordered consistently.
-            // Also resets ids to zero.
-            let known_schema = TableSchema::from_def(known_schema.table_id, TableDef::from(known_schema.into_owned()));
+            // Unfortunately `TableSchema::from_def . TableDef::from != id`.
+            //
+            // Namely, `from_def` inserts "generated" indexes, which are not
+            // removed if we are roundtripping from an existing `TableSchema`.
+            //
+            // Also, there is no guarantee that the constituents of the schema
+            // are sorted. They will be, however, when converting the proposed
+            // `TableDef` into `TableSchema` (via `from_def`).
+            let known_schema = known_schema.into_owned();
+            let columns = known_schema
+                .columns()
+                .iter()
+                .cloned()
+                .sorted_by_key(|x| x.col_pos)
+                .collect();
+            let known_schema = {
+                TableSchema::new(
+                    known_schema.table_id,
+                    known_schema.table_name,
+                    columns,
+                    known_schema
+                        .indexes
+                        .into_iter()
+                        .map(|x| IndexSchema {
+                            index_id: 0.into(),
+                            ..x
+                        })
+                        .sorted_by_key(|x| x.columns.clone())
+                        .collect(),
+                    known_schema
+                        .constraints
+                        .into_iter()
+                        .map(|x| ConstraintSchema {
+                            constraint_id: 0.into(),
+                            ..x
+                        })
+                        .filter(|x| x.constraints.kind() != ConstraintKind::UNSET)
+                        .sorted_by_key(|x| x.columns.clone())
+                        .collect(),
+                    known_schema
+                        .sequences
+                        .into_iter()
+                        .map(|x| SequenceSchema {
+                            sequence_id: 0.into(),
+                            ..x
+                        })
+                        .sorted_by_key(|x| x.col_pos)
+                        .collect(),
+                    known_schema.table_type,
+                    known_schema.table_access,
+                )
+            };
             let proposed_schema = TableSchema::from_def(known_schema.table_id, proposed_schema_def);
 
             if proposed_schema != known_schema {
@@ -136,8 +202,11 @@ pub fn schema_updates(
                 log::debug!("Existing: {known_schema:?}");
                 log::debug!("Proposed: {proposed_schema:?}");
                 tainted_tables.push(Tainted {
-                    table_name: proposed_schema.table_name,
-                    reason: TaintReason::IncompatibleSchema,
+                    table_name: proposed_schema.table_name.clone(),
+                    reason: TaintReason::IncompatibleSchema {
+                        existing: known_schema,
+                        proposed: proposed_schema,
+                    },
                 });
             }
         } else {
@@ -221,7 +290,7 @@ mod tests {
 
     #[test]
     fn test_updates_schema_mismatch() {
-        let current = vec![Cow::Owned(
+        let current: Vec<Cow<TableSchema>> = vec![Cow::Owned(
             TableDef::new(
                 "Person".into(),
                 vec![ColumnDef {
@@ -246,13 +315,7 @@ mod tests {
         )
         .with_column_constraint(Constraints::identity(), ColId(0))];
 
-        assert_tainted(
-            schema_updates(current, proposed).unwrap(),
-            &[Tainted {
-                table_name: "Person".into(),
-                reason: TaintReason::IncompatibleSchema,
-            }],
-        );
+        assert_incompatible_schema(schema_updates(current, proposed).unwrap(), &["Person"]);
     }
 
     #[test]
@@ -275,13 +338,7 @@ mod tests {
             }],
         )];
 
-        assert_tainted(
-            schema_updates(current, proposed).unwrap(),
-            &[Tainted {
-                table_name: "Person".into(),
-                reason: TaintReason::Orphaned,
-            }],
-        );
+        assert_orphaned(schema_updates(current, proposed).unwrap(), &["Person"]);
     }
 
     #[test]
@@ -305,18 +362,12 @@ mod tests {
         )
         .with_column_index(ColId(0), true)];
 
-        assert_tainted(
-            schema_updates(current, proposed).unwrap(),
-            &[Tainted {
-                table_name: "Person".into(),
-                reason: TaintReason::IncompatibleSchema,
-            }],
-        );
+        assert_incompatible_schema(schema_updates(current, proposed).unwrap(), &["Person"]);
     }
 
     #[test]
     fn test_updates_drop_index() {
-        let current = vec![Cow::Owned(TableSchema::new(
+        let current: Vec<Cow<TableSchema>> = vec![Cow::Owned(TableSchema::new(
             TableId(42),
             "Person".into(),
             vec![ColumnSchema {
@@ -346,13 +397,7 @@ mod tests {
             }],
         )];
 
-        assert_tainted(
-            schema_updates(current, proposed).unwrap(),
-            &[Tainted {
-                table_name: "Person".into(),
-                reason: TaintReason::IncompatibleSchema,
-            }],
-        );
+        assert_incompatible_schema(schema_updates(current, proposed).unwrap(), &["Person"]);
     }
 
     #[test]
@@ -376,13 +421,7 @@ mod tests {
         )
         .with_column_constraint(Constraints::unique(), ColId(0))];
 
-        assert_tainted(
-            schema_updates(current, proposed).unwrap(),
-            &[Tainted {
-                table_name: "Person".into(),
-                reason: TaintReason::IncompatibleSchema,
-            }],
-        );
+        assert_incompatible_schema(schema_updates(current, proposed).unwrap(), &["Person"]);
     }
 
     #[test]
@@ -406,24 +445,40 @@ mod tests {
             }],
         )];
 
-        assert_tainted(
-            schema_updates(current, proposed).unwrap(),
-            &[Tainted {
-                table_name: "Person".into(),
-                reason: TaintReason::IncompatibleSchema,
-            }],
-        );
+        assert_incompatible_schema(schema_updates(current, proposed).unwrap(), &["Person"]);
     }
 
-    fn assert_tainted(result: SchemaUpdates, expected: &[Tainted]) {
-        match result {
-            SchemaUpdates::Tainted(tainted) => {
-                assert_eq!(tainted.len(), expected.len());
-                assert_eq!(&tainted, &expected);
-            }
+    fn assert_incompatible_schema(result: SchemaUpdates, tainted_tables: &[&str]) {
+        assert_tainted(result, tainted_tables, |reason| {
+            matches!(reason, TaintReason::IncompatibleSchema { .. })
+        });
+    }
 
+    fn assert_orphaned(result: SchemaUpdates, tainted_tables: &[&str]) {
+        assert_tainted(result, tainted_tables, |reason| matches!(reason, TaintReason::Orphaned))
+    }
+
+    fn assert_tainted<F>(result: SchemaUpdates, tainted_tables: &[&str], match_reason: F)
+    where
+        F: Fn(&TaintReason) -> bool,
+    {
+        match result {
             up @ SchemaUpdates::Updates { .. } => {
                 panic!("unexpectedly not tainted: {up:#?}");
+            }
+
+            SchemaUpdates::Tainted(tainted) => {
+                let mut actual_tainted_tables = Vec::with_capacity(tainted.len());
+                for t in tainted {
+                    assert!(
+                        match_reason(&t.reason),
+                        "{}: unexpected taint reason: {:#?}",
+                        t.table_name,
+                        t.reason
+                    );
+                    actual_tainted_tables.push(t.table_name);
+                }
+                assert_eq!(&actual_tainted_tables, tainted_tables);
             }
         }
     }

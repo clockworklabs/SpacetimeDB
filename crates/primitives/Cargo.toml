@@ -6,6 +6,8 @@ license-file = "LICENSE"
 description = "Primitives such as TableId and ColumnIndexAttribute"
 
 [dependencies]
+spacetimedb-data-structures.workspace = true
+
 either.workspace = true
 bitflags.workspace = true
 

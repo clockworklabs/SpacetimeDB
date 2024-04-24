@@ -1,19 +1,27 @@
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
 use crate::sql::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
+use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::db::def::{TableDef, TableSchema};
 use spacetimedb_sats::relation::{self, DbTable, FieldExpr, FieldName, Header};
 use spacetimedb_vm::dsl::{db_table, db_table_raw, query};
 use spacetimedb_vm::expr::{ColumnOp, CrudExpr, DbType, Expr, QueryExpr, SourceExpr};
 use spacetimedb_vm::operator::OpCmp;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::ast::TableSchemaView;
 
+/// DIRTY HACK ALERT: Maximum allowed length, in UTF-8 bytes, of SQL queries.
+/// Any query longer than this will be rejected.
+/// This prevents a stack overflow when compiling queries with deeply-nested `AND` and `OR` conditions.
+const MAX_SQL_LENGTH: usize = 50_000;
+
 /// Compile the `SQL` expression into an `ast`
 pub fn compile_sql<T: TableSchemaView>(db: &RelationalDB, tx: &T, sql_text: &str) -> Result<Vec<CrudExpr>, DBError> {
+    if sql_text.len() > MAX_SQL_LENGTH {
+        return Err(anyhow::anyhow!("SQL query exceeds maximum allowed length: \"{sql_text:.120}...\"").into());
+    }
     tracing::trace!(sql = sql_text);
     let ast = compile_to_ast(db, tx, sql_text)?;
 
@@ -130,7 +138,16 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
                         OpCmp::Eq => {}
                         x => unreachable!("Unsupported operator `{x}` for joins"),
                     }
-                    q = q.with_join_inner(rhs_source_expr, on.lhs.clone(), on.rhs.clone());
+                    // Always construct inner joins, never semijoins.
+                    // The query optimizer can rewrite certain inner joins into semijoins later in the pipeline.
+                    // The full pipeline for a query like `SELECT lhs.* FROM lhs JOIN rhs ON lhs.a = rhs.a` is:
+                    // - We produce `[JoinInner(semi: false), Project]`.
+                    // - Optimizer rewrites to `[JoinInner(semi: true)]`.
+                    // - Optimizer rewrites to `[IndexJoin]`.
+                    // For incremental queries, this all happens on the original query with `DbTable` sources.
+                    // Then, the query is "incrementalized" by replacing the sources with `MemTable`s,
+                    // and the `IndexJoin` is rewritten back into a `JoinInner(semi: true)`.
+                    q = q.with_join_inner(rhs_source_expr, on.lhs.clone(), on.rhs.clone(), false);
                 }
             }
         }
@@ -274,11 +291,16 @@ mod tests {
     use super::*;
     use crate::db::datastore::traits::IsolationLevel;
     use crate::db::relational_db::tests_utils::make_test_db;
+    use crate::execution_context::ExecutionContext;
+    use crate::sql::execute::execute_sql;
+    use crate::vm::tests::create_table_with_rows;
     use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_lib::identity::AuthCtx;
     use spacetimedb_lib::operator::OpQuery;
     use spacetimedb_primitives::{col_list, ColList, TableId};
-    use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue};
+    use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductType};
     use spacetimedb_vm::expr::{IndexJoin, IndexScan, JoinExpr, Query};
+    use std::convert::From;
     use std::ops::Bound;
 
     fn assert_index_scan(
@@ -579,6 +601,7 @@ mod tests {
                     table: ref rhs_table,
                     field: ref rhs_field,
                 },
+            semi: false,
         }) = query[1]
         else {
             panic!("unexpected operator {:#?}", query[1]);
@@ -658,6 +681,7 @@ mod tests {
                     table: ref rhs_table,
                     field: ref rhs_field,
                 },
+            semi: false,
         }) = query[1]
         else {
             panic!("unexpected operator {:#?}", query[1]);
@@ -718,6 +742,7 @@ mod tests {
                     table: ref rhs_table,
                     field: ref rhs_field,
                 },
+            semi: false,
         }) = query[0]
         else {
             panic!("unexpected operator {:#?}", query[0]);
@@ -806,6 +831,7 @@ mod tests {
                     table: ref rhs_table,
                     field: ref rhs_field,
                 },
+            semi: false,
         }) = query[1]
         else {
             panic!("unexpected operator {:#?}", query[1]);
@@ -866,26 +892,26 @@ mod tests {
             probe_side:
                 QueryExpr {
                     source: SourceExpr::DbTable(DbTable { table_id, .. }),
-                    query: ref rhs,
+                    query: rhs,
                 },
             probe_field:
                 FieldName::Name {
-                    table: ref probe_table,
-                    field: ref probe_field,
+                    table: probe_table,
+                    field: probe_field,
                 },
             index_side: SourceExpr::DbTable(DbTable {
                 table_id: index_table, ..
             }),
             index_col,
             ..
-        }) = query[0]
+        }) = &query[0]
         else {
             panic!("unexpected operator {:#?}", query[0]);
         };
 
-        assert_eq!(table_id, rhs_id);
-        assert_eq!(index_table, lhs_id);
-        assert_eq!(index_col, 1.into());
+        assert_eq!(*table_id, rhs_id);
+        assert_eq!(*index_table, lhs_id);
+        assert_eq!(index_col, &1.into());
         assert_eq!(probe_field, "b");
         assert_eq!(probe_table, "rhs");
 
@@ -964,26 +990,26 @@ mod tests {
             probe_side:
                 QueryExpr {
                     source: SourceExpr::DbTable(DbTable { table_id, .. }),
-                    query: ref rhs,
+                    query: rhs,
                 },
             probe_field:
                 FieldName::Name {
-                    table: ref probe_table,
-                    field: ref probe_field,
+                    table: probe_table,
+                    field: probe_field,
                 },
             index_side: SourceExpr::DbTable(DbTable {
                 table_id: index_table, ..
             }),
             index_col,
             ..
-        }) = query[0]
+        }) = &query[0]
         else {
             panic!("unexpected operator {:#?}", query[0]);
         };
 
-        assert_eq!(table_id, rhs_id);
-        assert_eq!(index_table, lhs_id);
-        assert_eq!(index_col, 1.into());
+        assert_eq!(*table_id, rhs_id);
+        assert_eq!(*index_table, lhs_id);
+        assert_eq!(index_col, &1.into());
         assert_eq!(probe_field, "b");
         assert_eq!(probe_table, "rhs");
 
@@ -1056,6 +1082,27 @@ mod tests {
                 panic!("Unexpected")
             }
         }
+        Ok(())
+    }
+
+    #[test]
+    fn compile_enum_field() -> ResultTest<()> {
+        let (db, _tmp) = make_test_db()?;
+
+        // Create table [enum] with enum type on [a]
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
+        let head = ProductType::from([("a", AlgebraicType::simple_enum(["Player", "Gm"].into_iter()))]);
+        let rows: Vec<_> = (1..=10).map(|_| product!(AlgebraicValue::enum_simple(0))).collect();
+        create_table_with_rows(&db, &mut tx, "enum", head.clone(), &rows)?;
+        db.commit_tx(&ExecutionContext::default(), tx)?;
+
+        let tx = db.begin_tx();
+        // Should work with any qualified field
+        let sql = "select * from enum where a = 'Player'";
+        let q = compile_sql(&db, &tx, sql);
+        assert!(q.is_ok());
+        let result = execute_sql(&db, q.unwrap(), AuthCtx::for_testing())?;
+        assert_eq!(result[0].data, vec![product![AlgebraicValue::enum_simple(0)]]);
         Ok(())
     }
 }

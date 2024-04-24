@@ -197,6 +197,12 @@ pub static DEFAULT_CONFIG: Config = Config {
     fsync: FsyncPolicy::Never,
 };
 
+/// For performance tests, do not persist to disk.
+pub static IN_MEMORY_CONFIG: Config = Config {
+    storage: Storage::Disk,
+    fsync: FsyncPolicy::Never,
+};
+
 /// Used to parse output from module logs.
 ///
 /// Sync with: `core::database_logger::Record`. We can't use it

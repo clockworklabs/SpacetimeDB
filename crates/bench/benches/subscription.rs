@@ -1,8 +1,9 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use spacetimedb::client::Protocol;
 use spacetimedb::db::relational_db::{open_db, RelationalDB};
 use spacetimedb::error::DBError;
 use spacetimedb::execution_context::ExecutionContext;
-use spacetimedb::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp};
+use spacetimedb::host::module_host::{DatabaseTableUpdate, DatabaseUpdate};
 use spacetimedb::subscription::query::compile_read_only_query;
 use spacetimedb::subscription::subscription::ExecutionSet;
 use spacetimedb_lib::identity::AuthCtx;
@@ -18,16 +19,14 @@ fn create_table_location(db: &RelationalDB) -> Result<TableId, DBError> {
         ("z", AlgebraicType::I32),
         ("dimension", AlgebraicType::U32),
     ];
-    db.create_table_for_test_multi_column("location", schema, col_list![2, 3, 4])
+    let indexes = &[(0.into(), "entity_id"), (1.into(), "chunk_index")];
+
+    // Is necessary to test for both single & multi-column indexes...
+    db.create_table_for_test_mix_indexes("location", schema, indexes, col_list![2, 3, 4])
 }
 
 fn create_table_footprint(db: &RelationalDB) -> Result<TableId, DBError> {
-    let footprint = AlgebraicType::sum([
-        ("A", AlgebraicType::unit()),
-        ("B", AlgebraicType::unit()),
-        ("C", AlgebraicType::unit()),
-        ("D", AlgebraicType::unit()),
-    ]);
+    let footprint = AlgebraicType::sum(["A", "B", "C", "D"].map(|n| (n, AlgebraicType::unit())));
     let schema = &[
         ("entity_id", AlgebraicType::U64),
         ("type", footprint),
@@ -41,7 +40,8 @@ fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> Database
     DatabaseTableUpdate {
         table_id,
         table_name: table_name.to_string(),
-        ops: vec![TableOp::insert(row)],
+        inserts: vec![row],
+        deletes: vec![],
     }
 }
 
@@ -103,8 +103,8 @@ fn eval(c: &mut Criterion) {
             let tx = db.begin_tx();
             let query = compile_read_only_query(&db, &tx, &auth, sql).unwrap();
             let query: ExecutionSet = query.into();
-
-            b.iter(|| drop(black_box(query.eval(&db, &tx).unwrap())))
+            let ctx = &ExecutionContext::subscribe(db.address());
+            b.iter(|| drop(black_box(query.eval(ctx, Protocol::Binary, &db, &tx).unwrap())))
         });
     };
 
@@ -126,6 +126,8 @@ fn eval(c: &mut Criterion) {
     );
     bench_eval(c, "full-join", &name);
 
+    let ctx_incr = &ExecutionContext::incremental_update(db.address());
+
     // To profile this benchmark for 30s
     // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- incr-select --exact --profile-time=30
     c.bench_function("incr-select", |b| {
@@ -133,13 +135,14 @@ fn eval(c: &mut Criterion) {
         let select_lhs = "select * from footprint";
         let select_rhs = "select * from location";
         let auth = AuthCtx::for_testing();
-        let tx = db.begin_tx();
-        let query_lhs = compile_read_only_query(&db, &tx, &auth, select_lhs).unwrap();
-        let query_rhs = compile_read_only_query(&db, &tx, &auth, select_rhs).unwrap();
+        let tx = &db.begin_tx();
+        let query_lhs = compile_read_only_query(&db, tx, &auth, select_lhs).unwrap();
+        let query_rhs = compile_read_only_query(&db, tx, &auth, select_rhs).unwrap();
         let query = ExecutionSet::from_iter(query_lhs.into_iter().chain(query_rhs));
+        let tx = &tx.into();
 
         b.iter(|| {
-            let out = query.eval_incr(&db, &tx, &update).unwrap();
+            let out = query.eval_incr(ctx_incr, &db, tx, &update).unwrap();
             black_box(out);
         })
     });
@@ -155,12 +158,13 @@ fn eval(c: &mut Criterion) {
             where location.chunk_index = {chunk_index}"
         );
         let auth = AuthCtx::for_testing();
-        let tx = db.begin_tx();
-        let query = compile_read_only_query(&db, &tx, &auth, &join).unwrap();
+        let tx = &db.begin_tx();
+        let query = compile_read_only_query(&db, tx, &auth, &join).unwrap();
         let query: ExecutionSet = query.into();
+        let tx = &tx.into();
 
         b.iter(|| {
-            let out = query.eval_incr(&db, &tx, &update).unwrap();
+            let out = query.eval_incr(ctx_incr, &db, tx, &update).unwrap();
             black_box(out);
         })
     });

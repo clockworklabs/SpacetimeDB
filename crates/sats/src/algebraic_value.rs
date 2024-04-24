@@ -2,9 +2,10 @@ pub mod de;
 pub mod ser;
 
 use crate::{AlgebraicType, ArrayValue, MapValue, ProductValue, SumValue};
+use core::mem;
+use core::ops::{Bound, RangeBounds};
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use std::ops::{Bound, RangeBounds};
 
 /// Totally ordered [`f32`] allowing all IEEE-754 floating point values.
 pub type F32 = decorum::Total<f32>;
@@ -112,6 +113,11 @@ pub enum AlgebraicValue {
 
 #[allow(non_snake_case)]
 impl AlgebraicValue {
+    /// Extract the value and replace it with a dummy one that is cheap to make.
+    pub fn take(&mut self) -> Self {
+        mem::replace(self, Self::U8(0))
+    }
+
     /// Interpret the value as a byte slice or `None` if it isn't a byte slice.
     #[inline]
     pub fn as_bytes(&self) -> Option<&[u8]> {
@@ -161,6 +167,13 @@ impl AlgebraicValue {
     /// Returns an [`AlgebraicValue`] representing a sum value with `tag` and `value`.
     pub fn sum(tag: u8, value: Self) -> Self {
         let value = Box::new(value);
+        Self::Sum(SumValue { tag, value })
+    }
+
+    /// Returns an [`AlgebraicValue`] representing a sum value with `tag` and empty [AlgebraicValue::product], that is
+    /// valid for simple enums without payload.
+    pub fn enum_simple(tag: u8) -> Self {
+        let value = Box::new(AlgebraicValue::product(vec![]));
         Self::Sum(SumValue { tag, value })
     }
 

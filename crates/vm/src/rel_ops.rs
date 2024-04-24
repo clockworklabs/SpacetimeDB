@@ -1,8 +1,8 @@
 use crate::errors::ErrorVm;
 use crate::relation::RelValue;
+use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_sats::product_value::ProductValue;
 use spacetimedb_sats::relation::{FieldExpr, Header, RowCount};
-use std::collections::HashMap;
 use std::sync::Arc;
 
 pub(crate) trait ResultExt<T> {
@@ -12,7 +12,9 @@ pub(crate) trait ResultExt<T> {
 /// A trait for dealing with fallible iterators for the database.
 pub trait RelOps<'a> {
     fn head(&self) -> &Arc<Header>;
-    fn row_count(&self) -> RowCount;
+    fn row_count(&self) -> RowCount {
+        RowCount::unknown()
+    }
     /// Advances the `iterator` and returns the next [RelValue].
     fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm>;
 
@@ -59,13 +61,13 @@ pub trait RelOps<'a> {
     ///
     /// It is the equivalent of a `SELECT` clause on SQL.
     #[inline]
-    fn project<P>(self, cols: Vec<FieldExpr>, extractor: P) -> Result<Project<Self, P>, ErrorVm>
+    fn project<P>(self, cols: &[FieldExpr], extractor: P) -> Result<Project<Self, P>, ErrorVm>
     where
         P: for<'b> FnMut(&[FieldExpr], RelValue<'b>) -> Result<RelValue<'b>, ErrorVm>,
         Self: Sized,
     {
         let count = self.row_count();
-        let head = self.head().project(&cols)?;
+        let head = self.head().project(cols)?;
         Ok(Project::new(self, count, Arc::new(head), cols, extractor))
     }
 
@@ -132,22 +134,39 @@ impl<'a, I: RelOps<'a> + ?Sized> RelOps<'a> for Box<I> {
     }
 }
 
+/// `RelOps` iterator which never returns any rows.
+///
+/// Used to compile queries with unsatisfiable bounds, like `WHERE x < 5 AND x > 5`.
+#[derive(Clone, Debug)]
+pub struct EmptyRelOps {
+    head: Arc<Header>,
+}
+
+impl EmptyRelOps {
+    pub fn new(head: Arc<Header>) -> Self {
+        Self { head }
+    }
+}
+
+impl<'a> RelOps<'a> for EmptyRelOps {
+    fn head(&self) -> &Arc<Header> {
+        &self.head
+    }
+
+    fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
+        Ok(None)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Select<I, P> {
-    pub(crate) count: RowCount,
     pub(crate) iter: I,
     pub(crate) predicate: P,
 }
 
 impl<I, P> Select<I, P> {
     pub fn new(iter: I, predicate: P) -> Select<I, P> {
-        Select {
-            iter,
-            // NOTE: We could have propagated the upper bound,
-            // but this would likely cause over-allocation in `Vec::with_capacity`.
-            count: RowCount::unknown(),
-            predicate,
-        }
+        Select { iter, predicate }
     }
 }
 
@@ -160,15 +179,10 @@ where
         self.iter.head()
     }
 
-    fn row_count(&self) -> RowCount {
-        self.count
-    }
-
     fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
         let filter = &mut self.predicate;
         while let Some(v) = self.iter.next()? {
             if filter(&v)? {
-                self.count.add_exact(1);
                 return Ok(Some(v));
             }
         }
@@ -177,16 +191,16 @@ where
 }
 
 #[derive(Clone, Debug)]
-pub struct Project<I, P> {
+pub struct Project<'a, I, P> {
     pub(crate) head: Arc<Header>,
     pub(crate) count: RowCount,
-    pub(crate) cols: Vec<FieldExpr>,
+    pub(crate) cols: &'a [FieldExpr],
     pub(crate) iter: I,
     pub(crate) extractor: P,
 }
 
-impl<I, P> Project<I, P> {
-    pub fn new(iter: I, count: RowCount, head: Arc<Header>, cols: Vec<FieldExpr>, extractor: P) -> Project<I, P> {
+impl<'a, I, P> Project<'a, I, P> {
+    pub fn new(iter: I, count: RowCount, head: Arc<Header>, cols: &'a [FieldExpr], extractor: P) -> Project<'a, I, P> {
         Project {
             iter,
             count,
@@ -197,7 +211,7 @@ impl<I, P> Project<I, P> {
     }
 }
 
-impl<'a, I, P> RelOps<'a> for Project<I, P>
+impl<'a, I, P> RelOps<'a> for Project<'_, I, P>
 where
     I: RelOps<'a>,
     P: FnMut(&[FieldExpr], RelValue<'a>) -> Result<RelValue<'a>, ErrorVm>,
@@ -213,7 +227,7 @@ where
     fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
         let extract = &mut self.extractor;
         if let Some(v) = self.iter.next()? {
-            return Ok(Some(extract(&self.cols, v)?));
+            return Ok(Some(extract(self.cols, v)?));
         }
         Ok(None)
     }
@@ -222,7 +236,6 @@ where
 #[derive(Clone, Debug)]
 pub struct JoinInner<'a, Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> {
     pub(crate) head: Arc<Header>,
-    pub(crate) count: RowCount,
     pub(crate) lhs: Lhs,
     pub(crate) rhs: Rhs,
     pub(crate) key_lhs: KeyLhs,
@@ -246,7 +259,6 @@ impl<'a, Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> JoinInner<'a, Lhs, Rhs, KeyLhs, K
     ) -> Self {
         Self {
             head,
-            count: RowCount::unknown(),
             map: HashMap::new(),
             lhs,
             rhs,
@@ -272,10 +284,6 @@ where
 {
     fn head(&self) -> &Arc<Header> {
         &self.head
-    }
-
-    fn row_count(&self) -> RowCount {
-        self.count
     }
 
     fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
@@ -309,7 +317,6 @@ where
             if let Some(rvv) = self.map.get_mut(&k) {
                 if let Some(rhs) = rvv.pop() {
                     if (self.predicate)(&lhs, &rhs)? {
-                        self.count.add_exact(1);
                         return Ok(Some((self.projection)(lhs, rhs)));
                     }
                 }

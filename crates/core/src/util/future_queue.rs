@@ -1,9 +1,9 @@
-use futures::future::{Fuse, FusedFuture};
+use futures::future::MaybeDone;
 use futures::stream::FusedStream;
-use futures::{FutureExt, Stream};
+use futures::Stream;
 use pin_project_lite::pin_project;
 use std::collections::VecDeque;
-use std::future::Future;
+use std::future::{poll_fn, Future};
 use std::pin::Pin;
 use std::task::{self, Poll};
 
@@ -14,11 +14,11 @@ pin_project! {
     ///
     /// `Fut` should implement `Future`.
     /// `StartFn` should implement `FnMut(Job) -> Fut`.
-    pub struct FutureQueue<Job, StartFn, Fut> {
+    pub struct FutureQueue<Job, StartFn, Fut: Future> {
         job_queue: VecDeque<Job>,
         start_fn: StartFn,
         #[pin]
-        running_job: Fuse<Fut>,
+        running_job: MaybeDone<Fut>,
     }
 }
 
@@ -31,7 +31,7 @@ where
     FutureQueue {
         job_queue: VecDeque::new(),
         start_fn,
-        running_job: Fuse::terminated(),
+        running_job: MaybeDone::Gone,
     }
 }
 
@@ -75,7 +75,24 @@ where
     pub fn clear(self: Pin<&mut Self>) {
         let mut me = self.project();
         me.job_queue.clear();
-        me.running_job.set(Fuse::terminated());
+        me.running_job.set(MaybeDone::Gone);
+    }
+
+    pub fn queue_len(&self) -> usize {
+        self.job_queue.len()
+    }
+
+    pub async fn make_progress(self: &mut Pin<&mut Self>) {
+        poll_fn(|cx| self.as_mut().poll_progress(cx)).await
+    }
+
+    pub fn poll_progress(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<()> {
+        let me = self.project();
+        if let MaybeDone::Gone = &*me.running_job {
+            Poll::Ready(())
+        } else {
+            me.running_job.poll(cx)
+        }
     }
 }
 
@@ -88,16 +105,16 @@ where
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
         let mut me = self.project();
-        loop {
-            if !me.running_job.is_terminated() {
-                return me.running_job.poll(cx).map(Some);
-            }
+
+        if let MaybeDone::Gone = &*me.running_job {
             let Some(item) = me.job_queue.pop_front() else {
                 return Poll::Ready(None);
             };
             let fut = (me.start_fn)(item);
-            me.running_job.as_mut().set(fut.fuse());
+            me.running_job.as_mut().set(MaybeDone::Future(fut));
         }
+
+        me.running_job.as_mut().poll(cx).map(|()| me.running_job.take_output())
     }
 }
 
@@ -107,6 +124,6 @@ where
     Fut: Future,
 {
     fn is_terminated(&self) -> bool {
-        self.running_job.is_terminated() && self.job_queue.is_empty()
+        matches!(self.running_job, MaybeDone::Gone) && self.job_queue.is_empty()
     }
 }

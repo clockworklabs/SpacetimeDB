@@ -1,6 +1,8 @@
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
-use spacetimedb_table::table::UniqueConstraintViolation;
+use spacetimedb_sats::bsatn::ser::BsatnError;
+use spacetimedb_table::table::{RowRef, UniqueConstraintViolation};
+use spacetimedb_vm::relation::RelValue;
 use std::ops::DerefMut;
 use std::sync::Arc;
 
@@ -11,17 +13,15 @@ use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::error::{IndexError, NodesError};
 use crate::execution_context::ExecutionContext;
-use crate::vm::{DbProgram, TxMode};
+use crate::vm::{build_query, TxMode};
 use spacetimedb_lib::filter::CmpArgs;
-use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::operator::OpQuery;
-use spacetimedb_lib::{bsatn, ProductValue};
+use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::{ColId, ColListBuilder, TableId};
-use spacetimedb_sats::buffer::BufWriter;
 use spacetimedb_sats::db::def::{IndexDef, IndexType};
 use spacetimedb_sats::relation::{FieldExpr, FieldName};
 use spacetimedb_sats::{ProductType, Typespace};
-use spacetimedb_vm::expr::{Code, ColumnOp, SourceSet};
+use spacetimedb_vm::expr::{ColumnOp, NoInMemUsed};
 
 #[derive(Clone)]
 pub struct InstanceEnv {
@@ -33,6 +33,7 @@ pub struct InstanceEnv {
 #[derive(Clone, Default)]
 pub struct TxSlot {
     inner: Arc<Mutex<Option<MutTxId>>>,
+    ctx: Arc<Mutex<Option<ExecutionContext>>>,
 }
 
 #[derive(Default)]
@@ -41,17 +42,13 @@ struct ChunkedWriter {
     scratch_space: Vec<u8>,
 }
 
-impl BufWriter for ChunkedWriter {
-    fn put_slice(&mut self, slice: &[u8]) {
-        self.scratch_space.extend_from_slice(slice);
-    }
-}
-
 impl ChunkedWriter {
-    /// Reserves `len` additional bytes in the scratch space,
-    /// or does nothing if the capacity is already sufficient.
-    fn reserve_in_scratch(&mut self, len: usize) {
-        self.scratch_space.reserve(len);
+    fn write_row_ref_to_scratch(&mut self, row: RowRef<'_>) -> Result<(), BsatnError> {
+        row.to_bsatn_extend(&mut self.scratch_space)
+    }
+
+    fn write_rel_value_to_scratch(&mut self, row: &RelValue<'_>) -> Result<(), BsatnError> {
+        row.to_bsatn_extend(&mut self.scratch_space)
     }
 
     /// Flushes the data collected in the scratch space if it's larger than our
@@ -114,6 +111,10 @@ impl InstanceEnv {
         self.tx.get()
     }
 
+    pub fn get_ctx(&self) -> Result<impl DerefMut<Target = ExecutionContext> + '_, GetTxError> {
+        self.tx.get_ctx()
+    }
+
     #[tracing::instrument(skip_all)]
     pub fn console_log(&self, level: LogLevel, record: &Record, bt: &dyn BacktraceProvider) {
         self.dbic.logger.write(level, record, bt);
@@ -149,7 +150,6 @@ impl InstanceEnv {
     /// where the column identified by `cols` equates to `value`.
     ///
     /// Returns an error if no rows were deleted or if the column wasn't found.
-    #[tracing::instrument(skip(self, ctx, value))]
     pub fn delete_by_col_eq(
         &self,
         ctx: &ExecutionContext,
@@ -271,7 +271,6 @@ impl InstanceEnv {
     ///
     /// Matching is defined by decoding of `value` to an `AlgebraicValue`
     /// according to the column's schema and then `Ord for AlgebraicValue`.
-    #[tracing::instrument(skip_all)]
     pub fn iter_by_col_eq(
         &self,
         ctx: &ExecutionContext,
@@ -290,10 +289,8 @@ impl InstanceEnv {
         let results = stdb.iter_by_col_eq_mut(ctx, tx, table_id, col_id, value)?;
         let mut bytes = Vec::new();
         for result in results {
-            // Pre-allocate the capacity needed to write `result`.
-            bytes.reserve(bsatn::to_len(&result).unwrap());
             // Write the ref directly to the BSATN `bytes` buffer.
-            bsatn::to_writer(&mut bytes, &result).unwrap();
+            result.to_bsatn_extend(&mut bytes).unwrap();
         }
         Ok(bytes)
     }
@@ -306,10 +303,8 @@ impl InstanceEnv {
         let tx = &mut *self.tx.get()?;
 
         for row in stdb.iter_mut(ctx, tx, table_id)? {
-            // Pre-allocate the capacity needed to write `row`.
-            chunked_writer.reserve_in_scratch(bsatn::to_len(&row).unwrap());
             // Write the ref directly to the BSATN `chunked_writer` buffer.
-            bsatn::to_writer(&mut chunked_writer, &row).unwrap();
+            chunked_writer.write_row_ref_to_scratch(row).unwrap();
             // Flush at row boundaries.
             chunked_writer.flush();
         }
@@ -317,7 +312,6 @@ impl InstanceEnv {
         Ok(chunked_writer.into_chunks())
     }
 
-    #[tracing::instrument(skip_all)]
     pub fn iter_filtered_chunks(
         &self,
         ctx: &ExecutionContext,
@@ -369,44 +363,58 @@ impl InstanceEnv {
         )
         .map_err(NodesError::DecodeFilter)?;
 
-        let q =
-            spacetimedb_vm::dsl::query(schema.as_ref()).with_select(filter_to_column_op(&schema.table_name, filter));
-        //TODO: How pass the `caller` here?
-        let mut tx: TxMode = tx.into();
-        let p = &mut DbProgram::new(ctx, stdb, &mut tx, AuthCtx::for_current(self.dbic.identity));
-        // SQL queries can never reference `MemTable`s, so pass in an empty `SourceSet`.
-        let results = match spacetimedb_vm::eval::run_ast(p, q.into(), SourceSet::default()) {
-            Code::Table(table) => table,
-            _ => unreachable!("query should always return a table"),
-        };
+        // TODO(Centril): consider caching from `filter: &[u8] -> query: QueryExpr`.
+        let query = spacetimedb_vm::dsl::query(schema.as_ref())
+            .with_select(filter_to_column_op(&schema.table_name, filter))
+            .optimize(&|table_id, table_name| stdb.row_count(table_id, table_name));
 
+        // TODO(Centril): Conditionally dump the `query` to a file and compare against integration test.
+        // Invent a system where we can make these kinds of "optimization path tests".
+
+        let tx: TxMode = tx.into();
+        // SQL queries can never reference `MemTable`s, so pass in an empty set.
+        let mut query = build_query(ctx, stdb, &tx, &query, &mut NoInMemUsed)?;
+
+        // write all rows and flush at row boundaries.
         let mut chunked_writer = ChunkedWriter::default();
-
-        // write all rows and flush at row boundaries
-        for row in results.data {
-            row.encode(&mut chunked_writer);
+        while let Some(row) = query.next()? {
+            chunked_writer.write_rel_value_to_scratch(&row).unwrap();
             chunked_writer.flush();
         }
-
         Ok(chunked_writer.into_chunks())
     }
 }
 
 impl TxSlot {
-    pub fn set<T>(&self, tx: MutTxId, f: impl FnOnce() -> T) -> (MutTxId, T) {
+    pub fn set<T>(
+        &mut self,
+        ctx: ExecutionContext,
+        tx: MutTxId,
+        f: impl FnOnce() -> T,
+    ) -> (ExecutionContext, MutTxId, T) {
+        self.ctx.lock().replace(ctx);
         let prev = self.inner.lock().replace(tx);
         assert!(prev.is_none(), "reentrant TxSlot::set");
         let remove_tx = || self.inner.lock().take();
+
+        let remove_ctx = || self.ctx.lock().take();
+
         let res = {
-            scopeguard::defer_on_unwind! { remove_tx(); }
+            scopeguard::defer_on_unwind! { remove_ctx(); remove_tx();}
             f()
         };
+
+        let ctx = remove_ctx().expect("ctx was removed during transaction");
         let tx = remove_tx().expect("tx was removed during transaction");
-        (tx, res)
+        (ctx, tx, res)
     }
 
     pub fn get(&self) -> Result<impl DerefMut<Target = MutTxId> + '_, GetTxError> {
         MutexGuard::try_map(self.inner.lock(), |map| map.as_mut()).map_err(|_| GetTxError)
+    }
+
+    pub fn get_ctx(&self) -> Result<impl DerefMut<Target = ExecutionContext> + '_, GetTxError> {
+        MutexGuard::try_map(self.ctx.lock(), |map| map.as_mut()).map_err(|_| GetTxError)
     }
 }
 

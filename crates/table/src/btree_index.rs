@@ -31,7 +31,7 @@ use crate::{
 use core::ops::RangeBounds;
 use multimap::{MultiMap, MultiMapRangeIter};
 use spacetimedb_primitives::{ColList, IndexId};
-use spacetimedb_sats::{product_value::InvalidFieldError, AlgebraicValue, ProductValue};
+use spacetimedb_sats::{product_value::InvalidFieldError, AlgebraicValue};
 
 mod multimap;
 
@@ -375,11 +375,6 @@ impl BTreeIndex {
         })
     }
 
-    /// Extracts from `row` the relevant column values according to what columns are indexed.
-    pub fn get_fields(&self, cols: &ColList, row: &ProductValue) -> Result<AlgebraicValue, InvalidFieldError> {
-        row.project_not_empty(cols)
-    }
-
     /// Inserts `ptr` with the value `row` to this index.
     /// This index will extract the necessary values from `row` based on `self.cols`.
     ///
@@ -393,15 +388,6 @@ impl BTreeIndex {
     /// Returns whether `ptr` was present.
     pub fn delete(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<bool, InvalidFieldError> {
         self.idx.delete(cols, row_ref)
-    }
-
-    /// Returns whether indexing `row` again would violate a unique constraint, if any.
-    pub fn violates_unique_constraint(&self, cols: &ColList, row: &ProductValue) -> bool {
-        if self.is_unique {
-            let col_value = self.get_fields(cols, row).unwrap();
-            return self.contains_any(&col_value);
-        }
-        false
     }
 
     /// Returns an iterator over the rows that would violate the unique constraint of this index,
@@ -464,12 +450,12 @@ mod test {
     use core::ops::Bound::*;
     use proptest::prelude::*;
     use proptest::{collection::vec, test_runner::TestCaseResult};
+    use spacetimedb_data_structures::map::HashMap;
     use spacetimedb_primitives::ColListBuilder;
     use spacetimedb_sats::{
         db::def::{TableDef, TableSchema},
-        product, AlgebraicType, ProductType,
+        product, AlgebraicType, ProductType, ProductValue,
     };
-    use std::collections::HashMap;
 
     fn gen_cols(ty_len: usize) -> impl Strategy<Value = ColList> {
         vec((0..ty_len as u32).prop_map_into(), 1..=ty_len)
@@ -497,6 +483,16 @@ mod test {
         Table::new(schema, SquashedOffset::COMMITTED_STATE)
     }
 
+    /// Extracts from `row` the relevant column values according to what columns are indexed.
+    fn get_fields(cols: &ColList, row: &ProductValue) -> AlgebraicValue {
+        row.project_not_empty(cols).unwrap()
+    }
+
+    /// Returns whether indexing `row` again would violate a unique constraint, if any.
+    fn violates_unique_constraint(index: &BTreeIndex, cols: &ColList, row: &ProductValue) -> bool {
+        !index.is_unique || index.contains_any(&get_fields(cols, row))
+    }
+
     proptest! {
         #[test]
         fn remove_nonexistent_noop(((ty, cols, pv), is_unique) in (gen_row_and_cols(), any::<bool>())) {
@@ -516,7 +512,7 @@ mod test {
             let mut blob_store = HashMapBlobStore::default();
             let ptr = table.insert(&mut blob_store, &pv).unwrap().1;
             let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
-            let value = index.get_fields(&cols, &pv).unwrap();
+            let value = get_fields(&cols, &pv);
 
             prop_assert_eq!(index.idx.len(), 0);
             prop_assert_eq!(index.contains_any(&value), false);
@@ -541,11 +537,11 @@ mod test {
             let mut blob_store = HashMapBlobStore::default();
             let ptr = table.insert(&mut blob_store, &pv).unwrap().1;
             let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
-            let value = index.get_fields(&cols, &pv).unwrap();
+            let value = get_fields(&cols, &pv);
 
             // Nothing in the index yet.
             prop_assert_eq!(index.idx.len(), 0);
-            prop_assert_eq!(index.violates_unique_constraint(&cols, &pv), false);
+            prop_assert_eq!(violates_unique_constraint(&index, &cols, &pv), false);
             prop_assert_eq!(
                 index.get_rows_that_violate_unique_constraint(&value).unwrap().collect::<Vec<_>>(),
                 []
@@ -556,7 +552,7 @@ mod test {
 
             // Inserting again would be a problem.
             prop_assert_eq!(index.idx.len(), 1);
-            prop_assert_eq!(index.violates_unique_constraint(&cols, &pv), true);
+            prop_assert_eq!(violates_unique_constraint(&index, &cols, &pv), true);
             prop_assert_eq!(
                 index.get_rows_that_violate_unique_constraint(&value).unwrap().collect::<Vec<_>>(),
                 [ptr]

@@ -1,13 +1,13 @@
 use super::compiler::compile_sql;
 use crate::database_instance_context_controller::DatabaseInstanceContextController;
-use crate::db::relational_db::{MutTx, RelationalDB, Tx};
+use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, DatabaseError};
 use crate::execution_context::ExecutionContext;
 use crate::vm::{DbProgram, TxMode};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{ProductType, ProductValue};
 use spacetimedb_vm::eval::run_ast;
-use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr, SourceSet};
+use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
 use spacetimedb_vm::relation::MemTable;
 use tracing::info;
 
@@ -34,7 +34,7 @@ pub fn execute(
     }
 }
 
-fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Result<(), DBError> {
+pub(crate) fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Result<(), DBError> {
     match r {
         CodeResult::Value(_) => {}
         CodeResult::Table(x) => result.push(x),
@@ -50,41 +50,6 @@ fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Result<(), DBErr
     Ok(())
 }
 
-pub fn execute_single_sql(
-    cx: &ExecutionContext,
-    db: &RelationalDB,
-    tx: &Tx,
-    ast: CrudExpr,
-    auth: AuthCtx,
-    sources: SourceSet,
-) -> Result<Vec<MemTable>, DBError> {
-    let mut tx: TxMode = tx.into();
-    let p = &mut DbProgram::new(cx, db, &mut tx, auth);
-    let q = Expr::Crud(Box::new(ast));
-
-    let mut result = Vec::with_capacity(1);
-    collect_result(&mut result, run_ast(p, q, sources).into())?;
-    Ok(result)
-}
-
-pub fn execute_sql_mut_tx(
-    db: &RelationalDB,
-    tx: &mut MutTx,
-    ast: Vec<CrudExpr>,
-    auth: AuthCtx,
-    sources: SourceSet,
-) -> Result<Vec<MemTable>, DBError> {
-    let total = ast.len();
-    let mut tx: TxMode = tx.into();
-    let ctx = ExecutionContext::sql(db.address());
-    let p = &mut DbProgram::new(&ctx, db, &mut tx, auth);
-    let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
-
-    let mut result = Vec::with_capacity(total);
-    collect_result(&mut result, run_ast(p, q, sources).into())?;
-    Ok(result)
-}
-
 /// Run the compiled `SQL` expression inside the `vm` created by [DbProgram]
 ///
 /// Evaluates `ast` and accordingly triggers mutable or read tx to execute
@@ -92,20 +57,21 @@ pub fn execute_sql(db: &RelationalDB, ast: Vec<CrudExpr>, auth: AuthCtx) -> Resu
     let total = ast.len();
     let ctx = ExecutionContext::sql(db.address());
     let mut result = Vec::with_capacity(total);
+    let sources = [].into();
     match CrudExpr::is_reads(&ast) {
         false => db.with_auto_commit(&ctx, |mut_tx| {
             let mut tx: TxMode = mut_tx.into();
             let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
             let p = &mut DbProgram::new(&ctx, db, &mut tx, auth);
             // SQL queries can never reference `MemTable`s, so pass an empty `SourceSet`.
-            collect_result(&mut result, run_ast(p, q, SourceSet::default()).into())
+            collect_result(&mut result, run_ast(p, q, sources).into())
         }),
         true => db.with_read_only(&ctx, |tx| {
             let mut tx = TxMode::Tx(tx);
             let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
             let p = &mut DbProgram::new(&ctx, db, &mut tx, auth);
             // SQL queries can never reference `MemTable`s, so pass an empty `SourceSet`.
-            collect_result(&mut result, run_ast(p, q, SourceSet::default()).into())
+            collect_result(&mut result, run_ast(p, q, sources).into())
         }),
     }?;
 
@@ -127,7 +93,7 @@ pub(crate) mod tests {
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::vm::tests::create_table_with_rows;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_primitives::col_list;
+    use spacetimedb_primitives::{col_list, ColId};
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::relation::Header;
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
@@ -693,5 +659,62 @@ SELECT * FROM inventory",
         assert_eq!(result.data, vec![product![1, 1, 1, 1]]);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_large_query_no_panic() {
+        let (db, _tmp_dir) = make_test_db().unwrap();
+
+        let _table_id = db
+            .create_table_for_test_multi_column(
+                "test",
+                &[("x", AlgebraicType::I32), ("y", AlgebraicType::I32)],
+                col_list![0, 1],
+            )
+            .unwrap();
+
+        let mut query = "select * from test where ".to_string();
+        for x in 0..1_000 {
+            for y in 0..1_000 {
+                let fragment = format!("((x = {x}) and y = {y}) or");
+                query.push_str(&fragment);
+            }
+        }
+        query.push_str("((x = 1000) and (y = 1000))");
+
+        assert!(run_for_testing(&db, &query).is_err());
+    }
+
+    #[test]
+    fn test_impossible_bounds_no_panic() {
+        let (db, _tmp_dir) = make_test_db().unwrap();
+
+        let table_id = db
+            .create_table_for_test("test", &[("x", AlgebraicType::I32)], &[(ColId(0), "test_x")])
+            .unwrap();
+
+        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+            for i in 0..1000i32 {
+                db.insert(tx, table_id, product!(i)).unwrap();
+            }
+            Ok::<(), DBError>(())
+        })
+        .unwrap();
+
+        let result = run_for_testing(&db, "select * from test where x > 5 and x < 5").unwrap();
+        assert_eq!(result.len(), 1);
+        assert!(result[0].data.is_empty());
+
+        let result = run_for_testing(&db, "select * from test where x >= 5 and x < 4").unwrap();
+        assert_eq!(result.len(), 1);
+        assert!(
+            result[0].data.is_empty(),
+            "Expected no rows but found {:#?}",
+            result[0].data
+        );
+
+        let result = run_for_testing(&db, "select * from test where x > 5 and x <= 4").unwrap();
+        assert_eq!(result.len(), 1);
+        assert!(result[0].data.is_empty());
     }
 }

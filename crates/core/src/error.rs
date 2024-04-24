@@ -342,3 +342,9 @@ impl From<DBError> for NodesError {
         }
     }
 }
+
+impl From<ErrorVm> for NodesError {
+    fn from(err: ErrorVm) -> Self {
+        DBError::from(err).into()
+    }
+}

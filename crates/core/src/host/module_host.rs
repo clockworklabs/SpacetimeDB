@@ -1,12 +1,3 @@
-use std::collections::HashMap;
-use std::fmt;
-use std::sync::{Arc, Weak};
-use std::time::{Duration, Instant};
-
-use futures::{Future, FutureExt};
-use indexmap::IndexMap;
-use spacetimedb_lib::identity::RequestId;
-
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
 use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_logger::LogLevel;
@@ -19,16 +10,46 @@ use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
 use crate::identity::Identity;
 use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
-use crate::protobuf::client_api::{table_row_operation, TableRowOperation, TableUpdate};
+use crate::protobuf::client_api::{TableRowOperation, TableUpdate};
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
 use crate::util::notify_once::NotifyOnce;
+use crate::worker_metrics::WORKER_METRICS;
+use derive_more::{From, Into};
+use futures::{Future, FutureExt};
+use indexmap::IndexMap;
+use itertools::{Either, Itertools};
+use spacetimedb_client_api_messages::client_api::table_row_operation::OperationType;
+use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap, IntMap};
+use spacetimedb_lib::bsatn::to_vec;
+use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::{Address, ReducerDef, TableDesc};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
 use spacetimedb_vm::relation::MemTable;
+use std::borrow::Cow;
+use std::fmt;
+use std::sync::{Arc, Weak};
+use std::time::{Duration, Instant};
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone, From, Into)]
+pub struct ProtocolDatabaseUpdate {
+    pub tables: Either<Vec<TableUpdate>, Vec<TableUpdateJson>>,
+}
+
+impl From<ProtocolDatabaseUpdate> for Vec<TableUpdate> {
+    fn from(update: ProtocolDatabaseUpdate) -> Self {
+        update.tables.unwrap_left()
+    }
+}
+
+impl From<ProtocolDatabaseUpdate> for Vec<TableUpdateJson> {
+    fn from(update: ProtocolDatabaseUpdate) -> Self {
+        update.tables.unwrap_right()
+    }
+}
+
+#[derive(Debug, Default, Clone, From)]
 pub struct DatabaseUpdate {
     pub tables: Vec<DatabaseTableUpdate>,
 }
@@ -41,12 +62,6 @@ impl FromIterator<DatabaseTableUpdate> for DatabaseUpdate {
     }
 }
 
-impl From<Vec<DatabaseTableUpdate>> for DatabaseUpdate {
-    fn from(value: Vec<DatabaseTableUpdate>) -> Self {
-        DatabaseUpdate::from_iter(value)
-    }
-}
-
 impl DatabaseUpdate {
     pub fn is_empty(&self) -> bool {
         if self.tables.len() == 0 {
@@ -56,77 +71,42 @@ impl DatabaseUpdate {
     }
 
     pub fn from_writes(stdb: &RelationalDB, tx_data: &TxData) -> Self {
-        let mut map: HashMap<TableId, Vec<TableOp>> = HashMap::new();
+        let mut map: IntMap<TableId, (Vec<ProductValue>, Vec<ProductValue>)> = IntMap::new();
         for record in tx_data.records.iter() {
             let pv = record.product_value.clone();
-            map.entry(record.table_id).or_default().push(match record.op {
-                TxOp::Delete => TableOp::delete(pv),
-                TxOp::Insert(_) => TableOp::insert(pv),
-            });
+            let table = map.entry(record.table_id).or_default();
+            match record.op {
+                TxOp::Delete => &mut table.0,
+                TxOp::Insert(_) => &mut table.1,
+            }
+            .push(pv);
         }
 
         let ctx = ExecutionContext::internal(stdb.address());
         let table_updates = stdb.with_read_only(&ctx, |tx| {
             map.into_iter()
-                .map(|(table_id, ops)| DatabaseTableUpdate {
+                .map(|(table_id, (deletes, inserts))| DatabaseTableUpdate {
                     table_id,
                     table_name: stdb.table_name_from_id(tx, table_id).unwrap().unwrap().into_owned(),
-                    ops,
+                    deletes,
+                    inserts,
                 })
                 .collect()
         });
 
         DatabaseUpdate { tables: table_updates }
     }
+}
 
-    pub fn into_protobuf(self) -> Vec<TableUpdate> {
-        self.tables
-            .into_iter()
-            .map(|table| TableUpdate {
-                table_id: table.table_id.into(),
-                table_name: table.table_name,
-                table_row_operations: table
-                    .ops
-                    .into_iter()
-                    .map(|op| {
-                        let mut row_bytes = Vec::new();
-                        op.row.encode(&mut row_bytes);
-                        TableRowOperation {
-                            op: if op.op_type == 1 {
-                                table_row_operation::OperationType::Insert.into()
-                            } else {
-                                table_row_operation::OperationType::Delete.into()
-                            },
-                            row: row_bytes,
-                        }
-                    })
-                    .collect(),
-            })
-            .collect()
+impl From<DatabaseUpdate> for Vec<TableUpdate> {
+    fn from(update: DatabaseUpdate) -> Self {
+        update.tables.into_iter().map_into().collect()
     }
+}
 
-    pub fn into_json(self) -> Vec<TableUpdateJson> {
-        // For all tables, push all state
-        // TODO: We need some way to namespace tables so we don't send all the internal tables and stuff
-        self.tables
-            .into_iter()
-            .map(|table| TableUpdateJson {
-                table_id: table.table_id.into(),
-                table_name: table.table_name,
-                table_row_operations: table
-                    .ops
-                    .into_iter()
-                    .map(|op| TableRowOperationJson {
-                        op: if op.op_type == 1 {
-                            "insert".into()
-                        } else {
-                            "delete".into()
-                        },
-                        row: op.row.elements,
-                    })
-                    .collect(),
-            })
-            .collect()
+impl From<DatabaseUpdate> for Vec<TableUpdateJson> {
+    fn from(update: DatabaseUpdate) -> Self {
+        update.tables.into_iter().map_into().collect()
     }
 }
 
@@ -134,29 +114,182 @@ impl DatabaseUpdate {
 pub struct DatabaseTableUpdate {
     pub table_id: TableId,
     pub table_name: String,
-    pub ops: Vec<TableOp>,
+    pub inserts: Vec<ProductValue>,
+    pub deletes: Vec<ProductValue>,
+}
+
+impl From<DatabaseTableUpdate> for TableUpdate {
+    fn from(table: DatabaseTableUpdate) -> Self {
+        let deletes = table.deletes.into_iter().map(TableOp::delete);
+        let inserts = table.inserts.into_iter().map(TableOp::insert);
+        let table_row_operations = deletes.chain(inserts).map(|x| (&x).into()).collect();
+        Self {
+            table_id: table.table_id.into(),
+            table_name: table.table_name,
+            table_row_operations,
+        }
+    }
+}
+
+impl From<DatabaseTableUpdate> for TableUpdateJson {
+    fn from(table: DatabaseTableUpdate) -> Self {
+        let deletes = table.deletes.into_iter().map(TableOp::delete);
+        let inserts = table.inserts.into_iter().map(TableOp::insert);
+        let table_row_operations = deletes.chain(inserts).map_into().collect();
+        Self {
+            table_id: table.table_id.into(),
+            table_name: table.table_name,
+            table_row_operations,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct DatabaseUpdateCow<'a> {
+    pub tables: Vec<DatabaseTableUpdateCow<'a>>,
+}
+
+#[derive(PartialEq, Debug)]
+pub struct DatabaseTableUpdateCow<'a> {
+    pub table_id: TableId,
+    pub table_name: String,
+    pub updates: UpdatesCow<'a>,
+}
+
+#[derive(Default, PartialEq, Debug)]
+pub struct UpdatesCow<'a> {
+    pub deletes: Vec<Cow<'a, ProductValue>>,
+    pub inserts: Vec<Cow<'a, ProductValue>>,
+}
+
+impl UpdatesCow<'_> {
+    /// Returns whether there are any updates.
+    pub fn has_updates(&self) -> bool {
+        !(self.deletes.is_empty() && self.inserts.is_empty())
+    }
+
+    /// Returns a combined iterator over both deletes and inserts.
+    pub fn iter(&self) -> impl Iterator<Item = TableOpRef<'_>> {
+        self.deletes
+            .iter()
+            .map(TableOpRef::delete)
+            .chain(self.inserts.iter().map(TableOpRef::insert))
+    }
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpType {
+    Delete = 0,
+    Insert = 1,
+}
+
+impl TryFrom<u8> for OpType {
+    type Error = ();
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Delete),
+            1 => Ok(Self::Insert),
+            _ => Err(()),
+        }
+    }
+}
+
+pub struct TableOpRef<'a> {
+    pub op_type: OpType,
+    pub row: &'a ProductValue,
+}
+
+impl<'a> TableOpRef<'a> {
+    #[inline]
+    fn new(op_type: OpType, row: &'a Cow<'a, ProductValue>) -> Self {
+        let row = &**row;
+        Self { op_type, row }
+    }
+
+    #[inline]
+    pub fn insert(row: &'a Cow<'a, ProductValue>) -> Self {
+        Self::new(OpType::Insert, row)
+    }
+
+    #[inline]
+    pub fn delete(row: &'a Cow<'a, ProductValue>) -> Self {
+        Self::new(OpType::Delete, row)
+    }
+}
+
+impl From<OpType> for OperationType {
+    fn from(op: OpType) -> Self {
+        match op {
+            OpType::Delete => OperationType::Delete,
+            OpType::Insert => OperationType::Insert,
+        }
+    }
+}
+
+impl From<TableOpRef<'_>> for TableRowOperation {
+    fn from(top: TableOpRef<'_>) -> Self {
+        let row = to_vec(top.row).unwrap();
+        let op: OperationType = top.op_type.into();
+        Self { op: op.into(), row }
+    }
+}
+
+impl From<TableOpRef<'_>> for TableRowOperationJson {
+    fn from(top: TableOpRef<'_>) -> Self {
+        TableOp::from(top).into()
+    }
+}
+
+impl From<TableOpRef<'_>> for TableOp {
+    fn from(top: TableOpRef<'_>) -> Self {
+        let row = top.row.clone();
+        let op_type = top.op_type;
+        Self { op_type, row }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableOp {
-    pub op_type: u8,
+    pub op_type: OpType,
     pub row: ProductValue,
 }
 
 impl TableOp {
     #[inline]
-    pub fn new(op_type: u8, row: ProductValue) -> Self {
+    pub fn new(op_type: OpType, row: ProductValue) -> Self {
         Self { op_type, row }
     }
 
     #[inline]
     pub fn insert(row: ProductValue) -> Self {
-        Self::new(1, row)
+        Self::new(OpType::Insert, row)
     }
 
     #[inline]
     pub fn delete(row: ProductValue) -> Self {
-        Self::new(0, row)
+        Self::new(OpType::Delete, row)
+    }
+}
+
+impl From<&TableOp> for TableRowOperation {
+    #[inline]
+    fn from(TableOp { op_type, row }: &TableOp) -> Self {
+        TableOpRef { row, op_type: *op_type }.into()
+    }
+}
+
+impl From<TableOp> for TableRowOperationJson {
+    fn from(top: TableOp) -> Self {
+        let row = top.row.elements;
+        let op = if top.op_type == OpType::Insert {
+            "insert"
+        } else {
+            "delete"
+        }
+        .into();
+        Self { op, row }
     }
 }
 
@@ -260,7 +393,7 @@ pub trait ModuleInstance: Send + 'static {
     // should probably be generic over the type of token, but that turns out a
     // bit unpleasant at the moment. So we just use the widest possible integer.
 
-    fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<ReducerCallResult>;
+    fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<Option<ReducerCallResult>>;
 
     fn update_database(&mut self, fence: u128) -> anyhow::Result<UpdateDatabaseResult>;
 
@@ -297,7 +430,7 @@ impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
     fn trapped(&self) -> bool {
         self.inst.trapped()
     }
-    fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<ReducerCallResult> {
+    fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<Option<ReducerCallResult>> {
         let ret = self.inst.init_database(fence, args);
         self.check_trap();
         ret
@@ -377,6 +510,16 @@ async fn select_first<A: Future, B: Future<Output = ()>>(fut_a: A, fut_b: B) -> 
 #[async_trait::async_trait]
 impl<T: Module> DynModuleHost for HostControllerActor<T> {
     async fn get_instance(&self, db: Address) -> Result<Box<dyn ModuleInstance>, NoSuchModule> {
+        // In the event of a PoolClosed error,
+        // we need to reset the queue length metrics.
+        fn no_such_module(db: &Address) -> NoSuchModule {
+            WORKER_METRICS.instance_queue_length.with_label_values(db).set(0);
+            WORKER_METRICS
+                .instance_queue_length_histogram
+                .with_label_values(db)
+                .observe(0 as f64);
+            NoSuchModule
+        }
         self.start.notified().await;
         // in the future we should do something like in the else branch here -- add more instances based on load.
         // we need to do write-skew retries first - right now there's only ever once instance per module.
@@ -384,7 +527,7 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
             self.instance_pool
                 .request_with_context(db)
                 .await
-                .map_err(|_| NoSuchModule)?
+                .map_err(|_| no_such_module(&db))?
         } else {
             const GET_INSTANCE_TIMEOUT: Duration = Duration::from_millis(500);
             select_first(
@@ -392,7 +535,7 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
                 tokio::time::sleep(GET_INSTANCE_TIMEOUT).map(|()| self.spinup_new_instance()),
             )
             .await
-            .map_err(|_| NoSuchModule)?
+            .map_err(|_| no_such_module(&db))?
         };
         Ok(Box::new(AutoReplacingModuleInstance {
             inst,
@@ -635,7 +778,11 @@ impl ModuleHost {
         Ok(self.info().log_tx.subscribe())
     }
 
-    pub async fn init_database(&self, fence: u128, args: ReducerArgs) -> Result<ReducerCallResult, InitDatabaseError> {
+    pub async fn init_database(
+        &self,
+        fence: u128,
+        args: ReducerArgs,
+    ) -> Result<Option<ReducerCallResult>, InitDatabaseError> {
         let args = match self.catalog().get_reducer("__init__") {
             Some(schema) => args.into_tuple(schema)?,
             _ => ArgsTuple::default(),

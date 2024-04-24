@@ -1,5 +1,6 @@
 #![allow(clippy::too_many_arguments)]
 
+use std::ops::DerefMut;
 use std::time::Instant;
 
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
@@ -153,16 +154,15 @@ impl WasmInstanceEnv {
     }
 
     /// Returns an execution context for a reducer call.
-    fn reducer_context(&self) -> ExecutionContext {
-        ExecutionContext::reducer(self.instance_env().dbic.address, self.reducer_name.as_str())
+    fn reducer_context(&self) -> Result<impl DerefMut<Target = ExecutionContext> + '_, WasmError> {
+        self.instance_env().get_ctx().map_err(|err| WasmError::Db(err.into()))
     }
 
     // TODO: make this part of cvt(), maybe?
     /// Gather the appropriate metadata and log a wasm_abi_call_duration_ns with the given AbiCall & duration
-    #[cfg(feature = "metrics")]
+    #[allow(unused)]
     fn start_abi_call_timer(&self, call: AbiCall) -> prometheus::HistogramTimer {
-        let ctx = self.reducer_context();
-        let db = ctx.database();
+        let db = self.instance_env().dbic.address;
 
         DB_METRICS
             .wasm_abi_call_duration_sec
@@ -382,8 +382,7 @@ impl WasmInstanceEnv {
     pub fn insert(caller: Caller<'_, Self>, table_id: u32, row: WasmPtr<u8>, row_len: u32) -> RtResult<u32> {
         // TODO: Instead of writing this metric on every insert call,
         // we should aggregate and write at the end of the transaction.
-        #[cfg(feature = "metrics")]
-        let _guard = caller.data().start_abi_call_timer(AbiCall::Insert);
+        // let _guard = caller.data().start_abi_call_timer(AbiCall::Insert);
 
         Self::cvt(caller, AbiCall::Insert, |caller| {
             let (mem, env) = Self::mem_env(caller);
@@ -394,7 +393,7 @@ impl WasmInstanceEnv {
             // Insert the row into the DB. We get back the decoded version.
             // Then re-encode and write that back into WASM memory at `row`.
             // We're doing this because of autoinc.
-            let ctx = env.reducer_context();
+            let ctx = env.reducer_context()?;
             let new_row = env.instance_env.insert(&ctx, table_id.into(), row_buffer)?;
             new_row.encode(&mut { row_buffer });
             Ok(())
@@ -418,7 +417,6 @@ impl WasmInstanceEnv {
     ///   according to the `AlgebraicType` that the table's schema specifies for `col_id`.
     /// - `value + value_len` overflows a 64-bit integer
     /// - writing to `out` would overflow a 32-bit integer
-    #[tracing::instrument(skip_all)]
     pub fn delete_by_col_eq(
         caller: Caller<'_, Self>,
         table_id: u32,
@@ -427,12 +425,13 @@ impl WasmInstanceEnv {
         value_len: u32,
         out: WasmPtr<u32>,
     ) -> RtResult<u32> {
-        #[cfg(feature = "metrics")]
-        let _guard = caller.data().start_abi_call_timer(AbiCall::DeleteByColEq);
+        // TODO: Instead of writing this metric on every insert call,
+        // we should aggregate and write at the end of the transaction.
+        // let _guard = caller.data().start_abi_call_timer(AbiCall::DeleteByColEq);
 
         Self::cvt_ret(caller, AbiCall::DeleteByColEq, out, |caller| {
             let (mem, env) = Self::mem_env(caller);
-            let ctx = env.reducer_context();
+            let ctx = env.reducer_context()?;
             let value = mem.deref_slice(value, value_len)?;
             let count = env
                 .instance_env
@@ -558,7 +557,6 @@ impl WasmInstanceEnv {
     /// - `(val, val_len)` cannot be decoded to an `AlgebraicValue`
     ///   typed at the `AlgebraicType` of the column,
     /// - `val + val_len` overflows a 64-bit integer
-    #[tracing::instrument(skip_all)]
     pub fn iter_by_col_eq(
         caller: Caller<'_, Self>,
         table_id: u32,
@@ -567,8 +565,9 @@ impl WasmInstanceEnv {
         val_len: u32,
         out: WasmPtr<BufferIdx>,
     ) -> RtResult<u32> {
-        #[cfg(feature = "metrics")]
-        let _guard = caller.data().start_abi_call_timer(AbiCall::IterByColEq);
+        // TODO: Instead of writing this metric on every insert call,
+        // we should aggregate and write at the end of the transaction.
+        // let _guard = caller.data().start_abi_call_timer(AbiCall::IterByColEq);
 
         Self::cvt_ret(caller, AbiCall::IterByColEq, out, |caller| {
             let (mem, env) = Self::mem_env(caller);
@@ -576,12 +575,15 @@ impl WasmInstanceEnv {
             let value = mem.deref_slice(val, val_len)?;
 
             // Retrieve the execution context for the current reducer.
-            let ctx = env.reducer_context();
+            let ctx = env.reducer_context()?;
 
             // Find the relevant rows.
             let data = env
                 .instance_env
                 .iter_by_col_eq(&ctx, table_id.into(), col_id.into(), value)?;
+
+            // Release the immutable borrow of `env.buffers` by dropping `ctx`.
+            drop(ctx);
 
             // Insert the encoded + concatenated rows into a new buffer and return its id.
             Ok(env.buffers.insert(data.into()))
@@ -597,16 +599,17 @@ impl WasmInstanceEnv {
     /// - a table with the provided `table_id` doesn't exist
     // #[tracing::instrument(skip_all)]
     pub fn iter_start(caller: Caller<'_, Self>, table_id: u32, out: WasmPtr<BufferIterIdx>) -> RtResult<u32> {
-        #[cfg(feature = "metrics")]
-        let _guard = caller.data().start_abi_call_timer(AbiCall::IterStart);
+        // TODO: Instead of writing this metric on every insert call,
+        // we should aggregate and write at the end of the transaction.
+        // let _guard = caller.data().start_abi_call_timer(AbiCall::IterStart);
 
         Self::cvt_ret(caller, AbiCall::IterStart, out, |caller| {
             let env = caller.data_mut();
             // Retrieve the execution context for the current reducer.
-            let ctx = env.reducer_context();
+            let ctx = env.reducer_context()?;
             // Collect the iterator chunks.
             let chunks = env.instance_env.iter_chunks(&ctx, table_id.into())?;
-
+            drop(ctx);
             // Register the iterator and get back the index to write to `out`.
             // Calls to the iterator are done through dynamic dispatch.
             Ok(env.iters.insert(chunks.into_iter()))
@@ -626,7 +629,6 @@ impl WasmInstanceEnv {
     /// - a table with the provided `table_id` doesn't exist
     /// - `(filter, filter_len)` doesn't decode to a filter expression
     /// - `filter + filter_len` overflows a 64-bit integer
-    #[tracing::instrument(skip_all)]
     pub fn iter_start_filtered(
         caller: Caller<'_, Self>,
         table_id: u32,
@@ -634,20 +636,21 @@ impl WasmInstanceEnv {
         filter_len: u32,
         out: WasmPtr<BufferIterIdx>,
     ) -> RtResult<u32> {
-        #[cfg(feature = "metrics")]
-        let _guard = caller.data().start_abi_call_timer(AbiCall::IterStartFiltered);
+        // TODO: Instead of writing this metric on every insert call,
+        // we should aggregate and write at the end of the transaction.
+        // let _guard = caller.data().start_abi_call_timer(AbiCall::IterStartFiltered);
 
         Self::cvt_ret(caller, AbiCall::IterStartFiltered, out, |caller| {
             let (mem, env) = Self::mem_env(caller);
             // Retrieve the execution context for the current reducer.
-            let ctx = env.reducer_context();
+            let ctx = env.reducer_context()?;
 
             // Read the slice `(filter, filter_len)`.
             let filter = mem.deref_slice(filter, filter_len)?;
 
             // Construct the iterator.
             let chunks = env.instance_env.iter_filtered_chunks(&ctx, table_id.into(), filter)?;
-
+            drop(ctx);
             // Register the iterator and get back the index to write to `out`.
             // Calls to the iterator are done through dynamic dispatch.
             Ok(env.iters.insert(chunks.into_iter()))

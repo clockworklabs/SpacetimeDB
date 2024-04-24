@@ -1,9 +1,7 @@
-use itertools::Itertools;
-use std::borrow::Cow;
-use std::collections::HashMap;
-
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::{DBError, PlanError};
+use itertools::Itertools;
+use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_primitives::{ColList, ConstraintKind, Constraints};
 use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::db::def::{ColumnDef, ColumnSchema, ConstraintDef, FieldDef, TableDef, TableSchema};
@@ -12,7 +10,7 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductTypeElement};
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::expr::{ColumnOp, DbType, Expr};
 use spacetimedb_vm::operator::{OpCmp, OpLogic, OpQuery};
-use spacetimedb_vm::ops::parse::parse;
+use spacetimedb_vm::ops::parse::{parse, parse_simple_enum};
 use sqlparser::ast::{
     Assignment, BinaryOperator, ColumnDef as SqlColumnDef, ColumnOption, DataType, ExactNumberInfo, Expr as SqlExpr,
     GeneratedAs, HiveDistributionStyle, Ident, JoinConstraint, JoinOperator, ObjectName, ObjectType, Query, Select,
@@ -20,6 +18,7 @@ use sqlparser::ast::{
 };
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
+use std::borrow::Cow;
 
 /// Simplify to detect features of the syntax we don't support yet
 /// Because we use [PostgreSqlDialect] in the compiler step it already protect against features
@@ -309,6 +308,17 @@ fn infer_number(field: Option<&ProductTypeElement>, value: &str, is_long: bool) 
     }
 }
 
+/// `Enums` in `sql` are simple strings like `Player` that must be inferred by their type.
+///
+/// If `field` is a `simple enum` it looks for the `tag` specified by `value`, else it should be a plain `String`.
+fn infer_str_or_enum(field: Option<&ProductTypeElement>, value: String) -> Result<AlgebraicValue, ErrorVm> {
+    if let Some(sum) = field.and_then(|x| x.algebraic_type.as_sum()) {
+        parse_simple_enum(sum, &value)
+    } else {
+        Ok(AlgebraicValue::String(value))
+    }
+}
+
 /// Compiles a [SqlExpr] expression into a [ColumnOp]
 fn compile_expr_value(table: &From, field: Option<&ProductTypeElement>, of: SqlExpr) -> Result<ColumnOp, PlanError> {
     Ok(ColumnOp::Field(match of {
@@ -319,7 +329,7 @@ fn compile_expr_value(table: &From, field: Option<&ProductTypeElement>, of: SqlE
         }
         SqlExpr::Value(x) => FieldExpr::Value(match x {
             Value::Number(value, is_long) => infer_number(field, &value, is_long)?,
-            Value::SingleQuotedString(s) => AlgebraicValue::String(s),
+            Value::SingleQuotedString(s) => infer_str_or_enum(field, s)?,
             Value::DoubleQuotedString(s) => AlgebraicValue::String(s),
             Value::Boolean(x) => AlgebraicValue::Bool(x),
             Value::Null => AlgebraicValue::OptionNone(),

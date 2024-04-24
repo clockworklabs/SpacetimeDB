@@ -1,8 +1,10 @@
 use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
 use crate::operator::{OpCmp, OpLogic, OpQuery};
 use crate::relation::{MemTable, RelValue, Table};
+use arrayvec::ArrayVec;
 use derive_more::From;
 use smallvec::{smallvec, SmallVec};
+use spacetimedb_data_structures::map::{HashMap, HashSet};
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_type::AlgebraicType;
@@ -14,10 +16,10 @@ use spacetimedb_sats::relation::{Column, DbTable, FieldExpr, FieldName, Header, 
 use spacetimedb_sats::ProductValue;
 use std::cmp::Reverse;
 use std::collections::btree_map::Entry;
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
-use std::fmt;
+use std::collections::{BTreeMap, VecDeque};
 use std::ops::Bound;
 use std::sync::Arc;
+use std::{fmt, iter, mem};
 
 /// Trait for checking if the `caller` have access to `Self`
 pub trait AuthAccess {
@@ -55,9 +57,62 @@ impl ColumnOp {
         )
     }
 
+    /// Returns a new op where `lhs` and `rhs` are logically AND-ed together.
+    fn and(lhs: ColumnOp, rhs: ColumnOp) -> Self {
+        Self::new(OpQuery::Logic(OpLogic::And), lhs, rhs)
+    }
+
+    /// Returns an op where `col_i op value_i` are all `AND`ed together.
+    fn and_cmp(op: OpCmp, head: &Header, cols: &ColList, value: AlgebraicValue) -> Self {
+        let eq = |(col, value): (ColId, _)| {
+            let field = head.fields[col.idx()].field.clone();
+            Self::cmp(field, op, value)
+        };
+
+        // For singleton constraints, the `value` must be used directly.
+        if cols.is_singleton() {
+            return eq((cols.head(), value));
+        }
+
+        // Otherwise, pair column ids and product fields together.
+        cols.iter()
+            .zip(value.into_product().unwrap().elements)
+            .map(eq)
+            .reduce(Self::and)
+            .unwrap()
+    }
+
+    /// Returns an op where `cols` must be within bounds.
+    /// This handles both the case of single-col bounds and multi-col bounds.
+    fn from_op_col_bounds(
+        head: &Header,
+        cols: &ColList,
+        bounds: (Bound<AlgebraicValue>, Bound<AlgebraicValue>),
+    ) -> Self {
+        let (cmp, value) = match bounds {
+            // Equality; field <= value && field >= value <=> field = value
+            (Bound::Included(a), Bound::Included(b)) if a == b => (OpCmp::Eq, a),
+            // Inclusive lower bound => field >= value
+            (Bound::Included(value), Bound::Unbounded) => (OpCmp::GtEq, value),
+            // Exclusive lower bound => field > value
+            (Bound::Excluded(value), Bound::Unbounded) => (OpCmp::Gt, value),
+            // Inclusive upper bound => field <= value
+            (Bound::Unbounded, Bound::Included(value)) => (OpCmp::LtEq, value),
+            // Exclusive upper bound => field < value
+            (Bound::Unbounded, Bound::Excluded(value)) => (OpCmp::Lt, value),
+            (Bound::Unbounded, Bound::Unbounded) => unreachable!(),
+            (lower_bound, upper_bound) => {
+                let lhs = Self::from_op_col_bounds(head, cols, (lower_bound, Bound::Unbounded));
+                let rhs = Self::from_op_col_bounds(head, cols, (Bound::Unbounded, upper_bound));
+                return ColumnOp::and(lhs, rhs);
+            }
+        };
+        ColumnOp::and_cmp(cmp, head, cols, value)
+    }
+
     fn reduce(&self, row: &RelValue<'_>, value: &ColumnOp, header: &Header) -> Result<AlgebraicValue, ErrorLang> {
         match value {
-            ColumnOp::Field(field) => Ok(row.get(field, header)?.into_owned()),
+            ColumnOp::Field(field) => Ok(row.get(field.borrowed(), header)?.into_owned()),
             ColumnOp::Cmp { op, lhs, rhs } => Ok(self.compare_bin_op(row, *op, lhs, rhs, header)?.into()),
         }
     }
@@ -65,7 +120,7 @@ impl ColumnOp {
     fn reduce_bool(&self, row: &RelValue<'_>, value: &ColumnOp, header: &Header) -> Result<bool, ErrorLang> {
         match value {
             ColumnOp::Field(field) => {
-                let field = row.get(field, header)?;
+                let field = row.get(field.borrowed(), header)?;
 
                 match field.as_bool() {
                     Some(b) => Ok(*b),
@@ -113,7 +168,7 @@ impl ColumnOp {
     pub fn compare(&self, row: &RelValue<'_>, header: &Header) -> Result<bool, ErrorVm> {
         match self {
             ColumnOp::Field(field) => {
-                let lhs = row.get(field, header)?;
+                let lhs = row.get(field.borrowed(), header)?;
                 Ok(*lhs.as_bool().unwrap())
             }
             ColumnOp::Cmp { op, lhs, rhs } => self.compare_bin_op(row, *op, lhs, rhs, header),
@@ -210,106 +265,130 @@ impl From<AlgebraicValue> for Box<ColumnOp> {
     }
 }
 
-impl From<IndexScan> for Box<ColumnOp> {
-    fn from(value: IndexScan) -> Self {
-        Box::new(value.into())
-    }
-}
-
-impl From<IndexScan> for ColumnOp {
-    fn from(value: IndexScan) -> Self {
-        let table = value.table;
-        let columns = value.columns;
-
-        let field = table.head().fields[columns.head().idx()].field.clone();
-        match value.bounds {
-            // Inclusive lower bound => field >= value
-            (Bound::Included(value), Bound::Unbounded) => ColumnOp::cmp(field, OpCmp::GtEq, value),
-            // Exclusive lower bound => field > value
-            (Bound::Excluded(value), Bound::Unbounded) => ColumnOp::cmp(field, OpCmp::Gt, value),
-            // Inclusive upper bound => field <= value
-            (Bound::Unbounded, Bound::Included(value)) => ColumnOp::cmp(field, OpCmp::LtEq, value),
-            // Exclusive upper bound => field < value
-            (Bound::Unbounded, Bound::Excluded(value)) => ColumnOp::cmp(field, OpCmp::Lt, value),
-            (Bound::Unbounded, Bound::Unbounded) => unreachable!(),
-            (lower_bound, upper_bound) => {
-                let lhs = IndexScan {
-                    table: table.clone(),
-                    columns: columns.clone(),
-                    bounds: (lower_bound, Bound::Unbounded),
-                };
-                let rhs = IndexScan {
-                    table,
-                    columns,
-                    bounds: (Bound::Unbounded, upper_bound),
-                };
-                ColumnOp::new(OpQuery::Logic(OpLogic::And), lhs.into(), rhs.into())
-            }
-        }
-    }
-}
-
 impl From<Query> for Option<ColumnOp> {
     fn from(value: Query) -> Self {
         match value {
-            Query::IndexScan(op) => Some(op.into()),
+            Query::IndexScan(op) => Some(ColumnOp::from_op_col_bounds(&op.table.head, &op.columns, op.bounds)),
             Query::Select(op) => Some(op),
             _ => None,
         }
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Default)]
-#[repr(transparent)]
-/// A set of [`MemTable`]s referenced by a query plan by their [`SourceId`].
+/// An identifier for a data source (i.e. a table) in a query plan.
 ///
-/// Rather than embedding [`MemTable`]s in query plans, we store a `SourceExpr::MemTable`,
-/// which contains the information necessary for optimization along with a [`SourceId`].
-/// Query execution then executes the plan, and when it encounters a `SourceExpr::MemTable`,
-/// retrieves the [`MemTable`] from the corresponding `SourceSet`.
-/// This allows query plans to be re-used, though each execution requires a new `SourceSet`.
+/// When compiling a query plan, rather than embedding the inputs in the plan,
+/// we annotate each input with a `SourceId`, and the compiled plan refers to its inputs by id.
+/// This allows the plan to be re-used with distinct inputs,
+/// assuming the inputs obey the same schema.
 ///
-/// Internally, the `SourceSet` stores an `Option<MemTable>` for each planned [`SourceId`].
-/// During execution, the VM will [`Option::take`] the [`MemTable`] to consume them.
-/// This means that a query plan may not include multiple references to the same [`SourceId`].
-pub struct SourceSet(Vec<Option<MemTable>>);
+/// Note that re-using a query plan is only a good idea
+/// if the new inputs are similar to those used for compilation
+/// in terms of cardinality and distribution.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, From, Hash)]
+pub struct SourceId(pub usize);
 
-impl SourceSet {
+/// Types that relate [`SourceId`]s to their in-memory tables.
+///
+/// Rather than embedding tables in query plans, we store a [`SourceExpr::InMemory`],
+/// which contains the information necessary for optimization along with a `SourceId`.
+/// Query execution then executes the plan, and when it encounters a `SourceExpr::InMemory`,
+/// retrieves the `Self::Source` table from the corresponding provider.
+/// This allows query plans to be re-used, though each execution might require a new provider.
+///
+/// An in-memory table `Self::Source` is a type capable of producing [`RelValue<'a>`]s.
+/// The general form of this is `Iterator<Item = RelValue<'a>>`.
+/// Depending on the situation, this could be e.g.,
+/// - [`MemTable`], producing [`RelValue::Projection`],
+/// - `&'a [ProductValue]` producing [`RelValue::ProjRef`].
+pub trait SourceProvider<'a> {
+    /// The type of in-memory tables that this provider uses.
+    type Source: 'a + IntoIterator<Item = RelValue<'a>>;
+
+    /// Retrieve the `Self::Source` associated with `id`, if any.
+    ///
+    /// Taking the same `id` a second time may or may not yield the same source.
+    /// Callers should not assume that a generic provider will yield it more than once.
+    /// This means that a query plan may not include multiple references to the same [`SourceId`].
+    ///
+    /// Implementations are also not obligated to inspect `id`, e.g., if there's only one option.
+    fn take_source(&mut self, id: SourceId) -> Option<Self::Source>;
+}
+
+impl<'a, I: 'a + IntoIterator<Item = RelValue<'a>>, F: FnMut(SourceId) -> Option<I>> SourceProvider<'a> for F {
+    type Source = I;
+    fn take_source(&mut self, id: SourceId) -> Option<Self::Source> {
+        self(id)
+    }
+}
+
+impl<'a, I: 'a + IntoIterator<Item = RelValue<'a>>> SourceProvider<'a> for Option<I> {
+    type Source = I;
+    fn take_source(&mut self, _: SourceId) -> Option<Self::Source> {
+        self.take()
+    }
+}
+
+pub struct NoInMemUsed;
+
+impl<'a> SourceProvider<'a> for NoInMemUsed {
+    type Source = iter::Empty<RelValue<'a>>;
+    fn take_source(&mut self, _: SourceId) -> Option<Self::Source> {
+        None
+    }
+}
+
+/// A [`SourceProvider`] backed by an `ArrayVec`.
+///
+/// Internally, the `SourceSet` stores an `Option<T>` for each planned [`SourceId`]
+/// which are [`Option::take`]n out of the set.
+#[derive(Debug, PartialEq, Eq, Clone)]
+#[repr(transparent)]
+pub struct SourceSet<T, const N: usize>(
+    // Benchmarks showed an improvement in performance
+    // on incr-select by ~10% by not using `Vec<Option<T>>`.
+    ArrayVec<Option<T>, N>,
+);
+
+impl<'a, T: 'a + IntoIterator<Item = RelValue<'a>>, const N: usize> SourceProvider<'a> for SourceSet<T, N> {
+    type Source = T;
+    fn take_source(&mut self, id: SourceId) -> Option<T> {
+        self.take(id)
+    }
+}
+
+impl<T, const N: usize> From<[T; N]> for SourceSet<T, N> {
+    #[inline]
+    fn from(sources: [T; N]) -> Self {
+        Self(sources.map(Some).into())
+    }
+}
+
+impl<T, const N: usize> SourceSet<T, N> {
+    /// Returns an empty source set.
+    pub fn empty() -> Self {
+        Self(ArrayVec::new())
+    }
+
     /// Get a fresh `SourceId` which can be used as the id for a new entry.
     fn next_id(&self) -> SourceId {
         SourceId(self.0.len())
     }
 
-    /// Insert a [`MemTable`] into this `SourceSet` so it can be used in a query plan,
-    /// and return a [`SourceExpr`] which can be embedded in that plan.
-    pub fn add_mem_table(&mut self, table: MemTable) -> SourceExpr {
+    /// Insert an entry into this `SourceSet` so it can be used in a query plan,
+    /// and return a [`SourceId`] which can be embedded in that plan.
+    pub fn add(&mut self, table: T) -> SourceId {
         let source_id = self.next_id();
-        let expr = SourceExpr::from_mem_table(&table, source_id);
         self.0.push(Some(table));
-        expr
+        source_id
     }
 
-    /// Extract the [`MemTable`] referred to by `id` from this `SourceSet`,
+    /// Extract the entry referred to by `id` from this `SourceSet`,
     /// leaving a "gap" in its place.
     ///
-    /// Subsequent calls to `take_mem_table` on the same `id` will return `None`.
-    pub fn take_mem_table(&mut self, id: SourceId) -> Option<MemTable> {
-        self.0.get_mut(id.0)?.take()
-    }
-
-    /// Resolve `source` to a `Table` for use in query execution.
-    ///
-    /// If the `source` is a [`SourceExpr::DbTable`], this simply clones the [`DbTable`] and returns it.
-    /// ([`DbTable::clone`] is inexpensive.)
-    /// In this case, `self` is not modified.
-    ///
-    /// If the `source` is a [`SourceExpr::MemTable`], this behaves like [`Self::take_mem_table`].
-    /// Subsequent calls to `take_table` or `take_mem_table` with the same `source` will fail.
-    pub fn take_table(&mut self, source: &SourceExpr) -> Option<Table> {
-        match source {
-            SourceExpr::DbTable(db_table) => Some(Table::DbTable(db_table.clone())),
-            SourceExpr::MemTable { source_id, .. } => self.take_mem_table(*source_id).map(Table::MemTable),
-        }
+    /// Subsequent calls to `take` on the same `id` will return `None`.
+    pub fn take(&mut self, id: SourceId) -> Option<T> {
+        self.0.get_mut(id.0).map(mem::take).unwrap_or_default()
     }
 
     /// Returns the number of slots for [`MemTable`]s in this set.
@@ -327,45 +406,64 @@ impl SourceSet {
     }
 }
 
-impl std::ops::Index<SourceId> for SourceSet {
-    type Output = Option<MemTable>;
+impl<T, const N: usize> std::ops::Index<SourceId> for SourceSet<T, N> {
+    type Output = Option<T>;
 
-    fn index(&self, idx: SourceId) -> &Option<MemTable> {
+    fn index(&self, idx: SourceId) -> &Self::Output {
         &self.0[idx.0]
     }
 }
 
-impl std::ops::IndexMut<SourceId> for SourceSet {
-    fn index_mut(&mut self, idx: SourceId) -> &mut Option<MemTable> {
+impl<T, const N: usize> std::ops::IndexMut<SourceId> for SourceSet<T, N> {
+    fn index_mut(&mut self, idx: SourceId) -> &mut Self::Output {
         &mut self.0[idx.0]
     }
 }
 
-/// An identifier for a data source (i.e. a table) in a query plan.
-///
-/// When compiling a query plan, rather than embedding the inputs in the plan,
-/// we annotate each input with a `SourceId`, and the compiled plan refers to its inputs by id.
-/// This allows the plan to be re-used with distinct inputs,
-/// assuming the inputs obey the same schema.
-///
-/// Note that re-using a query plan is only a good idea
-/// if the new inputs are similar to those used for compilation
-/// in terms of cardinality and distribution.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, From, Hash)]
-pub struct SourceId(pub usize);
+impl<const N: usize> SourceSet<Vec<ProductValue>, N> {
+    /// Insert a [`MemTable`] into this `SourceSet` so it can be used in a query plan,
+    /// and return a [`SourceExpr`] which can be embedded in that plan.
+    pub fn add_mem_table(&mut self, table: MemTable) -> SourceExpr {
+        let len = table.data.len();
+        let id = self.add(table.data);
+        SourceExpr::from_mem_table(table.head, table.table_access, len, id)
+    }
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+    /// Resolve `source` to a `Table` for use in query execution.
+    ///
+    /// If the `source` is a [`SourceExpr::DbTable`], this simply clones the [`DbTable`] and returns it.
+    /// ([`DbTable::clone`] is inexpensive.)
+    /// In this case, `self` is not modified.
+    ///
+    /// If the `source` is a [`SourceExpr::MemTable`], this behaves like [`Self::take_mem_table`].
+    /// Subsequent calls to `take_table` or `take_mem_table` with the same `source` will fail.
+    pub fn take_table(&mut self, source: &SourceExpr) -> Option<Table> {
+        match source {
+            SourceExpr::DbTable(db_table) => Some(Table::DbTable(db_table.clone())),
+            SourceExpr::InMemory {
+                source_id,
+                header,
+                table_access,
+                ..
+            } => self
+                .take(*source_id)
+                .map(|data| MemTable::new(header.clone(), *table_access, data).into()),
+        }
+    }
+}
+
 /// A reference to a table within a query plan,
 /// used as the source for selections, scans, filters and joins.
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum SourceExpr {
     /// A plan for a "virtual" or projected table.
     ///
-    /// The actual [`MemTable`] is not stored within the query plan;
-    /// rather, the `source_id` is an index with a corresponding [`SourceSet`]
-    /// which contains the [`MemTable`].
+    /// The actual in-memory table, e.g., [`MemTable`] or `&'a [ProductValue]`
+    /// is not stored within the query plan;
+    /// rather, the `source_id` is an index which corresponds to the table in e.g., a [`SourceSet`].
     ///
-    /// This allows query plans to be reused by supplying a new [`SourceSet`].
-    MemTable {
+    /// This allows query plans to be reused by supplying e.g., a new [`SourceSet`].
+    InMemory {
         source_id: SourceId,
         header: Arc<Header>,
         table_type: StTableType,
@@ -383,7 +481,7 @@ impl SourceExpr {
     /// Returns `None` if `self` refers to a [`DbTable`], as [`DbTable`]s are stored directly in the `SourceExpr`,
     /// rather than indirected through the [`SourceSet`].
     pub fn source_id(&self) -> Option<SourceId> {
-        if let SourceExpr::MemTable { source_id, .. } = self {
+        if let SourceExpr::InMemory { source_id, .. } = self {
             Some(*source_id)
         } else {
             None
@@ -396,40 +494,40 @@ impl SourceExpr {
 
     pub fn table_type(&self) -> StTableType {
         match self {
-            SourceExpr::MemTable { table_type, .. } => *table_type,
+            SourceExpr::InMemory { table_type, .. } => *table_type,
             SourceExpr::DbTable(db_table) => db_table.table_type,
         }
     }
 
     pub fn table_access(&self) -> StAccess {
         match self {
-            SourceExpr::MemTable { table_access, .. } => *table_access,
+            SourceExpr::InMemory { table_access, .. } => *table_access,
             SourceExpr::DbTable(db_table) => db_table.table_access,
         }
     }
 
     pub fn head(&self) -> &Arc<Header> {
         match self {
-            SourceExpr::MemTable { header, .. } => header,
+            SourceExpr::InMemory { header, .. } => header,
             SourceExpr::DbTable(db_table) => &db_table.head,
         }
     }
 
     pub fn is_mem_table(&self) -> bool {
-        matches!(self, SourceExpr::MemTable { .. })
+        matches!(self, SourceExpr::InMemory { .. })
     }
 
     pub fn is_db_table(&self) -> bool {
         matches!(self, SourceExpr::DbTable(_))
     }
 
-    pub fn from_mem_table(mem_table: &MemTable, id: SourceId) -> Self {
-        SourceExpr::MemTable {
+    pub fn from_mem_table(header: Arc<Header>, table_access: StAccess, row_count: usize, id: SourceId) -> Self {
+        SourceExpr::InMemory {
             source_id: id,
-            header: mem_table.head.clone(),
+            header,
             table_type: StTableType::User,
-            table_access: mem_table.table_access,
-            row_count: RowCount::exact(mem_table.data.len()),
+            table_access,
+            row_count: RowCount::exact(row_count),
         }
     }
 
@@ -462,7 +560,7 @@ impl Relation for SourceExpr {
 
     fn row_count(&self) -> RowCount {
         match self {
-            SourceExpr::MemTable { row_count, .. } => *row_count,
+            SourceExpr::InMemory { row_count, .. } => *row_count,
             SourceExpr::DbTable(_) => RowCount::unknown(),
         }
     }
@@ -479,8 +577,9 @@ impl From<&TableSchema> for SourceExpr {
     }
 }
 
-// A descriptor for an index join operation.
-// The semantics are those of a semijoin with rows from the index or the probe side being returned.
+/// A descriptor for an index semi join operation.
+///
+/// The semantics are those of a semijoin with rows from the index or the probe side being returned.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct IndexJoin {
     pub probe_side: QueryExpr,
@@ -488,6 +587,8 @@ pub struct IndexJoin {
     pub index_side: SourceExpr,
     pub index_select: Option<ColumnOp>,
     pub index_col: ColId,
+    /// If true, returns rows from the `index_side`.
+    /// Otherwise, returns rows from the `probe_side`.
     pub return_index_rows: bool,
 }
 
@@ -542,7 +643,7 @@ impl IndexJoin {
             //
             // TODO: This determination is quite arbitrary.
             // Ultimately we should be using cardinality estimation.
-            Some(DbTable { head, table_id, .. }) if row_count(*table_id, &head.table_name) > 3000 => self,
+            Some(DbTable { head, table_id, .. }) if row_count(*table_id, &head.table_name) > 500 => self,
             // If this is a delta table, we must reorder.
             // If this is a sufficiently small physical table, we should reorder.
             _ => {
@@ -558,15 +659,12 @@ impl IndexJoin {
                     .clone();
                 // Merge all selections from the original probe side into a single predicate.
                 // This includes an index scan if present.
-                let predicate = self.probe_side.query.into_iter().fold(None, |acc, op| {
-                    <Query as Into<Option<ColumnOp>>>::into(op).map(|op| {
-                        if let Some(predicate) = acc {
-                            ColumnOp::new(OpQuery::Logic(OpLogic::And), predicate, op)
-                        } else {
-                            op
-                        }
-                    })
-                });
+                let predicate = self
+                    .probe_side
+                    .query
+                    .into_iter()
+                    .filter_map(<Query as Into<Option<ColumnOp>>>::into)
+                    .reduce(ColumnOp::and);
                 // Push any selections on the index side to the probe side.
                 let probe_side = if let Some(predicate) = self.index_select {
                     QueryExpr {
@@ -602,31 +700,20 @@ impl IndexJoin {
     // In other words, when an index join has two delta tables.
     pub fn to_inner_join(self) -> QueryExpr {
         if self.return_index_rows {
-            let col_lhs = self.index_side.head().fields[usize::from(self.index_col)].field.clone();
+            let col_lhs = self.index_side.head().fields[self.index_col.idx()].field.clone();
             let col_rhs = self.probe_field;
             let rhs = self.probe_side;
 
-            let fields = self
-                .index_side
-                .head()
-                .fields
-                .iter()
-                .cloned()
-                .map(|Column { field, .. }| field.into())
-                .collect();
-
-            let table = self.index_side.table_id();
             let source = self.index_side;
-            let inner_join = Query::JoinInner(JoinExpr::new(rhs, col_lhs, col_rhs));
-            let project = Query::Project(fields, table);
+            let inner_join = Query::JoinInner(JoinExpr::new(rhs, col_lhs, col_rhs, true));
             let query = if let Some(predicate) = self.index_select {
-                vec![predicate.into(), inner_join, project]
+                vec![predicate.into(), inner_join]
             } else {
-                vec![inner_join, project]
+                vec![inner_join]
             };
             QueryExpr { source, query }
         } else {
-            let col_rhs = self.index_side.head().fields[usize::from(self.index_col)].field.clone();
+            let col_rhs = self.index_side.head().fields[self.index_col.idx()].field.clone();
             let col_lhs = self.probe_field;
             let mut rhs: QueryExpr = self.index_side.into();
 
@@ -634,21 +721,9 @@ impl IndexJoin {
                 rhs.query.push(predicate.into());
             }
 
-            let fields = self
-                .probe_side
-                .source
-                .head()
-                .fields
-                .iter()
-                .cloned()
-                .map(|Column { field, .. }| field.into())
-                .collect();
-
-            let table = self.probe_side.source.table_id();
             let source = self.probe_side.source;
-            let inner_join = Query::JoinInner(JoinExpr::new(rhs, col_lhs, col_rhs));
-            let project = Query::Project(fields, table);
-            let query = vec![inner_join, project];
+            let inner_join = Query::JoinInner(JoinExpr::new(rhs, col_lhs, col_rhs, true));
+            let query = vec![inner_join];
             QueryExpr { source, query }
         }
     }
@@ -659,11 +734,21 @@ pub struct JoinExpr {
     pub rhs: QueryExpr,
     pub col_lhs: FieldName,
     pub col_rhs: FieldName,
+    /// If true, this is a left semi-join, returning rows only from the source table,
+    /// using the `rhs` as a filter.
+    ///
+    /// If false, this is an inner join, returning the concatenation of the matching rows.
+    pub semi: bool,
 }
 
 impl JoinExpr {
-    pub fn new(rhs: QueryExpr, col_lhs: FieldName, col_rhs: FieldName) -> Self {
-        Self { rhs, col_lhs, col_rhs }
+    pub fn new(rhs: QueryExpr, col_lhs: FieldName, col_rhs: FieldName, semi: bool) -> Self {
+        Self {
+            rhs,
+            col_lhs,
+            col_rhs,
+            semi,
+        }
     }
 }
 
@@ -685,7 +770,7 @@ pub enum Crud {
     Drop(DbType),
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum CrudExpr {
     Query(QueryExpr),
     Insert {
@@ -911,6 +996,19 @@ type FieldsIndexed<'a> = HashSet<(&'a FieldName, OpCmp)>;
 /// -`ScanOrIndex::Index([c, b] = [1, 2])`
 /// -`ScanOrIndex::Index(a = 1)`
 /// -`ScanOrIndex::Scan(c = 2)`
+///
+/// # Note
+///
+/// NOTE: For a query like `SELECT * FROM students WHERE age > 18 AND height < 180`
+/// we cannot serve this with a single `IndexScan`,
+/// but rather, `select_best_index`
+/// would give us two separate `IndexScan`s.
+/// However, the upper layers of `QueryExpr` building will convert both of those into `Select`s.
+/// In the case of `SELECT * FROM students WHERE age > 18 AND height > 180`
+/// we would generate a single `IndexScan((age, height) > (18, 180))`.
+/// However, and depending on the table data, this might not be efficient,
+/// whereas `age = 18 AND height > 180` might.
+/// TODO: Revisit this to see if we want to restrict this or use statistics.
 fn select_best_index<'a>(
     fields_indexed: &mut FieldsIndexed<'a>,
     header: &'a Header,
@@ -1073,6 +1171,12 @@ fn find_sargable_ops<'a>(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+// TODO(bikeshedding): Refactor this struct so that `IndexJoin`s replace the `table`,
+// rather than appearing as the first element of the `query`.
+//
+// `IndexJoin`s do not behave like filters; in fact they behave more like data sources.
+// A query conceptually starts with either a single table or an `IndexJoin`,
+// and then stacks a set of filters on top of that.
 pub struct QueryExpr {
     pub source: SourceExpr,
     pub query: Vec<Query>,
@@ -1162,30 +1266,31 @@ impl QueryExpr {
                 self
             }
             // try to push below join's rhs
-            Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs }) => {
+            Query::JoinInner(JoinExpr {
+                rhs,
+                col_lhs,
+                col_rhs,
+                semi,
+            }) => {
                 self.query.push(Query::JoinInner(JoinExpr {
                     rhs: rhs.with_index_eq(table, columns, value),
                     col_lhs,
                     col_rhs,
+                    semi,
                 }));
                 self
             }
             // merge with a preceding select
             Query::Select(filter) => {
-                let bounds = point(value);
-                self.query.push(Query::Select(ColumnOp::new(
-                    OpQuery::Logic(OpLogic::And),
-                    filter,
-                    IndexScan { table, columns, bounds }.into(),
-                )));
+                let op = ColumnOp::and_cmp(OpCmp::Eq, &table.head, &columns, value);
+                self.query.push(Query::Select(ColumnOp::and(filter, op)));
                 self
             }
             // else generate a new select
             query => {
                 self.query.push(query);
-                let bounds = point(value);
-                self.query
-                    .push(Query::Select(IndexScan { table, columns, bounds }.into()));
+                let op = ColumnOp::and_cmp(OpCmp::Eq, &table.head, &columns, value);
+                self.query.push(Query::Select(op));
                 self
             }
         }
@@ -1222,11 +1327,17 @@ impl QueryExpr {
                 self
             }
             // try to push below join's rhs
-            Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs }) => {
+            Query::JoinInner(JoinExpr {
+                rhs,
+                col_lhs,
+                col_rhs,
+                semi,
+            }) => {
                 self.query.push(Query::JoinInner(JoinExpr {
                     rhs: rhs.with_index_lower_bound(table, columns, value, inclusive),
                     col_lhs,
                     col_rhs,
+                    semi,
                 }));
                 self
             }
@@ -1246,26 +1357,39 @@ impl QueryExpr {
                 bounds: (Bound::Unbounded, Bound::Excluded(upper)),
                 ..
             }) if columns == lhs_col_id => {
+                // Queries like `WHERE x < 5 AND x > 5` never return any rows and are likely mistakes.
+                // Detect such queries and log a warning.
+                // Compute this condition early, then compute the resulting query and log it.
+                // TODO: We should not emit an `IndexScan` in this case.
+                // Further design work is necessary to decide whether this should be an error at query compile time,
+                // or whether we should emit a query plan which explicitly says that it will return 0 rows.
+                // The current behavior is a hack
+                // because this patch was written (2024-04-01 pgoldman) a short time before the BitCraft alpha,
+                // and a more invasive change was infeasible.
+                let is_never = !inclusive && value == upper;
+
                 let bounds = (Self::bound(value, inclusive), Bound::Excluded(upper));
                 self.query.push(Query::IndexScan(IndexScan { table, columns, bounds }));
+
+                if is_never {
+                    log::warn!("Query will select no rows due to equal excluded bounds: {self:?}")
+                }
+
                 self
             }
             // merge with a preceding select
             Query::Select(filter) => {
                 let bounds = (Self::bound(value, inclusive), Bound::Unbounded);
-                self.query.push(Query::Select(ColumnOp::new(
-                    OpQuery::Logic(OpLogic::And),
-                    filter,
-                    IndexScan { table, columns, bounds }.into(),
-                )));
+                let op = ColumnOp::from_op_col_bounds(&table.head, &columns, bounds);
+                self.query.push(Query::Select(ColumnOp::and(filter, op)));
                 self
             }
             // else generate a new select
             query => {
                 self.query.push(query);
                 let bounds = (Self::bound(value, inclusive), Bound::Unbounded);
-                self.query
-                    .push(Query::Select(IndexScan { table, columns, bounds }.into()));
+                let op = ColumnOp::from_op_col_bounds(&table.head, &columns, bounds);
+                self.query.push(Query::Select(op));
                 self
             }
         }
@@ -1305,11 +1429,17 @@ impl QueryExpr {
                 self
             }
             // try to push below join's rhs
-            Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs }) => {
+            Query::JoinInner(JoinExpr {
+                rhs,
+                col_lhs,
+                col_rhs,
+                semi,
+            }) => {
                 self.query.push(Query::JoinInner(JoinExpr {
                     rhs: rhs.with_index_upper_bound(table, columns, value, inclusive),
                     col_lhs,
                     col_rhs,
+                    semi,
                 }));
                 self
             }
@@ -1323,32 +1453,45 @@ impl QueryExpr {
                 self.query.push(Query::IndexScan(IndexScan { table, columns, bounds }));
                 self
             }
-            // merge with a preceding lower bounded index scan (inclusive)
+            // merge with a preceding lower bounded index scan (exclusive)
             Query::IndexScan(IndexScan {
                 columns: lhs_col_id,
                 bounds: (Bound::Excluded(lower), Bound::Unbounded),
                 ..
             }) if columns == lhs_col_id => {
+                // Queries like `WHERE x < 5 AND x > 5` never return any rows and are likely mistakes.
+                // Detect such queries and log a warning.
+                // Compute this condition early, then compute the resulting query and log it.
+                // TODO: We should not emit an `IndexScan` in this case.
+                // Further design work is necessary to decide whether this should be an error at query compile time,
+                // or whether we should emit a query plan which explicitly says that it will return 0 rows.
+                // The current behavior is a hack
+                // because this patch was written (2024-04-01 pgoldman) a short time before the BitCraft alpha,
+                // and a more invasive change was infeasible.
+                let is_never = !inclusive && value == lower;
+
                 let bounds = (Bound::Excluded(lower), Self::bound(value, inclusive));
                 self.query.push(Query::IndexScan(IndexScan { table, columns, bounds }));
+
+                if is_never {
+                    log::warn!("Query will select no rows due to equal excluded bounds: {self:?}")
+                }
+
                 self
             }
             // merge with a preceding select
             Query::Select(filter) => {
                 let bounds = (Bound::Unbounded, Self::bound(value, inclusive));
-                self.query.push(Query::Select(ColumnOp::new(
-                    OpQuery::Logic(OpLogic::And),
-                    filter,
-                    IndexScan { table, columns, bounds }.into(),
-                )));
+                let op = ColumnOp::from_op_col_bounds(&table.head, &columns, bounds);
+                self.query.push(Query::Select(ColumnOp::and(filter, op)));
                 self
             }
             // else generate a new select
             query => {
                 self.query.push(query);
                 let bounds = (Bound::Unbounded, Self::bound(value, inclusive));
-                self.query
-                    .push(Query::Select(IndexScan { table, columns, bounds }.into()));
+                let op = ColumnOp::from_op_col_bounds(&table.head, &columns, bounds);
+                self.query.push(Query::Select(op));
                 self
             }
         }
@@ -1365,7 +1508,12 @@ impl QueryExpr {
 
         match (query, op.into()) {
             (
-                Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs }),
+                Query::JoinInner(JoinExpr {
+                    rhs,
+                    col_lhs,
+                    col_rhs,
+                    semi,
+                }),
                 ColumnOp::Cmp {
                     op: OpQuery::Cmp(cmp),
                     lhs: field,
@@ -1377,7 +1525,7 @@ impl QueryExpr {
                 if self.source.head().column(&field).is_some() =>
                     {
                         self = self.with_select(ColumnOp::cmp(field, cmp, value));
-                        self.query.push(Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs }));
+                        self.query.push(Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs, semi}));
                         self
                     }
                 (ColumnOp::Field(FieldExpr::Name(field)), ColumnOp::Field(FieldExpr::Value(value)))
@@ -1388,18 +1536,18 @@ impl QueryExpr {
                             rhs: rhs.with_select(ColumnOp::cmp(field, cmp, value)),
                             col_lhs,
                             col_rhs,
+                            semi,
                         }));
                         self
                     }
                 (field, value) => {
-                    self.query.push(Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs }));
+                    self.query.push(Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs, semi, }));
                     self.query.push(Query::Select(ColumnOp::new(OpQuery::Cmp(cmp), field, value)));
                     self
                 }
             },
             (Query::Select(filter), op) => {
-                self.query
-                    .push(Query::Select(ColumnOp::new(OpQuery::Logic(OpLogic::And), filter, op)));
+                self.query.push(Query::Select(ColumnOp::and(filter, op)));
                 self
             }
             (query, op) => {
@@ -1431,9 +1579,10 @@ impl QueryExpr {
         x
     }
 
-    pub fn with_join_inner(self, with: impl Into<QueryExpr>, lhs: FieldName, rhs: FieldName) -> Self {
+    pub fn with_join_inner(self, with: impl Into<QueryExpr>, lhs: FieldName, rhs: FieldName, semi: bool) -> Self {
         let mut x = self;
-        x.query.push(Query::JoinInner(JoinExpr::new(with.into(), lhs, rhs)));
+        x.query
+            .push(Query::JoinInner(JoinExpr::new(with.into(), lhs, rhs, semi)));
         x
     }
 
@@ -1445,6 +1594,130 @@ impl QueryExpr {
         }
     }
 
+    /// Try to turn an inner join followed by a projection into a semijoin.
+    ///
+    /// This optimization recognizes queries of the form:
+    ///
+    /// ```ignore
+    /// QueryExpr {
+    ///   source: LHS,
+    ///   query: [
+    ///     JoinInner(JoinExpr {
+    ///       rhs: RHS,
+    ///       semi: false,
+    ///       ..
+    ///     }),
+    ///     Project(LHS.*),
+    ///     ...
+    ///   ]
+    /// }
+    /// ```
+    ///
+    /// And combines the `JoinInner` with the `Project` into a `JoinInner` with `semi: true`.
+    ///
+    /// Current limitations of this optimization:
+    /// - The `JoinInner` must be the first (0th) element of the `query`.
+    ///   Future work could search through the `query` to find any applicable `JoinInner`s,
+    ///   but the current implementation inspects only the first expr.
+    ///   This is likely sufficient because this optimization is primarily useful for enabling `try_index_join`,
+    ///   which is fundamentally limited to operate on the first expr.
+    ///   Note that we still get to optimize incremental joins, because we first optimize the original query
+    ///   with [`DbTable`] sources, which results in an [`IndexJoin`]
+    ///   then we replace the sources with [`MemTable`]s and go back to a [`JoinInner`] with `semi: true`.
+    /// - The `Project` must immediately follow the `JoinInner`, with no intervening exprs.
+    ///   Future work could search through intervening exprs to detect that the RHS table is unused.
+    /// - The LHS/source table must be a [`DbTable`], not a [`MemTable`].
+    ///   This is so we can recognize a wildcard project by its table id.
+    ///   Future work could inspect the set of projected fields and compare them to the LHS table's header instead.
+    pub fn try_semi_join(self) -> QueryExpr {
+        let QueryExpr { source, query } = self;
+
+        let Some(source_table_id) = source.table_id() else {
+            // Source is a `MemTable`, so we can't recognize a wildcard projection. Bail.
+            return QueryExpr { source, query };
+        };
+
+        let mut exprs = query.into_iter();
+        let Some(join_candidate) = exprs.next() else {
+            // No first (0th) expr to be the join; bail.
+            return QueryExpr { source, query: vec![] };
+        };
+        let Query::JoinInner(JoinExpr {
+            rhs,
+            col_lhs,
+            col_rhs,
+            semi: false,
+        }) = join_candidate
+        else {
+            // First (0th) expr is not an inner join. Bail.
+            return QueryExpr {
+                source,
+                query: itertools::chain![Some(join_candidate), exprs].collect(),
+            };
+        };
+
+        let Some(project_candidate) = exprs.next() else {
+            // No second (1st) expr to be the project. Bail.
+            return QueryExpr {
+                source,
+                query: vec![Query::JoinInner(JoinExpr {
+                    rhs,
+                    col_lhs,
+                    col_rhs,
+                    semi: false,
+                })],
+            };
+        };
+        let Query::Project(cols, Some(wildcard_table_id)) = project_candidate else {
+            // Second (1st) expr is not a wildcard projection. Bail.
+            return QueryExpr {
+                source,
+                query: itertools::chain![
+                    Some(Query::JoinInner(JoinExpr {
+                        rhs,
+                        col_lhs,
+                        col_rhs,
+                        semi: false
+                    })),
+                    Some(project_candidate),
+                    exprs
+                ]
+                .collect(),
+            };
+        };
+
+        if wildcard_table_id != source_table_id {
+            // Projection is selecting the RHS table. Bail.
+            return QueryExpr {
+                source,
+                query: itertools::chain![
+                    Some(Query::JoinInner(JoinExpr {
+                        rhs,
+                        col_lhs,
+                        col_rhs,
+                        semi: false
+                    })),
+                    Some(Query::Project(cols, Some(wildcard_table_id))),
+                    exprs
+                ]
+                .collect(),
+            };
+        };
+
+        // All conditions met; return a semijoin.
+        let semijoin = JoinExpr {
+            rhs,
+            col_lhs,
+            col_rhs,
+            semi: true,
+        };
+
+        QueryExpr {
+            source,
+            query: itertools::chain![Some(Query::JoinInner(semijoin)), exprs].collect(),
+        }
+    }
+
     // Try to turn an applicable join into an index join.
     // An applicable join is one that can use an index to probe the lhs.
     // It must also project only the columns from the lhs.
@@ -1453,45 +1726,37 @@ impl QueryExpr {
     // where `Left` has an index defined on `id`.
     fn try_index_join(self) -> QueryExpr {
         let mut query = self;
-        // We expect 2 and only 2 operations - a join followed by a wildcard projection.
-        if query.query.len() != 2 {
+        // We expect a single operation - an inner join with `semi: true`.
+        // These can be transformed by `try_semi_join` from a sequence of two queries, an inner join followed by a wildcard project.
+        if query.query.len() != 1 {
             return query;
         }
 
         // If the source is a `MemTable`, it doesn't have any indexes,
         // so we can't plan an index join.
-        let Some(source_table_id) = query.source.table_id() else {
+        if query.source.is_mem_table() {
             return query;
-        };
+        }
         let source = query.source;
-        let second = query.query.pop().unwrap();
-        let first = query.query.pop().unwrap();
+        let join = query.query.pop().unwrap();
 
-        // An applicable join must be followed by a wildcard projection.
-        let Query::Project(_, Some(wildcard_table_id)) = second else {
-            return QueryExpr {
-                source,
-                query: vec![first, second],
-            };
-        };
-
-        match first {
+        match join {
             Query::JoinInner(JoinExpr {
                 rhs: probe_side,
                 col_lhs: index_field,
                 col_rhs: probe_field,
+                semi: true,
             }) => {
-                if !probe_side.query.is_empty() && wildcard_table_id == source_table_id {
+                if !probe_side.query.is_empty() {
                     // An applicable join must have an index defined on the correct field.
                     if let Some(col) = source.head().column(&index_field) {
-                        let index_col = col.col_id;
                         if source.head().has_constraint(&index_field, Constraints::indexed()) {
                             let index_join = IndexJoin {
                                 probe_side,
                                 probe_field,
                                 index_side: source.clone(),
                                 index_select: None,
-                                index_col,
+                                index_col: col.col_id,
                                 return_index_rows: true,
                             };
                             return QueryExpr {
@@ -1501,19 +1766,20 @@ impl QueryExpr {
                         }
                     }
                 }
-                let first = Query::JoinInner(JoinExpr {
+                let join = Query::JoinInner(JoinExpr {
                     rhs: probe_side,
                     col_lhs: index_field,
                     col_rhs: probe_field,
+                    semi: true,
                 });
                 QueryExpr {
                     source,
-                    query: vec![first, second],
+                    query: vec![join],
                 }
             }
             first => QueryExpr {
                 source,
-                query: vec![first, second],
+                query: vec![first],
             },
         }
     }
@@ -1611,12 +1877,14 @@ impl QueryExpr {
                     q = Self::optimize_select(q, op, &tables);
                 }
                 Query::JoinInner(join) => {
-                    q = q.with_join_inner(join.rhs.optimize(row_count), join.col_lhs, join.col_rhs)
+                    q = q.with_join_inner(join.rhs.optimize(row_count), join.col_lhs, join.col_rhs, join.semi);
                 }
                 _ => q.query.push(query),
             };
         }
 
+        // Make sure to `try_semi_join` before `try_index_join`, as the latter depends on the former.
+        let q = q.try_semi_join();
         let q = q.try_index_join();
         if q.query.len() == 1 && matches!(q.query[0], Query::IndexJoin(_)) {
             return q.optimize(row_count);
@@ -1670,7 +1938,7 @@ impl AuthAccess for Query {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, From)]
+#[derive(Debug, Eq, PartialEq, From)]
 pub enum Expr {
     #[from]
     Value(AlgebraicValue),
@@ -1689,7 +1957,7 @@ impl From<QueryExpr> for Expr {
 impl fmt::Display for SourceExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SourceExpr::MemTable { header, source_id, .. } => {
+            SourceExpr::InMemory { header, source_id, .. } => {
                 let ty = AlgebraicType::Product(header.ty());
                 write!(f, "SourceExpr({source_id:?} => virtual {ty:?})")
             }
@@ -1732,27 +2000,6 @@ impl fmt::Display for Query {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-// TODO(bikeshedding): Refactor this struct so that `IndexJoin`s replace the `table`,
-// rather than appearing as the first element of the `query`.
-//
-// `IndexJoin`s do not behave like filters; in fact they behave more like data sources.
-// A query conceptually starts with either a single table or an `IndexJoin`,
-// and then stacks a set of filters on top of that.
-pub struct QueryCode {
-    pub table: SourceExpr,
-    pub query: Vec<Query>,
-}
-
-impl From<QueryExpr> for QueryCode {
-    fn from(value: QueryExpr) -> Self {
-        QueryCode {
-            table: value.source,
-            query: value.query,
-        }
-    }
-}
-
 impl AuthAccess for SourceExpr {
     fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
         if owner == caller || self.table_access() == StAccess::Public {
@@ -1777,12 +2024,12 @@ impl AuthAccess for Table {
     }
 }
 
-impl AuthAccess for QueryCode {
+impl AuthAccess for QueryExpr {
     fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
         if owner == caller {
             return Ok(());
         }
-        self.table.check_auth(owner, caller)?;
+        self.source.check_auth(owner, caller)?;
         for q in &self.query {
             q.check_auth(owner, caller)?;
         }
@@ -1791,47 +2038,23 @@ impl AuthAccess for QueryCode {
     }
 }
 
-impl Relation for QueryCode {
+impl Relation for QueryExpr {
     fn head(&self) -> &Arc<Header> {
-        self.table.head()
+        self.source.head()
     }
 
     fn row_count(&self) -> RowCount {
-        self.table.row_count()
+        self.source.row_count()
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CrudCode {
-    Query(QueryCode),
-    Insert {
-        table: SourceExpr,
-        rows: Vec<ProductValue>,
-    },
-    Update {
-        delete: QueryCode,
-        assignments: HashMap<FieldName, FieldExpr>,
-    },
-    Delete {
-        query: QueryCode,
-    },
-    CreateTable {
-        table: TableDef,
-    },
-    Drop {
-        name: String,
-        kind: DbType,
-        table_access: StAccess,
-    },
-}
-
-impl AuthAccess for CrudCode {
+impl AuthAccess for CrudExpr {
     fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
         if owner == caller {
             return Ok(());
         }
         // Anyone may query, so as long as the tables involved are public.
-        if let CrudCode::Query(q) = self {
+        if let CrudExpr::Query(q) = self {
             return q.check_auth(owner, caller);
         }
 
@@ -1840,13 +2063,13 @@ impl AuthAccess for CrudCode {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum Code {
     Value(AlgebraicValue),
     Table(MemTable),
     Halt(ErrorLang),
     Block(Vec<Code>),
-    Crud(CrudCode),
+    Crud(CrudExpr),
     Pass,
 }
 
@@ -1862,7 +2085,7 @@ impl fmt::Display for Code {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum CodeResult {
     Value(AlgebraicValue),
     Table(MemTable),
@@ -1895,8 +2118,10 @@ impl From<Code> for CodeResult {
 
 #[cfg(test)]
 mod tests {
+    use crate::dsl::db_table;
+
     use super::*;
-    use spacetimedb_sats::product;
+    use spacetimedb_sats::{product, ProductType};
     use typed_arena::Arena;
 
     const ALICE: Identity = Identity::from_byte_array([1; 32]);
@@ -1907,7 +2132,7 @@ mod tests {
 
     fn tables() -> [SourceExpr; 2] {
         [
-            SourceExpr::MemTable {
+            SourceExpr::InMemory {
                 source_id: SourceId(0),
                 header: Arc::new(Header {
                     table_name: "foo".into(),
@@ -1971,16 +2196,16 @@ mod tests {
                     table: "bar".into(),
                     field: "id".into(),
                 },
+                semi: false,
             }),
         ]
     }
 
-    fn query_codes() -> impl IntoIterator<Item = QueryCode> {
+    fn query_exprs() -> impl IntoIterator<Item = QueryExpr> {
         tables().map(|table| {
-            let expr = QueryExpr::from(table);
-            let mut code = QueryCode::from(expr);
-            code.query = queries().into_iter().collect();
-            code
+            let mut expr = QueryExpr::from(table);
+            expr.query = queries().into_iter().collect();
+            expr
         })
     }
 
@@ -2013,7 +2238,7 @@ mod tests {
                 .map(|(i, _)| (ColId(i as u32).into(), Constraints::indexed()))
                 .collect(),
         );
-        SourceExpr::MemTable {
+        SourceExpr::InMemory {
             source_id: SourceId(0),
             header: Arc::new(head),
             row_count: RowCount::unknown(),
@@ -2051,7 +2276,7 @@ mod tests {
         let expr = join.to_inner_join();
 
         assert_eq!(expr.source, probe_side);
-        assert_eq!(expr.query.len(), 2);
+        assert_eq!(expr.query.len(), 1);
 
         let Query::JoinInner(ref join) = expr.query[0] else {
             panic!("expected an inner join, but got {:#?}", expr.query[0]);
@@ -2066,18 +2291,7 @@ mod tests {
                 query: vec![index_select.into()]
             }
         );
-
-        let Query::Project(ref fields, None) = expr.query[1] else {
-            panic!("expected a projection, but got {:#?}", expr.query[1]);
-        };
-
-        assert_eq!(
-            fields,
-            &vec![
-                FieldName::named("probe", "c").into(),
-                FieldName::named("probe", "b").into(),
-            ]
-        );
+        assert!(join.semi);
     }
 
     fn setup_best_index() -> (Header, [Column; 5], [AlgebraicValue; 5]) {
@@ -2323,7 +2537,7 @@ mod tests {
 
     #[test]
     fn test_auth_query_code() {
-        for code in query_codes() {
+        for code in query_exprs() {
             assert_owner_private(&code)
         }
     }
@@ -2337,8 +2551,8 @@ mod tests {
 
     #[test]
     fn test_auth_crud_code_query() {
-        for query in query_codes() {
-            let crud = CrudCode::Query(query);
+        for query in query_exprs() {
+            let crud = CrudExpr::Query(query);
             assert_owner_private(&crud);
         }
     }
@@ -2346,15 +2560,18 @@ mod tests {
     #[test]
     fn test_auth_crud_code_insert() {
         for table in tables() {
-            let crud = CrudCode::Insert { table, rows: vec![] };
+            let crud = CrudExpr::Insert {
+                source: table,
+                rows: vec![],
+            };
             assert_owner_required(crud);
         }
     }
 
     #[test]
     fn test_auth_crud_code_update() {
-        for qc in query_codes() {
-            let crud = CrudCode::Update {
+        for qc in query_exprs() {
+            let crud = CrudExpr::Update {
                 delete: qc,
                 assignments: Default::default(),
             };
@@ -2364,8 +2581,8 @@ mod tests {
 
     #[test]
     fn test_auth_crud_code_delete() {
-        for query in query_codes() {
-            let crud = CrudCode::Delete { query };
+        for query in query_exprs() {
+            let crud = CrudExpr::Delete { query };
             assert_owner_required(crud);
         }
     }
@@ -2376,17 +2593,174 @@ mod tests {
             .with_access(StAccess::Public)
             .with_type(StTableType::System); // hah!
 
-        let crud = CrudCode::CreateTable { table };
+        let crud = CrudExpr::CreateTable { table };
         assert_owner_required(crud);
     }
 
     #[test]
     fn test_auth_crud_code_drop() {
-        let crud = CrudCode::Drop {
+        let crud = CrudExpr::Drop {
             name: "etcpasswd".into(),
             kind: DbType::Table,
             table_access: StAccess::Public,
         };
         assert_owner_required(crud);
+    }
+
+    #[test]
+    /// Tests that [`QueryExpr::optimize`] can rewrite inner joins followed by projections into semijoins.
+    fn optimize_inner_join_to_semijoin() {
+        let lhs = TableSchema::from_def(
+            TableId(0),
+            TableDef::new(
+                "lhs".into(),
+                ProductType::from_iter([AlgebraicType::I32, AlgebraicType::String]).into(),
+            ),
+        );
+        let rhs = TableSchema::from_def(
+            TableId(1),
+            TableDef::new(
+                "rhs".into(),
+                ProductType::from_iter([AlgebraicType::I32, AlgebraicType::I64]).into(),
+            ),
+        );
+
+        let lhs_source = SourceExpr::DbTable(db_table(&lhs, TableId(0)));
+        let rhs_source = SourceExpr::DbTable(db_table(&rhs, TableId(0)));
+
+        let q = QueryExpr::new(lhs_source.clone())
+            .with_join_inner(
+                rhs_source.clone(),
+                FieldName::Pos {
+                    table: "lhs".into(),
+                    field: 0,
+                },
+                FieldName::Pos {
+                    table: "rhs".into(),
+                    field: 0,
+                },
+                false,
+            )
+            .with_project(
+                &[
+                    FieldExpr::Name(FieldName::Pos {
+                        table: "lhs".into(),
+                        field: 0,
+                    }),
+                    FieldExpr::Name(FieldName::Pos {
+                        table: "lhs".into(),
+                        field: 1,
+                    }),
+                ],
+                Some(TableId(0)),
+            );
+        let q = q.optimize(&|_, _| 0);
+
+        assert_eq!(q.source, lhs_source, "Optimized query should read from lhs");
+
+        assert_eq!(
+            q.query.len(),
+            1,
+            "Optimized query should have a single member, a semijoin"
+        );
+        match &q.query[0] {
+            Query::JoinInner(JoinExpr { rhs, semi, .. }) => {
+                assert!(semi, "Optimized query should be a semijoin");
+                assert_eq!(rhs.source, rhs_source, "Optimized query should filter with rhs");
+                assert!(
+                    rhs.query.is_empty(),
+                    "Optimized query should not filter rhs before joining"
+                );
+            }
+            wrong => panic!("Expected an inner join, but found {wrong:?}"),
+        }
+    }
+
+    #[test]
+    /// Tests that [`QueryExpr::optimize`] will not rewrite inner joins which are not followed by projections to the LHS table.
+    fn optimize_inner_join_no_project() {
+        let lhs = TableSchema::from_def(
+            TableId(0),
+            TableDef::new(
+                "lhs".into(),
+                ProductType::from_iter([AlgebraicType::I32, AlgebraicType::String]).into(),
+            ),
+        );
+        let rhs = TableSchema::from_def(
+            TableId(1),
+            TableDef::new(
+                "rhs".into(),
+                ProductType::from_iter([AlgebraicType::I32, AlgebraicType::I64]).into(),
+            ),
+        );
+
+        let lhs_source = SourceExpr::DbTable(db_table(&lhs, TableId(0)));
+        let rhs_source = SourceExpr::DbTable(db_table(&rhs, TableId(0)));
+
+        let q = QueryExpr::new(lhs_source.clone()).with_join_inner(
+            rhs_source.clone(),
+            FieldName::Pos {
+                table: "lhs".into(),
+                field: 0,
+            },
+            FieldName::Pos {
+                table: "rhs".into(),
+                field: 0,
+            },
+            false,
+        );
+        let optimized = q.clone().optimize(&|_, _| 0);
+        assert_eq!(q, optimized);
+    }
+
+    #[test]
+    /// Tests that [`QueryExpr::optimize`] will not rewrite inner joins followed by projections to the RHS rather than LHS table.
+    fn optimize_inner_join_wrong_project() {
+        let lhs = TableSchema::from_def(
+            TableId(0),
+            TableDef::new(
+                "lhs".into(),
+                ProductType::from_iter([AlgebraicType::I32, AlgebraicType::String]).into(),
+            ),
+        );
+        let rhs = TableSchema::from_def(
+            TableId(1),
+            TableDef::new(
+                "rhs".into(),
+                ProductType::from_iter([AlgebraicType::I32, AlgebraicType::I64]).into(),
+            ),
+        );
+
+        let lhs_source = SourceExpr::DbTable(db_table(&lhs, TableId(0)));
+        let rhs_source = SourceExpr::DbTable(db_table(&rhs, TableId(0)));
+
+        let q = QueryExpr::new(lhs_source.clone())
+            .with_join_inner(
+                rhs_source.clone(),
+                FieldName::Pos {
+                    table: "lhs".into(),
+                    field: 0,
+                },
+                FieldName::Pos {
+                    table: "rhs".into(),
+                    field: 0,
+                },
+                false,
+            )
+            .with_project(
+                &[
+                    FieldExpr::Name(FieldName::Pos {
+                        table: "rhs".into(),
+                        field: 0,
+                    }),
+                    FieldExpr::Name(FieldName::Pos {
+                        table: "rhs".into(),
+                        field: 1,
+                    }),
+                ],
+                Some(TableId(1)),
+            );
+        let optimized = q.clone().optimize(&|_, _| 0);
+        assert_eq!(q, optimized);
     }
 }

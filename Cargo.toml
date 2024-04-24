@@ -7,6 +7,7 @@ members = [
   "crates/cli",
   "crates/client-api",
   "crates/client-api-messages",
+  "crates/commitlog",
   "crates/core",
   "crates/data-structures",
   "crates/lib",
@@ -20,6 +21,7 @@ members = [
   "crates/testing",
   "crates/vm",
   "modules/benchmarks",
+  "modules/perf-test",
   "modules/rust-wasm-test",
   "modules/quickstart-chat",
   "modules/sdk-test",
@@ -63,6 +65,10 @@ rpath = false
 [profile.bench]
 debug = true
 
+[profile.test]
+opt-level = 1
+debug = true
+
 [profile.profiling]
 inherits = "release"
 debug = true
@@ -71,7 +77,7 @@ debug = true
 version = "0.8.2"
 edition = "2021"
 # update rust-toolchain.toml too!
-rust-version = "1.76.0"
+rust-version = "1.77.0"
 
 [workspace.dependencies]
 spacetimedb = { path = "crates/bindings", version = "0.8.2" }
@@ -80,7 +86,10 @@ spacetimedb-bindings-sys = { path = "crates/bindings-sys", version = "0.8.2" }
 spacetimedb-cli = { path = "crates/cli", version = "0.8.2" }
 spacetimedb-client-api = { path = "crates/client-api", version = "0.8.2" }
 spacetimedb-client-api-messages = { path = "crates/client-api-messages", version = "0.8.2" }
+spacetimedb-commitlog = { path = "crates/commitlog", version = "0.8.2" }
 spacetimedb-core = { path = "crates/core", version = "0.8.2" }
+spacetimedb-data-structures = { path = "crates/data-structures", version = "0.8.2" }
+
 spacetimedb-lib = { path = "crates/lib", default-features = false, version = "0.8.2" }
 spacetimedb-metrics = { path = "crates/metrics", version = "0.8.2" }
 spacetimedb-primitives = { path = "crates/primitives", version = "0.8.2" }
@@ -90,7 +99,7 @@ spacetimedb-table = { path = "crates/table", version = "0.8.2" }
 spacetimedb-vm = { path = "crates/vm", version = "0.8.2" }
 
 ahash = "0.8"
-anyhow = { version = "1.0.68", features = ["backtrace"] }
+anyhow = "1.0.68"
 anymap = "0.12"
 arrayvec = "0.7.2"
 async-trait = "0.1.68"
@@ -101,6 +110,7 @@ base64 = "0.21.2"
 bitflags = "2.3.3"
 bit-vec = "0.6"
 blake3 = "1.5"
+brotli = "3.5"
 byte-unit = "4.0.18"
 bytes = "1.2.1"
 bytestring = { version = "1.2.0", features = ["serde"] }
@@ -110,8 +120,8 @@ clap = { version = "4.2.4", features = ["derive"] }
 colored = "2.0.0"
 console = { version = "0.15.6" }
 convert_case = "0.6.0"
+crc32c = "0.6.4"
 criterion = { version = "0.5.1", features = ["async", "async_tokio", "html_reports"] }
-criterion-perf-events = "0.4"
 crossbeam-channel = "0.5"
 cursive = { version = "0.20", default-features = false, features = ["crossterm-backend"] }
 decorum = { version = "0.3.1", default-features = false, features = ["std"] }
@@ -130,6 +140,7 @@ futures = "0.3"
 futures-channel = "0.3"
 getrandom = { version = "0.2.7", features = ["custom"] }
 glob = "0.3.1"
+hashbrown = { version = "0.14", features = ["rayon", "serde"] }
 headers = "0.4"
 hex = "0.4.3"
 home = "0.5"
@@ -167,7 +178,7 @@ rand = "0.8.5"
 rayon = "1.8"
 rayon-core = "1.11.0"
 regex = "1"
-reqwest = { version = "0.11.10", features = ["stream", "json"] }
+reqwest = { version = "0.12", features = ["stream", "json"] }
 rusqlite = { version = "0.29.0", features = ["bundled", "column_decltype"] }
 rust_decimal = { version = "1.29.1", features = ["db-tokio-postgres"] }
 rustc-demangle = "0.1.21"
@@ -175,7 +186,7 @@ rustc-hash = "1.1.0"
 rustyline = { version = "12.0.0", features = [] }
 scoped-tls = "1.0.1"
 scopeguard = "1.1.0"
-sendgrid = { version = "0.19.2", features = ["async"] }
+sendgrid = "0.21"
 serde = "1.0.136"
 serde_json = { version = "1.0.87", features = ["raw_value"] }
 serde_path_to_error = "0.1.9"
@@ -183,6 +194,7 @@ serde_with = { version = "3.3.0", features = ["base64", "hex"] }
 serial_test = "2.0.0"
 sha1 = "0.10.1"
 sha3 = "0.10.0"
+similar = "2.3"
 slab = "0.4.7"
 sled = "0.34.7"
 smallvec = { version = "1.11", features = ["union", "const_generics"] }

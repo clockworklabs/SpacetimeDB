@@ -289,6 +289,7 @@ impl RelationalDB {
     pub fn commit_tx(&self, ctx: &ExecutionContext, tx: MutTx) -> Result<Option<(TxData, Option<usize>)>, DBError> {
         log::trace!("COMMIT MUT TX");
         if let Some(tx_data) = self.inner.commit_mut_tx(ctx, tx)? {
+            // TODO(cloutiertyler): We should measure the time to append a transaction to the commitlog separately in metrics
             let bytes_written = self
                 .commit_log
                 .as_ref()
@@ -450,8 +451,29 @@ impl RelationalDB {
         self.with_auto_commit(&ExecutionContext::default(), |tx| self.create_table(tx, schema))
     }
 
+    pub fn create_table_for_test_mix_indexes(
+        &self,
+        name: &str,
+        schema: &[(&str, AlgebraicType)],
+        idx_cols_single: &[(ColId, &str)],
+        idx_cols_multi: ColList,
+    ) -> Result<TableId, DBError> {
+        let idx_cols_single = idx_cols_single
+            .iter()
+            .copied()
+            .map(|(col_id, index_name)| IndexDef::btree(index_name.into(), col_id, false))
+            .collect();
+
+        let schema = TableDef::new(name.into(), Self::col_def_for_test(schema))
+            .with_indexes(idx_cols_single)
+            .with_column_index(idx_cols_multi, false)
+            .with_type(StTableType::User)
+            .with_access(StAccess::Public);
+
+        self.with_auto_commit(&ExecutionContext::default(), |tx| self.create_table(tx, schema))
+    }
+
     pub fn drop_table(&self, ctx: &ExecutionContext, tx: &mut MutTx, table_id: TableId) -> Result<(), DBError> {
-        #[cfg(feature = "metrics")]
         let _guard = DB_METRICS
             .rdb_drop_table_time
             .with_label_values(&table_id.0)
@@ -630,11 +652,6 @@ impl RelationalDB {
     }
 
     pub fn insert(&self, tx: &mut MutTx, table_id: TableId, row: ProductValue) -> Result<ProductValue, DBError> {
-        #[cfg(feature = "metrics")]
-        let _guard = DB_METRICS
-            .rdb_insert_row_time
-            .with_label_values(&table_id.0)
-            .start_timer();
         self.inner.insert_mut_tx(tx, table_id, row)
     }
 
@@ -654,12 +671,6 @@ impl RelationalDB {
     }
 
     pub fn delete_by_rel<R: Relation>(&self, tx: &mut MutTx, table_id: TableId, relation: R) -> u32 {
-        #[cfg(feature = "metrics")]
-        let _guard = DB_METRICS
-            .rdb_delete_by_rel_time
-            .with_label_values(&table_id.0)
-            .start_timer();
-
         self.inner.delete_by_rel_mut_tx(tx, table_id, relation)
     }
 
@@ -1104,7 +1115,6 @@ mod tests {
         stdb.commit_tx(&ExecutionContext::default(), tx)?;
         drop(stdb);
 
-        dbg!("reopen...");
         let stdb = open_db(&tmp_dir, false, true)?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);

@@ -3,9 +3,9 @@ use crate::{
     schemas::{table_name, BenchTable, IndexStrategy},
     ResultBench,
 };
-use ahash::AHashMap;
 use lazy_static::lazy_static;
 use rusqlite::Connection;
+use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::sats::{AlgebraicType, AlgebraicValue, ProductType};
 use std::{
     fmt::Write,
@@ -246,7 +246,7 @@ fn memo_query<F: FnOnce() -> String>(bench_name: BenchName, table_id: &str, gene
     let bench_queries = if let Some(bench_queries) = queries.get_mut(&bench_name) {
         bench_queries
     } else {
-        queries.insert(bench_name, AHashMap::default());
+        queries.insert(bench_name, HashMap::default());
         queries.get_mut(&bench_name).unwrap()
     };
 
@@ -262,8 +262,8 @@ fn memo_query<F: FnOnce() -> String>(bench_name: BenchName, table_id: &str, gene
 lazy_static! {
     // bench_name -> table_id -> query.
     // Double hashmap is necessary because of tuple dereferencing problems.
-    static ref QUERIES: RwLock<ahash::AHashMap<BenchName, ahash::AHashMap<String, Arc<str>>>> =
-        RwLock::new(ahash::AHashMap::default());
+    static ref QUERIES: RwLock<HashMap<BenchName, HashMap<String, Arc<str>>>> =
+        RwLock::default();
 }
 
 #[inline(never)]

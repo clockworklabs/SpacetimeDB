@@ -14,6 +14,7 @@ proptest = ["dep:proptest", "dep:proptest-derive"]
 
 [dependencies]
 spacetimedb-bindings-macro.workspace = true
+spacetimedb-data-structures.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-metrics.workspace = true
 
@@ -31,7 +32,6 @@ sha3.workspace = true
 serde = { workspace = true, optional = true }
 smallvec.workspace = true
 thiserror.workspace = true
-tracing.workspace = true
 
 [dev-dependencies]
 bytes.workspace = true

@@ -9,9 +9,11 @@ use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, DatabaseInstance, EnergyBalance, IdentityEmail, Node};
 use spacetimedb::{energy, stdb_path};
 
+use spacetimedb_client_api_messages::name::{
+    DomainName, DomainParsingError, InsertDomainResult, RegisterTldResult, Tld, TldRef,
+};
+use spacetimedb_client_api_messages::recovery::RecoveryCode;
 use spacetimedb_lib::bsatn;
-use spacetimedb_lib::name::{DomainName, DomainParsingError, InsertDomainResult, RegisterTldResult, Tld, TldRef};
-use spacetimedb_lib::recovery::RecoveryCode;
 
 #[cfg(test)]
 mod tests;
@@ -282,7 +284,7 @@ impl ControlDb {
         for i in tree.iter() {
             let (_, value) = i?;
             let iemail: IdentityEmail = bsatn::from_slice(&value)?;
-            if iemail.email == email {
+            if iemail.email.eq_ignore_ascii_case(email) {
                 result.push(iemail);
             }
         }

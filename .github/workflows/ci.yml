@@ -18,11 +18,11 @@ jobs:
       - name: Start containers
         run: docker compose up -d
       - name: Run smoketests
-        run: test/run-smoke-tests.sh --parallel -x bitcraftmini-pretest zz_docker-restart-module zz_docker-restart-repeating-reducer zz_docker-restart-sql
+        run: python -m smoketests --docker -x zz_docker
       # These cannot run in parallel, even though the script tries to handle it
       # TODO: Fix flaky tests https://github.com/clockworklabs/SpacetimeDB/issues/630
       # - name: Run restarting smoketests
-      #   run: test/run-smoke-tests.sh zz_docker-restart-module zz_docker-restart-repeating-reducer zz_docker-restart-sql
+      #   run: python -m smoketests --docker zz_docker
       - name: Stop containers
         if: always()
         run: docker compose down
@@ -46,7 +46,7 @@ jobs:
           sudo chmod 777 /stdb
 
       - name: Run cargo test
-        run: cargo test --all --features odb_rocksdb,odb_sled,metrics
+        run: cargo test --all --features odb_rocksdb,odb_sled
 
   lints:
     name: Lints
@@ -62,7 +62,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Run cargo clippy
-        run: cargo clippy --all --tests --benches --features odb_rocksdb,odb_sled,metrics -- -D warnings
+        run: cargo clippy --all --tests --benches --features odb_rocksdb,odb_sled -- -D warnings
 
   wasm_bindings:
     name: Build and test wasm bindings

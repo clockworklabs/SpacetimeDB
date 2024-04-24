@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 use std::sync::Arc;
 use std::time::Instant;
 
-use super::messages::{OneOffQueryResponseMessage, ServerMessage};
+use super::messages::{OneOffQueryResponseMessage, SerializableMessage};
 use super::{message_handlers, ClientActorId, MessageHandleError};
 use crate::error::DBError;
 use crate::host::{ModuleHost, ReducerArgs, ReducerCallError, ReducerCallResult};
@@ -26,7 +26,7 @@ pub enum Protocol {
 pub struct ClientConnectionSender {
     pub id: ClientActorId,
     pub protocol: Protocol,
-    sendtx: mpsc::Sender<DataMessage>,
+    sendtx: mpsc::Sender<SerializableMessage>,
     abort_handle: AbortHandle,
     cancelled: AtomicBool,
 }
@@ -56,13 +56,11 @@ impl ClientConnectionSender {
         }
     }
 
-    pub fn send_message(&self, message: impl ServerMessage) -> Result<(), ClientSendError> {
-        self.send(message.serialize(self.protocol))
+    pub fn send_message(&self, message: impl Into<SerializableMessage>) -> Result<(), ClientSendError> {
+        self.send(message.into())
     }
 
-    pub fn send(&self, message: DataMessage) -> Result<(), ClientSendError> {
-        let bytes_len = message.len();
-
+    fn send(&self, message: SerializableMessage) -> Result<(), ClientSendError> {
         if self.cancelled.load(Relaxed) {
             return Err(ClientSendError::Cancelled);
         }
@@ -76,13 +74,6 @@ impl ClientConnectionSender {
             }
             mpsc::error::TrySendError::Closed(_) => ClientSendError::Disconnected,
         })?;
-
-        WORKER_METRICS.websocket_sent.with_label_values(&self.id.identity).inc();
-
-        WORKER_METRICS
-            .websocket_sent_msg_size
-            .with_label_values(&self.id.identity)
-            .observe(bytes_len as f64);
 
         Ok(())
     }
@@ -137,7 +128,7 @@ impl ClientConnection {
         actor: F,
     ) -> Result<ClientConnection, ReducerCallError>
     where
-        F: FnOnce(ClientConnection, mpsc::Receiver<DataMessage>) -> Fut,
+        F: FnOnce(ClientConnection, mpsc::Receiver<SerializableMessage>) -> Fut,
         Fut: Future<Output = ()> + Send + 'static,
     {
         // Add this client as a subscriber
@@ -148,7 +139,7 @@ impl ClientConnection {
             .call_identity_connected_disconnected(id.identity, id.address, true)
             .await?;
 
-        let (sendtx, sendrx) = mpsc::channel::<DataMessage>(CLIENT_CHANNEL_CAPACITY);
+        let (sendtx, sendrx) = mpsc::channel::<SerializableMessage>(CLIENT_CHANNEL_CAPACITY);
 
         let db = module.info().address;
 
@@ -226,9 +217,13 @@ impl ClientConnection {
 
     pub async fn subscribe(&self, subscription: Subscribe, timer: Instant) -> Result<(), DBError> {
         let me = self.clone();
-        tokio::task::spawn_blocking(move || me.module.subscriptions().add_subscriber(me.sender, subscription, timer))
-            .await
-            .unwrap()
+        tokio::task::spawn_blocking(move || {
+            me.module
+                .subscriptions()
+                .add_subscriber(me.sender, subscription, timer, None)
+        })
+        .await
+        .unwrap()
     }
 
     pub async fn one_off_query(&self, query: &str, message_id: &[u8], timer: Instant) -> Result<(), anyhow::Error> {

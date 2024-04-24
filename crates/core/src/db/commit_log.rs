@@ -8,7 +8,6 @@ use super::{
 use crate::{
     db::{
         datastore::traits::TxOp,
-        db_metrics::DB_METRICS,
         messages::{
             transaction::Transaction,
             write::{Operation, Write},
@@ -18,14 +17,12 @@ use crate::{
     execution_context::ExecutionContext,
 };
 use anyhow::Context;
+use spacetimedb_data_structures::map::{Entry, HashMap};
 use spacetimedb_sats::hash::{hash_bytes, Hash};
 use spacetimedb_sats::DataKey;
 use spacetimedb_table::indexes::RowPointer;
-use std::{
-    collections::{hash_map, HashMap},
-    io,
-    sync::{Arc, Mutex, MutexGuard},
-};
+use std::io;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 /// A read-only handle to the commit log.
 #[derive(Clone)]
@@ -372,7 +369,7 @@ impl CommitLogMut {
 
     fn generate_commit(
         &self,
-        ctx: &ExecutionContext,
+        _ctx: &ExecutionContext,
         unwritten_commit: &mut MutexGuard<'_, Commit>,
         tx_data: &TxData,
     ) -> Option<Vec<u8>> {
@@ -385,43 +382,12 @@ impl CommitLogMut {
 
         let mut writes = Vec::with_capacity(tx_data.records.len());
 
-        let workload = &ctx.workload();
-        let db = &ctx.database();
-        let reducer = &ctx.reducer_name();
-
         for record in &tx_data.records {
             let table_id: u32 = record.table_id.into();
-            let table_name = record.table_name.as_str();
 
             let operation = match record.op {
-                TxOp::Insert(_) => {
-                    // Increment rows inserted metric
-                    #[cfg(feature = "metrics")]
-                    DB_METRICS
-                        .rdb_num_rows_inserted
-                        .with_label_values(workload, db, reducer, &table_id, table_name)
-                        .inc();
-                    // Increment table rows gauge
-                    DB_METRICS
-                        .rdb_num_table_rows
-                        .with_label_values(db, &table_id, table_name)
-                        .inc();
-                    Operation::Insert
-                }
-                TxOp::Delete => {
-                    // Increment rows deleted metric
-                    #[cfg(feature = "metrics")]
-                    DB_METRICS
-                        .rdb_num_rows_deleted
-                        .with_label_values(workload, db, reducer, &table_id, table_name)
-                        .inc();
-                    // Decrement table rows gauge
-                    DB_METRICS
-                        .rdb_num_table_rows
-                        .with_label_values(db, &table_id, table_name)
-                        .dec();
-                    Operation::Delete
-                }
+                TxOp::Insert(_) => Operation::Insert,
+                TxOp::Delete => Operation::Delete,
             };
 
             writes.push(Write {
@@ -575,7 +541,7 @@ impl Replay {
                 }
             });
         for hash in hashes {
-            if let hash_map::Entry::Vacant(entry) = objects.entry(hash) {
+            if let Entry::Vacant(entry) = objects.entry(hash) {
                 let obj = odb.get(hash).ok_or(ReplayError::MissingObject {
                     segment_offset: self.segment_offset,
                     last_commit_offset: self.last_commit_offset.unwrap_or_default(),

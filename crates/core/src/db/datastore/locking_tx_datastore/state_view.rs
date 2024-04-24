@@ -3,13 +3,10 @@ use super::{
 };
 use crate::{
     address::Address,
-    db::{
-        datastore::system_tables::{
-            StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StIndexFields, StIndexRow,
-            StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMNS_ID, ST_CONSTRAINTS_ID,
-            ST_INDEXES_ID, ST_SEQUENCES_ID, ST_TABLES_ID,
-        },
-        db_metrics::DB_METRICS,
+    db::datastore::system_tables::{
+        StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StIndexFields, StIndexRow, StSequenceFields,
+        StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMNS_ID, ST_CONSTRAINTS_ID, ST_INDEXES_ID,
+        ST_SEQUENCES_ID, ST_TABLES_ID,
     },
     error::TableError,
     execution_context::ExecutionContext,
@@ -31,7 +28,7 @@ pub(crate) trait StateView {
         let ctx = ExecutionContext::internal(database_address);
         let name = &table_name.to_owned().into();
         let row = self
-            .iter_by_col_eq(&ctx, &ST_TABLES_ID, StTableFields::TableName.col_id().into(), name)?
+            .iter_by_col_eq(&ctx, &ST_TABLES_ID, StTableFields::TableName, name)?
             .next();
         Ok(row.map(|row| row.read_col(StTableFields::TableId).unwrap()))
     }
@@ -56,19 +53,18 @@ pub(crate) trait StateView {
         &'a self,
         ctx: &'a ExecutionContext,
         table_id: &TableId,
-        cols: ColList,
+        cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
     ) -> Result<IterByColEq<'a, 'r>> {
-        self.iter_by_col_range(ctx, table_id, cols, value)
+        self.iter_by_col_range(ctx, table_id, cols.into(), value)
     }
 
     /// Reads the schema information for the specified `table_id` directly from the database.
     fn schema_for_table_raw(&self, ctx: &ExecutionContext, table_id: TableId) -> Result<TableSchema> {
         // Look up the table_name for the table in question.
-        let st_table_table_id_col = StTableFields::TableId.col_id().into();
         let value_eq = &table_id.into();
         let row = self
-            .iter_by_col_eq(ctx, &ST_TABLES_ID, st_table_table_id_col, value_eq)?
+            .iter_by_col_eq(ctx, &ST_TABLES_ID, StTableFields::TableId, value_eq)?
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, table_id.into()))?;
         let row = StTableRow::try_from(row)?;
@@ -78,9 +74,8 @@ pub(crate) trait StateView {
         let table_access = row.table_access;
 
         // Look up the columns for the table in question.
-        let st_columns_table_id_col = StColumnFields::TableId.col_id().into();
         let mut columns = self
-            .iter_by_col_eq(ctx, &ST_COLUMNS_ID, st_columns_table_id_col, value_eq)?
+            .iter_by_col_eq(ctx, &ST_COLUMNS_ID, StColumnFields::TableId, value_eq)?
             .map(|row| {
                 let row = StColumnRow::try_from(row)?;
                 Ok(ColumnSchema {
@@ -94,9 +89,8 @@ pub(crate) trait StateView {
         columns.sort_by_key(|col| col.col_pos);
 
         // Look up the constraints for the table in question.
-        let st_constraints_table_id = StConstraintFields::TableId.col_id().into();
         let constraints = self
-            .iter_by_col_eq(ctx, &ST_CONSTRAINTS_ID, st_constraints_table_id, value_eq)?
+            .iter_by_col_eq(ctx, &ST_CONSTRAINTS_ID, StConstraintFields::TableId, value_eq)?
             .map(|row| {
                 let row = StConstraintRow::try_from(row)?;
                 Ok(ConstraintSchema {
@@ -110,9 +104,8 @@ pub(crate) trait StateView {
             .collect::<Result<Vec<_>>>()?;
 
         // Look up the sequences for the table in question.
-        let st_seq_table_id = StSequenceFields::TableId.col_id().into();
         let sequences = self
-            .iter_by_col_eq(ctx, &ST_SEQUENCES_ID, st_seq_table_id, value_eq)?
+            .iter_by_col_eq(ctx, &ST_SEQUENCES_ID, StSequenceFields::TableId, value_eq)?
             .map(|row| {
                 let row = StSequenceRow::try_from(row)?;
                 Ok(SequenceSchema {
@@ -130,9 +123,8 @@ pub(crate) trait StateView {
             .collect::<Result<Vec<_>>>()?;
 
         // Look up the indexes for the table in question.
-        let st_idx_table_id = StIndexFields::TableId.col_id().into();
         let indexes = self
-            .iter_by_col_eq(ctx, &ST_INDEXES_ID, st_idx_table_id, value_eq)?
+            .iter_by_col_eq(ctx, &ST_INDEXES_ID, StIndexFields::TableId, value_eq)?
             .map(|row| {
                 let row = StIndexRow::try_from(row)?;
                 Ok(IndexSchema {
@@ -172,8 +164,9 @@ pub(crate) trait StateView {
     }
 }
 
+#[allow(dead_code)]
 pub struct Iter<'a> {
-    ctx: &'a ExecutionContext<'a>,
+    ctx: &'a ExecutionContext,
     table_id: TableId,
     tx_state: Option<&'a TxState>,
     committed_state: &'a CommittedState,
@@ -182,21 +175,18 @@ pub struct Iter<'a> {
     num_committed_rows_fetched: u64,
 }
 
-#[cfg(feature = "metrics")]
-impl Drop for Iter<'_> {
-    fn drop(&mut self) {
-        DB_METRICS
-            .rdb_num_rows_fetched
-            .with_label_values(
-                &self.ctx.workload(),
-                &self.ctx.database(),
-                self.ctx.reducer_name(),
-                &self.table_id.into(),
-                self.table_name,
-            )
-            .inc_by(self.num_committed_rows_fetched);
-    }
-}
+// impl Drop for Iter<'_> {
+//     fn drop(&mut self) {
+//         let mut metrics = self.ctx.metrics.write();
+//         // Increment number of rows fetched
+//         metrics.inc_by(
+//             self.table_id,
+//             MetricType::RowsFetched,
+//             self.num_committed_rows_fetched,
+//             || self.table_name.to_string(),
+//         );
+//     }
+// }
 
 impl<'a> Iter<'a> {
     pub(crate) fn new(
@@ -319,8 +309,9 @@ impl<'a> Iterator for Iter<'a> {
     }
 }
 
+#[allow(dead_code)]
 pub struct IndexSeekIterMutTxId<'a> {
-    pub(crate) ctx: &'a ExecutionContext<'a>,
+    pub(crate) ctx: &'a ExecutionContext,
     pub(crate) table_id: TableId,
     pub(crate) tx_state: &'a TxState,
     pub(crate) committed_state: &'a CommittedState,
@@ -329,42 +320,40 @@ pub struct IndexSeekIterMutTxId<'a> {
     pub(crate) num_committed_rows_fetched: u64,
 }
 
-#[cfg(feature = "metrics")]
-impl Drop for IndexSeekIterMutTxId<'_> {
-    fn drop(&mut self) {
-        let workload = &self.ctx.workload();
-        let db = &self.ctx.database();
-        let reducer_name = self.ctx.reducer_name();
-        let table_id = &self.table_id.0;
-        let table_name = self
-            .committed_state
-            .get_schema(&self.table_id)
-            .map(|table| table.table_name.as_str())
-            .unwrap_or_default();
+// impl Drop for IndexSeekIterMutTxId<'_> {
+//     fn drop(&mut self) {
+//         let mut metrics = self.ctx.metrics.write();
+//         let get_table_name = || {
+//             self.committed_state
+//                 .get_schema(&self.table_id)
+//                 .map(|table| table.table_name.as_str())
+//                 .unwrap_or_default()
+//                 .to_string()
+//         };
 
-        // Increment number of index seeks
-        DB_METRICS
-            .rdb_num_index_seeks
-            .with_label_values(workload, db, reducer_name, table_id, table_name)
-            .inc();
+//         let num_pointers_yielded = self
+//             .committed_rows
+//             .as_ref()
+//             .map_or(0, |iter| iter.num_pointers_yielded());
 
-        // Increment number of index keys scanned
-        DB_METRICS
-            .rdb_num_keys_scanned
-            .with_label_values(workload, db, reducer_name, table_id, table_name)
-            .inc_by(
-                self.committed_rows
-                    .as_ref()
-                    .map_or(0, |iter| iter.num_pointers_yielded()),
-            );
-
-        // Increment number of rows fetched
-        DB_METRICS
-            .rdb_num_rows_fetched
-            .with_label_values(workload, db, reducer_name, table_id, table_name)
-            .inc_by(self.num_committed_rows_fetched);
-    }
-}
+//         // Increment number of index seeks
+//         metrics.inc_by(self.table_id, MetricType::IndexSeeks, 1, get_table_name);
+//         // Increment number of index keys scanned
+//         metrics.inc_by(
+//             self.table_id,
+//             MetricType::KeysScanned,
+//             num_pointers_yielded,
+//             get_table_name,
+//         );
+//         // Increment number of rows fetched
+//         metrics.inc_by(
+//             self.table_id,
+//             MetricType::RowsFetched,
+//             self.num_committed_rows_fetched,
+//             get_table_name,
+//         );
+//     }
+// }
 
 impl<'a> Iterator for IndexSeekIterMutTxId<'a> {
     type Item = RowRef<'a>;
