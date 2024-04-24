@@ -1,5 +1,5 @@
 ﻿/*  This is an optional helper class to store your auth token in local storage
- *  
+ *
     Example:
 
     AuthToken.Init(".my_app_name");
@@ -7,9 +7,9 @@
     SpacetimeDBClient.CreateInstance(new ConsoleLogger());
 
     SpacetimeDBClient.instance.onIdentityReceived += (token, identity) =>
-    {    
+    {
         AuthToken.SaveToken(token);
-    
+
         ...
     };
 
@@ -18,6 +18,7 @@
 #if !UNITY_5_3_OR_NEWER
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 
@@ -31,7 +32,7 @@ namespace SpacetimeDB
         /// <summary>
         /// Initializes the AuthToken class. This must be called before any other methods.
         /// </summary>
-        /// <param name="configFolder">The folder to store the config file in. Default is ".spacetime_csharp_sdk".</param> 
+        /// <param name="configFolder">The folder to store the config file in. Default is ".spacetime_csharp_sdk".</param>
         /// <param name="configFile">The name of the config file. Default is "settings.ini".</param>
         /// <param name="configRoot">The root folder to store the config file in. Default is the user's home directory.</param>
         /// </summary>
@@ -67,7 +68,7 @@ namespace SpacetimeDB
         /// <summary>
         /// This is the auth token that was saved to local storage. Null if not never saved.
         /// When you specify null to the SpacetimeDBClient, SpacetimeDB will generate a new identity for you.
-        /// </summary>  
+        /// </summary>
         public static string? Token
         {
             get
@@ -79,7 +80,7 @@ namespace SpacetimeDB
                 return token;
             }
         }
-        
+
         /// <summary>
         /// Save the auth token to local storage.
         /// SpacetimeDBClient provides this token to you in the onIdentityReceived callback.
