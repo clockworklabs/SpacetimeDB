@@ -274,9 +274,9 @@ impl LayoutBuilder {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{blob_store::HashMapBlobStore, proptest_sats::generate_typed_row};
+    use crate::blob_store::HashMapBlobStore;
     use proptest::prelude::*;
-    use spacetimedb_sats::{bsatn, AlgebraicType, ProductType};
+    use spacetimedb_sats::{bsatn, proptest::generate_typed_row, AlgebraicType, ProductType};
 
     fn assert_expected_layout(ty: ProductType, bsatn_length: u16, fields: &[(u16, u16, u16)]) {
         let expected_layout = StaticBsatnLayout {

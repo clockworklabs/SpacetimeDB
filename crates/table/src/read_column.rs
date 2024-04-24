@@ -343,13 +343,12 @@ impl_read_column_via_from! {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{
-        blob_store::HashMapBlobStore, indexes::SquashedOffset, proptest_sats::generate_typed_row, table::Table,
-    };
+    use crate::{blob_store::HashMapBlobStore, indexes::SquashedOffset, table::Table};
     use proptest::{prelude::*, prop_assert_eq, proptest, test_runner::TestCaseResult};
     use spacetimedb_sats::{
         db::def::{TableDef, TableSchema},
         product,
+        proptest::generate_typed_row,
     };
 
     fn table(ty: ProductType) -> Table {
