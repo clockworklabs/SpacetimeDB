@@ -1,5 +1,5 @@
 ﻿/*  SpacetimeDB logging for Unity
- *  *  This class is only used in Unity projects. 
+ *  *  This class is only used in Unity projects.
  *  *
  */
 #if UNITY_5_3_OR_NEWER

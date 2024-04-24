@@ -13,9 +13,6 @@ void Main()
 {
     AuthToken.Init(".spacetime_csharp_quickstart");
 
-    // create the client, pass in a logger to see debug messages
-    SpacetimeDBClient.CreateInstance(new ConsoleLogger());
-
     RegisterCallbacks();
 
     // spawn a thread to call process updates and process commands
@@ -54,7 +51,7 @@ void User_OnInsert(User insertedValue, ReducerEvent? dbEvent)
     }
 }
 
-void User_OnUpdate(User oldValue, User newValue, ReducerEvent dbEvent)
+void User_OnUpdate(User oldValue, User newValue, ReducerEvent? dbEvent)
 {
     if(oldValue.Name != newValue.Name)
     {

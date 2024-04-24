@@ -4,8 +4,6 @@
 
     AuthToken.Init(".my_app_name");
 
-    SpacetimeDBClient.CreateInstance(new ConsoleLogger());
-
     SpacetimeDBClient.instance.onIdentityReceived += (token, identity) =>
     {
         AuthToken.SaveToken(token);
