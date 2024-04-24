@@ -138,7 +138,7 @@ namespace SpacetimeDB
                 {
                     return false;
                 }
-               
+
                 // Insert the row into our table
                 entries[rowBytes] = (value, decoderFunc(value));
                 return true;
@@ -157,7 +157,7 @@ namespace SpacetimeDB
                     return true;
                 }
 
-                SpacetimeDBClient.instance.Logger.LogWarning("Deleting value that we don't have (no cached value available)");
+                Logger.LogWarning("Deleting value that we don't have (no cached value available)");
                 return false;
             }
 
@@ -204,7 +204,7 @@ namespace SpacetimeDB
 
             if (tables.TryGetValue(name, out _))
             {
-                SpacetimeDBClient.instance.Logger.LogError($"Table with name already exists: {name}");
+                Logger.LogError($"Table with name already exists: {name}");
                 return;
             }
 
@@ -245,7 +245,7 @@ namespace SpacetimeDB
                 return table;
             }
 
-            SpacetimeDBClient.instance.Logger.LogError($"We don't know that this table is: {name}");
+            Logger.LogError($"We don't know that this table is: {name}");
             return null;
         }
 
@@ -260,7 +260,7 @@ namespace SpacetimeDB
         }
 
         public IEnumerable<string> GetTableNames() => tables.Keys;
-        
+
         public IEnumerable<TableCache> GetTables() => tables.Values;
     }
 }
