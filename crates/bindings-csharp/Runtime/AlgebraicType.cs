@@ -16,22 +16,15 @@ namespace SpacetimeDB.SATS
         public static TypeInfo<Unit> GetSatsTypeInfo() => satsTypeInfo;
     }
 
-    public class TypeInfo<T>
+    public class TypeInfo<T>(
+        AlgebraicType algebraicType,
+        Func<BinaryReader, T> read,
+        Action<BinaryWriter, T> write
+    )
     {
-        public readonly AlgebraicType AlgebraicType;
-        public readonly Func<BinaryReader, T> Read;
-        public readonly Action<BinaryWriter, T> Write;
-
-        public TypeInfo(
-            AlgebraicType algebraicType,
-            Func<BinaryReader, T> read,
-            Action<BinaryWriter, T> write
-        )
-        {
-            this.AlgebraicType = algebraicType;
-            this.Read = read;
-            this.Write = write;
-        }
+        public readonly AlgebraicType AlgebraicType = algebraicType;
+        public readonly Func<BinaryReader, T> Read = read;
+        public readonly Action<BinaryWriter, T> Write = write;
 
         public IEnumerable<T> ReadBytes(byte[] bytes)
         {
@@ -64,7 +57,7 @@ namespace SpacetimeDB.SATS
     [SpacetimeDB.Type]
     public partial struct SumType : IEnumerable<SumTypeVariant>
     {
-        public List<SumTypeVariant> Variants = new();
+        public List<SumTypeVariant> Variants = [];
 
         public SumType() { }
 
@@ -131,22 +124,16 @@ namespace SpacetimeDB.SATS
     }
 
     [SpacetimeDB.Type]
-    public partial struct SumTypeVariant
+    public partial struct SumTypeVariant(string? name, AlgebraicType algebraicType)
     {
-        public string? Name;
-        public AlgebraicType AlgebraicType;
-
-        public SumTypeVariant(string? name, AlgebraicType algebraicType)
-        {
-            this.Name = name;
-            this.AlgebraicType = algebraicType;
-        }
+        public string? Name = name;
+        public AlgebraicType AlgebraicType = algebraicType;
     }
 
     [SpacetimeDB.Type]
     public partial struct ProductType : IEnumerable<ProductTypeElement>
     {
-        public List<ProductTypeElement> Elements = new();
+        public List<ProductTypeElement> Elements = [];
 
         public ProductType() { }
 
@@ -167,29 +154,17 @@ namespace SpacetimeDB.SATS
     }
 
     [SpacetimeDB.Type]
-    public partial struct ProductTypeElement
+    public partial struct ProductTypeElement(string? name, AlgebraicType algebraicType)
     {
-        public string? Name;
-        public AlgebraicType AlgebraicType;
-
-        public ProductTypeElement(string? name, AlgebraicType algebraicType)
-        {
-            this.Name = name;
-            this.AlgebraicType = algebraicType;
-        }
+        public string? Name = name;
+        public AlgebraicType AlgebraicType = algebraicType;
     }
 
     [SpacetimeDB.Type]
-    public partial struct MapType
+    public partial struct MapType(AlgebraicType key, AlgebraicType value)
     {
-        public AlgebraicType Key;
-        public AlgebraicType Value;
-
-        public MapType(AlgebraicType key, AlgebraicType value)
-        {
-            this.Key = key;
-            this.Value = value;
-        }
+        public AlgebraicType Key = key;
+        public AlgebraicType Value = value;
     }
 
     [SpacetimeDB.Type]
@@ -386,7 +361,7 @@ namespace SpacetimeDB.SATS
             );
         }
 
-        private static Dictionary<Type, object> enumTypeInfoCache = new();
+        private static Dictionary<Type, object> enumTypeInfoCache = [];
         private static readonly AlgebraicType unitType = Unit.GetSatsTypeInfo().AlgebraicType;
 
         public static TypeInfo<T> MakeEnum<T>()
@@ -400,17 +375,15 @@ namespace SpacetimeDB.SATS
             // plain enums are never recursive, so it should be fine to alloc & set typeref at once
             var typeRef = Module.FFI.AllocTypeRef();
 
-            Module
-                .FFI
-                .SetTypeRef<T>(
-                    typeRef,
-                    new SumType
-                    {
-                        Variants = Enum.GetNames(typeof(T))
-                            .Select(name => new SumTypeVariant(name, unitType))
-                            .ToList()
-                    }
-                );
+            Module.FFI.SetTypeRef<T>(
+                typeRef,
+                new SumType
+                {
+                    Variants = Enum.GetNames(typeof(T))
+                        .Select(name => new SumTypeVariant(name, unitType))
+                        .ToList()
+                }
+            );
 
             var typeInfo = new TypeInfo<T>(
                 typeRef,
@@ -455,13 +428,8 @@ namespace SpacetimeDB.SATS
     }
 
     [SpacetimeDB.Type]
-    public partial struct AlgebraicTypeRef
+    public partial struct AlgebraicTypeRef(int typeRef)
     {
-        public int TypeRef;
-
-        public AlgebraicTypeRef(int typeRef)
-        {
-            TypeRef = typeRef;
-        }
+        public int TypeRef = typeRef;
     }
 }

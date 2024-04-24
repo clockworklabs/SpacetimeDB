@@ -9,159 +9,100 @@ using System.Runtime.InteropServices;
 using SpacetimeDB.SATS;
 
 [SpacetimeDB.Type]
-public partial struct IndexDef
+public partial struct IndexDef(
+    string name,
+    Runtime.IndexType type,
+    bool isUnique,
+    RawBindings.ColId[] columnIds
+)
 {
-    string IndexName;
-    bool IsUnique;
-    Runtime.IndexType Type;
-    uint[] ColumnIds;
-
-    public IndexDef(
-        string name,
-        Runtime.IndexType type,
-        bool isUnique,
-        RawBindings.ColId[] columnIds
-    )
-    {
-        IndexName = name;
-        IsUnique = isUnique;
-        Type = type;
-        ColumnIds = columnIds.Select(id => (uint)id).ToArray();
-    }
+    string IndexName = name;
+    bool IsUnique = isUnique;
+    Runtime.IndexType Type = type;
+    uint[] ColumnIds = columnIds.Select(id => (uint)id).ToArray();
 }
 
 [SpacetimeDB.Type]
-public partial struct ColumnDef
+public partial struct ColumnDef(string name, AlgebraicType type)
 {
-    internal string ColName;
-    AlgebraicType ColType;
-
-    public ColumnDef(string name, AlgebraicType type)
-    {
-        ColName = name;
-        ColType = type;
-    }
+    internal string ColName = name;
+    AlgebraicType ColType = type;
 }
 
 [SpacetimeDB.Type]
-public partial struct ConstraintDef
+public partial struct ConstraintDef(string name, ColumnAttrs kind, uint[] columnIds)
 {
-    string ConstraintName;
+    string ConstraintName = name;
 
     // bitflags should be serialized as bytes rather than sum types
-    byte Kind;
-    uint[] ColumnIds;
-
-    public ConstraintDef(string name, ColumnAttrs kind, uint[] columnIds)
-    {
-        ConstraintName = name;
-        Kind = (byte)kind;
-        ColumnIds = columnIds;
-    }
+    byte Kind = (byte)kind;
+    uint[] ColumnIds = columnIds;
 }
 
 [SpacetimeDB.Type]
-public partial struct SequenceDef
+public partial struct SequenceDef(
+    string sequenceName,
+    uint colPos,
+    Int128? increment = null,
+    Int128? start = null,
+    Int128? min_value = null,
+    Int128? max_value = null,
+    Int128? allocated = null
+)
 {
-    string SequenceName;
-    uint ColPos;
-    Int128 increment;
-    Int128? start;
-    Int128? min_value;
-    Int128? max_value;
-    Int128 allocated;
-
-    public SequenceDef(
-        string sequenceName,
-        uint colPos,
-        Int128? increment = null,
-        Int128? start = null,
-        Int128? min_value = null,
-        Int128? max_value = null,
-        Int128? allocated = null
-    )
-    {
-        SequenceName = sequenceName;
-        ColPos = colPos;
-        this.increment = increment ?? 1;
-        this.start = start;
-        this.min_value = min_value;
-        this.max_value = max_value;
-        this.allocated = allocated ?? 4_096;
-    }
+    string SequenceName = sequenceName;
+    uint ColPos = colPos;
+    Int128 increment = increment ?? 1;
+    Int128? start = start;
+    Int128? min_value = min_value;
+    Int128? max_value = max_value;
+    Int128 allocated = allocated ?? 4_096;
 }
 
 // Not part of the database schema, just used by the codegen to group column definitions with their attributes.
-public struct ColumnDefWithAttrs
+public struct ColumnDefWithAttrs(ColumnDef columnDef, ColumnAttrs attrs)
 {
-    public ColumnDef ColumnDef;
-    public ColumnAttrs Attrs;
-
-    public ColumnDefWithAttrs(ColumnDef columnDef, ColumnAttrs attrs)
-    {
-        ColumnDef = columnDef;
-        Attrs = attrs;
-    }
+    public ColumnDef ColumnDef = columnDef;
+    public ColumnAttrs Attrs = attrs;
 }
 
 [SpacetimeDB.Type]
-public partial struct TableDef
+public partial struct TableDef(string tableName, ColumnDefWithAttrs[] columns)
 {
-    string TableName;
-    ColumnDef[] Columns;
+    string TableName = tableName;
+    ColumnDef[] Columns = columns.Select(col => col.ColumnDef).ToArray();
     IndexDef[] Indices = Array.Empty<IndexDef>();
-    ConstraintDef[] Constraints;
+    ConstraintDef[] Constraints = columns
+        // Important: the position must be stored here, before filtering.
+        .Select((col, pos) => (col, pos))
+        .Where(pair => pair.col.Attrs != ColumnAttrs.UnSet)
+        .Select(pair => new ConstraintDef(
+            $"ct_{tableName}_{pair.col.ColumnDef.ColName}_{pair.col.Attrs}",
+            pair.col.Attrs,
+            new[] { (uint)pair.pos }
+        ))
+        .ToArray();
     SequenceDef[] Sequences = Array.Empty<SequenceDef>();
 
     // "system" | "user"
-    string TableType;
+    string TableType = "user";
 
     // "public" | "private"
-    string TableAccess;
-
-    public TableDef(string tableName, ColumnDefWithAttrs[] columns)
-    {
-        TableName = tableName;
-        Columns = columns.Select(col => col.ColumnDef).ToArray();
-        Constraints = columns
-            // Important: the position must be stored here, before filtering.
-            .Select((col, pos) => (col, pos))
-            .Where(pair => pair.col.Attrs != ColumnAttrs.UnSet)
-            .Select(pair => new ConstraintDef(
-                $"ct_{tableName}_{pair.col.ColumnDef.ColName}_{pair.col.Attrs}",
-                pair.col.Attrs,
-                new[] { (uint)pair.pos }
-            ))
-            .ToArray();
-        TableType = "user";
-        TableAccess = tableName.StartsWith('_') ? "private" : "public";
-    }
+    string TableAccess = tableName.StartsWith('_') ? "private" : "public";
 }
 
 [SpacetimeDB.Type]
-public partial struct TableDesc
+public partial struct TableDesc(TableDef schema, AlgebraicTypeRef data)
 {
-    TableDef Schema;
-    AlgebraicTypeRef Data;
-
-    public TableDesc(TableDef schema, AlgebraicTypeRef data)
-    {
-        Schema = schema;
-        Data = data;
-    }
+    TableDef Schema = schema;
+    AlgebraicTypeRef Data = data;
 }
 
 [SpacetimeDB.Type]
-public partial struct ReducerDef
+public partial struct ReducerDef(string name, params ProductTypeElement[] args)
 {
-    string Name;
-    ProductTypeElement[] Args;
-
-    public ReducerDef(string name, params ProductTypeElement[] args)
-    {
-        Name = name;
-        Args = args;
-    }
+    string Name = name;
+    ProductTypeElement[] Args = args;
 }
 
 [SpacetimeDB.Type]
@@ -177,10 +118,10 @@ partial struct MiscModuleExport : SpacetimeDB.TaggedEnum<(TypeAlias TypeAlias, U
 [SpacetimeDB.Type]
 public partial struct ModuleDef
 {
-    List<AlgebraicType> Types = new();
-    List<TableDesc> Tables = new();
-    List<ReducerDef> Reducers = new();
-    List<MiscModuleExport> MiscExports = new();
+    List<AlgebraicType> Types = [];
+    List<TableDesc> Tables = [];
+    List<ReducerDef> Reducers = [];
+    List<MiscModuleExport> MiscExports = [];
 
     public ModuleDef() { }
 
@@ -254,7 +195,7 @@ public interface IReducer
 
 public static class FFI
 {
-    private static List<IReducer> reducers = new();
+    private static List<IReducer> reducers = [];
     private static ModuleDef module = new();
 
     public static void RegisterReducer(IReducer reducer)

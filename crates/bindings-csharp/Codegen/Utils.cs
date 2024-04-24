@@ -14,8 +14,9 @@ static class Utils
     {
         return symbol.ToDisplayString(
             SymbolDisplayFormat
-                .FullyQualifiedFormat
-                .WithMemberOptions(SymbolDisplayMemberOptions.IncludeContainingType)
+                .FullyQualifiedFormat.WithMemberOptions(
+                    SymbolDisplayMemberOptions.IncludeContainingType
+                )
                 .WithGenericsOptions(SymbolDisplayGenericsOptions.IncludeTypeParameters)
                 .WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted)
         );
@@ -85,24 +86,23 @@ static class Utils
                             // we don't currently do anything special whether or not it exists but might in the future
                             // so this requirement is mostly for future-proofing
                             && type.GetAttributes()
-                                .Any(
-                                    a =>
-                                        a.AttributeClass?.ToDisplayString()
-                                        == "SpacetimeDB.TypeAttribute"
+                                .Any(a =>
+                                    a.AttributeClass?.ToDisplayString()
+                                    == "SpacetimeDB.TypeAttribute"
                                 )
                         => $"SpacetimeDB.SATS.BuiltinType.MakeEnum<{type}>()",
                     SpecialType.None
                         => $"{type.OriginalDefinition.ToString() switch
-                    {
-                        "System.Collections.Generic.List<T>" => "SpacetimeDB.SATS.BuiltinType.MakeList",
-                        "System.Collections.Generic.Dictionary<TKey, TValue>" => "SpacetimeDB.SATS.BuiltinType.MakeMap",
-                        // If we're here, then this is nullable value type like `int?`.
-                        "System.Nullable<T>" => $"SpacetimeDB.SATS.SumType.MakeValueOption",
-                        var name when name.StartsWith("System.") => throw new InvalidOperationException(
-                            $"Unsupported system type {name}"
-                        ),
-                        _ => $"{type}.GetSatsTypeInfo",
-                    }}({string.Join(", ", namedType.TypeArguments.Select(GetTypeInfo))})",
+                        {
+                            "System.Collections.Generic.List<T>" => "SpacetimeDB.SATS.BuiltinType.MakeList",
+                            "System.Collections.Generic.Dictionary<TKey, TValue>" => "SpacetimeDB.SATS.BuiltinType.MakeMap",
+                            // If we're here, then this is nullable value type like `int?`.
+                            "System.Nullable<T>" => $"SpacetimeDB.SATS.SumType.MakeValueOption",
+                            var name when name.StartsWith("System.") => throw new InvalidOperationException(
+                                $"Unsupported system type {name}"
+                            ),
+                            _ => $"{type}.GetSatsTypeInfo",
+                        }}({string.Join(", ", namedType.TypeArguments.Select(GetTypeInfo))})",
                     _
                         => throw new InvalidOperationException(
                             $"Unsupported special type {type.SpecialType} ({type})"
