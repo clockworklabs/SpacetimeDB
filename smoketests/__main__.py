@@ -90,6 +90,8 @@ def main():
         unittest_parallel.main(buffer=buffer, verbose=verbosity, level="class", discovered_tests=tests, jobs=args.jobs)
     else:
         result = unittest.TextTestRunner(buffer=buffer, verbosity=verbosity).run(tests)
+        if not result.wasSuccessful():
+            parser.exit(status=1)
 
 
 if __name__ == '__main__':
