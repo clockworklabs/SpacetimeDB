@@ -17,9 +17,9 @@ use crate::{
     read_column::{ReadColumn, TypeError},
     static_assert_size,
 };
-use core::fmt;
 use core::hash::{BuildHasher, Hasher};
 use core::ops::RangeBounds;
+use core::{fmt, ptr};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_primitives::{ColId, ColList};
 use spacetimedb_sats::{
@@ -776,6 +776,26 @@ impl Serialize for RowRef<'_> {
         let (page, offset) = table.page_and_offset(self.pointer);
         // SAFETY: `ptr` points to a valid row in this table per above check.
         unsafe { serialize_row_from_page(ser, page, self.blob_store, offset, &table.row_layout) }
+    }
+}
+
+impl Eq for RowRef<'_> {}
+impl PartialEq for RowRef<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        // Ensure that the layouts are the same
+        // so that we can use `eq_row_in_page`.
+        // To do this, we first try address equality on the layouts.
+        // This should succeed when the rows originate from the same table.
+        // Otherwise, actually compare the layouts, which is expensive, but unlikely to happen.
+        let a_ty = self.row_layout();
+        let b_ty = other.row_layout();
+        if !(ptr::eq(a_ty, b_ty) || a_ty == b_ty) {
+            return false;
+        }
+        let (page_a, offset_a) = self.page_and_offset();
+        let (page_b, offset_b) = other.page_and_offset();
+        // SAFETY: `offset_a/b` are valid rows in `page_a/b` typed at `a_ty`.
+        unsafe { eq_row_in_page(page_a, page_b, offset_a, offset_b, a_ty) }
     }
 }
 
