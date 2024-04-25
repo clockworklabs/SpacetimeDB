@@ -447,6 +447,10 @@ async fn exec_import(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
     let nickname = args.get_one::<String>("name").cloned();
     config.can_set_name(nickname.as_deref())?;
 
+    if config.identity_configs().iter().any(|ic| ic.identity == identity) {
+        return Err(anyhow::anyhow!("Identity already exists in config"));
+    };
+
     config.identity_configs_mut().push(IdentityConfig {
         identity,
         token,
