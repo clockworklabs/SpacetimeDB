@@ -149,7 +149,7 @@ pub async fn select_identity_config(
     server: Option<&str>,
 ) -> Result<IdentityConfig, anyhow::Error> {
     if let Some(identity_or_name) = identity_or_name {
-        if identity_or_name == "" {
+        if identity_or_name.is_empty() {
             return Err(anyhow::anyhow!("Identity value cannot be empty."));
         }
 
