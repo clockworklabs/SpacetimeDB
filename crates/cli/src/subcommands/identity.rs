@@ -577,7 +577,7 @@ async fn exec_token(config: Config, args: &ArgMatches) -> Result<(), anyhow::Err
 async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let new_name = args.get_one::<String>("name").unwrap();
     let identity = args.get_one::<String>("identity").unwrap();
-    config.can_set_name(Some(identity.as_str()))?;
+    config.can_set_name(Some(new_name.as_str()))?;
     let ic = config
         .get_identity_config_mut(identity)
         .ok_or_else(|| anyhow::anyhow!("Missing identity credentials for identity: {identity}"))?;

@@ -9,6 +9,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::config::Config;
+use crate::util;
 use crate::util::unauth_error_context;
 use crate::util::{add_auth_header_opt, get_auth_header};
 
@@ -111,6 +112,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let build_debug = args.get_flag("debug");
     let wasm_file = args.get_one::<PathBuf>("wasm_file");
     let database_host = config.get_host_url(server)?;
+    // Validate the identity first to provide an early error message
+    util::select_identity_config(&mut config, identity, server).await?;
 
     let mut query_params = Vec::<(&str, &str)>::new();
     query_params.push(("host_type", host_type.as_str()));
