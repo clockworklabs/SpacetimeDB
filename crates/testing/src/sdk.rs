@@ -147,6 +147,8 @@ fn publish_module(wasm_file: &str) -> String {
     let name = random_module_name();
     invoke_cli(&[
         "publish",
+        "--server",
+        "local",
         "--debug",
         "--project-path",
         wasm_file,
