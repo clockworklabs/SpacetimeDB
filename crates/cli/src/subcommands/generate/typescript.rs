@@ -133,9 +133,9 @@ fn convert_type<'a>(
     fmt_fn(move |f| match ty {
         AlgebraicType::Product(product) => {
             if product.is_identity() {
-                write!(f, "new Identity({}.asProductValue().elements[0].asBytes())", value)
+                write!(f, "new Identity({value}.asProductValue().elements[0].asBytes())")
             } else if product.is_address() {
-                write!(f, "new Address({}.asProductValue().elements[0].asBytes())", value)
+                write!(f, "new Address({value}.asProductValue().elements[0].asBytes())")
             } else {
                 unimplemented!()
             }
@@ -208,7 +208,7 @@ fn convert_type<'a>(
         AlgebraicType::Builtin(b) => fmt::Display::fmt(&convert_builtintype(ctx, vecnest, b, &value, ref_prefix), f),
         AlgebraicType::Ref(r) => {
             let name = typescript_typename(ctx, *r);
-            write!(f, "{ref_prefix}{name}.fromValue({value})",)
+            write!(f, "{ref_prefix}{name}.fromValue({value})")
         }
     })
 }
@@ -329,7 +329,7 @@ fn serialize_type<'a>(
         AlgebraicType::Builtin(_) => write!(f, "{value}"),
         AlgebraicType::Ref(r) => {
             let typename = typescript_typename(ctx, *r);
-            write!(f, "{prefix}{typename}.serialize({value})",)
+            write!(f, "{prefix}{typename}.serialize({value})")
         }
     })
 }
@@ -446,8 +446,14 @@ pub fn autogen_typescript_sum(ctx: &GenCtx, name: &str, sum_type: &SumType) -> S
             // export an object or a function representing an enum value, so people
             // can pass it as an argument
             match variant.algebraic_type {
-                AlgebraicType::Product(_) => writeln!(output, "export const {variant_name} = {{ tag: \"{variant_name}\", value: undefined }};"),
-                _ => writeln!(output, "export const {variant_name} = (value: {a_type}): {variant_name} => {{ return {{ tag: \"{variant_name}\", value }} }};"),
+                AlgebraicType::Product(_) => writeln!(
+                    output,
+                    "export const {variant_name} = {{ tag: \"{variant_name}\", value: undefined }};"
+                ),
+                _ => writeln!(
+                    output,
+                    "export const {variant_name} = (value: {a_type}): {variant_name} => {{ return {{ tag: \"{variant_name}\", value }} }};"
+                ),
             };
         }
 
@@ -686,7 +692,7 @@ fn autogen_typescript_product_table_common(
             let arg = format!("{}: {}", field_name_camel_case, ty_fmt(ctx, &field.algebraic_type, ""));
             let assignment = format!("this.{field_name_camel_case} = {field_name_camel_case};");
 
-            writeln!(output, "public {arg};",);
+            writeln!(output, "public {arg};");
 
             constructor_signature.push(arg);
             constructor_assignments.push(assignment);
@@ -700,15 +706,11 @@ fn autogen_typescript_product_table_common(
                 .pk()
                 .map(|field| format!("\"{}\"", field.col_name.deref().to_case(Case::Camel)))
             {
-                writeln!(
-                    output,
-                    "public static primaryKey: string | undefined = {};",
-                    primary_key
-                );
+                writeln!(output, "public static primaryKey: string | undefined = {primary_key};");
                 writeln!(output);
             }
         } else {
-            writeln!(output, "public static primaryKey: string | undefined = undefined;",);
+            writeln!(output, "public static primaryKey: string | undefined = undefined;");
             writeln!(output);
         }
 
@@ -901,7 +903,10 @@ fn autogen_typescript_access_funcs_for_struct(
             }
         });
 
-        writeln!(output, "public static filterBy{typescript_field_name_pascal}(value: {typescript_field_type}): {filter_return_type}");
+        writeln!(
+            output,
+            "public static filterBy{typescript_field_name_pascal}(value: {typescript_field_type}): {filter_return_type}"
+        );
 
         writeln!(output, "{{");
         {
@@ -917,7 +922,7 @@ fn autogen_typescript_access_funcs_for_struct(
             {
                 indent_scope!(output);
                 if typescript_field_type == "Identity" || typescript_field_type == "Address" {
-                    writeln!(output, "if (instance.{typescript_field_name_camel}.isEqual(value)) {{",);
+                    writeln!(output, "if (instance.{typescript_field_name_camel}.isEqual(value)) {{");
                     {
                         indent_scope!(output);
                         if is_unique {
@@ -931,16 +936,16 @@ fn autogen_typescript_access_funcs_for_struct(
                     writeln!(
                         output,
                         "let byteArrayCompare = function (a1: Uint8Array, a2: Uint8Array)
-                    {{
-                        if (a1.length !== a2.length)
-                            return false;
+{{
+    if (a1.length !== a2.length)
+        return false;
 
-                        for (let i=0; i<a1.length; i++)
-                            if (a1[i]!==a2[i])
-                                return false;
+    for (let i=0; i<a1.length; i++)
+        if (a1[i]!==a2[i])
+            return false;
 
-                        return true;
-                    }}"
+    return true;
+}}"
                     );
                     writeln!(output);
                     writeln!(
