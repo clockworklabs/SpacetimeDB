@@ -6,7 +6,7 @@ using System.IO;
 using System.Linq.Expressions;
 using SpacetimeDB.SATS;
 
-class ErasedValue
+class ErasedValue(Action<BinaryWriter> write)
 {
     private static readonly TypeInfo<ErasedValue> erasedTypeInfo = new TypeInfo<ErasedValue>(
         // uninhabited type (sum type with zero variants)
@@ -18,28 +18,17 @@ class ErasedValue
 
     public static TypeInfo<ErasedValue> GetSatsTypeInfo() => erasedTypeInfo;
 
-    private readonly Action<BinaryWriter> write;
-
-    public ErasedValue(Action<BinaryWriter> write)
-    {
-        this.write = write;
-    }
+    private readonly Action<BinaryWriter> write = write;
 }
 
 [SpacetimeDB.Type]
 partial struct Rhs : SpacetimeDB.TaggedEnum<(ErasedValue Value, byte Field)> { }
 
 [SpacetimeDB.Type]
-partial struct CmpArgs
+partial struct CmpArgs(byte lhsField, Rhs rhs)
 {
-    public byte LhsField;
-    public Rhs Rhs;
-
-    public CmpArgs(byte lhsField, Rhs rhs)
-    {
-        LhsField = lhsField;
-        Rhs = rhs;
-    }
+    public byte LhsField = lhsField;
+    public Rhs Rhs = rhs;
 }
 
 [SpacetimeDB.Type]
@@ -54,16 +43,10 @@ enum OpCmp
 }
 
 [SpacetimeDB.Type]
-partial struct Cmp
+partial struct Cmp(OpCmp op, CmpArgs args)
 {
-    public OpCmp op;
-    public CmpArgs args;
-
-    public Cmp(OpCmp op, CmpArgs args)
-    {
-        this.op = op;
-        this.args = args;
-    }
+    public OpCmp op = op;
+    public CmpArgs args = args;
 }
 
 [SpacetimeDB.Type]
@@ -74,19 +57,12 @@ enum OpLogic
 }
 
 [SpacetimeDB.Type]
-partial struct Logic
+partial struct Logic(Expr lhs, OpLogic op, Expr rhs)
 {
-    public Expr lhs;
+    public Expr lhs = lhs;
 
-    public OpLogic op;
-    public Expr rhs;
-
-    public Logic(Expr lhs, OpLogic op, Expr rhs)
-    {
-        this.lhs = lhs;
-        this.op = op;
-        this.rhs = rhs;
-    }
+    public OpLogic op = op;
+    public Expr rhs = rhs;
 }
 
 [SpacetimeDB.Type]
@@ -96,16 +72,10 @@ enum OpUnary
 }
 
 [SpacetimeDB.Type]
-partial struct Unary
+partial struct Unary(OpUnary op, Expr arg)
 {
-    public OpUnary op;
-    public Expr arg;
-
-    public Unary(OpUnary op, Expr arg)
-    {
-        this.op = op;
-        this.arg = arg;
-    }
+    public OpUnary op = op;
+    public Expr arg = arg;
 }
 
 [SpacetimeDB.Type]
