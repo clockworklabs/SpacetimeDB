@@ -427,7 +427,7 @@ Finally we just need to add a call to `Main` in `Program.cs`:
 Main();
 ```
 
-Now we can run the client, by hitting start in Visual Studio or running the following command in the `client` directory:
+Now, we can run the client by hitting start in Visual Studio or Rider; or by running the following command in the `client` directory:
 
 ```bash
 dotnet run --project client
