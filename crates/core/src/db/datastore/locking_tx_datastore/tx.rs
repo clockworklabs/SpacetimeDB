@@ -8,6 +8,7 @@ use super::{
 use crate::execution_context::ExecutionContext;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::{db::def::TableSchema, AlgebraicValue};
+use std::sync::Arc;
 use std::{
     ops::RangeBounds,
     time::{Duration, Instant},
@@ -20,7 +21,7 @@ pub struct TxId {
 }
 
 impl StateView for TxId {
-    fn get_schema(&self, table_id: &TableId) -> Option<&TableSchema> {
+    fn get_schema(&self, table_id: &TableId) -> Option<&Arc<TableSchema>> {
         self.committed_state_shared_lock.get_schema(table_id)
     }
 

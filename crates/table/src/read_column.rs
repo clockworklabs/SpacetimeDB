@@ -11,8 +11,8 @@ use crate::{
     util::slice_assume_init_ref,
 };
 use spacetimedb_sats::{
-    algebraic_value::ser::ValueSerializer, AlgebraicType, AlgebraicValue, ArrayValue, MapValue, ProductType,
-    ProductValue, SumValue,
+    algebraic_value::{ser::ValueSerializer, Packed},
+    AlgebraicType, AlgebraicValue, ArrayValue, MapValue, ProductType, ProductValue, SumValue,
 };
 use std::{cell::Cell, mem};
 use thiserror::Error;
@@ -306,9 +306,9 @@ macro_rules! impl_read_column_via_av {
 }
 
 impl_read_column_via_av! {
-    AlgebraicTypeLayout::VarLen(VarLenType::String) => into_string => String;
+    AlgebraicTypeLayout::VarLen(VarLenType::String) => into_string => Box<str>;
     AlgebraicTypeLayout::VarLen(VarLenType::Array(_)) => into_array => ArrayValue;
-    AlgebraicTypeLayout::VarLen(VarLenType::Map(_)) => into_map => MapValue;
+    AlgebraicTypeLayout::VarLen(VarLenType::Map(_)) => into_map => Box<MapValue>;
     AlgebraicTypeLayout::Sum(_) => into_sum => SumValue;
     AlgebraicTypeLayout::Product(_) => into_product => ProductValue;
 }
@@ -336,24 +336,25 @@ impl_read_column_via_from! {
     u32 => spacetimedb_primitives::IndexId;
     u32 => spacetimedb_primitives::ConstraintId;
     u32 => spacetimedb_primitives::SequenceId;
+    u128 => Packed<u128>;
+    i128 => Packed<i128>;
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{
-        blob_store::HashMapBlobStore, indexes::SquashedOffset, proptest_sats::generate_typed_row, table::Table,
-    };
+    use crate::{blob_store::HashMapBlobStore, indexes::SquashedOffset, table::Table};
     use proptest::{prelude::*, prop_assert_eq, proptest, test_runner::TestCaseResult};
     use spacetimedb_sats::{
         db::def::{TableDef, TableSchema},
         product,
+        proptest::generate_typed_row,
     };
 
     fn table(ty: ProductType) -> Table {
         let def = TableDef::from_product("", ty);
         let schema = TableSchema::from_def(0.into(), def);
-        Table::new(schema, SquashedOffset::COMMITTED_STATE)
+        Table::new(schema.into(), SquashedOffset::COMMITTED_STATE)
     }
 
     proptest! {
@@ -373,7 +374,7 @@ mod test {
 
             let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
 
-            for (idx, orig_col_value) in val.elements.into_iter().enumerate() {
+            for (idx, orig_col_value) in val.into_iter().enumerate() {
                 let read_col_value = row_ref.read_col::<AlgebraicValue>(idx).unwrap();
                 prop_assert_eq!(orig_col_value, read_col_value);
             }
@@ -391,7 +392,7 @@ mod test {
 
             let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
 
-            for (idx, col_ty) in ty.elements.into_iter().enumerate() {
+            for (idx, col_ty) in ty.elements.iter().enumerate() {
                 assert_wrong_type_error::<u8>(row_ref, idx, &col_ty.algebraic_type, AlgebraicType::U8)?;
                 assert_wrong_type_error::<i8>(row_ref, idx, &col_ty.algebraic_type, AlgebraicType::I8)?;
                 assert_wrong_type_error::<u16>(row_ref, idx, &col_ty.algebraic_type, AlgebraicType::U16)?;
@@ -405,7 +406,7 @@ mod test {
                 assert_wrong_type_error::<f32>(row_ref, idx, &col_ty.algebraic_type, AlgebraicType::F32)?;
                 assert_wrong_type_error::<f64>(row_ref, idx, &col_ty.algebraic_type, AlgebraicType::F64)?;
                 assert_wrong_type_error::<bool>(row_ref, idx, &col_ty.algebraic_type, AlgebraicType::Bool)?;
-                assert_wrong_type_error::<String>(row_ref, idx, &col_ty.algebraic_type, AlgebraicType::String)?;
+                assert_wrong_type_error::<Box<str>>(row_ref, idx, &col_ty.algebraic_type, AlgebraicType::String)?;
             }
         }
 
@@ -509,15 +510,15 @@ mod test {
 
         read_column_bool { AlgebraicType::Bool => bool = true };
 
-        read_column_empty_string { AlgebraicType::String => String = "".to_string() };
+        read_column_empty_string { AlgebraicType::String => Box<str> = "".into() };
 
         // Use a short string which fits in a single granule.
-        read_column_short_string { AlgebraicType::String => String = "short string".to_string() };
+        read_column_short_string { AlgebraicType::String => Box<str> = "short string".into() };
 
         // Use a medium-sized string which takes multiple granules.
-        read_column_medium_string { AlgebraicType::String => String = "medium string.".repeat(16) };
+        read_column_medium_string { AlgebraicType::String => Box<str> = "medium string.".repeat(16).into() };
 
         // Use a long string which will hit the blob store.
-        read_column_long_string { AlgebraicType::String => String = "long string. ".repeat(2048) };
+        read_column_long_string { AlgebraicType::String => Box<str> = "long string. ".repeat(2048).into() };
     }
 }

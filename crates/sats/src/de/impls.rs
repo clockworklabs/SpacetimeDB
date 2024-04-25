@@ -320,7 +320,7 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, AlgebraicType> {
             &AlgebraicType::U128 => u128::deserialize(de).map(Into::into),
             &AlgebraicType::F32 => f32::deserialize(de).map(Into::into),
             &AlgebraicType::F64 => f64::deserialize(de).map(Into::into),
-            &AlgebraicType::String => String::deserialize(de).map(Into::into),
+            &AlgebraicType::String => <Box<str>>::deserialize(de).map(Into::into),
         }
     }
 }
@@ -417,9 +417,9 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
         /// Deserialize a vector and `map` it to the appropriate `ArrayValue` variant.
         fn de_array<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
             de: D,
-            map: impl FnOnce(Vec<T>) -> ArrayValue,
+            map: impl FnOnce(Box<[T]>) -> ArrayValue,
         ) -> Result<ArrayValue, D::Error> {
-            de.deserialize_array(BasicVecVisitor).map(map)
+            de.deserialize_array(BasicVecVisitor).map(<Box<[_]>>::from).map(map)
         }
 
         let mut ty = &*self.ty().elem_ty;
@@ -434,19 +434,26 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
                 }
                 AlgebraicType::Sum(ty) => deserializer
                     .deserialize_array_seed(BasicVecVisitor, self.with(ty))
+                    .map(<Box<[_]>>::from)
                     .map(ArrayValue::Sum),
                 AlgebraicType::Product(ty) => deserializer
                     .deserialize_array_seed(BasicVecVisitor, self.with(ty))
+                    .map(<Box<[_]>>::from)
                     .map(ArrayValue::Product),
                 AlgebraicType::Builtin(crate::BuiltinType::Array(ty)) => deserializer
                     .deserialize_array_seed(BasicVecVisitor, self.with(ty))
+                    .map(<Box<[_]>>::from)
                     .map(ArrayValue::Array),
                 AlgebraicType::Builtin(crate::BuiltinType::Map(ty)) => deserializer
                     .deserialize_array_seed(BasicVecVisitor, self.with(&**ty))
+                    .map(<Box<[_]>>::from)
                     .map(ArrayValue::Map),
                 &AlgebraicType::Bool => de_array(deserializer, ArrayValue::Bool),
                 &AlgebraicType::I8 => de_array(deserializer, ArrayValue::I8),
-                &AlgebraicType::U8 => deserializer.deserialize_bytes(OwnedSliceVisitor).map(ArrayValue::U8),
+                &AlgebraicType::U8 => deserializer
+                    .deserialize_bytes(OwnedSliceVisitor)
+                    .map(<Box<[_]>>::from)
+                    .map(ArrayValue::U8),
                 &AlgebraicType::I16 => de_array(deserializer, ArrayValue::I16),
                 &AlgebraicType::U16 => de_array(deserializer, ArrayValue::U16),
                 &AlgebraicType::I32 => de_array(deserializer, ArrayValue::I32),

@@ -100,7 +100,7 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
                 Err(err) => return Err(err),
             },
             Column::QualifiedWildcard { table: name } => {
-                if let Some(t) = table.iter_tables().find(|x| x.table_name == name) {
+                if let Some(t) = table.iter_tables().find(|x| *x.table_name == name) {
                     for c in t.columns().iter() {
                         col_ids.push(FieldName::named(&t.table_name, &c.col_name).into());
                     }
@@ -121,7 +121,7 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
     }
 
     let source_expr = SourceExpr::DbTable(db_table_raw(
-        &table.root,
+        &*table.root,
         table.root.table_id,
         table.root.table_type,
         table.root.table_access,
@@ -133,7 +133,7 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
         for join in joins {
             match join {
                 Join::Inner { rhs, on } => {
-                    let rhs_source_expr = SourceExpr::DbTable(db_table(rhs, rhs.table_id));
+                    let rhs_source_expr = SourceExpr::DbTable(db_table(&**rhs, rhs.table_id));
                     match on.op {
                         OpCmp::Eq => {}
                         x => unreachable!("Unsupported operator `{x}` for joins"),
@@ -171,30 +171,26 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
 }
 
 /// Builds the schema description [DbTable] from the [TableSchema] and their list of columns
-fn compile_columns(table: &TableSchema, columns: Vec<FieldName>) -> DbTable {
-    let mut new = Vec::with_capacity(columns.len());
+fn compile_columns(table: &TableSchema, field_names: Vec<FieldName>) -> DbTable {
+    let mut columns = Vec::with_capacity(field_names.len());
+    let cols = field_names
+        .into_iter()
+        .filter_map(|col| table.get_column_by_field(&col))
+        .map(|col| relation::Column::new(FieldName::named(&table.table_name, &col.col_name), col.col_type.clone()));
+    columns.extend(cols);
 
-    for col in columns.into_iter() {
-        if let Some(x) = table.get_column_by_field(&col) {
-            let field = FieldName::named(&table.table_name, &x.col_name);
-            new.push(relation::Column::new(field, x.col_type.clone(), x.col_pos));
-        }
-    }
-    DbTable::new(
-        Arc::new(Header::new(table.table_name.clone(), new, table.get_constraints())),
-        table.table_id,
-        table.table_type,
-        table.table_access,
-    )
+    let header = Arc::new(Header::new(table.table_name.clone(), columns, table.get_constraints()));
+
+    DbTable::new(header, table.table_id, table.table_type, table.table_access)
 }
 
 /// Compiles a `INSERT ...` clause
 fn compile_insert(
-    table: TableSchema,
+    table: &TableSchema,
     columns: Vec<FieldName>,
     values: Vec<Vec<FieldExpr>>,
 ) -> Result<CrudExpr, PlanError> {
-    let source_expr = SourceExpr::DbTable(compile_columns(&table, columns));
+    let source_expr = SourceExpr::DbTable(compile_columns(table, columns));
 
     let mut rows = Vec::with_capacity(values.len());
     for x in values {
@@ -219,28 +215,28 @@ fn compile_insert(
 }
 
 /// Compiles a `DELETE ...` clause
-fn compile_delete(table: TableSchema, selection: Option<Selection>) -> Result<CrudExpr, PlanError> {
+fn compile_delete(table: Arc<TableSchema>, selection: Option<Selection>) -> Result<CrudExpr, PlanError> {
     let query = if let Some(filter) = selection {
-        let query = QueryExpr::new(&table);
+        let query = QueryExpr::new(&*table);
         compile_where(query, &From::new(table), filter)?
     } else {
-        QueryExpr::new(&table)
+        QueryExpr::new(&*table)
     };
     Ok(CrudExpr::Delete { query })
 }
 
 /// Compiles a `UPDATE ...` clause
 fn compile_update(
-    table: TableSchema,
+    table: Arc<TableSchema>,
     assignments: HashMap<FieldName, FieldExpr>,
     selection: Option<Selection>,
 ) -> Result<CrudExpr, PlanError> {
     let table = From::new(table);
     let delete = if let Some(filter) = selection.clone() {
-        let query = QueryExpr::new(&table.root);
+        let query = QueryExpr::new(&*table.root);
         compile_where(query, &table, filter)?
     } else {
-        QueryExpr::new(&table.root)
+        QueryExpr::new(&*table.root)
     };
 
     Ok(CrudExpr::Update { delete, assignments })
@@ -268,7 +264,7 @@ fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, P
             project,
             selection,
         } => CrudExpr::Query(compile_select(from, project, selection)?),
-        SqlAst::Insert { table, columns, values } => compile_insert(table, columns, values)?,
+        SqlAst::Insert { table, columns, values } => compile_insert(&table, columns, values)?,
         SqlAst::Update {
             table,
             assignments,
@@ -281,6 +277,8 @@ fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, P
             kind,
             table_access,
         } => compile_drop(name, kind, table_access)?,
+        SqlAst::SetVar { name, value } => CrudExpr::SetVar { name, value },
+        SqlAst::ReadVar { name } => CrudExpr::ReadVar { name },
     };
 
     Ok(q.optimize(&|table_id, table_name| db.row_count(table_id, table_name)))
@@ -290,13 +288,14 @@ fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, P
 mod tests {
     use super::*;
     use crate::db::datastore::traits::IsolationLevel;
-    use crate::db::relational_db::tests_utils::make_test_db;
+    use crate::db::relational_db::tests_utils::TestDB;
     use crate::execution_context::ExecutionContext;
-    use crate::sql::execute::execute_sql;
+    use crate::sql::execute::{execute_sql, run};
     use crate::vm::tests::create_table_with_rows;
-    use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_lib::error::{ResultTest, TestError};
     use spacetimedb_lib::identity::AuthCtx;
     use spacetimedb_lib::operator::OpQuery;
+    use spacetimedb_lib::{Address, Identity};
     use spacetimedb_primitives::{col_list, ColList, TableId};
     use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductType};
     use spacetimedb_vm::expr::{IndexJoin, IndexScan, JoinExpr, Query};
@@ -330,7 +329,7 @@ mod tests {
 
     #[test]
     fn compile_eq() -> ResultTest<()> {
-        let (db, _) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [test] without any indexes
         let schema = &[("a", AlgebraicType::U64)];
@@ -350,7 +349,7 @@ mod tests {
 
     #[test]
     fn compile_not_eq() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [test] with cols [a, b] and index on [b].
         db.create_table_for_test(
@@ -373,7 +372,7 @@ mod tests {
 
     #[test]
     fn compile_index_eq() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [test] with index on [a]
         let schema = &[("a", AlgebraicType::U64)];
@@ -392,8 +391,71 @@ mod tests {
     }
 
     #[test]
+    fn compile_eq_identity_address() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        // Create table [test] without any indexes
+        let schema = &[
+            ("identity", Identity::get_type()),
+            ("identity_mix", Identity::get_type()),
+            ("address", Address::get_type()),
+        ];
+        let indexes = &[];
+        let table_id = db.create_table_for_test("test", schema, indexes)?;
+
+        let row = product![
+            Identity::__dummy(),
+            Identity::from_hex("93dda09db9a56d8fa6c024d843e805d8262191db3b4ba84c5efcd1ad451fed4e").unwrap(),
+            Address::__DUMMY
+        ];
+
+        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+            db.insert(tx, table_id, row.clone())?;
+            Ok::<(), TestError>(())
+        })?;
+
+        // Check can be used by CRUD ops:
+        let sql = &format!(
+            "INSERT INTO test (identity, identity_mix, address) VALUES (0x{}, x'91DDA09DB9A56D8FA6C024D843E805D8262191DB3B4BA84C5EFCD1AD451FED4E', 0x{})",
+            Identity::__dummy().to_hex().as_str(),
+            Address::__DUMMY.to_hex().as_str(),
+        );
+        run(&db, sql, AuthCtx::for_testing())?;
+
+        let tx = db.begin_tx();
+        // Compile query, check for both hex formats and it to be case-insensitive...
+        let sql = &format!(
+            "select * from test where identity = 0x{} AND identity_mix = x'93dda09db9a56d8fa6c024d843e805D8262191db3b4bA84c5efcd1ad451fed4e' AND address = x'{}' AND address = 0x{}",
+            Identity::__dummy().to_hex().as_str(),
+            Address::__DUMMY.to_hex().as_str(),
+            Address::__DUMMY.to_hex().as_str(),
+        );
+
+        let rows = run(&db, sql, AuthCtx::for_testing())?;
+
+        let CrudExpr::Query(QueryExpr {
+            source: _,
+            query: mut ops,
+        }) = compile_sql(&db, &tx, sql)?.remove(0)
+        else {
+            panic!("Expected QueryExpr");
+        };
+
+        assert_eq!(1, ops.len());
+
+        // Assert no index scan
+        let Query::Select(_) = ops.remove(0) else {
+            panic!("Expected Select");
+        };
+
+        assert_eq!(rows[0].data, vec![row]);
+
+        Ok(())
+    }
+
+    #[test]
     fn compile_eq_and_eq() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [test] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -415,7 +477,7 @@ mod tests {
 
     #[test]
     fn compile_index_eq_and_eq() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [test] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -437,7 +499,7 @@ mod tests {
 
     #[test]
     fn compile_index_multi_eq_and_eq() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [test] with index on [b]
         let schema = &[
@@ -460,7 +522,7 @@ mod tests {
 
     #[test]
     fn compile_eq_or_eq() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [test] with indexes on [a] and [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -481,7 +543,7 @@ mod tests {
 
     #[test]
     fn compile_index_range_open() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [test] with indexes on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -502,7 +564,7 @@ mod tests {
 
     #[test]
     fn compile_index_range_closed() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [test] with indexes on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -528,7 +590,7 @@ mod tests {
 
     #[test]
     fn compile_index_eq_select_range() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [test] with indexes on [a] and [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -550,7 +612,7 @@ mod tests {
 
     #[test]
     fn compile_join_lhs_push_down() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [lhs] with index on [a]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -608,16 +670,16 @@ mod tests {
         };
 
         assert_eq!(table_id, rhs_id);
-        assert_eq!(lhs_field, "b");
-        assert_eq!(rhs_field, "b");
-        assert_eq!(lhs_table, "lhs");
-        assert_eq!(rhs_table, "rhs");
+        assert_eq!(&**lhs_field, "b");
+        assert_eq!(&**rhs_field, "b");
+        assert_eq!(&**lhs_table, "lhs");
+        assert_eq!(&**rhs_table, "rhs");
         Ok(())
     }
 
     #[test]
     fn compile_join_lhs_push_down_no_index() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [lhs] with no indexes
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -657,8 +719,8 @@ mod tests {
             panic!("unexpected left hand side {:#?}", **lhs);
         };
 
-        assert_eq!(table, "lhs");
-        assert_eq!(field, "a");
+        assert_eq!(&**table, "lhs");
+        assert_eq!(&**field, "a");
 
         let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **rhs else {
             panic!("unexpected right hand side {:#?}", **rhs);
@@ -688,17 +750,17 @@ mod tests {
         };
 
         assert_eq!(table_id, rhs_id);
-        assert_eq!(lhs_field, "b");
-        assert_eq!(rhs_field, "b");
-        assert_eq!(lhs_table, "lhs");
-        assert_eq!(rhs_table, "rhs");
+        assert_eq!(&**lhs_field, "b");
+        assert_eq!(&**rhs_field, "b");
+        assert_eq!(&**lhs_table, "lhs");
+        assert_eq!(&**rhs_table, "rhs");
         assert!(rhs.is_empty());
         Ok(())
     }
 
     #[test]
     fn compile_join_rhs_push_down_no_index() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [lhs] with no indexes
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -749,10 +811,10 @@ mod tests {
         };
 
         assert_eq!(table_id, rhs_id);
-        assert_eq!(lhs_field, "b");
-        assert_eq!(rhs_field, "b");
-        assert_eq!(lhs_table, "lhs");
-        assert_eq!(rhs_table, "rhs");
+        assert_eq!(&**lhs_field, "b");
+        assert_eq!(&**rhs_field, "b");
+        assert_eq!(&**lhs_table, "lhs");
+        assert_eq!(&**rhs_table, "rhs");
 
         // The selection should be pushed onto the rhs of the join
         let Query::Select(ColumnOp::Cmp {
@@ -768,8 +830,8 @@ mod tests {
             panic!("unexpected left hand side {:#?}", **lhs);
         };
 
-        assert_eq!(table, "rhs");
-        assert_eq!(field, "c");
+        assert_eq!(&**table, "rhs");
+        assert_eq!(&**field, "c");
 
         let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **rhs else {
             panic!("unexpected right hand side {:#?}", **rhs);
@@ -779,7 +841,7 @@ mod tests {
 
     #[test]
     fn compile_join_lhs_and_rhs_push_down() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [lhs] with index on [a]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -838,10 +900,10 @@ mod tests {
         };
 
         assert_eq!(table_id, rhs_id);
-        assert_eq!(lhs_field, "b");
-        assert_eq!(rhs_field, "b");
-        assert_eq!(lhs_table, "lhs");
-        assert_eq!(rhs_table, "rhs");
+        assert_eq!(&**lhs_field, "b");
+        assert_eq!(&**rhs_field, "b");
+        assert_eq!(&**lhs_table, "lhs");
+        assert_eq!(&**rhs_table, "rhs");
 
         assert_eq!(1, rhs.len());
 
@@ -854,7 +916,7 @@ mod tests {
 
     #[test]
     fn compile_index_join() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -912,8 +974,8 @@ mod tests {
         assert_eq!(*table_id, rhs_id);
         assert_eq!(*index_table, lhs_id);
         assert_eq!(index_col, &1.into());
-        assert_eq!(probe_field, "b");
-        assert_eq!(probe_table, "rhs");
+        assert_eq!(&**probe_field, "b");
+        assert_eq!(&**probe_table, "rhs");
 
         assert_eq!(2, rhs.len());
 
@@ -941,8 +1003,8 @@ mod tests {
             panic!("unexpected left hand side {:#?}", field);
         };
 
-        assert_eq!(table, "rhs");
-        assert_eq!(field, "d");
+        assert_eq!(&**table, "rhs");
+        assert_eq!(&**field, "d");
 
         let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **value else {
             panic!("unexpected right hand side {:#?}", value);
@@ -952,7 +1014,7 @@ mod tests {
 
     #[test]
     fn compile_index_multi_join() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -1010,8 +1072,8 @@ mod tests {
         assert_eq!(*table_id, rhs_id);
         assert_eq!(*index_table, lhs_id);
         assert_eq!(index_col, &1.into());
-        assert_eq!(probe_field, "b");
-        assert_eq!(probe_table, "rhs");
+        assert_eq!(&**probe_field, "b");
+        assert_eq!(&**probe_table, "rhs");
 
         assert_eq!(2, rhs.len());
 
@@ -1034,8 +1096,8 @@ mod tests {
             panic!("unexpected left hand side {:#?}", field);
         };
 
-        assert_eq!(table, "rhs");
-        assert_eq!(field, "d");
+        assert_eq!(&**table, "rhs");
+        assert_eq!(&**field, "d");
 
         let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **value else {
             panic!("unexpected right hand side {:#?}", value);
@@ -1045,7 +1107,7 @@ mod tests {
 
     #[test]
     fn compile_check_ambiguous_field() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [lhs] with index on [a]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -1087,7 +1149,7 @@ mod tests {
 
     #[test]
     fn compile_enum_field() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [enum] with enum type on [a]
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
@@ -1101,7 +1163,7 @@ mod tests {
         let sql = "select * from enum where a = 'Player'";
         let q = compile_sql(&db, &tx, sql);
         assert!(q.is_ok());
-        let result = execute_sql(&db, q.unwrap(), AuthCtx::for_testing())?;
+        let result = execute_sql(&db, sql, q.unwrap(), AuthCtx::for_testing())?;
         assert_eq!(result[0].data, vec![product![AlgebraicValue::enum_simple(0)]]);
         Ok(())
     }

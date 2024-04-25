@@ -507,7 +507,7 @@ fn u32_array_value<const N: usize>(arr: [u32; N]) -> ProductValue {
 
 fn u32_matrix_value<const N: usize, const M: usize>(matrix: [[u32; N]; M]) -> ProductValue {
     let elements = matrix
-        .map(|inner| AlgebraicValue::product(inner.map(AlgebraicValue::U32).into()))
+        .map(|inner| AlgebraicValue::product(inner.map(AlgebraicValue::U32)))
         .into();
     ProductValue { elements }
 }
@@ -567,28 +567,28 @@ fn product_value_test_cases() -> impl Iterator<
         (
             "String/0",
             string_row_type(),
-            product!["".to_string()],
+            product![""],
             None,
             Some(AlignedVarLenOffsets::from_offsets(&[0])),
         ),
         (
             "String/16",
             string_row_type(),
-            product!["0123456789abcdef".to_string()],
+            product!["0123456789abcdef"],
             None,
             Some(AlignedVarLenOffsets::from_offsets(&[0])),
         ),
         (
             "String/128",
             string_row_type(),
-            product!["0123456789abcdef".repeat(8)],
+            product!["0123456789abcdef".repeat(8).into_boxed_str()],
             None,
             Some(AlignedVarLenOffsets::from_offsets(&[0])),
         ),
         (
             "String/512",
             string_row_type(),
-            product!["0123456789abcdef".repeat(32)],
+            product!["0123456789abcdef".repeat(32).into_boxed_str()],
             None,
             Some(AlignedVarLenOffsets::from_offsets(&[0])),
         ),

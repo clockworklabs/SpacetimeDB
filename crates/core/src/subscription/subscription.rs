@@ -61,12 +61,13 @@ use std::sync::Arc;
 pub struct SupportedQuery {
     pub kind: query::Supported,
     pub expr: QueryExpr,
+    pub sql: String,
 }
 
 impl SupportedQuery {
-    pub fn new(expr: QueryExpr, text: String) -> Result<Self, DBError> {
-        let kind = query::classify(&expr).ok_or(SubscriptionError::Unsupported(text))?;
-        Ok(Self { kind, expr })
+    pub fn new(expr: QueryExpr, sql: String) -> Result<Self, DBError> {
+        let kind = query::classify(&expr).ok_or_else(|| SubscriptionError::Unsupported(sql.clone()))?;
+        Ok(Self { kind, expr, sql })
     }
 
     pub fn kind(&self) -> query::Supported {
@@ -113,12 +114,12 @@ impl SupportedQuery {
 }
 
 #[cfg(test)]
-impl TryFrom<QueryExpr> for SupportedQuery {
+impl TryFrom<(QueryExpr, String)> for SupportedQuery {
     type Error = DBError;
 
-    fn try_from(expr: QueryExpr) -> Result<Self, Self::Error> {
+    fn try_from((expr, sql): (QueryExpr, String)) -> Result<Self, Self::Error> {
         let kind = query::classify(&expr).context("Unsupported query expression")?;
-        Ok(Self { kind, expr })
+        Ok(Self { kind, expr, sql })
     }
 }
 
@@ -378,21 +379,21 @@ impl IncrementalJoin {
         let mut lhs_deletes = updates
             .clone()
             .filter(|u| u.table_id == self.lhs.table_id)
-            .flat_map(|u| &u.deletes)
+            .flat_map(|u| u.deletes.iter())
             .peekable();
         let mut lhs_inserts = updates
             .clone()
             .filter(|u| u.table_id == self.lhs.table_id)
-            .flat_map(|u| &u.inserts)
+            .flat_map(|u| u.inserts.iter())
             .peekable();
         let mut rhs_deletes = updates
             .clone()
             .filter(|u| u.table_id == self.rhs.table_id)
-            .flat_map(|u| &u.deletes)
+            .flat_map(|u| u.deletes.iter())
             .peekable();
         let mut rhs_inserts = updates
             .filter(|u| u.table_id == self.rhs.table_id)
-            .flat_map(|u| &u.inserts)
+            .flat_map(|u| u.inserts.iter())
             .peekable();
 
         // No updates at all? Return `None`.
@@ -553,7 +554,7 @@ impl ExecutionSet {
         self.exec_units
             // if you need eval to run single-threaded for debugging, change this to .iter()
             .par_iter()
-            .filter_map(|unit| unit.eval_json(ctx, db, tx).transpose())
+            .filter_map(|unit| unit.eval_json(ctx, db, tx, &unit.sql).transpose())
             .collect::<Result<Vec<_>, _>>()
     }
 
@@ -563,7 +564,7 @@ impl ExecutionSet {
         self.exec_units
             // if you need eval to run single-threaded for debugging, change this to .iter()
             .par_iter()
-            .filter_map(|unit| unit.eval_binary(ctx, db, tx).transpose())
+            .filter_map(|unit| unit.eval_binary(ctx, db, tx, &unit.sql).transpose())
             .collect::<Result<Vec<_>, _>>()
     }
 
@@ -577,7 +578,7 @@ impl ExecutionSet {
     ) -> Result<DatabaseUpdateCow<'_>, DBError> {
         let mut tables = Vec::new();
         for unit in &self.exec_units {
-            if let Some(table) = unit.eval_incr(ctx, db, tx, database_update.tables.iter())? {
+            if let Some(table) = unit.eval_incr(ctx, db, tx, &unit.sql, database_update.tables.iter())? {
                 tables.push(table);
             }
         }
@@ -636,6 +637,7 @@ pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> 
         .map(|src| SupportedQuery {
             kind: query::Supported::Select,
             expr: QueryExpr::new(src),
+            sql: format!("SELECT * FROM {}", src.table_name),
         })
         .collect())
 }
@@ -643,7 +645,7 @@ pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::relational_db::tests_utils::make_test_db;
+    use crate::db::relational_db::tests_utils::TestDB;
     use crate::sql::compiler::compile_sql;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_sats::relation::{DbTable, FieldName};
@@ -654,7 +656,7 @@ mod tests {
     // Compile an index join after replacing the index side with a virtual table.
     // The original index and probe sides should be swapped after introducing the delta table.
     fn compile_incremental_index_join_index_side() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -730,8 +732,8 @@ mod tests {
         // Assert that original index and probe tables have been swapped.
         assert_eq!(index_table, rhs_id);
         assert_eq!(index_col, 0.into());
-        assert_eq!(probe_field, "b");
-        assert_eq!(probe_table, "lhs");
+        assert_eq!(&**probe_field, "b");
+        assert_eq!(&**probe_table, "lhs");
         Ok(())
     }
 
@@ -739,7 +741,7 @@ mod tests {
     // Compile an index join after replacing the probe side with a virtual table.
     // The original index and probe sides should remain after introducing the virtual table.
     fn compile_incremental_index_join_probe_side() -> ResultTest<()> {
-        let (db, _tmp) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
@@ -817,14 +819,14 @@ mod tests {
         // Assert that original index and probe tables have not been swapped.
         assert_eq!(index_table, lhs_id);
         assert_eq!(index_col, 1.into());
-        assert_eq!(probe_field, "b");
-        assert_eq!(probe_table, "rhs");
+        assert_eq!(&**probe_field, "b");
+        assert_eq!(&**probe_table, "rhs");
         Ok(())
     }
 
     #[test]
     fn compile_incremental_join_unindexed_semi_join() {
-        let (db, _tmp) = make_test_db().expect("Failed to make_test_db");
+        let db = TestDB::durable().expect("failed to make test db");
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];

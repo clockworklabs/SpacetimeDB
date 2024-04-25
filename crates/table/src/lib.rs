@@ -23,8 +23,5 @@ pub mod row_type_visitor;
 pub mod table;
 pub mod var_len;
 
-#[cfg(test)]
-mod proptest_sats;
-
 #[doc(hidden)] // Used in tests and benchmarks.
 pub mod util;

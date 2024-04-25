@@ -20,7 +20,6 @@ pub use address::Address;
 pub use identity::Identity;
 pub use spacetimedb_sats::hash::{self, hash_bytes, Hash};
 pub use spacetimedb_sats::relation;
-pub use spacetimedb_sats::DataKey;
 pub use spacetimedb_sats::{self as sats, bsatn, buffer, de, ser};
 pub use type_def::*;
 pub use type_value::{AlgebraicValue, ProductValue};
@@ -102,7 +101,7 @@ impl TableDesc {
 
 #[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
 pub struct ReducerDef {
-    pub name: String,
+    pub name: Box<str>,
     pub args: Vec<ProductTypeElement>,
 }
 

@@ -225,7 +225,7 @@ impl InstanceEnv {
     #[tracing::instrument(skip_all)]
     pub fn create_index(
         &self,
-        index_name: String,
+        index_name: Box<str>,
         table_id: TableId,
         index_type: u8,
         col_ids: Vec<u8>,

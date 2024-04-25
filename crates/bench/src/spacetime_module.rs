@@ -1,9 +1,9 @@
 use std::path::Path;
 
-use spacetimedb::db::{Config, FsyncPolicy, Storage};
+use spacetimedb::db::{Config, Storage};
 use spacetimedb_lib::{
     sats::{product, ArrayValue},
-    AlgebraicValue, ProductValue,
+    AlgebraicValue,
 };
 use spacetimedb_testing::modules::{start_runtime, CompilationMode, CompiledModule, LoggerRecord, ModuleHandle};
 use tokio::runtime::Runtime;
@@ -60,17 +60,12 @@ impl BenchDatabase for SpacetimeModule {
 
     type TableId = TableId;
 
-    fn build(in_memory: bool, fsync: bool) -> ResultBench<Self>
+    fn build(in_memory: bool, _fsync: bool) -> ResultBench<Self>
     where
         Self: Sized,
     {
         let runtime = start_runtime();
         let config = Config {
-            fsync: if fsync {
-                FsyncPolicy::EveryTx
-            } else {
-                FsyncPolicy::Never
-            },
             storage: if in_memory { Storage::Memory } else { Storage::Disk },
         };
 
@@ -112,7 +107,7 @@ impl BenchDatabase for SpacetimeModule {
             module.call_reducer_binary(&name, ProductValue::new(&[])).await?;
             */
             // workaround for now
-            module.client.module.clear_table(table_id.pascal_case.clone()).await?;
+            module.client.module.clear_table(&table_id.pascal_case).await?;
             Ok(())
         })
     }
@@ -199,9 +194,7 @@ impl BenchDatabase for SpacetimeModule {
         let reducer_name = format!("filter_{}_by_{}", table_id.snake_case, column_name);
 
         runtime.block_on(async move {
-            module
-                .call_reducer_binary(&reducer_name, ProductValue { elements: vec![value] })
-                .await?;
+            module.call_reducer_binary(&reducer_name, [value].into()).await?;
             Ok(())
         })
     }

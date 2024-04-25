@@ -1,6 +1,7 @@
 use crate::errors::{ErrorType, ErrorVm};
+use spacetimedb_lib::{Address, Identity};
 use spacetimedb_sats::satn::Satn;
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, SumType};
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, SumType};
 use std::fmt::Display;
 use std::str::FromStr;
 
@@ -32,6 +33,22 @@ pub fn parse_simple_enum(sum: &SumType, tag_name: &str) -> Result<AlgebraicValue
     }
 }
 
+/// Try to parse `value` as [Identity] or [Address].
+pub fn parse_product(product: &ProductType, value: &str) -> Result<AlgebraicValue, ErrorVm> {
+    if product.is_identity() {
+        return Ok(Identity::from_hex(value)
+            .map_err(|err| ErrorVm::Other(err.into()))?
+            .into());
+    }
+    if product.is_address() {
+        return Ok(Address::from_hex(value).map_err(ErrorVm::Other)?.into());
+    }
+    Err(ErrorVm::Unsupported(format!(
+        "Can't parse '{value}' to {}",
+        product.to_satn_pretty()
+    )))
+}
+
 /// Parse a `&str` into [AlgebraicValue] using the supplied [AlgebraicType].
 ///
 /// ```
@@ -60,8 +77,9 @@ pub fn parse(value: &str, ty: &AlgebraicType) -> Result<AlgebraicValue, ErrorVm>
         &AlgebraicType::U128 => _parse::<u128>(value, ty),
         &AlgebraicType::F32 => _parse::<f32>(value, ty),
         &AlgebraicType::F64 => _parse::<f64>(value, ty),
-        &AlgebraicType::String => Ok(AlgebraicValue::String(value.to_string())),
+        &AlgebraicType::String => Ok(AlgebraicValue::String(value.into())),
         AlgebraicType::Sum(sum) => parse_simple_enum(sum, value),
+        AlgebraicType::Product(product) => parse_product(product, value),
         x => Err(ErrorVm::Unsupported(format!(
             "Can't parse '{value}' to {}",
             x.to_satn_pretty()

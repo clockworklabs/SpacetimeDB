@@ -1,8 +1,10 @@
+use self::module_host_actor::ReducerOp;
+
 use super::wasm_instance_env::WasmInstanceEnv;
 use super::{Mem, WasmtimeFuel};
 use crate::energy::ReducerBudget;
 use crate::host::instance_env::InstanceEnv;
-use crate::host::wasm_common::module_host_actor::{DescribeError, InitializationError, ReducerOp};
+use crate::host::wasm_common::module_host_actor::{DescribeError, InitializationError};
 use crate::host::wasm_common::*;
 use anyhow::anyhow;
 use bytes::Bytes;

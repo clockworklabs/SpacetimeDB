@@ -31,7 +31,7 @@ use crate::{
 
 /// A precomputed BSATN layout for a type whose encoded length is a known constant,
 /// enabling fast BFLATN -> BSATN conversion.
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct StaticBsatnLayout {
     /// The length of the encoded BSATN representation of a row of this type,
     /// in bytes.
@@ -240,40 +240,28 @@ impl LayoutBuilder {
 
         // Now that we've reached this point, we know that `first_variant_layout`
         // applies to the values of all the variants.
-        // Do a bit of hackery to re-order the tag, since BFLATN stores `(payload, tag)`,
-        // but BSATN stores `(tag, payload)`,
-        // then splice the `first_variant_layout` into `self`.
 
-        let payload_bflatn_offset = self.next_bflatn_offset();
-        let tag_bflatn_offset = payload_bflatn_offset + sum.tag_offset;
+        let tag_bflatn_offset = self.next_bflatn_offset();
+        let payload_bflatn_offset = tag_bflatn_offset + sum.payload_offset;
 
         let tag_bsatn_offset = self.next_bsatn_offset();
         let payload_bsatn_offset = tag_bsatn_offset + 1;
 
-        self.fields.push(MemcpyField {
-            bflatn_offset: tag_bflatn_offset,
-            bsatn_offset: tag_bsatn_offset,
-            length: 1,
-        });
+        // Serialize the tag, consolidating into the previous memcpy if possible.
+        self.visit_primitive(&PrimitiveType::U8);
 
-        for payload_field in &first_variant_layout.fields[..] {
+        if sum.payload_offset > 1 {
+            // Add an empty marker field to keep track of padding.
             self.fields.push(MemcpyField {
-                bflatn_offset: payload_bflatn_offset + payload_field.bflatn_offset,
-                bsatn_offset: payload_bsatn_offset + payload_field.bsatn_offset,
-                length: payload_field.length,
+                bflatn_offset: payload_bflatn_offset,
+                bsatn_offset: payload_bsatn_offset,
+                length: 0,
             });
-        }
+        } // Otherwise, nothing to do.
 
-        // Finally, start a new field which skips over the tag.
-        // This field will almost certainly end up empty,
-        // as there will generally be padding following the tag in `sum`,
-        // but that's okay, because `Self::build` strips empty fields.
-        let next_bsatn_offset = self.next_bsatn_offset();
-        self.fields.push(MemcpyField {
-            bflatn_offset: tag_bflatn_offset + 1,
-            bsatn_offset: next_bsatn_offset,
-            length: 0,
-        });
+        // Lay out the variants.
+        // Since all variants have the same layout, we just use the first one.
+        self.visit_value(&first_variant.ty)?;
 
         Some(())
     }
@@ -286,9 +274,9 @@ impl LayoutBuilder {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{blob_store::HashMapBlobStore, proptest_sats::generate_typed_row};
+    use crate::blob_store::HashMapBlobStore;
     use proptest::prelude::*;
-    use spacetimedb_sats::{bsatn, AlgebraicType, ProductType};
+    use spacetimedb_sats::{bsatn, proptest::generate_typed_row, AlgebraicType, ProductType};
 
     fn assert_expected_layout(ty: ProductType, bsatn_length: u16, fields: &[(u16, u16, u16)]) {
         let expected_layout = StaticBsatnLayout {
@@ -333,7 +321,7 @@ mod test {
         }
 
         for (ty, bsatn_length, fields) in [
-            (ProductType::new(vec![]), 0, &[][..]),
+            (ProductType::new([].into()), 0, &[][..]),
             (
                 ProductType::from([AlgebraicType::sum([
                     AlgebraicType::U8,
@@ -341,9 +329,10 @@ mod test {
                     AlgebraicType::Bool,
                 ])]),
                 2,
-                // Sums get wonky layouts
-                // because BFLATN and BSATN store the tag and the payload in opposite orders.
-                &[(1, 0, 1), (0, 1, 1)][..],
+                // In BFLATN, sums have padding after the tag to the max alignment of any variant payload.
+                // In this case, 0 bytes of padding, because all payloads are aligned to 1.
+                // Since there's no padding, the memcpys can be consolidated.
+                &[(0, 0, 2)][..],
             ),
             (
                 ProductType::from([AlgebraicType::sum([
@@ -357,9 +346,9 @@ mod test {
                     AlgebraicType::U32,
                 ])]),
                 5,
-                // Sums get wonky layouts
-                // because BFLATN and BSATN store the tag and the payload in opposite orders.
-                &[(4, 0, 1), (0, 1, 4)][..],
+                // In BFLATN, sums have padding after the tag to the max alignment of any variant payload.
+                // In this case, 3 bytes of padding.
+                &[(0, 0, 1), (4, 1, 4)][..],
             ),
             (
                 ProductType::from([
@@ -367,9 +356,9 @@ mod test {
                     AlgebraicType::U32,
                 ]),
                 21,
-                // Sums get wonky layouts
-                // because BFLATN and BSATN store the tag and the payload in opposite orders.
-                &[(16, 0, 1), (0, 1, 16), (32, 17, 4)][..],
+                // In BFLATN, sums have padding after the tag to the max alignment of any variant payload.
+                // In this case, 15 bytes of padding.
+                &[(0, 0, 1), (16, 1, 20)][..],
             ),
             (
                 ProductType::from([
@@ -392,6 +381,56 @@ mod test {
                 ]),
                 31,
                 &[(0, 0, 1), (2, 1, 30)][..],
+            ),
+            // Make sure sums with no variant data are handled correctly.
+            (
+                ProductType::from([AlgebraicType::sum([AlgebraicType::product::<[AlgebraicType; 0]>([])])]),
+                1,
+                &[(0, 0, 1)][..],
+            ),
+            (
+                ProductType::from([AlgebraicType::sum([
+                    AlgebraicType::product::<[AlgebraicType; 0]>([]),
+                    AlgebraicType::product::<[AlgebraicType; 0]>([]),
+                ])]),
+                1,
+                &[(0, 0, 1)][..],
+            ),
+            // Various experiments with 1-byte-aligned payloads.
+            // These are particularly nice for memcpy consolidation as there's no padding.
+            (
+                ProductType::from([AlgebraicType::sum([
+                    AlgebraicType::product([AlgebraicType::U8, AlgebraicType::U8]),
+                    AlgebraicType::product([AlgebraicType::Bool, AlgebraicType::Bool]),
+                ])]),
+                3,
+                &[(0, 0, 3)][..],
+            ),
+            (
+                ProductType::from([
+                    AlgebraicType::sum([AlgebraicType::Bool, AlgebraicType::U8]),
+                    AlgebraicType::sum([AlgebraicType::U8, AlgebraicType::Bool]),
+                ]),
+                4,
+                &[(0, 0, 4)][..],
+            ),
+            (
+                ProductType::from([
+                    AlgebraicType::U16,
+                    AlgebraicType::sum([AlgebraicType::U8, AlgebraicType::Bool]),
+                    AlgebraicType::U16,
+                ]),
+                6,
+                &[(0, 0, 6)][..],
+            ),
+            (
+                ProductType::from([
+                    AlgebraicType::U32,
+                    AlgebraicType::sum([AlgebraicType::U16, AlgebraicType::I16]),
+                    AlgebraicType::U32,
+                ]),
+                11,
+                &[(0, 0, 5), (6, 5, 6)][..],
             ),
         ] {
             assert_expected_layout(ty, bsatn_length, fields);

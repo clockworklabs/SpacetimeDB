@@ -1,151 +1,200 @@
-use super::commit_log::{CommitLog, CommitLogMut};
-use super::datastore::locking_tx_datastore::{
-    datastore::Locking,
-    state_view::{Iter, IterByColEq, IterByColRange},
-};
 use super::datastore::traits::{
-    IsolationLevel, MutProgrammable, MutTx as _, MutTxDatastore, Programmable, Tx as _, TxData, TxDatastore,
+    IsolationLevel, MutProgrammable, MutTx as _, MutTxDatastore, Programmable, RowTypeForTable, Tx as _, TxDatastore,
 };
-use super::message_log::MessageLog;
-use super::ostorage::memory_object_db::MemoryObjectDB;
+use super::datastore::{
+    locking_tx_datastore::{
+        datastore::Locking,
+        state_view::{Iter, IterByColEq, IterByColRange},
+    },
+    traits::TxData,
+};
 use super::relational_operators::Relation;
 use crate::address::Address;
+use crate::config::DatabaseConfig;
 use crate::db::db_metrics::DB_METRICS;
-use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
-use crate::db::ostorage::ObjectDB;
-use crate::db::FsyncPolicy;
 use crate::error::{DBError, DatabaseError, TableError};
-use crate::execution_context::ExecutionContext;
+use crate::execution_context::{ExecutionContext, ReducerContext};
 use crate::hash::Hash;
+use crate::util::slow::SlowQueryConfig;
 use fs2::FileExt;
+use parking_lot::RwLock;
+use spacetimedb_commitlog as commitlog;
+use spacetimedb_durability::{self as durability, Durability};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{ColumnDef, IndexDef, SequenceDef, TableDef, TableSchema};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_table::indexes::RowPointer;
+use spacetimedb_vm::errors::ErrorVm;
 use std::borrow::Cow;
 use std::fs::{create_dir_all, File};
+use std::io;
 use std::ops::RangeBounds;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 pub type MutTx = <Locking as super::datastore::traits::MutTx>::MutTx;
 pub type Tx = <Locking as super::datastore::traits::Tx>::Tx;
 
 type RowCountFn = Arc<dyn Fn(TableId, &str) -> i64 + Send + Sync>;
 
+/// A function to determine the size on disk of the durable state of the
+/// local database instance. This is used for metrics and energy accounting
+/// purposes.
+///
+/// It is not part of the [`Durability`] trait because it must report disk
+/// usage of the local instance only, even if exclusively remote durability is
+/// configured or the database is in follower state.
+type DiskSizeFn = Arc<dyn Fn() -> io::Result<u64> + Send + Sync>;
+
+pub type Txdata = commitlog::payload::Txdata<ProductValue>;
+
 #[derive(Clone)]
 pub struct RelationalDB {
     // TODO(cloutiertyler): This should not be public
     pub(crate) inner: Locking,
-    commit_log: Option<CommitLogMut>,
-    _lock: Arc<File>,
+    durability: Option<Arc<dyn Durability<TxData = Txdata>>>,
     address: Address,
+
     row_count_fn: RowCountFn,
+    /// Function to determine the durable size on disk. `Some` if `durability`
+    /// is `Some`, `None` otherwise.
+    disk_size_fn: Option<DiskSizeFn>,
+
+    // Release file lock last when dropping.
+    _lock: Arc<File>,
+    config: Arc<RwLock<DatabaseConfig>>,
 }
 
 impl std::fmt::Debug for RelationalDB {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RelationalDB").finish()
+        f.debug_struct("RelationalDB").field("address", &self.address).finish()
     }
 }
 
 impl RelationalDB {
+    /// Open a database with local durability.
+    ///
+    /// This is a convenience constructor which initializes the database with
+    /// the [`spacetimedb_durability::Local`] durability implementation.
+    ///
+    /// The commitlog is expected to be located in the `clog` directory relative
+    /// to `root`. If there already exists data in the log, it is replayed into
+    /// the database's state via [`Self::apply`].
+    ///
+    /// The [`tokio::runtime::Handle`] is used to spawn background tasks which
+    /// take care of flushing and syncing the log.
+    pub fn local(root: impl AsRef<Path>, rt: tokio::runtime::Handle, address: Address) -> Result<Self, DBError> {
+        let log_dir = root.as_ref().join("clog");
+        create_dir_all(&log_dir)?;
+        let durability = durability::Local::open(
+            log_dir,
+            rt,
+            durability::local::Options {
+                commitlog: commitlog::Options {
+                    max_records_in_commit: 1.try_into().unwrap(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        )
+        .map(Arc::new)?;
+        let disk_size_fn = Arc::new({
+            let durability = durability.clone();
+            move || durability.size_on_disk()
+        });
+
+        Self::open(root, address, Some((durability.clone(), disk_size_fn)))?.apply(durability)
+    }
+
+    /// Open a database with root directory `root` and the provided [`Durability`]
+    /// implementation.
+    ///
+    /// Note that this **does not** replay existing state, [`Self::apply`] must
+    /// be called explicitly if this is desired.
     pub fn open(
         root: impl AsRef<Path>,
-        message_log: Option<Arc<Mutex<MessageLog>>>,
-        odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
         address: Address,
-        fsync: bool,
+        durability: Option<(Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn)>,
     ) -> Result<Self, DBError> {
-        let db_address = address;
-        let address = address.to_hex();
-        log::info!("[{}] DATABASE: OPENING", address);
-
-        // Ensure that the `root` directory the database is running in exists.
         create_dir_all(&root)?;
 
-        // NOTE: This prevents accidentally opening the same database twice
-        // which could potentially cause corruption if commits were interleaved
-        // and so forth
-        let root = root.as_ref();
-        let lock = File::create(root.join("db.lock"))?;
+        let lock = File::create(root.as_ref().join("db.lock"))?;
         lock.try_lock_exclusive()
-            .map_err(|err| DatabaseError::DatabasedOpened(root.to_path_buf(), err.into()))?;
+            .map_err(|e| DatabaseError::DatabasedOpened(root.as_ref().to_path_buf(), e.into()))?;
 
-        let datastore = Locking::bootstrap(db_address)?;
-        let mut transaction_offset = 0;
-        let commit_log = message_log
-            .map(|mlog| {
-                log::info!("[{}] Replaying transaction log.", address);
-                let mut last_logged_percentage = 0;
+        let (durability, disk_size_fn) = durability.map(|(a, b)| (Some(a), Some(b))).unwrap_or_default();
+        let inner = Locking::bootstrap(address)?;
+        let row_count_fn: RowCountFn = Arc::new(move |table_id, table_name| {
+            DB_METRICS
+                .rdb_num_table_rows
+                .with_label_values(&address, &table_id.into(), table_name)
+                .get()
+        });
 
-                let commit_log = CommitLog::new(mlog, odb);
-                let max_commit_offset = commit_log.max_commit_offset();
-
-                let commit_log = commit_log.replay(|commit, odb| {
-                    transaction_offset += commit.transactions.len();
-                    for transaction in commit.transactions {
-                        datastore.replay_transaction(&transaction, odb)?;
-                    }
-
-                    let percentage =
-                        f64::floor((commit.commit_offset as f64 / max_commit_offset as f64) * 100.0) as i32;
-                    if percentage > last_logged_percentage && percentage % 10 == 0 {
-                        last_logged_percentage = percentage;
-                        log::info!(
-                            "[{}] Loaded {}% ({}/{})",
-                            address,
-                            percentage,
-                            transaction_offset,
-                            max_commit_offset
-                        );
-                    }
-
-                    Ok(())
-                })?;
-
-                let fsync = if fsync {
-                    FsyncPolicy::EveryTx
-                } else {
-                    FsyncPolicy::Never
-                };
-
-                Ok::<_, DBError>(commit_log.with_fsync(fsync))
-            })
-            .transpose()?;
-
-        // The purpose of this is to rebuild the state of the datastore
-        // after having inserted all of rows from the message log.
-        // This is necessary because, for example, inserting a row into `st_table`
-        // is not equivalent to calling `create_table`.
-        // There may eventually be better way to do this, but this will have to do for now.
-        datastore.rebuild_state_after_replay()?;
-
-        log::info!(
-            "[{}] Initialized with {} commits and tx offset {}",
+        Ok(Self {
+            inner,
+            durability,
             address,
-            commit_log.as_ref().map(|log| log.commit_offset()).unwrap_or_default(),
-            transaction_offset
-        );
 
-        // i.e. essentially bootstrap the creation of the schema
-        // tables by hard coding the schema of the schema tables
-        let db = Self {
-            inner: datastore,
-            commit_log,
+            row_count_fn,
+            disk_size_fn,
+
             _lock: Arc::new(lock),
-            address: db_address,
-            row_count_fn: Arc::new(move |table_id, table_name| {
-                DB_METRICS
-                    .rdb_num_table_rows
-                    .with_label_values(&db_address, &table_id.into(), table_name)
-                    .get()
-            }),
+            config: Arc::new(RwLock::new(DatabaseConfig::with_slow_query(
+                SlowQueryConfig::with_defaults(),
+            ))),
+        })
+    }
+
+    /// Replay ("fold") the provided [`spacetimedb_durability::History`] onto
+    /// the database state.
+    ///
+    /// Consumes `self` in order to ensure exclusive access, and to prevent use
+    /// of the database in case of an incomplete replay.
+    ///
+    /// This restriction may be lifted in the future to allow for "live" followers.
+    pub fn apply<T>(self, history: T) -> Result<Self, DBError>
+    where
+        T: durability::History<TxData = Txdata>,
+    {
+        log::info!("[{}] DATABASE: applying transaction history...", self.address);
+
+        // TODO: Revisit once we actually replay history suffixes, ie. starting
+        // from an offset larger than the history's min offset.
+        // TODO: We may want to require that a `tokio::runtime::Handle` is
+        // always supplied when constructing a `RelationalDB`. This would allow
+        // to spawn a timer task here which just prints the progress periodically
+        // in case the history is finite but very long.
+        let max_tx_offset = history.max_tx_offset();
+        let mut last_logged_percentage = 0;
+        let progress = |tx_offset: u64| {
+            if let Some(max_tx_offset) = max_tx_offset {
+                let percentage = f64::floor((tx_offset as f64 / max_tx_offset as f64) * 100.0) as i32;
+                if percentage > last_logged_percentage && percentage % 10 == 0 {
+                    log::info!(
+                        "[{}] Loaded {}% ({}/{})",
+                        self.address,
+                        percentage,
+                        tx_offset,
+                        max_tx_offset
+                    );
+                    last_logged_percentage = percentage;
+                }
+            // Print _something_ even if we don't know what's still ahead.
+            } else if tx_offset % 10_000 == 0 {
+                log::info!("[{}] Loading transaction {}", self.address, tx_offset);
+            }
         };
 
-        log::info!("[{}] DATABASE: OPENED", address);
-        Ok(db)
+        history
+            .fold_transactions_from(0, self.inner.replay(progress))
+            .map_err(anyhow::Error::from)?;
+        log::info!("[{}] DATABASE: applied transaction history", self.address);
+        self.inner.rebuild_state_after_replay()?;
+        log::info!("[{}] DATABASE: rebuilt state after replay", self.address);
+
+        Ok(self)
     }
 
     /// Returns an approximate row count for a particular table.
@@ -165,21 +214,11 @@ impl RelationalDB {
         self.address
     }
 
-    /// Obtain a read-only view of this database's [`CommitLog`].
-    pub fn commit_log(&self) -> Option<CommitLog> {
-        self.commit_log.as_ref().map(CommitLog::from)
-    }
-
-    /// The number of bytes on disk occupied by the [MessageLog].
-    pub fn message_log_size_on_disk(&self) -> u64 {
-        self.commit_log()
-            .map_or(0, |commit_log| commit_log.message_log_size_on_disk())
-    }
-
-    /// The number of bytes on disk occupied by the [ObjectDB].
-    pub fn object_db_size_on_disk(&self) -> std::result::Result<u64, DBError> {
-        self.commit_log()
-            .map_or(Ok(0), |commit_log| commit_log.object_db_size_on_disk())
+    /// The number of bytes on disk occupied by the durability layer.
+    ///
+    /// If this is an in-memory instance, `Ok(0)` is returned.
+    pub fn size_on_disk(&self) -> io::Result<u64> {
+        self.disk_size_fn.as_ref().map_or(Ok(0), |f| f())
     }
 
     pub fn encode_row(row: &ProductValue, bytes: &mut Vec<u8>) {
@@ -187,15 +226,11 @@ impl RelationalDB {
         row.encode(bytes);
     }
 
-    pub fn schema_for_table_mut<'tx>(
-        &self,
-        tx: &'tx MutTx,
-        table_id: TableId,
-    ) -> Result<Cow<'tx, TableSchema>, DBError> {
+    pub fn schema_for_table_mut(&self, tx: &MutTx, table_id: TableId) -> Result<Arc<TableSchema>, DBError> {
         self.inner.schema_for_table_mut_tx(tx, table_id)
     }
 
-    pub fn schema_for_table<'tx>(&self, tx: &'tx Tx, table_id: TableId) -> Result<Cow<'tx, TableSchema>, DBError> {
+    pub fn schema_for_table(&self, tx: &Tx, table_id: TableId) -> Result<Arc<TableSchema>, DBError> {
         self.inner.schema_for_table_tx(tx, table_id)
     }
 
@@ -203,26 +238,27 @@ impl RelationalDB {
         &self,
         tx: &'tx MutTx,
         table_id: TableId,
-    ) -> Result<Cow<'tx, ProductType>, DBError> {
+    ) -> Result<RowTypeForTable<'tx>, DBError> {
         self.inner.row_type_for_table_mut_tx(tx, table_id)
     }
 
-    pub fn get_all_tables_mut<'tx>(&self, tx: &'tx MutTx) -> Result<Vec<Cow<'tx, TableSchema>>, DBError> {
+    pub fn get_all_tables_mut(&self, tx: &MutTx) -> Result<Vec<Arc<TableSchema>>, DBError> {
         self.inner
             .get_all_tables_mut_tx(&ExecutionContext::internal(self.address), tx)
     }
 
-    pub fn get_all_tables<'tx>(&self, tx: &'tx Tx) -> Result<Vec<Cow<'tx, TableSchema>>, DBError> {
+    pub fn get_all_tables(&self, tx: &Tx) -> Result<Vec<Arc<TableSchema>>, DBError> {
         self.inner
             .get_all_tables_tx(&ExecutionContext::internal(self.address), tx)
     }
 
-    pub fn schema_for_column<'tx>(
+    pub fn decode_column(
         &self,
-        tx: &'tx MutTx,
+        tx: &MutTx,
         table_id: TableId,
         col_id: ColId,
-    ) -> Result<Cow<'tx, AlgebraicType>, DBError> {
+        bytes: &[u8],
+    ) -> Result<AlgebraicValue, DBError> {
         // We need to do a manual bounds check here
         // since we want to do `swap_remove` to get an owned value
         // in the case of `Cow::Owned` and avoid a `clone`.
@@ -233,27 +269,10 @@ impl RelationalDB {
             }
             Ok(col_idx)
         };
-        Ok(match self.row_schema_for_table(tx, table_id)? {
-            Cow::Borrowed(schema) => {
-                let col_idx = check_bounds(schema)?;
-                Cow::Borrowed(&schema.elements[col_idx].algebraic_type)
-            }
-            Cow::Owned(mut schema) => {
-                let col_idx = check_bounds(&schema)?;
-                Cow::Owned(schema.elements.swap_remove(col_idx).algebraic_type)
-            }
-        })
-    }
-
-    pub fn decode_column(
-        &self,
-        tx: &MutTx,
-        table_id: TableId,
-        col_id: ColId,
-        bytes: &[u8],
-    ) -> Result<AlgebraicValue, DBError> {
-        let schema = self.schema_for_column(tx, table_id, col_id)?;
-        Ok(AlgebraicValue::decode(&schema, &mut &*bytes)?)
+        let row_ty = &*self.row_schema_for_table(tx, table_id)?;
+        let col_idx = check_bounds(row_ty)?;
+        let col_ty = &row_ty.elements[col_idx].algebraic_type;
+        Ok(AlgebraicValue::decode(col_ty, &mut &*bytes)?)
     }
 
     /// Begin a transaction.
@@ -286,19 +305,74 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn commit_tx(&self, ctx: &ExecutionContext, tx: MutTx) -> Result<Option<(TxData, Option<usize>)>, DBError> {
+    pub fn commit_tx(&self, ctx: &ExecutionContext, tx: MutTx) -> Result<Option<TxData>, DBError> {
+        use commitlog::payload::{
+            txdata::{Mutations, Ops},
+            Txdata,
+        };
+
         log::trace!("COMMIT MUT TX");
-        if let Some(tx_data) = self.inner.commit_mut_tx(ctx, tx)? {
-            // TODO(cloutiertyler): We should measure the time to append a transaction to the commitlog separately in metrics
-            let bytes_written = self
-                .commit_log
-                .as_ref()
-                .map(|commit_log| commit_log.append_tx(ctx, &tx_data, &self.inner))
-                .transpose()?
-                .flatten();
-            return Ok(Some((tx_data, bytes_written)));
+
+        let Some(tx_data) = self.inner.commit_mut_tx(ctx, tx)? else {
+            return Ok(None);
+        };
+
+        if let Some(durability) = &self.durability {
+            let inserts: Box<_> = tx_data
+                .inserts()
+                .map(|(table_id, rowdata)| Ops {
+                    table_id: *table_id,
+                    rowdata: rowdata.clone(),
+                })
+                .collect();
+            let deletes: Box<_> = tx_data
+                .deletes()
+                .map(|(table_id, rowdata)| Ops {
+                    table_id: *table_id,
+                    rowdata: rowdata.clone(),
+                })
+                .collect();
+
+            // Avoid appending transactions to the commitlog which don't modify
+            // any tables.
+            //
+            // An exception ar connect / disconnect calls, which we always want
+            // paired in the log, so as to be able to disconnect clients
+            // automatically after a server crash. See:
+            // [`crate::host::ModuleHost::call_identity_connected_disconnected`]
+            //
+            // Note that this may change in the future: some analytics and/or
+            // timetravel queries may benefit from seeing all inputs, even if
+            // the database state did not change.
+            let is_noop = || inserts.is_empty() && deletes.is_empty();
+            let is_connect_disconnect = |ctx: &ReducerContext| {
+                matches!(
+                    ctx.name.strip_prefix("__identity_"),
+                    Some("connected__" | "disconnected__")
+                )
+            };
+            let inputs = ctx
+                .reducer_context()
+                .and_then(|rcx| (!is_noop() || is_connect_disconnect(rcx)).then(|| rcx.into()));
+
+            let txdata = Txdata {
+                inputs,
+                outputs: None,
+                mutations: Some(Mutations {
+                    inserts,
+                    deletes,
+                    truncates: [].into(),
+                }),
+            };
+
+            if !txdata.is_empty() {
+                log::trace!("append {txdata:?}");
+                // TODO: Should measure queuing time + actual write
+                durability.append_tx(txdata);
+            }
         }
-        Ok(None)
+
+        Ok(Some(tx_data))
     }
 
     /// Run a fallible function in a transaction.
@@ -733,50 +807,209 @@ impl RelationalDB {
     pub(crate) fn set_program_hash(&self, tx: &mut MutTx, fence: u128, hash: Hash) -> Result<(), DBError> {
         self.inner.set_program_hash(tx, fence, hash)
     }
+
+    /// Set a runtime configurations setting of the database
+    pub fn set_config(&self, key: &str, value: AlgebraicValue) -> Result<(), ErrorVm> {
+        self.config.write().set_config(key, value)
+    }
+    /// Read the runtime configurations settings of the database
+    pub fn read_config(&self) -> DatabaseConfig {
+        *self.config.read()
+    }
 }
 
-fn make_default_ostorage(in_memory: bool, path: impl AsRef<Path>) -> Result<Box<dyn ObjectDB + Send>, DBError> {
-    Ok(if in_memory {
-        Box::<MemoryObjectDB>::default()
-    } else {
-        Box::new(HashMapObjectDB::open(path)?)
-    })
-}
+#[cfg(any(test, feature = "test"))]
+pub mod tests_utils {
+    use std::fs::create_dir_all;
+    use std::ops::Deref;
 
-pub fn open_db(path: impl AsRef<Path>, in_memory: bool, fsync: bool) -> Result<RelationalDB, DBError> {
-    let path = path.as_ref();
-    let mlog = if in_memory {
-        None
-    } else {
-        Some(Arc::new(Mutex::new(
-            MessageLog::open(path.join("mlog")).map_err(|e| DBError::Other(e.into()))?,
-        )))
-    };
-    let odb = Arc::new(Mutex::new(make_default_ostorage(in_memory, path.join("odb"))?));
-    let stdb = RelationalDB::open(path, mlog, odb, Address::zero(), fsync)?;
-
-    Ok(stdb)
-}
-
-pub fn open_log(path: impl AsRef<Path>) -> Result<Arc<Mutex<MessageLog>>, DBError> {
-    let path = path.as_ref().to_path_buf();
-    Ok(Arc::new(Mutex::new(
-        MessageLog::open(path.join("mlog")).map_err(|e| DBError::Other(e.into()))?,
-    )))
-}
-
-#[cfg(test)]
-pub(crate) mod tests_utils {
     use super::*;
     use tempfile::TempDir;
 
-    // Utility for creating a database on a TempDir
-    pub(crate) fn make_test_db() -> Result<(RelationalDB, TempDir), DBError> {
-        let tmp_dir = TempDir::with_prefix("stdb_test")?;
-        let in_memory = false;
-        let fsync = false;
-        let stdb = open_db(&tmp_dir, in_memory, fsync)?.with_row_count(Arc::new(|_, _| i64::MAX));
-        Ok((stdb, tmp_dir))
+    /// A [`RelationalDB`] in a temporary directory.
+    ///
+    /// When dropped, any resources including the temporary directory will be
+    /// removed.
+    ///
+    /// To ensure all data is flushed to disk when using the durable variant
+    /// constructed via [`Self::durable`], [`Self::close`] or [`Self::reopen`]
+    /// must be used.
+    ///
+    /// To keep the temporary directory, use [`Self::reopen`] or [`Self::into_parts`].
+    ///
+    /// [`TestDB`] is deref-coercible into [`RelationalDB`], which is dubious
+    /// but convenient.
+    pub struct TestDB {
+        pub db: RelationalDB,
+
+        // nb: drop order is declaration order
+        durable: Option<DurableState>,
+        tmp_dir: TempDir,
+    }
+
+    struct DurableState {
+        handle: Arc<durability::Local<ProductValue>>,
+        rt: tokio::runtime::Runtime,
+    }
+
+    impl TestDB {
+        pub const ADDRESS: Address = Address::zero();
+
+        /// Create a [`TestDB`] which does not store data on disk.
+        pub fn in_memory() -> Result<Self, DBError> {
+            let dir = TempDir::with_prefix("stdb_test")?;
+            let db = Self::in_memory_internal(dir.path())?;
+            Ok(Self {
+                db,
+
+                durable: None,
+                tmp_dir: dir,
+            })
+        }
+
+        /// Create a [`TestDB`] which stores data in a local commitlog.
+        ///
+        /// Note that flushing the log is an asynchronous process. [`Self::reopen`]
+        /// ensures all data has been flushed to disk before re-opening the
+        /// database.
+        pub fn durable() -> Result<Self, DBError> {
+            let dir = TempDir::with_prefix("stdb_test")?;
+            let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
+            let (db, handle) = Self::durable_internal(dir.path(), rt.handle().clone())?;
+            let durable = DurableState { handle, rt };
+
+            Ok(Self {
+                db,
+
+                durable: Some(durable),
+                tmp_dir: dir,
+            })
+        }
+
+        /// Re-open the database, after ensuring that all data has been flushed
+        /// to disk (if the database was created via [`Self::durable`]).
+        pub fn reopen(self) -> Result<Self, DBError> {
+            drop(self.db);
+
+            if let Some(DurableState { handle, rt }) = self.durable {
+                let handle =
+                    Arc::into_inner(handle).expect("`drop(self.db)` should have dropped all references to durability");
+                rt.block_on(handle.close())?;
+
+                let (db, handle) = Self::durable_internal(self.tmp_dir.path(), rt.handle().clone())?;
+                let durable = DurableState { handle, rt };
+
+                Ok(Self {
+                    db,
+                    durable: Some(durable),
+                    ..self
+                })
+            } else {
+                let db = Self::in_memory_internal(self.tmp_dir.path())?;
+                Ok(Self { db, ..self })
+            }
+        }
+
+        /// Close the database, flushing outstanding data to disk (if the
+        /// database was created via [`Self::durable`].
+        ///
+        /// Note that the data is no longer accessible once this method returns,
+        /// because the temporary directory has been dropped. The method is
+        /// provided mainly for cases where measuring the flush overhead is
+        /// desired.
+        pub fn close(self) -> Result<(), DBError> {
+            drop(self.db);
+            if let Some(DurableState { handle, rt }) = self.durable {
+                let handle =
+                    Arc::into_inner(handle).expect("`drop(self.db)` should have dropped all references to durability");
+                rt.block_on(handle.close())?;
+            }
+
+            Ok(())
+        }
+
+        pub fn with_row_count(self, row_count: RowCountFn) -> Self {
+            Self {
+                db: self.db.with_row_count(row_count),
+                ..self
+            }
+        }
+
+        /// The root path of the (temporary) database directory.
+        pub fn path(&self) -> &Path {
+            self.tmp_dir.path()
+        }
+
+        /// Handle to the tokio runtime, available if [`Self::durable`] was used
+        /// to create the [`TestDB`].
+        pub fn runtime(&self) -> Option<&tokio::runtime::Handle> {
+            self.durable.as_ref().map(|ds| ds.rt.handle())
+        }
+
+        /// Deconstruct `self` into its constituents.
+        #[allow(unused)]
+        pub fn into_parts(
+            self,
+        ) -> (
+            RelationalDB,
+            Option<Arc<durability::Local<ProductValue>>>,
+            Option<tokio::runtime::Runtime>,
+            TempDir,
+        ) {
+            let Self { db, durable, tmp_dir } = self;
+            let (durability, rt) = durable
+                .map(|DurableState { handle, rt }| (Some(handle), Some(rt)))
+                .unwrap_or((None, None));
+            (db, durability, rt, tmp_dir)
+        }
+
+        fn in_memory_internal(root: &Path) -> Result<RelationalDB, DBError> {
+            Ok(RelationalDB::open(root, Self::ADDRESS, None)?.with_row_count(Self::row_count_fn()))
+        }
+
+        fn durable_internal(
+            root: &Path,
+            rt: tokio::runtime::Handle,
+        ) -> Result<(RelationalDB, Arc<durability::Local<ProductValue>>), DBError> {
+            let log_dir = root.join("clog");
+            create_dir_all(&log_dir)?;
+
+            let handle = durability::Local::open(
+                log_dir,
+                rt,
+                durability::local::Options {
+                    commitlog: commitlog::Options {
+                        max_records_in_commit: 1.try_into().unwrap(),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+            )
+            .map(Arc::new)?;
+            let disk_size_fn = Arc::new({
+                let handle = handle.clone();
+                move || handle.size_on_disk()
+            });
+
+            let rdb = RelationalDB::open(root, Self::ADDRESS, Some((handle.clone(), disk_size_fn)))?
+                .apply(handle.clone())?
+                .with_row_count(Self::row_count_fn());
+
+            Ok((rdb, handle))
+        }
+
+        // NOTE: This is important to make compiler tests work.
+        fn row_count_fn() -> RowCountFn {
+            Arc::new(|_, _| i64::MAX)
+        }
+    }
+
+    impl Deref for TestDB {
+        type Target = RelationalDB;
+
+        fn deref(&self) -> &Self::Target {
+            &self.db
+        }
     }
 }
 
@@ -784,28 +1017,35 @@ pub(crate) mod tests_utils {
 mod tests {
     #![allow(clippy::disallowed_macros)]
 
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
     use super::*;
     use crate::db::datastore::system_tables::{
-        StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINTS_ID, ST_INDEXES_ID, ST_SEQUENCES_ID,
-        ST_TABLES_ID,
+        system_tables, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINTS_ID, ST_INDEXES_ID,
+        ST_SEQUENCES_ID, ST_TABLES_ID,
     };
-    use crate::db::message_log::SegmentView;
-    use crate::db::ostorage::sled_object_db::SledObjectDB;
-    use crate::db::relational_db::tests_utils::make_test_db;
+    use crate::db::relational_db::tests_utils::TestDB;
     use crate::error::IndexError;
-    use crate::error::LogReplayError;
+    use crate::execution_context::ReducerContext;
+    use crate::host::Timestamp;
+    use anyhow::bail;
+    use bytes::Bytes;
+    use commitlog::payload::txdata;
+    use commitlog::Commitlog;
+    use spacetimedb_data_structures::map::IntMap;
     use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_lib::Identity;
+    use spacetimedb_sats::bsatn;
+    use spacetimedb_sats::buffer::BufReader;
     use spacetimedb_sats::db::def::{ColumnDef, ConstraintDef};
     use spacetimedb_sats::product;
     use spacetimedb_table::read_column::ReadColumn;
     use spacetimedb_table::table::RowRef;
-    use std::io::{self, Seek, SeekFrom, Write};
-    use std::ops::Range;
-    use tempfile::TempDir;
 
     fn column(name: &str, ty: AlgebraicType) -> ColumnDef {
         ColumnDef {
-            col_name: name.to_string(),
+            col_name: name.into(),
             col_type: ty,
         }
     }
@@ -833,7 +1073,7 @@ mod tests {
         TableDef::new(
             "MyTable".into(),
             vec![ColumnDef {
-                col_name: "my_col".to_string(),
+                col_name: "my_col".into(),
                 col_type,
             }],
         )
@@ -841,7 +1081,7 @@ mod tests {
 
     #[test]
     fn test() -> ResultTest<()> {
-        let (stdb, _tmp_dir) = make_test_db()?;
+        let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
@@ -852,22 +1092,13 @@ mod tests {
 
     #[test]
     fn test_open_twice() -> ResultTest<()> {
-        let (stdb, tmp_dir) = make_test_db()?;
+        let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-
         stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
-
         stdb.commit_tx(&ExecutionContext::default(), tx)?;
 
-        let mlog = Some(Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?)));
-        let in_memory = false;
-        let odb = Arc::new(Mutex::new(make_default_ostorage(
-            in_memory,
-            tmp_dir.path().join("odb"),
-        )?));
-
-        match RelationalDB::open(tmp_dir.path(), mlog, odb, Address::zero(), true) {
+        match RelationalDB::local(stdb.path(), stdb.runtime().unwrap().clone(), Address::zero()) {
             Ok(_) => {
                 panic!("Allowed to open database twice")
             }
@@ -884,7 +1115,7 @@ mod tests {
 
     #[test]
     fn test_table_name() -> ResultTest<()> {
-        let (stdb, _tmp_dir) = make_test_db()?;
+        let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let table_id = stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
@@ -895,20 +1126,20 @@ mod tests {
 
     #[test]
     fn test_column_name() -> ResultTest<()> {
-        let (stdb, _tmp_dir) = make_test_db()?;
+        let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
         let table_id = stdb.table_id_from_name_mut(&tx, "MyTable")?.unwrap();
         let schema = stdb.schema_for_table_mut(&tx, table_id)?;
-        let col = schema.columns().iter().find(|x| x.col_name == "my_col").unwrap();
+        let col = schema.columns().iter().find(|x| &*x.col_name == "my_col").unwrap();
         assert_eq!(col.col_pos, 0.into());
         Ok(())
     }
 
     #[test]
     fn test_create_table_pre_commit() -> ResultTest<()> {
-        let (stdb, _tmp_dir) = make_test_db()?;
+        let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let schema = my_table(AlgebraicType::I32);
@@ -955,7 +1186,8 @@ mod tests {
 
     #[test]
     fn test_pre_commit() -> ResultTest<()> {
-        let (stdb, _tmp_dir) = make_test_db()?;
+        let stdb = TestDB::durable()?;
+
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let table_id = stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
 
@@ -966,7 +1198,7 @@ mod tests {
 
     #[test]
     fn test_post_commit() -> ResultTest<()> {
-        let (stdb, _tmp_dir) = make_test_db()?;
+        let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
 
@@ -982,7 +1214,7 @@ mod tests {
 
     #[test]
     fn test_filter_range_pre_commit() -> ResultTest<()> {
-        let (stdb, _tmp_dir) = make_test_db()?;
+        let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
 
@@ -994,7 +1226,7 @@ mod tests {
 
     #[test]
     fn test_filter_range_post_commit() -> ResultTest<()> {
-        let (stdb, _tmp_dir) = make_test_db()?;
+        let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
 
@@ -1010,7 +1242,7 @@ mod tests {
 
     #[test]
     fn test_create_table_rollback() -> ResultTest<()> {
-        let (stdb, _tmp_dir) = make_test_db()?;
+        let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
 
@@ -1036,7 +1268,7 @@ mod tests {
 
     #[test]
     fn test_rollback() -> ResultTest<()> {
-        let (stdb, _tmp_dir) = make_test_db()?;
+        let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
@@ -1059,7 +1291,7 @@ mod tests {
 
     #[test]
     fn test_auto_inc() -> ResultTest<()> {
-        let (stdb, _tmp_dir) = make_test_db()?;
+        let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let schema = table_auto_inc();
@@ -1077,7 +1309,7 @@ mod tests {
 
     #[test]
     fn test_auto_inc_disable() -> ResultTest<()> {
-        let (stdb, _tmp_dir) = make_test_db()?;
+        let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let schema = table_auto_inc();
@@ -1094,12 +1326,18 @@ mod tests {
     }
 
     fn table_indexed(is_unique: bool) -> TableDef {
-        my_table(AlgebraicType::I64).with_indexes(vec![IndexDef::btree("MyTable_my_col_idx".to_string(), 0, is_unique)])
+        my_table(AlgebraicType::I64).with_indexes(vec![IndexDef::btree("MyTable_my_col_idx".into(), 0, is_unique)])
     }
 
     #[test]
     fn test_auto_inc_reload() -> ResultTest<()> {
-        let (stdb, tmp_dir) = make_test_db()?;
+        let _ = env_logger::builder()
+            .filter_level(log::LevelFilter::Trace)
+            .format_timestamp(None)
+            .is_test(true)
+            .try_init();
+
+        let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let schema = my_table(AlgebraicType::I64).with_column_sequence(0.into());
@@ -1113,12 +1351,12 @@ mod tests {
         assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?, vec![1]);
 
         stdb.commit_tx(&ExecutionContext::default(), tx)?;
-        drop(stdb);
 
-        let stdb = open_db(&tmp_dir, false, true)?;
+        dbg!("reopen...");
+        let stdb = stdb.reopen()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-        stdb.insert(&mut tx, table_id, product![0i64])?;
+        stdb.insert(&mut tx, table_id, product![0i64]).unwrap();
 
         // Check the second row start after `SEQUENCE_PREALLOCATION_AMOUNT`
         assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?, vec![1, 4098]);
@@ -1127,7 +1365,7 @@ mod tests {
 
     #[test]
     fn test_indexed() -> ResultTest<()> {
-        let (stdb, _tmp_dir) = make_test_db()?;
+        let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let schema = table_indexed(false);
@@ -1147,7 +1385,7 @@ mod tests {
 
     #[test]
     fn test_unique() -> ResultTest<()> {
-        let (stdb, _tmp_dir) = make_test_db()?;
+        let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
 
@@ -1183,7 +1421,7 @@ mod tests {
 
     #[test]
     fn test_identity() -> ResultTest<()> {
-        let (stdb, _tmp_dir) = make_test_db()?;
+        let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let schema = table_indexed(true).with_column_constraint(Constraints::identity(), 0);
@@ -1207,14 +1445,14 @@ mod tests {
 
     #[test]
     fn test_cascade_drop_table() -> ResultTest<()> {
-        let (stdb, _tmp_dir) = make_test_db()?;
+        let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let schema = TableDef::new(
             "MyTable".into(),
             ["col1", "col2", "col3", "col4"]
                 .map(|c| ColumnDef {
-                    col_name: c.to_string(),
+                    col_name: c.into(),
                     col_type: AlgebraicType::I64,
                 })
                 .into(),
@@ -1288,7 +1526,7 @@ mod tests {
 
     #[test]
     fn test_rename_table() -> ResultTest<()> {
-        let (stdb, _tmp_dir) = make_test_db()?;
+        let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
@@ -1313,7 +1551,7 @@ mod tests {
 
     #[test]
     fn test_multi_column_index() -> ResultTest<()> {
-        let (stdb, _tmp_dir) = make_test_db()?;
+        let stdb = TestDB::durable()?;
 
         let columns = ["a", "b", "c"].map(|n| column(n, AlgebraicType::U64)).into();
 
@@ -1366,186 +1604,10 @@ mod tests {
     // }
 
     #[test]
-    fn test_replay_corrupted_log() -> ResultTest<()> {
-        let tmp = TempDir::with_prefix("stdb_test")?;
-        let mlog_path = tmp.path().join("mlog");
-
-        const NUM_TRANSACTIONS: usize = 10_000;
-        // 64KiB should create like 11 segments
-        const MAX_SEGMENT_SIZE: u64 = 64 * 1024;
-
-        let mlog = MessageLog::options()
-            .max_segment_size(MAX_SEGMENT_SIZE)
-            .open(&mlog_path)
-            .map(Mutex::new)
-            .map(Arc::new)?;
-        let odb = SledObjectDB::open(tmp.path().join("odb"))
-            .map(|odb| Box::new(odb) as Box<dyn ObjectDB + Send>)
-            .map(Mutex::new)
-            .map(Arc::new)?;
-        let reopen_db = || RelationalDB::open(tmp.path(), Some(mlog.clone()), odb.clone(), Address::zero(), false);
-        let db = reopen_db()?;
-        let ctx = ExecutionContext::default();
-
-        let table_id = db.with_auto_commit(&ctx, |tx| {
-            db.create_table(
-                tx,
-                table(
-                    "Account",
-                    vec![ColumnDef {
-                        ..column("deposit", AlgebraicType::U64)
-                    }],
-                    vec![],
-                    vec![ConstraintDef::for_column(
-                        "Account",
-                        "deposit",
-                        Constraints::identity(),
-                        ColList::new(0.into()),
-                    )],
-                ),
-            )
-        })?;
-
-        fn balance(ctx: &ExecutionContext, db: &RelationalDB, table_id: TableId) -> ResultTest<u64> {
-            let balance = db.with_auto_commit(ctx, |tx| -> ResultTest<u64> {
-                let last = db
-                    .iter_mut(ctx, tx, table_id)?
-                    .last()
-                    .map(|row| row.to_product_value().field_as_u64(0, None))
-                    .transpose()?
-                    .unwrap_or_default();
-                Ok(last)
-            })?;
-
-            Ok(balance)
-        }
-
-        // Invalidate a segment by shrinking the file by one byte.
-        fn invalidate_shrink(mlog_path: &Path, segment: SegmentView) -> io::Result<()> {
-            let segment_file = File::options().write(true).open(
-                mlog_path
-                    .join(format!("{:0>20}", segment.offset()))
-                    .with_extension("log"),
-            )?;
-            let len = segment_file.metadata()?.len();
-            eprintln!("shrink segment segment={segment:?} len={len}");
-            segment_file.set_len(len - 1)?;
-            segment_file.sync_all()
-        }
-
-        // Invalidate a segment by overwriting some portion of the file.
-        fn invalidate_overwrite(mlog_path: &Path, segment: SegmentView) -> io::Result<()> {
-            let mut segment_file = File::options().write(true).open(
-                mlog_path
-                    .join(format!("{:0>20}", segment.offset()))
-                    .with_extension("log"),
-            )?;
-
-            let len = segment_file.metadata()?.len();
-            let ofs = len / 2;
-            eprintln!("overwrite segment={segment:?} len={len} ofs={ofs}");
-            segment_file.seek(SeekFrom::Start(ofs))?;
-            segment_file.write_all(&[255, 255, 255, 255])?;
-            segment_file.sync_all()
-        }
-
-        // Create transactions.
-        for _ in 0..NUM_TRANSACTIONS {
-            db.with_auto_commit(&ctx, |tx| db.insert(tx, table_id, product![AlgebraicValue::U64(0)]))?;
-        }
-        assert_eq!(NUM_TRANSACTIONS as u64, balance(&ctx, &db, table_id)?);
-
-        drop(db);
-        odb.lock().unwrap().sync_all()?;
-        mlog.lock().unwrap().sync_all()?;
-
-        // The state must be the same after reopening the db.
-        let db = reopen_db()?;
-        assert_eq!(
-            NUM_TRANSACTIONS as u64,
-            balance(&ctx, &db, table_id)?,
-            "the state should be the same as before reopening the db"
-        );
-
-        let total_segments = mlog.lock().unwrap().total_segments();
-        assert!(total_segments > 3, "expected more than 3 segments");
-
-        // Close the db and pop a byte from the end of the message log.
-        drop(db);
-        let last_segment = mlog.lock().unwrap().segments().last().unwrap();
-        invalidate_shrink(&mlog_path, last_segment.clone())?;
-
-        // Assert that the final tx is lost.
-        let db = reopen_db()?;
-        assert_eq!(
-            (NUM_TRANSACTIONS - 1) as u64,
-            balance(&ctx, &db, table_id)?,
-            "the last transaction should have been dropped"
-        );
-        assert_eq!(
-            total_segments,
-            mlog.lock().unwrap().total_segments(),
-            "no segment should have beeen removed"
-        );
-
-        // Overwrite some portion of the last segment.
-        drop(db);
-        let last_segment = mlog.lock().unwrap().segments().last().unwrap();
-        invalidate_overwrite(&mlog_path, last_segment)?;
-        let res = reopen_db();
-        if !matches!(res, Err(DBError::LogReplay(LogReplayError::OutOfOrderCommit { .. }))) {
-            panic!("Expected replay error but got: {res:?}");
-        }
-        // We can't recover from this, so drop the last segment.
-        let mut mlog_guard = mlog.lock().unwrap();
-        let drop_segment = mlog_guard.segments().last().unwrap();
-        mlog_guard.reset_to(drop_segment.offset() - 1)?;
-        let last_segment = mlog_guard.segments().last().unwrap();
-        drop(mlog_guard);
-
-        let segment_range = Range {
-            start: last_segment.offset(),
-            end: drop_segment.offset() - 1,
-        };
-        let db = reopen_db()?;
-        let balance = balance(&ctx, &db, table_id)?;
-        assert!(
-            segment_range.contains(&balance),
-            "balance {balance} should fall within {segment_range:?}"
-        );
-        assert_eq!(
-            total_segments - 1,
-            mlog.lock().unwrap().total_segments(),
-            "one segment should have beeen removed"
-        );
-
-        // Now, let's poke a segment somewhere in the middle of the log.
-        drop(db);
-        let segment = mlog.lock().unwrap().segments().nth(5).unwrap();
-        invalidate_shrink(&mlog_path, segment)?;
-
-        let res = reopen_db();
-        if !matches!(res, Err(DBError::LogReplay(LogReplayError::TrailingSegments { .. }))) {
-            panic!("Expected `LogReplayError::TrailingSegments` but got: {res:?}")
-        }
-
-        // The same should happen if we overwrite instead of shrink.
-        let segment = mlog.lock().unwrap().segments().nth(5).unwrap();
-        invalidate_overwrite(&mlog_path, segment)?;
-
-        let res = reopen_db();
-        if !matches!(res, Err(DBError::LogReplay(LogReplayError::OutOfOrderCommit { .. }))) {
-            panic!("Expected `LogReplayError::OutOfOrderCommit` but got: {res:?}")
-        }
-
-        Ok(())
-    }
-
-    #[test]
     /// Test that iteration yields each row only once
     /// in the edge case where a row is committed and has been deleted and re-inserted within the iterating TX.
     fn test_insert_delete_insert_iter() {
-        let (stdb, _tmp_dir) = make_test_db().expect("make_test_db failed");
+        let stdb = TestDB::durable().expect("failed to create TestDB");
         let ctx = ExecutionContext::default();
 
         let mut initial_tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
@@ -1584,5 +1646,213 @@ mod tests {
         );
 
         stdb.rollback_mut_tx(&ctx, delete_insert_tx);
+    }
+
+    #[test]
+    fn test_tx_inputs_are_in_the_commitlog() {
+        let _ = env_logger::builder()
+            .filter_level(log::LevelFilter::Trace)
+            .format_timestamp(None)
+            .is_test(true)
+            .try_init();
+
+        let stdb = TestDB::durable().expect("failed to create TestDB");
+
+        let timestamp = Timestamp::now();
+        let ctx = ExecutionContext::reducer(
+            stdb.address(),
+            ReducerContext {
+                name: "abstract_concrete_proxy_factory_impl".into(),
+                caller_identity: Identity::__dummy(),
+                caller_address: Address::__DUMMY,
+                timestamp,
+                arg_bsatn: Bytes::new(),
+            },
+        );
+
+        let row_ty = ProductType::from([("le_boeuf", AlgebraicType::I32)]);
+        let schema = TableDef::from_product("test_table", row_ty.clone());
+
+        // Create an empty transaction
+        {
+            let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+            stdb.commit_tx(&ctx, tx).expect("failed to commit empty transaction");
+        }
+
+        // Create an empty transaction pretending to be an
+        // `__identity_connected__` call.
+        {
+            let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+            stdb.commit_tx(
+                &ExecutionContext::reducer(
+                    stdb.address(),
+                    ReducerContext {
+                        name: "__identity_connected__".into(),
+                        caller_identity: Identity::__dummy(),
+                        caller_address: Address::__DUMMY,
+                        timestamp,
+                        arg_bsatn: Bytes::new(),
+                    },
+                ),
+                tx,
+            )
+            .expect("failed to commit empty __identity_connected__ transaction");
+        }
+
+        // Create a non-empty transaction including reducer info
+        let table_id = {
+            let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+            let table_id = stdb.create_table(&mut tx, schema).expect("failed to create table");
+            stdb.insert(&mut tx, table_id, product!(AlgebraicValue::I32(0)))
+                .expect("failed to insert row");
+            stdb.commit_tx(&ctx, tx).expect("failed to commit tx");
+
+            table_id
+        };
+
+        // Create a non-empty transaction without reducer info, as it would be
+        // created by a mutable SQL transaction
+        {
+            let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+            stdb.insert(&mut tx, table_id, product!(AlgebraicValue::I32(-42)))
+                .expect("failed to insert row");
+            stdb.commit_tx(&ExecutionContext::sql(stdb.address(), Default::default()), tx)
+                .expect("failed to commit tx");
+        }
+
+        // `txdata::Visitor` which only collects `txdata::Inputs`.
+        struct Inputs {
+            // The inputs collected during traversal of the log.
+            inputs: Vec<txdata::Inputs>,
+            // The number of transactions seen during traversal of the log.
+            num_txs: usize,
+            // System tables, needed to be able to consume transaction records.
+            sys: IntMap<TableId, ProductType>,
+            // The table created above, needed to be able to consume transaction
+            // records.
+            row_ty: ProductType,
+        }
+
+        impl txdata::Visitor for Inputs {
+            type Row = ();
+            type Error = anyhow::Error;
+
+            fn visit_insert<'a, R: BufReader<'a>>(
+                &mut self,
+                table_id: TableId,
+                reader: &mut R,
+            ) -> Result<Self::Row, Self::Error> {
+                let ty = self.sys.get(&table_id).unwrap_or(&self.row_ty);
+                let row = ProductValue::decode(ty, reader)?;
+                log::debug!("insert: {table_id} {row:?}");
+                Ok(())
+            }
+
+            fn visit_delete<'a, R: BufReader<'a>>(
+                &mut self,
+                table_id: TableId,
+                _reader: &mut R,
+            ) -> Result<Self::Row, Self::Error> {
+                bail!("unexpected delete for table: {table_id}")
+            }
+
+            fn visit_inputs(&mut self, inputs: &txdata::Inputs) -> Result<(), Self::Error> {
+                log::debug!("visit_inputs: {inputs:?}");
+                self.inputs.push(inputs.clone());
+                Ok(())
+            }
+
+            fn visit_tx_start(&mut self, offset: u64) -> Result<(), Self::Error> {
+                log::debug!("tx start: {offset}");
+                self.num_txs += 1;
+                Ok(())
+            }
+
+            fn visit_tx_end(&mut self) -> Result<(), Self::Error> {
+                log::debug!("tx end");
+                Ok(())
+            }
+        }
+
+        struct Decoder(Rc<RefCell<Inputs>>);
+
+        impl spacetimedb_commitlog::Decoder for Decoder {
+            type Record = txdata::Txdata<()>;
+            type Error = txdata::DecoderError<anyhow::Error>;
+
+            #[inline]
+            fn decode_record<'a, R: BufReader<'a>>(
+                &self,
+                version: u8,
+                tx_offset: u64,
+                reader: &mut R,
+            ) -> Result<Self::Record, Self::Error> {
+                txdata::decode_record_fn(&mut *self.0.borrow_mut(), version, tx_offset, reader)
+            }
+        }
+
+        let (db, durablity, rt, dir) = stdb.into_parts();
+        // Free reference to durability.
+        drop(db);
+        // Ensure everything is flushed to disk.
+        rt.expect("Durable TestDB must have a runtime")
+            .block_on(
+                Arc::into_inner(durablity.expect("Durable TestDB must have a durability"))
+                    .expect("failed to unwrap Arc")
+                    .close(),
+            )
+            .expect("failed to close local durabilility");
+
+        // Re-open commitlog and collect inputs.
+        let inputs = Rc::new(RefCell::new(Inputs {
+            inputs: Vec::new(),
+            num_txs: 0,
+            sys: system_tables()
+                .into_iter()
+                .map(|schema| (schema.table_id, schema.into_row_type()))
+                .collect(),
+            row_ty,
+        }));
+        {
+            let clog =
+                Commitlog::<()>::open(dir.path().join("clog"), Default::default()).expect("failed to open commitlog");
+            let decoder = Decoder(Rc::clone(&inputs));
+            clog.fold_transactions(decoder).unwrap();
+        }
+        // Just a safeguard so we don't drop the temp dir before this point.
+        drop(dir);
+
+        let inputs = Rc::into_inner(inputs).unwrap().into_inner();
+        log::debug!("collected inputs: {:?}", inputs.inputs);
+
+        // We should've seen three transactions --
+        // the empty one should've been ignored/
+        assert_eq!(inputs.num_txs, 3);
+        // Two of the transactions should yield inputs.
+        assert_eq!(inputs.inputs.len(), 2);
+
+        // Also assert that we got what we put in.
+        for (i, input) in inputs.inputs.into_iter().enumerate() {
+            let reducer_name = input.reducer_name.as_str();
+            if i == 0 {
+                assert_eq!(reducer_name, "__identity_connected__");
+            } else {
+                assert_eq!(reducer_name, "abstract_concrete_proxy_factory_impl");
+            }
+            let mut args = input.reducer_args.as_ref();
+            let identity: Identity =
+                bsatn::from_reader(&mut args).expect("failed to decode caller identity from reducer args");
+            let address: Address =
+                bsatn::from_reader(&mut args).expect("failed to decode caller address from reducer args");
+            let timestamp1: Timestamp =
+                bsatn::from_reader(&mut args).expect("failed to decode timestamp from reducer args");
+            assert!(
+                args.is_empty(),
+                "expected args to be exhausted because nullary args were given"
+            );
+            assert_eq!(identity, Identity::ZERO);
+            assert_eq!(address, Address::ZERO);
+            assert_eq!(timestamp1, timestamp);
+        }
     }
 }

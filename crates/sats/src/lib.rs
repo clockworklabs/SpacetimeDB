@@ -1,13 +1,13 @@
 pub mod algebraic_type;
 mod algebraic_type_ref;
 pub mod algebraic_value;
+mod algebraic_value_hash;
 pub mod array_type;
 pub mod array_value;
 pub mod bsatn;
 pub mod buffer;
 pub mod builtin_type;
 pub mod convert;
-pub mod data_key;
 pub mod db;
 pub mod de;
 pub mod hash;
@@ -27,13 +27,16 @@ pub mod sum_type_variant;
 pub mod sum_value;
 pub mod typespace;
 
+#[cfg(any(test, feature = "proptest"))]
+pub mod proptest;
+
 pub use algebraic_type::AlgebraicType;
 pub use algebraic_type_ref::AlgebraicTypeRef;
 pub use algebraic_value::{AlgebraicValue, F32, F64};
+pub use algebraic_value_hash::hash_bsatn;
 pub use array_type::ArrayType;
 pub use array_value::ArrayValue;
 pub use builtin_type::BuiltinType;
-pub use data_key::{DataKey, ToDataKey};
 pub use map_type::MapType;
 pub use map_value::MapValue;
 pub use product_type::ProductType;
@@ -52,7 +55,7 @@ pub trait Value {
     type Type;
 }
 
-impl<T: Value> Value for Vec<T> {
+impl<T: Value> Value for Box<[T]> {
     // TODO(centril/phoebe): This looks weird; shouldn't it be ArrayType?
     type Type = T::Type;
 }
@@ -109,7 +112,7 @@ impl<'a, T: Value> ValueWithType<'a, T> {
     }
 }
 
-impl<'a, T: Value> ValueWithType<'a, Vec<T>> {
+impl<'a, T: Value> ValueWithType<'a, Box<[T]>> {
     pub fn iter(&self) -> impl Iterator<Item = ValueWithType<'_, T>> {
         self.value().iter().map(|val| ValueWithType { ty: self.ty, val })
     }

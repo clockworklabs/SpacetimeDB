@@ -7,10 +7,10 @@ use spacetimedb_primitives::{ColId, ColList};
 /// "elements" / "fields" / "factors" of other `AlgebraicValue`s.
 ///
 /// The type of a product value is a [product type](`ProductType`).
-#[derive(Debug, Clone, Ord, PartialOrd, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Ord, PartialOrd, PartialEq, Eq, Default)]
 pub struct ProductValue {
     /// The values that make up this product value.
-    pub elements: Vec<AlgebraicValue>,
+    pub elements: Box<[AlgebraicValue]>,
 }
 
 /// Constructs a product value from a list of fields with syntax `product![v1, v2, ...]`.
@@ -20,7 +20,7 @@ pub struct ProductValue {
 macro_rules! product {
     [$($elems:expr),*$(,)?] => {
         $crate::ProductValue {
-            elements: vec![$($crate::AlgebraicValue::from($elems)),*],
+            elements: [$($crate::AlgebraicValue::from($elems)),*].into(),
         }
     }
 }
@@ -36,7 +36,7 @@ impl IntoIterator for ProductValue {
     type Item = AlgebraicValue;
     type IntoIter = std::vec::IntoIter<AlgebraicValue>;
     fn into_iter(self) -> Self::IntoIter {
-        self.elements.into_iter()
+        Vec::from(self.elements).into_iter()
     }
 }
 
@@ -168,12 +168,12 @@ impl ProductValue {
 
     /// Interprets the value at field of `self` identified by `index` as a `i128`.
     pub fn field_as_i128(&self, index: usize, named: Option<&'static str>) -> Result<i128, InvalidFieldError> {
-        self.extract_field(index, named, |f| f.as_i128().copied())
+        self.extract_field(index, named, |f| f.as_i128().copied().map(|x| x.0))
     }
 
     /// Interprets the value at field of `self` identified by `index` as a `u128`.
     pub fn field_as_u128(&self, index: usize, named: Option<&'static str>) -> Result<u128, InvalidFieldError> {
-        self.extract_field(index, named, |f| f.as_u128().copied())
+        self.extract_field(index, named, |f| f.as_u128().copied().map(|x| x.0))
     }
 
     /// Interprets the value at field of `self` identified by `index` as a string slice.

@@ -5,6 +5,7 @@ use spacetimedb_sats::buffer::{BufReader, BufWriter, DecodeError};
 use thiserror::Error;
 
 use crate::{
+    error,
     varint::{decode_varint, encode_varint},
     Encode, Varchar,
 };
@@ -96,6 +97,15 @@ pub struct Txdata<T> {
     pub inputs: Option<Inputs>,
     pub outputs: Option<Outputs>,
     pub mutations: Option<Mutations<T>>,
+}
+
+impl<T> Txdata<T> {
+    /// `true` if `self` contains neither inputs, outputs nor mutations.
+    pub fn is_empty(&self) -> bool {
+        self.inputs.is_none()
+            && self.outputs.is_none()
+            && self.mutations.as_ref().map(Mutations::is_empty).unwrap_or(true)
+    }
 }
 
 impl<T: Encode> Txdata<T> {
@@ -245,6 +255,13 @@ pub struct Mutations<T> {
     pub truncates: Box<[TableId]>,
 }
 
+impl<T> Mutations<T> {
+    /// `true` if `self` contains no mutations at all.
+    pub fn is_empty(&self) -> bool {
+        self.inserts.is_empty() && self.deletes.is_empty() && self.truncates.is_empty()
+    }
+}
+
 impl<T: Encode> Mutations<T> {
     /// Encode `self` in the canonical format to the given buffer.
     pub fn encode(&self, buf: &mut impl BufWriter) {
@@ -350,6 +367,8 @@ pub enum DecoderError<V> {
     Decode(#[from] DecodeError),
     #[error(transparent)]
     Visitor(V),
+    #[error(transparent)]
+    Traverse(#[from] error::Traversal),
 }
 
 /// A free standing implementation of [`crate::Decoder::decode_record`], which

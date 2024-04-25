@@ -9,6 +9,7 @@ pub mod prometheus_handle;
 mod future_queue;
 pub mod lending_pool;
 pub mod notify_once;
+pub mod slow;
 
 pub use future_queue::{future_queue, FutureQueue};
 
@@ -28,6 +29,12 @@ pub enum AnyBytes {
 
 impl From<Vec<u8>> for AnyBytes {
     fn from(b: Vec<u8>) -> Self {
+        Self::Bytes(b.into())
+    }
+}
+
+impl From<Box<[u8]>> for AnyBytes {
+    fn from(b: Box<[u8]>) -> Self {
         Self::Bytes(b.into())
     }
 }

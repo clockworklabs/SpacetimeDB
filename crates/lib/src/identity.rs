@@ -1,6 +1,6 @@
 use spacetimedb_bindings_macro::{Deserialize, Serialize};
 use spacetimedb_sats::hex::HexString;
-use spacetimedb_sats::{hash, impl_st, AlgebraicType};
+use spacetimedb_sats::{hash, impl_st, AlgebraicType, AlgebraicValue, ProductValue};
 use std::{fmt, str::FromStr};
 
 pub type RequestId = u32;
@@ -123,6 +123,12 @@ impl FromStr for Identity {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::from_hex(s)
+    }
+}
+
+impl From<Identity> for AlgebraicValue {
+    fn from(value: Identity) -> Self {
+        AlgebraicValue::Product(ProductValue::from(AlgebraicValue::Bytes(value.to_vec().into())))
     }
 }
 

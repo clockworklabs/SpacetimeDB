@@ -67,7 +67,12 @@ fn get_subcommands() -> Vec<Command> {
             ),
         Command::new("fingerprint")
             .about("Show or update a saved server's fingerprint")
-            .arg(Arg::new("server").help("The nickname, host name or URL of the server"))
+            .arg(
+                Arg::new("server")
+                    .short('s')
+                    .long("server")
+                    .help("The nickname, host name or URL of the server"),
+            )
             .arg(
                 Arg::new("force")
                     .help("Save changes to the server's configuration without confirming")

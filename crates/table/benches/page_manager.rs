@@ -146,7 +146,6 @@ unsafe impl Row for U32x64 {
 
     fn from_product(prod: ProductValue) -> Self {
         let vals: Vec<u32> = prod
-            .elements
             .into_iter()
             .map(|val| *val.as_u32().expect("Invalid product value for U32x64"))
             .collect();
@@ -165,18 +164,17 @@ unsafe impl FixedLenRow for U32x64 {
     }
 }
 
-unsafe impl Row for String {
+unsafe impl Row for Box<str> {
     fn row_type() -> ProductType {
         [AlgebraicType::String].into()
     }
 
     fn from_product(prod: ProductValue) -> Self {
-        prod.elements
-            .into_iter()
+        prod.into_iter()
             .next()
             .expect("Invalid ProductValue for String: not enough elements")
             .into_string()
-            .expect("Invalid ProductValue for String: not a String")
+            .expect("Invalid ProductValue for String: not a string")
     }
 
     fn to_product(self) -> ProductValue {
@@ -498,7 +496,7 @@ fn make_table(c: &mut Criterion) {
                 let mut tables = Vec::with_capacity(num_iters as usize);
                 let start = WallTime.start();
                 for schema in schemas {
-                    tables.push(Table::new(schema, SquashedOffset::COMMITTED_STATE));
+                    tables.push(Table::new(schema.into(), SquashedOffset::COMMITTED_STATE));
                 }
                 let elapsed = WallTime.end(start);
                 black_box(tables);
@@ -517,7 +515,7 @@ fn make_table(c: &mut Criterion) {
 fn make_table_for_row_type<R: Row>(name: &str) -> Table {
     let ty = R::row_type();
     let schema = schema_from_ty(ty.clone(), name);
-    Table::new(schema, SquashedOffset::COMMITTED_STATE)
+    Table::new(schema.into(), SquashedOffset::COMMITTED_STATE)
 }
 
 fn use_type_throughput<T>(group: &mut BenchmarkGroup<'_, impl Measurement>) {
@@ -555,15 +553,19 @@ fn table_insert_one_row(c: &mut Criterion) {
     let mut group = c.benchmark_group("table_insert_one_row/String");
 
     group.throughput(Throughput::Elements(1));
-    bench_insert_row(&mut group, "".to_string(), "0");
+    bench_insert_row(&mut group, Box::from(""), "0");
 
     group.throughput(Throughput::Bytes(1));
-    bench_insert_row(&mut group, "a".to_string(), "1");
+    bench_insert_row(&mut group, Box::from("a"), "1");
 
     for num_granules in [1, 2, 4, 8, 16] {
         let num_bytes = VarLenGranule::DATA_SIZE * num_granules;
         group.throughput(Throughput::Bytes(num_bytes as u64));
-        bench_insert_row(&mut group, "a".repeat(num_bytes), &num_bytes.to_string());
+        bench_insert_row(
+            &mut group,
+            "a".repeat(num_bytes).into_boxed_str(),
+            &num_bytes.to_string(),
+        );
     }
 }
 
@@ -598,15 +600,19 @@ fn table_delete_one_row(c: &mut Criterion) {
     let mut group = c.benchmark_group("table_delete_one_row/String");
 
     group.throughput(Throughput::Elements(1));
-    bench_delete_row(&mut group, "".to_string(), "0");
+    bench_delete_row(&mut group, Box::from(""), "0");
 
     group.throughput(Throughput::Bytes(1));
-    bench_delete_row(&mut group, "a".to_string(), "1");
+    bench_delete_row(&mut group, Box::from("a"), "1");
 
     for num_granules in [1, 2, 4, 8, 16] {
         let num_bytes = VarLenGranule::DATA_SIZE * num_granules;
         group.throughput(Throughput::Bytes(num_bytes as u64));
-        bench_delete_row(&mut group, "a".repeat(num_bytes), &num_bytes.to_string());
+        bench_delete_row(
+            &mut group,
+            "a".repeat(num_bytes).into_boxed_str(),
+            &num_bytes.to_string(),
+        );
     }
 }
 
@@ -644,15 +650,19 @@ fn table_extract_one_row(c: &mut Criterion) {
     let mut group = c.benchmark_group("table_extract_one_row/String");
 
     group.throughput(Throughput::Elements(1));
-    bench_extract_row(&mut group, "".to_string(), "0");
+    bench_extract_row(&mut group, Box::from(""), "0");
 
     group.throughput(Throughput::Bytes(1));
-    bench_extract_row(&mut group, "a".to_string(), "1");
+    bench_extract_row(&mut group, Box::from("a"), "1");
 
     for num_granules in [1, 2, 4, 8, 16] {
         let num_bytes = VarLenGranule::DATA_SIZE * num_granules;
         group.throughput(Throughput::Bytes(num_bytes as u64));
-        bench_extract_row(&mut group, "a".repeat(num_bytes), &num_bytes.to_string());
+        bench_extract_row(
+            &mut group,
+            "a".repeat(num_bytes).into_boxed_str(),
+            &num_bytes.to_string(),
+        );
     }
 }
 
@@ -707,9 +717,9 @@ impl IndexedRow for U32x64 {
     }
 }
 
-impl IndexedRow for String {
+impl IndexedRow for Box<str> {
     fn column_value_from_u64(u: u64) -> AlgebraicValue {
-        AlgebraicValue::String(u.to_string())
+        AlgebraicValue::String(u.to_string().into())
     }
     fn throughput() -> Throughput {
         // I'm too lazy to come up with an interface that computes the length of a string
@@ -720,7 +730,7 @@ impl IndexedRow for String {
 
 fn make_table_with_indexes<R: IndexedRow>() -> Table {
     let schema = R::make_schema();
-    let mut tbl = Table::new(schema, SquashedOffset::COMMITTED_STATE);
+    let mut tbl = Table::new(schema.into(), SquashedOffset::COMMITTED_STATE);
 
     let cols = R::indexed_columns();
     let idx = BTreeIndex::new(IndexId(0), &R::row_type().into(), &cols, false, "idx").unwrap();
@@ -843,7 +853,7 @@ fn index_insert(c: &mut Criterion) {
     bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 0.50);
     bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 1.00);
     bench_many_table_sizes::<U32x64>(FixedLenRow::from_u64, &mut group, "U32x64", 0.0);
-    bench_many_table_sizes::<String>(|i| i.to_string(), &mut group, "String", 0.0);
+    bench_many_table_sizes::<Box<str>>(|i| i.to_string().into(), &mut group, "String", 0.0);
 }
 
 fn index_seek(c: &mut Criterion) {
@@ -908,7 +918,7 @@ fn index_seek(c: &mut Criterion) {
     bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 0.50);
     bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 1.00);
     bench_many_table_sizes::<U32x64>(FixedLenRow::from_u64, &mut group, "U32x64", 0.0);
-    bench_many_table_sizes::<String>(|i| i.to_string(), &mut group, "String", 0.0);
+    bench_many_table_sizes::<Box<str>>(|i| i.to_string().into(), &mut group, "String", 0.0);
 }
 
 fn index_delete(c: &mut Criterion) {
@@ -957,7 +967,7 @@ fn index_delete(c: &mut Criterion) {
     bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 0.50);
     bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 1.00);
     bench_many_table_sizes::<U32x64>(FixedLenRow::from_u64, &mut group, "U32x64", 0.0);
-    bench_many_table_sizes::<String>(|i| i.to_string(), &mut group, "String", 0.0);
+    bench_many_table_sizes::<Box<str>>(|i| i.to_string().into(), &mut group, "String", 0.0);
 }
 
 criterion_group!(index, index_insert, index_seek, index_delete);

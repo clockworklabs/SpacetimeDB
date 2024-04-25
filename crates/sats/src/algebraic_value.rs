@@ -22,7 +22,7 @@ pub type F64 = decorum::Total<f64>;
 /// These are only values and not expressions.
 /// That is, they are canonical and cannot be simplified further by some evaluation.
 /// So forms like `42 + 24` are not represented in an `AlgebraicValue`.
-#[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, From)]
+#[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, From)]
 pub enum AlgebraicValue {
     /// A structural sum value.
     ///
@@ -64,7 +64,7 @@ pub enum AlgebraicValue {
     ///
     /// We box the `MapValue` to reduce size
     /// and because we assume that map values will be uncommon.
-    Map(MapValue),
+    Map(Box<MapValue>),
     /// A [`bool`] value of type [`AlgebraicType::Bool`].
     Bool(bool),
     /// An [`i8`] value of type [`AlgebraicType::I8`].
@@ -86,11 +86,11 @@ pub enum AlgebraicValue {
     /// An [`i128`] value of type [`AlgebraicType::I128`].
     ///
     /// We box these up as they allow us to shrink `AlgebraicValue`.
-    I128(i128),
+    I128(Packed<i128>),
     /// A [`u128`] value of type [`AlgebraicType::U128`].
     ///
     /// We box these up as they allow us to shrink `AlgebraicValue`.
-    U128(u128),
+    U128(Packed<u128>),
     /// A totally ordered [`F32`] value of type [`AlgebraicType::F32`].
     ///
     /// All floating point values defined in IEEE-754 are supported.
@@ -108,7 +108,30 @@ pub enum AlgebraicValue {
     /// A UTF-8 string value of type [`AlgebraicType::String`].
     ///
     /// Uses Rust's standard representation of strings.
-    String(String),
+    String(Box<str>),
+}
+
+/// Wraps `T` making the outer type packed with alignment 1.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(packed)]
+pub struct Packed<T>(pub T);
+
+impl From<u128> for AlgebraicValue {
+    fn from(value: u128) -> Self {
+        Self::U128(Packed(value))
+    }
+}
+
+impl From<i128> for AlgebraicValue {
+    fn from(value: i128) -> Self {
+        Self::I128(Packed(value))
+    }
+}
+
+impl<T> From<T> for Packed<T> {
+    fn from(value: T) -> Self {
+        Self(value)
+    }
 }
 
 #[allow(non_snake_case)]
@@ -131,17 +154,17 @@ impl AlgebraicValue {
     ///
     /// The type of `UNIT` is `()`.
     pub fn unit() -> Self {
-        Self::product([].into())
+        Self::product([])
     }
 
-    /// Returns an [`AlgebraicValue`] representing `v: Vec<u8>`.
+    /// Returns an [`AlgebraicValue`] representing `v: Box<[u8]>`.
     #[inline]
-    pub const fn Bytes(v: Vec<u8>) -> Self {
+    pub const fn Bytes(v: Box<[u8]>) -> Self {
         Self::Array(ArrayValue::U8(v))
     }
 
     /// Converts `self` into a byte string, if applicable.
-    pub fn into_bytes(self) -> Result<Vec<u8>, Self> {
+    pub fn into_bytes(self) -> Result<Box<[u8]>, Self> {
         match self {
             Self::Array(ArrayValue::U8(v)) => Ok(v),
             _ => Err(self),
@@ -178,13 +201,13 @@ impl AlgebraicValue {
     }
 
     /// Returns an [`AlgebraicValue`] representing a product value with the given `elements`.
-    pub const fn product(elements: Vec<Self>) -> Self {
-        Self::Product(ProductValue { elements })
+    pub fn product(elements: impl Into<ProductValue>) -> Self {
+        Self::Product(elements.into())
     }
 
     /// Returns an [`AlgebraicValue`] representing a map value defined by the given `map`.
     pub fn map(map: MapValue) -> Self {
-        Self::Map(map)
+        Self::Map(Box::new(map))
     }
 
     /// Returns the [`AlgebraicType`] of the sum value `x`.
@@ -204,7 +227,7 @@ impl AlgebraicValue {
 
     /// Returns the [`AlgebraicType`] of the product value `x`.
     pub(crate) fn type_of_product(x: &ProductValue) -> AlgebraicType {
-        AlgebraicType::product(x.elements.iter().map(|x| x.type_of().into()).collect::<Vec<_>>())
+        AlgebraicType::product(x.elements.iter().map(|x| x.type_of().into()).collect::<Box<[_]>>())
     }
 
     /// Returns the [`AlgebraicType`] of the map with key type `k` and value type `v`.
@@ -258,8 +281,8 @@ impl AlgebraicValue {
             Self::U32(x) => x == 0,
             Self::I64(x) => x == 0,
             Self::U64(x) => x == 0,
-            Self::I128(x) => x == 0,
-            Self::U128(x) => x == 0,
+            Self::I128(x) => x.0 == 0,
+            Self::U128(x) => x.0 == 0,
             Self::F32(x) => x == 0.0,
             Self::F64(x) => x == 0.0,
             _ => false,
@@ -339,7 +362,7 @@ mod tests {
     fn product_value() {
         let product_type = AlgebraicType::product([("foo", AlgebraicType::I32)]);
         let typespace = Typespace::new(vec![]);
-        let product_value = AlgebraicValue::product([AlgebraicValue::I32(42)].into());
+        let product_value = AlgebraicValue::product([AlgebraicValue::I32(42)]);
         assert_eq!(
             "(foo = 42)",
             in_space(&typespace, &product_type, &product_value).to_satn(),
@@ -365,7 +388,7 @@ mod tests {
     #[test]
     fn array() {
         let array = AlgebraicType::array(AlgebraicType::U8);
-        let value = AlgebraicValue::Array(ArrayValue::Sum(Vec::new()));
+        let value = AlgebraicValue::Array(ArrayValue::Sum([].into()));
         let typespace = Typespace::new(vec![]);
         assert_eq!(in_space(&typespace, &array, &value).to_satn(), "[]");
     }

@@ -26,7 +26,7 @@ use spacetimedb_vm::expr::Crud;
 #[derive(Error, Debug)]
 pub enum TableError {
     #[error("Table with name `{0}` start with 'st_' and that is reserved for internal system tables.")]
-    System(String),
+    System(Box<str>),
     #[error("Table with name `{0}` already exists.")]
     Exist(String),
     #[error("Table with name `{0}` not found.")]
@@ -56,7 +56,7 @@ pub enum TableError {
     )]
     DecodeField {
         table: String,
-        field: String,
+        field: Box<str>,
         expect: String,
         found: String,
     },
@@ -103,15 +103,15 @@ pub enum PlanError {
     #[error("Unsupported feature: `{feature}`")]
     Unsupported { feature: String },
     #[error("Unknown table: `{table}`")]
-    UnknownTable { table: String },
+    UnknownTable { table: Box<str> },
     #[error("Qualified Table `{expect}` not found")]
     TableNotFoundQualified { expect: String },
     #[error("Unknown field: `{field}` not found in the table(s): `{tables:?}`")]
-    UnknownField { field: FieldName, tables: Vec<String> },
+    UnknownField { field: FieldName, tables: Vec<Box<str>> },
     #[error("Field(s): `{fields:?}` not found in the table(s): `{tables:?}`")]
     UnknownFields {
         fields: Vec<FieldName>,
-        tables: Vec<String>,
+        tables: Vec<Box<str>>,
     },
     #[error("Ambiguous field: `{field}`. Also found in {found:?}")]
     AmbiguousField { field: String, found: Vec<FieldName> },
@@ -324,7 +324,7 @@ pub enum NodesError {
     #[error("table with name {0:?} already exists")]
     AlreadyExists(String),
     #[error("table with name `{0}` start with 'st_' and that is reserved for internal system tables.")]
-    SystemName(String),
+    SystemName(Box<str>),
     #[error("internal db error: {0}")]
     Internal(#[source] Box<DBError>),
     #[error("invalid index type: {0}")]

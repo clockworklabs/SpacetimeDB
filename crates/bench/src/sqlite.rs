@@ -135,8 +135,8 @@ impl BenchDatabase for SQLite {
 
     fn update_bulk<T: BenchTable>(&mut self, table_id: &Self::TableId, row_count: u32) -> ResultBench<()> {
         let mut product = T::product_type();
-        let id_column = product.elements.swap_remove(0).name.unwrap();
-        let update_column = product.elements.swap_remove(1).name.unwrap();
+        let id_column = product.elements[0].name.take().unwrap();
+        let update_column = product.elements[1].name.take().unwrap();
         // this relies on IDs having been generated in order...
         let statement =
             format!("UPDATE {table_id} SET {update_column} = {update_column} + 1 WHERE {id_column} < {row_count}");
@@ -175,11 +175,7 @@ impl BenchDatabase for SQLite {
         value: AlgebraicValue,
     ) -> ResultBench<()> {
         let statement = memo_query(BenchName::Filter, table_id, || {
-            let column: String = T::product_type()
-                .elements
-                .swap_remove(column_index as usize)
-                .name
-                .unwrap();
+            let column: Box<str> = T::product_type().elements[column_index as usize].name.take().unwrap();
             format!("SELECT * FROM {table_id} WHERE {column} = ?")
         });
 

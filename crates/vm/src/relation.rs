@@ -20,8 +20,15 @@ use std::sync::Arc;
 /// A `RelValue` is the type generated/consumed by a [Relation] operator.
 #[derive(Debug, Clone)]
 pub enum RelValue<'a> {
+    /// A reference to a row in a table.
     Row(RowRef<'a>),
+    /// An ephemeral row made during query execution.
     Projection(ProductValue),
+    /// A row coming directly from a collected update.
+    ///
+    /// This is really a row in a table, and not an actual projection.
+    /// However, for (lifetime) reasons, we cannot (yet) keep it as a `RowRef<'_>`
+    /// and must convert that into a `ProductValue`.
     ProjRef(&'a ProductValue),
 }
 
@@ -67,11 +74,11 @@ impl<'a> RelValue<'a> {
 
     /// Extends `self` with the columns in `other`.
     ///
-    /// This will always cause `RowRef<'_>`s to be read out into
+    /// This will always cause `RowRef<'_>`s to be read out into [`ProductValue`]s.
     pub fn extend(self, other: RelValue<'a>) -> RelValue<'a> {
-        let mut x = self.into_product_value();
-        x.elements.extend(other.into_product_value().elements);
-        RelValue::Projection(x)
+        let mut x: Vec<_> = self.into_product_value().elements.into();
+        x.extend(other.into_product_value());
+        RelValue::Projection(x.into())
     }
 
     /// Read the column at index `col`.

@@ -528,7 +528,7 @@ impl WasmInstanceEnv {
         Self::cvt(caller, AbiCall::CreateIndex, |caller| {
             let (mem, env) = Self::mem_env(caller);
             // Read the index name from WASM memory.
-            let index_name = mem.deref_str(index_name, index_name_len)?.to_owned();
+            let index_name = mem.deref_str(index_name, index_name_len)?.into();
 
             // Read the column ids on which to create an index from WASM memory.
             // This may be one column or an index on several columns.

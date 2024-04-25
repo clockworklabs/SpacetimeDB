@@ -14,7 +14,7 @@ use crate::database_logger::{LogLevel, Record, SystemLogger};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::traits::IsolationLevel;
 use crate::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
-use crate::execution_context::ExecutionContext;
+use crate::execution_context::{self, ExecutionContext, ReducerContext};
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_host::{
     CallReducerParams, DatabaseUpdate, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo,
@@ -241,6 +241,10 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         self.make_from_instance(instance)
     }
 
+    fn dbic(&self) -> &DatabaseInstanceContext {
+        &self.database_instance_context
+    }
+
     fn inject_logs(&self, log_level: LogLevel, message: &str) {
         self.database_instance_context.logger.write(
             log_level,
@@ -268,7 +272,8 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         let db = &self.database_instance_context.relational_db;
         let auth = AuthCtx::new(self.database_instance_context.identity, caller_identity);
         log::debug!("One-off query: {query}");
-        let ctx = &ExecutionContext::sql(db.address());
+        // Don't need the `slow query` logger on compilation
+        let ctx = &ExecutionContext::sql(db.address(), db.read_config().slow_query);
         let compiled: Vec<_> = db.with_read_only(ctx, |tx| {
             let ast = sql::compiler::compile_sql(db, tx, &query)?;
             ast.into_iter()
@@ -282,10 +287,10 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
                 .collect::<Result<_, _>>()
         })?;
 
-        sql::execute::execute_sql(db, compiled, auth)
+        sql::execute::execute_sql(db, &query, compiled, auth)
     }
 
-    fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error> {
+    fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {
         let db = &*self.database_instance_context.relational_db;
         db.with_auto_commit(&ExecutionContext::internal(db.address()), |tx| {
             let tables = db.get_all_tables_mut(tx)?;
@@ -293,7 +298,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
             // so we can assume there's only one table to clear.
             if let Some(table_id) = tables
                 .iter()
-                .find_map(|t| (t.table_name == table_name).then_some(t.table_id))
+                .find_map(|t| (&*t.table_name == table_name).then_some(t.table_id))
             {
                 db.clear_table(tx, table_id)?;
             }
@@ -537,7 +542,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             energy.used = tracing::field::Empty,
         )
         .entered();
-        let ctx = ExecutionContext::reducer(address, reducer_name.to_owned());
+        let ctx = ExecutionContext::reducer(address, ReducerContext::from(op.clone()));
         // run the call_reducer call in rayon. it's important that we don't acquire a lock inside a rayon task,
         // as that can lead to deadlock.
         let (ctx, tx, result) = rayon::scope(|_| tx_slot.set(ctx, tx, || self.instance.call_reducer(op, budget)));
@@ -603,17 +608,8 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 EventStatus::Failed(errmsg.into())
             }
             Ok(Ok(())) => {
-                if let Some((tx_data, bytes_written)) = stdb.commit_tx(&ctx, tx).unwrap() {
-                    // TODO(cloutiertyler): This tracking doesn't really belong here if we want to write transactions to disk
-                    // in batches. This is because it's possible for a tiny reducer call to trigger a whole commit to be written to disk.
-                    // We should track the commit sizes instead internally to the CommitLog probably.
-                    if let Some(bytes_written) = bytes_written {
-                        WORKER_METRICS
-                            .reducer_write_size
-                            .with_label_values(&address, reducer_name)
-                            .observe(bytes_written as f64);
-                    }
-                    EventStatus::Committed(DatabaseUpdate::from_writes(stdb, &tx_data))
+                if let Some(tx_data) = stdb.commit_tx(&ctx, tx).unwrap() {
+                    EventStatus::Committed(DatabaseUpdate::from_writes(&tx_data))
                 } else {
                     todo!("Write skew, you need to implement retries my man, T-dawg.");
                 }
@@ -653,12 +649,35 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     }
 }
 
-#[derive(Debug)]
+/// Describes a reducer call in a cheaply shareable way.
+#[derive(Clone, Debug)]
 pub struct ReducerOp<'a> {
     pub id: ReducerId,
     pub name: &'a str,
     pub caller_identity: &'a Identity,
     pub caller_address: &'a Address,
     pub timestamp: Timestamp,
+    /// The BSATN-serialized arguments passed to the reducer.
     pub arg_bytes: Bytes,
+}
+
+impl From<ReducerOp<'_>> for execution_context::ReducerContext {
+    fn from(
+        ReducerOp {
+            id: _,
+            name,
+            caller_identity,
+            caller_address,
+            timestamp,
+            arg_bytes,
+        }: ReducerOp<'_>,
+    ) -> Self {
+        Self {
+            name: name.to_owned(),
+            caller_identity: *caller_identity,
+            caller_address: *caller_address,
+            timestamp,
+            arg_bsatn: arg_bytes.clone(),
+        }
+    }
 }

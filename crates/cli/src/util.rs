@@ -361,7 +361,7 @@ Has the server rotated its keys?
 Remove the outdated identity with:
 \tspacetime identity remove {identity}
 Generate a new identity with:
-\tspacetime identity new --no-email --server {server}"
+\tspacetime identity new --no-email --server {server} --default"
         )
     })
 }

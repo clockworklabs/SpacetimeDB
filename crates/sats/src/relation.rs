@@ -11,25 +11,6 @@ use spacetimedb_primitives::{ColId, ColList, ColListBuilder, Constraints, TableI
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
-pub struct TableField<'a> {
-    pub table: Option<&'a str>,
-    pub field: &'a str,
-}
-
-pub fn extract_table_field(ident: &str) -> Result<TableField, RelationError> {
-    let parts: Vec<_> = ident.split('.').take(3).collect();
-
-    match parts[..] {
-        [table, field] => Ok(TableField {
-            table: Some(table),
-            field,
-        }),
-        [field] => Ok(TableField { table: None, field }),
-        _ => Err(RelationError::FieldPathInvalid(ident.to_string())),
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub enum FieldOnly<'a> {
     Name(&'a str),
     Pos(usize),
@@ -51,21 +32,21 @@ impl fmt::Display for FieldOnly<'_> {
 // TODO(perf): Remove `Clone` derivation.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub enum FieldName {
-    Name { table: String, field: String },
-    Pos { table: String, field: usize },
+    Name { table: Box<str>, field: Box<str> },
+    Pos { table: Box<str>, field: usize },
 }
 
 impl FieldName {
     pub fn named(table: &str, field: &str) -> Self {
         Self::Name {
-            table: table.to_string(),
-            field: field.to_string(),
+            table: table.into(),
+            field: field.into(),
         }
     }
 
     pub fn positional(table: &str, field: usize) -> Self {
         Self::Pos {
-            table: table.to_string(),
+            table: table.into(),
             field,
         }
     }
@@ -89,7 +70,7 @@ impl FieldName {
         }
     }
 
-    pub fn into_field_name(self) -> Option<String> {
+    pub fn into_field_name(self) -> Option<Box<str>> {
         match self {
             FieldName::Name { field, .. } => Some(field),
             FieldName::Pos { .. } => None,
@@ -160,16 +141,11 @@ pub struct ColumnOnlyField<'a> {
 pub struct Column {
     pub field: FieldName,
     pub algebraic_type: AlgebraicType,
-    pub col_id: ColId,
 }
 
 impl Column {
-    pub fn new(field: FieldName, algebraic_type: AlgebraicType, col_id: ColId) -> Self {
-        Self {
-            field,
-            algebraic_type,
-            col_id,
-        }
+    pub fn new(field: FieldName, algebraic_type: AlgebraicType) -> Self {
+        Self { field, algebraic_type }
     }
 
     pub fn as_without_table(&self) -> ColumnOnlyField {
@@ -188,13 +164,13 @@ pub struct HeaderOnlyField<'a> {
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Header {
-    pub table_name: String,
+    pub table_name: Box<str>,
     pub fields: Vec<Column>,
     pub constraints: Vec<(ColList, Constraints)>,
 }
 
 impl Header {
-    pub fn new(table_name: String, fields: Vec<Column>, constraints: Vec<(ColList, Constraints)>) -> Self {
+    pub fn new(table_name: Box<str>, fields: Vec<Column>, constraints: Vec<(ColList, Constraints)>) -> Self {
         Self {
             table_name,
             fields,
@@ -216,9 +192,8 @@ impl Header {
         }
     }
 
-    pub fn from_product_type(table_name: String, fields: ProductType) -> Self {
-        let cols = fields
-            .elements
+    pub fn from_product_type(table_name: Box<str>, fields: ProductType) -> Self {
+        let cols = Vec::from(fields.elements)
             .into_iter()
             .enumerate()
             .map(|(pos, f)| {
@@ -232,7 +207,7 @@ impl Header {
                         field,
                     },
                 };
-                Column::new(name, f.algebraic_type, ColId(pos as u32))
+                Column::new(name, f.algebraic_type)
             })
             .collect();
 
@@ -240,16 +215,15 @@ impl Header {
     }
 
     pub fn to_product_type(&self) -> ProductType {
-        ProductType::from_iter(
-            self.fields.iter().map(|x| {
-                ProductTypeElement::new(x.algebraic_type.clone(), x.field.field_name().map(ToString::to_string))
-            }),
-        )
+        self.fields
+            .iter()
+            .map(|x| ProductTypeElement::new(x.algebraic_type.clone(), x.field.field_name().map(Into::into)))
+            .collect()
     }
 
     pub fn for_mem_table(fields: ProductType) -> Self {
         let hash = DefaultHashBuilder::default().hash_one(&fields);
-        let table_name = format!("mem#{:x}", hash);
+        let table_name = format!("mem#{:x}", hash).into();
         Self::from_product_type(table_name, fields)
     }
 
@@ -257,14 +231,6 @@ impl Header {
         HeaderOnlyField {
             fields: self.fields.iter().map(|x| x.as_without_table()).collect(),
         }
-    }
-
-    pub fn ty(&self) -> ProductType {
-        ProductType::from_iter(
-            self.fields
-                .iter()
-                .map(|x| (x.field.field_name(), x.algebraic_type.clone())),
-        )
     }
 
     pub fn find_by_name(&self, field_name: &str) -> Option<&Column> {
@@ -293,8 +259,8 @@ impl Header {
         self.column_pos(&FieldName::named(&self.table_name, name))
     }
 
-    pub fn column<'a>(&'a self, col: &'a FieldName) -> Option<&Column> {
-        self.column_pos(col).map(|id| &self.fields[id.idx()])
+    pub fn field_name<'a>(&'a self, col: &'a FieldName) -> Option<(ColId, &FieldName)> {
+        self.column_pos(col).map(|id| (id, &self.fields[id.idx()].field))
     }
 
     /// Copy the [Constraints] that are referenced in the list of `for_columns`
@@ -337,7 +303,6 @@ impl Header {
                             field: pos,
                         },
                         col.type_of(),
-                        pos.into(),
                     ));
                 }
             }
@@ -372,8 +337,8 @@ impl Header {
         let mut cont = 0;
         //Avoid duplicated field names...
         for mut f in right.fields.iter().cloned() {
-            if f.field.table() == self.table_name && self.column_pos(&f.field).is_some() {
-                let name = format!("{}_{}", f.field.field(), cont);
+            if f.field.table() == &*self.table_name && self.column_pos(&f.field).is_some() {
+                let name = format!("{}_{}", f.field.field(), cont).into();
                 f.field = FieldName::Name {
                     table: f.field.table().into(),
                     field: name,
@@ -510,8 +475,8 @@ mod tests {
         Header::new(
             table.into(),
             vec![
-                Column::new(FieldName::named(table, fields.0), AlgebraicType::I8, 0.into()),
-                Column::new(FieldName::named(table, fields.1), AlgebraicType::I8, 0.into()),
+                Column::new(FieldName::named(table, fields.0), AlgebraicType::I8),
+                Column::new(FieldName::named(table, fields.1), AlgebraicType::I8),
             ],
             ct,
         )

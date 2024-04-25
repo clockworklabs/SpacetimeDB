@@ -523,6 +523,17 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
             TxMode::Tx(_) => unreachable!("mutable operation is invalid with read tx"),
         }
     }
+
+    fn _set_config(&mut self, name: String, value: AlgebraicValue) -> Result<Code, ErrorVm> {
+        self.db.set_config(&name, value)?;
+        Ok(Code::Pass)
+    }
+
+    fn _read_config(&self, name: String) -> Result<Code, ErrorVm> {
+        let config = self.db.read_config();
+
+        Ok(Code::Table(config.read_key_into_table(&name)?))
+    }
 }
 
 impl ProgramVm for DbProgram<'_, '_> {
@@ -562,7 +573,6 @@ impl ProgramVm for DbProgram<'_, '_> {
                     .into_iter()
                     .map(|row| {
                         let elements = row
-                            .elements
                             .into_iter()
                             .zip(&exprs)
                             .map(|(val, expr)| {
@@ -583,6 +593,8 @@ impl ProgramVm for DbProgram<'_, '_> {
             CrudExpr::Delete { query } => self._delete_query(&query, sources),
             CrudExpr::CreateTable { table } => self._create_table(table),
             CrudExpr::Drop { name, kind, .. } => self._drop(&name, kind),
+            CrudExpr::SetVar { name, value } => self._set_config(name, value),
+            CrudExpr::ReadVar { name } => self._read_config(name),
         }
     }
 }
@@ -616,7 +628,7 @@ pub(crate) mod tests {
         ST_COLUMNS_NAME, ST_INDEXES_NAME, ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID, ST_TABLES_NAME,
     };
     use crate::db::datastore::traits::IsolationLevel;
-    use crate::db::relational_db::tests_utils::make_test_db;
+    use crate::db::relational_db::tests_utils::TestDB;
     use crate::execution_context::ExecutionContext;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
@@ -634,12 +646,11 @@ pub(crate) mod tests {
         schema: ProductType,
         rows: &[ProductValue],
     ) -> ResultTest<TableId> {
-        let columns: Vec<_> = schema
-            .elements
+        let columns: Vec<_> = Vec::from(schema.elements)
             .into_iter()
             .enumerate()
             .map(|(i, e)| ColumnDef {
-                col_name: e.name.unwrap_or(i.to_string()),
+                col_name: e.name.unwrap_or_else(|| i.to_string().into()),
                 col_type: e.algebraic_type,
             })
             .collect();
@@ -678,7 +689,7 @@ pub(crate) mod tests {
     /// Location
     /// | entity_id: u64 | x : f32 | z : f32 |
     fn test_db_query_inner_join() -> ResultTest<()> {
-        let (stdb, _tmp_dir) = make_test_db()?;
+        let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
@@ -728,7 +739,7 @@ pub(crate) mod tests {
     /// Location
     /// | entity_id: u64 | x : f32 | z : f32 |
     fn test_db_query_semijoin() -> ResultTest<()> {
-        let (stdb, _tmp_dir) = make_test_db()?;
+        let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
@@ -780,7 +791,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_query_catalog_tables() -> ResultTest<()> {
-        let (stdb, _tmp_dir) = make_test_db()?;
+        let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
@@ -797,7 +808,7 @@ pub(crate) mod tests {
             ST_TABLES_NAME,
             StTableRow {
                 table_id: ST_TABLES_ID,
-                table_name: ST_TABLES_NAME.to_string(),
+                table_name: ST_TABLES_NAME.into(),
                 table_type: StTableType::System,
                 table_access: StAccess::Public,
             }
@@ -813,7 +824,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_query_catalog_columns() -> ResultTest<()> {
-        let (stdb, _tmp_dir) = make_test_db()?;
+        let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
@@ -852,7 +863,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_query_catalog_indexes() -> ResultTest<()> {
-        let (db, _tmp_dir) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row = product!(1u64, "health");
@@ -878,7 +889,7 @@ pub(crate) mod tests {
             ST_INDEXES_NAME,
             StIndexRow {
                 index_id,
-                index_name: "idx_1".to_owned(),
+                index_name: "idx_1".into(),
                 table_id,
                 columns: ColList::new(0.into()),
                 is_unique: true,
@@ -896,7 +907,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_query_catalog_sequences() -> ResultTest<()> {
-        let (db, _tmp_dir) = make_test_db()?;
+        let db = TestDB::durable()?;
 
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
@@ -913,7 +924,7 @@ pub(crate) mod tests {
             ST_SEQUENCES_NAME,
             StSequenceRow {
                 sequence_id: 3.into(),
-                sequence_name: "seq_st_sequence_sequence_id_primary_key_auto".to_string(),
+                sequence_name: "seq_st_sequence_sequence_id_primary_key_auto".into(),
                 table_id: 2.into(),
                 col_pos: 0.into(),
                 increment: 1,
