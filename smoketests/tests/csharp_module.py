@@ -23,9 +23,7 @@ class CreateProject(unittest.TestCase):
             run_cmd("dotnet", "pack", cwd=codegen, capture_stderr=True)
             run_cmd("dotnet", "pack", cwd=runtime, capture_stderr=True)
 
-            # with tempfile.TemporaryDirectory() as tmpdir:
-            tmpdir = tempfile.mkdtemp()
-            if True:
+            with tempfile.TemporaryDirectory() as tmpdir:
                 spacetime("init", "--lang=csharp", tmpdir)
 
                 codegen_bin = codegen / "bin" / "Release"
