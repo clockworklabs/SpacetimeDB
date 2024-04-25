@@ -250,9 +250,9 @@ fn autogen_python_product_table_common(
                     .expect("autogen'd tuples should have field names")
                     .replace("r#", "")
                     .to_case(Case::Snake);
-                format!("\"{}\"", field_name)
+                format!("\"{field_name}\"")
             }) {
-                writeln!(output, "primary_key = {}", primary_key);
+                writeln!(output, "primary_key = {primary_key}");
                 writeln!(output);
             }
 
@@ -380,7 +380,7 @@ fn autogen_python_product_table_common(
                 let python_field_name = field_name.to_string().replace("r#", "").to_case(Case::Snake);
                 match &field.algebraic_type {
                     AlgebraicType::Sum(sum_type) if sum_type.as_option().is_some() => {
-                        reducer_args.push(format!("{{'0': [self.{}]}}", python_field_name))
+                        reducer_args.push(format!("{{'0': [self.{python_field_name}]}}"))
                     }
                     AlgebraicType::Sum(_) => unimplemented!(),
                     AlgebraicType::Product(_) => {
@@ -393,7 +393,7 @@ fn autogen_python_product_table_common(
                         let ref_type = &ctx.typespace.types[type_ref.idx()];
                         if let AlgebraicType::Sum(sum_type) = ref_type {
                             if sum_type.is_simple_enum() {
-                                reducer_args.push(format!("{{str({}.value): []}}", python_field_name))
+                                reducer_args.push(format!("{{str({python_field_name}.value): []}}"))
                             } else {
                                 unimplemented!()
                             }
@@ -405,7 +405,7 @@ fn autogen_python_product_table_common(
             }
             let reducer_args_str = reducer_args.join(", ");
 
-            writeln!(output, "return [{}]", reducer_args_str);
+            writeln!(output, "return [{reducer_args_str}]");
         }
         writeln!(output);
 

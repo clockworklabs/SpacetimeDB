@@ -118,14 +118,14 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
                             let enum_name = parts[1];
                             write!(f, "{namespace}.{enum_namespace}.Types.{enum_name}")
                         } else {
-                            write!(f, "{}.{}", namespace, name)
+                            write!(f, "{namespace}.{name}")
                         }
                     } else {
-                        write!(f, "{}.{}", namespace, name)
+                        write!(f, "{namespace}.{name}")
                     }
                 }
                 _ => {
-                    write!(f, "{}.{}", namespace, name)
+                    write!(f, "{namespace}.{name}")
                 }
             }
         }
@@ -154,10 +154,9 @@ fn convert_builtintype<'a>(
             )?;
             writeln!(
                 f,
-                "\tvar vec{vecnest} = new System.Collections.Generic.List<{}>();",
-                csharp_type
+                "\tvar vec{vecnest} = new System.Collections.Generic.List<{csharp_type}>();"
             )?;
-            writeln!(f, "\tvar vec{vecnest}_source = {value}.AsArray();",)?;
+            writeln!(f, "\tvar vec{vecnest}_source = {value}.AsArray();")?;
             writeln!(f, "\tforeach(var entry in vec{vecnest}_source!)")?;
             writeln!(f, "\t{{")?;
             writeln!(
@@ -185,14 +184,12 @@ fn convert_type<'a>(
             if product.is_identity() {
                 write!(
                     f,
-                    "SpacetimeDB.Identity.From({}.AsProductValue().elements[0].AsBytes())",
-                    value
+                    "SpacetimeDB.Identity.From({value}.AsProductValue().elements[0].AsBytes())"
                 )
             } else if product.is_address() {
                 write!(
                     f,
-                    "(SpacetimeDB.Address)SpacetimeDB.Address.From({}.AsProductValue().elements[0].AsBytes())",
-                    value
+                    "(SpacetimeDB.Address)SpacetimeDB.Address.From({value}.AsProductValue().elements[0].AsBytes())"
                 )
             } else {
                 unimplemented!()
@@ -227,7 +224,7 @@ fn convert_type<'a>(
                                 ctx,
                                 vecnest,
                                 inner_ty,
-                                format_args!("{}.AsSumValue().tag == 1 ? null : {}.AsSumValue().value", value, value),
+                                format_args!("{value}.AsSumValue().tag == 1 ? null : {value}.AsSumValue().value"),
                                 namespace,
                             ),
                             f,
@@ -238,7 +235,7 @@ fn convert_type<'a>(
                             ctx,
                             vecnest,
                             inner_ty,
-                            format_args!("{}.AsSumValue().tag == 1 ? null : {}.AsSumValue().value", value, value),
+                            format_args!("{value}.AsSumValue().tag == 1 ? null : {value}.AsSumValue().value"),
                             namespace,
                         ),
                         f,
@@ -260,8 +257,7 @@ fn convert_type<'a>(
                             assert_eq!(
                                 split.len(),
                                 2,
-                                "Enum namespaces can only be in the form Namespace.EnumName, invalid value={}",
-                                name
+                                "Enum namespaces can only be in the form Namespace.EnumName, invalid value={name}"
                             );
                             let enum_namespace = split[0];
                             let enum_name = split[1];
@@ -277,7 +273,7 @@ fn convert_type<'a>(
                     }
                 }
                 _ => {
-                    write!(f, "({namespace}.{name})({value})",)
+                    write!(f, "({namespace}.{name})({value})")
                 }
             }
         }
@@ -303,8 +299,7 @@ fn convert_algebraic_type<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace:
             MaybePrimitive::Primitive(_) => {
                 write!(
                     f,
-                    "SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.{:?})",
-                    b
+                    "SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.{b:?})"
                 )
             }
             MaybePrimitive::Array(ArrayType { elem_ty }) => write!(
@@ -332,7 +327,7 @@ fn convert_algebraic_type<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace:
                     }
                 }
                 _ => {
-                    write!(f, "{}.{}.GetAlgebraicType()", namespace, name)
+                    write!(f, "{namespace}.{name}.GetAlgebraicType()")
                 }
             }
         }
@@ -356,7 +351,7 @@ fn convert_product_type<'a>(
                 "{INDENT}new SpacetimeDB.SATS.ProductTypeElement({}, {}),",
                 elem.name
                     .to_owned()
-                    .map(|s| format!("\"{}\"", s))
+                    .map(|s| format!("\"{s}\""))
                     .unwrap_or("null".into()),
                 convert_algebraic_type(ctx, &elem.algebraic_type, namespace)
             )?;
@@ -378,7 +373,7 @@ fn convert_sum_type<'a>(ctx: &'a GenCtx, sum_type: &'a SumType, namespace: &'a s
                 "\tnew SpacetimeDB.SATS.SumTypeVariant({}, {}),",
                 elem.name
                     .to_owned()
-                    .map(|s| format!("\"{}\"", s))
+                    .map(|s| format!("\"{s}\""))
                     .unwrap_or("null".into()),
                 convert_algebraic_type(ctx, &elem.algebraic_type, namespace)
             )?;
@@ -434,8 +429,8 @@ pub fn autogen_csharp_enum(ctx: &GenCtx, name: &str, sum_type: &SumType, namespa
             output,
             "public {}",
             match sum_namespace.clone() {
-                None => format!("enum {}", sum_type_name),
-                Some(namespace) => format!("partial class {}", namespace),
+                None => format!("enum {sum_type_name}"),
+                Some(namespace) => format!("partial class {namespace}"),
             },
         );
         writeln!(output, "{{");
@@ -447,7 +442,7 @@ pub fn autogen_csharp_enum(ctx: &GenCtx, name: &str, sum_type: &SumType, namespa
                     writeln!(output, "{{");
                     {
                         indent_scope!(output);
-                        writeln!(output, "public enum {}", sum_type_name);
+                        writeln!(output, "public enum {sum_type_name}");
                         writeln!(output, "{{");
                         {
                             indent_scope!(output);
@@ -457,7 +452,7 @@ pub fn autogen_csharp_enum(ctx: &GenCtx, name: &str, sum_type: &SumType, namespa
                                     .as_ref()
                                     .expect("All sum variants should have names!")
                                     .replace("r#", "");
-                                writeln!(output, "{},", variant_name);
+                                writeln!(output, "{variant_name},");
                             }
                         }
                         writeln!(output, "}}");
@@ -484,7 +479,7 @@ pub fn autogen_csharp_enum(ctx: &GenCtx, name: &str, sum_type: &SumType, namespa
                             .as_ref()
                             .expect("All sum variants should have names!")
                             .replace("r#", "");
-                        writeln!(output, "{},", variant_name);
+                        writeln!(output, "{variant_name},");
                     }
                 }
             }
@@ -522,7 +517,7 @@ fn autogen_csharp_enum_value_to_struct(
                     .as_ref()
                     .expect("autogen'd product types should have field names");
                 let csharp_variant_name = field_name.to_string().replace("r#", "").to_case(Case::Pascal);
-                writeln!(output, "case {}:", idx);
+                writeln!(output, "case {idx}:");
                 {
                     indent_scope!(output);
                     writeln!(output, "return {sum_full_enum_name}.{csharp_variant_name};");
@@ -653,12 +648,15 @@ fn autogen_csharp_product_table_common(
                         continue;
                     }
                     let type_name = ty_fmt(ctx, &col.col_type, namespace);
-                    let comparer = if format!("{}", type_name) == "byte[]" {
+                    let comparer = if format!("{type_name}") == "byte[]" {
                         ", new SpacetimeDB.ByteArrayComparer()"
                     } else {
                         ""
                     };
-                    writeln!(output, "private static Dictionary<{type_name}, {name}> {field_name}_Index = new Dictionary<{type_name}, {name}>(16{comparer});");
+                    writeln!(
+                        output,
+                        "private static Dictionary<{type_name}, {name}> {field_name}_Index = new Dictionary<{type_name}, {name}>(16{comparer});"
+                    );
                 }
                 writeln!(output);
                 // OnInsert method for updating indexes
@@ -811,11 +809,17 @@ fn autogen_csharp_product_table_common(
                 writeln!(output, "}}");
                 writeln!(output);
 
-                writeln!(output, "public static void OnRowUpdateEvent(SpacetimeDBClient.TableOp op, object oldValue, object newValue, ClientApi.Event dbEvent)");
+                writeln!(
+                    output,
+                    "public static void OnRowUpdateEvent(SpacetimeDBClient.TableOp op, object oldValue, object newValue, ClientApi.Event dbEvent)"
+                );
                 writeln!(output, "{{");
                 {
                     indent_scope!(output);
-                    writeln!(output, "OnRowUpdate?.Invoke(op, ({name})oldValue,({name})newValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);");
+                    writeln!(
+                        output,
+                        "OnRowUpdate?.Invoke(op, ({name})oldValue,({name})newValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
+                    );
                 }
                 writeln!(output, "}}");
             }
@@ -850,7 +854,7 @@ fn autogen_csharp_product_value_to_struct(
     writeln!(output_contents_header, "\tvar productValue = value.AsProductValue();").unwrap();
 
     // vec conversion go here
-    writeln!(output_contents_return, "\treturn new {}", struct_name_pascal_case).unwrap();
+    writeln!(output_contents_return, "\treturn new {struct_name_pascal_case}").unwrap();
     writeln!(output_contents_return, "\t{{").unwrap();
 
     for (idx, field) in product_type.elements.iter().enumerate() {
@@ -916,7 +920,7 @@ fn autogen_csharp_access_funcs_for_struct(
 
     writeln!(output, "public static int Count()");
     indented_block(output, |output| {
-        writeln!(output, "return SpacetimeDBClient.clientDB.Count(\"{table_name}\");",);
+        writeln!(output, "return SpacetimeDBClient.clientDB.Count(\"{table_name}\");");
     });
 
     let constraints = schema.column_constraints();
@@ -945,7 +949,7 @@ fn autogen_csharp_access_funcs_for_struct(
             AlgebraicType::Sum(sum) => {
                 if let Some(Builtin(b)) = sum.as_option() {
                     match maybe_primitive(b) {
-                        MaybePrimitive::Primitive(ty) => (format!("{:?}", b), format!("{}?", ty), true),
+                        MaybePrimitive::Primitive(ty) => (format!("{b:?}"), format!("{ty}?"), true),
                         _ => {
                             continue;
                         }
@@ -960,7 +964,7 @@ fn autogen_csharp_access_funcs_for_struct(
                 continue;
             }
             AlgebraicType::Builtin(b) => match maybe_primitive(b) {
-                MaybePrimitive::Primitive(ty) => (format!("{:?}", b), ty.into(), false),
+                MaybePrimitive::Primitive(ty) => (format!("{b:?}"), ty.into(), false),
                 MaybePrimitive::Array(ArrayType { elem_ty }) => {
                     if let Some(BuiltinType::U8) = elem_ty.as_builtin() {
                         // Do allow filtering for byte arrays
@@ -981,14 +985,13 @@ fn autogen_csharp_access_funcs_for_struct(
             if is_unique {
                 f.write_str(struct_name_pascal_case)
             } else {
-                write!(f, "System.Collections.Generic.IEnumerable<{}>", struct_name_pascal_case)
+                write!(f, "System.Collections.Generic.IEnumerable<{struct_name_pascal_case}>")
             }
         });
 
         writeln!(
             output,
-            "public static {filter_return_type} FilterBy{}({} value)",
-            csharp_field_name_pascal, csharp_field_type
+            "public static {filter_return_type} FilterBy{csharp_field_name_pascal}({csharp_field_type} value)"
         );
 
         writeln!(output, "{{");
@@ -1003,43 +1006,47 @@ fn autogen_csharp_access_funcs_for_struct(
             } else {
                 writeln!(
                     output,
-                    "foreach(var entry in SpacetimeDBClient.clientDB.GetEntries(\"{}\"))",
-                    table_name
+                    "foreach(var entry in SpacetimeDBClient.clientDB.GetEntries(\"{table_name}\"))"
                 );
                 writeln!(output, "{{");
                 {
                     indent_scope!(output);
                     writeln!(output, "var productValue = entry.Item1.AsProductValue();");
                     if field_type == "Identity" {
-                        writeln!(output, "var compareValue = Identity.From(productValue.elements[{}].AsProductValue().elements[0].AsBytes());",
-                        col_i);
+                        writeln!(
+                            output,
+                            "var compareValue = Identity.From(productValue.elements[{col_i}].AsProductValue().elements[0].AsBytes());"
+                        );
                     } else if is_option {
-                        writeln!(output, "var compareValue = ({})(productValue.elements[{}].AsSumValue().tag == 1 ? null : productValue.elements[{}].AsSumValue().value.As{}());",
-                        csharp_field_type, col_i, col_i, field_type);
+                        writeln!(
+                            output,
+                            "var compareValue = ({csharp_field_type})(productValue.elements[{col_i}].AsSumValue().tag == 1 ? null : productValue.elements[{col_i}].AsSumValue().value.As{field_type}());"
+                        );
                     } else if field_type == "Address" {
-                        writeln!(output, "var compareValue = (Address)Address.From(productValue.elements[{}].AsProductValue().elements[0].AsBytes());",
-                        col_i);
+                        writeln!(
+                            output,
+                            "var compareValue = (Address)Address.From(productValue.elements[{col_i}].AsProductValue().elements[0].AsBytes());"
+                        );
                     } else {
                         writeln!(
                             output,
-                            "var compareValue = ({})productValue.elements[{}].As{}();",
-                            csharp_field_type, col_i, field_type
+                            "var compareValue = ({csharp_field_type})productValue.elements[{col_i}].As{field_type}();"
                         );
                     }
                     if csharp_field_type == "byte[]" {
                         writeln!(
                             output,
                             "static bool ByteArrayCompare(byte[] a1, byte[] a2)
-                            {{
-                                if (a1.Length != a2.Length)
-                                    return false;
+    {{
+        if (a1.Length != a2.Length)
+            return false;
 
-                                for (int i=0; i<a1.Length; i++)
-                                    if (a1[i]!=a2[i])
-                                        return false;
+        for (int i=0; i<a1.Length; i++)
+            if (a1[i]!=a2[i])
+                return false;
 
-                                return true;
-                            }}"
+        return true;
+    }}"
                         );
                         writeln!(output);
                         writeln!(output, "if (ByteArrayCompare(compareValue, value)) {{");
@@ -1079,7 +1086,10 @@ fn autogen_csharp_access_funcs_for_struct(
     }
 
     if let Some(primary_col_index) = primary_col_idx {
-        writeln!(output, "public static bool ComparePrimaryKey(SpacetimeDB.SATS.AlgebraicType t, SpacetimeDB.SATS.AlgebraicValue v1, SpacetimeDB.SATS.AlgebraicValue v2)");
+        writeln!(
+            output,
+            "public static bool ComparePrimaryKey(SpacetimeDB.SATS.AlgebraicType t, SpacetimeDB.SATS.AlgebraicValue v1, SpacetimeDB.SATS.AlgebraicValue v2)"
+        );
         writeln!(output, "{{");
         {
             indent_scope!(output);
@@ -1093,7 +1103,10 @@ fn autogen_csharp_access_funcs_for_struct(
                 "var primaryColumnValue2 = v2.AsProductValue().elements[{}];",
                 primary_col_index.col_pos
             );
-            writeln!(output, "return SpacetimeDB.SATS.AlgebraicValue.Compare(t.product.elements[0].algebraicType, primaryColumnValue1, primaryColumnValue2);");
+            writeln!(
+                output,
+                "return SpacetimeDB.SATS.AlgebraicValue.Compare(t.product.elements[0].algebraicType, primaryColumnValue1, primaryColumnValue2);"
+            );
         }
         writeln!(output, "}}");
         writeln!(output);
@@ -1129,7 +1142,10 @@ fn autogen_csharp_access_funcs_for_struct(
         }
         writeln!(output, "}}");
     } else {
-        writeln!(output, "public static bool ComparePrimaryKey(SpacetimeDB.SATS.AlgebraicType t, SpacetimeDB.SATS.AlgebraicValue _v1, SpacetimeDB.SATS.AlgebraicValue _v2)");
+        writeln!(
+            output,
+            "public static bool ComparePrimaryKey(SpacetimeDB.SATS.AlgebraicType t, SpacetimeDB.SATS.AlgebraicValue _v1, SpacetimeDB.SATS.AlgebraicValue _v2)"
+        );
         writeln!(output, "{{");
         {
             indent_scope!(output);
@@ -1181,7 +1197,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
     writeln!(output);
 
     if use_namespace {
-        writeln!(output, "namespace {}", namespace);
+        writeln!(output, "namespace {namespace}");
         writeln!(output, "{{");
         output.indent(1);
     }
@@ -1196,7 +1212,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
             let name = arg
                 .name
                 .as_deref()
-                .unwrap_or_else(|| panic!("reducer args should have names: {}", func_name));
+                .unwrap_or_else(|| panic!("reducer args should have names: {func_name}"));
             let arg_name = name.to_case(Case::Camel);
             let arg_type_str = ty_fmt(ctx, &arg.algebraic_type, namespace);
 
@@ -1207,7 +1223,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
             match &arg.algebraic_type {
                 AlgebraicType::Sum(sum_type) => {
                     if sum_type.as_option().is_some() {
-                        json_args.push_str(&format!("new SpacetimeDB.SomeWrapper<{}>({})", arg_type_str, arg_name));
+                        json_args.push_str(&format!("new SpacetimeDB.SomeWrapper<{arg_type_str}>({arg_name})"));
                     } else {
                         json_args.push_str(&arg_name);
                     }
@@ -1222,9 +1238,8 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
                     let ref_type = &ctx.typespace.types[type_ref.idx()];
                     if let AlgebraicType::Sum(sum_type) = ref_type {
                         if sum_type.is_simple_enum() {
-                            json_args.push_str(
-                                format!("new SpacetimeDB.EnumWrapper<{}>({})", arg_type_str, arg_name).as_str(),
-                            );
+                            json_args
+                                .push_str(format!("new SpacetimeDB.EnumWrapper<{arg_type_str}>({arg_name})").as_str());
                         } else {
                             unimplemented!()
                         }
@@ -1239,8 +1254,8 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
             }
             arg_types.push_str(", ");
 
-            write!(func_arguments, "{} {}", arg_type_str, arg_name).unwrap();
-            write!(arg_types, "{}", arg_type_str).unwrap();
+            write!(func_arguments, "{arg_type_str} {arg_name}").unwrap();
+            write!(arg_types, "{arg_type_str}").unwrap();
         }
 
         let delegate_args = if !reducer.args.is_empty() {
@@ -1265,7 +1280,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
             indent_scope!(output);
 
             // Tell the network manager to send this message
-            writeln!(output, "var _argArray = new object[] {{{}}};", json_args);
+            writeln!(output, "var _argArray = new object[] {{{json_args}}};");
             writeln!(output, "var _message = new SpacetimeDBClient.ReducerCallRequest {{");
             {
                 indent_scope!(output);
@@ -1274,7 +1289,10 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
             }
             writeln!(output, "}};");
 
-            writeln!(output, "SpacetimeDBClient.instance.InternalCallReducer(Newtonsoft.Json.JsonConvert.SerializeObject(_message, _settings));");
+            writeln!(
+                output,
+                "SpacetimeDBClient.instance.InternalCallReducer(Newtonsoft.Json.JsonConvert.SerializeObject(_message, _settings));"
+            );
         }
         // Closing brace for reducer
         writeln!(output, "}}");
@@ -1308,7 +1326,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
                         let arg_name = arg
                             .name
                             .clone()
-                            .unwrap_or_else(|| format!("arg_{}", i).into())
+                            .unwrap_or_else(|| format!("arg_{i}").into())
                             .deref()
                             .to_case(Case::Pascal);
                         let arg_type_str = ty_fmt(ctx, &arg.algebraic_type, namespace);
@@ -1346,7 +1364,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
                 let arg_name = arg
                     .name
                     .clone()
-                    .unwrap_or_else(|| format!("arg_{}", i).into())
+                    .unwrap_or_else(|| format!("arg_{i}").into())
                     .deref()
                     .to_case(Case::Pascal);
                 let algebraic_type = convert_algebraic_type(ctx, &arg.algebraic_type, namespace);
@@ -1377,7 +1395,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
             let arg_name = arg
                 .name
                 .clone()
-                .unwrap_or_else(|| format!("arg_{}", i).into())
+                .unwrap_or_else(|| format!("arg_{i}").into())
                 .deref()
                 .to_case(Case::Pascal);
             let cs_type = ty_fmt(ctx, &arg.algebraic_type, namespace);
@@ -1432,7 +1450,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
     writeln!(output);
 
     if use_namespace {
-        writeln!(output, "namespace {}", namespace);
+        writeln!(output, "namespace {namespace}");
         writeln!(output, "{{");
         output.indent(1);
     }
@@ -1515,7 +1533,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
                                 let arg_name = arg
                                     .name
                                     .clone()
-                                    .unwrap_or_else(|| format!("arg_{}", i).into())
+                                    .unwrap_or_else(|| format!("arg_{i}").into())
                                     .deref()
                                     .to_case(Case::Pascal);
                                 writeln!(output, "args.{arg_name},");
@@ -1551,7 +1569,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
     writeln!(output);
 
     if use_namespace {
-        writeln!(output, "namespace {}", namespace);
+        writeln!(output, "namespace {namespace}");
         writeln!(output, "{{");
         output.indent(1);
     }
@@ -1561,7 +1579,10 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
     writeln!(output, "{{");
     {
         indent_scope!(output);
-        writeln!(output, "private static Newtonsoft.Json.JsonSerializerSettings _settings = new Newtonsoft.Json.JsonSerializerSettings");
+        writeln!(
+            output,
+            "private static Newtonsoft.Json.JsonSerializerSettings _settings = new Newtonsoft.Json.JsonSerializerSettings"
+        );
         writeln!(output, "{{");
         {
             indent_scope!(output);

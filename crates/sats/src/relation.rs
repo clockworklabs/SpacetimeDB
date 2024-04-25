@@ -366,7 +366,7 @@ impl From<Header> for ProductType {
 
 impl fmt::Display for Header {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[",)?;
+        write!(f, "[")?;
         for (pos, col) in self.fields.iter().enumerate() {
             write!(
                 f,
@@ -379,7 +379,7 @@ impl fmt::Display for Header {
                 write!(f, ", ")?;
             }
         }
-        write!(f, "]",)
+        write!(f, "]")
     }
 }
 

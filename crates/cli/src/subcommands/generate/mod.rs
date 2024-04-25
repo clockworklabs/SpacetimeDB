@@ -1,3 +1,5 @@
+#![warn(clippy::uninlined_format_args)]
+
 use std::fs;
 use std::io::Write;
 use std::ops::Deref;
