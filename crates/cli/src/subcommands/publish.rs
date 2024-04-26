@@ -9,7 +9,6 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::config::Config;
-use crate::util;
 use crate::util::unauth_error_context;
 use crate::util::{add_auth_header_opt, get_auth_header};
 
@@ -112,8 +111,14 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let build_debug = args.get_flag("debug");
     let wasm_file = args.get_one::<PathBuf>("wasm_file");
     let database_host = config.get_host_url(server)?;
-    // Validate the identity first to provide an early error message
-    util::select_identity_config(&mut config, identity, server).await?;
+
+    // If the user didn't specify an identity and we didn't specify an anonymous identity, then
+    // we want to use the default identity
+    // TODO(jdetter): We should maybe have some sort of user prompt here for them to be able to
+    //  easily create a new identity with an email
+    let (auth_header, identity) = get_auth_header(&mut config, anon_identity, identity, server)
+        .await?
+        .unzip();
 
     let mut query_params = Vec::<(&str, &str)>::new();
     query_params.push(("host_type", host_type.as_str()));
@@ -166,15 +171,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         format!("{}/database/publish", database_host).as_str(),
         query_params,
     )?);
-
-    // If the user didn't specify an identity and we didn't specify an anonymous identity, then
-    // we want to use the default identity
-    // TODO(jdetter): We should maybe have some sort of user prompt here for them to be able to
-    //  easily create a new identity with an email
-
-    let (auth_header, identity) = get_auth_header(&mut config, anon_identity, identity, server)
-        .await?
-        .unzip();
 
     builder = add_auth_header_opt(builder, &auth_header);
 

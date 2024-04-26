@@ -388,7 +388,9 @@ async fn exec_new(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let alias = args.get_one::<String>("name");
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let default = *args.get_one::<bool>("default").unwrap();
-    config.can_set_name(alias.map(|x| x.as_str()))?;
+    if let Some(x) = alias {
+        config.can_set_name(x.as_str())?;
+    }
 
     let email = args.get_one::<String>("email");
     let no_email = args.get_flag("no-email");
@@ -445,10 +447,12 @@ async fn exec_import(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
 
     //optional
     let nickname = args.get_one::<String>("name").cloned();
-    config.can_set_name(nickname.as_deref())?;
+    if let Some(x) = nickname.as_deref() {
+        config.can_set_name(x)?;
+    }
 
     if config.identity_configs().iter().any(|ic| ic.identity == identity) {
-        return Err(anyhow::anyhow!("Identity already exists in config"));
+        return Err(anyhow::anyhow!("Identity \"{}\" already exists in config", identity));
     };
 
     config.identity_configs_mut().push(IdentityConfig {
@@ -581,7 +585,7 @@ async fn exec_token(config: Config, args: &ArgMatches) -> Result<(), anyhow::Err
 async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let new_name = args.get_one::<String>("name").unwrap();
     let identity = args.get_one::<String>("identity").unwrap();
-    config.can_set_name(Some(new_name.as_str()))?;
+    config.can_set_name(new_name.as_str())?;
     let ic = config
         .get_identity_config_mut(identity)
         .ok_or_else(|| anyhow::anyhow!("Missing identity credentials for identity: {identity}"))?;

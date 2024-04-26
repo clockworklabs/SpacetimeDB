@@ -149,14 +149,10 @@ pub async fn select_identity_config(
     server: Option<&str>,
 ) -> Result<IdentityConfig, anyhow::Error> {
     if let Some(identity_or_name) = identity_or_name {
-        if identity_or_name.is_empty() {
-            return Err(anyhow::anyhow!("Identity value cannot be empty."));
-        }
-
         config
             .get_identity_config(identity_or_name)
             .cloned()
-            .ok_or_else(|| anyhow::anyhow!("No such identity credentials for identity: {}", identity_or_name))
+            .ok_or_else(|| anyhow::anyhow!("No identity credentials for identity \"{}\"", identity_or_name))
     } else {
         Ok(init_default(config, None, server).await?.identity_config)
     }

@@ -978,17 +978,13 @@ Import an existing identity with:
         })
     }
 
-    pub fn can_set_name(&self, new_nickname: Option<&str>) -> Result<(), anyhow::Error> {
-        if let Some(new_nickname) = new_nickname {
-            if self.name_exists(new_nickname) {
-                return Err(anyhow::anyhow!("An identity with that name already exists."));
-            }
-
-            if is_hex_identity(new_nickname) {
-                return Err(anyhow::anyhow!("An identity name cannot be an identity."));
-            }
+    pub fn can_set_name(&self, new_nickname: &str) -> Result<(), anyhow::Error> {
+        if self.name_exists(new_nickname) {
+            return Err(anyhow::anyhow!("An identity with that name already exists."));
         }
-
+        if is_hex_identity(new_nickname) {
+            return Err(anyhow::anyhow!("An identity name cannot be an identity."));
+        }
         Ok(())
     }
 
