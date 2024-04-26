@@ -996,7 +996,6 @@ impl Table {
 pub(crate) mod test {
     use super::*;
     use crate::blob_store::HashMapBlobStore;
-    use crate::indexes::{PageIndex, PageOffset};
     use proptest::prelude::*;
     use proptest::test_runner::TestCaseResult;
     use spacetimedb_sats::bsatn::to_vec;
