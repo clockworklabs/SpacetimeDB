@@ -388,7 +388,7 @@ async fn exec_new(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let alias = args.get_one::<String>("name");
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let default = *args.get_one::<bool>("default").unwrap();
-    if let Some(x) = alias.as_deref() {
+    if let Some(x) = alias {
         config.can_set_name(x)?;
     }
 
@@ -451,7 +451,7 @@ async fn exec_import(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
         config.can_set_name(x)?;
     }
 
-    if config.identity_configs().iter().any(|ic| ic.identity == identity) {
+    if config.identity_exists(&identity) {
         return Err(anyhow::anyhow!("Identity \"{}\" already exists in config", identity));
     };
 

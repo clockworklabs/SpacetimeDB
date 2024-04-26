@@ -988,13 +988,12 @@ Import an existing identity with:
         Ok(())
     }
 
-    pub fn name_exists(&self, nickname: &str) -> bool {
-        for name in self.identity_configs().iter().map(|c| &c.nickname) {
-            if name.as_ref() == Some(&nickname.to_string()) {
-                return true;
-            }
-        }
-        false
+    pub fn name_exists(&self, name: &str) -> bool {
+        self.get_identity_config_by_name(name).is_some()
+    }
+
+    pub fn identity_exists(&self, identity: &Identity) -> bool {
+        self.get_identity_config_by_identity(identity).is_some()
     }
 
     pub fn get_identity_config_by_name(&self, name: &str) -> Option<&IdentityConfig> {
