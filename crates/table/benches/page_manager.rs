@@ -531,7 +531,7 @@ fn table_insert_one_row(c: &mut Criterion) {
         let mut ctx = (table, NullBlobStore);
         let ptr = ctx.0.insert(&mut ctx.1, &val).unwrap().1.pointer();
         let pre = |_, (table, bs): &mut (Table, NullBlobStore)| {
-            table.delete(bs, ptr).unwrap();
+            table.delete(bs, ptr, |_| ()).unwrap();
         };
         group.bench_function(name, |b| {
             iter_time_with(b, &mut ctx, pre, |_, _, (table, bs)| {
@@ -582,7 +582,7 @@ fn table_delete_one_row(c: &mut Criterion) {
         let insert = |_: u64, (table, bs): &mut (Table, NullBlobStore)| table.insert(bs, &val).unwrap().1.pointer();
 
         group.bench_function(name, |b| {
-            iter_time_with(b, &mut ctx, insert, |row, _, (table, bs)| table.delete(bs, row));
+            iter_time_with(b, &mut ctx, insert, |row, _, (table, bs)| table.delete(bs, row, |_| ()));
         });
     }
 
@@ -773,7 +773,7 @@ fn clear_all_same<R: IndexedRow>(tbl: &mut Table, val_same: u64) {
         .map(|r| r.pointer())
         .collect::<Vec<_>>();
     for ptr in ptrs {
-        tbl.delete(&mut NullBlobStore, ptr).unwrap();
+        tbl.delete(&mut NullBlobStore, ptr, |_| ()).unwrap();
     }
 }
 
@@ -939,7 +939,9 @@ fn index_delete(c: &mut Criterion) {
                     clear_all_same::<R>(tbl, num_rows);
                     insert_num_same(tbl, || make_row(num_rows), num_same).unwrap()
                 };
-                iter_time_with(b, &mut tbl, pre, |ptr, _, tbl| tbl.delete(&mut NullBlobStore, ptr));
+                iter_time_with(b, &mut tbl, pre, |ptr, _, tbl| {
+                    tbl.delete(&mut NullBlobStore, ptr, |_| ())
+                });
             },
         );
     }
