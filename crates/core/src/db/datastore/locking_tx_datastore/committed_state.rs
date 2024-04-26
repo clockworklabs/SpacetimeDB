@@ -43,7 +43,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 #[derive(Default)]
-pub(crate) struct CommittedState {
+pub struct CommittedState {
     pub(crate) next_tx_offset: u64,
     pub(crate) tables: IntMap<TableId, Table>,
     pub(crate) blob_store: HashMapBlobStore,
@@ -555,6 +555,12 @@ impl CommittedState {
 
     pub(super) fn get_table_mut(&mut self, table_id: TableId) -> Option<&mut Table> {
         self.tables.get_mut(&table_id)
+    }
+
+    pub fn get_table_and_blob_store_immutable(&self, table_id: TableId) -> Option<(&Table, &dyn BlobStore)> {
+        self.tables
+            .get(&table_id)
+            .map(|tbl| (tbl, &self.blob_store as &dyn BlobStore))
     }
 
     pub(super) fn get_table_and_blob_store(&mut self, table_id: TableId) -> Option<(&mut Table, &mut dyn BlobStore)> {
