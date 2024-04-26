@@ -503,10 +503,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let stdb = &*dbic.relational_db.clone();
         let address = dbic.address;
         let reducer_name = &*self.info.reducers[reducer_id].name;
-        WORKER_METRICS
-            .reducer_count
-            .with_label_values(&address, reducer_name)
-            .inc();
 
         let _outer_span = tracing::trace_span!("call_reducer",
             reducer_name,
@@ -570,11 +566,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             );
         }
         reducer_span.exit();
-
-        WORKER_METRICS
-            .reducer_compute_time
-            .with_label_values(&address, reducer_name)
-            .observe(timings.total_duration.as_secs_f64());
 
         // Take a lock on our subscriptions now. Otherwise, we could have a race condition where we commit
         // the tx, someone adds a subscription and receives this tx as an initial update, and then receives the

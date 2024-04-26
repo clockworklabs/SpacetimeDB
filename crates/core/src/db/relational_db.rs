@@ -548,10 +548,6 @@ impl RelationalDB {
     }
 
     pub fn drop_table(&self, ctx: &ExecutionContext, tx: &mut MutTx, table_id: TableId) -> Result<(), DBError> {
-        let _guard = DB_METRICS
-            .rdb_drop_table_time
-            .with_label_values(&table_id.0)
-            .start_timer();
         let table_name = self
             .table_name_from_id_mut(ctx, tx, table_id)?
             .map(|name| name.to_string())
