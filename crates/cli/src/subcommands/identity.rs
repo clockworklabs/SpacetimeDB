@@ -388,8 +388,8 @@ async fn exec_new(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let alias = args.get_one::<String>("name");
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let default = *args.get_one::<bool>("default").unwrap();
-    if let Some(x) = alias {
-        config.can_set_name(x.as_str())?;
+    if let Some(x) = alias.as_deref() {
+        config.can_set_name(x)?;
     }
 
     let email = args.get_one::<String>("email");
