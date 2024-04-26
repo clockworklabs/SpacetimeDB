@@ -14,7 +14,6 @@ use crate::protobuf::client_api::{TableRowOperation, TableUpdate};
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
 use crate::util::notify_once::NotifyOnce;
-use crate::worker_metrics::WORKER_METRICS;
 use bytes::Bytes;
 use derive_more::{From, Into};
 use futures::{Future, FutureExt};
@@ -511,16 +510,6 @@ async fn select_first<A: Future, B: Future<Output = ()>>(fut_a: A, fut_b: B) -> 
 #[async_trait::async_trait]
 impl<T: Module> DynModuleHost for HostControllerActor<T> {
     async fn get_instance(&self, db: Address) -> Result<Box<dyn ModuleInstance>, NoSuchModule> {
-        // In the event of a PoolClosed error,
-        // we need to reset the queue length metrics.
-        fn no_such_module(db: &Address) -> NoSuchModule {
-            WORKER_METRICS.instance_queue_length.with_label_values(db).set(0);
-            WORKER_METRICS
-                .instance_queue_length_histogram
-                .with_label_values(db)
-                .observe(0 as f64);
-            NoSuchModule
-        }
         self.start.notified().await;
         // in the future we should do something like in the else branch here -- add more instances based on load.
         // we need to do write-skew retries first - right now there's only ever once instance per module.
@@ -528,7 +517,7 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
             self.instance_pool
                 .request_with_context(db)
                 .await
-                .map_err(|_| no_such_module(&db))?
+                .map_err(|_| NoSuchModule)?
         } else {
             const GET_INSTANCE_TIMEOUT: Duration = Duration::from_millis(500);
             select_first(
@@ -536,7 +525,7 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
                 tokio::time::sleep(GET_INSTANCE_TIMEOUT).map(|()| self.spinup_new_instance()),
             )
             .await
-            .map_err(|_| no_such_module(&db))?
+            .map_err(|_| NoSuchModule)?
         };
         Ok(Box::new(AutoReplacingModuleInstance {
             inst,
