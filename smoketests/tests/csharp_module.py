@@ -35,7 +35,8 @@ class CreateProject(unittest.TestCase):
 
                 contents = contents.replace(
                     "</PropertyGroup>",
-                    f"""<RestoreAdditionalProjectSources>{codegen_bin.absolute()};{runtime_bin.absolute()}</RestoreAdditionalProjectSources>
+                    # note that nuget URL comes last, which ensures local sources should override it.
+                    f"""<RestoreSources>{codegen_bin.absolute()};{runtime_bin.absolute()};https://api.nuget.org/v3/index.json</RestoreSources>
 </PropertyGroup>""",
                 )
                 with open(csproj, "w") as f:
