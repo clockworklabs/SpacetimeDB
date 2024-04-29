@@ -34,12 +34,9 @@
     <None Include="../logo.png" Pack="true" PackagePath="" />
     <None Include="README.md" Pack="true" PackagePath="" />
     <None Include="../LICENSE" Pack="true" PackagePath="" />
-    <!-- apparently analyzers need to be in specific folder and need custom PowerShell script to be distributed -->
-    <!-- see https://roslyn-analyzers.readthedocs.io/en/latest/create-nuget-package.html and other docs -->
+    <!-- source generators need to be put in a specific folder -->
+    <!-- see https://github.com/dotnet/roslyn/blob/main/docs/features/source-generators.cookbook.md#package-a-generator-as-a-nuget-package -->
     <None Include="$(OutputPath)/$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
-    <!-- they also need some custom PowerShell scripts copied from template or docs (whyyyy) -->
-    <!-- see https://learn.microsoft.com/en-us/nuget/guides/analyzers-conventions#install-and-uninstall-scripts -->
-    <None Update="tools/*.ps1" CopyToOutputDirectory="Always" Pack="true" PackagePath="tools" />
   </ItemGroup>
 
 </Project>

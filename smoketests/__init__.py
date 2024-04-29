@@ -23,11 +23,21 @@ STDB_CONFIG = TEST_DIR / "config.toml"
 TEMPLATE_LIB_RS = open(STDB_DIR / "crates/cli/src/subcommands/project/rust/lib._rs").read()
 TEMPLATE_CARGO_TOML = open(STDB_DIR / "crates/cli/src/subcommands/project/rust/Cargo._toml").read()
 bindings_path = (STDB_DIR / "crates/bindings").absolute()
+escaped_bindings_path = re.escape(
+    str(bindings_path).replace('\\', '\\\\')
+)
 TEMPLATE_CARGO_TOML = (re.compile(r"^spacetimedb\s*=.*$", re.M) \
-    .sub(f'spacetimedb = {{ path = "{bindings_path}" }}', TEMPLATE_CARGO_TOML))
+    .sub(f'spacetimedb = {{ path = "{escaped_bindings_path}" }}', TEMPLATE_CARGO_TOML))
 
 # this is set to true when the --docker flag is passed to the cli
 HAVE_DOCKER = False
+
+
+
+def requires_dotnet(item):
+    if HAVE_DOTNET:
+        return item
+    return unittest.skip("dotnet 8.0 not available")(item)
 
 
 def build_template_target():
@@ -37,7 +47,7 @@ def build_template_target():
             AUTOPUBLISH = False
 
         BuildModule.setUpClass()
-        env = { **os.environ, "CARGO_TARGET_DIR": TEMPLATE_TARGET_DIR }
+        env = { **os.environ, "CARGO_TARGET_DIR": str(TEMPLATE_TARGET_DIR) }
         spacetime("build", BuildModule.project_path, env=env, capture_stderr=False)
         BuildModule.tearDownClass()
         BuildModule.doClassCleanups()
@@ -93,6 +103,22 @@ def run_cmd(*args, capture_stderr=True, check=True, full_output=False, cmd_name=
 
 def spacetime(*args, **kwargs):
     return run_cmd(SPACETIME_BIN, *args, cmd_name="spacetime", **kwargs)
+
+
+def _check_for_dotnet() -> bool:
+    try:
+        version = run_cmd("dotnet", "--version")
+        print("dotnet version:", version)
+        if int(version.split(".")[0]) < 8:
+            print("not high enough, skipping dotnet smoketests")
+            return False
+    except Exception as e:
+        raise e
+        return False
+    return True
+
+HAVE_DOTNET = _check_for_dotnet()
+
 
 class Smoketest(unittest.TestCase):
     MODULE_CODE = TEMPLATE_LIB_RS
