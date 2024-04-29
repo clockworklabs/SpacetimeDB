@@ -14,6 +14,7 @@ use crate::protobuf::client_api::{TableRowOperation, TableUpdate};
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
 use crate::util::notify_once::NotifyOnce;
+use crate::worker_metrics::WORKER_METRICS;
 use bytes::Bytes;
 use derive_more::{From, Into};
 use futures::{Future, FutureExt};
@@ -636,12 +637,19 @@ impl ModuleHost {
         &self.info.subscriptions
     }
 
-    async fn call<F, R>(&self, _reducer_name: &str, f: F) -> Result<R, NoSuchModule>
+    async fn call<F, R>(&self, reducer: &str, f: F) -> Result<R, NoSuchModule>
     where
         F: FnOnce(&mut dyn ModuleInstance) -> R + Send + 'static,
         R: Send + 'static,
     {
-        let mut inst = self.inner.get_instance(self.info.address).await?;
+        let mut inst = {
+            // Record the time spent waiting in the queue
+            let _guard = WORKER_METRICS
+                .reducer_wait_time
+                .with_label_values(&self.info.address, reducer)
+                .start_timer();
+            self.inner.get_instance(self.info.address).await?
+        };
 
         let result = tokio::task::spawn_blocking(move || f(&mut *inst))
             .await
