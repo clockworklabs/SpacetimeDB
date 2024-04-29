@@ -57,7 +57,7 @@ public class Type : IIncrementalGenerator
         WithAttrAndPredicate(context, "SpacetimeDB.TableAttribute", (_node) => true);
     }
 
-    public void WithAttrAndPredicate(
+    public static void WithAttrAndPredicate(
         IncrementalGeneratorInitializationContext context,
         string fullyQualifiedMetadataName,
         Func<SyntaxNode, bool> predicate
@@ -86,7 +86,12 @@ public class Type : IIncrementalGenerator
                         .FirstOrDefault();
 
                     var fields = type.Members.OfType<FieldDeclarationSyntax>()
-                        .Where(f => !f.Modifiers.Any(m => m.IsKind(SyntaxKind.StaticKeyword)))
+                        .Where(f =>
+                            !f.Modifiers.Any(m =>
+                                m.IsKind(SyntaxKind.StaticKeyword)
+                                || m.IsKind(SyntaxKind.ConstKeyword)
+                            )
+                        )
                         .SelectMany(f =>
                         {
                             var typeSymbol = context
