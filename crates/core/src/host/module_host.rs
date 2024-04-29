@@ -772,6 +772,9 @@ impl ModuleHost {
         reducer_name: &str,
         args: ReducerArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
+        if reducer_name.starts_with("__") && reducer_name.ends_with("__") {
+            return Err(ReducerCallError::NoSuchReducer);
+        }
         let res = self
             .call_reducer_inner(
                 caller_identity,
