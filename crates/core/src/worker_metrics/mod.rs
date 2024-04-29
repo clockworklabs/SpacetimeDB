@@ -39,15 +39,10 @@ metrics_group!(
         #[labels(database_address: Address)]
         pub instance_queue_length: IntGaugeVec,
 
-        #[name = spacetime_worker_instance_operation_queue_length_max]
-        #[help = "Max length of the wait queue for access to a module instance."]
-        #[labels(database_address: Address)]
-        pub instance_queue_length_max: IntGaugeVec,
-
         #[name = spacetime_worker_instance_operation_queue_length_histogram]
         #[help = "Length of the wait queue for access to a module instance."]
         #[labels(database_address: Address)]
-        #[buckets(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 25, 50)]
+        #[buckets(0, 10, 25, 50, 75, 100, 150, 200, 250, 300, 350, 400, 450, 500, 1000)]
         pub instance_queue_length_histogram: HistogramVec,
 
         #[name = spacetime_scheduled_reducer_delay_sec]
@@ -87,14 +82,10 @@ metrics_group!(
 
 type ReducerLabel = (Address, String);
 
-pub static MAX_QUEUE_LEN: Lazy<Mutex<HashMap<Address, i64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 pub static MAX_REDUCER_DELAY: Lazy<Mutex<HashMap<ReducerLabel, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 pub static WORKER_METRICS: Lazy<WorkerMetrics> = Lazy::new(WorkerMetrics::new);
 
 pub fn reset_counters() {
-    // Reset max queue length
-    WORKER_METRICS.instance_queue_length_max.0.reset();
-    MAX_QUEUE_LEN.lock().unwrap().clear();
     // Reset max reducer wait time
     WORKER_METRICS.scheduled_reducer_delay_sec_max.0.reset();
     MAX_REDUCER_DELAY.lock().unwrap().clear();
