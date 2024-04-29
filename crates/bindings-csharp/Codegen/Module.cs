@@ -1,8 +1,6 @@
 namespace SpacetimeDB.Codegen;
 
-using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
