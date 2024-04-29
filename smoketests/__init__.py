@@ -110,7 +110,7 @@ def _check_for_dotnet() -> bool:
         version = run_cmd("dotnet", "--version")
         print("dotnet version:", version)
         if int(version.split(".")[0]) < 8:
-            print("")
+            print("not high enough, skipping dotnet smoketests")
             return False
     except Exception as e:
         raise e
