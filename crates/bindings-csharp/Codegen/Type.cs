@@ -130,7 +130,7 @@ public class Type : IIncrementalGenerator
                         IsTaggedEnum = taggedEnumVariants is not null,
                         TypeParams = type.TypeParameterList?.Parameters
                             .Select(p => p.Identifier.Text)
-                            .ToArray() ?? new string[] { },
+                            .ToArray() ?? [],
                         Members = fields,
                     };
                 }
