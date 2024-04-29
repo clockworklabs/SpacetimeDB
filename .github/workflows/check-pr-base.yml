@@ -1,4 +1,4 @@
-name: Check PR base
+name: Git tree checks
 
 on:
   pull_request:
@@ -8,6 +8,7 @@ permissions: read-all
 
 jobs:
   check_base_ref:
+    name: Based on `master`
     runs-on: ubuntu-latest
     steps:
       - id: not_based_on_master
