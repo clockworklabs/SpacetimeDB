@@ -34,21 +34,6 @@ metrics_group!(
         #[labels(identity: Identity)]
         pub websocket_sent_msg_size: HistogramVec,
 
-        #[name = spacetime_worker_transactions]
-        #[help = "Number of reducer calls."]
-        #[labels(database_address: Address, reducer_symbol: str)]
-        pub reducer_count: IntCounterVec,
-
-        #[name = spacetime_worker_module_tx_compute_time]
-        #[help = "The time it takes to compute and commit after reducer execution."]
-        #[labels(database_address: Address, reducer_symbol: str)]
-        pub reducer_compute_time: HistogramVec,
-
-        #[name = spacetime_worker_tx_size]
-        #[help = "The size of committed bytes in the message log after reducer execution."]
-        #[labels(database_address: Address, reducer_symbol: str)]
-        pub reducer_write_size: HistogramVec,
-
         #[name = spacetime_worker_instance_operation_queue_length]
         #[help = "Length of the wait queue for access to a module instance."]
         #[labels(database_address: Address)]
