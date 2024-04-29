@@ -16,9 +16,3 @@ jobs:
         run: |
           echo "This is labeled \"Do not merge\"."
           exit 1
-      - id: not_based_on_master
-        if: |
-          github.event.pull_request.base.ref != 'master'
-        run: |
-          echo "This PR is not based on master. Please wait until the base PR merges."
-          exit 1
